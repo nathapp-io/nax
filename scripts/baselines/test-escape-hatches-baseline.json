@@ -1,8 +1,7 @@
 {
   "counts": {
-    "tsSuppress": 0,
-    "ratchetAllow": 26,
-    "looseCast": 1595
+    "looseCast": 1479,
+    "ratchetAllow": 26
   },
   "updatedAt": "2026-09-10T12:00:00.000Z",
   "byFile": {
@@ -242,9 +241,6 @@
       "looseCast": 20
     },
     "test/unit/prompts/builder.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/prompts/builders/critic-builder.test.ts": {
       "looseCast": 3
     },
     "test/unit/prompts/builders/rectifier-builder.test.ts": {
@@ -577,9 +573,6 @@
     "test/unit/operations/semantic-review-reground.test.ts": {
       "looseCast": 2
     },
-    "test/unit/operations/stateful-debater-op.test.ts": {
-      "looseCast": 7
-    },
     "test/unit/operations/plan-refine-out-of-scope.test.ts": {
       "looseCast": 2
     },
@@ -589,17 +582,11 @@
     "test/unit/operations/full-suite-rectify.test.ts": {
       "looseCast": 5
     },
-    "test/unit/operations/plan-critic-llm.test.ts": {
-      "looseCast": 3
-    },
     "test/unit/operations/mutation-check-telemetry.test.ts": {
       "looseCast": 1
     },
     "test/unit/operations/lint-check-tool-diagnostics.test.ts": {
       "looseCast": 4
-    },
-    "test/unit/operations/debate-hybrid.test.ts": {
-      "looseCast": 5
     },
     "test/unit/operations/build-hop-callback.test.ts": {
       "looseCast": 19
@@ -612,9 +599,6 @@
     },
     "test/unit/operations/finish-review.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/operations/debate-plan.test.ts": {
-      "looseCast": 6
     },
     "test/unit/operations/mutation-check-diff-scope.test.ts": {
       "looseCast": 4
@@ -634,45 +618,6 @@
     "test/unit/operations/typecheck-check-tool-diagnostics.test.ts": {
       "looseCast": 4
     },
-    "test/unit/debate/resolvers.test.ts": {
-      "looseCast": 20
-    },
-    "test/unit/debate/runner-plan-helpers.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/debate/runner-plan-signal.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/debate/runner-hybrid-rebuttal.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/debate/race-against-abort.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/debate/session-helpers-resolver-model.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/debate/prompt-builder.test.ts": {
-      "looseCast": 4
-    },
-    "test/unit/debate/session-helpers.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/debate/selectors/pick.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/debate/selectors/verifier-pick-signal.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/debate/selectors/judge.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/debate/verifiers/plan-checklist.test.ts": {
-      "looseCast": 35
-    },
-    "test/unit/debate/verifiers/checks.test.ts": {
-      "looseCast": 7
-    },
     "test/unit/cli/setup-fill.test.ts": {
       "looseCast": 13
     },
@@ -681,9 +626,6 @@
     },
     "test/unit/cli/plan-mode.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/cli/plan-decompose-debate.test.ts": {
-      "looseCast": 5
     },
     "test/unit/cli/rules-lint.test.ts": {
       "looseCast": 1
@@ -829,9 +771,6 @@
     "test/unit/runtime/runtime.test.ts": {
       "looseCast": 1
     },
-    "test/unit/runtime/session-role-plan-critic.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/runtime/prompt-auditor.test.ts": {
       "looseCast": 1
     },
@@ -853,17 +792,11 @@
     "test/unit/runtime/middleware/_idle-watchdog-harness.ts": {
       "looseCast": 8
     },
-    "test/unit/plan/debate-strategy.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/plan/strategies.test.ts": {
       "looseCast": 5
     },
     "test/unit/plan/refine-strategy.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/plan/debate-composition.test.ts": {
-      "looseCast": 3
     },
     "test/unit/plan/single-strategy.test.ts": {
       "looseCast": 1
@@ -939,9 +872,6 @@
     },
     "test/unit/config/quality-commands-schema.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/config/debate-schema.test.ts": {
-      "looseCast": 1
     },
     "test/unit/config/merge-agent-models-routing.test.ts": {
       "ratchetAllow": 2,
