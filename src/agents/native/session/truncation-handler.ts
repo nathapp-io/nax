@@ -40,13 +40,20 @@ export function spillRootFor(sessionId: string): string | undefined {
 export async function truncateNativeToolResult(
   sessionId: string,
   body: string,
-  opts: { readonly toolName: string; readonly callId: string },
+  opts: { readonly toolName: string; readonly callId: string; readonly reserveBytes?: number },
 ): Promise<string> {
   const root = spillRootFor(sessionId);
+  // `reserveBytes` is what the CALLER will add to this result after the policy
+  // has run -- today only the spin-breaker nudge, which the turn loop prepends.
+  // Anything appended or prepended downstream has to be charged against the
+  // same ceiling here, or the guarantee this chokepoint exists to give (the
+  // model-facing content is at most MODEL_MAX_BYTES) is broken by exactly the
+  // bytes the caller adds. Reserving is what keeps the ceiling unconditional.
+  const reserved = Math.max(0, opts.reserveBytes ?? 0);
   return applyModelTruncationPolicy(body, {
     toolName: opts.toolName,
     callId: opts.callId,
     ...(root !== undefined ? { root } : {}),
-    maxBytes: MODEL_MAX_BYTES,
+    maxBytes: Math.max(0, MODEL_MAX_BYTES - reserved),
   });
 }

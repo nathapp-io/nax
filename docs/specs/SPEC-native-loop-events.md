@@ -230,6 +230,14 @@ the retained first line and the retained tail instead — the exit line, then th
 the tail. When the budget leaves no room for a tail at all, the marker is simply last. Either
 way it is inside the `MODEL_MAX_BYTES` budget, never added after the cut.
 
+Anything the turn loop adds to a result AFTER the policy has run is charged against the
+same ceiling, never added on top of it. Today that is the spin-breaker nudge, which
+`withNudge` prepends: the loop reserves the nudge's bytes plus its separator from the
+budget it hands the policy, so the content that reaches the model is at most
+`MODEL_MAX_BYTES` WITH the nudge included. Enforcing the ceiling and then prepending
+would break the guarantee by exactly the bytes the prefix adds, and the nudge fires
+precisely when a session is already burning context.
+
 The path in the marker is relative to the scratchpad directory, because `ScratchpadRead`
 resolves paths relative to it. A body larger than `READ_CEILING` produces a spill file
 whose own trailing line records that the spill is itself incomplete.
@@ -525,7 +533,9 @@ final line survives as a shortened slice — the skip rule under "Truncation dir
 intended behaviour and the criteria below pin it.
 
 - `[integration]` a `Grep` tool result larger than `MODEL_MAX_BYTES` enters the message array
-  with content whose UTF-8 byte length is at most `MODEL_MAX_BYTES`.
+  with content whose UTF-8 byte length is at most `MODEL_MAX_BYTES` — including when a
+  spin-breaker nudge is prepended to it, whose bytes are reserved from the same budget
+  rather than added after the ceiling is enforced.
 - `[integration]` a `Bash` tool result for a failing command with stdout larger than
   `MODEL_MAX_BYTES` enters the message array with content whose first line is the body's
   `exit N` line.

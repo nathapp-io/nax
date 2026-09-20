@@ -29,6 +29,7 @@ import {
 import { createInvalidCallBudget, rewriteToolCallInput } from "./handle-invalid-tool-call";
 import { createLoopEventRegistry } from "./loop-events";
 import { registerBuiltinLoopHandlers } from "./loop-handlers";
+import { nudgeOverheadBytes, withNudge } from "./nudge";
 import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance";
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
@@ -44,10 +45,6 @@ import { cacheUsageFields, type NativeTurnResponse, recordNativeTurnFailureUsage
  * (nax#2120). The handler's text leads, because a handler that says "begin with
  * this" must be able to.
  */
-function withNudge(nudgeText: string | undefined, content: string): string {
-  return nudgeText === undefined ? content : `${nudgeText}\n\n---\n\n${content}`;
-}
-
 /**
  * Structural, matching adapter.ts's guard: nax-ai's error class is not importable
  * here and the kind is what matters.
@@ -476,6 +473,9 @@ export async function runNativeTurn(
           const shaped = await truncateNativeToolResult(handle.id, patch.content ?? answerText, {
             toolName: call.name,
             callId: call.id,
+            // The nudge is prepended below, so its bytes are spent out of this
+            // result's budget -- not added after the ceiling was enforced.
+            ...(nudgeText !== undefined ? { reserveBytes: nudgeOverheadBytes(nudgeText) } : {}),
           });
           messages.push(
             buildToolResult({
