@@ -115,7 +115,7 @@ const curatorAction: IPostRunAction = {
           projectKey: curatorContext.projectKey,
           retention,
         });
-        if (pruneOutcome.error) {
+        if (pruneOutcome.error !== undefined) {
           context.logger.warn("Curator auto-prune failed", {
             error: pruneOutcome.error,
             rollupPath,

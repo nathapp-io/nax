@@ -30,20 +30,37 @@ export const DEFAULT_RETENTION: CuratorRetentionConfig = {
 };
 
 /**
+ * Read a retention field defensively — non-finite, negative, or non-integer
+ * values fall back to the schema default.
+ *
+ * `PostRunContext.config` is `unknown`; a malformed retention object that
+ * has slipped past the schema (e.g. an out-of-band mutation in a fixture,
+ * or `keepRuns: -1` whose slice(0, -1) keeps more than `keepRuns` rows)
+ * must not silently change behaviour.
+ */
+function readRetentionField(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    return fallback;
+  }
+  return value;
+}
+
+/**
  * Resolve curator retention from a post-run context.
  *
  * `PostRunContext.config` is untyped (`unknown`), so the schema default cannot
  * reach it automatically. Read `context.config.curator.retention` and fall
- * back to `DEFAULT_RETENTION` for any missing field — this is the untyped
- * counterpart of what `CuratorConfigSchema` already does at parse time.
+ * back to `DEFAULT_RETENTION` for any missing or malformed field — this is
+ * the untyped counterpart of what `CuratorConfigSchema` already does at parse
+ * time.
  */
 export function getCuratorRetention(context: PostRunContext): CuratorRetentionConfig {
   const cfg = context.config as Record<string, unknown> | undefined;
   const curator = cfg?.curator as Record<string, unknown> | undefined;
   const raw = curator?.retention as Partial<CuratorRetentionConfig> | undefined;
   return {
-    pruneThresholdBytes: raw?.pruneThresholdBytes ?? DEFAULT_RETENTION.pruneThresholdBytes,
-    keepRuns: raw?.keepRuns ?? DEFAULT_RETENTION.keepRuns,
+    pruneThresholdBytes: readRetentionField(raw?.pruneThresholdBytes, DEFAULT_RETENTION.pruneThresholdBytes),
+    keepRuns: readRetentionField(raw?.keepRuns, DEFAULT_RETENTION.keepRuns),
   };
 }
 
@@ -52,13 +69,15 @@ export function getCuratorRetention(context: PostRunContext): CuratorRetentionCo
  *
  * Reads `Bun.file(input.rollupPath).size`, returns `{ pruned: false }` when
  * the size is at or below `retention.pruneThresholdBytes`, and otherwise
- * derives `keepRunIds` from the first `retention.keepRuns` ids of
- * `scanProjectRunIds` before calling `pruneRollup`. A rejection from either
- * call is caught and reported on `error` with `pruned: false`.
+ * runs `scanAndPruneNewest` — the scan-then-prune pair under a single lock
+ * acquisition, so a concurrent `appendToRollup` cannot land between them
+ * and have its observations dropped. A rejection from the call is caught
+ * and reported on `error` with `pruned: false`; the error string is
+ * normalised so it is never empty (the post-run hook suppresses an empty
+ * string and the AC10 contract guarantees a prune-failure warning fires).
  *
- * Routing `pruneRollup` and `scanProjectRunIds` through `_curatorPruneDeps`
- * keeps the file-system work injectable for tests — there is no monkey-patch
- * of globals anywhere.
+ * Routing the file-system work through `_curatorPruneDeps` keeps it
+ * injectable for tests — there is no monkey-patch of globals anywhere.
  */
 export async function maybePruneRollup(input: {
   rollupPath: string;
@@ -75,15 +94,16 @@ export async function maybePruneRollup(input: {
       return { pruned: false };
     }
 
-    const runIds = await _curatorPruneDeps.scanProjectRunIds(rollupPath, projectKey);
-    const keepRunIds = new Set(runIds.slice(0, retention.keepRuns));
-
-    const result = await _curatorPruneDeps.pruneRollup({ rollupPath, projectKey, keepRunIds });
+    const result = await _curatorPruneDeps.scanAndPruneNewest(rollupPath, projectKey, retention.keepRuns);
     return { pruned: true, result };
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       pruned: false,
-      error: err instanceof Error ? err.message : String(err),
+      // The post-run hook logs on `error !== undefined`; an empty `err.message`
+      // (or `String(undefined)`) would silently bypass that warn. Substitute a
+      // non-empty sentinel so a real failure always surfaces.
+      error: message.length > 0 ? message : `Unknown error: ${err === undefined ? "undefined" : typeof err}`,
     };
   }
 }

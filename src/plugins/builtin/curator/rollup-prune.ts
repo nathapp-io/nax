@@ -101,11 +101,34 @@ export async function pruneRollup(input: PruneRollupInput): Promise<PruneResult>
 }
 
 /**
+ * Scan + prune atomically under the path-file-lock.
+ *
+ * US-004's auto-prune derives `keepRunIds` from the first N entries of
+ * `scanProjectRunIds` and feeds that set into `pruneRollup`. If the scan and
+ * rewrite run as two separate calls, a concurrent `appendToRollup` can land
+ * between them: its observations are not in `keepRunIds`, so the rewrite
+ * silently drops them. Holding the lock across both calls closes that
+ * window — the same lock `pruneRollup` and `appendToRollup` already share
+ * (`rollup-prune.ts:100` / `rollup.ts:108`).
+ */
+export async function scanAndPruneNewest(
+  rollupPath: string,
+  projectKey: string,
+  keepRuns: number,
+): Promise<PruneResult> {
+  return withPathFileLock(rollupPath, async () => {
+    const runIds = await scanProjectRunIds(rollupPath, projectKey);
+    const keepRunIds = new Set(runIds.slice(0, keepRuns));
+    return pruneRollupUnlocked({ rollupPath, projectKey, keepRunIds });
+  });
+}
+
+/**
  * Injectable dependency object for the auto-prune size gate (US-004).
  *
- * The implementer routes `pruneRollup` and `scanProjectRunIds` through this
- * object so tests can intercept the underlying file-system work without
- * monkey-patching globals.
+ * The implementer routes `pruneRollup`, `scanProjectRunIds`, and
+ * `scanAndPruneNewest` through this object so tests can intercept the
+ * underlying file-system work without monkey-patching globals.
  */
 export const _curatorPruneDeps = {
   pruneRollup: ((input: PruneRollupInput) => pruneRollup(input)) as (input: PruneRollupInput) => Promise<PruneResult>,
@@ -113,6 +136,17 @@ export const _curatorPruneDeps = {
     rollupPath: string,
     projectKey: string,
   ) => Promise<string[]>,
+  /**
+   * Scan + prune under a single lock acquisition — closes the
+   * scan-then-prune race that a separate `scanProjectRunIds` / `pruneRollup`
+   * pair leaves open. Used by the auto-prune size gate (US-004).
+   */
+  scanAndPruneNewest: ((rollupPath: string, projectKey: string, keepRuns: number) =>
+    scanAndPruneNewest(rollupPath, projectKey, keepRuns)) as (
+    rollupPath: string,
+    projectKey: string,
+    keepRuns: number,
+  ) => Promise<PruneResult>,
 };
 
 async function pruneRollupUnlocked(input: PruneRollupInput): Promise<PruneResult> {
