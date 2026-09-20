@@ -3,7 +3,7 @@
   "feature": "curator-observation-and-retention",
   "branchName": "feat/curator-observation-and-retention",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-09-20T14:04:04.124Z",
+  "updatedAt": "2026-09-20T14:34:48.685Z",
   "userStories": [
     {
       "id": "US-001",
@@ -96,8 +96,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -156,14 +156,17 @@
         "provenance"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "The work changes a backward-compatible public rendering signature, a cross-run post-run integration path, fallback semantics, heuristic identity, and documentation."
+        "reasoning": "The work changes a backward-compatible public rendering signature, a cross-run post-run integration path, fallback semantics, heuristic identity, and documentation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/plugins/builtin/curator/render.ts",
@@ -185,7 +188,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f89ff1f1ce49ea68cc3e41ce19729ab94f9264cf"
     },
     {
       "id": "US-004",
@@ -222,7 +226,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "This combines a new injectable filesystem gate, failure-isolated post-run integration, schema/type extraction constrained by a hard file-size limit, and preservation of manual-gc behavior."
+        "reasoning": "This combines a new injectable filesystem gate, failure-isolated post-run integration, schema/type extraction constrained by a hard file-size limit, and preservation of manual-gc behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/plugins/builtin/curator/index.ts",
@@ -240,6 +247,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "4d615441000f4cb33a6c997e6b962fde35de5fc7",
       "outOfScope": [
         "**Out of scope (US-004 only):** concurrent invocation of the automatic prune and `nax curator gc` against the same rollup. Both already serialise through the path-keyed file lock that `pruneRollup` and `appendToRollup` share (`rollup-prune.ts:100`), and this story adds no new concurrency surface."
       ]
