@@ -33,10 +33,11 @@ function chunk(opts: {
   tokens?: number;
   rawScore?: number;
   score?: number;
+  providerId?: string;
 }): ContextChunk {
   return {
     id: opts.id,
-    providerId: opts.id.split(":")[0] ?? "p1",
+    providerId: opts.providerId ?? "fixture-provider",
     kind: opts.kind ?? "feature",
     scope: opts.scope ?? "feature",
     role: opts.role ?? ["all"],

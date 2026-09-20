@@ -95,6 +95,21 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.manifest.includedChunks).toContain("c:1");
   });
 
+  test("rejects duplicate chunk IDs before provider attribution becomes ambiguous", async () => {
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "opaque-id", content: "alpha content" })),
+      makeProvider("p2", makeChunkResult({ id: "opaque-id", content: "beta content" })),
+    ]);
+
+    await expect(orch.assemble(BASE_REQUEST)).rejects.toMatchObject({
+      code: "CONTEXT_DUPLICATE_CHUNK_ID",
+      context: {
+        chunkId: "opaque-id",
+        providerIds: ["p1", "p2"],
+      },
+    });
+  });
+
   test("manifest records each packed chunk's token cost (#1421)", async () => {
     // Without this the curator can only record tokens:0 for every chunk, and the
     // context budget cannot be tuned against real data.

@@ -203,6 +203,17 @@ describe("buildManifest — chunkProviders omits chunks without providerId (AC2)
     expect(manifest.chunkProviders).toBeUndefined();
   });
 
+  test("AC2 (legacy caller): an omitted chunkProviderLookup leaves excluded chunks unattributed", () => {
+    const { chunkProviderLookup: _lookup, ...legacyInputs } = makeInputs({
+      roleFiltered: [{ id: "legacy:excluded" }],
+    });
+
+    const manifest = buildManifest(legacyInputs);
+
+    expect(manifest.excludedChunks.map((chunk) => chunk.id)).toContain("legacy:excluded");
+    expect(manifest.chunkProviders).toBeUndefined();
+  });
+
   test("AC2 (boundary): a packed chunk list with no providerId on any chunk omits chunkProviders entirely (AC3 cross-coverage)", () => {
     // This is also AC3 — kept here as a boundary so the AC2 path covers the
     // mixed case while AC3 covers the all-undefined case.

@@ -479,7 +479,10 @@ export interface ContextRequest {
 
 /** Raw chunk data returned by a provider before scoring/packing. */
 export interface RawChunk {
-  /** Stable chunk ID (provider is responsible for stable IDs within a feature) */
+  /**
+   * Stable chunk ID. Providers own stability within a feature; the
+   * orchestrator rejects duplicate IDs across the assembled provider set.
+   */
   id: string;
   /**
    * Provider ID — set by the orchestrator after fetch().

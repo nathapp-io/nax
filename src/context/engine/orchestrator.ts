@@ -152,6 +152,24 @@ function enrichRaw(chunk: RawChunk, providerId: string): RawChunk {
   return { ...chunk, providerId };
 }
 
+function assertUniqueChunkIds(chunks: RawChunk[], request: ContextRequest): void {
+  const providerByChunkId = new Map<string, string>();
+  for (const chunk of chunks) {
+    const providerId = chunk.providerId ?? "unknown";
+    const existingProviderId = providerByChunkId.get(chunk.id);
+    if (existingProviderId !== undefined) {
+      throw new NaxError(`[context-v2] Duplicate context chunk ID: ${chunk.id}`, "CONTEXT_DUPLICATE_CHUNK_ID", {
+        stage: "context-v2",
+        storyId: request.storyId,
+        requestStage: request.stage,
+        chunkId: chunk.id,
+        providerIds: [existingProviderId, providerId],
+      });
+    }
+    providerByChunkId.set(chunk.id, providerId);
+  }
+}
+
 function buildProviderSourceMap(
   stageProviderIds: string[],
   extraProviderIds: string[],
@@ -362,6 +380,8 @@ export class ContextOrchestrator {
         tokensProduced: tokens,
       });
     }
+
+    assertUniqueChunkIds(allRaw, request);
 
     // Phase 4: build pull tool descriptors from stage config + PULL_TOOL_REGISTRY.
     // Provider-level result.pullTools is reserved for Phase 7 and ignored here.
