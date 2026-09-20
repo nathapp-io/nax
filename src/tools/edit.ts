@@ -52,7 +52,13 @@ export const editTool: CodingTool = {
       const { size } = await stat(target);
       if (size > ctx.maxFileBytes) {
         return {
-          content: `${target} is ${size} bytes, which exceeds the ${ctx.maxFileBytes}-byte file ceiling`,
+          // The reason leads and the path trails, matching Write's and
+          // ScratchpadWrite's refusal shape. A tool result is capped before the
+          // model reads it, and a head cut keeps the leading bytes: a message
+          // that opens with a long path has its diagnosis cut away first, which
+          // is the one sentence the model needs (src/tools/grep.ts states the
+          // same rule for its literal-search caveat).
+          content: `the file is ${size} bytes, which exceeds the ${ctx.maxFileBytes}-byte file ceiling -- refusing to edit ${target}`,
           isError: true,
         };
       }

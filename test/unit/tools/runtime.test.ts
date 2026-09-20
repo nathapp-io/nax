@@ -273,6 +273,27 @@ describe("a thrown tool", () => {
     expect(out.kind).toBe("error");
     if (out.kind === "error") expect(out.content).toContain("boom from Thrower");
   });
+
+  test("shapes an oversized thrown error before returning it to the model", async () => {
+    registerCodingTool({
+      name: "LargeThrower",
+      description: "Throws a large error to exercise model-facing shaping.",
+      inputSchema: { type: "object", properties: {} },
+      scope: { pathFields: [] },
+      run: async () => {
+        throw new Error("x".repeat(1_000));
+      },
+    });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "LargeThrower", patterns: ["*"] }], root),
+      maxBytes: 32,
+    });
+
+    const out = await rt.callTool("LargeThrower", {});
+
+    expect(out.kind).toBe("error");
+    if (out.kind === "error") expect(Buffer.byteLength(out.content, "utf8")).toBeLessThanOrEqual(32);
+  });
 });
 
 describe("after the thrown-tool cleanup", () => {

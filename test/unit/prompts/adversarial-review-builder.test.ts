@@ -582,7 +582,8 @@ describe("US-005: buildAdversarialReviewPrompt introduces the scratchpad", () =>
     });
     expect(result).toContain(".nax/scratchpad/");
     const lower = result.toLowerCase();
-    expect(lower).toContain("wiped at the start of each run");
+    // US-004 — end-of-run wipe contract replaces the old "start of each run" wording.
+    expect(lower).toContain("wiped when a run finishes");
     expect(lower).toContain("never committed");
   });
 

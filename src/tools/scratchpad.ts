@@ -16,9 +16,10 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
-import { readPrefix } from "@/utils/bounded-io";
 import { resolveWithin } from "./policy";
+import { readFileSlice } from "./read-file";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { READ_CEILING } from "./truncate";
 
 /** The canonical scratchpad path, written into the policy as `scope.confineTo`. */
 export const SCRATCHPAD_DIR = ".nax/scratchpad";
@@ -27,54 +28,15 @@ export const SCRATCHPAD_DIR = ".nax/scratchpad";
  * Match cap for ScratchpadList. Mirrors `glob.ts`'s `MAX_MATCHES` -- a
  * long-running session accumulates throwaway files by design, so an
  * unbounded scan would feed an arbitrarily large listing back into model
- * context, bypassing the `ctx.maxBytes` ceiling every other content-
- * returning tool honours.
+ * context, bypassing the model-facing ceiling the after_tool policy
+ * applies to every other content-returning tool.
  */
 const MAX_MATCHES = 500;
-
-/**
- * Slice the first `maxBytes` bytes of a UTF-8 buffer, backing up to the last
- * codepoint boundary if the raw slice would land mid-codepoint.
- *
- * A byte-aligned slice that ends inside a multi-byte codepoint decodes with
- * a U+FFFD replacement character (3 bytes), which can push the resulting
- * string PAST the byte budget the slice was taken from -- exactly the
- * contract AC12 pins ("at most maxBytes bytes"). Backing up one byte at a
- * time lands on a clean codepoint boundary within four attempts (max UTF-8
- * codepoint length), keeping the decoded byte length under control.
- */
-function sliceByteBudget(buf: Buffer, maxBytes: number): string {
-  const end = Math.min(buf.length, maxBytes);
-  for (let cut = end; cut > 0; cut -= 1) {
-    const candidate = buf.subarray(0, cut).toString("utf8");
-    if (Buffer.byteLength(candidate, "utf8") <= maxBytes) return candidate;
-  }
-  return "";
-}
-
-/** Truncate content to `maxBytes` with a marker, preserving the byte ceiling. */
-function truncate(body: string, maxBytes: number): string {
-  if (Buffer.byteLength(body, "utf8") <= maxBytes) return body;
-  const buf = Buffer.from(body, "utf8");
-  const suffix = `\n... [truncated at ${maxBytes} bytes]`;
-  const suffixLen = Buffer.byteLength(suffix, "utf8");
-  // Ceiling too small to fit the marker -- return a plain slice with no suffix
-  // rather than exceeding maxBytes. sliceByteBudget backs up to the last
-  // codepoint boundary so a multi-byte UTF-8 source does not produce a
-  // U+FFFD-stuffed string that overshoots the budget.
-  if (suffixLen >= maxBytes) return sliceByteBudget(buf, maxBytes);
-  // Reserve space for the suffix so head + suffix stays within maxBytes.
-  // The same boundary discipline applies here: the head is byte-fitted to
-  // `budget` before the marker is appended, so the combined result never
-  // exceeds maxBytes even when `budget` lands mid-codepoint.
-  const budget = maxBytes - suffixLen;
-  return `${sliceByteBudget(buf, budget)}${suffix}`;
-}
 
 export const scratchpadWriteTool: CodingTool = {
   name: "ScratchpadWrite",
   description:
-    "Write a throwaway file to your scratchpad at .nax/scratchpad/. Use it for notes to yourself, command output you want to re-read, or intermediate lists. It is never committed and is wiped at the start of each run. Paths are relative to the scratchpad and cannot reach the repository.",
+    "Write a throwaway file to your scratchpad at .nax/scratchpad/. Use it for notes to yourself, command output you want to re-read, or intermediate lists. It is never committed and is wiped when a run finishes (a failed run's scratchpad is retained for inspection until the next run starts and clears it). Paths are relative to the scratchpad and cannot reach the repository.",
   inputSchema: {
     type: "object",
     properties: {
@@ -115,11 +77,13 @@ export const scratchpadWriteTool: CodingTool = {
 export const scratchpadReadTool: CodingTool = {
   name: "ScratchpadRead",
   description:
-    "Read a throwaway file from your scratchpad at .nax/scratchpad/. Paths are relative to the scratchpad. Use it to re-read notes, command output and intermediate lists you wrote with ScratchpadWrite.",
+    "Read a throwaway file from your scratchpad at .nax/scratchpad/. Paths are relative to the scratchpad. Use it to re-read notes, command output and intermediate lists you wrote with ScratchpadWrite -- including the output a truncated tool result spilled there. Optionally pass offset (1-based line number to start from) and/or limit (maximum number of lines to return) to page through a body too large to read at once.",
   inputSchema: {
     type: "object",
     properties: {
       path: { type: "string", description: "Path relative to the scratchpad directory" },
+      offset: { type: "integer", minimum: 1, description: "1-based line number to start reading from" },
+      limit: { type: "integer", minimum: 1, description: "Maximum number of lines to return" },
     },
     required: ["path"],
   },
@@ -129,22 +93,59 @@ export const scratchpadReadTool: CodingTool = {
     const [target] = ctx.resolvedPaths;
     if (target === undefined) return { content: "no path supplied", isError: true };
     const requestedPath = typeof input.path === "string" ? input.path : "<path>";
+    const rawOffset = input.offset;
+    if (rawOffset !== undefined && typeof rawOffset !== "number") {
+      return { content: "offset must be an integer", isError: true };
+    }
+    const rawLimit = input.limit;
+    if (rawLimit !== undefined && typeof rawLimit !== "number") {
+      return { content: "limit must be an integer", isError: true };
+    }
+    const offset = rawOffset;
+    const limit = rawLimit;
     try {
-      // Read up to ctx.maxBytes + 1 (readPrefix's overshoot contract): the
-      // extra byte is how we tell "this is the whole thing" from "there was
-      // more", without a second stat. The file's true size comes from
-      // `Bun.file(target).size` so resultBytesPreTruncation is the FULL byte
-      // length even when no truncation happened -- AC13 pins this for both
-      // the truncated and the untruncated case.
-      const file = Bun.file(target);
-      const fullBytes = file.size;
-      const body = await readPrefix(target, ctx.maxBytes);
-      const truncated = fullBytes > ctx.maxBytes;
-      const content = truncated ? truncate(body, ctx.maxBytes) : body;
-      return {
-        content,
-        resultBytesPreTruncation: fullBytes,
-      };
+      // The tool bounds its own I/O at `readCeiling`, NOT at `maxBytes`: the
+      // model-facing cap belongs to the session's after_tool policy, which
+      // also owns the spill of whatever it cuts. Reading up to the ceiling is
+      // what lets a body in (maxBytes, readCeiling) reach that policy whole.
+      //
+      // `resultBytesPreTruncation` reports the file's FULL byte length, before
+      // any of this, so the ledger can answer "how much did we discard" for a
+      // result that was shaped after it left here.
+      const slice = await readFileSlice(target, {
+        readCeiling: ctx.readCeiling ?? READ_CEILING,
+        ...(offset !== undefined ? { offset } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+      });
+      const fullBytes = Bun.file(target).size;
+      const { content, bounded, totalLines } = slice;
+      // The header leads EVERY read that returns file content, the paged one
+      // included: it reports the FILE's line count, which is what a model
+      // paging a spilled body needs in order to know how many pages remain —
+      // the page it asked for is not a substitute for that number. Precedent
+      // from readTool's whole-file read, marked with `+` when the read stopped
+      // at the I/O ceiling and the count is therefore a floor rather than the
+      // file's true total.
+      const header = `[${bounded ? `${totalLines}+` : `${totalLines}`} lines]`;
+      if (offset !== undefined || limit !== undefined) {
+        // An offset past the last line is answered with the line count rather
+        // than an empty result, because "there is nothing here" is
+        // indistinguishable from "the file is empty" and the model can act on
+        // the number -- and there the count IS the message, so no header leads
+        // it. The condition is the OFFSET against the file, never the emptiness
+        // of the slice: a range that selects only blank lines is a perfectly
+        // valid page, and reporting it as past-the-end would hide content the
+        // caller asked for and that the file really holds.
+        if (offset !== undefined && offset > totalLines) {
+          const pastEnd = `offset ${String(offset)} is past the end of the file -- it has ${totalLines} lines`;
+          return { content: pastEnd, resultBytesPreTruncation: fullBytes };
+        }
+        // The header goes on its own line and the requested range follows it,
+        // verbatim -- possibly empty, when the page holds blank lines.
+        // readTool's ranged read composes it the same way.
+        return { content: `${header}\n${content}`, resultBytesPreTruncation: fullBytes };
+      }
+      return { content: content === "" ? header : `${header}\n${content}`, resultBytesPreTruncation: fullBytes };
     } catch (err) {
       // A missing file is a tool ERROR the model can react to, never a
       // denial -- the policy already said yes. Naming the requested path is
@@ -197,6 +198,6 @@ export const scratchpadListTool: CodingTool = {
     if (files.length === 0) return { content: "(no entries)" };
 
     const rendered = files.join("\n");
-    return { content: truncate(rendered, ctx.maxBytes) };
+    return { content: rendered };
   },
 };

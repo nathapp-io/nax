@@ -1,0 +1,320 @@
+/**
+ * Shared model-facing truncation policy — US-001.
+ *
+ * The single byte-safe implementation that `after_tool` will apply, replacing
+ * the per-tool `truncate(body, ctx.maxBytes)` helpers. Constants, direction
+ * lookup, and the core algorithm all live here so a future regression that
+ * resuscitates a per-tool slicer sits behind one import rather than 5+.
+ *
+ * Three independent caps compose as an ORDERED PIPELINE, never as alternatives:
+ *   1. Per-line cap: every line longer than MODEL_MAX_LINE_CHARS (UTF-16
+ *      code units) is shortened.
+ *   2. Line-count cap: if still over MODEL_MAX_LINES lines, direction selects
+ *      which lines to keep — over the WHOLE body, not over a byte window of it.
+ *   3. Byte cap LAST: if the result still exceeds MODEL_MAX_BYTES, cut on a
+ *      codepoint boundary. Running it last is what makes the byte ceiling
+ *      unconditional — nothing is appended or prepended after the cut. Under
+ *      `tail-with-first-line` the first line is retained INSIDE that budget,
+ *      with the trailing slice taken against what remains after the first line
+ *      and its newline; if the first line alone does not fit, it is itself cut.
+ *
+ * Line counting: a trailing newline TERMINATES the last line rather than
+ * opening an empty one, and an empty body has no lines, matching
+ * `readFileSlice`'s `totalLines` and `readTool`'s `[N lines]` header.
+ */
+
+/** Tool-layer I/O bound for ranged file reads. */
+export const READ_CEILING = 2_000_000;
+export const MODEL_MAX_BYTES = 40_000;
+export const MODEL_MAX_LINES = 1_000;
+export const MODEL_MAX_LINE_CHARS = 2_000;
+
+export type TruncationDirection = "head" | "tail-with-first-line";
+
+/** Result of `truncateForModel`: the rewritten body and whether any stage changed it. */
+export interface TruncationResult {
+  readonly content: string;
+  readonly truncated: boolean;
+  /** Full UTF-8 byte length of the input, regardless of whether anything was truncated. */
+  readonly originalBytes: number;
+}
+
+/** Options passed to `truncateForModel`. Direction is determined by tool name via `truncationDirectionFor`. */
+export interface TruncateForModelOptions {
+  readonly direction: TruncationDirection;
+}
+
+/** Tools whose output direction is `tail-with-first-line` — keep the start AND the end. */
+const TAIL_DIRECTION_TOOLS = new Set<string>(["Bash", "RunCommand", "Exec"]);
+
+/** Look up the truncation direction for a tool by name. */
+export function truncationDirectionFor(toolName: string): TruncationDirection {
+  if (TAIL_DIRECTION_TOOLS.has(toolName)) return "tail-with-first-line";
+  return "head";
+}
+
+/**
+ * Split a body into lines honouring the trailing-newline convention:
+ * "a\nb\n" is two lines, not three. An empty body yields zero lines.
+ *
+ * Exported because the spill-and-marker composition (src/tools/spill.ts) has
+ * to count the same lines this policy counts: a marker line occupies one of
+ * `MODEL_MAX_LINES`, and counting it with a raw `split("\n")` would let the
+ * delivered content exceed the cap by exactly the phantom empty line.
+ */
+export function splitModelLines(body: string): string[] {
+  if (body === "") return [];
+  const trimmed = body.endsWith("\n") ? body.slice(0, -1) : body;
+  return trimmed.split("\n");
+}
+
+/**
+ * Shorten a single line so its UTF-16 code-unit length is at most
+ * `maxCodeUnits`. Backs up one code unit if the cut would land on a high
+ * surrogate (the lead of a surrogate pair), so the result never carries
+ * a lone surrogate that would re-encode as U+FFFD in a downstream stage.
+ *
+ * Exported for the same reason `splitModelLines` is: the marker composition
+ * keeps lines that the policy has not yet shaped, and it must shorten them
+ * the one way the policy shortens them.
+ */
+export function capModelLine(line: string, maxCodeUnits: number): string {
+  if (line.length <= maxCodeUnits) return line;
+  let cut = maxCodeUnits;
+  // Avoid splitting a surrogate pair: if the last code unit kept is a
+  // high surrogate, back up one so the pair stays whole.
+  if (cut > 0) {
+    const last = line.charCodeAt(cut - 1);
+    if (last >= 0xd800 && last <= 0xdbff) cut -= 1;
+  }
+  return line.slice(0, cut);
+}
+
+/**
+ * Apply the per-line cap (stage 1) to every line, preserving the array
+ * shape so later stages can count and slice by line.
+ */
+function applyLineCharCap(lines: string[], maxLineChars: number): { lines: string[]; changed: boolean } {
+  let changed = false;
+  const out: string[] = [];
+  for (const line of lines) {
+    if (line.length <= maxLineChars) {
+      out.push(line);
+      continue;
+    }
+    changed = true;
+    out.push(capModelLine(line, maxLineChars));
+  }
+  return { lines: out, changed };
+}
+
+/**
+ * Apply the line-count cap (stage 2) by direction, chosen over the WHOLE
+ * body rather than over a byte window of it. `head` keeps the first N
+ * lines and drops the rest; `tail-with-first-line` keeps the first line
+ * followed by the last N-1 lines, dropping the middle.
+ */
+function applyLineCountCap(
+  lines: string[],
+  maxLines: number,
+  direction: TruncationDirection,
+): { lines: string[]; changed: boolean } {
+  if (lines.length <= maxLines) return { lines, changed: false };
+  if (direction === "head") {
+    return { lines: lines.slice(0, maxLines), changed: true };
+  }
+  // tail-with-first-line: first line + last (maxLines - 1) lines.
+  // When maxLines is 0 or 1 the result is just the first line.
+  const tailCount = Math.max(0, maxLines - 1);
+  const tail = lines.slice(-tailCount);
+  const head = lines.slice(0, 1);
+  return { lines: [...head, ...tail], changed: true };
+}
+
+/**
+ * True when `byte` is a UTF-8 continuation byte (`10xxxxxx`) — meaning the
+ * position it sits at is INSIDE a multi-byte codepoint, not at its start.
+ */
+function isContinuationByte(byte: number | undefined): boolean {
+  return byte !== undefined && (byte & 0xc0) === 0x80;
+}
+
+function utf8SequenceLength(byte: number | undefined): number {
+  if (byte === undefined || byte < 0x80) return 1;
+  if ((byte & 0xe0) === 0xc0) return 2;
+  if ((byte & 0xf0) === 0xe0) return 3;
+  if ((byte & 0xf8) === 0xf0) return 4;
+  return 1;
+}
+
+/**
+ * Cut `body` to at most `maxBytes` bytes on a clean codepoint boundary.
+ * Nothing is appended after the cut: the byte cap is unconditional.
+ *
+ * The one codepoint-boundary slicer in the tool layer — `readFileSlice`
+ * needs the same guarantee for its own I/O bound, so it shares this rather
+ * than growing a second copy.
+ *
+ * The boundary is found STRUCTURALLY, by walking back over continuation bytes,
+ * not by measuring the decoded candidate's byte length. Measurement is unsound:
+ * a slice that ends mid-codepoint decodes into a U+FFFD, and that replacement
+ * costs 3 bytes — exactly what a truncated 4-byte codepoint contributed when
+ * three of its four bytes were included. The length check then passes while the
+ * output carries a replacement character, which is the outcome the codepoint
+ * boundary exists to prevent. Walking back stops where a codepoint starts, so
+ * the slice is always whole codepoints and re-encodes to exactly `cut` bytes.
+ */
+export function cutBufferToByteCap(buffer: Buffer, maxBytes: number): Buffer {
+  let cut = Math.min(buffer.length, maxBytes);
+  while (cut > 0 && isContinuationByte(buffer[cut])) cut -= 1;
+  let sequenceStart = cut - 1;
+  while (sequenceStart >= 0 && isContinuationByte(buffer[sequenceStart])) sequenceStart -= 1;
+  if (sequenceStart >= 0 && sequenceStart + utf8SequenceLength(buffer[sequenceStart]) > cut) {
+    cut = sequenceStart;
+  }
+  return buffer.subarray(0, cut);
+}
+
+export function cutToByteCap(body: string, maxBytes: number): string {
+  const buffer = Buffer.from(body, "utf8");
+  return cutBufferToByteCap(buffer, maxBytes).toString("utf8");
+}
+
+/**
+ * Cut `body` down to its LAST `maxBytes` bytes, on a clean codepoint boundary.
+ * The mirror of `cutToByteCap`: that one backs up over the continuation bytes a
+ * cut-inside-a-codepoint would end on, this one skips forward over the
+ * continuation bytes such a start would begin on. Same structural rule, same
+ * reason — measuring the decoded candidate would accept a tail that opens with
+ * a U+FFFD whenever the replacement costs no more bytes than the partial
+ * codepoint it replaced.
+ */
+function tailWithinBytes(body: string, maxBytes: number): string {
+  const buf = Buffer.from(body, "utf8");
+  if (buf.length <= maxBytes) return body;
+  let start = buf.length - maxBytes;
+  while (start < buf.length && isContinuationByte(buf[start])) start += 1;
+  return buf.subarray(start).toString("utf8");
+}
+
+/**
+ * Cut a `tail-with-first-line` body to `maxBytes`: the body's first line, then
+ * its LAST bytes, dropping the middle. The byte stage's half of the same choice
+ * the line-count stage makes — a body cut for length should lose its middle,
+ * not its end, when the direction says the end is what matters.
+ *
+ * The first line is retained INSIDE the budget, not on top of it: the trailing
+ * slice is measured against what remains once the first line and its newline
+ * are paid for. If the first line alone does not fit, it is itself cut. Either
+ * way nothing is appended after the cut — the trailing slice is what fills the
+ * remaining budget, never an extra.
+ */
+function cutKeepingFirstLine(body: string, maxBytes: number): string {
+  const lineEnd = body.indexOf("\n");
+  // No newline: the body is one line, so there is no tail distinct from its head.
+  if (lineEnd === -1) return cutToByteCap(body, maxBytes);
+  const firstLine = body.slice(0, lineEnd);
+  const firstLineBytes = Buffer.byteLength(firstLine, "utf8");
+  // Paying for the first line and its newline leaves no room for a tail.
+  if (firstLineBytes + 1 >= maxBytes) return cutToByteCap(firstLine, maxBytes);
+  const tail = tailWithinBytes(body.slice(lineEnd + 1), maxBytes - firstLineBytes - 1);
+  return `${firstLine}\n${tail}`;
+}
+
+/**
+ * Apply the model-facing truncation policy to a tool result body.
+ *
+ * Three stages, in order, each independently reachable: per-line cap,
+ * line-count cap, byte cap. The pipeline reports `truncated: true` when
+ * any stage changed the content. `originalBytes` always reports the
+ * input's full UTF-8 byte length, regardless of which stages fired.
+ *
+ * Direction governs both stages that drop content: the line-count cap keeps
+ * the first N lines (`head`) or the first line plus the last N-1 lines
+ * (`tail-with-first-line`), and the byte cap keeps the leading bytes or the
+ * first line plus the trailing bytes the same way. Within-cap bodies are
+ * returned unchanged regardless of direction.
+ */
+export function truncateForModel(body: string, opts: TruncateForModelOptions): TruncationResult {
+  const originalBytes = Buffer.byteLength(body, "utf8");
+
+  // Split the body into lines once; every cap is checked against the
+  // line-aware view, so we don't pay for `split("\n")` three times.
+  const lines = splitModelLines(body);
+  // Per-line cap is measured in UTF-16 code units — the same metric
+  // `String#length` reports — so a 2_000-character line of single-unit
+  // codepoints is at the cap, not over it. It is independent of the byte
+  // ceiling: stage 3 alone decides which otherwise-valid bytes are retained.
+  const perLineOver = lines.some((l) => l.length > MODEL_MAX_LINE_CHARS);
+
+  let working = lines;
+  let changed = false;
+
+  // Stage 1: per-line cap.
+  if (perLineOver) {
+    const capped = applyLineCharCap(working, MODEL_MAX_LINE_CHARS);
+    working = capped.lines;
+    if (capped.changed) changed = true;
+  }
+
+  // Stage 2: line-count cap. The cap fires only when the body is strictly
+  // over MODEL_MAX_LINES — within-cap bodies must be returned unchanged
+  // per AC1, so no preview is allowed at smaller scales.
+  if (working.length > MODEL_MAX_LINES) {
+    const trimmed = applyLineCountCap(working, MODEL_MAX_LINES, opts.direction);
+    working = trimmed.lines;
+    if (trimmed.changed) changed = true;
+  }
+
+  // Re-join with newlines. The trailing-newline convention: the "\n" is
+  // preserved only when the body ended in one and NO stage modified it —
+  // `changed` covers a line merely SHORTENED by stage 1 as well as one
+  // DROPPED by stage 2. Gating on "dropped" alone would be wrong: stage 2
+  // fires only at strictly more than MODEL_MAX_LINES, so a stage-1-shortened
+  // body can sit at exactly MODEL_MAX_LINES lines, and re-emitting "\n" there
+  // inflates `split("\n").length` to MODEL_MAX_LINES + 1 — past the cap that
+  // AC4 pins via the naive split. The conservative guard is deliberate: a
+  // modified body has already lost byte-for-byte fidelity, so dropping its
+  // terminator costs nothing the caller can observe, while re-adding it can
+  // break the count.
+  const joined = working.join("\n");
+  let rebuilt = !changed && body.endsWith("\n") && working.length > 0 ? `${joined}\n` : joined;
+
+  // Stage 3: byte cap. Runs last, so the byte ceiling is unconditional —
+  // nothing is appended after the cut. The direction decides which bytes
+  // survive the cut, exactly as it decided which lines survived stage 2:
+  // `head` keeps the leading bytes, `tail-with-first-line` keeps the first
+  // line plus the trailing bytes and drops the middle.
+  let truncated = changed;
+  if (Buffer.byteLength(rebuilt, "utf8") > MODEL_MAX_BYTES) {
+    rebuilt =
+      opts.direction === "tail-with-first-line"
+        ? cutKeepingFirstLine(rebuilt, MODEL_MAX_BYTES)
+        : cutToByteCap(rebuilt, MODEL_MAX_BYTES);
+    truncated = true;
+  }
+
+  // Trim a trailing surrogate so the byte cap (or the per-line cap) cannot
+  // leave the body ending on a lone half of a surrogate pair. A cut that
+  // lands on a UTF-16 surrogate code unit is a structural artifact of the
+  // cap — there is no scenario in which ending the body on a surrogate is
+  // intentional, and downstream UTF-8 decoding of such a body produces a
+  // U+FFFD replacement character that the model cannot distinguish from
+  // a real codepoint. We only strip when something above changed the
+  // content; an untruncated body that happens to end on a surrogate is
+  // already what the caller gave us and is left alone.
+  if (truncated && rebuilt.length > 0) {
+    const lastChar = rebuilt.charCodeAt(rebuilt.length - 1);
+    if (lastChar >= 0xd800 && lastChar <= 0xdfff) {
+      let trimmed = rebuilt.length;
+      while (trimmed > 0) {
+        const c = rebuilt.charCodeAt(trimmed - 1);
+        if (c < 0xd800 || c > 0xdfff) break;
+        trimmed -= 1;
+      }
+      rebuilt = rebuilt.slice(0, trimmed);
+    }
+  }
+
+  return { content: rebuilt, truncated, originalBytes };
+}

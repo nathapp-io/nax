@@ -22,6 +22,7 @@ import { describeExecAllowlist } from "./exec-allowlist-text";
 import { pathListElements } from "./path-list";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 import { runExecBranch } from "./run-command-exec";
+import { cutToByteCap, READ_CEILING } from "./truncate";
 
 const PLACEHOLDER = /\{\{([a-zA-Z]+)\}\}/g;
 
@@ -442,7 +443,12 @@ export function createRunCommandTool(
         origin: "agent-tool",
       });
       const body = `exit ${result.exitCode}\n${result.output}`;
-      return { content: body.slice(0, ctx.maxBytes), isError: !result.success };
+      // Tool-layer I/O bound, not the model-facing cap: `maxBytes` shapes what
+      // the model is told and belongs to the session's truncation policy, which
+      // spills the cut. Bounded here so a runaway command cannot be buffered
+      // without limit, and cut on a codepoint boundary so the returned body
+      // never carries a replacement character.
+      return { content: cutToByteCap(body, ctx.readCeiling ?? READ_CEILING), isError: !result.success };
     },
   };
 }

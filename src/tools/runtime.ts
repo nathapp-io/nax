@@ -9,6 +9,7 @@
  * tool error, which ADR-029 section 5 forbids.
  */
 
+import { randomUUID } from "node:crypto";
 import { getSafeLogger } from "@/logger";
 import { ASK_UNAVAILABLE_REASON, type AskResolver, headlessAskResolver } from "@/permissions";
 import { errorMessage } from "@/utils/errors";
@@ -23,7 +24,9 @@ import { readTool } from "./read";
 import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry";
 import { requestCapabilityTool } from "./request-capability";
 import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad";
+import { applyModelTruncationPolicy } from "./spill";
 import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit";
+import { READ_CEILING } from "./truncate";
 import { EXEC_TOOL_NAME, type ToolPolicy, type ToolScope } from "./types";
 import { writeTool } from "./write";
 
@@ -115,6 +118,13 @@ export function createCodingToolRuntime(opts: {
   policy: ToolPolicy;
   maxBytes?: number;
   maxFileBytes?: number;
+  /**
+   * Tool-layer I/O bound. Defaults to `READ_CEILING` when absent — tools
+   * bound their reads to this ceiling before any model-facing truncation
+   * policy runs. Distinct from `maxBytes` (model-facing) and `maxFileBytes`
+   * (whole-file Edit/Write cap).
+   */
+  readCeiling?: number;
   storyId?: string;
   sink?: ToolAuditSink;
   extraTools?: readonly CodingTool[];
@@ -154,6 +164,7 @@ export function createCodingToolRuntime(opts: {
   const sink = opts.sink ?? createNoOpToolAuditSink();
   const maxBytes = opts.maxBytes ?? DEFAULT_TOOL_MAX_BYTES;
   const maxFileBytes = opts.maxFileBytes ?? DEFAULT_TOOL_MAX_FILE_BYTES;
+  const readCeiling = opts.readCeiling ?? READ_CEILING;
   const askResolver = opts.askResolver ?? headlessAskResolver();
   const granted = new Set(opts.policy.grantedTools());
 
@@ -267,6 +278,14 @@ export function createCodingToolRuntime(opts: {
        * Executes a permitted call and records its outcome. Shared by the
        * ordinary allow path and an ask verdict an AskResolver approved, so an
        * approved call behaves exactly as a grant would have.
+       *
+       * The result is shaped by `applyModelTruncationPolicy` before it is
+       * returned, which is what makes the model-facing cap one policy rather
+       * than one per tool: the tools bound their own I/O at `ctx.readCeiling`,
+       * and this is where the byte/line ceilings the model experiences — and
+       * the spill of whatever they cut — are applied. The native session
+       * applies the same policy at its `after_tool` chokepoint, so a call made
+       * through the loop and one made directly see the same shaping.
        */
       async function runTool(
         target: CodingTool,
@@ -279,13 +298,20 @@ export function createCodingToolRuntime(opts: {
             resolvedPaths,
             maxBytes,
             maxFileBytes,
+            readCeiling,
             ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
           });
           const kind = result.isError === true ? "error" : "ok";
+          const content = await applyModelTruncationPolicy(result.content, {
+            toolName: policyIdentity,
+            callId: randomUUID(),
+            root: opts.policy.root,
+            maxBytes,
+          });
           log(
             policyIdentity,
             kind,
-            result.content.length,
+            content.length,
             callInput,
             false,
             kind === "error" ? result.content : undefined,
@@ -293,10 +319,16 @@ export function createCodingToolRuntime(opts: {
             result.audit,
             result.resultBytesPreTruncation,
           );
-          return { kind, content: result.content };
+          return { kind, content };
         } catch (err) {
-          const content = err instanceof Error ? err.message : String(err);
-          log(policyIdentity, "error", content.length, callInput, false, content, target.routineErrors);
+          const rawContent = err instanceof Error ? err.message : String(err);
+          const content = await applyModelTruncationPolicy(rawContent, {
+            toolName: policyIdentity,
+            callId: randomUUID(),
+            root: opts.policy.root,
+            maxBytes,
+          });
+          log(policyIdentity, "error", content.length, callInput, false, rawContent, target.routineErrors);
           return { kind: "error", content };
         }
       }

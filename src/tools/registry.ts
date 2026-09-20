@@ -57,6 +57,13 @@ export interface ToolRunContext {
    */
   readonly maxFileBytes: number;
   /**
+   * Tool-layer I/O bound. Optional so existing `ToolRunContext` literals
+   * compile unchanged; resolves to `READ_CEILING` when absent. Distinct
+   * from `maxFileBytes` (whole-file Edit/Write cap) and `maxBytes` (the
+   * model-facing ceiling owned by `after_tool`).
+   */
+  readonly readCeiling?: number;
+  /**
    * Repo-configurable glob denylist (nax#1972, `execution.denyPaths` in
    * config), narrowing what a tool may act on beyond containment and grants.
    * Currently consumed by Delete only -- see src/tools/deny-paths.ts. Absent

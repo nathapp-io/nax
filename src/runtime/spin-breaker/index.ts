@@ -225,13 +225,15 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
   let maxSameKeyRepeats = 0;
   let nudges = 0;
 
-  function remember(key: string): void {
-    recent.set(key, { count: 1, sameResultRun: 0 });
+  function remember(key: string): KeyRecord {
+    const record: KeyRecord = { count: 1, sameResultRun: 0 };
+    recent.set(key, record);
     newKeyEvents += 1;
     if (recent.size > settings.recentKeyWindow) {
       const oldest = recent.keys().next();
       if (!oldest.done) recent.delete(oldest.value);
     }
+    return record;
   }
 
   function buildNudge(toolName: string, repeats: number): SpinVerdict {
@@ -256,6 +258,24 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
     "same-key-backstop":
       "Ending the turn — the same call repeated too many times (raw backstop; results were changing)",
   };
+
+  /**
+   * The raw per-key backstop: a cap on the cumulative count, and that count
+   * includes the call being judged — `remember` seeds a new key at 1. It is
+   * therefore checked on the key's FIRST occurrence too, in both branches,
+   * rather than only when the key is seen again. For every supported cap
+   * (`stopAfterRepeats` has a schema minimum of 3) the first occurrence sits
+   * below it and nothing changes; a degenerate cap of 1 stops on the first
+   * call rather than the second, and that is the only case where the two
+   * readings differ.
+   */
+  function backstopVerdict(record: KeyRecord, toolName: string): SpinVerdict | undefined {
+    if (settings.stopAfterSameKeyRepeats <= 0 || record.count < settings.stopAfterRepeats) return undefined;
+    return stopOrNudge(toolName, record.count, "same-key-backstop", () => {
+      record.count = 0;
+      record.sameResultRun = 0;
+    });
+  }
 
   /**
    * nax#2120: the escalation ladder must always render before a kill. The
@@ -303,9 +323,11 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
 
       const existing = recent.get(key);
       if (existing === undefined) {
-        remember(key);
+        const created = remember(key);
         repeatsSinceProgress = 0;
-        return { action: "allow" };
+        // Judged on its own first occurrence — see `backstopVerdict`.
+        const firstBackstop = backstopVerdict(created, toolName);
+        return firstBackstop ?? { action: "allow" };
       }
       const record = existing;
       record.count += 1;
@@ -324,12 +346,8 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
           record.sameResultRun = 0;
         });
       }
-      if (settings.stopAfterSameKeyRepeats > 0 && record.count >= settings.stopAfterRepeats) {
-        return stopOrNudge(toolName, record.count, "same-key-backstop", () => {
-          record.count = 0;
-          record.sameResultRun = 0;
-        });
-      }
+      const backstop = backstopVerdict(record, toolName);
+      if (backstop !== undefined) return backstop;
 
       repeatsSinceProgress += 1;
       if (repeatsSinceProgress > maxRepeatRun) maxRepeatRun = repeatsSinceProgress;

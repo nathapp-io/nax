@@ -27,8 +27,13 @@ afterEach(() => {
   cleanupTempDir(root);
 });
 
-function ctx(paths: string[], maxBytes = 10_000, maxFileBytes: number = DEFAULT_TOOL_MAX_FILE_BYTES) {
-  return { root, resolvedPaths: paths, maxBytes, maxFileBytes };
+function ctx(
+  paths: string[],
+  maxBytes = 10_000,
+  maxFileBytes: number = DEFAULT_TOOL_MAX_FILE_BYTES,
+  readCeiling?: number,
+) {
+  return { root, resolvedPaths: paths, maxBytes, maxFileBytes, ...(readCeiling === undefined ? {} : { readCeiling }) };
 }
 
 describe("readTool — unranged line-total header", () => {
@@ -71,23 +76,41 @@ describe("readTool — unranged line-total header", () => {
     expect(res.content).toBe("[0 lines]");
   });
 
-  test("AC5 — file larger than ctx.maxBytes reports a floor: [<digits>+ lines]", async () => {
-    // 30 lines * 100 bytes = 3000 bytes; maxBytes below that.
+  test("AC5 — file larger than readCeiling reports a floor: [<digits>+ lines]", async () => {
+    // 30 lines * 100 bytes = 3000 bytes; readCeiling below that.
     const path = join(root, "oversize.txt");
     const line = "x".repeat(99);
     writeFileSync(path, `${line}\n`.repeat(30));
-    const res = await readTool.run({ path: "oversize.txt" }, ctx([path], 500));
+    const res = await readTool.run({ path: "oversize.txt" }, ctx([path], 500, DEFAULT_TOOL_MAX_FILE_BYTES, 500));
     expect(res.isError).toBeFalsy();
     expect(res.content).toMatch(/^\[\d+\+ lines\]/);
   });
 
-  test("AC6 — oversize unranged read contains 'truncated', so the floor header and truncation marker coexist", async () => {
+  test("AC6 — oversize unranged read returns the [N+ lines] floor header (no per-tool 'truncated' marker)", async () => {
+    // US-005: the readTool no longer appends its own `[truncated at N
+    // bytes]` marker. The floor header from this test pins the line count
+    // the model sees; the marker that names the spill path is the
+    // after_tool policy's, applied when the result reaches the message
+    // array. Exercising the tool directly therefore returns the prefix
+    // (bounded by the model's ceiling, ctx.maxBytes) WITHOUT the tool's
+    // old marker.
     const path = join(root, "oversize-trunc.txt");
     const line = "x".repeat(99);
     writeFileSync(path, `${line}\n`.repeat(30));
-    const res = await readTool.run({ path: "oversize-trunc.txt" }, ctx([path], 500));
-    expect(res.content).toContain("truncated");
+    const res = await readTool.run({ path: "oversize-trunc.txt" }, ctx([path], 500, DEFAULT_TOOL_MAX_FILE_BYTES, 500));
     expect(res.content).toMatch(/^\[\d+\+ lines\]/);
+    expect(res.content).not.toContain("truncated at");
+  });
+
+  test("an unranged read uses readCeiling rather than the model-facing maxBytes", async () => {
+    const path = join(root, "read-ceiling.txt");
+    const body = "r".repeat(256);
+    writeFileSync(path, body);
+
+    const res = await readTool.run({ path: "read-ceiling.txt" }, { ...ctx([path], 32), readCeiling: 512 });
+
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toContain(body);
   });
 
   test("AC7 — with maxBytes of 5 the content is no longer than 60 characters (header is inside the budget)", async () => {

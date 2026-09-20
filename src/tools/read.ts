@@ -15,22 +15,10 @@
 
 import { readPrefix } from "@/utils/bounded-io";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { READ_CEILING } from "./truncate";
 
 /** Range arguments models invent instead of offset/limit -- rejected by name, never silently dropped. */
 const UNSUPPORTED_RANGE_ALIASES = ["start_line", "end_line", "start", "end", "line", "lineEnd", "size"] as const;
-
-function truncate(body: string, maxBytes: number): string {
-  if (Buffer.byteLength(body, "utf8") <= maxBytes) return body;
-  const suffix = `\n... [truncated at ${maxBytes} bytes]`;
-  const suffixLen = Buffer.byteLength(suffix, "utf8");
-  // Ceiling too small to fit the marker -- return a plain slice with no suffix
-  // rather than exceeding maxBytes. The marker would be longer than the budget
-  // itself, so there is nothing to fit it after.
-  if (suffixLen >= maxBytes) return Buffer.from(body, "utf8").subarray(0, maxBytes).toString("utf8");
-  // Reserve space for the suffix so head + suffix stays within maxBytes.
-  const budget = maxBytes - suffixLen;
-  return `${Buffer.from(body, "utf8").subarray(0, budget).toString("utf8")}${suffix}`;
-}
 
 /** A positive integer, or an error string naming which constraint failed. */
 function parsePositiveInt(value: unknown, field: string): number | string {
@@ -86,11 +74,15 @@ export const readTool: CodingTool = {
         // is what tells us the prefix hit the ceiling -- in that case the count
         // is a floor and we mark it with '+'. The ranged branch reads with
         // maxFileBytes and compares against maxFileBytes for the same reason.
-        const prefix = await readPrefix(target, ctx.maxBytes);
-        const bounded = Buffer.byteLength(prefix, "utf8") > ctx.maxBytes;
+        const readCeiling = ctx.readCeiling ?? READ_CEILING;
+        const prefix = await readPrefix(target, readCeiling);
+        const bounded = Buffer.byteLength(prefix, "utf8") > readCeiling;
         const lineCount = countLines(prefix);
         const header = `[${bounded ? `${lineCount}+` : `${lineCount}`} lines]`;
-        return { content: truncate(prefix === "" ? header : `${header}\n${prefix}`, ctx.maxBytes) };
+        // The model-facing cap and the marker that names the spill path are
+        // the after_tool policy's, NOT this tool's. The tool returns the
+        // header + the prefix, bounded by the tool-layer read ceiling.
+        return { content: prefix === "" ? header : `${header}\n${prefix}` };
       }
 
       let offset = 1;
@@ -131,7 +123,11 @@ export const readTool: CodingTool = {
       const endLine = limit === undefined ? totalLines : Math.min(startIndex + limit, totalLines);
       const selected = lines.slice(startIndex, endLine).join("\n");
       const header = `[lines ${offset}-${endLine} of ${totalLabel}]\n`;
-      return { content: truncate(`${header}${selected}`, ctx.maxBytes) };
+      // The model-facing cap and the marker that names the spill path are
+      // the after_tool policy's, NOT this tool's. The header and the
+      // requested range go back to the runtime whole; the chokepoint shapes
+      // them for the model.
+      return { content: `${header}${selected}` };
     } catch (err) {
       // An unreadable file is a tool ERROR the model can react to, never a
       // denial: the policy already said yes.

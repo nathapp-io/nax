@@ -72,6 +72,10 @@ function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunClea
     branch: "feat/my-feature",
     version: "1.2.3",
     hooks: { hooks: {} },
+    // US-004 — required by cleanupRun now; default false so existing tests
+    // (none of which set runCompleted: true) don't accidentally invoke the
+    // new end-of-run wipe seam.
+    dryRun: false,
     ...overrides,
   };
 }
@@ -599,6 +603,9 @@ describe("runner.ts — cleanupRun receives feature/prdPath/branch/version", () 
       branch: "feat/test",
       version: "1.0.0",
       hooks: { hooks: {} },
+      // US-004 — `dryRun` is required (the runner always has it in scope), so
+      // cleanupRun's end-of-run wipe gate is never decided by a default.
+      dryRun: false,
     };
 
     expect(opts.feature).toBe("my-feature");
@@ -754,3 +761,7 @@ describe("cleanupRun — clears per-run detection memos (MEM-7)", () => {
     expect(clearPackageConfigCache).toHaveBeenCalledTimes(1);
   });
 });
+
+// US-004's end-of-run scratchpad wipe cases live in
+// ./run-cleanup-scratchpad-wipe.test.ts — this file would otherwise breach the
+// 800-line test limit.

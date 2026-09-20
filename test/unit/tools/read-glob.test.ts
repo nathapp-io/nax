@@ -14,8 +14,14 @@ beforeAll(() => {
   writeFileSync(join(root, "notes.md"), "hello\n");
 });
 
-function ctx(paths: string[], maxBytes = 10_000) {
-  return { root, resolvedPaths: paths, maxBytes, maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES };
+function ctx(paths: string[], maxBytes = 10_000, readCeiling?: number) {
+  return {
+    root,
+    resolvedPaths: paths,
+    maxBytes,
+    maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES,
+    ...(readCeiling === undefined ? {} : { readCeiling }),
+  };
 }
 
 describe("readTool", () => {
@@ -30,12 +36,21 @@ describe("readTool", () => {
     expect(res.isError).toBe(true);
   });
 
-  test("truncates beyond maxBytes and says so", async () => {
+  test("does not append a per-tool 'truncated' marker (the after_tool policy owns the marker)", async () => {
+    // US-005: the model-facing cap and the marker that names the spill path
+    // live at the after_tool policy (applyModelTruncationPolicy), NOT inside
+    // the tool itself. The unranged readTool branch still reads at
+    // ctx.readCeiling, while ctx.maxBytes remains model-facing. The OLD marker
+    // — `[truncated at N bytes]` — is gone. The runtime's marker (naming the
+    // spill path and both byte counts) takes its place when the body reaches
+    // the message array.
     const longPath = join(root, "long.ts");
     writeFileSync(longPath, "x".repeat(200));
-    const res = await readTool.run({ path: "long.ts" }, ctx([longPath], 30));
-    expect(res.content).toContain("truncated");
-    expect(Buffer.byteLength(res.content, "utf8")).toBeLessThanOrEqual(30);
+    const res = await readTool.run({ path: "long.ts" }, ctx([longPath], 30, 30));
+    // The tool's old [truncated at N bytes] marker is gone.
+    expect(res.content).not.toContain("truncated at");
+    // The floor header is still emitted when the prefix hits the cap.
+    expect(res.content).toMatch(/^\[\d+\+ lines\]/);
   });
 
   test("declares its path field so the policy can gate it", () => {
@@ -121,9 +136,14 @@ describe("readTool", () => {
       },
     );
 
-    test("truncation at maxBytes still applies to a ranged read", async () => {
+    test("a ranged read is not truncated by the tool (the after_tool policy owns the marker)", async () => {
+      // US-005: the ranged branch reads at ctx.maxFileBytes (a separate
+      // whole-file Edit/Write cap), and the OLD `[truncated at N bytes]`
+      // marker is gone. The model-facing cap and the runtime's marker
+      // (naming the spill path) belong to after_tool, NOT the tool itself.
       const res = await readTool.run({ path: "many.txt", offset: 1, limit: 50 }, ctx([manyPath], 30));
-      expect(res.content).toContain("truncated");
+      // The tool's old marker is gone.
+      expect(res.content).not.toContain("truncated at");
     });
   });
 
