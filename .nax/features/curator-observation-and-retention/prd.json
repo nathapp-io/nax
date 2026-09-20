@@ -1,0 +1,239 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "curator-observation-and-retention",
+  "branchName": "feat/curator-observation-and-retention",
+  "createdAt": "2026-10-29T00:00:00.000Z",
+  "updatedAt": "2026-09-20T13:32:03.664Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Attribute staleness on excluded chunks",
+      "description": "**Goal** \u2014 Add an orthogonal stale axis to every manifest excluded-chunk entry without changing its mechanical exclusion reason.\n\n**Motivation** \u2014 Staleness demotes a chunk's score \u2014 it never excludes it, and the exclusion site records only the mechanical cause, so the attribution is lost.\n\n**Approach** \u2014 Staleness is an axis, not a reason. The mechanical cause of an exclusion (`budget`, `below-min-score`, `dedupe`, `role-filter`) and the fact that the chunk was stale are orthogonal facts, and the current `reason` union conflates them by offering `\"stale\"` as a fifth alternative. Adding a separate `stale` flag preserves both facts; overwriting `reason` would destroy the mechanical cause. The `\"stale\"` member of the union is therefore removed \u2014 nothing produces it and nothing will.\n\nThe flag is stamped **uniformly on all five exclusion-stamping sites** \u2014 the four mappings inside `buildManifest` plus the inline construction in `rebuild.ts` \u2014 so the contract does not depend on which paths production happens to reach today. Production reachability is narrower than that contract: per the Motivation, only `dedupe` and `role-filter` can carry a stale chunk. The unit criteria below pin the uniform stamping; the single integration criterion drives the one path a real stale chunk can reach.\n\n**Scope** \u2014 In: manifest schema, `ManifestInputs.staleIds`, all exclusion mappings, orchestrator stale-ID derivation, and rebuild budget-exclusion attribution. Out: forwarding observation fields and retargeting H5 belongs to US-002; provenance belongs to US-003; retention belongs to US-004; making stale chunks reachable by budget/min-score exclusion remains deferred.\n\n**Interface**\n```typescript\nContextManifest[\"excludedChunks\"]: Array<{\n  id: string;\n  reason: \"below-min-score\" | \"budget\" | \"dedupe\" | \"role-filter\";\n  stale?: boolean;\n}>\n\ninterface ManifestInputs {\n  staleIds: ReadonlySet<string>;\n}\n```\n\n`buildManifest` has exactly one production caller. The set is derived there from `scored`, which is in scope and is documented as a superset of every chunk that reaches the exclusion lists. `rebuild.ts` does **not** call `buildManifest`; its budget mapping additionally stamps `stale`, derived from the `packedChunks` in scope, which carry `staleCandidate`.",
+      "acceptanceCriteria": [
+        "When buildManifest receives staleIds containing an ID in budgetExcludedIds, then that excludedChunks entry has stale equal to true.",
+        "When buildManifest receives staleIds containing an ID in budgetExcludedIds, then that excludedChunks entry has reason equal to \"budget\", preserving the mechanical cause rather than replacing it.",
+        "When buildManifest receives staleIds containing an ID in belowMin, then that excludedChunks entry has stale equal to true.",
+        "When buildManifest receives staleIds containing an ID in dedupeDropped, then that excludedChunks entry has stale equal to true.",
+        "When buildManifest receives staleIds containing an ID in roleFiltered, then that excludedChunks entry has stale equal to true.",
+        "When buildManifest receives an empty staleIds set, then every excludedChunks entry has stale equal to false.",
+        "Given ContextOrchestrator.assemble receives two providers whose chunk content has trigram Jaccard similarity at or above SIMILARITY_THRESHOLD (src/context/engine/dedupe.ts:21, 0.9 - identical content satisfies it), and applyStaleness marks the lower-scoring chunk staleCandidate true with a scoreMultiplier below 1, when assembly dedupes the chunks, then the manifest excludedChunks entry for the dropped chunk has stale true and reason \"dedupe\".",
+        "When the rebuild path budget-excludes a packed chunk carrying staleCandidate true, then that rebuilt manifest excludedChunks entry has stale equal to true.",
+        "When the rebuild path budget-excludes a packed chunk carrying no staleCandidate, then that rebuilt manifest excludedChunks entry has stale equal to false."
+      ],
+      "tags": [
+        "feature",
+        "context-engine",
+        "manifest",
+        "staleness"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "The change alters a persisted manifest contract, threads a required input through the main assembler, and must independently preserve attribution on the separate rebuild and dedupe integration paths."
+      },
+      "contextFiles": [
+        "src/context/engine/manifest-builder.ts",
+        "src/context/engine/manifest-types.ts",
+        "src/context/engine/orchestrator.ts",
+        "src/context/engine/rebuild.ts",
+        "src/context/engine/staleness.ts"
+      ],
+      "outOfScope": [
+        "**Out of scope (US-001 only):** making a stale chunk reachable by the budget or min-score exclusion paths. Stale chunks are always `kind: \"feature\"`, a floor kind exempt from both by deliberate design (`packing.ts:54`, `orchestrator.ts:396`), and changing that exemption reopens a settled budget-floor decision well outside this feature."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/context/engine/rebuild.test.ts",
+          "reason": "line 370 asserts `expect(rebuilt.manifest.excludedChunks).toEqual([{ id: \"drop\", reason: \"budget\" }])`, a closed-world equality on an excluded-chunk element. The replacing invariant: the rebuilt budget exclusion carries `stale: false` alongside its unchanged `reason`, because the flag is stamped on every exclusion path whether or not the chunk is stale."
+        },
+        {
+          "path": "test/unit/context/engine/manifest-builder.test.ts",
+          "reason": "its `makeInputs` factory at line 48 is annotated `(overrides: Partial<ManifestInputs> = {}): ManifestInputs`, so it must supply every required member; adding the required `staleIds` input breaks it across 12 `buildManifest` call sites. The replacing invariant: `makeInputs` supplies `staleIds: new Set()` by default, overridable per test."
+        },
+        {
+          "path": "test/unit/context/engine/manifest-builder-us003.test.ts",
+          "reason": "its `makeInputs` factory at line 51 carries the same `: ManifestInputs` return annotation, so adding the required `staleIds` input breaks it across 9 `buildManifest` call sites. The replacing invariant: `makeInputs` supplies `staleIds: new Set()` by default, overridable per test."
+        },
+        {
+          "path": "test/unit/context/engine/manifest-builder-eviction.test.ts",
+          "reason": "its `makeInputs` factory at line 42 carries the same `: ManifestInputs` return annotation, so adding the required `staleIds` input breaks it across 6 `buildManifest` call sites. The replacing invariant: `makeInputs` supplies `staleIds: new Set()` by default, overridable per test."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Carry provider and staleness axes onto chunk observations",
+      "description": "**Goal** \u2014 Forward the persisted provider and excluded-chunk stale fields into curator observations and make H5 select the stale axis.\n\n**Motivation** \u2014 In the measured `acp-catalog-pricing` run, 1,202 of 1,294 observations (93%) were `chunk-included` and fed no heuristic, while `chunkProviders` is already persisted onto the manifest and the emitter drops it.\n\n**Approach** \u2014 The provider is the grouping axis. `chunkProviders` is already persisted, so carrying `provider` onto both chunk observations is plumbing, not new state. `ChunkKind` is deliberately **not** persisted: it is load-bearing in memory (`scoring.ts:31` `KIND_WEIGHTS`, and the floor logic in `packing.ts`) and for every built-in provider it is near-1:1 with the provider id (`git-history`\u2192`history`, `lint-config`\u2192`lint-config`, `test-coverage`\u2192`test-coverage`, `static-rules`\u2192`static`), so persisting it would buy a second axis that mostly duplicates the first.\n\n**Scope** \u2014 In: curator observation contracts, manifest collector projection, and H5 filtering. Out: producing the manifest stale flag belongs to US-001; provenance belongs to US-003; retention belongs to US-004; persisting ChunkKind and adding a heuristic are excluded.\n\n**Interface**\n```typescript\nChunkIncludedObservation.payload: {\n  chunkId: string;\n  label: string;\n  tokens: number;\n  provider?: string;\n}\n\nChunkExcludedObservation.payload: {\n  chunkId: string;\n  label: string;\n  reason?: string;\n  provider?: string;\n  stale?: boolean;\n}\n```\n\n`h5StaleChunk` selects `chunk-excluded` observations where `payload.stale === true`. Its `staleChunkRuns` threshold and cross-run grouping by `chunkId` are unchanged. A missing `chunkProviders` entry omits `provider` rather than setting a placeholder.",
+      "acceptanceCriteria": [
+        "When collectObservations reads a manifest whose chunkProviders maps an included chunk ID to \"static-rules\", then the emitted chunk-included observation payload has provider equal to \"static-rules\".",
+        "When collectObservations reads a manifest with no chunkProviders entry for an included chunk, then the emitted chunk-included observation payload omits provider.",
+        "When collectObservations reads a manifest whose chunkProviders maps an excluded chunk ID to \"git-history\", then the emitted chunk-excluded observation payload has provider equal to \"git-history\".",
+        "When collectObservations reads a manifest whose excludedChunks entry carries stale true, then the emitted chunk-excluded observation payload has stale equal to true.",
+        "When collectObservations reads a manifest whose excludedChunks entry carries stale false, then the emitted chunk-excluded observation payload has stale equal to false.",
+        "When runHeuristics receives chunk-excluded observations for one chunk ID carrying payload.stale equal to true across distinct runs equal to staleChunkRuns, then it emits an H5 proposal naming that chunk ID.",
+        "When runHeuristics receives chunk-excluded observations for one chunk ID carrying payload.stale equal to false across the same number of distinct runs, then it emits no H5 proposal.",
+        "Given collectObservations emits stale chunk-excluded observations from a manifest entry carrying stale true across enough distinct runs to meet staleChunkRuns, when runHeuristics processes them, then it emits an H5 proposal without a hand-built observation fixture between producer and consumer."
+      ],
+      "tags": [
+        "feature",
+        "curator",
+        "collector",
+        "heuristics"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a bounded two-module schema/projection change plus one existing heuristic predicate; its producer-consumer seam is straightforward to exercise in one test session."
+      },
+      "contextFiles": [
+        "src/plugins/builtin/curator/types.ts",
+        "src/plugins/builtin/curator/collect.ts",
+        "src/plugins/builtin/curator/heuristics.ts",
+        "src/context/engine/manifest-types.ts",
+        "test/unit/plugins/builtin/curator-collector.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/plugins/builtin/curator-collector-chunk-axes.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/plugins/builtin/curator-heuristics-h4-h6.test.ts",
+          "reason": "its H5 fixtures at lines 146 and 157 construct `chunk-excluded` payloads with `reason: \"stale\"` to make the heuristic fire. The replacing invariant: H5 fires on `payload.stale === true`, and `reason` on those fixtures carries the mechanical cause instead."
+        },
+        {
+          "path": "test/unit/plugins/builtin/curator-collector.test.ts",
+          "reason": "its fixture at line 327 writes `excludedChunks: [{ id: \"rules:def\", reason: \"stale\" }]` into a manifest file and line 410 asserts the emitted observation has `payload.reason === \"stale\"`. Both sit in the same test. The replacing invariant: the fixture expresses staleness as `stale: true` alongside the mechanical reason that excluded the chunk, and the assertion reads `payload.stale === true`. Note the fixture at line 327 is inside a `JSON.stringify` call and so is invisible to the typecheck gate \u2014 it will not fail the build, and must be changed deliberately."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Label proposals with real heuristic-window provenance",
+      "description": "**Goal** \u2014 Render both heuristic-window provenance and run-local counts, and retain the H6 feature prefix that its grouping key already has.\n\n**Motivation** \u2014 A file headed \"1294 observations\" contained nothing derived from those 1,294 observations because the renderer labels the current run while heuristics consume the rollup window.\n\n**Approach** \u2014 `renderProposals(proposals, runId, observationCount, provenance?)` receives provenance `{ runCount: number; observationCount: number }` describing the heuristic window. The header states the window the proposals derive from and the run's own count separately, so neither fact is lost. The fourth parameter is optional, and omitted `provenance` defaults to `{ runCount: 1, observationCount }` \u2014 the single-run reading, which is exactly correct for the dryrun. The post-run path has a window; when the window is empty and current observations are used instead, its provenance describes that fallback as one run. H6 proposal `storyIds` is `[\"<featureId>/<storyId>\"]`, the same composite key its group was built under.\n\n**Scope** \u2014 In: renderer interface/header and empty-proposal text, post-run window/fallback wiring, H6 identifier correction, and guide update. Out: automatic size-gated pruning belongs to US-004; collector axes belong to US-002; changing proposal file location, filename, or commit/show markdown structure remains excluded.\n\n**Interface**\n```typescript\nrenderProposals(\n  proposals: Proposal[],\n  runId: string,\n  observationCount: number,\n  provenance?: { runCount: number; observationCount: number },\n): string\n```\n\nThe two production callers are the post-run action, which has a window, and `curatorDryrun`, which uses one run's `observations.jsonl` and has no window. Existing three-argument callers remain valid, and the run's own observation count remains in the header.",
+      "acceptanceCriteria": [
+        "When renderProposals receives provenance { runCount: 20, observationCount: 4000 } and a run observation count of 1294, then its header states both 20 runs and 4000 window observations.",
+        "When renderProposals receives provenance { runCount: 20, observationCount: 4000 } and a run observation count of 1294, then its header separately states the run's own count of 1294, distinctly from the window count.",
+        "When renderProposals receives provenance whose runCount is 1, then its header states one run, so the empty-window fallback is described as such rather than as a 20-run window.",
+        "When runHeuristics processes enough consecutive unchanged fix-cycle iteration observations for featureId \"context-providers-22\" and storyId \"US-001\" to meet unchangedOutcome, then its H6 proposal storyIds contains \"context-providers-22/US-001\".",
+        "When runHeuristics processes threshold-satisfying unchanged fix-cycle iteration observations for storyId \"US-001\" under two different featureId values, then it emits two distinct H6 proposals whose storyIds differ.",
+        "Given the curator post-run action has outputDir set and its rollup holds observations from more than one run, when it executes, then the written curator-proposals.md header states the window run count rather than 1.",
+        "When renderProposals is called with only three arguments, then its header states one run and a window observation count equal to the run's own observation count, preserving the correct single-run dryrun default.",
+        "Given the curator post-run action has outputDir set and an empty rollup, when it executes, then the written curator-proposals.md header states one run and a window observation count equal to the current run's own observation count rather than the zero runs returned by the empty window.",
+        "When renderProposals receives an empty proposal list, then its no-heuristics-fired line attributes its observation count to the heuristic window rather than to this run."
+      ],
+      "tags": [
+        "feature",
+        "curator",
+        "rendering",
+        "provenance"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "The work changes a backward-compatible public rendering signature, a cross-run post-run integration path, fallback semantics, heuristic identity, and documentation."
+      },
+      "contextFiles": [
+        "src/plugins/builtin/curator/render.ts",
+        "src/plugins/builtin/curator/heuristics.ts",
+        "src/plugins/builtin/curator/index.ts",
+        "src/plugins/builtin/curator/rollup.ts",
+        "src/commands/curator.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/plugins/builtin/curator-render.test.ts",
+          "reason": "18 existing call sites pass `renderProposals` three arguments, and lines 28, 35, 103, 198 and 204 assert substrings of the current header. The replacing invariant: the three-argument form keeps working via the optional fourth parameter, the run's own observation count remains in the header, and this story's new criteria are added to this file. Lines 99-105 additionally assert on the zero-proposal line at `render.ts:40`, which still reads \"No heuristics fired for this run\" \u2014 the same per-run misattribution this story corrects \u2014 and must be reworded with it."
+        },
+        {
+          "path": "docs/guides/curator.md",
+          "reason": "line 148 states \"Each run produces a proposal file\" and line 151 shows a sample header carrying only a run id, both of which teach the per-run reading this story corrects. The replacing invariant: the guide states that proposals derive from the rolling heuristic window and shows the corrected header."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "Size-gate automatic rollup retention",
+      "description": "**Goal** \u2014 Add configurable, failure-tolerant post-run pruning that rewrites project rollup rows only after the rollup exceeds a size threshold.\n\n**Motivation** \u2014 Appending unconditionally while pruning only on manual invocation is not a retention policy, and most of a measured 219 MB rollup was already beyond the maximum heuristic-window tail.\n\n**Approach** \u2014 Pruning is size-gated. `pruneRollup` is a two-pass, project-scoped, full-file rewrite under a path lock, and `scanProjectRunIds` full-scans the file before it. Running that after every run is not affordable. Reading `Bun.file(path).size` is effectively free, so the post-run hook reads the size first and does nothing below the threshold. The threshold and keep-count are configuration, not literals, so they are tunable and testable.\n\n**Scope** \u2014 In: curator retention schema/runtime types and defaults, required curator type extraction/re-export, injectable auto-prune size gate and untyped post-run resolver, post-run invocation and warning behavior. Out: US-003 owns its provenance edits to `curator/index.ts`; per-run artifact deletion remains manual-gc-only; concurrent automatic pruning and manual gc remain deferred.\n\n**Interface**\n```typescript\nmaybePruneRollup(input: {\n  rollupPath: string;\n  projectKey: string;\n  retention: CuratorRetentionConfig;\n}): Promise<{ pruned: boolean; result?: PruneResult; error?: string }>\n```\n\n`CuratorConfigSchema` and `CuratorConfig` additionally carry `retention: { pruneThresholdBytes: number; keepRuns: number }`, with zod defaults `67108864` (64 MiB) and `50`. `maybePruneRollup` reads the size via `Bun.file(input.rollupPath).size`, returns `{ pruned: false }` unchanged when the size is at or below `retention.pruneThresholdBytes`, and otherwise derives `keepRunIds` from the first `retention.keepRuns` ids of `scanProjectRunIds` before calling `pruneRollup`. A rejection from either call is caught and reported on `error` with `pruned: false`.\n\nAdd a `DEFAULT_RETENTION` constant and `getCuratorRetention(context)` resolver mirroring the existing threshold pair because `PostRunContext.config` is `unknown`. Move `CuratorThresholds` and `CuratorConfig` wholesale with `CuratorRetentionConfig` into `src/config/runtime-types-curator.ts`; replace their old definitions in the full `runtime-types.ts` with `export type { CuratorConfig, CuratorRetentionConfig, CuratorThresholds } from \"./runtime-types-curator\";` so every external importer keeps working. A bare re-export does not bind those names in local scope, so the in-file reference at runtime-types.ts:564 must also be rewritten as `curator?: import(\"./runtime-types-curator\").CuratorConfig;` (the idiom its neighbours mcp?, project?, debate? and autoPr already use); leaving it unchanged is an unresolved-name error. Reading size and pruning failures log `logger.warn` and return success from post-run; the curator is an observer. Automatic pruning invokes the existing locked rollup rewrite and does not delete artifacts.",
+      "acceptanceCriteria": [
+        "When CuratorConfigSchema parses curator configuration with retention.pruneThresholdBytes unset, then the parsed retention.pruneThresholdBytes is 67108864.",
+        "When CuratorConfigSchema parses curator configuration with retention.keepRuns unset, then the parsed retention.keepRuns is 50.",
+        "When maybePruneRollup receives a rollup file whose size exceeds retention.pruneThresholdBytes, then it calls pruneRollup once with keepRunIds containing at most retention.keepRuns IDs.",
+        "When maybePruneRollup receives a rollup file whose size is below retention.pruneThresholdBytes, then it does not call pruneRollup.",
+        "When maybePruneRollup receives a rollup file whose size exactly equals retention.pruneThresholdBytes, then it does not call pruneRollup, because the gate opens above rather than at the threshold.",
+        "When pruneRollup rejects during maybePruneRollup, then maybePruneRollup resolves with pruned equal to false and an error string rather than propagating the rejection.",
+        "When maybePruneRollup receives a rollup path that does not exist, then it does not call pruneRollup and resolves without rejecting.",
+        "Given the curator post-run action has outputDir set and a rollup larger than configured retention.pruneThresholdBytes, when it executes, then it calls pruneRollup once.",
+        "Given the curator post-run action has outputDir set and a rollup smaller than configured retention.pruneThresholdBytes, when it executes, then it does not call pruneRollup.",
+        "Given the curator post-run action has outputDir set and pruneRollup rejects, when it executes, then its returned PostRunActionResult has success equal to true.",
+        "Given the curator post-run action has outputDir set and an over-threshold rollup evicts runs, when it executes, then observations.jsonl and curator-proposals.md remain present in each evicted run directory, preserving artifact deletion exclusively for manual gc.",
+        "When getCuratorRetention receives a post-run context carrying no curator configuration, then it returns pruneThresholdBytes 67108864 and keepRuns 50, matching the schema defaults despite the untyped post-run config."
+      ],
+      "tags": [
+        "feature",
+        "curator",
+        "retention",
+        "configuration",
+        "filesystem"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This combines a new injectable filesystem gate, failure-isolated post-run integration, schema/type extraction constrained by a hard file-size limit, and preservation of manual-gc behavior."
+      },
+      "contextFiles": [
+        "src/plugins/builtin/curator/index.ts",
+        "src/plugins/builtin/curator/rollup-prune.ts",
+        "src/config/schemas-infra.ts",
+        "src/config/runtime-types.ts",
+        "src/plugins/builtin/curator/rollup.ts"
+      ],
+      "expectedFiles": [
+        "src/config/runtime-types-curator.ts",
+        "src/plugins/builtin/curator/auto-prune.ts",
+        "test/unit/plugins/builtin/curator-auto-prune.test.ts"
+      ],
+      "outOfScope": [
+        "**Out of scope (US-004 only):** concurrent invocation of the automatic prune and `nax curator gc` against the same rollup. Both already serialise through the path-keyed file lock that `pruneRollup` and `appendToRollup` share (`rollup-prune.ts:100`), and this story adds no new concurrency surface."
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "This is an enhancement across the existing context-engine manifest pipeline and curator post-run plugin. `buildManifest` is a pure assembly function at `src/context/engine/manifest-builder.ts:49-154`; its four exclusion mappings currently emit only IDs and reasons at `:103-108`. The persisted `ContextManifest.excludedChunks` union still includes the dead `\"stale\"` reason at `src/context/engine/manifest-types.ts:150-153`. The sole production buildManifest call is in `src/context/engine/orchestrator.ts:369-455`: `scored` is available before dedupe/role/min-score/packing and is documented as the superset required to derive `staleIds`. Rebuild is a separate path that bypasses buildManifest and hand-builds budget exclusions in `src/context/engine/rebuild.ts:203-205`; it must inspect `packedChunks` for `staleCandidate`. Existing builder test input factories, notably `test/unit/context/engine/manifest-builder-eviction.test.ts:35-59`, must supply the new required input. Staleness classification itself remains untouched.\n\nCurator collection reads persisted manifests defensively in `src/plugins/builtin/curator/collect.ts:275-342`. It currently forwards chunk summary/token data but drops `chunkProviders` and excluded stale attribution. The source contracts are `src/plugins/builtin/curator/types.ts:54-71`; optional additions preserve old manifests, and unknown provider mappings must result in omission rather than a synthetic value. H5 currently can never fire because `src/plugins/builtin/curator/heuristics.ts:320-325` filters on `reason === \"stale\"`; retargeting to the boolean flag retains its existing run-ID threshold/grouping. H6 already groups by feature/story composite key but emits the bare story ID at `src/plugins/builtin/curator/heuristics.ts:357-400`. The existing collector test is near its size cap, so the specified new chunk-axis test file is justified.\n\nThe post-run action at `src/plugins/builtin/curator/index.ts:83-143` appends observations, reads a project-scoped cross-run heuristic window, falls back to current observations when that window is empty, and calls the current three-argument renderer. `renderProposals` at `src/plugins/builtin/curator/render.ts:30-41` labels only the run-local count and misattributes its no-proposal wording. The dryrun caller in `src/commands/curator.ts:500-527` has only one run, so the renderer's provenance parameter must be optional. Existing post-run seam context construction and cross-run rollup use are demonstrated by `test/unit/plugins/builtin/curator-seam.test.ts:35-88`; post-run integration cases must set `outputDir`. The guide example at `docs/guides/curator.md:148-151` teaches the old per-run interpretation.\n\nRetention must compose existing primitives, not replace them. `scanProjectRunIds` full-scans and returns newest-first project run IDs (`src/plugins/builtin/curator/rollup-prune.ts:55-68`); `pruneRollup` is locked, two-pass, and preserves other-project/unattributed rows (`:94-167`). `src/plugins/builtin/curator/rollup.ts:18-29` defines the 64 MiB maximum window tail and already uses Bun file APIs. Manual gc has a 50-run default and deletes run artifacts (`src/commands/curator.ts:533-579`), behavior automatic pruning must not replicate. Schema defaults belong in `src/config/schemas-infra.ts:440-468`. `src/config/runtime-types.ts` is exactly at the 600-line hard limit (`:550-600`), so all curator runtime interfaces must move to the new leaf file and be re-exported; hub exports in `src/config/types.ts:19-31` must continue to resolve. Risks are persisted-schema compatibility, losing the mechanical cause when adding stale attribution, falsely claiming window provenance during fallback, and allowing observer/prune filesystem failures to fail a successful run. No migration is needed: optional new fields leave historical manifests readable and prune preserves unknown/other-project rows.",
+  "outOfScope": [
+    "Changing what `applyStaleness`, `detectContradictions` or `selectStaleByAge` classify as stale. This feature only attributes an existing signal; the detection rules are untouched.",
+    "Persisting `ChunkKind` onto the context manifest. It remains an in-memory field consumed by scoring and packing, and is neither persisted nor removed.",
+    "Deleting per-run curator artifacts (`observations.jsonl`, `curator-proposals.md`) from evicted run directories in the automatic prune path. That deletion stays exclusive to the manual `nax curator gc` subcommand; the automatic path prunes rollup rows only.",
+    "Changing the location, filename or markdown structure that `nax curator commit` and `nax curator show` parse out of `curator-proposals.md`. Only the header provenance line changes.",
+    "Fixing H1 recurrence detection (nax#1863). It is closed by ruling and must not be reopened here.",
+    "Retiring the human-readable prompt-audit `.txt` generation (nax#2155).",
+    "Adding any new heuristic. H5 is retargeted and H6 is corrected; no seventh heuristic is introduced."
+  ],
+  "routingProfile": "native"
+}

@@ -160,7 +160,8 @@ fifth stamping site. `rebuild.ts` does **not** call `buildManifest`; it builds t
 **`CuratorConfigSchema`** (`src/config/schemas-infra.ts:451`) and **`CuratorConfig`**
 (`src/config/runtime-types.ts:583`)
 - Baseline: `{ enabled, rollupPath?, thresholds }`.
-- Target: additionally `retention: { pruneThresholdBytes: number; keepRuns: number }`, with zod
+- Target: additionally `retention?: { pruneThresholdBytes: number; keepRuns: number }` — optional on
+  the interface, mirroring the existing `enabled?`, `rollupPath?` and `thresholds?`, with zod
   defaults `67108864` (64 MiB, the value of `MAX_WINDOW_TAIL_BYTES`) and `50` (the value of
   `DEFAULT_KEEP` at `src/commands/curator.ts:533`).
 - **File-size constraint, and why it forces a move rather than an addition:**
@@ -176,7 +177,15 @@ fifth stamping site. `rebuild.ts` does **not** call `buildManifest`; it builds t
   block: `export type { CuratorConfig, CuratorRetentionConfig, CuratorThresholds } from "./runtime-types-curator";`.
   That takes the file to roughly 584. Note the existing re-export at `:591-600` carries a
   different `from` clause (`./runtime-types-agent`), so the new names cannot be folded into it.
-  Every current importer of `@/config/runtime-types` keeps working through the re-export.
+  Every *external* importer of `@/config/runtime-types` keeps working through the re-export — the
+  only one is `src/config/types.ts:30`, a re-export chain that resolves.
+  **One in-file reference must also change, and a re-export does not cover it.**
+  `runtime-types.ts:564` reads `curator?: CuratorConfig;` inside `NaxConfig`, and a bare
+  `export type { … } from "./runtime-types-curator";` does not bind the name in local scope, so
+  that line becomes an unresolved-name error. Rewrite it as
+  `curator?: import("./runtime-types-curator").CuratorConfig;`, the idiom its four immediate
+  neighbours already use (`mcp?`, `project?`, `debate?`, `autoPr`). This is net zero lines, so the
+  ~584 budget above still holds.
 
 **Plugin-side size gate** (new, `src/plugins/builtin/curator/auto-prune.ts`)
 - Baseline: none. `pruneRollup` requires `projectKey` and a `keepRunIds: ReadonlySet<string>`
@@ -303,6 +312,10 @@ US-003 and US-004 both modify `src/plugins/builtin/curator/index.ts` and must no
 
 **US-001**
 - `test/unit/context/engine/rebuild.test.ts` — line 370 asserts `expect(rebuilt.manifest.excludedChunks).toEqual([{ id: "drop", reason: "budget" }])`, a closed-world equality on an excluded-chunk element. The replacing invariant: the rebuilt budget exclusion carries `stale: false` alongside its unchanged `reason`, because the flag is stamped on every exclusion path whether or not the chunk is stale.
+
+- `test/unit/context/engine/manifest-builder.test.ts` — its `makeInputs` factory at line 48 is annotated `(overrides: Partial<ManifestInputs> = {}): ManifestInputs`, so it must supply every required member; adding `staleIds` breaks it across 12 `buildManifest` call sites. The replacing invariant: `makeInputs` supplies `staleIds: new Set()` by default, overridable per test.
+- `test/unit/context/engine/manifest-builder-us003.test.ts` — its `makeInputs` factory at line 51 carries the same `: ManifestInputs` return annotation, breaking across 9 `buildManifest` call sites. The replacing invariant: `makeInputs` supplies `staleIds: new Set()` by default, overridable per test.
+- `test/unit/context/engine/manifest-builder-eviction.test.ts` — its `makeInputs` factory at line 42 carries the same `: ManifestInputs` return annotation, breaking across 6 `buildManifest` call sites. The replacing invariant: `makeInputs` supplies `staleIds: new Set()` by default, overridable per test.
 
 **US-002**
 - `test/unit/plugins/builtin/curator-heuristics-h4-h6.test.ts` — its H5 fixtures at lines 146 and 157 construct `chunk-excluded` payloads with `reason: "stale"` to make the heuristic fire. The replacing invariant: H5 fires on `payload.stale === true`, and `reason` on those fixtures carries the mechanical cause instead.
