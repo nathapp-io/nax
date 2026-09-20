@@ -148,13 +148,21 @@ describe("AC5: line longer than MODEL_MAX_LINE_CHARS is shortened to that length
 
 describe("AC6: both line-count and per-line caps apply to a body within MODEL_MAX_BYTES", () => {
   test("body with > MODEL_MAX_LINES lines and an over-long line retains <= MODEL_MAX_LINES lines, all <= MODEL_MAX_LINE_CHARS", () => {
+    // The over-long line is ONE of the body's lines, so the ordinary lines
+    // plus it must strictly exceed the line cap. The line-count stage only
+    // fires above MODEL_MAX_LINES, so the body is sized at the cap + a
+    // margin; short ordinary lines keep the whole body under the byte cap.
+    const total = MODEL_MAX_LINES + 50;
     const overLong = "z".repeat(MODEL_MAX_LINE_CHARS * 3);
-    const lines = Array.from({ length: MODEL_MAX_LINES - 2 }, (_, i) => `line ${i + 1}`);
+    const lines = Array.from({ length: total - 1 }, (_, i) => `line ${i + 1}`);
     const body = `${overLong}\n${lines.join("\n")}\n`;
-    // Sanity: the body fits within the byte ceiling when its long line is
-    // capped to MODEL_MAX_LINE_CHARS. We keep the body within the headline
-    // size so the byte cap doesn't dominate the test.
+    // Sanity: within the byte ceiling, but with strictly more logical lines
+    // than the line cap (a trailing newline terminates the last line rather
+    // than opening an empty one). So BOTH the per-line stage and the
+    // line-count stage have to fire for this body.
     expect(Buffer.byteLength(body, "utf8")).toBeLessThan(MODEL_MAX_BYTES);
+    expect(body.slice(0, -1).split("\n").length).toBe(total);
+    expect(total).toBeGreaterThan(MODEL_MAX_LINES);
 
     const res = trunc(body, "head");
     const outLines = res.content.split("\n");
@@ -162,9 +170,15 @@ describe("AC6: both line-count and per-line caps apply to a body within MODEL_MA
     for (const line of outLines) {
       expect(line.length).toBeLessThanOrEqual(MODEL_MAX_LINE_CHARS);
     }
-    // The over-long line was definitely shortened, and the body had more
-    // than MODEL_MAX_LINES lines, so at least one stage must have changed
-    // the content.
+    // The per-line stage fired: the over-long line is now exactly at the cap.
+    expect(outLines[0]).toBe("z".repeat(MODEL_MAX_LINE_CHARS));
+    // The line-count stage fired too: head keeps the first MODEL_MAX_LINES
+    // lines, so the last retained line is the body's MODEL_MAX_LINES-th line
+    // and every line past the cap is gone.
+    expect(outLines[outLines.length - 1]).toBe(`line ${MODEL_MAX_LINES - 1}`);
+    expect(res.content).not.toContain(`line ${MODEL_MAX_LINES}`);
+    expect(res.content).not.toContain(`line ${total - 1}`);
+    // Both stages changed the content, so truncation must be reported.
     expect(res.truncated).toBe(true);
   });
 });
