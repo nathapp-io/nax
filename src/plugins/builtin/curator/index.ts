@@ -122,6 +122,10 @@ const curatorAction: IPostRunAction = {
           window.observations.length > 0 ? window.observations : observations,
           thresholds,
         );
+        // STUB: post-run path will pass provenance describing the heuristic
+        // window. The 3-arg form keeps working while the implementer session
+        // is pending — AC6/AC8 tests assert on the header output, which the
+        // current 3-arg call cannot satisfy.
         const markdown = renderProposals(proposals, context.runId, observations.length);
 
         const proposalsMdPath = path.join(runDir, "curator-proposals.md");

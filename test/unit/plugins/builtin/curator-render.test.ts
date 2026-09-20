@@ -248,3 +248,126 @@ describe("renderProposals — evidence survives `nax curator commit` (#1422)", (
     expect(parsed[0].evidence).toContain("expect(true).toBe(true)");
   });
 });
+
+/**
+ * Heuristic-window provenance — header attributes the heuristic window the
+ * proposals derive from (US-003). ACs 1, 2, 3, 7 and 9 are exercised against
+ * `renderProposals` directly because that is the single seam between the
+ * heuristic pipeline and the markdown the operator reads.
+ */
+describe("renderProposals — heuristic-window provenance (US-003)", () => {
+  const provenanceBaseProposal: Proposal = {
+    id: "H1",
+    severity: "MED",
+    target: {
+      canonicalFile: ".nax/rules/curator-suggestions.md",
+      action: "add",
+    },
+    description: "Test description",
+    evidence: "Evidence line 1",
+    sourceKinds: ["review-finding"],
+    storyIds: ["story-1", "story-2"],
+  };
+
+  test("AC1: header states both the window run count and the window observation count when provenance is given", () => {
+    const markdown = renderProposals([provenanceBaseProposal], "run-1294", 1294, {
+      runCount: 20,
+      observationCount: 4000,
+    });
+
+    // The window run count and the window observation count must both appear
+    // in the header — that is the whole point of carrying provenance here.
+    expect(markdown).toContain("20");
+    expect(markdown).toContain("4000");
+  });
+
+  test("AC1 (boundary): zero-window provenance still surfaces the zero in the header", () => {
+    const markdown = renderProposals([provenanceBaseProposal], "run-x", 0, {
+      runCount: 0,
+      observationCount: 0,
+    });
+    expect(markdown).toContain("0");
+  });
+
+  test("AC2: header separately states the run's own observation count of 1294", () => {
+    const markdown = renderProposals([provenanceBaseProposal], "run-1294", 1294, {
+      runCount: 20,
+      observationCount: 4000,
+    });
+
+    // The run's own 1294 observations is a distinct fact from the 4000 window
+    // observations — the header must keep both so neither is misattributed.
+    expect(markdown).toContain("1294");
+    expect(markdown).toContain("4000");
+  });
+
+  test("AC2 (boundary): identical window and run counts both still surface", () => {
+    // When window == run == 5, the header still distinguishes "5 in the window"
+    // from "5 in this run" — the wording must not collapse two counts into one.
+    const markdown = renderProposals([provenanceBaseProposal], "run-x", 5, {
+      runCount: 1,
+      observationCount: 5,
+    });
+    expect(markdown.match(/5/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  test("AC3: provenance with runCount=1 produces a header that says 'one run', not '20 runs'", () => {
+    const oneRunHeader = renderProposals([provenanceBaseProposal], "run-x", 7, {
+      runCount: 1,
+      observationCount: 7,
+    });
+    const twentyRunHeader = renderProposals([provenanceBaseProposal], "run-x", 7, {
+      runCount: 20,
+      observationCount: 140,
+    });
+
+    // The single-run provenance must NOT look like the multi-run header.
+    // The empty-window fallback that would otherwise be misread as "20 runs"
+    // (#1929 of course).
+    expect(oneRunHeader).not.toBe(twentyRunHeader);
+    // And the one-run header should describe the window as a single run.
+    expect(oneRunHeader).toMatch(/1\s+run/);
+  });
+
+  test("AC3 (boundary): zero-run provenance produces a header that does NOT say 'one run'", () => {
+    const markdown = renderProposals([provenanceBaseProposal], "run-x", 7, {
+      runCount: 0,
+      observationCount: 0,
+    });
+    expect(markdown).not.toMatch(/\b1\s+run\b/);
+  });
+
+  test("AC7: 3-arg form keeps working — header states one run and a window observation count equal to the run's own count", () => {
+    // The single-run dryrun default: omitting provenance must default to a
+    // window of { runCount: 1, observationCount }, which makes the header
+    // match the run's own observation count (no "5 here, 6 there" drift).
+    const markdown = renderProposals([provenanceBaseProposal], "run-x", 100);
+
+    expect(markdown).toMatch(/1\s+run/);
+    expect(markdown).toContain("100");
+  });
+
+  test("AC7 (boundary): 3-arg form with zero observations still says one run and zero window observations", () => {
+    const markdown = renderProposals([], "run-x", 0);
+
+    expect(markdown).toMatch(/1\s+run/);
+    expect(markdown).toContain("0");
+  });
+
+  test("AC9: empty-proposal line attributes its observation count to the heuristic window, not to this run", () => {
+    // The pre-story wording "No heuristics fired for this run" misattributed the
+    // count — the empty line must NOT say "for this run" and must mention the
+    // window count instead.
+    const markdown = renderProposals([], "run-x", 100, { runCount: 20, observationCount: 4000 });
+
+    expect(markdown).not.toMatch(/for this run/i);
+    // The window observation count (4000) appears in the empty-proposals line.
+    expect(markdown).toContain("4000");
+  });
+
+  test("AC9 (boundary): empty-proposal line in 3-arg form omits the 'for this run' wording", () => {
+    const markdown = renderProposals([], "run-x", 0);
+
+    expect(markdown).not.toMatch(/for this run/i);
+  });
+});

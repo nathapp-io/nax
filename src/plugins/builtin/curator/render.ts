@@ -27,15 +27,25 @@ function actionLabel(action: "add" | "drop" | "advisory"): string {
  * @param observationCount - Total observation count from this run
  * @returns Markdown string
  */
-export function renderProposals(proposals: Proposal[], runId: string, observationCount: number): string {
+export function renderProposals(
+  proposals: Proposal[],
+  runId: string,
+  observationCount: number,
+  provenance?: { runCount: number; observationCount: number },
+): string {
+  // STUB: real implementation is deferred to the implementer session. The
+  // optional `provenance` parameter is accepted (existing 3-arg callers stay
+  // valid) but the new heuristic-window header is NOT yet rendered. This
+  // produces markdown equivalent to the pre-story behaviour, which is what
+  // makes the new AC tests fail at their assertions rather than at compile
+  // time.
+  void provenance;
   const ts = formatTimestamp();
   const lines: string[] = [];
-
   lines.push("# Curator Proposals");
   lines.push("");
   lines.push(`> generated at ${ts} · run ${runId} · ${observationCount} observations`);
   lines.push("");
-
   if (proposals.length === 0) {
     lines.push(`_No heuristics fired for this run. ${observationCount} observation(s) collected._`);
     return lines.join("\n");
