@@ -54,7 +54,7 @@ const CONTEXT_VS_EXPECTED_FILES_RULE = `**\`contextFiles\` rule — files readab
 
 **\`expectedFiles\` rule — files THIS story CREATES.** List every NEW file this story authors. A file this story creates belongs here, NEVER in \`contextFiles\` — these are the story's outputs, not files to read first. A file created by an upstream dependency and only read/modified here belongs in \`contextFiles\`, NOT here (this story does not author it). A single path may appear in \`contextFiles\` (an existing sibling to mirror) AND \`expectedFiles\` (the new file itself), but the same path must never be in both. Every path in both fields is relative to the REPO ROOT — including a file this story creates inside its own \`workdir\` package (e.g. a story scoped to \`packages/api\` that creates \`src/routes/users.ts\` writes \`packages/api/src/routes/users.ts\`, never the bare \`src/routes/users.ts\`).`;
 
-/** Output-schema line for the `expectedFiles` field, shared by both prompts. */
+/** Output-schema line for the `expectedFiles` field in the plan prompt. */
 const EXPECTED_FILES_SCHEMA_FIELD = `"expectedFiles": ["string — NEW files this story creates (repo-rooted relative paths, omit if none)"],`;
 
 /**
@@ -387,7 +387,7 @@ function buildFileReadInstruction(proposers?: { fileReadAccess?: boolean; fileRe
   if (proposers?.fileReadAccess === true) {
     const budgetClause =
       proposers.fileReadBudget !== undefined ? ` You have up to ${proposers.fileReadBudget} file reads.` : "";
-    return `**File Read Permission:** You may use file-read tools to verify spec claims against actual code.${budgetClause} Cite the resulting factId from the manifest, or include a verbatim excerpt with path:line-range for any claim derived from a file you read directly.`;
+    return `**File Read Permission:** You may use file-read tools to verify spec claims against actual code.${budgetClause} Cite the resulting factId, or include a verbatim excerpt with path:line-range for any claim derived from a file you read directly.`;
   }
   return "";
 }

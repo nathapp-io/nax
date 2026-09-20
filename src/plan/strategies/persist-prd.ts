@@ -11,7 +11,7 @@
  *
  * Routing them all through here makes the repair a property of *writing a PRD*
  * rather than of any one code path, which is what `applyPlanFidelity`'s own
- * contract already claimed ("the four plan strategies cannot drift on which
+ * contract already claimed ("the two plan strategies cannot drift on which
  * repairs they apply"). Re-application is safe: `backfillOutOfScope` early-returns
  * once nothing is missing, and `applyModifiedFiles` merges deduped by path.
  *
@@ -162,7 +162,7 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
   return args.outputPath;
 }
 
-/** `finalizeAndWritePrd` for the four strategies, which all carry a full context. */
+/** `finalizeAndWritePrd` for the two plan strategies, which both carry a full context. */
 export async function persistPrd(ctx: PlanModeContext, prd: PRD): Promise<string> {
   return finalizeAndWritePrd({
     prd,

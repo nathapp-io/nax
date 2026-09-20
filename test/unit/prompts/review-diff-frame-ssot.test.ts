@@ -1,7 +1,7 @@
 /**
  * Cross-builder invariants for the review builders' git argv (PR 5, M6/M9/M10).
  *
- * A. The three ref-mode diff builders must emit the SAME nax-metadata exclusion
+ * A. The two ref-mode diff builders must emit the SAME nax-metadata exclusion
  *    set, and that set must be the SSOT (`src/utils/nax-owned-paths.ts`). #2101
  *    added three hand-rolled copies that disagreed with each other, so a nested
  *    `packages/api/tools/.nax/` was excluded on two arms and visible on the
