@@ -219,12 +219,18 @@ describe("AC3: when that Bash result enters the message array, its content ends 
     expect(outLines[outLines.length - 1]).toBe(stderrTail);
   });
 
-  test("a Bash body of exit 0 + huge stdout + huge stderr keeps the LAST stderr line", async () => {
+  test("a Bash body whose final stderr line is one runaway blob ends with the last stderr line that FITS", async () => {
     // Even on exit 0, the shape `exit 0\n<stdout>\n<stderr>` makes stderr the
-    // body's tail. The after_tool cut must keep the LAST stderr line.
+    // body's tail. Here the body's literal last line is a 160 KB blob, larger
+    // than the whole tail budget. Per the skip-whole rule ("Truncation
+    // direction" in the spec) that line is skipped rather than shortened into
+    // the tail slot, so the content ends with `lastFittingStderrLine` — the
+    // last stderr line that fits, NOT the body's literal final line. Keeping a
+    // 2,000-char slice of the blob instead would evict the short line that
+    // carries the signal, which is the failure this direction exists to avoid.
     const bigStdout = "x".repeat(MODEL_MAX_BYTES);
-    const stderrTail = "stderr-final-line";
-    const stderr = `${stderrTail}\n${"more".repeat(MODEL_MAX_BYTES)}`;
+    const lastFittingStderrLine = "stderr-final-line";
+    const stderr = `${lastFittingStderrLine}\n${"more".repeat(MODEL_MAX_BYTES)}`;
     _bashToolDeps.runArgv = async () => ({
       exitCode: 0,
       stdout: bigStdout,
@@ -241,7 +247,7 @@ describe("AC3: when that Bash result enters the message array, its content ends 
     expect(outcome.kind).toBe("ok");
     if (outcome.kind !== "ok") throw new Error("unreachable");
     const outLines = outcome.content.split("\n");
-    expect(outLines[outLines.length - 1]).toBe(stderrTail);
+    expect(outLines[outLines.length - 1]).toBe(lastFittingStderrLine);
   });
 });
 
