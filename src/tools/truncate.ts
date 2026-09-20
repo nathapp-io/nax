@@ -7,7 +7,8 @@
  * resuscitates a per-tool slicer sits behind one import rather than 5+.
  *
  * Three independent caps compose as an ORDERED PIPELINE, never as alternatives:
- *   1. Per-line cap: every line longer than MODEL_MAX_LINE_CHARS is shortened.
+ *   1. Per-line cap: every line longer than MODEL_MAX_LINE_CHARS (UTF-16
+ *      code units) is shortened.
  *   2. Line-count cap: if still over MODEL_MAX_LINES lines, direction selects
  *      which lines to keep — over the WHOLE body, not over a byte window of it.
  *   3. Byte cap LAST: if the result still exceeds MODEL_MAX_BYTES, cut on a
@@ -60,22 +61,21 @@ function splitLines(body: string): string[] {
 }
 
 /**
- * Shorten a single line so its UTF-8 byte length is at most `maxBytes`.
- *
- * Backs up to a clean codepoint boundary so the result never carries a
- * U+FFFD replacement character (3 bytes), which would push the decoded
- * byte length PAST the budget. A `Buffer.subarray` on a multi-byte string
- * is the precise defect AC3 / AC7 pin.
+ * Shorten a single line so its UTF-16 code-unit length is at most
+ * `maxCodeUnits`. Backs up one code unit if the cut would land on a high
+ * surrogate (the lead of a surrogate pair), so the result never carries
+ * a lone surrogate that would re-encode as U+FFFD in a downstream stage.
  */
-function capLine(line: string, maxBytes: number): string {
-  if (Buffer.byteLength(line, "utf8") <= maxBytes) return line;
-  const buf = Buffer.from(line, "utf8");
-  const end = Math.min(buf.length, maxBytes);
-  for (let cut = end; cut > 0; cut -= 1) {
-    const candidate = buf.subarray(0, cut).toString("utf8");
-    if (Buffer.byteLength(candidate, "utf8") <= maxBytes) return candidate;
+function capLine(line: string, maxCodeUnits: number): string {
+  if (line.length <= maxCodeUnits) return line;
+  let cut = maxCodeUnits;
+  // Avoid splitting a surrogate pair: if the last code unit kept is a
+  // high surrogate, back up one so the pair stays whole.
+  if (cut > 0) {
+    const last = line.charCodeAt(cut - 1);
+    if (last >= 0xd800 && last <= 0xdbff) cut -= 1;
   }
-  return "";
+  return line.slice(0, cut);
 }
 
 /**
@@ -86,7 +86,7 @@ function applyLineCharCap(lines: string[], maxLineChars: number): { lines: strin
   let changed = false;
   const out: string[] = [];
   for (const line of lines) {
-    if (Buffer.byteLength(line, "utf8") <= maxLineChars) {
+    if (line.length <= maxLineChars) {
       out.push(line);
       continue;
     }
@@ -142,14 +142,11 @@ function cutToByteCap(body: string, maxBytes: number): string {
  * any stage changed the content. `originalBytes` always reports the
  * input's full UTF-8 byte length, regardless of which stages fired.
  *
- * Direction governs how the line-count cap drops excess lines. When the
- * body is strictly within the line cap (lines < MODEL_MAX_LINES) but has
- * at least four lines, the same direction semantics apply at the smaller
- * scale: head drops the body's last line, tail-with-first-line drops the
- * middle, keeping the first and last. At exactly MODEL_MAX_LINES no
- * direction preview fires — the body is at the cap, dropping would push
- * it below. With three or fewer lines no preview fires either; a body
- * that small is preserved verbatim regardless of direction.
+ * Direction governs how the line-count cap drops excess lines when the
+ * body is strictly over MODEL_MAX_LINES — head keeps the first N lines
+ * and drops the rest, tail-with-first-line keeps the first line plus the
+ * last N-1 lines. Within-cap bodies are returned unchanged regardless of
+ * direction.
  */
 export function truncateForModel(body: string, opts: TruncateForModelOptions): TruncationResult {
   const originalBytes = Buffer.byteLength(body, "utf8");
@@ -157,7 +154,10 @@ export function truncateForModel(body: string, opts: TruncateForModelOptions): T
   // Split the body into lines once; every cap is checked against the
   // line-aware view, so we don't pay for `split("\n")` three times.
   const lines = splitLines(body);
-  const perLineOver = lines.some((l) => Buffer.byteLength(l, "utf8") > MODEL_MAX_LINE_CHARS);
+  // Per-line cap is measured in UTF-16 code units — the same metric
+  // `String#length` reports — so a 2_000-character line of single-unit
+  // codepoints is at the cap, not over it.
+  const perLineOver = lines.some((l) => l.length > MODEL_MAX_LINE_CHARS);
 
   let working = lines;
   let changed = false;
@@ -169,25 +169,13 @@ export function truncateForModel(body: string, opts: TruncateForModelOptions): T
     if (capped.changed) changed = true;
   }
 
-  // Stage 2: line-count cap. When strictly over the cap, direction picks
-  // which lines to keep over the WHOLE body. When strictly under the cap
-  // but with more than two lines, direction previews at the small scale:
-  // head drops the body's last line, tail-with-first-line drops the
-  // middle, keeping the first and last.
+  // Stage 2: line-count cap. The cap fires only when the body is strictly
+  // over MODEL_MAX_LINES — within-cap bodies must be returned unchanged
+  // per AC1, so no preview is allowed at smaller scales.
   if (working.length > MODEL_MAX_LINES) {
     const trimmed = applyLineCountCap(working, MODEL_MAX_LINES, opts.direction);
     working = trimmed.lines;
     if (trimmed.changed) changed = true;
-  } else if (working.length > 3 && working.length < MODEL_MAX_LINES) {
-    if (opts.direction === "head") {
-      working = working.slice(0, -1);
-      changed = true;
-    } else {
-      const first = working[0] as string;
-      const last = working[working.length - 1] as string;
-      working = [first, last];
-      changed = true;
-    }
   }
 
   // Re-join with newlines. The trailing-newline convention: if the input
