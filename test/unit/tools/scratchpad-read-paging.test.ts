@@ -71,9 +71,12 @@ describe("AC11: when ScratchpadRead receives offset 3 and limit 2, then it retur
 
     const result = await scratchpadReadTool.run({ path: "exact.md", offset: 3, limit: 2 }, ctx(filePath));
     expect(result.isError).toBeFalsy();
-    // readFileSlice joins lines with no synthesised newline — the slice is
-    // exactly the two lines the caller asked for.
-    expect(result.content).toBe("L3\nL4");
+    // The `[N lines]` header leads a paged read too (AC12/AC13: it reports
+    // the FILE's line count, which is what a caller paging a spilled body
+    // needs). Underneath it, readFileSlice joins lines with no synthesised
+    // newline — the payload is exactly the two lines the caller asked for,
+    // and the header is not a file line.
+    expect(result.content).toBe("[5 lines]\nL3\nL4");
   });
 
   test("offset only (no limit) reads from offset to end of file", async () => {

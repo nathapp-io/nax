@@ -158,24 +158,28 @@ export const scratchpadReadTool: CodingTool = {
       });
       const fullBytes = Bun.file(target).size;
       const { content, bounded, totalLines } = slice;
-      if (offset !== undefined || limit !== undefined) {
-        // A ranged read returns the requested lines and nothing else: the
-        // result IS the slice, so no header leads it (the caller asked for
-        // lines 3-4, and lines 3-4 are what it gets). A range that selects
-        // nothing means the offset is past the last line. readTool answers that
-        // with the line count rather than an empty result, because "there is
-        // nothing here" is indistinguishable from "the file is empty" and the
-        // model can act on the number.
-        const message =
-          content === ""
-            ? `offset ${String(offset ?? 1)} is past the end of the file -- it has ${totalLines} lines`
-            : content;
-        return { content: message, resultBytesPreTruncation: fullBytes };
-      }
-      // Precedent from readTool's whole-file read: a leading line count, marked
-      // with `+` when the read stopped at the I/O ceiling and the count is
-      // therefore a floor rather than the file's true total.
+      // The header leads EVERY read that returns file content, the paged one
+      // included: it reports the FILE's line count, which is what a model
+      // paging a spilled body needs in order to know how many pages remain —
+      // the page it asked for is not a substitute for that number. Precedent
+      // from readTool's whole-file read, marked with `+` when the read stopped
+      // at the I/O ceiling and the count is therefore a floor rather than the
+      // file's true total.
       const header = `[${bounded ? `${totalLines}+` : `${totalLines}`} lines]`;
+      if (offset !== undefined || limit !== undefined) {
+        // The header is not a file line, so it does not contradict the range
+        // the caller asked for: lines 3-4 are still exactly what follows it.
+        // A range that selects nothing means the offset is past the last line.
+        // readTool answers that with the line count rather than an empty
+        // result, because "there is nothing here" is indistinguishable from
+        // "the file is empty" and the model can act on the number — and there
+        // the count IS the message, so no header leads it.
+        if (content === "") {
+          const pastEnd = `offset ${String(offset ?? 1)} is past the end of the file -- it has ${totalLines} lines`;
+          return { content: pastEnd, resultBytesPreTruncation: fullBytes };
+        }
+        return { content: `${header}\n${content}`, resultBytesPreTruncation: fullBytes };
+      }
       return { content: content === "" ? header : `${header}\n${content}`, resultBytesPreTruncation: fullBytes };
     } catch (err) {
       // A missing file is a tool ERROR the model can react to, never a
