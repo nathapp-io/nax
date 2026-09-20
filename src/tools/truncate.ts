@@ -123,44 +123,54 @@ function applyLineCountCap(
 }
 
 /**
+ * True when `byte` is a UTF-8 continuation byte (`10xxxxxx`) — meaning the
+ * position it sits at is INSIDE a multi-byte codepoint, not at its start.
+ */
+function isContinuationByte(byte: number | undefined): boolean {
+  return byte !== undefined && (byte & 0xc0) === 0x80;
+}
+
+/**
  * Cut `body` to at most `maxBytes` bytes on a clean codepoint boundary.
  * Nothing is appended after the cut: the byte cap is unconditional.
  *
  * The one codepoint-boundary slicer in the tool layer (its original is
  * `sliceByteBudget` in scratchpad.ts). `readFileSlice` needs the same
  * guarantee for its own I/O bound, so it shares this rather than growing a
- * second copy: a byte-aligned cut that lands inside a multi-byte codepoint
- * decodes with U+FFFD (3 bytes) and pushes the result PAST the budget it was
- * cut to. Backing up one byte at a time lands on a boundary within four
- * attempts (the maximum UTF-8 codepoint length).
+ * second copy.
+ *
+ * The boundary is found STRUCTURALLY, by walking back over continuation bytes,
+ * not by measuring the decoded candidate's byte length. Measurement is unsound:
+ * a slice that ends mid-codepoint decodes into a U+FFFD, and that replacement
+ * costs 3 bytes — exactly what a truncated 4-byte codepoint contributed when
+ * three of its four bytes were included. The length check then passes while the
+ * output carries a replacement character, which is the outcome the codepoint
+ * boundary exists to prevent. Walking back stops where a codepoint starts, so
+ * the slice is always whole codepoints and re-encodes to exactly `cut` bytes.
  */
 export function cutToByteCap(body: string, maxBytes: number): string {
   const buf = Buffer.from(body, "utf8");
   if (buf.length <= maxBytes) return body;
-  const end = Math.min(buf.length, maxBytes);
-  for (let cut = end; cut > 0; cut -= 1) {
-    const candidate = buf.subarray(0, cut).toString("utf8");
-    if (Buffer.byteLength(candidate, "utf8") <= maxBytes) return candidate;
-  }
-  return "";
+  let cut = maxBytes;
+  while (cut > 0 && isContinuationByte(buf[cut])) cut -= 1;
+  return buf.subarray(0, cut).toString("utf8");
 }
 
 /**
  * Cut `body` down to its LAST `maxBytes` bytes, on a clean codepoint boundary.
- * The mirror of `cutToByteCap`: where that one risks a U+FFFD at the tail, this
- * one risks one at the head, and either way a replacement character is 3 bytes
- * and pushes the decoded result past the budget it was taken against. Advancing
- * the start by one byte at a time clears the partial codepoint within four
- * attempts (the maximum UTF-8 codepoint length).
+ * The mirror of `cutToByteCap`: that one backs up over the continuation bytes a
+ * cut-inside-a-codepoint would end on, this one skips forward over the
+ * continuation bytes such a start would begin on. Same structural rule, same
+ * reason — measuring the decoded candidate would accept a tail that opens with
+ * a U+FFFD whenever the replacement costs no more bytes than the partial
+ * codepoint it replaced.
  */
 function tailWithinBytes(body: string, maxBytes: number): string {
   const buf = Buffer.from(body, "utf8");
   if (buf.length <= maxBytes) return body;
-  for (let start = buf.length - maxBytes; start < buf.length; start += 1) {
-    const candidate = buf.subarray(start).toString("utf8");
-    if (Buffer.byteLength(candidate, "utf8") <= maxBytes) return candidate;
-  }
-  return "";
+  let start = buf.length - maxBytes;
+  while (start < buf.length && isContinuationByte(buf[start])) start += 1;
+  return buf.subarray(start).toString("utf8");
 }
 
 /**
