@@ -413,9 +413,16 @@ so the end wipe covers shared mode.
 
 **US-005**
 
-None. US-003 already replaces every call into the five private truncators, so the deletions
-remove code that no test reaches by then; the build and lint gates are what confirm no
-reference survives.
+- `test/unit/tools/read-line-total.test.ts` — its AC6 case asserts an oversize unranged read
+  contains `truncated`, i.e. that the floor header and `readTool`'s OWN marker coexist.
+  Deleting that marker removes the string it looks for. Replacing invariant: the floor
+  header is unchanged and the marker the model sees is the shared policy's, applied by the
+  session rather than by the tool.
+- `test/unit/tools/read-glob.test.ts` — "truncates beyond maxBytes and says so" and
+  "truncation at maxBytes still applies to a ranged read" both pin `readTool` capping at
+  `ctx.maxBytes` with its own marker. Replacing invariant: the tool returns up to
+  `readCeiling` and the model-facing cap and marker come from the `after_tool` policy, the
+  same move US-003 made for Grep, Git, Bash and ScratchpadRead.
 
 ### Seams
 
@@ -599,15 +606,29 @@ lock is assumed to prevent it, so no cross-run coordination is added.
 
 ### US-005: Remove the superseded truncators
 
+**Scope — what is deleted.** Only the MODEL-FACING cap: the private `truncate()` in
+`src/tools/read.ts` (called at `ctx.maxBytes`) and in `src/tools/scratchpad.ts` (likewise).
+`src/tools/bash.ts` is already done — US-003 replaced its inline slice with
+`cutToByteCap(body, ctx.readCeiling ?? READ_CEILING)`, so there is nothing left to remove
+there and no edit to that file is expected.
+
+**Scope — what STAYS.** The `truncate()` calls in `src/tools/grep.ts` and `src/tools/git.ts`
+bound at `ioCeiling` (`ctx.readCeiling ?? READ_CEILING`), NOT at `ctx.maxBytes`. That is the
+tool-layer I/O ceiling US-001 introduced, not the superseded model-facing cap, and it is not
+part of this deletion. Removing it would drop a real bound silently — no current test fails
+when it goes — so the criterion below pins it instead.
+
 **Verification note:** removal is verified by `bun run typecheck && bun run lint` — the
 compiler and linter reject any surviving reference to, or unused definition of, the deleted
-helpers in `src/tools/read.ts`, `src/tools/grep.ts`, `src/tools/git.ts`,
-`src/tools/scratchpad.ts`, and the inline slice in `src/tools/bash.ts`.
+helpers.
 
 - `[integration]` after the deletions, a `Grep` result larger than `MODEL_MAX_BYTES` still
   enters the message array with content whose UTF-8 byte length is at most
   `MODEL_MAX_BYTES`.
 - `[integration]` after the deletions, a `Git` result larger than `MODEL_MAX_BYTES` still
   enters the message array with a marker naming its original byte count.
+- `[unit]` after the deletions, `Grep` and `Git` invoked with a `ToolRunContext` whose
+  `readCeiling` is set still return at most that many bytes from the tool itself, before any
+  session policy runs.
 
 <!-- spec-writing: completed-through-phase-6 -->

@@ -358,7 +358,8 @@
       "description": "**Goal** — Delete per-tool truncation once after_tool is the only model-facing truncation seam.\n\n**Motivation** — The truncation policy is reimplemented in five files that have already drifted: `read.ts:22-32`, `grep.ts:63-65`, `git.ts:327-329` and `scratchpad.ts:36-45` each carry their own `truncate()`, while `bash.ts:113` truncates inline with `body.slice(0, ctx.maxBytes)`.\n\n**Approach** — US-003 already replaces every call into the five private truncators, so the deletions remove code that no test reaches by then; the build and lint gates are what confirm no reference survives.\n\n**Scope** — In: delete superseded private Read/Grep/Git/Scratchpad helpers and Bash inline slice after US-003 migration. Out: changing US-001 policy algorithm or US-003 spill behavior.\n\n**Interface** — `src/tools/truncate.ts` — created by US-001; the replacement every deleted helper defers to.",
       "acceptanceCriteria": [
         "When a `Grep` result larger than `MODEL_MAX_BYTES` enters the message array after deletions, then its content UTF-8 byte length is at most `MODEL_MAX_BYTES`.",
-        "When a `Git` result larger than `MODEL_MAX_BYTES` enters the message array after deletions, then its marker names original byte count."
+        "When a `Git` result larger than `MODEL_MAX_BYTES` enters the message array after deletions, then its marker names original byte count.",
+        "When `Grep` and `Git` are invoked with a `ToolRunContext` whose `readCeiling` is set after the deletions, then each still returns at most that many bytes from the tool itself, before any session policy runs."
       ],
       "tags": [
         "feature",
@@ -382,7 +383,8 @@
         "src/tools/read.ts",
         "src/tools/grep.ts",
         "src/tools/git.ts",
-        "src/tools/scratchpad.ts"
+        "src/tools/scratchpad.ts",
+        "src/tools/bash.ts"
       ],
       "suggestedCriteria": [
         "When a tool result is within every model cap after the deletions, then it is delivered without a truncation marker."
@@ -390,7 +392,21 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "modifiedFiles": [
+        {
+          "path": "test/unit/tools/read-line-total.test.ts",
+          "reason": "its AC6 case asserts an oversize unranged read contains `truncated` -- readTool's OWN marker. Deleting that marker removes the string it looks for. Replacing invariant: the floor header is unchanged and the marker the model sees is the shared policy's, applied by the session."
+        },
+        {
+          "path": "test/unit/tools/read-glob.test.ts",
+          "reason": "'truncates beyond maxBytes and says so' and 'truncation at maxBytes still applies to a ranged read' pin readTool capping at ctx.maxBytes with its own marker. Replacing invariant: the tool returns up to readCeiling and the model-facing cap and marker come from the after_tool policy."
+        }
+      ],
+      "outOfScope": [
+        "the `truncate()` calls in grep.ts and git.ts bound at ioCeiling (readCeiling ?? READ_CEILING), not ctx.maxBytes -- that is US-001's tool-layer I/O ceiling, not the superseded model-facing cap, and is NOT deleted.",
+        "src/tools/bash.ts needs no edit: US-003 already replaced its inline slice with cutToByteCap(body, ctx.readCeiling ?? READ_CEILING)."
+      ]
     }
   ],
   "analysis": "Existing TypeScript code requires a cross-cutting migration. ToolRunContext defines a tool-owned maxBytes cap at src/tools/registry.ts:47-67 and createCodingToolRuntime constructs it at src/tools/runtime.ts:269-281. Preserve compatibility with the many literal test contexts by adding optional readCeiling and resolving absence to READ_CEILING. Duplicated output truncation exists in Read (src/tools/read.ts:22-32), Grep (src/tools/grep.ts:63-65), Git (src/tools/git.ts:327-329), ScratchpadRead (src/tools/scratchpad.ts:36-70), and Bash (src/tools/bash.ts:109-118). Grep drains ctx.maxBytes (src/tools/grep.ts:129-130), Git passes it to gitWithTimeout (src/tools/git.ts:381-389), and RunCommand/Exec also slice command bodies (src/tools/run-command.ts:443-445; src/tools/run-command-exec.ts:86-93); the migration must preserve a tool I/O bound while moving model shaping into native after_tool. bounded-io returns an overshoot byte (src/utils/bounded-io.ts:17-50), and ScratchpadRead has the sole codepoint-boundary precedent.\n\nturn-loop.ts has seven inline tool-result pushes and inline invalid/spin policy (src/agents/native/session/turn-loop.ts:350-452). Only policy denial, normal tool answer, and caught tool throws are genuine executions; AskHuman budget/no-operator/answer and spin-stop are synthetic. Invalid-call repair currently returns rewritten transcript messages (src/agents/native/session/handle-invalid-tool-call.ts:48-128); the event seam must preserve observable repair/stop behavior without exposing history to handlers. TurnDeps owns spinBreaker (src/agents/native/session/turn-types.ts:54-104), so session/adapter wiring must own registrations. Existing tests include test/unit/agents/native/session/turn-loop-invalid-input.test.ts, turn-loop-invalid-input-budget.test.ts, and session-lifetime-spin.test.ts.\n\nScratchpadRead is path-only and tool-truncates at maxBytes (src/tools/scratchpad.ts:116-151); reuse Read's range semantics (src/tools/read.ts:78-137), retain pre-truncation metrics, and write recoverable spills within SCRATCHPAD_DIR. Spill filesystem dependencies must be injectable like _scratchpadWipeDeps (src/execution/lifecycle/scratchpad-wipe.ts:27-48). RunCleanupOptions has runCompleted but no dryRun (src/execution/lifecycle/run-cleanup.ts:51-82), and runner does not pass dryRun to cleanup (src/execution/runner.ts:395-417). wipeScratchpad already swallows and warns on failure (src/execution/lifecycle/scratchpad-wipe.ts:39-57); add it only after completed non-dry runs while retaining start wipe for crashes. Key risks are UTF-8 replacement-byte overflow, marker bytes exceeding the model cap, losing command stderr, naming failed spill files, invalid provider tool-call/result pairing, and cache-prefix rewrites. Implement US-001 and US-002 independently, then US-003, with US-004 independent and US-005 last.",
