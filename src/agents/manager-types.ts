@@ -195,6 +195,12 @@ export interface RunAsSessionOpts {
   readonly callId?: string;
   /** Caller-supplied region id forwarded to dispatch events. */
   readonly scopeId?: string;
+  /**
+   * Per-turn identity minted by `runAsSession` before the turn runs and carried
+   * out to the dispatch event and the transport, so a recorded tool call can be
+   * traced to the cost row that paid for it.
+   */
+  readonly turnId?: string;
 }
 
 export interface IAgentManager {

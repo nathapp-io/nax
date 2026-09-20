@@ -254,8 +254,8 @@ describe("attachCostSubscriber — schemaVersion 5 for session-turn and error ro
     bus.emitDispatch(makeSessionTurnEvent());
 
     expect(recorded).toHaveLength(1);
-    expect(recorded[0].schemaVersion).toBe(5);
-    expect(COST_ROW_SCHEMA_VERSION).toBe(5);
+    expect(recorded[0].schemaVersion).toBe(6);
+    expect(COST_ROW_SCHEMA_VERSION).toBe(6);
   });
 
   test("AC13: a dispatch error event records an error row with schemaVersion 5", () => {
@@ -267,6 +267,6 @@ describe("attachCostSubscriber — schemaVersion 5 for session-turn and error ro
     bus.emitDispatchError(makeErrorEvent());
 
     expect(errors).toHaveLength(1);
-    expect(errors[0].schemaVersion).toBe(5);
+    expect(errors[0].schemaVersion).toBe(6);
   });
 });

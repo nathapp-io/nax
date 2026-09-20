@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { type CostErrorEvent, type CostEvent, createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
+import { attachAuditSubscriber } from "@/runtime/middleware/audit";
 import { attachCostSubscriber, COST_ROW_SCHEMA_VERSION } from "@/runtime/middleware/cost";
+import { createNoOpPromptAuditor, type PromptAuditEntry } from "@/runtime/prompt-auditor";
 
 const PERMS = { mode: "approve-reads" as const };
 
@@ -578,8 +580,8 @@ describe("attachCostSubscriber", () => {
 
     bus.emitDispatch(makeSessionTurnEvent());
 
-    expect(recorded[0].schemaVersion).toBe(5);
-    expect(COST_ROW_SCHEMA_VERSION).toBe(5);
+    expect(recorded[0].schemaVersion).toBe(6);
+    expect(COST_ROW_SCHEMA_VERSION).toBe(6);
   });
 
   // ── US-004: producer-supplied pricingSource wins over the model-derived one ─
@@ -675,5 +677,63 @@ describe("attachCostSubscriber", () => {
     expect(recorded).toHaveLength(1);
     expect(recorded[0].pricingSource).toBe("wire");
     expect(recorded[0].confidence).toBe("exact");
+  });
+});
+
+// ─── tier 3: turnId on the cost row, joined to the prompt-audit entry ────────
+
+describe("attachCostSubscriber — turnId (tier 3)", () => {
+  test("a cost row carries the turnId from the dispatch event", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ protocolIds: { sessionId: "sess-1", turnId: "turn-9" } }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].turnId).toBe("turn-9");
+    expect(recorded[0].schemaVersion).toBe(6);
+  });
+
+  test("an error row carries the flat turnId from the dispatch error event", () => {
+    const errors: CostErrorEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), recordError: (e: CostErrorEvent) => errors.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatchError(makeErrorEvent({ turnId: "turn-9" }));
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].turnId).toBe("turn-9");
+    expect(errors[0].schemaVersion).toBe(6);
+  });
+
+  test("omits turnId on a row whose event carried none", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent());
+
+    expect("turnId" in recorded[0]).toBe(false);
+  });
+
+  test("the cost row and the prompt-audit entry carry the SAME minted turnId", () => {
+    const recorded: CostEvent[] = [];
+    const audit: PromptAuditEntry[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const auditor = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => audit.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+    attachAuditSubscriber(bus, auditor, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ protocolIds: { sessionId: "sess-1", turnId: "turn-9" } }));
+
+    expect(recorded).toHaveLength(1);
+    expect(audit).toHaveLength(1);
+    expect(recorded[0].turnId).toBe("turn-9");
+    expect(audit[0].turnId).toBe(recorded[0].turnId);
   });
 });

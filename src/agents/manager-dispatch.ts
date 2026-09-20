@@ -86,6 +86,8 @@ export function buildSessionTurnEvent(input: {
   /** Resolved profile-chain display string from config; "default" when none. */
   profile?: string;
   startedAt: number;
+  /** Minted per-turn identity, stamped onto `protocolIds.turnId`. */
+  turnId?: string;
 }): SessionTurnDispatchEvent {
   const { handle, result, opts, startedAt } = input;
   return {
@@ -128,6 +130,7 @@ export function buildSessionTurnEvent(input: {
     protocolIds: {
       sessionId: handle.protocolIds?.sessionId ?? null,
       recordId: handle.protocolIds?.recordId ?? null,
+      ...(input.turnId !== undefined ? { turnId: input.turnId } : {}),
     },
     ...(result.interactions?.length ? { interactions: result.interactions } : {}),
     origin: "runAsSession",
@@ -220,6 +223,7 @@ export function buildDispatchErrorEvent(input: {
   resolvedPermissions: ResolvedPermissions;
   callId?: string;
   scopeId?: string;
+  turnId?: string;
   startedAt: number;
   /**
    * US-001: model attribution for the failed dispatch. Top-level
@@ -261,6 +265,7 @@ export function buildDispatchErrorEvent(input: {
   const storyId = dispatchOpts?.storyId ?? input.storyId;
   const callId = dispatchOpts?.callId ?? input.callId;
   const scopeId = dispatchOpts?.scopeId ?? input.scopeId;
+  const turnId = input.turnId;
   const sessionRole = dispatchOpts?.sessionRole;
   // US-001: top-level modelDef / modelTier win over dispatchOptions so a caller
   // holding the dispatch's resolved ModelDef (e.g. handle.modelDef on a
@@ -306,6 +311,7 @@ export function buildDispatchErrorEvent(input: {
     resolvedPermissions: input.resolvedPermissions,
     ...(callId !== undefined ? { callId } : {}),
     ...(scopeId !== undefined ? { scopeId } : {}),
+    ...(turnId !== undefined ? { turnId } : {}),
     ...(sessionRole !== undefined ? { sessionRole } : {}),
     ...(tokenUsage !== undefined ? { tokenUsage } : {}),
     ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}),

@@ -593,11 +593,8 @@ export class SessionManager implements ISessionManager {
 
     try {
       const result = await adapter.sendTurn(handle, prompt, {
+        ...opts,
         interactionHandler: opts?.interactionHandler ?? NO_OP_INTERACTION_HANDLER,
-        signal: opts?.signal,
-        maxInteractions: opts?.maxInteractions,
-        contextPullTools: opts?.contextPullTools,
-        codingTools: opts?.codingTools,
       });
       return { ...result, protocolIds: result.protocolIds ?? handle.protocolIds };
     } catch (err) {

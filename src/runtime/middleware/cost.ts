@@ -65,7 +65,7 @@ export const _costSubscriberDeps = {
  *     carry `model` (omitted when no `modelDef` was attributed, never
  *     defaulted to "unknown").
  *
- * 5 — current (US-003). Successful rows additionally carry `rates` (the four
+ * 5 — (US-003). Successful rows additionally carry `rates` (the four
  *     effective per-1M numbers that priced `estimatedCostUsd`, forwarded from
  *     the dispatch event when the producer stamped them) and `catalogVersion`
  *     (the version of the catalog package those rates came from, stamped
@@ -81,10 +81,15 @@ export const _costSubscriberDeps = {
  *     catalog version on error rows because the error carrier is a
  *     positional constructor).
  *
+ * 6 — adds `turnId`, copied from `protocolIds.turnId`. This is the first row
+ *     field that identifies WHICH turn within a `callId` the row is: `callId`
+ *     is per-callOp-invocation and is 1:N over rows. Absent on v5 and earlier,
+ *     and not backfillable.
+ *
  * Bump this when adding or changing a field consumers key on, and extend the
  * list above — the constant is how a reader learns what a row guarantees.
  */
-export const COST_ROW_SCHEMA_VERSION = 5;
+export const COST_ROW_SCHEMA_VERSION = 6;
 
 export function attachCostSubscriber(
   bus: IDispatchEventBus,
@@ -156,6 +161,9 @@ export function attachCostSubscriber(
       storyId: event.storyId,
       callId: event.callId,
       scopeId: event.scopeId,
+      ...(event.kind === "session-turn" && event.protocolIds?.turnId !== undefined
+        ? { turnId: event.protocolIds.turnId }
+        : {}),
       // US-001: omit `tokens` on a `usageMissing` row. Carrying a zeroed
       // `tokens: { input: 0, output: 0 }` object would re-create the
       // "failed vs cost zero" ambiguity the `kind: "error"` discriminator
@@ -248,6 +256,7 @@ export function attachCostSubscriber(
       storyId: event.storyId,
       callId: event.callId,
       scopeId: event.scopeId,
+      ...(event.turnId !== undefined ? { turnId: event.turnId } : {}),
       errorCode: event.errorCode,
       durationMs: event.durationMs,
       ...(event.sessionRole !== undefined ? { sessionRole: event.sessionRole } : {}),

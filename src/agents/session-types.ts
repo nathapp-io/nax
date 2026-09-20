@@ -152,6 +152,14 @@ export interface SendTurnOpts {
   contextPullTools?: readonly ToolDescriptor[];
   /** Coding tools advertised to the model this turn (already policy-filtered). */
   codingTools?: readonly import("@/tools").CodingTool[];
+  /**
+   * Identity for THIS turn, minted by `runAsSession` before the turn runs.
+   *
+   * One turn is one cost row, so this is the field that selects a single row —
+   * `callId` spans retries and hops and cannot. Minted ahead of `sendPrompt`
+   * precisely so tool calls made during the turn can carry it.
+   */
+  turnId?: string;
 }
 
 /** Result returned by sendTurn(). */

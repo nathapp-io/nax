@@ -8,6 +8,7 @@ import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import type { PidRegistry } from "../execution/pid-registry";
 import { getSafeLogger } from "../logger";
+import { newCorrelationId } from "../operations/call-resolvers";
 import type { MiddlewareContext } from "../runtime/agent-middleware";
 // Leaf import to avoid barrel cycle:
 // src/runtime/index.ts → internal/agent-manager-factory → agents/factory → agents/manager → runtime/index.ts
@@ -466,8 +467,9 @@ export class AgentManager implements IAgentManager {
     const resolvedPermissions = resolvePermissions(opts.config ?? this._config, stage);
     const sessionRole = handle.role ?? opts.sessionRole ?? "main";
     const start = Date.now();
+    const turnId = newCorrelationId();
     try {
-      const rawResult = await sendPrompt(handle, prompt, opts);
+      const rawResult = await sendPrompt(handle, prompt, { ...opts, turnId });
       const result = {
         ...rawResult,
         protocolIds: rawResult.protocolIds ?? handle.protocolIds,
@@ -483,6 +485,7 @@ export class AgentManager implements IAgentManager {
         resolvedPermissions,
         profile: this._config.profile,
         startedAt: start,
+        turnId,
       });
       this._dispatchEvents.emitDispatch(event);
       return result;
@@ -496,6 +499,7 @@ export class AgentManager implements IAgentManager {
         prompt,
         resolvedPermissions,
         startedAt: start,
+        turnId,
         dispatchOptions: { ...opts, sessionRole, modelDef: handle.modelDef, modelTier: handle.modelTier },
       });
       this._dispatchEvents.emitDispatchError(errEvent);

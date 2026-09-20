@@ -125,6 +125,29 @@ describe("attachAuditSubscriber", () => {
     expect(recorded[0].interactions).toBeUndefined();
   });
 
+  test("carries protocolIds.turnId onto the audit entry (tier 3)", () => {
+    const recorded: PromptAuditEntry[] = [];
+    const auditor = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachAuditSubscriber(bus, auditor, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ protocolIds: { sessionId: "sess-1", turnId: "turn-9" } }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].turnId).toBe("turn-9");
+  });
+
+  test("records turnId null on a session-turn with none", () => {
+    const recorded: PromptAuditEntry[] = [];
+    const auditor = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachAuditSubscriber(bus, auditor, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ protocolIds: { sessionId: "sess-1" } }));
+
+    expect(recorded[0].turnId).toBeNull();
+  });
+
   test("records PromptAuditEntry on complete dispatch with callType=complete", () => {
     const recorded: PromptAuditEntry[] = [];
     const auditor = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
