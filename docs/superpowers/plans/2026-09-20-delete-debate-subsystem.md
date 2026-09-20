@@ -85,8 +85,9 @@ Deleting either half first leaves the other uncompilable. Hence one deletion PR.
 
 1. **One deletion PR, not two.** The two clusters do not compile apart (see Findings). PR 1 deletes source and tests together; PR 2 handles config guards, docs, rules and baselines.
 2. **Retired config keys warn-and-strip, they do not throw.** This follows the #1859 precedent already implemented in `stripRemovedNoOpKeys` (`src/config/config-guards.ts`): a throw would hard-fail every existing config carrying an inert key, with no behaviour change to show for it. Applies to the `debate` block, `plan.citationThreshold` and `plan.criticModel`.
-3. **`plan.mode: "debate"` and `plan.mode: "pipeline"` fail schema validation.** Unlike the inert keys above, these were **not** inert — a user who set either was getting that strategy, and silently downgrading them to `single` would change their plan output without telling them. The Zod enum narrows to `["single", "refine"]`, so the config fails to parse with a clear message.
+3. **`plan.mode: "debate"` and `plan.mode: "pipeline"` are rejected by a dedicated guard, not just by the Zod enum.** Unlike the inert keys above, these were **not** inert — a user who set either was getting that strategy, and silently downgrading them to `single` would change their plan output without telling them. The repo already distinguishes these two cases and this plan follows it: an *inert* key removal goes through `stripRemovedNoOpKeys` (warn and strip), while a *behaviour-changing* removal gets a `reject*` guard that throws before `safeParse` with a bespoke migration message — see `rejectLegacyAgentKeys`, `rejectLegacyRectificationKeys` and `rejectDeadQualityFlags` in `src/config/config-guards.ts`. A bare Zod enum error would say only `plan.mode: Invalid option: expected one of "single"|"refine"`, which names the survivors but explains neither why the mode vanished nor what to do. Task 5 adds `rejectRemovedPlanModes` alongside the enum narrowing.
 4. **Nothing is relocated.** An earlier draft of this plan lifted `facts-manifest`, `citations` and `verifiers/checks` into `src/plan/grounding/`. With pipeline mode also going, those three modules have no surviving consumer and are deleted outright. Do not reintroduce the move.
+5. **Grounded planning is retired, by the owner's ruling (2026-09-20): "no more grounding for plan, only single or refine."** After this change nax does not ground a plan against a facts manifest and does not measure citation rate. This is a deliberate scope reduction, not an oversight — do not preserve, stub, or reintroduce any part of the grounder/draft/critic cluster "just in case". Reviving evidence-grounded planning later is a rebuild, not a revert, and this plan's PR bodies must say so plainly.
 
 ---
 
@@ -355,7 +356,7 @@ The known ones as of 2026-09-20:
 | `src/review/acks.ts:22` | Keep the #1859 history but drop the "deleted `semantic-debate.ts`" framing that now needs two deletions of context to parse |
 | `src/agents/manager-types.ts:305-321` | Re-describe the two completion entry points without "debate debaters" / "debate resolvers" |
 | `src/agents/types.ts:221` | The guarded-path list loses `debate-plan`; check what remains and list it accurately |
-| `src/prd/schema-story.ts:229-230` | The `testStrategy` contradiction it describes came from debate synthesis. Verify whether the resolution code is still reachable — if nothing can now produce that state, say so in the PR body and propose removing the branch in a follow-up rather than silently keeping dead defensive code |
+| `src/prd/schema-story.ts:229-230` | **Comment only — keep the code.** See "Resolved: the `testStrategy` auto-correct stays" below. Rewrite the comment so it no longer attributes the contradiction to debate synthesis: any LLM-authored PRD can populate `noTestJustification` while leaving `testStrategy` set to something else |
 | `src/prd/workdir-canonical.ts:86` | Drop the `src/debate/verifiers/checks.ts` cross-reference |
 | `src/cli/confirm.ts:32`, `src/operations/call-resolvers.ts:117`, `src/operations/implement.ts:86`, `src/operations/plan-fidelity.ts:180`, `src/plan/strategies/persist-prd.ts:6`, `src/prompts/builders/plan-builder.ts:8`, `src/prompts/builders/adversarial-review-builder.ts:270`, `src/prompts/builders/rectifier-builder.ts:767`, `src/review/{types.ts:47,62,70, semantic-helpers.ts:63}`, `src/runtime/{dispatch-context.ts:8, usage-auditor.ts:77}`, `src/agents/complete-exception-classifier.ts:20`, `src/config/{schema-types.ts:189, config-profile.ts:31}`, `src/pipeline/stages/acceptance.ts:394` | Drop the debate mention; keep the surrounding point |
 
@@ -507,13 +508,127 @@ modes."
 
 # PR 2 — Config guards, docs, rules, baselines
 
-### Task 5: Warn-and-strip the retired config keys
+### Task 5: Reject the retired plan modes, warn-and-strip the inert keys
+
+Two mechanisms, deliberately different — see "Resolved: retired plan modes get a
+`reject*` guard" above. Do not collapse them into one.
 
 **Files:**
-- Modify: `src/config/config-guards.ts`, `src/cli/config-descriptions.ts`
-- Test: `test/unit/config/strip-removed-noop-keys.test.ts`
+- Modify: `src/config/config-guards.ts`, `src/config/loader.ts`, `src/cli/config-descriptions.ts`
+- Test: `test/unit/config/strip-removed-noop-keys.test.ts`, `test/unit/config/config-guards.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+**Interfaces:**
+- Produces: `rejectRemovedPlanModes(conf: Record<string, unknown>): void` — throws `NaxError` with code `CONFIG_REMOVED_PLAN_MODE`, same shape as the three existing `reject*` guards.
+
+**File-size note:** `src/config/config-guards.ts` is 510 lines against the 600
+cap. The new guard is ~40 lines, landing around 550. If a later edit pushes it
+over, extract rather than shrink the message — `check:file-sizes` is a hard gate.
+
+- [ ] **Step 1: Write the failing test for the reject guard**
+
+Add to `test/unit/config/config-guards.test.ts`:
+
+```ts
+describe("rejectRemovedPlanModes", () => {
+  it.each(["pipeline", "debate"])("throws on plan.mode: %s", (mode) => {
+    expect(() => rejectRemovedPlanModes({ plan: { mode } })).toThrow(/plan\.mode/);
+  });
+
+  it("names the surviving modes in the message", () => {
+    expect(() => rejectRemovedPlanModes({ plan: { mode: "pipeline" } })).toThrow(/single.*refine|refine.*single/s);
+  });
+
+  it.each(["single", "refine"])("accepts the surviving mode %s", (mode) => {
+    expect(() => rejectRemovedPlanModes({ plan: { mode } })).not.toThrow();
+  });
+
+  it("is a no-op when plan or plan.mode is absent", () => {
+    expect(() => rejectRemovedPlanModes({})).not.toThrow();
+    expect(() => rejectRemovedPlanModes({ plan: {} })).not.toThrow();
+  });
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+```bash
+bun test test/unit/config/config-guards.test.ts --timeout=60000
+```
+
+Expected: FAIL — `rejectRemovedPlanModes is not defined`.
+
+- [ ] **Step 3: Implement the guard**
+
+Add to `src/config/config-guards.ts`, beside the three existing `reject*` guards:
+
+```ts
+/**
+ * Plan modes removed with the debate subsystem and the asymmetric pipeline.
+ *
+ * Unlike the inert keys handled by `stripRemovedNoOpKeys`, these were not
+ * no-ops: a config that named one was getting that strategy. Silently
+ * resolving to `single` would change the user's plan output without telling
+ * them, so this guard throws — matching `rejectDeadQualityFlags` rather than
+ * the warn-and-strip path. The narrowed Zod enum would reject these too, but
+ * only with "Invalid option: expected one of ...", which names the survivors
+ * and explains nothing.
+ */
+const REMOVED_PLAN_MODES: Readonly<Record<string, string>> = {
+  pipeline:
+    "the asymmetric pipeline plan mode was removed along with its grounder, draft and critic stages; nax no longer grounds plans against a facts manifest",
+  debate: "the multi-agent debate subsystem was removed",
+};
+
+export function rejectRemovedPlanModes(conf: Record<string, unknown>): void {
+  const plan = conf.plan as Record<string, unknown> | undefined;
+  if (!plan || typeof plan !== "object") return;
+
+  const mode = plan.mode;
+  if (typeof mode !== "string") return;
+
+  const reason = REMOVED_PLAN_MODES[mode];
+  if (!reason) return;
+
+  const message = [
+    `Invalid configuration — removed plan mode: plan.mode: "${mode}".`,
+    `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`,
+    "",
+    "Set `plan.mode` to one of the surviving modes instead:",
+    "- `single` — one planning call (the default when `plan.mode` is unset)",
+    "- `refine` — a draft call followed by a self-audit call",
+  ].join("\n");
+  throw new NaxError(message, "CONFIG_REMOVED_PLAN_MODE", { stage: "config", mode });
+}
+```
+
+- [ ] **Step 4: Run the test and confirm it passes**
+
+```bash
+bun test test/unit/config/config-guards.test.ts --timeout=60000
+```
+
+- [ ] **Step 5: Wire the guard into both parse chains**
+
+`src/config/loader.ts` runs the `reject*` guards at **two** sites — lines
+234-241 for the root config and 563-568 for the per-package overlays (BUG-05:
+guards must cover every overlay, not just the root). Add
+`rejectRemovedPlanModes(...)` beside `rejectDeadQualityFlags(...)` at both,
+before the `stripRemovedNoOpKeys` call that follows each. Import it alongside
+the other guards at line 19-23.
+
+Note there is a **third** `stripRemovedNoOpKeys` call at line 507, in the merge
+chain, which the `reject*` guards deliberately do not cover. Match the existing
+pattern — do not add the new guard there.
+
+Confirm the wiring:
+
+```bash
+grep -n 'rejectRemovedPlanModes\|rejectDeadQualityFlags' src/config/loader.ts
+```
+
+Expected: one import line and two call sites for each, paired.
+
+- [ ] **Step 6: Write the failing test for the inert-key strip**
 
 Add to `test/unit/config/strip-removed-noop-keys.test.ts`:
 
@@ -543,7 +658,7 @@ it("strips the retired pipeline-only plan keys", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [ ] **Step 7: Run it and confirm it fails**
 
 ```bash
 bun test test/unit/config/strip-removed-noop-keys.test.ts --timeout=60000
@@ -551,7 +666,7 @@ bun test test/unit/config/strip-removed-noop-keys.test.ts --timeout=60000
 
 Expected: FAIL — the keys survive.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 8: Implement**
 
 In `src/config/config-guards.ts`, in `REMOVED_NO_OP_KEYS`, replace the `"debate.stages.review"` entry (it is subsumed) with:
 
@@ -561,35 +676,41 @@ In `src/config/config-guards.ts`, in `REMOVED_NO_OP_KEYS`, replace the `"debate.
   "plan.criticModel": "this key only fed the removed pipeline plan mode",
 ```
 
-Extend the map's doc comment: it now covers whole retired subsystems, not only inert leaf keys. Say explicitly that `plan.mode: "debate"` and `plan.mode: "pipeline"` are deliberately **not** handled here — they were not inert, so they fail schema validation instead of being silently downgraded.
+Extend the map's doc comment: it now covers whole retired subsystems, not only inert leaf keys. Say explicitly that `plan.mode: "debate"` and `plan.mode: "pipeline"` are deliberately **not** handled here — they were not inert, so `rejectRemovedPlanModes` throws on them instead.
 
 Confirm `stripRemovedNoOpKeys` handles a non-dotted top-level key. If it only walks dotted paths, extend it and call that out in the PR body.
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [ ] **Step 9: Run the test and confirm it passes**
 
 ```bash
 bun test test/unit/config/strip-removed-noop-keys.test.ts --timeout=60000
 ```
 
-- [ ] **Step 5: Delete the retired CLI descriptions**
+- [ ] **Step 10: Delete the retired CLI descriptions**
 
 In `src/cli/config-descriptions.ts`, delete the block from the `// Debate (US-001)` comment through the last `debate.*` entry, plus the `plan.citationThreshold` and `plan.criticModel` entries. Update the `plan.mode` description to name only `single` and `refine`.
 
-- [ ] **Step 6: Verify and commit**
+- [ ] **Step 11: Verify and commit**
 
 ```bash
 bun run typecheck && bun run test && bun run check:all
 RTK_DISABLED=1 git add -A
-RTK_DISABLED=1 git commit -m "feat(config): warn and strip the retired debate and pipeline keys
+RTK_DISABLED=1 git commit -m "feat(config): reject the retired plan modes, strip the inert keys
 
-Follows the #1859 precedent: warn rather than throw, so an existing
-config carrying an inert debate block or a pipeline-only plan key still
-loads, with a message naming the surviving modes.
+Two mechanisms, matching how this repo already separates the cases.
 
-plan.mode: 'debate' and 'pipeline' are deliberately not handled this
-way. They were not inert, so they now fail schema validation rather than
-being silently downgraded to single, which would change a user's plan
-output without telling them."
+The debate block, plan.citationThreshold and plan.criticModel were inert
+once their readers were deleted, so they follow the #1859 precedent:
+stripRemovedNoOpKeys warns rather than throws, and an existing config
+carrying one still loads.
+
+plan.mode: 'pipeline' and 'debate' were not inert — a config naming one
+was getting that strategy. Silently resolving to single would change a
+user's plan output without telling them, so rejectRemovedPlanModes
+throws before safeParse with a migration message, matching
+rejectDeadQualityFlags. It is wired into both the root and the
+per-package parse chains (BUG-05). The narrowed Zod enum stays as a
+second line of defence."
 ```
 
 ### Task 6: Docs, rules and profiles
@@ -741,10 +862,46 @@ Do **not** push or open a PR without explicit approval at that moment.
 
 ---
 
-## Open questions for the reviewer
+## Resolved decisions (were open questions)
 
-None block execution; each has a stated default. Flag them in the PR 1 description so the owner can overrule.
+All three were resolved on 2026-09-20 before execution. They are recorded here so
+the PR bodies can cite them; none is still a choice for the implementer to make.
 
-1. **`plan.mode: "debate"` and `"pipeline"` now hard-fail config parsing** (Decision 3). If the owner prefers a silent downgrade to `single`, that is a one-line change in `resolvePlanMode` plus two `REMOVED_NO_OP_KEYS` entries instead of the enum narrowing.
-2. **`src/prd/schema-story.ts:229-230`** resolves a `testStrategy` contradiction that arose from debate synthesis keeping a majority `testStrategy` while adopting a minority debater's no-test justification. With debate gone, that state may be unproducible. Task 3 Step 2 says to verify and report rather than delete — if it is genuinely unreachable, propose removing the branch in a follow-up rather than carrying dead defensive code.
-3. **Grounded planning is gone with pipeline mode.** `single` and `refine` do not ground against a facts manifest or measure citation rate. If evidence-grounded planning is wanted again later it is a rebuild, not a revert — worth stating plainly in the PR body so the decision is visible to whoever looks next.
+### Resolved: retired plan modes get a `reject*` guard, not a bare enum error
+
+`config-guards.ts` already encodes the distinction this needed. An **inert** key
+removal — one where the key never did anything — goes through
+`stripRemovedNoOpKeys`, which warns and strips so an existing config keeps
+loading. A **behaviour-changing** removal gets a `reject*` guard that throws
+before `safeParse` with a tailored migration message: `rejectLegacyAgentKeys`,
+`rejectLegacyRectificationKeys`, `rejectDeadQualityFlags`.
+
+`plan.mode: "pipeline"` and `"debate"` are squarely the second class — the user
+was getting that strategy. Relying on the narrowed Zod enum alone would surface
+only `plan.mode: Invalid option: expected one of "single"|"refine"`, which names
+the survivors but explains neither the removal nor the remedy. Task 5 therefore
+adds `rejectRemovedPlanModes` following the existing pattern. The enum narrowing
+stays as well — belt and braces, and it keeps the type-level union honest.
+
+### Resolved: the `testStrategy` auto-correct stays
+
+`src/prd/schema-story.ts:238-245` downgrades `testStrategy` to `"no-test"` when
+`noTestJustification` carries text matching `NO_TEST_JUSTIFICATION_SIGNAL`. Its
+comment blames debate synthesis, which is what prompted the question — but the
+code is not debate-gated and never was. It fires on any PRD payload where an LLM
+populated the justification field while leaving `testStrategy` set to something
+else, which the surviving `single` and `refine` paths can produce exactly as
+readily. BUG-26 (recorded in the same comment) confirms the broader framing: the
+branch was *hardened* precisely because an unconditional version fired on "ANY
+stray note in this field", across plan paths.
+
+**Keep the branch. Fix only the comment.** No follow-up issue.
+
+### Resolved: grounded planning is retired deliberately
+
+Owner ruling, 2026-09-20: *"no more grounding for plan, only single or refine."*
+`single` and `refine` do not ground against a facts manifest and do not measure
+citation rate, and that is the intended end state. Do not preserve or stub any
+part of the grounder/draft/critic cluster against a possible revival. State in
+the PR 1 body that reviving evidence-grounded planning would be a rebuild rather
+than a revert, so the decision stays visible to whoever looks next.
