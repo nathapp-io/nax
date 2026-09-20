@@ -266,12 +266,17 @@ export function truncateForModel(body: string, opts: TruncateForModelOptions): T
     if (trimmed.changed) changed = true;
   }
 
-  // Re-join with newlines. The trailing-newline convention: if the input
-  // body ended in "\n" AND no line was dropped, preserve that so a
-  // downstream parser doesn't see a line count that disagrees with
-  // `splitModelLines`'s view of the input. Re-emitting "\n" after dropping a
-  // line would inflate `split("\n").length` past the cap — the test for
-  // AC4 pins "at most MODEL_MAX_LINES" via the naive split.
+  // Re-join with newlines. The trailing-newline convention: the "\n" is
+  // preserved only when the body ended in one and NO stage modified it —
+  // `changed` covers a line merely SHORTENED by stage 1 as well as one
+  // DROPPED by stage 2. Gating on "dropped" alone would be wrong: stage 2
+  // fires only at strictly more than MODEL_MAX_LINES, so a stage-1-shortened
+  // body can sit at exactly MODEL_MAX_LINES lines, and re-emitting "\n" there
+  // inflates `split("\n").length` to MODEL_MAX_LINES + 1 — past the cap that
+  // AC4 pins via the naive split. The conservative guard is deliberate: a
+  // modified body has already lost byte-for-byte fidelity, so dropping its
+  // terminator costs nothing the caller can observe, while re-adding it can
+  // break the count.
   const joined = working.join("\n");
   let rebuilt = !changed && body.endsWith("\n") && working.length > 0 ? `${joined}\n` : joined;
 

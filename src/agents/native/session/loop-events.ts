@@ -122,6 +122,17 @@ export function createLoopEventRegistry(): LoopEventRegistry {
         if (outcome.kind === "nudge") nudgeText = outcome.text;
         else if (outcome.input !== undefined) input = outcome.input;
       }
+      // A `nudge` outcome carries no input, so an `allow` rewrite accumulated
+      // earlier in the chain cannot ride along with it: the loop reads the
+      // rewrite only off an `allow`. No built-in handler produces the
+      // combination today (only the spin breaker nudges, and it never rewrites
+      // input), but this dispatcher is the general seam, so a later handler
+      // pairing the two would otherwise lose its correction with no trace.
+      if (nudgeText !== undefined && input !== undefined) {
+        getSafeLogger()?.warn("native-loop-events", "before_tool nudge discards an accumulated input rewrite", {
+          tool: call.name,
+        });
+      }
       if (nudgeText !== undefined) return { kind: "nudge", text: nudgeText };
       return input === undefined ? { kind: "allow" } : { kind: "allow", input };
     },

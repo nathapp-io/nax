@@ -40,12 +40,6 @@ import { realSleep, retryTransportFault } from "./turn-retry";
 import { cacheUsageFields, type NativeTurnResponse, recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
 
 /**
- * `nudge` prefixes the eventual result rather than replacing it: the model
- * needs the real output to act on, plus the notice that it is repeating itself
- * (nax#2120). The handler's text leads, because a handler that says "begin with
- * this" must be able to.
- */
-/**
  * Structural, matching adapter.ts's guard: nax-ai's error class is not importable
  * here and the kind is what matters.
  */

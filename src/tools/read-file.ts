@@ -7,6 +7,7 @@
  */
 
 import { open } from "node:fs/promises";
+import { NaxError } from "@/errors";
 import { cutBufferToByteCap, READ_CEILING } from "./truncate";
 
 export interface ReadFileSliceOptions {
@@ -30,10 +31,17 @@ export interface ReadFileSliceResult {
 /** Reject offset/limit values that would silently drift to the file's last line. */
 function validateRange(opts: ReadFileSliceOptions): void {
   if (opts.offset !== undefined && (!Number.isInteger(opts.offset) || opts.offset <= 0)) {
-    throw new RangeError(`offset must be a positive integer (1-based); got ${JSON.stringify(opts.offset)}`);
+    throw new NaxError(
+      `offset must be a positive integer (1-based); got ${JSON.stringify(opts.offset)}`,
+      "READ_RANGE_INVALID",
+      { stage: "tools", offset: opts.offset },
+    );
   }
   if (opts.limit !== undefined && (!Number.isInteger(opts.limit) || opts.limit <= 0)) {
-    throw new RangeError(`limit must be a positive integer; got ${JSON.stringify(opts.limit)}`);
+    throw new NaxError(`limit must be a positive integer; got ${JSON.stringify(opts.limit)}`, "READ_RANGE_INVALID", {
+      stage: "tools",
+      limit: opts.limit,
+    });
   }
 }
 
