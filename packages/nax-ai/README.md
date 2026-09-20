@@ -35,6 +35,8 @@ A `ToolDefinition` can carry an optional `constrainedSampling: { type: "json_sch
 
 `ResolvedModel.supportsStrictToolSampling === true` identifies a model whose catalog explicitly declares strict JSON Schema tool-argument sampling support; an absent value means nax-ai has no declaration and is not a statement about pi-ai's runtime defaults. This capability constrains arguments only when a tool is called: it does not require a tool call and does not provide structured completion output.
 
+Do not filter models on an absent value. Whether an undeclared model behaves as supported is a property of the protocol, and pi-ai 0.85.1 defaults the two opposite ways: `anthropic-messages` treats an undeclared model as unsupported, while `openai-completions` falls back to endpoint detection that accepts most endpoints. Skipping every model without a declaration is therefore correct for the former and needlessly discards working models for the latter, where a `strict: "require"` call against an undeclared model succeeds whenever pi-ai's detection accepts the endpoint. Only `true` is a positive statement; the field records what the catalog declared, not what a request will do.
+
 ### Logging in
 
 `login()` obtains a credential and writes it to the store you pass. It covers

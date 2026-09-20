@@ -73,6 +73,19 @@ export interface ResolvedModel {
    * Explicit per-model support for strict JSON Schema tool-argument sampling.
    * This is not structured-output support and does not imply a tool call can
    * be required. Absent means unknown, not unsupported.
+   *
+   * Absent is not a uniform signal, so do not filter models on it. Whether a
+   * missing declaration behaves as supported is a property of the protocol,
+   * and pi-ai 0.85.1 defaults the two opposite ways: `anthropic-messages`
+   * treats an undeclared model as unsupported, while `openai-completions`
+   * falls back to endpoint detection that accepts most endpoints. Treating
+   * absent as "do not use strict" is therefore correct for the first and
+   * needlessly discards working models for the second.
+   *
+   * What this answers is "did the catalog declare a value", not "will
+   * `strict: "require"` succeed". Only `true` is a positive statement, and
+   * only pi-ai enforces the request, applying adapter defaults and endpoint
+   * detection this field deliberately does not reproduce.
    */
   readonly supportsStrictToolSampling?: boolean;
   /** Empty means the model has no thinking support. */
