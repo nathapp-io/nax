@@ -22,9 +22,17 @@ function actionLabel(action: "add" | "drop" | "advisory"): string {
  * Groups proposals by target action and canonical file, with severity and evidence.
  * Includes timestamp, observation count, and checkbox sections.
  *
+ * The header attributes both the heuristic window the proposals derive from
+ * (`provenance.runCount` runs and `provenance.observationCount` window
+ * observations) and the run's own observation count — these are independent
+ * facts that an operator needs to read separately. A missing `provenance`
+ * defaults to a single-run window covering only the current run's
+ * observations; that is the dryrun reading.
+ *
  * @param proposals - Array of proposals to render
  * @param runId - Identifier of the run
  * @param observationCount - Total observation count from this run
+ * @param provenance - Optional heuristic-window provenance (runCount, observationCount)
  * @returns Markdown string
  */
 export function renderProposals(
@@ -33,21 +41,24 @@ export function renderProposals(
   observationCount: number,
   provenance?: { runCount: number; observationCount: number },
 ): string {
-  // STUB: real implementation is deferred to the implementer session. The
-  // optional `provenance` parameter is accepted (existing 3-arg callers stay
-  // valid) but the new heuristic-window header is NOT yet rendered. This
-  // produces markdown equivalent to the pre-story behaviour, which is what
-  // makes the new AC tests fail at their assertions rather than at compile
-  // time.
-  void provenance;
+  // Single-run dryrun default: omitting provenance is read as a window of one
+  // run whose observation count equals this run's own. That keeps the 3-arg
+  // callers (`curatorDryrun`) emitting a header that doesn't misattribute the
+  // current run's observations to a multi-run history.
+  const window = provenance ?? { runCount: 1, observationCount };
   const ts = formatTimestamp();
   const lines: string[] = [];
   lines.push("# Curator Proposals");
   lines.push("");
-  lines.push(`> generated at ${ts} · run ${runId} · ${observationCount} observations`);
+  lines.push(
+    `> generated at ${ts} · run ${runId} · ${window.runCount} run(s) · ${window.observationCount} window observation(s) · ${observationCount} run observation(s)`,
+  );
   lines.push("");
   if (proposals.length === 0) {
-    lines.push(`_No heuristics fired for this run. ${observationCount} observation(s) collected._`);
+    // The empty-proposal line attributes the observation count to the
+    // heuristic window — proposals would have fired against window
+    // observations, not against this run's alone.
+    lines.push(`_No heuristics fired. ${window.observationCount} window observation(s) inspected._`);
     return lines.join("\n");
   }
 

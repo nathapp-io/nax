@@ -122,11 +122,17 @@ const curatorAction: IPostRunAction = {
           window.observations.length > 0 ? window.observations : observations,
           thresholds,
         );
-        // STUB: post-run path will pass provenance describing the heuristic
-        // window. The 3-arg form keeps working while the implementer session
-        // is pending — AC6/AC8 tests assert on the header output, which the
-        // current 3-arg call cannot satisfy.
-        const markdown = renderProposals(proposals, context.runId, observations.length);
+        // Provenance describes the heuristic window the proposals were drawn
+        // from: a multi-run rollup carries its own run count and observation
+        // count, distinct from this run's observation count. When the
+        // rollup is empty (no window yet) we fall back to "this run only"
+        // rather than "0 runs" — the heuristic window IS this run's
+        // observations by definition (#1929).
+        const windowHasObservations = window.observations.length > 0;
+        const provenance = windowHasObservations
+          ? { runCount: window.runIds.length, observationCount: window.observations.length }
+          : { runCount: 1, observationCount: observations.length };
+        const markdown = renderProposals(proposals, context.runId, observations.length, provenance);
 
         const proposalsMdPath = path.join(runDir, "curator-proposals.md");
         await Bun.write(proposalsMdPath, markdown);

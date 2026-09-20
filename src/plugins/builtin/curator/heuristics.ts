@@ -382,6 +382,12 @@ function h6FixCycleUnchanged(observations: Observation[], threshold: number): Pr
   const proposals: Proposal[] = [];
   for (const storyIterations of byStory.values()) {
     const storyId = storyIterations[0].storyId;
+    const featureId = storyIterations[0].featureId;
+    // Composite site key — `storyId` is feature-scoped (every feature has its
+    // own "US-001"), so the bare story ID collides across features and the
+    // H6 group's grouping key is the only unambiguous site reference
+    // (US-003 / BUG-48 — same fix as H1/H2/H3/H4 already carry).
+    const site = `${featureId}/${storyId}`;
     const ordered = [...storyIterations].sort(
       (a, b) => (a.payload.iterationNum ?? a.payload.iteration) - (b.payload.iterationNum ?? b.payload.iteration),
     );
@@ -400,10 +406,10 @@ function h6FixCycleUnchanged(observations: Observation[], threshold: number): Pr
       id: "H6",
       severity: "LOW",
       target: { canonicalFile: ".nax/rules/curator-suggestions.md", action: "advisory" },
-      description: `Fix-cycle unchanged: story ${storyId} had ${maxStreak} consecutive unchanged outcomes`,
-      evidence: `Story ${storyId} had ${maxStreak} consecutive fix-cycle iterations with outcome=unchanged`,
+      description: `Fix-cycle unchanged: story ${site} had ${maxStreak} consecutive unchanged outcomes`,
+      evidence: `Story ${site} had ${maxStreak} consecutive fix-cycle iterations with outcome=unchanged`,
       sourceKinds: ["fix-cycle-iteration"],
-      storyIds: [storyId],
+      storyIds: [site],
     });
   }
   return proposals;
