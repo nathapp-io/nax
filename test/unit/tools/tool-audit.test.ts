@@ -119,6 +119,28 @@ describe("createToolAuditSink", () => {
     expect(parsed.calls[0].scopeId).toBe("scope-1");
   });
 
+  test("records turn context alongside the tool call", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const sink = createToolAuditSink({ dir, sessionName: "s1" });
+    sink.record({
+      tool: "Read",
+      outcome: "ok",
+      input: {},
+      resultBytes: 1,
+      at: "2026-09-20T00:00:00.000Z",
+      turnId: "turn-1",
+      roundTrips: 3,
+      toolCallId: "toolu_abc",
+    });
+    await sink.flush();
+
+    const files = await readdir(dir);
+    const parsed = JSON.parse(await readFile(join(dir, files[0] as string), "utf8"));
+    expect(parsed.calls[0].turnId).toBe("turn-1");
+    expect(parsed.calls[0].roundTrips).toBe(3);
+    expect(parsed.calls[0].toolCallId).toBe("toolu_abc");
+  });
+
   test('the runtime writes tool "Exec" for an argv call all the way into the ledger file', async () => {
     const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
     const sink = createToolAuditSink({ dir, sessionName: "US-001-implementer" });

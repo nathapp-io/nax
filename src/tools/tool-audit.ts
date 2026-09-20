@@ -64,6 +64,27 @@ export interface ToolCallRecord {
   readonly callId?: string;
   /** Caller-defined region spanning many callOp invocations. */
   readonly scopeId?: string;
+  /**
+   * The turn this call happened in. One turn is one cost row, so this is the
+   * field that prices a tool call. Native sessions only — ACP does not route
+   * coding tools through the turn loop.
+   */
+  readonly turnId?: string;
+  /**
+   * Model round-trip index WITHIN the turn, 1-based.
+   *
+   * Not a turn index. `turn-loop.ts` pushes an interaction field named
+   * `turnIndex` whose value is this same round-trip counter; the two names
+   * have been conflated before. Native sessions only.
+   */
+  readonly roundTrips?: number;
+  /**
+   * Provider-assigned `tool_use` id, passed through verbatim — nax never mints
+   * or namespaces it. Unique within a session in practice, with no global
+   * guarantee, and NOT stable across a retry: a retried turn produces fresh
+   * ids. The unique tuple is (runId, sessionName, toolCallId).
+   */
+  readonly toolCallId?: string;
 }
 
 export interface ToolAuditSink {

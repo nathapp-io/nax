@@ -6,7 +6,15 @@ export type AdapterInteraction =
   // Coding tools get their own kind rather than riding "context-tool": that
   // channel is the context engine's pull-tool vocabulary, with PullToolBudget
   // behind it. Routing Write through it would be a category error.
-  | { kind: "coding-tool"; name: string; input?: Record<string, unknown> };
+  | {
+      kind: "coding-tool";
+      name: string;
+      input?: Record<string, unknown>;
+      /** Turn context, for the audit ledger. Native only. */
+      turnId?: string;
+      roundTrips?: number;
+      toolCallId?: string;
+    };
 
 export interface AdapterInteractionResponse {
   answer: string;

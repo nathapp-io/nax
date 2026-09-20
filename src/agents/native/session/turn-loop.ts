@@ -452,7 +452,22 @@ export async function runNativeTurn(
           if (kind === "coding-tool") codingToolsCalled.push(call.name);
           const answer = await opts.interactionHandler.onInteraction(
             kind === "coding-tool"
-              ? { kind, name: call.name, input: (input ?? {}) as Record<string, unknown> }
+              ? {
+                  kind,
+                  name: call.name,
+                  // MUST be `input`, NOT `call.input`. #2162's US-002 added a
+                  // `before_tool` `allow` outcome that may REWRITE the input;
+                  // the merged line is `input: (input ?? {}) as Record<...>`
+                  // where `input = rewritten ?? call.input` (turn-loop.ts:448).
+                  // Using `call.input` here runs the tool on the model's
+                  // original arguments while `rewriteToolCallInput` has already
+                  // recorded the corrected ones — execution and transcript
+                  // diverge, silently, with no test in this plan covering it.
+                  input: (input ?? {}) as Record<string, unknown>,
+                  ...(opts.turnId !== undefined ? { turnId: opts.turnId } : {}),
+                  roundTrips,
+                  toolCallId: call.id,
+                }
               : { kind, name: call.name, input },
           );
           const answerText = answer?.answer ?? "";
