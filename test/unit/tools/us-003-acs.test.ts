@@ -390,6 +390,69 @@ describe("AC7: tail-with-first-line truncated -> marker sits after retained firs
     const lines = outcome.content.split("\n");
     expect(lines[0]).toBe("exit 13");
   });
+
+  // The marker promises "showing D of N bytes", so D has to be the body text
+  // the model can read back — and it has to mean that in both directions. The
+  // newline that puts the marker on a line of its own is not a body byte:
+  // `composeHead` reports its head without one, and the tail arm must agree or
+  // the same marker means a different width per tool. Adding one on the tail
+  // side also reported one byte more than the model can actually read.
+  const markerDelivered = (content: string): { delivered: number; retainedBody: string } => {
+    const lines = content.split("\n");
+    const markerLine = lines[1] ?? "";
+    const match = /showing (\d+) of \d+ bytes/.exec(markerLine);
+    if (match?.[1] === undefined) throw new Error(`no delivered count in marker line: ${markerLine}`);
+    // Line 0 is the retained first line, line 1 is the marker. Everything after
+    // it is the retained tail; removing the marker line leaves exactly the body
+    // text the model received.
+    return { delivered: Number(match[1]), retainedBody: [lines[0], ...lines.slice(2)].join("\n") };
+  };
+
+  test("AC7 (review): with a tail retained, the marker's delivered count is the retained body text", async () => {
+    _bashToolDeps.runArgv = async () => ({
+      exitCode: 9,
+      stdout: "x".repeat(MODEL_MAX_BYTES),
+      stderr: "warn\nfatal-marker-tail-line",
+      timedOut: false,
+    });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Bash", patterns: ["*"] }], root),
+      maxBytes: MODEL_MAX_BYTES,
+      extraTools: [createBashTool()],
+    });
+    rt.advertised(["Bash"]);
+    const outcome = await rt.callTool("Bash", { command: "false" });
+    if (outcome.kind !== "error") throw new Error("unreachable");
+
+    const { delivered, retainedBody } = markerDelivered(outcome.content);
+    expect(retainedBody).toContain("fatal-marker-tail-line");
+    expect(delivered).toBe(Buffer.byteLength(retainedBody, "utf8"));
+  });
+
+  test("AC7 (review): with no tail retained, the marker's delivered count is the first line alone", async () => {
+    // Tail-empty shape: the marker is the last line, so the body text the model
+    // can read is the retained first line and nothing else. The newline before
+    // the marker is the marker's own line terminator, as it is in the head
+    // direction — it is not a byte of the output that was shown.
+    _bashToolDeps.runArgv = async () => ({
+      exitCode: 13,
+      stdout: "x".repeat(MODEL_MAX_BYTES),
+      stderr: "",
+      timedOut: false,
+    });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Bash", patterns: ["*"] }], root),
+      maxBytes: MODEL_MAX_BYTES,
+      extraTools: [createBashTool()],
+    });
+    rt.advertised(["Bash"]);
+    const outcome = await rt.callTool("Bash", { command: "false" });
+    if (outcome.kind !== "error") throw new Error("unreachable");
+
+    const { delivered, retainedBody } = markerDelivered(outcome.content);
+    expect(retainedBody).toBe("exit 13");
+    expect(delivered).toBe(Buffer.byteLength(retainedBody, "utf8"));
+  });
 });
 
 // -----------------------------------------------------------------------------

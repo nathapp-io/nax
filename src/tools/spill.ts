@@ -206,15 +206,16 @@ function composeTail(
     const tailBudget = forFirstLine - Buffer.byteLength(firstLine, "utf8") - 1;
     const tail = tailBudget < 0 ? "" : selectTail(lines, tailBudget);
     const firstLineBytes = Buffer.byteLength(firstLine, "utf8");
-    // The tail's own bytes, plus the newline that opens it.
-    const tailSegmentBytes = tail === "" ? 0 : Buffer.byteLength(tail, "utf8") + 1;
-    // The delivered count is every byte of the result except the marker itself:
-    // the retained first line, the output's own newline that follows it, and
-    // the tail. That newline is not formatting folded into the marker's line --
-    // it is the body's line separator, and the tail direction exists precisely
-    // so the body's line structure stays in view. Omitting it reported one byte
-    // fewer than the result actually carries.
-    const delivered = firstLineBytes + 1 + tailSegmentBytes;
+    const tailBytes = Buffer.byteLength(tail, "utf8");
+    // The delivered count is the body text the model can read back: the retained
+    // first line, the body's own newline that still separates it from the tail,
+    // and the tail. The newline that puts the marker on a line of its own is not
+    // a body byte — here it is the one that opens the tail, and with no tail
+    // retained there is no body byte after the first line at all. `composeHead`
+    // reports its head with no marker-line byte either; counting one only here
+    // made the same marker mean a different width per tool, and reported one
+    // byte more than the model can actually read.
+    const delivered = tail === "" ? firstLineBytes : firstLineBytes + 1 + tailBytes;
     const marker = render(delivered);
     return tail === "" ? `${firstLine}\n${marker}` : `${firstLine}\n${marker}\n${tail}`;
   }
