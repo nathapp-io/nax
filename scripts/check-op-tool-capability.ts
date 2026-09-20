@@ -56,13 +56,13 @@ export const REQUIRED_TOOLS_BY_ROLE: Record<string, readonly string[]> = {
   "finish-fix": ["Write", "Edit"],
   /**
    * The verifier runs the story's scoped tests AND writes one fresh output
-   * file — the same `fileOutput`-style contract as the four roles below. It
+   * file — the same `fileOutput`-style contract as the three roles below. It
    * was omitted from that group, so the prompt's mandatory verdict-file write
    * had no tool behind it and `recover`'s disk fallback was dead (nax#2013).
    */
   verifier: ["RunCommand", "Write"],
   /**
-   * These four roles never edit an existing file (no Edit requirement) — each
+   * These three roles never edit an existing file (no Edit requirement) — each
    * writes ONE fresh output file via a `fileOutput`-style contract ("write JSON
    * to this path, then reply with a brief confirmation") rather than replying
    * with the content inline. See docs/superpowers/specs/

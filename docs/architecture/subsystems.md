@@ -1306,7 +1306,7 @@ One descriptor wraps N adapter sessions across the lifetime of one story attempt
 
 | Op | Kind | Used by |
 |:---|:---|:---|
-| `planDraftOp` / `planRefineOp` / `planInteractiveOp` | run | Plan stage (`src/operations/plan*.ts`) |
+| `planRefineOp` / `planInteractiveOp` | run | Plan stage (`src/operations/plan*.ts`) |
 | `decomposeOp` | complete | Story decomposition |
 | `classifyRouteOp` | complete | Routing stage |
 | `acceptanceGenerateOp` / `acceptanceRefineOp` / `acceptanceDiagnoseOp` | varies | Acceptance subsystem |

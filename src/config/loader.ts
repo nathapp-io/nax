@@ -251,7 +251,7 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
   rejectRemovedPlanModes(rawConfig);
   // The block is enforced now, so validate it rather than reject it.
   validatePermissionsBlock(rawConfig);
-  // Strip the four inert no-op keys (warn-and-strip, not throw — see
+  // Strip the removed no-op keys (warn-and-strip, not throw — see
   // config-guards.ts for the divergence rationale). Runs AFTER the reject guards
   // and BEFORE safeParse, so the removed key is gone before the schema sees it.
   // Post-merge placement yields one warning per resolved config regardless of
@@ -506,7 +506,7 @@ export async function loadConfigForWorkdir(
   warnQualityCommandChains(shimmedPackageFields as Record<string, unknown>, warnDedupe.warn);
   let merged = mergePackageConfig(rootConfig, shimmedPackageFields);
 
-  // Strip the four inert no-op keys from the per-package overlay result.
+  // Strip the removed no-op keys from the per-package overlay result.
   // Runs for BOTH ordinary package overlays and package profiles (the profile
   // branch re-runs the strip on the profile-merged result, so this also covers
   // the case where a per-package overlay introduces a no-op key on a mergeable
@@ -566,7 +566,7 @@ export async function loadConfigForWorkdir(
   // CFG-1: same validation as the root chain — a per-package
   // `execution.permissions` block is now enforced, so validate it here too.
   validatePermissionsBlock(rawMerged);
-  // Strip the four inert no-op keys again post-profile-overlay (a package
+  // Strip the removed no-op keys again post-profile-overlay (a package
   // profile can reintroduce one). Runs after the reject guards and before
   // safeParse, mirroring the root chain. Post-merge placement yields one
   // warning per resolved config regardless of which layer supplied the key.
