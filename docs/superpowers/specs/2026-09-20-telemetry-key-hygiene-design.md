@@ -157,9 +157,20 @@ incremented at `:293`, and is in lexical scope at the tool dispatch
 > the same quantity. This spec uses `roundTrips` for the within-turn index and
 > `turnId` for turn identity, and does not reuse the name `turnIndex`.
 
-**Tier 3 — turn identity, and therefore price.** Populate
-`protocolIds.turnId` at `src/agents/manager-dispatch.ts:128`, copy it onto the
-cost row in `src/runtime/middleware/cost.ts`, and emit it on the tool record.
+**Tier 3 — turn identity, and therefore price.** Mint a `turnId` per turn,
+carry it onto the cost row, and emit it on the tool record.
+
+The mint site matters and is not the obvious one. `protocolIds.turnId` is
+consumed at `src/agents/manager-dispatch.ts:128`, but populating it *there*
+would be too late: `runAsSession` calls `sendPrompt` and only then builds the
+dispatch event, so an id created at event-build time comes into existence after
+the tool calls it is meant to label. The id is therefore minted in
+`runAsSession` **before** `sendPrompt`, passed down through `SendTurnOpts` so
+the turn loop can attach it to each tool call, and stamped onto the event
+afterwards. One value, three consumers.
+
+This also gives tier 2 its carrier: `roundTrips` rides the same per-call turn
+context, so the two tiers share one mechanism rather than inventing two.
 
 Tier 3 is the only tier that makes a tool call priceable, because of a
 granularity fact the source review did not reach: **a cost row is per turn, not
@@ -169,6 +180,14 @@ per model call.** One `runAsSession` emits exactly one `SessionTurnDispatchEvent
 it — `roundTrips` is returned as `internalRoundTrips` (`turn-loop.ts:517`) and
 stamped with `roundTripUnit: "model-call"`. Tiers 1 and 2 give attribution;
 only tier 3 selects the cost row that holds the money.
+
+**Transport scope.** Only `src/agents/native/session/turn-loop.ts` dispatches
+`"coding-tool"` interactions; ACP does not use that path. So tier 2, and the
+`turnId` on tool *records*, are native-only. The cost-row half of tier 3 is
+transport-agnostic — `buildSessionTurnEvent` serves both — so an ACP turn still
+gets a `turnId` on its cost row even though no tool record references it.
+`roundTrips` is native-only in any case: ACP rows carry
+`roundTripUnit: "agent-run"`, a different quantity.
 
 Also in scope, independent of the tiers:
 
