@@ -157,23 +157,26 @@ export const scratchpadReadTool: CodingTool = {
         ...(limit !== undefined ? { limit } : {}),
       });
       const fullBytes = Bun.file(target).size;
-      const paged = offset !== undefined || limit !== undefined;
       const { content, bounded, totalLines } = slice;
-      if (paged) {
-        // A range that selects nothing means the offset is past the last line;
-        // readTool answers that with the line count rather than an empty
-        // result, because "there is nothing here" is indistinguishable from
-        // "the file is empty" and the model can act on the number.
-        const message =
-          content === ""
-            ? `offset ${String(offset ?? 1)} is past the end of the file -- it has ${totalLines} lines`
-            : content;
-        return { content: message, resultBytesPreTruncation: fullBytes };
-      }
-      // Precedent from readTool: a leading line count, marked with `+` when the
-      // read stopped at the I/O ceiling and the count is therefore a floor
-      // rather than the file's true total.
+      // The header leads *every* read that returns file content, the paged one
+      // included: a model paging a spilled body is exactly the caller that needs
+      // the file's line count, since without it it cannot tell how many pages
+      // remain. Marked with `+` when the read stopped at the I/O ceiling and the
+      // count is therefore a floor rather than the file's true total
+      // (readTool's convention).
       const header = `[${bounded ? `${totalLines}+` : `${totalLines}`} lines]`;
+      if (offset !== undefined || limit !== undefined) {
+        // A range that selects nothing means the offset is past the last line.
+        // readTool answers that with the line count rather than an empty result,
+        // because "there is nothing here" is indistinguishable from "the file is
+        // empty" and the model can act on the number. No header: no content is
+        // returned, and the message names the count itself.
+        if (content === "") {
+          const pastEnd = `offset ${String(offset ?? 1)} is past the end of the file -- it has ${totalLines} lines`;
+          return { content: pastEnd, resultBytesPreTruncation: fullBytes };
+        }
+        return { content: `${header}\n${content}`, resultBytesPreTruncation: fullBytes };
+      }
       return { content: content === "" ? header : `${header}\n${content}`, resultBytesPreTruncation: fullBytes };
     } catch (err) {
       // A missing file is a tool ERROR the model can react to, never a
