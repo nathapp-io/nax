@@ -205,7 +205,16 @@ function composeTail(
     // One more byte for the newline that opens the tail.
     const tailBudget = forFirstLine - Buffer.byteLength(firstLine, "utf8") - 1;
     const tail = tailBudget < 0 ? "" : selectTail(lines, tailBudget);
-    const delivered = Buffer.byteLength(firstLine, "utf8") + (tail === "" ? 0 : Buffer.byteLength(tail, "utf8") + 1);
+    const firstLineBytes = Buffer.byteLength(firstLine, "utf8");
+    // The tail's own bytes, plus the newline that opens it.
+    const tailSegmentBytes = tail === "" ? 0 : Buffer.byteLength(tail, "utf8") + 1;
+    // The delivered count is every byte of the result except the marker itself:
+    // the retained first line, the output's own newline that follows it, and
+    // the tail. That newline is not formatting folded into the marker's line --
+    // it is the body's line separator, and the tail direction exists precisely
+    // so the body's line structure stays in view. Omitting it reported one byte
+    // fewer than the result actually carries.
+    const delivered = firstLineBytes + 1 + tailSegmentBytes;
     const marker = render(delivered);
     return tail === "" ? `${firstLine}\n${marker}` : `${firstLine}\n${marker}\n${tail}`;
   }
