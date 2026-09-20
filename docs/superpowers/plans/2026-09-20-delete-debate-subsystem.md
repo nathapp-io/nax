@@ -10,7 +10,22 @@
 
 **Spec:** None — this is a deletion authorised directly by the repo owner. This plan document is the specification. The investigation findings that justify each deletion are recorded under "Findings" below.
 
-**Branch / worktree:** `chore/delete-debate`, worktree at `.worktrees/delete-debate`, branched from `origin/main` @ `f4b3bbc7a`.
+**Branch topology:** Both PRs land on one integration branch, which is then merged to `main` as a single unit.
+
+```
+main
+ └── feat/delete-debate                      <- integration branch; holds this plan
+      ├── chore/delete-debate-source         <- PR 1, targets feat/delete-debate
+      └── chore/delete-debate-config-docs    <- PR 2, cut AFTER PR 1 merges, targets feat/delete-debate
+```
+
+`feat/delete-debate` already exists in the worktree at `.worktrees/delete-debate`, branched from `origin/main` @ `f4b3bbc7a`, carrying this plan document and nothing else.
+
+The two PRs are **sequential, not concurrent**: PR 2's tasks edit config guards, docs and baselines that only make sense once PR 1's deletions have landed, and cutting PR 2 before PR 1 merges would give it a diff full of PR 1's changes. Merge PR 1 into `feat/delete-debate` first, then cut PR 2 from the updated integration branch.
+
+One worktree is enough for the whole arc — the branches are worked one after another, so `git checkout -b` inside `.worktrees/delete-debate` is all that is needed. Do not create additional worktrees.
+
+**Final merge:** `feat/delete-debate` → `main` as one PR (Task 8), after both sub-PRs have merged and the full gate run is green on the integration branch itself — not merely on each sub-PR in isolation.
 
 ---
 
@@ -99,10 +114,15 @@ Do not skip this. It re-derives every precondition from the real tree rather tha
 
 ```bash
 cd .worktrees/delete-debate
-RTK_DISABLED=1 git branch --show-current   # expect: chore/delete-debate
-RTK_DISABLED=1 git log --oneline -1        # expect: this plan's commit on top of f4b3bbc7a or later origin/main
+RTK_DISABLED=1 git branch --show-current   # expect: feat/delete-debate
+RTK_DISABLED=1 git log --oneline origin/main..HEAD   # expect: only the plan-document commits
 bun install
 ```
+
+If the branch is anything other than `feat/delete-debate`, or if there are
+non-documentation commits ahead of `origin/main`, **stop and report** — the
+integration branch is meant to hold the plan and nothing else until PR 1 merges
+into it.
 
 - [ ] **Step 2: Confirm the baseline is green before changing anything**
 
@@ -149,7 +169,16 @@ RTK_DISABLED=1 git ls-files test | xargs wc -l | tail -1
 
 # PR 1 — Delete the debate subsystem and the pipeline plan mode
 
-Four commits. Each step's verification is cumulative; `bun run typecheck` is not expected to pass until Task 3 is complete.
+**Branch:** `chore/delete-debate-source`, cut from `feat/delete-debate`. **PR base: `feat/delete-debate`, not `main`.**
+
+Cut it before Task 1:
+
+```bash
+RTK_DISABLED=1 git checkout feat/delete-debate
+RTK_DISABLED=1 git checkout -b chore/delete-debate-source
+```
+
+Four commits. Each task's verification is cumulative; `bun run typecheck` is not expected to pass until Task 3 is complete, so do not treat a red typecheck in Tasks 1-2 as a failure.
 
 ### Task 1: Delete the source files
 
@@ -504,9 +533,72 @@ asserting createPlanStrategy now rejects the retired debate and pipeline
 modes."
 ```
 
+### Task 4b: Verify and open PR 1
+
+- [ ] **Step 1: Full gate run on the branch**
+
+```bash
+bun run typecheck
+bun run lint
+bun run check:all
+bun run test
+bun run test:e2e
+```
+
+All five must pass. `test:coverage` and the baselines are PR 2's job — if
+`check:file-sizes` or a coverage gate fails here purely because a deleted file
+is still named in a baseline, note it and let PR 2 fix it rather than editing
+baselines in this PR.
+
+- [ ] **Step 2: Code review before push**
+
+Run the repo's post-implementation review over the full branch diff. Do not take
+a subagent's "all green" at face value — re-run the gates yourself.
+
+- [ ] **Step 3: Get approval, then push and open PR 1**
+
+Do not push without explicit approval at that moment. When approved:
+
+```bash
+RTK_DISABLED=1 git push -u origin chore/delete-debate-source
+RTK_DISABLED=1 gh pr create \
+  --base feat/delete-debate \
+  --head chore/delete-debate-source \
+  --title "refactor: delete the debate subsystem and the pipeline plan mode"
+```
+
+**Check the base.** `gh pr create` defaults to the repo's default branch; if
+`--base feat/delete-debate` is dropped this opens against `main` and the stack
+is broken. Verify after creating:
+
+```bash
+RTK_DISABLED=1 gh pr view --json baseRefName,headRefName
+```
+
+The PR body should carry: the reachability table from Findings, the note that
+the two clusters do not compile apart (so one PR rather than two), Decision 5
+(grounded planning is retired deliberately — reviving it is a rebuild, not a
+revert), and the `src/prd/schema-story.ts` resolution (comment-only, code stays).
+
+- [ ] **Step 4: Merge PR 1 into `feat/delete-debate`**
+
+Merge only after review. PR 2 cannot start until this lands.
+
 ---
 
 # PR 2 — Config guards, docs, rules, baselines
+
+**Branch:** `chore/delete-debate-config-docs`, cut from `feat/delete-debate` **after PR 1 has merged into it**. **PR base: `feat/delete-debate`, not `main`.**
+
+```bash
+RTK_DISABLED=1 git checkout feat/delete-debate
+RTK_DISABLED=1 git pull --ff-only          # pick up PR 1's merge
+RTK_DISABLED=1 git log --oneline -1        # confirm PR 1 is in
+RTK_DISABLED=1 git checkout -b chore/delete-debate-config-docs
+bun install
+```
+
+If `src/debate/` still exists on `feat/delete-debate` at this point, PR 1 has not merged — **stop**. Cutting PR 2 now would put PR 1's entire diff inside it.
 
 ### Task 5: Reject the retired plan modes, warn-and-strip the inert keys
 
@@ -835,7 +927,9 @@ Expected: zero hits.
 
 - [ ] **Step 6: Smoke-test the surviving plan modes**
 
-The gates above prove the tree compiles and the suite is green. They do not prove `nax plan` still runs. Before the PR, run a real plan in each surviving mode against a throwaway feature and a small spec, in a scratch copy — **not** in this worktree, since a run auto-commits onto the current branch.
+The gates above prove the tree compiles and the suite is green. They do not prove `nax plan` still runs. Run a real plan in each surviving mode (`single` and `refine`) against a throwaway feature and a small spec, in a scratch copy — **not** in this worktree, since a run auto-commits onto the current branch.
+
+**This may be deferred to Task 8 Step 3 instead**, against the fully merged integration branch, where it is more meaningful. Run it once, in one place or the other — it is a billed LLM call, not a free gate.
 
 This is a billed LLM run. **Get explicit approval at that moment**, and confirm the produced `prd.json` parses rather than trusting the exit code — `nax plan` exits 0 on fatal errors.
 
@@ -854,11 +948,85 @@ RTK_DISABLED=1 git commit -m "chore: ratchet baselines after the debate and pipe
 
 - [ ] **Step 9: Code review before any push**
 
-Run the repo's post-implementation review over the full branch diff **before** pushing or opening a PR, not after. Do not take a subagent's "all green" at face value — re-run the gates yourself.
+Run the repo's post-implementation review over this branch's diff **before** pushing or opening a PR, not after. Do not take a subagent's "all green" at face value — re-run the gates yourself.
 
-- [ ] **Step 10: Stop and get approval**
+- [ ] **Step 10: Get approval, then push and open PR 2**
 
-Do **not** push or open a PR without explicit approval at that moment.
+Do not push without explicit approval at that moment. When approved:
+
+```bash
+RTK_DISABLED=1 git push -u origin chore/delete-debate-config-docs
+RTK_DISABLED=1 gh pr create \
+  --base feat/delete-debate \
+  --head chore/delete-debate-config-docs \
+  --title "chore: retire the debate and pipeline config keys, docs and baselines"
+RTK_DISABLED=1 gh pr view --json baseRefName,headRefName
+```
+
+Same trap as PR 1: confirm `baseRefName` is `feat/delete-debate`, not `main`.
+
+The PR body should carry the two-mechanism rationale from the Resolved decisions
+section — why the inert keys warn-and-strip while `plan.mode` throws — and the
+baseline-diff audit result from Step 3.
+
+- [ ] **Step 11: Merge PR 2 into `feat/delete-debate`**
+
+---
+
+### Task 8: Merge the integration branch to `main`
+
+Only after both sub-PRs have merged into `feat/delete-debate`.
+
+- [ ] **Step 1: Refresh the integration branch and re-run every gate on it**
+
+The sub-PRs were each green in isolation, and PR 1 was knowingly allowed to
+leave stale baseline entries for PR 2 to fix. Neither proves the merged result
+is green. Re-run the full set on the integration branch itself:
+
+```bash
+RTK_DISABLED=1 git checkout feat/delete-debate
+RTK_DISABLED=1 git pull --ff-only
+RTK_DISABLED=1 git fetch origin main
+RTK_DISABLED=1 git merge --ff-only origin/main 2>/dev/null || echo "main has moved — rebase or merge, then re-run the gates"
+bun install
+bun run typecheck && bun run lint && bun run check:all && bun run test && bun run test:e2e && bun run test:coverage
+```
+
+All must pass. If `main` moved while the stack was in flight, reconcile first and
+re-run — do not open the final PR on a stale base.
+
+- [ ] **Step 2: Final sweep on the merged result**
+
+```bash
+grep -rin 'debate' src test scripts bin --include='*.ts' --include='*.json'
+RTK_DISABLED=1 git diff --stat origin/main...HEAD | tail -1
+```
+
+Expected: zero grep hits. Record the diffstat for the PR body.
+
+- [ ] **Step 3: Smoke-test the surviving plan modes**
+
+Carry out Task 7 Step 6 here if it has not already been done — it is the only
+check that proves `nax plan` still runs, and it is most meaningful against the
+fully merged tree. Billed LLM run: **get explicit approval at that moment**, run
+from a scratch copy rather than this worktree (a run auto-commits onto the
+current branch), and confirm the produced `prd.json` parses rather than trusting
+the exit code — `nax plan` exits 0 on fatal errors.
+
+- [ ] **Step 4: Get approval, then open the PR to `main`**
+
+```bash
+RTK_DISABLED=1 git push -u origin feat/delete-debate
+RTK_DISABLED=1 gh pr create \
+  --base main \
+  --head feat/delete-debate \
+  --title "refactor: remove the debate subsystem and the pipeline plan mode"
+```
+
+This is the reviewable unit for the whole change. Its body should consolidate:
+the reachability table, the scale of the cut, all five Decisions, the three
+Resolved decisions, what survives and why (`PlanPromptBuilder` trim, the
+hardening pass), and the smoke-test result from Step 3.
 
 ---
 
