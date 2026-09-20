@@ -2,11 +2,16 @@
  * US-004 — wipe the scratchpad at run start.
  *
  * The scratchpad tools (src/tools/scratchpad.ts) advertise throwaway storage:
- * "It is never committed and is wiped at the start of each run." The wipe
- * itself is observable only through the production caller, `setupRun`, so every
- * test below drives the real setup flow against a temp workdir — stubbing just
- * the run-container dependencies that would otherwise reach an agent or the
- * developer's machine.
+ * "It is never committed and is wiped when a run finishes (a failed run's
+ * scratchpad is retained for inspection until the next run starts and clears
+ * it)." This start wipe is the half of that contract that survives a run
+ * dying before its end-of-run wipe — see the AC6 case below, and
+ * run-cleanup.test.ts for the end-of-run half.
+ *
+ * The wipe itself is observable only through the production caller, `setupRun`,
+ * so every test below drives the real setup flow against a temp workdir —
+ * stubbing just the run-container dependencies that would otherwise reach an
+ * agent or the developer's machine.
  *
  * The removal primitive (`_scratchpadWipeDeps.remove`) is left real on the
  * success paths and injected only for the failure path, so the record asserted
@@ -121,6 +126,23 @@ describe("setupRun — US-004: run-start scratchpad wipe", () => {
     const result = await setupRun(options);
 
     expect(result.runtime).toBeDefined();
+  });
+
+  test("AC6: a failed run's retained scratchpad is removed by the next run's start wipe", async () => {
+    const { workdir, options } = await makeRun("nax-test-scratchpad-retained-");
+    // A failed run never reaches its end-of-run wipe, so its files are still on
+    // disk when the next run starts. The start wipe does not consult the prior
+    // run's outcome — that is the whole reason it is kept alongside the end
+    // wipe: a SIGKILL, hard crash or power loss never reaches the `finally`
+    // block in cleanupRun at all.
+    const retained = join(workdir, SCRATCHPAD_DIR, "diagnosis.md");
+    await Bun.write(retained, "notes from the run that failed");
+    expect(existsSync(retained)).toBe(true);
+
+    const result = await setupRun(options);
+
+    expect(result.runtime).toBeDefined();
+    expect(existsSync(join(workdir, SCRATCHPAD_DIR))).toBe(false);
   });
 
   test("a dry run leaves the scratchpad alone — a preview is not a mutation", async () => {

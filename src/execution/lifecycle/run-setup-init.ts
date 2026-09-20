@@ -108,11 +108,12 @@ export async function initializeAfterLock(options: InitializeAfterLockOptions): 
     }
 
     // ── Scratchpad wipe (US-004) ────────────────────────────────────────────
-    // The scratchpad tools (US-002) advertise throwaway storage wiped at the
-    // start of each run, so anything an agent parked last run is cleared
-    // before this one writes. Behind the same lock as the sweep above: the
-    // wipe is destructive run state, and a second nax process that loses the
-    // lock race must not clear the running run's scratchpad on its way out.
+    // The scratchpad tools advertise throwaway storage cleared when a run
+    // finishes, so anything an agent parked in a run that died before that
+    // wipe is cleared here before this run writes. Behind the same lock as the
+    // sweep above: the wipe is destructive run state, and a second nax process
+    // that loses the lock race must not clear the running run's scratchpad on
+    // its way out.
     // Unlike the sweep it is also gated on dryRun, for the same reason the
     // sweep is: a preview must not mutate the tree. Absence and failure are
     // tolerated inside wipeScratchpad() — a busy handle or a permission error

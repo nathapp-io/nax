@@ -574,3 +574,34 @@ describe("AC15: a third-party registerCodingTool using a scratchpad name throws 
     expect(RESERVED_TOOL_NAMES as readonly string[]).toContain("ScratchpadList");
   });
 });
+
+// ============================================================================
+// US-004 — ScratchpadWrite's description matches the actual lifetime contract.
+//
+// The description is what an agent reads at advertise time to decide whether
+// a file is durable. The old text said "wiped at the start of each run" —
+// that was true at one point but never told the whole story. The end-of-run
+// wipe (US-004) is the load-bearing guarantee: a successful run's scratchpad
+// is gone before the next one starts. The description has to say so
+// directly, otherwise an agent writing a "park this for later" note ends up
+// parked into nothing. The previous "start of each run" wording was a half
+// truth that the section now no longer tells.
+// ============================================================================
+
+describe("US-004 — ScratchpadWrite.description lifetime contract", () => {
+  test("AC8: states the scratchpad is wiped when a run finishes (not only at the start of each run)", () => {
+    const lower = scratchpadWriteTool.description.toLowerCase();
+    expect(lower).toContain("wiped when a run finishes");
+    // The old wording is no longer accurate — the contract is end-of-run, not
+    // start-of-run. A future regression that reverts to "wiped at the start
+    // of each run" without a paired end-of-run wipe will fail this assertion.
+    expect(lower).not.toContain("wiped at the start of each run");
+  });
+
+  test("AC8: still states the scratchpad is never committed", () => {
+    // A wipe is not a substitute for non-commitment — both contracts hold,
+    // and both belong in the description. Losing the "never committed" half
+    // would mislead agents that conflate wiped with disposable.
+    expect(scratchpadWriteTool.description.toLowerCase()).toContain("never committed");
+  });
+});

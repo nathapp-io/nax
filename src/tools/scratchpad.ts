@@ -75,7 +75,7 @@ function truncate(body: string, maxBytes: number): string {
 export const scratchpadWriteTool: CodingTool = {
   name: "ScratchpadWrite",
   description:
-    "Write a throwaway file to your scratchpad at .nax/scratchpad/. Use it for notes to yourself, command output you want to re-read, or intermediate lists. It is never committed and is wiped at the start of each run. Paths are relative to the scratchpad and cannot reach the repository.",
+    "Write a throwaway file to your scratchpad at .nax/scratchpad/. Use it for notes to yourself, command output you want to re-read, or intermediate lists. It is never committed and is wiped when a run finishes (a failed run's scratchpad is retained for inspection until the next run starts and clears it). Paths are relative to the scratchpad and cannot reach the repository.",
   inputSchema: {
     type: "object",
     properties: {

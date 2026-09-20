@@ -31,6 +31,10 @@ import { errorMessage } from "@/utils/errors";
 import { clearGitRootCache } from "@/verification";
 import { resetRuntimeCrashRetryCounts } from "../escalation";
 import { releaseLock } from "../helpers";
+// Sibling import: the wipe is a local lifecycle module, and routing it through
+// the lifecycle barrel would point this module at its own barrel to reach the
+// file next door.
+import { wipeScratchpad } from "./scratchpad-wipe";
 
 type PostRunActionOutcome =
   | { status: "succeeded"; message: string; url?: string }
@@ -46,6 +50,9 @@ export const _runCleanupDeps = {
   clearGitRootCache,
   resetCanonicalRulesCache: _resetCanonicalRulesCache,
   clearPackageConfigCache: () => packageConfigCache.clear(),
+  // US-004 — end-of-run scratchpad wipe. Injected so the test can stub a
+  // fail-open path without monkey-patching Bun.file / fs.rm.
+  wipeScratchpad,
 };
 
 export interface RunCleanupOptions {
@@ -69,6 +76,13 @@ export interface RunCleanupOptions {
    * run:completed was never emitted.
    */
   runCompleted?: boolean;
+  /**
+   * US-004 — dry-run flag forwarded from runner.ts. Gated on together with
+   * `runCompleted` to decide whether the end-of-run scratchpad wipe fires:
+   * a successful dry run never wrote to the scratchpad (no story dispatched)
+   * and a preview is not a mutation, so the wipe is skipped.
+   */
+  dryRun: boolean;
   /** Project output directory (for curator and other plugins) */
   outputDir?: string;
   /** Global output directory (for curator and other plugins) */
@@ -292,6 +306,27 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
   // consumer (embedded TUI, watch mode) would keep serving the first run's
   // .nax/rules/ content to every subsequent run in the same process.
   _runCleanupDeps.resetCanonicalRulesCache();
+
+  // US-004 — end-of-run scratchpad wipe. The run-start wipe (run-setup-init.ts)
+  // remains the backstop that guarantees a clean slate however the previous run
+  // died (SIGKILL, hard crash, power loss). This wipe is the load-bearing
+  // promise the agents advertise: "nothing there survives the run". Gated on
+  // `runCompleted && !dryRun` because a failed run's scratchpad is retained
+  // for inspection (bounded by the next run's start wipe) and a dry run never
+  // wrote anything to the scratchpad in the first place. Fail-open by design:
+  // a wipe that rejects is logged at warn, and run success is unaffected —
+  // `cleanupRun` is the finally block, and the run has already committed to
+  // its success/failure verdict before this line is reached.
+  if (options.runCompleted && !options.dryRun) {
+    try {
+      await _runCleanupDeps.wipeScratchpad(workdir);
+    } catch (err) {
+      logger?.warn("cleanup", "End-of-run scratchpad wipe failed — continuing", {
+        workdir,
+        error: errorMessage(err),
+      });
+    }
+  }
 
   // Always release lock, even if execution fails
   await releaseLock(workdir);

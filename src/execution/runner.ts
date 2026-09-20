@@ -407,6 +407,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
         version: NAX_VERSION,
         hooks,
         runCompleted,
+        // US-004 — gated together with `runCompleted` to decide whether the
+        // end-of-run scratchpad wipe fires. A dry run never wrote anything
+        // to the scratchpad, so there is nothing to wipe.
+        dryRun,
         outputDir: runtime.outputDir,
         globalDir: runtime.globalDir,
         projectKey: runtime.projectKey,

@@ -242,7 +242,12 @@ describe("US-005: TddPromptBuilder composes the scratchpad section", () => {
 
     expect(prompt).toContain(".nax/scratchpad/");
     const lower = prompt.toLowerCase();
-    expect(lower).toContain("wiped at the start of each run");
+    // US-004 — the end-of-run wipe contract replaces "wiped at the start of
+    // each run". The section is composed from `buildScratchpadSection`, which
+    // the implementer prompt inherits verbatim — see
+    // test/unit/prompts/sections/scratchpad.test.ts for the section-level
+    // assertions on the new wording.
+    expect(lower).toContain("wiped when a run finishes");
     expect(lower).toContain("never committed");
   });
 });

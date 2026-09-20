@@ -2,9 +2,13 @@
  * Run-start scratchpad wipe (US-004).
  *
  * The scratchpad tools (src/tools/scratchpad.ts) promise throwaway storage:
- * "It is never committed and is wiped at the start of each run." This is the
- * wipe — a note, a list of files to revisit, or a chunk of command output an
- * agent parks in one run must not outlive it.
+ * "It is never committed and is wiped when a run finishes (a failed run's
+ * scratchpad is retained for inspection until the next run starts and clears
+ * it)." This is the start half of that contract — the backstop that clears the
+ * scratchpad however the previous run died, including the SIGKILL / hard crash
+ * / power loss cases that never reach the end-of-run wipe in `cleanupRun`
+ * (a `finally` block). A note, a list of files to revisit, or a chunk of
+ * command output an agent parks in one run must not outlive it.
  *
  * A dry run is a preview, not a mutation, so it is skipped outright — the same
  * contract the sibling retention sweep honours (transcript-sweep.ts), and the
