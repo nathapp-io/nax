@@ -340,11 +340,22 @@ describe("renderProposals — heuristic-window provenance (US-003)", () => {
   test("AC7: 3-arg form keeps working — header states one run and a window observation count equal to the run's own count", () => {
     // The single-run dryrun default: omitting provenance must default to a
     // window of { runCount: 1, observationCount }, which makes the header
-    // match the run's own observation count (no "5 here, 6 there" drift).
+    // carry the run's own observation count both as the window observation
+    // count and as the run observation count. Both must surface — a header
+    // that reads "0 window observations · 100 run observations" would NOT
+    // satisfy the AC's invariant that the window count equals the run's own.
     const markdown = renderProposals([provenanceBaseProposal], "run-x", 100);
 
     expect(markdown).toMatch(/1\s+run/);
-    expect(markdown).toContain("100");
+    // Match the window observation count token directly — a header that
+    // lists the window count as 0 but the run count as 100 would pass a
+    // naive `toContain("100")` check, but does not satisfy AC7. Capturing
+    // the value rather than counting occurrences is robust against
+    // unrelated "100" substrings.
+    const windowMatch = markdown.match(/(\d+)\s+window observation/);
+    expect(windowMatch?.[1]).toBe("100");
+    const runMatch = markdown.match(/(\d+)\s+run observation/);
+    expect(runMatch?.[1]).toBe("100");
   });
 
   test("AC7 (boundary): 3-arg form with zero observations still says one run and zero window observations", () => {

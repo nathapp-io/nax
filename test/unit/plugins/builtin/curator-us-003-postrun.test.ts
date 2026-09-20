@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import { makeNaxConfig, withTempDir } from "@test/helpers";
 import type { CuratorPostRunContext, Observation } from "@/plugins/builtin/curator";
@@ -135,11 +136,34 @@ describe("curator post-run action — heuristic-window provenance wiring (US-003
       const rollupPath = path.join(globalDir, "rollup.jsonl");
       const runId = "current-run";
 
-      // Empty rollup. The fallback provenance must say "one run" — NOT
-      // "zero runs" — because the heuristic window is "this run's own
-      // observations" by definition. The current run's own observation count
-      // is whatever `collectObservations` returned; with no artifacts the
-      // collector returns [], so the window observation count is 0.
+      // Seed outputDir with metrics.json whose stories will produce a known
+      // number of observations. The test is non-tautological only when the
+      // current run has a NON-ZERO observation count: with all zeros, a broken
+      // implementation that always reports "0 window observations" still
+      // passes — exactly the bug the AC exists to catch.
+      //
+      // Seven stories → seven verdict observations on the collector path. We
+      // capture the value of the window observation token directly rather
+      // than just checking that "7" occurs somewhere, so the test fails if
+      // the implementation ever lists the window count as 0 while the run
+      // count is 7 — exactly AC8's bug.
+      await mkdir(outputDir, { recursive: true });
+      await writeFile(
+        path.join(outputDir, "metrics.json"),
+        JSON.stringify([
+          {
+            runId,
+            feature: "feat-test",
+            stories: Array.from({ length: 7 }, (_, i) => ({
+              storyId: `US-${String(i + 1).padStart(3, "0")}`,
+              success: true,
+              attempts: 1,
+              cost: 0,
+            })),
+          },
+        ]),
+      );
+
       const ctx = makePostRunContext({
         outputDir,
         globalDir,
@@ -152,11 +176,22 @@ describe("curator post-run action — heuristic-window provenance wiring (US-003
       await postRunAction?.execute(ctx);
 
       const md = await Bun.file(path.join(outputDir, "runs", runId, "curator-proposals.md")).text();
-      // Empty rollup AND empty current-run observations → window count is this
-      // run (fallback provenance), so the header must say "1 run(s)". The
-      // window observation count matches the run's own count (both 0 here).
+      // Empty rollup, this run has 7 observations → fallback provenance is
+      // { runCount: 1, observationCount: 7 } and the run's own observation
+      // count is also 7. The header must carry 7 both as the window
+      // observation count and as the run observation count. A header that
+      // reports "1 run(s) · 0 window observation(s) · 7 run observation(s)"
+      // would NOT satisfy AC8 — the window count must equal the run's own.
       expect(md).toMatch(/1\s+run/);
-      expect(md).toContain("0");
+      // Match the window observation count token directly — a header that
+      // lists the window count as 0 but the run count as 7 would pass a
+      // naive `toContain("7")` check, but does not satisfy AC8. Capturing
+      // the value rather than counting occurrences is robust against
+      // unrelated "7" substrings in the rendered markdown.
+      const windowMatch = md.match(/(\d+)\s+window observation/);
+      expect(windowMatch?.[1]).toBe("7");
+      const runMatch = md.match(/(\d+)\s+run observation/);
+      expect(runMatch?.[1]).toBe("7");
     });
   });
 });
