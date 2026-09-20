@@ -167,17 +167,21 @@ export const scratchpadReadTool: CodingTool = {
       // file's true total.
       const header = `[${bounded ? `${totalLines}+` : `${totalLines}`} lines]`;
       if (offset !== undefined || limit !== undefined) {
-        // The header is not a file line, so it does not contradict the range
-        // the caller asked for: lines 3-4 are still exactly what follows it.
-        // A range that selects nothing means the offset is past the last line.
-        // readTool answers that with the line count rather than an empty
-        // result, because "there is nothing here" is indistinguishable from
-        // "the file is empty" and the model can act on the number — and there
-        // the count IS the message, so no header leads it.
-        if (content === "") {
-          const pastEnd = `offset ${String(offset ?? 1)} is past the end of the file -- it has ${totalLines} lines`;
+        // An offset past the last line is answered with the line count rather
+        // than an empty result, because "there is nothing here" is
+        // indistinguishable from "the file is empty" and the model can act on
+        // the number -- and there the count IS the message, so no header leads
+        // it. The condition is the OFFSET against the file, never the emptiness
+        // of the slice: a range that selects only blank lines is a perfectly
+        // valid page, and reporting it as past-the-end would hide content the
+        // caller asked for and that the file really holds.
+        if (offset !== undefined && offset > totalLines) {
+          const pastEnd = `offset ${String(offset)} is past the end of the file -- it has ${totalLines} lines`;
           return { content: pastEnd, resultBytesPreTruncation: fullBytes };
         }
+        // The header goes on its own line and the requested range follows it,
+        // verbatim -- possibly empty, when the page holds blank lines.
+        // readTool's ranged read composes it the same way.
         return { content: `${header}\n${content}`, resultBytesPreTruncation: fullBytes };
       }
       return { content: content === "" ? header : `${header}\n${content}`, resultBytesPreTruncation: fullBytes };
