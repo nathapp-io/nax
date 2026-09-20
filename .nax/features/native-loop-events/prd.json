@@ -3,18 +3,23 @@
   "feature": "native-loop-events",
   "branchName": "feat/native-loop-events",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-20T02:49:22.899Z",
+  "updatedAt": "2026-09-20T03:56:37.776Z",
   "userStories": [
     {
       "id": "US-001",
       "title": "Add shared truncation and ranged file-read core",
-      "description": "**Goal** — Establish the single byte-safe model truncation policy, direction mapping, read ceiling, and reusable ranged file-read core.\n\n**Motivation** — Tool output reaches the model through a byte ceiling and nothing else. There is no line cap, no per-line cap, and no way for the agent to recover what was cut.\n\n**Approach** — Truncation is applied through `after_tool` rather than inside each tool, but the tools keep a bound on their own I/O. A two-tier split is required: if the model-facing cap left the tools entirely they would have to return unbounded content, trading a token problem for a memory one.\n\n- **I/O ceiling (tool layer, a safety bound):** tools bound their reads to `READ_CEILING`.\n- **Model-facing policy (`after_tool`, one implementation):** `MODEL_MAX_BYTES`, `MODEL_MAX_LINES`, `MODEL_MAX_LINE_CHARS`.\n\n**Scope** — In: create the codepoint-safe truncator and shared ranged read core; add optional readCeiling; preserve `maxFileBytes` as the whole-file Edit/Write bound. Out: event registration (US-002), session/spill/paging integration (US-003), and deletion of legacy helpers (US-005).\n\n**Interface** — Target: the same `ToolRunContext` shape, plus an **optional** `readCeiling?: number` — the tool's I/O bound, resolving to `READ_CEILING` when absent. Optional is load-bearing, not a style choice: 21 test files construct a `ToolRunContext` literal. `maxBytes` is retained and keeps its value, but is no longer consumed by any tool for truncation; the session's `after_tool` policy owns the model-facing ceiling. `maxFileBytes` is unchanged and remains the whole-file bound for `Edit`/`Write`.\n\n**Patterns to follow:** `src/tools/scratchpad.ts:36-45` is the only correct codepoint-boundary slice in the codebase and is the base for the shared truncator. `src/tools/read.ts:78-137` is the precedent for `offset`/`limit` line semantics and the `[N lines]` header.",
+      "description": "**Goal** \u2014 Establish the single byte-safe model truncation policy, direction mapping, read ceiling, and reusable ranged file-read core.\n\n**Motivation** \u2014 Tool output reaches the model through a byte ceiling and nothing else. There is no line cap, no per-line cap, and no way for the agent to recover what was cut.\n\n**Approach** \u2014 Truncation is applied through `after_tool` rather than inside each tool, but the tools keep a bound on their own I/O. A two-tier split is required: if the model-facing cap left the tools entirely they would have to return unbounded content, trading a token problem for a memory one.\n\n- **I/O ceiling (tool layer, a safety bound):** tools bound their reads to `READ_CEILING`.\n- **Model-facing policy (`after_tool`, one implementation):** `MODEL_MAX_BYTES`, `MODEL_MAX_LINES`, `MODEL_MAX_LINE_CHARS`.\n\n**Constants** \u2014 `READ_CEILING` 2_000_000 bytes; `MODEL_MAX_BYTES` 40_000 bytes; `MODEL_MAX_LINES` 1_000 lines; `MODEL_MAX_LINE_CHARS` 2_000 code units. The three model-facing caps must stay independently reachable: `MODEL_MAX_LINES * (MODEL_MAX_LINE_CHARS + 1)` must exceed `MODEL_MAX_BYTES`, so a body can sit at the byte ceiling while still satisfying the line caps. At these values the product is 2_001_000 against a 40_000-byte ceiling.\n\n**Precedence** \u2014 the three caps are independent triggers that compose as an ORDERED PIPELINE, never as alternatives. Being over one cap never buys a pass on another. (1) Per-line cap: shorten every line longer than `MODEL_MAX_LINE_CHARS`. (2) Line-count cap: if still over `MODEL_MAX_LINES` lines, the direction selects which lines to keep, chosen over the whole body rather than over a byte window of it. (3) Byte cap LAST: if the result still exceeds `MODEL_MAX_BYTES`, cut on a codepoint boundary. Running it last is what makes the byte ceiling unconditional \u2014 nothing is appended or prepended after the cut. Under `tail-with-first-line` the first line is retained INSIDE that budget, not in addition to it; if it alone does not fit it is itself cut. `truncated` is true when any stage changed the content; `originalBytes` always reports the input's full UTF-8 byte length.\n\n**Line counting** \u2014 a trailing newline TERMINATES the last line rather than opening an empty one, and an empty body has no lines, matching `readFileSlice`'s `totalLines` and `readTool`'s `[N lines]` header. `\"a\\nb\\n\"` is two lines, not three. A raw `split(\"\\n\")` breaks this in two places.\n\n**Scope** \u2014 In: create the codepoint-safe truncator and shared ranged read core; add optional readCeiling; preserve `maxFileBytes` as the whole-file Edit/Write bound. Out: event registration (US-002), session/spill/paging integration (US-003), and deletion of legacy helpers (US-005).\n\n**Interface** \u2014 Target: the same `ToolRunContext` shape, plus an **optional** `readCeiling?: number` \u2014 the tool's I/O bound, resolving to `READ_CEILING` when absent. Optional is load-bearing, not a style choice: 21 test files construct a `ToolRunContext` literal. `maxBytes` is retained and keeps its value, but is no longer consumed by any tool for truncation; the session's `after_tool` policy owns the model-facing ceiling. `maxFileBytes` is unchanged and remains the whole-file bound for `Edit`/`Write`.\n\n**Patterns to follow:** `src/tools/scratchpad.ts:36-45` is the only correct codepoint-boundary slice in the codebase and is the base for the shared truncator. `src/tools/read.ts:78-137` is the precedent for `offset`/`limit` line semantics and the `[N lines]` header.",
       "acceptanceCriteria": [
         "When `truncateForModel` receives a body within `MODEL_MAX_BYTES`, `MODEL_MAX_LINES` and `MODEL_MAX_LINE_CHARS`, then it returns the body unchanged and `truncated` false.",
         "When `truncateForModel` receives a body exceeding `MODEL_MAX_BYTES`, then it returns `truncated` true and content whose UTF-8 byte length is at most `MODEL_MAX_BYTES`.",
         "When a `truncateForModel` cut lands inside a multi-byte codepoint, then returned content has UTF-8 byte length at most `MODEL_MAX_BYTES` rather than exceeding it by emitting a replacement character.",
-        "When a body has more than `MODEL_MAX_LINES` lines while within the byte ceiling, then `truncateForModel` returns at most `MODEL_MAX_LINES` lines.",
-        "When a body contains a line longer than `MODEL_MAX_LINE_CHARS`, then `truncateForModel` shortens that returned line to that length.",
+        "When a body has more than `MODEL_MAX_LINES` lines while within the byte and per-line ceilings, then `truncateForModel` returns at most `MODEL_MAX_LINES` lines.",
+        "When a body contains a line longer than `MODEL_MAX_LINE_CHARS` while within the byte and line-count ceilings, then `truncateForModel` shortens that returned line to that length.",
+        "When a body is within `MODEL_MAX_BYTES` but has both more than `MODEL_MAX_LINES` lines and a line longer than `MODEL_MAX_LINE_CHARS`, then `truncateForModel` applies both caps: the returned content has at most `MODEL_MAX_LINES` lines and no line longer than `MODEL_MAX_LINE_CHARS`.",
+        "When a body both exceeds `MODEL_MAX_BYTES` and carries a line longer than `MODEL_MAX_LINE_CHARS`, then `truncateForModel` returns content with no line longer than `MODEL_MAX_LINE_CHARS` and UTF-8 byte length at most `MODEL_MAX_BYTES`.",
+        "When `truncateForModel` uses `tail-with-first-line` on a body exceeding `MODEL_MAX_BYTES`, then returned content has UTF-8 byte length at most `MODEL_MAX_BYTES` and its first line is the body's first line, the retained first line counting against the byte budget rather than being added on top of it.",
+        "When `truncateForModel` receives a body ending in a trailing newline that is within every cap counting that newline as terminating its last line, then it returns the body unchanged and `truncated` false.",
+        "When `truncateForModel` uses `tail-with-first-line` on a body that ends in a trailing newline and exceeds `MODEL_MAX_LINES`, then the last retained line is the body's last non-empty line.",
         "When `truncateForModel` uses `head`, then it returns the body's first lines and omits its last line.",
         "When `truncateForModel` uses `tail-with-first-line`, then it returns the first line followed by last lines and omits middle lines.",
         "When `truncateForModel` is called on a truncated or untruncated body, then `originalBytes` equals the body's full UTF-8 byte length.",
@@ -24,7 +29,8 @@
         "When a file is larger than supplied `readCeiling`, then `readFileSlice` returns `bounded` true.",
         "When `readFileSlice` receives `offset` 3 and `limit` 2, then it returns the third and fourth lines.",
         "When a file is within `readCeiling`, then `readFileSlice` returns `totalLines` equal to its line count.",
-        "When `readFileSlice` receives an offset greater than the file line count, then it returns empty content and that count as `totalLines`."
+        "When `readFileSlice` receives an offset greater than the file line count, then it returns empty content and that line count as `totalLines`.",
+        "When `readFileSlice` receives an `offset` of 0 or a `limit` of 0, then it rejects the request rather than returning the file's last line."
       ],
       "tags": [
         "feature",
@@ -39,7 +45,11 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Two shared primitives change UTF-8, line-slicing, and bounded-I/O contracts used by several tools."
+        "reasoning": "Two shared primitives change UTF-8, line-slicing, and bounded-I/O contracts used by several tools.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced",
+        "agent": "native"
       },
       "contextFiles": [
         "src/tools/scratchpad.ts",
@@ -58,12 +68,16 @@
           "reason": "asserts each tool bounds its work at `ctx.maxBytes`. US-001 introduces `READ_CEILING` as the tool-layer bound, so the ceiling these assertions name is no longer the one tools read. Replacing invariant: tools bound work at `ctx.readCeiling`, and `maxFileBytes` still bounds whole-file reads."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "08e020829014620c2e3656cfb6e057f299d8de0b"
     },
     {
       "id": "US-002",
       "title": "Introduce native loop event seam and result chokepoint",
-      "description": "**Goal** — Add typed in-process `before_tool` and `after_tool` registrations and route every native tool-result message through one builder.\n\n**Motivation** — The result is appended at seven separate sites in `turn-loop.ts`, so there is no single point at which a policy could be applied even if one existed.\n\n**Approach** — The seam is built as **typed in-process function registrations**, not as an extension of `src/hooks/`, and not as a general eleven-event map. Two events are built because two have real consumers today: the spin breaker and invalid-call repair for `before_tool`, and the truncation policy for `after_tool`.\n\nThe dispatcher enforces four rules: **Results are partial patches, never mutations.** A handler returns only what it wants changed and the dispatcher merges. No handler receives the message array. **Handlers chain**, each seeing the previous handler's output, in registration order. **A throwing handler is logged at warn and skipped**, never failing the turn. **No handler may rewrite history.** `after_tool` is safe by construction because it shapes a result before it enters the array.\n\n`before_tool` outcomes are `allow` (optionally rewriting the tool's input), `nudge` (prefixing the eventual result), `block` (answering without invoking the tool), and `terminate` (answering every outstanding call in the current batch). `after_tool` may patch `content` and `isError`. It may **not** patch `denied`: a refused Write is not a crashed Write.\n\n**Scope** — In: dispatcher, result builder, spin/invalid migration, and exact synthetic-versus-genuine dispatch boundaries. Out: shared truncation/read primitives (US-001) and truncation/spill handler registration (US-003).\n\n**Interface** — `before_tool` outcomes are `allow`, `nudge`, `block`, and `terminate`; `after_tool` patches only `content` and `isError`, never `denied`.",
+      "description": "**Goal** \u2014 Add typed in-process `before_tool` and `after_tool` registrations and route every native tool-result message through one builder.\n\n**Motivation** \u2014 The result is appended at seven separate sites in `turn-loop.ts`, so there is no single point at which a policy could be applied even if one existed.\n\n**Approach** \u2014 The seam is built as **typed in-process function registrations**, not as an extension of `src/hooks/`, and not as a general eleven-event map. Two events are built because two have real consumers today: the spin breaker and invalid-call repair for `before_tool`, and the truncation policy for `after_tool`.\n\nThe dispatcher enforces four rules: **Results are partial patches, never mutations.** A handler returns only what it wants changed and the dispatcher merges. No handler receives the message array. **Handlers chain**, each seeing the previous handler's output, in registration order. **A throwing handler is logged at warn and skipped**, never failing the turn. **No handler may rewrite history.** `after_tool` is safe by construction because it shapes a result before it enters the array.\n\n`before_tool` outcomes are `allow` (optionally rewriting the tool's input), `nudge` (prefixing the eventual result), `block` (answering without invoking the tool), and `terminate` (answering every outstanding call in the current batch). `after_tool` may patch `content` and `isError`. It may **not** patch `denied`: a refused Write is not a crashed Write.\n\n**Scope** \u2014 In: dispatcher, result builder, spin/invalid migration, and exact synthetic-versus-genuine dispatch boundaries. Out: shared truncation/read primitives (US-001) and truncation/spill handler registration (US-003).\n\n**Interface** \u2014 `before_tool` outcomes are `allow`, `nudge`, `block`, and `terminate`; `after_tool` patches only `content` and `isError`, never `denied`.",
       "acceptanceCriteria": [
         "When `after_tool` is dispatched with no registered handler, then it returns payload `content` and `isError` unchanged.",
         "When `after_tool` has two registered handlers, then the second receives the first handler's returned `content` as payload `content`.",
@@ -124,12 +138,15 @@
           "reason": "pins the spin breaker's nudge and terminal-notice behaviour against inline branches. Replacing invariant: the nudge is applied by an `after_tool` patch and the stop by a `before_tool` `terminate`, with the same observable messages."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
       "title": "Apply after-tool truncation, spill recovery, and scratchpad paging",
-      "description": "**Goal** — Register shared truncation on native sessions, spill cut output to scratchpad, and make ScratchpadRead page full tool bodies.\n\n**Motivation** — Tool output reaches the model through a byte ceiling and nothing else. There is no line cap, no per-line cap, and no way for the agent to recover what was cut.\n\n**Approach** — Truncation is applied through `after_tool` rather than inside each tool, but the tools keep a bound on their own I/O. A two-tier split is required: if the model-facing cap left the tools entirely they would have to return unbounded content, trading a token problem for a memory one.\n\n- **I/O ceiling (tool layer, a safety bound):** tools bound their reads to `READ_CEILING`.\n- **Model-facing policy (`after_tool`, one implementation):** `MODEL_MAX_BYTES`, `MODEL_MAX_LINES`, `MODEL_MAX_LINE_CHARS`.\n\n`Read`, `Grep`, `Git`, `ScratchpadRead`, and unlisted names use `head`; `Bash`, `RunCommand`, and `Exec` use `tail-with-first-line`. Command output tails because the failure is at the end, but not naively: the body's first line carries the exit code, so the policy preserves that line and then tails.\n\nOn truncation only, the full body — up to `READ_CEILING` — is written at `spill/<toolName>-<callId>.txt`; the marker names the relative path and both byte counts. A body larger than `READ_CEILING` produces a spill file whose trailing line records that it is itself incomplete. The spill writer exposes filesystem calls through injectable `_spillDeps`, following `_scratchpadWipeDeps`; file writes use Bun-native APIs, not Node synchronous APIs.\n\n**Scope** — In: register truncation handler, migrate model-facing tool truncation to read ceilings, add spills, and add ScratchpadRead offset/limit paging. Out: US-001 shared primitives, US-002 dispatcher/chokepoint, and US-005 helper deletions.\n\n**Interface** — `scratchpadReadTool.inputSchema` target is its existing `{ type: \"object\", properties: { path }, required: [\"path\"] }` plus optional `offset` (1-based integer minimum 1) and `limit` (maximum line count, integer minimum 1), matching `readTool` spelling.\n\n**Failure handling** — A spill write that fails → fail-open: the result is still delivered truncated, and the marker omits the spill path rather than naming a file that does not exist. A body exceeding `READ_CEILING` → the spill file is written up to the ceiling and records that it is itself incomplete. `ScratchpadRead` with an `offset` past the end of the file → returns a message naming the file's total line count, mirroring `readTool`'s behaviour.",
+      "description": "**Goal** \u2014 Register shared truncation on native sessions, spill cut output to scratchpad, and make ScratchpadRead page full tool bodies.\n\n**Motivation** \u2014 Tool output reaches the model through a byte ceiling and nothing else. There is no line cap, no per-line cap, and no way for the agent to recover what was cut.\n\n**Approach** \u2014 Truncation is applied through `after_tool` rather than inside each tool, but the tools keep a bound on their own I/O. A two-tier split is required: if the model-facing cap left the tools entirely they would have to return unbounded content, trading a token problem for a memory one.\n\n- **I/O ceiling (tool layer, a safety bound):** tools bound their reads to `READ_CEILING`.\n- **Model-facing policy (`after_tool`, one implementation):** `MODEL_MAX_BYTES`, `MODEL_MAX_LINES`, `MODEL_MAX_LINE_CHARS`.\n\n`Read`, `Grep`, `Git`, `ScratchpadRead`, and unlisted names use `head`; `Bash`, `RunCommand`, and `Exec` use `tail-with-first-line`. Command output tails because the failure is at the end, but not naively: the body's first line carries the exit code, so the policy preserves that line and then tails.\n\nOn truncation only, the full body \u2014 up to `READ_CEILING` \u2014 is written at `spill/<toolName>-<callId>.txt`; the marker names the relative path and both byte counts. A body larger than `READ_CEILING` produces a spill file whose trailing line records that it is itself incomplete. The spill writer exposes filesystem calls through injectable `_spillDeps`, following `_scratchpadWipeDeps`; file writes use Bun-native APIs, not Node synchronous APIs.\n\n**Scope** \u2014 In: register truncation handler, migrate model-facing tool truncation to read ceilings, add spills, and add ScratchpadRead offset/limit paging. Out: US-001 shared primitives, US-002 dispatcher/chokepoint, and US-005 helper deletions.\n\n**Interface** \u2014 `scratchpadReadTool.inputSchema` target is its existing `{ type: \"object\", properties: { path }, required: [\"path\"] }` plus optional `offset` (1-based integer minimum 1) and `limit` (maximum line count, integer minimum 1), matching `readTool` spelling.\n\n**Failure handling** \u2014 A spill write that fails \u2192 fail-open: the result is still delivered truncated, and the marker omits the spill path rather than naming a file that does not exist. A body exceeding `READ_CEILING` \u2192 the spill file is written up to the ceiling and records that it is itself incomplete. `ScratchpadRead` with an `offset` past the end of the file \u2192 returns a message naming the file's total line count, mirroring `readTool`'s behaviour.",
       "acceptanceCriteria": [
         "When a `Grep` result larger than `MODEL_MAX_BYTES` enters the message array, then its content UTF-8 byte length is at most `MODEL_MAX_BYTES`.",
         "When a failing `Bash` command has stdout larger than `MODEL_MAX_BYTES`, then its message-array result first line is the body's `exit N` line.",
@@ -179,9 +196,6 @@
         "src/tools/spill.ts",
         "src/agents/native/session/truncation-handler.ts"
       ],
-      "outOfScope": [
-        "rejecting invented range-argument aliases on `ScratchpadRead`, which `readTool` does at `src/tools/read.ts:70-76`, is deferred."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/tools/grep.test.ts",
@@ -212,12 +226,18 @@
           "reason": "pins `readTool`'s line-total and bounded/`+` behaviour against its inline implementation. Replacing invariant: identical behaviour, produced by `readFileSlice`."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "rejecting invented range-argument aliases on `ScratchpadRead`, which `readTool` does at `src/tools/read.ts:70-76`, is deferred."
+      ]
     },
     {
       "id": "US-004",
       "title": "Wipe scratchpad after successful runs",
-      "description": "**Goal** — Make scratchpad cleanup run at successful completion and align scratchpad lifetime text.\n\n**Motivation** — `src/prompts/sections/scratchpad.ts:27` already tells every agent that \"Nothing there survives the run\". That is false today: `wipeScratchpad` is called only at run start (`run-setup-init.ts:120`), so files survive until the next run's wipe.\n\n**Approach** — Both wipes are kept, because they cover different failure modes. `cleanupRun` runs in a `finally` block, which does not run on SIGKILL, a hard crash, or power loss — so the start wipe remains the backstop that guarantees a clean slate however the previous run died. The end wipe is gated on `runCompleted === true`: a failed run retains its scratchpad for inspection, bounded because the next run's start wipe clears it.\n\n**Scope** — In: add `dryRun: boolean` to cleanup options, pass runner dryRun, wipe only completed non-dry runs, and update prompt/tool text. Out: start-wipe behavior changes and cross-run coordination.\n\n**Interface** — `RunCleanupOptions` target is its existing shape plus `dryRun: boolean`; the caller at `src/execution/runner.ts:395` has `dryRun` in scope and passes it through. `wipeScratchpad(workdir, opts?: { dryRun?: boolean }): Promise<void>` already tolerates absence and swallows failure at warn level.\n\n**Failure handling** — An end-of-run scratchpad removal that fails → fail-open: logged at warn, `cleanupRun` still resolves, and run success is unaffected.",
+      "description": "**Goal** \u2014 Make scratchpad cleanup run at successful completion and align scratchpad lifetime text.\n\n**Motivation** \u2014 `src/prompts/sections/scratchpad.ts:27` already tells every agent that \"Nothing there survives the run\". That is false today: `wipeScratchpad` is called only at run start (`run-setup-init.ts:120`), so files survive until the next run's wipe.\n\n**Approach** \u2014 Both wipes are kept, because they cover different failure modes. `cleanupRun` runs in a `finally` block, which does not run on SIGKILL, a hard crash, or power loss \u2014 so the start wipe remains the backstop that guarantees a clean slate however the previous run died. The end wipe is gated on `runCompleted === true`: a failed run retains its scratchpad for inspection, bounded because the next run's start wipe clears it.\n\n**Scope** \u2014 In: add `dryRun: boolean` to cleanup options, pass runner dryRun, wipe only completed non-dry runs, and update prompt/tool text. Out: start-wipe behavior changes and cross-run coordination.\n\n**Interface** \u2014 `RunCleanupOptions` target is its existing shape plus `dryRun: boolean`; the caller at `src/execution/runner.ts:395` has `dryRun` in scope and passes it through. `wipeScratchpad(workdir, opts?: { dryRun?: boolean }): Promise<void>` already tolerates absence and swallows failure at warn level.\n\n**Failure handling** \u2014 An end-of-run scratchpad removal that fails \u2192 fail-open: logged at warn, `cleanupRun` still resolves, and run success is unaffected.",
       "acceptanceCriteria": [
         "When `cleanupRun` receives `runCompleted: true` and `dryRun: false`, then it invokes scratchpad removal once with `<workdir>/.nax/scratchpad`.",
         "When `cleanupRun` receives `runCompleted: false`, then it does not invoke scratchpad removal.",
@@ -250,9 +270,6 @@
         "src/prompts/sections/scratchpad.ts",
         "src/tools/scratchpad.ts"
       ],
-      "outOfScope": [
-        "two concurrent runs sharing one workdir's scratchpad directory — the run lock is assumed to prevent it, so no cross-run coordination is added."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/execution/lifecycle/scratchpad-wipe.test.ts",
@@ -263,12 +280,18 @@
           "reason": "asserts the section's promise that nothing survives the run. Replacing invariant: the section states the scratchpad is wiped when a run finishes, retained after a failed run, and cleared at the next run's start."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "two concurrent runs sharing one workdir's scratchpad directory \u2014 the run lock is assumed to prevent it, so no cross-run coordination is added."
+      ]
     },
     {
       "id": "US-005",
       "title": "Remove superseded tool truncators",
-      "description": "**Goal** — Delete per-tool truncation once after_tool is the only model-facing truncation seam.\n\n**Motivation** — The truncation policy is reimplemented in five files that have already drifted: `read.ts:22-32`, `grep.ts:63-65`, `git.ts:327-329` and `scratchpad.ts:36-45` each carry their own `truncate()`, while `bash.ts:113` truncates inline with `body.slice(0, ctx.maxBytes)`.\n\n**Approach** — US-003 already replaces every call into the five private truncators, so the deletions remove code that no test reaches by then; the build and lint gates are what confirm no reference survives.\n\n**Scope** — In: delete superseded private Read/Grep/Git/Scratchpad helpers and Bash inline slice after US-003 migration. Out: changing US-001 policy algorithm or US-003 spill behavior.\n\n**Interface** — `src/tools/truncate.ts` — created by US-001; the replacement every deleted helper defers to.",
+      "description": "**Goal** \u2014 Delete per-tool truncation once after_tool is the only model-facing truncation seam.\n\n**Motivation** \u2014 The truncation policy is reimplemented in five files that have already drifted: `read.ts:22-32`, `grep.ts:63-65`, `git.ts:327-329` and `scratchpad.ts:36-45` each carry their own `truncate()`, while `bash.ts:113` truncates inline with `body.slice(0, ctx.maxBytes)`.\n\n**Approach** \u2014 US-003 already replaces every call into the five private truncators, so the deletions remove code that no test reaches by then; the build and lint gates are what confirm no reference survives.\n\n**Scope** \u2014 In: delete superseded private Read/Grep/Git/Scratchpad helpers and Bash inline slice after US-003 migration. Out: changing US-001 policy algorithm or US-003 spill behavior.\n\n**Interface** \u2014 `src/tools/truncate.ts` \u2014 created by US-001; the replacement every deleted helper defers to.",
       "acceptanceCriteria": [
         "When a `Grep` result larger than `MODEL_MAX_BYTES` enters the message array after deletions, then its content UTF-8 byte length is at most `MODEL_MAX_BYTES`.",
         "When a `Git` result larger than `MODEL_MAX_BYTES` enters the message array after deletions, then its marker names original byte count."
@@ -300,12 +323,15 @@
       "suggestedCriteria": [
         "When a tool result is within every model cap after the deletions, then it is delivered without a truncation marker."
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Existing TypeScript code requires a cross-cutting migration. ToolRunContext defines a tool-owned maxBytes cap at src/tools/registry.ts:47-67 and createCodingToolRuntime constructs it at src/tools/runtime.ts:269-281. Preserve compatibility with the many literal test contexts by adding optional readCeiling and resolving absence to READ_CEILING. Duplicated output truncation exists in Read (src/tools/read.ts:22-32), Grep (src/tools/grep.ts:63-65), Git (src/tools/git.ts:327-329), ScratchpadRead (src/tools/scratchpad.ts:36-70), and Bash (src/tools/bash.ts:109-118). Grep drains ctx.maxBytes (src/tools/grep.ts:129-130), Git passes it to gitWithTimeout (src/tools/git.ts:381-389), and RunCommand/Exec also slice command bodies (src/tools/run-command.ts:443-445; src/tools/run-command-exec.ts:86-93); the migration must preserve a tool I/O bound while moving model shaping into native after_tool. bounded-io returns an overshoot byte (src/utils/bounded-io.ts:17-50), and ScratchpadRead has the sole codepoint-boundary precedent.\n\nturn-loop.ts has seven inline tool-result pushes and inline invalid/spin policy (src/agents/native/session/turn-loop.ts:350-452). Only policy denial, normal tool answer, and caught tool throws are genuine executions; AskHuman budget/no-operator/answer and spin-stop are synthetic. Invalid-call repair currently returns rewritten transcript messages (src/agents/native/session/handle-invalid-tool-call.ts:48-128); the event seam must preserve observable repair/stop behavior without exposing history to handlers. TurnDeps owns spinBreaker (src/agents/native/session/turn-types.ts:54-104), so session/adapter wiring must own registrations. Existing tests include test/unit/agents/native/session/turn-loop-invalid-input.test.ts, turn-loop-invalid-input-budget.test.ts, and session-lifetime-spin.test.ts.\n\nScratchpadRead is path-only and tool-truncates at maxBytes (src/tools/scratchpad.ts:116-151); reuse Read's range semantics (src/tools/read.ts:78-137), retain pre-truncation metrics, and write recoverable spills within SCRATCHPAD_DIR. Spill filesystem dependencies must be injectable like _scratchpadWipeDeps (src/execution/lifecycle/scratchpad-wipe.ts:27-48). RunCleanupOptions has runCompleted but no dryRun (src/execution/lifecycle/run-cleanup.ts:51-82), and runner does not pass dryRun to cleanup (src/execution/runner.ts:395-417). wipeScratchpad already swallows and warns on failure (src/execution/lifecycle/scratchpad-wipe.ts:39-57); add it only after completed non-dry runs while retaining start wipe for crashes. Key risks are UTF-8 replacement-byte overflow, marker bytes exceeding the model cap, losing command stderr, naming failed spill files, invalid provider tool-call/result pairing, and cache-prefix rewrites. Implement US-001 and US-002 independently, then US-003, with US-004 independent and US-005 last.",
   "outOfScope": [
-    "The nine remaining in-loop events in pi's `HookMap` — `transform_context`, `before_request`, `before_payload`, `after_response`, `before_compaction`, `before_navigation`, `before_run`, `before_drive` and `before_run_end` — are not built.",
+    "The nine remaining in-loop events in pi's `HookMap` \u2014 `transform_context`, `before_request`, `before_payload`, `after_response`, `before_compaction`, `before_navigation`, `before_run`, `before_drive` and `before_run_end` \u2014 are not built.",
     "`transform_context` specifically is excluded by design rather than omission: at a 96.7% prefix-matched cache-hit rate, a history-rewriting handler makes the workload roughly 5x more expensive.",
     "Extending the orchestration hook subsystem under `src/hooks/` is not part of this work; those events fire around a story, shell out with a 5s timeout, and cannot carry a rewritten tool result.",
     "Trimming the advertised tool set, and bounding `advertisedSchemaBytes` in `src/tools/provider-advertise.ts`, are deferred; they belong at advertise time rather than per call.",

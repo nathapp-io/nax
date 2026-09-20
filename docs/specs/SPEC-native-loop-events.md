@@ -57,6 +57,24 @@ memory one.
 - **Model-facing policy (`after_tool`, one implementation):** `MODEL_MAX_BYTES`,
   `MODEL_MAX_LINES`, `MODEL_MAX_LINE_CHARS`.
 
+The four constants take these values:
+
+| constant | value | bounds |
+|:---|---:|:---|
+| `READ_CEILING` | 2_000_000 | bytes a tool may read before bounding its own work |
+| `MODEL_MAX_BYTES` | 40_000 | UTF-8 bytes of model-facing content |
+| `MODEL_MAX_LINES` | 1_000 | lines of model-facing content |
+| `MODEL_MAX_LINE_CHARS` | 2_000 | UTF-16 code units per retained line |
+
+The three model-facing caps must stay **independently reachable**, which constrains their
+values: `MODEL_MAX_LINES * (MODEL_MAX_LINE_CHARS + 1)` must exceed `MODEL_MAX_BYTES`, so
+that a body can sit at the byte ceiling while still satisfying the line and per-line caps.
+Choosing values that violate this collapses the policy: if the largest body satisfying the
+line caps is *smaller* than `MODEL_MAX_BYTES`, then the byte ceiling is unreachable by any
+otherwise-compliant body, every boundary case trips two caps at once, and no test can
+isolate one cap's behaviour from another's. At the values above the product is 2,001,000
+against a 40,000-byte ceiling, so each cap is reachable on its own.
+
 The event fires only for genuine tool executions. The turn loop's seven `tool-result` push
 sites divide into two kinds, and the distinction is load-bearing:
 
@@ -145,6 +163,37 @@ because the spin breaker's stop is a batch-level outcome, not a per-call one.
 Write is not a crashed Write, and letting a handler flip that erases a distinction the
 model is meant to act on.
 
+### Truncation policy
+
+The three caps are independent triggers, and a body may break more than one at once. They
+compose as an **ordered pipeline**, not as a set of alternatives — each stage runs on the
+previous stage's output, and a body that trips several caps is subject to every stage that
+applies to it. Being over one cap never buys a pass on another.
+
+1. **Per-line cap.** Every line longer than `MODEL_MAX_LINE_CHARS` is shortened to that
+   length. Runs first, so later stages count and measure already-shortened lines.
+2. **Line-count cap.** If the body still has more than `MODEL_MAX_LINES` lines, the
+   direction selects which to keep (see the table below). Runs before the byte cut, so the
+   direction's choice of lines is made on the whole body rather than on a byte window of
+   it.
+3. **Byte cap.** If the result still exceeds `MODEL_MAX_BYTES`, it is cut on a codepoint
+   boundary. Runs last, which is what makes the byte ceiling unconditional: because no
+   stage follows, nothing can be appended or prepended after the cut, and the returned
+   content is at most `MODEL_MAX_BYTES` for every input and either direction. Under
+   `tail-with-first-line` the first line is retained inside this budget rather than in
+   addition to it — the trailing slice is taken against the budget that remains after the
+   first line and its newline, and if the first line alone does not fit, it is itself cut.
+
+`truncated` is true when any stage changed the content, and `originalBytes` always reports
+the input's full UTF-8 byte length regardless of which stages ran.
+
+Lines are counted the way the rest of the tool layer counts them — `readFileSlice`'s
+`totalLines` and `readTool`'s `[N lines]` header: a trailing newline **terminates** the
+last line rather than opening an empty one, and an empty body has no lines. So `"a\nb\n"`
+is two lines, not three. A raw `split("\n")` breaks this in two places: it truncates a body
+that is within `MODEL_MAX_LINES`, and the phantom empty element becomes the line
+`tail-with-first-line` keeps in place of the body's last real line.
+
 ### Truncation direction
 
 | tool name | direction |
@@ -209,6 +258,11 @@ so the end wipe covers shared mode.
   still resolves, and the run's success is unaffected.
 - `ScratchpadRead` with an `offset` past the end of the file → returns a message naming the
   file's total line count, mirroring `readTool`'s behaviour.
+- `readFileSlice` with a non-positive `offset` or `limit` → rejects the request rather than
+  computing a negative start index. `offset` is 1-based, so `offset` 0 would index one
+  before the first line and silently return the file's tail. The tool-level schemas declare
+  `minimum: 1`, but `readFileSlice` is called directly by other code and validates for
+  itself rather than trusting its callers.
 
 ## Out of Scope
 
@@ -354,9 +408,26 @@ reference survives.
   `MODEL_MAX_BYTES` when the cut lands inside a multi-byte codepoint, rather than exceeding
   it by emitting a replacement character.
 - `[unit]` `truncateForModel` returns content with at most `MODEL_MAX_LINES` lines when the
-  body has more lines than that, even when the body is within the byte ceiling.
+  body has more lines than that while within the byte and per-line ceilings.
 - `[unit]` `truncateForModel` shortens any single line longer than `MODEL_MAX_LINE_CHARS` to
-  that length in the returned content.
+  that length in the returned content, for a body within the byte and line-count ceilings.
+- `[unit]` `truncateForModel` applies both caps to a body that is within the byte ceiling
+  but has both more than `MODEL_MAX_LINES` lines and a line longer than
+  `MODEL_MAX_LINE_CHARS`: the returned content has at most `MODEL_MAX_LINES` lines and no
+  line longer than `MODEL_MAX_LINE_CHARS`.
+- `[unit]` `truncateForModel` returns content with no line longer than
+  `MODEL_MAX_LINE_CHARS` for a body that both exceeds `MODEL_MAX_BYTES` and carries an
+  over-long line, in addition to the byte ceiling being honored.
+- `[unit]` `truncateForModel` with direction `tail-with-first-line` returns content whose
+  UTF-8 byte length is at most `MODEL_MAX_BYTES` and whose first line is the body's first
+  line, for a body exceeding that ceiling — the retained first line counts against the
+  byte budget rather than being added on top of it.
+- `[unit]` `truncateForModel` returns a body ending in a trailing newline unchanged and
+  `truncated` false when it is within every cap counting that newline as terminating its
+  last line rather than opening an empty one.
+- `[unit]` `truncateForModel` with direction `tail-with-first-line` on a body that ends in a
+  trailing newline and exceeds `MODEL_MAX_LINES` returns the body's last non-empty line as
+  the last retained line.
 - `[unit]` `truncateForModel` with direction `head` returns the body's first lines and omits
   its last line.
 - `[unit]` `truncateForModel` with direction `tail-with-first-line` returns the body's first
@@ -377,6 +448,8 @@ reference survives.
   is within `readCeiling`.
 - `[unit]` `readFileSlice` with an `offset` greater than the file's line count returns empty
   content and that line count as `totalLines`.
+- `[unit]` `readFileSlice` rejects an `offset` of 0 rather than returning the file's last
+  line, and rejects a `limit` of 0.
 
 ### US-002: Loop event seam and tool-result chokepoint
 
