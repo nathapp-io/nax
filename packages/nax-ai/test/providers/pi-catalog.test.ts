@@ -1,3 +1,4 @@
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
 import { normaliseCatalog } from "../../src/providers/catalog.ts";
 import { piProviders } from "../../src/providers/pi-catalog.ts";
@@ -82,5 +83,43 @@ describe("piProviders", () => {
     for (const level of levels) {
       expect(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).toContain(level);
     }
+  });
+
+  it("projects Anthropic Messages strict-tool metadata from supportsStrictTools", async () => {
+    const upstream = getBuiltinModels("anthropic");
+    const source = upstream.find(
+      (model) => model.api === "anthropic-messages" && model.compat?.supportsStrictTools !== undefined,
+    );
+    expect(source).toBeDefined();
+
+    const [anthropic] = await piProviders(["anthropic"]);
+    const projected = anthropic?.models.find((model) => model.id === source?.id);
+    expect(projected?.supportsStrictToolSampling).toBe(source?.compat?.supportsStrictTools);
+  });
+
+  it("projects non-Anthropic strict-tool metadata from supportsStrictMode", async () => {
+    const upstream = getBuiltinModels("openai") as ReadonlyArray<{
+      readonly id: string;
+      readonly api: string;
+      readonly compat?: { readonly supportsStrictMode?: boolean };
+    }>;
+    const source = upstream.find(
+      (model) => model.api !== "anthropic-messages" && model.compat?.supportsStrictMode !== undefined,
+    );
+    expect(source).toBeDefined();
+
+    const [openai] = await piProviders(["openai"]);
+    const projected = openai?.models.find((model) => model.id === source?.id);
+    expect(projected?.supportsStrictToolSampling).toBe(source?.compat?.supportsStrictMode);
+  });
+
+  it("does not invent a strict-tool declaration when pi exposes none", async () => {
+    const upstream = getBuiltinModels("deepseek");
+    const source = upstream.find((model) => model.compat?.supportsStrictMode === undefined);
+    expect(source).toBeDefined();
+
+    const [deepseek] = await piProviders(["deepseek"]);
+    const projected = deepseek?.models.find((model) => model.id === source?.id);
+    expect(projected).not.toHaveProperty("supportsStrictToolSampling");
   });
 });

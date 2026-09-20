@@ -69,6 +69,12 @@ export interface ResolvedModel {
    */
   readonly maxTokens?: number;
   readonly supportsTools: boolean;
+  /**
+   * Explicit per-model support for strict JSON Schema tool-argument sampling.
+   * This is not structured-output support and does not imply a tool call can
+   * be required. Absent means unknown, not unsupported.
+   */
+  readonly supportsStrictToolSampling?: boolean;
   /** Empty means the model has no thinking support. */
   readonly thinkingLevels: readonly ThinkingLevel[];
   /**

@@ -32,6 +32,13 @@ function toProviderAuth(id: string, auth: { apiKey?: unknown; oauth?: unknown })
   throw new Error(`Provider "${id}" declares neither api-key nor oauth auth.`);
 }
 
+function explicitStrictToolSamplingDeclaration(model: {
+  readonly api: string;
+  readonly compat?: { readonly supportsStrictMode?: boolean; readonly supportsStrictTools?: boolean };
+}): boolean | undefined {
+  return model.api === "anthropic-messages" ? model.compat?.supportsStrictTools : model.compat?.supportsStrictMode;
+}
+
 /**
  * Neutral name for this module's public entry point.
  *
@@ -41,6 +48,7 @@ function toProviderAuth(id: string, auth: { apiKey?: unknown; oauth?: unknown })
  * names what this returns (the client's default provider catalog), not what
  * produces it today. The old name stays as a deprecated, non-breaking alias.
  */
+
 export async function defaultProviders(ids?: readonly string[]): Promise<RawProvider[]> {
   const { builtinProviders, getBuiltinModels, getBuiltinProviders } = await import(
     "@earendil-works/pi-ai/providers/all"
@@ -63,36 +71,40 @@ export async function defaultProviders(ids?: readonly string[]): Promise<RawProv
 
     const piModels = getBuiltinModels(id as Parameters<typeof getBuiltinModels>[0]);
 
-    const models: RawModel[] = piModels.map((model) => ({
-      id: model.id,
-      protocol: model.api,
-      pricing: {
-        input: model.cost.input,
-        output: model.cost.output,
-        cacheRead: model.cost.cacheRead,
-        cacheWrite: model.cost.cacheWrite,
-        ...(model.cost.tiers !== undefined
-          ? {
-              tiers: model.cost.tiers.map(
-                (tier): PricingTier => ({
-                  inputTokensAbove: tier.inputTokensAbove,
-                  input: tier.input,
-                  output: tier.output,
-                  cacheRead: tier.cacheRead,
-                  cacheWrite: tier.cacheWrite,
-                }),
-              ),
-            }
-          : {}),
-      },
-      contextWindow: model.contextWindow,
-      maxTokens: model.maxTokens,
-      // pi-ai's catalog does not carry a per-model tool flag; every model it
-      // serves through these four protocols accepts tool definitions, and a
-      // model that ignores them fails at request time, not at catalog time.
-      supportsTools: true,
-      thinkingLevels: getSupportedThinkingLevels(model) as readonly ThinkingLevel[],
-    }));
+    const models: RawModel[] = piModels.map((model) => {
+      const supportsStrictToolSampling = explicitStrictToolSamplingDeclaration(model);
+      return {
+        id: model.id,
+        protocol: model.api,
+        pricing: {
+          input: model.cost.input,
+          output: model.cost.output,
+          cacheRead: model.cost.cacheRead,
+          cacheWrite: model.cost.cacheWrite,
+          ...(model.cost.tiers !== undefined
+            ? {
+                tiers: model.cost.tiers.map(
+                  (tier): PricingTier => ({
+                    inputTokensAbove: tier.inputTokensAbove,
+                    input: tier.input,
+                    output: tier.output,
+                    cacheRead: tier.cacheRead,
+                    cacheWrite: tier.cacheWrite,
+                  }),
+                ),
+              }
+            : {}),
+        },
+        contextWindow: model.contextWindow,
+        maxTokens: model.maxTokens,
+        // pi-ai's catalog does not carry a per-model tool flag; every model it
+        // serves through these four protocols accepts tool definitions, and a
+        // model that ignores them fails at request time, not at catalog time.
+        supportsTools: true,
+        ...(supportsStrictToolSampling !== undefined ? { supportsStrictToolSampling } : {}),
+        thinkingLevels: getSupportedThinkingLevels(model) as readonly ThinkingLevel[],
+      };
+    });
 
     // A provider can span protocols, so the default is the one most of its
     // models use; per-model `protocol` above is what actually selects.

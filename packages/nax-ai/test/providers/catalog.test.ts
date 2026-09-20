@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OAuthFlowProhibitedError } from "../../src/auth/oauth-policy.ts";
-import { normaliseCatalog, type RawProvider } from "../../src/providers/catalog.ts";
+import { normaliseCatalog, type RawModel, type RawProvider } from "../../src/providers/catalog.ts";
 
 const DEEPSEEK: RawProvider = {
   id: "deepseek",
@@ -258,5 +258,56 @@ describe("normaliseCatalog", () => {
   it("leaves maxTokens absent when the raw model declares none", () => {
     const model = normaliseCatalog(RAW).model("deepseek", "deepseek-chat");
     expect(model).not.toHaveProperty("maxTokens");
+  });
+
+  it("carries an explicitly supported strict-tool-sampling declaration into the resolved catalog", () => {
+    const catalog = normaliseCatalog([
+      { ...DEEPSEEK, models: [{ ...(DEEPSEEK.models[0] as RawModel), supportsStrictToolSampling: true }] },
+    ]);
+    expect(catalog.model("deepseek", "deepseek-chat")?.supportsStrictToolSampling).toBe(true);
+  });
+
+  it("carries an explicitly unsupported strict-tool-sampling declaration into the resolved catalog", () => {
+    const catalog = normaliseCatalog([
+      { ...DEEPSEEK, models: [{ ...(DEEPSEEK.models[0] as RawModel), supportsStrictToolSampling: false }] },
+    ]);
+    expect(catalog.model("deepseek", "deepseek-chat")?.supportsStrictToolSampling).toBe(false);
+  });
+
+  it("leaves strict-tool-sampling absent when the raw catalog makes no declaration", () => {
+    const model = normaliseCatalog(RAW).model("deepseek", "deepseek-chat");
+    expect(model).not.toHaveProperty("supportsStrictToolSampling");
+  });
+
+  it("retains both strict-tool-sampling declarations on override models", () => {
+    const catalog = normaliseCatalog(RAW, [
+      {
+        provider: "deepseek",
+        models: [
+          {
+            id: "strict-override-supported",
+            provider: "deepseek",
+            protocol: "openai-completions",
+            pricing: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 100,
+            supportsTools: true,
+            supportsStrictToolSampling: true,
+            thinkingLevels: [],
+          },
+          {
+            id: "strict-override-unsupported",
+            provider: "deepseek",
+            protocol: "openai-completions",
+            pricing: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 100,
+            supportsTools: true,
+            supportsStrictToolSampling: false,
+            thinkingLevels: [],
+          },
+        ],
+      },
+    ]);
+    expect(catalog.model("deepseek", "strict-override-supported")?.supportsStrictToolSampling).toBe(true);
+    expect(catalog.model("deepseek", "strict-override-unsupported")?.supportsStrictToolSampling).toBe(false);
   });
 });

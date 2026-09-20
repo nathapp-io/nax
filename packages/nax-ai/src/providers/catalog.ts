@@ -27,6 +27,11 @@ export interface RawModel {
    */
   readonly maxTokens?: number;
   readonly supportsTools: boolean;
+  /**
+   * Explicit per-model declaration for strict JSON Schema tool-argument
+   * sampling. Absent means the catalog does not know; it is not `false`.
+   */
+  readonly supportsStrictToolSampling?: boolean;
   readonly thinkingLevels: readonly ThinkingLevel[];
 }
 
@@ -90,6 +95,9 @@ export function normaliseCatalog(raw: readonly RawProvider[], overrides: readonl
         contextWindow: rawModel.contextWindow,
         ...(rawModel.maxTokens !== undefined ? { maxTokens: rawModel.maxTokens } : {}),
         supportsTools: rawModel.supportsTools,
+        ...(rawModel.supportsStrictToolSampling !== undefined
+          ? { supportsStrictToolSampling: rawModel.supportsStrictToolSampling }
+          : {}),
         thinkingLevels: rawModel.thinkingLevels,
       });
     }

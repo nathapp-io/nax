@@ -33,6 +33,8 @@ While the API is unstable, `latest` and `next` both point at the current 0.x rel
 
 A `ToolDefinition` can carry an optional `constrainedSampling: { type: "json_schema"; strict: "prefer" | "require" }` to ask the provider to constrain a tool's arguments to its schema. Support is per-model, not caller-controllable — some models simply cannot honour it. `"prefer"` degrades silently to an unconstrained tool when the model lacks support, so a well-formed response is not evidence the constraint was applied; `"require"` throws instead of degrading.
 
+`ResolvedModel.supportsStrictToolSampling === true` identifies a model whose catalog explicitly declares strict JSON Schema tool-argument sampling support; an absent value means nax-ai has no declaration and is not a statement about pi-ai's runtime defaults. This capability constrains arguments only when a tool is called: it does not require a tool call and does not provide structured completion output.
+
 ### Logging in
 
 `login()` obtains a credential and writes it to the store you pass. It covers
