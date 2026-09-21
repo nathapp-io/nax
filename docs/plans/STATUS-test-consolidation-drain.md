@@ -102,7 +102,7 @@ outlived the refactors they guarded.
 2. **-11,185 lines**, almost all duplicated preamble (70,169 lines, 18.6% of test LOC).
 3. **Compliance.** `test-architecture.md` "Placement Rules" §2 already forbids these files;
    292 violate it. **The rule was never gated**, which is why the drain is needed at all —
-   and why Task 30 (the ratchet) is the only task that stops it recurring.
+   and why Task 33 (the ratchet) is the only task that stops it recurring.
 4. **A slightly faster suite as a side effect,** not a goal: 233 fewer preamble evaluations.
    `bun test` runs all files in one process with no `--parallel`, so this should help rather
    than hurt. Measure it in §9; do not promise a number.
@@ -463,7 +463,7 @@ protect — record both in §9. Largest clusters first:
 
 ### Wave 6 — stop the recurrence
 
-**Task 33: gate it.** Add `scripts/check-test-satellites.ts` + baseline. **Without this the
+**Task 33: gate it. — LANDED 2026-09-21, see §9.32.** Add `scripts/check-test-satellites.ts` + baseline. **Without this the
 drain re-fills** — every nax story that fixes a bug adds a file, which is how 385
 accumulated under a rule that already forbade them. Land it as soon as Wave 1 is done. Five
 things the idiom actually requires, beyond "copy `check-file-sizes.ts`":
@@ -1858,3 +1858,54 @@ Cumulative **-137 files** against the plan's Waves 1–4 target of -141 (the 4-f
 shortfall: §9.5 +2, §9.8 +1, §9.31 +1). §0 is re-measured above at the completed
 wave boundary. Next: Wave 5 (Task 32, the T3 describe-scoped collapse, -342 tests)
 or Wave 6 (Task 33, the satellite gate — recommended before the tail).
+
+### 9.32 — 2026-09-21, Task 33 landed — the satellite gate (no test drain)
+
+Wave 6. Added `scripts/check-test-satellites.ts` + baseline, wired it into
+`lint:checks`, and wrote its unit test. This is the task that stops the drain
+re-filling; the 251 satellites are its backlog.
+
+The five requirements from §3, each met:
+
+1. **Filename-only.** `isTicketNamed()` matches `TICKET_RE` against the basename
+   only. Content is never read, so a compliant file that mentions "#1234" in its
+   header cannot fail CI.
+2. **Mirrors excluded.** `findTicketSatellites(paths, isMirror)` drops mirrors, so
+   a same-named `src/` module's test file can never fail the gate.
+3. **Baseline** `scripts/baselines/test-satellites-baseline.json` shaped
+   `{updatedAt, byFile: {path: true}}`, with `--update-baseline`, `--list`, a
+   missing-baseline exit-1 arm, and a "baseline can be lowered" hint.
+4. **Wired into `lint:checks`** (`check:test-satellites`), so `check:all` →
+   `check:all-without-biome` → `lint:checks` reaches it and
+   `check:gate-reachability` passes.
+5. **`test/unit/scripts/check-test-satellites.test.ts`** — 10 tests over the
+   exported `isTicketNamed`/`findTicketSatellites`/`formatReport`. To make the
+   primitives importable, `report-test-consolidation.ts` was refactored: `walk`,
+   `readStat`, `buildGroups`, `packGroup`, `classifyRestore`, `countLines`,
+   `mirrorsSrcModule`, the constants and types are exported, `readStat` takes the
+   frozen baseline as a parameter, and every scan/report/`process.exit` moved
+   into `main()` behind `if (import.meta.main)`. Importing the ranker is now
+   side-effect-free; its stdout is byte-identical to before the refactor (same
+   1408 files / 375,930 lines / 140 groups / 251 satellites / 95 removable).
+
+**Baseline is 6, not 0.** The broad filename rule flags six existing ticket-named
+test files that the ranker never listed as removable because they have no base
+(so they are not "satellites" in the group sense, but they are still
+`<module>-<ticket>.test.ts` and violate Placement Rule §2):
+`test/unit/tools/us-005`, `tools/us-003-acs`, `tools/us-003-scratchpad-acs`,
+`config/curator-config-us-004`, `agents/native/session/us-003-acs`,
+`prompts/us-004-affordances`. They are grandfathered, named here, and the
+baseline drops to 0 when they are renamed/merged. Broad rather than group-scoped
+on purpose: it catches the recurrence even when the new ticket file has no base,
+which a group-membership rule would miss.
+
+Verified: negative check — adding `test/unit/execution/foo-bug-99.test.ts` fails
+the gate (exit 1, names the file) and removing it returns exit 0. Counts: unit
+18,321 / 42,357 / 7 skip (**+10 tests / +23 expects, exactly the new test file**),
+integration 1,261 / 2,999 / 36, ui 98 / 149 / 0; `bun run test` 0 fail;
+`check:all` 0 (now including the new gate); both tsc clean; coverage 96.37% lines
+/ 93.41% functions, 0 below floor.
+
+Remaining Wave 6: Task 35 (fix or retire `report:test-overlap` /
+`report:dead-tests`). Wave 5 (Task 32 collapse) and the Wave 7 tail are still
+open.
