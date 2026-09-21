@@ -1536,3 +1536,60 @@ Waves 1-4 cumulative -141, we are 19 short — Wave 4's seven remaining groups
 (ranker's next rows: agents/acp/adapter 9→6, pid-registry 4→1, rebuild 5→3,
 effectiveness 5→3, verify-op 4→2, manifest-builder 4→2, pipeline-result-handler
 4→3/4→2) carry the rest; the re-rank will confirm the exact totals when they land.
+
+### 9.25 — 2026-09-21, Task 25 landed — agents/acp/adapter group 9 → 6 files (-17 lines)
+
+Hit the packed target exactly: 9 → 6 files, 2,797 → 2,780 lines, all 105 group
+tests / 196 expects preserved. Unit phase 18,309 / 42,331 / 7 skip unchanged;
+integration 1,261 / 2,999 / 36 and ui 98 / 149 / 0 unchanged; full suite 0 fail,
+`check:all` 0, both tsc clean, coverage 96.36% lines / 93.39% functions, 0 below
+floor (empty baseline). Ranker `_deps unrestored 0` (group carried no `⚠deps`
+flag).
+
+Receivers (T2 — absorb non-mirror satellites into the base and two concern files):
+
+- `adapter.test.ts` (584l, the mirror **base** of `src/agents/acp/adapter.ts` —
+  well under the fill target, unlike Waves 1–4's frozen over-limit bases)
+  absorbs `adapter-phase1` (computeAcpHandle stable-name plumbing, 2 tests).
+  Base-as-receiver is legal: §1.1's mirror prohibition is about a *satellite*
+  mirror being merged **away**, and the base mirrors its own src module by
+  definition. The two satellite mirrors `adapter-lifecycle`
+  (`src/agents/acp/adapter-lifecycle.ts`) and `adapter-close-physical`
+  (`src/agents/acp/adapter-close-physical.ts`) are untouched, as §1.5 requires.
+- `adapter-rate-card-pricing.test.ts` (644l) absorbs `adapter-output-timedout`
+  (buildTurnResult AC1/AC2/AC3 wall-clock timeout, 6 tests). Its card is
+  `TIMED_OUT_CARD` (catalog-rates 3/15) kept distinct from the receiver's
+  `CATALOG_CARD` (2/10) because both are consulted; `makeResponse` appended and
+  `InteractionExchange` added to the session-types import.
+- `adapter-complete-rates.test.ts` (363l) absorbs `adapter-output-rate-card`
+  (buildTurnResult AC5/AC6/AC8 rateCard pricing, 7 tests; cards inline per
+  test). `makeResponse` + the `buildTurnResult` import added.
+
+Deletes (3): `adapter-phase1`, `adapter-output-timedout`,
+`adapter-output-rate-card` — none has a `src/agents/acp/` module. Stayed alone:
+`adapter-phase-a` (752l, 726-line body).
+
+Mutation check: 3 merged receivers × one flipped assertion — computeAcpHandle
+stable-handle (`toBe(again)` → `"MUTATION"`), timeout output (`toBe("")` →
+`"MUTATION"`), AC5 estimatedCostUsd (12 → 99) → 3 distinct failures, 62 pass;
+all reverted with exact reverse edits, re-run green.
+
+**Process incident (recorded because it is the failure mode this doc warns
+about).** This task resumed from an uncommitted WIP the prior session left: the
+absorbs were applied but the `adapter-output-rate-card` source was not yet
+removed, so the `buildTurnResult — rateCard field` describe existed in **two**
+files. I completed the `git rm` and verified the full loop, then — restoring the
+mutation-check flips — used `git checkout -- <receiver>`, which reverts to
+**HEAD** and discards *all* uncommitted work, not just the flip. The three
+receiver additions were lost. They were reconstructed from the `git show HEAD:`
+sources and re-verified end-to-end: the reconstruction's insertion count is
+byte-identical (311 insertions), the §2.1 loop was re-run from scratch (the
+counts above are the post-reconstruction measurements), and the mutation check
+was repeated with exact reverse edits (working diff byte-identical before and
+after). **Lesson: never `git checkout --` an uncommitted drain file — save
+`git diff HEAD > /tmp/<task>.patch` before any mutation step.**
+
+Wave 4 running total: **-12 files**. Cumulative: **-125** (vs the plan's Waves
+1-4 cumulative -141; the six remaining Wave-4 groups carry -13). The persistent
+3-file shortfall remains the documented over-target landings in §9.5 (callOp)
+and §9.8 (orchestrator).
