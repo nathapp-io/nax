@@ -1,10 +1,10 @@
 {
   "counts": {
     "tsSuppress": 0,
-    "ratchetAllow": 31,
-    "looseCast": 1476
+    "ratchetAllow": 26,
+    "looseCast": 1474
   },
-  "updatedAt": "2026-09-21T07:31:31.741Z",
+  "updatedAt": "2026-09-20T17:25:10.301Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -357,9 +357,6 @@
     },
     "test/unit/execution/merge-conflict-rectify.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/execution/merge-worktree-id.test.ts": {
-      "ratchetAllow": 1
     },
     "test/unit/execution/parallel-batch.test.ts": {
       "looseCast": 10
@@ -762,13 +759,6 @@
     },
     "test/unit/worktree/manager.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/worktree/nax-orphan-ref.test.ts": {
-      "ratchetAllow": 4
-    },
-
-    "test/unit/worktree/nax-orphan-ref-worktree-id.test.ts": {
-      "looseCast": 2
     },
     "test/unit/runtime/session-run-hop.test.ts": {
       "looseCast": 1

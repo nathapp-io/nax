@@ -15,7 +15,7 @@
  * and quietly diverge from the SSOT.
  *
  * Use `storyWorktreePath(projectRoot, worktreeId)` / `storyBranchName(worktreeId)`
- * / `naxOrphanRefName(storyId)` / `deriveStoryWorktreeId(feature, storyId)` /
+ * / `naxOrphanRefName(worktreeId)` / `deriveStoryWorktreeId(feature, storyId)` /
  * `deriveBakeoffWorktreeId(feature, profile)` from `@/worktree` (or
  * `@/bakeoff` for the bakeoff- namespace helper). Prose that genuinely must
  * live in a string literal — a user-facing message, an LLM prompt — carries
@@ -56,13 +56,6 @@ const SCAN_ROOTS = ["src"] as const;
  *   producers (US-001 Out-of-Scope — changing bakeoff's composition
  *   inputs is not part of this story).
  *
- * Execution-layer sites (`WorktreeManager.create`/`remove`, `MergeEngine`,
- * `pipeline-result-handler`, `parallel-batch`, etc.) currently spell
- * `.nax-wt/<id>` and `nax/<storyId>` directly. Migrating them to the
- * producers is US-002/US-003; this gate pins their current spelling so
- * US-001's SSOT changes do not pull execution-layer migrations into
- * scope.
- *
  * CLI, context-generator, and rule-loader files mention `.nax/...`
  * (project config root) in user-facing prose. The branch-name pattern
  * explicitly excludes `.nax/...` (a project config directory, not a
@@ -81,16 +74,6 @@ const ALLOWED_FILES = new Set([
   "src/precheck/checks-git.ts",
   "src/precheck/checks-warnings.ts",
   "src/bakeoff/preflight.ts",
-  "src/worktree/manager.ts",
-  "src/worktree/merge.ts",
-  "src/worktree/dependencies.ts",
-  "src/execution/parallel-batch.ts",
-  "src/execution/parallel-worker.ts",
-  "src/execution/merge-conflict-rectify.ts",
-  "src/execution/iteration-runner.ts",
-  "src/execution/pipeline-result-handler.ts",
-  "src/execution/lifecycle/run-initialization.ts",
-  "src/execution/non-blocking-fix.ts",
   "src/context/engine/types.ts",
   "src/context/engine/scope-path-match.ts",
   "src/context/engine/providers/test-coverage.ts",
@@ -343,7 +326,7 @@ export function formatWorktreeIdViolationReport(violations: readonly WorktreeIdV
     "[FAIL] Open-coded worktree identity found",
     "",
     "Use storyWorktreePath(projectRoot, worktreeId) / storyBranchName(worktreeId) from",
-    "@/worktree for the story worktree path and branch, naxOrphanRefName(storyId) for",
+    "@/worktree for the story worktree path and branch, naxOrphanRefName(worktreeId) for",
     "the orphan ref, and deriveStoryWorktreeId(feature, storyId) /",
     "deriveBakeoffWorktreeId(feature, profile) for the corresponding IDs.",
     `If the line is genuinely prose, append "// ${ALLOW_MARKER}: <reason>".`,

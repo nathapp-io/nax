@@ -66,6 +66,12 @@ describe("findWorktreeIdViolations", () => {
     expect(violations[0]?.line).toBe(1);
   });
 
+  test("flags an open-coded worktree path in a production constructor", () => {
+    writeSource(tempDir, "src/worktree/manager.ts", 'const worktreePath = join(projectRoot, ".nax-wt", storyId);\n');
+
+    expect(findWorktreeIdViolations(tempDir)).toHaveLength(1);
+  });
+
   // AC-12: a per-line `nax-worktree-id-allow: <reason>` marker MUST escape.
   test("US-001 AC12: honours a per-line allow comment on a prose line", () => {
     writeSource(
@@ -261,6 +267,7 @@ describe("formatWorktreeIdViolationReport", () => {
     expect(report).toContain("[FAIL]");
     expect(report).toContain("src/unsafe.ts:7");
     expect(report).toContain("storyWorktreePath");
+    expect(report).toContain("naxOrphanRefName(worktreeId)");
     expect(report).toContain("nax-worktree-id-allow");
   });
 });
