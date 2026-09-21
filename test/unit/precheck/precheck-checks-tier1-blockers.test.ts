@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
+import { _featureLockDeps } from "@/execution";
 import type { PRD, UserStory } from "@/prd/types";
 import {
   checkCanonicalRulesLint,
@@ -112,13 +113,20 @@ describe("checkWorkingTreeClean (Tier 1 blocker)", () => {
 
 describe("checkStaleLock (Tier 1 blocker)", () => {
   let testDir: string;
+  let featureOutputDir: string;
+  let savedFeatureLockDeps: typeof _featureLockDeps;
 
   beforeEach(() => {
     testDir = makeTempDir("nax-test-precheck-");
+    featureOutputDir = makeTempDir("nax-test-precheck-feature-out-");
+    savedFeatureLockDeps = { ..._featureLockDeps };
+    _featureLockDeps.host = () => "test-machine";
   });
 
   afterEach(() => {
     rmSync(testDir, { recursive: true, force: true });
+    rmSync(featureOutputDir, { recursive: true, force: true });
+    Object.assign(_featureLockDeps, savedFeatureLockDeps);
   });
 
   test("passes when no lock file exists", async () => {
@@ -177,6 +185,121 @@ describe("checkStaleLock (Tier 1 blocker)", () => {
     const result = await checkStaleLock(testDir);
 
     expect(result.passed).toBe(true);
+  });
+
+  // =========================================================================
+  // US-003: checkStaleLock accepts an optional featureLock argument and
+  // applies isLockSuspect to both locks, naming whichever are stale.
+  // Without the argument the behaviour is unchanged: checkout-only check.
+  // =========================================================================
+
+  /** Write a feature lock at `<outputDir>/features/<f>/nax.lock`. */
+  function writeFeatureLock(
+    fileDir: string,
+    feature: string,
+    opts: {
+      pid: number;
+      host?: string;
+      ageMs?: number;
+    },
+  ): string {
+    const featureDir = join(fileDir, "features", feature);
+    mkdirSync(featureDir, { recursive: true });
+    const lockPath = join(featureDir, "nax.lock");
+    const startedAt = new Date(Date.now() - (opts.ageMs ?? 0)).toISOString();
+    const record = {
+      pid: opts.pid,
+      host: opts.host ?? "test-machine",
+      workdir: "/tmp/workdir",
+      feature,
+      runId: "run-1",
+      startedAt,
+      timestamp: Date.now() - (opts.ageMs ?? 0),
+    };
+    writeFileSync(lockPath, JSON.stringify(record));
+    return lockPath;
+  }
+
+  test("AC12: passes when neither lock file exists", async () => {
+    const result = await checkStaleLock(testDir, { outputDir: featureOutputDir, feature: "auth" });
+    expect(result.passed).toBe(true);
+    expect(result.message).toContain("No lock file");
+  });
+
+  test("AC12 (boundary): passes when no featureLock argument is passed and no checkout lock exists", async () => {
+    const result = await checkStaleLock(testDir);
+    expect(result.passed).toBe(true);
+  });
+
+  test("AC10: passes for a checkout lock younger than two hours whose PID is not alive", async () => {
+    const lockPath = join(testDir, "nax.lock");
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ pid: 999999, startedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() }),
+    );
+    const result = await checkStaleLock(testDir, { outputDir: featureOutputDir, feature: "auth" });
+    expect(result.passed).toBe(true);
+  });
+
+  test("AC10 (boundary): the same checkout-lock scenario passes with no featureLock argument", async () => {
+    const lockPath = join(testDir, "nax.lock");
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ pid: 999999, startedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() }),
+    );
+    const result = await checkStaleLock(testDir);
+    expect(result.passed).toBe(true);
+  });
+
+  test("AC11: passes without a featureLock argument even when a suspect feature lock exists", async () => {
+    _featureLockDeps.isProcessAlive = () => false; // would be suspect
+    writeFeatureLock(featureOutputDir, "auth", { pid: 999_999, ageMs: 3 * 60 * 60 * 1000 });
+
+    // No featureLock arg passed — checkout lock is absent so the check passes,
+    // regardless of any feature-lock state under featureOutputDir.
+    const result = await checkStaleLock(testDir);
+    expect(result.passed).toBe(true);
+  });
+
+  test("AC8: returns a failed check naming only the feature lock when the checkout lock is clean", async () => {
+    _featureLockDeps.isProcessAlive = () => false; // dead PID → suspect once aged
+    writeFeatureLock(featureOutputDir, "auth", { pid: 999_999, ageMs: 3 * 60 * 60 * 1000 });
+
+    const result = await checkStaleLock(testDir, { outputDir: featureOutputDir, feature: "auth" });
+    expect(result.passed).toBe(false);
+    // The feature lock is the named offender; the checkout lock is clean so
+    // its name must NOT appear in the failure reason.
+    expect(result.message).toContain("auth");
+    expect(result.message).not.toContain("checkout");
+  });
+
+  test("AC9: returns a failed check naming both locks when both are suspect", async () => {
+    _featureLockDeps.isProcessAlive = () => false; // both dead PIDs → both suspect once aged
+    const checkoutLockPath = join(testDir, "nax.lock");
+    writeFileSync(
+      checkoutLockPath,
+      JSON.stringify({ pid: 999_998, startedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString() }),
+    );
+    writeFeatureLock(featureOutputDir, "auth", { pid: 999_999, ageMs: 3 * 60 * 60 * 1000 });
+
+    const result = await checkStaleLock(testDir, { outputDir: featureOutputDir, feature: "auth" });
+    expect(result.passed).toBe(false);
+    // Both must be named in the message so an operator can act on either.
+    expect(result.message).toContain("auth");
+    expect(result.message.toLowerCase()).toMatch(/checkout|nax\.lock/);
+  });
+
+  test("AC9 (boundary): with a featureLock argument the checkout lock fails on its own when suspect", async () => {
+    _featureLockDeps.isProcessAlive = () => false; // dead PID → suspect
+    const checkoutLockPath = join(testDir, "nax.lock");
+    writeFileSync(
+      checkoutLockPath,
+      JSON.stringify({ pid: 999_998, startedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString() }),
+    );
+    // No feature lock file present.
+    const result = await checkStaleLock(testDir, { outputDir: featureOutputDir, feature: "auth" });
+    expect(result.passed).toBe(false);
+    expect(result.message.toLowerCase()).toMatch(/checkout|nax\.lock/);
   });
 });
 

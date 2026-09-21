@@ -1355,12 +1355,14 @@ program
   .command("unlock")
   .description("Release stale lock from crashed nax process")
   .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("-f, --feature <name>", "Feature name (scoped unlock; resolves <outputDir>/features/<feature>/nax.lock)")
   .option("--force", "Skip liveness check and remove unconditionally", false)
   .action(async (options) => {
     try {
       await unlockCommand({
         dir: options.dir,
         force: options.force,
+        feature: options.feature,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
