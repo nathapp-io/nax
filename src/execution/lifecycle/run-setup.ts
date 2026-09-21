@@ -185,6 +185,10 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     dryRun,
     startTimeMs: startTime,
     pid: process.pid,
+    // US-005: thread the run's workdir through so the snapshot written to
+    // disk carries `run.workdir` for external readers (TUI, `nax status`).
+    // The `workdir` local above has been in scope since :142.
+    workdir,
   });
 
   // ── PID registry constructed by createRuntime (BUG-002) ────────

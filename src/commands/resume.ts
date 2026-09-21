@@ -17,6 +17,7 @@ import type { Command } from "commander";
 import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { buildResumePlan, loadCheckpoints, type StoryCheckpoint } from "../execution/checkpoint";
+import { buildRunId } from "../execution/run-id";
 import { projectOutputDir } from "../runtime";
 import { validateFeatureName } from "../utils/feature-name";
 
@@ -198,7 +199,11 @@ export function registerResumeCommand(program: Command): void {
           // read for a resumed run (BUG-38).
           const runsDir = join(outputDir, "features", feature, "runs");
           mkdirSync(runsDir, { recursive: true });
-          const runId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
+          // US-005: route the resumed run's id through `buildRunId` so the
+          // resumed log file matches the run it records (the same id flows
+          // back into `run()` as `runId`, keeping log filename and the run
+          // record in sync — AC-9).
+          const runId = buildRunId(cmdOpts.dir, new Date());
           const logFilePath = join(runsDir, `${runId}.jsonl`);
           initLogger({ level: "info", filePath: logFilePath, useChalk: true, headless: true, suppressConsole: false });
 
@@ -217,6 +222,10 @@ export function registerResumeCommand(program: Command): void {
             headless: true,
             skipPrecheck: false,
             resumeMode: "auto",
+            // Pin the same id so the runner doesn't generate a second one
+            // (and so the resumed run's status.json reads back the same id
+            // it logs under — AC-7 + AC-9).
+            runId,
           });
 
           return result.success ? 0 : 1;
