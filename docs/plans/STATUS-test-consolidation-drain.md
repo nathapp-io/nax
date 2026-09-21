@@ -1498,3 +1498,41 @@ Deletes (3): `stage-assembler-exec-root`, `stage-assembler-provider-weights-inva
 `stage-assembler-extra-provider-ids`.
 
 Wave 4 running total: **-6 files**. Cumulative: **-119**.
+
+### 9.25 — 2026-09-21, Task 24 landed — scoring group 4 → 1 file (-93 lines)
+
+Hit the packed target exactly: 4 → 1 files, 523 → 514 lines, all 39 tests /
+57 expects preserved (13 base + 15 us004 + 7 lint-config + 4 prior-failure).
+Unit phase 18,309 / 42,331 unchanged, full suite 0 fail, `check:all` 0,
+both tsc clean, coverage 96.36% lines / 93.39% functions, 0 below floor.
+Ranker `_deps unrestored 0` (pure-function group — no deps hooks anywhere).
+
+T2 (absorb into base): the base `scoring.test.ts` (135l, mirror of
+src/context/engine/scoring.ts) had ~515 lines of headroom, so the whole
+group folds into it — the mirror-as-receiver case is the rule's own ideal
+("one test file per source file"). **514l** landed.
+
+Simplest group of the drain: no hooks, no _deps, no mocks in any of the
+four files. Only collision: **four `makeChunk` fixtures with different
+defaults** — base's (kind "feature") kept file-level; `makeWeightsChunk`
+(us004: +providerId "p1" default, 19 sites), `makeLintConfigChunk` (kind
+"lint-config", 7 sites), `makePriorFailureChunk` (kind "prior-failure",
+6 sites). Barrel imports flattened to the base's specific
+`@/context/engine/scoring` path. us004's pre-existing `delete (chunk as
+{providerId?})` cast left in place. Describe order: base's three, then
+us004 AC3→AC2→AC1→AC4, then lint-config, then prior-failure.
+
+Mutation check (mine, independent): 2 flips — us004 AC1 `× 0.5` → `× 0.9`
+and lint-config `toBeCloseTo(0.8)` → 0.99 — 2 distinct failures (the
+latter also caught the AC3 "ordering vs prior-failure" test in the same
+describe, expected), 36 pass; reverted, final run green.
+
+Deletes (3): `scoring-us004`, `scoring-lint-config`, `scoring-prior-failure`.
+Group dissolved — the ranker now has no scoring group at all (groups
+142 → 141, satellites 272 → 266).
+
+Wave 4 running total: **-9 files**. Cumulative: **-122**. Against the plan's
+Waves 1-4 cumulative -141, we are 19 short — Wave 4's seven remaining groups
+(ranker's next rows: agents/acp/adapter 9→6, pid-registry 4→1, rebuild 5→3,
+effectiveness 5→3, verify-op 4→2, manifest-builder 4→2, pipeline-result-handler
+4→3/4→2) carry the rest; the re-rank will confirm the exact totals when they land.
