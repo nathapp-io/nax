@@ -3,7 +3,7 @@
   "feature": "project-identity-run-locking",
   "branchName": "feat/project-identity-run-locking",
   "createdAt": "2026-01-20T00:00:00.000Z",
-  "updatedAt": "2026-09-21T11:12:12.001Z",
+  "updatedAt": "2026-09-21T12:50:19.650Z",
   "userStories": [
     {
       "id": "US-001",
@@ -105,8 +105,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -191,7 +191,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Mostly additive wiring across precheck + unlock command + CLI option flag. Existing test file `test/unit/commands/unlock.test.ts` and `test/unit/precheck/precheck-checks-tier1-blockers.test.ts` need new cases; the seams already exist as the pattern (`_precheckDeps` already holds checkStorySizeGate)."
+        "reasoning": "Mostly additive wiring across precheck + unlock command + CLI option flag. Existing test file `test/unit/commands/unlock.test.ts` and `test/unit/precheck/precheck-checks-tier1-blockers.test.ts` need new cases; the seams already exist as the pattern (`_precheckDeps` already holds checkStorySizeGate).",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/commands/unlock.ts",
@@ -223,6 +226,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "d8a5b9484fdeabb3c4814d47fb956f96e4dced28",
       "outOfScope": [
         "Identity-by-remote in claimProjectIdentity and checkInitCollision (covered by US-004).",
         "Status-file workdir stamping and unified buildRunId (covered by US-005).",

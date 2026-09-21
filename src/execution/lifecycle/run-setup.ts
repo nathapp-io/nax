@@ -377,8 +377,18 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // alone leaves a window for unsynchronised mutation.
     const checkoutLock = await _runSetupDeps.acquireLock(workdir);
     if (!checkoutLock.acquired) {
-      logger?.error("execution", "Another nax process is already running in this directory");
-      logger?.error("execution", "If you believe this is an error, remove nax.lock manually");
+      // `storyId: "_setup"` follows the convention every other log call in
+      // this file uses (e.g. the auto-migration call below at line ~313).
+      // Replay/reconstruct (src/replay/reconstruct.ts) falls back to
+      // `entry.data?.storyId` when the top-level `entry.storyId` is absent,
+      // so a missing data.storyId would orphan the refusal from the run's
+      // log filter.
+      logger?.error("execution", "Another nax process is already running in this directory", {
+        storyId: "_setup",
+      });
+      logger?.error("execution", "If you believe this is an error, remove nax.lock manually", {
+        storyId: "_setup",
+      });
       // EXEC-2: this throw is caught by the outer try/catch above (MEM-1), whose catch
       // calls cleanupCrashHandlers() and closes the runtime — no site-specific cleanup
       // needed here any more.
