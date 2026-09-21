@@ -950,4 +950,31 @@ Delegated to a subagent; post-verification by me: 132/269 reproduced, all receiv
 × one flipped assertion → 5 distinct failures (us002's mutation failed 3 tests,
 the others 1 each), all reverted.
 
-### 9.12 — next entry goes here
+### 9.12 — 2026-09-21, Task 11 landed — acceptance-setup group 13 → 7 files (-549 lines)
+
+Hit the packed target: 13 → 7 files, 4,747 → 4,198 lines, all 152 tests / 288
+expect() preserved. Unit phase 18,247 / 42,169 unchanged, full suite 0 fail,
+`check:all` 0, both tsc clean, coverage 96.32% / 93.40%, 0 below floor.
+
+Bins per the packer, seam assignment mine:
+
+- `acceptance-setup-regeneration` absorbs `acceptance-setup-dispatch-root` (705l).
+- `acceptance-setup-fingerprint` absorbs `acceptance-setup-commit` (679l).
+- `acceptance-setup-criteria` absorbs `acceptance-setup-profile-chain` (595l).
+- `acceptance-setup-gate` absorbs `acceptance-setup-strategy` (701l).
+- `acceptance-setup-dispatch-failure` absorbs `acceptance-setup-events` (696l).
+- `acceptance-missing-target` absorbs `acceptance-setup-agent-file` (573l).
+- `acceptance.test.ts` base (635l) stays alone.
+
+Deletes (6): `acceptance-setup-dispatch-root`, `acceptance-setup-commit`,
+`acceptance-setup-profile-chain`, `acceptance-setup-strategy`, `acceptance-setup-events`,
+`acceptance-setup-agent-file`.
+
+Delegated to a subagent; post-verification by me: 152/288 reproduced, all receivers
+≤ 705l. Collisions renamed with `*MakeCtx`/`*MakeStory`/`*MakePrd` prefixes; same-key
+deps hook pairs merged into one. Mutation check: 6 receivers × one flipped assertion →
+6 distinct failures. One receiver's `toBe(true)` mutation landed inside a template-literal
+fixture string (`BARE_TIER2_TEST`), not an executed assertion — re-verified by flipping a
+live `toBe(false)` instead. All reverted.
+
+### 9.13 — next entry goes here

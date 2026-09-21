@@ -6,8 +6,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { assertDefined, makeDispatchContext } from "@test/helpers";
-import { DEFAULT_CONFIG } from "@/config";
+import path from "node:path";
+import {
+  assertDefined,
+  cleanupTempDir,
+  makeStory as dispatchRootMakeStory,
+  makeDispatchContext,
+  makeMockAgentManager,
+  makePRD,
+  makeTempDir,
+  makeTestRuntime,
+} from "@test/helpers";
+import { groupStoriesByPackage } from "@/acceptance";
+import type { AgentRunOptions } from "@/agents/types";
+import { DEFAULT_CONFIG, pickSelector } from "@/config";
+import type { RunOperation } from "@/operations";
 import {
   _acceptanceSetupDeps,
   type AcceptanceMeta,
@@ -16,6 +29,9 @@ import {
   computeAcceptanceLayoutFingerprint,
 } from "@/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "@/pipeline/types";
+import type { PRD } from "@/prd/types";
+import type { NaxRuntime } from "@/runtime";
+import { storyExecRoot } from "@/runtime/packages";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -551,5 +567,139 @@ describe("acceptance-setup: writes acceptance-meta.json (P2-B, AC-15)", () => {
     expect(writtenMeta.storyCount).toBe(2);
     expect(writtenMeta.generatedAt).toBeString();
     expect(writtenMeta.generator).toBe("nax");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Absorbed: acceptance-setup-dispatch-root.test.ts
+// ---------------------------------------------------------------------------
+
+const dispatchRootTestSel = pickSelector("acceptance-setup-dispatch-root-test", "routing");
+
+const dispatchRootSuccessResult = {
+  success: true,
+  exitCode: 0,
+  output: "ok",
+  rateLimited: false,
+  durationMs: 1,
+  estimatedCostUsd: 0,
+  agentFallbacks: [],
+};
+
+function makeDispatchRootRunOp(): RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> {
+  return {
+    kind: "run",
+    name: "acceptance-setup-root-probe",
+    stage: "run",
+    config: dispatchRootTestSel,
+    session: { role: "implementer", lifetime: "fresh" },
+    build: (input) => ({
+      role: { id: "role", content: "You echo text.", overridable: false },
+      task: { id: "task", content: input.text, overridable: false },
+    }),
+    parse: (output) => output.trim(),
+  };
+}
+
+function makeDispatchRootCtx(runtime: NaxRuntime, repoRoot: string, prd: PRD): PipelineContext {
+  return {
+    config: runtime.configLoader.current(),
+    rootConfig: runtime.configLoader.current(),
+    prd,
+    story: prd.userStories[0],
+    stories: prd.userStories,
+    routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    workdir: repoRoot,
+    projectDir: repoRoot,
+    featureDir: path.join(repoRoot, ".nax", "features", "test-feature"),
+    hooks: { hooks: {} },
+    ...makeDispatchContext({ runtime }),
+  };
+}
+
+const tempDirs: string[] = [];
+
+function trackedTempDir(prefix: string): string {
+  const dir = makeTempDir(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs) cleanupTempDir(dir);
+  tempDirs.length = 0;
+});
+
+describe("acceptance-setup: main-checkout dispatch root survives the containment-root move", () => {
+  test("local callOp dispatches at the main-checkout repoRoot, not a worktree path", async () => {
+    const repoRoot = trackedTempDir("nax-accept-root-");
+    const absPackageDir = path.join(repoRoot, "packages", "core");
+
+    let seen: AgentRunOptions | undefined;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        seen = req.runOptions;
+        return { result: dispatchRootSuccessResult, fallbacks: [], dispatchesCompleted: 1 };
+      },
+    });
+    const runtime = makeTestRuntime({ agentManager, workdir: repoRoot });
+    const prd = makePRD({
+      feature: "test-feature",
+      userStories: [
+        dispatchRootMakeStory({ id: "US-001", workdir: "packages/core", acceptanceCriteria: ["AC-1: works"] }),
+      ],
+    });
+    const ctx = makeDispatchRootCtx(runtime, repoRoot, prd);
+
+    await _acceptanceSetupDeps.callOp(ctx, absPackageDir, makeDispatchRootRunOp(), { text: "hi" });
+
+    const packageView = runtime.packages.resolve(absPackageDir);
+    // The registry relativizes the absolute packageDir, so the view's own
+    // packageDir is relative — exactly the shape `storyExecRoot` expects.
+    expect(packageView.packageDir).toBe("packages/core");
+    expect(packageView.repoRoot).toBe(repoRoot);
+    expect(storyExecRoot(packageView)).toBe(repoRoot);
+
+    expect(seen).toBeDefined();
+    expect(seen?.codingToolRoot).toBe(repoRoot);
+    expect(seen?.workdir).toBe(repoRoot);
+    // Discriminating: the package workdir is a different, real directory, and
+    // the dispatch root must not have been re-pointed at it or at a worktree.
+    expect(seen?.codingToolRoot).not.toBe(absPackageDir);
+    expect(seen?.codingToolRoot).not.toContain(".nax-wt");
+    expect(seen?.workdir).not.toContain(".nax-wt");
+  });
+
+  test("the absolute targetTestFilePath is inside storyExecRoot(packageView)", async () => {
+    const repoRoot = trackedTempDir("nax-accept-path-");
+    const runtime = makeTestRuntime({ agentManager: makeMockAgentManager(), workdir: repoRoot });
+    const prd = makePRD({
+      feature: "test-feature",
+      userStories: [
+        dispatchRootMakeStory({ id: "US-001", workdir: "packages/core", acceptanceCriteria: ["AC-1: works"] }),
+      ],
+    });
+
+    // `targetTestFilePath` (acceptance-setup.ts:417) is `group.testPath`
+    // verbatim, so this is the real construction, not a copy of it.
+    const [group] = await groupStoriesByPackage(prd, repoRoot, "test-feature");
+    expect(group).toBeDefined();
+    const testPath = group?.testPath as string;
+    const packageDir = group?.packageDir as string;
+
+    expect(path.isAbsolute(packageDir)).toBe(true);
+    expect(path.isAbsolute(testPath)).toBe(true);
+
+    const packageView = runtime.packages.resolve(packageDir);
+    const execRoot = storyExecRoot(packageView);
+    expect(execRoot).toBe(repoRoot);
+
+    const relativeToExecRoot = path.relative(execRoot, testPath);
+    expect(path.isAbsolute(relativeToExecRoot)).toBe(false);
+    expect(relativeToExecRoot.startsWith("..")).toBe(false);
+    expect(testPath).not.toContain(".nax-wt");
+    // Explicit reachability for a package acceptance session: the file lives
+    // under the package, which lives under the main-checkout exec root.
+    expect(relativeToExecRoot.startsWith(`packages/core${path.sep}`)).toBe(true);
   });
 });
