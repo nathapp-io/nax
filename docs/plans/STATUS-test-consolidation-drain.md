@@ -16,13 +16,13 @@ to re-measure after every task, and §6 tells you when to stop rather than push 
 
 ---
 
-## 0. Current state - re-measured 2026-09-21 @ d2e338fb6 (after Task 31, Wave 4 complete; original main measurement @ 4af3c680e in §9.0)
+## 0. Current state - re-measured 2026-09-21 @ 5a046d6f3 (after Task 32, Wave 5 complete; original main measurement @ 4af3c680e in §9.0)
 
 ```
 bun run report:test-consolidation
   scope              test/unit + test/integration + test/ui  (test/e2e/ excluded — separate CI step)
-  scanned            1408 files, 375930 lines, 35800 expect()
-  static test sites  17528  + 543 .each sites — NOT the runtime count, use `bun test`
+  scanned            1409 files, 375361 lines, 35823 expect()
+  static test sites  17388  + 543 .each sites — NOT the runtime count, use `bun test`
   satellite groups   140  (nested bases collapsed into their outermost ancestor)
   satellites         251  (188 encode a ticket — rule §2 violations)
   mirrors            54  EXCLUDED — each is its own src module's test file (--mirrors)
@@ -31,31 +31,31 @@ bun run report:test-consolidation
   removable lines    3169   (11,185 at drain start)
 ```
 
-> **Waves 1–4 are complete.** Tasks 1–31 landed 28 groups: **-24 files in Wave 4,
+> **Waves 1–5 are complete.** Tasks 1–31 landed 28 groups: **-24 files in Wave 4,
 > -137 files cumulative** against the plan's Waves 1–4 target of -141. The 4-file
 > shortfall is the documented over-target landings in §9.5 (callOp +2) and §9.8
 > (orchestrator +1), plus §9.31 (pipeline-result-handler packs to 3, not the plan
-> row's 2). The runtime baseline was re-based mid-Wave-4 when `origin/main`
-> advanced (§9.25/§9.26): unit is **18,311 / 42,334 / 7 skip**, up 2 tests / 3
-> expects from main's check-coverage commits, not drift. Remaining: Wave 5 (Task
-> 32, the T3 collapse pass), Wave 6 (Tasks 33–35, the recurrence gate — the
-> highest-value remaining item), and the Wave 7 tail.
+> row's 2). Task 32 (Wave 5) removed no files but **-154 runtime tests / -659
+> lines**, with `expect()` unchanged (§9.33). The runtime baseline was re-based
+> mid-Wave-4 when `origin/main` advanced (§9.25/§9.26); Wave 5's before-baseline was
+> **19,680 tests / 45,505 expect() / 43 skip**. Remaining: Wave 6 (Tasks 33–35 —
+> the gate landed as §9.32; Task 35 open) and the Wave 7 tail.
 
 ### 0.1 Runtime state — measured with `bun test`, which is the only authority on test counts
 
 | Suite | Tests | Files | `expect()` | Skip | Wall | Cap |
 |:--|--:|--:|--:|--:|--:|--:|
-| `test/unit/` | 18,311 | 1,285 | 42,334 | 7 | 46–53s | 120s |
-| `test/integration/` | 1,261 | 125 | 2,999 | 36 | 17–22s | 120s |
+| `test/unit/` | 18,168 | 1,274 | 42,357 | 7 | 46–53s | 120s |
+| `test/integration/` | 1,260 | 125 | 2,999 | 36 | 17–22s | 120s |
 | `test/ui/` | 98 | 10 | 149 | 0 | 0.8–1.1s | 30s |
-| **Total (`bun run test`)** | **19,670** | **1,408** | **45,482** | **43** | **~65–72s** | — |
+| **Total (`bun run test`)** | **19,526** | **1,409** | **45,505** | **43** | **~65–72s** | — |
 
-(Per-phase file counts from `bun test <dir>` sum to 1,420 while the ranker and the
-coverage run both report 1,408 files — a Bun file-counting artifact, not test
-drift. Tests and `expect()` are the only invariants.)
+(Per-phase file counts from `bun test <dir>` sum to 1,409, matching the ranker;
+the earlier 1,408/1,420 gap was a Bun file-counting artifact, not test drift.
+Tests and `expect()` are the only invariants.)
 
-0 fail. **Do not mix these with the ranker's static counts.** The ranker reports 17,526
-static `test(`/`it(` sites because it cannot expand the 543 `.each` sites, and 35,796
+0 fail. **Do not mix these with the ranker's static counts.** The ranker reports 17,388
+static `test(`/`it(` sites because it cannot expand the 543 `.each` sites, and 35,823
 static `expect(` occurrences because it cannot count calls inside loops. Every invariant in
 §4 is a *runtime* number, read off `bun test`.
 
@@ -63,15 +63,15 @@ static `expect(` occurrences because it cannot count calls inside loops. Every i
 
 | Reading | Value | Source |
 |:--|--:|:--|
-| Test lines / src lines | **375,930 / 166,497 — 2.26:1** | ranker; `git ls-files` + `wc -l` over `src/**/*.ts{,x}` |
-| Preamble (lines before the first `describe`) | **63,342 — 16.8% of test lines** | re-measured this pass with the ranker's own rule (`^describe(`), cross-checked on three files against `--group` output. The pre-drain §0.2 row said ~74,100/19.7% and §0.3 said 70,169/18.6% — those two already disagreed, so treat the drop as indicative rather than exact |
+| Test lines / src lines | **375,361 / 166,497 — 2.25:1** | ranker; `git ls-files` + `wc -l` over `src/**/*.ts{,x}` |
+| Preamble (lines before the first `describe`) | **~63,300 — 16.9% of test lines** | ranker rule (`^describe(`); roughly unchanged by Wave 5 (it removed test bodies, not preamble) |
 | Files importing `@test/helpers` | 874 (61.2%) of 1,429 | grep — **not re-measured this pass** |
 | Helper modules available | 52 `test/helpers/*.ts` (51 excl. `index.ts`) | `git ls-files` |
 | Satellite groups / satellites / mirrors | **140 / 251 / 54** | ranker |
 | Satellites encoding a ticket | **188 of 251 (75%)** | ranker |
-| Removable files / lines | **95** (1,408 → 1,313) / **3,169** | ranker |
-| Line coverage | **96.36%** (74,776/77,597), floor 80% | `bun run test:coverage` |
-| Function coverage | **93.39%** (7,055/7,554), floor 80% | same, varies run to run |
+| Removable files / lines | **95** (1,409 → 1,314) / **3,169** | ranker |
+| Line coverage | **96.37%** (74,777/77,597), floor 80% | `bun run test:coverage` |
+| Function coverage | **93.41%** (7,056/7,554), floor 80% | same, varies run to run |
 | Files below the per-file floor | **0**, baseline empty | same |
 
 **Everything is green. This is a debt drain, not a fix for a broken thing.** Coverage is 16
@@ -1909,3 +1909,70 @@ integration 1,261 / 2,999 / 36, ui 98 / 149 / 0; `bun run test` 0 fail;
 Remaining Wave 6: Task 35 (fix or retire `report:test-overlap` /
 `report:dead-tests`). Wave 5 (Task 32 collapse) and the Wave 7 tail are still
 open.
+
+### 9.33 — 2026-09-21, Task 32 landed — the T3 collapse pass (83 files, -154 tests)
+
+Wave 5. The plan's "214 clusters / 342 tests" came from an uncommitted analysis
+heuristic and no detector shipped with the doc, so a codemod was written to
+enumerate and apply T3 mechanically (`/tmp/collapse-apply.ts`, not committed —
+see below). Its rule is a conservative, faithful reading of §1.3 T3: **within one
+`describe`**, ≥2 plain `test()`/`it()` bodies (no `.skip/.only/.todo/.each`) that
+open with a byte-identical `setup;` statement and contain **exactly one**
+top-level `expect(...)`, with nothing after it. Detection therefore lands lower
+than the doc's figure: **95 clusters / 150 removable static test sites**.
+
+Invariants (runtime, the only authority — §0.1):
+
+| | before | after | Δ |
+|:--|--:|--:|--:|
+| unit tests | 18,321 | 18,168 | -153 |
+| integration tests | 1,261 | 1,260 | -1 |
+| ui tests | 98 | 98 | 0 |
+| **total tests** | **19,680** | **19,526** | **-154** |
+| `expect()` | 45,505 | **45,505** | **0** |
+| skip | 43 | 43 | 0 |
+| fail | 0 | 0 | 0 |
+
+**Static −150 but runtime −154, and the gap is legitimate, not lost tests.** Two
+removed static sites are `test()` calls registered *inside a `for` loop*
+(`context/rules/nax-rules-stage-scoping` — 1 site × 4 rule filenames; and
+`operations/plan-fileoutput-writable` — 1 site × 2 op names). Merging each
+loop-body pair halves that loop's runtime registrations, so the merged test still
+runs once per iteration with **both** asserts — 4 + 2 runtime tests, not 2. The
+merged names were hand-corrected to template literals (the codemod's
+`JSON.stringify` had frozen `${fileName}`/`${name}`), and the dropped rationale
+comment in `nax-rules-stage-scoping` was restored verbatim.
+
+The codemod enforces three write-time guards per file, and **skips rather than
+writes** on any failure: (1) no two edit spans overlap, (2) the result parses
+(`Bun.Transpiler`), (3) the `expect(` count and the total plain-test-site count
+each drop by exactly the cluster arithmetic. 0 files skipped. Two earlier dry
+runs corrupted output and were caught by these guards — the first because
+**regex literals (`/\bsrc\//`) were mis-lexed as `//` comments**, which made
+`matchBracket` overshoot a test boundary (the regenerated scanner now skips
+regex literals using a `prevSignificant` heuristic). This is why a hand-merge
+was not attempted and why the guards are mandatory.
+
+**Process incidents (recorded per §9.25):**
+
+1. `bunx biome format --write <file>` run from inside this worktree **reformats
+   the whole repository with default config** — `biome.json` `files.includes`
+   excludes `!**/.worktrees/**`, so a path-scoped invocation falls back. It
+   touched 325 files before being caught; all were reverted with
+   `git checkout -- .`. Never format from a worktree by path.
+2. `bunx biome format --stdin-file-path=<f>` respects config and touches only
+   stdin — but it is **lossy for control bytes**: the literal ESC (0x1B) in
+   `log-format/formatter.test.ts`'s ANSI-stripping regex came back as U+FFFD,
+   which silently disarmed the suppression and the escaping. Caught by
+   `check:all` ("suppression has no effect") and restored byte-exact. Only that
+   one file in the diff contained a control byte.
+
+Verification: `bun run test` 0 fail all three phases; `check:all` 0 (after the
+two format incidents above); `bun x tsc --noEmit` and `-p tsconfig.test.json`
+both clean; `test:coverage` **96.37% lines / 93.41% functions, 0 files below
+floor, empty baseline**. Mutation check per §5 step 7: 6 merged tests across 6
+files, one assertion flipped each → 6 distinct failures, all restored.
+
+No `src/` change, no mirror merged, no escape hatch, no baseline moved. Remaining:
+Wave 6 Task 35 (fix/retire the alias-blind `report:test-overlap` /
+`report:dead-tests`) and the Wave 7 tail.
