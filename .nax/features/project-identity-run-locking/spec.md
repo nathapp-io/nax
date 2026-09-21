@@ -212,7 +212,7 @@ implement.
 
 - Baseline: `checkStaleLock(workdir: string): Promise<Check>`.
 - Target: `checkStaleLock(workdir: string, featureLock?: { outputDir: string; feature: string })`.
-  With the argument it applies `isLockStale` to both locks and names whichever are stale; without
+  With the argument it applies `isLockSuspect` to both locks and names whichever are suspect; without
   it, it checks the checkout lock only, exactly as today.
 
 **`getEarlyEnvironmentBlockers`** — `src/precheck/index.ts:134`
@@ -247,7 +247,7 @@ implement.
   `:191-192`. With a
   feature, the command resolves that feature's lock. Without one, it reports the checkout lock
   and every `<outputDir>/features/*/nax.lock` it finds — the scan runs whether or not a checkout
-  lock exists — removing only those `isLockStale` accepts. `--force` overrides the staleness
+  lock exists — removing only those `isLockReclaimable` accepts. `--force` overrides that
   check for both kinds, as it already does for the checkout lock at `:64-69` and `:79`.
 
 **`claimProjectIdentity`** — `src/runtime/paths.ts:75`
@@ -292,7 +292,7 @@ implement.
 
 | Condition | Behavior |
 |:--|:--|
-| Feature lock held, and `isLockStale` rejects the record | Refuse the run; the error names the feature, the holder's workdir, host and PID. |
+| Feature lock held, and `isLockReclaimable` rejects the record | Refuse the run; the error names the feature, the holder's workdir, host and PID. |
 | Feature lock refused after the checkout lock was taken | The checkout lock is released before the error escapes. |
 | Post-lock initialization fails after both locks are held | Both locks are released before the error escapes. |
 | Lock file present but unparseable | Logged at warn level, treated as stale, and removed, matching the existing checkout-lock behaviour. |
@@ -329,8 +329,8 @@ implement.
 ## Stories
 
 **US-001 — Feature lock primitive**
-`featureLockPath`, `acquireFeatureLock`, `releaseFeatureLock` and the shared `isLockStale`
-predicate, over a record carrying the holder, reusing the checkout lock's exclusive-create and
+`featureLockPath`, `acquireFeatureLock`, `releaseFeatureLock` and the shared `isLockReclaimable`
+and `isLockSuspect` predicates, over a record carrying the holder, reusing the checkout lock's exclusive-create and
 stale-reclaim guarantees and verifying ownership before release. No dependencies.
 
 **US-002 — Run lifecycle holds both locks**
@@ -483,7 +483,7 @@ change. Depends on US-004.
 
 - `[cli]` the `unlock` command accepts a `-f, --feature <name>` option and forwards it to `unlockCommand`.
 - `[cli]` `nax unlock -f <feature>` exits `0` and removes `<outputDir>/features/<feature>/nax.lock`.
-- `[cli]` `nax unlock -f <feature> --force` removes that feature's lock even when `isLockSuspect` reports the holder live.
+- `[cli]` `nax unlock -f <feature> --force` removes that feature's lock even when `isLockReclaimable` returns `false` for its record.
 - `[cli]` `nax unlock` with no feature exits `0` and removes the checkout lock.
 - `[cli]` `nax unlock` with no feature reports a feature lock whose holder is live and leaves it in place.
 - `[cli]` `nax unlock` with no feature runs the feature-lock scan and reports what it finds even when no checkout lock exists.
