@@ -13,6 +13,7 @@ import { mkdirSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, withWarnSpy } from "@test/helpers";
+import * as executionBarrel from "@/execution";
 import type { FeatureLockRecord } from "@/execution/feature-lock";
 import {
   _featureLockDeps,
@@ -38,6 +39,29 @@ beforeEach(() => {
 });
 afterEach(() => {
   Object.assign(_featureLockDeps, savedDeps);
+});
+
+describe("US-001 barrel importability (public surface parity)", () => {
+  test("every feature-lock symbol is re-exported from @/execution, matching the rest of the execution primitives", () => {
+    // The execution module's public surface is its barrel (`@/execution`).
+    // Every other execution primitive — `acquireLock`, `releaseLock`,
+    // `_lockDeps`, `inspectRecurrenceBreaker`, `recordOscillations`, etc. —
+    // is re-exported there, and the test suite imports from the barrel, not
+    // from the internal file. The feature-lock primitive must follow the
+    // same convention so (a) tests can target the public surface, and
+    // (b) production callers depending on the barrel can use the new
+    //     feature-lock API without reaching into an internal path.
+    expect(typeof executionBarrel.featureLockPath).toBe("function");
+    expect(typeof executionBarrel.acquireFeatureLock).toBe("function");
+    expect(typeof executionBarrel.releaseFeatureLock).toBe("function");
+    expect(typeof executionBarrel.lockHost).toBe("function");
+    expect(typeof executionBarrel.isLockReclaimable).toBe("function");
+    expect(typeof executionBarrel.isLockSuspect).toBe("function");
+    // The `_featureLockDeps` seam is part of the public surface — every
+    // other `_…Deps` object in the barrel is re-exported alongside the
+    // function it backs so tests can mutate the seam through the barrel.
+    expect(executionBarrel._featureLockDeps).toBeDefined();
+  });
 });
 
 describe("featureLockPath", () => {
