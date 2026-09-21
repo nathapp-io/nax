@@ -301,6 +301,49 @@ describe("checkStaleLock (Tier 1 blocker)", () => {
     expect(result.passed).toBe(false);
     expect(result.message.toLowerCase()).toMatch(/checkout|nax\.lock/);
   });
+
+  test("US-003 regression: foreign-host checkout lock is suspect at age >= 2h even when its PID is alive locally (PID-recycling)", async () => {
+    // The previous checkout-only verdict used `!isProcessAlive(pid)` against
+    // the local kernel, so a foreign-host checkout lock whose recorded PID
+    // happened to be reused by a live local process was silently treated as
+    // fresh. The fix unifies on `isLockSuspect`, which ignores local PID
+    // liveness for foreign-host records and treats them as suspect at age
+    // >= 2h — matching the feature-lock verdict.
+    const checkoutLockPath = join(testDir, "nax.lock");
+    writeFileSync(
+      checkoutLockPath,
+      JSON.stringify({
+        // Foreign host — explicitly not the test-machine that the seam returns.
+        host: "other-machine",
+        pid: process.pid, // current test-runner process: alive locally (PID recycling)
+        startedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      }),
+    );
+    _featureLockDeps.isProcessAlive = () => true; // belt-and-braces: even if asked, "alive"
+
+    const result = await checkStaleLock(testDir, { outputDir: featureOutputDir, feature: "auth" });
+    expect(result.passed).toBe(false);
+    expect(result.message.toLowerCase()).toMatch(/checkout|nax\.lock/);
+  });
+
+  test("US-003 regression: foreign-host checkout lock younger than 2h passes even when local PID probe says alive", async () => {
+    // Mirror of the above for the negative case — a young foreign-host checkout
+    // lock is not suspect, regardless of whether the recorded PID happens to
+    // be alive locally.
+    const checkoutLockPath = join(testDir, "nax.lock");
+    writeFileSync(
+      checkoutLockPath,
+      JSON.stringify({
+        host: "other-machine",
+        pid: process.pid,
+        startedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(), // 1h ago
+      }),
+    );
+    _featureLockDeps.isProcessAlive = () => true;
+
+    const result = await checkStaleLock(testDir, { outputDir: featureOutputDir, feature: "auth" });
+    expect(result.passed).toBe(true);
+  });
 });
 
 describe("checkPRDValid (Tier 1 blocker)", () => {
