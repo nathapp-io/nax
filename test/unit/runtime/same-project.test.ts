@@ -82,4 +82,16 @@ describe("isSameProject", () => {
   it("returns false for the same path under different paths (fork under different paths)", () => {
     expect(isSameProject("https://github.com/o/r1", "https://github.com/o/r2")).toBe(false);
   });
+
+  it("returns true when one side has trailing .git/ and the other has .git", () => {
+    expect(isSameProject("https://github.com/o/r.git/", "https://github.com/o/r.git")).toBe(true);
+  });
+
+  it("returns true when one side has trailing .git/ and the other has no suffix", () => {
+    expect(isSameProject("https://github.com/o/r.git/", "https://github.com/o/r")).toBe(true);
+  });
+
+  it("returns true when ssh-style trailing .git/ matches https form without suffix", () => {
+    expect(isSameProject("git@github.com:o/r.git/", "https://github.com/o/r")).toBe(true);
+  });
 });

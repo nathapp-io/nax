@@ -11,8 +11,8 @@
  * Decide whether two remote strings refer to the same project.
  *
  * Returns false when either argument is null. Otherwise normalizes both
- * sides (lowercase, strip scheme, credentials, port, .git suffix, trailing
- * slash; convert scp-style host:path to host/path) and compares the
+ * sides (lowercase, strip scheme, credentials, port, trailing slash, .git
+ * suffix; convert scp-style host:path to host/path) and compares the
  * resulting "host/path". Host is significant — forks on different hosts
  * remain different projects.
  */
@@ -29,8 +29,11 @@ export function isSameProject(remoteA: string | null, remoteB: string | null): b
  *   3. strip credentials (user:pass@, user@)
  *   4. strip any port (:1234 after host)
  *   5. convert scp-style "host:path" to "host/path"
- *   6. strip one trailing ".git"
- *   7. strip trailing slash
+ *   6. strip trailing slash
+ *   7. strip one trailing ".git"
+ *
+ * The slash is stripped before ".git" so a remote ending in ".git/" reduces
+ * to the same canonical form as one ending in ".git" or no suffix.
  *
  * The returned form is "host/path" — host is significant, forks on different
  * hosts remain different projects.
@@ -57,14 +60,14 @@ function normalize(remote: string): string {
     s = `${s.slice(0, colon)}/${s.slice(colon + 1)}`;
   }
 
-  // 6. Strip one trailing ".git"
-  if (s.endsWith(".git")) {
-    s = s.slice(0, -4);
-  }
-
-  // 7. Strip trailing slash
+  // 6. Strip trailing slash first (so a trailing ".git/" is reduced to ".git")
   if (s.endsWith("/")) {
     s = s.slice(0, -1);
+  }
+
+  // 7. Strip one trailing ".git"
+  if (s.endsWith(".git")) {
+    s = s.slice(0, -4);
   }
 
   return s;
