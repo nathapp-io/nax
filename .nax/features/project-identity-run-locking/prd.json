@@ -3,7 +3,7 @@
   "feature": "project-identity-run-locking",
   "branchName": "feat/project-identity-run-locking",
   "createdAt": "2026-01-20T00:00:00.000Z",
-  "updatedAt": "2026-09-21T13:45:08.782Z",
+  "updatedAt": "2026-09-21T14:11:23.920Z",
   "userStories": [
     {
       "id": "US-001",
@@ -320,8 +320,8 @@
         "status"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -384,7 +384,10 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Localized fix in one function (`collectFromMetrics`); the surrounding reference reader (`:209`) is the pattern; the other audit-table rows are explicitly unchanged. Risk is purely the change in fallback behavior, which the ACs enumerate."
+        "reasoning": "Localized fix in one function (`collectFromMetrics`); the surrounding reference reader (`:209`) is the pattern; the other audit-table rows are explicitly unchanged. Risk is purely the change in fallback behavior, which the ACs enumerate.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "src/plugins/builtin/curator/collect.ts",
@@ -400,6 +403,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "d09209058bddbb6d294797574d8947efda748e4b",
       "outOfScope": [
         "Identity-by-remote (covered by US-004).",
         "Lock primitive and lifecycle (covered by US-001, US-002).",
