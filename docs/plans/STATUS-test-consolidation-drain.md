@@ -16,29 +16,29 @@ to re-measure after every task, and §6 tells you when to stop rather than push 
 
 ---
 
-## 0. Current state - re-measured 2026-09-21 @ 9bd1b8bab (after Task 14; original main measurement @ 4af3c680e in §9.0)
+## 0. Current state - re-measured 2026-09-21 @ 36a7c5c14 (after Task 21, Wave 3 complete; original main measurement @ 4af3c680e in §9.0)
 
 ```
 bun run report:test-consolidation
   scope              test/unit + test/integration + test/ui  (test/e2e/ excluded — separate CI step)
-  scanned            1458 files, 375268 lines, 35616 expect()
+  scanned            1426 files, 374655 lines, 35615 expect()
   static test sites  17457  + 543 .each sites — NOT the runtime count, use `bun test`
-  satellite groups   142  (nested bases collapsed into their outermost ancestor)
-  satellites         304  (223 encode a ticket — rule §2 violations)
+  satellite groups   141  (nested bases collapsed into their outermost ancestor)
+  satellites         272  (202 encode a ticket — rule §2 violations)
   mirrors            54  EXCLUDED — each is its own src module's test file (--mirrors)
   _deps unrestored   0 files with no restore; 1 need a read (hook, no visible restore)
-  removable files    151   (packed to 650, hard cap 800; 233 at drain start)
-  removable lines    6012   (11,185 at drain start)
+  removable files    119   (packed to 650, hard cap 800; 233 at drain start)
+  removable lines    4449   (11,185 at drain start)
 ```
 
 ### 0.1 Runtime state — measured with `bun test`, which is the only authority on test counts
 
 | Suite | Tests | Files | `expect()` | Skip | Wall | Cap |
 |:--|--:|--:|--:|--:|--:|--:|
-| `test/unit/` | 18,247 | 1,320 | 42,169 | 7 | 44–50s | 120s |
+| `test/unit/` | 18,247 | 1,292 | 42,169 | 7 | 44–50s | 120s |
 | `test/integration/` | 1,254 | 124 | 2,980 | 36 | 16–18s | 120s |
 | `test/ui/` | 98 | 10 | 149 | 0 | 0.85s | 30s |
-| **Total (`bun run test`)** | **19,599** | **1,454** | **45,298** | **43** | **~62–90s** | — |
+| **Total (`bun run test`)** | **19,599** | **1,426** | **45,298** | **43** | **~62–90s** | — |
 
 0 fail. **Do not mix these with the ranker's static counts.** The ranker reports 17,457
 static `test(`/`it(` sites because it cannot expand the 543 `.each` sites, and 35,616
@@ -49,15 +49,15 @@ static `expect(` occurrences because it cannot count calls inside loops. Every i
 
 | Reading | Value | Source |
 |:--|--:|:--|
-| Test lines / src lines | **375,268 / 166,420 — 2.26:1** | ranker; `wc -l` over `src/**/*.ts{,x}` |
+| Test lines / src lines | **374,655 / 166,420 — 2.25:1** | ranker; `wc -l` over `src/**/*.ts{,x}` |
 | Preamble (lines before the first `describe`) | **~68,700 — 18.3% of test lines** | ranker definition |
-| Files importing `@test/helpers` | 889 (61.1%) of 1,454 | grep |
+| Files importing `@test/helpers` | 889 (61.1%) of 1,426 | grep |
 | Helper modules available | 48 in `test/helpers/` (excl. `index.ts`, `e2e/`) | `ls` |
-| Satellite groups / satellites / mirrors | **142 / 304 / 54** | ranker |
-| Satellites encoding a ticket | **223 of 304 (73%)** | ranker |
-| Removable files / lines | **151** (1,454 → 1,303) / **6,012** | ranker |
+| Satellite groups / satellites / mirrors | **141 / 272 / 54** | ranker |
+| Satellites encoding a ticket | **202 of 272 (74%)** | ranker |
+| Removable files / lines | **119** (1,426 → 1,307) / **4,449** | ranker |
 | Line coverage | **96.32%** (74,694/77,549), floor 80% | `bun run test:coverage` |
-| Function coverage | **93.39–93.41%** (7,047–7,049/7,546), floor 80% | same, varies run to run |
+| Function coverage | **93.39%** (7,047/7,546), floor 80% | same, varies run to run |
 | Files below the per-file floor | **0**, baseline empty | same |
 
 **Everything is green. This is a debt drain, not a fix for a broken thing.** Coverage is 16
@@ -1261,3 +1261,130 @@ check is the only thing that catches this class; both incidents now recorded.
 Mutation check: 3 merged receivers × one flipped assertion (pid register
 42→43; resume CREATED→RUNNING; bindHandle handle "mutated") → 3 distinct
 failures, no collateral; reverted. Group at floor (5 files, -0).
+
+### 9.20 — 2026-09-21, Task 19 landed — spawn-client group 8 → 4 files (-114 lines)
+
+Target 8 → 4 (-4 f, packer claims -111 l); **landed 8 → 4 (-4 f, -114 l)**.
+All 41 tests / 45,298 expect() preserved: unit phase 18,247 / 42,169
+unchanged, full suite 0 fail, `check:all` 0, both tsc clean, coverage 96.32%
+lines / 93.39% functions, 0 below floor. Ranker `_deps unrestored 0` (group
+carried no `⚠deps` flag).
+
+Packer bins retained, seam assignment mine:
+
+- `spawn-client-reasoning-effort.test.ts` absorbs `spawn-client-pid-callback`
+  (ADR-013 phase 3 onPidSpawned/onPidExited callback family) +
+  `spawn-client-cancel-cwd` (BUG-3 --cwd on cancel/stop) +
+  `spawn-client-timeout` (US-005 timeoutSeconds zero-survival) — client
+  session/argv lifecycle family. 726l.
+  **727 → 726l — over the 650 fill target, under the cap.** The packer's
+  631l estimate charged the reasoning-effort preamble as the union; the four
+  absorbed files bring four different dep keys and three fixture families
+  (`installSpawn` vs bare `mock` vs direct assignment), so the union lands
+  ~100 over the estimate. Same understatement class as §9.5/§9.13/§9.14.
+  Hooks: the absorbed pid-callback file had a top-level beforeEach/afterEach
+  pair stubbing `spawn` to TURN — merged describe-scoped into its own suite
+  (§1.6: do not give every test both hooks); the BUG-3 file's top-level
+  `stubProcessKill()` merged into the file's single top-level pair; its
+  describe-scoped `withDepsRestore` kept. `FIXED_PID` unified the local
+  makeSpawnResult across all four (effort used 4321, pid-callback 54321;
+  nothing asserted the effort pid).
+- `spawn-client-tracked-spawn-deadlines.test.ts` absorbs
+  `spawn-client-stderr-cap` (MEM-1 stderr buffering cap) — trackedSpawn
+  response/failure family. ~250l. stderr-cap's local makeSpawnResult was
+  byte-identical to the shared `./_spawn-client-test-helpers` one → deleted
+  in favor of the shared import; its own top-level process.kill pair was
+  redundant with the file's `stubProcessKill()` → deleted.
+
+Deletes (4): `spawn-client-pid-callback`, `spawn-client-cancel-cwd`,
+`spawn-client-timeout`, `spawn-client-stderr-cap`.
+
+Frozen base (spawn-client.test.ts, 810l) and mirror
+(spawn-client-process.test.ts) untouched.
+
+Mutation check: flipped one assertion per absorbed concern family — effort
+thrice-set assertion (`reasoning_effort` argv row + the byte-identical
+pid-callback TURN default), pid-callback callback-order ("resolved" → mutated),
+MEM-1 rolling-tail (`endsWith` → false) → 3 distinct failures, no collateral;
+reverted. Post-commit re-run clean.
+
+Group at floor per ranker (4 files, -0).
+
+### 9.21 — 2026-09-21, Task 20 landed — quality/runner group 5 → 1 file (-54 lines)
+
+Target 5 → 1 (-4 f, packer claims -54 l); **landed 5 → 1 (-4 f, -54 l) — hit
+exactly.** All 30 tests / 45,298 expect() preserved: unit phase 18,247 /
+42,169 unchanged, full suite 0 fail, `check:all` 0, both tsc clean, coverage
+96.32% lines / 93.39% functions, 0 below floor.
+
+One receiver: `runner.test.ts` (mirror base) absorbs all four satellites —
+origin gating (harness vs agent-tool console semantics), env stripping
+(secrets, AGENT=1 opt-in, overrides), list commands (one spawn per entry,
+aggregate result), empty-command guard. Base 226l → 525l. Same
+`_qualityRunnerDeps.spawn` save/restore hook pattern throughout, each
+describe-scoped — no top-level hook trap. Collision renames: none (the
+origin file's local `makeSpawn`-named fixtures were already distinct; the
+env-strip file's `markers`/`lastEnv` locals named uniquely). The base's
+`mock` import (timeout flow) already covered the absorbed files' needs;
+`withDebugSpy`/`withInfoSpy` imports added.
+
+Deletes (4): `runner-origin`, `runner-env-strip`, `runner-multi-command`,
+`runner-empty-command`.
+
+Mutation check: flipped origin "agent-tool emits no info" (0 → 99) and
+env-strip override value (override-value → mutated-value) → 2 distinct
+failures, no collateral; reverted. Group at floor (1 file, -0).
+
+### 9.22 — 2026-09-21, Task 21 landed — adversarial-review group 7 → 4 files (-36 lines)
+
+Target 7 → 4 (-3 f, packer claims -276 l); **landed 7 → 4 (-3 f, -36 l)**.
+All 62 tests / 45,298 expect() preserved: unit phase 18,247 / 42,169
+unchanged, full suite 0 fail, `check:all` 0, both tsc clean, coverage 96.32%
+lines / 93.39% functions, 0 below floor.
+
+The packer's line claim was the largest miss of the drain: its bin 3
+(review-requote + retry-flip) built to **725l vs an 848l raw sum with no
+deduplicable preamble** (retry-flip brings 100 lines of fixtures — SAMPLE
+consts, makeBuildCtx, resolveRetryStrategy — that nothing else shares, and
+bin 4 (base + verify-ac-dropped + inspection-trail) landed 681l with three
+mutually-disjoint fixture families). Neither over-800 case appeared; the
+surprise is that a group packing to 4 files at 631+535=1,166 claimed lines
+lands 725+681=1,406. Lines moved with the file count as the compliance
+metric; files hit the target exactly.
+
+Bins per the packer, seam assignment mine:
+
+- `adversarial-review-requote.test.ts` absorbs `adversarial-review-retry-flip`
+  (US-005c retry flip from hopBody to op.retry) — hop-body + retry behavior
+  family, 725l. The retry-flip file's `afterEach` runtime-closure merged into
+  the receiver's existing createdRuntimes pair (its own array was identical);
+  `makeSpawnResult`-style locals renamed `makeRetrySpawnResult` etc. where
+  they collided with the receiver's locals.
+- `adversarial-review.test.ts` (base/mirror) absorbs
+  `adversarial-review-verify-ac-dropped` (#1950 AC-dropped findings surfaced)
+  + `adversarial-review-inspection-trail` (#3A rubber-stamp guard) —
+  verify() and hopBody guard family, 681l. Both absorbed files' fixture
+  consts renamed (`STORY` → `STORY_AC_DROPPED` / `STORY_INSPECT`) to survive
+  each other (the base's SAMPLE_* names were already distinct).
+
+Deletes (3): `adversarial-review-retry-flip`,
+`adversarial-review-verify-ac-dropped`, `adversarial-review-inspection-trail`.
+
+Frozen/other receivers untouched (`adversarial-review-reground` 800l,
+`adversarial-review-verify` 695l — both at their own standalone floors).
+
+Mutation check: flipped one assertion per absorbed concern family — base's
+AC-dropped `toHaveLength(1)` → 2 and inspection-trail send-count (2 → 1),
+then requote's retry-flip cost-sum (`toBeCloseTo(0.001+0.002+0.003)` → +0.004)
+and requote's call-count (2 → 3) — 2 distinct failures per receiver, no
+collateral; all reverted.
+
+Group at floor per ranker (4 files, -0).
+
+**Wave 3 complete:** coding-tool-support (-5 f), buildHopCallback (-4),
+metrics/tracker (-4), cli/rules (-4), session/manager (-4), spawn-client
+(-4), quality/runner (-4), adversarial-review (-3) = **-32 files** against
+the plan's Wave-3 target of -32. Cumulative: -49 (W1) + -32 (W2) + -32 (W3)
+= **-113 files** against the plan's cumulative -116 for Waves 1-3 (the
+3-file shortfall is the documented over-target landings in §9.5 callOp and
+§9.8 orchestrator).
