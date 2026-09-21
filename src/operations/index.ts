@@ -28,20 +28,6 @@ export { _callOpDeps, _runPostParseForTest, callOp } from "./call";
 export { newCorrelationId } from "./call-resolvers";
 export type { ClassifyRouteInput, ClassifyRouteOutput } from "./classify-route";
 export { classifyRouteBatchOp, classifyRouteOp } from "./classify-route";
-export type { DebateHybridInput, DebateHybridOutput } from "./debate-hybrid";
-export { hybridDebaterOp } from "./debate-hybrid";
-export type { DebateJudgeInput } from "./debate-judge";
-export { judgeOp } from "./debate-judge";
-export type { DebatePlanInput, DebatePlanOutput } from "./debate-plan";
-export { planDebaterOp } from "./debate-plan";
-export type { DebateProposeInput } from "./debate-propose";
-export { debateProposeOp } from "./debate-propose";
-export type { DebateRebutInput } from "./debate-rebut";
-export { debateRebutOp } from "./debate-rebut";
-export type { DebateStatefulInput, DebateStatefulOutput } from "./debate-stateful";
-export { statefulDebaterOp } from "./debate-stateful";
-export type { DebateSynthesisInput } from "./debate-synthesis";
-export { synthesisOp } from "./debate-synthesis";
 export type { DeclarationSink } from "./declaration-sink";
 export { makeDeclarationSink } from "./declaration-sink";
 export type { DecomposeOpInput, DecomposeOpOutput } from "./decompose";
@@ -81,8 +67,6 @@ export type { FullSuiteRectifyInput, FullSuiteRectifyOutput } from "./full-suite
 export { fullSuiteRectifyOp } from "./full-suite-rectify-op";
 export type { GreenfieldGateInput, GreenfieldGateOutput } from "./greenfield-gate";
 export { greenfieldGateOp } from "./greenfield-gate";
-export type { GrounderInput } from "./ground";
-export { groundOp } from "./ground";
 export type { ImplementerInput, ImplementerOutput } from "./implement";
 export { implementerOp, implementTddOp } from "./implement";
 export type { LintCheckDeps, LintCheckInput, LintCheckOutput } from "./lint-check";
@@ -111,10 +95,6 @@ export type { MutationCheckDeps, MutationCheckInput, MutationCheckOutput } from 
 export { _mutationCheckDeps, mutationCheckOp } from "./mutation-check";
 export type { PlanInteractiveInput } from "./plan";
 export { planInteractiveOp } from "./plan";
-export type { PlanCriticLlmInput, PlanCriticLlmOutput } from "./plan-critic-llm";
-export { inspectCriticOutput, planCriticLlmOp } from "./plan-critic-llm";
-export type { PlanDraftInput, PlanDraftOutput } from "./plan-draft";
-export { inspectDraftOutput, planDraftOp } from "./plan-draft";
 export {
   applyPlanFidelity,
   backfillModifiedFiles,

@@ -3,7 +3,7 @@
  *
  * `DispatchContext` requires `agentManager`, `sessionManager`, `runtime` and
  * `abortSignal` on every context that dispatches agent work — pipeline stages,
- * routing, lifecycle options, acceptance, debate. Tests that build such a
+ * routing, lifecycle options, acceptance. Tests that build such a
  * context by hand were missing all four.
  *
  * The three object fields come from ONE runtime rather than three independent

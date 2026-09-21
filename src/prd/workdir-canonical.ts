@@ -83,8 +83,8 @@ export function deriveWorkdir(
  * a stray package-relative spelling, not a disambiguation — there is nothing
  * left to disambiguate. Delegates to toRepoFrame, which already implements
  * the identical segment-boundary-safe re-spell; kept as a distinct named
- * export because src/debate/verifiers/checks.ts and this module's own
- * canonicalizePrdWorkdirs both call it as "the PRD write-time re-spell",
+ * export because this module's own
+ * canonicalizePrdWorkdirs calls it as "the PRD write-time re-spell",
  * a narrower and more discoverable name than the general-purpose toRepoFrame.
  */
 export function canonicalizeDeclaredPath(path: string, workdir: string): string {

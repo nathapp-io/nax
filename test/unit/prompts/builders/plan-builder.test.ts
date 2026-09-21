@@ -255,19 +255,6 @@ describe("PlanPromptBuilder.build — AC qualifying-clause preservation (#1667)"
     expect(outputFormat).toContain("One assertion per AC");
     expect(outputFormat).toContain("not a second assertion");
   });
-
-  test("second-prompt schema ('One assertion per item') also spares a trailing qualifying clause", () => {
-    const draft = new PlanPromptBuilder().buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: SPEC,
-      codebaseContext: CTX,
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    expect(draft.task.content).toContain("One assertion per item");
-    expect(draft.task.content).toContain("not a second assertion");
-  });
 });
 
 // ─── Source Roots section (wireSourceRoots story) ─────────────────────────────
@@ -327,125 +314,6 @@ describe("PlanPromptBuilder — shared quality rules", () => {
     const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX);
     expect(taskContext).toContain(expected);
   });
-
-  test.each([
-    ["COMPLEXITY_GUIDE", "Complexity Classification Guide"],
-    ["TEST_STRATEGY_GUIDE", "Test Strategy Guide"],
-    ["DESCRIPTION_QUALITY_RULES", "Description Quality Rules"],
-  ])("buildDraft() injects %s", (_name, expected) => {
-    const builder = new PlanPromptBuilder();
-    const { task } = builder.buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: "Some spec",
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    expect(task.content).toContain(expected);
-  });
-
-  test("buildDraft() DESCRIPTION_QUALITY_RULES includes self-check", () => {
-    const { task } = new PlanPromptBuilder().buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: "Some spec",
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    expect(task.content).toContain("Self-check before emitting");
-  });
-
-  test.each([
-    ["injects SPEC_ANCHOR_RULES when spec non-empty", "Some non-empty spec", true],
-    ["omits SPEC_ANCHOR_RULES when spec empty", "", false],
-  ] as const)("buildDraft(): %s", (_label, specContent, shouldInclude) => {
-    const { task } = new PlanPromptBuilder().buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent,
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    if (shouldInclude) expect(task.content).toContain("Enumerate failure-mode tables");
-    else expect(task.content).not.toContain("Enumerate failure-mode tables");
-  });
-
-  test.each([
-    ["injects monorepo hint when packages provided", ["packages/api"] as string[] | undefined, true],
-    ["omits monorepo hint when no packages", undefined, false],
-  ] as const)("buildDraft(): %s", (_label, packages, shouldInclude) => {
-    const { task } = new PlanPromptBuilder().buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: "Some spec",
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-      packages,
-    });
-    if (shouldInclude) {
-      expect(task.content).toContain("Monorepo Context");
-      expect(task.content).toContain("packages/api");
-      expect(task.content).toContain('"workdir"');
-    } else {
-      expect(task.content).not.toContain("Monorepo Context");
-      expect(task.content).not.toContain('"workdir"');
-    }
-  });
-
-  test.each([
-    ["includes suggestedCriteria when spec non-empty", "Some spec", true],
-    ["omits suggestedCriteria when spec empty", "", false],
-  ] as const)("buildDraft(): %s", (_label, specContent, shouldInclude) => {
-    const { task } = new PlanPromptBuilder().buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent,
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    if (shouldInclude) expect(task.content).toContain("suggestedCriteria");
-    else expect(task.content).not.toContain("suggestedCriteria");
-  });
-});
-
-// ─── PlanPromptBuilder.buildDraft() — US-003 ────────────────────────────────
-
-describe("PlanPromptBuilder.buildDraft() — US-003", () => {
-  type PlanDraftOverrides = Partial<Parameters<InstanceType<typeof PlanPromptBuilder>["buildDraft"]>[0]>;
-
-  const makePlanDraftInput = (overrides?: PlanDraftOverrides) => ({
-    manifestSection: "## Manifest\nF-001: user table exists\nS-001: users have emails",
-    manifest: { repoFacts: [], specClaims: [], gaps: [] },
-    specContent: "Users should be able to login with email/password",
-    codebaseContext: "Express.js backend with PostgreSQL",
-    feature: "User authentication",
-    branchName: "feat/auth",
-    citationThreshold: 0.5,
-    ...overrides,
-  });
-
-  test("AC-6/7: input is well-formed with undefined revisionFindings; revisionFindings are forwarded when provided", () => {
-    const inputUndefined = makePlanDraftInput({ revisionFindings: undefined });
-    expect(inputUndefined.manifestSection).toBeDefined();
-    expect(inputUndefined.feature).toBeDefined();
-    expect(inputUndefined.manifestSection).toContain("Manifest");
-    expect(inputUndefined.revisionFindings).toBeUndefined();
-
-    const message = "Citations must reference [F-NNN] or [S-NNN] from manifest";
-    const findings = [
-      { checklistItem: "ac-testable", severity: "blocker", message: "ACs must be testable" },
-      { checklistItem: "citation", severity: "blocker", message },
-    ];
-    const inputWithFindings = makePlanDraftInput({ revisionFindings: findings });
-    expect(inputWithFindings.revisionFindings).toEqual(findings);
-    expect(inputWithFindings.revisionFindings?.[1]?.message).toBe(message);
-    expect(inputWithFindings.revisionFindings?.length).toBe(2);
-  });
 });
 
 // ─── PlanPromptBuilder.schemaRepair() static method ────────────────────────
@@ -485,40 +353,86 @@ describe("PlanPromptBuilder — repo-rooted path frame (single-frame redesign)",
     expect(outputFormat).not.toContain("Paths in contextFiles and expectedFiles are relative to THIS workdir");
     expect(outputFormat).toContain("Paths in contextFiles and expectedFiles are relative to the REPO ROOT");
   });
+});
 
-  test("buildDraft() carries the same repo-rooted wording as build()", () => {
-    const builder = new PlanPromptBuilder();
-    const { task } = builder.buildDraft({
-      manifestSection: "m",
-      specContent: "s",
-      codebaseContext: "c",
-      feature: "f",
-      branchName: "b",
-      citationThreshold: 0.8,
-      packages: ["packages/api"],
-    });
-    expect(task.content).toContain("relative to the REPO ROOT");
-    expect(task.content).not.toContain("Paths in contextFiles and expectedFiles are relative to THIS workdir");
+// ─── Conditional repair turns on the refine path ──────────────────────────
+
+/**
+ * `buildSpecDriftRepair` and `buildOutOfScopeRepair` are the two conditional
+ * turns `planRefineOp` fires (src/operations/plan-refine.ts:310,323). The
+ * plan-refine tests spy on them to assert the wiring, so until now nothing
+ * exercised either body. These assert the payload the model actually receives:
+ * every flagged item has to reach the prompt, since a dropped one is silently
+ * not repaired.
+ */
+describe("PlanPromptBuilder.buildSpecDriftRepair()", () => {
+  const VIOLATIONS = [
+    { storyId: "US-001", acIndex: 0, ac: "[grep] `grep -c foo src/a.ts` returns 1", reason: "deprecated-tag" },
+    { storyId: "US-002", acIndex: 3, ac: "[file] src/b.ts contains a guard", reason: "shell-command" },
+  ];
+
+  test("renders one bullet per violation carrying storyId, AC index, reason and the AC text", () => {
+    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
+
+    expect(prompt).toContain("- US-001 AC[0] (deprecated-tag): [grep] `grep -c foo src/a.ts` returns 1");
+    expect(prompt).toContain("- US-002 AC[3] (shell-command): [file] src/b.ts contains a guard");
+  });
+
+  test("keeps the violations in the order given, so the list matches the checker's output", () => {
+    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
+
+    expect(prompt.indexOf("US-001 AC[0]")).toBeLessThan(prompt.indexOf("US-002 AC[3]"));
+  });
+
+  test("names the deprecated tags to strip and the runtime tags that replace them", () => {
+    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
+
+    for (const tag of ["[grep]", "[file]", "[verbatim]"]) expect(prompt).toContain(tag);
+    for (const tag of ["[unit]", "[integration]", "[cli]"]) expect(prompt).toContain(tag);
+  });
+
+  test("routes the result to the file and forbids echoing the PRD into chat", () => {
+    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/feature/prd.json");
+
+    expect(prompt).toContain("Write the corrected PRD to this file path: /tmp/feature/prd.json");
+    expect(prompt).toContain("Do not output the PRD in chat.");
+  });
+
+  test("guards the correct ACs: the model is told not to weaken what is already right", () => {
+    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
+
+    expect(prompt).toContain("Do not remove or weaken acceptance criteria that are already correct.");
   });
 });
 
-// ─── PlanPromptBuilder.citationRepair() static method ──────────────────────
+describe("PlanPromptBuilder.buildOutOfScopeRepair()", () => {
+  const MISSING = ["No OAuth device flow", "No migration of legacy sessions"];
 
-describe("PlanPromptBuilder.citationRepair() — US-003", () => {
-  test("AC-20: method exists, returns non-empty string containing the message", () => {
-    expect(typeof PlanPromptBuilder.citationRepair).toBe("function");
-    const message = "Citation rate 0.30 below threshold 0.50";
-    const result = PlanPromptBuilder.citationRepair(message);
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-    expect(result).toContain(message);
+  test("renders every missing exclusion verbatim as its own bullet", () => {
+    const prompt = new PlanPromptBuilder().buildOutOfScopeRepair(MISSING, "/tmp/prd.json");
+
+    expect(prompt).toContain("- No OAuth device flow");
+    expect(prompt).toContain("- No migration of legacy sessions");
   });
 
-  test.each([
-    ["cite claims from manifest", (r: string) => r.toLowerCase().includes("cit")],
-    ["manifest fact IDs [F-NNN] or [S-NNN]", (r: string) => /\[F-\d+\]|\[S-\d+\]/.test(r)],
-  ])("AC-20: instructs agent to reference %s", (_label, check) => {
-    const result = PlanPromptBuilder.citationRepair("low citations");
-    expect(check(result)).toBe(true);
+  test("names the top-level outOfScope array as the destination", () => {
+    const prompt = new PlanPromptBuilder().buildOutOfScopeRepair(MISSING, "/tmp/prd.json");
+
+    expect(prompt).toContain("`outOfScope`");
+    expect(prompt).toContain("Add it to the top-level `outOfScope` array, preserving the spec's wording.");
+  });
+
+  test("forbids the two failure modes the backfill cannot undo: dropping and AC conversion", () => {
+    const prompt = new PlanPromptBuilder().buildOutOfScopeRepair(MISSING, "/tmp/prd.json");
+
+    expect(prompt).toContain("never drop or merge an item");
+    expect(prompt).toContain("Never convert an out-of-scope statement into an acceptance criterion");
+  });
+
+  test("routes the result to the file and forbids echoing the PRD into chat", () => {
+    const prompt = new PlanPromptBuilder().buildOutOfScopeRepair(MISSING, "/tmp/feature/prd.json");
+
+    expect(prompt).toContain("Write the corrected PRD to this file path: /tmp/feature/prd.json");
+    expect(prompt).toContain("Do not output the PRD in chat.");
   });
 });

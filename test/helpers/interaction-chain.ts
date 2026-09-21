@@ -6,7 +6,7 @@
  * test files cast their stubs into the type — 3 casts for one missing helper
  * (#1514 §3c-ii, Decision 1).
  *
- * Same shape of fix as `makeDebateRunner` / `makeMergeEngine` / `makeLogger`:
+ * Same shape of fix as `makeMergeEngine` / `makeLogger`:
  * intersect, and keep the one cast here.
  */
 import { mock } from "bun:test";

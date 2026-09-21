@@ -19,6 +19,7 @@ import {
   rejectDeadQualityFlags,
   rejectLegacyAgentKeys,
   rejectLegacyRectificationKeys,
+  rejectRemovedPlanModes,
   stripRemovedNoOpKeys,
   validatePermissionsBlock,
   warnQualityCommandChains,
@@ -164,30 +165,9 @@ async function applyProfileChainLayer(
   let merged = rawConfig;
   for (const name of overlayChain) {
     const profileData = await loadProfile(name, projectRoot);
-    // Load companion .env for $VAR resolution — do NOT write to process.env (AC 9).
-    // Must resolve BEFORE merging, otherwise a "$MODEL_FAST"-style reference lands
-    // in the run config as the literal unresolved string (BUG-17) — the load path
-    // previously discarded loadProfileEnv's return value and never called
-    // resolveEnvVars, so this only ever worked via the separate `config profile show
-    // --unmask` command path.
-    const profileEnv = await loadProfileEnv(name, projectRoot);
-    let resolvedProfileData: Record<string, unknown>;
-    try {
-      resolvedProfileData =
-        Object.keys(profileEnv).length > 0
-          ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
-          : profileData;
-    } catch (err) {
-      // BUG-21 — surface which profile and which key path referenced the
-      // unresolved $VAR, instead of a bare Error with no config context.
-      const varName = err instanceof UnresolvedEnvVarError ? err.varName : undefined;
-      const path = err instanceof UnresolvedEnvVarError ? err.path.join(".") : undefined;
-      throw new NaxError(
-        `Profile "${name}" references an undefined environment variable${varName ? ` $${varName}` : ""}${path ? ` at "${path}"` : ""}.`,
-        "PROFILE_ENV_VAR_UNRESOLVED",
-        { stage: "config", profileName: name, varName, path, cause: err },
-      );
-    }
+    // Must resolve BEFORE merging, otherwise a "$MODEL_FAST"-style reference
+    // lands in the run config as the literal unresolved string (BUG-17).
+    const resolvedProfileData = await resolveProfileEnvVars(name, projectRoot, profileData, `Profile "${name}"`);
     // Same compat-shim chain as the file layers above (BUG-51) — a profile can carry
     // the same legacy shapes (e.g. routing.strategy: "manual") and must be remapped
     // rather than hard-failing Zod validation.
@@ -203,6 +183,37 @@ async function applyProfileChainLayer(
     });
   }
   return merged;
+}
+
+/**
+ * Resolve one profile's $VAR references against its companion .env file.
+ * Shared by the root and per-package chains (CFG-3): load the profile's own
+ * `.env` (AC 9 — never write to process.env) and resolve references against
+ * it. BUG-21 — an unresolved reference throws a NaxError naming the profile
+ * and key path; `label` is the profile identity and `extra` carries extra
+ * error context for the per-package chain.
+ */
+async function resolveProfileEnvVars(
+  name: string,
+  profileDir: string,
+  profileData: Record<string, unknown>,
+  label: string,
+  extra: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  const profileEnv = await loadProfileEnv(name, profileDir);
+  try {
+    return Object.keys(profileEnv).length > 0
+      ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
+      : profileData;
+  } catch (err) {
+    const varName = err instanceof UnresolvedEnvVarError ? err.varName : undefined;
+    const path = err instanceof UnresolvedEnvVarError ? err.path.join(".") : undefined;
+    throw new NaxError(
+      `${label} references an undefined environment variable${varName ? ` $${varName}` : ""}${path ? ` at "${path}"` : ""}.`,
+      "PROFILE_ENV_VAR_UNRESOLVED",
+      { stage: "config", profileName: name, ...extra, varName, path, cause: err },
+    );
+  }
 }
 
 /** Layer 4: CLI overrides (highest priority). */
@@ -237,9 +248,10 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
   // unification. Same Zod-strip rationale.
   rejectLegacyRectificationKeys(rawConfig);
   rejectDeadQualityFlags(rawConfig);
+  rejectRemovedPlanModes(rawConfig);
   // The block is enforced now, so validate it rather than reject it.
   validatePermissionsBlock(rawConfig);
-  // Strip the four inert no-op keys (warn-and-strip, not throw — see
+  // Strip the removed no-op keys (warn-and-strip, not throw — see
   // config-guards.ts for the divergence rationale). Runs AFTER the reject guards
   // and BEFORE safeParse, so the removed key is gone before the schema sees it.
   // Post-merge placement yields one warning per resolved config regardless of
@@ -494,7 +506,7 @@ export async function loadConfigForWorkdir(
   warnQualityCommandChains(shimmedPackageFields as Record<string, unknown>, warnDedupe.warn);
   let merged = mergePackageConfig(rootConfig, shimmedPackageFields);
 
-  // Strip the four inert no-op keys from the per-package overlay result.
+  // Strip the removed no-op keys from the per-package overlay result.
   // Runs for BOTH ordinary package overlays and package profiles (the profile
   // branch re-runs the strip on the profile-merged result, so this also covers
   // the case where a per-package overlay introduces a no-op key on a mergeable
@@ -524,26 +536,13 @@ export async function loadConfigForWorkdir(
     const packageRoot = join(repoRoot, packageDir);
     for (const name of packageChain) {
       const profileData = await loadProfile(name, packageRoot);
-      // CFG-3: mirror the root profile chain's $VAR resolution (loader.ts
-      // layer 3) — without this, a per-package profile's "$VAR"-style
-      // references land in the merged config as literal unresolved strings
-      // while the same profile file at root level either resolves or throws.
-      const profileEnv = await loadProfileEnv(name, packageRoot);
-      let resolvedProfileData: Record<string, unknown>;
-      try {
-        resolvedProfileData =
-          Object.keys(profileEnv).length > 0
-            ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
-            : profileData;
-      } catch (err) {
-        const varName = err instanceof UnresolvedEnvVarError ? err.varName : undefined;
-        const path = err instanceof UnresolvedEnvVarError ? err.path.join(".") : undefined;
-        throw new NaxError(
-          `Per-package profile "${name}" (${packageDir}) references an undefined environment variable${varName ? ` $${varName}` : ""}${path ? ` at "${path}"` : ""}.`,
-          "PROFILE_ENV_VAR_UNRESOLVED",
-          { stage: "config", profileName: name, packageDir, varName, path, cause: err },
-        );
-      }
+      const resolvedProfileData = await resolveProfileEnvVars(
+        name,
+        packageRoot,
+        profileData,
+        `Per-package profile "${name}" (${packageDir})`,
+        { packageDir },
+      );
       // #1620: same chain as the root profile layer (BUG-51).
       const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, logger, warnDedupe);
       // nax#1990 — same per-layer scoping as the package overlay above: run the
@@ -563,10 +562,11 @@ export async function loadConfigForWorkdir(
   rejectLegacyAgentKeys(rawMerged);
   rejectLegacyRectificationKeys(rawMerged);
   rejectDeadQualityFlags(rawMerged);
+  rejectRemovedPlanModes(rawMerged);
   // CFG-1: same validation as the root chain — a per-package
   // `execution.permissions` block is now enforced, so validate it here too.
   validatePermissionsBlock(rawMerged);
-  // Strip the four inert no-op keys again post-profile-overlay (a package
+  // Strip the removed no-op keys again post-profile-overlay (a package
   // profile can reintroduce one). Runs after the reject guards and before
   // safeParse, mirroring the root chain. Post-merge placement yields one
   // warning per resolved config regardless of which layer supplied the key.

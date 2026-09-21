@@ -29,7 +29,6 @@ src/
 │   └── generators/   # Per-agent constitution generators (claude, aider, cursor, opencode, windsurf)
 ├── context/          # Context generation for agent prompts
 │   └── generators/   # Per-agent context generators (claude, codex, cursor, gemini, opencode, aider, windsurf)
-├── debate/           # Multi-agent debate system (session, concurrency, resolvers, prompts)
 ├── execution/        # Run orchestration (parallel, crash recovery, pipeline result handling)
 │   ├── escalation/   # Tier escalation on repeated failures (fast → balanced → powerful)
 │   └── lifecycle/    # Run lifecycle phases (setup, initialization, completion, cleanup, regression, acceptance-loop, paused-story-prompts)
@@ -48,7 +47,7 @@ src/
 ├── prd/              # PRD parsing, story state machine, story management
 ├── project/          # Auto-detect project type, language, frameworks
 ├── prompts/          # Prompt building (domain-specific builders, loader, core engine)
-│   ├── builders/     # 7 domain-specific prompt builders (tdd, debate, review, acceptance, rectifier, one-shot, adversarial-review)
+│   ├── builders/     # 8 domain-specific prompt builders (tdd, review, acceptance, rectifier, one-shot, adversarial-review, plan, setup)
 │   ├── core/         # Shared prompt engine (SectionAccumulator, universal sections, wrappers, types)
 │   │   └── sections/ # Pure section functions (findings, instructions, json-schema, prior-failures, routing-candidates)
 │   └── sections/     # Legacy prompt sections (conventions, hermetic, isolation, role-task, story, tdd-conventions, verdict)
@@ -197,7 +196,6 @@ The `_deps` pattern is used extensively (70+ modules). Key examples by subsystem
 | | `src/routing/router.ts` | `_tryLlmBatchRouteDeps` | LLM batch routing |
 | | `src/worktree/manager.ts` | `_managerDeps` | Worktree management |
 | | `src/worktree/merge.ts` | `_mergeDeps` | Worktree merge |
-| | `src/debate/session-helpers.ts` | `_debateSessionDeps` | Debate sessions |
 | | `src/project/detector.ts` | `_detectorDeps` | Project detection |
 | | `src/quality/runner.ts` | `_qualityRunnerDeps` | Quality command execution |
 

@@ -7,8 +7,8 @@
  * `PromptOptimizerInput` has never had. That is 22 typecheck errors across 11
  * byte-identical stubs (#1514 §5.2) — one missing factory, copy-pasted.
  *
- * Unlike `makeDebateRunner`, this needs no cast: `PromptOptimizerResult` is a
- * plain interface, so the factory satisfies it structurally.
+ * `PromptOptimizerResult` is a plain interface, so the factory satisfies it
+ * structurally — unlike the class-based helpers it needs no cast.
  */
 import { estimateTokens, type PromptOptimizerResult } from "@/optimizer/types";
 

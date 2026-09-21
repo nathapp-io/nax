@@ -121,7 +121,6 @@ const origWriteFile = _planDeps.writeFile;
 const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
-const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
@@ -172,7 +171,6 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
     _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
-    _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
@@ -275,7 +273,6 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
-    _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
@@ -360,7 +357,6 @@ describe("plan-decompose split tests — no deprecated subStories envelope asser
       Bun.file(join(import.meta.dir, "plan-decompose-guards.test.ts")).text(),
       Bun.file(join(import.meta.dir, "plan-decompose-writeback.test.ts")).text(),
       Bun.file(join(import.meta.dir, "plan-decompose-ac13-14.test.ts")).text(),
-      Bun.file(join(import.meta.dir, "plan-decompose-debate.test.ts")).text(),
     ]);
 
     // The deprecated complete() path used JSON.stringify({ subStories }). After US-002,

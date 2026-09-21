@@ -643,7 +643,7 @@ describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", ()
   // forbidden-patterns.md was split into -source/-tests by SPEC-bounded-rules-floor
   // US-005. Both halves, and project-conventions.md, originally declared no
   // `stages:` key and so loaded at every stage. #1612 gave each an explicit stage
-  // list to keep them out of plan/route/verify/debate, where they were 6749
+  // list to keep them out of plan/route/verify, where they were 6749
   // tokens of freight per prompt. They must still be declared, still exclude
   // plan, and still cover execution — an empty list would exclude plan while
   // reaching no agent at all.

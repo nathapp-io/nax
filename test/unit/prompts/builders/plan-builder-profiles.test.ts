@@ -37,18 +37,4 @@ describe("PlanPromptBuilder agent profiles", () => {
     expect(taskContext).not.toContain("## Agent Profiles");
     expect(outputFormat).not.toContain("agentProfileId");
   });
-
-  test("buildDraft(): injects cards + agentProfileId schema field when profiles exist", () => {
-    const { task } = new PlanPromptBuilder().buildDraft({
-      feature: "f",
-      branchName: "feat/f",
-      specContent: "spec",
-      codebaseContext: "context",
-      manifestSection: "manifest",
-      citationThreshold: 0.5,
-      profiles,
-    });
-    expect(task.content).toContain("## Agent Profiles");
-    expect(task.content).toContain("agentProfileId");
-  });
 });

@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { makeDebateRunner, makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { _planDeps, planCommand } from "@/cli";
 import type { PRD } from "@/prd/types";
 
@@ -178,7 +178,7 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
   // callOp integration: verify planInteractiveOp is actually called
   // ────────────────────────────────────────────────────────────────────────────
 
-  test("calls callOp with planInteractiveOp for interactive (non-auto, non-debate) path", async () => {
+  test("calls callOp with planInteractiveOp for interactive (non-auto) path", async () => {
     const specPath = join(tmpDir, "spec.md");
     await writeFile(specPath, SAMPLE_SPEC, "utf-8");
 
@@ -347,43 +347,6 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
     // This test will initially fail/error because the actual implementation isn't ready
     // but it documents the expected behavior
     expect(thrownError !== null || true).toBe(true); // Placeholder
-  });
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // Debate fallback: should use callOp instead of runInteractivePlan
-  // ────────────────────────────────────────────────────────────────────────────
-
-  test("debate fallback uses callOp when all debaters fail", async () => {
-    const specPath = join(tmpDir, "spec.md");
-    await writeFile(specPath, SAMPLE_SPEC, "utf-8");
-
-    const config = makeNaxConfig();
-
-    // Mock createDebateRunner to verify it's called
-    const origCreateDebateRunner = _planDeps.createDebateRunner;
-    _planDeps.createDebateRunner = mock(() =>
-      makeDebateRunner({
-        runPlan: mock(async () => ({
-          outcome: "failed" as const,
-          output: null,
-        })),
-      }),
-    );
-
-    try {
-      await planCommand(tmpDir, config, {
-        from: specPath,
-        feature: "authentication",
-      });
-    } catch (_err) {
-      // Expected to fail with invalid mock setup
-    }
-
-    // After migration, when debate fails, should fall back to callOp
-    // The old code would call runInteractivePlan; new code calls callOp
-    if (_planDeps.createDebateRunner) {
-      _planDeps.createDebateRunner = origCreateDebateRunner;
-    }
   });
 
   // ────────────────────────────────────────────────────────────────────────────

@@ -154,7 +154,7 @@ exhaustedFallback: (lastOutput) =>
 
 Custom `RetryStrategy` implementations can also set `fallback` on their `{ retry: false }` decision — `callOp` reads it regardless of which strategy produced it.
 
-**Success-path cost:** Cost recording is always-on and flows **only** through the `DispatchEvent` → cost middleware → `CostAggregator` path, never through op output (`O`). Callers needing per-region cost attribution use `costAggregator.openScope()` and stamp `CallContext.scopeId` at the orchestration layer. Leaf code (selectors, debaters, adapters) remains cost-blind. The middleware layer is the sole writer of cost data.
+**Success-path cost:** Cost recording is always-on and flows **only** through the `DispatchEvent` → cost middleware → `CostAggregator` path, never through op output (`O`). Callers needing per-region cost attribution use `costAggregator.openScope()` and stamp `CallContext.scopeId` at the orchestration layer. Leaf code (selectors, adapters) remains cost-blind. The middleware layer is the sole writer of cost data.
 
 ## `ParseValidationError` discrimination
 

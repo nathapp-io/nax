@@ -1,12 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import {
-  firstCall,
-  makeDebateRunner,
-  makeLogger,
-  makeMockAgentManager,
-  makeMockRuntime,
-  makeNaxConfig,
-} from "@test/helpers";
+import { firstCall, makeLogger, makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { InteractionBridge } from "@/interaction/bridge-builder";
 import { _singlePlanDeps, SinglePlanStrategy } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
@@ -47,7 +40,6 @@ function makeDeps(exists = false): PlanDeps {
       detectQuestion: async () => false,
       onQuestionDetected: async () => "",
     }),
-    createDebateRunner: () => makeDebateRunner(),
     getLogger: makeLogger,
   };
 }

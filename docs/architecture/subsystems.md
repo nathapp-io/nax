@@ -831,31 +831,6 @@ interface TokenUsage {
 
 ---
 
-## §29 Debate System
-
-`src/debate/`:
-- Multi-agent debate for complex decisions
-- Configurable resolver strategies: synthesis, majority-fail-closed, majority-fail-open, custom
-- `ResolverConfig` supports optional `model` field for asymmetric tier routing (resolver can use a different model tier than debaters)
-
-### Debate Flow
-
-```
-DebateSession.run()
-  → Round 1: Agent A argues position
-  → Round 2: Agent B counters
-  → ...N rounds
-  → Resolver synthesizes final answer
-```
-
-### Concurrency
-
-`src/debate/concurrency.ts`:
-- Parallel argument generation across agents
-- Controlled fan-out with result aggregation
-
----
-
 ## §30 Worktree & Parallel Support
 
 ### Worktree Manager
@@ -976,8 +951,7 @@ terminal.
 
 - `runInSession(name, prompt, opts)` → open + sendPrompt + close (try/finally).
 - `runInSession(name, runFn, opts)` — callback overload for transactional
-  multi-prompt orchestration (debate stateful debaters, future keep-open
-  patterns).
+  multi-prompt orchestration (future keep-open patterns).
 
 **Naming + introspection:**
 
@@ -1083,8 +1057,8 @@ Neither imports the other. Integration happens at callOp / buildHopCallback.
 
 | Method | Use case | Session involvement |
 |:---|:---|:---|
-| `completeAs(name, prompt, opts)` | Sessionless one-shot — Plan, Route, semantic review, debate-propose/rebut/rank, acceptance diagnose | None — calls `adapter.complete` directly |
-| `runAsSession(agent, handle, prompt, opts)` | Caller-managed session — orchestrators that keep a session open across multiple prompts (TDD multi-prompt, debate-stateful) | Caller opens handle via `SessionManager.openSession`; AgentManager wraps `sessionManager.sendPrompt` with the middleware envelope; **no internal fallback** |
+| `completeAs(name, prompt, opts)` | Sessionless one-shot — Plan, Route, semantic review, acceptance diagnose | None — calls `adapter.complete` directly |
+| `runAsSession(agent, handle, prompt, opts)` | Caller-managed session — orchestrators that keep a session open across multiple prompts (TDD multi-prompt) | Caller opens handle via `SessionManager.openSession`; AgentManager wraps `sessionManager.sendPrompt` with the middleware envelope; **no internal fallback** |
 | `runWithFallback(request)` | Chain iteration with per-hop callback delegation | Iterates the fallback chain; invokes `request.executeHop(agent, bundle, failure, opts)` per hop. The callback (constructed by `callOp` via `buildHopCallback`, §37) owns rebuild + open + send + close |
 
 The middleware envelope (audit → cost → cancellation → logging) wraps every
@@ -1193,7 +1167,7 @@ completion).
 Before ADR-018, three different code paths constructed `AgentManager`
 independently (`runner.ts`, `acceptance/generator.ts`, `acceptance/refinement.ts`).
 A 401 on routing fell into a different fallback chain than execution; cost events
-from rectification and debate proposers landed in unrelated `CostAggregator`
+from rectification proposers landed in unrelated `CostAggregator`
 instances. `NaxRuntime` collapses these into one shared lifecycle, with
 middleware sinks wired once.
 
@@ -1332,18 +1306,17 @@ One descriptor wraps N adapter sessions across the lifetime of one story attempt
 
 | Op | Kind | Used by |
 |:---|:---|:---|
-| `planDraftOp` / `planRefineOp` / `planInteractiveOp` | run | Plan stage (`src/operations/plan*.ts`) |
+| `planRefineOp` / `planInteractiveOp` | run | Plan stage (`src/operations/plan*.ts`) |
 | `decomposeOp` | complete | Story decomposition |
 | `classifyRouteOp` | complete | Routing stage |
 | `acceptanceGenerateOp` / `acceptanceRefineOp` / `acceptanceDiagnoseOp` | varies | Acceptance subsystem |
 | `acceptanceFixSourceOp` / `acceptanceFixTestOp` | run | Acceptance fix stories |
 | `semanticReviewOp` / `adversarialReviewOp` | run | Review subsystem |
 | `rectifyOp` | run | Rectification loop |
-| `debateProposeOp` / `debateRebutOp` | varies | Debate subsystem |
 | `writeTddTestOp` / `implementTddOp` / `verifyTddOp` | run | TDD three-session orchestrator |
 
-Multi-session orchestrators (TDD three-session, debate) live next to their
-domain (`src/tdd/`, `src/debate/`) and sequence multiple `callOp` invocations.
+Multi-session orchestrators (TDD three-session) live next to their
+domain (`src/tdd/`) and sequence multiple `callOp` invocations.
 They are **not** `ISessionRunner` implementations — that interface was removed
 in ADR-019 Phase C.
 
@@ -1635,21 +1608,19 @@ Prompt token-reduction seam, invoked as pipeline stage 6 (`src/pipeline/stages/o
 
 ## §45 Plan (`src/plan/`)
 
-Planning pipeline that converts a feature spec into a `prd.json`. Supports four strategies — `single` (one-shot LLM), `pipeline` (sequential critique passes), `debate` (multi-agent parallel then synthesise), `refine` (existing PRD + spec delta). Orchestrated by `planCommand` (§42). The `runPlanCritic` step runs mechanical checks (citation, contradiction, AC-anchoring, coverage) and an LLM judge; blockers trigger a draft revision via `planDraftOp`.
+Planning pipeline that converts a feature spec into a `prd.json`. Supports two strategies — `single` (one-shot LLM via `planInteractiveOp`) and `refine` (existing PRD + spec delta via `planRefineOp`), selected by `config.plan.mode` (default `single`). Orchestrated by `planCommand` (§42).
 
 **Key exports:**
 - `IPlanStrategy`, `PlanModeContext`, `PlanCommandOptions`, `PlanDeps` — shared types
-- `SinglePlanStrategy`, `PipelinePlanStrategy`, `DebatePlanStrategy`, `RefinePlanStrategy` — four concrete strategies
-- `createPlanStrategy(mode, deps)` — factory; selects strategy from `config.plan.mode`
+- `SinglePlanStrategy`, `RefinePlanStrategy` — the two surviving strategies
+- `createPlanStrategy(mode)` — factory; maps `single` | `refine` to its strategy
 - `buildPlanModeContext(opts, deps)` — assembles the context object threaded through strategy execution
 - `writeOrRecoverPrd(path, content)` — atomic PRD write with recovery on parse failure
-- `runPlanCritic(input)` — mechanical + LLM critic; triggers revision on blockers
 - `finalizePrdRouting(prd, config)` — sets per-story `modelTier` / `testStrategy` from routing config
-- `buildPlanComposition(config)` — builds debate composition for pipeline/debate modes
 
 **Entry point:** `src/plan/index.ts`
 
-**Called by:** `src/cli/plan-command.ts`, `src/cli/plan-decompose.ts`. Depends on `src/debate/` (§29), `src/operations/` (§37), `src/prd/`, `src/prompts/` (§49).
+**Called by:** `src/cli/plan-command.ts`, `src/cli/plan-decompose.ts`. Depends on `src/operations/` (§37), `src/prd/`, `src/prompts/` (§49).
 
 ---
 
@@ -1716,18 +1687,14 @@ Single home for all LLM prompt construction. No prompt template literals are per
 | `ReviewPromptBuilder` | Semantic review dialogue |
 | `AdversarialReviewPromptBuilder` | Adversarial review dialogue |
 | `AcceptancePromptBuilder` | Acceptance generator, diagnoser, fix-executor |
-| `DebatePromptBuilder` | Propose, critique, rebut, synthesise |
 | `OneShotPromptBuilder` | Short single-turn prompts (router, decomposer, auto-approver) |
 | `PlanPromptBuilder` | `nax plan` decomposition prompts |
-| `GrounderPromptBuilder` | Debate pre-phase: repo grounding |
-| `CriticPromptBuilder` | Plan critic (mechanical + LLM checks) |
-| `PatchPromptBuilder` | Verifier-pick selector |
 
 **Key infrastructure exports:**
 - `composeSections(sections)` → assembled prompt string — used by `callOp` (§37)
 - `PromptSection` — `{ key, content, separator? }` — unit of composition
 - `loadPromptOverride(role, workdir)` — disk-based prompt override for TDD roles
-- `buildSourceRootsSection(roots)` — formats `SourceRoot[]` for plan/grounding prompts
+- `buildSourceRootsSection(roots)` — formats `SourceRoot[]` for plan prompts
 - `SectionAccumulator` — internal builder engine (not barrel-exported; used only within `src/prompts/builders/`)
 
 **Entry point:** `src/prompts/index.ts` (barrel). No subsystem imports from `src/prompts/builders/` directly — always via the barrel.
@@ -1748,7 +1715,7 @@ Codebase scanner used by `nax analyze` and the planning pipeline. Discovers work
 
 **Entry point:** `src/analyze/index.ts`
 
-**Called by:** `src/cli/plan-runtime.ts` (wires `scanSourceRoots` into `_planDeps`), `src/cli/plan-command.ts`, `src/cli/plan-decompose.ts`, `src/plan/strategies/context-builder.ts`, `src/debate/pre-phase/grounder.ts` — all consume `scanSourceRoots` via the `_planDeps` injection point.
+**Called by:** `src/cli/plan-runtime.ts` (wires `scanSourceRoots` into `_planDeps`), `src/cli/plan-command.ts`, `src/cli/plan-decompose.ts`, `src/plan/strategies/context-builder.ts` — all consume `scanSourceRoots` via the `_planDeps` injection point.
 
 ---
 

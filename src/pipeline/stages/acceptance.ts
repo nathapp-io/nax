@@ -391,7 +391,7 @@ export const acceptanceStage: PipelineStage = {
     if (allFailedACs.length === 0) {
       logger.info("acceptance", "All acceptance tests passed", { storyId: ctx.story.id });
 
-      // Hardening pass: test debater-suggested criteria (non-blocking)
+      // Hardening pass: test plan-suggested criteria (non-blocking)
       const hardeningEnabled = ctx.config.acceptance?.hardening?.enabled !== false;
       const hasAnySuggested = ctx.prd.userStories.some((s) => s.suggestedCriteria && s.suggestedCriteria.length > 0);
       if (hardeningEnabled && hasAnySuggested && ctx.featureDir) {

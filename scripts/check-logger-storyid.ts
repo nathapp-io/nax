@@ -27,9 +27,8 @@ import { byCodePoint } from "../src/utils/sort";
 const ROOT = join(import.meta.dir, "..");
 const BASELINE_FILE = join(import.meta.dir, "baselines", "logger-storyid-baseline.json");
 // Scope per .claude/rules/project-conventions.md → "Structured Log Fields — Mandatory":
-// pipeline stages + review. We extend to src/debate/ because the gap-analysis
-// violation lived there and debate runs inside the pipeline.
-const SCOPED_DIRS = ["src/pipeline/stages", "src/debate", "src/review"];
+// pipeline stages + review.
+const SCOPED_DIRS = ["src/pipeline/stages", "src/review"];
 const LOGGER_RE = /\blogger\??\.(info|warn|error|debug)\s*\(/g;
 const ALLOW = "nax-lint-allow: no-storyid";
 

@@ -9,8 +9,8 @@
  * Zod-validated yet.
  */
 
-import { describe, expect, test } from "bun:test";
-import { warnQualityCommandChains } from "@/config/config-guards";
+import { describe, expect, it, test } from "bun:test";
+import { rejectRemovedPlanModes, warnQualityCommandChains } from "@/config/config-guards";
 
 describe("warnQualityCommandChains", () => {
   test("warns via the sink for a chained string command", () => {
@@ -63,5 +63,24 @@ describe("warnQualityCommandChains", () => {
 
   test("does nothing when warn is omitted", () => {
     expect(() => warnQualityCommandChains({ quality: { commands: { lint: "a && b" } } })).not.toThrow();
+  });
+});
+
+describe("rejectRemovedPlanModes", () => {
+  it.each(["pipeline", "debate"])("throws on plan.mode: %s", (mode) => {
+    expect(() => rejectRemovedPlanModes({ plan: { mode } })).toThrow(/plan\.mode/);
+  });
+
+  it("names the surviving modes in the message", () => {
+    expect(() => rejectRemovedPlanModes({ plan: { mode: "pipeline" } })).toThrow(/single.*refine|refine.*single/s);
+  });
+
+  it.each(["single", "refine"])("accepts the surviving mode %s", (mode) => {
+    expect(() => rejectRemovedPlanModes({ plan: { mode } })).not.toThrow();
+  });
+
+  it("is a no-op when plan or plan.mode is absent", () => {
+    expect(() => rejectRemovedPlanModes({})).not.toThrow();
+    expect(() => rejectRemovedPlanModes({ plan: {} })).not.toThrow();
   });
 });

@@ -15,7 +15,6 @@ import {
   assertDefined,
   assertNaxError,
   cleanupTempDir,
-  makeDebateRunner,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -23,12 +22,13 @@ import {
   makeStory,
   makeTempDir,
 } from "@test/helpers";
-import type { DecomposedStory, DecomposeOptions } from "@/agents/shared/types-extended";
+import type { DecomposedStory } from "@/agents/shared/types-extended";
 import type { CompleteOptions } from "@/agents/types";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
 import { NaxError } from "@/errors";
 import type { PRD, UserStory } from "@/prd/types";
-import { buildDecomposePromptAsync } from "@/prompts";
+import { buildDecomposePromptSync } from "@/prompts";
+import type { DecomposePromptInput } from "@/prompts/builders/decompose-builder";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: CompleteOptions) => Promise<{ stories: DecomposedStory[] }>,
@@ -104,7 +104,6 @@ const origWriteFile = _planDeps.writeFile;
 const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
-const origCreateDebateRunner = _planDeps.createDebateRunner;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
@@ -129,7 +128,6 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.createDebateRunner = mock(() => makeDebateRunner({ run: mock(async () => ({ outcome: "failed" })) }));
   }
 
   beforeEach(async () => {
@@ -144,7 +142,6 @@ describe("planDecomposeCommand — AC overflow repair loop (issue #227)", () => 
     _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
-    _planDeps.createDebateRunner = origCreateDebateRunner;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
@@ -446,43 +443,41 @@ describe("buildDecomposePrompt — maxAcCount prompt hardening (issue #227)", ()
     };
   }
 
-  function makeDecomposeOptions(maxAcCount?: number): DecomposeOptions {
+  function makeDecomposeOptions(maxAcCount?: number): DecomposePromptInput {
     return {
       specContent: "",
       codebaseContext: "## Codebase\n\nsome context",
-      workdir: "/tmp/test",
       targetStory: makeTargetStory(),
       siblings: [],
       maxAcCount: maxAcCount ?? null,
     };
   }
 
-  test("prompt includes maxAcCount constraint when config has storySizeGate.maxAcCount", async () => {
-    const prompt = await buildDecomposePromptAsync(makeDecomposeOptions(8));
+  test("prompt includes maxAcCount constraint when config has storySizeGate.maxAcCount", () => {
+    const prompt = buildDecomposePromptSync(makeDecomposeOptions(8));
     expect(prompt).toContain("8");
     expect(prompt).toContain("acceptance criteria");
   });
 
-  test("prompt includes explicit split instruction when maxAcCount is set", async () => {
-    const prompt = await buildDecomposePromptAsync(makeDecomposeOptions(6));
+  test("prompt includes explicit split instruction when maxAcCount is set", () => {
+    const prompt = buildDecomposePromptSync(makeDecomposeOptions(6));
     expect(prompt).toContain("split");
     expect(prompt).toContain("6");
   });
 
-  test("prompt does not include AC constraint section when config is absent", async () => {
-    const prompt = await buildDecomposePromptAsync(makeDecomposeOptions(undefined));
+  test("prompt does not include AC constraint section when config is absent", () => {
+    const prompt = buildDecomposePromptSync(makeDecomposeOptions(undefined));
     expect(prompt).not.toContain("Acceptance Criteria Constraint");
   });
 
-  test("prompt does not include AC constraint when maxAcCount is not set in config", async () => {
-    const opts: DecomposeOptions = {
+  test("prompt does not include AC constraint when maxAcCount is not set in config", () => {
+    const opts: DecomposePromptInput = {
       specContent: "",
       codebaseContext: "context",
-      workdir: "/tmp",
       targetStory: makeTargetStory(),
       maxAcCount: null,
     };
-    const prompt = await buildDecomposePromptAsync(opts);
+    const prompt = buildDecomposePromptSync(opts);
     expect(prompt).not.toContain("Acceptance Criteria Constraint");
   });
 });

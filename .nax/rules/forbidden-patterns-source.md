@@ -16,7 +16,6 @@ stages:
   - "review"
   - "review-semantic"
   - "review-adversarial"
-  - "debate"
 ---
 
 # Forbidden Patterns
@@ -76,7 +75,6 @@ avoid; the same assembly belongs on `RectifierPromptBuilder`.
 | `ReviewPromptBuilder` | Semantic and adversarial review prompts |
 | `TddPromptBuilder` | TDD session prompts (test-writer, implementer, verifier) |
 | `AcceptancePromptBuilder` | Acceptance test generation, diagnosis, refinement, fix execution |
-| `DebatePromptBuilder` | Multi-agent debate and review-dialogue prompts |
 | `OneShotPromptBuilder` | Single-turn utility prompts (router, decomposer, auto-approver) |
 
 If no existing builder fits, create `src/prompts/builders/<domain>-builder.ts` and export from `src/prompts/index.ts`.

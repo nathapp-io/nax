@@ -1,12 +1,3 @@
-export type {
-  DebateConfig,
-  DebateResult,
-  Debater,
-  DebateStageConfig,
-  ResolverConfig,
-  ResolverType,
-  SessionMode,
-} from "../debate/types";
 export { findProjectDir, globalConfigPath, loadConfig, loadConfigForWorkdir, loadPackageOverride } from "./loader";
 export type { ConfigLoader } from "./loader-runtime";
 export { createConfigLoader } from "./loader-runtime";
@@ -79,7 +70,6 @@ export {
   resolveModelForAgent,
   resolveTierMembership,
 } from "./schema";
-export { DebateConfigSchema } from "./schemas-debate";
 export {
   AutoRouteConfigSchema,
   DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
@@ -124,7 +114,6 @@ export {
   agentManagerConfigSelector,
   autofixConfigSelector,
   contextToolRuntimeConfigSelector,
-  debateConfigSelector,
   decomposeConfigSelector,
   executionGatesConfigSelector,
   finishConfigSelector,

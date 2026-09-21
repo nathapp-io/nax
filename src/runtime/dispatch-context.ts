@@ -5,7 +5,7 @@ import type { NaxRuntime } from "./index";
 /**
  * Base contract for any context that dispatches agent work. Required fields
  * mean every consumer (pipeline stage, operation, lifecycle, CLI command,
- * routing, debate, review, acceptance, plan) must thread these by
+ * routing, review, acceptance, plan) must thread these by
  * construction. Closes the wrapAdapterAsManager-fallback class structurally
  * (wrapAdapterAsManager was previously exported from src/agents/utils.ts and
  * deleted in ADR-020 Wave 2): there is nowhere a nullable agentManager exists

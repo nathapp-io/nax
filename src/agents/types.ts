@@ -217,8 +217,8 @@ export interface AgentRunOptions {
    *
    * Forwarded to `compileToolPolicy` as `ownedWriteExemption` so an op whose
    * contract is "write your result to this file" can write it even when the path
-   * is otherwise nax-owned run state. Today only the three plan ops
-   * (`plan`, `plan-refine`, `debate-plan`) name a guarded path; every other
+   * is otherwise nax-owned run state. Today only the two surviving plan ops
+   * (`plan`, `plan-refine`) name a guarded path; every other
    * fileOutput path is unguarded and the exemption is inert for them.
    *
    * PRODUCER: src/operations/call-run-options.ts

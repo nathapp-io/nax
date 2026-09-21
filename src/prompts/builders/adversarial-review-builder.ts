@@ -267,7 +267,7 @@ function buildAdversarialRefDiffSection(
   // excludePatterns is a production-scope filter: applying it here would hide
   // the test files this view exists to audit, and would make the full diff
   // identical to the production diff whose label distinguishes it. This is the
-  // same defect #2101 fixed in the semantic and debate builders.
+  // same defect #2101 fixed in the semantic builder.
   const fullExcludes = [...NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS];
   const fullExcludeArgs = fullExcludes.map((p) => `'${p}'`).join(" ");
   const productionExcludes = [

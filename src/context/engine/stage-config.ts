@@ -309,26 +309,6 @@ export const STAGE_CONTEXT_MAP = {
     providerIds: PHASE_0_PROVIDERS,
   },
 
-  // Review dialogue — reviewer role.
-  // Declared but not assembled by any site today — see nax#1743. nax#1758
-  // resolved the pull-tool question: there is no dispatch seam — the review
-  // dialogue path makes no callOp/assembleForStage call (the debate builder
-  // owns those prompts), and query_feature_context is
-  // already available to the two review stages that ARE assembled
-  // (review-semantic, review-adversarial). Dropped pullToolNames rather
-  // than building a dialogue seam for a capability nothing could deliver.
-  "review-dialogue": {
-    role: "reviewer",
-    budgetTokens: 6_000,
-    providerIds: PHASE_0_PROVIDERS,
-  },
-
-  // Debate — reviewer role; static + feature context for multi-agent critique
-  debate: {
-    role: "reviewer",
-    budgetTokens: 6_000,
-    providerIds: PHASE_0_PROVIDERS,
-  },
   // `satisfies`, not a `Record<string, StageContextConfig>` annotation: the
   // annotation would widen the key type to `string` and make `StageKey` below
   // vacuous (every string assignable), defeating the point of typing the

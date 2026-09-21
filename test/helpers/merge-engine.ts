@@ -6,7 +6,7 @@
  * `pipeline-result-handler.test.ts` therefore cast their stubs into the dep
  * slot — 7 casts for one missing helper (#1514 §3c-ii, Decision 1).
  *
- * Same shape of fix as `makeDebateRunner` / `makeLogger` / `makeStatusWriter`:
+ * Same shape of fix as `makeLogger` / `makeStatusWriter`:
  * intersect, and keep the one cast here.
  */
 import { mock } from "bun:test";

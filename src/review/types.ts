@@ -44,7 +44,7 @@ export interface ReviewAck {
 }
 
 /**
- * Diff context passed to debate resolver and prompt builders.
+ * Diff context passed to review prompt builders.
  * Discriminated on `mode` — prevents ambiguous routing when both
  * `diff` and `storyGitRef` are present.
  */
@@ -59,17 +59,12 @@ export type DiffContext =
        * Repo-rooted pathspec the story's diff is scoped to — the story's
        * package dir (e.g. "packages/api") or "." for a repo-root story.
        *
-       * The debate resolver's ACP cwd and the native Git tool's permitted root
-       * are both the repo root (single-frame redesign), so a bare "." would
-       * admit cross-package noise; threading the story workdir here restores
-       * the per-package scoping the old package cwd used to provide.
+       * The native Git tool's permitted root is the repo root (single-frame
+       * redesign), so a bare "." would admit cross-package noise; threading the
+       * story workdir here restores the per-package scoping the old package cwd
+       * used to provide.
        */
       pathspec: string;
-      /**
-       * Production-diff exclude pathspec derived from resolveTestFilePatterns() +
-       * resolveReviewExcludePatterns(). Used by debate resolver prompts.
-       */
-      productionExcludePatterns?: readonly string[];
     };
 
 /** Story fields required for semantic review */

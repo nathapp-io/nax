@@ -2,9 +2,9 @@
  * Shared spy helpers for assertions against a single logger level.
  *
  * `withWarnSpy` was written for the drift warnings emitted by the plan ops
- * (src/operations/plan-fidelity.ts) — all three plan modes (single / refine /
- * debate) emit theirs through `logger.warn("plan", …)`, so their tests assert
- * against it identically. `withInfoSpy` is the same contract one level down, for
+ * (src/operations/plan-fidelity.ts) — both plan modes (single / refine) emit
+ * theirs through `logger.warn("plan", …)`, so their tests assert against it
+ * identically. `withInfoSpy` is the same contract one level down, for
  * records the code under test emits via `logger.info`.
  *
  * Usage:

@@ -15,7 +15,5 @@ export {
 export type { ParseRetryOpts } from "./parse-retry";
 export { makeParseRetryStrategy, previewOutput, UNPARSED_PREVIEW_BYTES } from "./parse-retry";
 export { resolveRetryPreset } from "./presets";
-export type { TieredInspection, TieredParseRetryOpts } from "./tiered-parse-retry";
-export { makeTieredParseRetryStrategy } from "./tiered-parse-retry";
 export type { RetryContext, RetryDecision, RetryPreset, RetryStrategy } from "./types";
 export { ParseValidationError } from "./types";

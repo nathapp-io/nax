@@ -1,15 +1,15 @@
 /**
  * DecomposePromptBuilder — prompt assembly for nax plan / decompose operations.
  *
- * Extracted from src/agents/shared/decompose-prompt.ts as part of
- * Prompt Builder Convention compliance (forbidden-patterns.md).
+ * Extracted from the former src/agents/shared/decompose-prompt.ts as part
+ * of Prompt Builder Convention compliance (forbidden-patterns.md); that
+ * deprecated re-export shim is gone.
  *
  * Two modes:
  *   - spec mode: breaks a feature spec into user stories
  *   - plan mode: splits a single targetStory into sub-stories
  */
 
-import type { DecomposeOptions } from "@/agents/types";
 import type { AgentRoutingProfile } from "@/config";
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "@/config";
 import type { SchemaDescriptor } from "../core";
@@ -118,28 +118,18 @@ export interface DecomposePromptInput {
 }
 
 /**
- * Build a decompose prompt synchronously (used by decomposeOp.build()).
+ * Build a decompose prompt (used by decomposeOp.build()).
  *
- * Functionally identical to buildDecomposePromptAsync — all inner operations
- * are synchronous (OneShotPromptBuilder.build() returns a string, no I/O).
+ * Synchronous by construction — every inner operation is synchronous
+ * (OneShotPromptBuilder.build() returns a string, no I/O). The async twin
+ * this used to mirror was deleted with the debate subsystem, which owned its
+ * only caller.
  */
 export function buildDecomposePromptSync(input: DecomposePromptInput): string {
   if (input.targetStory) {
     return buildPlanModePromptSync(input);
   }
   return buildSpecModePromptSync(input);
-}
-
-/**
- * Build a decompose prompt using OneShotPromptBuilder.
- *
- * Dispatches to plan-mode or spec-mode depending on options.targetStory.
- */
-export async function buildDecomposePromptAsync(options: DecomposeOptions): Promise<string> {
-  if (options.targetStory) {
-    return buildPlanModePrompt(options);
-  }
-  return buildSpecModePrompt(options);
 }
 
 function buildPlanModePromptSync(input: DecomposePromptInput): string {
@@ -170,41 +160,6 @@ function buildSpecModePromptSync(input: DecomposePromptInput): string {
     .inputData("Codebase Context", input.codebaseContext)
     .inputData("Feature Specification", input.specContent)
     .agentProfiles(input.profiles ?? [])
-    .jsonSchema(DECOMPOSE_SPEC_SCHEMA)
-    .build();
-}
-
-async function buildPlanModePrompt(options: DecomposeOptions): Promise<string> {
-  // biome-ignore lint/style/noNonNullAssertion: guarded by caller (options.targetStory is defined)
-  const targetStory = options.targetStory!;
-  const siblings = options.siblings ?? [];
-  // options.maxAcCount is pre-resolved by the CLI caller from config at the boundary.
-  // The config fallback chain is dropped — if the field is absent the gate is inactive.
-  const maxAcCount = options.maxAcCount ?? null;
-  const instructions = buildPlanModeInstructions(targetStory.id, maxAcCount);
-
-  let builder = OneShotPromptBuilder.for("decomposer")
-    .instructions(instructions)
-    .inputData("Target Story", JSON.stringify(targetStory, null, 2))
-    .inputData("Codebase Context", options.codebaseContext);
-
-  if (siblings.length > 0) {
-    const siblingsSummary = siblings.map((s) => `- ${s.id}: ${s.title}`).join("\n");
-    builder = builder.inputData("Sibling Stories", siblingsSummary);
-  }
-
-  return builder
-    .agentProfiles(options.profiles ?? [])
-    .jsonSchema(DECOMPOSE_PLAN_SCHEMA)
-    .build();
-}
-
-async function buildSpecModePrompt(options: DecomposeOptions): Promise<string> {
-  return OneShotPromptBuilder.for("decomposer")
-    .instructions(SPEC_DECOMPOSE_INSTRUCTIONS)
-    .inputData("Codebase Context", options.codebaseContext)
-    .inputData("Feature Specification", options.specContent)
-    .agentProfiles(options.profiles ?? [])
     .jsonSchema(DECOMPOSE_SPEC_SCHEMA)
     .build();
 }

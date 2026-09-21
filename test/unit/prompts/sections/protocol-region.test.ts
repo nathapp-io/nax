@@ -506,9 +506,9 @@ describe("applyProtocolRegions — idempotence (AC13)", () => {
 // ---------------------------------------------------------------------------
 // Cross-entry seam with the retained diff-access adapter.
 //
-// This block is the seam contract that US-002 will exercise. Three live
+// This block is the seam contract that US-002 will exercise. Two live
 // producers (src/prompts/builders/review-builder.ts:356,
-// debate-builder.ts:464, adversarial-review-builder.ts:303) still wrap with
+// adversarial-review-builder.ts:303) still wrap with
 // the legacy `wrapDiffAccess` — by design, the PRD's "Out of Scope" list
 // keeps that adapter as a thin pass-through. The replacement seam in
 // US-002 is `applyProtocolRegions(prompt, { protocol })` and

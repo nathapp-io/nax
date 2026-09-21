@@ -6,7 +6,7 @@
  * their stubs into the dep slot — 16 casts for one missing helper (#1514 §5.3),
  * two of which had already been downgraded to a ratcheted double cast.
  *
- * Same shape of fix as `makeMergeEngine` / `makeDebateRunner`: intersect, and
+ * Same shape of fix as `makeMergeEngine`: intersect, and
  * keep the one cast here.
  */
 import { mock } from "bun:test";

@@ -38,7 +38,7 @@ describe("REQUIRED_TOOLS_BY_ROLE", () => {
   });
 
   test("fileOutput-shaped roles require Write only — they author one fresh file, never edit an existing one", () => {
-    for (const role of ["plan", "plan-refine", "debate-plan", "acceptance-gen"]) {
+    for (const role of ["plan", "plan-refine", "acceptance-gen"]) {
       expect(REQUIRED_TOOLS_BY_ROLE[role]).toContain("Write");
       expect(REQUIRED_TOOLS_BY_ROLE[role]).not.toContain("Edit");
     }

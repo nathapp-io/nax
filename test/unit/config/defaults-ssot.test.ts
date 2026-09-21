@@ -48,7 +48,6 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "finish",
   "mcp",
   "reporters",
-  "debate",
   "profile",
   "profileChain",
 ];

@@ -309,14 +309,14 @@ export interface IAgentManager {
 
   /**
    * Run against a specific agent (not getDefault()), still honoring the fallback
-   * chain rooted at agentName. Used by debate debaters and other callers that
-   * need a non-default agent without bypassing AgentManager.
+   * chain rooted at agentName. Used by callers that need a non-default agent
+   * without bypassing AgentManager.
    */
   runAs(agentName: string, request: AgentRunRequest): Promise<AgentResult>;
 
   /**
-   * One-shot completion pinned to a specific agent. Used by debate resolvers
-   * that intentionally call a specific judge/synthesis model.
+   * One-shot completion pinned to a specific agent. Used by callers that need a
+   * completed response from a named agent rather than the default one.
    */
   completeAs(agentName: string, prompt: string, options: CompleteOptions): Promise<CompleteResult>;
 
@@ -325,7 +325,7 @@ export interface IAgentManager {
    *
    * nax#1712: callers that can attribute hops to a story (currently `callOp`'s
    * complete branch) use this and hand `outcome.fallbacks` to the run-scoped sink;
-   * callers that cannot — the debate resolvers, `complete()` — keep using
+   * callers that cannot — `complete()` — keep using
    * `completeAs`, which unwraps this.
    */
   completeAsWithFallback(agentName: string, prompt: string, options: CompleteOptions): Promise<AgentCompleteOutcome>;

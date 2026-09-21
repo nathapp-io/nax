@@ -25,7 +25,7 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
   name: "plan-interactive",
   stage: "plan",
   session: { role: "plan", lifetime: "fresh" },
-  // The prompt (PlanPromptBuilder.build / jsonRepair / schemaRepair / citationRepair)
+  // The prompt (PlanPromptBuilder.build / jsonRepair / schemaRepair)
   // always instructs the agent to write the PRD JSON directly to `outputFilePath`
   // rather than reply with it — see `fileOutput` below, which reads that file back.
   // No Exec: this writes ONE fresh PRD JSON file (fileOutput contract below),

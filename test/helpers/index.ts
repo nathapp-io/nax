@@ -19,7 +19,6 @@ export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp } from "./ca
 export { opSelector } from "./config-selector";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { type MockContextOrchestrator, makeContextOrchestrator } from "./context-orchestrator";
-export { DEFAULT_DEBATE_RESULT, type MockDebateRunner, makeDebateRunner } from "./debate-runner";
 export { withDepsRestore } from "./deps";
 export { type DispatchContextOptions, makeDispatchContext } from "./dispatch-context";
 export type { E2EGates, E2EOptions, E2EResult, ScriptedAgentSpec, ScriptedTurn } from "./e2e";

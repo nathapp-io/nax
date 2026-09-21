@@ -226,9 +226,10 @@ export function validateStory(raw: unknown, index: number, allIds: Set<string>, 
   }
 
   // Auto-correct: noTestJustification present but testStrategy is not "no-test".
-  // This happens when debate synthesis keeps the majority testStrategy but adopts
-  // a minority debater's no-test justification. Resolve the contradiction by
-  // downgrading to "no-test" — the justification is the stronger signal.
+  // Any LLM-authored PRD can populate the justification field while leaving
+  // testStrategy set to something else — not specific to any one plan path.
+  // Resolve the contradiction by downgrading to "no-test" — the justification
+  // is the stronger signal.
   //
   // BUG-26: gated on the justification text actually explaining absent tests
   // (NO_TEST_JUSTIFICATION_SIGNAL), not merely being non-empty — the

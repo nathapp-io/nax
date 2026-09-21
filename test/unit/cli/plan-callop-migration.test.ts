@@ -8,7 +8,6 @@
  * - callOp is used with planInteractiveOp
  * - interactionBridge is properly threaded from interaction chain or fallback
  * - maxInteractionTurns is passed through
- * - Debate fallback also uses callOp
  */
 
 import { describe, expect, test } from "bun:test";

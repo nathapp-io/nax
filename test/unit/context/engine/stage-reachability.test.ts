@@ -12,9 +12,10 @@
  * that set (plus the always-live "context" key, the third assembly site).
  *
  * Not every key in STAGE_CONTEXT_MAP is checked: the declared-but-unassembled
- * keys autofix, verify, review, acceptance, plan, route and debate carry no
- * pull tools and are intentionally aspirational — see the reachability comment
- * above STAGE_CONTEXT_MAP. `review-dialogue` used to be the one exception —
+ * keys autofix, verify, review, acceptance, plan, route and review-dialogue
+ * carry no pull tools and are intentionally aspirational — see the
+ * reachability comment above STAGE_CONTEXT_MAP. `review-dialogue` used to be
+ * the one exception —
  * it declared pull tools AND was unassembled — but nax#1758 dropped its
  * `pullToolNames` (no dispatch seam exists to wire; `query_feature_context`
  * is already available to the two review stages that ARE assembled). Every

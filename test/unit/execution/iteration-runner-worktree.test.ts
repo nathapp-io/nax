@@ -122,8 +122,6 @@ describe("reviewerSession cleanup on escalation", () => {
       review: mock(async () => ({})),
       reReview: mock(async () => ({})),
       clarify: mock(async () => ""),
-      resolveDebate: mock(async () => ({})),
-      reReviewDebate: mock(async () => ({})),
       getVerdict: mock(() => ({})),
       destroy: destroyMock,
     };

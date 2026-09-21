@@ -1,3 +1,7 @@
+> **Status: RETIRED 2026-09-20.** The subsystem this spec describes was
+> deleted. The document is kept as a historical record of what was built;
+> nothing in it describes current behaviour.
+
 # SPEC: Multi-Agent Debate Sessions
 
 ## Summary

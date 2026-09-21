@@ -277,11 +277,7 @@ export interface PlanConfig {
   /** Override timeout for decompose calls in seconds. Defaults to plan.timeoutSeconds. */
   decomposeTimeoutSeconds?: number;
   /** Orchestration mode. Resolved at runtime when absent; see resolvePlanMode(). */
-  mode?: "single" | "debate" | "pipeline" | "refine";
-  /** Minimum citation overlap threshold for the pipeline drafter gate [0, 1]. Default: 0.5 */
-  citationThreshold: number;
-  /** Model tier for the pipeline LLM critic. Default: "fast" */
-  criticModel: ConfiguredModel;
+  mode?: "single" | "refine";
   /**
    * When true, the refine hopBody runs a deterministic spec-drift check after
    * Turn 2 and issues a repair turn if violations are found. Default: false.
@@ -335,7 +331,7 @@ export interface AcceptanceConfig {
   fix: AcceptanceFixConfig;
   /** Override filename for suggested acceptance tests (hardening pass) */
   suggestedTestPath?: string;
-  /** Hardening pass configuration — test debater-suggested criteria after acceptance passes */
+  /** Hardening pass configuration — test plan-suggested criteria after acceptance passes */
   hardening?: { enabled: boolean };
 }
 
@@ -486,16 +482,6 @@ export interface TestingConfig {
    */
   mockGuidance?: string;
 }
-// Re-exported from debate/types.ts to maintain single source of truth
-export type {
-  DebateConfig,
-  DebateResult,
-  Debater,
-  DebateStageConfig,
-  ResolverConfig,
-  ResolverType,
-  SessionMode,
-} from "../debate/types";
 export type { FinishConfig, FinishTimeoutsConfig } from "./runtime-types-finish";
 export type { McpConfig, McpServerConfig, McpStage } from "./runtime-types-mcp";
 export type { ProjectProfile } from "./runtime-types-project";
@@ -558,8 +544,6 @@ export interface NaxConfig {
   generate?: GenerateConfig;
   /** Project profile — language and tooling metadata (US-001) */
   project?: import("./runtime-types-project").ProjectProfile;
-  /** Multi-agent debate settings */
-  debate?: import("../debate/types").DebateConfig;
   /** Curator configuration */
   curator?: import("./runtime-types-curator").CuratorConfig;
   autoPr: import("./runtime-types-autopr").AutoPrConfig;
