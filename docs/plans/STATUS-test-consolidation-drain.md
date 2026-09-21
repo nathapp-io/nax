@@ -16,62 +16,60 @@ to re-measure after every task, and §6 tells you when to stop rather than push 
 
 ---
 
-## 0. Current state - re-measured 2026-09-21 @ 5a046d6f3 (after Task 32, Wave 5 complete; original main measurement @ 4af3c680e in §9.0)
+## 0. Current state - re-measured 2026-09-21 @ f944cc6b5 (after Wave 7, the tail; original main measurement @ 4af3c680e in §9.0)
 
 ```
 bun run report:test-consolidation
   scope              test/unit + test/integration + test/ui  (test/e2e/ excluded — separate CI step)
-  scanned            1409 files, 375361 lines, 35823 expect()
+  scanned            1314 files, 374280 lines, 35823 expect()
   static test sites  17388  + 543 .each sites — NOT the runtime count, use `bun test`
-  satellite groups   140  (nested bases collapsed into their outermost ancestor)
-  satellites         251  (188 encode a ticket — rule §2 violations)
-  mirrors            54  EXCLUDED — each is its own src module's test file (--mirrors)
+  satellite groups   94   (nested bases collapsed into their outermost ancestor)
+  satellites         156  (121 encode a ticket — rule §2 violations)
+  mirrors            54   EXCLUDED — each is its own src module's test file (--mirrors)
   _deps unrestored   0 files with no restore; 1 need a read (hook, no visible restore)
-  removable files    95   (packed to 650, hard cap 800; 233 at drain start)
-  removable lines    3169   (11,185 at drain start)
+  removable files    0    (packed to 650, hard cap 800; 233 at drain start)
+  removable lines    0    (11,185 at drain start)
 ```
 
-> **Waves 1–5 are complete.** Tasks 1–31 landed 28 groups: **-24 files in Wave 4,
-> -137 files cumulative** against the plan's Waves 1–4 target of -141. The 4-file
-> shortfall is the documented over-target landings in §9.5 (callOp +2) and §9.8
-> (orchestrator +1), plus §9.31 (pipeline-result-handler packs to 3, not the plan
-> row's 2). Task 32 (Wave 5) removed no files but **-154 runtime tests / -659
-> lines**, with `expect()` unchanged (§9.33). The runtime baseline was re-based
-> mid-Wave-4 when `origin/main` advanced (§9.25/§9.26); Wave 5's before-baseline was
-> **19,680 tests / 45,505 expect() / 43 skip**. Remaining: Wave 6 (Tasks 33–35 —
-> the gate landed as §9.32; Task 35 open) and the Wave 7 tail.
+> **Waves 1–7 are complete. The drain's structural target is met: `removable files 0`.**
+> Tasks 1–31 (Waves 1–4) landed -137 files against the plan's -141 (the 4-file
+> shortfall: §9.5 callOp +2, §9.8 orchestrator +1, §9.31 pipeline-result-handler
+> +1). Task 32 (Wave 5) removed no files but **-154 runtime tests / -659 lines**
+> with `expect()` unchanged (§9.33). Wave 7 (the tail) drained the remaining **95
+> files / -1,081 lines** across nine batches (§9.34), taking `removable files 95 →
+> 0` and `files 1,409 → 1,314`. Runtime is **19,526 tests / 45,505 expect() / 43
+> skip / 0 fail** — Wave 7 preserved every test and assertion (only preambles
+> dedupe). Remaining: Wave 6 Task 35 (fix/retire the alias-blind
+> `report:test-overlap` / `report:dead-tests`); Tasks 1–34 are landed.
 
 ### 0.1 Runtime state — measured with `bun test`, which is the only authority on test counts
 
 | Suite | Tests | Files | `expect()` | Skip | Wall | Cap |
 |:--|--:|--:|--:|--:|--:|--:|
-| `test/unit/` | 18,168 | 1,274 | 42,357 | 7 | 46–53s | 120s |
-| `test/integration/` | 1,260 | 125 | 2,999 | 36 | 17–22s | 120s |
+| `test/unit/` | 18,168 | 1,185 | 42,357 | 7 | 46–53s | 120s |
+| `test/integration/` | 1,260 | 119 | 2,999 | 36 | 17–22s | 120s |
 | `test/ui/` | 98 | 10 | 149 | 0 | 0.8–1.1s | 30s |
-| **Total (`bun run test`)** | **19,526** | **1,409** | **45,505** | **43** | **~65–72s** | — |
-
-(Per-phase file counts from `bun test <dir>` sum to 1,409, matching the ranker;
-the earlier 1,408/1,420 gap was a Bun file-counting artifact, not test drift.
-Tests and `expect()` are the only invariants.)
+| **Total (`bun run test`)** | **19,526** | **1,314** | **45,505** | **43** | **~65–72s** | — |
 
 0 fail. **Do not mix these with the ranker's static counts.** The ranker reports 17,388
 static `test(`/`it(` sites because it cannot expand the 543 `.each` sites, and 35,823
 static `expect(` occurrences because it cannot count calls inside loops. Every invariant in
-§4 is a *runtime* number, read off `bun test`.
+§4 is a *runtime* number, read off `bun test`. (Wave 7 merged 95 files without changing a
+single runtime test or expect — test and assert counts are identical to §9.33's close.)
 
 ### 0.2 Structural state
 
 | Reading | Value | Source |
 |:--|--:|:--|
-| Test lines / src lines | **375,361 / 166,497 — 2.25:1** | ranker; `git ls-files` + `wc -l` over `src/**/*.ts{,x}` |
-| Preamble (lines before the first `describe`) | **~63,300 — 16.9% of test lines** | ranker rule (`^describe(`); roughly unchanged by Wave 5 (it removed test bodies, not preamble) |
-| Files importing `@test/helpers` | 874 (61.2%) of 1,429 | grep — **not re-measured this pass** |
+| Test lines / src lines | **374,280 / 166,497 — 2.25:1** | ranker; `git ls-files` + `wc -l` over `src/**/*.ts{,x}` |
+| Preamble (lines before the first `describe`) | **not re-measured this pass** | ranking rule (`^describe(`); the drain's win is now merged preambles, not a separately tracked figure |
+| Files importing `@test/helpers` | 874 (61.2%) of ~1,314 | grep — **not re-measured this pass** |
 | Helper modules available | 52 `test/helpers/*.ts` (51 excl. `index.ts`) | `git ls-files` |
-| Satellite groups / satellites / mirrors | **140 / 251 / 54** | ranker |
-| Satellites encoding a ticket | **188 of 251 (75%)** | ranker |
-| Removable files / lines | **95** (1,409 → 1,314) / **3,169** | ranker |
+| Satellite groups / satellites / mirrors | **94 / 156 / 54** | ranker |
+| Satellites encoding a ticket | **121 of 156 (78%)** | ranker — the remainder are the 6 gate-baselined no-base files (§9.32) plus group members the packing cannot legally collapse |
+| Removable files / lines | **0** (1,314 → 1,314) / **0** | ranker |
 | Line coverage | **96.37%** (74,777/77,597), floor 80% | `bun run test:coverage` |
-| Function coverage | **93.41%** (7,056/7,554), floor 80% | same, varies run to run |
+| Function coverage | **93.39–93.43%** (7,055/7,554), floor 80% | same, varies run to run |
 | Files below the per-file floor | **0**, baseline empty | same |
 
 **Everything is green. This is a debt drain, not a fix for a broken thing.** Coverage is 16
@@ -1976,3 +1974,81 @@ files, one assertion flipped each → 6 distinct failures, all restored.
 No `src/` change, no mirror merged, no escape hatch, no baseline moved. Remaining:
 Wave 6 Task 35 (fix/retire the alias-blind `report:test-overlap` /
 `report:dead-tests`) and the Wave 7 tail.
+
+### 9.34 — 2026-09-21, Wave 7 landed — the tail, 95 files drained, `removable files 0`
+
+The tail had no rank order left to give: after Wave 5 the ranker reported **95
+removable files across 79 groups** (16 groups packed to −2, 63 to −1), the rest
+already at floor. Delegate-by-directory with the Waves 1–4 recipe, in nine
+batches. It landed **1,409 → 1,314 files (−95) and 375,361 → 374,280 lines
+(−1,081)**; `removable files` and `removable lines` are now **0**.
+
+**Runtime is bit-identical to Wave 5's close: 19,526 tests / 45,505 `expect()` /
+43 skip / 0 fail.** Merging satellites never deletes a test or an assertion — it
+removes files and dedupes preambles — so that invariance is the whole correctness
+claim for this wave. Every batch was verified centrally with `bun test` per phase
+(unit 18,168 / 42,357; integration 1,260 / 2,999; ui 98 / 149), `check:all`,
+both `tsc --noEmit` invocations, and `test:coverage` (96.37% lines, 0 files below
+floor, empty baseline). Each delegated batch ran its own per-receiver mutation
+check (one flipped assertion per merged receiver → a distinct failure, restored
+byte-exact).
+
+Batches (one commit each; file before → after, group count):
+
+| Batch | Scope | Files | Yield |
+|:--|:--|--:|--:|
+| slice 1 | parallel-batch, integration/plan/plan, manifest-store, config/defaults | 14→6 | −8 |
+| slice 2 | tdd/isolation, iteration-runner, plan-inputs, plan-builder | 13→5 | −8 |
+| slice 3 | acceptance-loop, tools/git, commands/curator, config/schemas | 25→17 | −8 |
+| slice 4 | smart-runner, prd/schema, integration/review/review, cli/init | 18→10 | −8 |
+| batch A | execution/* + runtime/* (13 groups) | 26→13 | −13 |
+| batch B | operations/* + review/finish/verification/findings/acceptance (14) | 44→30 | −14 |
+| batch C | context/* + prompts/* (10) | 28→18 | −10 |
+| batch D | tools/* + config/* + cli/* + plugins (14) | 32→18 | −14 |
+| batch E | agents/* + test-runners/* + interaction/* + misc + integration (12) | 34→22 | −12 |
+| **total** | **79 groups** | | **−95** |
+
+The plan's tail estimate was 77 groups / −92; the actual 79 / −95 is the same
+order — the difference is that the ranker is the authority (§2.3) and several
+2→1 groups packed straight into a single receiver.
+
+Recurring mechanics, all documented in the per-batch agent reports: base-as-
+receiver when the base is a mirror (§9.25 precedent); satellite top-level
+`beforeEach` `_deps`/tempdir stubs scoped inside the satellite's own `describe`
+(§1.6, so the receiver's tests don't inherit them); colliding fixtures renamed;
+byte-identical fixtures dropped once; ticket references moved into `describe`
+names. Notable catches by the delegated agents: a dropped regex escape
+(`/_API_KEY\$/)`) that the per-file test run caught immediately, and duplicate
+imports flagged by biome.
+
+**Formatting note (carried from §9.33):** after every batch, run
+`bun x biome check --write test/` — it respects `biome.json` from the worktree and
+fixes only unformatted files. Do **not** run path-scoped `biome format --write
+<file>` (it reformats the whole repo with defaults) and do not pipe through
+`--stdin-file-path` (it corrupts control bytes).
+
+**Definition of done (§4), measured at f944cc6b5:**
+
+- `removable files 0` ✓ (was 233 at drain start; §9.0).
+- Ticket-flagged satellites 0: **not yet** — the gate baseline is 6 (§9.32), and
+  the ranker still reports 121 ticket-flagged satellites. These are files with
+  *no base* (so not "removable") or members a legal bin cannot absorb; they are
+  the gate's grandfathered set, unchanged by this drain. **Task 35 remains open**;
+  the gate itself (Task 33) is what stops recurrence.
+- `bun run test` green: **19,526 tests / 45,505 `expect()` / 43 skip / 0 fail**.
+  The plan's DoD wrote 19,599-minus-collapses; 19,526 = 19,680 (the Wave-4-close
+  baseline after `origin/main` advanced) − 154 (Wave 5), and Wave 7 changed
+  neither count.
+- `bun run check:all` and both `tsc --noEmit` clean ✓.
+- `test:coverage` **0 files below the floor, empty grandfather baseline** ✓
+  (aggregate varies 93.39–93.43% functions run to run).
+- No baseline in `scripts/baselines/` grew ✓.
+
+So the drain is structurally complete. This session (Wave 5 + Wave 7) reduced the
+tree **1,409 → 1,314 files (−95)** and **375,361 → 374,280 lines (−1,081)** on
+top of Waves 1–4's −137 files, against the ranker's **`removable files 0` /
+`removable lines 0`**. It does not reach the plan's original
+1,539→1,306 / −11,185 estimate as a raw count, because `origin/main` advanced
+mid-drain (adding test files to the baseline, §9.25/§9.26) and the packer's
+original target was optimistic; the compliance metric — no satellite left that a
+legal packing can absorb — is met. One Wave 6 task (35) is all that remains.
