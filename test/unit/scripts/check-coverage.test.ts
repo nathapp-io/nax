@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildUpdatedBaseline,
+  extractTestSummary,
   findMissingBaselined,
   parseLcov,
   parsePerFileLines,
@@ -165,5 +166,22 @@ describe("buildUpdatedBaseline", () => {
     const { byFile } = buildUpdatedBaseline({ "src/measured.ts": 0.6 }, perFile, everythingExists);
 
     expect(byFile).toEqual({ "src/measured.ts": 0.4 });
+  });
+});
+
+describe("extractTestSummary", () => {
+  const noise = "[logger] Failed to write\n\n❌ PRECHECK FAILED\n✗ working-tree-clean: dirty.txt\n";
+  const summary =
+    " 19554 pass\n 45 skip\n 0 fail\n 22 snapshots, 45295 expect() calls\nRan 19599 tests across 1539 files. [50.51s]";
+
+  test("keeps the pass/fail block and drops the test noise around it", () => {
+    const out = extractTestSummary(`bun test v1.4.2\n${noise}\n${summary}\n`);
+
+    expect(out).toBe(`${summary}\n`);
+    expect(out).not.toContain("PRECHECK FAILED");
+  });
+
+  test("returns an empty string when bun printed no summary", () => {
+    expect(extractTestSummary(noise)).toBe("");
   });
 });
