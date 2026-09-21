@@ -53,14 +53,12 @@ export type {
   RetryStrategy,
   SameAgentRetryResult,
   SameAgentRetryState,
-  TieredInspection,
   TimeoutRetryConfig,
   TrySameAgentRetryDeps,
 } from "./retry";
 export {
   extractTimeoutRetryConfig,
   makeParseRetryStrategy,
-  makeTieredParseRetryStrategy,
   ParseValidationError,
   resolveTimeoutRetryOptions,
   timeoutRetryShouldRetry,

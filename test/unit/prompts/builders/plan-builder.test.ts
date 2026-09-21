@@ -354,3 +354,85 @@ describe("PlanPromptBuilder — repo-rooted path frame (single-frame redesign)",
     expect(outputFormat).toContain("Paths in contextFiles and expectedFiles are relative to the REPO ROOT");
   });
 });
+
+// ─── Conditional repair turns on the refine path ──────────────────────────
+
+/**
+ * `buildSpecDriftRepair` and `buildOutOfScopeRepair` are the two conditional
+ * turns `planRefineOp` fires (src/operations/plan-refine.ts:310,323). The
+ * plan-refine tests spy on them to assert the wiring, so until now nothing
+ * exercised either body. These assert the payload the model actually receives:
+ * every flagged item has to reach the prompt, since a dropped one is silently
+ * not repaired.
+ */
+describe("PlanPromptBuilder.buildSpecDriftRepair()", () => {
+  const VIOLATIONS = [
+    { storyId: "US-001", acIndex: 0, ac: "[grep] `grep -c foo src/a.ts` returns 1", reason: "deprecated-tag" },
+    { storyId: "US-002", acIndex: 3, ac: "[file] src/b.ts contains a guard", reason: "shell-command" },
+  ];
+
+  test("renders one bullet per violation carrying storyId, AC index, reason and the AC text", () => {
+    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
+
+    expect(prompt).toContain("- US-001 AC[0] (deprecated-tag): [grep] `grep -c foo src/a.ts` returns 1");
+    expect(prompt).toContain("- US-002 AC[3] (shell-command): [file] src/b.ts contains a guard");
+  });
+
+  test("keeps the violations in the order given, so the list matches the checker's output", () => {
+    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
+
+    expect(prompt.indexOf("US-001 AC[0]")).toBeLessThan(prompt.indexOf("US-002 AC[3]"));
+  });
+
+  test("names the deprecated tags to strip and the runtime tags that replace them", () => {
+    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
+
+    for (const tag of ["[grep]", "[file]", "[verbatim]"]) expect(prompt).toContain(tag);
+    for (const tag of ["[unit]", "[integration]", "[cli]"]) expect(prompt).toContain(tag);
+  });
+
+  test("routes the result to the file and forbids echoing the PRD into chat", () => {
+    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/feature/prd.json");
+
+    expect(prompt).toContain("Write the corrected PRD to this file path: /tmp/feature/prd.json");
+    expect(prompt).toContain("Do not output the PRD in chat.");
+  });
+
+  test("guards the correct ACs: the model is told not to weaken what is already right", () => {
+    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
+
+    expect(prompt).toContain("Do not remove or weaken acceptance criteria that are already correct.");
+  });
+});
+
+describe("PlanPromptBuilder.buildOutOfScopeRepair()", () => {
+  const MISSING = ["No OAuth device flow", "No migration of legacy sessions"];
+
+  test("renders every missing exclusion verbatim as its own bullet", () => {
+    const prompt = new PlanPromptBuilder().buildOutOfScopeRepair(MISSING, "/tmp/prd.json");
+
+    expect(prompt).toContain("- No OAuth device flow");
+    expect(prompt).toContain("- No migration of legacy sessions");
+  });
+
+  test("names the top-level outOfScope array as the destination", () => {
+    const prompt = new PlanPromptBuilder().buildOutOfScopeRepair(MISSING, "/tmp/prd.json");
+
+    expect(prompt).toContain("`outOfScope`");
+    expect(prompt).toContain("Add it to the top-level `outOfScope` array, preserving the spec's wording.");
+  });
+
+  test("forbids the two failure modes the backfill cannot undo: dropping and AC conversion", () => {
+    const prompt = new PlanPromptBuilder().buildOutOfScopeRepair(MISSING, "/tmp/prd.json");
+
+    expect(prompt).toContain("never drop or merge an item");
+    expect(prompt).toContain("Never convert an out-of-scope statement into an acceptance criterion");
+  });
+
+  test("routes the result to the file and forbids echoing the PRD into chat", () => {
+    const prompt = new PlanPromptBuilder().buildOutOfScopeRepair(MISSING, "/tmp/feature/prd.json");
+
+    expect(prompt).toContain("Write the corrected PRD to this file path: /tmp/feature/prd.json");
+    expect(prompt).toContain("Do not output the PRD in chat.");
+  });
+});
