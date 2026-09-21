@@ -1177,3 +1177,45 @@ Mutation check: 3 merged receivers × one flipped assertion each →
 (each-row, 3 rows failed), `toBe(0.1)` in provider-cost → 5 distinct
 failures (escalation's each spans 3), all reverted; 65 unrelated pass.
 Group now at floor per ranker (5 files).
+
+### 9.18 — 2026-09-21, Task 17 landed — cli/rules group 9 → 5 files (-181 lines)
+
+Target 9 → 5 (-4 f, packer claims -270 l); **landed 9 → 5 (-4 f, -181 l)**.
+All 67 tests / 45,298 expect() preserved: unit phase 18,247 / 42,169
+unchanged, full suite 0 fail, `check:all` 0, both tsc clean, coverage 96.32%
+lines / 93.39% functions, 0 below floor. Ranker `_deps unrestored 0` (group
+carried no `⚠deps` flag).
+
+**Seam reassignment within the packer's 5-file count** — the packer separated
+the two export-sibling files and the two migrate files across bins; the
+files' own headers document the seams, so I paired by family instead:
+
+- `rules.test.ts` (base/mirror) absorbs `rules-migrate-description` (US-001
+  AC9 description round-trip) + `rules-migrate-parity` (AC-7..AC-14 dry-run
+  parity) — rulesMigrateCommand family. Both absorbed files' `_rulesCLIDeps`
+  hooks are strict subsets of the base's 8-key family, so the base's existing
+  hook covers them with zero new hook code; only the describes were
+  appended. 675l (over the 650 fill target, under the cap).
+- `rules-lint-isolation.test.ts` absorbs `rules-export-description` (US-002)
+  + `rules-export-scope` (package-scope globs) — rulesExportCommand family;
+  both share byte-identical injection harnesses (per their own headers "the
+  seam and injection harness are the same"). To avoid the §1.6 top-level
+  hook trap, the export pair's hook is scoped to one wrapping describe
+  (exportWritten/exportWarnings/exportOne/frontmatterBlock/bodyAfterFrontmatter
+  deduped once), leaving lint-isolation's own `_rulesLintDeps` top-level
+  hooks untouched. 623l.
+
+Three mirrors untouched (`rules-migrate`, `rules-lint`, `rules-migrate-plan`).
+
+Deletes (4): `rules-export-description`, `rules-export-scope`,
+`rules-migrate-description`, `rules-migrate-parity`.
+
+Imports: base gained `rulesMigrateCommand` + `type MigrationOutcome`
+(`@/cli/rules` re-exports both); lint-isolation gained `rulesExportCommand`
+and `mock` (getLogger wrapper). Runtime counts verified site-by-site:
+rules.test.ts 38 = 28+1+9; lint-isolation 29 = 10+7+12 (export-scope's
+`test.each` expands 6 rows).
+
+Mutation check: flipped `migrated.toBeDefined()` → `toBeUndefined()` (AC9)
+and `out.startsWith("---\n")` → `toBe(false)` (export AC1) → 2 distinct
+failures, all others pass; reverted. Group at floor (5 files, -0).
