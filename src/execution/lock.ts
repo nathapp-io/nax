@@ -226,11 +226,17 @@ export async function acquireLock(workdir: string): Promise<LockAcquisitionResul
       }
       return { acquired: false, holder: { pid: 0 } };
     }
+    // Non-EEXIST failure: a real filesystem error (EACCES, EIO, ENOSPC,
+    // EPERM, …). Don't fabricate a "holder" — re-throw so the caller sees
+    // the actual failure instead of a misleading "another process holds the
+    // lock" refusal. The outer setupRun / runner layers will surface this
+    // as the I/O failure it actually is.
     const logger = getSafeLogger();
-    logger?.warn("execution", "Failed to acquire lock", {
+    logger?.warn("execution", "Failed to acquire lock due to filesystem error", {
       error: (error as Error).message,
+      code: (error as NodeJS.ErrnoException).code,
     });
-    return { acquired: false, holder: { pid: 0 } };
+    throw error;
   }
 }
 
