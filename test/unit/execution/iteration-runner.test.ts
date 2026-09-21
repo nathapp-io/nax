@@ -25,6 +25,7 @@ import {
   makeStatusWriter,
   makeStory,
   makeTempDir,
+  makeWorktreeManager,
 } from "@test/helpers";
 import type { SequentialExecutionContext } from "@/execution/executor-types";
 import { _iterationRunnerDeps, releaseHeavyPipelineContext, runIteration } from "@/execution/iteration-runner";
@@ -237,6 +238,7 @@ describe("runIteration — US-001 stamps packageView for the context producers",
   let origRunPipeline: typeof _iterationRunnerDeps.runPipeline;
   let origExistsSync: typeof _iterationRunnerDeps.existsSync;
   let origPrepareDeps: typeof _iterationRunnerDeps.prepareWorktreeDependencies;
+  let origWorktreeManager: typeof _iterationRunnerDeps.worktreeManager;
   let story: UserStory;
   let prd: PRD;
 
@@ -245,6 +247,7 @@ describe("runIteration — US-001 stamps packageView for the context producers",
     origRunPipeline = _iterationRunnerDeps.runPipeline;
     origExistsSync = _iterationRunnerDeps.existsSync;
     origPrepareDeps = _iterationRunnerDeps.prepareWorktreeDependencies;
+    origWorktreeManager = _iterationRunnerDeps.worktreeManager;
     story = makeStory({ id: "US-001", title: "Story one" });
     prd = makePRD({ userStories: [story] });
   });
@@ -253,6 +256,7 @@ describe("runIteration — US-001 stamps packageView for the context producers",
     _iterationRunnerDeps.runPipeline = origRunPipeline;
     _iterationRunnerDeps.existsSync = origExistsSync;
     _iterationRunnerDeps.prepareWorktreeDependencies = origPrepareDeps;
+    _iterationRunnerDeps.worktreeManager = origWorktreeManager;
     cleanupTempDir(tempDir);
   });
 
@@ -266,15 +270,60 @@ describe("runIteration — US-001 stamps packageView for the context producers",
     return ref;
   }
 
-  test("under worktree isolation the pipeline context carries a packageView rooted at the story's worktree", async () => {
+  test("US-003 AC-5: with no worktree yet, WorktreeManager.create receives story-f-US-001 — not the raw story ID", async () => {
+    // First attempt for this story: the worktree does not exist yet, so the
+    // runner takes the create() branch.
+    const manager = makeWorktreeManager();
+    _iterationRunnerDeps.worktreeManager = manager;
+    _iterationRunnerDeps.existsSync = () => false;
+    // The pipeline result is a failure so the run's post-pipeline handlers stay
+    // off the real merge path — this test is about the identity passed to
+    // create(), and nothing downstream should need git.
+    let capturedStoryId: string | undefined;
+    _iterationRunnerDeps.runPipeline = mock(async (_stages: PipelineStage[], ctx: PipelineContext) => {
+      capturedStoryId = ctx.story.id;
+      return makePipelineResult({ success: false, finalAction: "fail", reason: "boom" }, { prd, workdir: ctx.workdir });
+    });
+
+    const ctx = makeCtx(tempDir, {
+      feature: "f",
+      config: makeNaxConfig({ execution: { storyIsolation: "worktree" } }),
+    });
+
+    await runIteration(
+      ctx,
+      prd,
+      { story, storiesToExecute: [story], routing: ROUTING, isBatchExecution: false },
+      1,
+      0,
+      [],
+    );
+
+    const createArgs = manager.create.mock.calls[0];
+    assertDefined(createArgs, "worktreeManager.create call");
+    expect(createArgs[0]).toBe(tempDir);
+    // feature "f" + story "US-001" → the composed identity, spelled literally
+    // so the assertion does not mirror the producer it is checking.
+    expect(String(createArgs[1])).toBe("story-f-US-001");
+    expect(String(createArgs[1])).not.toBe(story.id);
+    // AC-13: the story the pipeline (and therefore metrics, costs and status)
+    // sees keeps its raw ID — the composed identity is a worktree name only.
+    expect(capturedStoryId).toBe(story.id);
+  });
+
+  test("under worktree isolation the pipeline context carries a packageView rooted at the story's composed worktree", async () => {
     const capture = capturePipelineContext();
     // Worktree already exists → reuse it (skip create()).
     _iterationRunnerDeps.existsSync = () => true;
-    _iterationRunnerDeps.prepareWorktreeDependencies = (async () => ({
-      cwd: join(tempDir, ".nax-wt", story.id),
-    })) as typeof _iterationRunnerDeps.prepareWorktreeDependencies;
+    // US-003: the runner composes effectiveWorkdir from (feature, storyId) and
+    // routes it through the worktree-id producers. prepareWorktreeDependencies
+    // is left at its real implementation (mode "off" returns cwd =
+    // worktreeRoot unchanged), so the runner is exercised end to end instead
+    // of short-circuiting through a mock.
+    const composedWorktreePath = join(tempDir, ".nax-wt", "story-f-US-001");
 
     const ctx = makeCtx(tempDir, {
+      feature: "f",
       config: makeNaxConfig({ execution: { storyIsolation: "worktree" } }),
     });
 
@@ -293,9 +342,12 @@ describe("runIteration — US-001 stamps packageView for the context producers",
     // against the MAIN checkout — the stale-or-absent-context defect.
     const packageView = capture.captured?.packageView;
     assertDefined(packageView, "pipelineContext.packageView");
-    // storyExecRoot(packageView) must land on the worktree root the agent
-    // actually executes in, not the main checkout.
-    expect(storyExecRoot(packageView)).toBe(join(tempDir, ".nax-wt", story.id));
+    // storyExecRoot(packageView) must land on the COMPOSED worktree root
+    // (US-003 AC-6): .nax-wt/story-f-US-001, not the raw .nax-wt/US-001 the
+    // pre-US-003 spelling used.
+    expect(storyExecRoot(packageView)).toBe(composedWorktreePath);
+    expect(storyExecRoot(packageView).endsWith(join(".nax-wt", "story-f-US-001"))).toBe(true);
+    expect(storyExecRoot(packageView).endsWith(join(".nax-wt", story.id))).toBe(false);
   });
 
   test("under shared isolation the packageView resolves to the main checkout", async () => {

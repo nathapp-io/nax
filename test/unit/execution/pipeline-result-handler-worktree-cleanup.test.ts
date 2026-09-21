@@ -11,21 +11,26 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { join } from "node:path";
 import {
   makeAgentResult,
+  makeMergeEngine,
   makeMockRuntime,
   makePRD,
   makeSpawn,
   makeStory,
   makeTestContext,
+  withInfoSpy,
   withWarnSpy,
 } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
   _resultHandlerDeps,
   handlePipelineFailure,
+  handlePipelineSuccess,
   type PipelineHandlerContext,
 } from "@/execution/pipeline-result-handler";
+import type { StoryMetrics } from "@/metrics";
 import type { PipelineRunResult } from "@/pipeline/runner";
 import { PluginRegistry } from "@/plugins/registry";
 import type { UserStory } from "@/prd/types";
@@ -393,3 +398,202 @@ function failResultFor(_storyId: string): PipelineRunResult {
     context: makeTestContext({ agentResult: makeAgentResult() }),
   };
 }
+
+function successResultFor(storyMetrics: StoryMetrics[] = []): PipelineRunResult {
+  return {
+    success: true,
+    finalAction: "complete",
+    context: makeTestContext({ agentResult: makeAgentResult(), storyMetrics }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// US-003 — every execution-layer site derives the identity. This block pins
+// the COMPOSED spellings at this module's sites; the pre-US-003 spellings were
+// the raw `nax/<storyId>` / `.nax-wt/<storyId>` / `refs/nax/orphan/<storyId>`.
+//
+// The run's feature is "f", so the composed identity is
+// `deriveStoryWorktreeId("f", "US-001")` = `story-f-US-001`. The spellings are
+// written literally (not through the producers) so an assertion cannot agree
+// with a producer that the site under test never called.
+// ---------------------------------------------------------------------------
+
+const US003_STORY_ID = "US-001";
+const COMPOSED_TAIL = join(".nax-wt", "story-f-US-001");
+const COMPOSED_BRANCH = "nax/story-f-US-001";
+const COMPOSED_ORPHAN_REF = "refs/nax/orphan/story-f-US-001";
+const COMPOSED_SOURCE_REF = `refs/heads/${COMPOSED_BRANCH}`;
+
+/** Worktree mode with the retry budget already spent, so `fail` reaches cleanup. */
+const US003_WORKTREE_CONFIG = {
+  ...DEFAULT_CONFIG,
+  execution: {
+    ...DEFAULT_CONFIG.execution,
+    storyIsolation: "worktree" as const,
+    rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+  },
+};
+
+function makeIdentityCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = {}): PipelineHandlerContext {
+  return makeCtx(story, { feature: "f", config: US003_WORKTREE_CONFIG, ...overrides });
+}
+
+describe("US-003 handlePipelineFailure — cleanup keys off the composed identity", () => {
+  let origUkSpawn: typeof _resultHandlerDeps.spawn;
+  let origUkExistsSync: typeof _resultHandlerDeps.existsSync;
+
+  beforeEach(() => {
+    origUkSpawn = _resultHandlerDeps.spawn;
+    origUkExistsSync = _resultHandlerDeps.existsSync;
+  });
+
+  afterEach(() => {
+    _resultHandlerDeps.spawn = origUkSpawn;
+    _resultHandlerDeps.existsSync = origUkExistsSync;
+    mock.restore();
+  });
+
+  test("AC-8: the worktree-existence probe tests the path ending in .nax-wt/story-f-US-001", async () => {
+    const probed: string[] = [];
+    _resultHandlerDeps.existsSync = (...args: Parameters<typeof origUkExistsSync>) => {
+      probed.push(String(args[0]));
+      return true;
+    };
+    _resultHandlerDeps.spawn = makeSpawn(() => ({})).spawn;
+
+    const story = makeStory({ id: US003_STORY_ID, status: "pending", passes: false, attempts: 2 });
+    await handlePipelineFailure(makeIdentityCtx(story), failResultFor(US003_STORY_ID));
+
+    // The probe MUST point at the composed directory — a raw `.nax-wt/US-001`
+    // probe would report "no worktree" for every composed one, silently
+    // disabling failed-story cleanup.
+    expect(probed.some((p) => p.endsWith(COMPOSED_TAIL))).toBe(true);
+    expect(probed.some((p) => p.endsWith(join(".nax-wt", US003_STORY_ID)))).toBe(false);
+  });
+
+  test("AC-9: the worktree removal argv names the directory ending in .nax-wt/story-f-US-001", async () => {
+    _resultHandlerDeps.existsSync = () => true;
+    const spawnCalls: string[][] = [];
+    _resultHandlerDeps.spawn = mockSpawnCapturingCalls(spawnCalls);
+
+    const story = makeStory({ id: US003_STORY_ID, status: "pending", passes: false, attempts: 2 });
+    await handlePipelineFailure(makeIdentityCtx(story), failResultFor(US003_STORY_ID));
+
+    const removed = spawnCalls
+      .filter((a) => a[0] === "git" && a[1] === "worktree" && a[2] === "remove")
+      .map((a) => a[3] ?? "");
+    expect(removed.length).toBeGreaterThan(0);
+    for (const target of removed) {
+      expect(target.endsWith(COMPOSED_TAIL)).toBe(true);
+      expect(target.endsWith(join(".nax-wt", US003_STORY_ID))).toBe(false);
+    }
+  });
+
+  test("AC-10: the orphan-ref argv names both refs/nax/orphan/story-f-US-001 and its composed source branch", async () => {
+    _resultHandlerDeps.existsSync = () => true;
+    const spawnCalls: string[][] = [];
+    _resultHandlerDeps.spawn = mockSpawnCapturingCalls(spawnCalls);
+
+    const story = makeStory({ id: US003_STORY_ID, status: "pending", passes: false, attempts: 2 });
+    await handlePipelineFailure(makeIdentityCtx(story), failResultFor(US003_STORY_ID));
+
+    const updateRefCalls = spawnCalls.filter((a) => a[0] === "git" && a[1] === "update-ref");
+    const orphanCalls = updateRefCalls.filter((a) => a[2] === COMPOSED_ORPHAN_REF);
+    expect(orphanCalls.length).toBeGreaterThan(0);
+    for (const call of orphanCalls) {
+      // [git, update-ref, <orphan ref>, <source branch>]
+      expect(call[3]).toBe(COMPOSED_SOURCE_REF);
+    }
+    // Neither ref may be spelled with the raw story ID — the reader
+    // (`WorktreeManager.create`) looks the composed name up and would never
+    // find a raw one.
+    expect(updateRefCalls.some((a) => a[2] === `refs/nax/orphan/${US003_STORY_ID}`)).toBe(false);
+    expect(updateRefCalls.some((a) => a[3] === `refs/heads/nax/${US003_STORY_ID}`)).toBe(false);
+  });
+
+  test("AC-14: the failure log's branch field is nax/story-f-US-001 and its storyId stays raw", async () => {
+    _resultHandlerDeps.existsSync = () => true;
+    _resultHandlerDeps.spawn = makeSpawn(() => ({})).spawn;
+
+    const story = makeStory({ id: US003_STORY_ID, status: "pending", passes: false, attempts: 2 });
+
+    await withInfoSpy(async (infoSpy) => {
+      await handlePipelineFailure(makeIdentityCtx(story), failResultFor(US003_STORY_ID));
+
+      const branchLog = infoSpy.mock.calls.find((c) => c[0] === "worktree" && c[1] === "Kept failed story branch");
+      expect(branchLog).toBeDefined();
+      const data = branchLog?.[2] as { branch?: string; storyId?: string } | undefined;
+      expect(data?.branch).toBe(COMPOSED_BRANCH);
+      expect(data?.branch).not.toBe(`nax/${US003_STORY_ID}`);
+      // The raw story ID remains the correlation key (AC-13).
+      expect(data?.storyId).toBe(US003_STORY_ID);
+    });
+  });
+});
+
+describe("US-003 handlePipelineSuccess — the merge takes the composed identity", () => {
+  let origUkSpawn: typeof _resultHandlerDeps.spawn;
+  let origUkExistsSync: typeof _resultHandlerDeps.existsSync;
+  let origUkMergeEngine: typeof _resultHandlerDeps.mergeEngine;
+
+  beforeEach(() => {
+    origUkSpawn = _resultHandlerDeps.spawn;
+    origUkExistsSync = _resultHandlerDeps.existsSync;
+    origUkMergeEngine = _resultHandlerDeps.mergeEngine;
+    _resultHandlerDeps.existsSync = () => false;
+  });
+
+  afterEach(() => {
+    _resultHandlerDeps.spawn = origUkSpawn;
+    _resultHandlerDeps.existsSync = origUkExistsSync;
+    _resultHandlerDeps.mergeEngine = origUkMergeEngine;
+    mock.restore();
+  });
+
+  test("AC-11: MergeEngine.merge receives the WorktreeId story-f-US-001", async () => {
+    const mergeEngine = makeMergeEngine();
+    _resultHandlerDeps.mergeEngine = mergeEngine;
+
+    const story = makeStory({ id: US003_STORY_ID, status: "pending", passes: false });
+    // storyGitRef is cleared so no diff capture (real git) runs.
+    const ctx = makeIdentityCtx(story, { storyGitRef: undefined });
+
+    await handlePipelineSuccess(ctx, successResultFor());
+
+    const mergeArgs = mergeEngine.merge.mock.calls[0];
+    expect(mergeArgs).toBeDefined();
+    expect(mergeArgs?.[0]).toBe(ctx.workdir);
+    expect(String(mergeArgs?.[1])).toBe("story-f-US-001");
+    expect(String(mergeArgs?.[1])).not.toBe(US003_STORY_ID);
+  });
+
+  test("AC-13: recorded story metrics keep the raw story ID, never the composed identity", async () => {
+    const story = makeStory({ id: US003_STORY_ID, status: "pending", passes: false });
+    const metric: StoryMetrics = {
+      storyId: US003_STORY_ID,
+      complexity: "simple",
+      modelTier: "fast",
+      modelUsed: "claude-haiku-4.5",
+      attempts: 1,
+      finalTier: "fast",
+      success: true,
+      cost: 0.01,
+      durationMs: 100,
+      firstPassSuccess: true,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:00.100Z",
+    };
+    const allStoryMetrics: StoryMetrics[] = [];
+    // Shared isolation: metrics are recorded on the same path either way, and
+    // this keeps the test off the worktree merge.
+    const ctx = makeCtx(story, {
+      storyGitRef: undefined,
+      allStoryMetrics,
+    });
+
+    await handlePipelineSuccess(ctx, successResultFor([metric]));
+
+    expect(allStoryMetrics.map((m) => m.storyId)).toEqual([US003_STORY_ID]);
+    expect(allStoryMetrics.some((m) => m.storyId === "story-f-US-001")).toBe(false);
+  });
+});
