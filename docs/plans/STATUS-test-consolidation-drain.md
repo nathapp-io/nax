@@ -977,4 +977,33 @@ deps hook pairs merged into one. Mutation check: 6 receivers × one flipped asse
 fixture string (`BARE_TIER2_TEST`), not an executed assertion — re-verified by flipping a
 live `toBe(false)` instead. All reverted.
 
-### 9.13 — next entry goes here
+### 9.13 — 2026-09-21, Task 12 landed — tier-escalation group 10 → 4 files (-437 lines)
+
+Hit the packed target: 10 → 4 files, 2,990 → 2,553 lines, all 59 tests / 162
+expect() preserved. Unit phase 18,247 / 42,169 unchanged, full suite 0 fail,
+`check:all` 0, both tsc clean, coverage 96.32% / 93.40%, 0 below floor.
+
+Bins per the packer, seam assignment mine (re-assigned after the §6 recovery):
+
+- `tier-escalation-greenfield` absorbs `reroute-delete` + `first-iteration` + `routing-widening` (753l).
+- `tier-escalation-retry-cap` absorbs `dry-run` + `source-tier` (600l).
+- `tier-escalation-story-failed` absorbs `off-ladder` (546l).
+- `tier-escalation.test.ts` frozen base (1025l) untouched.
+
+Deletes (6): `tier-escalation-dry-run`, `tier-escalation-first-iteration`,
+`tier-escalation-reroute-delete`, `tier-escalation-routing-widening`,
+`tier-escalation-source-tier`, `tier-escalation-off-ladder`.
+
+**Over-cap recovery (§6 invoked):** the packer's 3-way bin (story-failed +
+source-tier + off-ladder, predicted 643l) actually packed to **829l > 800 cap**.
+The subagent correctly reverted the 3-way per protocol; I re-binned into two 2-ways
+that fit: story-failed + off-ladder (546l) and retry-cap + source-tier (600l).
+Target of 4 files still hit. Lesson: line-sum projections understate the merged
+result when absorbed files carry module-level scaffolding — when a 3-way lands near
+the cap, split before merging.
+
+Delegated to a subagent; post-verification by me: 59/162 reproduced, all receivers
+≤ 753l, mutation check 3 merged receivers × one flipped assertion → 3 distinct
+failures, all reverted.
+
+### 9.14 — next entry goes here
