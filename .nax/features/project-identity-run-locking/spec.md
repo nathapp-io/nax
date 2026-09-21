@@ -71,21 +71,37 @@ form.
   `runParallelBatch` (`src/execution/parallel-batch.ts:121`) receives an already-built context
   and dispatches to `runPipeline` directly (`src/execution/parallel-worker.ts:92`).
 
-**One staleness predicate, shared.** `feature-lock.ts` exports `isLockStale(record, now)`, and
-both `acquireFeatureLock` and `checkStaleLock` use it, so "stale" means one thing:
+**Two predicates, because there are two questions.** Acquire asks "may I take this lock?"; the
+precheck asks "is this lock suspiciously old?". They already differ today and must keep
+differing: `acquireLock` (`src/execution/lock.ts:87-94`) reclaims on liveness alone and never
+reads `timestamp`, while `checkStaleLock` (`src/precheck/checks-config.ts:46`) passes on
+`holderAlive || ageMs < twoHoursMs` — so a dead PID on a young lock is reclaimable by the first
+and not flagged by the second. Collapsing them into one predicate would flip the precheck's
+verdict for that case. `feature-lock.ts` therefore exports both, and neither changes an existing
+verdict for a local record:
+
+`isLockReclaimable(record, now)` — used by both acquire paths:
 
 | Record | Verdict |
 |:--|:--|
-| `host` is this machine, PID alive | **not stale**, regardless of age |
-| `host` is this machine, PID not alive | **stale** |
-| `host` absent (written before this feature, or by an older binary) | treated as **this machine**, so the PID rule above applies |
-| `host` is another machine, age < 2 hours | **not stale** — a PID number from another host is meaningless, so liveness cannot be evaluated |
-| `host` is another machine, age ≥ 2 hours | **stale** |
+| `host` is this machine, or `host` absent (written before this feature, or by an older binary) | reclaimable only when the PID is not alive — today's rule, unchanged |
+| `host` is another machine | liveness cannot be evaluated, so reclaimable only at age ≥ 2 hours |
 
-Two hours is the existing threshold at `src/precheck/checks-config.ts:46`
-(`holderAlive || ageMs < twoHoursMs`); this predicate generalizes that rule rather than
-introducing a second one. `host` is `os.hostname()`, compared case-insensitively, written by one
-exported helper so both lock writers produce identical values.
+`isLockSuspect(record, now)` — used by `checkStaleLock`:
+
+| Record | Verdict |
+|:--|:--|
+| `host` is this machine, or `host` absent | not suspect while the PID is alive **or** the record is younger than 2 hours — today's rule, unchanged |
+| `host` is another machine | not suspect while younger than 2 hours; suspect at or beyond it |
+
+Both resolve a record's age from `timestamp` when present, else `startedAt`; `checkStaleLock`
+keeps its existing file-mtime fallback (`src/precheck/checks-config.ts:29-37`) for records
+carrying neither. `host` is `os.hostname()`, compared case-insensitively, produced by
+`lockHost()`, exported from `feature-lock.ts` so both lock writers emit identical values.
+
+`acquireFeatureLock` creates `<outputDir>/features/<feature>/` when absent, because an exclusive
+create does not make parent directories; the unlock scan treats a missing `features/` directory
+as zero feature locks.
 
 **Lock record shapes.** The feature-lock record carries `pid`, `host`, `workdir`, `feature`,
 `runId`, `startedAt` and `timestamp`. The checkout-lock record keeps its existing `pid` and
@@ -101,23 +117,29 @@ lock is judged stale and reclaimed by run B, then A reaches cleanup and deletes 
 still runs. The repository already guards this shape twice — the BUG-34 re-verify at
 `src/execution/lock.ts:110-160`, and the TOCTOU guard at `src/commands/unlock.ts:74-86`.
 
-**Injection points.** Three seams are added so the new calls can be observed without
+**Injection points.** Three seams are extended or added so the new calls can be observed without
 `mock.module()`, which `.nax/rules/forbidden-patterns-source.md:31` bans: `_runSetupDeps`
-(`src/execution/lifecycle/run-setup.ts:62-67`) gains `acquireLock` and `acquireFeatureLock`;
-`src/precheck/index.ts` gains a `_precheckDeps` object holding `checkStaleLock`; and
-`src/commands/resume.ts` receives its run ID rather than generating one, so no seam is needed
-there. This mirrors the existing `_lockDeps.rename` seam at `src/execution/lock.ts:20`.
+(`src/execution/lifecycle/run-setup.ts:62-67`) gains `acquireLock` and `acquireFeatureLock`; the
+existing `_precheckDeps` (`src/precheck/index.ts:191`, which already holds `checkStorySizeGate`)
+gains `checkStaleLock` alongside it rather than being redeclared; and `feature-lock.ts` exports
+`_featureLockDeps` holding `featureLockPath`. `src/commands/resume.ts` receives its run ID rather
+than generating one, so it needs no seam. All three mirror the existing `_lockDeps.rename` seam
+at `src/execution/lock.ts:20`.
 
-**Logger.** `src/execution/lock.ts:24-30` declares a private `getSafeLogger`; five other modules
-do the same. The shared export lives at `src/logger` (`src/logger/index.ts:10`), and the new
-module uses it rather than adding a seventh copy.
+**Barrels.** The three new modules are re-exported from `src/execution/index.ts`,
+`src/execution/helpers/index.ts` and `src/runtime/index.ts`, so cross-module consumers import the
+barrel rather than an internal path.
+
+**Logger.** `src/execution/lock.ts:24-30` declares a private `getSafeLogger`, as five other
+modules do. A shared export exists at `src/logger` (`src/logger/index.ts:10`); using it is
+preferred over adding a seventh private copy, though any logger satisfies the logging criteria
+below.
 
 ### Run identity
 
-`buildRunId(workdir, now)` is the single producer. Its workdir component is an 8-character
-lowercase base36 hash of the absolute working directory — not the basename, which would collide
-for the common `git worktree add ../repo-feat` topology where two checkouts share a trailing
-name. The result contains no path separator, because it is interpolated into filenames and
+`buildRunId(workdir, now)` is the single producer. Its workdir component is a short hash of the
+absolute working directory — any hash will do, but not the basename, which would collide for the
+common `git worktree add ../repo-feat` topology where two checkouts share a trailing name. The result contains no path separator, because it is interpolated into filenames and
 directory names at more than ten sites, including `${project}-${feature}-${runId}` as a directory
 at `src/pipeline/subscribers/registry.ts:53`.
 
@@ -204,17 +226,25 @@ implement.
 
 - Baseline: `{ format?, workdir, silent? }` — no output directory and no feature, which is why
   neither `runPrecheck` (`:278`) nor `runEnvironmentPrecheck` (`:219`) can supply one today.
-- Target: gains an optional `featureLock?: { outputDir: string; feature: string }`, supplied by
-  `src/execution/lifecycle/precheck-runner.ts:49-53`, which already holds the feature and runs
-  after `run-setup.ts:327` computes the project key. `src/commands/precheck.ts:87-90` omits it and
-  keeps today's checkout-only behaviour.
+- Target: gains an optional `featureLock?: { outputDir: string; feature: string }`.
+  `src/execution/lifecycle/precheck-runner.ts:49-53` supplies it, re-deriving the output
+  directory from `ctx.config` and `ctx.workdir` — `projectKey` at `run-setup.ts:327` sits inside a
+  bare block closed at `:337` and is not in scope at the `:342` call, so it is re-derived rather
+  than threaded. `featureLock` is omitted when `ctx.featureName` is undefined.
+  `src/commands/precheck.ts:87-90` omits it, and so do the three `nax plan` call sites
+  (`src/cli/plan-decompose.ts:246`, `:269`, `src/cli/plan-runtime/index.ts:110`), all keeping
+  today's checkout-only behaviour.
 
 **`unlockCommand`** — `src/commands/unlock.ts:37`
 
 - Baseline: `unlockCommand(options: UnlockOptions)` with `{ dir?, force? }`, resolving
   `<workdir>/nax.lock` only, and returning early at `:43-48` when that file is absent.
-- Target: `UnlockOptions` gains an optional `feature`. The output directory is derived by the
-  same `loadConfig` → `projectOutputDir` chain `src/commands/resume.ts:191-192` uses. With a
+- Target: `UnlockOptions` gains an optional `feature`, and the `unlock` command in `bin/nax.ts`
+  registers a `-f, --feature <name>` option forwarding it — it registers only `-d` and `--force`
+  today, so the capability would otherwise be unreachable from the CLI. The output directory is
+  derived by the full chain `src/commands/resume.ts` uses: `findProjectDir` at `:143`,
+  `loadConfig` at `:172`, then `config.name?.trim() || basename(workdir)` → `projectOutputDir` at
+  `:191-192`. With a
   feature, the command resolves that feature's lock. Without one, it reports the checkout lock
   and every `<outputDir>/features/*/nax.lock` it finds — the scan runs whether or not a checkout
   lock exists — removing only those `isLockStale` accepts. `--force` overrides the staleness
@@ -238,8 +268,11 @@ implement.
 **`NaxStatusFile.run`** — `src/execution/status-file.ts:105-127`
 
 - Baseline: `{ id, feature, startedAt, status, dryRun, pid, crashedAt?, crashSignal? }`.
-- Target: the same plus an optional `workdir: string`, carried in through `StatusWriterContext`.
-  Readers tolerate its absence in files written before this change.
+- Target: the same plus an optional `workdir: string`, carried in through an optional `workdir`
+  on `StatusWriterContext` (`src/execution/status-writer.ts:28-41`) and an optional `workdir` on
+  `RunStateSnapshot` (`src/execution/status-file.ts:255-273`), which `buildStatusSnapshot` reads
+  at `:315-328`. Both are optional, so every existing fixture constructing either shape keeps
+  compiling. Readers tolerate the field's absence in files written before this change.
 
 **`run`** — `src/execution/runner.ts:176`
 
@@ -250,6 +283,10 @@ implement.
 
 - Signature: `isSameProject(remoteA: string | null, remoteB: string | null): boolean`. It compares
   two remotes, not identity records; callers pass `identity.remoteUrl` as the second argument.
+- Normalization, applied to each side before comparison: lowercase; strip the scheme, any
+  credentials and any port; convert an scp-style `host:path` to `host/path`; strip one trailing
+  `.git` and any trailing slash. The comparison is over the resulting `host/path`, so the host is
+  significant and two forks on different hosts remain different projects.
 
 ### Failure Handling
 
@@ -282,6 +319,7 @@ implement.
 - The project-level directories `cost/`, `usage/`, `prompt-audit/`, `tool-audit/`,
   `finish-audit/`, `cycle-shadow/` and `mcp/` were not audited for concurrency safety; only the
   readers listed in the Design's read-surface table were examined.
+- The `nax plan` precheck path keeps checkout-only stale-lock checking; threading a feature lock through it is not part of this feature.
 - Changing `nax migrate --reclaim` or `--merge` semantics is not part of this feature.
 - Reclaiming a lock held on another host by any signal other than age is not delivered; there is
   no cross-host liveness channel.
@@ -342,7 +380,7 @@ change. Depends on US-004.
 - `src/precheck/checks-config.ts` — the stale-lock precheck
 - `src/precheck/index.ts` — the options type and the two entry points that compose the early blockers
 - `src/execution/lifecycle/precheck-runner.ts` — the run's precheck caller, which holds the feature
-- `src/commands/resume.ts` — the open-coded output-directory derivation to mirror
+- `bin/nax.ts` — the `unlock` command registration, which today exposes only `-d` and `--force`
 
 **US-004**
 
@@ -394,17 +432,15 @@ change. Depends on US-004.
 
 - `test/unit/precheck/precheck-checks-tier1-blockers.test.ts` — calls `checkStaleLock` with a single argument and asserts checkout-lock outcomes; those calls stay valid against the optional second parameter, and the suite must add the feature-lock cases the new argument introduces.
 - `test/unit/commands/unlock.test.ts` — asserts the command resolves exactly one lock path and exits early when it is absent; the scan now runs regardless, so the assertions must cover both lock kinds.
+- `bin/nax.ts` — the unlock command registers only the dir and force options; it must also register the feature option and forward it, or the feature-scoped unlock is unreachable from the CLI.
 
-**US-005**
-
-- `test/unit/execution/status-writer-finish.test.ts` — constructs a status-writer context without a workdir; the context type gains the field that carries `run.workdir`, so the fixtures must supply it.
 
 ### Seams
 
 - `[unit]` set `_runSetupDeps.acquireLock` and `_runSetupDeps.acquireFeatureLock` to recording doubles; invoke `setupRun` for a feature; assert `acquireFeatureLock` was recorded exactly once and after `acquireLock`.
 - `[unit]` set `_runSetupDeps.acquireFeatureLock` to a recording double; invoke `setupRun` for a run configured with three parallel stories; assert `acquireFeatureLock` was recorded exactly once.
 - `[unit]` set `_precheckDeps.checkStaleLock` to a recording double; invoke `runPrecheck` for a feature; assert it was recorded once with the run's feature and output directory.
-- `[unit]` stub `featureLockPath` through the feature-lock module's own deps seam; invoke `acquireFeatureLock`; assert it was called once with the output directory and the feature.
+- `[unit]` stub `featureLockPath` through `_featureLockDeps`; invoke `acquireFeatureLock`; assert it was called once with the output directory and the feature.
 
 ## Acceptance Criteria
 
@@ -412,19 +448,21 @@ change. Depends on US-004.
 
 - `[unit]` `featureLockPath(outputDir, "f")` returns the path `<outputDir>/features/f/nax.lock`.
 - `[unit]` `acquireFeatureLock` writes a record whose `pid`, `host`, `workdir`, `feature`, `runId` and `startedAt` fields are all populated.
-- `[unit]` `acquireFeatureLock` writes a `host` equal to the machine's hostname.
-- `[unit]` `isLockStale` returns `false` for a record whose `host` matches this machine and whose PID is alive, at an age beyond two hours.
-- `[unit]` `isLockStale` returns `true` for a record whose `host` matches this machine and whose PID is not alive.
-- `[unit]` `isLockStale` returns `true` for a record with no `host` field whose PID is not alive.
-- `[unit]` `isLockStale` returns `false` for a record whose `host` differs from this machine, is younger than two hours, and whose PID is not alive locally.
-- `[unit]` `isLockStale` returns `true` for a record whose `host` differs from this machine and is older than two hours.
-- `[unit]` `isLockStale` compares `host` case-insensitively.
-- `[unit]` `acquireFeatureLock` returns a refusal for the same output directory and feature from a different working directory while `isLockStale` rejects the record.
+- `[unit]` `lockHost()` returns the machine's hostname.
+- `[unit]` `acquireFeatureLock` creates `<outputDir>/features/<feature>/` when that directory does not exist.
+- `[unit]` `isLockReclaimable` returns `false` for a record whose `host` matches this machine and whose PID is alive.
+- `[unit]` `isLockReclaimable` returns `true` for a record whose `host` matches this machine and whose PID is not alive, regardless of the record's age.
+- `[unit]` `isLockReclaimable` returns `true` for a record with no `host` field whose PID is not alive.
+- `[unit]` `isLockReclaimable` returns `false` for a record whose `host` differs from this machine, is younger than two hours, and whose PID is not alive locally.
+- `[unit]` `isLockReclaimable` returns `true` for a record whose `host` differs from this machine and is older than two hours.
+- `[unit]` `isLockReclaimable` compares `host` case-insensitively.
+- `[unit]` `isLockReclaimable` resolves a record's age from `timestamp` when present and from `startedAt` when it is not.
+- `[unit]` `acquireFeatureLock` returns a refusal for the same output directory and feature from a different working directory while `isLockReclaimable` returns `false`.
 - `[unit]` the refusal returned by `acquireFeatureLock` carries the holder's `pid`, `host` and `workdir` read from the existing record.
 - `[unit]` `acquireFeatureLock` returns an acquired result for a different feature in the same output directory while the first feature's lock is held.
 - `[unit]` `acquireFeatureLock` logs at warn level and replaces a lock file whose contents do not parse.
 - `[unit]` `acquireFeatureLock` creates the lock file with an exclusive create, so a second call running after the file appears returns a refusal rather than overwriting it.
-- `[unit]` when two `acquireFeatureLock` calls both observe the same stale record and the injected rename seam lets only one claim it, exactly one returns an acquired result.
+- `[unit]` when two `acquireFeatureLock` calls both observe the same reclaimable record and the injected rename seam lets only one claim it, exactly one returns an acquired result.
 
 ### US-002 — Run lifecycle holds both locks
 
@@ -443,22 +481,27 @@ change. Depends on US-004.
 
 ### US-003 — Lock tooling sees both locks
 
+- `[cli]` the `unlock` command accepts a `-f, --feature <name>` option and forwards it to `unlockCommand`.
 - `[cli]` `nax unlock -f <feature>` exits `0` and removes `<outputDir>/features/<feature>/nax.lock`.
+- `[cli]` `nax unlock -f <feature> --force` removes that feature's lock even when `isLockSuspect` reports the holder live.
 - `[cli]` `nax unlock` with no feature exits `0` and removes the checkout lock.
-- `[cli]` `nax unlock` with no feature reports a feature lock that `isLockStale` rejects and leaves it in place.
+- `[cli]` `nax unlock` with no feature reports a feature lock whose holder is live and leaves it in place.
 - `[cli]` `nax unlock` with no feature runs the feature-lock scan and reports what it finds even when no checkout lock exists.
-- `[cli]` `nax unlock --force` with no feature removes a feature lock that `isLockStale` rejects.
-- `[unit]` `checkStaleLock` called with a feature lock argument returns a failed check naming the feature lock when `isLockStale` accepts only the feature lock's record.
-- `[unit]` `checkStaleLock` called with a feature lock argument returns a failed check naming both locks when `isLockStale` accepts both records.
-- `[unit]` `checkStaleLock` called without a feature lock argument passes when the checkout lock is absent, even when a stale feature lock exists.
+- `[cli]` `nax unlock --force` with no feature removes a feature lock whose holder is live.
+- `[unit]` `checkStaleLock` called with a feature lock argument returns a failed check naming the feature lock when `isLockSuspect` reports only the feature lock suspect.
+- `[unit]` `checkStaleLock` called with a feature lock argument returns a failed check naming both locks when `isLockSuspect` reports both suspect.
+- `[unit]` `checkStaleLock` passes for a checkout lock younger than two hours whose recorded PID is not alive, with or without a feature lock argument.
+- `[unit]` `checkStaleLock` called without a feature lock argument passes when the checkout lock is absent, even when a suspect feature lock exists.
 - `[unit]` `checkStaleLock` returns a passed check when neither lock file exists.
 - `[unit]` `runEnvironmentPrecheck` composes its early blockers without a feature lock argument.
 - `[unit]` the run's precheck caller passes the run's feature and output directory through to `checkStaleLock`.
+- `[unit]` the run's precheck caller omits the feature lock argument when the run has no feature name.
 
 ### US-004 — Project identity matched by remote
 
 - `[unit]` `isSameProject("git@github.com:o/r.git", "https://github.com/o/r")` returns `true`.
-- `[unit]` `isSameProject` returns `false` when the two remotes name different repositories.
+- `[unit]` `isSameProject` returns `false` when the two remotes name the same path on different hosts.
+- `[unit]` `isSameProject` returns `true` for two spellings of one remote differing only by letter case and a trailing slash.
 - `[unit]` `isSameProject` returns `false` when either argument is null.
 - `[unit]` `claimProjectIdentity` with a workdir different from the registered one and an equal normalized remote resolves without throwing and updates the stored `lastSeen`.
 - `[unit]` `claimProjectIdentity` with a workdir different from the registered one and an equal normalized remote leaves the stored `workdir` equal to the originally registered path.
@@ -479,6 +522,7 @@ change. Depends on US-004.
 - `[unit]` `buildRunId` returns an identifier retaining millisecond precision from its timestamp.
 - `[unit]` `buildRunId` returns an identifier containing no path separator and no character outside `[A-Za-z0-9._-]`.
 - `[unit]` `run` uses a caller-supplied `runId` when one is given rather than generating another.
+- `[unit]` `run` invoked without a `runId` produces one through `buildRunId`, so two runs of one feature from different working directories at the same timestamp receive different identifiers.
 - `[unit]` a resumed run writes its log file under a name equal to the run identifier the run itself reports.
 
 ### US-006 — The curator metrics reader fails closed
