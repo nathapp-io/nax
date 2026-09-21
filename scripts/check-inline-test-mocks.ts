@@ -79,6 +79,7 @@ const SKIP_FILES = new Set([
   "test/unit/context/engine/orchestrator-factory.test.ts",
   "test/unit/context/engine/prior-run-failure-factory.test.ts",
   "test/unit/cli/plan-decompose-ac13-14.test.ts",
+  "test/unit/cli/plan-callop.test.ts",
   "test/unit/cli/plan-decompose-guards.test.ts",
   "test/unit/cli/plan-decompose-adapter.test.ts",
   "test/unit/verification/rectification-loop.test.ts",

@@ -351,12 +351,12 @@ describe("plan-decompose split tests — no deprecated subStories envelope asser
   test("AC-4: split plan-decompose tests do not contain { subStories } envelope in adapter mocks", async () => {
     const sources = await Promise.all([
       Bun.file(join(import.meta.dir, "plan-decompose-ac-repair.test.ts")).text(),
-      Bun.file(join(import.meta.dir, "plan-decompose-adapter.test.ts")).text(),
-      Bun.file(join(import.meta.dir, "plan-decompose-mapper.test.ts")).text(),
-      Bun.file(join(import.meta.dir, "plan-decompose-cli-wiring.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-decompose-guards.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-interactive.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-decompose-ac-repair.test.ts")).text(),
       Bun.file(join(import.meta.dir, "plan-decompose-guards.test.ts")).text(),
       Bun.file(join(import.meta.dir, "plan-decompose-writeback.test.ts")).text(),
-      Bun.file(join(import.meta.dir, "plan-decompose-ac13-14.test.ts")).text(),
+      Bun.file(join(import.meta.dir, "plan-callop.test.ts")).text(),
     ]);
 
     // The deprecated complete() path used JSON.stringify({ subStories }). After US-002,

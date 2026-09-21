@@ -883,4 +883,45 @@ orchestrator (-8 f), story-orchestrator (-8 f) = **-49 files** against the plan'
 Wave-1 target of -52 (the 3-file shortfall is the documented over-target landings in
 §9.5 callOp and §9.8 orchestrator).
 
-### 9.10 — next entry goes here
+### 9.10 — 2026-09-21, Task 9 landed — cli/plan group 18 → 11 files (-518 lines)
+
+Hit the packed target: 18 → 11 files, 5,989 → 5,471 lines, all 192 tests / 358
+expect() preserved. Unit phase 18,247 / 42,169 unchanged, full suite 0 fail,
+`check:all` 0 (after the mock-exemption carry-forward below), both tsc clean,
+coverage 96.32% / 93.40%, 0 below floor.
+
+Bins per the packer, seam assignment mine:
+
+- `plan-callop` absorbs `plan-decompose-ac13-14` (770l).
+- `plan-decompose-ac-repair` absorbs `plan-callop-migration` + `plan-decompose-cli-wiring`
+  + `plan-mode` (590l).
+- `plan-interactive` absorbs `plan-decompose-mapper` (736l).
+- `plan-decompose-writeback` absorbs `plan-identity-claim` (707l).
+- `plan-decompose-guards` absorbs `plan-decompose-adapter` (761l).
+- `plan-replan`, `plan-decompose-regression`, `plan-monorepo` stay alone.
+- `plan.test.ts` frozen base (809l, 392l headroom unused) and mirrors
+  `plan-helpers`, `plan-runtime` untouched.
+
+Deletes (7): `plan-decompose-ac13-14`, `plan-callop-migration`,
+`plan-decompose-cli-wiring`, `plan-mode`, `plan-decompose-mapper`,
+`plan-identity-claim`, `plan-decompose-adapter`.
+
+Two non-trivial items, both handled plan-consistently:
+
+1. **Cross-file meta-test (AC-4 in `plan-decompose-regression`)** reads 7 split-test
+   sources by path, 4 of which were absorbed. The AC-4 test now points each absorbed
+   path at its receiver home (guards/interactive/ac-repair/callop), preserving all 7
+   entries and the assertion verbatim — expect count unchanged. That file is otherwise
+   untouched.
+2. **Mock-gate carry-forward:** the absorbed `ac13-14` file was on
+   `scripts/check-inline-test-mocks.ts` SKIP_FILES (custom local `makeStory`/`makeConfig`
+   that are NOT drop-in for `test/helpers`). Merging it into `plan-callop` surfaced the
+   pair as new violations. `plan-callop.test.ts` was added to SKIP_FILES (Pattern B),
+   carrying the exemption forward — the alternative (rewriting tests to the shared
+   helpers) would change test semantics and is out of scope for a mechanical merge.
+
+Mutation check: 5 merged receivers × one flipped assertion → 5 distinct failures, all
+reverted. Delegated to a subagent; post-verification by me: 192/358 reproduced, all
+receivers ≤ 770l.
+
+### 9.11 — next entry goes here
