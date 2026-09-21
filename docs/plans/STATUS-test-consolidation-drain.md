@@ -1235,7 +1235,7 @@ Bins per the packer, seam assignment retained:
   core SessionManager operation family. Both absorbed files' hooks are
   describe-scoped inside their blocks (pid's writeDescriptor stub cannot be
   top-level: the base's own persistence describes capture the real
-  writeDescriptor). 947 → wait, base grew 468 → 675l? No — **675l** landed.
+  writeDescriptor). **675l** landed.
 - `manager-phase-b-prompt.test.ts` absorbs `manager-lifecycle` (resume() /
   closeStory(), Phase 3 #477) — the lifecycle suites carry their own
   deterministic uuid/now/writeDescriptor hooks, wrapped describe-scoped so
