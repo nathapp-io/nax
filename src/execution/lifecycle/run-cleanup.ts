@@ -334,6 +334,28 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
     }
   }
 
-  // Always release lock, even if execution fails
-  await releaseLock(workdir);
+  // Always release both locks (in reverse acquisition order) at the end of
+  // the finally block, even if execution or cleanup threw. The feature lock
+  // comes down first (acquired second, in setupRun), then the checkout lock.
+  // US-002: missing outputDir/feature silently no-ops the feature release;
+  // releaseFeatureLock itself leaves a holder's lock in place when the on-disk
+  // runId doesn't match this run's (US-001 invariant). Release sites are
+  // routed through `_runCleanupDeps` so tests can observe the ordering via
+  // the same injectable seam.
+  if (options.outputDir && options.feature && options.runId) {
+    try {
+      await _runCleanupDeps.releaseFeatureLock({
+        outputDir: options.outputDir,
+        feature: options.feature,
+        runId: options.runId,
+      });
+    } catch (err) {
+      logger?.warn("cleanup", "Failed to release feature lock", {
+        outputDir: options.outputDir,
+        feature: options.feature,
+        error: errorMessage(err),
+      });
+    }
+  }
+  await _runCleanupDeps.releaseLock(workdir);
 }

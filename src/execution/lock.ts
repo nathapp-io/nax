@@ -6,6 +6,7 @@
  */
 
 import { rename, unlink } from "node:fs/promises";
+import { hostname } from "node:os";
 import path from "node:path";
 import { isProcessAlive } from "@/utils/process-alive";
 import { getLogger } from "../logger";
@@ -15,9 +16,14 @@ import { getLogger } from "../logger";
  * simulate the race window BUG-34 guards against (another racer replacing lockPath
  * with a fresh live lock between our staleness read and our rename) instead of
  * relying on real concurrent scheduling, which only exercises that branch sometimes.
+ *
+ * `host` is the hostname used to populate the lock record's `host` field
+ * (US-002 AC11). Production reads `os.hostname()`; tests override it to keep
+ * the assertion deterministic.
  */
 export const _lockDeps = {
   rename: rename as typeof rename,
+  host: (): string => hostname(),
 };
 
 /** Safely get logger instance, returns null if not initialized */
@@ -51,9 +57,6 @@ export async function tryExclusiveCreate(targetPath: string, content: string): P
 /**
  * Outcome of `acquireLock`. On refusal the `holder` carries the recorded PID
  * (and host when the on-disk record carries one).
- *
- * STUB: the type ships so call sites compile; the holder-population inside
- * `acquireLock` is only partially threaded (see the refusal returns below).
  */
 export type LockAcquisitionResult = { acquired: true } | { acquired: false; holder: { pid: number; host?: string } };
 
@@ -179,6 +182,7 @@ export async function acquireLock(workdir: string): Promise<LockAcquisitionResul
     // Create lock file atomically using exclusive create (O_CREAT | O_EXCL)
     const lockData = {
       pid: process.pid,
+      host: _lockDeps.host(),
       timestamp: Date.now(),
     };
     // NOTE: Node.js fs used intentionally — Bun.file()/Bun.write() lacks O_CREAT|O_EXCL atomic exclusive create
