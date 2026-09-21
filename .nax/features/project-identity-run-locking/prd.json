@@ -3,7 +3,7 @@
   "feature": "project-identity-run-locking",
   "branchName": "feat/project-identity-run-locking",
   "createdAt": "2026-01-20T00:00:00.000Z",
-  "updatedAt": "2026-09-21T14:11:23.920Z",
+  "updatedAt": "2026-09-21T14:35:06.899Z",
   "userStories": [
     {
       "id": "US-001",
@@ -26,7 +26,9 @@
         "acquireFeatureLock returns an acquired result for a different feature in the same output directory while the first feature's lock is held.",
         "acquireFeatureLock logs at warn level and replaces a lock file whose contents do not parse.",
         "acquireFeatureLock creates the lock file with an exclusive create, so a second call running after the file appears returns a refusal rather than overwriting it.",
-        "When two acquireFeatureLock calls both observe the same reclaimable record and the injected rename seam lets only one claim it, exactly one returns an acquired result."
+        "When two acquireFeatureLock calls both observe the same reclaimable record and the injected rename seam lets only one claim it, exactly one returns an acquired result.",
+        "acquireFeatureLock creates intermediate parent directories when the output directory's parent chain does not exist (mkdir -p semantics).",
+        "isLockSuspect returns `false` for a record whose host matches this machine (case-insensitive) and whose PID is alive, even when the record is older than two hours."
       ],
       "tags": [
         "feature",
@@ -55,10 +57,6 @@
       ],
       "expectedFiles": [
         "src/execution/feature-lock.ts"
-      ],
-      "suggestedCriteria": [
-        "acquireFeatureLock creates intermediate parent directories when the output directory's parent chain does not exist (mkdir -p semantics).",
-        "isLockSuspect returns `false` for a record whose host matches this machine and whose PID is alive, even when the record is older than two hours."
       ],
       "modifiedFiles": [
         {
@@ -95,7 +93,10 @@
         "releaseFeatureLock leaves the lock file in place when the on-disk record's `runId` is not the releasing run's.",
         "releaseFeatureLock resolves without error when the lock file is already absent.",
         "The checkout lock record written by `acquireLock` carries `host` alongside `pid` and `timestamp`.",
-        "acquireLock acquires and replaces a checkout-lock record that has no `host` field and whose recorded PID is not alive."
+        "acquireLock acquires and replaces a checkout-lock record that has no `host` field and whose recorded PID is not alive.",
+        "When `acquireLock` refuses, the resulting LockAcquisitionError's context includes the holding `host` when the on-disk record carries one.",
+        "When the post-lock initialization catch in run-setup-init.ts releases both locks, the feature lock release happens before the checkout lock release.",
+        "When setupRun's outer MEM-1 catch runs because acquireLock refused (no post-lock init attempted), no feature-lock file is created."
       ],
       "tags": [
         "feature",
@@ -123,11 +124,6 @@
         "src/execution/lifecycle/run-cleanup.ts",
         "src/errors.ts",
         "src/execution/feature-lock.ts"
-      ],
-      "suggestedCriteria": [
-        "When `acquireLock` refuses, the resulting LockAcquisitionError's context includes the holding `host` when the on-disk record carries one.",
-        "When the post-lock initialization catch in run-setup-init.ts releases both locks, the feature lock release happens before the checkout lock release.",
-        "When setupRun's outer MEM-1 catch runs because acquireLock refused (no post-lock init attempted), no feature-lock file is created."
       ],
       "modifiedFiles": [
         {
@@ -174,7 +170,10 @@
         "checkStaleLock returns a passed check when neither lock file exists.",
         "runEnvironmentPrecheck composes its early blockers without a feature lock argument.",
         "The run's precheck caller passes the run's feature and output directory through to checkStaleLock.",
-        "The run's precheck caller omits the feature lock argument when the run has no feature name."
+        "The run's precheck caller omits the feature lock argument when the run has no feature name.",
+        "`nax unlock -f <feature>` exits `1` and reports the holder when isLockSuspect reports the holder live and --force is not provided.",
+        "checkStaleLock with a feature lock argument still passes when only the checkout lock file exists and is fresh.",
+        "`nax unlock -f <unknown-feature>` reports that the feature's lock was not found and exits 0."
       ],
       "tags": [
         "feature",
@@ -202,11 +201,6 @@
         "src/precheck/index.ts",
         "src/execution/lifecycle/precheck-runner.ts",
         "bin/nax.ts"
-      ],
-      "suggestedCriteria": [
-        "`nax unlock -f <feature>` exits `1` and reports the holder when isLockSuspect reports the holder live and --force is not provided.",
-        "`nax unlock -f <unknown-feature>` reports that the feature's lock was not found and exits 0.",
-        "checkStaleLock with a feature lock argument still passes when only the checkout lock file exists and is fresh."
       ],
       "modifiedFiles": [
         {
@@ -252,7 +246,10 @@
         "claimProjectIdentity called with a null remoteUrl and the registered workdir resolves without throwing and updates `lastSeen` (preserving the existing workdir-equality fallback when `git remote get-url origin` fails or the project is not a git repository).",
         "checkInitCollision returns a result whose `collision` is `false` for an ssh remote against a stored identity holding the https form of the same repository.",
         "checkInitCollision returns a result whose `collision` is `false` when both remotes are absent and the workdir equals the stored one.",
-        "checkInitCollision returns a result whose `collision` is `true` when the stored identity holds a different repository's remote."
+        "checkInitCollision returns a result whose `collision` is `true` when the stored identity holds a different repository's remote.",
+        "isSameProject strips one trailing `.git` (and only one) — `repo.git.git` does not normalize to `repo`.",
+        "claimProjectIdentity with a workdir different from the registered one and an equal normalized remote writes back to disk (verified by a subsequent readProjectIdentity call).",
+        "isSameProject treats `ssh://git@host:2222/o/r` and `host:o/r` as not equal (different port AND different host representation after strip)."
       ],
       "tags": [
         "feature",
@@ -282,11 +279,6 @@
       "expectedFiles": [
         "src/runtime/same-project.ts"
       ],
-      "suggestedCriteria": [
-        "isSameProject strips one trailing `.git` (and only one) — `repo.git.git` does not normalize to `repo`.",
-        "claimProjectIdentity with a workdir different from the registered one and an equal normalized remote writes back to disk (verified by a subsequent readProjectIdentity call).",
-        "isSameProject treats `ssh://git@host:2222/o/r` and `host:o/r` as not equal (different port AND different host representation after strip)."
-      ],
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
@@ -312,7 +304,10 @@
         "buildRunId returns an identifier containing no path separator and no character outside `[A-Za-z0-9._-]`.",
         "run uses a caller-supplied `runId` when one is given rather than generating another.",
         "run invoked without a `runId` produces one through buildRunId, so two runs of one feature from different working directories at the same timestamp receive different identifiers.",
-        "A resumed run writes its log file under a name equal to the run identifier the run itself reports."
+        "A resumed run writes its log file under a name equal to the run identifier the run itself reports.",
+        "buildRunId returns an identifier that is unique across the (workdir, now) input space for any pair of distinct absolute workdirs at any timestamp.",
+        "buildRunId's output sorts lexicographically the same way its input timestamps sort — log filename ordering matches run ordering.",
+        "StatusWriterContext constructed without workdir produces a status snapshot whose `run.workdir` is absent (not present-but-undefined)."
       ],
       "tags": [
         "feature",
@@ -342,11 +337,6 @@
       "expectedFiles": [
         "src/execution/run-id.ts"
       ],
-      "suggestedCriteria": [
-        "buildRunId returns an identifier that is unique across the (workdir, now) input space for any pair of distinct absolute workdirs at any timestamp.",
-        "buildRunId's output sorts lexicographically the same way its input timestamps sort — log filename ordering matches run ordering.",
-        "StatusWriterContext constructed without workdir produces a status snapshot whose `run.workdir` is absent (not present-but-undefined)."
-      ],
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
@@ -367,7 +357,10 @@
         "collectObservations logs at warn level when the metrics file holds no entry whose `runId` equals the context's `runId`.",
         "collectObservations returns the matching run's story observations when the metrics file holds an entry whose `runId` equals the context's `runId`.",
         "When the metrics file holds entries for two runs whose `runId` values differ and the context names one of them, every returned observation carries that entry's `runId`.",
-        "getLastRun returns the final element of the runs array, unchanged by this story."
+        "getLastRun returns the final element of the runs array, unchanged by this story.",
+        "When the metrics file is empty (an array of zero runs) and the context's runId is non-empty, collectObservations logs at warn level and returns no observations.",
+        "collectObservations returns no metrics-derived observations when the metrics file does not exist.",
+        "collectObservations returns no metrics-derived observations when the metrics file is unparseable."
       ],
       "tags": [
         "feature",
@@ -377,8 +370,8 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -393,11 +386,6 @@
         "src/plugins/builtin/curator/collect.ts",
         "src/metrics/aggregator.ts",
         "src/metrics/tracker.ts"
-      ],
-      "suggestedCriteria": [
-        "collectObservations returns no metrics-derived observations when the metrics file does not exist.",
-        "collectObservations returns no metrics-derived observations when the metrics file is unparseable.",
-        "When the metrics file is empty (an array of zero runs) and the context's runId is non-empty, collectObservations logs at warn level and returns no observations."
       ],
       "workdirSource": "defaulted",
       "priorErrors": [],
