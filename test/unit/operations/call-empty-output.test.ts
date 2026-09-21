@@ -5,7 +5,9 @@ import {
   makeMockAgentManager,
   makeMockRuntime,
   makeSessionManager,
+  makeTestRuntime,
 } from "@test/helpers";
+import type { AgentRunRequest } from "@/agents/manager-types";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import type { RunOperation } from "@/operations";
@@ -70,12 +72,14 @@ function makeRunOp(
 
 let origReadFileOutput: typeof _callOpDeps.readFileOutput;
 const createdRuntimes: NaxRuntime[] = [];
+let runtime: NaxRuntime | undefined;
 
 beforeEach(() => {
   origReadFileOutput = _callOpDeps.readFileOutput;
 });
 afterEach(async () => {
   _callOpDeps.readFileOutput = origReadFileOutput;
+  await runtime?.close();
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
@@ -454,5 +458,199 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
     );
 
     expect(capturedAdapterFailure).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-001 AC5-AC8 — dispatch adapterFailure attachment (from call-adapter-failure.test.ts)
+// ---------------------------------------------------------------------------
+
+const adapterTestSel = pickSelector("routing-op-test", "routing");
+
+// Mirrors the echoOp shape used elsewhere in test/unit/operations/call*.test.ts.
+const runEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+  kind: "run",
+  name: "run-echo-test",
+  stage: "run",
+  config: adapterTestSel,
+  session: { role: "implementer", lifetime: "fresh" },
+  build: (input) => ({
+    role: { id: "role", content: "You echo text.", overridable: false },
+    task: { id: "task", content: input.text, overridable: false },
+  }),
+  parse: (output) => output.trim(),
+};
+
+describe("callOp — kind:run — attach adapterFailure from dispatch outcome (US-001 AC5-AC8)", () => {
+  // Acceptance-shaped op: parses the run outcome's stdout to { testCode }.
+  const acceptanceOp: RunOperation<
+    { text: string },
+    { testCode: string | null; adapterFailure?: AdapterFailure },
+    Pick<typeof DEFAULT_CONFIG, "routing">
+  > = {
+    kind: "run",
+    name: "acceptance-generate",
+    stage: "run",
+    config: adapterTestSel,
+    session: { role: "implementer", lifetime: "fresh" },
+    build: (input) => ({
+      role: { id: "role", content: "Echo text.", overridable: false },
+      task: { id: "task", content: input.text, overridable: false },
+    }),
+    parse: (output) => {
+      if (output === "SENTINEL_NULL") return { testCode: null };
+      if (output === "SENTINEL_OBJECT") {
+        return {
+          testCode: "code",
+          adapterFailure: { outcome: "fail-quality", category: "quality", retriable: false, message: "producer" },
+        };
+      }
+      return { testCode: output };
+    },
+  };
+
+  function makeRunResultWithFailure(output: string, failure: AdapterFailure | undefined) {
+    return async (_req: AgentRunRequest) => ({
+      result: {
+        success: true,
+        exitCode: 0,
+        output,
+        rateLimited: false,
+        durationMs: 1,
+        estimatedCostUsd: 0,
+        agentFallbacks: [],
+        ...(failure !== undefined ? { adapterFailure: failure } : {}),
+      },
+      fallbacks: [],
+    });
+  }
+
+  test("AC5: attaches adapterFailure from outcome when parse returns { testCode: null }", async () => {
+    const failure: AdapterFailure = {
+      outcome: "fail-service-down",
+      category: "availability",
+      retriable: false,
+      message: "dispatch service down",
+    };
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: makeRunResultWithFailure("SENTINEL_NULL", failure),
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      acceptanceOp,
+      { text: "x" },
+    );
+
+    expect(result.testCode).toBeNull();
+    expect(result.adapterFailure).toEqual(failure);
+    expect(result.adapterFailure?.outcome).toBe("fail-service-down");
+  });
+
+  test("AC6: leaves parsed value untouched when outcome carries no adapterFailure", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: makeRunResultWithFailure("some code", undefined),
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      acceptanceOp,
+      { text: "x" },
+    );
+
+    expect(result.testCode).toBe("some code");
+    expect("adapterFailure" in result).toBe(false);
+  });
+
+  test("AC7: preserves producer's adapterFailure over dispatch outcome's", async () => {
+    const failure: AdapterFailure = {
+      outcome: "fail-service-down",
+      category: "availability",
+      retriable: false,
+      message: "dispatch service down",
+    };
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: makeRunResultWithFailure("SENTINEL_OBJECT", failure),
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      acceptanceOp,
+      { text: "x" },
+    );
+
+    expect(result.testCode).toBe("code");
+    expect(result.adapterFailure?.outcome).toBe("fail-quality");
+  });
+
+  test("AC8: returns the same string when parse returns a string", async () => {
+    const failure: AdapterFailure = {
+      outcome: "fail-service-down",
+      category: "availability",
+      retriable: true,
+      message: "dispatch failure",
+    };
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: makeRunResultWithFailure("hello-string-output", failure),
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      runEchoOp,
+      { text: "x" },
+    );
+
+    expect(result).toBe("hello-string-output");
+  });
+
+  test("clears an earlier provider failure after a later successful operation", async () => {
+    const failure: AdapterFailure = {
+      outcome: "fail-rate-limit",
+      category: "availability",
+      retriable: true,
+      message: "429",
+    };
+    let calls = 0;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req: AgentRunRequest) => {
+        calls += 1;
+        return {
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "ok",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            agentFallbacks: [],
+            ...(calls === 1 ? { adapterFailure: failure } : {}),
+          },
+          fallbacks: [],
+        };
+      },
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+    const ctx = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "/tmp",
+      agentName: "claude",
+      storyId: "US-001",
+    };
+
+    await callOp(ctx, runEchoOp, { text: "first" });
+    expect(runtime.lastAdapterFailure.get("US-001")).toEqual(failure);
+
+    await callOp(ctx, runEchoOp, { text: "second" });
+    expect(runtime.lastAdapterFailure.has("US-001")).toBe(false);
   });
 });

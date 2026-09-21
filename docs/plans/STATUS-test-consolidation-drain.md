@@ -724,4 +724,39 @@ Proof: ranker `_deps unrestored 0`; `bun run test` 0 fail, 19,599 tests / 45,298
 / 43 skip, unchanged; `check:all` 0; both `tsc --noEmit` clean; coverage 96.32% lines /
 93.40% functions, 0 below floor.
 
-### 9.5 — next entry goes here
+### 9.5 — 2026-09-21, Task 4 landed — callOp group 22 → 10 files (lands 11, one over target)
+
+Target was 22 → 9 (-13 f, -968 l); **landed 22 → 11 (-11 f, -327 l)**, one over the
+packed floor. All 149 tests / 325 expect() preserved: `bun test` on the group reads
+149 pass, unit phase 18,247 / 42,169 (unchanged), full suite 0 fail, `check:all` 0,
+both tsc clean, coverage 96.32% lines / 93.40% functions, 0 below floor.
+
+Bins built (seam by seam, not by ticket):
+
+- bin 5 → `call-op-retry.test.ts` absorbs `call-sticky-target` (#1964 — retry/hop
+  family). **Not merged:** `call-effective-config` (#2066) — the packer's proved bin
+  assumed preamble dedup (retry 40l + sticky 180l + effective 95l union to a 315l
+  preamble; real union pushed the three-way merge to 804l > 800 cap). `op-retry`
+  lands at 799l, exactly at the cap.
+- bin 6 → split into two files, not one: `call-exhausted-fallback.test.ts` absorbs
+  `call-fallback-recording` (empty-output/seam family, 668l) and
+  `call-complete-model-resolver.test.ts` absorbs `call-complete-fallback-recording`
+  + `call-tool-providers` (complete-kind family, 310l). The single-file pack (641l
+  claimed) assumed the disjoint fixtures (empty-output mocks vs model-resolver
+  config vs MCP builders) dedupe into one preamble; they do not. Two files is the
+  honest seam floor here.
+- bin 7 → `call-empty-output.test.ts` absorbs `call-adapter-failure` (656l).
+- bin 8 → `call-correlation.test.ts` absorbs `call-exhaustion` (676l).
+- bin 9 → `call-root-collapse.test.ts` absorbs abort-signal, fail-timeout,
+  coding-tool-root-producer, run-counter, output-dir-producer (587l).
+
+Deletes: `call-abort-signal`, `call-adapter-failure`, `call-coding-tool-root-producer`,
+`call-complete-fallback-recording`, `call-exhaustion`, `call-fail-timeout`,
+`call-fallback-recording`, `call-output-dir-producer`, `call-run-counter`,
+`call-sticky-target`, `call-tool-providers` — 11 files. Mirrors (call-hop-output,
+call-run-options) and frozen base untouched.
+
+Mutation check per merged file (one assertion flipped → 6 distinct describes failed;
+restored). `_deps` still 0 unrestored. All four runtime invariants on §0.1 hold.
+
+### 9.6 — next entry goes here

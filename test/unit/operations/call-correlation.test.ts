@@ -6,10 +6,21 @@
 
 import type { mock } from "bun:test";
 import { afterEach, describe, expect, mock as mockFn, test } from "bun:test";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
-import type { CompleteResult } from "@/agents/types";
-import type { DEFAULT_CONFIG } from "@/config";
-import { pickSelector } from "@/config";
+import {
+  agentManagerInternals,
+  assertCaughtInstanceOf,
+  assertDefined,
+  assertNaxError,
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeSessionManager,
+  makeTestRuntime,
+} from "@test/helpers";
+import { _agentManagerDeps } from "@/agents/manager";
+import type { CompleteResult, TurnResult } from "@/agents/types";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { NaxError } from "@/errors";
 import type { CompleteOperation, RunOperation } from "@/operations";
 import { callOp, newCorrelationId } from "@/operations";
 import { createNoOpCostAggregator, type NaxRuntime } from "@/runtime";
@@ -404,5 +415,262 @@ describe("callOp kind:run — callId/scopeId forwarding (ACs 7, 9)", () => {
       | { runOptions?: { scopeId?: string } }
       | undefined;
     expect(req?.runOptions?.scopeId).toBe("phase-2-region");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC7 — exhaustion boundary (from call-exhaustion.test.ts)
+// ---------------------------------------------------------------------------
+
+const exhaustionSel = pickSelector("call-exhaustion-test", "routing");
+
+function makeRunOp(name: string): RunOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> {
+  return {
+    kind: "run",
+    name,
+    stage: "run",
+    config: exhaustionSel,
+    session: { role: "implementer", lifetime: "fresh" },
+    build: (input) => ({
+      role: { id: "role", content: "Echo the input.", overridable: false },
+      task: { id: "task", content: input, overridable: false },
+    }),
+    parse: (output) => output.trim(),
+  };
+}
+
+function makeCompleteOp(name: string): CompleteOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> {
+  return {
+    kind: "complete",
+    name,
+    stage: "run",
+    config: exhaustionSel,
+    build: (input) => ({
+      role: { id: "role", content: "Echo the input.", overridable: false },
+      task: { id: "task", content: input, overridable: false },
+    }),
+    parse: (output) => output.trim(),
+  };
+}
+
+const createdRuntimes: NaxRuntime[] = [];
+const originalSleep = _agentManagerDeps.sleep;
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+  _agentManagerDeps.sleep = originalSleep;
+});
+
+function captureSleeps(): number[] {
+  const slept: number[] = [];
+  _agentManagerDeps.sleep = async (ms: number) => {
+    slept.push(ms);
+  };
+  return slept;
+}
+
+describe("AC7: run-kind — all retries exhaust → CALL_OP_NO_OUTPUT", () => {
+  test("maxRetryAttempts=0, no fallback, empty output → throws CALL_OP_NO_OUTPUT", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hop = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hop.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async (): Promise<TurnResult> => ({
+        output: "",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    let thrown: unknown;
+    try {
+      await callOp(
+        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "us-001" },
+        makeRunOp("run-exhaustion-no-retry"),
+        "hello",
+      );
+    } catch (err) {
+      thrown = err;
+    }
+
+    assertNaxError(thrown, "callOp rejection");
+    expect(thrown.code).toBe("CALL_OP_NO_OUTPUT");
+  });
+
+  test("multiple retries all return empty → throws CALL_OP_NO_OUTPUT (not CALL_OP_PARSE_FAILED)", async () => {
+    let hopCount = 0;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        let lastHop = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+        hopCount++;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          if (lastHop.result.adapterFailure?.outcome !== "fail-stale") break;
+          lastHop = await executeHop("claude", undefined, { kind: "stale-retry", attempt }, req.runOptions);
+          hopCount++;
+        }
+        return { result: { ...lastHop.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async (): Promise<TurnResult> => ({
+        output: "",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    let thrown: unknown;
+    try {
+      await callOp(
+        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "us-002" },
+        makeRunOp("run-exhaustion-after-retries"),
+        "hello",
+      );
+    } catch (err) {
+      thrown = err;
+    }
+
+    assertNaxError(thrown, "callOp rejection");
+    expect(thrown.code).toBe("CALL_OP_NO_OUTPUT");
+    expect(thrown.code).not.toBe("CALL_OP_PARSE_FAILED");
+    expect(hopCount).toBe(3);
+  });
+});
+
+describe("AC7: complete-kind — all retries exhaust → parse receives empty string", () => {
+  test("maxRetryAttempts=0, no fallback, empty output → callOp returns empty string (parse succeeds)", async () => {
+    const slept = captureSleeps();
+    const config = makeNaxConfig({
+      agent: {
+        idleWatchdog: { maxRetryAttempts: 0, enabled: true, idleTimeoutSeconds: 900 },
+        fallback: { enabled: false, map: {}, maxHopsPerStory: 0, onQualityFailure: false, rebuildContext: false },
+      },
+    });
+    const rt = makeTestRuntime({ config });
+    createdRuntimes.push(rt);
+
+    let callCount = 0;
+    const adapter = {
+      complete: async () => {
+        callCount++;
+        return {
+          output: "",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+        };
+      },
+    };
+    agentManagerInternals(rt.agentManager)._resolveRegistry = () => ({ getAgent: () => adapter });
+
+    const result = await callOp(
+      { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "us-003" },
+      makeCompleteOp("complete-exhaustion-no-retry"),
+      "hello",
+    );
+
+    expect(result).toBe("");
+    expect(callCount).toBe(4);
+    expect(slept).toEqual([2000, 4000, 8000]);
+  });
+
+  test("complete-kind exhaustion error code is NOT CALL_OP_PARSE_FAILED when parse rejects empty", async () => {
+    captureSleeps();
+    const config = makeNaxConfig({
+      agent: {
+        idleWatchdog: { maxRetryAttempts: 0, enabled: true, idleTimeoutSeconds: 900 },
+        fallback: { enabled: false, map: {}, maxHopsPerStory: 0, onQualityFailure: false, rebuildContext: false },
+      },
+    });
+    const rt = makeTestRuntime({ config });
+    createdRuntimes.push(rt);
+
+    const adapter = {
+      complete: async () => ({
+        output: "",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    };
+    agentManagerInternals(rt.agentManager)._resolveRegistry = () => ({ getAgent: () => adapter });
+
+    const rejectEmptyOp: CompleteOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      kind: "complete",
+      name: "reject-empty-parse",
+      stage: "run",
+      config: exhaustionSel,
+      build: (input) => ({
+        role: { id: "role", content: "Echo the input.", overridable: false },
+        task: { id: "task", content: input, overridable: false },
+      }),
+      parse: (output) => {
+        if (!output.trim()) throw new Error("parse-rejected-empty");
+        return output.trim();
+      },
+    };
+
+    let thrown: unknown;
+    try {
+      await callOp(
+        { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "us-004" },
+        rejectEmptyOp,
+        "hello",
+      );
+    } catch (err) {
+      thrown = err;
+    }
+
+    assertCaughtInstanceOf(thrown, Error, "callOp rejection");
+    expect(thrown.message).toContain("parse-rejected-empty");
+    expect(thrown).not.toBeInstanceOf(NaxError);
+  });
+});
+
+describe("AC7: error code is CALL_OP_NO_OUTPUT specifically (run-kind)", () => {
+  test("run-kind empty output throws with code CALL_OP_NO_OUTPUT", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const { executeHop } = req;
+        assertDefined(executeHop, "req.executeHop");
+        const hop = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hop.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async (): Promise<TurnResult> => ({
+        output: "",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    let thrown: unknown;
+    try {
+      await callOp(
+        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "us-005" },
+        makeRunOp("error-code-check"),
+        "hello",
+      );
+    } catch (err) {
+      thrown = err;
+    }
+
+    assertNaxError(thrown, "callOp rejection");
+    expect(thrown.code).toBe("CALL_OP_NO_OUTPUT");
+    expect(thrown.code).not.toBe("CALL_OP_PARSE_FAILED");
+    expect(thrown?.code).not.toBe("CALL_OP_MAX_RETRIES");
+    expect(thrown?.code).not.toBe("CALL_OP_ABORTED");
   });
 });

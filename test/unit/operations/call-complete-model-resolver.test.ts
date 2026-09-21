@@ -9,12 +9,21 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
-import type { CompleteOptions } from "@/agents/types";
-import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import type { CompleteOperation } from "@/operations";
-import { callOp } from "@/operations";
+import {
+  makeMockAgentManager,
+  makeMockCallContext,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeSessionManager,
+  makeTestRuntime,
+} from "@test/helpers";
+import type { AgentFallbackRecord } from "@/agents/manager-types";
+import type { AgentRunOptions, CompleteOptions } from "@/agents/types";
+import { type DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema, pickSelector } from "@/config";
+import type { BuildHopCallbackContext, CompleteOperation, RunOperation } from "@/operations";
+import { _callOpDeps, callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
+import type { ToolProvider } from "@/tools";
 
 const testSel = pickSelector("complete-model-resolver-test", "routing");
 const createdRuntimes: NaxRuntime[] = [];
@@ -125,5 +134,186 @@ describe("callOp injects a per-agent model resolver (nax#1739)", () => {
     // agent's model. Pinned rather than fixed: the run() path resolves identically
     // (build-hop-callback.ts), and diverging here would put the two seams out of step.
     expect(seen[0].modelDefFor?.("agent-with-no-models")?.model).toBe("claude-sonnet");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Complete-path fallback recording (nax#1712) — absorbed from
+// call-complete-fallback-recording.test.ts.
+// ---------------------------------------------------------------------------
+
+const recordingCompleteTestSel = pickSelector("complete-fallback-recording-test", "routing");
+
+function completeHop(overrides: Partial<AgentFallbackRecord> = {}): AgentFallbackRecord {
+  return {
+    storyId: "US-001",
+    priorAgent: "claude",
+    newAgent: "codex",
+    hop: 1,
+    outcome: "fail-quota",
+    category: "availability",
+    timestamp: "2026-08-25T00:00:00.000Z",
+    costUsd: 0.25,
+    ...overrides,
+  };
+}
+
+/** A manager whose completeAsWithFallback reports `fallbacks` beside a good result. */
+function completeRecordingRuntimeWith(fallbacks: AgentFallbackRecord[]): NaxRuntime {
+  const agentManager = makeMockAgentManager({
+    completeAsWithFallbackFn: async () => ({
+      result: {
+        output: "complete-out",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      },
+      fallbacks,
+      dispatchesCompleted: 1,
+    }),
+  });
+  const runtime = makeMockRuntime({ agentManager });
+  createdRuntimes.push(runtime);
+  return runtime;
+}
+
+function makeCompleteRecordingOp(
+  name: string,
+): CompleteOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> {
+  return {
+    kind: "complete",
+    name,
+    stage: "complete",
+    config: recordingCompleteTestSel,
+    build: (input) => ({
+      role: { id: "role", content: "You process input.", overridable: false },
+      task: { id: "task", content: input, overridable: false },
+    }),
+    parse: (output) => output,
+  };
+}
+
+function completeRecordingCtxFor(runtime: NaxRuntime, storyId?: string) {
+  return {
+    runtime,
+    packageView: runtime.packages.repo(),
+    packageDir: "/tmp",
+    agentName: "claude",
+    ...(storyId !== undefined ? { storyId } : {}),
+  };
+}
+
+describe("callOp records complete()-path agent-swap hops (#1712)", () => {
+  test("AC-3: appends the hops completeAsWithFallback reported, keyed by story", async () => {
+    const recorded = [completeHop()];
+    const runtime = completeRecordingRuntimeWith(recorded);
+
+    await callOp(completeRecordingCtxFor(runtime, "US-001"), makeCompleteRecordingOp("record-one"), "input");
+
+    expect(runtime.agentFallbacks.get("US-001")).toEqual(recorded);
+  });
+
+  test("AC-4: a second writer accumulates rather than replacing", async () => {
+    const runtime = completeRecordingRuntimeWith([completeHop({ hop: 1 })]);
+
+    await callOp(completeRecordingCtxFor(runtime, "US-001"), makeCompleteRecordingOp("first-op"), "input");
+    await callOp(completeRecordingCtxFor(runtime, "US-001"), makeCompleteRecordingOp("second-op"), "input");
+
+    expect(runtime.agentFallbacks.get("US-001")).toHaveLength(2);
+  });
+
+  test("AC-5: an ad-hoc call carrying no storyId records nothing", async () => {
+    const runtime = completeRecordingRuntimeWith([completeHop()]);
+
+    await callOp(completeRecordingCtxFor(runtime), makeCompleteRecordingOp("no-story"), "input");
+
+    expect(runtime.agentFallbacks.size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Runtime tool-provider injection (absorbed from call-tool-providers.test.ts).
+// ---------------------------------------------------------------------------
+
+const providersTestSel = pickSelector("test", "routing");
+
+const providersRunEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+  kind: "run",
+  name: "run-echo-provider-injection",
+  stage: "run",
+  config: providersTestSel,
+  session: { role: "implementer", lifetime: "fresh" },
+  build: (input) => ({
+    role: { id: "role", content: "You echo text.", overridable: false },
+    task: { id: "task", content: input.text, overridable: false },
+  }),
+  parse: (output) => output.trim(),
+};
+
+const configWithMcpServer = (): NaxConfig => {
+  const parsed = NaxConfigSchema.parse({
+    name: "probe",
+    mcp: { servers: { memory: { command: "fake", stages: ["run"] } } },
+  });
+  return { ...parsed, version: 1 };
+};
+
+interface CapturedOptions {
+  providers: readonly ToolProvider[] | undefined;
+  runtimeProviders: readonly ToolProvider[];
+}
+
+async function runOpAndCaptureProviders(config: NaxConfig | undefined): Promise<CapturedOptions> {
+  const orig = _callOpDeps.buildHopCallback;
+  let seenProviders: readonly ToolProvider[] | undefined;
+  _callOpDeps.buildHopCallback = (
+    _hopCtx: BuildHopCallbackContext,
+    _sessionId: string | undefined,
+    runOptions: AgentRunOptions,
+  ) => {
+    seenProviders = runOptions.providers;
+    return async () => ({
+      result: {
+        success: true,
+        exitCode: 0,
+        output: "ok",
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCostUsd: 0,
+      },
+      bundle: undefined,
+    });
+  };
+
+  const agentManager = makeMockAgentManager({});
+  const runtime = makeTestRuntime({ config, agentManager, sessionManager: makeSessionManager({}) });
+  try {
+    await callOp(
+      makeMockCallContext({
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+      }),
+      providersRunEchoOp,
+      { text: "hi" },
+    ).catch(() => undefined);
+  } finally {
+    _callOpDeps.buildHopCallback = orig;
+    await runtime.close();
+  }
+  return { providers: seenProviders, runtimeProviders: runtime.toolProviders };
+}
+
+describe("callOp — runtime tool providers reach run options", () => {
+  test("no MCP servers: run options carry no `providers` key", async () => {
+    const { providers, runtimeProviders } = await runOpAndCaptureProviders(undefined);
+    expect(runtimeProviders).toEqual([]);
+    expect(providers).toBeUndefined();
+  });
+
+  test("a configured server: run options carry the runtime's providers array", async () => {
+    const { providers, runtimeProviders } = await runOpAndCaptureProviders(configWithMcpServer());
+    expect(runtimeProviders.map((p) => p.id)).toEqual(["memory"]);
+    expect(providers).toBe(runtimeProviders);
   });
 });
