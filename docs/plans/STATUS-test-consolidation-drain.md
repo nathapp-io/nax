@@ -1452,3 +1452,49 @@ expects preserved).
 Wave 4 running total: **-3 files**. Cumulative: -113 (W1-3) + -3 = **-116
 files** — the plan's cumulative Waves 1-3 target (-116) is now met; against
 the plan's Waves 1-4 cumulative (-141) we are at -116 + next task's yield.
+
+### 9.24 — 2026-09-21, Task 23 landed — stage-assembler group 5 → 2 files (-52 lines)
+
+Target 5 → 2 (-3 f, packer claims -176 l); **landed 5 → 2 (-3 f, -52 l)** —
+the packer's line projection understated again (union preambles, §9.5 class).
+All 11 merged tests / 12 expects preserved (46 = 35 base + 11 merged):
+unit phase 18,309 / 42,331 unchanged, full suite 0 fail, `check:all` 0,
+both tsc clean, coverage 96.36% lines / 93.39% functions, 0 below floor.
+Ranker `_deps unrestored 0` (group carried no `⚠deps` flag).
+
+One receiver: `stage-assembler-scope-files.test.ts` (164l) absorbs
+`exec-root` (US-001 AC8-AC10 execRoot propagation), `provider-weights-invalidation`
+(PERF-1 weights cache), `extra-provider-ids` (#662) — all ContextRequest
+field-threading suites of the same module above the pinned mirror base
+(795l, at the 800 cap, untouched; the receiver's header comment's
+"800-line hard limit" rationale is why the satellites existed at all).
+**495l** landed; expected 430-500, hit 495.
+
+Densest collision surface of the drain so far — **four different `makeCtx`
+signatures** in one file: receiver's (story, agent default, routing) kept;
+`makeExecRootCtx` (workdir/storyWorkdir overrides), `makeWeightsCtx`
+(deterministic:true), `makeExtraProviderCtx` (extraProviderIds + pull
+config) — all renamed, 6 call sites. Two `makeMockOrchestrator` with
+different return shapes (ref-captured vs request-captured) —
+`makeExtraProviderMockOrchestrator` renamed, 2 sites. Receiver's local
+`makeStory` wrapper (US-005) renamed `makeScopeStory` (4 sites) so the
+absorbed files' bare `makeStory({ id: "US-001" })` calls keep resolving to
+the `@test/helpers` factory. Hooks: three top-level pairs → ONE top-level
+3-key pair (createOrchestrator/readdir/readDescriptor + ENOENT defaults);
+the PERF-1 extras (loadFeatureManifests, deriveProviderWeights,
+_manifestStoreDeps.mkdirp/writeJson stubs) moved into a **describe-scoped
+pair inside the PERF-1 describe** so the other 10 tests don't inherit the
+manifest-store stubs (§1.6 hook-trap rule); exec-root's pre-existing
+describe-scoped pair left in place. Imports flattened from three barrel
+styles to specific paths (ProviderWeightsCache stays on the barrel).
+
+Mutation check (mine, independent of the subagent's): 3 flips — execRoot
+`.nax-wt/US-001` → `/repo/nope` (AC8 only), `cache.invalidated` → `["x"]`
+(PERF-1 only), extraProviderIds → `["wrong"]` (#662 only) — 3 distinct
+failures / 8 unrelated pass, all reverted, final run green. Renames verified
+on disk post-commit.
+
+Deletes (3): `stage-assembler-exec-root`, `stage-assembler-provider-weights-invalidation`,
+`stage-assembler-extra-provider-ids`.
+
+Wave 4 running total: **-6 files**. Cumulative: **-119**.
