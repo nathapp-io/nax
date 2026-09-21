@@ -4,15 +4,14 @@
  * When ContextRequest.deterministic === true, the orchestrator skips any
  * provider that declares `deterministic: false`. Deterministic providers
  * (no field or deterministic: true) are always included.
+ *
+ * Split back out of orchestrator-pull-tools.test.ts when that file crossed the
+ * 800-line test limit during the consolidation drain.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine/orchestrator";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ─────────────────────────────────────────────────────────────────────────────
 
 let _seq = 0;
 const _origUuid = _orchestratorDeps.uuid;
@@ -66,10 +65,6 @@ function makeProvider(id: string, deterministic?: boolean): IContextProvider {
   return provider;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests
-// ─────────────────────────────────────────────────────────────────────────────
-
 describe("ContextOrchestrator — determinism mode (AC-24)", () => {
   test("non-deterministic: false request does not skip any providers", async () => {
     const det = makeProvider("det-provider", true);
@@ -94,7 +89,7 @@ describe("ContextOrchestrator — determinism mode (AC-24)", () => {
   });
 
   test("deterministic: true keeps provider with no deterministic field (default: deterministic)", async () => {
-    const implicit = makeProvider("implicit-det"); // no deterministic field
+    const implicit = makeProvider("implicit-det");
     const orch = new ContextOrchestrator([implicit]);
     const bundle = await orch.assemble({ ...BASE_REQUEST, deterministic: true });
 
@@ -114,7 +109,7 @@ describe("ContextOrchestrator — determinism mode (AC-24)", () => {
   test("deterministic: undefined (absent) does not skip non-deterministic providers", async () => {
     const nonDet = makeProvider("non-det-provider", false);
     const orch = new ContextOrchestrator([nonDet]);
-    const bundle = await orch.assemble({ ...BASE_REQUEST }); // no deterministic field
+    const bundle = await orch.assemble({ ...BASE_REQUEST });
 
     const providerIds = bundle.manifest.providerResults?.map((p) => p.providerId) ?? [];
     expect(providerIds).toContain("non-det-provider");

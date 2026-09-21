@@ -818,4 +818,35 @@ mutation check: 6 merged receivers × one flipped `toBe(true)` → 6 distinct fa
 all reverted) + the full gate loop. Collisions renamed: `phase5MakeRunOptions`,
 `abortMakeRunOptions`.
 
-### 9.8 — next entry goes here
+### 9.8 — 2026-09-21, Task 7 landed — orchestrator group 14 → 6 files (lands 6, one over target)
+
+Target was 14 → 5 (-9 f, -550 l); **landed 14 → 6 (-8 f, -153 l)**, one over the packed
+floor. All 131 tests / 255 expect() preserved. Unit phase 18,247 / 42,169 unchanged,
+full suite 0 fail, `check:all` 0, both tsc clean, coverage 96.32% / 93.40%, 0 below floor.
+
+Bins per the packer, seam assignment mine:
+
+- `orchestrator-rebuild` absorbs `orchestrator-plan-digest-boost` + `orchestrator-stale-attribution` (747l).
+- `orchestrator-pull-tools` absorbs `orchestrator-us004` + `orchestrator-floor-overage`
+  + `orchestrator-floor-budget-exceeded` (727l).
+- `orchestrator-extra-provider-ids` absorbs `orchestrator-agent-framing`
+  + `orchestrator-unknown-providers` + `orchestrator-budget-pressure` (330l).
+- `orchestrator-determinism` **split back out** of pull-tools when the merged file hit
+  845l > 800 cap (its AC-24 concern + 8 tests were the tail block). **This is the
+  reason the group lands 6 files, not the packer's 5.**
+- `orchestrator.test.ts` (base) stays alone (665-line body, no room at 650 fill target).
+- `orchestrator-factory` is a MIRROR — untouched.
+
+Deletes (8): `orchestrator-plan-digest-boost`, `orchestrator-stale-attribution`,
+`orchestrator-us004`, `orchestrator-floor-overage`, `orchestrator-floor-budget-exceeded`,
+`orchestrator-agent-framing`, `orchestrator-unknown-providers`, `orchestrator-budget-pressure`.
+
+Mechanical merge delegated to a subagent (recipe from §9.7); the 845l-over-cap bin was
+caught by my post-delegation `wc -l` check and re-split (this is exactly §6's
+"merged file over 800 → split the largest seam" recovery). Mutation check: 4 merged
+receivers × one flipped assertion → 4 distinct failures, all reverted (one revert
+corrupted a sibling assertion via blanket replace; fixed by restoring the specific
+`toBeUndefined()` at the budgetPressure AC-2 line). `_deps` hooks merged to one
+top-level pair per file (Task 2's restores preserved).
+
+### 9.9 — next entry goes here
