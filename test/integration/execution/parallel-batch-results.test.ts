@@ -93,7 +93,10 @@ describe("AC-1: runParallelBatch completed stories", () => {
     _parallelBatchDeps.createWorktreeManager = async () => makeWorktreeManager();
     _parallelBatchDeps.createMergeEngine = async () =>
       makeMergeEngine({
-        mergeAll: async (_wd: string, ids: string[]) => ids.map((id) => ({ success: true, storyId: id })),
+        mergeAll: async (
+          _wd: string,
+          entries: ReadonlyArray<{ storyId: string; worktreeId: import("@/worktree").WorktreeId }>,
+        ) => entries.map((e) => ({ success: true, storyId: e.storyId })),
       });
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: stories,

@@ -18,6 +18,7 @@ import type { PRD } from "../prd/types";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import { storyAbsWorkdir, storyPackageDir } from "../utils/path-frame";
+import { deriveStoryWorktreeId, storyWorktreePath } from "../worktree";
 import { prepareWorktreeDependencies } from "../worktree/dependencies";
 import { WorktreeManager } from "../worktree/manager";
 import { handleDryRun } from "./dry-run";
@@ -83,16 +84,22 @@ export async function runIteration(
   const storyStartTime = Date.now();
 
   // EXEC-002: Resolve the effective workdir for this story.
-  // In "worktree" mode, each story runs in its own git worktree at .nax-wt/<storyId>/.
+  // In "worktree" mode, each story runs in its own git worktree at
+  // .nax-wt/<worktreeId>/ (US-003: `story-<feature>-<storyId>`).
   // In "shared" mode (default), use the project root as-is.
   let effectiveWorkdir = ctx.workdir;
   if (ctx.config.execution.storyIsolation === "worktree") {
-    const worktreePath = join(ctx.workdir, ".nax-wt", story.id);
+    // US-003: the identity is composed from this run's feature and the story's
+    // raw id, so the probe, the create() and the working directory all name the
+    // same `.nax-wt/story-<feature>-<storyId>` path — a composed worktree beside
+    // a raw path would send every story into a directory that does not exist.
+    const worktreeId = deriveStoryWorktreeId(ctx.feature, story.id);
+    const worktreePath = storyWorktreePath(ctx.workdir, worktreeId);
     const worktreeExists = _iterationRunnerDeps.existsSync(worktreePath);
     if (!worktreeExists) {
       // First attempt for this story — create a fresh worktree.
       await _iterationRunnerDeps.worktreeManager.ensureGitExcludes(ctx.workdir);
-      await _iterationRunnerDeps.worktreeManager.create(ctx.workdir, story.id);
+      await _iterationRunnerDeps.worktreeManager.create(ctx.workdir, worktreeId);
     }
     // Escalation reuse: if the worktree already exists (story retried in same worktree),
     // skip creation and continue in the existing worktree directory.
@@ -149,7 +156,9 @@ export async function runIteration(
       markStoryFailed(prd, story.id, "dependency-prep", "worktree-dependencies", ctx.statusWriter);
       await savePRD(prd, ctx.prdPath);
       try {
-        await _iterationRunnerDeps.worktreeManager.remove(ctx.workdir, story.id);
+        // US-003: same composed identity create() used, so the cleanup removes
+        // the worktree that was actually built.
+        await _iterationRunnerDeps.worktreeManager.remove(ctx.workdir, deriveStoryWorktreeId(ctx.feature, story.id));
       } catch {
         // best-effort cleanup
       }
@@ -205,7 +214,7 @@ export async function runIteration(
     // the stale-or-absent-context defect US-001 exists to fix.
     //
     // `resolvedWorkdir` is the dial to turn: under worktree isolation it is
-    // inside `.nax-wt/<storyId>/`, so the registry key it resolves to carries
+    // inside `.nax-wt/<worktreeId>/`, so the registry key it resolves to carries
     // that prefix and `storyExecRoot` returns the worktree root; under shared
     // isolation it resolves to the repo root. Both spellings come from the
     // runtime's own registry — no path is re-derived here (nax#2069).

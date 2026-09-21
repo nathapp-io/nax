@@ -39,4 +39,5 @@ export {
 export { rankContestants } from "./ranking";
 export { renderBakeoffReport } from "./report";
 export type { BakeoffResult, ContestantResult, ContestantStatus } from "./types";
+export type { WorktreeId } from "./worktree-id";
 export { deriveBakeoffWorktreeId } from "./worktree-id";

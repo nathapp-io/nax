@@ -3,6 +3,8 @@ import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
 import type { WorktreeManager } from "./manager";
+import type { WorktreeId } from "./worktree-id";
+import { storyBranchName, storyWorktreePath } from "./worktree-id";
 
 /**
  * Why a merge did not succeed.
@@ -52,7 +54,14 @@ export class MergeEngine {
   }
 
   /**
-   * Merges branch nax/<storyId> into the current branch with --no-ff.
+   * Merges branch `nax/<worktreeId>` into the current branch with --no-ff.
+   *
+   * US-002 narrows the second parameter to `WorktreeId`. The branch
+   * spelling is composed through `storyBranchName(worktreeId)`, so the
+   * branch passed to git is the composed `nax/<worktreeId>` form — never
+   * `nax/<rawStoryId>`. The story ID that the CALLER supplied is not
+   * read inside this method; `mergeAll` keeps its own per-call map of
+   * `(worktreeId → storyId)` to populate `MergeResult.storyId`.
    *
    * TOTAL over git-level failures — it never throws for them. Callers (`mergeAll`,
    * `pipeline-result-handler`) treat merging as one step in a longer sequence, so a
@@ -63,8 +72,8 @@ export class MergeEngine {
    *   { success: false, failureKind: "conflict" } real conflict, aborted, rectifiable
    *   { success: false, failureKind: "error" }    everything else, NOT rectifiable
    */
-  async merge(projectRoot: string, storyId: string): Promise<Omit<MergeResult, "storyId">> {
-    const branchName = `nax/${storyId}`;
+  async merge(projectRoot: string, worktreeId: WorktreeId): Promise<Omit<MergeResult, "storyId">> {
+    const branchName = storyBranchName(worktreeId);
 
     try {
       // Guard: never merge into a repository that is already mid-merge. Doing so
@@ -73,7 +82,7 @@ export class MergeEngine {
       if (await this.isMidMerge(projectRoot)) {
         const error = `Repository has an unresolved merge in progress; refusing to merge ${branchName}`;
         getSafeLogger()?.error("worktree", "Refusing to merge into a mid-merge repository", {
-          storyId,
+          worktreeId,
           projectRoot,
         });
         return { success: false, failureKind: "error", error };
@@ -87,11 +96,11 @@ export class MergeEngine {
       if (exitCode === 0) {
         // Clean merge - cleanup worktree
         try {
-          await this.worktreeManager.remove(projectRoot, storyId);
+          await this.worktreeManager.remove(projectRoot, worktreeId);
         } catch (error) {
           // Log warning but don't fail the merge
           const logger = getSafeLogger();
-          logger?.warn("worktree", `Failed to cleanup worktree for ${storyId}`, {
+          logger?.warn("worktree", `Failed to cleanup worktree for ${worktreeId}`, {
             error: errorMessage(error),
           });
         }
@@ -99,11 +108,11 @@ export class MergeEngine {
         return { success: true };
       }
 
-      return await this.classifyMergeFailure(projectRoot, storyId, `${stdout}\n${stderr}`);
+      return await this.classifyMergeFailure(projectRoot, worktreeId, `${stdout}\n${stderr}`);
     } catch (error) {
       // Spawn-level failure (git missing, cwd gone). Still a value, not a throw.
       getSafeLogger()?.error("worktree", "Merge failed before git could report", {
-        storyId,
+        worktreeId,
         error: errorMessage(error),
       });
       return { success: false, failureKind: "error", error: errorMessage(error) };
@@ -116,7 +125,7 @@ export class MergeEngine {
    */
   private async classifyMergeFailure(
     projectRoot: string,
-    storyId: string,
+    worktreeId: WorktreeId,
     output: string,
   ): Promise<Omit<MergeResult, "storyId">> {
     const logger = getSafeLogger();
@@ -128,7 +137,7 @@ export class MergeEngine {
     if (!midMerge && conflictFiles.length === 0) {
       const error = output.trim() || "unknown error";
       logger?.error("worktree", "Merge failed for a non-conflict reason", {
-        storyId,
+        worktreeId,
         error,
       });
       return { success: false, failureKind: "error", error };
@@ -138,9 +147,9 @@ export class MergeEngine {
     // the abort does not take, say so rather than reporting a tidy conflict: the
     // repository is now unusable for every merge that follows.
     if (!(await this.abortMerge(projectRoot))) {
-      const error = `Merge conflict in ${storyId} could not be aborted; repository left mid-merge`;
+      const error = `Merge conflict in ${worktreeId} could not be aborted; repository left mid-merge`;
       logger?.error("worktree", "git merge --abort failed — repository left mid-merge", {
-        storyId,
+        worktreeId,
         conflictFiles,
       });
       return { success: false, failureKind: "error", conflictFiles, error };
@@ -150,33 +159,67 @@ export class MergeEngine {
   }
 
   /**
-   * Merges stories in topological order based on dependencies
-   * On conflict: retries once after rebasing worktree on updated base
-   * On 2nd conflict: marks story as failed, continues with remaining stories
+   * Merges stories in topological order based on dependencies.
+   *
+   * US-002 narrows the second parameter from `string[]` (raw story IDs)
+   * to `Array<{ storyId: string; worktreeId: WorktreeId }>`. The
+   * dependency map stays keyed by raw story IDs — that's the join key
+   * into `pipelinePassed`, `storyCosts`, and `prd.userStories` upstream.
+   * The merge itself uses the COMPOSED `nax/<worktreeId>` branch; the
+   * returned `MergeResult.storyId` is the RAW storyId, matching the
+   * upstream join keys.
+   *
+   * On conflict: retries once after rebasing worktree on updated base.
+   * On 2nd conflict: marks story as failed, continues with remaining stories.
    */
-  async mergeAll(projectRoot: string, storyIds: string[], dependencies: StoryDependencies): Promise<MergeResult[]> {
+  async mergeAll(
+    projectRoot: string,
+    stories: ReadonlyArray<{ storyId: string; worktreeId: WorktreeId }>,
+    dependencies: StoryDependencies,
+  ): Promise<MergeResult[]> {
     // BUG-27: topologicalSort() throws on a circular dependency. Schema
     // validation now rejects cycles at plan time (src/prd/schema.ts), but
     // this stays defensive — a PRD written or edited outside that path
     // (manual edit, older artifact) must not crash the whole merge batch,
     // leaving every story silently "pending"/"running" forever.
-    let orderedStories: string[];
+    //
+    // US-002: the topological sort still operates on raw story IDs, the
+    // join key for `StoryDependencies`. The composed worktree IDs ride
+    // alongside via `storyIdToWorktreeId`, so the iteration order is
+    // determined by the dependency map (raw IDs) while the merges use
+    // the composed branch.
+    let orderedStoryIds: string[];
     try {
-      orderedStories = this.topologicalSort(storyIds, dependencies);
+      orderedStoryIds = this.topologicalSort(
+        stories.map((s) => s.storyId),
+        dependencies,
+      );
     } catch (error) {
       const message = errorMessage(error);
-      return storyIds.map((storyId) => ({
+      return stories.map((s) => ({
         success: false,
-        storyId,
+        storyId: s.storyId,
         conflictFiles: [],
-        failureKind: "error",
+        failureKind: "error" as const,
         error: `Merge batch aborted: ${message}`,
       }));
+    }
+    const storyIdToWorktreeId = new Map<string, WorktreeId>();
+    for (const s of stories) {
+      storyIdToWorktreeId.set(s.storyId, s.worktreeId);
     }
     const results: MergeResult[] = [];
     const failedStories = new Set<string>();
 
-    for (const storyId of orderedStories) {
+    for (const storyId of orderedStoryIds) {
+      const worktreeId = storyIdToWorktreeId.get(storyId);
+      if (worktreeId === undefined) {
+        // Unreachable: orderedStoryIds was derived from `stories` above, so
+        // every id in the ordered list has an entry in the map. The guard
+        // is defensive against an external sort changing semantics later.
+        continue;
+      }
+
       // Check if any dependencies failed
       const deps = dependencies[storyId] || [];
       const hasFailedDeps = deps.some((dep) => failedStories.has(dep));
@@ -194,7 +237,7 @@ export class MergeEngine {
       }
 
       // Try to merge
-      let result = await this.merge(projectRoot, storyId);
+      let result = await this.merge(projectRoot, worktreeId);
 
       // Only a real conflict is worth a rebase-and-retry. A non-conflict error
       // (dirty tree, missing branch, repository stuck mid-merge) is not fixed by
@@ -202,10 +245,10 @@ export class MergeEngine {
       if (result.failureKind === "conflict") {
         try {
           // Rebase worktree on updated base
-          await this.rebaseWorktree(projectRoot, storyId);
+          await this.rebaseWorktree(projectRoot, worktreeId);
 
           // Retry merge
-          result = await this.merge(projectRoot, storyId);
+          result = await this.merge(projectRoot, worktreeId);
 
           // If still fails, mark as failed
           if (!result.success) {
@@ -310,8 +353,8 @@ export class MergeEngine {
   /**
    * Rebases worktree on current base branch
    */
-  private async rebaseWorktree(projectRoot: string, storyId: string): Promise<void> {
-    const worktreePath = `${projectRoot}/.nax-wt/${storyId}`;
+  private async rebaseWorktree(projectRoot: string, worktreeId: WorktreeId): Promise<void> {
+    const worktreePath = storyWorktreePath(projectRoot, worktreeId);
 
     try {
       // Get current branch name from main repo
@@ -322,7 +365,7 @@ export class MergeEngine {
       if (exitCode !== 0) {
         throw new NaxError("Failed to get current branch", "WORKTREE_CURRENT_BRANCH_FAILED", {
           stage: "worktree",
-          storyId,
+          worktreeId,
           projectRoot,
         });
       }
@@ -342,7 +385,7 @@ export class MergeEngine {
 
         throw new NaxError(`Rebase failed: ${stderr || "unknown error"}`, "WORKTREE_REBASE_FAILED", {
           stage: "worktree",
-          storyId,
+          worktreeId,
           stderr,
         });
       }
@@ -350,9 +393,9 @@ export class MergeEngine {
       if (error instanceof Error) {
         throw error;
       }
-      throw new NaxError(`Failed to rebase worktree ${storyId}: ${String(error)}`, "WORKTREE_REBASE_FAILED", {
+      throw new NaxError(`Failed to rebase worktree ${worktreeId}: ${String(error)}`, "WORKTREE_REBASE_FAILED", {
         stage: "worktree",
-        storyId,
+        worktreeId,
         cause: error,
       });
     }

@@ -26,6 +26,7 @@ import { PluginRegistry } from "@/plugins/registry";
 import { loadPRD, savePRD } from "@/prd";
 import type { PRD, UserStory } from "@/prd/types";
 import { _gitDeps } from "@/utils/git";
+import { deriveStoryWorktreeId } from "@/worktree";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -269,7 +270,11 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
 
     const result = await handlePipelineSuccess(ctx, makeMinimalResult());
 
-    expect(mergeMock).toHaveBeenCalledWith("/tmp/repo", "US-001");
+    // US-002: the production code composes the WorktreeId from
+    // `(ctx.feature, ctx.story.id)` before calling mergeEngine.merge.
+    // The fixture's `feature: "test-feature"` derives
+    // `story-test-feature-US-001` — assert on the composed form.
+    expect(mergeMock).toHaveBeenCalledWith("/tmp/repo", deriveStoryWorktreeId("test-feature", "US-001"));
     expect(result.prdDirty).toBe(true);
   });
 

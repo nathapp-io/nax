@@ -8,7 +8,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import {
+  assertDefined,
   makeMockAgentManager,
   makeNaxConfig,
   makePluginRegistry,
@@ -27,6 +29,7 @@ import {
   rectifyConflictedStory,
   rectifyMergeFailure,
 } from "@/execution/merge-conflict-rectify";
+import { _worktreeManagerDeps } from "@/worktree/manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // rect AC-7 — errors are caught, not propagated; returns { success: false }
@@ -306,5 +309,142 @@ describe("closeStaleAcpSession — bounded `acpx sessions close` (hang-path)", (
     }
     expect(threw).toBe(false);
     expect(killedPid).toBe(3333);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003 AC-7 — rectification derives the worktree identity from its run's
+// feature. The pre-US-003 rectifier built `.nax-wt/<storyId>` by hand and
+// handed the raw story ID to `remove`/`create`/`mergeAll`.
+//
+// Both tests drive the real `rectifyConflictedStory`; the only stubs are the
+// two process boundaries (git, and the `acpx sessions close` eviction). The
+// PRD deliberately does not contain the story, so rectification stops after
+// the identity-bearing steps instead of running a real pipeline.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("US-003 AC-7: rectification derives the worktree identity", () => {
+  const FEATURE = "f";
+  const STORY_ID = "US-001";
+  const COMPOSED_TAIL = join(".nax-wt", "story-f-US-001");
+  const COMPOSED_BRANCH = "nax/story-f-US-001";
+  const WORKDIR = "/tmp/nax-us003-rectify";
+
+  let savedGit: typeof _worktreeManagerDeps.gitWithTimeout;
+  let savedTypedSpawn: typeof _mergeRectifyDeps.typedSpawn;
+
+  beforeEach(() => {
+    savedGit = _worktreeManagerDeps.gitWithTimeout;
+    savedTypedSpawn = _mergeRectifyDeps.typedSpawn;
+  });
+
+  afterEach(() => {
+    _worktreeManagerDeps.gitWithTimeout = savedGit;
+    _mergeRectifyDeps.typedSpawn = savedTypedSpawn;
+  });
+
+  /** Every git argv the rectifier issues, with every command succeeding. */
+  function stubGit(): string[][] {
+    const calls: string[][] = [];
+    _worktreeManagerDeps.gitWithTimeout = async (args: string[]) => {
+      calls.push(args);
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    return calls;
+  }
+
+  /**
+   * A `typedSpawn` stand-in that records the eviction argv. Typed structurally
+   * (not cast) so the stub needs no assertion.
+   */
+  function stubAcpxSpawn(): string[][] {
+    const calls: string[][] = [];
+    const emptyStream = (): ReadableStream<Uint8Array> =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      });
+    _mergeRectifyDeps.typedSpawn = (cmd: string[]) => {
+      calls.push(cmd);
+      return {
+        stdout: emptyStream(),
+        stderr: emptyStream(),
+        exited: Promise.resolve(0),
+        pid: 4242,
+        kill: () => {},
+      };
+    };
+    return calls;
+  }
+
+  function makeOpts(feature: string): RectifyConflictedStoryOptions {
+    const config = makeNaxConfig();
+    // No story in the PRD: rectification stops right after the identity-bearing
+    // worktree steps, so no pipeline and no merge are reached.
+    const prd = makePRD({ feature, userStories: [] });
+    return {
+      storyId: STORY_ID,
+      conflictFiles: ["src/foo.ts"],
+      originalCost: 0.5,
+      workdir: WORKDIR,
+      config,
+      hooks: { hooks: {} },
+      pluginRegistry: makePluginRegistry(),
+      prd,
+      pipelineContextBase: makeTestContext({ config, prd, workdir: WORKDIR }),
+    };
+  }
+
+  test("AC-7: create() is asked for .nax-wt/story-f-US-001 on branch nax/story-f-US-001", async () => {
+    const gitCalls = stubGit();
+    stubAcpxSpawn();
+
+    await rectifyConflictedStory(makeOpts(FEATURE));
+
+    const addCall = gitCalls.find((args) => args[0] === "worktree" && args[1] === "add");
+    assertDefined(addCall, "git worktree add argv");
+    // The recorded git argv carries no `git` argv[0] — `gitWithTimeout` prepends
+    // that itself (`["git", ...args]`) — so the tuple is
+    // [worktree, add, <path>, -b, <branch>].
+    expect(addCall[2]?.endsWith(COMPOSED_TAIL)).toBe(true);
+    expect(addCall[3]).toBe("-b");
+    expect(addCall[4]).toBe(COMPOSED_BRANCH);
+    // The raw story ID must not appear anywhere in the argv.
+    expect(gitCalls.some((args) => args.some((a) => a.endsWith(join(".nax-wt", STORY_ID))))).toBe(false);
+  });
+
+  test("AC-7: the rectification's worktreePath is the composed path, not the raw story directory", async () => {
+    stubGit();
+    const acpxCalls = stubAcpxSpawn();
+
+    await rectifyConflictedStory(makeOpts(FEATURE));
+
+    // The stale-session eviction is the one place the rectifier hands its
+    // `worktreePath` to an observable boundary: `acpx --cwd <worktreePath> …`.
+    const eviction = acpxCalls.find((cmd) => cmd[0] === "acpx");
+    assertDefined(eviction, "acpx sessions close argv");
+    expect(eviction[1]).toBe("--cwd");
+    expect(eviction[2]?.endsWith(COMPOSED_TAIL)).toBe(true);
+    expect(eviction[2]?.endsWith(join(".nax-wt", STORY_ID))).toBe(false);
+  });
+
+  test("AC-7 (boundary): the worktree directory follows the run's feature, so a different feature is a different path", async () => {
+    const firstRun = stubGit();
+    stubAcpxSpawn();
+    await rectifyConflictedStory(makeOpts("f"));
+
+    const secondRun = stubGit();
+    stubAcpxSpawn();
+    await rectifyConflictedStory(makeOpts("g"));
+
+    // Same index base as the AC-7 assertion above: the recorded argv excludes
+    // `git` itself.
+    const addPath = (calls: string[][]): string | undefined =>
+      calls.find((args) => args[0] === "worktree" && args[1] === "add")?.[2];
+
+    expect(addPath(firstRun)?.endsWith(join(".nax-wt", "story-f-US-001"))).toBe(true);
+    expect(addPath(secondRun)?.endsWith(join(".nax-wt", "story-g-US-001"))).toBe(true);
+    expect(addPath(firstRun)).not.toBe(addPath(secondRun));
   });
 });

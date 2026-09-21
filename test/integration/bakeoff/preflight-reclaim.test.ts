@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { reclaimStaleBakeoffBranches } from "@/bakeoff";
+import { deriveBakeoffWorktreeId, reclaimStaleBakeoffBranches } from "@/bakeoff";
 import { WorktreeManager } from "@/worktree";
 
 async function git(args: string[], cwd: string): Promise<{ stdout: string; exitCode: number }> {
@@ -46,8 +46,12 @@ describe("reclaimStaleBakeoffBranches", () => {
   // AC-6: a leftover nax/bakeoff-<id> branch with no worktree record is
   // removed, and worktree creation for that same ID subsequently succeeds.
   it("US-004 AC6: removes a leftover nax/bakeoff-<id> branch with no worktree record and lets worktree creation succeed", async () => {
-    const id = "bakeoff-orphan-id";
-    const branchName = `nax/${id}`;
+    const feature = "orphan";
+    const profile = "id";
+    // US-002: derive the bakeoff identity through the producer so the
+    // manager's `WorktreeId` signature is satisfied at the call site.
+    const worktreeId = deriveBakeoffWorktreeId(feature, profile);
+    const branchName = `nax/${worktreeId}`;
     // Simulate an orphaned branch left by a crashed prior run: a real
     // branch, but no matching worktree directory/record.
     await git(["branch", branchName], projectRoot);
@@ -58,8 +62,8 @@ describe("reclaimStaleBakeoffBranches", () => {
     expect(await branchExists(projectRoot, branchName)).toBe(false);
 
     const manager = new WorktreeManager();
-    await manager.create(projectRoot, id);
-    await manager.remove(projectRoot, id);
+    await manager.create(projectRoot, worktreeId);
+    await manager.remove(projectRoot, worktreeId);
   });
 
   // AC-7: a branch outside the nax/bakeoff- namespace is never touched.

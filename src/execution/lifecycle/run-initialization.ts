@@ -25,6 +25,7 @@ import type { ReviewConfig } from "@/review/types";
 import { spawn } from "@/utils/bun-deps";
 import { hasCommitsForStory } from "@/utils/git";
 import { storyAbsWorkdir } from "@/utils/path-frame";
+import { deriveStoryWorktreeId, storyBranchName } from "@/worktree";
 
 /**
  * Injectable dependencies for reconcileState — allows tests to mock
@@ -231,12 +232,16 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
     const resetIds = resetStories.map((s) => s.id);
     logger?.info("run-initialization", "Reset failed stories to pending for re-run", { storyIds: resetIds });
 
-    // EXEC-002: In worktree mode, delete old nax/<storyId> branches so worktreeManager.create()
-    // starts from a clean slate (fresh branch from current main HEAD).
+    // EXEC-002: In worktree mode, delete old nax/<worktreeId> branches so worktreeManager.create()
+    // starts from a clean slate (fresh branch from current main HEAD). US-003:
+    // the branch is the COMPOSED one (`nax/story-<feature>-<storyId>`) — the
+    // name create() actually made; deleting a raw `nax/<storyId>` would leave
+    // the composed branch in place and crash the next create().
     if (storyIsolation === "worktree") {
       for (const story of resetStories) {
+        const branch = storyBranchName(deriveStoryWorktreeId(prd.feature, story.id));
         try {
-          const proc = _reconcileDeps.spawn(["git", "branch", "-D", `nax/${story.id}`], {
+          const proc = _reconcileDeps.spawn(["git", "branch", "-D", branch], {
             cwd: ctx.workdir,
             stdout: "pipe",
             stderr: "pipe",
@@ -251,7 +256,7 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
               // will crash on the next run with "branch already exists".
               logger?.warn("worktree", "Failed to clean up old branch for re-run (non-fatal)", {
                 storyId: story.id,
-                branch: `nax/${story.id}`,
+                branch,
                 stderr: stderr.trim(),
               });
             }
