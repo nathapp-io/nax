@@ -13,12 +13,11 @@
  * them with `--force`).
  */
 
-import { mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { unlink } from "node:fs/promises";
+import { mkdir, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
-import chalk from "chalk";
 import { findProjectDir, loadConfig } from "@/config";
 import { type FeatureLockRecord, featureLockPath, isLockSuspect } from "@/execution";
+import { getSafeLogger, type Logger } from "@/logger";
 import { projectOutputDir } from "@/runtime";
 import { isProcessAlive } from "@/utils/process-alive";
 
@@ -44,7 +43,18 @@ export const _unlockDeps = {
   findProjectDir: findProjectDir as typeof findProjectDir,
   loadConfig: loadConfig as typeof loadConfig,
   projectOutputDir: projectOutputDir as typeof projectOutputDir,
+  getSafeLogger: (): Pick<Logger, "info" | "error"> | null => getSafeLogger(),
 };
+
+const UNLOCK_LOG_STAGE = "unlock";
+
+function logUnlockInfo(message: string): void {
+  _unlockDeps.getSafeLogger()?.info(UNLOCK_LOG_STAGE, message);
+}
+
+function logUnlockError(message: string): void {
+  _unlockDeps.getSafeLogger()?.error(UNLOCK_LOG_STAGE, message);
+}
 
 /**
  * Format lock age in minutes
@@ -105,35 +115,30 @@ async function tryRemoveFeatureLock(
   const raw = await lockFile.text();
   const record = parseFeatureLockRecord(raw);
   if (record === null) {
-    console.error(chalk.red(`Failed to parse feature lock: ${lockPath}`));
+    logUnlockError(`Failed to parse feature lock: ${lockPath}`);
     return "parse-error";
   }
 
   const now = Date.now();
   const suspect = isLockSuspect(record, now);
   if (!force && !suspect) {
-    console.error(
-      chalk.red(
-        `nax is still running on feature "${feature}" (PID ${record.pid}${record.host ? `, host ${record.host}` : ""}). Use --force to override.`,
-      ),
+    logUnlockError(
+      `nax is still running on feature "${feature}" (PID ${record.pid}${record.host ? `, host ${record.host}` : ""}). Use --force to override.`,
     );
     return "skipped";
   }
 
   const ageMs = typeof record.timestamp === "number" ? now - record.timestamp : 0;
-  console.log(
+  logUnlockInfo(
     `${force && !suspect ? "Forced removal of" : "Stale"} feature lock: feature=${feature} PID=${record.pid} age=${formatLockAge(ageMs)}`,
   );
 
   try {
     await unlink(lockPath);
   } catch (error) {
-    console.error(
-      chalk.red(`Failed to remove feature lock: ${error instanceof Error ? error.message : String(error)}`),
-    );
+    logUnlockError(`Failed to remove feature lock: ${error instanceof Error ? error.message : String(error)}`);
     return "skipped";
   }
-  await Bun.sleep(10);
   return "removed";
 }
 
@@ -141,28 +146,18 @@ async function tryRemoveFeatureLock(
  * List feature names that currently have a lock file under
  * `<outputDir>/features/<feature>/nax.lock`. Returns names sorted ascending.
  */
-function listFeatureLockFeatures(outputDir: string): string[] {
+async function listFeatureLockFeatures(outputDir: string): Promise<string[]> {
   const featuresRoot = join(outputDir, "features");
-  let entries: { name: string }[];
+  let paths: string[];
   try {
-    entries = readdirSync(featuresRoot, { withFileTypes: true }) as { name: string }[];
-  } catch {
-    return [];
+    paths = await Array.fromAsync(new Bun.Glob("*/nax.lock").scan({ cwd: featuresRoot, onlyFiles: true }));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
   }
-  const names: string[] = [];
-  for (const entry of entries) {
-    if (!entry.name || entry.name.startsWith(".")) continue;
-    const lockPath = join(featuresRoot, entry.name, "nax.lock");
-    try {
-      // statSync would be cheaper but we want to fail closed on every
-      // error (EACCES, ENOTDIR, …), so a one-shot read is fine.
-      readFileSync(lockPath);
-      names.push(entry.name);
-    } catch {
-      // Missing or unreadable — skip silently; the scan will only see
-      // names that have a lock file we can actually stat.
-    }
-  }
+  const names = paths
+    .map((lockPath) => lockPath.split("/")[0])
+    .filter((name): name is string => Boolean(name) && !name.startsWith("."));
   names.sort((a, b) => a.localeCompare(b));
   return names;
 }
@@ -187,13 +182,13 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
   // lock is touched here — a feature-scoped unlock stays feature-scoped.
   if (options.feature !== undefined && options.feature.length > 0) {
     const { outputDir } = await resolveOutputDir(workdir);
-    mkdirSync(join(outputDir, "features"), { recursive: true });
+    await mkdir(join(outputDir, "features"), { recursive: true });
 
     const outcome = await tryRemoveFeatureLock(outputDir, options.feature, options.force ?? false);
     if (outcome === "skipped" || outcome === "parse-error") {
       process.exit(1);
     }
-    console.log("Feature lock removed");
+    logUnlockInfo("Feature lock removed");
     process.exit(0);
   }
 
@@ -213,7 +208,7 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
       const lockContent = await lockFile.text();
       lockData = JSON.parse(lockContent);
     } catch {
-      console.error(chalk.red("Failed to parse lock file"));
+      logUnlockError("Failed to parse lock file");
       checkoutAborted = true;
       lockData = undefined;
     }
@@ -225,13 +220,13 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
       // Check if process is alive (unless --force)
       if (!options.force) {
         if (isProcessAlive(pid)) {
-          console.error(chalk.red(`nax is still running (PID ${pid}). Use --force to override.`));
+          logUnlockError(`nax is still running (PID ${pid}). Use --force to override.`);
           process.exit(1);
         }
       }
 
       // Print lock info before removing
-      console.log(`Stale lock found (PID ${pid}, age: ${formatLockAge(ageMs)})`);
+      logUnlockInfo(`Stale lock found (PID ${pid}, age: ${formatLockAge(ageMs)})`);
 
       // TOCTOU guard: re-read the lock file and re-verify the PID immediately before
       // deleting it. A new run could have acquired the lock in the window between the
@@ -244,14 +239,12 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
           const currentContent = await Bun.file(checkoutLockPath).text();
           currentLockData = JSON.parse(currentContent);
         } catch {
-          console.log("Lock file disappeared before removal — nothing to do");
+          logUnlockInfo("Lock file disappeared before removal — nothing to do");
           process.exit(0);
         }
         if (currentLockData.pid !== pid) {
-          console.error(
-            chalk.red(
-              `Lock now held by a different PID (${currentLockData.pid}) — refusing to remove. Re-run nax unlock.`,
-            ),
+          logUnlockError(
+            `Lock now held by a different PID (${currentLockData.pid}) — refusing to remove. Re-run nax unlock.`,
           );
           process.exit(1);
         }
@@ -262,17 +255,15 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
       try {
         await unlink(checkoutLockPath);
       } catch (error) {
-        console.error(chalk.red(`Failed to remove lock: ${error instanceof Error ? error.message : String(error)}`));
+        logUnlockError(`Failed to remove lock: ${error instanceof Error ? error.message : String(error)}`);
         checkoutAborted = true;
       }
-      // Wait a bit for filesystem to sync (prevents race in tests)
-      await Bun.sleep(10);
       if (!checkoutAborted) {
-        console.log("Lock removed");
+        logUnlockInfo("Lock removed");
       }
     }
   } else {
-    console.log("No lock file found");
+    logUnlockInfo("No lock file found");
   }
 
   // Feature-lock scan — runs whether or not the checkout lock existed.
@@ -304,7 +295,7 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
   let scanError: unknown;
   try {
     const { outputDir } = await resolveOutputDir(workdir);
-    const features = listFeatureLockFeatures(outputDir);
+    const features = await listFeatureLockFeatures(outputDir);
     for (const feature of features) {
       scannedCount++;
       const outcome = await tryRemoveFeatureLock(outputDir, feature, options.force ?? false);
@@ -320,14 +311,14 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
 
   if (scanError !== undefined) {
     const message = scanError instanceof Error ? scanError.message : String(scanError);
-    console.error(chalk.red(`Feature lock scan failed: ${message}`));
+    logUnlockError(`Feature lock scan failed: ${message}`);
     process.exit(1);
   }
 
   if (scannedCount === 0) {
-    console.log("No feature locks found");
+    logUnlockInfo("No feature locks found");
   } else {
-    console.log(
+    logUnlockInfo(
       `Feature lock scan: ${scannedCount - skippedCount} removed, ${skippedCount} skipped${options.force ? " (--force)" : ""}`,
     );
   }

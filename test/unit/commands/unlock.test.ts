@@ -78,11 +78,8 @@ async function writeFeatureLock(
 describe("unlockCommand", () => {
   let testDir: string;
   let capturedOutput: string[];
-  let capturedErrors: string[];
   let exitCode: number | null;
 
-  const originalLog = console.log;
-  const originalError = console.error;
   const originalExit = process.exit;
   let savedUnlockDeps: typeof _unlockDeps;
   let savedFeatureLockDeps: typeof _featureLockDeps;
@@ -92,15 +89,7 @@ describe("unlockCommand", () => {
     testDir = realpathSync(raw);
 
     capturedOutput = [];
-    capturedErrors = [];
     exitCode = null;
-
-    console.log = (...args: unknown[]) => {
-      capturedOutput.push(args.join(" "));
-    };
-    console.error = (...args: unknown[]) => {
-      capturedErrors.push(args.join(" "));
-    };
 
     // Intercept process.exit: record the code and throw so the command stops.
     process.exit = (code?: number): never => {
@@ -113,11 +102,13 @@ describe("unlockCommand", () => {
     savedUnlockDeps = { ..._unlockDeps };
     savedFeatureLockDeps = { ..._featureLockDeps };
     _featureLockDeps.host = () => "test-machine";
+    _unlockDeps.getSafeLogger = () => ({
+      info: (_stage: string, message: string) => capturedOutput.push(message),
+      error: (_stage: string, message: string) => capturedOutput.push(message),
+    });
   });
 
   afterEach(() => {
-    console.log = originalLog;
-    console.error = originalError;
     process.exit = originalExit;
 
     Object.assign(_unlockDeps, savedUnlockDeps);
@@ -140,7 +131,7 @@ describe("unlockCommand", () => {
   }
 
   function allOutput(): string {
-    return [...capturedOutput, ...capturedErrors].join("\n");
+    return capturedOutput.join("\n");
   }
 
   // =========================================================================
@@ -148,6 +139,21 @@ describe("unlockCommand", () => {
   // =========================================================================
 
   describe("AC1: no lock file", () => {
+    test("CLI reports a missing lock through its initialized logger", async () => {
+      const proc = Bun.spawn(["bun", "run", "bin/nax.ts", "unlock", "-d", testDir], {
+        cwd: process.cwd(),
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+
+      expect(`${stdout}${stderr}`).toContain("No lock file found");
+    });
+
     test("prints 'No lock file found' and exits 0", async () => {
       await run({ dir: testDir });
 
@@ -657,6 +663,21 @@ describe("unlockCommand", () => {
         // whole point of the fix is that failures stop being hidden.
         expect(allOutput().toLowerCase()).toContain("feature lock scan failed");
         expect(allOutput()).toContain("simulated scan failure");
+      } finally {
+        rmSync(tempOutputDir, { recursive: true, force: true });
+      }
+    });
+
+    test("reports an unreadable feature-lock directory instead of claiming no locks exist", async () => {
+      const tempOutputDir = realpathSync(makeTempDir("nax-unlock-scan-unreadable-"));
+      try {
+        setupNaxRepoWithOutputDir(testDir, tempOutputDir);
+        await Bun.write(join(tempOutputDir, "features"), "not a directory");
+
+        await run({ dir: testDir });
+
+        expect(exitCode).toBe(1);
+        expect(allOutput().toLowerCase()).toContain("feature lock scan failed");
       } finally {
         rmSync(tempOutputDir, { recursive: true, force: true });
       }

@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawn } from "bun";
 import type { StoryCounts } from "@/execution";
 import { _lockDeps, acquireLock, formatProgress, releaseLock } from "@/execution";
+import { tryExclusiveCreate } from "@/execution/lock";
 
 describe("formatProgress", () => {
   test("formats progress with all stories pending", () => {
@@ -153,6 +154,12 @@ describe("acquireLock and releaseLock", () => {
   afterEach(() => {
     // Clean up test directory
     rmSync(testDir, { recursive: true, force: true });
+  });
+
+  test("tryExclusiveCreate preserves an existing lock record", async () => {
+    expect(await tryExclusiveCreate(lockPath, "first")).toBe(true);
+    expect(await tryExclusiveCreate(lockPath, "second")).toBe(false);
+    expect(await Bun.file(lockPath).text()).toBe("first");
   });
 
   test("acquires lock when no lock file exists", async () => {

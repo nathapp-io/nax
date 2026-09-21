@@ -64,6 +64,12 @@ describe("US-001 barrel importability (public surface parity)", () => {
   });
 });
 
+describe("feature lock path validation", () => {
+  test.each(["", "../escape", "--flag", "contains space"])("rejects unsafe feature ID %p", (feature) => {
+    expect(() => featureLockPath("/tmp/output", feature)).toThrow();
+  });
+});
+
 describe("featureLockPath", () => {
   test("US-001 AC1: returns <outputDir>/features/f/nax.lock", () => {
     const out = join("proj", "out");
@@ -422,6 +428,34 @@ describe("releaseFeatureLock", () => {
     await releaseFeatureLock({ outputDir: dir, feature: "f", runId: "caller-run" });
     expect(await Bun.file(recordPath).exists()).toBe(true);
     expect(await Bun.file(recordPath).text()).toContain("other-run");
+  });
+
+  test("does not remove a new holder that replaces the lock during release", async () => {
+    const recordPath = lockPath(dir, "f");
+    const runId = "run-1";
+    await acquireFeatureLock({ outputDir: dir, feature: "f", workdir: join(dir, "checkout-a"), runId });
+    const originalRename = _featureLockDeps.rename;
+    _featureLockDeps.rename = async (from, to) => {
+      await originalRename(from, to);
+      await Bun.write(
+        recordPath,
+        JSON.stringify({
+          pid: 2,
+          host: "test-machine",
+          workdir: join(dir, "checkout-b"),
+          feature: "f",
+          runId: "run-2",
+          startedAt: new Date().toISOString(),
+          timestamp: Date.now(),
+        }),
+      );
+    };
+    try {
+      await releaseFeatureLock({ outputDir: dir, feature: "f", runId });
+      expect(await Bun.file(recordPath).text()).toContain("run-2");
+    } finally {
+      _featureLockDeps.rename = originalRename;
+    }
   });
 
   test("US-001: resolves silently when the lock file is absent (ENOENT)", async () => {

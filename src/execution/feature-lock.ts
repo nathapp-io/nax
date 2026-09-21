@@ -365,12 +365,33 @@ export async function releaseFeatureLock(args: { outputDir: string; feature: str
   if (holder === null) return;
   if (holder.runId !== args.runId) return;
 
-  await _featureLockDeps.unlink(lockPath).catch((err: NodeJS.ErrnoException) => {
-    if (err.code !== "ENOENT") {
-      const logger = getSafeLogger();
-      logger?.warn("feature-lock", "Failed to release feature lock", {
-        error: err.message,
+  const tombstonePath = `${lockPath}.release.${process.pid}.${Date.now()}`;
+  try {
+    await _featureLockDeps.rename(lockPath, tombstonePath);
+  } catch (renameErr) {
+    const code = (renameErr as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      getSafeLogger()?.warn("feature-lock", "Failed to claim feature lock for release", {
+        error: (renameErr as Error).message,
         lockPath,
+        feature: args.feature,
+      });
+    }
+    return;
+  }
+
+  const tombstoneContent = await Bun.file(tombstonePath)
+    .text()
+    .catch(() => null);
+  const tombstoneHolder = parseHolder(tombstoneContent);
+  if (tombstoneHolder?.runId !== args.runId && tombstoneContent !== null) {
+    await _featureLockDeps.tryExclusiveCreate(lockPath, tombstoneContent);
+  }
+  await _featureLockDeps.unlink(tombstonePath).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== "ENOENT") {
+      getSafeLogger()?.warn("feature-lock", "Failed to discard released feature lock", {
+        error: err.message,
+        lockPath: tombstonePath,
         feature: args.feature,
       });
     }

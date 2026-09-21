@@ -1359,6 +1359,9 @@ program
   .option("--force", "Skip liveness check and remove unconditionally", false)
   .action(async (options) => {
     try {
+      // unlock reports exclusively through the structured logger; initialize
+      // its console-facing sink before the command emits status or refusal.
+      initLogger({ level: "info", useChalk: true });
       await unlockCommand({
         dir: options.dir,
         force: options.force,
