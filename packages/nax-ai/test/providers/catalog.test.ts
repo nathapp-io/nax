@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { OAuthFlowProhibitedError } from "../../src/auth/oauth-policy.ts";
 import { normaliseCatalog, type RawModel, type RawProvider } from "../../src/providers/catalog.ts";
+import type { ProviderOverride } from "../../src/providers/types.ts";
 
 const DEEPSEEK: RawProvider = {
   id: "deepseek",
@@ -418,6 +419,44 @@ describe("normaliseCatalog", () => {
             ],
           },
         ],
+      ),
+    ).toThrow(/states no preference/);
+  });
+
+  it("rejects a JavaScript routing object whose only key is undefined", () => {
+    // `exactOptionalPropertyTypes` protects TypeScript callers, but runtime
+    // configuration may originate in JavaScript. The wire mapper removes
+    // undefined-valued keys, so accepting this would still send `provider: {}`.
+    const overrides = [
+      {
+        provider: "openrouter",
+        models: [
+          {
+            id: "deepseek/deepseek-v4-flash",
+            provider: "openrouter",
+            protocol: "openai-completions",
+            pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 163840,
+            supportsTools: true,
+            thinkingLevels: [],
+            openRouterRouting: { only: undefined },
+          },
+        ],
+      },
+    ] as unknown as readonly ProviderOverride[];
+
+    expect(() =>
+      normaliseCatalog(
+        [
+          {
+            id: "openrouter",
+            baseUrl: "https://openrouter.ai/api/v1",
+            auth: { kind: "api-key" },
+            defaultProtocol: "openai-completions",
+            models: [],
+          },
+        ],
+        overrides,
       ),
     ).toThrow(/states no preference/);
   });

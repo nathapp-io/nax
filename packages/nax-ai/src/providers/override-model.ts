@@ -62,7 +62,18 @@ export function assertOverrideModelRouting(model: ResolvedModel): void {
     );
   }
 
-  if (Object.keys(routing).length === 0) {
+  const hasPreference = [
+    routing.allow_fallbacks,
+    routing.require_parameters,
+    routing.data_collection,
+    routing.zdr,
+    routing.order,
+    routing.only,
+    routing.ignore,
+    routing.quantizations,
+    routing.sort,
+  ].some((value) => value !== undefined);
+  if (!hasPreference) {
     throw new Error(
       `Model "${model.id}" declares openRouterRouting that states no preference. An empty declaration would be ` +
         `sent as an empty "provider" block and change nothing: state at least one preference, or omit the field.`,
