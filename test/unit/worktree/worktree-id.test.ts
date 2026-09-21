@@ -107,8 +107,14 @@ describe("WorktreeId — branded string identity", () => {
     const longFeature = "a-very-long-feature-name-that-goes-on-and-on-and-on-and-on";
     const longProfile = "an-equally-long-contestant-profile-name-that-also-goes-on-forever";
     const id3 = deriveBakeoffWorktreeId(longFeature, longProfile);
+    // Pin the EXACT returned string for the overlong pair. The
+    // derivation MUST produce this value for these inputs; a US-001
+    // change to MAX_WORKTREE_ID_LENGTH, HASH_SUFFIX_LENGTH, the
+    // sanitize pass, or the JSON-encoding of the hash payload would
+    // shift one of these characters and fail this assertion.
+    expect(String(id3)).toBe("bakeoff-a-very-long-feature-name-that-goes-on-and-on-an-7942bc3e");
     expect(id3.startsWith("bakeoff-")).toBe(true);
-    expect(id3.length).toBeLessThanOrEqual(64);
+    expect(id3.length).toBe(64);
     expect(() => validateStoryId(id3)).not.toThrow();
   });
 });

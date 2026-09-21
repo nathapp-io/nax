@@ -113,6 +113,30 @@ describe("findWorktreeIdViolations", () => {
     expect(violations[0]?.file).toBe("src/execution/marker-via-string-slash-slash.ts");
   });
 
+  // Regression: a closed block comment on the same line as executable
+  // code is NOT pure prose — the gate must still scan the code for an
+  // open-coded `.nax-wt/<id>` spelling. The pre-fix `startsWith("*") /
+  // startsWith("/*")` check would skip the line entirely.
+  test("a closed block comment on the same line as code does NOT skip the code", () => {
+    const src = '/* ignored */ const worktreePath = join(root, ".nax-wt", storyId);\n';
+    writeSource(tempDir, "src/execution/block-then-code.ts", src);
+
+    const violations = findWorktreeIdViolations(tempDir);
+    expect(violations.length).toBeGreaterThan(0);
+    expect(violations[0]?.file).toBe("src/execution/block-then-code.ts");
+  });
+
+  // Regression: a block-comment terminator followed by executable code
+  // on the same line is NOT pure prose — the gate must scan the code.
+  test("a block-comment terminator followed by code on the same line does NOT skip the code", () => {
+    const src = '*/ const worktreePath = join(root, ".nax-wt", storyId);\n';
+    writeSource(tempDir, "src/execution/terminator-then-code.ts", src);
+
+    const violations = findWorktreeIdViolations(tempDir);
+    expect(violations.length).toBeGreaterThan(0);
+    expect(violations[0]?.file).toBe("src/execution/terminator-then-code.ts");
+  });
+
   // AC-13: an allowlisted consumer file that spells `.nax-wt` MUST pass.
   test("US-001 AC13: allows src/utils/gitignore.ts (the gitignore entry)", () => {
     writeSource(tempDir, "src/utils/gitignore.ts", 'const ENTRY = ".nax-wt/";\n');

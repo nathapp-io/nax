@@ -197,10 +197,37 @@ const FORBIDDEN_PATTERNS: ReadonlyArray<{ kind: Kind; pattern: RegExp }> = [
 /** Opt-out marker for prose that must live in a string literal. */
 const ALLOW_MARKER = "nax-worktree-id-allow";
 
-/** Lines that are pure prose — comments and their continuations. */
+/**
+ * True only when the line is PURE comment — no executable code on the
+ * line after the comment is closed. The earlier `startsWith("*")` and
+ * `startsWith("/*")` form skipped a closed block comment followed by
+ * code on the same line, and a block-comment terminator followed by
+ * code, as if they were prose, hiding real violations. The refined
+ * check skips a line only when:
+ *   - line comment, e.g. double-slash
+ *   - self-contained block comment, opens and closes on the same line
+ *     with nothing executable after
+ *   - multi-line block comment opener
+ *   - multi-line block comment continuation (asterisk-prefixed)
+ * Anything else — including a closed block comment followed by code,
+ * a block-comment terminator followed by code, and code with a
+ * trailing comment — falls through to the pattern check.
+ */
 function isCommentLine(line: string): boolean {
   const trimmed = line.trim();
-  return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
+  if (trimmed.startsWith("//")) return true;
+  // Self-contained block comment: opens with `/*`, closes with `*/`,
+  // AND there is nothing executable after the closing `*/`. A pure
+  // comment ends with `*/`; a comment+code has code after the `*/`.
+  if (trimmed.startsWith("/*") && trimmed.endsWith("*/")) return true;
+  // Multi-line block comment opener: opens with `/*` but the closing
+  // `*/` is on a LATER line. Note this excludes `/* ... */ code`,
+  // which the second branch skips when the line ends with `*/`.
+  if (trimmed.startsWith("/*") && !trimmed.includes("*/")) return true;
+  // Multi-line block comment continuation: asterisk-prefixed but NOT
+  // the terminator (`*/`).
+  if (trimmed.startsWith("*") && !trimmed.startsWith("*/")) return true;
+  return false;
 }
 
 /**
