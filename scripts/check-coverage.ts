@@ -108,6 +108,22 @@ export interface Totals {
 }
 
 /**
+ * The pass/skip/fail block bun prints at the end of a run, from the `N pass` line
+ * through the `Ran N tests …` line. Empty when bun printed none (crash, timeout).
+ */
+export function extractTestSummary(output: string): string {
+  const lines = output.split("\n");
+  const start = lines.findIndex((l) => /^\s*\d+ pass\s*$/.test(l));
+  if (start === -1) return "";
+  const end = lines.findIndex((l, i) => i >= start && /^Ran \d+ tests?\b/.test(l));
+  return end === -1 ? "" : `${lines.slice(start, end + 1).join("\n")}\n`;
+}
+
+async function readStream(stream: ReadableStream<Uint8Array> | number | undefined): Promise<string> {
+  return stream instanceof ReadableStream ? new Response(stream).text() : "";
+}
+
+/**
  * Run the gated suites with coverage in a detached process group so a hang or
  * SIGABRT is reaped along with any descendants (mirrors scripts/run-tests.ts).
  *
@@ -129,6 +145,9 @@ export interface Totals {
  * actually select the reporter.
  */
 async function runCoverage(): Promise<number> {
+  // Mirrors scripts/run-tests.ts: under AGENT=1 a green run stays quiet (just bun's
+  // summary block) and the captured output is replayed only when the run fails.
+  const quiet = process.env.AGENT === "1";
   const child = Bun.spawn(
     [
       "bun",
@@ -146,8 +165,8 @@ async function runCoverage(): Promise<number> {
     {
       cwd: ROOT,
       env: { ...process.env, AGENT: "1" },
-      stdout: "inherit",
-      stderr: "inherit",
+      stdout: quiet ? "pipe" : "inherit",
+      stderr: quiet ? "pipe" : "inherit",
       // Leader of its own process group so the timeout kill reaches descendants.
       detached: true,
     },
@@ -164,8 +183,19 @@ async function runCoverage(): Promise<number> {
     }
   }, RUN_TIMEOUT_MS);
 
+  const captured = Promise.all([readStream(child.stdout), readStream(child.stderr)]);
   const exitCode = await child.exited;
   clearTimeout(timer);
+
+  if (quiet) {
+    const [stdout, stderr] = await captured;
+    if (timedOut || exitCode !== 0) {
+      process.stdout.write(stdout);
+      process.stderr.write(stderr);
+    } else {
+      process.stdout.write(extractTestSummary(stderr) || extractTestSummary(stdout));
+    }
+  }
 
   if (timedOut) {
     console.error(`\n[coverage] unit suite exceeded ${RUN_TIMEOUT_MS / 1000}s — killed.`);
