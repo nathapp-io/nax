@@ -786,4 +786,36 @@ Deletes: `curator-seam`, `curator-us-004-postrun`, `curator-maybe-prune-rollup`,
 Mutation check: 8 merged files each got one flipped assertion → 8 distinct failures;
 all reverted. Ranker `_deps unrestored 0` throughout.
 
-### 9.7 — next entry goes here
+### 9.7 — 2026-09-21, Task 6 landed — agents/manager group 19 → 8 files (-433 lines)
+
+Hit the packed target: 19 → 8 files, 4,651 → 4,218 lines, all 180 tests / 402
+expect() preserved. Unit phase 18,247 / 42,169 unchanged, full suite 0 fail,
+`check:all` 0, both tsc clean, coverage 96.32% / 93.40%, 0 below floor.
+
+Bins per the packer, seam assignment mine:
+
+- `manager-dispatch-emission` absorbs `manager-narrowed`.
+- `manager-swap-loop` absorbs `manager-stale-retry-hop-kind`.
+- `manager.test.ts` (base) absorbs `manager-dispatch-rates` + `manager-types-phase5`
+  + `manager-cancellable-backoff`.
+- `manager-dispatch-error-event` absorbs `manager-complete-empty-output`.
+- `manager-story-hop-budget` absorbs `manager-dispatch-complete` + `manager-abort`.
+- `manager-complete` absorbs `manager-credentials` + `manager-dispatch-error-event-model`
+  + `manager-rate-limit`.
+- `manager-iface-run` stays alone (its bin could not host a second member at the
+  650 fill target — 311-line body).
+- `manager-exhaustion` is a MIRROR — untouched.
+
+Deletes (11): `manager-narrowed`, `manager-stale-retry-hop-kind`, `manager-dispatch-rates`,
+`manager-types-phase5`, `manager-cancellable-backoff`, `manager-complete-empty-output`,
+`manager-dispatch-complete`, `manager-abort`, `manager-credentials`,
+`manager-dispatch-error-event-model`, `manager-rate-limit`.
+
+Delegated the mechanical merge to a subagent with a pinned recipe (this group was the
+first delegation; per §7 the recipe proven in callOp/curator was handed over verbatim,
+the subagent reproduced the 180/402 invariant, and I independently verified via
+mutation check: 6 merged receivers × one flipped `toBe(true)` → 6 distinct failures,
+all reverted) + the full gate loop. Collisions renamed: `phase5MakeRunOptions`,
+`abortMakeRunOptions`.
+
+### 9.8 — next entry goes here
