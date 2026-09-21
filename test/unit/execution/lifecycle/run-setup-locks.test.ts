@@ -28,6 +28,7 @@ import {
 } from "@test/helpers";
 import { LockAcquisitionError } from "@/errors";
 import { _runSetupDeps, type RunSetupOptions, setupRun } from "@/execution/lifecycle/run-setup";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { NaxRuntime } from "@/runtime";
 
 const runtimesToClose: NaxRuntime[] = [];
@@ -280,6 +281,56 @@ describe("setupRun — US-002: both locks held, in order", () => {
       expect(await Bun.file(join(h.workdir, "nax.lock")).exists()).toBe(false);
       expect(await Bun.file(featureLockPath).exists()).toBe(false);
     } finally {
+      cleanupTempDir(h.workdir);
+    }
+  });
+
+  test("US-002: checkout-lock refusal pipeline errors carry storyId so log entries are attributable", async () => {
+    // The two `logger.error("execution", …)` calls the checkout-lock
+    // refusal emits at src/execution/lifecycle/run-setup.ts:380-381 must
+    // carry a `storyId` in their `data`, matching the convention every
+    // other log call in this file uses (e.g. line 313: `{ storyId: "_setup" }`).
+    // The replay/reconstruct consumer falls back to `entry.data?.storyId`
+    // (src/replay/reconstruct.ts:117) when the top-level `entry.storyId`
+    // is absent, so leaving `data.storyId` unset would orphan the refusal
+    // entries from the run's log filter — the exact bug this test pins.
+    resetLogger();
+    initLogger({ level: "silent", suppressConsole: true });
+    const entries: LogEntry[] = [];
+    const unsubscribe = addSink((entry) => entries.push(entry));
+
+    const h = makeHarness();
+    installRuntimeMocks(h);
+
+    const holderPid = 123_456;
+    const acquireLockRefusal: typeof _runSetupDeps.acquireLock = async () => ({
+      acquired: false,
+      holder: { pid: holderPid, host: "holder-machine" },
+    });
+    _runSetupDeps.acquireLock = acquireLockRefusal;
+
+    try {
+      const err = await captureSetupError(h.options);
+      assertCaughtInstanceOf(err, LockAcquisitionError, "setupRun checkout refusal");
+
+      // The checkout-lock refusal must emit two error-level entries on the
+      // "execution" pipeline stage (one diagnostic, one remediation hint).
+      const pipelineErrors = entries.filter((e) => e.level === "error" && e.stage === "execution");
+      expect(pipelineErrors.length).toBeGreaterThanOrEqual(2);
+
+      // Every emitted entry MUST carry a `storyId` in its data so the
+      // rest of the pipeline can group it by story for replay/reconstruct.
+      const offenders = pipelineErrors.filter((e) => typeof e.data?.storyId !== "string");
+      expect(offenders).toEqual([]);
+
+      // Spot-check the actual messages so the test stays honest about
+      // which error calls it's covering (the two checkout-refusal lines).
+      const messages = pipelineErrors.map((e) => e.message);
+      expect(messages).toContain("Another nax process is already running in this directory");
+      expect(messages).toContain("If you believe this is an error, remove nax.lock manually");
+    } finally {
+      unsubscribe();
+      resetLogger();
       cleanupTempDir(h.workdir);
     }
   });
