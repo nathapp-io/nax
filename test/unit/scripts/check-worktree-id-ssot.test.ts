@@ -100,6 +100,19 @@ describe("findWorktreeIdViolations", () => {
     expect(violations[0]?.file).toBe("src/execution/marker-in-string.ts");
   });
 
+  // Regression: a `//` inside a string literal is NOT a comment start.
+  // Otherwise `const m = "//nax-worktree-id-allow: r";` would make the
+  // gate treat the rest of the line as a comment and miss a real
+  // `.nax-wt/<id>` spelling that follows the string literal.
+  test("a `//` inside a string literal does NOT count as a comment start", () => {
+    const src = 'const m = "//nax-worktree-id-allow: r"; const worktreePath = join(root, ".nax-wt", storyId);\n';
+    writeSource(tempDir, "src/execution/marker-via-string-slash-slash.ts", src);
+
+    const violations = findWorktreeIdViolations(tempDir);
+    expect(violations.length).toBeGreaterThan(0);
+    expect(violations[0]?.file).toBe("src/execution/marker-via-string-slash-slash.ts");
+  });
+
   // AC-13: an allowlisted consumer file that spells `.nax-wt` MUST pass.
   test("US-001 AC13: allows src/utils/gitignore.ts (the gitignore entry)", () => {
     writeSource(tempDir, "src/utils/gitignore.ts", 'const ENTRY = ".nax-wt/";\n');

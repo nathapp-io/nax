@@ -87,9 +87,15 @@ describe("WorktreeId — branded string identity", () => {
 
   it("US-001 AC7: deriveBakeoffWorktreeId returns an identity beginning with the prefix 'bakeoff-', unchanged in value for the same inputs", () => {
     // Pinned against the pre-US-001 implementation (src/bakeoff/worktree-id.ts).
-    // Two cases: a normal pair and a profile with characters outside the
-    // allowed alphabet — both must still begin with `bakeoff-` and pass
-    // validateStoryId.
+    // Three cases pin the contract:
+    //   1. short pair — exact value matches the pre-US-001 derivation.
+    //   2. short pair with illegal characters in the profile — the sanitized
+    //      value still passes validateStoryId (no `..` path traversal, no
+    //      forbidden chars).
+    //   3. overlong pair — the truncation/hash-suffix path still fires and
+    //      stays within validateStoryId's 64-char cap, so a US-001 change
+    //      to MAX_WORKTREE_ID_LENGTH, HASH_SUFFIX_LENGTH, or the sanitize
+    //      pass would fail this test for the same inputs.
     const id = deriveBakeoffWorktreeId("my-feature", "claude");
     expect(id.startsWith("bakeoff-")).toBe(true);
     expect(String(id)).toBe("bakeoff-my-feature-claude");
@@ -97,6 +103,13 @@ describe("WorktreeId — branded string identity", () => {
     const id2 = deriveBakeoffWorktreeId("my-feature", "gpu claude/v2!!");
     expect(id2.startsWith("bakeoff-")).toBe(true);
     expect(() => validateStoryId(id2)).not.toThrow();
+
+    const longFeature = "a-very-long-feature-name-that-goes-on-and-on-and-on-and-on";
+    const longProfile = "an-equally-long-contestant-profile-name-that-also-goes-on-forever";
+    const id3 = deriveBakeoffWorktreeId(longFeature, longProfile);
+    expect(id3.startsWith("bakeoff-")).toBe(true);
+    expect(id3.length).toBeLessThanOrEqual(64);
+    expect(() => validateStoryId(id3)).not.toThrow();
   });
 });
 

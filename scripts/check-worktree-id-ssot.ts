@@ -204,12 +204,43 @@ function isCommentLine(line: string): boolean {
 }
 
 /**
- * Drop a trailing `//` comment so prose after real code is not matched. Naive on
- * purpose: a `//` inside a string literal truncates the line early, which can
- * only ever hide a violation (false negative), never invent one.
+ * Find the index of a `//` comment that starts OUTSIDE any string literal.
+ *
+ * A simple `indexOf("//")` would treat a `//` inside a string literal
+ * (`const m = "//nax-worktree-id-allow: r";`) as a comment start, which
+ * lets a marker hidden in a string literal mask a real violation on the
+ * same line. Tracking single/double/template quote state keeps the
+ * check string-aware without a full parser.
+ *
+ * Returns -1 when no such comment exists.
+ */
+function findCommentStart(line: string): number {
+  let quote: '"' | "'" | "`" | null = null;
+  for (let i = 0; i < line.length - 1; i++) {
+    const ch = line[i];
+    if (quote !== null) {
+      if (ch === "\\") {
+        i++; // skip the escaped character
+        continue;
+      }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "/" && line[i + 1] === "/") return i;
+  }
+  return -1;
+}
+
+/**
+ * Drop a trailing `//` comment so prose after real code is not matched.
+ * String-literal-aware so a `//` inside a string doesn't truncate the line.
  */
 function stripTrailingComment(line: string): string {
-  const idx = line.indexOf("//");
+  const idx = findCommentStart(line);
   return idx === -1 ? line : line.slice(0, idx);
 }
 
@@ -253,13 +284,14 @@ export function findWorktreeIdViolations(repoRoot: string): WorktreeIdViolation[
     for (let index = 0; index < lines.length; index++) {
       const line = lines[index] ?? "";
       if (isCommentLine(line)) continue;
-      const commentStart = line.indexOf("//");
+      const commentStart = findCommentStart(line);
       const comment = commentStart === -1 ? "" : line.slice(commentStart);
       // The allow marker only counts when it appears inside a trailing
       // `//` comment. Scanning the full line would let a string literal
       // like `const m = "nax-worktree-id-allow";` mask a real violation
-      // on the same line — the marker must be a comment to be an
-      // exemption.
+      // on the same line — and `commentStart` is string-literal-aware so
+      // the marker can't be smuggled in via a string that contains `//`
+      // either.
       if (comment.includes(ALLOW_MARKER)) continue;
       const code = stripTrailingComment(line);
 
