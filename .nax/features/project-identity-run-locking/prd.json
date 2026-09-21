@@ -3,7 +3,7 @@
   "feature": "project-identity-run-locking",
   "branchName": "feat/project-identity-run-locking",
   "createdAt": "2026-01-20T00:00:00.000Z",
-  "updatedAt": "2026-09-21T10:37:02.328Z",
+  "updatedAt": "2026-09-21T11:12:12.001Z",
   "userStories": [
     {
       "id": "US-001",
@@ -34,8 +34,8 @@
         "concurrency"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -112,7 +112,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Multi-file lifecycle change (setup, setup-init, cleanup, errors, lock) with a strict lock-order contract and partial-acquire unwind that has to work under three failure modes. Existing test files (`test/unit/errors.test.ts`, `test/unit/execution/helpers.test.ts`, `test/unit/utils/utils-helpers.test.ts`) must be updated alongside."
+        "reasoning": "Multi-file lifecycle change (setup, setup-init, cleanup, errors, lock) with a strict lock-order contract and partial-acquire unwind that has to work under three failure modes. Existing test files (`test/unit/errors.test.ts`, `test/unit/execution/helpers.test.ts`, `test/unit/utils/utils-helpers.test.ts`) must be updated alongside.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/lifecycle/run-setup.ts",
@@ -144,6 +147,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "acd98ccf849738a91c006f224f20dbe94f54549f",
       "outOfScope": [
         "Adding the -f feature option to `nax unlock` and threading feature lock through `checkStaleLock` (covered by US-003).",
         "Project identity by remote — claimProjectIdentity relaxing and checkInitCollision adopting isSameProject (covered by US-004).",
