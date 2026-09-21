@@ -39,8 +39,8 @@ bun run report:test-consolidation
 > files / -1,081 lines** across nine batches (§9.34), taking `removable files 95 →
 > 0` and `files 1,409 → 1,314`. Runtime is **19,526 tests / 45,505 expect() / 43
 > skip / 0 fail** — Wave 7 preserved every test and assertion (only preambles
-> dedupe). Remaining: Wave 6 Task 35 (fix/retire the alias-blind
-> `report:test-overlap` / `report:dead-tests`); Tasks 1–34 are landed.
+> dedupe). Remaining: Wave 6 Task 35 — **ruled 2026-09-21 as RETIRE BOTH (§9.35),
+> execution pending**; Tasks 1–34 are landed.
 
 ### 0.1 Runtime state — measured with `bun test`, which is the only authority on test counts
 
@@ -487,10 +487,50 @@ sits at the end of `.nax/rules/test-architecture.md` (the rule this drain enforc
 generated `.claude/rules/` copy regenerated via `bun bin/nax.ts rules export --agent=claude`.
 If you edit the rule, regenerate — `bun run check:rules-drift` fails otherwise.
 
-**Task 35: fix or retire `report:test-overlap` and `report:dead-tests`** (§1.6). Either teach
-them the `@/` alias from `tsconfig.json` `paths`, or delete them with their tests. A tool that
-cannot fail is worse than no tool. `test/unit/scripts/report-{dead-tests,test-overlap}.test.ts`
-pin the current blind behaviour and go with whichever choice.
+**Task 35: fix or retire `report:test-overlap` and `report:dead-tests`** (§1.6).
+**RULED 2026-09-21: RETIRE BOTH. See §9.35 for the argument. Not yet landed — this is
+the last open task in the drain.** The work is mechanical and fully specified below; it
+needs no re-derivation of the analysis.
+
+Delete, in one commit (`chore: retire the alias-blind test-report scripts`):
+
+| Path | Note |
+|:--|:--|
+| `scripts/report-dead-tests.ts` | |
+| `scripts/report-test-overlap.ts` | |
+| `test/unit/scripts/report-dead-tests.test.ts` | 350 lines |
+| `test/unit/scripts/report-test-overlap.test.ts` | 223 lines |
+| `docs/dead-tests-report.md` | checked-in stale output; its one "finding" is its own test file |
+| `package.json:59-60` | the two `report:*` entries |
+
+Then edit §1.6's third-to-last bullet to say the two tools were **retired** on 2026-09-21
+and why, so the trap note does not outlive the tools. Leave the `docs/test-overlap-report.md`
+path alone — it is not checked in.
+
+**Expected numbers after the deletion.** This is the one diff in the whole drain that
+legitimately reduces the test count (§0.3 says a reduction means a behaviour pin was
+deleted — the exception is an explicitly-recorded retirement, which this is). Measured
+before the change: the two files run **32 tests / 53 `expect()`**.
+
+| Reading | Before | After |
+|:--|--:|--:|
+| `bun run test` tests | 19,526 | **19,494** |
+| `expect()` | 45,505 | **45,452** |
+| files | 1,314 | **1,312** |
+| `test/unit/` tests / `expect()` | 18,168 / 42,357 | **18,136 / 42,304** |
+| skip / fail | 43 / 0 | **43 / 0** |
+
+**Gates to run, and what will not move.** `bun run check:all`, both `tsc --noEmit`
+invocations, `bun run test`, `bun run test:coverage`. No baseline in `scripts/baselines/`
+references either file — checked — so none should change. `check:gate-reachability` only
+discovers `scripts/check-*`, so removing two `report-*` scripts cannot trip it.
+`check:test-satellites`, `check:file-sizes`, `check:test-escape-hatches` and
+`check:test-as-unknown-as` are all unaffected. `test:coverage` must still report **0 files
+below the floor and an empty grandfather baseline**; do not re-baseline it (memory
+`never-re-baseline-coverage-locally`).
+
+Record the close in §9 as §9.36, with the runtime numbers read off `bun test` — not
+predicted from this table.
 
 ### Wave 7 — the tail (77 groups, -92 files, -2,910 lines)
 
@@ -2052,3 +2092,53 @@ top of Waves 1–4's −137 files, against the ranker's **`removable files 0` /
 mid-drain (adding test files to the baseline, §9.25/§9.26) and the packer's
 original target was optimistic; the compliance metric — no satellite left that a
 legal packing can absorb — is met. One Wave 6 task (35) is all that remains.
+
+### 9.35 — 2026-09-21, Task 35 ruled (nothing landed yet)
+
+**Ruled: retire both `report:test-overlap` and `report:dead-tests`.** Task 35 offered
+fix-or-retire; the fix option is not merely low-value, it is the harmful one. Three findings,
+in the order that decided it.
+
+**1. `report:dead-tests` is fully subsumed by a real resolver that already runs in CI.**
+`tsconfig.test.json` includes `test/**/*.ts` and `scripts/**/*.ts` and inherits the `@/`,
+`@test/`, `@scripts/` `paths` from `tsconfig.json`. `bun run typecheck` runs
+`tsc --noEmit -p tsconfig.test.json`, so a test importing a deleted `src/` module is a
+TS2307 at the gate. The script's whole job is a regex-and-`existsSync` approximation of
+that. Teaching it the alias buys a second, weaker answer to a question already answered
+correctly. Its one non-overlapping feature is `REMOVED_FEATURES` — a hardcoded four-string
+list whose only current hit, per the checked-in `docs/dead-tests-report.md`, is the script's
+own test file matching its own constants.
+
+**2. Its record is 0 true positives and 2 destructive false positives.** The script's own
+header documents the first: an ESM `.js`-specifier bug "has already cost this repo five real
+test files (98b27affe)". `test/unit/optimizer/index.test.ts:1-7` documents the second — the
+`rule-based` optimizer "lost its 24 tests 15 days later to a false positive in
+report-dead-tests", and the built-in was removed with them.
+`docs/superpowers/specs/2026-09-08-acp-catalog-pricing-design.md:240` warns a third reader
+off it. **Every recorded effect this tool has had on the repo was to delete working tests.**
+Fixing the alias restores exactly that capability across 4,549 imports instead of 27.
+
+**3. For `report:test-overlap` the alias is not the defect — the heuristic is.** It calls an
+integration file "REDUNDANT, 100%" when a unit file sharing any one import has
+string-equal `describe()` names. Today the alias blindness keeps it silent; fixing the alias
+is what makes that heuristic *fire*, and each time it fires it recommends deleting an
+integration test on the evidence that two authors picked the same describe string. §0.3
+already measured the ground truth by other means: ~234 duplicated names / 1.8% of named
+tests, "almost all legitimately-parallel names in different modules". That is precisely the
+population this tool would report as redundant. A fix here converts a tool that cannot fail
+into a tool that fails destructively, against a question the drain has already answered.
+
+Against that, the cost of retiring is bounded and checked: neither script is reachable from
+any gate (`check:gate-reachability` discovers only `scripts/check-*`), neither appears in any
+file under `scripts/baselines/`, and no code outside their own tests imports them. §1.6
+already tells every reader "do not use them", so the retirement only makes the tree agree
+with the doc.
+
+The 32 tests / 53 `expect()` lost with the two test files are an **explicitly recorded
+retirement**, not the §0.3 red flag: they pin the blind behaviour of tools being deleted, and
+`test-architecture.md` has no module for them to belong to afterwards. This is the only
+sanctioned test-count reduction in the drain outside Wave 5's collapses.
+
+Nothing is landed. Counts at ruling time are unchanged from §9.34: 19,526 tests / 1,314 files
+/ 45,505 `expect()` / 43 skip / 0 fail. §3 Task 35 carries the deletion list and the expected
+post-change numbers.
