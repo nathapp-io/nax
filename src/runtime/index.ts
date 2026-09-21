@@ -76,6 +76,7 @@ export type {
   PromptAuditErrorEntry,
 } from "./prompt-auditor";
 export { _promptAuditorDeps, createNoOpPromptAuditor, PromptAuditor } from "./prompt-auditor";
+export { isSameProject } from "./same-project";
 export { formatSessionName } from "./session-name";
 export type { CanonicalSessionRole, SessionRole } from "./session-role";
 export { isSessionRole, KNOWN_SESSION_ROLES } from "./session-role";

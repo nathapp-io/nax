@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { featuresDir, globalConfigDir, PROJECT_FEATURES_DIR, projectConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
-import { readProjectIdentity } from "../runtime";
+import { isSameProject, readProjectIdentity } from "../runtime";
 import {
   NAX_GITIGNORE_ENTRIES,
   NAX_NAXIGNORE_ENTRIES,
@@ -64,7 +64,8 @@ export interface InitCollisionResult {
 /**
  * Check whether a project name is already claimed by a different project.
  * Returns `{ collision: false }` if the name is unclaimed or claimed by the
- * same project (matched by remote URL or workdir when no remote exists).
+ * same project (matched by remote URL with normalization, or by workdir when
+ * no remote exists on either side).
  */
 export async function checkInitCollision(
   name: string,
@@ -74,7 +75,7 @@ export async function checkInitCollision(
   const identity = await readProjectIdentity(name);
   if (!identity) return { collision: false };
 
-  const sameRemote = currentRemote !== null && identity.remoteUrl !== null && currentRemote === identity.remoteUrl;
+  const sameRemote = isSameProject(currentRemote, identity.remoteUrl);
   const sameWorkdir = !currentRemote && !identity.remoteUrl && currentWorkdir === identity.workdir;
   if (sameRemote || sameWorkdir) return { collision: false };
 
