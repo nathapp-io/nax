@@ -35,7 +35,7 @@ function getSafeLogger() {
  * the BUG-34 fix to restore a wrongly-stolen lock without ever overwriting a
  * lock a third process has since legitimately created.
  */
-async function tryExclusiveCreate(targetPath: string, content: string): Promise<boolean> {
+export async function tryExclusiveCreate(targetPath: string, content: string): Promise<boolean> {
   const fs = await import("node:fs");
   try {
     const fd = fs.openSync(targetPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o644);
