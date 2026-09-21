@@ -621,3 +621,73 @@ describe("checkInitCollision", () => {
     expect(result.existing?.workdir).toBe("/tmp/other-project");
   });
 });
+
+describe("checkInitCollision (US-004 — worktree branch identity)", () => {
+  const KEY = "nax-test-init-check-collision-us004";
+  const identityDir = join(globalConfigDir(), KEY);
+
+  test("returns collision:false when ssh remote matches stored https form of the same repo", async () => {
+    await writeProjectIdentity(KEY, {
+      name: KEY,
+      workdir: "/tmp/original",
+      remoteUrl: "https://github.com/o/r.git",
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+    try {
+      const result = await checkInitCollision(KEY, "/tmp/worktree", "git@github.com:o/r.git");
+      expect(result.collision).toBe(false);
+    } finally {
+      await Bun.$`rm -rf ${identityDir}`.quiet().nothrow();
+    }
+  });
+
+  test("returns collision:false when both remotes are absent and workdir equals stored one", async () => {
+    await writeProjectIdentity(KEY, {
+      name: KEY,
+      workdir: "/tmp/some-path",
+      remoteUrl: null,
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+    try {
+      const result = await checkInitCollision(KEY, "/tmp/some-path", null);
+      expect(result.collision).toBe(false);
+    } finally {
+      await Bun.$`rm -rf ${identityDir}`.quiet().nothrow();
+    }
+  });
+
+  test("returns collision:true when the stored remote is for a different repository", async () => {
+    await writeProjectIdentity(KEY, {
+      name: KEY,
+      workdir: "/tmp/some-path",
+      remoteUrl: "https://github.com/o/r.git",
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+    try {
+      const result = await checkInitCollision(KEY, "/tmp/other", "https://github.com/o/different-repo.git");
+      expect(result.collision).toBe(true);
+      expect(result.existing?.remoteUrl).toBe("https://github.com/o/r.git");
+    } finally {
+      await Bun.$`rm -rf ${identityDir}`.quiet().nothrow();
+    }
+  });
+
+  test("returns collision:false when workdirs differ but normalized remotes match (https vs https-with-credentials)", async () => {
+    await writeProjectIdentity(KEY, {
+      name: KEY,
+      workdir: "/tmp/original",
+      remoteUrl: "https://github.com/o/r.git",
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+    try {
+      const result = await checkInitCollision(KEY, "/tmp/worktree", "https://user:pass@github.com/o/r.git");
+      expect(result.collision).toBe(false);
+    } finally {
+      await Bun.$`rm -rf ${identityDir}`.quiet().nothrow();
+    }
+  });
+});

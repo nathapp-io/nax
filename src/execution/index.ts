@@ -32,6 +32,22 @@ export {
 export { ensureStoryPackageDirs } from "./ensure-package-dirs";
 export { calculateMaxIterations, escalateTier, getTierConfig, resolveMaxAttemptsOutcome } from "./escalation";
 export { buildPreviewRouting } from "./executor-types";
+// US-001 public surface: feature-lock primitive must be importable from the
+// execution barrel (matching `acquireLock` / `_lockDeps` / etc.) so tests and
+// production callers can depend on the public barrel rather than reaching
+// into the internal `./feature-lock` module. `_featureLockDeps` is the
+// testability seam for the host / process-alive / rename overrides.
+export {
+  _featureLockDeps,
+  acquireFeatureLock,
+  type FeatureLockRecord,
+  type FeatureLockResult,
+  featureLockPath,
+  isLockReclaimable,
+  isLockSuspect,
+  lockHost,
+  releaseFeatureLock,
+} from "./feature-lock";
 export {
   _lockDeps,
   acquireLock,
@@ -40,6 +56,7 @@ export {
   formatProgress,
   getAllReadyStories,
   hookCtx,
+  type LockAcquisitionResult,
   maybeGetContext,
   releaseLock,
   type StoryCounts,

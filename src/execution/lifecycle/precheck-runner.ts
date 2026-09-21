@@ -14,6 +14,7 @@ import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction/chain";
 import { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd/types";
+import { projectOutputDir } from "@/runtime";
 import type { StatusWriter } from "../status-writer";
 
 export interface PrecheckContext {
@@ -46,10 +47,23 @@ export async function runPrecheckValidation(ctx: PrecheckContext): Promise<void>
   logger?.info("precheck", "Running precheck validations...");
 
   const { runPrecheck } = await import("@/precheck");
+
+  // US-003: derive the project output directory from `ctx.config` +
+  // `ctx.workdir` so the run can thread its feature lock through to
+  // `checkStaleLock`. `projectKey` lives in a bare block in run-setup.ts
+  // that isn't in scope here, so we recompute it the same way (config.name
+  // or the workdir's basename). When the run has no featureName (e.g. the
+  // `nax plan` path), no featureLock is threaded and the stale-lock check
+  // stays checkout-only.
+  const projectKey = ctx.config.name?.trim() || path.basename(ctx.workdir);
+  const outputDir = projectOutputDir(projectKey, ctx.config.outputDir);
+  const featureLock = ctx.featureName !== undefined ? { outputDir, feature: ctx.featureName } : undefined;
+
   const precheckResult = await runPrecheck(ctx.config, ctx.prd, {
     workdir: ctx.workdir,
     format: "human",
     silent: true,
+    ...(featureLock !== undefined ? { featureLock } : {}),
   });
 
   // Log precheck results to JSONL

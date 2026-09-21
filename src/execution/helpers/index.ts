@@ -23,7 +23,12 @@
  */
 
 // Lock management
-export { _lockDeps, acquireLock, releaseLock } from "../lock";
+export {
+  _lockDeps,
+  acquireLock,
+  type LockAcquisitionResult,
+  releaseLock,
+} from "../lock";
 // Story context building
 export {
   buildStoryContext,

@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
+import { unlink } from "node:fs/promises";
+import { hostname } from "node:os";
 import path from "node:path";
 import { spawn } from "bun";
 import type { StoryCounts } from "@/execution";
 import { _lockDeps, acquireLock, formatProgress, releaseLock } from "@/execution";
+import { tryExclusiveCreate } from "@/execution/lock";
 
 describe("formatProgress", () => {
   test("formats progress with all stories pending", () => {
@@ -154,9 +157,15 @@ describe("acquireLock and releaseLock", () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
+  test("tryExclusiveCreate preserves an existing lock record", async () => {
+    expect(await tryExclusiveCreate(lockPath, "first")).toBe(true);
+    expect(await tryExclusiveCreate(lockPath, "second")).toBe(false);
+    expect(await Bun.file(lockPath).text()).toBe("first");
+  });
+
   test("acquires lock when no lock file exists", async () => {
     const acquired = await acquireLock(testDir);
-    expect(acquired).toBe(true);
+    expect(acquired.acquired).toBe(true);
 
     // Verify lock file was created
     const lockFile = Bun.file(lockPath);
@@ -174,11 +183,15 @@ describe("acquireLock and releaseLock", () => {
   test("fails to acquire lock when another process holds it", async () => {
     // First process acquires lock
     const acquired1 = await acquireLock(testDir);
-    expect(acquired1).toBe(true);
+    expect(acquired1.acquired).toBe(true);
 
     // Second process tries to acquire lock
     const acquired2 = await acquireLock(testDir);
-    expect(acquired2).toBe(false);
+    expect(acquired2.acquired).toBe(false);
+    if (acquired2.acquired === false) {
+      // US-002: the refusal names the live holder (our own process).
+      expect(acquired2.holder.pid).toBe(process.pid);
+    }
 
     await releaseLock(testDir);
   });
@@ -194,12 +207,12 @@ describe("acquireLock and releaseLock", () => {
 
   test("can re-acquire lock after release", async () => {
     const acquired1 = await acquireLock(testDir);
-    expect(acquired1).toBe(true);
+    expect(acquired1.acquired).toBe(true);
 
     await releaseLock(testDir);
 
     const acquired2 = await acquireLock(testDir);
-    expect(acquired2).toBe(true);
+    expect(acquired2.acquired).toBe(true);
 
     await releaseLock(testDir);
   });
@@ -215,7 +228,7 @@ describe("acquireLock and releaseLock", () => {
 
     // Try to acquire lock - should detect stale lock and remove it
     const acquired = await acquireLock(testDir);
-    expect(acquired).toBe(true);
+    expect(acquired.acquired).toBe(true);
 
     // Verify new lock file has current PID
     const lockFile = Bun.file(lockPath);
@@ -245,7 +258,7 @@ describe("acquireLock and releaseLock", () => {
     }) as typeof process.kill;
 
     try {
-      expect(await acquireLock(testDir)).toBe(false);
+      expect((await acquireLock(testDir)).acquired).toBe(false);
 
       // The holder's lock must still be on disk, untouched.
       const lockData = JSON.parse(await Bun.file(lockPath).text());
@@ -278,7 +291,7 @@ describe("acquireLock and releaseLock", () => {
 
     // Now try to acquire lock - should detect child process is dead
     const acquired = await acquireLock(testDir);
-    expect(acquired).toBe(true);
+    expect(acquired.acquired).toBe(true);
 
     // Verify new lock has current PID
     const lockFile = Bun.file(lockPath);
@@ -299,7 +312,11 @@ describe("acquireLock and releaseLock", () => {
 
     // Try to acquire lock - should NOT remove it since process is alive
     const acquired = await acquireLock(testDir);
-    expect(acquired).toBe(false);
+    expect(acquired.acquired).toBe(false);
+    if (acquired.acquired === false) {
+      // US-002: the refusal names the live holder (our own process).
+      expect(acquired.holder.pid).toBe(process.pid);
+    }
 
     // Verify lock still exists with same PID
     const lockFile = Bun.file(lockPath);
@@ -314,7 +331,7 @@ describe("acquireLock and releaseLock", () => {
 
     // Should treat corrupt lock as stale and acquire successfully
     const acquired = await acquireLock(testDir);
-    expect(acquired).toBe(true);
+    expect(acquired.acquired).toBe(true);
   });
 
   test("handles release when lock file doesn't exist", async () => {
@@ -333,7 +350,7 @@ describe("acquireLock and releaseLock", () => {
     // both believing they hold the lock simultaneously.
     const results = await Promise.all(Array.from({ length: 10 }, () => acquireLock(testDir)));
 
-    const winners = results.filter(Boolean);
+    const winners = results.filter((r) => r.acquired);
     expect(winners.length).toBe(1);
 
     // No `.stale.<pid>.<ts>` tombstone left behind — the winner's rename
@@ -374,7 +391,7 @@ describe("acquireLock and releaseLock", () => {
       }) as typeof _lockDeps.rename;
 
       const acquired = await acquireLock(testDir);
-      expect(acquired).toBe(false);
+      expect(acquired.acquired).toBe(false);
 
       // The freshly-created live lock must be restored, untouched, at lockPath.
       const lockData = JSON.parse(await Bun.file(lockPath).text());
@@ -403,7 +420,7 @@ describe("acquireLock and releaseLock", () => {
       }) as typeof _lockDeps.rename;
 
       const acquired = await acquireLock(testDir);
-      expect(acquired).toBe(false);
+      expect(acquired.acquired).toBe(false);
 
       // Racer D's lock must survive untouched.
       const lockData = JSON.parse(await Bun.file(lockPath).text());
@@ -414,5 +431,82 @@ describe("acquireLock and releaseLock", () => {
       const entries = readdirSync(testDir);
       expect(entries.some((e) => e.includes(".stale."))).toBe(false);
     });
+  });
+
+  describe("read-vs-exists race: lock file vanishes between exists() and the read (deterministic)", () => {
+    // BUG-07's own concurrency test only exercises this window when real OS
+    // scheduling happens to interleave racers so one's exists() sees the file
+    // and another's rename/release removes it before the first racer reads —
+    // observed to fail intermittently in CI without ever reproducing locally.
+    // Force the window deterministically via `_lockDeps.readLockText`.
+    let originalReadLockText: typeof _lockDeps.readLockText;
+
+    beforeEach(() => {
+      originalReadLockText = _lockDeps.readLockText;
+    });
+
+    afterEach(() => {
+      _lockDeps.readLockText = originalReadLockText;
+    });
+
+    test("treats a vanished lock file as absent and acquires successfully", async () => {
+      const stalePid = 999999;
+      await Bun.write(lockPath, JSON.stringify({ pid: stalePid, timestamp: Date.now() - 60000 }));
+
+      _lockDeps.readLockText = async (path: string) => {
+        // Simulate another racer removing the lock in the window between our
+        // exists() check (which already observed the file) and this read.
+        await unlink(path).catch(() => {});
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      };
+
+      const acquired = await acquireLock(testDir);
+      expect(acquired.acquired).toBe(true);
+
+      const lockData = JSON.parse(await Bun.file(lockPath).text());
+      expect(lockData.pid).toBe(process.pid);
+
+      await releaseLock(testDir);
+    });
+
+    test("propagates a non-ENOENT read failure instead of masking it", async () => {
+      await Bun.write(lockPath, JSON.stringify({ pid: 999999, timestamp: Date.now() - 60000 }));
+
+      _lockDeps.readLockText = async () => {
+        throw new Error("EIO: simulated disk failure");
+      };
+
+      await expect(acquireLock(testDir)).rejects.toThrow("EIO");
+    });
+  });
+
+  test("US-002 AC11: the lock record written by acquireLock carries host alongside pid and timestamp", async () => {
+    const acquired = await acquireLock(testDir);
+    expect(acquired.acquired).toBe(true);
+
+    const lockData = JSON.parse(await Bun.file(lockPath).text());
+    expect(lockData.pid).toBe(process.pid);
+    expect(typeof lockData.timestamp).toBe("number");
+    // US-002: the written record gains `host` next to `pid` and `timestamp`.
+    expect(typeof lockData.host).toBe("string");
+    expect(lockData.host.length).toBeGreaterThan(0);
+    expect(lockData.host).toBe(hostname());
+
+    await releaseLock(testDir);
+  });
+
+  test("US-002 AC12: acquires and replaces a checkout-lock record that has no host field and whose recorded PID is not alive", async () => {
+    // Plant a legacy record: no `host` field, dead PID.
+    const deadPid = 999999;
+    await Bun.write(lockPath, JSON.stringify({ pid: deadPid, timestamp: Date.now() - 60000 }));
+
+    const result = await acquireLock(testDir);
+    expect(result.acquired).toBe(true);
+
+    // The record was replaced: the new lock carries the current process.
+    const lockData = JSON.parse(await Bun.file(lockPath).text());
+    expect(lockData.pid).toBe(process.pid);
+
+    await releaseLock(testDir);
   });
 });

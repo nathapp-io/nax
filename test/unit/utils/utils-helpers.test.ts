@@ -197,12 +197,13 @@ describe("acquireLock / releaseLock", () => {
 
   it("acquire → locked (no double-acquire) → release → reacquire lifecycle", async () => {
     const lockPath = path.join(testDir, "nax.lock");
-    expect(await acquireLock(testDir)).toBe(true);
+    expect((await acquireLock(testDir)).acquired).toBe(true);
     expect(fs.existsSync(lockPath)).toBe(true);
-    expect(await acquireLock(testDir)).toBe(false);
+    // US-002: a held lock is refused (acquired discriminator flipped), never a double-acquire.
+    expect((await acquireLock(testDir)).acquired).toBe(false);
     await releaseLock(testDir);
     expect(fs.existsSync(lockPath)).toBe(false);
-    expect(await acquireLock(testDir)).toBe(true);
+    expect((await acquireLock(testDir)).acquired).toBe(true);
   });
 
   it("removes stale lock from dead process", async () => {
@@ -216,7 +217,7 @@ describe("acquireLock / releaseLock", () => {
 
     // Should acquire lock by removing stale lock
     const acquired = await acquireLock(testDir);
-    expect(acquired).toBe(true);
+    expect(acquired.acquired).toBe(true);
   });
 
   it("handles non-existent directory gracefully during release", async () => {

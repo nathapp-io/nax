@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
+import { isSameProject } from "./same-project";
 
 export interface ProjectIdentity {
   name: string;
@@ -70,7 +71,14 @@ export async function writeProjectIdentity(projectKey: string, identity: Project
  *
  * - First call: writes the identity file under ~/.nax/<projectKey>/.identity
  * - Same workdir on subsequent calls: updates lastSeen only (idempotent)
- * - Different workdir: no-op (collision detection is the responsibility of nax init)
+ * - Workdir differs but normalized remotes match: refresh lastSeen and leave
+ *   the stored workdir at the registered value (US-004 — worktrees of one
+ *   repository share one identity, anchored to the workdir that first
+ *   claimed it).
+ * - Different workdir AND different remotes (or both remotes null): throw
+ *   RUN_NAME_COLLISION. The workdir-equality fallback for non-git projects
+ *   is preserved: when git remote lookup fails on both sides, workdir is
+ *   the only available identity signal.
  */
 export async function claimProjectIdentity(
   projectKey: string,
@@ -82,6 +90,12 @@ export async function claimProjectIdentity(
 
   if (existing) {
     if (existing.workdir === workdir) {
+      await writeProjectIdentity(projectKey, { ...existing, lastSeen: now });
+      return;
+    }
+    if (isSameProject(remoteUrl, existing.remoteUrl)) {
+      // Same repository under a different checkout (worktree). Refresh
+      // lastSeen; the registered workdir stays as the identity's anchor.
       await writeProjectIdentity(projectKey, { ...existing, lastSeen: now });
       return;
     }

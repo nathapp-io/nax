@@ -30,6 +30,7 @@ import { clearWorkspaceCache } from "@/test-runners/detect";
 import { errorMessage } from "@/utils/errors";
 import { clearGitRootCache } from "@/verification";
 import { resetRuntimeCrashRetryCounts } from "../escalation";
+import { releaseFeatureLock } from "../feature-lock";
 import { releaseLock } from "../helpers";
 // Sibling import: the wipe is a local lifecycle module, and routing it through
 // the lifecycle barrel would point this module at its own barrel to reach the
@@ -53,6 +54,11 @@ export const _runCleanupDeps = {
   // US-004 — end-of-run scratchpad wipe. Injected so the test can stub a
   // fail-open path without monkey-patching Bun.file / fs.rm.
   wipeScratchpad,
+  // US-002 release seams: `cleanupRun` must release both locks at the bottom
+  // (feature first, then checkout). Injected so a test can observe ordering;
+  // the always-release call itself is the implementer's work.
+  releaseLock,
+  releaseFeatureLock,
 };
 
 export interface RunCleanupOptions {
@@ -328,6 +334,28 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
     }
   }
 
-  // Always release lock, even if execution fails
-  await releaseLock(workdir);
+  // Always release both locks (in reverse acquisition order) at the end of
+  // the finally block, even if execution or cleanup threw. The feature lock
+  // comes down first (acquired second, in setupRun), then the checkout lock.
+  // US-002: missing outputDir/feature silently no-ops the feature release;
+  // releaseFeatureLock itself leaves a holder's lock in place when the on-disk
+  // runId doesn't match this run's (US-001 invariant). Release sites are
+  // routed through `_runCleanupDeps` so tests can observe the ordering via
+  // the same injectable seam.
+  if (options.outputDir && options.feature && options.runId) {
+    try {
+      await _runCleanupDeps.releaseFeatureLock({
+        outputDir: options.outputDir,
+        feature: options.feature,
+        runId: options.runId,
+      });
+    } catch (err) {
+      logger?.warn("cleanup", "Failed to release feature lock", {
+        outputDir: options.outputDir,
+        feature: options.feature,
+        error: errorMessage(err),
+      });
+    }
+  }
+  await _runCleanupDeps.releaseLock(workdir);
 }
