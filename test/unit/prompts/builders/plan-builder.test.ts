@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { AgentRoutingProfile } from "@/config";
 import type { PackageSummary } from "@/prompts";
 import { PlanPromptBuilder } from "@/prompts";
 
@@ -213,6 +214,53 @@ describe("PlanPromptBuilder.jsonRepair() — US-002", () => {
     const result2 = PlanPromptBuilder.jsonRepair(0, "Error type B");
     expect(result1).not.toEqual(result2);
   });
+
+  test("static method exists and returns a string; returns non-empty string; output contains the word JSON", () => {
+    const result = PlanPromptBuilder.jsonRepair(0, "Invalid JSON");
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+    expect(result).toContain("JSON");
+  });
+
+  test("output includes the parseError string passed as argument", () => {
+    const parseError = "JSON parse error: expected { at position 42";
+    const result = PlanPromptBuilder.jsonRepair(0, parseError);
+    expect(result).toContain(parseError);
+  });
+
+  test("output includes parseError with special characters", () => {
+    const parseError = "Unexpected token } at line 5, column 12 — expected ]";
+    const result = PlanPromptBuilder.jsonRepair(1, parseError);
+    expect(result).toContain(parseError);
+  });
+
+  test("output includes parseError with empty string (should still work)", () => {
+    const result = PlanPromptBuilder.jsonRepair(0, "");
+    expect(result).toContain("JSON");
+  });
+
+  test("with different attempt numbers", () => {
+    const error = "test error";
+    const result0 = PlanPromptBuilder.jsonRepair(0, error);
+    const result1 = PlanPromptBuilder.jsonRepair(1, error);
+    const result2 = PlanPromptBuilder.jsonRepair(2, error);
+
+    // All should contain the error
+    expect(result0).toContain(error);
+    expect(result1).toContain(error);
+    expect(result2).toContain(error);
+
+    // All should contain JSON
+    expect(result0).toContain("JSON");
+    expect(result1).toContain("JSON");
+    expect(result2).toContain("JSON");
+  });
+
+  test("can be used in a prompt template", () => {
+    const repair = PlanPromptBuilder.jsonRepair(0, "Trailing comma at line 20");
+    expect(repair.length).toBeGreaterThan(50); // Long enough to be a real prompt
+    expect(repair).toContain("complete PRD JSON");
+  });
 });
 
 // ─── PlanPromptBuilder.buildRefineContinuation() ─────────────────────────────
@@ -378,10 +426,10 @@ describe("PlanPromptBuilder.buildSpecDriftRepair()", () => {
     expect(prompt).toContain("- US-002 AC[3] (shell-command): [file] src/b.ts contains a guard");
   });
 
-  test("keeps the violations in the order given, so the list matches the checker's output", () => {
+  test("keeps the violations in the order given, so the list matches the checker's output; guards the correct ACs: the model is told not to weaken what is already right", () => {
     const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
-
     expect(prompt.indexOf("US-001 AC[0]")).toBeLessThan(prompt.indexOf("US-002 AC[3]"));
+    expect(prompt).toContain("Do not remove or weaken acceptance criteria that are already correct.");
   });
 
   test("names the deprecated tags to strip and the runtime tags that replace them", () => {
@@ -396,12 +444,6 @@ describe("PlanPromptBuilder.buildSpecDriftRepair()", () => {
 
     expect(prompt).toContain("Write the corrected PRD to this file path: /tmp/feature/prd.json");
     expect(prompt).toContain("Do not output the PRD in chat.");
-  });
-
-  test("guards the correct ACs: the model is told not to weaken what is already right", () => {
-    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
-
-    expect(prompt).toContain("Do not remove or weaken acceptance criteria that are already correct.");
   });
 });
 
@@ -434,5 +476,44 @@ describe("PlanPromptBuilder.buildOutOfScopeRepair()", () => {
 
     expect(prompt).toContain("Write the corrected PRD to this file path: /tmp/feature/prd.json");
     expect(prompt).toContain("Do not output the PRD in chat.");
+  });
+});
+
+// ─── Agent routing profiles ───────────────────────────────────────────────────
+
+const PROFILES: AgentRoutingProfile[] = [
+  {
+    id: "opencode-structural",
+    target: { agent: "opencode", model: "fast" },
+    strengths: ["mechanical edits"],
+  },
+  {
+    id: "claude-final",
+    target: { agent: "claude", model: "balanced" },
+    strengths: ["design work"],
+  },
+];
+
+describe("PlanPromptBuilder agent profiles", () => {
+  test("build(): injects capability cards and an agentProfileId schema field when profiles exist", () => {
+    const { taskContext, outputFormat } = new PlanPromptBuilder().build(
+      "spec",
+      "context",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      PROFILES,
+    );
+    expect(taskContext).toContain("## Agent Profiles");
+    expect(taskContext).toContain("opencode-structural");
+    expect(outputFormat).toContain("agentProfileId");
+  });
+
+  test("build(): omits cards and the schema field when no profiles", () => {
+    const { taskContext, outputFormat } = new PlanPromptBuilder().build("spec", "context");
+    expect(taskContext).not.toContain("## Agent Profiles");
+    expect(outputFormat).not.toContain("agentProfileId");
   });
 });

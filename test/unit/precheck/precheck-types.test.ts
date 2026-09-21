@@ -68,25 +68,14 @@ describe("PrecheckResult type structure", () => {
 });
 
 describe("Check type structure", () => {
-  test("Check has required name field", () => {
+  test("Check has required name field; Check has required tier field", () => {
     const check: Check = {
       name: "test-check",
       tier: "blocker",
       passed: true,
       message: "Check passed",
     };
-
     expect(check.name).toBe("test-check");
-  });
-
-  test("Check has required tier field", () => {
-    const check: Check = {
-      name: "test-check",
-      tier: "blocker",
-      passed: true,
-      message: "Check passed",
-    };
-
     expect(check.tier).toBe("blocker");
   });
 

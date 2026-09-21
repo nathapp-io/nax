@@ -59,8 +59,7 @@ const SKIP_FILES = new Set([
   "test/integration/execution/status-file-integration.test.ts",
   // Pattern B (makeStory) - local factory functions
   "test/unit/metrics/tracker-escalation.test.ts",
-  "test/unit/metrics/tracker-full-suite-gate.test.ts",
-  "test/unit/metrics/tracker-runtime-crashes.test.ts",
+  "test/unit/metrics/tracker-provider-cost.test.ts",
   "test/unit/metrics/tracker.test.ts",
   "test/unit/pipeline/stages/completion-semantic.test.ts",
   "test/unit/pipeline/stages/acceptance-setup-fingerprint.test.ts",
@@ -79,6 +78,7 @@ const SKIP_FILES = new Set([
   "test/unit/context/engine/orchestrator-factory.test.ts",
   "test/unit/context/engine/prior-run-failure-factory.test.ts",
   "test/unit/cli/plan-decompose-ac13-14.test.ts",
+  "test/unit/cli/plan-callop.test.ts",
   "test/unit/cli/plan-decompose-guards.test.ts",
   "test/unit/cli/plan-decompose-adapter.test.ts",
   "test/unit/verification/rectification-loop.test.ts",

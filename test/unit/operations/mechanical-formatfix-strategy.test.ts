@@ -85,40 +85,20 @@ function makeDeps(overrides: Partial<MechanicalFormatFixDeps> = {}): MechanicalF
 }
 
 describe("makeMechanicalFormatFixStrategy — shape", () => {
-  test("name is mechanical-formatfix", () => {
+  test("name is mechanical-formatfix; maxAttempts is 1; coRun is exclusive; fixOp kind is deterministic; fixOp name is mechanical-formatfix", () => {
     const strategy = makeMechanicalFormatFixStrategy();
     expect(strategy.name).toBe("mechanical-formatfix");
-  });
-
-  test("maxAttempts is 1", () => {
-    const strategy = makeMechanicalFormatFixStrategy();
     expect(strategy.maxAttempts).toBe(1);
-  });
-
-  test("coRun is exclusive", () => {
-    const strategy = makeMechanicalFormatFixStrategy();
     expect(strategy.coRun).toBe("exclusive");
-  });
-
-  test("fixOp kind is deterministic", () => {
-    const strategy = makeMechanicalFormatFixStrategy();
     expect(strategy.fixOp.kind).toBe("deterministic");
-  });
-
-  test("fixOp name is mechanical-formatfix", () => {
-    const strategy = makeMechanicalFormatFixStrategy();
     expect(strategy.fixOp.name).toBe("mechanical-formatfix");
   });
 });
 
 describe("makeMechanicalFormatFixStrategy — appliesTo predicate", () => {
-  test("returns true for findings with source=lint (format findings tagged as lint)", () => {
+  test("returns true for findings with source=lint (format findings tagged as lint); returns false for findings with source=test-runner", () => {
     const strategy = makeMechanicalFormatFixStrategy();
     expect(strategy.appliesTo(makeFinding({ source: "lint" }))).toBe(true);
-  });
-
-  test("returns false for findings with source=test-runner", () => {
-    const strategy = makeMechanicalFormatFixStrategy();
     expect(strategy.appliesTo(makeFinding({ source: "test-runner" }))).toBe(false);
   });
 });

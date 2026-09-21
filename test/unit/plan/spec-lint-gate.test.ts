@@ -43,10 +43,11 @@ function caughtNaxError(run: () => void): NaxError {
 const OPTIONS = { specPath: "docs/specs/SPEC-fixture.md", featureName: "fixture", workdir: "/tmp/nonexistent-workdir" };
 
 describe("assertSpecLintClean", () => {
-  test("throws on a Modifies block that declares intent but extracts nothing", () => {
+  test("throws on a Modifies block that declares intent but extracts nothing; skips every check when the caller opted out", () => {
     const dropped = `Modifies:
 - **US-001** \`src/a.ts\` — reason`;
     expect(() => assertSpecLintClean(spec(dropped), OPTIONS)).toThrow(NaxError);
+    expect(assertSpecLintClean(spec(dropped), { ...OPTIONS, skip: true })).toEqual([]);
   });
 
   test("names the blocking codes and the spec path in the thrown error's context", () => {
@@ -69,11 +70,5 @@ describe("assertSpecLintClean", () => {
 
   test("returns no findings for a spec whose sections all round-trip", () => {
     expect(assertSpecLintClean(spec(CLEAN), OPTIONS)).toEqual([]);
-  });
-
-  test("skips every check when the caller opted out", () => {
-    const dropped = `Modifies:
-- **US-001** \`src/a.ts\` — reason`;
-    expect(assertSpecLintClean(spec(dropped), { ...OPTIONS, skip: true })).toEqual([]);
   });
 });

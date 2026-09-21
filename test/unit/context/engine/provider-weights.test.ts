@@ -97,9 +97,10 @@ function followedChunk(id: string, providerId: string, kind: ChunkVerdict["kind"
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("deriveProviderWeights — empty input (AC6)", () => {
-  test("AC6: empty manifest list → 1.0 for any queried provider ID", () => {
+  test("AC6: empty manifest list → 1.0 for any queried provider ID; AC6 (empty string lookup): empty-string provider ID also returns 1.0", () => {
     const weights = deriveProviderWeights([]);
     expect(weights["any-provider-id"]).toBe(1.0);
+    expect(weights[""]).toBe(1.0);
   });
 
   test("AC6 (multiple lookups): every provider query returns 1.0", () => {
@@ -107,12 +108,6 @@ describe("deriveProviderWeights — empty input (AC6)", () => {
     for (const id of ["static-rules", "git-history", "code-neighbor", "feature-context", "session-scratch"]) {
       expect(weights[id]).toBe(1.0);
     }
-  });
-
-  test("AC6 (empty string lookup): empty-string provider ID also returns 1.0", () => {
-    // The empty key is harmless — any string lookup must return 1.0.
-    const weights = deriveProviderWeights([]);
-    expect(weights[""]).toBe(1.0);
   });
 });
 

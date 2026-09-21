@@ -15,6 +15,7 @@ import { join } from "node:path";
 import {
   assertDefined,
   cleanupTempDir,
+  makeAgentResult,
   makeContextBundle,
   makeDispatchContext,
   makeFinding,
@@ -25,8 +26,10 @@ import {
   makeStatusWriter,
   makeStory,
   makeTempDir,
+  makeTestContext,
   makeWorktreeManager,
 } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { SequentialExecutionContext } from "@/execution/executor-types";
 import { _iterationRunnerDeps, releaseHeavyPipelineContext, runIteration } from "@/execution/iteration-runner";
 import type { IsolationCheck } from "@/execution/types";
@@ -36,6 +39,7 @@ import type { PipelineContext, PipelineStage, RoutingResult } from "@/pipeline/t
 import type { PRD, UserStory } from "@/prd/types";
 import type { SelfVerificationResult } from "@/quality";
 import { storyExecRoot } from "@/runtime";
+import { WorktreeManager } from "@/worktree/manager";
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
@@ -428,5 +432,225 @@ describe("releaseHeavyPipelineContext", () => {
     expect(ctx.tddIsolations).toBeUndefined();
     // Fields that must survive — not part of the "heavy" set.
     expect(ctx.story.id).toBe("US-001");
+  });
+
+  test("drops per-story payloads without clearing durable execution state", () => {
+    const largeText = "payload".repeat(1_000);
+    const initialStory = makeStory({ id: "US-001" });
+    const ctx = makeTestContext({
+      prd: makePRD({ feature: "memory-fix", userStories: [initialStory] }),
+      story: initialStory,
+      agentResult: makeAgentResult({ output: largeText }),
+      prompt: largeText,
+      contextMarkdown: largeText,
+      featureContextMarkdown: largeText,
+      builtContext: { elements: [], totalTokens: 0, truncated: false, summary: largeText },
+      contextBundle: makeContextBundle({ pushMarkdown: largeText }),
+      constitution: { content: largeText, tokens: 0, truncated: false },
+      acceptanceFailures: { failedACs: [], findings: [], testOutput: largeText },
+      reviewFindings: [makeFinding({ message: largeText })],
+      selfVerification: { lint: "pass", typecheck: "pass", preExistingFailures: [], rawMarker: largeText },
+      tddIsolations: { implementer: { passed: true, violations: [] } },
+    });
+    const prd = ctx.prd;
+    const story = ctx.story;
+
+    releaseHeavyPipelineContext(ctx);
+
+    expect(ctx.agentResult).toBeUndefined();
+    expect(ctx.prompt).toBeUndefined();
+    expect(ctx.contextMarkdown).toBeUndefined();
+    expect(ctx.featureContextMarkdown).toBeUndefined();
+    expect(ctx.builtContext).toBeUndefined();
+    expect(ctx.contextBundle).toBeUndefined();
+    expect(ctx.constitution).toBeUndefined();
+    expect(ctx.acceptanceFailures).toBeUndefined();
+    expect(ctx.reviewFindings).toBeUndefined();
+    expect(ctx.selfVerification).toBeUndefined();
+    expect(ctx.tddIsolations).toBeUndefined();
+    expect(ctx.prd).toBe(prd);
+    expect(ctx.story).toBe(story);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Worktree lifecycle (EXEC-002 / US-002) and #410 reviewerSession cleanup.
+//
+// The deps save/restore hook pair is scoped to this wrapping describe so it
+// does not leak into the receiver's own `runIteration` tests (§1.6).
+// ---------------------------------------------------------------------------
+
+describe("iteration-runner — worktree lifecycle (EXEC-002 / US-002)", () => {
+  let origExistsSync: typeof _iterationRunnerDeps.existsSync;
+  let origWorktreeManager: typeof _iterationRunnerDeps.worktreeManager;
+
+  beforeEach(() => {
+    origExistsSync = _iterationRunnerDeps.existsSync;
+    origWorktreeManager = _iterationRunnerDeps.worktreeManager;
+  });
+
+  afterEach(() => {
+    _iterationRunnerDeps.existsSync = origExistsSync;
+    _iterationRunnerDeps.worktreeManager = origWorktreeManager;
+  });
+
+  describe("_iterationRunnerDeps.worktreeManager (EXEC-002)", () => {
+    test("worktreeManager is a WorktreeManager instance", () => {
+      expect(_iterationRunnerDeps.worktreeManager).toBeInstanceOf(WorktreeManager);
+    });
+
+    test("existsSync is the node:fs existsSync", () => {
+      // It should be a function (the real existsSync from node:fs)
+      expect(typeof _iterationRunnerDeps.existsSync).toBe("function");
+    });
+
+    test("iteration runner exposes dependency-prep and runPipeline deps", () => {
+      expect(typeof _iterationRunnerDeps.prepareWorktreeDependencies).toBe("function");
+      expect(typeof _iterationRunnerDeps.runPipeline).toBe("function");
+    });
+  });
+
+  describe("worktree creation gating (EXEC-002)", () => {
+    test("source calls prepareWorktreeDependencies before runPipeline", async () => {
+      const src = await Bun.file("src/execution/iteration-runner.ts").text();
+      const prepIndex = src.indexOf("prepareWorktreeDependencies");
+      const runPipelineIndex = src.indexOf("runPipeline(defaultPipeline");
+
+      expect(prepIndex).toBeGreaterThan(-1);
+      expect(runPipelineIndex).toBeGreaterThan(-1);
+      expect(prepIndex).toBeLessThan(runPipelineIndex);
+    });
+
+    test("worktreeManager.create is NOT called when storyIsolation is 'shared'", async () => {
+      // When storyIsolation === "shared", no worktree operations should occur.
+      // We verify by checking that create() is never called on the manager.
+      const createMock = mock(async () => {});
+      const manager = new WorktreeManager();
+      manager.create = createMock;
+      manager.ensureGitExcludes = mock(async () => {});
+      _iterationRunnerDeps.worktreeManager = manager;
+
+      // In "shared" mode, the worktree code path is gated by:
+      //   if (ctx.config.execution.storyIsolation === "worktree") { ... }
+      // So create() should never be called. We can verify with the DEFAULT_CONFIG
+      // (storyIsolation defaults to "shared" per EXEC-002 spec).
+      // The schema default guarantees "shared" as the default value
+      const isolation: unknown = DEFAULT_CONFIG.execution.storyIsolation;
+      expect(isolation).toBe("shared");
+      // The gating ensures create() is skipped for "shared" mode.
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
+    test("existsSync returning true means worktree is reused (create NOT called)", () => {
+      // When the worktree directory already exists (escalation path),
+      // existsSync returns true → create() should be skipped.
+      const createMock = mock(async () => {});
+      _iterationRunnerDeps.existsSync = mock(() => true);
+      const manager = new WorktreeManager();
+      manager.create = createMock;
+      manager.ensureGitExcludes = mock(async () => {});
+      _iterationRunnerDeps.worktreeManager = manager;
+
+      // The gating logic: if (!worktreeExists) { create() }
+      // Since existsSync returns true, create() must not be called.
+      // This mirrors the runtime escalation reuse path.
+      expect(_iterationRunnerDeps.existsSync("/any/path")).toBe(true);
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
+    test("existsSync returning false means worktree is created (first attempt)", () => {
+      // When the worktree directory does NOT exist (first attempt),
+      // existsSync returns false → create() should be called.
+      _iterationRunnerDeps.existsSync = mock(() => false);
+
+      expect(_iterationRunnerDeps.existsSync("/any/path")).toBe(false);
+      // The caller (runIteration) would proceed to call create().
+      // We validate the dep's mock returns the correct value.
+    });
+  });
+
+  // #410: reviewerSession cleanup on escalation
+  describe("reviewerSession cleanup on escalation", () => {
+    test("destroys reviewerSession when pipeline returns escalate action", async () => {
+      const destroyMock = mock(async () => {});
+      const mockSession = {
+        active: true,
+        history: [],
+        review: mock(async () => ({})),
+        reReview: mock(async () => ({})),
+        clarify: mock(async () => ""),
+        getVerdict: mock(() => ({})),
+        destroy: destroyMock,
+      };
+
+      // The cleanup block checks: pipelineResult.finalAction === "escalate" && reviewerSession?.active
+      // We simulate this directly against the condition logic.
+      const finalAction = "escalate";
+      const reviewerSession = mockSession;
+
+      if (finalAction === "escalate" && reviewerSession?.active) {
+        try {
+          await reviewerSession.destroy();
+        } catch {
+          // best-effort
+        }
+      }
+
+      expect(destroyMock).toHaveBeenCalledTimes(1);
+    });
+
+    test("does not throw if reviewerSession.destroy() fails", async () => {
+      const destroyMock = mock(async () => {
+        throw new Error("session already closed");
+      });
+      const mockSession = {
+        active: true,
+        history: [],
+        destroy: destroyMock,
+      };
+
+      // The cleanup block swallows errors from destroy() — must not propagate
+      const finalAction = "escalate";
+      const reviewerSession = mockSession;
+
+      let threw = false;
+      try {
+        if (finalAction === "escalate" && reviewerSession?.active) {
+          try {
+            await reviewerSession.destroy();
+          } catch {
+            // best-effort — swallowed
+          }
+        }
+      } catch {
+        threw = true;
+      }
+
+      expect(threw).toBe(false);
+      expect(destroyMock).toHaveBeenCalledTimes(1);
+    });
+
+    test("does not call destroy if reviewerSession is already inactive", async () => {
+      const destroyMock = mock(async () => {});
+      const mockSession = {
+        active: false, // already inactive
+        history: [],
+        destroy: destroyMock,
+      };
+
+      const finalAction = "escalate";
+      const reviewerSession = mockSession;
+
+      if (finalAction === "escalate" && reviewerSession?.active) {
+        try {
+          await reviewerSession.destroy();
+        } catch {
+          // best-effort
+        }
+      }
+
+      // active === false means the guard prevents destroy() from being called
+      expect(destroyMock).not.toHaveBeenCalled();
+    });
   });
 });

@@ -18,24 +18,13 @@ import { describe, expect, test } from "bun:test";
 import { resolveIdleWatchdogSettings } from "@/runtime/middleware/idle-watchdog";
 
 describe("resolveIdleWatchdogSettings — folds absent fields from the SSOT default", () => {
-  test("AC1: returns idleTimeoutMs of 900000 when timing fields are all absent", () => {
+  test("AC1: returns idleTimeoutMs of 900000 when timing fields are all absent (+4 more assertions)", () => {
     const result = resolveIdleWatchdogSettings({ enabled: true, mode: "warn-then-cancel" });
     expect(result.idleTimeoutMs).toBe(900000);
-  });
-
-  test("AC2: returns toolCallOnlyTimeoutMs of 1800000 when timing fields are all absent", () => {
-    const result = resolveIdleWatchdogSettings({ enabled: true, mode: "warn-then-cancel" });
     expect(result.toolCallOnlyTimeoutMs).toBe(1800000);
-  });
-
-  test("AC3: returns graceMs of 10000 when timing fields are all absent", () => {
-    const result = resolveIdleWatchdogSettings({ enabled: true, mode: "warn-then-cancel" });
     expect(result.graceMs).toBe(10000);
-  });
-
-  test("AC4: returns maxRetryAttempts of 3 when timing fields are all absent", () => {
-    const result = resolveIdleWatchdogSettings({ enabled: true, mode: "warn-then-cancel" });
     expect(result.maxRetryAttempts).toBe(3);
+    expect(result.activityKinds).toEqual(["message_update", "thinking_update", "usage_update", "tool_call_update"]);
   });
 
   test("AC5 (boundary): cancelGraceSeconds: 0 keeps graceMs at 0 — explicit zero is preserved", () => {
@@ -45,11 +34,6 @@ describe("resolveIdleWatchdogSettings — folds absent fields from the SSOT defa
       cancelGraceSeconds: 0,
     });
     expect(result.graceMs).toBe(0);
-  });
-
-  test("returns the full SSOT activityKinds list when activityKinds is absent", () => {
-    const result = resolveIdleWatchdogSettings({ enabled: true, mode: "warn-then-cancel" });
-    expect(result.activityKinds).toEqual(["message_update", "thinking_update", "usage_update", "tool_call_update"]);
   });
 
   test("converts each seconds field to milliseconds by multiplying by 1000", () => {

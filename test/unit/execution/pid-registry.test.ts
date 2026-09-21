@@ -6,7 +6,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { makeSpawn, withDepsRestore } from "@test/helpers";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { cleanupTempDir, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _pidRegistryDeps, PidRegistry } from "@/execution";
 
 const TEST_WORKDIR = `/tmp/nax-pid-registry-test-${randomUUID()}`;
@@ -408,5 +410,211 @@ describe("PidRegistry — PERF-3: bounded ps/kill subprocesses", () => {
 
     expect(result).not.toBe(timed);
     expect(registry.getPids()).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Concurrent operations (pid-registry-race.test.ts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PidRegistry - Concurrent Operations", () => {
+  let tempDir: string;
+  let registry: PidRegistry;
+
+  afterEach(() => {
+    if (tempDir?.startsWith(tmpdir())) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("concurrent register() calls do not lose PIDs", async () => {
+    tempDir = makeTempDir("nax-pid-race-test-");
+    registry = new PidRegistry(tempDir);
+
+    // Register 50 PIDs concurrently
+    const pidCount = 50;
+    const pids = Array.from({ length: pidCount }, (_, i) => 1000 + i);
+
+    const registerPromises = pids.map((pid) => registry.register(pid));
+    await Promise.all(registerPromises);
+
+    // Read the file and verify all PIDs are present
+    const pidsFile = join(tempDir, ".nax-pids");
+    const content = await Bun.file(pidsFile).text();
+    const lines = content.split("\n").filter((line) => line.trim());
+
+    expect(lines.length).toBe(pidCount);
+
+    // Verify each PID is in the file
+    const registeredPids = new Set(
+      lines.map((line) => {
+        const entry = JSON.parse(line);
+        return entry.pid;
+      }),
+    );
+
+    for (const pid of pids) {
+      expect(registeredPids.has(pid)).toBe(true);
+    }
+  });
+
+  test("register() handles rapid sequential calls correctly", async () => {
+    tempDir = makeTempDir("nax-pid-seq-test-");
+    registry = new PidRegistry(tempDir);
+
+    // Register PIDs sequentially
+    for (let i = 0; i < 20; i++) {
+      await registry.register(2000 + i);
+    }
+
+    // Verify all PIDs are present
+    const pidsFile = join(tempDir, ".nax-pids");
+    const content = await Bun.file(pidsFile).text();
+    const lines = content.split("\n").filter((line) => line.trim());
+
+    expect(lines.length).toBe(20);
+
+    const pids = lines.map((line) => JSON.parse(line).pid);
+    for (let i = 0; i < 20; i++) {
+      expect(pids).toContain(2000 + i);
+    }
+  });
+
+  test("unregister removes only specified PID", async () => {
+    tempDir = makeTempDir("nax-pid-unregister-test-");
+    registry = new PidRegistry(tempDir);
+
+    await registry.register(3000);
+    await registry.register(3001);
+    await registry.register(3002);
+
+    // Unregister the middle one
+    await registry.unregister(3001);
+
+    // Verify only that PID is gone
+    const pidsFile = join(tempDir, ".nax-pids");
+    const content = await Bun.file(pidsFile).text();
+    const lines = content.split("\n").filter((line) => line.trim());
+    const pids = lines.map((line) => JSON.parse(line).pid);
+
+    expect(pids).toContain(3000);
+    expect(pids).not.toContain(3001);
+    expect(pids).toContain(3002);
+  });
+
+  // RACE-34: register() called while a write is in flight must wait for
+  // the in-flight write AND the follow-up coalesced write that includes
+  // the just-added pid. Previously the returned tail waited only for the
+  // in-flight write — a hard kill in the gap between caller-return and
+  // follow-up-write left the live agent PID absent from .nax-pids.
+  test("RACE-34: register() resolves only after the just-added PID is durably persisted", async () => {
+    tempDir = makeTempDir("nax-pid-race34-");
+    registry = new PidRegistry(tempDir);
+
+    // Start an in-flight write by registering a sentinel and NOT awaiting.
+    const sentinelPromise = registry.register(9999);
+
+    // Without awaiting sentinelPromise, register another PID — this call
+    // enters enqueueWrite() with _writing=true.
+    const livePidPromise = registry.register(8888);
+
+    await Promise.all([sentinelPromise, livePidPromise]);
+
+    // After both promises resolve, BOTH PIDs must be on disk. The bug
+    // would leave 8888 absent if register()'s tail skipped the follow-up.
+    const pidsFile = join(tempDir, ".nax-pids");
+    const content = await Bun.file(pidsFile).text();
+    const pids = content
+      .split("\n")
+      .filter((line) => line.trim())
+      .map((line) => JSON.parse(line).pid);
+
+    expect(pids).toContain(9999);
+    expect(pids).toContain(8888);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PidRegistry.freeze() — Issue 5 fix (pid-registry-freeze.test.ts)
+//
+// Once the registry is frozen (at shutdown), register() must become a no-op
+// so late-spawning retry paths cannot add PIDs that would outlive the process.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PidRegistry.freeze()", () => {
+  let workdir: string;
+
+  beforeEach(() => {
+    workdir = `/tmp/nax-pid-freeze-test-${randomUUID()}`;
+    mkdirSync(workdir, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(workdir)) rmSync(workdir, { recursive: true });
+  });
+
+  test("register() before freeze() records the PID", async () => {
+    const reg = new PidRegistry(workdir);
+    await reg.register(1111);
+    expect(reg.getPids()).toEqual([1111]);
+  });
+
+  test("register() after freeze() is a no-op — PID is not recorded", async () => {
+    const reg = new PidRegistry(workdir);
+    reg.freeze();
+    await reg.register(2222);
+    expect(reg.getPids()).toEqual([]);
+  });
+
+  test("isFrozen() reports state", () => {
+    const reg = new PidRegistry(workdir);
+    expect(reg.isFrozen()).toBe(false);
+    reg.freeze();
+    expect(reg.isFrozen()).toBe(true);
+  });
+
+  test("freeze() is idempotent — second call is harmless", () => {
+    const reg = new PidRegistry(workdir);
+    reg.freeze();
+    reg.freeze();
+    expect(reg.isFrozen()).toBe(true);
+  });
+
+  test("PIDs registered before freeze survive — killAll can still target them", async () => {
+    const reg = new PidRegistry(workdir);
+    await reg.register(3333);
+    reg.freeze();
+    expect(reg.getPids()).toEqual([3333]);
+    // After freeze, new registration blocked but existing state preserved.
+    await reg.register(4444);
+    expect(reg.getPids()).toEqual([3333]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Serialization (pid-registry-serialization.test.ts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PidRegistry concurrent writes", () => {
+  test("interleaved register/unregister leave the file consistent with the live set", async () => {
+    const dir = makeTempDir("nax-pid-serial-test-");
+    try {
+      const reg = new PidRegistry(dir);
+      // Fire many concurrent register + unregister ops
+      await Promise.all([
+        reg.register(101),
+        reg.register(102),
+        reg.register(103),
+        reg.unregister(101),
+        reg.register(104),
+        reg.unregister(102),
+      ]);
+      await reg.flush(); // new API
+      const onDisk = await reg.readPidsFromDisk(); // new test helper
+      // Disk must match the in-memory set exactly (no orphaned/duplicate lines)
+      expect(new Set(onDisk)).toEqual(new Set(reg.snapshot()));
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 });

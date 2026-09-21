@@ -111,18 +111,10 @@ describe("toCostReport — schemaVersion / generatedAt / project", () => {
 // ---------------------------------------------------------------------------
 
 describe("toCostReport — empty runs", () => {
-  test("AC5: aggregate is null when runs array is empty", () => {
+  test("AC5: aggregate is null when runs array is empty; AC5: lastRun is null when runs array is empty; AC5: modelEfficiency deep-equals [] when runs array is empty", () => {
     const result = toCostReport([], fixedDeps);
     expect(result.aggregate).toBeNull();
-  });
-
-  test("AC5: lastRun is null when runs array is empty", () => {
-    const result = toCostReport([], fixedDeps);
     expect(result.lastRun).toBeNull();
-  });
-
-  test("AC5: modelEfficiency deep-equals [] when runs array is empty", () => {
-    const result = toCostReport([], fixedDeps);
     expect(result.modelEfficiency).toEqual([]);
   });
 });

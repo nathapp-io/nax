@@ -253,3 +253,50 @@ describe("finishReviewOp exhausted-retry fallback", () => {
     expect(exhausted(1, "waffle, no sections").gaps.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * US-002 / AC15 — `finishReviewOp.verify` threads `base` and `phase` and
+ * invokes the changed-file git command with `<base>...HEAD`.
+ *
+ * The op's `verify` hook now consults `_gitDeps.spawn` to learn which files
+ * the diff touched; this test stubs the spawn seam and asserts the spawned
+ * command line contains the review range verbatim.
+ */
+const QUALITY_WALK_INPUT: FinishReviewInput = {
+  phase: "quality",
+  base: "origin/main",
+  specPath: "docs/specs/example.md",
+  workdir: "/tmp/finish-review-quality-walk-test",
+};
+
+describe("AC15 — finishReviewOp.verify invokes git with the review range", () => {
+  test("spawn receives arguments containing `origin/main...HEAD` for a quality input", async () => {
+    const calls: string[][] = [];
+    const stub = makeSpawn((call) => {
+      calls.push(call.cmd);
+      return "";
+    });
+    const orig = _gitDeps.spawn;
+    _gitDeps.spawn = stub.spawn;
+    try {
+      await withTempDir(async (dir) => {
+        const ctx = makeCtx();
+        const parsed = finishReviewOp.parse("[HIGH] Some finding\nProblem: p\nFix: f", QUALITY_WALK_INPUT, ctx);
+        await finishReviewOp.verify(
+          parsed,
+          { ...QUALITY_WALK_INPUT, workdir: dir },
+          {
+            ...ctx,
+            readFile: async () => null,
+            fileExists: async () => false,
+          },
+        );
+      });
+    } finally {
+      _gitDeps.spawn = orig;
+    }
+    // The changed-file listing must reference the review range.
+    const sawRange = calls.some((args) => args.some((arg) => arg.includes("origin/main...HEAD")));
+    expect(sawRange).toBe(true);
+  });
+});

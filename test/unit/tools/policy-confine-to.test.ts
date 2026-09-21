@@ -19,7 +19,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolScope } from "@/tools";
-import { compileToolPolicy } from "@/tools";
+import { compileToolPolicy, resolveWithin } from "@/tools";
 
 let root: string;
 let outside: string;
@@ -283,5 +283,51 @@ describe("confinement applies to the refPathFields branch", () => {
     expect(verdict.allowed).toBe(false);
     if (verdict.allowed) throw new Error("unreachable");
     expect(verdict.breach).toBe(true);
+  });
+});
+
+/**
+ * Single-frame redesign PR2, Task 13. Pre-move, the containment root was the
+ * story's package dir while a workspace install wrote the repo-ROOT manifest
+ * outside it, so `resolveWithin` carried an `execTouchedPaths` carve-out to
+ * admit exactly those recorded paths. The root move made the containment root
+ * the repo root, so the root manifest is in-root by construction and the
+ * carve-out is retired. These pin the post-retirement shape.
+ */
+describe("compileToolPolicy — root move retires the execTouchedPaths carve-out (PR2/Task 13)", () => {
+  let rootMoveRoot: string;
+  let rootMoveOutside: string;
+
+  beforeAll(() => {
+    const base = mkdtempSync(join(tmpdir(), "nax-policy-root-move-"));
+    rootMoveRoot = join(base, "repo");
+    rootMoveOutside = join(base, "elsewhere");
+    mkdirSync(rootMoveRoot, { recursive: true });
+    mkdirSync(rootMoveOutside, { recursive: true });
+  });
+
+  test("resolveWithin is the 2-arg containment seam", () => {
+    // The third, optional execTouchedPaths parameter is gone. Function.length
+    // is the runtime-visible arity of the declared parameter list, so this is a
+    // genuine red pre-change (3) and green post-change (2).
+    expect(resolveWithin.length).toBe(2);
+  });
+
+  test("a genuinely out-of-root candidate is refused by ordinary containment", () => {
+    // Removing the carve-out must not widen containment: a candidate in a
+    // sibling directory is still rejected by isInside.
+    expect(resolveWithin(rootMoveRoot, join(rootMoveOutside, "package.json"))).toBeNull();
+  });
+
+  test("a repo-root manifest is admitted by isInside alone, with no carve-out option", () => {
+    // Post-move the containment root IS the repo root, so a GitCommit staging
+    // the root manifest needs no execTouchedPaths allowance.
+    const policy = compileToolPolicy([{ tool: "GitCommit", patterns: ["*"] }], rootMoveRoot);
+    const verdict = policy.check(
+      "GitCommit",
+      { pathFields: [], arrayPathFields: ["paths"] },
+      { message: "chore: refresh root manifest", paths: [join(rootMoveRoot, "package.json")] },
+    );
+    expect(verdict.allowed).toBe(true);
   });
 });

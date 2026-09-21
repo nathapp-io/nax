@@ -9,13 +9,9 @@ describe("buildIsolationSection — test-writer role", () => {
     expect(result).not.toContain("MAY read src/");
   });
 
-  test("lite mode allows reading src/", () => {
+  test("lite mode allows reading src/; lite mode mentions stubs", () => {
     const result = buildIsolationSection("test-writer", "lite");
     expect(result).toContain("MAY read src/");
-  });
-
-  test("lite mode mentions stubs", () => {
-    const result = buildIsolationSection("test-writer", "lite");
     expect(result).toContain("stub");
   });
 

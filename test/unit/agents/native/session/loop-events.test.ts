@@ -241,12 +241,13 @@ describe("loop events — buildToolResult chokepoint", () => {
     expect(result.role).toBe("tool-result");
   });
 
-  test("AC9 (boundary): buildToolResult sets role to 'tool-result'", () => {
+  test("AC9 (boundary): buildToolResult sets role to 'tool-result'; AC9: buildToolResult leaves isError absent when not supplied", () => {
     const result = buildToolResult({
       toolCallId: "c1",
       content: "x",
     });
     expect(result.role).toBe("tool-result");
+    expect("isError" in result).toBe(false);
   });
 
   test("AC9: buildToolResult carries isError when supplied", () => {
@@ -256,13 +257,5 @@ describe("loop events — buildToolResult chokepoint", () => {
       isError: true,
     });
     expect(result.isError).toBe(true);
-  });
-
-  test("AC9: buildToolResult leaves isError absent when not supplied", () => {
-    const result = buildToolResult({
-      toolCallId: "c1",
-      content: "x",
-    });
-    expect("isError" in result).toBe(false);
   });
 });

@@ -61,17 +61,13 @@ describe("buildReviewPrompt — quality reply contract (US-001)", () => {
   });
 
   // AC 3: the quality prompt retains the per-function walk as private scratch work.
-  test("AC 3: quality prompt keeps the private per-function walk", () => {
+  test("AC 3: quality prompt keeps the private per-function walk; AC 4: quality fresh review omits specPath", () => {
     const p = buildReviewPrompt("quality", { base: QUALITY_BASE, specPath: SPEC_PATH });
     expect(p).toContain("write yourself");
-  });
-
-  // AC 4: the quality prompt in fresh-review form omits the spec path.
-  test("AC 4: quality fresh review omits specPath", () => {
-    const p = buildReviewPrompt("quality", { base: QUALITY_BASE, specPath: SPEC_PATH });
     expect(p).not.toContain(SPEC_PATH);
   });
 
+  // AC 4: the quality prompt in fresh-review form omits the spec path.
   // AC 5: the quality prompt in re-review form omits the spec path.
   test("AC 5: quality re-review omits specPath", () => {
     const p = buildReviewPrompt("quality", {

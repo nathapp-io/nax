@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type DeepPartial, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { _curatorCmdDeps as _deps, curatorGc } from "@/commands";
+import { _curatorCmdDeps as _deps, curatorCommit, curatorGc } from "@/commands";
 import type { ResolvedProject } from "@/commands/common";
 import type { NaxConfig } from "@/config";
 import type { Observation } from "@/plugins/builtin/curator/types";
@@ -422,5 +422,45 @@ describe("curatorGc", () => {
       expect(text).toContain("mine-002");
       expect(text).not.toContain("mine-001");
     });
+  });
+});
+
+// curatorCommit — US-002 unsafe runId (AC #5) (absorbed curator-runid)
+
+describe("curatorCommit — US-002 unsafe runId (AC #5)", () => {
+  test("rejects a runId that escapes the run directory via path traversal before any file read", async () => {
+    let readFileCalled = false;
+    _deps.readFile = mock(async (_p: string) => {
+      readFileCalled = true;
+      return "";
+    });
+
+    await expect(curatorCommit({ runId: "../../etc" })).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INVALID_RUN_ID",
+    });
+    expect(readFileCalled).toBe(false);
+  });
+});
+
+// curator openInEditor — argument-bearing editor (absorbed curator-editor)
+
+describe("curator editor openInEditor (argument-bearing editor)", () => {
+  beforeEach(() => {
+    // The module-level hook stubs `openInEditor` for the curator command
+    // suites; this test exercises the real implementation, so restore it.
+    _deps.openInEditor = originalOpenInEditor;
+  });
+
+  test("warns instead of rejecting when an argument-bearing editor cannot start", async () => {
+    const previousEditor = process.env.EDITOR;
+    process.env.EDITOR = "missing-editor --wait";
+
+    try {
+      await expect(_deps.openInEditor(join(process.cwd(), "rule.md"))).resolves.toBeUndefined();
+    } finally {
+      if (previousEditor === undefined) delete process.env.EDITOR;
+      else process.env.EDITOR = previousEditor;
+    }
   });
 });

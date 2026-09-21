@@ -111,18 +111,10 @@ describe("buildFixCommitMessage — gate body names the failure", () => {
   const gateMsg = (output: string, workdir?: string) =>
     buildFixCommitMessage("gate", "f", gateCtx(output), { workdir });
 
-  test("names the failing test rather than whichever lines happened to be last", () => {
+  test("names the failing test rather than whichever lines happened to be last (+2 more assertions)", () => {
     const msg = gateMsg(REAL_GATE_OUTPUT);
     expect(msg).toContain("execute omits reviewer profile env vars");
-  });
-
-  test("does not present a passing test's warning trace as the failure", () => {
-    const msg = gateMsg(REAL_GATE_OUTPUT);
     expect(msg).not.toContain("Failed to write PR title/body");
-  });
-
-  test("strips absolute paths so shipped history carries no local filesystem layout", () => {
-    const msg = gateMsg(REAL_GATE_OUTPUT);
     expect(msg).not.toContain("/Users/someone");
   });
 

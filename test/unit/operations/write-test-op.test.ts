@@ -46,30 +46,18 @@ describe("testWriterOp — RunOperation shape", () => {
     expect(testWriterOp.kind).toBe("run");
   });
 
-  test("testWriterOp.session.role equals 'test-writer'", async () => {
+  test("testWriterOp.session.role equals 'test-writer'; testWriterOp.session.lifetime equals 'warm'; testWriterOp declares a keepOpen resolver; testWriterOp has a config selector", async () => {
     const { testWriterOp } = await import("@/operations");
     expect(testWriterOp.session.role).toBe("test-writer");
-  });
-
-  test("testWriterOp.session.lifetime equals 'warm'", async () => {
-    const { testWriterOp } = await import("@/operations");
     expect(testWriterOp.session.lifetime).toBe("warm");
-  });
-
-  test("testWriterOp declares a keepOpen resolver", async () => {
-    const { testWriterOp } = await import("@/operations");
     expect(typeof testWriterOp.keepOpen).toBe("function");
+    expect(testWriterOp.config).toBeDefined();
   });
 
   test.each([["name" as const], ["stage" as const]])("testWriterOp has a non-empty %s string", async (field) => {
     const { testWriterOp } = await import("@/operations");
     expect(typeof testWriterOp[field]).toBe("string");
     expect(testWriterOp[field]).toBeTruthy();
-  });
-
-  test("testWriterOp has a config selector", async () => {
-    const { testWriterOp } = await import("@/operations");
-    expect(testWriterOp.config).toBeDefined();
   });
 
   test.each([["build" as const], ["parse" as const]])("testWriterOp has a %s function", async (method) => {

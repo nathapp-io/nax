@@ -1,9 +1,22 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { assertDefined, cleanupTempDir, makeDispatchContext, makeMockRuntime, makeTempDir } from "@test/helpers";
+import {
+  assertDefined,
+  cleanupTempDir,
+  makeDispatchContext,
+  makeMockRuntime,
+  makePRD,
+  makeStory,
+  makeTempDir,
+} from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
-import { _parallelWorkerDeps, executeParallelBatch, executeStoryInWorktree } from "@/execution/parallel-worker";
+import {
+  _parallelWorkerDeps,
+  buildWorktreePipelineContext,
+  executeParallelBatch,
+  executeStoryInWorktree,
+} from "@/execution/parallel-worker";
 import { defaultPipeline } from "@/pipeline/stages";
 import type { PipelineContext, PipelineStage } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
@@ -12,7 +25,7 @@ import { storyExecRoot } from "@/runtime";
 import { byCodePoint } from "@/utils/sort";
 import type { WorktreeDependencyContext } from "@/worktree/types";
 
-function makeStory(id: string): UserStory {
+function makeWorkerStory(id: string): UserStory {
   return {
     id,
     title: `Story ${id}`,
@@ -57,7 +70,7 @@ afterEach(() => {
 
 describe("executeParallelBatch", () => {
   test("routes each story with its effective per-story config when provided", async () => {
-    const story = makeStory("US-001");
+    const story = makeWorkerStory("US-001");
     const rootConfig = DEFAULT_CONFIG as NaxConfig;
     const storyConfig = {
       ...rootConfig,
@@ -110,7 +123,7 @@ describe("executeParallelBatch", () => {
   // sibling stories still running in their worktrees — their results were lost
   // and the rejection surfaced as an unhandled rejection.
   test("records a rejected story as failed instead of aborting the batch", async () => {
-    const stories = ["US-001", "US-002", "US-003"].map(makeStory);
+    const stories = ["US-001", "US-002", "US-003"].map(makeWorkerStory);
     const config = DEFAULT_CONFIG as NaxConfig;
 
     _parallelWorkerDeps.routeTask = mock(
@@ -148,7 +161,7 @@ describe("executeParallelBatch", () => {
   });
 
   test("marks a story with no prepared worktree as failed without invoking the executor", async () => {
-    const story = makeStory("US-no-worktree");
+    const story = makeWorkerStory("US-no-worktree");
     const config: NaxConfig = DEFAULT_CONFIG;
     const executeStoryMock = mock(async () => ({ success: true, cost: 0 }));
     _parallelWorkerDeps.executeStoryInWorktree = executeStoryMock as typeof _parallelWorkerDeps.executeStoryInWorktree;
@@ -168,7 +181,7 @@ describe("executeParallelBatch", () => {
   });
 
   test("marks a story with no prepared dependency context as failed without invoking the executor", async () => {
-    const story = makeStory("US-no-dep-context");
+    const story = makeWorkerStory("US-no-dep-context");
     const config: NaxConfig = DEFAULT_CONFIG;
     const executeStoryMock = mock(async () => ({ success: true, cost: 0 }));
     _parallelWorkerDeps.executeStoryInWorktree = executeStoryMock as typeof _parallelWorkerDeps.executeStoryInWorktree;
@@ -188,7 +201,7 @@ describe("executeParallelBatch", () => {
   });
 
   test("records a story whose executor resolves with success: false as failed", async () => {
-    const story = makeStory("US-pipeline-failed");
+    const story = makeWorkerStory("US-pipeline-failed");
     const config: NaxConfig = DEFAULT_CONFIG;
 
     _parallelWorkerDeps.routeTask = mock(
@@ -258,7 +271,7 @@ describe("executeStoryInWorktree — US-001 stamps packageView for the context p
     });
 
     try {
-      const story = makeStory("US-001");
+      const story = makeWorkerStory("US-001");
       const dependencyContext: WorktreeDependencyContext = { cwd: worktreeRoot };
 
       await executeStoryInWorktree(story, worktreeRoot, dependencyContext, makeContext(undefined, workdir), {
@@ -325,7 +338,7 @@ describe("executeStoryInWorktree — cost includes stageCost (BUG-7)", () => {
     });
 
     try {
-      const story = makeStory("US-cost-001");
+      const story = makeWorkerStory("US-cost-001");
       const dependencyContext: WorktreeDependencyContext = { cwd: workdir };
       const result = await executeStoryInWorktree(story, workdir, dependencyContext, makeContext(), {
         complexity: "simple",
@@ -353,7 +366,7 @@ describe("executeStoryInWorktree — cost includes stageCost (BUG-7)", () => {
     });
 
     try {
-      const story = makeStory("US-cost-002");
+      const story = makeWorkerStory("US-cost-002");
       const dependencyContext: WorktreeDependencyContext = { cwd: workdir };
       const result = await executeStoryInWorktree(story, workdir, dependencyContext, makeContext(), {
         complexity: "simple",
@@ -419,7 +432,7 @@ describe("executeStoryInWorktree — storyGitRef capture", () => {
   });
 
   test("reuses an already-valid persisted storyGitRef instead of recapturing HEAD", async () => {
-    const story = makeStory("US-gitref-valid");
+    const story = makeWorkerStory("US-gitref-valid");
     story.storyGitRef = headSha;
     const dependencyContext: WorktreeDependencyContext = { cwd: workdir };
 
@@ -436,7 +449,7 @@ describe("executeStoryInWorktree — storyGitRef capture", () => {
   });
 
   test("captures HEAD as storyGitRef when none is persisted", async () => {
-    const story = makeStory("US-gitref-capture");
+    const story = makeWorkerStory("US-gitref-capture");
     const dependencyContext: WorktreeDependencyContext = { cwd: workdir };
 
     const result = await executeStoryInWorktree(story, workdir, dependencyContext, makeContext(), {
@@ -451,7 +464,7 @@ describe("executeStoryInWorktree — storyGitRef capture", () => {
   });
 
   test("re-captures HEAD when the persisted storyGitRef is no longer valid", async () => {
-    const story = makeStory("US-gitref-invalid");
+    const story = makeWorkerStory("US-gitref-invalid");
     story.storyGitRef = "0000000000000000000000000000000000000000";
     const dependencyContext: WorktreeDependencyContext = { cwd: workdir };
 
@@ -464,5 +477,31 @@ describe("executeStoryInWorktree — storyGitRef capture", () => {
 
     expect(result.success).toBe(true);
     expect(story.storyGitRef).toBe(headSha);
+  });
+});
+
+describe("buildWorktreePipelineContext", () => {
+  test("deep-clones prd so concurrent stories never share one object", () => {
+    const base: Parameters<typeof buildWorktreePipelineContext>[0] = {
+      ...makeDispatchContext(),
+      config: DEFAULT_CONFIG,
+      rootConfig: DEFAULT_CONFIG,
+      prd: makePRD({
+        feature: "f",
+        userStories: [makeStory({ id: "US-001", title: "t", status: "pending" })],
+      }),
+      projectDir: "/tmp",
+      hooks: { hooks: {} },
+      skipPrdPersistence: true,
+    };
+    const story = makeStory({ id: "US-001", title: "t", status: "pending", attempts: 0, passes: false });
+    const a = buildWorktreePipelineContext(base, story);
+    const b = buildWorktreePipelineContext(base, story);
+    expect(a.prd).not.toBe(base.prd);
+    expect(a.prd).not.toBe(b.prd);
+    expect(a.skipPrdPersistence).toBe(true); // inherited from base
+    // Mutating one story's clone must not affect the base
+    a.prd.userStories[0].status = "passed";
+    expect(base.prd.userStories[0].status).toBe("pending");
   });
 });

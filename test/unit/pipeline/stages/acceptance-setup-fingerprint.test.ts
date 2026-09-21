@@ -480,3 +480,200 @@ describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
     expect(deleteSemanticVerdictsCalled).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Absorbed: acceptance-setup-commit.test.ts
+// ---------------------------------------------------------------------------
+
+function commitMakeStory(id: string, acs: string[]) {
+  return {
+    id,
+    title: `Story ${id}`,
+    description: "desc",
+    acceptanceCriteria: acs,
+    tags: [],
+    dependencies: [],
+    status: "pending" as const,
+    passes: false,
+    escalations: [],
+    attempts: 0,
+  };
+}
+
+function commitMakeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
+  const stories = [commitMakeStory("US-001", ["AC-1: login", "AC-2: logout"])];
+  return {
+    config: {
+      ...DEFAULT_CONFIG,
+      acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: true, refinement: false, redGate: false, model: "fast" },
+    },
+    prd: {
+      project: "p",
+      feature: "my-feature",
+      branchName: "feat/x",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: stories,
+    },
+    story: stories[0],
+    stories,
+    routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    rootConfig: DEFAULT_CONFIG,
+    workdir: "/tmp/test-workdir",
+    projectDir: "/tmp/test-workdir",
+    featureDir: "/tmp/test-workdir/.nax/features/my-feature",
+    hooks: { hooks: {} },
+    ...makeDispatchContext(),
+    ...overrides,
+  };
+}
+
+/** Wire up the minimal happy-path deps for a generation run (no existing file/meta). */
+function setupGenerationDeps(commitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }>) {
+  _acceptanceSetupDeps.fileExists = async () => false;
+  _acceptanceSetupDeps.readMeta = async () => null;
+  _acceptanceSetupDeps.copyFile = async () => {};
+  _acceptanceSetupDeps.deleteFile = async () => {};
+  _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {};
+  _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+    if (op.name === "acceptance-generate") return { testCode: "// generated" };
+    if (op.name === "acceptance-refine") {
+      const { criteria, storyId } = input as { criteria: string[]; storyId: string };
+      return criteria.map((c: string) => ({ original: c, refined: c, testable: true, storyId }));
+    }
+    throw new Error(`unexpected op: ${op.name}`);
+  };
+  _acceptanceSetupDeps.writeFile = async () => {};
+  _acceptanceSetupDeps.writeMeta = async () => {};
+  _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "RED" });
+  _acceptanceSetupDeps.getAgent = mock(() => undefined);
+  _acceptanceSetupDeps.autoCommitIfDirty = async (workdir, stage, role, storyId) => {
+    commitCalls.push({ workdir, stage, role, storyId });
+  };
+}
+
+/** Wire up deps simulating a fingerprint-match (no regeneration). */
+function setupFingerprintMatchDeps(
+  commitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }>,
+  fingerprint: string,
+  layoutFingerprint: string,
+) {
+  _acceptanceSetupDeps.fileExists = async () => true;
+  _acceptanceSetupDeps.readMeta = async () => ({
+    generatedAt: new Date().toISOString(),
+    acFingerprint: fingerprint,
+    layoutFingerprint,
+    storyCount: 1,
+    acCount: 2,
+    generator: "nax",
+  });
+  _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "RED" });
+  _acceptanceSetupDeps.getAgent = mock(() => undefined);
+  _acceptanceSetupDeps.autoCommitIfDirty = async (workdir, stage, role, storyId) => {
+    commitCalls.push({ workdir, stage, role, storyId });
+  };
+}
+
+// nax#1808: a dry run still reaches pre-run acceptance setup when acceptance is
+// enabled, so guarding only the completion-phase commit left this path able to
+// commit generated files during a run that was supposed to execute nothing.
+describe("acceptance-setup: dry run", () => {
+  test("forwards runtime.dryRun to autoCommitIfDirty", async () => {
+    const dryRunArgs: Array<boolean | undefined> = [];
+    setupGenerationDeps([]);
+    _acceptanceSetupDeps.autoCommitIfDirty = async (
+      _workdir: string,
+      _stage: string,
+      _role: string,
+      _storyId: string,
+      _blocked?: ReadonlySet<string>,
+      dryRun?: boolean,
+    ) => {
+      dryRunArgs.push(dryRun);
+    };
+    const ctx = commitMakeCtx();
+    (ctx.runtime as { dryRun: boolean }).dryRun = true;
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(dryRunArgs).toEqual([true]);
+  });
+});
+
+describe("acceptance-setup: autoCommitIfDirty after generation", () => {
+  test("calls autoCommitIfDirty after generating acceptance test files", async () => {
+    const commitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }> = [];
+    setupGenerationDeps(commitCalls);
+    const ctx = commitMakeCtx();
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(commitCalls).toHaveLength(1);
+  });
+
+  test("passes ctx.workdir to autoCommitIfDirty", async () => {
+    const commitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }> = [];
+    setupGenerationDeps(commitCalls);
+    const ctx = commitMakeCtx({ workdir: "/my/project" });
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(commitCalls[0].workdir).toBe("/my/project");
+  });
+
+  test("passes feature name as storyId to autoCommitIfDirty", async () => {
+    const commitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }> = [];
+    setupGenerationDeps(commitCalls);
+    const ctx = commitMakeCtx();
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(commitCalls[0].storyId).toBe("my-feature");
+  });
+
+  test("passes 'acceptance-setup' as stage to autoCommitIfDirty", async () => {
+    const commitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }> = [];
+    setupGenerationDeps(commitCalls);
+    const ctx = commitMakeCtx();
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(commitCalls[0].stage).toBe("acceptance-setup");
+  });
+
+  test("passes 'pre-run' as role to autoCommitIfDirty", async () => {
+    const commitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }> = [];
+    setupGenerationDeps(commitCalls);
+    const ctx = commitMakeCtx();
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(commitCalls[0].role).toBe("pre-run");
+  });
+});
+
+describe("acceptance-setup: autoCommitIfDirty skipped on fingerprint match", () => {
+  test("does NOT call autoCommitIfDirty when fingerprint matches (no regeneration)", async () => {
+    const commitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }> = [];
+    const ctx = commitMakeCtx();
+
+    // Compute the real fingerprint so the stored meta matches
+    const { computeACFingerprint, computeAcceptanceLayoutFingerprint } = await import(
+      "@/pipeline/stages/acceptance-setup"
+    );
+    const acs = ctx.prd.userStories.flatMap((s) => s.acceptanceCriteria);
+    const fingerprint = computeACFingerprint(acs);
+    const layoutFingerprint = computeAcceptanceLayoutFingerprint(ctx.workdir, [
+      {
+        testPath: `${ctx.workdir}/.nax/features/my-feature/.nax-acceptance.test.ts`,
+        stories: [{ id: "US-001" }],
+      },
+    ]);
+
+    setupFingerprintMatchDeps(commitCalls, fingerprint, layoutFingerprint);
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(commitCalls).toHaveLength(0);
+  });
+});

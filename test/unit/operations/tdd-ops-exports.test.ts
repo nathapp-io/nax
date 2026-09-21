@@ -17,18 +17,10 @@ describe("src/operations/index.ts — TddRunOp export removal", () => {
     expect("TddRunOp" in operationsIndex).toBe(false);
   });
 
-  test("implementerOp should be exported from src/operations/index.ts", async () => {
+  test("implementerOp should be exported from src/operations/index.ts; testWriterOp should be exported from src/operations/index.ts; verifierOp should be exported from src/operations/index.ts", async () => {
     const operationsIndex = await import("@/operations");
     expect("implementerOp" in operationsIndex).toBe(true);
-  });
-
-  test("testWriterOp should be exported from src/operations/index.ts", async () => {
-    const operationsIndex = await import("@/operations");
     expect("testWriterOp" in operationsIndex).toBe(true);
-  });
-
-  test("verifierOp should be exported from src/operations/index.ts", async () => {
-    const operationsIndex = await import("@/operations");
     expect("verifierOp" in operationsIndex).toBe(true);
   });
 

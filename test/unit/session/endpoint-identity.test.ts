@@ -47,13 +47,9 @@ describe("decideReuse()", () => {
     expect(decideReuse(undefined, undefined, { agentName: "native", modelDef: model("m") })).toBe("reopen");
   });
 
-  test("terminal descriptor -> reopen (adapter session already closed)", () => {
+  test("terminal descriptor -> reopen (adapter session already closed); same agent, same endpoint -> reuse", () => {
     const live = handle("native", model("m"));
     expect(decideReuse(live, desc("COMPLETED"), { agentName: "native", modelDef: model("m") })).toBe("reopen");
-  });
-
-  test("same agent, same endpoint -> reuse", () => {
-    const live = handle("native", model("m"));
     expect(decideReuse(live, desc("RUNNING"), { agentName: "native", modelDef: model("m") })).toBe("reuse");
   });
 

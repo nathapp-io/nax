@@ -36,13 +36,9 @@ describe("toLogRecord", () => {
     expect(record.timeUnixNano).toBe("1735689600123000000");
   });
 
-  test("AC2: level error maps to severityNumber 17", () => {
+  test("AC2: level error maps to severityNumber 17; AC3: level error maps to severityText ERROR", () => {
     const record = toLogRecord({ ...baseEntry, level: "error" });
     expect(record.severityNumber).toBe(17);
-  });
-
-  test("AC3: level error maps to severityText ERROR", () => {
-    const record = toLogRecord({ ...baseEntry, level: "error" });
     expect(record.severityText).toBe("ERROR");
   });
 

@@ -9,13 +9,9 @@ import { describe, expect, test } from "bun:test";
 import { NaxConfigSchema } from "@/config";
 
 describe("NaxConfigSchema — autoPr root config", () => {
-  test("defaults autoPr.enabled to false when omitted", () => {
+  test("defaults autoPr.enabled to false when omitted; defaults autoPr.draft to true when omitted", () => {
     const parsed = NaxConfigSchema.parse({});
     expect(parsed.autoPr.enabled).toBe(false);
-  });
-
-  test("defaults autoPr.draft to true when omitted", () => {
-    const parsed = NaxConfigSchema.parse({});
     expect(parsed.autoPr.draft).toBe(true);
   });
 

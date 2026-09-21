@@ -5,6 +5,7 @@ import {
   countPriorAppearances,
   fingerprintFor,
   normalizeIssueText,
+  stampRecurrenceMeta,
   tagCoverageGap,
 } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
@@ -385,5 +386,174 @@ describe("classifyRecurrence — semantic source (F1b)", () => {
     const r = classifyRecurrence([semFinding(AC3_KEY_FORMAT[2], 3)], priors, off, noTest, "error", "semantic-review");
     expect(r.blocking.length).toBe(1);
     expect(r.demoted.length).toBe(0);
+  });
+});
+
+type StampedFinding = AdversarialLLMFinding & { meta?: Record<string, unknown> };
+type RecurrenceMeta = { disposition: string; rounds: number; wasBlocking: boolean };
+
+const retirementConfig = { enabled: true, maxBlockingRounds: 2, maxAdvisoryRounds: 2 };
+
+function retirementFinding(severity: string, over: Partial<StampedFinding> = {}): StampedFinding {
+  return {
+    severity,
+    category: "assumption",
+    file: "lib/store.ts",
+    line: 1,
+    issue: "recurrent issue",
+    suggestion: "fix",
+    ...over,
+  };
+}
+
+function retirementIteration(num: number, severity: FindingSeverity, message = "recurrent issue"): Iteration {
+  const reviewFinding: Finding = {
+    source: "adversarial-review",
+    severity,
+    category: "assumption",
+    file: "lib/store.ts",
+    message,
+  };
+  return {
+    iterationNum: num,
+    findingsBefore: [],
+    findingsAfter: [reviewFinding],
+    fixesApplied: [],
+    outcome: "unchanged",
+    startedAt: "2026-09-10T00:00:00.000Z",
+    finishedAt: "2026-09-10T00:00:01.000Z",
+  };
+}
+
+function recurrenceOf(finding: StampedFinding): RecurrenceMeta {
+  const recurrence = finding.meta?.recurrence;
+  if (!isRecurrenceMeta(recurrence)) throw new Error("missing recurrence stamp");
+  return recurrence;
+}
+
+function isRecurrenceMeta(value: unknown): value is RecurrenceMeta {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "disposition" in value &&
+    "rounds" in value &&
+    "wasBlocking" in value &&
+    typeof value.disposition === "string" &&
+    typeof value.rounds === "number" &&
+    typeof value.wasBlocking === "boolean"
+  );
+}
+
+function recurrenceAt(findings: StampedFinding[], index: number): RecurrenceMeta {
+  const finding = findings[index];
+  if (!finding) throw new Error(`missing classified finding at index ${index}`);
+  return recurrenceOf(finding);
+}
+
+describe("classifyRecurrence retirement", () => {
+  test("returns every input unchanged in classified when recurrence is disabled", () => {
+    const inputs = [
+      retirementFinding("error", { issue: "blocking" }),
+      retirementFinding("warning", { issue: "advisory" }),
+    ];
+    const result = classifyRecurrence(
+      inputs,
+      [retirementIteration(1, "error")],
+      { enabled: false, maxBlockingRounds: 2 },
+      noTest,
+      "error",
+    );
+
+    expect(result.classified).toEqual(inputs);
+    expect(result.classified.map((entry) => entry.meta?.recurrence)).toEqual([undefined, undefined]);
+  });
+
+  test("stamps wasBlocking for blocking, advisory, demoted, and retired findings", () => {
+    const blocking = retirementFinding("error", { issue: "blocking" });
+    const advisory = retirementFinding("warning", { issue: "advisory" });
+    const demoted = retirementFinding("error", { issue: "demoted" });
+    const retired = retirementFinding("warning", { issue: "retired" });
+    const priors = [
+      retirementIteration(1, "error", "demoted"),
+      retirementIteration(2, "error", "demoted"),
+      retirementIteration(1, "warning", "retired"),
+    ];
+    const result = classifyRecurrence(
+      [blocking, advisory, demoted, retired],
+      priors,
+      retirementConfig,
+      noTest,
+      "error",
+    );
+
+    expect(recurrenceAt(result.classified, 0).wasBlocking).toBe(true);
+    expect(recurrenceAt(result.classified, 1).wasBlocking).toBe(false);
+    expect(recurrenceAt(result.classified, 2).wasBlocking).toBe(true);
+    expect(recurrenceAt(result.classified, 3).wasBlocking).toBe(false);
+  });
+
+  test("keeps wasBlocking on the blocking test-gap carve-out", () => {
+    const result = classifyRecurrence(
+      [retirementFinding("error", { category: "test-gap", file: "test/store.test.ts" })],
+      [retirementIteration(1, "error"), retirementIteration(2, "error"), retirementIteration(3, "error")],
+      retirementConfig,
+      isTest,
+      "error",
+    );
+
+    expect(recurrenceAt(result.classified, 0).wasBlocking).toBe(true);
+  });
+
+  test("retires sub-threshold findings at the default advisory cap without mutating input metadata", () => {
+    const input = retirementFinding("warning", { meta: { note: "preserve" } });
+    const result = classifyRecurrence(
+      [input],
+      [retirementIteration(1, "warning")],
+      { enabled: true, maxBlockingRounds: 2 },
+      noTest,
+      "error",
+    );
+
+    expect(result.retired).toHaveLength(1);
+    expect(result.advisory).toHaveLength(0);
+    expect(recurrenceAt(result.classified, 0).disposition).toBe("retired");
+    expect(input.meta).toEqual({ note: "preserve" });
+  });
+
+  test("demotes blocking findings after the blocking cap instead of retiring them", () => {
+    const result = classifyRecurrence(
+      [retirementFinding("error")],
+      [retirementIteration(1, "error"), retirementIteration(2, "error")],
+      retirementConfig,
+      noTest,
+      "error",
+    );
+
+    expect(result.demoted).toHaveLength(1);
+    expect(result.retired).toHaveLength(0);
+    expect(recurrenceAt(result.classified, 0).disposition).toBe("demoted");
+  });
+});
+
+describe("recurrence stamp consumers", () => {
+  test("tagCoverageGap preserves a recurrence stamp", () => {
+    const tagged = tagCoverageGap<{ meta?: Record<string, unknown> }>([
+      { meta: { recurrence: { disposition: "retired", rounds: 2, wasBlocking: false } } },
+    ]);
+    expect(tagged[0]?.meta).toEqual({
+      recurrence: { disposition: "retired", rounds: 2, wasBlocking: false },
+      coverageGap: true,
+    });
+  });
+
+  test("stampRecurrenceMeta forwards a complete recurrence stamp", () => {
+    const stamped = stampRecurrenceMeta<{ meta?: Record<string, unknown> }>(
+      [{ meta: { acQuote: "literal" } }],
+      [{ meta: { recurrence: { disposition: "blocking", rounds: 1, wasBlocking: true } } }],
+    );
+    expect(stamped[0]?.meta).toEqual({
+      acQuote: "literal",
+      recurrence: { disposition: "blocking", rounds: 1, wasBlocking: true },
+    });
   });
 });

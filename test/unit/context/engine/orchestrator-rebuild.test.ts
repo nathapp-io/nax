@@ -9,8 +9,19 @@
  * 400-line file limit; split is by describe block concern.
  */
 
-import { describe, expect, test } from "bun:test";
-import { ContextOrchestrator } from "@/context/engine/orchestrator";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import {
+  DEFAULT_TEST_ROUTING,
+  makeContextBundle,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+  makeTestContext,
+} from "@test/helpers";
+import { SIMILARITY_THRESHOLD } from "@/context/engine/dedupe";
+import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine/orchestrator";
+import { _stageAssemblerDeps, assembleForStage } from "@/context/engine/stage-assembler";
+import { getStageContextConfig } from "@/context/engine/stage-config";
 import type {
   AdapterFailure,
   ContextBundle,
@@ -18,6 +29,7 @@ import type {
   ContextRequest,
   IContextProvider,
 } from "@/context/engine/types";
+import type { RoutingResult } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -396,5 +408,340 @@ describe("rebuildForAgent — #508-M5 rebuildInfo chunk ID correlation", () => {
     const orch2 = new ContextOrchestrator([]);
     const original2 = await orch2.assemble(BASE_REQUEST);
     expect(orch2.rebuildForAgent(original2).manifest.rebuildInfo).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ContextOrchestrator.assemble — US-001 stale attribution through the dedupe path
+//
+// Covers AC7 of "Attribute staleness on excluded chunks":
+//   AC7  Given two providers whose chunk content has trigram Jaccard similarity
+//        at or above SIMILARITY_THRESHOLD (src/context/engine/dedupe.ts:21, 0.9
+//        — identical content satisfies it), and applyStaleness marks the
+//        lower-scoring chunk staleCandidate true with a scoreMultiplier below
+//        1, when assembly dedupes the chunks, then the manifest excludedChunks
+//        entry for the dropped chunk has stale true and reason "dedupe".
+// ─────────────────────────────────────────────────────────────────────────────
+
+const staleBaseRequest: ContextRequest = {
+  storyId: "US-001",
+  repoRoot: "/repo",
+  packageDir: "/repo",
+  stage: "tdd-implementer",
+  role: "implementer",
+  budgetTokens: 8_000,
+  providerIds: ["p1", "p2"],
+};
+
+function staleMakeProvider(id: string, result: ContextProviderResult): IContextProvider {
+  return {
+    id,
+    kind: "feature",
+    fetch: async () => result,
+  };
+}
+
+/**
+ * Two near-duplicate chunks sharing identical content (trigram Jaccard = 1.0
+ * ≥ SIMILARITY_THRESHOLD). The lower-scoring chunk is marked staleCandidate
+ * with a scoreMultiplier below 1 — applyStaleness()'s effect on the scoring
+ * pass reduces its score further, so the higher-scoring non-stale chunk is
+ * the dedupe representative and the stale one is dropped.
+ */
+function makeNearDuplicateResults(): ContextProviderResult[] {
+  // Identical content → Jaccard similarity = 1.0 ≥ threshold.
+  const sharedContent = "Always use the lint check before merging a pull request.";
+  return [
+    {
+      chunks: [
+        {
+          id: "chunk-higher",
+          providerId: "p1",
+          kind: "feature",
+          scope: "project",
+          role: ["all"],
+          content: sharedContent,
+          tokens: 100,
+          rawScore: 0.9,
+        },
+      ],
+    },
+    {
+      chunks: [
+        {
+          id: "chunk-lower-stale",
+          providerId: "p2",
+          kind: "feature",
+          scope: "project",
+          role: ["all"],
+          content: sharedContent,
+          tokens: 100,
+          rawScore: 0.8,
+          staleCandidate: true,
+          scoreMultiplier: 0.5,
+        },
+      ],
+    },
+  ];
+}
+
+function findExcluded(
+  manifest: { excludedChunks: Array<{ id: string; reason: string; stale?: boolean }> },
+  id: string,
+) {
+  const entry = manifest.excludedChunks.find((c) => c.id === id);
+  if (!entry) throw new Error(`Expected excludedChunks to contain id="${id}"`);
+  return entry;
+}
+
+describe("ContextOrchestrator — stale attribution through dedupe (AC7)", () => {
+  test("AC7: identical-content chunks (Jaccard >= SIMILARITY_THRESHOLD) → dropped stale chunk has stale: true, reason: 'dedupe'", async () => {
+    const [r1, r2] = makeNearDuplicateResults();
+    const orch = new ContextOrchestrator([staleMakeProvider("p1", r1), staleMakeProvider("p2", r2)]);
+
+    const bundle = await orch.assemble(staleBaseRequest);
+
+    // Sanity: the threshold used in dedupe.ts is 0.9 — we pass with 1.0.
+    expect(SIMILARITY_THRESHOLD).toBe(0.9);
+
+    // Sanity: the stale chunk must have actually been dropped from
+    // includedChunks and surfaced as excluded.
+    expect(bundle.manifest.includedChunks).not.toContain("chunk-lower-stale");
+    expect(bundle.manifest.excludedChunks.map((c) => c.id)).toContain("chunk-lower-stale");
+
+    const entry = findExcluded(bundle.manifest, "chunk-lower-stale");
+    expect(entry.reason).toBe("dedupe");
+    expect(entry.stale).toBe(true);
+    expect(bundle.manifest.chunkProviders?.["chunk-lower-stale"]).toBe("p2");
+  });
+
+  test("AC7 (mechanical reason preserved): the dropped stale chunk keeps reason 'dedupe' rather than being re-labeled 'stale'", async () => {
+    // The story's contract: the stale flag is additive, never replaces the
+    // mechanical cause. reason='stale' is no longer a member of the union;
+    // a stale chunk whose drop cause is dedupe must record reason='dedupe'.
+    const [r1, r2] = makeNearDuplicateResults();
+    const orch = new ContextOrchestrator([staleMakeProvider("p1", r1), staleMakeProvider("p2", r2)]);
+
+    const bundle = await orch.assemble(staleBaseRequest);
+
+    for (const entry of bundle.manifest.excludedChunks) {
+      expect(entry.reason).not.toBe("stale");
+    }
+    expect(findExcluded(bundle.manifest, "chunk-lower-stale").reason).toBe("dedupe");
+  });
+
+  test("AC7 (kept representative unchanged): the higher-scoring non-stale chunk survives dedupe and is not in excludedChunks", async () => {
+    // Boundary: the non-stale representative is included, not excluded —
+    // it does NOT get a stale stamp on a phantom excludedChunks entry.
+    const [r1, r2] = makeNearDuplicateResults();
+    const orch = new ContextOrchestrator([staleMakeProvider("p1", r1), staleMakeProvider("p2", r2)]);
+
+    const bundle = await orch.assemble(staleBaseRequest);
+
+    expect(bundle.manifest.includedChunks).toContain("chunk-higher");
+    expect(bundle.manifest.excludedChunks.map((c) => c.id)).not.toContain("chunk-higher");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Amendment B AC-51: planDigestBoost
+//
+// For stages single-session, tdd-simple, no-test, and batch the plan digest
+// is injected as a scored RawChunk (id: "plan-digest:<hash>") with a boosted
+// rawScore. For all other stages the priorStageDigest remains raw markdown only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _seq = 0;
+beforeEach(() => {
+  _seq = 0;
+  _orchestratorDeps.uuid = () => `test-uuid-${++_seq}` as `${string}-${string}-${string}-${string}-${string}`;
+  _orchestratorDeps.now = () => Date.now();
+});
+
+const PLAN_DIGEST = "Plan summary: touch auth.ts, use _deps pattern, tests in test/unit/auth.";
+
+const boostBaseRequest: ContextRequest = {
+  storyId: "US-001",
+  repoRoot: "/project",
+  packageDir: "/project",
+  stage: "single-session",
+  role: "implementer",
+  budgetTokens: 10_000,
+  providerIds: [],
+  priorStageDigest: PLAN_DIGEST,
+};
+
+describe("StageContextConfig.planDigestBoost", () => {
+  // Only tdd-simple and no-test are TestStrategy values — the only two keys
+  // getStageContextConfig(ctx.routing.testStrategy) can ever select for the
+  // boost (nax#1759). single-session and batch used to also declare 1.5 here,
+  // but neither is a TestStrategy value, so neither field was ever read —
+  // dead configuration, removed.
+  test.each(["tdd-simple", "no-test"])("%s has planDigestBoost >= 1.5", (stage) => {
+    const cfg = getStageContextConfig(stage);
+    expect(cfg.planDigestBoost).toBeGreaterThanOrEqual(1.5);
+  });
+
+  test.each(["single-session", "batch", "verify", "review-semantic", "plan", "tdd-test-writer", "tdd-implementer"])(
+    "%s has planDigestBoost absent or <= 1",
+    (stage) => {
+      const cfg = getStageContextConfig(stage);
+      expect(cfg.planDigestBoost ?? 1.0).toBeLessThanOrEqual(1.0);
+    },
+  );
+});
+
+/** Minimal PipelineContext for assembleForStage, mirroring stage-assembler.test.ts's makeCtx. */
+function makeAssembleCtx(testStrategy: RoutingResult["testStrategy"]) {
+  const config = makeNaxConfig({ context: { v2: { enabled: true, pluginProviders: [] } } });
+  const story = makeStory({ id: "US-001" });
+  return makeTestContext({
+    config,
+    rootConfig: config,
+    prd: makePRD({ feature: "test-feature", userStories: [] }),
+    story,
+    stories: [],
+    routing: { ...DEFAULT_TEST_ROUTING, agent: undefined, testStrategy },
+    projectDir: undefined, // suppresses manifest writes in tests
+    workdir: "/repo",
+    hooks: { hooks: {} },
+  });
+}
+
+/**
+ * Mock orchestrator that captures the last assemble() request via a mutable
+ * ref. Built as a real `ContextOrchestrator` instance with `assemble`
+ * monkey-patched — `_stageAssemblerDeps.createOrchestrator` returns
+ * `ContextOrchestrator`, and a genuine instance satisfies that return type
+ * with no cast needed (unlike a structurally-mocked object literal).
+ */
+function makeMockOrchestrator() {
+  const ref: { captured: ContextRequest | null } = { captured: null };
+  const orchestrator = new ContextOrchestrator([]);
+  orchestrator.assemble = async (r: ContextRequest): Promise<ContextBundle> => {
+    ref.captured = r;
+    return makeContextBundle({
+      digest: "abc",
+      manifest: {
+        requestId: "req-1",
+        stage: "single-session",
+        totalBudgetTokens: 0,
+        usedTokens: 0,
+        includedChunks: [],
+        excludedChunks: [],
+        floorItems: [],
+        digestTokens: 0,
+        buildMs: 0,
+      },
+    });
+  };
+  return { ref, orchestrator };
+}
+
+describe("assembleForStage — planDigestBoost is resolved from testStrategy, not the assembled stage (nax#1759)", () => {
+  let origReaddir: typeof _stageAssemblerDeps.readdir;
+  let origReadDescriptor: typeof _stageAssemblerDeps.readDescriptor;
+  let origCreateOrchestrator: typeof _stageAssemblerDeps.createOrchestrator;
+
+  beforeEach(() => {
+    origReaddir = _stageAssemblerDeps.readdir;
+    origReadDescriptor = _stageAssemblerDeps.readDescriptor;
+    origCreateOrchestrator = _stageAssemblerDeps.createOrchestrator;
+    _stageAssemblerDeps.readdir = async () => {
+      throw new Error("ENOENT");
+    };
+    _stageAssemblerDeps.readDescriptor = async () => null;
+  });
+
+  afterEach(() => {
+    _stageAssemblerDeps.readdir = origReaddir;
+    _stageAssemblerDeps.readDescriptor = origReadDescriptor;
+    _stageAssemblerDeps.createOrchestrator = origCreateOrchestrator;
+  });
+
+  test("a tdd-simple story gets planDigestBoost=1.5 whether assembling 'single-session' or 'tdd-implementer'", async () => {
+    const execMock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => execMock.orchestrator;
+    await assembleForStage(makeAssembleCtx("tdd-simple"), "single-session");
+    expect(execMock.ref.captured?.planDigestBoost).toBe(1.5);
+
+    const tddMock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => tddMock.orchestrator;
+    await assembleForStage(makeAssembleCtx("tdd-simple"), "tdd-implementer");
+    expect(tddMock.ref.captured?.planDigestBoost).toBe(1.5);
+  });
+
+  test("a test-after story gets no planDigestBoost, even assembling 'single-session' (the stage it maps to)", async () => {
+    const mock = makeMockOrchestrator();
+    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
+
+    // test-after is resolveTestStrategy's fallback and a single-session mode,
+    // and executionContextStage maps it to the "single-session" stage — whose
+    // own entry no longer declares a boost. It has no STAGE_CONTEXT_MAP entry
+    // of its own, so the strategy-keyed lookup finds nothing: a known gap
+    // (ADR-010 Amendment B, nax#1759).
+    await assembleForStage(makeAssembleCtx("test-after"), "single-session");
+
+    expect(mock.ref.captured?.planDigestBoost).toBeUndefined();
+  });
+});
+
+describe("ContextOrchestrator — planDigestBoost (Amendment B AC-51)", () => {
+  test("plan-digest chunk is injected into includedChunks when planDigestBoost > 1", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({ ...boostBaseRequest, planDigestBoost: 1.5 });
+    const planChunk = bundle.manifest.includedChunks.find((id) => id.startsWith("plan-digest:"));
+    expect(planChunk).toBeDefined();
+  });
+
+  test("plan-digest chunk appears in bundle.chunks when boosted", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({ ...boostBaseRequest, planDigestBoost: 1.5 });
+    const chunk = bundle.chunks.find((c) => c.id.startsWith("plan-digest:"));
+    expect(chunk).toBeDefined();
+    expect(chunk?.content).toBe(PLAN_DIGEST);
+  });
+
+  test("plan-digest chunk is NOT injected when planDigestBoost absent", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({ ...boostBaseRequest }); // no planDigestBoost
+    const planChunk = bundle.manifest.includedChunks.find((id) => id.startsWith("plan-digest:"));
+    expect(planChunk).toBeUndefined();
+  });
+
+  test("plan-digest chunk is NOT injected when planDigestBoost <= 1", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({ ...boostBaseRequest, planDigestBoost: 1.0 });
+    const planChunk = bundle.manifest.includedChunks.find((id) => id.startsWith("plan-digest:"));
+    expect(planChunk).toBeUndefined();
+  });
+
+  test("plan-digest chunk is NOT injected when priorStageDigest is absent", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({ ...boostBaseRequest, priorStageDigest: undefined, planDigestBoost: 1.5 });
+    const planChunk = bundle.manifest.includedChunks.find((id) => id.startsWith("plan-digest:"));
+    expect(planChunk).toBeUndefined();
+  });
+
+  test("boosted plan-digest chunk has higher rawScore than session-scratch chunks (0.9)", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({ ...boostBaseRequest, planDigestBoost: 1.5 });
+    const chunk = bundle.chunks.find((c) => c.id.startsWith("plan-digest:"));
+    // rawScore should be 0.9 * 1.5 = 1.35, exceeding normal session rawScore of 0.9
+    expect(chunk?.rawScore).toBeGreaterThan(0.9);
+  });
+
+  test("plan-digest chunk appears in providerResults with providerId 'plan-digest'", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({ ...boostBaseRequest, planDigestBoost: 1.5 });
+    const pr = bundle.manifest.providerResults?.find((p) => p.providerId === "plan-digest");
+    expect(pr).toBeDefined();
+    expect(pr?.status).toBe("ok");
+  });
+
+  test("pushMarkdown contains plan digest content when boosted", async () => {
+    const orch = new ContextOrchestrator([]);
+    const bundle = await orch.assemble({ ...boostBaseRequest, planDigestBoost: 1.5 });
+    expect(bundle.pushMarkdown).toContain(PLAN_DIGEST);
   });
 });

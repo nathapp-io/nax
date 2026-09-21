@@ -56,10 +56,10 @@ describe("formatMutationSummary", () => {
     expect(formatMutationSummary([summary])).toContain("US-010");
   });
 
-  test("US-004 AC10: omits NOT CHECKED for disabled stories", () => {
+  test("US-004 AC10: omits NOT CHECKED for disabled stories; US-004 AC13: returns empty output when every story was unchecked", () => {
     const summary = makeSummary({ survivors: [], candidates: 0, checked: false });
-
     expect(formatMutationSummary([summary])).not.toContain("NOT CHECKED");
+    expect(formatMutationSummary([summary])).toBe("");
   });
 
   test("US-004 AC11: renders survivors before NOT CHECKED stories", () => {
@@ -82,11 +82,6 @@ describe("formatMutationSummary", () => {
     expect(output).toContain("US-011");
   });
 
-  test("US-004 AC13: returns empty output when every story was unchecked", () => {
-    const summary = makeSummary({ survivors: [], candidates: 0, checked: false });
-
-    expect(formatMutationSummary([summary])).toBe("");
-  });
   test("US-004 AC8: includes survivors from multiple story summaries", () => {
     const second = makeSummary({
       storyId: "US-005",

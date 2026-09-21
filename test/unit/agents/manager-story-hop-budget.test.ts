@@ -11,11 +11,15 @@
  * unavailable starts on the first live fallback instead, consuming no hop.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import type { AgentRunOptions } from "@/agents";
 import { AgentManager } from "@/agents";
+import { _agentManagerDeps } from "@/agents/manager";
+import { buildCompleteEvent, buildSessionTurnEvent } from "@/agents/manager-dispatch";
+import type { CompleteOptions, ResolvedCompleteOptions, SessionHandle, TurnResult } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
+import { resolvePermissions } from "@/config/permissions";
 import { agentManagerConfigSelector } from "@/config/selectors";
 import type { AdapterFailure } from "@/context/engine";
 
@@ -388,5 +392,273 @@ describe("AgentManager — dead-primary skip is scoped to the dispatched endpoin
     // NOT inherit the stale primary's modelDef default. If it had, codex would show
     // unavailable under claude's own model id, which is the wrong identity for it.
     expect(m.isUnavailable("codex", "balanced", "claude-sonnet-4-5")).toBe(false);
+  });
+});
+
+// ─── US-002/US-004: dispatch-event builders (sessionId, pricingSource) ───────
+
+const PERMS = resolvePermissions(DEFAULT_CONFIG, "complete");
+
+function makeOptions(): ResolvedCompleteOptions {
+  return {
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-6" },
+    workdir: "/tmp",
+    resolvedPermissions: PERMS,
+  };
+}
+
+describe("buildCompleteEvent — sessionId plumbing", () => {
+  test("US-002 AC4: sessionId supplied on options reaches the returned event", () => {
+    // AC 4 calls buildCompleteEvent's `input.sessionId` — the story describes
+    // it as a plain field on the dispatcher event, so we exercise the build
+    // path that would surface an adapter-supplied id.
+    const startedAt = 1_000;
+    const event = buildCompleteEvent({
+      sessionName: "nax-abc-feat-s1-plan",
+      prompt: "do the thing",
+      response: "done",
+      agentName: "claude",
+      stage: "complete",
+      options: { ...makeOptions(), sessionName: "nax-abc-feat-s1-plan" } as CompleteOptions,
+      resolvedPermissions: PERMS,
+      tokenUsage: { inputTokens: 10, outputTokens: 5 },
+      estimatedCostUsd: 0.001,
+      startedAt,
+      sessionId: "nax-abc12345",
+    });
+
+    expect(event.kind).toBe("complete");
+    expect(event.sessionId).toBe("nax-abc12345");
+  });
+
+  test("US-002 AC5: no sessionId on input means the returned event has no sessionId property", () => {
+    const event = buildCompleteEvent({
+      sessionName: "nax-abc-feat-s1-plan",
+      prompt: "do the thing",
+      response: "done",
+      agentName: "claude",
+      stage: "complete",
+      options: { ...makeOptions(), sessionName: "nax-abc-feat-s1-plan" } as CompleteOptions,
+      resolvedPermissions: PERMS,
+      tokenUsage: { inputTokens: 10, outputTokens: 5 },
+      estimatedCostUsd: 0.001,
+      startedAt: 1_000,
+    });
+
+    expect(event.kind).toBe("complete");
+    // The exact invariant the AC names: no sessionId property at all.
+    expect("sessionId" in event).toBe(false);
+  });
+});
+
+// US-004: the dispatch-event builders forward the producer-supplied
+// pricingSource from the adapter's result so the cost subscriber can prefer
+// it over the model-derived default.
+describe("buildSessionTurnEvent — pricingSource plumbing (US-004)", () => {
+  test("US-004 AC7: TurnResult.pricingSource catalog-rates reaches the returned event", () => {
+    const handle: SessionHandle = {
+      id: "nax-test-handle",
+      agentName: "native",
+      modelDef: { provider: "openai", model: "gpt-5.6-terra" },
+    };
+    const result: TurnResult = {
+      output: "ok",
+      tokenUsage: { inputTokens: 10, outputTokens: 5 },
+      estimatedCostUsd: 0.001,
+      exactCostUsd: 0.001,
+      internalRoundTrips: 1,
+      pricingSource: "catalog-rates",
+    };
+    const event = buildSessionTurnEvent({
+      handle,
+      sessionRole: "main",
+      prompt: "do the thing",
+      result,
+      agentName: "native",
+      stage: "run",
+      opts: { pipelineStage: "run", storyId: "US-004" },
+      resolvedPermissions: PERMS,
+      startedAt: 1_000,
+    });
+
+    expect(event.kind).toBe("session-turn");
+    expect(event.pricingSource).toBe("catalog-rates");
+  });
+
+  test("TurnResult without pricingSource means the returned event has no pricingSource property", () => {
+    // The exact invariant the AC names for the no-value case: omitted (not
+    // undefined) so the cost subscriber's "in" check distinguishes "no report"
+    // from "explicitly unknown".
+    const handle: SessionHandle = {
+      id: "nax-test-handle",
+      agentName: "claude",
+    };
+    const result: TurnResult = {
+      output: "ok",
+      tokenUsage: { inputTokens: 10, outputTokens: 5 },
+      estimatedCostUsd: 0.001,
+      internalRoundTrips: 1,
+    };
+    const event = buildSessionTurnEvent({
+      handle,
+      sessionRole: "main",
+      prompt: "do the thing",
+      result,
+      agentName: "claude",
+      stage: "run",
+      opts: { pipelineStage: "run" },
+      resolvedPermissions: PERMS,
+      startedAt: 1_000,
+    });
+
+    expect(event.kind).toBe("session-turn");
+    expect("pricingSource" in event).toBe(false);
+  });
+});
+
+describe("buildCompleteEvent — pricingSource plumbing (US-004)", () => {
+  test("buildCompleteEvent forwards pricingSource from the producer result", () => {
+    const event = buildCompleteEvent({
+      sessionName: "nax-abc-feat-s1-plan",
+      prompt: "do the thing",
+      response: "done",
+      agentName: "claude",
+      stage: "complete",
+      options: { ...makeOptions(), sessionName: "nax-abc-feat-s1-plan" } as CompleteOptions,
+      resolvedPermissions: PERMS,
+      tokenUsage: { inputTokens: 10, outputTokens: 5 },
+      estimatedCostUsd: 0.001,
+      exactCostUsd: 0.001,
+      startedAt: 1_000,
+      // The producer-supplied rate card lives on CompleteResult / TurnResult
+      // (US-003); US-004 forwards it onto the dispatch event via the builder.
+      // We simulate that by passing the value through buildCompleteEvent's
+      // pricingSource input.
+      pricingSource: "catalog-rates",
+    });
+
+    expect(event.kind).toBe("complete");
+    expect(event.pricingSource).toBe("catalog-rates");
+  });
+});
+
+// ─── #585: AbortSignal plumbing through runWithFallback backoff ──────────────
+
+const rateLimitFailure = {
+  category: "availability" as const,
+  outcome: "fail-rate-limit" as const,
+  retriable: true,
+  message: "429",
+};
+
+const mockBundle = {} as import("@/context/engine").ContextBundle;
+
+function makeConfigNoFallback() {
+  // No fallback chain — forces the rate-limit-backoff branch rather than a swap.
+  return makeNaxConfig({
+    agent: {
+      fallback: { enabled: false, map: {}, maxHopsPerStory: 0, onQualityFailure: false, rebuildContext: false },
+    },
+  });
+}
+
+function abortMakeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
+  return {
+    prompt: "p",
+    workdir: "/tmp",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    timeoutSeconds: 60,
+    config: agentManagerConfigSelector.select(DEFAULT_CONFIG),
+    ...overrides,
+  };
+}
+
+function makeRateLimitedRunHop() {
+  return async () => ({
+    prompt: "prompt-mock",
+    result: {
+      success: false,
+      exitCode: 1,
+      output: "rate limit",
+      rateLimited: true,
+      durationMs: 1,
+      estimatedCostUsd: 0,
+      adapterFailure: rateLimitFailure,
+    },
+  });
+}
+
+describe("AgentManager.runWithFallback — abort signal (#585)", () => {
+  const origSleep = _agentManagerDeps.sleep;
+  afterEach(() => {
+    _agentManagerDeps.sleep = origSleep;
+  });
+
+  test("pre-aborted signal stops backoff immediately (no sleep issued)", async () => {
+    const sleepCalls: Array<{ ms: number; aborted: boolean }> = [];
+    _agentManagerDeps.sleep = async (ms, signal) => {
+      sleepCalls.push({ ms, aborted: Boolean(signal?.aborted) });
+    };
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const m = new AgentManager(makeConfigNoFallback(), undefined, { runHop: makeRateLimitedRunHop() });
+    const outcome = await m.runWithFallback({
+      runOptions: abortMakeRunOptions({ storyId: "s1" }),
+      bundle: mockBundle,
+      signal: controller.signal,
+    });
+
+    // The adapter ran once and returned the rate-limit failure.
+    // Backoff sleep must NOT have been issued because the signal was already aborted.
+    expect(outcome.result.success).toBe(false);
+    expect(sleepCalls).toHaveLength(0);
+  });
+
+  test("signal forwarded to sleep — backoff races against it", async () => {
+    let receivedSignal: AbortSignal | undefined;
+    _agentManagerDeps.sleep = async (_ms, signal) => {
+      receivedSignal = signal;
+    };
+
+    const controller = new AbortController();
+    const m = new AgentManager(makeConfigNoFallback(), undefined, { runHop: makeRateLimitedRunHop() });
+    await m.runWithFallback({
+      runOptions: abortMakeRunOptions({ storyId: "s1" }),
+      bundle: mockBundle,
+      signal: controller.signal,
+    });
+
+    expect(receivedSignal).toBe(controller.signal);
+  });
+
+  test("abort during backoff returns without further retries", async () => {
+    const controller = new AbortController();
+    // Simulate a sleep that "wakes up" to find the signal aborted.
+    _agentManagerDeps.sleep = async (_ms, signal) => {
+      if (signal && !signal.aborted) {
+        // abort the signal while the backoff sleep is in flight
+        controller.abort();
+      }
+    };
+
+    // Abort after a microtask so the first hop runs, then the signal is aborted
+    // before the backoff loop checks again.
+    queueMicrotask(() => controller.abort());
+
+    const m = new AgentManager(makeConfigNoFallback(), undefined, { runHop: makeRateLimitedRunHop() });
+    const startHops = performance.now();
+    const outcome = await m.runWithFallback({
+      runOptions: abortMakeRunOptions({ storyId: "s1" }),
+      bundle: mockBundle,
+      signal: controller.signal,
+    });
+    const elapsed = performance.now() - startHops;
+
+    // Settled quickly, did not loop through all 3 backoff attempts.
+    expect(elapsed).toBeLessThan(500);
+    expect(outcome.result.adapterFailure?.outcome).toBe("fail-rate-limit");
   });
 });

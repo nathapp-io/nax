@@ -172,13 +172,9 @@ describe("US-007 AC3: buildHeartbeatMetricsPayload resource attributes include n
     snapshot: snapshot(),
   });
 
-  test("success: emits a nax.run_id resource attribute equal to the snapshot's run id", () => {
+  test("success: emits a nax.run_id resource attribute equal to the snapshot's run id; boundary: still includes the service.name attribute (no regression)", () => {
     const attrs = payload.resourceMetrics[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "nax.run_id", value: { stringValue: "r1" } });
-  });
-
-  test("boundary: still includes the service.name attribute (no regression)", () => {
-    const attrs = payload.resourceMetrics[0].resource.attributes;
     expect(attrs).toContainEqual({ key: "service.name", value: { stringValue: "nax" } });
   });
 });

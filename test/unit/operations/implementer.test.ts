@@ -40,25 +40,17 @@ describe("implementerOp — RunOperation shape", () => {
     expect(implementerOp.kind).toBe("run");
   });
 
-  test("implementerOp.session.role equals 'implementer'", async () => {
+  test("implementerOp.session.role equals 'implementer'; implementerOp.session.lifetime equals 'warm'; implementerOp has a config selector", async () => {
     const { implementerOp } = await import("@/operations");
     expect(implementerOp.session.role).toBe("implementer");
-  });
-
-  test("implementerOp.session.lifetime equals 'warm'", async () => {
-    const { implementerOp } = await import("@/operations");
     expect(implementerOp.session.lifetime).toBe("warm");
+    expect(implementerOp.config).toBeDefined();
   });
 
   test.each([["name" as const], ["stage" as const]])("implementerOp has a non-empty %s string", async (field) => {
     const { implementerOp } = await import("@/operations");
     expect(typeof implementerOp[field]).toBe("string");
     expect(implementerOp[field]).toBeTruthy();
-  });
-
-  test("implementerOp has a config selector", async () => {
-    const { implementerOp } = await import("@/operations");
-    expect(implementerOp.config).toBeDefined();
   });
 
   test.each([["build" as const], ["parse" as const]])("implementerOp has a %s function", async (method) => {
@@ -335,16 +327,13 @@ function tddBuildCtx(sessionTiers: Partial<typeof DEFAULT_CONFIG.tdd.sessionTier
 }
 
 describe("implementerOp.model — routing-driven", () => {
-  test("returns the story's initial modelTier", () => {
+  test("returns the story's initial modelTier; follows the escalated tier (escalation mutates story.routing.modelTier); returns undefined when routing is absent (callOp then defaults)", () => {
     const model = implementerOp.model;
     expect(typeof model === "function" ? model({ story: storyWithTier("fast") }, buildCtx) : model).toBe("fast");
-  });
-
-  test("follows the escalated tier (escalation mutates story.routing.modelTier)", () => {
-    const model = implementerOp.model;
     expect(typeof model === "function" ? model({ story: storyWithTier("powerful") }, buildCtx) : model).toBe(
       "powerful",
     );
+    expect(typeof model === "function" ? model({ story: storyWithTier(undefined) }, buildCtx) : model).toBeUndefined();
   });
 
   test("uses a literal profile pin with its assigned agent", () => {
@@ -364,11 +353,6 @@ describe("implementerOp.model — routing-driven", () => {
       agent: "claude",
       model: "claude-opus-5-1",
     });
-  });
-
-  test("returns undefined when routing is absent (callOp then defaults)", () => {
-    const model = implementerOp.model;
-    expect(typeof model === "function" ? model({ story: storyWithTier(undefined) }, buildCtx) : model).toBeUndefined();
   });
 });
 

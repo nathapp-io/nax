@@ -1,7 +1,10 @@
 /**
- * Tests for codex effort-suffix handling in SpawnAcpClient.
+ * Tests for SpawnAcpClient / SpawnAcpSession argv construction and session
+ * lifecycle — the codex effort-suffix handling (Task 4), the onPidSpawned /
+ * onPidExited callback family (ADR-013 Phase 3), --cwd on cancel/stop (BUG-3),
+ * and timeoutSeconds zero-survival (US-005).
  *
- * A profile model like "gpt-5.6-luna[high]" is split three ways:
+ * Effort suffix: a profile model like "gpt-5.6-luna[high]" is split three ways:
  *   - the bare id rides on every prompt via --model,
  *   - the original string stays on the agent.call_started event so headless and
  *     TUI keep showing the effort,
@@ -16,9 +19,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { withDepsRestore } from "@test/helpers";
-import { _spawnClientDeps, SpawnAcpClient } from "@/agents";
+import { assertDefined, withDepsRestore } from "@test/helpers";
+import { _spawnClientDeps, createSpawnAcpClient, SpawnAcpClient } from "@/agents";
+import { DEFAULT_ACP_TIMEOUT_SECONDS } from "@/agents/acp/spawn-client";
+import { SpawnAcpSession } from "@/agents/acp/spawn-client-session";
 import type { AgentStreamEvent } from "@/runtime";
+import { stubProcessKill } from "./_spawn-client-test-helpers";
 
 const ENSURE_JSON = JSON.stringify({
   action: "session_ensured",
@@ -29,6 +35,8 @@ const ENSURE_JSON = JSON.stringify({
 });
 
 const TURN_JSON = JSON.stringify({ result: "done", stopReason: "end_turn" });
+
+const FIXED_PID = 54321;
 
 /** `sessions show --format json` payload shape acpx returns; only the fields discovery reads. */
 function showJson(configOptions: Array<{ id: string; category: string }>): string {
@@ -54,7 +62,7 @@ function makeSpawnResult(exitCode = 0, stdout = ""): ReturnType<typeof _spawnCli
     stderr: makeStream(""),
     stdin: { write: () => 0, end: () => {}, flush: () => {} },
     exited: Promise.resolve(exitCode),
-    pid: 4321,
+    pid: FIXED_PID,
     kill: () => {},
   } as ReturnType<typeof _spawnClientDeps.spawn>;
 }
@@ -94,6 +102,7 @@ function installDispatchSpawn(dispatch: (cmd: string[]) => { stdout: string; exi
 }
 
 withDepsRestore(_spawnClientDeps, ["spawn"]);
+stubProcessKill();
 
 beforeEach(() => {
   calls = [];
@@ -374,5 +383,290 @@ describe("SpawnAcpClient - effort suffix", () => {
       expect(sets).toHaveLength(1);
       expect(sets[0]?.[5]).toBe("reasoning_effort");
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SpawnAcpSession — onPidSpawned callback (ADR-013 Phase 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SpawnAcpSession — onPidSpawned callback", () => {
+  // The file-level beforeEach installs the ENSURE default; this suite prompts
+  // sessions directly, so it defaults to a TURN response instead.
+  beforeEach(() => {
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, TURN_JSON));
+  });
+
+  function makeSession(onPidSpawned?: (pid: number) => void): SpawnAcpSession {
+    return new SpawnAcpSession({
+      agentName: "claude",
+      sessionName: "test-session",
+      cwd: "/tmp/test",
+      model: "claude-haiku",
+      timeoutSeconds: 30,
+      promptRetries: 0,
+      permissionMode: "approve-all",
+      env: {},
+      onPidSpawned,
+    });
+  }
+
+  test("onPidSpawned fires when prompt() spawns a process", async () => {
+    const pids: number[] = [];
+    const session = makeSession((pid) => pids.push(pid));
+
+    await session.prompt("do something");
+
+    expect(pids).toHaveLength(1);
+    expect(pids[0] as number).toBe(FIXED_PID);
+  });
+
+  test("onPidSpawned receives the process PID", async () => {
+    const capturedPids: number[] = [];
+    const session = makeSession((pid: number) => {
+      capturedPids.push(pid);
+    });
+
+    await session.prompt("test");
+
+    expect(capturedPids[0]).toBe(FIXED_PID);
+  });
+
+  test("onPidSpawned fires BEFORE prompt() resolves", async () => {
+    const order: string[] = [];
+    let resolveExit!: (code: number) => void;
+    const exitPromise = new Promise<number>((r) => {
+      resolveExit = r;
+    });
+
+    _spawnClientDeps.spawn = mock(() => ({
+      ...makeSpawnResult(0, JSON.stringify({ result: "done", stopReason: "end_turn" })),
+      exited: exitPromise,
+      pid: FIXED_PID,
+    }));
+
+    const session = makeSession((pid) => {
+      order.push(`callback:${pid}`);
+    });
+
+    // Start prompt but resolve exit after the callback should have fired
+    const promptPromise = session.prompt("test").then((r: unknown) => {
+      order.push("resolved");
+      return r;
+    });
+    // Give the microtask queue a turn so spawn fires
+    await Promise.resolve();
+    order.push("pre-exit");
+    resolveExit(0);
+    await promptPromise;
+
+    expect(order[0]).toBe(`callback:${FIXED_PID}`);
+    expect(order[order.length - 1]).toBe("resolved");
+  });
+
+  test("works when onPidSpawned is undefined (no crash)", async () => {
+    const session = makeSession(undefined);
+    const result = await session.prompt("do something");
+    expect(result.stopReason).toBe("end_turn");
+  });
+
+  test("onPidExited fires after prompt() resolves and pairs with onPidSpawned", async () => {
+    const events: string[] = [];
+    const session = new SpawnAcpSession({
+      agentName: "claude",
+      sessionName: "test-session",
+      cwd: "/tmp/test",
+      model: "claude-haiku",
+      timeoutSeconds: 30,
+      promptRetries: 0,
+      permissionMode: "approve-all",
+      env: {},
+      onPidSpawned: (pid) => events.push(`spawn:${pid}`),
+      onPidExited: (pid) => events.push(`exit:${pid}`),
+    });
+
+    await session.prompt("do something");
+
+    expect(events).toEqual([`spawn:${FIXED_PID}`, `exit:${FIXED_PID}`]);
+  });
+
+  test("onPidExited fires exactly once even when prompt() throws", async () => {
+    // Make the spawned proc fail with a non-zero exit
+    _spawnClientDeps.spawn = mock(() => ({
+      ...makeSpawnResult(1, ""),
+      pid: FIXED_PID,
+    }));
+
+    const exits: number[] = [];
+    const session = new SpawnAcpSession({
+      agentName: "claude",
+      sessionName: "test-session",
+      cwd: "/tmp/test",
+      model: "claude-haiku",
+      timeoutSeconds: 30,
+      promptRetries: 0,
+      permissionMode: "approve-all",
+      env: {},
+      onPidExited: (pid) => exits.push(pid),
+    });
+
+    // prompt() with non-zero exit returns an error response (doesn't throw),
+    // but we still expect the exit callback to fire exactly once.
+    await session.prompt("test");
+    expect(exits).toEqual([FIXED_PID]);
+  });
+
+  test("onPidExited tolerates a throwing callback without breaking prompt()", async () => {
+    let exitCalls = 0;
+    const session = new SpawnAcpSession({
+      agentName: "claude",
+      sessionName: "test-session",
+      cwd: "/tmp/test",
+      model: "claude-haiku",
+      timeoutSeconds: 30,
+      promptRetries: 0,
+      permissionMode: "approve-all",
+      env: {},
+      onPidExited: () => {
+        exitCalls++;
+        throw new Error("registry write failed");
+      },
+    });
+
+    // Even if onPidExited throws, prompt() must still resolve normally —
+    // unregistration is best-effort.
+    const result = await session.prompt("do something");
+    expect(result.stopReason).toBe("end_turn");
+    expect(exitCalls).toBe(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SpawnAcpClient — propagates onPidSpawned to sessions
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SpawnAcpClient — propagates onPidSpawned to sessions", () => {
+  function makeClient(onPidSpawned?: (pid: number) => void): SpawnAcpClient {
+    return new SpawnAcpClient("acpx --model claude-haiku claude", "/tmp/test", 30, onPidSpawned);
+  }
+
+  beforeEach(() => {
+    // Make trackedSpawn return a valid session-ensure response
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, JSON.stringify({ sessionId: "sess-1", recordId: "rec-1" })));
+  });
+
+  test("createSession passes onPidSpawned to the returned SpawnAcpSession", async () => {
+    const pids: number[] = [];
+    const client = makeClient((pid) => pids.push(pid));
+    const session = await client.createSession({ agentName: "claude", permissionMode: "approve-all" });
+
+    // createSession itself fires onPidSpawned once (tracked acpx sessions ensure)
+    expect(pids).toHaveLength(1);
+
+    // Now swap spawn to return a prompt response
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, JSON.stringify({ result: "done", stopReason: "end_turn" })));
+
+    await session.prompt("hello");
+    // prompt() fires onPidSpawned once more
+    expect(pids).toHaveLength(2);
+    expect(pids[1]).toBe(FIXED_PID);
+  });
+
+  test("createSession without callback creates session without callback", async () => {
+    const client = makeClient(undefined);
+    const session = await client.createSession({ agentName: "claude", permissionMode: "approve-all" });
+
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, JSON.stringify({ result: "ok", stopReason: "end_turn" })));
+
+    const result = await session.prompt("test");
+    expect(result.stopReason).toBe("end_turn");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// createSpawnAcpClient factory — passes onPidSpawned
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("createSpawnAcpClient factory", () => {
+  test("accepts onPidSpawned as fourth argument and threads it to sessions", async () => {
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, JSON.stringify({ sessionId: "sid-99", recordId: null })));
+
+    const pids: number[] = [];
+    const client = createSpawnAcpClient("acpx --model claude-haiku claude", "/tmp/test", 30, (pid: number) => {
+      pids.push(pid);
+    });
+    const session = await client.createSession({ agentName: "claude", permissionMode: "approve-all" });
+
+    // createSession fires onPidSpawned once (tracked acpx sessions ensure)
+    expect(pids).toHaveLength(1);
+
+    _spawnClientDeps.spawn = mock(() => makeSpawnResult(0, JSON.stringify({ result: "done", stopReason: "end_turn" })));
+    await session.prompt("go");
+
+    // prompt() fires onPidSpawned once more
+    expect(pids).toHaveLength(2);
+    expect(pids[1]).toBe(FIXED_PID);
+  });
+
+  test("accepts undefined onPidSpawned without error", () => {
+    expect(() => createSpawnAcpClient("acpx --model claude-haiku claude", "/tmp/test", 30, undefined)).not.toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SpawnAcpSession — --cwd on cancel/stop (BUG-3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SpawnAcpSession — --cwd on cancel/stop (BUG-3)", () => {
+  test("close({forceTerminate:true}) spawns `acpx --cwd <cwd> <agentName> stop`", async () => {
+    const spawnedCommands: string[][] = [];
+    _spawnClientDeps.spawn = (cmd, _opts) => {
+      spawnedCommands.push(cmd as string[]);
+      return makeSpawnResult(0);
+    };
+
+    const client = new SpawnAcpClient("acpx claude", "/tmp/my-worktree");
+    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    assertDefined(session, "session");
+    spawnedCommands.length = 0; // drop the loadSession/ensure-session spawn(s)
+
+    await session.close({ forceTerminate: true });
+
+    const stopCall = spawnedCommands.find((c) => c.includes("stop"));
+    expect(stopCall).toEqual(["acpx", "--cwd", "/tmp/my-worktree", "claude", "stop"]);
+  });
+
+  test("cancelActivePrompt() spawns `acpx --cwd <cwd> <agentName> cancel`", async () => {
+    const spawnedCommands: string[][] = [];
+    _spawnClientDeps.spawn = (cmd, _opts) => {
+      spawnedCommands.push(cmd as string[]);
+      return makeSpawnResult(0);
+    };
+
+    const client = new SpawnAcpClient("acpx claude", "/tmp/my-worktree");
+    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    assertDefined(session, "session");
+    spawnedCommands.length = 0;
+
+    await session.cancelActivePrompt();
+
+    const cancelCall = spawnedCommands.find((c) => c.includes("cancel"));
+    expect(cancelCall).toEqual(["acpx", "--cwd", "/tmp/my-worktree", "claude", "cancel"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SpawnAcpClient — timeoutSeconds zero-survival (US-005)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SpawnAcpClient — timeoutSeconds zero-survival (#US-005)", () => {
+  test("AC8 (success): an explicit timeoutSeconds=0 is preserved on the client", () => {
+    const client = new SpawnAcpClient("acpx claude", "/tmp", 0);
+    expect(client.timeoutSeconds).toBe(0);
+  });
+
+  test("AC8 (default): omitting timeoutSeconds defaults to DEFAULT_ACP_TIMEOUT_SECONDS", () => {
+    const client = new SpawnAcpClient("acpx claude", "/tmp");
+    expect(client.timeoutSeconds).toBe(DEFAULT_ACP_TIMEOUT_SECONDS);
   });
 });

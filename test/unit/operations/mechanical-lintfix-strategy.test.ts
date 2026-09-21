@@ -80,45 +80,21 @@ function makeDeps(overrides: Partial<MechanicalLintFixDeps> = {}): MechanicalLin
 }
 
 describe("makeMechanicalLintFixStrategy — shape", () => {
-  test("name is mechanical-lintfix", () => {
+  test("name is mechanical-lintfix; maxAttempts is 1; coRun is exclusive; fixOp kind is deterministic; fixOp name is mechanical-lintfix", () => {
     const strategy = makeMechanicalLintFixStrategy();
     expect(strategy.name).toBe("mechanical-lintfix");
-  });
-
-  test("maxAttempts is 1", () => {
-    const strategy = makeMechanicalLintFixStrategy();
     expect(strategy.maxAttempts).toBe(1);
-  });
-
-  test("coRun is exclusive", () => {
-    const strategy = makeMechanicalLintFixStrategy();
     expect(strategy.coRun).toBe("exclusive");
-  });
-
-  test("fixOp kind is deterministic", () => {
-    const strategy = makeMechanicalLintFixStrategy();
     expect(strategy.fixOp.kind).toBe("deterministic");
-  });
-
-  test("fixOp name is mechanical-lintfix", () => {
-    const strategy = makeMechanicalLintFixStrategy();
     expect(strategy.fixOp.name).toBe("mechanical-lintfix");
   });
 });
 
 describe("makeMechanicalLintFixStrategy — AC7: appliesTo predicate", () => {
-  test("AC7: returns true for findings with source=lint", () => {
+  test("AC7: returns true for findings with source=lint; AC7: returns false for findings with source=test-runner; AC7: returns false for findings with source=typecheck", () => {
     const strategy = makeMechanicalLintFixStrategy();
     expect(strategy.appliesTo(makeFinding({ source: "lint" }))).toBe(true);
-  });
-
-  test("AC7: returns false for findings with source=test-runner", () => {
-    const strategy = makeMechanicalLintFixStrategy();
     expect(strategy.appliesTo(makeFinding({ source: "test-runner" }))).toBe(false);
-  });
-
-  test("AC7: returns false for findings with source=typecheck", () => {
-    const strategy = makeMechanicalLintFixStrategy();
     expect(strategy.appliesTo(makeFinding({ source: "typecheck" }))).toBe(false);
   });
 });

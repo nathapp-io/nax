@@ -1,16 +1,34 @@
 // RE-ARCH: keep
 /**
- * Smart Test Runner — 3-Pass Discovery Tests
+ * Smart Test Runner — discovery, package scoping, and git-failure handling
  *
  * Tests:
  * - Pass 1: path convention mapping (mapSourceToTests)
  * - Pass 2: import-grep fallback (importGrepFallback)
  * - Pass 3: full-suite fallback
  * - Custom testFilePatterns
+ * - packagePrefix / co-located test discovery (testFilePatterns)
+ * - US-001: surface swallowed git failures
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { importGrepFallback, mapSourceToTests } from "@/verification/smart-runner";
+import { withWarnSpy } from "@test/helpers";
+import {
+  _gitUtilDeps,
+  clearGitRootCache,
+  getChangedNonTestFiles,
+  getChangedTestFiles,
+  importGrepFallback,
+  mapSourceToTests,
+} from "@/verification/smart-runner";
+
+function mockFileExists(existingPaths: string[]) {
+  Object.assign(Bun, {
+    file: (path: string) => ({
+      exists: () => Promise.resolve(existingPaths.includes(path)),
+    }),
+  });
+}
 
 describe("Pass 1: mapSourceToTests (path convention)", () => {
   let originalFile: typeof Bun.file;
@@ -22,14 +40,6 @@ describe("Pass 1: mapSourceToTests (path convention)", () => {
   afterEach(() => {
     Object.assign(Bun, { file: originalFile });
   });
-
-  function mockFileExists(existingPaths: string[]) {
-    Object.assign(Bun, {
-      file: (path: string) => ({
-        exists: () => Promise.resolve(existingPaths.includes(path)),
-      }),
-    });
-  }
 
   test("maps src/foo/bar.ts to test/unit/foo/bar.test.ts", async () => {
     mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
@@ -380,5 +390,228 @@ describe("Custom testFilePatterns", () => {
     ]);
 
     expect(scanCount).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// packagePrefix and co-located test discovery
+//
+// Co-located detection is driven by extractPatternSuffix() — the suffix after
+// the last `*` in each configured glob pattern. Examples:
+//   "src/**\/*.spec.ts"  → probes <sourceFile>.spec.ts  (NestJS)
+//   "**\/*_test.go"      → probes <sourceFile>_test.go   (Go)
+//   "test_*.py"          → no suffix (pattern omitted)
+// ---------------------------------------------------------------------------
+
+describe("mapSourceToTests — packagePrefix (monorepo)", () => {
+  let originalFile: typeof Bun.file;
+
+  beforeEach(() => {
+    originalFile = Bun.file;
+  });
+
+  afterEach(() => {
+    Object.assign(Bun, { file: originalFile });
+  });
+
+  test("maps monorepo source to package-local test/unit when packagePrefix is set", async () => {
+    mockFileExists(["/repo/apps/api/test/unit/foo/bar.test.ts"]);
+
+    const result = await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
+
+    expect(result).toEqual(["/repo/apps/api/test/unit/foo/bar.test.ts"]);
+  });
+
+  test("maps monorepo source to package-local test/integration when packagePrefix is set", async () => {
+    mockFileExists(["/repo/apps/api/test/integration/foo/bar.test.ts"]);
+
+    const result = await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
+
+    expect(result).toEqual(["/repo/apps/api/test/integration/foo/bar.test.ts"]);
+  });
+
+  test("does NOT look in workdir/test/unit when packagePrefix is set", async () => {
+    // Only the wrong (root-level) path exists — should not be returned
+    mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
+
+    const result = await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
+
+    expect(result).toEqual([]);
+  });
+
+  test("returns empty array when no packagePrefix match exists on disk", async () => {
+    mockFileExists([]);
+
+    const result = await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
+
+    expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Co-located test files — language-agnostic via testFilePatterns
+//
+// The suffix after the last `*` in each pattern drives which co-located
+// candidates are probed. No suffixes are hardcoded in the source.
+// ---------------------------------------------------------------------------
+
+describe("mapSourceToTests — co-located test files (testFilePatterns)", () => {
+  let originalFile: typeof Bun.file;
+
+  beforeEach(() => {
+    originalFile = Bun.file;
+  });
+
+  afterEach(() => {
+    Object.assign(Bun, { file: originalFile });
+  });
+
+  test("finds co-located .spec.ts in monorepo src/ when pattern includes src/**/*.spec.ts (NestJS)", async () => {
+    mockFileExists(["/repo/apps/api/src/agents/agents.service.spec.ts"]);
+
+    const result = await mapSourceToTests(["apps/api/src/agents/agents.service.ts"], "/repo", "apps/api", [
+      "src/**/*.spec.ts",
+    ]);
+
+    expect(result).toEqual(["/repo/apps/api/src/agents/agents.service.spec.ts"]);
+  });
+
+  test("finds co-located .test.ts in monorepo src/ when pattern includes test/**/*.test.ts (Vitest/Jest)", async () => {
+    mockFileExists(["/repo/apps/api/src/agents/agents.service.test.ts"]);
+
+    const result = await mapSourceToTests(["apps/api/src/agents/agents.service.ts"], "/repo", "apps/api", [
+      "test/**/*.test.ts",
+    ]);
+
+    expect(result).toEqual(["/repo/apps/api/src/agents/agents.service.test.ts"]);
+  });
+
+  test("finds co-located .spec.ts in single-package src/ when pattern includes src/**/*.spec.ts", async () => {
+    mockFileExists(["/repo/src/utils/helper.spec.ts"]);
+
+    const result = await mapSourceToTests(["src/utils/helper.ts"], "/repo", undefined, ["src/**/*.spec.ts"]);
+
+    expect(result).toEqual(["/repo/src/utils/helper.spec.ts"]);
+  });
+
+  test("does not find co-located .spec.ts when pattern only includes test/**/*.test.ts", async () => {
+    // .spec.ts exists but suffix not covered by the configured pattern
+    mockFileExists(["/repo/src/utils/helper.spec.ts"]);
+
+    const result = await mapSourceToTests(["src/utils/helper.ts"], "/repo", undefined, ["test/**/*.test.ts"]);
+
+    expect(result).toEqual([]);
+  });
+
+  test("returns both separated test/unit/ and co-located .spec.ts when both exist (multi-pattern)", async () => {
+    mockFileExists([
+      "/repo/apps/api/test/unit/agents/agents.service.test.ts",
+      "/repo/apps/api/src/agents/agents.service.spec.ts",
+    ]);
+
+    const result = await mapSourceToTests(["apps/api/src/agents/agents.service.ts"], "/repo", "apps/api", [
+      "test/**/*.test.ts",
+      "src/**/*.spec.ts",
+    ]);
+
+    expect(result).toEqual([
+      "/repo/apps/api/test/unit/agents/agents.service.test.ts",
+      "/repo/apps/api/src/agents/agents.service.spec.ts",
+    ]);
+  });
+
+  test("deduplicates suffixes — duplicate patterns produce no duplicate candidates", async () => {
+    mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
+
+    const result = await mapSourceToTests(
+      ["src/foo/bar.ts"],
+      "/repo",
+      undefined,
+      ["test/**/*.test.ts", "test/unit/**/*.test.ts"], // both yield .test.ts
+    );
+
+    // Should not return the same file twice
+    expect(result).toEqual(["/repo/test/unit/foo/bar.test.ts"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-001: surface swallowed git failures
+// ---------------------------------------------------------------------------
+
+describe("US-001 smart-runner — surface swallowed git failures", () => {
+  const savedGetGitRoot = _gitUtilDeps.getGitRoot;
+  const savedGitWithTimeout = _gitUtilDeps.gitWithTimeout;
+
+  beforeEach(() => {
+    clearGitRootCache();
+    _gitUtilDeps.getGitRoot = async () => null;
+  });
+
+  afterEach(() => {
+    _gitUtilDeps.getGitRoot = savedGetGitRoot;
+    _gitUtilDeps.gitWithTimeout = savedGitWithTimeout;
+    clearGitRootCache();
+  });
+
+  test("AC-5: getChangedNonTestFiles warns and fails open on a non-zero git exit", async () => {
+    _gitUtilDeps.gitWithTimeout = async () => ({
+      exitCode: 128,
+      stdout: "",
+      stderr: "fatal: bad revision 'HEAD~1'",
+    });
+
+    await withWarnSpy(async (warnSpy) => {
+      const result = await getChangedNonTestFiles("/fake/repo", "HEAD~1");
+      expect(result).toEqual([]);
+      const call = warnSpy.mock.calls.find((c) => c[0] === "verification");
+      expect(call).toBeDefined();
+      expect(JSON.stringify(call?.[2] ?? {})).toContain("bad revision");
+    });
+  });
+
+  test("AC-6: getChangedTestFiles warns and fails open on a non-zero git exit", async () => {
+    _gitUtilDeps.gitWithTimeout = async () => ({
+      exitCode: 128,
+      stdout: "",
+      stderr: "fatal: bad revision 'HEAD~1'",
+    });
+
+    await withWarnSpy(async (warnSpy) => {
+      const result = await getChangedTestFiles("/fake/repo", "/fake/repo", "HEAD~1", undefined, [/\.test\.ts$/]);
+      expect(result).toEqual([]);
+      const call = warnSpy.mock.calls.find((c) => c[0] === "verification");
+      expect(call).toBeDefined();
+    });
+  });
+
+  test("AC-7: getChangedNonTestFiles warns and fails open when the spawn throws", async () => {
+    _gitUtilDeps.gitWithTimeout = async () => {
+      throw new Error("spawn EACCES");
+    };
+
+    await withWarnSpy(async (warnSpy) => {
+      const result = await getChangedNonTestFiles("/fake/repo");
+      expect(result).toEqual([]);
+      const call = warnSpy.mock.calls.find((c) => c[0] === "verification");
+      expect(call).toBeDefined();
+      expect(JSON.stringify(call?.[2] ?? {})).toContain("spawn EACCES");
+    });
+  });
+
+  test("AC-8: getChangedNonTestFiles returns real files and stays quiet on success", async () => {
+    _gitUtilDeps.gitWithTimeout = async () => ({
+      exitCode: 0,
+      stdout: "src/a.ts\nsrc/b.ts\n",
+      stderr: "",
+    });
+
+    await withWarnSpy(async (warnSpy) => {
+      const result = await getChangedNonTestFiles("/fake/repo");
+      expect(result).toContain("src/a.ts");
+      expect(result).toContain("src/b.ts");
+      const call = warnSpy.mock.calls.find((c) => c[0] === "verification");
+      expect(call).toBeUndefined();
+    });
   });
 });

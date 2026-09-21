@@ -504,3 +504,205 @@ describe("AC7: mechanical-only rectificationExhausted → resume IS entered for 
     }
   });
 });
+
+// ===========================================================================
+// Review-Continuation (#1666 Parts A & B) (absorbed from
+// story-orchestrator-review-continuation.test.ts)
+// ===========================================================================
+
+const rcTestSel = pickSelector("test-review-continuation-selector", "execution");
+type rcTestOpConfig = ReturnType<(typeof rcTestSel)["select"]>;
+
+const rcMockImplementerOp: RunOperation<{ code: string }, { success: boolean }, rcTestOpConfig> = {
+  kind: "run",
+  name: "mock-implementer",
+  stage: "run",
+  config: rcTestSel,
+  session: { role: "implementer", lifetime: "warm" },
+  build: (input) => ({
+    role: { id: "r1", content: "Implement", overridable: false },
+    task: { id: "t1", content: input.code, overridable: false },
+  }),
+  parse: (output) => {
+    try {
+      return JSON.parse(output);
+    } catch {
+      return { success: false };
+    }
+  },
+};
+
+function rcMakeDeterministicOp(
+  name: string,
+  result: { success: boolean; findings?: unknown[] },
+): DeterministicOperation<unknown, unknown, rcTestOpConfig> {
+  return {
+    kind: "deterministic",
+    name,
+    stage: "verify",
+    config: rcTestSel,
+    execute: async () => ({ ...result, estimatedCostUsd: 0 }),
+  };
+}
+
+let rcRuntime: NaxRuntime | undefined;
+const origCallOp = _storyOrchestratorDeps.callOp;
+afterEach(async () => {
+  _storyOrchestratorDeps.callOp = origCallOp;
+  await rcRuntime?.close();
+  rcRuntime = undefined;
+});
+
+function buildCtx(rt: NaxRuntime, storyId: string): CallContext {
+  return {
+    runtime: rt,
+    packageView: rt.packages.repo(),
+    packageDir: "/tmp",
+    agentName: "claude",
+    storyId,
+  };
+}
+
+describe("Part B (#1666): semantic-review failure continues to adversarial-review", () => {
+  test("adversarial-review DOES run after semantic-review fails, and the story still fails", async () => {
+    rcRuntime = makeTestRuntime({ config: makeNaxConfig() });
+    const opRunCount: Record<string, number> = {};
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
+      },
+    });
+
+    const semOp = rcMakeDeterministicOp("semantic-review", { success: false, findings: [] });
+    const advOp = rcMakeDeterministicOp("adversarial-review", { success: true, findings: [] });
+    const story = makeStory({ id: "US-b1" });
+
+    const result = await new StoryOrchestratorBuilder()
+      .addImplementer({ op: rcMockImplementerOp, input: { code: "" } })
+      .addSemanticReview({
+        op: semOp,
+        input: { workdir: "/tmp", story, semanticConfig: makeSemanticReviewConfig(), mode: "ref" },
+      })
+      .addAdversarialReview({
+        op: advOp,
+        input: { workdir: "/tmp", story, adversarialConfig: makeAdversarialReviewConfig(), mode: "ref" },
+      })
+      .build(buildCtx(rcRuntime, "US-b1"))
+      .run();
+
+    // adversarial-review must run even though semantic-review failed.
+    expect(opRunCount["adversarial-review"] ?? 0).toBeGreaterThan(0);
+    // Both outputs land in phaseOutputs (rectification still needs both sets of findings).
+    expect(result.phaseOutputs["semantic-review"]).toBeDefined();
+    expect(result.phaseOutputs["adversarial-review"]).toBeDefined();
+    // The story still fails on semantic-review's own finding — Part B changes
+    // what runs, not the verdict.
+    expect(result.success).toBe(false);
+    // Both configured reviews ran, so there is nothing missing to report.
+    expect(result.missingRequiredReviewPhases).toBeUndefined();
+  });
+
+  test("semantic-review's failure is not silently upgraded to a pass by continuing", async () => {
+    rcRuntime = makeTestRuntime({ config: makeNaxConfig() });
+    _storyOrchestratorDeps.callOp = makeCallOp();
+
+    const semOp = rcMakeDeterministicOp("semantic-review", { success: false, findings: [] });
+    const advOp = rcMakeDeterministicOp("adversarial-review", { success: true, findings: [] });
+    const story = makeStory({ id: "US-b2" });
+
+    const result = await new StoryOrchestratorBuilder()
+      .addImplementer({ op: rcMockImplementerOp, input: { code: "" } })
+      .addSemanticReview({
+        op: semOp,
+        input: { workdir: "/tmp", story, semanticConfig: makeSemanticReviewConfig(), mode: "ref" },
+      })
+      .addAdversarialReview({
+        op: advOp,
+        input: { workdir: "/tmp", story, adversarialConfig: makeAdversarialReviewConfig(), mode: "ref" },
+      })
+      .build(buildCtx(rcRuntime, "US-b2"))
+      .run();
+
+    const semanticOutput = result.phaseOutputs["semantic-review"] as { success?: boolean };
+    expect(semanticOutput.success).toBe(false);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("Part A (#1666): every OTHER phase still halts the loop unconditionally", () => {
+  test("full-suite-gate failure still short-circuits before reaching reviews (no rectification configured)", async () => {
+    rcRuntime = makeTestRuntime({ config: makeNaxConfig() });
+    const opRunCount: Record<string, number> = {};
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
+      },
+    });
+
+    const gateOp = rcMakeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" },
+      ],
+    });
+    const semOp = rcMakeDeterministicOp("semantic-review", { success: true, findings: [] });
+    const advOp = rcMakeDeterministicOp("adversarial-review", { success: true, findings: [] });
+    const story = makeStory({ id: "US-a1" });
+
+    const result = await new StoryOrchestratorBuilder()
+      .addImplementer({ op: rcMockImplementerOp, input: { code: "" } })
+      .addFullSuiteGate({ op: gateOp, input: { story, workdir: "/tmp" } })
+      .addSemanticReview({
+        op: semOp,
+        input: { workdir: "/tmp", story, semanticConfig: makeSemanticReviewConfig(), mode: "ref" },
+      })
+      .addAdversarialReview({
+        op: advOp,
+        input: { workdir: "/tmp", story, adversarialConfig: makeAdversarialReviewConfig(), mode: "ref" },
+      })
+      .build(buildCtx(rcRuntime, "US-a1"))
+      .run();
+
+    // Neither review ran — the gate failure halts unconditionally, no exemption
+    // was introduced for phases other than the semantic->adversarial transition.
+    expect(opRunCount["semantic-review"] ?? 0).toBe(0);
+    expect(opRunCount["adversarial-review"] ?? 0).toBe(0);
+    expect(result.success).toBe(false);
+    // Still reported so escalation fires (the field itself is unaffected by
+    // Part A — only how the *reason* is surfaced changes).
+    expect(result.missingRequiredReviewPhases).toEqual(["semantic-review", "adversarial-review"]);
+  });
+
+  test("verifier failure still short-circuits before reaching reviews", async () => {
+    rcRuntime = makeTestRuntime({ config: makeNaxConfig() });
+    const opRunCount: Record<string, number> = {};
+    _storyOrchestratorDeps.callOp = makeCallOp({
+      onDispatch: (op) => {
+        opRunCount[op.name] = (opRunCount[op.name] ?? 0) + 1;
+      },
+    });
+
+    const verOp = rcMakeDeterministicOp("verifier", { success: false });
+    const semOp = rcMakeDeterministicOp("semantic-review", { success: true, findings: [] });
+    const advOp = rcMakeDeterministicOp("adversarial-review", { success: true, findings: [] });
+    const story = makeStory({ id: "US-a2" });
+
+    const result = await new StoryOrchestratorBuilder()
+      .addImplementer({ op: rcMockImplementerOp, input: { code: "" } })
+      .addVerifier({ op: verOp, input: { code: "" } })
+      .addSemanticReview({
+        op: semOp,
+        input: { workdir: "/tmp", story, semanticConfig: makeSemanticReviewConfig(), mode: "ref" },
+      })
+      .addAdversarialReview({
+        op: advOp,
+        input: { workdir: "/tmp", story, adversarialConfig: makeAdversarialReviewConfig(), mode: "ref" },
+      })
+      .build(buildCtx(rcRuntime, "US-a2"))
+      .run();
+
+    expect(opRunCount["semantic-review"] ?? 0).toBe(0);
+    expect(opRunCount["adversarial-review"] ?? 0).toBe(0);
+    expect(result.success).toBe(false);
+  });
+});

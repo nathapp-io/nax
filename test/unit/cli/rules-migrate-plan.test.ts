@@ -34,23 +34,15 @@ function makeOptions(overrides: Partial<PlanMigrationOptions> = {}): PlanMigrati
 }
 
 describe("planMigration", () => {
-  test("AC-1: existing target without force is planned as skipped", async () => {
+  test("AC-1: existing target without force is planned as skipped; AC-2: existing target without force has no planned writes", async () => {
     const plan = await planMigration([makeEntry()], makeOptions({ force: false, fileExists: async () => true }));
     expect(plan.skips.map((e) => e.targetFileName)).toContain("rule.md");
-  });
-
-  test("AC-2: existing target without force has no planned writes", async () => {
-    const plan = await planMigration([makeEntry()], makeOptions({ force: false, fileExists: async () => true }));
     expect(plan.writes).toEqual([]);
   });
 
-  test("AC-3: existing target with force is planned for one write", async () => {
+  test("AC-3: existing target with force is planned for one write; AC-4: existing target with force has no planned skips", async () => {
     const plan = await planMigration([makeEntry()], makeOptions({ force: true, fileExists: async () => true }));
     expect(plan.writes.map((e) => e.targetFileName)).toEqual(["rule.md"]);
-  });
-
-  test("AC-4: existing target with force has no planned skips", async () => {
-    const plan = await planMigration([makeEntry()], makeOptions({ force: true, fileExists: async () => true }));
     expect(plan.skips).toEqual([]);
   });
 

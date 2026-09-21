@@ -76,16 +76,9 @@ describe("turnRetryDelayMs", () => {
     expect(turnRetryDelayMs(err, 1, config, () => 1, 300)).toBe(300);
   });
 
-  test("clamps the provider's retryAfter to the turn's remaining budget", () => {
-    // A 503 may advertise a recovery window far longer than the turn has left.
-    // Sleeping it out would spend wall clock the budget already declared gone,
-    // and the attempt after it aborts at once (remainingMs clamps to 0).
+  test("clamps the provider's retryAfter to the turn's remaining budget; leaves the delay alone when the turn is unbounded", () => {
     const err = new ProtocolStreamError({ kind: "overloaded", message: "x", retryAfter: 600 });
     expect(turnRetryDelayMs(err, 0, config, () => 0.5, 30_000)).toBe(30_000);
-  });
-
-  test("leaves the delay alone when the turn is unbounded", () => {
-    const err = new ProtocolStreamError({ kind: "overloaded", message: "x", retryAfter: 600 });
     expect(turnRetryDelayMs(err, 0, config, () => 0.5, undefined)).toBe(600_000);
   });
 });

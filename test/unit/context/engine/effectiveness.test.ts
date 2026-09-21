@@ -1,13 +1,22 @@
 /**
  * Amendment A AC-45: Effectiveness signal
  *
- * Unit tests for effectiveness.ts pure helpers:
- *   - classifyWithTerms + buildEvidenceTerms (per-chunk signal based on diff / output / findings)
- *
- * US-004: classifyEffectiveness wrapper removed — tests migrated to production helpers.
+ * Three concerns, each previously its own satellite, merged per
+ * test-architecture.md (split by concern, never by ticket):
+ *   1. effectiveness.ts pure helpers — classifyWithTerms + buildEvidenceTerms
+ *      (per-chunk signal based on diff / output / findings), US-004.
+ *      US-004: classifyEffectiveness wrapper removed — tests migrated to
+ *      production helpers.
+ *   2. Barrel-import convention for effectiveness.ts (US-003 adversarial
+ *      finding) — pins the cycle-drain exemption for globToRegex/normalizePath
+ *      and that the context-engine barrel re-exports them.
+ *   3. Fixture-scored regression gate (US-003 AC11/AC12) — scoped
+ *      sizeCorrelation beats the pre-change whole-diff baseline, and scoped
+ *      followed F1 beats the baseline F1.
  */
 
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { makeLogger, withDepsRestore } from "@test/helpers";
 import * as EngineBarrel from "@/context/engine";
 import {
@@ -21,6 +30,8 @@ import {
 } from "@/context/engine";
 // AC2: must import directly from effectiveness.ts to verify direct-vs-barrel equivalence
 import { classifyWithTerms as classifyWithTermsDirect } from "@/context/engine/effectiveness";
+// Gate (AC11/AC12): fixture-scored regression gate
+import { type Classifier, type LabelCase, loadLabelSet, scoreEffectiveness } from "@/context/engine/effectiveness-eval";
 import { _manifestStoreDeps } from "@/context/engine/manifest-store";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -417,5 +428,250 @@ describe("classifyWithTerms (#2091) — scopePaths must not cross packages", () 
     });
 
     expect(result.signal).toBe("followed");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Barrel-import convention (effectiveness-barrel.test.ts)
+//
+// Adversarial finding (US-003): `src/context/engine/effectiveness.ts` is part
+// of the context-engine public API and must not bypass the barrel for any
+// value import the barrel already re-exports — with the documented
+// cycle-drain exemption (STATUS-import-cycles-drain.md Task 2) for
+// globToRegex/normalizePath from ./providers/static-rules.
+//
+// Each test reads the source file as text and asserts on the import statements
+// it contains.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const REPO_ROOT = join(import.meta.dir, "..", "..", "..", "..");
+const SOURCE_PATH = join(REPO_ROOT, "src", "context", "engine", "effectiveness.ts");
+const BARREL_PATH = join(REPO_ROOT, "src", "context", "engine", "index.ts");
+
+interface ImportRecord {
+  /** Specifier names bound by the import (e.g. ["globToRegex", "normalizePath"]) */
+  specifiers: string[];
+  /** The module specifier string (e.g. "./providers/static-rules") */
+  module: string;
+  /** 1-based line number where the import statement begins */
+  line: number;
+  /** True when the import is `import type { … } from …` — exempt from the rule */
+  isTypeOnly: boolean;
+}
+
+/** Match `import [type] { a, b, c as d } from "..."` and `import [type] x from "..."`. */
+const IMPORT_REGEX = /^import\s+(type\s+)?(?:\{([^}]+)\}|(\w+))\s+from\s+["']([^"']+)["']/gm;
+
+function parseImportMatch(match: RegExpExecArray): ImportRecord {
+  const isTypeOnly = Boolean(match[1]);
+  const specifiersText = match[2] ?? match[3] ?? "";
+  const specifiers = specifiersText
+    .split(",")
+    .map(
+      (s) =>
+        s
+          .trim()
+          .split(/\s+as\s+/)[0]
+          ?.trim() ?? "",
+    )
+    .filter(Boolean);
+  return {
+    specifiers,
+    module: match[4] ?? "",
+    line: 0, // filled by the loader
+    isTypeOnly,
+  };
+}
+
+async function loadSourceImports(): Promise<{
+  source: string;
+  imports: ImportRecord[];
+}> {
+  const source = await Bun.file(SOURCE_PATH).text();
+  const imports: ImportRecord[] = [];
+
+  IMPORT_REGEX.lastIndex = 0;
+  let match = IMPORT_REGEX.exec(source);
+  while (match !== null) {
+    const record = parseImportMatch(match);
+    record.line = source.substring(0, match.index).split("\n").length;
+    imports.push(record);
+    match = IMPORT_REGEX.exec(source);
+  }
+  return { source, imports };
+}
+
+describe("effectiveness.ts — barrel-import convention (US-003 adversarial finding)", () => {
+  // Cycle-drain exemption (see header): these two symbols may be imported
+  // from the defining leaf because the barrel route closes a runtime
+  // import cycle.
+  const EXEMPT_SYMBOLS = new Set(["globToRegex", "normalizePath"]);
+  const EXEMPT_MODULE = "./providers/static-rules";
+
+  test("[barrel] no provider-leaf value imports beyond the cycle-drain exemption", async () => {
+    const { imports } = await loadSourceImports();
+
+    const offending = imports.filter(
+      (imp) =>
+        !imp.isTypeOnly &&
+        imp.module.startsWith("./providers/") &&
+        !(imp.module === EXEMPT_MODULE && imp.specifiers.every((s) => EXEMPT_SYMBOLS.has(s))),
+    );
+
+    expect(offending).toHaveLength(0);
+  });
+
+  test("[barrel] the cycle-drain exemption is scoped to exactly globToRegex and normalizePath", async () => {
+    // Pins the exemption so it cannot widen silently: the only legal
+    // provider-leaf value import is the two-symbol static-rules statement.
+    const { imports } = await loadSourceImports();
+
+    const exemptImports = imports.filter((imp) => !imp.isTypeOnly && imp.module === EXEMPT_MODULE);
+
+    expect(exemptImports).toHaveLength(1);
+    expect(exemptImports[0]?.specifiers.sort()).toEqual(["globToRegex", "normalizePath"]);
+  });
+
+  test("[barrel, boundary] type-only imports from './providers/...' are permitted (singleton-safe)", async () => {
+    // `import type { X } from "./providers/static-rules"` does not import
+    // a runtime value, so Bun's module registry is unaffected. The
+    // project's barrel rule explicitly exempts type-only imports. This
+    // boundary test pins the exemption so it cannot regress.
+    const { imports } = await loadSourceImports();
+
+    const typeOnlyProviderImports = imports.filter((imp) => imp.isTypeOnly && imp.module.startsWith("./providers/"));
+
+    // The current source has zero type-only provider imports — the
+    // exemption is exercised by negative space, not by a positive count.
+    expect(typeOnlyProviderImports).toHaveLength(0);
+  });
+
+  test("[barrel] the context-engine barrel re-exports globToRegex and normalizePath", async () => {
+    // Pre-condition guard: the fix path (switching the source to import
+    // from the barrel) is only viable when the barrel actually re-exports
+    // the symbols. If a future refactor removes them from the barrel,
+    // the upstream test fails fast and points at the barrel instead of
+    // leaving the downstream test to fail with a confusing module-not-found
+    // error at runtime.
+    const barrelSource = await Bun.file(BARREL_PATH).text();
+
+    expect(barrelSource).toContain("globToRegex");
+    expect(barrelSource).toContain("normalizePath");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fixture-scored regression gate (effectiveness-gate.test.ts)
+//
+// The synthetic fixture must satisfy the US-003 gate:
+//   AC11 — scoped sizeCorrelation |scoped| < |pre-change whole-diff sizeCorrelation|
+//   AC12 — scoped followed F1 > baseline.f1 (in the same report)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const COMMITTED_FIXTURE = join(import.meta.dir, "..", "..", "..", "fixtures", "effectiveness", "labels.sample.json");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Whole-diff classifier (pre-change behaviour) — three+ shared terms with the
+// whole diff text → followed; contradicted if a review finding matches; else
+// ignored. Mirrors the legacy classifyEffectiveness logic for cases without
+// scopePaths so the gate's "pre-change" baseline is reproducible without
+// importing the wrapper.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function tokenizeLocally(text: string): Set<string> {
+  return _effectivenessDeps.tokenize(text);
+}
+
+function makeWholeDiffClassifier(): Classifier {
+  return (c) => {
+    const diffTerms = tokenizeLocally(c.diffText);
+    const summaryTerms = tokenizeLocally(c.chunkSummary);
+    let shared = 0;
+    for (const term of summaryTerms) if (diffTerms.has(term)) shared++;
+    if (shared >= 3) return "followed";
+    return "ignored";
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scoped classifier (post-change behaviour) — delegates to classifyWithTerms
+// with the case's own scopePaths so the gate observes the production path.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeScopedClassifier(): Classifier {
+  return (c) => {
+    const evidence = buildEvidenceTerms("", c.diffText, []);
+    const result = classifyWithTerms(c.chunkSummary, evidence, {
+      scopePaths: c.scopePaths,
+      diffText: c.diffText,
+    });
+    if (result.signal === "unknown") return "ignored";
+    if (result.signal === "contradicted") return "contradicted";
+    return result.signal;
+  };
+}
+
+describe("effectiveness gate (AC11)", () => {
+  test("[AC11] scoped sizeCorrelation absolute value is strictly smaller than pre-change whole-diff sizeCorrelation absolute value", async () => {
+    const raw = await Bun.file(COMMITTED_FIXTURE).text();
+    const labelSet = loadLabelSet(raw);
+    const cases = labelSet.cases;
+
+    const wholeDiffReport = scoreEffectiveness(cases, makeWholeDiffClassifier());
+    const scopedReport = scoreEffectiveness(cases, makeScopedClassifier());
+
+    // The gate: |scoped| < |whole-diff|.
+    // The fixture's case 5 has scopePaths that exclude its diff file
+    // (src/small.ts vs src/big.ts), so the scoped classifier does NOT
+    // declare that large-diff case as followed — Spearman correlation
+    // between diff size and "followed" drops relative to the whole-diff
+    // baseline.
+    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(Math.abs(wholeDiffReport.sizeCorrelation));
+  });
+
+  test("[AC11, boundary] added-lines-only attribution reduces size correlation even without scopePaths", async () => {
+    // Strip scopePaths from every case so the scoped classifier falls back to
+    // the whole diff. US-003 restricts evidence to added lines even without
+    // scopePaths, so this fallback is NOT the pre-change full-diff classifier
+    // (which tokenized removed/context lines too). The added-lines restriction
+    // is itself size-independent and shrinks the size correlation below the
+    // pre-change value — the gate still holds.
+    const raw = await Bun.file(COMMITTED_FIXTURE).text();
+    const labelSet = loadLabelSet(raw);
+    const casesNoScope = labelSet.cases.map((c) => ({ ...c, scopePaths: undefined })) as LabelCase[];
+
+    const wholeDiffReport = scoreEffectiveness(casesNoScope, makeWholeDiffClassifier());
+    const scopedReport = scoreEffectiveness(casesNoScope, makeScopedClassifier());
+
+    expect(Math.abs(scopedReport.sizeCorrelation)).toBeLessThan(Math.abs(wholeDiffReport.sizeCorrelation));
+  });
+});
+
+describe("effectiveness gate (AC12)", () => {
+  test("[AC12] scoped followed F1 is strictly greater than baseline.f1 in the same report", async () => {
+    const raw = await Bun.file(COMMITTED_FIXTURE).text();
+    const labelSet = loadLabelSet(raw);
+    const cases = labelSet.cases;
+
+    const scopedReport = scoreEffectiveness(cases, makeScopedClassifier());
+
+    expect(scopedReport.perSignal.followed.f1).toBeGreaterThan(scopedReport.baseline.f1);
+  });
+
+  test("[AC12, boundary] baseline is the always-ignored macro-average across the three signals", async () => {
+    const raw = await Bun.file(COMMITTED_FIXTURE).text();
+    const labelSet = loadLabelSet(raw);
+    const cases = labelSet.cases;
+
+    const scopedReport = scoreEffectiveness(cases, makeScopedClassifier());
+    const wholeDiffReport = scoreEffectiveness(cases, makeWholeDiffClassifier());
+
+    // Baseline is independent of the supplied classifier — both reports'
+    // baseline must match.
+    expect(scopedReport.baseline).toEqual(wholeDiffReport.baseline);
+
+    // The baseline is the always-ignored macro-average; it must be in [0,1].
+    expect(scopedReport.baseline.f1).toBeGreaterThanOrEqual(0);
+    expect(scopedReport.baseline.f1).toBeLessThanOrEqual(1);
   });
 });

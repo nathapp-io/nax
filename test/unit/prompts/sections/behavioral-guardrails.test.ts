@@ -83,64 +83,24 @@ describe("buildBehavioralGuardrailsSection", () => {
 
   // AC-16: test-writer role — both lite and strict
   describe("role === test-writer", () => {
-    test("lite: does NOT include Anti-cheat rule", () => {
+    test("lite: does NOT include Anti-cheat rule (+5 more assertions)", () => {
       const result = buildBehavioralGuardrailsSection("test-writer", "lite") as string;
       expect(result).not.toContain("Anti-cheat");
-    });
-
-    test("lite: does NOT include Orphans rule", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "lite") as string;
       expect(result).not.toContain("Orphans");
-    });
-
-    test("lite: does NOT include Commit rule", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "lite") as string;
       expect(result).not.toContain("Commit");
-    });
-
-    test("lite: DOES include Simplicity (test scope)", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "lite") as string;
       expect(result).toContain("Simplicity");
-    });
-
-    test("lite: DOES include Surgical (don't touch src)", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "lite") as string;
       expect(result).toContain("Surgical");
-    });
-
-    test("strict: does NOT include Anti-cheat rule", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "strict") as string;
-      expect(result).not.toContain("Anti-cheat");
-    });
-
-    test("strict: does NOT include Orphans rule", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "strict") as string;
-      expect(result).not.toContain("Orphans");
-    });
-
-    test("strict: does NOT include Commit rule", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "strict") as string;
-      expect(result).not.toContain("Commit");
-    });
-
-    test("strict: DOES include Simplicity (test scope)", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "strict") as string;
-      expect(result).toContain("Simplicity");
-    });
-
-    test("strict: DOES include Surgical (don't touch src)", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "strict") as string;
-      expect(result).toContain("Surgical");
-    });
-
-    test("strict: adds State Assumptions bullet", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "strict") as string;
-      expect(result).toContain("State Assumptions");
-    });
-
-    test("lite: does not include State Assumptions", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "lite") as string;
       expect(result).not.toContain("State Assumptions");
+    });
+
+    test("strict: does NOT include Anti-cheat rule (+5 more assertions)", () => {
+      const result = buildBehavioralGuardrailsSection("test-writer", "strict") as string;
+      expect(result).not.toContain("Anti-cheat");
+      expect(result).not.toContain("Orphans");
+      expect(result).not.toContain("Commit");
+      expect(result).toContain("Simplicity");
+      expect(result).toContain("Surgical");
+      expect(result).toContain("State Assumptions");
     });
   });
 

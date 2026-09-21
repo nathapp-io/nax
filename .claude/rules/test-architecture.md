@@ -31,7 +31,7 @@ src/verification/smart-runner.ts → test/unit/verification/smart-runner.test.ts
 ## Placement Rules
 
 1. **Never create test files in `test/` root.** Always place in the appropriate subdirectory.
-2. **Never create standalone bug-fix test files** like `test/execution/post-verify-bug026.test.ts`. Add tests to the existing relevant test file instead. If the relevant file would exceed 400 lines, split the file by describe block — not by bug number.
+2. **Never create standalone bug-fix test files** like `test/execution/post-verify-bug026.test.ts`. Add tests to the existing relevant test file instead. If the relevant file would exceed **~650 lines, split the file by describe block** — not by bug number. **800 is the hard limit**, enforced by `bun run check:file-sizes` (`TEST_LIMIT`); 650 is the target, so a later fix to the same module still has somewhere to go. (Ruled 2026-09-21: this said 400 while the gate enforced 800, which left every split knowingly non-compliant against one of the two numbers.)
 3. **Never create `TEST_COVERAGE_*.md` or documentation files in `test/`.** Put docs in `docs/`.
 4. **Unit test directories must exist under `test/unit/`**, mirroring `src/`. Do not create top-level test directories like `test/execution/` or `test/context/` — use `test/unit/execution/` and `test/unit/context/`.
 
@@ -95,3 +95,19 @@ real public API for tests, so import them from their barrel (`@test/helpers`).
 
 See `project-conventions.md` for the full path-alias rules and
 the import-cycle ratchet.
+
+## Satellite files — the Placement Rules §2 backlog
+
+The "one test file per source file" and "never create standalone bug-fix test files" rules
+above were never gated, and 385 `<module>-<ticket>.test.ts` satellites accumulated against
+them — 292 naming an issue rather than a concern. They are being drained back into their
+per-module files.
+
+Before adding a test for a bug fix, **add it to the module's existing test file**. If that
+file would pass ~650 lines, split by describe block into `<module>-<concern>.test.ts` — never
+`<module>-<ticket>.test.ts`, and never a name that maps to no `src/` module.
+
+Current counts, the ranked backlog, the merge techniques, and the traps (mirror files that
+only look like satellites, `_deps` restore idioms, the 800-line cap):
+`docs/plans/STATUS-test-consolidation-drain.md`. Re-measure with
+`bun run report:test-consolidation`.

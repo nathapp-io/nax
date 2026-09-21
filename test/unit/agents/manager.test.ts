@@ -1,14 +1,25 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { assertDefined, makeAgentAdapter, makeContextBundle, makeNaxConfig } from "@test/helpers";
-import type { AgentRunOptions } from "@/agents";
+import {
+  assertCaughtInstanceOf,
+  assertDefined,
+  makeAgentAdapter,
+  makeContextBundle,
+  makeNaxConfig,
+} from "@test/helpers";
+import type { AgentResult, AgentRunOptions, AgentRunOutcome, AgentRunRequest, HopKind } from "@/agents";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
-import { AgentManager } from "@/agents/manager";
+import type { ResolvedRates } from "@/agents/cost";
+import { _agentManagerDeps, AgentManager } from "@/agents/manager";
+import { buildCompleteEvent, buildSessionTurnEvent } from "@/agents/manager-dispatch";
 import type { AgentRegistry } from "@/agents/registry";
+import type { CompleteOptions, SessionHandle, TurnResult } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { ResolvedPermissions } from "@/config/permissions";
+import { resolvePermissions } from "@/config/permissions";
 import { NaxConfigSchema } from "@/config/schemas";
 import { agentManagerConfigSelector } from "@/config/selectors";
+import type { ContextBundle } from "@/context/engine";
 import { type AgentMiddleware, MiddlewareChain, type MiddlewareContext } from "@/runtime/agent-middleware";
 import { makeClient, makeSession } from "./acp/adapter.test";
 
@@ -86,15 +97,11 @@ describe("AgentManager — Phase 1 pass-through", () => {
 
   // Was "returns false when hasBundle is false" — nax#1722 removed that gate. DEFAULT_CONFIG
   // leaves fallback disabled, which is the gate that actually declines here.
-  test("shouldSwap() returns false when fallback is disabled", () => {
+  test("shouldSwap() returns false when fallback is disabled; nextCandidate() returns null when no fallback map configured", () => {
     const manager = new AgentManager(DEFAULT_CONFIG);
     expect(
       manager.shouldSwap({ category: "availability", outcome: "fail-auth", message: "x", retriable: false }, 0),
     ).toBe(false);
-  });
-
-  test("nextCandidate() returns null when no fallback map configured", () => {
-    const manager = new AgentManager(DEFAULT_CONFIG);
     expect(manager.nextCandidate("claude", 0)).toBeNull();
   });
 
@@ -461,5 +468,218 @@ describe("AgentManager — middleware envelope", () => {
       .catch(() => {});
     expect(calls).toHaveLength(0);
     expect(capturedSignal).toBeUndefined();
+  });
+});
+
+// ─── US-002: rates passenger on dispatch events ──────────────────────────────
+
+const PERMS = resolvePermissions(DEFAULT_CONFIG, "complete");
+
+function makeOptions(): CompleteOptions {
+  return {
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-6" },
+    workdir: "/tmp",
+    resolvedPermissions: PERMS,
+  };
+}
+
+describe("buildCompleteEvent — rates passenger (US-002 AC9, AC10)", () => {
+  // AC9 (success): when the CompleteResult carries `rates`, the event
+  // exposes the same four rate values.
+  test("AC9: CompleteResult.rates (4 fields) reaches the DispatchEvent.rates", () => {
+    const rates: ResolvedRates = {
+      inputPer1M: 2,
+      outputPer1M: 10,
+      cacheReadPer1M: 0.2,
+      cacheCreationPer1M: 2.5,
+    };
+    const options = makeOptions();
+    options.sessionName = "nax-ac9";
+    const event = buildCompleteEvent({
+      sessionName: "nax-ac9",
+      prompt: "do the thing",
+      response: "done",
+      agentName: "claude",
+      stage: "complete",
+      options,
+      resolvedPermissions: PERMS,
+      tokenUsage: { inputTokens: 100, outputTokens: 50 },
+      estimatedCostUsd: 0,
+      startedAt: 1_000,
+      rates,
+    });
+
+    expect(event.rates).toEqual(rates);
+    expect(event.rates?.inputPer1M).toBe(2);
+    expect(event.rates?.outputPer1M).toBe(10);
+    expect(event.rates?.cacheReadPer1M).toBe(0.2);
+    expect(event.rates?.cacheCreationPer1M).toBe(2.5);
+  });
+
+  // AC10 (boundary): when the CompleteResult has NO `rates` (e.g. native path
+  // that always stamps vs ACP that stamps only when nonzero-usage guard let
+  // pricing run), the event OMITS the field entirely. The AC explicitly
+  // says "omits... rather than exposing it as undefined" — the "no field"
+  // contract is what lets a downstream subscriber distinguish "no report"
+  // from "explicitly unknown".
+  test("AC10: CompleteResult without rates means the returned event has no rates property", () => {
+    const options = makeOptions();
+    options.sessionName = "nax-ac10";
+    const event = buildCompleteEvent({
+      sessionName: "nax-ac10",
+      prompt: "do the thing",
+      response: "done",
+      agentName: "claude",
+      stage: "complete",
+      options,
+      resolvedPermissions: PERMS,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+      startedAt: 1_000,
+      // No `rates` supplied — the builder must NOT set event.rates to
+      // undefined, must NOT set it to a zeroed object: it must omit it.
+    });
+
+    expect("rates" in event).toBe(false);
+  });
+});
+
+describe("buildSessionTurnEvent — rates passenger (US-002 AC9, AC10)", () => {
+  // AC9 (success, sendTurn path): TurnResult.rates propagates onto the
+  // session-turn event's `rates`.
+  test("AC9: TurnResult.rates (4 fields) reaches the DispatchEvent.rates", () => {
+    const rates: ResolvedRates = {
+      inputPer1M: 3,
+      outputPer1M: 15,
+      cacheReadPer1M: 3,
+      cacheCreationPer1M: 3,
+    };
+    const handle: SessionHandle = {
+      id: "nax-ac9-handle",
+      agentName: "claude",
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6" },
+    };
+    const result: TurnResult = {
+      output: "ok",
+      tokenUsage: { inputTokens: 100, outputTokens: 50 },
+      estimatedCostUsd: 0,
+      internalRoundTrips: 1,
+      rates,
+    };
+    const event = buildSessionTurnEvent({
+      handle,
+      sessionRole: "main",
+      prompt: "do the thing",
+      result,
+      agentName: "claude",
+      stage: "run",
+      opts: { pipelineStage: "run", storyId: "US-002" },
+      resolvedPermissions: PERMS,
+      startedAt: 1_000,
+    });
+
+    expect(event.rates).toEqual(rates);
+    expect(event.rates?.inputPer1M).toBe(3);
+    expect(event.rates?.outputPer1M).toBe(15);
+  });
+
+  // AC10 (boundary, sendTurn path): when TurnResult has no `rates`, the
+  // event omits the field.
+  test("AC10: TurnResult without rates means the returned event has no rates property", () => {
+    const handle: SessionHandle = {
+      id: "nax-ac10-handle",
+      agentName: "claude",
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6" },
+    };
+    const result: TurnResult = {
+      output: "ok",
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      estimatedCostUsd: 0,
+      internalRoundTrips: 1,
+      // No `rates` — the builder must omit it.
+    };
+    const event = buildSessionTurnEvent({
+      handle,
+      sessionRole: "main",
+      prompt: "do the thing",
+      result,
+      agentName: "claude",
+      stage: "run",
+      opts: { pipelineStage: "run" },
+      resolvedPermissions: PERMS,
+      startedAt: 1_000,
+    });
+
+    expect("rates" in event).toBe(false);
+  });
+});
+
+// ─── Phase 5 type surface: executeHop callback + outcome shape ───────────────
+
+function phase5MakeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
+  return {
+    prompt: "p",
+    workdir: "/tmp",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    timeoutSeconds: 60,
+    config: agentManagerConfigSelector.select(DEFAULT_CONFIG),
+    ...overrides,
+  };
+}
+
+describe("AgentRunRequest — executeHop callback", () => {
+  test("AgentRunRequest accepts executeHop callback", () => {
+    const req: AgentRunRequest = {
+      runOptions: phase5MakeRunOptions(),
+      executeHop: async (_agentName: string, bundle: ContextBundle | undefined, _hopKind: HopKind) => ({
+        result: {} as AgentResult,
+        bundle,
+        prompt: "test",
+      }),
+    };
+    expect(typeof req.executeHop).toBe("function");
+  });
+
+  test("AgentRunOutcome has finalBundle and finalPrompt", () => {
+    const outcome: AgentRunOutcome = {
+      result: {} as AgentResult,
+      fallbacks: [],
+      finalBundle: undefined,
+      finalPrompt: undefined,
+      dispatchesCompleted: 1,
+    };
+    expect(outcome.finalBundle).toBeUndefined();
+    expect(outcome.finalPrompt).toBeUndefined();
+    expect(outcome.dispatchesCompleted).toBe(1);
+  });
+});
+
+// ─── ADR-012: cancellable rate-limit backoff wiring ──────────────────────────
+
+describe("AgentManager — rate-limit backoff wiring", () => {
+  test("_deps.sleep accepts an AbortSignal and aborts mid-flight", async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new Error("aborted")), 10);
+
+    const start = performance.now();
+    let error: unknown;
+    try {
+      await _agentManagerDeps.sleep(5_000, controller.signal);
+    } catch (err) {
+      error = err;
+    }
+    const elapsed = performance.now() - start;
+
+    assertCaughtInstanceOf(error, Error, "cancellable backoff rejection");
+    expect(error.message).toBe("aborted");
+    expect(elapsed).toBeLessThan(1_000);
+  });
+
+  test("_deps.sleep resolves normally when no signal is passed", async () => {
+    const start = performance.now();
+    await _agentManagerDeps.sleep(30);
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeGreaterThanOrEqual(25);
   });
 });

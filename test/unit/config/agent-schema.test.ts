@@ -74,9 +74,17 @@ describe("AgentConfigSchema", () => {
     expect(() => NaxConfigSchema.parse({ agent: { fallback: { maxHopsPerStory: 11 } } })).toThrow();
   });
 
-  test("agent.acp.promptRetries defaults to 0", () => {
+  test("agent.acp.promptRetries defaults to 0; agent.spinBreaker applies all six documented defaults from an empty config", () => {
     const result = NaxConfigSchema.parse({});
     expect(result.agent?.acp?.promptRetries).toBe(0);
+    expect(result.agent?.spinBreaker).toEqual({
+      enabled: true,
+      nudgeAfterRepeats: 25,
+      maxNudges: 3,
+      stopAfterRepeats: 50,
+      recentKeyWindow: 64,
+      stopAfterSameKeyRepeats: 12,
+    });
   });
 
   test("agent.acp.promptRetries accepts values 0–5", () => {
@@ -345,17 +353,5 @@ describe("AgentConfigSchema", () => {
       agent: { spinBreaker: { nudgeAfterRepeats: 25, stopAfterRepeats: 50 } },
     });
     expect(result.success).toBe(true);
-  });
-
-  test("agent.spinBreaker applies all six documented defaults from an empty config", () => {
-    const result = NaxConfigSchema.parse({});
-    expect(result.agent?.spinBreaker).toEqual({
-      enabled: true,
-      nudgeAfterRepeats: 25,
-      maxNudges: 3,
-      stopAfterRepeats: 50,
-      recentKeyWindow: 64,
-      stopAfterSameKeyRepeats: 12,
-    });
   });
 });

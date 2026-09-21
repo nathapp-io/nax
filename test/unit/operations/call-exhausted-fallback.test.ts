@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { assertDefined, makeMockAgentManager, makeMockRuntime, makeSessionManager } from "@test/helpers";
+import { ladderSlotKey } from "@/agents/ladder-slot";
+import type { AgentFallbackRecord } from "@/agents/manager-types";
 import type { RetryStrategy } from "@/agents/retry";
 import { makeParseRetryStrategy, ParseValidationError } from "@/agents/retry";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
@@ -466,5 +468,201 @@ describe("callOp — BUG-62: provider-refusal turn with a strict parser returns 
     // consumer reading `.passed` / `.findings` off a shape that doesn't have them.
     expect(result).toEqual({ ...FAIL_OPEN, estimatedCostUsd: 0.01 });
     expect((result as { output?: unknown }).output).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fallback recording (nax#1707, nax#1964) — hops and sticky targets land on
+// the run-scoped store. Absorbed from call-fallback-recording.test.ts.
+// ---------------------------------------------------------------------------
+
+const recordingTestSel = pickSelector("fallback-recording-test", "routing");
+
+function recordingHop(overrides: Partial<AgentFallbackRecord> = {}): AgentFallbackRecord {
+  return {
+    storyId: "US-001",
+    priorAgent: "claude",
+    newAgent: "codex",
+    hop: 1,
+    outcome: "fail-quota",
+    category: "availability",
+    timestamp: "2026-08-25T00:00:00.000Z",
+    costUsd: 0.25,
+    ...overrides,
+  };
+}
+
+/** A manager whose runWithFallback reports `fallbacks` alongside a successful result. */
+function managerReporting(fallbacks: AgentFallbackRecord[]) {
+  return makeMockAgentManager({
+    runWithFallbackFn: async (req) => {
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+      return { result: { ...hopResult.result, agentFallbacks: fallbacks }, fallbacks };
+    },
+    runAsSessionFn: async () => ({
+      output: "done",
+      estimatedCostUsd: 0,
+      internalRoundTrips: 0,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    }),
+  });
+}
+
+function makeRecordingOp(name: string): RunOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> {
+  return {
+    kind: "run",
+    name,
+    stage: "run",
+    config: recordingTestSel,
+    session: { role: "implementer", lifetime: "fresh" },
+    build: (input) => ({
+      role: { id: "role", content: "You process input.", overridable: false },
+      task: { id: "task", content: input, overridable: false },
+    }),
+    parse: (output) => output,
+  };
+}
+
+function recordingRuntimeWith(fallbacks: AgentFallbackRecord[]): NaxRuntime {
+  const runtime = makeMockRuntime({ agentManager: managerReporting(fallbacks) });
+  createdRuntimes.push(runtime);
+  return runtime;
+}
+
+/** A manager whose runWithFallback reports a swap AND the target it swapped to. */
+function managerSwappingTo(newAgent: string) {
+  const fallbacks = [recordingHop({ newAgent })];
+  return makeMockAgentManager({
+    runWithFallbackFn: async (req) => {
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop(newAgent, undefined, { kind: "primary" }, req.runOptions);
+      return {
+        result: { ...hopResult.result, agentFallbacks: fallbacks },
+        fallbacks,
+        finalTarget: { agent: newAgent },
+        didSwap: true,
+      };
+    },
+    runAsSessionFn: async () => ({
+      output: "done",
+      estimatedCostUsd: 0,
+      internalRoundTrips: 0,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    }),
+  });
+}
+
+/** A manager that retried a stale session without selecting a fallback target. */
+function managerReportingStaleRetry() {
+  const fallbacks = [recordingHop({ priorAgent: "claude", newAgent: "claude", outcome: "fail-stale" })];
+  return makeMockAgentManager({
+    runWithFallbackFn: async (req) => {
+      const { executeHop } = req;
+      assertDefined(executeHop, "req.executeHop");
+      const hopResult = await executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+      return {
+        result: { ...hopResult.result, agentFallbacks: fallbacks },
+        fallbacks,
+        finalTarget: { agent: "claude" },
+        didSwap: false,
+      };
+    },
+    runAsSessionFn: async () => ({
+      output: "done",
+      estimatedCostUsd: 0,
+      internalRoundTrips: 0,
+      tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    }),
+  });
+}
+
+function recordingCtxFor(runtime: NaxRuntime, storyId?: string) {
+  return {
+    runtime,
+    packageView: runtime.packages.repo(),
+    packageDir: "/tmp",
+    agentName: "claude",
+    ...(storyId !== undefined ? { storyId } : {}),
+  };
+}
+
+describe("callOp records agent-swap hops on the run-scoped store (#1707)", () => {
+  test("appends the hops runWithFallback reported, keyed by story", async () => {
+    const recorded = [recordingHop()];
+    const runtime = recordingRuntimeWith(recorded);
+
+    await callOp(recordingCtxFor(runtime, "US-001"), makeRecordingOp("record-one"), "input");
+
+    expect(runtime.agentFallbacks.get("US-001")).toEqual(recorded);
+  });
+
+  test("accumulates hops across every op in the same story", async () => {
+    const runtime = recordingRuntimeWith([recordingHop({ hop: 1 })]);
+
+    await callOp(recordingCtxFor(runtime, "US-001"), makeRecordingOp("first-op"), "input");
+    await callOp(recordingCtxFor(runtime, "US-001"), makeRecordingOp("second-op"), "input");
+
+    expect(runtime.agentFallbacks.get("US-001")).toHaveLength(2);
+  });
+
+  test("keeps stories separate", async () => {
+    const runtime = recordingRuntimeWith([recordingHop()]);
+
+    await callOp(recordingCtxFor(runtime, "US-001"), makeRecordingOp("op-a"), "input");
+    await callOp(recordingCtxFor(runtime, "US-002"), makeRecordingOp("op-b"), "input");
+
+    expect(runtime.agentFallbacks.get("US-001")).toHaveLength(1);
+    expect(runtime.agentFallbacks.get("US-002")).toHaveLength(1);
+  });
+
+  test("records nothing when the op ran with no swaps", async () => {
+    const runtime = recordingRuntimeWith([]);
+
+    await callOp(recordingCtxFor(runtime, "US-001"), makeRecordingOp("no-swap"), "input");
+
+    expect(runtime.agentFallbacks.has("US-001")).toBe(false);
+  });
+
+  test("drops hops from an ad-hoc call that carries no storyId", async () => {
+    const runtime = recordingRuntimeWith([recordingHop()]);
+
+    await callOp(recordingCtxFor(runtime), makeRecordingOp("no-story"), "input");
+
+    expect(runtime.agentFallbacks.size).toBe(0);
+  });
+});
+
+describe("callOp records the target a story swapped to (nax#1964)", () => {
+  test("records finalTarget on runtime.ladderSlots, keyed by the escalation rung and role", async () => {
+    const runtime = makeMockRuntime({ agentManager: managerSwappingTo("codex") });
+    createdRuntimes.push(runtime);
+
+    await callOp(recordingCtxFor(runtime, "US-001"), makeRecordingOp("record-target"), "input");
+
+    expect(runtime.ladderSlots.get(ladderSlotKey("US-001", "balanced", "claude", "implementer"))).toEqual({
+      target: { agent: "codex" },
+      depth: 0,
+    });
+  });
+
+  test("records nothing when the op ran with no swaps", async () => {
+    const runtime = recordingRuntimeWith([]);
+
+    await callOp(recordingCtxFor(runtime, "US-001"), makeRecordingOp("no-swap"), "input");
+
+    expect(runtime.ladderSlots.size).toBe(0);
+  });
+
+  test("does not make a stale retry sticky", async () => {
+    const runtime = makeMockRuntime({ agentManager: managerReportingStaleRetry() });
+    createdRuntimes.push(runtime);
+
+    await callOp(recordingCtxFor(runtime, "US-001"), makeRecordingOp("stale-retry"), "input");
+
+    expect(runtime.agentFallbacks.get("US-001")).toHaveLength(1);
+    expect(runtime.ladderSlots.size).toBe(0);
   });
 });

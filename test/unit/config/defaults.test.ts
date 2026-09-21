@@ -1,18 +1,32 @@
 // RE-ARCH: keep
 /**
- * DEFAULT_CONFIG.review.checks default value tests
+ * DEFAULT_CONFIG tests.
  *
- * Verifies that the default review.checks array does NOT include 'test',
- * since test execution is handled by the verify stage and is redundant
- * in the review stage.
+ * Merged from three files that all pin the default config surface:
+ *   - DEFAULT_CONFIG.review.checks defaults (schema backwards compatibility)
+ *   - US-002: DEFAULT_CONFIG is derived from NaxConfigSchema.parse({}), not a
+ *     hand-maintained literal
+ *   - US-003: schema defaults deeply equal DEFAULT_CONFIG (single source of truth)
  *
- * 'test' must still be a valid enum value in the schema (backwards compat).
+ * The original per-ticket files were `defaults-schema-derive.test.ts` (US-002)
+ * and `defaults-ssot.test.ts` (US-003).
  */
 
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { assertDefined } from "@test/helpers";
+import {
+  AdversarialReviewConfigSchema,
+  ExecutionConfigSchema,
+  RectificationConfigSchema,
+  RegressionGateConfigSchema,
+} from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import { loadConfig } from "@/config/loader";
 import { NaxConfigSchema } from "@/config/schemas";
+import type { NaxConfig } from "@/config/types";
 
 describe("DEFAULT_CONFIG review.checks", () => {
   test("default review.checks is ['typecheck', 'lint'] without 'test'", () => {
@@ -104,5 +118,207 @@ describe("DEFAULT_CONFIG.precheck.storySizeGate (US-001)", () => {
   ])("precheck.storySizeGate.%s defaults to %s", (field, expected) => {
     assertDefined(DEFAULT_CONFIG.precheck, "DEFAULT_CONFIG.precheck");
     expect(DEFAULT_CONFIG.precheck.storySizeGate[field]).toBe(expected);
+  });
+});
+
+describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
+  describe("defaults.ts structure", () => {
+    test("defaults.ts is fewer than 15 lines total", async () => {
+      const { readFileSync } = await import("node:fs");
+      const { resolve } = await import("node:path");
+      const defaultsPath = resolve(import.meta.dir, "../../../src/config/defaults.ts");
+      const content = readFileSync(defaultsPath, "utf-8");
+      const lineCount = content.split("\n").length;
+      expect(lineCount).toBeLessThan(15);
+    });
+
+    test("DEFAULT_CONFIG is exported from defaults.ts", () => {
+      expect(DEFAULT_CONFIG).toBeDefined();
+    });
+
+    test("DEFAULT_CONFIG is cast from NaxConfigSchema.parse({})", () => {
+      const derivedConfig = NaxConfigSchema.parse({});
+      expect(derivedConfig).toBeDefined();
+      expect(typeof derivedConfig).toBe("object");
+    });
+  });
+
+  describe("DEFAULT_CONFIG default values from Zod schema", () => {
+    test("DEFAULT_CONFIG.execution.sessionTimeoutSeconds === 3600", () => {
+      expect(DEFAULT_CONFIG.execution.sessionTimeoutSeconds).toBe(3600);
+    });
+
+    test("DEFAULT_CONFIG.execution.rectification.maxAttemptsTotal === 12", () => {
+      expect(DEFAULT_CONFIG.execution.rectification.maxAttemptsTotal).toBe(12);
+    });
+
+    test("DEFAULT_CONFIG.execution.rectification.maxAttemptsPerStrategy === 3", () => {
+      expect(DEFAULT_CONFIG.execution.rectification.maxAttemptsPerStrategy).toBe(3);
+    });
+  });
+
+  describe("NaxConfigSchema.parse({}) produces DEFAULT_CONFIG", () => {
+    test("schema parse returns object with same sessionTimeoutSeconds; schema parse returns object with same rectification.maxAttemptsTotal", () => {
+      const parsed = NaxConfigSchema.parse({});
+      expect(parsed.execution.sessionTimeoutSeconds).toBe(3600);
+      expect(parsed.execution.rectification.maxAttemptsTotal).toBe(12);
+    });
+
+    test("schema parse produces NaxConfig type", () => {
+      const parsed = NaxConfigSchema.parse({});
+      const typed = parsed as NaxConfig;
+      expect(typed.execution).toBeDefined();
+      expect(typed.quality).toBeDefined();
+    });
+  });
+
+  describe("BUG-20: execution timeout defaults never drift between outer literal and inner schema", () => {
+    // Previously the outer `execution: ExecutionConfigSchema.default({...})`
+    // literal in schemas.ts hardcoded verificationTimeoutSeconds: 600,
+    // rectification.fullSuiteTimeoutSeconds: 300, and
+    // regressionGate.timeoutSeconds: 300 — all of which had drifted from
+    // their own field-level `.default()` in schemas-execution.ts (300, 120,
+    // 120 respectively). `NaxConfigSchema.parse({})` used the outer numbers;
+    // parsing a config that supplied `execution.rectification: {}` used the
+    // inner ones. Pin both to the single source of truth.
+    test("DEFAULT_CONFIG.execution.verificationTimeoutSeconds matches the field's own schema default", () => {
+      const fieldDefault = ExecutionConfigSchema.shape.verificationTimeoutSeconds.parse(undefined);
+      expect(DEFAULT_CONFIG.execution.verificationTimeoutSeconds).toBe(fieldDefault);
+      expect(NaxConfigSchema.parse({}).execution.verificationTimeoutSeconds).toBe(fieldDefault);
+    });
+
+    test("DEFAULT_CONFIG.execution.rectification matches RectificationConfigSchema.parse({})", () => {
+      const schemaDefault = RectificationConfigSchema.parse({});
+      expect(DEFAULT_CONFIG.execution.rectification).toEqual(schemaDefault);
+      expect(NaxConfigSchema.parse({}).execution.rectification).toEqual(schemaDefault);
+    });
+
+    test("DEFAULT_CONFIG.execution.regressionGate matches RegressionGateConfigSchema.parse({})", () => {
+      const schemaDefault = RegressionGateConfigSchema.parse({});
+      expect(DEFAULT_CONFIG.execution.regressionGate).toEqual(schemaDefault);
+      expect(NaxConfigSchema.parse({}).execution.regressionGate).toEqual(schemaDefault);
+    });
+  });
+
+  describe("issue #1338: review.adversarial default is schema-derived (no hand-copied drift)", () => {
+    test("DEFAULT_CONFIG.review.adversarial equals the schema default (aside from schema-optional substantiation)", () => {
+      const schemaDefault = AdversarialReviewConfigSchema.parse({});
+      const adv = DEFAULT_CONFIG.review?.adversarial;
+      expect(adv).toBeDefined();
+      if (!adv) return;
+      const { substantiation, ...derived } = adv;
+      expect(derived).toEqual(schemaDefault);
+      // substantiation is schema-optional (no `.default()`), spread in explicitly to keep the shape.
+      expect(substantiation).toEqual({ requote: true, maxRequotes: 5 });
+    });
+
+    test("new schema defaults flow into DEFAULT_CONFIG automatically (recurrenceDemotion, not a hand-copied literal)", () => {
+      expect(DEFAULT_CONFIG.review?.adversarial?.recurrenceDemotion).toEqual(
+        AdversarialReviewConfigSchema.parse({}).recurrenceDemotion,
+      );
+    });
+  });
+
+  describe("loadConfig() with no config files", () => {
+    test("loadConfig() with no config files returns config deeply equal to DEFAULT_CONFIG", async () => {
+      const tempProjectDir = join(tmpdir(), `nax-test-project-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      const tempGlobalDir = join(tmpdir(), `nax-test-global-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      mkdirSync(join(tempProjectDir, ".nax"), { recursive: true });
+      mkdirSync(tempGlobalDir, { recursive: true });
+
+      const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+      process.env.NAX_GLOBAL_CONFIG_DIR = tempGlobalDir;
+
+      try {
+        const result = await loadConfig(tempProjectDir);
+        expect(result).toEqual(DEFAULT_CONFIG);
+      } finally {
+        if (originalGlobalDir === undefined) {
+          process.env.NAX_GLOBAL_CONFIG_DIR = undefined;
+        } else {
+          process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+        }
+        rmSync(tempProjectDir, { recursive: true, force: true });
+        rmSync(tempGlobalDir, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
+  "name",
+  "outputDir",
+  "version",
+  "models",
+  "autoMode",
+  "autoRoute",
+  "routing",
+  "execution",
+  "install",
+  "quality",
+  "tdd",
+  "constitution",
+  "review",
+  "plan",
+  "acceptance",
+  "context",
+  "optimizer",
+  "plugins",
+  "disabledPlugins",
+  "hooks",
+  "interaction",
+  "precheck",
+  "prompts",
+  "agent",
+  "generate",
+  "project",
+  "curator",
+  "autoPr",
+  "finish",
+  "mcp",
+  "reporters",
+  "profile",
+  "profileChain",
+];
+
+describe("NaxConfigSchema.parse({}) does not throw (AC-4)", () => {
+  test("parses empty object without throwing", () => {
+    expect(() => NaxConfigSchema.parse({})).not.toThrow();
+  });
+});
+
+describe("schema defaults deeply equal DEFAULT_CONFIG (AC-2)", () => {
+  test("deepEqual(NaxConfigSchema.parse({}), DEFAULT_CONFIG) passes", () => {
+    const parsed = NaxConfigSchema.parse({}) as NaxConfig;
+    expect(parsed).toEqual(DEFAULT_CONFIG);
+  });
+});
+
+describe("schema defaults have no extra keys beyond DEFAULT_CONFIG (AC-3)", () => {
+  test("parsed keys exactly match DEFAULT_CONFIG keys", () => {
+    const parsed = NaxConfigSchema.parse({});
+    const schemaKeys = Object.keys(parsed).sort();
+    const defaultKeys = Object.keys(DEFAULT_CONFIG).sort();
+    expect(schemaKeys).toEqual(defaultKeys);
+  });
+});
+
+describe("every DEFAULT_CONFIG key is a valid NaxConfig top-level key (AC-3)", () => {
+  test("all DEFAULT_CONFIG keys exist in NaxConfig", () => {
+    const defaultKeys = Object.keys(DEFAULT_CONFIG) as (keyof NaxConfig)[];
+    for (const key of defaultKeys) {
+      expect(NAX_CONFIG_KEYS).toContain(key);
+    }
+  });
+});
+
+describe("every NaxConfig top-level key with a default is present in schema defaults (AC-3)", () => {
+  test("all NaxConfig keys that have .default() are in NaxConfigSchema.parse({})", () => {
+    const parsed = NaxConfigSchema.parse({});
+    for (const key of NAX_CONFIG_KEYS) {
+      if (key in parsed) {
+        expect(parsed).toHaveProperty(key);
+      }
+    }
   });
 });

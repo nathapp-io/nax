@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { assertDefined, makeLogger, withTempDir } from "@test/helpers";
+import { assertDefined, makeLogger, withDepsRestore, withTempDir } from "@test/helpers";
 import { _costAggDeps, CostAggregator, type CostEvent, createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 
 function makeEvent(overrides: Partial<CostEvent> = {}): CostEvent {
@@ -20,6 +20,7 @@ function makeEvent(overrides: Partial<CostEvent> = {}): CostEvent {
 }
 
 describe("CostAggregator", () => {
+  withDepsRestore(_costAggDeps, ["write"]);
   test("snapshot(): zero totals when empty; accumulates events; counts errors separately", () => {
     const agg = new CostAggregator("r-001", "/tmp/drain");
     const empty = agg.snapshot();

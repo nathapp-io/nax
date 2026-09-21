@@ -28,11 +28,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { buildTurnResult } from "@/agents";
 import { _acpAdapterDeps, AcpAgentAdapter } from "@/agents/acp/adapter";
 import type { RateCard } from "@/agents/cost";
 import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import { buildCompleteEvent, buildSessionTurnEvent } from "@/agents/manager-dispatch";
-import type { OpenSessionOpts } from "@/agents/session-types";
+import type { InteractionExchange, OpenSessionOpts } from "@/agents/session-types";
 import { resolvePermissions } from "@/config/permissions";
 import { type CostEvent, createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
@@ -50,6 +51,13 @@ const CATALOG_CARD: RateCard = {
 const FALLBACK_CARD: RateCard = {
   rates: { inputPer1M: 3, outputPer1M: 15 },
   source: "fallback-rates",
+};
+
+// From adapter-output-timedout.test.ts — a catalog-rates card at 3/15,
+// distinct from CATALOG_CARD (2/10) above, so both are kept.
+const TIMED_OUT_CARD: RateCard = {
+  rates: { inputPer1M: 3, outputPer1M: 15 },
+  source: "catalog-rates",
 };
 
 const TEST_PERMS = resolvePermissions(undefined, "complete");
@@ -82,6 +90,16 @@ function successResponse(overrides: Partial<AcpSessionResponse> = {}): AcpSessio
     messages: [{ role: "assistant", content: "done." }],
     stopReason: "end_turn",
     cumulative_token_usage: { input_tokens: 100, output_tokens: 50 },
+    ...overrides,
+  };
+}
+
+// From adapter-output-timedout.test.ts — minimal response builder for the
+// buildTurnResult timeout describe.
+function makeResponse(overrides: Partial<AcpSessionResponse> = {}): AcpSessionResponse | null {
+  return {
+    messages: [{ role: "assistant", content: "" }],
+    stopReason: "end_turn",
     ...overrides,
   };
 }
@@ -521,5 +539,94 @@ describe("complete() — degraded results carry the resolved card source", () =>
     const result = await new AcpAgentAdapter("claude").complete("hi", makeCompleteOptions());
     expect(result.cancelled).toBe(true);
     expect(result.pricingSource).toBe("catalog-rates");
+  });
+});
+
+// buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true
+// (from adapter-output-timedout.test.ts; rates card renamed TIMED_OUT_CARD)
+describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", () => {
+  test("returns TurnResult with timedOut=true when timedOut flag is passed; returns output='' when timedOut flag is passed (AC2)", () => {
+    const result = buildTurnResult({
+      lastResponse: null,
+      totalTokenUsage: { inputTokens: 0, outputTokens: 0 },
+      totalExactCostUsd: undefined,
+      turnCount: 1,
+      interactions: [],
+      timedOut: true,
+      rateCard: TIMED_OUT_CARD,
+    });
+    expect(result.timedOut).toBe(true);
+    expect(result.output).toBe("");
+  });
+
+  test("extracts output from the response when timedOut is false (AC3 normal path)", () => {
+    const result = buildTurnResult({
+      lastResponse: makeResponse({
+        messages: [{ role: "assistant", content: "hello world" }],
+      }),
+      totalTokenUsage: { inputTokens: 0, outputTokens: 0 },
+      totalExactCostUsd: undefined,
+      turnCount: 1,
+      interactions: [],
+      timedOut: false,
+      rateCard: TIMED_OUT_CARD,
+    });
+    expect(result.output).toBe("hello world");
+    expect(result.timedOut).toBe(false);
+  });
+
+  test("returns timedOut=undefined when flag is not provided (AC3)", () => {
+    const result = buildTurnResult({
+      lastResponse: makeResponse({
+        messages: [{ role: "assistant", content: "done" }],
+      }),
+      totalTokenUsage: { inputTokens: 0, outputTokens: 0 },
+      totalExactCostUsd: undefined,
+      turnCount: 1,
+      interactions: [],
+      timedOut: false,
+      rateCard: TIMED_OUT_CARD,
+    });
+    expect(result.timedOut).toBe(false);
+  });
+
+  test("preserves internalRoundTrips, tokenUsage, and cost on timeout", () => {
+    const result = buildTurnResult({
+      lastResponse: null,
+      totalTokenUsage: { inputTokens: 5, outputTokens: 3 },
+      totalExactCostUsd: 0.42,
+      turnCount: 7,
+      interactions: [],
+      timedOut: true,
+      rateCard: TIMED_OUT_CARD,
+    });
+    expect(result.internalRoundTrips).toBe(7);
+    expect(result.tokenUsage).toEqual({ inputTokens: 5, outputTokens: 3 });
+    expect(result.exactCostUsd).toBe(0.42);
+  });
+
+  test("emits interactions array only when present (matching legacy contract)", () => {
+    const interactions: InteractionExchange[] = [{ turnIndex: 1, question: "q?", reply: "a" }];
+    const withInter = buildTurnResult({
+      lastResponse: makeResponse({ messages: [{ role: "assistant", content: "x" }] }),
+      totalTokenUsage: { inputTokens: 0, outputTokens: 0 },
+      totalExactCostUsd: undefined,
+      turnCount: 1,
+      interactions,
+      timedOut: false,
+      rateCard: TIMED_OUT_CARD,
+    });
+    expect(withInter.interactions).toEqual(interactions);
+
+    const noInter = buildTurnResult({
+      lastResponse: makeResponse({ messages: [{ role: "assistant", content: "x" }] }),
+      totalTokenUsage: { inputTokens: 0, outputTokens: 0 },
+      totalExactCostUsd: undefined,
+      turnCount: 1,
+      interactions: [],
+      timedOut: false,
+      rateCard: TIMED_OUT_CARD,
+    });
+    expect(noInter.interactions).toBeUndefined();
   });
 });

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 import { NaxError } from "@/errors";
-import { _isolationDeps, getChangedFiles } from "@/tdd";
-import { getAddedLinesPerFile } from "@/tdd/isolation";
+import { _isolationDeps, getChangedFiles, verifyTestWriterIsolation } from "@/tdd";
+import { getAddedLinesPerFile, verifyImplementerIsolation } from "@/tdd/isolation";
 
 async function git(cwd: string, args: string[]): Promise<void> {
   const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
@@ -147,5 +147,136 @@ describe("getAddedLinesPerFile (US-002: loud git failures)", () => {
     const result = await getAddedLinesPerFile("/tmp/does-not-matter", "HEAD");
 
     expect(result.get("src/a.ts")).toBe(3);
+  });
+});
+
+// L9 (review 2026-08-14): allow patterns were interpolated straight into a
+// RegExp, so regex metacharacters in ordinary directory names changed meaning.
+// Three distinct failure modes, all reachable from real paths:
+//   - `.` matched any character, so the pattern `src/a.ts` also allowed
+//     `src/axts.ts` — WIDENING the allowlist, downgrading a hard violation to soft
+//   - `[id]`, `a+b`, `app(1)` matched nothing, so a genuinely-allowed file was
+//     reported as a hard violation
+//   - an unbalanced `(` threw out of the isolation check entirely
+describe("verifyTestWriterIsolation — allow-pattern matching", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = makeTempDir("nax-isolation-allow-");
+    await Bun.write(`${dir}/seed.txt`, "seed");
+    await git(dir, ["init", "-q"]);
+    await git(dir, ["config", "user.email", "t@t"]);
+    await git(dir, ["config", "user.name", "t"]);
+    await git(dir, ["add", "."]);
+    await git(dir, ["commit", "-qm", "base"]);
+  });
+
+  afterEach(() => {
+    cleanupTempDir(dir);
+  });
+
+  /**
+   * Write a source file and return the isolation result for the given allow patterns.
+   *
+   * `git add -- <file>` matters twice over: when an entire directory is
+   * untracked `git status --porcelain` collapses it to a single `?? src/`
+   * entry so the file never reaches the matcher, and the `--` stops git
+   * treating a name like `src/[id]/page.ts` as a pathspec glob.
+   */
+  async function checkWith(file: string, allowedPaths: string[]) {
+    await Bun.write(`${dir}/${file}`, "export const x = 1;\n");
+    await git(dir, ["add", "--", file]);
+    return verifyTestWriterIsolation(dir, "HEAD", allowedPaths);
+  }
+
+  test("treats `.` in a pattern literally instead of as a wildcard", async () => {
+    const result = await checkWith("src/axts.ts", ["src/a.ts"]);
+    expect(result.softViolations).not.toContain("src/axts.ts");
+    expect(result.violations).toContain("src/axts.ts");
+  });
+
+  test("matches a bracketed directory against its own literal pattern", async () => {
+    const result = await checkWith("src/[id]/page.ts", ["src/[id]/**"]);
+    expect(result.softViolations).toContain("src/[id]/page.ts");
+    expect(result.violations).not.toContain("src/[id]/page.ts");
+  });
+
+  test("matches a `+` directory against its own literal pattern", async () => {
+    const result = await checkWith("src/a+b/page.ts", ["src/a+b/**"]);
+    expect(result.softViolations).toContain("src/a+b/page.ts");
+    expect(result.violations).not.toContain("src/a+b/page.ts");
+  });
+
+  test("matches a parenthesised directory against its own literal pattern", async () => {
+    const result = await checkWith("src/app(1)/page.ts", ["src/app(1)/**"]);
+    expect(result.softViolations).toContain("src/app(1)/page.ts");
+    expect(result.violations).not.toContain("src/app(1)/page.ts");
+  });
+
+  test("does not throw on a pattern containing an unbalanced parenthesis", async () => {
+    const result = await checkWith("src/plain.ts", ["src/a(b/**"]);
+    expect(result.violations).toContain("src/plain.ts");
+  });
+
+  test("still honours ** across directories", async () => {
+    const result = await checkWith("src/a/b/index.ts", ["src/**/index.ts"]);
+    expect(result.softViolations).toContain("src/a/b/index.ts");
+  });
+
+  test("still honours * within a single segment", async () => {
+    const result = await checkWith("src/thing.ts", ["src/*.ts"]);
+    expect(result.softViolations).toContain("src/thing.ts");
+  });
+
+  test("* does not cross a directory separator", async () => {
+    const result = await checkWith("src/deep/thing.ts", ["src/*.ts"]);
+    expect(result.softViolations).not.toContain("src/deep/thing.ts");
+  });
+});
+
+/**
+ * An empty workdir must not silently become process.cwd().
+ *
+ * packageView.packageDir is "" for the root package of every single-package
+ * repo (see toRelativeKey in runtime/packages.ts), and Bun.spawn treats cwd:""
+ * as unset. Running nax from one repository against another with `-d` therefore
+ * ran the isolation diff in the *launching* repo, where the target repo's SHA is
+ * a bad object — every story failed with "fatal: bad object <sha>". See
+ * docs/superpowers/specs/2026-09-02-plan-4-results.md.
+ */
+describe("isolation git calls reject an empty workdir", () => {
+  // Scoped to this describe so the restore does not leak into the receiver's
+  // tests (the satellite stubbed `_isolationDeps.spawn` from a top-level hook).
+  const realSpawn = _isolationDeps.spawn;
+  afterEach(() => {
+    _isolationDeps.spawn = realSpawn;
+  });
+
+  test("verifyImplementerIsolation rejects rather than falling back to process.cwd()", async () => {
+    const stub = makeSpawn(() => "src/foo.ts\n");
+    _isolationDeps.spawn = stub.spawn;
+
+    await expect(verifyImplementerIsolation("", "abc123")).rejects.toThrow(/workdir/i);
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  test("verifyTestWriterIsolation rejects rather than falling back to process.cwd()", async () => {
+    const stub = makeSpawn(() => "src/foo.ts\n");
+    _isolationDeps.spawn = stub.spawn;
+
+    await expect(verifyTestWriterIsolation("", "abc123")).rejects.toThrow(/workdir/i);
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  test("a real workdir is passed through to git as cwd", async () => {
+    const stub = makeSpawn(() => "");
+    _isolationDeps.spawn = stub.spawn;
+
+    await verifyImplementerIsolation("/tmp/some-repo", "abc123");
+
+    expect(stub.calls.length).toBeGreaterThan(0);
+    for (const call of stub.calls) {
+      expect(call.opts.cwd).toBe("/tmp/some-repo");
+    }
   });
 });

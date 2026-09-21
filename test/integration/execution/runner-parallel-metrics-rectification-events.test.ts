@@ -11,9 +11,11 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
+import type { RunParallelBatchResult } from "@/execution/parallel-batch";
 import { initLogger, resetLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import type { PipelineEvent } from "@/pipeline/event-bus";
+import type { UserStory } from "@/prd/types";
 import { makeCtx, makePendingStory, makePrd } from "./_parallel-metrics-helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -287,5 +289,229 @@ describe("AC-4 — story:started emitted with correct storyId for each batch sto
     expect(s2Idx).toBeGreaterThanOrEqual(0);
     expect(s1Idx).toBeLessThan(batchIdx);
     expect(s2Idx).toBeLessThan(batchIdx);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004 AC-1/AC-2/AC-5: per-story cost and duration, and the executeUnified
+// cut-over. Local helper makeBatchResult() builds a batch result with the
+// per-story maps the assertions read.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeBatchResult(
+  stories: UserStory[],
+  costMap: Map<string, number>,
+  durationsMap?: Map<string, number>,
+  conflicts: Array<{ story: UserStory; rectified: boolean; cost: number }> = [],
+): RunParallelBatchResult {
+  return {
+    completed: stories,
+    failed: [],
+    mergeConflicts: conflicts,
+    storyCosts: costMap,
+    storyDurations: durationsMap,
+    totalCost: [...costMap.values()].reduce((a, b) => a + b, 0),
+  };
+}
+
+describe("AC-1 — completed story cost equals storyCosts.get(story.id)", () => {
+  let deps: Record<string, unknown>;
+  let origRunParallelBatch: unknown;
+  let origSelectIndependentBatch: unknown;
+
+  beforeEach(async () => {
+    const mod = await import("@/execution/unified-executor");
+    deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
+    origRunParallelBatch = deps.runParallelBatch;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
+  });
+
+  afterEach(() => {
+    if (deps) {
+      deps.runParallelBatch = origRunParallelBatch;
+      deps.selectIndependentBatch = origSelectIndependentBatch;
+    }
+    mock.restore();
+  });
+
+  test("story1 cost equals storyCosts.get(story1.id) from batch result", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+    const costMap = new Map([
+      [story1.id, 0.15],
+      [story2.id, 0.25],
+    ]);
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => makeBatchResult([story1, story2], costMap));
+
+    const { executeUnified } = await import("@/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const ctx = makeCtx({ parallelCount: 2 });
+
+    const result = await executeUnified(ctx, prd);
+
+    const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
+    const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
+
+    assertDefined(m1, `metric for ${story1.id}`);
+    assertDefined(m2, `metric for ${story2.id}`);
+    expect(m1.cost).toBe(0.15);
+    expect(m2.cost).toBe(0.25);
+  });
+
+  test("story cost is not an even-split of totalCost (each story gets its own Map value)", async () => {
+    const story1 = makePendingStory("US-A");
+    const story2 = makePendingStory("US-B");
+    // Deliberately asymmetric costs — even-split would give 0.1 each
+    const costMap = new Map([
+      [story1.id, 0.05],
+      [story2.id, 0.15],
+    ]);
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => makeBatchResult([story1, story2], costMap));
+
+    const { executeUnified } = await import("@/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const ctx = makeCtx({ parallelCount: 2 });
+
+    const result = await executeUnified(ctx, prd);
+
+    const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
+    const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
+
+    assertDefined(m1, `metric for ${story1.id}`);
+    assertDefined(m2, `metric for ${story2.id}`);
+
+    // Even-split would be 0.1 for both — these must differ
+    expect(m1.cost).not.toBe(m2.cost);
+    expect(m1.cost).toBe(0.05);
+    expect(m2.cost).toBe(0.15);
+  });
+});
+
+describe("AC-2 — durationMs equals storyDurations.get(story.id) from batch result", () => {
+  let deps: Record<string, unknown>;
+  let origRunParallelBatch: unknown;
+  let origSelectIndependentBatch: unknown;
+
+  beforeEach(async () => {
+    const mod = await import("@/execution/unified-executor");
+    deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
+    origRunParallelBatch = deps.runParallelBatch;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
+  });
+
+  afterEach(() => {
+    if (deps) {
+      deps.runParallelBatch = origRunParallelBatch;
+      deps.selectIndependentBatch = origSelectIndependentBatch;
+    }
+    mock.restore();
+  });
+
+  test("durationMs comes from storyDurations Map in the batch result, not from external wall-clock", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+    const costMap = new Map([
+      [story1.id, 0.1],
+      [story2.id, 0.1],
+    ]);
+    // Distinct per-story durations (ms elapsed from worktree creation to merge)
+    const durationsMap = new Map([
+      [story1.id, 1500],
+      [story2.id, 3200],
+    ]);
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => makeBatchResult([story1, story2], costMap, durationsMap));
+
+    const { executeUnified } = await import("@/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const ctx = makeCtx({ parallelCount: 2 });
+
+    const result = await executeUnified(ctx, prd);
+
+    const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
+    const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
+
+    assertDefined(m1, `metric for ${story1.id}`);
+    assertDefined(m2, `metric for ${story2.id}`);
+    // Must match the per-story values from the Map, not the batch wall-clock
+    expect(m1.durationMs).toBe(1500);
+    expect(m2.durationMs).toBe(3200);
+  });
+
+  test("durationMs values differ per story when storyDurations has asymmetric timings", async () => {
+    const story1 = makePendingStory("US-X");
+    const story2 = makePendingStory("US-Y");
+    const costMap = new Map([
+      [story1.id, 0.1],
+      [story2.id, 0.1],
+    ]);
+    const durationsMap = new Map([
+      [story1.id, 800],
+      [story2.id, 4500],
+    ]);
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => makeBatchResult([story1, story2], costMap, durationsMap));
+
+    const { executeUnified } = await import("@/execution/unified-executor");
+    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([story1, story2]));
+
+    const m1 = result.allStoryMetrics.find((m) => m.storyId === story1.id);
+    const m2 = result.allStoryMetrics.find((m) => m.storyId === story2.id);
+
+    assertDefined(m1, `metric for ${story1.id}`);
+    assertDefined(m2, `metric for ${story2.id}`);
+    expect(m1.durationMs).toBe(800);
+    expect(m2.durationMs).toBe(4500);
+    // Sanity: they differ (not batch-averaged)
+    expect(m1.durationMs).not.toBe(m2.durationMs);
+  });
+
+  test("RunParallelBatchResult exposes storyDurations field (type stub check)", () => {
+    // The type must declare storyDurations — this test validates the type stub is in place
+    const result: RunParallelBatchResult = {
+      completed: [],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map(),
+      storyDurations: new Map([["story-1", 1000]]),
+      totalCost: 0,
+    };
+    const durations = result.storyDurations;
+    assertDefined(durations, "result.storyDurations");
+    expect(durations.get("story-1")).toBe(1000);
+  });
+});
+
+describe("AC-5 — executeUnified is the only dispatch entry point; removed function is absent", () => {
+  test("executeUnified is a callable function exported from unified-executor", async () => {
+    const mod = await import("@/execution/unified-executor");
+    expect(typeof mod.executeUnified).toBe("function");
+  });
+
+  test("unified-executor module does not export the old removed dispatch function", async () => {
+    const mod = await import("@/execution/unified-executor");
+    // The old function was named runParallelExecution and was removed in US-003.
+    // Key: it must not appear as an export.
+    const exportedKeys = Object.keys(mod);
+    const legacyName = ["runParallel", "Execution"].join(""); // avoid literal match in this file
+    expect(exportedKeys).not.toContain(legacyName);
+  });
+
+  test("unified-executor.ts source does not import or define the old removed dispatch function", async () => {
+    const src = await Bun.file(new URL("../../../src/execution/unified-executor.ts", import.meta.url).pathname).text();
+    const legacyName = ["runParallel", "Execution"].join("");
+    expect(src).not.toContain(legacyName);
+  });
+
+  test("runner-execution.ts source does not reference the old removed dispatch function", async () => {
+    const src = await Bun.file(new URL("../../../src/execution/runner-execution.ts", import.meta.url).pathname).text();
+    const legacyName = ["runParallel", "Execution"].join("");
+    expect(src).not.toContain(legacyName);
   });
 });

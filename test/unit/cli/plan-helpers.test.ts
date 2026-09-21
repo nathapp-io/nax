@@ -61,40 +61,24 @@ describe("buildSourceRootsSection", () => {
   // AC-3: When called with empty array, contains "- .  (unknown, framework: —, tests: —)"
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-3: returns '- .  (unknown, framework: —, tests: —)' when array is empty", () => {
+  test("AC-3: returns '- .  (unknown, framework: —, tests: —)' when array is empty (+3 more assertions)", () => {
     const result = buildSourceRootsSection([]);
     expect(result).toContain("- .  (unknown, framework: —, tests: —)");
+    expect(result).toContain("You have Read, Grep, and Glob tools");
+    expect(result).toContain("≤ 10 file reads per story");
+    expect(result).toContain("path:line");
   });
 
   // ──────────────────────────────────────────────────────────────────────────
   // Additional: Section contains instruction text about tools and budget
   // ──────────────────────────────────────────────────────────────────────────
-
-  test("includes instruction text about Read, Grep, and Glob tools", () => {
-    const result = buildSourceRootsSection([]);
-    expect(result).toContain("You have Read, Grep, and Glob tools");
-  });
-
-  test("includes budget guidance of '≤ 10 file reads per story'", () => {
-    const result = buildSourceRootsSection([]);
-    expect(result).toContain("≤ 10 file reads per story");
-  });
-
-  test("includes instruction to cite findings as 'path:line'", () => {
-    const result = buildSourceRootsSection([]);
-    expect(result).toContain("path:line");
-  });
 });
 
 describe("createCliInteractionBridge", () => {
   describe("detectQuestion", () => {
-    test("returns true when the text contains a question mark", async () => {
+    test("returns true when the text contains a question mark; returns false when the text has no question mark", async () => {
       const bridge = createCliInteractionBridge();
       expect(await bridge.detectQuestion("What should I do?")).toBe(true);
-    });
-
-    test("returns false when the text has no question mark", async () => {
-      const bridge = createCliInteractionBridge();
       expect(await bridge.detectQuestion("Implementing the story now.")).toBe(false);
     });
   });

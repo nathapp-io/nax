@@ -68,13 +68,9 @@ describe("genericTypecheckDiagnosticToFinding", () => {
     expect(finding.file).toBe("src/absolute.ts");
   });
 
-  test("fixTarget is always source — autofix-implementer routes on it", () => {
+  test("fixTarget is always source — autofix-implementer routes on it; suggestion is always undefined — TypecheckDiagnostic has no fix field", () => {
     const finding = genericTypecheckDiagnosticToFinding(baseDiagnostic, WORKDIR, "tsc");
     expect(finding.fixTarget).toBe("source");
-  });
-
-  test("suggestion is always undefined — TypecheckDiagnostic has no fix field", () => {
-    const finding = genericTypecheckDiagnosticToFinding(baseDiagnostic, WORKDIR, "tsc");
     expect(finding.suggestion).toBeUndefined();
   });
 });

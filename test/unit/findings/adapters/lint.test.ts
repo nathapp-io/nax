@@ -79,13 +79,9 @@ describe("lintDiagnosticToFinding", () => {
     expect(finding.file).toBe("src/absolute.ts");
   });
 
-  test("fixTarget is always undefined — derived by cycle layer", () => {
+  test("fixTarget is always undefined — derived by cycle layer; suggestion is always undefined — LintDiagnostic has no fix field", () => {
     const finding = lintDiagnosticToFinding(baseDiagnostic, WORKDIR, "biome");
     expect(finding.fixTarget).toBeUndefined();
-  });
-
-  test("suggestion is always undefined — LintDiagnostic has no fix field", () => {
-    const finding = lintDiagnosticToFinding(baseDiagnostic, WORKDIR, "biome");
     expect(finding.suggestion).toBeUndefined();
   });
 });

@@ -81,13 +81,9 @@ describe("LintConfigProvider — AC1 + AC2 construction & identity", () => {
     expect(() => new LintConfigProvider()).not.toThrow();
   });
 
-  test("AC2: id is 'lint-config'", () => {
+  test("AC2: id is 'lint-config'; AC2: kind is 'lint-config'", () => {
     const provider = new LintConfigProvider();
     expect(provider.id).toBe("lint-config");
-  });
-
-  test("AC2: kind is 'lint-config'", () => {
-    const provider = new LintConfigProvider();
     expect(provider.kind).toBe("lint-config");
   });
 });

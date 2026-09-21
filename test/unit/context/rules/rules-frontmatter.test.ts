@@ -150,13 +150,9 @@ describe("parseFrontmatter", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("RulesFrontmatterError", () => {
-  test("has correct error code", () => {
+  test("has correct error code; includes filePath in context", () => {
     const error = new RulesFrontmatterError("test error", "/path/to/file.md");
     expect(error.code).toBe("RULES_FRONTMATTER_INVALID");
-  });
-
-  test("includes filePath in context", () => {
-    const error = new RulesFrontmatterError("test error", "/path/to/file.md");
     expect(error.context?.filePath).toBe("/path/to/file.md");
   });
 });

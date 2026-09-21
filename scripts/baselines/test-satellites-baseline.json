@@ -1,0 +1,11 @@
+{
+  "updatedAt": "2026-09-21T12:24:11.471Z",
+  "byFile": {
+    "test/unit/agents/native/session/us-003-acs.test.ts": true,
+    "test/unit/config/curator-config-us-004.test.ts": true,
+    "test/unit/prompts/us-004-affordances.test.ts": true,
+    "test/unit/tools/us-003-acs.test.ts": true,
+    "test/unit/tools/us-003-scratchpad-acs.test.ts": true,
+    "test/unit/tools/us-005.test.ts": true
+  }
+}

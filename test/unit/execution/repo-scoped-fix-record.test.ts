@@ -74,13 +74,9 @@ describe("deriveRepoScopedFixes", () => {
     expect(records[0]?.filesChanged).toEqual(["src/legacy/auth.ts"]);
   });
 
-  test("names the failing tests that triggered it, so an unrelated file in the diff has a cause", () => {
+  test("names the failing tests that triggered it, so an unrelated file in the diff has a cause; carries the reason the story-scoped rectifier declined", () => {
     const records = deriveRepoScopedFixes([declined, repoScopedIteration(["src/legacy/auth.ts"], [])]);
     expect(records[0]?.triggeringTests).toEqual(["test/legacy/auth.spec.ts::redirects to login"]);
-  });
-
-  test("carries the reason the story-scoped rectifier declined", () => {
-    const records = deriveRepoScopedFixes([declined, repoScopedIteration(["src/legacy/auth.ts"], [])]);
     expect(records[0]?.declinedReason).toBe("test/legacy/auth.spec.ts is outside this story's scope");
   });
 

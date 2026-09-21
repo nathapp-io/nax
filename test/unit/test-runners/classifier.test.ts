@@ -18,13 +18,9 @@ function makeResolved(override: Partial<ResolvedTestPatterns> = {}): ResolvedTes
 }
 
 describe("createTestFileClassifier", () => {
-  test("returns false for non-test path", () => {
+  test("returns false for non-test path; returns true for matching test path", () => {
     const isTest = createTestFileClassifier(makeResolved());
     expect(isTest("src/foo.ts")).toBe(false);
-  });
-
-  test("returns true for matching test path", () => {
-    const isTest = createTestFileClassifier(makeResolved());
     expect(isTest("test/unit/foo.test.ts")).toBe(true);
   });
 

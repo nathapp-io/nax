@@ -72,19 +72,15 @@ describe("AgentManager availability is a cooldown, not a retirement", () => {
 });
 
 describe("AgentManager.nextCandidate explicit exclusion", () => {
-  test("skips the excluded agent and returns the next one", () => {
+  test("skips the excluded agent and returns the next one; without an exclude argument it returns what it returns today", () => {
     const manager = new AgentManager(config());
     expect(manager.nextCandidate("claude", 0, "codex")).toEqual({ agent: "gemini" });
+    expect(manager.nextCandidate("claude", 0)).toEqual({ agent: "codex" });
   });
 
   test("returns null when the excluded agent was the only candidate left", () => {
     const manager = new AgentManager(config());
     manager.markUnavailable("gemini", failure("fail-auth"));
     expect(manager.nextCandidate("claude", 0, "codex")).toBeNull();
-  });
-
-  test("without an exclude argument it returns what it returns today", () => {
-    const manager = new AgentManager(config());
-    expect(manager.nextCandidate("claude", 0)).toEqual({ agent: "codex" });
   });
 });

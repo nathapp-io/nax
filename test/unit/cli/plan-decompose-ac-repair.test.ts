@@ -24,8 +24,13 @@ import {
 } from "@test/helpers";
 import type { DecomposedStory } from "@/agents/shared/types-extended";
 import type { CompleteOptions } from "@/agents/types";
+import type { PlanCommandOptions } from "@/cli";
+import { resolvePlanMode } from "@/cli";
 import { _planDeps, planDecomposeCommand } from "@/cli/plan";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
 import { NaxError } from "@/errors";
+import { planInteractiveOp } from "@/operations";
 import type { PRD, UserStory } from "@/prd/types";
 import { buildDecomposePromptSync } from "@/prompts";
 import type { DecomposePromptInput } from "@/prompts/builders/decompose-builder";
@@ -479,5 +484,101 @@ describe("buildDecomposePrompt — maxAcCount prompt hardening (issue #227)", ()
     };
     const prompt = buildDecomposePromptSync(opts);
     expect(prompt).not.toContain("Acceptance Criteria Constraint");
+  });
+});
+
+/**
+ * Unit tests for planCommand callOp migration (US-003)
+ *
+ * Tests the migration from runInteractivePlan + agentManager.runAs to callOp + planInteractiveOp.
+ * Validates that:
+ * - --auto flag is removed
+ * - runInteractivePlan inner function is gone
+ * - callOp is used with planInteractiveOp
+ * - interactionBridge is properly threaded from interaction chain or fallback
+ * - maxInteractionTurns is passed through
+ */
+
+describe("planCommand — callOp migration (US-003)", () => {
+  // AC2: No --auto option in interface
+  test("AC2: PlanCommandOptions does not have auto property", () => {
+    // This test validates the interface structure
+    const options: PlanCommandOptions = {
+      from: "/spec.md",
+      feature: "test",
+      // auto should not be present
+    };
+
+    // If the code compiles, auto is not a required property
+    expect(options).toBeTruthy();
+    // Verify the optional field is not present
+    expect(Object.hasOwn(options, "auto")).toBe(false);
+  });
+
+  // AC10: planInteractiveOp is imported instead of planOp
+  test("AC10: planInteractiveOp is exported from operations barrel", () => {
+    expect(planInteractiveOp).toBeDefined();
+    expect(planInteractiveOp.kind).toBe("run");
+    expect(planInteractiveOp.name).toBe("plan-interactive");
+    expect(planInteractiveOp.stage).toBe("plan");
+    expect(typeof planInteractiveOp.build).toBe("function");
+    expect(typeof planInteractiveOp.parse).toBe("function");
+  });
+
+  // AC10: planOp should not exist
+  test("AC10: planOp should not be exported (only planInteractiveOp exists)", () => {
+    const ops = require("../../../src/operations");
+    expect(ops.planInteractiveOp).toBeDefined();
+    // planOp should not exist in the barrel
+    expect(ops.planOp).toBeUndefined();
+  });
+});
+
+/**
+ * Unit tests for planDecomposeCommand (US-002)
+ *
+ * Covers: bin/nax.ts CLI wiring — verifies --decompose option is registered
+ * on the plan command (AC-11).
+ */
+
+describe("bin/nax.ts plan command — --decompose wiring (AC-11)", () => {
+  test("AC-11: bin/nax.ts imports planDecomposeCommand; AC-11: bin/nax.ts registers --decompose <storyId> option on plan command", async () => {
+    const binSource = await Bun.file(join(import.meta.dir, "../../../bin/nax.ts")).text();
+    expect(binSource).toContain("planDecomposeCommand");
+    expect(binSource).toContain("--decompose");
+  });
+
+  test("AC-11: plan command --help output includes --decompose option", async () => {
+    const binSource = await Bun.file(join(import.meta.dir, "../../../bin/nax.ts")).text();
+
+    // Commander derives --help output from registered options; verifying the
+    // option definition in source is equivalent without spawning the binary.
+    expect(binSource).toContain("--decompose <storyId>");
+  });
+});
+
+/**
+ * Tests for resolvePlanMode() in planCommand().
+ * Split from plan.test.ts to stay within the 600-line file limit.
+ * Covers the surviving plan.mode schema arms: "single" and "refine".
+ */
+
+function makeMinimalConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
+  return { ...DEFAULT_CONFIG, ...overrides } as NaxConfig;
+}
+
+describe("resolvePlanMode", () => {
+  test("explicit plan.mode single returns single", () => {
+    const config = makeMinimalConfig({ plan: { ...DEFAULT_CONFIG.plan, mode: "single" } });
+    expect(resolvePlanMode(config)).toBe("single");
+  });
+
+  test("explicit plan.mode refine returns refine", () => {
+    const config = makeMinimalConfig({ plan: { ...DEFAULT_CONFIG.plan, mode: "refine" } });
+    expect(resolvePlanMode(config)).toBe("refine");
+  });
+
+  test("no plan.mode returns single", () => {
+    expect(resolvePlanMode({} as NaxConfig)).toBe("single");
   });
 });

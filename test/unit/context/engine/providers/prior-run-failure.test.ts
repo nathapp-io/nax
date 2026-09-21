@@ -94,13 +94,9 @@ describe("PriorRunFailureProvider — AC1 + AC2 construction & identity", () => 
     expect(() => new PriorRunFailureProvider()).not.toThrow();
   });
 
-  test("AC2: id is 'prior-run-failure'", () => {
+  test("AC2: id is 'prior-run-failure'; AC2: kind is 'prior-failure'", () => {
     const provider = new PriorRunFailureProvider();
     expect(provider.id).toBe("prior-run-failure");
-  });
-
-  test("AC2: kind is 'prior-failure'", () => {
-    const provider = new PriorRunFailureProvider();
     expect(provider.kind).toBe("prior-failure");
   });
 });

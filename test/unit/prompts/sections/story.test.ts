@@ -11,13 +11,9 @@ describe("buildStorySection", () => {
     acceptanceCriteria: ["Criterion 1", "Criterion 2", "Criterion 3"],
   });
 
-  test("includes story title", () => {
+  test("includes story title; includes story description", () => {
     const result = buildStorySection(mockStory);
     expect(result).toContain("Test Story");
-  });
-
-  test("includes story description", () => {
-    const result = buildStorySection(mockStory);
     expect(result).toContain("This is a test story");
   });
 
@@ -99,14 +95,11 @@ describe("buildBatchStorySection", () => {
     acceptanceCriteria: ["AC 2a"],
   });
 
-  test("includes USER-SUPPLIED DATA opening boundary tag", () => {
+  test("includes USER-SUPPLIED DATA opening boundary tag; includes END USER-SUPPLIED DATA closing boundary tag; single story uses heading '## Story 1: {id} - {title}'", () => {
     const result = buildBatchStorySection([storyA]);
     expect(result).toContain("<!-- USER-SUPPLIED DATA:");
-  });
-
-  test("includes END USER-SUPPLIED DATA closing boundary tag", () => {
-    const result = buildBatchStorySection([storyA]);
     expect(result).toContain("<!-- END USER-SUPPLIED DATA -->");
+    expect(result).toContain("## Story 1: BP-001 - First Batch Story");
   });
 
   test("formats each story heading as '## Story N: {id} - {title}'", () => {
@@ -135,11 +128,6 @@ describe("buildBatchStorySection", () => {
     expect(idxA).toBeGreaterThanOrEqual(0);
     expect(idxB).toBeGreaterThanOrEqual(0);
     expect(idxA).toBeLessThan(idxB);
-  });
-
-  test("single story uses heading '## Story 1: {id} - {title}'", () => {
-    const result = buildBatchStorySection([storyA]);
-    expect(result).toContain("## Story 1: BP-001 - First Batch Story");
   });
 });
 

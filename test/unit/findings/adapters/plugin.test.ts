@@ -25,9 +25,11 @@ describe("pluginToFinding", () => {
     expect(finding.message).toBe("Variable is unused");
   });
 
-  test("defaults tool to 'plugin' when source is absent", () => {
+  test("defaults tool to 'plugin' when source is absent; defaults category to 'general' when absent; omits meta when url is absent", () => {
     const finding = pluginToFinding(baseReviewFinding, WORKDIR);
     expect(finding.tool).toBe("plugin");
+    expect(finding.category).toBe("general");
+    expect(finding.meta).toBeUndefined();
   });
 
   test("uses rf.source as tool when present", () => {
@@ -50,11 +52,6 @@ describe("pluginToFinding", () => {
     expect(finding.category).toBe("security");
   });
 
-  test("defaults category to 'general' when absent", () => {
-    const finding = pluginToFinding(baseReviewFinding, WORKDIR);
-    expect(finding.category).toBe("general");
-  });
-
   test("passes through column, endLine, endColumn when present", () => {
     const rf: ReviewFinding = { ...baseReviewFinding, column: 5, endLine: 12, endColumn: 8 };
     const finding = pluginToFinding(rf, WORKDIR);
@@ -74,11 +71,6 @@ describe("pluginToFinding", () => {
     const rf: ReviewFinding = { ...baseReviewFinding, url: "https://eslint.org/rules/no-unused-vars" };
     const finding = pluginToFinding(rf, WORKDIR);
     expect(finding.meta).toEqual({ url: "https://eslint.org/rules/no-unused-vars" });
-  });
-
-  test("omits meta when url is absent", () => {
-    const finding = pluginToFinding(baseReviewFinding, WORKDIR);
-    expect(finding.meta).toBeUndefined();
   });
 
   test("workdir parameter is accepted but file path is not rebased (already workdir-relative)", () => {

@@ -47,13 +47,9 @@ describe("compileToolPolicy — patterns", () => {
     expect(verdict.allowed).toBe(false);
   });
 
-  test("denies a tool with no grant at all", () => {
+  test("denies a tool with no grant at all; a bare '*' grant allows any path inside the root", () => {
     const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
     expect(policy.check("Write", PATH_SCOPE, { path: "src/a.ts" }).allowed).toBe(false);
-  });
-
-  test("a bare '*' grant allows any path inside the root", () => {
-    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
     expect(policy.check("Read", PATH_SCOPE, { path: "test/deep/x.ts" }).allowed).toBe(true);
   });
 });
@@ -111,13 +107,9 @@ describe("compileToolPolicy — tool-level gating", () => {
     allowedVerbs: ["diff", "log", "show", "status", "blame"],
   };
 
-  test("allows a granted verb", () => {
+  test("allows a granted verb; denies a verb the grant omits", () => {
     const policy = compileToolPolicy([{ tool: "Git", patterns: ["diff", "log"] }], root);
     expect(policy.check("Git", VERB_SCOPE, { subcommand: "diff" }).allowed).toBe(true);
-  });
-
-  test("denies a verb the grant omits", () => {
-    const policy = compileToolPolicy([{ tool: "Git", patterns: ["diff", "log"] }], root);
     expect(policy.check("Git", VERB_SCOPE, { subcommand: "blame" }).allowed).toBe(false);
   });
 

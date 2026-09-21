@@ -77,17 +77,13 @@ describe("nax .nax/rules — test-authoring rules are scoped to authoring stages
       expect(rule.stages, `${fileName} must not list ${IMPLEMENTER_STAGE}`).not.toContain(IMPLEMENTER_STAGE);
     });
 
-    test(`${fileName} still reaches the test-writer`, async () => {
+    test(`${fileName} still reaches the test-writer and rectification`, async () => {
       const rule = await ruleNamed(fileName);
       expect(rule.stages, `${fileName} must keep ${TEST_WRITER_STAGE}`).toContain(TEST_WRITER_STAGE);
-    });
-
-    test(`${fileName} still reaches rectification`, async () => {
       // Rectification turns dispatch the `implementer` op onto the `rectify`
       // stage (RECTIFICATION_STAGE_MAP is consulted before the three-session
       // branch), and that is the implementer context that may edit tests under
       // the three narrow exceptions. Narrowing must not reach it.
-      const rule = await ruleNamed(fileName);
       expect(rule.stages, `${fileName} must keep ${RECTIFY_STAGE}`).toContain(RECTIFY_STAGE);
     });
   }

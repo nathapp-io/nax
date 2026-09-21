@@ -353,3 +353,141 @@ describe("PromptBuilder — test-quality pre-brief section", () => {
     expect(prompt).not.toContain("# Review-Proof Tests");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PromptBuilder.acceptanceContext() — US-001 AC4–AC5
+//
+// The acceptance section is emitted by build() after the story section.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PromptBuilder.acceptanceContext() — fluent API", () => {
+  test("acceptanceContext() returns PromptBuilder instance (chainable)", () => {
+    const builder = PromptBuilder.for("implementer").story(makeStory()).acceptanceContext([]);
+    expect(builder).toBeInstanceOf(PromptBuilder);
+  });
+
+  test("acceptanceContext() can be chained with story() and build()", async () => {
+    const result = PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext([{ testPath: "foo.test.ts", content: "// test" }])
+      .build();
+    expect(result).toBeInstanceOf(Promise);
+    const text = await result;
+    expect(typeof text).toBe("string");
+  });
+});
+
+describe("PromptBuilder.build() — with acceptanceContext()", () => {
+  test("content is fenced as a typescript code block", async () => {
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext([{ testPath: "fence.test.ts", content: "const x = 1;" }])
+      .build();
+    expect(prompt).toContain("```typescript");
+  });
+
+  test("multiple entries each render their path and content", async () => {
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext([
+        { testPath: "test/a.test.ts", content: "CONTENT_A" },
+        { testPath: "test/b.test.ts", content: "CONTENT_B" },
+      ])
+      .build();
+    expect(prompt).toContain("test/a.test.ts");
+    expect(prompt).toContain("test/b.test.ts");
+    expect(prompt).toContain("CONTENT_A");
+    expect(prompt).toContain("CONTENT_B");
+  });
+
+  test("build() output contains the test path when acceptanceContext() is called", async () => {
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext([{ testPath: "test/unit/foo.test.ts", content: "// file content" }])
+      .build();
+
+    expect(prompt).toContain("test/unit/foo.test.ts");
+  });
+
+  test("build() output contains the test content when acceptanceContext() is called", async () => {
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext([{ testPath: "acceptance.test.ts", content: "ACCEPTANCE_CONTENT_MARKER" }])
+      .build();
+
+    expect(prompt).toContain("ACCEPTANCE_CONTENT_MARKER");
+  });
+
+  test("acceptance section appears after the story section in build() output", async () => {
+    const story = makeStory({ title: "STORY_TITLE_FOR_ORDER_TEST" });
+    const prompt = await PromptBuilder.for("implementer")
+      .story(story)
+      .acceptanceContext([{ testPath: "order.test.ts", content: "ACCEPTANCE_ORDER_MARKER" }])
+      .build();
+
+    const storyIdx = prompt.indexOf("STORY_TITLE_FOR_ORDER_TEST");
+    const acceptanceIdx = prompt.indexOf("ACCEPTANCE_ORDER_MARKER");
+
+    expect(storyIdx).toBeGreaterThanOrEqual(0);
+    expect(acceptanceIdx).toBeGreaterThanOrEqual(0);
+    expect(storyIdx).toBeLessThan(acceptanceIdx);
+  });
+
+  test("acceptance section appears before conventions footer", async () => {
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext([{ testPath: "a.test.ts", content: "BEFORE_CONVENTIONS" }])
+      .build();
+
+    const acceptanceIdx = prompt.indexOf("BEFORE_CONVENTIONS");
+    const conventionsIdx = prompt.lastIndexOf("conventions");
+
+    expect(acceptanceIdx).toBeGreaterThanOrEqual(0);
+    expect(conventionsIdx).toBeGreaterThanOrEqual(0);
+    expect(acceptanceIdx).toBeLessThan(conventionsIdx);
+  });
+});
+
+describe("PromptBuilder.build() — without acceptanceContext()", () => {
+  test("build() is deterministic across two calls", async () => {
+    const story = makeStory({ title: "DETERMINISM_STORY" });
+    const a = await PromptBuilder.for("implementer").story(story).build();
+    const b = await PromptBuilder.for("implementer").story(story).build();
+    expect(a).toBe(b);
+  });
+
+  test("build() does not contain truncation markers when acceptanceContext() is not called", async () => {
+    const prompt = await PromptBuilder.for("implementer").story(makeStory()).build();
+    expect(prompt).not.toContain("[truncated — full file at");
+  });
+
+  test("build() does not emit an acceptance section when acceptanceContext() is not called", async () => {
+    const story = makeStory({ title: "NO_ACCEPTANCE_CONTEXT_STORY" });
+
+    const withoutAcceptance = await PromptBuilder.for("implementer").story(story).build();
+    const withAcceptance = await PromptBuilder.for("implementer")
+      .story(story)
+      .acceptanceContext([{ testPath: "t.test.ts", content: "ACCEPTANCE_MARKER" }])
+      .build();
+
+    // Without acceptanceContext: no acceptance marker in output
+    expect(withoutAcceptance).not.toContain("ACCEPTANCE_MARKER");
+    // With acceptanceContext: marker IS present
+    expect(withAcceptance).toContain("ACCEPTANCE_MARKER");
+  });
+
+  test("build() output without acceptanceContext matches build() with empty entries", async () => {
+    const story = makeStory({ title: "EMPTY_ENTRIES_STORY" });
+
+    const withoutMethod = await PromptBuilder.for("tdd-simple").story(story).build();
+    const withEmpty = await PromptBuilder.for("tdd-simple").story(story).acceptanceContext([]).build();
+
+    expect(withoutMethod).toBe(withEmpty);
+  });
+
+  test("story section still present when acceptanceContext() is not called", async () => {
+    const story = makeStory({ title: "STORY_PRESENT_WITHOUT_ACCEPTANCE" });
+    const prompt = await PromptBuilder.for("implementer").story(story).build();
+    expect(prompt).toContain("STORY_PRESENT_WITHOUT_ACCEPTANCE");
+  });
+});
