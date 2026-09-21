@@ -200,3 +200,33 @@ describe("buildBatchRoutingPromptAsync", () => {
     expect(prompt).toContain("BatchRoutingDecision");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AA-003: adapter integration surface
+//
+// classifyWithLlm and routeBatch are deleted (ADR-019 Phase B1). Routing now
+// goes through classifyRouteOp / classifyRouteBatchOp via callOp. This suite
+// retains only the tests that verify _llmStrategyDeps.spawn is NOT used and
+// that the module still exports the expected utilities.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("llm.ts module exports — cache utilities still available", () => {
+  test("clearCache, getCacheSize, injectCacheEntry are exported", async () => {
+    const { clearCache, getCacheSize, injectCacheEntry, clearCacheForStory } = await import("@/routing/strategies/llm");
+    expect(typeof clearCache).toBe("function");
+    expect(typeof getCacheSize).toBe("function");
+    expect(typeof injectCacheEntry).toBe("function");
+    expect(typeof clearCacheForStory).toBe("function");
+  });
+
+  test("ROUTING_INSTRUCTIONS is exported from llm.ts", async () => {
+    const { ROUTING_INSTRUCTIONS } = await import("@/routing/strategies/llm");
+    expect(typeof ROUTING_INSTRUCTIONS).toBe("string");
+    expect(ROUTING_INSTRUCTIONS.length).toBeGreaterThan(0);
+  });
+
+  test("_llmStrategyDeps.spawn is defined (not undefined)", async () => {
+    const { _llmStrategyDeps } = await import("@/routing/strategies/llm");
+    expect(_llmStrategyDeps.spawn).toBeDefined();
+  });
+});

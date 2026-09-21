@@ -8,6 +8,14 @@
  * would read back. Mirrors `turn-loop-spin.test.ts` (mkdtemp + nativeTranscriptDirs
  * + loadTranscript), since the failure mode is the same shape: a `complete` stub
  * whose first call returns a tool call, second returns clean text so the loop exits.
+ *
+ * Also pins the hard budget for repeated invalid calls (nax#2047, Task 4). A
+ * malformed tool call is never productive. The spin breaker's 50-call budget
+ * is for REPEATED valid-shape calls; a malformed shape is a stronger signal —
+ * the model will keep sending the same wrong shape for as long as it ignores
+ * the error result. The gate hard-stops a turn after 3 identical invalid calls
+ * (same tool, same `stableStringify`'d input) so the transcript never grows
+ * past the second error result.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -39,8 +47,18 @@ const MALFORMED = { command: "testScoped", values: "" } as const;
 // `{ "<FILL IN>": "<FILL IN>" }` applies — see tool-input-exemplar.test.ts).
 const EXEMPLAR = { command: "testScoped", values: { "<FILL IN>": "<FILL IN>" } } as const;
 
+// Same tool, different property violations. Each is invalid but the key
+// (name + stableStringify(input)) differs, so the per-key counter stays at 1.
+const MALFORMED_A = { command: "testScoped", values: "" } as const;
+const MALFORMED_B = { command: "BAD", values: { any: "thing" } } as const;
+const MALFORMED_C = { command: 42, values: { any: "thing" } } as const;
+
+const VALID_INPUT = { command: "typecheck" };
+
 let dir: string;
+let budgetDir: string;
 const handle = { id: "sess-invalid-input", agentName: "native" } as const;
+const budgetHandle = { id: "sess-invalid-input-budget", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-turn-invalid-input-"));
@@ -297,5 +315,178 @@ describe("runNativeTurn — invalid tool call input (nax#2047)", () => {
     const toolResults = saved.filter((m) => m.role === "tool-result");
     expect(toolResults.length).toBe(1);
     expect(toolResults[0]?.isError).not.toBe(true);
+  });
+});
+
+type RoundTripPlan = ReadonlyArray<{
+  text: string;
+  toolCalls?: ReadonlyArray<{ id: string; input: Record<string, unknown> }>;
+}>;
+
+interface BudgetDrivingComplete {
+  first: TurnDeps["complete"];
+  observedInputs: unknown[];
+}
+
+function budgetDrivingComplete(plan: RoundTripPlan): BudgetDrivingComplete {
+  const observed: unknown[] = [];
+  let call = 0;
+  const complete: TurnDeps["complete"] = async () => {
+    const step = plan[call] ?? { text: "done" };
+    call += 1;
+    return {
+      text: step.text,
+      toolCalls: step.toolCalls?.map((c) => ({ id: c.id, name: "RunCommand", input: c.input })),
+      usage: baseUsage,
+      costUsd: 0,
+    };
+  };
+  return { first: complete, observedInputs: observed };
+}
+
+describe("runNativeTurn — invalid call budget (nax#2047)", () => {
+  beforeEach(async () => {
+    budgetDir = await mkdtemp(join(tmpdir(), "nax-turn-invalid-input-budget-"));
+    nativeTranscriptDirs.set("sess-invalid-input-budget", budgetDir);
+  });
+  afterEach(async () => {
+    nativeTranscriptDirs.delete("sess-invalid-input-budget");
+    await rm(budgetDir, { recursive: true, force: true });
+  });
+
+  async function runBudgetTurn(driving: BudgetDrivingComplete): Promise<{
+    result: Awaited<ReturnType<typeof runNativeTurn>>;
+    saved: Awaited<ReturnType<typeof loadTranscript>>;
+  }> {
+    const observed = driving.observedInputs;
+    const opts = baseOpts({
+      interactionHandler: {
+        onInteraction: async (req: AdapterInteraction) => {
+          if (req.kind === "coding-tool") observed.push(req.input);
+          return { answer: "29 tests passed" };
+        },
+      },
+    });
+    const result = await runNativeTurn(budgetHandle, "hi", opts, { complete: driving.first });
+    const saved = await loadTranscript(budgetDir, budgetHandle.id);
+    return { result, saved };
+  }
+
+  function countToolResults(saved: Awaited<ReturnType<typeof loadTranscript>>): number {
+    return saved.filter((m) => m.role === "tool-result").length;
+  }
+
+  test("1. 3 identical invalid calls end the turn with invalidCallBudgetExceeded", async () => {
+    // Same shape, same key — three round trips, one malformed call each.
+    const driving = budgetDrivingComplete([
+      { text: "", toolCalls: [{ id: "c1", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c2", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c3", input: { ...MALFORMED_A } }] },
+      // Should never be reached — the 3rd invalid call trips the budget and
+      // the loop ends before round-trip 4. If the implementation doesn't
+      // stop, this clean text becomes the wrap-up.
+      { text: "done" },
+    ]);
+    const { result, saved } = await runBudgetTurn(driving);
+
+    expect(result.invalidCallBudgetExceeded).toBe(true);
+    // Distinguishable from a spin-stopped turn — that's a separate channel.
+    expect(result.spinStopped).toBeFalsy();
+    // The model asked for work the loop never executed.
+    expect(result.turnIncomplete).toBe(true);
+    // No valid tool calls reached the interaction handler.
+    expect(driving.observedInputs).toEqual([]);
+    // The 3rd invalid call was NOT answered with a tool-result. Only the
+    // first two rewrites appended an error result.
+    expect(countToolResults(saved)).toBe(2);
+  });
+
+  test("2. the 3rd identical invalid call has no tool-result in the saved transcript", async () => {
+    const driving = budgetDrivingComplete([
+      { text: "", toolCalls: [{ id: "c1", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c2", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c3", input: { ...MALFORMED_A } }] },
+      { text: "done" },
+    ]);
+    const { saved } = await runBudgetTurn(driving);
+
+    // Belt-and-braces: every saved tool-result belongs to one of the first
+    // two invalid calls. The third call's id never appears in a tool-result.
+    const toolResults = saved.filter((m) => m.role === "tool-result");
+    const ids = toolResults.map((m) => (m.role === "tool-result" ? m.toolCallId : ""));
+    expect(ids).not.toContain("c3");
+    expect(toolResults.length).toBe(2);
+
+    // The assistant message for round-trip 3 IS persisted (the model said
+    // something), but with no answering tool-result — exactly the shape the
+    // brief calls out as "a result nobody reads only grows the transcript".
+    const assistants = saved.filter((m) => m.role === "assistant");
+    const lastAssistant = assistants[assistants.length - 1];
+    expect(lastAssistant).toBeDefined();
+    if (lastAssistant === undefined || lastAssistant.role !== "assistant") throw new Error("unreachable");
+    const lastToolCall = lastAssistant.toolCalls?.[0];
+    expect(lastToolCall?.id).toBe("c3");
+  });
+
+  test("3. TurnResult is distinguishable from fail-spin (invalidCallBudgetExceeded, not spinStopped)", async () => {
+    const driving = budgetDrivingComplete([
+      { text: "", toolCalls: [{ id: "c1", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c2", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c3", input: { ...MALFORMED_A } }] },
+      { text: "done" },
+    ]);
+    const { result } = await runBudgetTurn(driving);
+
+    expect(result.invalidCallBudgetExceeded).toBe(true);
+    expect(result.spinStopped).toBeUndefined();
+  });
+
+  test("4. 3 invalid calls with DIFFERENT inputs do NOT stop — the model is exploring", async () => {
+    // Each call has a distinct key (different stableStringify'd input), so
+    // every counter stays at 1. The budget is per-key, not per-turn.
+    const driving = budgetDrivingComplete([
+      { text: "", toolCalls: [{ id: "c1", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c2", input: { ...MALFORMED_B } }] },
+      { text: "", toolCalls: [{ id: "c3", input: { ...MALFORMED_C } }] },
+      { text: "done" },
+    ]);
+    const { result, saved } = await runBudgetTurn(driving);
+
+    expect(result.invalidCallBudgetExceeded).toBeUndefined();
+    expect(result.spinStopped).toBeFalsy();
+    // Loop ran through to the model's clean-text exit — the turn completed.
+    expect(result.turnIncomplete).toBeFalsy();
+    expect(result.output).toBe("done");
+    // All three invalid calls were rewritten, none reached the handler.
+    expect(driving.observedInputs).toEqual([]);
+    // Each invalid call appends one error tool-result.
+    expect(countToolResults(saved)).toBe(3);
+  });
+
+  test("5. counter is cumulative — 2 invalid + 1 valid + 1 invalid trips on the 4th invalid", async () => {
+    // Same key A appears three times total, but interleaved with a valid call.
+    // The brief is explicit: cumulative, not consecutive — a valid call does
+    // not reset the counter, and a later reappearance of A keeps accumulating.
+    const driving = budgetDrivingComplete([
+      { text: "", toolCalls: [{ id: "c1", input: { ...MALFORMED_A } }] }, // counter[A]=1
+      { text: "", toolCalls: [{ id: "c2", input: { ...MALFORMED_A } }] }, // counter[A]=2
+      { text: "", toolCalls: [{ id: "c3", input: { ...VALID_INPUT } }] }, // valid — handler runs
+      { text: "", toolCalls: [{ id: "c4", input: { ...MALFORMED_A } }] }, // counter[A]=3 → STOP
+      { text: "done" },
+    ]);
+    const { result, saved } = await runBudgetTurn(driving);
+
+    expect(result.invalidCallBudgetExceeded).toBe(true);
+    // The valid call reached the handler — observed in input order.
+    expect(driving.observedInputs).toEqual([VALID_INPUT]);
+    // Two error results (c1, c2) plus one success result (c3). c4 is NOT
+    // answered — the budget tripped on the 4th invalid call and no
+    // tool-result is appended.
+    expect(countToolResults(saved)).toBe(3);
+    const toolResults = saved.filter((m) => m.role === "tool-result");
+    const ids = toolResults.map((m) => (m.role === "tool-result" ? m.toolCallId : ""));
+    expect(ids).not.toContain("c4");
+    const c4Ids = toolResults.filter((m) => m.role === "tool-result" && m.toolCallId === "c4");
+    expect(c4Ids.length).toBe(0);
   });
 });
