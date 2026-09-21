@@ -89,7 +89,6 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/tdd/` | TDD orchestration (three-session workflow, isolation, verdict) |
 | `src/review/` | Code review orchestration (built-in + semantic + plugin checks) |
 | `src/analyze/` | `nax analyze` — story classifier |
-| `src/debate/` | Multi-agent debate system |
 | `src/queue/` | Mid-run queue control (PAUSE, ABORT, SKIP) |
 | `src/worktree/` | Git worktree management for parallel execution |
 | `src/tui/` | React/Ink terminal UI |
@@ -103,7 +102,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/quality/` | Resolves and runs the project's real lint/typecheck/test commands |
 | `src/test-runners/` | Test-framework detection, output parsing, scoped test selection |
 | `src/session/` | Agent session lifecycle — naming, model selection, keeper, scratch dirs, sweep |
-| `src/plan/` | `nax plan` — draft strategies, critic, spec deltas, citations |
+| `src/plan/` | `nax plan` — single/refine strategies, prompt building, PRD types, spec lint gate, persist/write (incl. fidelity repair) |
 | `src/replay/` | Reconstruct a past run from its artifacts (`nax replay`) |
 | `src/bakeoff/` | Multi-contestant bakeoff runs — coordinator, ranking, report |
 | `src/forge/` | Git-forge integration — provider detect, PR creation, templates |

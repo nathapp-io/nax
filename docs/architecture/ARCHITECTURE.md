@@ -68,7 +68,6 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§26 Interaction & Human-in-the-Loop** — Interaction chain, 8 triggers, bridge, plugins
 - **§27 Hooks & Lifecycle** — 11 hook events, `HookDef`, `HookContext`
 - **§28 Metrics & Cost Tracking** — `StoryMetrics`, aggregator, cost system
-- **§29 Debate System** — Multi-agent debate, resolver strategies, concurrency
 - **§30 Worktree & Parallel** — Worktree manager, merge, dispatcher
 - **§31 Queue Management** — PAUSE/ABORT/SKIP mid-run control
 - **§32 TUI (Terminal UI)** — React/Ink terminal UI, components, hooks
@@ -84,11 +83,11 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§42 CLI** — High-level command implementations (`initCommand`, `planCommand`, `acceptCommand`, `generateCommand`, …). One of two directories permitted to use `process.cwd()`.
 - **§43 Commands** — Thin CLI wrappers + `resolveProject(opts)` shared entry point; curator, logs, precheck, migrate sub-commands.
 - **§44 Optimizer** — Pipeline stage 6; `NoopOptimizer` / plugin; `resolveOptimizer` factory.
-- **§45 Plan** — Spec → `prd.json` pipeline: four strategies (single/pipeline/debate/refine), `runPlanCritic`, `finalizePrdRouting`.
+- **§45 Plan** — Spec → `prd.json` pipeline: two strategies (`single`/`refine`), `finalizePrdRouting`.
 - **§46 Precheck** — Pre-run validation suite; two tiers (environment + project); `EXIT_CODES`; gates every `nax run` via `run-setup.ts`.
 - **§47 Project** — Heuristic language/framework/type detection from manifest files; `detectLanguage`, `detectProjectProfile`. Authoritative detector — do not re-derive manifest lookups elsewhere.
 - **§48 Findings** — ADR-021/022 SSOT: `Finding` wire type, per-producer adapter converters, `runFixCycle` fix-loop orchestration, `classifyOutcome`.
-- **§49 Prompts** — All LLM prompt construction: six builder classes (`TddPromptBuilder`, `RectifierPromptBuilder`, `ReviewPromptBuilder`, `AcceptancePromptBuilder`, `DebatePromptBuilder`, `OneShotPromptBuilder`); `composeSections`; `SectionAccumulator`. No prompt literals outside this module.
+- **§49 Prompts** — All LLM prompt construction: eight builder classes (`TddPromptBuilder`, `RectifierPromptBuilder`, `ReviewPromptBuilder`, `AdversarialReviewPromptBuilder`, `AcceptancePromptBuilder`, `OneShotPromptBuilder`, `PlanPromptBuilder`, `SetupPromptBuilder`); `composeSections`; `SectionAccumulator`. No prompt literals outside this module.
 - **§50 Analyze** — `nax analyze` codebase scanner; `scanCodebase` → `CodebaseScan` / `SourceRoot[]`; delegates to workspace discovery (§21) and language detection (§47).
 - **§51 Utils** — Single-purpose leaf utilities (no barrel): `parseLLMJson` (LLM JSON SSOT), `git.ts`, `path-filters.ts`, `path-security.ts`, `json-file.ts`, `errorMessage`, `killProcessTree`, `bun-deps.ts`, `writeQueueCommand`.
 

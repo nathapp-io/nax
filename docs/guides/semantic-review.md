@@ -355,13 +355,8 @@ The LLM model must be configured in `models` for the chosen `model` tier.
 
 ## Behavior Matrix — Semantic Review
 
-Semantic review has two paths, selected by `debate.enabled` + `debate.stages.review.enabled` (shown as **debate**). The dialogue / `ReviewerSession` path was removed (2026-05-29) — `review.dialogue.enabled` is a rejected legacy config key.
+Semantic review runs as a single stateless LLM pass (`semanticReviewOp`). The dialogue / `ReviewerSession` path was removed (2026-05-29), and the debate panel path was removed with the debate subsystem (2026-09-20) — `review.dialogue.enabled` is a rejected legacy config key.
 
-| debate | Reviewer | Resolver |
-|:---:|:---|:---|
-| off (default) | single reviewer via `agent.run()` or `agent.complete()` | N/A |
-| on | N debaters (panel one-shot) via `agent.complete()` | resolver-derived base selector + `review-grounding-filter` post-debate verifier |
-
-When debate is enabled, debaters remain stateless and `runSemanticDebate` (`src/review/semantic-debate.ts`) always composes the review stage as a one-shot panel. The resolver type comes from `debate.stages.review.resolverType` (e.g. `synthesis`, `majority`). The verdict is re-derived from the deduplicated debater proposals.
-
-See also: [Debate Resolver Reference](./debate.md#resolver-types).
+| Reviewer | Resolver |
+|:---|:---|
+| single reviewer via `agent.run()` or `agent.complete()` | N/A |

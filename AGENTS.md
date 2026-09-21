@@ -15,9 +15,9 @@ These instructions apply to all AI coding agents in this project.
 
 **Language:** TypeScript
 
-**Key dependencies:** @types/react, react, zod, @types/bun, react-devtools-core, typescript
+**Key dependencies:** react, zod, @types/bun, @types/react, react-devtools-core, typescript
 
-**Commands:** test: `bun run test` | lint: `bun run lint` | typecheck: `bun run typecheck`
+**Commands:** test: `bun run test` | lint: `AGENT=1 bun run lint:biome && AGENT=1 bun run check:all-without-biome` | typecheck: `bun x tsc --noEmit && bun x tsc --noEmit -p tsconfig.test.json`
 
 ---
 # nax — AI Coding Agent Orchestrator
@@ -111,7 +111,6 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/tdd/` | TDD orchestration (three-session workflow, isolation, verdict) |
 | `src/review/` | Code review orchestration (built-in + semantic + plugin checks) |
 | `src/analyze/` | `nax analyze` — story classifier |
-| `src/debate/` | Multi-agent debate system |
 | `src/queue/` | Mid-run queue control (PAUSE, ABORT, SKIP) |
 | `src/worktree/` | Git worktree management for parallel execution |
 | `src/tui/` | React/Ink terminal UI |
@@ -125,7 +124,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/quality/` | Resolves and runs the project's real lint/typecheck/test commands |
 | `src/test-runners/` | Test-framework detection, output parsing, scoped test selection |
 | `src/session/` | Agent session lifecycle — naming, model selection, keeper, scratch dirs, sweep |
-| `src/plan/` | `nax plan` — draft strategies, critic, spec deltas, citations |
+| `src/plan/` | `nax plan` — single/refine strategies, prompt building, PRD types, spec lint gate, persist/write (incl. fidelity repair) |
 | `src/replay/` | Reconstruct a past run from its artifacts (`nax replay`) |
 | `src/bakeoff/` | Multi-contestant bakeoff runs — coordinator, ranking, report |
 | `src/forge/` | Git-forge integration — provider detect, PR creation, templates |

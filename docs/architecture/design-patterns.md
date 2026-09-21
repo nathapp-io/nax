@@ -50,13 +50,13 @@ const prompt = builder.build();
 | Builder | Roles | Purpose |
 |:--------|:------|:--------|
 | `TddPromptBuilder` | implementer, test-writer, verifier, single-session, tdd-simple, batch | TDD execution pipeline |
-| `DebatePromptBuilder` | propose, critique, rebut, synthesize | Debate persona/proposal sections |
 | `ReviewPromptBuilder` | dialogue, semantic | Semantic review, AC verification |
 | `AcceptancePromptBuilder` | generator, diagnoser, fix-executor | Acceptance test generation/diagnosis |
 | `RectifierPromptBuilder` | tdd-test-failure, tdd-suite-failure, verify-failure, review-findings, test-writer-rectification | Fix prompts with escalation preambles; includes `testWriterRectification()` for adversarial test-file findings |
 | `OneShotPromptBuilder` | router, decomposer, auto-approver | Trivial instruction + schema combos |
 | `PlanPromptBuilder` | planner | Planning prompt construction (story decomposition, complexity classification, AC generation) |
 | `AdversarialReviewPromptBuilder` | adversarial | Adversarial heuristics + findings schema |
+| `SetupPromptBuilder` | setup | `nax setup` config generation |
 
 **Core engine** (`src/prompts/core/`):
 

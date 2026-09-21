@@ -1,6 +1,6 @@
 ---
 title: Acceptance & Review End-to-End Flow
-description: How acceptance testing, semantic review, debate, and diagnose/fix connect
+description: How acceptance testing, semantic review, and diagnose/fix connect
 ---
 
 ## Acceptance & Review End-to-End Flow
@@ -11,7 +11,6 @@ This document maps how four subsystems connect across the nax pipeline:
 2. **Semantic review** — LLM-verified behavioral check against ACs
 3. **Adversarial review** — LLM-based adversarial code review (REVIEW-003)
 4. **Acceptance loop** — post-run gate with diagnose/fix retry
-5. **Debate** — optional multi-agent panel resolution for semantic review
 
 ---
 
@@ -35,8 +34,7 @@ PRD loaded (stories with acceptance criteria)
  │   ├─ 3. REVIEW (semantic-review + adversarial-review phases of CANONICAL_ORDER)
  │   │   semanticReviewOp / adversarialReviewOp (src/operations/)
  │   │   ├─ SEMANTIC REVIEW (behavioral AC check)
- │   │   │   ├─ STATELESS (default) → agent.run() or agent.complete()
- │   │   │   └─ DEBATE (debate.stages.review.enabled) → N debaters + resolver
+ │   │   │   └─ stateless → agent.run() or agent.complete()
  │   │   │
  │   │   ├─ ADVERSARIAL REVIEW (REVIEW-003, own ACP session)
  │   │   │   ├─ Checks: input handling, error paths, abandonment, test gaps, conventions, assumptions
@@ -48,8 +46,6 @@ PRD loaded (stories with acceptance criteria)
  │   │   On findings → runFixCycle (src/findings/cycle.ts, ADR-021/022)
  │   │   ├─ Mechanical lint fix strategy (lint --fix, format)
  │   │   └─ Agent fix strategies routed by Finding.fixTarget → re-validate
- │   │       ├─ stateless: full re-run
- │   │       └─ debate: full re-debate
  │   │
  │   └─ 4. COMPLETION (per story)
  │       completionStage.execute()
@@ -103,20 +99,12 @@ PRD loaded (stories with acceptance criteria)
 **Files:**
 - `src/operations/semantic-review.ts` — semantic review operation
 - `src/operations/adversarial-review.ts` — adversarial review operation (REVIEW-003)
-- `src/review/semantic.ts` — LLM-based semantic check
-- `src/review/adversarial.ts` — LLM-based adversarial review (REVIEW-003)
 - `src/review/diff-utils.ts` — shared diff utilities (collectDiff, truncateDiff, resolveEffectiveRef)
-- `src/review/semantic-debate.ts` — debate-path semantic review (`runSemanticDebate`)
-- `src/review/runner.ts` — check orchestration (lint, typecheck, semantic, adversarial)
+- `src/review/runner/` — check orchestration (lint, typecheck, semantic, adversarial)
 
-**Two review paths** (selected by `debate.enabled` + `debate.stages.review.enabled`). The dialogue / `ReviewerSession` path was removed (`review.dialogue` is a rejected legacy config key):
+Semantic review runs as a single stateless LLM pass (`semanticReviewOp`). The dialogue / `ReviewerSession` path was removed (2026-05-29), and the debate panel path was removed with the debate subsystem (2026-09-20) — `review.dialogue.enabled` is a rejected legacy config key.
 
-| debate | Path | Reviewer | Resolver |
-|:---:|:---|:---|:---|
-| off | stateless (default) | `agent.run()` or `agent.complete()` | N/A |
-| on | debate | N debaters (panel one-shot) | resolver-derived base selector + `review-grounding-filter` post-debate verifier |
-
-**Re-review behavior:** Both paths re-run from scratch on the next fix-cycle iteration — there is no persistent reviewer session to carry delta context.
+**Re-review behavior:** The review re-runs from scratch on the next fix-cycle iteration — there is no persistent reviewer session to carry delta context.
 
 ---
 
@@ -236,38 +224,10 @@ while (retries < maxRetries):
 
 ---
 
-## Debate Review Flow
-
-When `debate.enabled && debate.stages.review.enabled` is true, semantic review runs as a debate panel (`runSemanticDebate` in `src/review/semantic-debate.ts`):
-
-```
-semantic.ts (reviewDebateEnabled = true)
-  │
-  ├─ Build prompt from story ACs + production diff
-  ├─ Compose review DebateStageConfig (always):
-  │     sessionMode: "one-shot", mode: "panel",
-  │     selector: resolver-derived base selector (pickBaseSelectorKind),
-  │     postDebateVerifier: { kind: "review-grounding-filter" }
-  │
-  ├─ debateRunner.run(prompt)
-  │   ├─ N debaters produce proposals (stateless, one-shot panel)
-  │   └─ post-debate verifier grounds claims against the actual diff
-  │
-  ├─ resolverPassed = debateResult.outcome === "passed"
-  └─ Re-derive verdict: parse proposals, dedupe findings by AC id / file:line
-        → ReviewCheckResult
-```
-
-There is no persistent reviewer session and no `resolveDebate()`/dialogue continuation — that path was removed (2026-05-29 ReviewerSession removal). The resolver type is read from `debate.stages.review.resolverType`.
-
----
-
 ## Failure Handling Summary
 
 | Failure | Recovery |
 |:--------|:---------|
-| Debater proposal fails | Excluded; debate continues with remaining debaters |
-| All debaters fail | `DebateResult.outcome = "failed"` — story escalates |
 | Semantic parse fails | Fail-open (pass with warning) |
 | Semantic parse fails with `"passed": false` | Fail-closed (LLM intended failure) |
 | Acceptance test crashes | `AC-ERROR` sentinel → diagnosis fast path → `test_bug` → `acceptanceFixTestOp` |
@@ -296,14 +256,6 @@ After `acceptanceFixSourceOp` succeeds, the acceptance loop re-runs acceptance t
 **Why accepted:** Source fixes are scoped to failing ACs. Re-running semantic review would add LLM cost with marginal benefit since the acceptance tests themselves validate the fix.
 
 **When to revisit:** If source fixes introduce new semantic issues that acceptance tests don't catch. The fix would be to re-run the `semantic-review` phase (`semanticReviewOp`) after a successful source fix before looping back.
-
-### GAP-4: Acceptance diagnosis does not receive debate proposals
-
-`acceptanceDiagnoseOp` receives test output, source files, semantic verdict context, and `previousFailure` accumulator — but NOT the debate proposals or resolver findings. When debate produced the semantic verdict, the diagnosis agent doesn't see the panel's reasoning about why it passed/failed.
-
-**Why accepted:** The diagnosis agent focuses on test vs source bug classification, not semantic reasoning. The `resolveAcceptanceDiagnosis()` fast path skips the LLM call entirely when all semantic verdicts passed — so debate findings are only relevant in the slow-path mixed-verdict case.
-
-**When to revisit:** If diagnosis accuracy is poor when debate is enabled with mixed verdicts. The fix would be to thread the debate findings into the diagnosis prompt, which requires persisting them alongside semantic verdicts.
 
 ### GAP-5: `previousFailure` is not persisted across runs
 

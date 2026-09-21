@@ -175,6 +175,44 @@ export function rejectDeadQualityFlags(conf: Record<string, unknown>): void {
 }
 
 /**
+ * Plan modes removed with the debate subsystem and the asymmetric pipeline.
+ *
+ * Unlike the inert keys handled by `stripRemovedNoOpKeys`, these were not
+ * no-ops: a config that named one was getting that strategy. Silently
+ * resolving to `single` would change the user's plan output without telling
+ * them, so this guard throws — matching `rejectDeadQualityFlags` rather than
+ * the warn-and-strip path. The narrowed Zod enum would reject these too, but
+ * only with "Invalid option: expected one of ...", which names the survivors
+ * and explains nothing.
+ */
+const REMOVED_PLAN_MODES: Readonly<Record<string, string>> = {
+  pipeline:
+    "the asymmetric pipeline plan mode was removed along with its grounder, draft and critic stages; nax no longer grounds plans against a facts manifest",
+  debate: "the multi-agent debate subsystem was removed",
+};
+
+export function rejectRemovedPlanModes(conf: Record<string, unknown>): void {
+  const plan = conf.plan as Record<string, unknown> | undefined;
+  if (!plan || typeof plan !== "object") return;
+
+  const mode = plan.mode;
+  if (typeof mode !== "string") return;
+
+  const reason = REMOVED_PLAN_MODES[mode];
+  if (!reason) return;
+
+  const message = [
+    `Invalid configuration — removed plan mode: plan.mode: "${mode}".`,
+    `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`,
+    "",
+    "Set `plan.mode` to one of the surviving modes instead:",
+    "- `single` — one planning call (the default when `plan.mode` is unset)",
+    "- `refine` — a draft call followed by a self-audit call",
+  ].join("\n");
+  throw new NaxError(message, "CONFIG_REMOVED_PLAN_MODE", { stage: "config", mode });
+}
+
+/**
  * Warn (never throw) when a declared `quality.commands` entry chains with
  * `&&`. A chain still runs exactly as it always did — this is a nudge toward
  * the list form (nax#1990), not a removal, so it follows the warn-and-continue
@@ -204,6 +242,13 @@ export function warnQualityCommandChains(conf: Record<string, unknown>, warn?: (
  * Zod's default `.strip()` would swallow the keys and leave the user
  * believing their override was still in effect.
  *
+ * The map covers whole retired subsystems too, not only inert leaf keys:
+ * `debate` was removed with the multi-agent debate subsystem, and
+ * `plan.citationThreshold`/`plan.criticModel` only fed the removed pipeline
+ * plan mode. Clearing `plan.mode` of `"debate"`/`"pipeline"` is deliberately
+ * NOT handled here — those modes were not inert (a config naming one was
+ * getting that strategy), so `rejectRemovedPlanModes` throws on them instead.
+ *
  * Map value is a migration hint appended to the warning message, telling the
  * user where (or whether) the behaviour they thought they were toggling
  * actually lives. The three `tdd.*` and `execution.rectification.*` entries
@@ -215,15 +260,16 @@ const REMOVED_NO_OP_KEYS: Readonly<Record<string, string>> = {
   "tdd.autoVerifyIsolation": "this key had no effect — isolation verification is currently unconditional",
   "tdd.autoApproveVerifier": "this key had no effect — verifier auto-approval is currently unconditional",
   "acceptance.generateTests": "use `acceptance.enabled` instead",
-  "debate.stages.review":
-    "configure timeoutSeconds on the active debate stage instead; review-stage debate was removed with the unreachable runReview LLM path (#1859)",
+  debate: "the multi-agent debate subsystem was removed; plan.mode is now single or refine",
+  "plan.citationThreshold": "this key only fed the removed pipeline plan mode",
+  "plan.criticModel": "this key only fed the removed pipeline plan mode",
 };
 
 /**
  * Strip config keys that were declared but never read, warning once per key.
  *
  * Unlike the four `reject*` siblings above, this function warns rather than
- * throws. The four keys it strips were inert: setting one to `false` never
+ * throws. The keys it strips were inert: setting one to `false` never
  * disabled anything. A throw would hard-fail every existing config that
  * supplied an already-inert key, with no behaviour change to show for it. A
  * warning surfaces the false belief (the user was setting a key that did
@@ -248,7 +294,8 @@ export function stripRemovedNoOpKeys(
 
   for (const [path, hint] of Object.entries(REMOVED_NO_OP_KEYS)) {
     const segments = path.split(".");
-    if (segments.length < 2) continue;
+    // A single-segment key (e.g. `debate`) targets the top level: the walk
+    // below simply never descends, so `parent` stays the root object.
 
     // Walk into result following `segments`. Tolerate missing intermediates
     // (AC-7: no `tdd` at all) and non-object intermediates (AC-8: `tdd: 42`).

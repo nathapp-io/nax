@@ -1,9 +1,10 @@
 {
   "counts": {
-    "looseCast": 1479,
-    "ratchetAllow": 26
+    "tsSuppress": 0,
+    "ratchetAllow": 26,
+    "looseCast": 1474
   },
-  "updatedAt": "2026-09-10T12:00:00.000Z",
+  "updatedAt": "2026-09-20T17:25:10.301Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -45,9 +46,6 @@
       "looseCast": 1
     },
     "test/helpers/context-bundle.ts": {
-      "looseCast": 1
-    },
-    "test/helpers/e2e/scripted-agent.ts": {
       "looseCast": 1
     },
     "test/helpers/e2e/orchestrator-harness.ts": {
@@ -146,6 +144,10 @@
     "test/integration/agents/stale-retry-session-reuse.test.ts": {
       "looseCast": 1
     },
+    "test/integration/worktree/manager.test.ts": {
+      "ratchetAllow": 1,
+      "looseCast": 1
+    },
     "test/integration/plan/plan-prd-preservation.test.ts": {
       "looseCast": 1
     },
@@ -166,10 +168,6 @@
     },
     "test/integration/pipeline/reporter-lifecycle-resilience.test.ts": {
       "looseCast": 3
-    },
-    "test/integration/worktree/manager.test.ts": {
-      "looseCast": 1,
-      "ratchetAllow": 1
     },
     "test/unit/session/manager.test.ts": {
       "looseCast": 1
@@ -263,6 +261,9 @@
     },
     "test/unit/prd/out-of-scope-persistence.test.ts": {
       "looseCast": 1
+    },
+    "test/unit/scripts/check-story-workdir-access.test.ts": {
+      "looseCast": 4
     },
     "test/unit/review/review-iteration-store.test.ts": {
       "looseCast": 1
@@ -622,7 +623,7 @@
       "looseCast": 13
     },
     "test/unit/cli/plan-decompose-writeback.test.ts": {
-      "looseCast": 4
+      "looseCast": 7
     },
     "test/unit/cli/plan-mode.test.ts": {
       "looseCast": 2
@@ -658,7 +659,7 @@
       "looseCast": 10
     },
     "test/unit/cli/plan.test.ts": {
-      "looseCast": 13
+      "looseCast": 10
     },
     "test/unit/cli/plan-decompose-guards.test.ts": {
       "looseCast": 5
@@ -756,6 +757,9 @@
     "test/unit/agents/native/auth-store-ops.test.ts": {
       "looseCast": 1
     },
+    "test/unit/worktree/manager.test.ts": {
+      "looseCast": 1
+    },
     "test/unit/runtime/session-run-hop.test.ts": {
       "looseCast": 1
     },
@@ -801,8 +805,11 @@
     "test/unit/plan/single-strategy.test.ts": {
       "looseCast": 1
     },
+    "test/unit/plan/strategies/persist-prd-workdir.test.ts": {
+      "looseCast": 1
+    },
     "test/unit/plan/strategies/single.test.ts": {
-      "looseCast": 5
+      "looseCast": 4
     },
     "test/unit/plugins/builtin/auto-pr-forge.test.ts": {
       "looseCast": 1
@@ -838,7 +845,7 @@
       "looseCast": 10
     },
     "test/unit/config/plan-mode-refine.test.ts": {
-      "looseCast": 4
+      "looseCast": 3
     },
     "test/unit/config/project-profile.test.ts": {
       "looseCast": 1
@@ -863,6 +870,9 @@
     },
     "test/unit/config/acceptance-test-strategy.test.ts": {
       "looseCast": 5
+    },
+    "test/unit/config/deprecation-cross-package-depth.test.ts": {
+      "looseCast": 1
     },
     "test/unit/config/loader-legacy-shim.test.ts": {
       "looseCast": 20
@@ -944,7 +954,7 @@
       "looseCast": 4
     },
     "test/unit/context/engine/stage-assembler.test.ts": {
-      "looseCast": 18
+      "looseCast": 1
     },
     "test/unit/context/engine/orchestrator.test.ts": {
       "looseCast": 2
@@ -973,9 +983,6 @@
     "test/unit/context/engine/providers/feature-context.test.ts": {
       "looseCast": 3
     },
-    "test/unit/context/engine/providers/code-neighbor.test.ts": {
-      "looseCast": 6
-    },
     "test/unit/context/engine/providers/static-rules.test.ts": {
       "looseCast": 2
     },
@@ -986,7 +993,7 @@
       "looseCast": 13
     },
     "test/unit/context/engine/providers/git-history.test.ts": {
-      "looseCast": 4
+      "looseCast": 2
     },
     "test/unit/context/engine/providers/prior-run-failure.test.ts": {
       "ratchetAllow": 2
@@ -994,7 +1001,13 @@
     "test/unit/context/engine/providers/lint-config.test.ts": {
       "looseCast": 3
     },
+    "test/unit/context/engine/providers/git-history-scope.test.ts": {
+      "looseCast": 10
+    },
     "test/unit/context/engine/providers/plugin-loader.test.ts": {
+      "looseCast": 1
+    },
+    "test/unit/context/engine/providers/code-neighbor-frame.test.ts": {
       "looseCast": 1
     },
     "test/unit/context/engine/providers/feature-context-fragments.test.ts": {
@@ -1068,6 +1081,9 @@
     },
     "test/unit/pipeline/stages/autofix-prompts.test.ts": {
       "looseCast": 1
+    },
+    "test/unit/pipeline/stages/context-request-workdir-fields.test.ts": {
+      "looseCast": 5
     },
     "test/unit/pipeline/stages/prompt-acceptance.test.ts": {
       "looseCast": 1

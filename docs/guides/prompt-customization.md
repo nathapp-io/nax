@@ -342,7 +342,6 @@ Domain-specific builders handle all prompt construction. The primary builders:
 | Builder | Roles |
 |:--------|:------|
 | `TddPromptBuilder` | test-writer, implementer, verifier, single-session, tdd-simple, batch |
-| `DebatePromptBuilder` | propose, critique, rebut, synthesize |
 | `ReviewPromptBuilder` | dialogue, semantic |
 | `AcceptancePromptBuilder` | generator, diagnoser, fix-executor |
 | `RectifierPromptBuilder` | tdd-test-failure, tdd-suite-failure, verify-failure, review-findings, test-writer-rectification |
