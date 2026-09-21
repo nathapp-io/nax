@@ -3,7 +3,7 @@
   "feature": "project-identity-run-locking",
   "branchName": "feat/project-identity-run-locking",
   "createdAt": "2026-01-20T00:00:00.000Z",
-  "updatedAt": "2026-09-21T13:34:01.394Z",
+  "updatedAt": "2026-09-21T13:45:08.782Z",
   "userStories": [
     {
       "id": "US-001",
@@ -261,8 +261,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -327,7 +327,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "New module + additive optional fields across status-writer/status-file; one call-site update in resume.ts. The existing fixture contract for status files must keep compiling, so optional-everywhere is the rule."
+        "reasoning": "New module + additive optional fields across status-writer/status-file; one call-site update in resume.ts. The existing fixture contract for status files must keep compiling, so optional-everywhere is the rule.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/status-file.ts",
@@ -348,6 +351,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "d51e196148c7cd23cf5ad25133f797f5bb04af78",
       "outOfScope": [
         "Identity-by-remote (covered by US-004).",
         "Tooling visibility for locks (covered by US-003).",
