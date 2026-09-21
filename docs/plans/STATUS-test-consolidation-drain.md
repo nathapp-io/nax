@@ -16,37 +16,43 @@ to re-measure after every task, and §6 tells you when to stop rather than push 
 
 ---
 
-## 0. Current state - re-measured 2026-09-21 @ f06f5ead7 (after Task 22, Wave 4 task 1; original main measurement @ 4af3c680e in §9.0)
+## 0. Current state - re-measured 2026-09-21 @ d2e338fb6 (after Task 31, Wave 4 complete; original main measurement @ 4af3c680e in §9.0)
 
 ```
 bun run report:test-consolidation
   scope              test/unit + test/integration + test/ui  (test/e2e/ excluded — separate CI step)
-  scanned            1429 files, 376304 lines, 35796 expect()
-  static test sites  17526  + 543 .each sites — NOT the runtime count, use `bun test`
-  satellite groups   142  (nested bases collapsed into their outermost ancestor)
-  satellites         272  (204 encode a ticket — rule §2 violations)
+  scanned            1408 files, 375930 lines, 35800 expect()
+  static test sites  17528  + 543 .each sites — NOT the runtime count, use `bun test`
+  satellite groups   140  (nested bases collapsed into their outermost ancestor)
+  satellites         251  (188 encode a ticket — rule §2 violations)
   mirrors            54  EXCLUDED — each is its own src module's test file (--mirrors)
   _deps unrestored   0 files with no restore; 1 need a read (hook, no visible restore)
-  removable files    116   (packed to 650, hard cap 800; 233 at drain start)
-  removable lines    4250   (11,185 at drain start)
+  removable files    95   (packed to 650, hard cap 800; 233 at drain start)
+  removable lines    3169   (11,185 at drain start)
 ```
 
-> **Wave 4 starts on a re-based branch.** Between Task 21's measurement (36a7c5c14)
-> and Wave 4, `git fetch origin && git rebase origin/main` (§2.2) pulled in 18 new
-> `origin/main` commits (the worktree-branch-identity feature). All §0.1 runtime
-> numbers below are therefore **up ~62 unit tests / 162 expects and up 7 integration
-> tests / 19 expects relative to the §9.4–§9.22 invariant** — that is main's new
-> tests, not drift. The count-invariant comparison for every Wave-4 task is against
-> §9.23's numbers, not the older §0.1 row in §9.x entries.
+> **Waves 1–4 are complete.** Tasks 1–31 landed 28 groups: **-24 files in Wave 4,
+> -137 files cumulative** against the plan's Waves 1–4 target of -141. The 4-file
+> shortfall is the documented over-target landings in §9.5 (callOp +2) and §9.8
+> (orchestrator +1), plus §9.31 (pipeline-result-handler packs to 3, not the plan
+> row's 2). The runtime baseline was re-based mid-Wave-4 when `origin/main`
+> advanced (§9.25/§9.26): unit is **18,311 / 42,334 / 7 skip**, up 2 tests / 3
+> expects from main's check-coverage commits, not drift. Remaining: Wave 5 (Task
+> 32, the T3 collapse pass), Wave 6 (Tasks 33–35, the recurrence gate — the
+> highest-value remaining item), and the Wave 7 tail.
 
 ### 0.1 Runtime state — measured with `bun test`, which is the only authority on test counts
 
 | Suite | Tests | Files | `expect()` | Skip | Wall | Cap |
 |:--|--:|--:|--:|--:|--:|--:|
-| `test/unit/` | 18,309 | 1,294 | 42,331 | 7 | 48–52s | 120s |
-| `test/integration/` | 1,261 | 125 | 2,999 | 36 | 18–22s | 120s |
-| `test/ui/` | 98 | 10 | 149 | 0 | 0.85s | 30s |
-| **Total (`bun run test`)** | **19,668** | **1,429** | **45,479** | **43** | **~68–90s** | — |
+| `test/unit/` | 18,311 | 1,285 | 42,334 | 7 | 46–53s | 120s |
+| `test/integration/` | 1,261 | 125 | 2,999 | 36 | 17–22s | 120s |
+| `test/ui/` | 98 | 10 | 149 | 0 | 0.8–1.1s | 30s |
+| **Total (`bun run test`)** | **19,670** | **1,408** | **45,482** | **43** | **~65–72s** | — |
+
+(Per-phase file counts from `bun test <dir>` sum to 1,420 while the ranker and the
+coverage run both report 1,408 files — a Bun file-counting artifact, not test
+drift. Tests and `expect()` are the only invariants.)
 
 0 fail. **Do not mix these with the ranker's static counts.** The ranker reports 17,526
 static `test(`/`it(` sites because it cannot expand the 543 `.each` sites, and 35,796
@@ -57,15 +63,15 @@ static `expect(` occurrences because it cannot count calls inside loops. Every i
 
 | Reading | Value | Source |
 |:--|--:|:--|
-| Test lines / src lines | **376,304 / 166,420 — 2.26:1** | ranker; `wc -l` over `src/**/*.ts{,x}` |
-| Preamble (lines before the first `describe`) | **~74,100 — 19.7% of test lines** | ranker definition |
-| Files importing `@test/helpers` | 874 (61.2%) of 1,429 | grep |
-| Helper modules available | 48 in `test/helpers/` (excl. `index.ts`, `e2e/`) | `ls` |
-| Satellite groups / satellites / mirrors | **142 / 272 / 54** | ranker |
-| Satellites encoding a ticket | **204 of 272 (75%)** | ranker |
-| Removable files / lines | **116** (1,429 → 1,313) / **4,250** | ranker |
-| Line coverage | **96.36%** (74,769/77,597), floor 80% | `bun run test:coverage` |
-| Function coverage | **93.39%** (7,054/7,553), floor 80% | same, varies run to run |
+| Test lines / src lines | **375,930 / 166,497 — 2.26:1** | ranker; `git ls-files` + `wc -l` over `src/**/*.ts{,x}` |
+| Preamble (lines before the first `describe`) | **63,342 — 16.8% of test lines** | re-measured this pass with the ranker's own rule (`^describe(`), cross-checked on three files against `--group` output. The pre-drain §0.2 row said ~74,100/19.7% and §0.3 said 70,169/18.6% — those two already disagreed, so treat the drop as indicative rather than exact |
+| Files importing `@test/helpers` | 874 (61.2%) of 1,429 | grep — **not re-measured this pass** |
+| Helper modules available | 52 `test/helpers/*.ts` (51 excl. `index.ts`) | `git ls-files` |
+| Satellite groups / satellites / mirrors | **140 / 251 / 54** | ranker |
+| Satellites encoding a ticket | **188 of 251 (75%)** | ranker |
+| Removable files / lines | **95** (1,408 → 1,313) / **3,169** | ranker |
+| Line coverage | **96.36%** (74,776/77,597), floor 80% | `bun run test:coverage` |
+| Function coverage | **93.39%** (7,055/7,554), floor 80% | same, varies run to run |
 | Files below the per-file floor | **0**, baseline empty | same |
 
 **Everything is green. This is a debt drain, not a fix for a broken thing.** Coverage is 16
@@ -1806,3 +1812,49 @@ edits, working diff byte-identical before/after.
 
 Wave 4 running total: **-23 files**. Cumulative: **-136**. One Wave-4 group
 remains per §3: `pipeline-result-handler` (4→2).
+
+### 9.31 — 2026-09-21, Task 31 landed — execution/pipeline-result-handler group 4 → 3 files (-2 lines)
+
+**Landed 4 → 3, not the plan row's 4 → 2** — the current ranker is the authority
+(§0/§2.3) and it packs this group to three files: the 745-line mirror base and
+the 599-line `worktree-cleanup` file each exceed the point where the other
+members can share their preamble, so only bin 3 (bug12 + pause-reason) merges.
+This is the fourth and last documented over-target landing; the plan's Wave-4
+aggregate of -25 is therefore -24 actual.
+
+Hit the ranker's target exactly: 4 → 3 files, 1,691 → 1,689 lines. All 46 group
+static sites / 6 receiver runtime tests preserved (bug12 3 + pause-reason 3).
+Unit phase 18,311 / 42,334 unchanged; full suite 0 fail, `check:all` 0, both tsc
+clean, coverage 96.36% lines / 93.39% functions, 0 below floor. Ranker `_deps
+unrestored 0` (group carried no `⚠deps` flag).
+
+Receiver per the packer's bin 3: `pipeline-result-handler-bug12.test.ts` (222l →
+345l, under the fill target) absorbs `pipeline-result-handler-pause-reason`
+(nax#1582 pause-reason persistence). Both are `handlePipelineFailure` concerns —
+worktree-removal stream draining (BUG-12/BUG-3) and pause-reason/priorErrors
+persistence. `pipeline-result-handler.test.ts` (745l) and
+`pipeline-result-handler-worktree-cleanup.test.ts` (599l) stay alone.
+
+Dedup/renames: pause-reason's module-level `makeCtx` renamed `makePauseCtx`
+(bug12 already had a `makeCtx` built on `makeDispatchContext`; pause-reason's
+adds `runtime: makeMockRuntime()`); imports merged (`join`, `cleanupTempDir`/
+`makeMockRuntime`/`makeTempDir`, `loadPRD`). **Hook safety (§1.6):** bug12's
+top-level `beforeEach`/`afterEach` (saving `_resultHandlerDeps.spawn`/`existsSync`)
+stay; pause-reason's tempdir + `existsSync=false` hooks stay **describe-scoped**,
+so its tests inherit the outer stub then override it and the outer `afterEach`
+still restores the real originals — no leak into bug12's own tests.
+
+Deletes (1): `pipeline-result-handler-pause-reason`.
+
+Mutation check: 2 flipped assertions in the merged describe — `priorErrors`
+`["PAUSED: …"]` → `["MUTATION"]`, and the nax#930 scrub `toContain("<UNVERIFIED_QUOTE>")`
+→ `toContain("MUTATION")` → 2 distinct failures, 4 pass; both reverted with exact
+reverse edits, working diff byte-identical before/after.
+
+**Wave 4 complete.** Tasks 22–31 landed 10 groups for **-24 files**: code-neighbor
+-3, stage-assembler -3, scoring -3, acp/adapter -3, pid-registry -3, rebuild -2,
+effectiveness -2, verify-op -2, manifest-builder -2, pipeline-result-handler -1.
+Cumulative **-137 files** against the plan's Waves 1–4 target of -141 (the 4-file
+shortfall: §9.5 +2, §9.8 +1, §9.31 +1). §0 is re-measured above at the completed
+wave boundary. Next: Wave 5 (Task 32, the T3 describe-scoped collapse, -342 tests)
+or Wave 6 (Task 33, the satellite gate — recommended before the tail).
