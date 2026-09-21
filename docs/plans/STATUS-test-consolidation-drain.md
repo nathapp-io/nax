@@ -1641,3 +1641,43 @@ groups (per §3): `context/engine/rebuild` (5→3), `context/engine/effectivenes
 (5→3), `operations/verify-op` (4→2), `context/engine/manifest-builder` (4→2),
 `execution/pipeline-result-handler` (4→2) — plus the re-rank's next rows
 (`acceptance-loop`, `parallel-batch`, `plan`, …) which carry the tail.
+
+### 9.27 — 2026-09-21, Task 27 landed — context/engine/rebuild group 5 → 3 files (-85 lines)
+
+Hit the packed target exactly: 5 → 3 files, 2,187 → 2,102 lines. All 61 group
+static sites / 13 receiver runtime tests preserved (stale 7 + scope-paths 3 +
+providers 3); group runtime expect count 42. Unit phase 18,311 / 42,334
+unchanged; full suite 0 fail, `check:all` 0, both tsc clean, coverage 96.35%
+lines / 93.38% functions, 0 below floor. Ranker `_deps unrestored 0` (group
+carried no `⚠deps` flag).
+
+One receiver, per the packer's bin 3: `rebuild-stale.test.ts` (274l → 620l,
+under the 650 fill target) absorbs `rebuild-chunk-scope-paths` (US-002
+chunkScopePaths filtering) + `rebuild-chunk-providers` (chunkProviders filtering).
+The frozen 795l `rebuild-repack.test.ts` and the 687l mirror base
+`rebuild.test.ts` stay alone.
+
+**The two absorbed files duplicated their fixture preamble verbatim** (`chunk`,
+`makeManifest`, `makeBundleFromChunks`, `AVAILABILITY_FAILURE`), and I verified
+before unifying that they are assertion-equivalent: **`rebuild()` reads
+`chunkScopePaths`/`chunkProviders` off the PRIOR manifest and filters them
+(`src/context/engine/rebuild.ts`), never from `chunk.providerId`**, so the two
+variants' differing `chunk.providerId` default (`id.split(":")[0]` vs
+`"fixture-provider"`) and differing `makeManifest` requestId default are both
+unobservable. The providers file's `providerId?` option was declared but never
+passed at any call site. Result: one fixture set, not two — which is also what
+made the file fit at 620l rather than the ~700l a naive copy would have hit.
+The receiver's `rebuild`/`ContextOrchestrator` imports and `BASE_REQUEST`/
+`makePriorBundleWithBudgetDrop`/`findExcluded` fixtures are untouched.
+
+Deletes (2): `rebuild-chunk-scope-paths`, `rebuild-chunk-providers`.
+
+Mutation check: 2 merged describes × one flipped assertion —
+`rebuiltScopePaths` `toBeDefined()` → `toBeUndefined()` (US-002) and
+`rebuiltProviders` `toBeDefined()` → `toBeUndefined()` (chunkProviders) →
+2 distinct failures, 11 pass; both reverted with exact reverse edits, working
+diff byte-identical before/after.
+
+Wave 4 running total: **-17 files**. Cumulative: **-130**. Four Wave-4 groups
+remain per §3: `effectiveness` (5→3), `verify-op` (4→2), `manifest-builder`
+(4→2), `pipeline-result-handler` (4→2).
