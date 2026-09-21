@@ -77,7 +77,7 @@ describe("`nax resume` — AC-9: log filename matches the run identifier", () =>
     // completes without spawning an agent and writes its final state.
     writeProjectFixture(tempDir, "ac9-feature");
     const outputDir = join(tempDir, "run-output");
-    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({ outputDir }));
+    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({ outputDir, acceptance: { enabled: false } }));
 
     // Stub process.exit so the resume action's "process.exit(...)" call
     // does not kill the test runner. The action always reaches
@@ -184,7 +184,11 @@ describe("`nax resume` — AC-9: log filename matches the run identifier", () =>
 
 function writeProjectFixture(tempDir: string, feature: string): void {
   mkdirSync(join(tempDir, ".nax"), { recursive: true });
-  writeFileSync(join(tempDir, ".nax", "config.json"), "{}");
+  // acceptance.enabled defaults to true, which makes runWillUseAgent() require
+  // an installed agent even though every story below is already `passed` and
+  // no agent will actually be dispatched. Disable it so this fixture doesn't
+  // depend on a real `claude` binary being on PATH (CI has none).
+  writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({ acceptance: { enabled: false } }));
 
   const featureDir = join(tempDir, ".nax", "features", feature);
   mkdirSync(featureDir, { recursive: true });
