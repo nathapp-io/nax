@@ -759,4 +759,31 @@ call-run-options) and frozen base untouched.
 Mutation check per merged file (one assertion flipped → 6 distinct describes failed;
 restored). `_deps` still 0 unrestored. All four runtime invariants on §0.1 hold.
 
-### 9.6 — next entry goes here
+### 9.6 — 2026-09-21, Task 5 landed — curator group 20 → 9 files (-301 lines)
+
+Hit the packed target exactly: 20 → 9 files, 5,722 → 5,421 lines, all 203 tests /
+466 expect() preserved. Unit phase 18,247 / 42,169 unchanged, full suite 0 fail,
+`check:all` 0, both tsc clean, coverage 96.32% / 93.40%, 0 below floor.
+
+Bins per the packer, seam assignment mine:
+
+- `curator.test.ts` (base/mirror) absorbs `curator-seam` (collector→heuristics seam).
+- `curator-heuristics-h4-h6` absorbs `curator-us-004-postrun` (auto-prune wiring).
+- `curator-heuristics` absorbs `curator-maybe-prune-rollup` (size gate).
+- `curator-rollup` absorbs `curator-heuristics-h1` (H1 cross-feature recurrence).
+- `curator-chunk-provider-stale` absorbs `curator-scoping` (#1422 collection scoping).
+- `curator-render` absorbs `curator-us-003-postrun` + `curator-acceptance`.
+- `curator-types` absorbs `curator-paths` + `curator-integration` + `curator-us-003-h6`.
+- `curator-registration` absorbs `curator-collector-fix-cycle`.
+- `curator-collector` (748l, 713-line body) stays alone — no bin can host it at the
+  650 fill target.
+
+Deletes: `curator-seam`, `curator-us-004-postrun`, `curator-maybe-prune-rollup`,
+`curator-heuristics-h1`, `curator-scoping`, `curator-us-003-postrun`,
+`curator-acceptance`, `curator-paths`, `curator-integration`, `curator-us-003-h6`,
+`curator-collector-fix-cycle` — 11 files.
+
+Mutation check: 8 merged files each got one flipped assertion → 8 distinct failures;
+all reverted. Ranker `_deps unrestored 0` throughout.
+
+### 9.7 — next entry goes here
