@@ -1006,4 +1006,36 @@ Delegated to a subagent; post-verification by me: 59/162 reproduced, all receive
 ≤ 753l, mutation check 3 merged receivers × one flipped assertion → 3 distinct
 failures, all reverted.
 
-### 9.14 — next entry goes here
+### 9.14 — 2026-09-21, Task 13 landed — agents/native/adapter group 9 → 3 files (-430 lines)
+
+Hit the packed target: 9 → 3 files, 1,992 → 1,562 lines, all 64 tests / 131
+expect() preserved. Unit phase 18,247 / 42,169 unchanged, full suite 0 fail,
+`check:all` 0, both tsc clean, coverage 96.32% / 93.40%, 0 below floor.
+
+Bins per the packer, seam assignment mine:
+
+- `adapter-complete-rates` absorbs `turn-classification` + `context-window-override`
+  + `cost-rates` + `cache-retention` + `close-physical` (775l — the first 6-way merge
+  of the drain; no bin before it exceeded ~3 members).
+- `adapter-scope-id` absorbs `catalog-overrides` (208l).
+- `adapter.test.ts` base (749l) MIRROR — untouched.
+
+Deletes (6): `adapter-turn-classification`, `adapter-context-window-override`,
+`adapter-cost-rates`, `adapter-cache-retention`, `adapter-close-physical`,
+`adapter-catalog-overrides`.
+
+Collisions renamed `MODEL`/`send`/`options()`/`dir`/`fakeClient` per absorber;
+all absorbed files stubbed the same 4 deps keys (`_clientDeps.build`,
+`_resetNativeClient`, `listStoredProviders`, `anyAmbientCredential`) → merged into
+one `afterEach` with a single capture.
+
+Delegated to a subagent; post-verification by me: 64/131 reproduced, receivers
+≤ 775l, mutation check 2 merged receivers × one flipped assertion → 2 distinct
+failures, all reverted.
+
+**Wave 2 complete:** plan (-7 f), static-rules (-7), acceptance-setup (-6),
+tier-escalation (-6), adapter (-6) = **-32 files, -2,320 lines** — exactly on the
+plan's Wave-2 target. §9.9's Wave-1 shortfall (-3 vs -52) stands; cumulative now
+-81 files against the plan's cumulative -84 for Waves 1+2.
+
+### 9.15 — next entry goes here
