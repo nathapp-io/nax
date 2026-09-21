@@ -3,14 +3,17 @@
  *
  * Tests that nax init creates the project nax/ directory structure, prints a
  * summary, generates a stack-aware constitution.md, and reconciles the repo's
- * .gitignore and .naxignore without disturbing user content.
+ * .gitignore and .naxignore without disturbing user content. Also carries the
+ * name-validation/collision guard and the package-scaffold (MW-005) suites.
  */
 
-import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, test } from "bun:test";
+import { existsSync, rmSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
-import { _initDeps, initCommand, initProject } from "@/cli/init";
+import { makeTempDir, withTempDir } from "@test/helpers";
+import { _initDeps, checkInitCollision, initCommand, initProject, validateProjectName } from "@/cli/init";
+import { generatePackageContextTemplate, initPackage } from "@/cli/init-context";
 import { globalConfigDir } from "@/config/paths";
 import { writeProjectIdentity } from "@/runtime";
 
@@ -404,5 +407,217 @@ describe("initProject — prints summary with created files and next steps", () 
     } finally {
       restore();
     }
+  });
+});
+
+// ─── MW-005: package context scaffold ────────────────────────────────────────
+
+describe("generatePackageContextTemplate (MW-005)", () => {
+  test("uses the last path segment as package name; includes root context.md reference comment; includes a Commands table with bun test", () => {
+    const content = generatePackageContextTemplate("packages/api");
+    expect(content).toContain("# api — Context");
+    expect(content).toContain("Root context.md");
+    expect(content).toContain("bun test");
+  });
+
+  test("uses single-segment path as package name", () => {
+    const content = generatePackageContextTemplate("api");
+    expect(content).toContain("# api — Context");
+  });
+
+  test("includes Tech Stack and Development Guidelines sections", () => {
+    const content = generatePackageContextTemplate("packages/web");
+    expect(content).toContain("## Tech Stack");
+    expect(content).toContain("## Development Guidelines");
+  });
+});
+
+describe("initPackage (MW-005)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("nax-test-");
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("creates nax/context.md in the package directory", async () => {
+    await initPackage(tmpDir, "packages/api");
+    const contextPath = join(tmpDir, ".nax/mono/packages/api/context.md");
+    expect(await Bun.file(contextPath).exists()).toBe(true);
+  });
+
+  test("content includes package name from path", async () => {
+    await initPackage(tmpDir, "packages/api");
+    const content = await Bun.file(join(tmpDir, ".nax/mono/packages/api/context.md")).text();
+    expect(content).toContain("# api — Context");
+  });
+
+  test("does not overwrite existing file when force=false", async () => {
+    const contextPath = join(tmpDir, ".nax/mono/packages/api/context.md");
+    await Bun.write(contextPath, "# Existing content");
+    await initPackage(tmpDir, "packages/api", false);
+    const content = await Bun.file(contextPath).text();
+    expect(content).toBe("# Existing content");
+  });
+
+  test("overwrites existing file when force=true", async () => {
+    const contextPath = join(tmpDir, ".nax/mono/packages/api/context.md");
+    await Bun.write(contextPath, "# Existing content");
+    await initPackage(tmpDir, "packages/api", true);
+    const content = await Bun.file(contextPath).text();
+    expect(content).not.toBe("# Existing content");
+    expect(content).toContain("# api — Context");
+  });
+
+  test("creates intermediate directories", async () => {
+    await initPackage(tmpDir, "apps/backend/service");
+    const contextPath = join(tmpDir, ".nax/mono/apps/backend/service/context.md");
+    expect(await Bun.file(contextPath).exists()).toBe(true);
+  });
+
+  test("rejects a packagePath that escapes the repo via '..' before creating any directory (US-002 AC #3)", async () => {
+    await expect(initPackage(tmpDir, "../../evil")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INVALID_PACKAGE_PATH",
+    });
+    // The directory must NOT be created when validation rejects.
+    expect(await Bun.file(join(tmpDir, ".nax/mono/evil/context.md")).exists()).toBe(false);
+  });
+
+  test("rejects an empty packagePath rather than resolving to the repo root (US-002 AC #6)", async () => {
+    await expect(initPackage(tmpDir, "")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INVALID_PACKAGE_PATH",
+    });
+    const rootContext = join(tmpDir, ".nax", "context.md");
+    // The pre-existing initContext file at <repoRoot>/.nax/context.md must NOT
+    // be created by a stray empty packagePath.
+    expect(await Bun.file(rootContext).exists()).toBe(false);
+  });
+
+  test("rejects an absolute packagePath before creating any directory", async () => {
+    await expect(initPackage(tmpDir, "/etc")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INVALID_PACKAGE_PATH",
+    });
+  });
+
+  test("rejects with NaxError code INIT_ERROR when an ancestor of the package .nax dir is a regular file", async () => {
+    // .nax/mono/packages exists as a regular file, so mkdir(..., { recursive: true })
+    // for .nax/mono/packages/api throws ENOTDIR instead of creating the directory.
+    await Bun.write(join(tmpDir, ".nax", "mono", "packages"), "not a directory");
+    await expect(initPackage(tmpDir, "packages/api")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INIT_ERROR",
+    });
+  });
+
+  test("rejects with NaxError code INIT_ERROR when the package .nax dir itself is a regular file", async () => {
+    // naxDir (.nax/mono/api) is itself a regular file. Bun.file(naxDir).exists()
+    // is true for a regular file, so a bunFileExists(naxDir) guard would wrongly
+    // skip bunMkdirp here — this pins that bunMkdirp always runs.
+    await Bun.write(join(tmpDir, ".nax", "mono", "api"), "not a directory");
+    await expect(initPackage(tmpDir, "api")).rejects.toMatchObject({
+      name: "NaxError",
+      code: "INIT_ERROR",
+    });
+  });
+});
+
+// ─── name validation + collision guard ───────────────────────────────────────
+
+describe("validateProjectName", () => {
+  it("accepts 'my-project'", () => {
+    const r = validateProjectName("my-project");
+    expect(r.valid).toBe(true);
+  });
+
+  it("rejects empty string", () => {
+    const r = validateProjectName("");
+    expect(r.valid).toBe(false);
+    expect(r.error).toContain("non-empty");
+  });
+
+  it("rejects 'global'", () => {
+    const r = validateProjectName("global");
+    expect(r.valid).toBe(false);
+    expect(r.error).toContain("reserved");
+  });
+
+  it("rejects name with uppercase", () => {
+    const r = validateProjectName("MyProject");
+    expect(r.valid).toBe(false);
+  });
+
+  it("rejects name starting with '_'", () => {
+    const r = validateProjectName("_archive");
+    expect(r.valid).toBe(false);
+    expect(r.error).toContain("reserved");
+  });
+
+  it("rejects name longer than 64 chars", () => {
+    const r = validateProjectName("a".repeat(65));
+    expect(r.valid).toBe(false);
+  });
+});
+
+const TEST_KEY = "__nax_test_init_collision__";
+
+describe("checkInitCollision", () => {
+  const identityDir = join(globalConfigDir(), TEST_KEY);
+
+  beforeEach(async () => {
+    await rm(identityDir, { recursive: true, force: true });
+    await mkdir(identityDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(identityDir, { recursive: true, force: true });
+  });
+
+  it("returns no collision when identity does not exist", async () => {
+    const result = await checkInitCollision(TEST_KEY, "/tmp/my-project", null);
+    expect(result.collision).toBe(false);
+  });
+
+  it("returns no collision when workdir matches (no-remote case)", async () => {
+    await writeProjectIdentity(TEST_KEY, {
+      name: TEST_KEY,
+      workdir: "/tmp/my-project",
+      remoteUrl: null,
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+    const result = await checkInitCollision(TEST_KEY, "/tmp/my-project", null);
+    expect(result.collision).toBe(false);
+  });
+
+  it("returns no collision when remote URL matches", async () => {
+    const remote = "git@github.com:org/repo.git";
+    await writeProjectIdentity(TEST_KEY, {
+      name: TEST_KEY,
+      workdir: "/tmp/other-project",
+      remoteUrl: remote,
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+    const result = await checkInitCollision(TEST_KEY, "/tmp/my-project", remote);
+    expect(result.collision).toBe(false);
+  });
+
+  it("returns collision when different workdir and no remote", async () => {
+    await writeProjectIdentity(TEST_KEY, {
+      name: TEST_KEY,
+      workdir: "/tmp/other-project",
+      remoteUrl: null,
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+    const result = await checkInitCollision(TEST_KEY, "/tmp/my-project", null);
+    expect(result.collision).toBe(true);
+    expect(result.existing?.workdir).toBe("/tmp/other-project");
   });
 });
