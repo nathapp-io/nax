@@ -58,6 +58,7 @@
     "test:coverage:list": "bun run scripts/check-coverage.ts --list",
     "report:test-overlap": "bun run scripts/report-test-overlap.ts",
     "report:dead-tests": "bun run scripts/report-dead-tests.ts",
+    "report:test-consolidation": "bun run scripts/report-test-consolidation.ts",
     "check:test-mocks": "bun scripts/quiet-run.ts bun scripts/check-inline-test-mocks.ts --strict",
     "check:dispatch-context": "bun scripts/quiet-run.ts bash scripts/check-dispatch-context.sh",
     "check:naxconfig-cast": "bun scripts/quiet-run.ts bash scripts/check-no-silent-naxconfig-cast.sh",
