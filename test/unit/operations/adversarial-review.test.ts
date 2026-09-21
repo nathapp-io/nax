@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   assertDefined,
   makeMockAgentManager,
@@ -6,13 +8,16 @@ import {
   makeSessionManager,
   makeTestRuntime,
   opSelector,
+  withTempDir,
 } from "@test/helpers";
 import type { RetryStrategy } from "@/agents/retry";
 import type { ReviewConfig } from "@/config/selectors";
 import { callOp } from "@/operations";
-import type { AdversarialReviewInput } from "@/operations/adversarial-review";
+import type { AdversarialReviewInput, AdversarialReviewOutput } from "@/operations/adversarial-review";
 import { adversarialReviewOp } from "@/operations/adversarial-review";
-import type { BuildContext } from "@/operations/types";
+import type { BuildContext, HopBodyContext } from "@/operations/types";
+import { AdversarialReviewPromptBuilder } from "@/prompts";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -345,5 +350,332 @@ describe("adversarialReviewOp — AC3: empty-output exhaustion returns FAIL_OPEN
     expect(result.passed).toBe(true);
     expect(result.failOpen).toBe(true);
     expect(result.normalizedFindings).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// verify() — AC-dropped findings surfaced on a passing verdict (#1950)
+// ---------------------------------------------------------------------------
+// An AC-quote-dropped finding must reach a human-facing surface when the verdict
+// passes. Before the fix, `dropped` fed only `acDropped` (a machine channel
+// nothing renders); the run-end "NON-BLOCKING REVIEW FINDINGS" surface reads
+// `advisoryFindings` only, so the drop evaporated on a passing verdict.
+//
+// Drives the REAL adversarialReviewOp.verify() (not a hand-authored fixture).
+
+const STORY_AC_DROPPED = {
+  id: "STORY-AV-ACDROP-01",
+  title: "Adversarial verify pipeline — AC-dropped findings",
+  description: "Tests for adversarialReviewOp.verify() (#1950)",
+  // ACs include locus keywords so filterByAcQuote can validate acQuote-locus grounding.
+  // "auth" is extracted from file "src/auth.ts"; must appear in both AC text and acQuote.
+  acceptanceCriteria: [
+    "AC1: auth login security must not allow SQL injection attacks",
+    "AC2: handler must not throw unhandled exceptions",
+  ],
+};
+
+const BASE_INPUT: AdversarialReviewInput = {
+  workdir: "/tmp/adversarial-verify-ac-dropped-test",
+  story: STORY_AC_DROPPED,
+  adversarialConfig: {
+    model: "balanced" as const,
+    diffMode: "ref" as const,
+    rules: [],
+    timeoutMs: 600_000,
+    parallel: false,
+    maxConcurrentSessions: 2,
+    substantiation: { requote: true, maxRequotes: 5 },
+  },
+  mode: "ref",
+  blockingThreshold: "error",
+};
+
+function makeVerifyCtx() {
+  const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
+  const view = runtime.packages.repo();
+  return {
+    packageView: view,
+    config: view.select(opSelector(adversarialReviewOp.config)),
+    readFile: async (_path: string) => null as string | null,
+    fileExists: async (_path: string) => false,
+  };
+}
+
+function makeOutput(overrides: Partial<AdversarialReviewOutput> = {}): AdversarialReviewOutput {
+  return {
+    passed: true,
+    findings: [],
+    normalizedFindings: [],
+    acDropped: [],
+    ...overrides,
+  };
+}
+
+async function runVerify(
+  parsed: AdversarialReviewOutput,
+  input: AdversarialReviewInput,
+  ctx: ReturnType<typeof makeVerifyCtx>,
+) {
+  const { verify } = adversarialReviewOp;
+  assertDefined(verify, "adversarialReviewOp.verify");
+  return verify(parsed, input, ctx);
+}
+
+function dropCandidateFinding(overrides: Partial<AdversarialLLMFinding> = {}): AdversarialLLMFinding {
+  return {
+    severity: "error",
+    category: "security",
+    file: "src/auth.ts",
+    line: 1,
+    issue: "No acQuote — will be dropped",
+    suggestion: "fix",
+    acIndex: 1,
+    // verifiedBy passes substantiation; no acQuote → filterByAcQuote drops to acDropped
+    verifiedBy: { file: "src/auth.ts", line: 1, observed: "db.rawQuery" },
+    ...overrides,
+  };
+}
+
+describe("adversarialReviewOp.verify() — AC-dropped findings surfaced on a passing verdict (#1950)", () => {
+  test("passing verdict + a dropped blocking finding: the drop is folded into advisoryFindings, tagged, and passed stays true", async () => {
+    return withTempDir(async (workdir) => {
+      const FILE_CONTENT = "function login(u, p) { return db.rawQuery(u + p); }\n";
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "auth.ts"), FILE_CONTENT);
+
+      const ctx = makeVerifyCtx();
+      const input: AdversarialReviewInput = { ...BASE_INPUT, workdir, mode: "ref" };
+      // Model claims pass while emitting a blocking-severity, ungrounded finding —
+      // exactly #1950's precondition (validateAcQuote only inspects blocking severities).
+      const parsed = makeOutput({
+        passed: true,
+        findings: [dropCandidateFinding()],
+        normalizedFindings: [],
+      });
+
+      const output = await runVerify(parsed, input, ctx);
+      assertDefined(output, "verify() result");
+
+      expect(output.passed).toBe(true);
+      expect(output.acDropped).toHaveLength(1);
+      // Still never blocks — normalizedFindings stays empty.
+      expect(output.normalizedFindings).toHaveLength(0);
+
+      const advisory = output.advisoryFindings ?? [];
+      expect(advisory).toHaveLength(1);
+      expect(advisory[0]?.message).toContain("No acQuote");
+      expect(advisory[0]?.acDropped).toBe(true);
+    });
+  });
+
+  test("failing verdict (everything dropped, accepted empty): drops are NOT folded into advisoryFindings", async () => {
+    return withTempDir(async (workdir) => {
+      const FILE_CONTENT = "function login(u, p) { return db.rawQuery(u + p); }\n";
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "auth.ts"), FILE_CONTENT);
+
+      const ctx = makeVerifyCtx();
+      const input: AdversarialReviewInput = { ...BASE_INPUT, workdir, mode: "ref" };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [dropCandidateFinding()],
+        normalizedFindings: [],
+      });
+
+      const output = await runVerify(parsed, input, ctx);
+      assertDefined(output, "verify() result");
+
+      expect(output.passed).toBe(false);
+      expect(output.acDropped).toHaveLength(1);
+      expect(output.advisoryFindings ?? []).toHaveLength(0);
+    });
+  });
+
+  test("no drops: advisoryFindings is byte-identical to today (unaffected)", async () => {
+    return withTempDir(async (workdir) => {
+      const ctx = makeVerifyCtx();
+      const input: AdversarialReviewInput = { ...BASE_INPUT, workdir, mode: "ref" };
+      const parsed = makeOutput({
+        passed: true,
+        findings: [
+          {
+            severity: "warning",
+            category: "quality",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Advisory only",
+            suggestion: "Consider X",
+          },
+        ],
+        normalizedFindings: [],
+      });
+
+      const output = await runVerify(parsed, input, ctx);
+      assertDefined(output, "verify() result");
+
+      expect(output.passed).toBe(true);
+      expect(output.acDropped ?? []).toHaveLength(0);
+      const advisory = output.advisoryFindings ?? [];
+      expect(advisory).toHaveLength(1);
+      expect(advisory[0]?.message).toBe("Advisory only");
+      expect(advisory[0]?.acDropped).toBeUndefined();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hopBody — inspection-trail guard (#3A)
+// ---------------------------------------------------------------------------
+// A ref-mode `passed:true` verdict with zero findings and no `inspectedFiles`
+// is the rubber-stamp signature (the reviewer never opened the code). The guard
+// issues exactly one same-session re-prompt demanding inspection, then adopts the
+// second turn's verdict. It is gated on `adversarialConfig.demandInspectionTrail`
+// and only fires in ref mode.
+//
+// See docs/findings/2026-05-30-prompt-audit-analysis.md (#3A).
+
+const ADVERSARIAL_CONFIG = {
+  model: "balanced" as const,
+  diffMode: "ref" as const,
+  rules: [] as string[],
+  timeoutMs: 600_000,
+  parallel: false,
+  maxConcurrentSessions: 2,
+  acRegroundOnDrop: true,
+  demandInspectionTrail: true,
+  substantiation: { requote: false, maxRequotes: 0 },
+};
+
+const STORY_INSPECT = {
+  id: "STORY-INSPECT",
+  title: "Inspection trail guard",
+  description: "guard against rubber-stamp reviews",
+  acceptanceCriteria: ["auth login must not allow SQL injection attacks"],
+};
+
+function turn(output: string) {
+  return { output, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 };
+}
+
+async function runHopBody(opts: {
+  responses: string[];
+  config?: Partial<typeof ADVERSARIAL_CONFIG>;
+  mode?: "ref" | "embedded";
+}) {
+  let callCount = 0;
+  const mockSend = mock(async () => turn(opts.responses[Math.min(callCount++, opts.responses.length - 1)]));
+  const result = await adversarialReviewOp.hopBody("initial prompt", {
+    send: mockSend,
+    sendWithParseRetry: mockSend,
+    input: {
+      workdir: "/tmp",
+      story: STORY_INSPECT,
+      adversarialConfig: { ...ADVERSARIAL_CONFIG, ...opts.config },
+      mode: opts.mode ?? "ref",
+    },
+  } satisfies HopBodyContext<AdversarialReviewInput>);
+  return { result, callCount };
+}
+
+describe("adversarialReviewOp.hopBody — inspection-trail guard (#3A)", () => {
+  const RUBBER_STAMP = JSON.stringify({ passed: true, findings: [] });
+
+  test("empty pass with no inspectedFiles → one re-prompt (two sends)", async () => {
+    const second = JSON.stringify({ passed: true, inspectedFiles: ["src/auth.ts"], findings: [] });
+    const { callCount } = await runHopBody({ responses: [RUBBER_STAMP, second] });
+    expect(callCount).toBe(2);
+  });
+
+  test("re-prompt uses the demandInspection prompt", async () => {
+    let secondPrompt: string | undefined;
+    let n = 0;
+    const second = JSON.stringify({ passed: true, inspectedFiles: ["src/auth.ts"], findings: [] });
+    const mockSend = mock(async (p: string) => {
+      if (n === 1) secondPrompt = p;
+      n += 1;
+      return turn(n === 1 ? RUBBER_STAMP : second);
+    });
+    await adversarialReviewOp.hopBody("initial prompt", {
+      send: mockSend,
+      sendWithParseRetry: mockSend,
+      input: { workdir: "/tmp", story: STORY_INSPECT, adversarialConfig: ADVERSARIAL_CONFIG, mode: "ref" },
+    } satisfies HopBodyContext<AdversarialReviewInput>);
+    expect(secondPrompt).toBe(AdversarialReviewPromptBuilder.demandInspection());
+  });
+
+  test("second turn's verdict is adopted (findings flow downstream)", async () => {
+    const second = JSON.stringify({
+      passed: false,
+      inspectedFiles: ["src/auth.ts"],
+      findings: [
+        { severity: "error", category: "test-gap", file: "src/auth.ts", line: 1, issue: "x", suggestion: "y" },
+      ],
+    });
+    const { result } = await runHopBody({ responses: [RUBBER_STAMP, second] });
+    expect(result.output).toBe(second);
+  });
+
+  test("empty pass WITH inspectedFiles → no re-prompt (single send)", async () => {
+    const passed = JSON.stringify({ passed: true, inspectedFiles: ["src/auth.ts"], findings: [] });
+    const { callCount } = await runHopBody({ responses: [passed] });
+    expect(callCount).toBe(1);
+  });
+
+  test("demandInspectionTrail:false → no re-prompt", async () => {
+    const { callCount } = await runHopBody({
+      responses: [RUBBER_STAMP],
+      config: { demandInspectionTrail: false },
+    });
+    expect(callCount).toBe(1);
+  });
+
+  test("embedded mode → guard does not fire (ref-only)", async () => {
+    const { callCount } = await runHopBody({ responses: [RUBBER_STAMP], mode: "embedded" });
+    expect(callCount).toBe(1);
+  });
+
+  test("unparseable second turn → keep original pass, still two sends", async () => {
+    const { result, callCount } = await runHopBody({ responses: [RUBBER_STAMP, "not json at all"] });
+    expect(callCount).toBe(2);
+    expect(result.output).toBe(RUBBER_STAMP);
+  });
+});
+
+/**
+ * Corroboration (2026-09-03). Reproduces the verdict observed in the Phase C1
+ * A/B run: the reviewer wrote "I have no file/shell access tool in this
+ * environment", then returned `passed:true` with
+ * `inspectedFiles: ["src/calc.ts", "src/calc.test.ts"]` — files it had just
+ * said it could not open. The guard believed the list and let it through.
+ */
+describe("adversarialReviewOp.hopBody — inspection trail corroborated against tool use", () => {
+  const DECLARED = JSON.stringify({
+    passed: true,
+    inspectedFiles: ["src/calc.ts", "src/calc.test.ts"],
+    findings: [],
+  });
+
+  async function sendCount(codingToolUse: { advertised: number; called: string[] } | undefined) {
+    const mockSend = mock(async () => ({ ...turn(DECLARED), ...(codingToolUse ? { codingToolUse } : {}) }));
+    await adversarialReviewOp.hopBody("initial prompt", {
+      send: mockSend,
+      sendWithParseRetry: mockSend,
+      input: { workdir: "/tmp", story: STORY_INSPECT, adversarialConfig: ADVERSARIAL_CONFIG, mode: "ref" },
+    } satisfies HopBodyContext<AdversarialReviewInput>);
+    return mockSend.mock.calls.length;
+  }
+
+  test("re-prompts when tools were advertised and the reviewer called none", async () => {
+    expect(await sendCount({ advertised: 4, called: [] })).toBe(2);
+  });
+
+  test("accepts the verdict when the reviewer actually called a tool", async () => {
+    expect(await sendCount({ advertised: 4, called: ["Git", "Read"] })).toBe(1);
+  });
+
+  test("falls back to the self-report when no tools were advertised", async () => {
+    expect(await sendCount(undefined)).toBe(1);
   });
 });
