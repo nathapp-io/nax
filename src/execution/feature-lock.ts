@@ -17,11 +17,56 @@ import { mkdir, rename, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { isProcessAlive } from "@/utils/process-alive";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { tryExclusiveCreate } from "./lock";
 
 /** Two hours — the cross-host reclaim/suspect threshold. */
 const STALE_AGE_MS = 2 * 3_600_000;
+
+/**
+ * Feature ID charset — mirrors `validateStoryId` (`src/prd/validate.ts`) and
+ * the `featureDir` SEC-3 hardening in `src/config/paths/index.ts`. A leading
+ * underscore is allowed so future sentinels (parallel to `_unattached`) keep
+ * resolving. Path traversal (`..`) and a leading `--` (git-flag-shaped) are
+ * rejected explicitly so the error names the actual problem instead of a
+ * generic pattern mismatch.
+ */
+const FEATURE_ID_PATTERN = /^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,63}$/;
+
+/**
+ * SEC: reject feature values that would let `featureLockPath` escape the
+ * intended `<outputDir>/features/<feature>/` subtree. Mirrors the SEC-3
+ * guard in `src/config/paths/index.ts::featureDir` — that guard covers
+ * writes under the feature tree from CLI entry points; this one covers the
+ * feature lock's own reader/writer so a buggy or hostile caller can't make
+ * the lock land outside the project (e.g. `featureLockPath(outDir, "../etc")`
+ * would otherwise resolve to `<outDir>/features/../etc/nax.lock`).
+ */
+function validateFeatureId(featureId: string): void {
+  if (!featureId || featureId.length === 0) {
+    throw new NaxError("Feature ID cannot be empty", "INVALID_FEATURE_ID", { stage: "feature-lock" });
+  }
+  if (featureId.includes("..")) {
+    throw new NaxError("Feature ID cannot contain path traversal (..)", "INVALID_FEATURE_ID", {
+      stage: "feature-lock",
+      featureId,
+    });
+  }
+  if (featureId.startsWith("--")) {
+    throw new NaxError("Feature ID cannot start with git flags (--)", "INVALID_FEATURE_ID", {
+      stage: "feature-lock",
+      featureId,
+    });
+  }
+  if (!FEATURE_ID_PATTERN.test(featureId)) {
+    throw new NaxError(
+      `Feature ID must match pattern [a-zA-Z0-9_][a-zA-Z0-9._-]{0,63}. Got: ${featureId}`,
+      "INVALID_FEATURE_ID",
+      { stage: "feature-lock", featureId },
+    );
+  }
+}
 
 export interface FeatureLockRecord {
   pid: number;
@@ -60,8 +105,13 @@ function getSafeLogger() {
 /**
  * Resolve the on-disk path to the feature lock file.
  * `<outputDir>/features/<feature>/nax.lock`
+ *
+ * Throws `NaxError("INVALID_FEATURE_ID")` when `feature` would let the
+ * resolved path escape the intended subtree (path traversal, leading `--`,
+ * empty, or characters outside the SEC-3 charset).
  */
 export function featureLockPath(outputDir: string, feature: string): string {
+  validateFeatureId(feature);
   return path.join(outputDir, "features", feature, "nax.lock");
 }
 
@@ -287,14 +337,29 @@ export async function acquireFeatureLock(args: {
 /**
  * Release the feature lock. Re-reads the on-disk record and only unlinks when
  * the holder's runId matches the caller's, so a release issued by a different
- * run leaves a live holder's lock untouched. ENOENT resolves silently.
+ * run leaves a live holder's lock untouched. ENOENT resolves silently; other
+ * I/O errors (permissions, EIO, …) are warn-logged so a stale lock isn't
+ * masked by a transient read failure.
  */
 export async function releaseFeatureLock(args: { outputDir: string; feature: string; runId: string }): Promise<void> {
   const lockPath = _featureLockDeps.featureLockPath(args.outputDir, args.feature);
   const lockFile = Bun.file(lockPath);
 
-  const content = await lockFile.text().catch(() => null);
-  if (content === null) return;
+  let content: string | null;
+  try {
+    content = await lockFile.text();
+  } catch (readErr) {
+    const code = (readErr as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return;
+    const logger = getSafeLogger();
+    logger?.warn("feature-lock", "Failed to read feature lock for release", {
+      error: (readErr as Error).message,
+      code,
+      lockPath,
+      feature: args.feature,
+    });
+    return;
+  }
 
   const holder = parseHolder(content);
   if (holder === null) return;
