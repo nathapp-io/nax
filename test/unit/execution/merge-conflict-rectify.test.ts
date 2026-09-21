@@ -404,10 +404,12 @@ describe("US-003 AC-7: rectification derives the worktree identity", () => {
 
     const addCall = gitCalls.find((args) => args[0] === "worktree" && args[1] === "add");
     assertDefined(addCall, "git worktree add argv");
-    // [git, worktree, add, <path>, -b, <branch>]
-    expect(addCall[3]?.endsWith(COMPOSED_TAIL)).toBe(true);
-    expect(addCall[4]).toBe("-b");
-    expect(addCall[5]).toBe(COMPOSED_BRANCH);
+    // The recorded git argv carries no `git` argv[0] — `gitWithTimeout` prepends
+    // that itself (`["git", ...args]`) — so the tuple is
+    // [worktree, add, <path>, -b, <branch>].
+    expect(addCall[2]?.endsWith(COMPOSED_TAIL)).toBe(true);
+    expect(addCall[3]).toBe("-b");
+    expect(addCall[4]).toBe(COMPOSED_BRANCH);
     // The raw story ID must not appear anywhere in the argv.
     expect(gitCalls.some((args) => args.some((a) => a.endsWith(join(".nax-wt", STORY_ID))))).toBe(false);
   });
@@ -436,8 +438,10 @@ describe("US-003 AC-7: rectification derives the worktree identity", () => {
     stubAcpxSpawn();
     await rectifyConflictedStory(makeOpts("g"));
 
+    // Same index base as the AC-7 assertion above: the recorded argv excludes
+    // `git` itself.
     const addPath = (calls: string[][]): string | undefined =>
-      calls.find((args) => args[0] === "worktree" && args[1] === "add")?.[3];
+      calls.find((args) => args[0] === "worktree" && args[1] === "add")?.[2];
 
     expect(addPath(firstRun)?.endsWith(join(".nax-wt", "story-f-US-001"))).toBe(true);
     expect(addPath(secondRun)?.endsWith(join(".nax-wt", "story-g-US-001"))).toBe(true);

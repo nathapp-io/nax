@@ -5,7 +5,6 @@
  * so it sees all previously merged stories (MFX-005).
  */
 
-import path from "node:path";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";
@@ -17,6 +16,7 @@ import { typedSpawn } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import { killProcessGroup } from "../utils/process-kill";
 import type { MergeResult } from "../worktree";
+import { deriveStoryWorktreeId, storyWorktreePath } from "../worktree";
 import { buildWorktreePipelineContext } from "./parallel-worker";
 
 /**
@@ -260,19 +260,21 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     const worktreeManager = new WorktreeManager();
     const mergeEngine = new MergeEngine(worktreeManager);
 
+    // US-003: compose the identity once from the run's feature and the raw story
+    // id — remove(), create(), the working directory and the merge must all name
+    // the same `.nax-wt/story-<feature>-<storyId>` worktree / branch pair.
+    const worktreeId = deriveStoryWorktreeId(prd.feature, storyId);
+
     // Step 1: Remove old worktree
     try {
-      // US-003 site: this cast keeps US-002 compiling. US-003 composes
-      // the brand via `deriveStoryWorktreeId`.
-      await worktreeManager.remove(workdir, storyId as unknown as import("../worktree").WorktreeId);
+      await worktreeManager.remove(workdir, worktreeId);
     } catch {
       // Ignore — worktree may have already been removed
     }
 
     // Step 2: Create fresh worktree from current HEAD
-    // US-003 site: same cast pattern as Step 1 above.
-    await worktreeManager.create(workdir, storyId as unknown as import("../worktree").WorktreeId);
-    const worktreePath = path.join(workdir, ".nax-wt", storyId);
+    await worktreeManager.create(workdir, worktreeId);
+    const worktreePath = storyWorktreePath(workdir, worktreeId);
 
     // @design: BUG-122: Close stale ACP session from the original failed run before re-running.
     // computeAcpHandle hashes the workdir path — same worktree path = same session name.
@@ -319,13 +321,7 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     }
 
     // Step 4: Attempt merge on updated base
-    // US-003 site: this cast keeps US-002 compiling. US-003 composes the
-    // brand via `deriveStoryWorktreeId`.
-    const mergeResults = await mergeEngine.mergeAll(
-      workdir,
-      [{ storyId, worktreeId: storyId as unknown as import("../worktree").WorktreeId }],
-      { [storyId]: [] },
-    );
+    const mergeResults = await mergeEngine.mergeAll(workdir, [{ storyId, worktreeId }], { [storyId]: [] });
     const mergeResult = mergeResults[0];
 
     if (!mergeResult?.success) {

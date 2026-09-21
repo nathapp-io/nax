@@ -22,6 +22,7 @@ import type { AgentGetFn, PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
 import { storyPackageDir } from "../utils/path-frame";
+import { deriveStoryWorktreeId, storyWorktreePath } from "../worktree";
 import { prepareWorktreeDependencies } from "../worktree/dependencies";
 import type { WorktreeDependencyContext } from "../worktree/types";
 
@@ -141,11 +142,13 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   const preExecutionFailureEndTimes = new Map<string, number>();
   for (const story of stories) {
     storyStartTimes.set(story.id, Date.now());
+    // US-003: compose the worktree identity from the run's feature and the
+    // story's raw id, so `create()` — and every spelling built from it below —
+    // names the same `.nax-wt/story-<feature>-<storyId>` directory the
+    // workers and the result handler look for.
+    const worktreeId = deriveStoryWorktreeId(prd.feature, story.id);
     try {
-      // US-003 site: this cast keeps US-002 compiling. US-003 replaces
-      // `story.id` with `deriveStoryWorktreeId(feature, story.id)` so the
-      // brand is composed rather than asserted.
-      await worktreeManager.create(workdir, story.id as unknown as import("../worktree").WorktreeId);
+      await worktreeManager.create(workdir, worktreeId);
     } catch (error) {
       logger?.error("parallel-batch", "Failed to create worktree for story", {
         storyId: story.id,
@@ -164,7 +167,7 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
       preExecutionFailureEndTimes.set(story.id, Date.now());
       continue;
     }
-    worktreePaths.set(story.id, path.join(workdir, ".nax-wt", story.id));
+    worktreePaths.set(story.id, storyWorktreePath(workdir, worktreeId));
   }
 
   // PKG-003 (parallel): Resolve per-story effective configs so per-package quality/review
@@ -239,9 +242,9 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
       // batch's wall-clock time instead of the actual (near-instant) failure.
       preExecutionFailureEndTimes.set(story.id, Date.now());
       try {
-        // US-003 site: this cast keeps US-002 compiling. US-003 composes
-        // the brand via `deriveStoryWorktreeId`.
-        await worktreeManager.remove(workdir, story.id as unknown as import("../worktree").WorktreeId);
+        // US-003: the same identity `create()` was given, so cleanup names the
+        // directory that actually exists.
+        await worktreeManager.remove(workdir, deriveStoryWorktreeId(prd.feature, story.id));
       } catch {
         // best-effort cleanup
       }
@@ -285,11 +288,11 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
     const deps: Record<string, string[]> = {};
     for (const s of stories) deps[s.id] = s.dependencies ?? [];
 
-    // US-003 site: this cast keeps US-002 compiling. US-003 composes the
-    // brand via `deriveStoryWorktreeId` per entry.
+    // US-003: `storyId` stays raw — it is the merge-order key `deps` is indexed
+    // by — while the branch each entry merges is the composed identity.
     const successfulStories = successfulIds.map((id) => ({
       storyId: id,
-      worktreeId: id as unknown as import("../worktree").WorktreeId,
+      worktreeId: deriveStoryWorktreeId(prd.feature, id),
     }));
     const mergeResults = await mergeEngine.mergeAll(workdir, successfulStories, deps);
 

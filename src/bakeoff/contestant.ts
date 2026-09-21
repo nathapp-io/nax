@@ -9,7 +9,7 @@
 import { basename, join } from "node:path";
 import type { NaxConfig } from "../config";
 import { projectOutputDir } from "../runtime/paths";
-import type { WorktreeId } from "../worktree";
+import { storyWorktreePath, type WorktreeId } from "../worktree";
 import type { ContestantResult } from "./types";
 import { deriveBakeoffWorktreeId } from "./worktree-id";
 
@@ -128,7 +128,10 @@ export async function runContestant(
     },
   };
 
-  const worktree = join(options.projectRoot, ".nax-wt", storyId);
+  // US-003: the worktree path is the US-001 producer's spelling of the bakeoff
+  // identity, so the path handed to the pipeline is the directory `create()`
+  // builds rather than a second, hand-rolled `join`.
+  const worktree = storyWorktreePath(options.projectRoot, storyId);
   const projectKey = options.config.name?.trim() || basename(options.projectRoot);
   const outputDir = join(projectOutputDir(projectKey, options.outputDir), "bakeoff", feature, agent);
 
