@@ -21,7 +21,7 @@ export type { AdversarialReviewPromptOptions, TestInventory } from "./builders/a
 export { AdversarialReviewPromptBuilder } from "./builders/adversarial-review-builder";
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.
-export { buildDecomposePromptAsync, buildDecomposePromptSync } from "./builders/decompose-builder";
+export { buildDecomposePromptSync } from "./builders/decompose-builder";
 export type { OneShotRole } from "./builders/one-shot-builder";
 // One-shot prompt builder — escape hatch for structurally trivial prompts.
 // Used by router and decomposer.

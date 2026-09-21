@@ -260,7 +260,8 @@ const REMOVED_NO_OP_KEYS: Readonly<Record<string, string>> = {
   "tdd.autoVerifyIsolation": "this key had no effect — isolation verification is currently unconditional",
   "tdd.autoApproveVerifier": "this key had no effect — verifier auto-approval is currently unconditional",
   "acceptance.generateTests": "use `acceptance.enabled` instead",
-  debate: "the multi-agent debate subsystem was removed; plan.mode is now single or refine",
+  debate:
+    "the multi-agent debate subsystem was removed; a config that enabled debate.stages.plan without setting plan.mode was resolving to the debate plan strategy and now plans with `single` — set plan.mode explicitly to `single` or `refine`",
   "plan.citationThreshold": "this key only fed the removed pipeline plan mode",
   "plan.criticModel": "this key only fed the removed pipeline plan mode",
 };

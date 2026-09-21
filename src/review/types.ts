@@ -65,11 +65,6 @@ export type DiffContext =
        * used to provide.
        */
       pathspec: string;
-      /**
-       * Production-diff exclude pathspec derived from resolveTestFilePatterns() +
-       * resolveReviewExcludePatterns(). Used by review prompt builders.
-       */
-      productionExcludePatterns?: readonly string[];
     };
 
 /** Story fields required for semantic review */
