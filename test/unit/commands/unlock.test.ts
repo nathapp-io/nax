@@ -630,5 +630,36 @@ describe("unlockCommand", () => {
         rmSync(tempOutputDir, { recursive: true, force: true });
       }
     });
+
+    test("US-003 adversarial: surfaces a feature-scan failure instead of silently exiting 0", async () => {
+      // The previous bare `catch {}` swallowed every error from the scan
+      // block, so a projectOutputDir CONFIG_INVALID or a permission failure
+      // hid behind a successful "Lock removed" exit. The fix narrows the
+      // skip to "project not initialised" and surfaces any other throw.
+      const tempOutputDir = realpathSync(makeTempDir("nax-unlock-scan-fail-"));
+      try {
+        // Project IS initialised — set up the seam so the pre-scan check
+        // recognises that, then force resolveOutputDir to throw to simulate
+        // a CONFIG_INVALID or filesystem-level failure.
+        mkdirSync(join(testDir, ".nax"));
+        writeFileSync(join(testDir, ".nax", "config.json"), JSON.stringify({ name: "test-proj" }));
+        _unlockDeps.findProjectDir = mock(() => join(testDir, ".nax"));
+        _unlockDeps.loadConfig = mock(async () => makeNaxConfig({ name: "test-proj" }));
+        _unlockDeps.projectOutputDir = mock(() => {
+          throw new Error("simulated scan failure: permission denied");
+        });
+
+        await run({ dir: testDir });
+
+        // The error must surface as a non-zero exit, not a silent 0.
+        expect(exitCode).toBe(1);
+        // And the operator must see the error message in the output — the
+        // whole point of the fix is that failures stop being hidden.
+        expect(allOutput().toLowerCase()).toContain("feature lock scan failed");
+        expect(allOutput()).toContain("simulated scan failure");
+      } finally {
+        rmSync(tempOutputDir, { recursive: true, force: true });
+      }
+    });
   });
 });

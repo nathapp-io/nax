@@ -276,11 +276,32 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
   }
 
   // Feature-lock scan — runs whether or not the checkout lock existed.
-  // Only reachable when the project is initialised; otherwise we silently
-  // skip (no outputDir to scan). Failure of any single lock (parse error,
-  // live holder, unlink failure) is reported but does not abort the scan.
+  //
+  // Only reachable when the project is initialised; the "not initialised"
+  // case is the one explicitly benign skip here, since a `nax unlock`
+  // invoked against a directory that never ran `nax init` has no feature
+  // tree to scan. Any other failure (loadConfig rejecting a corrupt config,
+  // projectOutputDir throwing CONFIG_INVALID for a relative `outputDir`
+  // override, an unexpected filesystem error inside the scan) is a real
+  // problem and must surface — the previous bare `catch {}` silently hid
+  // permission errors and CONFIG_INVALID behind a successful "Lock removed"
+  // exit, leaving operators to think the unlock worked.
+  //
+  // Per-feature failures inside `tryRemoveFeatureLock` are already reported
+  // as `"skipped"` (parse error, live holder, unlink failure) and do NOT
+  // abort the scan — only exceptional throws above the per-feature loop
+  // escalate.
+  if (_unlockDeps.findProjectDir(workdir) === null) {
+    // Project isn't initialised — there is no `<outputDir>/features/` tree
+    // to scan, and forcing a resolve would either read DEFAULT_CONFIG (a
+    // mis-anchored path keyed off `basename(workdir)`) or throw on a
+    // CONFIG_INVALID `outputDir` override. Both outcomes would be misleading.
+    process.exit(checkoutAborted ? 1 : 0);
+  }
+
   let scannedCount = 0;
   let skippedCount = 0;
+  let scanError: unknown;
   try {
     const { outputDir } = await resolveOutputDir(workdir);
     const features = listFeatureLockFeatures(outputDir);
@@ -291,19 +312,24 @@ export async function unlockCommand(options: UnlockOptions): Promise<void> {
         skippedCount++;
       }
     }
-    if (scannedCount === 0) {
-      console.log("No feature locks found");
-    } else {
-      console.log(
-        `Feature lock scan: ${scannedCount - skippedCount} removed, ${skippedCount} skipped${
-          options.force ? " (--force)" : ""
-        }`,
-      );
-    }
-  } catch {
-    // resolveOutputDir/listFeatureLockFeatures threw — likely because the
-    // project is not initialised. That's fine: we already handled the
-    // checkout lock above; a feature scan is opt-in by having run setup.
+  } catch (err) {
+    // Surface the error to the operator and exit non-zero so the
+    // checkout-lock handling above is not reported as a clean success.
+    scanError = err;
+  }
+
+  if (scanError !== undefined) {
+    const message = scanError instanceof Error ? scanError.message : String(scanError);
+    console.error(chalk.red(`Feature lock scan failed: ${message}`));
+    process.exit(1);
+  }
+
+  if (scannedCount === 0) {
+    console.log("No feature locks found");
+  } else {
+    console.log(
+      `Feature lock scan: ${scannedCount - skippedCount} removed, ${skippedCount} skipped${options.force ? " (--force)" : ""}`,
+    );
   }
 
   process.exit(checkoutAborted ? 1 : 0);
