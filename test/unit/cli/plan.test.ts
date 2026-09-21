@@ -674,6 +674,10 @@ describe("assertIsValidPrd guard (#993)", () => {
   const origExistsSync993 = _planDeps.existsSync;
   const origReadFile993 = _planDeps.readFile;
   const origWriteFile993 = _planDeps.writeFile;
+  const origScanSourceRoots993 = _planDeps.scanSourceRoots;
+  const origReadPackageJson993 = _planDeps.readPackageJson;
+  const origSpawnSync993 = _planDeps.spawnSync;
+  const origMkdirp993 = _planDeps.mkdirp;
 
   beforeEach(async () => {
     tmpDir993 = makeTempDir("nax-plan-993-");
@@ -695,6 +699,10 @@ describe("assertIsValidPrd guard (#993)", () => {
     _planDeps.existsSync = origExistsSync993;
     _planDeps.readFile = origReadFile993;
     _planDeps.writeFile = origWriteFile993;
+    _planDeps.scanSourceRoots = origScanSourceRoots993;
+    _planDeps.readPackageJson = origReadPackageJson993;
+    _planDeps.spawnSync = origSpawnSync993;
+    _planDeps.mkdirp = origMkdirp993;
     await rm(tmpDir993, { recursive: true, force: true });
   });
 
