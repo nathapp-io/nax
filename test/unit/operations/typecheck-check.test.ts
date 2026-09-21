@@ -1,11 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { join } from "node:path";
 import type { DeepPartial } from "@test/helpers";
-import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir, makeTestRuntime } from "@test/helpers";
 import type { ConfigSelector, QualityConfig } from "@/config";
 import type { Finding } from "@/findings";
-import type { CallContext, TypecheckCheckDeps } from "@/operations";
+import type { CallContext, TypecheckCheckDeps, TypecheckCheckOutput } from "@/operations";
 import { typecheckCheckOp } from "@/operations";
 import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
+import type { ToolDiagnosticsScratchEntry } from "@/session/scratch-writer";
 
 function ctxWithQuality(
   quality?: DeepPartial<QualityConfig>,
@@ -60,6 +62,24 @@ const mockFinding: Finding = {
 function makeDeps(overrides: Partial<TypecheckCheckDeps> = {}): TypecheckCheckDeps {
   return {
     runQualityCommand: async () => passedResult,
+    parseTypecheckOutput: () => null,
+    ...overrides,
+  };
+}
+
+const failedTypecheckDiagResult = {
+  commandName: "typecheck",
+  command: "bun run typecheck",
+  success: false,
+  exitCode: 2,
+  output: "src/a.ts(12,5): error TS2304: Cannot find name 'foo'.",
+  durationMs: 50,
+  timedOut: false,
+};
+
+function makeFailedTypecheckDeps(overrides: Partial<TypecheckCheckDeps> = {}): TypecheckCheckDeps {
+  return {
+    runQualityCommand: async () => failedTypecheckDiagResult,
     parseTypecheckOutput: () => null,
     ...overrides,
   };
@@ -218,5 +238,132 @@ describe("typecheckCheckOp — sentinel affordances", () => {
       _commandDefaultsDeps.detectLanguage = origDetect;
       clearCommandDefaultsCache();
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 typecheckCheckOp — tool-diagnostics scratch capture
+//
+// AC11 — a typecheck command returning non-zero triggers a tool-diagnostics
+//        entry to be appended to the story scratch dir.
+// AC12 — when the capture throws, the surrounding typecheck operation still
+//        completes and reports its normal result (best-effort: capture
+//        never blocks stage execution).
+//
+// The capture lives behind an optional `sessionScratchDir` +
+// `appendScratchEntry` dep pair on `TypecheckCheckDeps`. Tests inject mocks so
+// the test stays hermetic (no real filesystem, no real tsc binary).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("typecheckCheckOp — tool-diagnostics scratch capture", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("nax-typecheck-tool-diag-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tmpDir);
+  });
+
+  describe("typecheckCheckOp — AC11: tool-diagnostics capture on non-zero typecheck exit", () => {
+    test("AC11: non-zero typecheck exit triggers appendScratchEntry with kind=tool-diagnostics to sessionScratchDir", async () => {
+      const scratchDir = join(tmpDir, "sess-ac11");
+      const appendSpy = mock(async (_dir: string, _entry: ToolDiagnosticsScratchEntry) => undefined);
+
+      const out = await typecheckCheckOp.execute(
+        { workdir: "/tmp", storyId: "US-003" },
+        ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
+        makeFailedTypecheckDeps({
+          sessionScratchDir: scratchDir,
+          appendScratchEntry: appendSpy as TypecheckCheckDeps["appendScratchEntry"],
+        }),
+      );
+
+      expect(appendSpy).toHaveBeenCalledTimes(1);
+      const [calledDir, calledEntry] = appendSpy.mock.calls[0];
+      expect(calledDir).toBe(scratchDir);
+      expect(calledEntry.kind).toBe("tool-diagnostics");
+      expect(calledEntry.storyId).toBe("US-003");
+      expect(typeof calledEntry.timestamp).toBe("string");
+      expect(Array.isArray(calledEntry.diagnostics)).toBe(true);
+      expect(out.success).toBe(false);
+    });
+
+    test("AC11: zero typecheck exit does NOT trigger tool-diagnostics capture", async () => {
+      const scratchDir = join(tmpDir, "sess-ac11-pass");
+      const appendSpy = mock(async (_dir: string, _entry: ToolDiagnosticsScratchEntry) => undefined);
+
+      const out = await typecheckCheckOp.execute(
+        { workdir: "/tmp", storyId: "US-003" },
+        ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
+        {
+          runQualityCommand: async () => passedResult,
+          parseTypecheckOutput: () => null,
+          sessionScratchDir: scratchDir,
+          appendScratchEntry: appendSpy as TypecheckCheckDeps["appendScratchEntry"],
+        },
+      );
+
+      expect(appendSpy).toHaveBeenCalledTimes(0);
+      expect(out.success).toBe(true);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // AC12: capture is best-effort
+  // ───────────────────────────────────────────────────────────────────────────
+
+  describe("typecheckCheckOp — AC12: capture is best-effort", () => {
+    test("AC12: appendScratchEntry throwing does not propagate — op still completes and returns its normal result", async () => {
+      const scratchDir = join(tmpDir, "sess-ac12");
+      const appendSpy = mock(async () => {
+        throw new Error("disk full");
+      });
+
+      let out: TypecheckCheckOutput | undefined;
+      let threw = false;
+      try {
+        out = await typecheckCheckOp.execute(
+          { workdir: "/tmp", storyId: "US-003" },
+          ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
+          {
+            runQualityCommand: async () => failedTypecheckDiagResult,
+            parseTypecheckOutput: () => null,
+            sessionScratchDir: scratchDir,
+            appendScratchEntry: appendSpy as TypecheckCheckDeps["appendScratchEntry"],
+          },
+        );
+      } catch {
+        threw = true;
+      }
+
+      expect(threw).toBe(false);
+      expect(out).toBeDefined();
+      expect(out?.success).toBe(false);
+      expect(out?.findings.length).toBeGreaterThan(0);
+      expect(appendSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test("AC12: capture skipped entirely (no sessionScratchDir wired) — op still completes normally", async () => {
+      const appendSpy = mock(async () => {
+        throw new Error("should not be called");
+      });
+
+      const out = await typecheckCheckOp.execute(
+        { workdir: "/tmp", storyId: "US-003" },
+        ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
+        {
+          runQualityCommand: async () => failedTypecheckDiagResult,
+          parseTypecheckOutput: () => null,
+          // sessionScratchDir intentionally omitted
+          appendScratchEntry: appendSpy as TypecheckCheckDeps["appendScratchEntry"],
+        },
+      );
+
+      expect(out.success).toBe(false);
+      expect(out.findings.length).toBeGreaterThan(0);
+      expect(appendSpy).toHaveBeenCalledTimes(0);
+    });
   });
 });
