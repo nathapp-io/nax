@@ -1,0 +1,390 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "project-identity-run-locking",
+  "branchName": "feat/project-identity-run-locking",
+  "createdAt": "2026-01-20T00:00:00.000Z",
+  "updatedAt": "2026-09-21T05:54:49.482Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Feature lock primitive",
+      "description": "**Goal** — Add a feature-scoped lock primitive (path, acquire, release, host- and age-aware staleness predicates) to `src/execution/feature-lock.ts`, reusing the checkout lock's exclusive-create and stale-reclaim guarantees and verifying ownership before release.\n\n**Motivation** — Without a feature lock that mirrors the checkout lock's race-safe semantics, two worktrees of the same project could mutate the shared `~/.nax/<projectKey>/features/<feature>/` tree at once. The two predicates stay distinct because acquire and precheck ask different questions: a dead PID on a young lock is reclaimable by the first and not flagged by the second, so collapsing them would flip a verdict.\n\n**Approach** — `featureLockPath`, `acquireFeatureLock`, `releaseFeatureLock`, `lockHost()`, and the two predicates `isLockReclaimable` and `isLockSuspect` (kept distinct because acquire asks \"may I take this lock?\" while precheck asks \"is this lock suspiciously old?\"), over a record carrying the holder, reusing the checkout lock's exclusive-create and stale-reclaim guarantees and verifying ownership before release.\n\n**Scope** — In: `src/execution/feature-lock.ts` with `featureLockPath(outputDir, feature)`, `acquireFeatureLock`, `releaseFeatureLock`, `lockHost()`, `isLockReclaimable`, `isLockSuspect`, and `_featureLockDeps` seam. Out: lifecycle wiring (US-002), unlock/precheck wiring (US-003), identity predicate (US-004), status/run-id work (US-005), curator fix (US-006).\n\n**Interface**\n```typescript\n// src/execution/feature-lock.ts\nexport interface FeatureLockRecord {\n  pid: number;\n  host: string;\n  workdir: string;\n  feature: string;\n  runId: string;\n  startedAt: string;\n  timestamp: number;\n}\n\nexport type FeatureLockResult =\n  | { acquired: true }\n  | {\n      acquired: false;\n      holder: { pid: number; host: string; workdir: string; feature: string; runId: string; startedAt: string; timestamp: number };\n    };\n\nexport function featureLockPath(outputDir: string, feature: string): string;\n// → <outputDir>/features/<feature>/nax.lock\n\nexport function lockHost(): string;\n// → os.hostname()\n\nexport async function acquireFeatureLock(args: {\n  outputDir: string;\n  feature: string;\n  workdir: string;\n  runId: string;\n}): Promise<FeatureLockResult>;\n// Creates <outputDir>/features/<feature>/ when absent.\n// Mirrors checkout-lock stale-reclaim (rename→verify→restore via tryExclusiveCreate).\n// Writes record { pid, host, workdir, feature, runId, startedAt, timestamp }.\n// Corrupt/unparseable on-disk record → warn-log, treat as stale, remove, retry.\n// Uses O_CREAT|O_EXCL via the exported tryExclusiveCreate from lock.ts.\n// Refusal carries the existing on-disk record's pid/host/workdir.\n\nexport async function releaseFeatureLock(args: {\n  outputDir: string;\n  feature: string;\n  runId: string;\n}): Promise<void>;\n// Re-reads the lock file before unlinking; only removes when the on-disk record's runId equals the caller.\n// Otherwise leaves the file in place (no-op).\n// ENOENT → resolves silently.\n\nexport function isLockReclaimable(record: Partial<FeatureLockRecord> & { pid: number }, now: number): boolean;\n// | Record | Verdict |\n// |:--|:--|\n// | host matches this machine (case-insensitive) or host absent | reclaimable only when PID is not alive |\n// | host differs from this machine | reclaimable only at age ≥ 2 hours |\n// Age resolved from timestamp when present, else startedAt.\n\nexport function isLockSuspect(record: Partial<FeatureLockRecord> & { pid: number }, now: number): boolean;\n// | Record | Verdict |\n// |:--|:--|\n// | host matches this machine or host absent | not suspect while PID alive OR age < 2h |\n// | host differs from this machine | not suspect while age < 2h; suspect at or beyond |\n\nexport const _featureLockDeps = {\n  featureLockPath: featureLockPath as typeof featureLockPath,\n};\n```\n\n**Failure handling** — Corrupt lock file → warn log, treat as stale, remove (matches checkout-lock behaviour at `src/execution/lock.ts`). Missing parent directory → create. On-disk `runId` mismatch at release → leave file in place, no-op.",
+      "acceptanceCriteria": [
+        "featureLockPath(outputDir, \"f\") returns the path `<outputDir>/features/f/nax.lock`.",
+        "acquireFeatureLock writes a record whose `pid`, `host`, `workdir`, `feature`, `runId` and `startedAt` fields are all populated.",
+        "lockHost() returns the value of os.hostname().",
+        "acquireFeatureLock creates `<outputDir>/features/<feature>/` when that directory does not exist.",
+        "isLockReclaimable returns `false` for a record whose `host` matches this machine and whose PID is alive.",
+        "isLockReclaimable returns `true` for a record whose `host` matches this machine and whose PID is not alive, regardless of the record's age.",
+        "isLockReclaimable returns `true` for a record with no `host` field whose PID is not alive.",
+        "isLockReclaimable returns `false` for a record whose `host` differs from this machine, is younger than two hours, and whose PID is not alive locally.",
+        "isLockReclaimable returns `true` for a record whose `host` differs from this machine and is older than two hours.",
+        "isLockReclaimable compares `host` case-insensitively.",
+        "isLockReclaimable resolves a record's age from `timestamp` when present and from `startedAt` when it is not.",
+        "acquireFeatureLock returns a refusal for the same output directory and feature from a different working directory while isLockReclaimable returns `false`.",
+        "The refusal returned by acquireFeatureLock carries the holder's `pid`, `host` and `workdir` read from the existing record.",
+        "acquireFeatureLock returns an acquired result for a different feature in the same output directory while the first feature's lock is held.",
+        "acquireFeatureLock logs at warn level and replaces a lock file whose contents do not parse.",
+        "acquireFeatureLock creates the lock file with an exclusive create, so a second call running after the file appears returns a refusal rather than overwriting it.",
+        "When two acquireFeatureLock calls both observe the same reclaimable record and the injected rename seam lets only one claim it, exactly one returns an acquired result."
+      ],
+      "tags": [
+        "feature",
+        "locking",
+        "concurrency"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New module with non-trivial concurrency semantics: stale-reclaim race mirror, ownership-verified release, two predicates with subtle divergence, and host/age resolution rules. Multiple ACs involve concurrent state management."
+      },
+      "contextFiles": [
+        "src/execution/lock.ts",
+        "src/utils/process-alive.ts",
+        "src/runtime/paths.ts",
+        "src/precheck/checks-config.ts",
+        "src/commands/unlock.ts"
+      ],
+      "expectedFiles": [
+        "src/execution/feature-lock.ts"
+      ],
+      "suggestedCriteria": [
+        "acquireFeatureLock creates intermediate parent directories when the output directory's parent chain does not exist (mkdir -p semantics).",
+        "isLockSuspect returns `false` for a record whose host matches this machine and whose PID is alive, even when the record is older than two hours."
+      ],
+      "outOfScope": [
+        "Wiring the feature lock into run lifecycle (covered by US-002).",
+        "Wiring the feature lock into nax unlock and checkStaleLock (covered by US-003).",
+        "Project-identity matching by remote (covered by US-004).",
+        "Status-file workdir stamping and buildRunId (covered by US-005).",
+        "Curator metrics reader fail-closed fix (covered by US-006)."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/execution/lock.ts",
+          "reason": "`tryExclusiveCreate` is module-private at line 38; it must be exported so the feature lock reuses its exclusive-create and BUG-34 restore semantics instead of copying them."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Run lifecycle holds both locks",
+      "description": "**Goal** — Make the run lifecycle acquire the checkout lock then the feature lock in `setupRun`, release both in reverse at every release site, add `host` to the checkout record, and split `LockAcquisitionError` into two refusals that name their holder.\n\n**Motivation** — Acquiring the feature lock alone is unsafe: it is project-scoped, so a single checkout could both own the feature lock and proceed to mutate the project tree without mutual exclusion against another nax process in the same directory. Acquiring only the checkout lock is what was wrong before. The two must be held together, in a fixed order, to avoid cycles; a partial acquire must always be unwound before the error escapes.\n\n**Approach** — Acquire the checkout lock then the feature lock in `setupRun`, release both in reverse at both release sites, add `host` to the checkout record, and split `LockAcquisitionError` into two refusals that name their holder. Depends on US-001.\n\n**Scope** — In: extend `_runSetupDeps` with `acquireLock` and `acquireFeatureLock`; replace single-lock acquire in `setupRun` with checkout→feature sequence; wrap so feature-lock refusal releases the checkout lock first; split `LockAcquisitionError` into two classes (or shape-discriminated refusal messages); have `acquireLock` carry the holding PID/host in its refusal and write `host` into its record; have both release sites (FIX-H16 inner catch in `run-setup-init.ts` and the always-release at the bottom of `run-cleanup.ts`) release both locks in reverse order. Out: tooling visibility (US-003), identity-by-remote (US-004), status-file workdir (US-005), curator fix (US-006).\n\n**Interface**\n```typescript\n// src/errors.ts\nexport class LockAcquisitionError extends NaxError {\n  // Backwards-compatible shape preserved: context still carries `workdir`.\n  // New fields `pid` and `host` describe the holder when available.\n  constructor(args: {\n    workdir: string;\n    pid?: number;\n    host?: string;\n    feature?: string;\n    holderWorkdir?: string;\n  });\n  // Two distinguishable message forms:\n  //   checkout: \"Another nax process is already running in this directory (PID <pid> on <host>)\"\n  //   feature:  \"Feature \"<feature>\" is locked by another run (PID <pid> on <host>, workdir <holderWorkdir>)\"\n  // Both carry code `LOCK_ACQUISITION_FAILED`.\n}\n\n// src/execution/lock.ts\nexport type LockAcquisitionResult =\n  | { acquired: true }\n  | { acquired: false; holder: { pid: number; host?: string } };\n\nexport async function acquireLock(workdir: string): Promise<LockAcquisitionResult>;\n// Written record gains `host: lockHost()` alongside `pid` and `timestamp`.\n// Existing verdict logic unchanged.\n\nexport async function releaseLock(workdir: string): Promise<void>;\n// No change to the existing semantics (delete <workdir>/nax.lock, ENOENT-tolerant).\n\n// src/execution/lifecycle/run-setup.ts\nexport const _runSetupDeps = {\n  detectProjectProfile,\n  createRuntime,\n  installCrashHandlers,\n  sweepFeatureTranscripts,\n  acquireLock,                    // NEW: injectable seam\n  acquireFeatureLock,             // NEW: injectable seam\n};\n\n// Inside setupRun, after precheck but before post-lock init:\n//   1) const checkoutLock = await _runSetupDeps.acquireLock(workdir);\n//      if (!checkoutLock.acquired) throw new LockAcquisitionError({ workdir, ...checkoutLock.holder });\n//   2) try {\n//        const featureLock = await _runSetupDeps.acquireFeatureLock({ outputDir: runtime.outputDir, feature, workdir, runId });\n//        if (!featureLock.acquired) {\n//          await releaseLock(workdir);  // release checkout before throwing\n//          throw new LockAcquisitionError({ workdir, feature, ...featureLock.holder });\n//        }\n//        try { return await initializeAfterLock(...); }\n//        catch (err) { await releaseFeatureLock({...}); await releaseLock(workdir); throw err; }\n//      } catch (err) { /* MEM-1 outer catch still runs */ throw err; }\n//\n// Both release sites (run-cleanup.ts bottom, run-setup-init.ts FIX-H16 inner catch)\n// must release feature lock before checkout lock.\n```\n\n**Failure handling** — Feature lock refused after checkout lock taken → release checkout before throwing. Post-lock init fails after both locks held → release both before throwing. On-disk `runId` mismatch on feature-release → no-op (left in place).",
+      "acceptanceCriteria": [
+        "setupRun calls `acquireLock` before `acquireFeatureLock`.",
+        "When `acquireFeatureLock` refuses, setupRun leaves no `nax.lock` file in the working directory.",
+        "When `acquireLock` refuses, setupRun throws an error whose message names the working directory and the holding PID.",
+        "When `acquireFeatureLock` refuses, setupRun throws an error whose message names the feature, the holder's working directory, the holder's host and the holding PID.",
+        "Both refusals carry the code `LOCK_ACQUISITION_FAILED`.",
+        "When post-lock initialization fails, neither the checkout lock file nor the feature lock file remains.",
+        "Run cleanup releases the feature lock before it releases the checkout lock.",
+        "After run cleanup completes, neither the checkout lock file nor the feature lock file exists.",
+        "releaseFeatureLock leaves the lock file in place when the on-disk record's `runId` is not the releasing run's.",
+        "releaseFeatureLock resolves without error when the lock file is already absent.",
+        "The checkout lock record written by `acquireLock` carries `host` alongside `pid` and `timestamp`.",
+        "acquireLock acquires and replaces a checkout-lock record that has no `host` field and whose recorded PID is not alive."
+      ],
+      "tags": [
+        "feature",
+        "locking",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multi-file lifecycle change (setup, setup-init, cleanup, errors, lock) with a strict lock-order contract and partial-acquire unwind that has to work under three failure modes. Existing test files (`test/unit/errors.test.ts`, `test/unit/execution/helpers.test.ts`, `test/unit/utils/utils-helpers.test.ts`) must be updated alongside."
+      },
+      "contextFiles": [
+        "src/execution/lifecycle/run-setup.ts",
+        "src/execution/lifecycle/run-setup-init.ts",
+        "src/execution/lifecycle/run-cleanup.ts",
+        "src/errors.ts",
+        "src/execution/feature-lock.ts"
+      ],
+      "suggestedCriteria": [
+        "When `acquireLock` refuses, the resulting LockAcquisitionError's context includes the holding `host` when the on-disk record carries one.",
+        "When the post-lock initialization catch in run-setup-init.ts releases both locks, the feature lock release happens before the checkout lock release.",
+        "When setupRun's outer MEM-1 catch runs because acquireLock refused (no post-lock init attempted), no feature-lock file is created."
+      ],
+      "outOfScope": [
+        "Adding the -f feature option to `nax unlock` and threading feature lock through `checkStaleLock` (covered by US-003).",
+        "Project identity by remote — claimProjectIdentity relaxing and checkInitCollision adopting isSameProject (covered by US-004).",
+        "Stamping workdir into the status file and building runId in one place (covered by US-005).",
+        "Curator metrics reader fail-closed fix (covered by US-006)."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/errors.test.ts",
+          "reason": "asserts LockAcquisitionError's exact message by equality and its whole context object by exact-object equality; both are closed-world, and the refusal now carries the holder's PID, so the assertions must allow a context holding both workdir and pid instead of exactly one key."
+        },
+        {
+          "path": "test/unit/execution/helpers.test.ts",
+          "reason": "asserts `acquireLock`'s boolean result and the written record's fields; the result becomes a holder-carrying object and the record gains host, so the assertions must read the new shapes."
+        },
+        {
+          "path": "test/unit/utils/utils-helpers.test.ts",
+          "reason": "asserts `acquireLock`'s boolean result by identity at four sites; the result becomes a holder-carrying object, so those assertions must read the acquired-or-refused discriminator instead of true and false."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Lock tooling sees both locks",
+      "description": "**Goal** — Make `nax unlock` and the stale-lock precheck see both the checkout lock and the per-feature lock, with the run-path precheck threading the feature name and output directory through while the environment precheck stays checkout-only.\n\n**Motivation** — Once the run lifecycle holds both locks, operators need a way to inspect and clear either one, and the run precheck needs to warn about a stale feature lock before setupRun has a chance to refuse. The `nax plan` path has no feature, so it stays checkout-only.\n\n**Approach** — `nax unlock` gains an optional feature and a scan; `checkStaleLock` gains an optional feature lock, threaded from the run's precheck and omitted on the environment-precheck path that has no feature. Depends on US-001.\n\n**Scope** — In: `unlockCommand` accepts optional `feature`; CLI registers `-f, --feature <name>` and forwards it; with feature, resolves `<outputDir>/features/<feature>/nax.lock` (using `findProjectDir` → `loadConfig` → `projectOutputDir`); without one, reports the checkout lock and scans every `<outputDir>/features/*/nax.lock` (running whether or not the checkout lock exists), removing only those `isLockSuspect` accepts; `--force` overrides staleness for both. `checkStaleLock(workdir, featureLock?)` applies `isLockSuspect` to both locks when the argument is present, names whichever are stale, and preserves checkout-only behaviour when omitted. `PrecheckOptions` and `getEarlyEnvironmentBlockers` gain the optional argument; `_precheckDeps` gains `checkStaleLock`. `precheck-runner.ts` re-derives output directory from `ctx.config` and `ctx.workdir` (projectKey sits in a bare block in `run-setup.ts` not in scope) and supplies the argument, omitting it when `ctx.featureName` is undefined. Out: identity-by-remote (US-004), run attribution (US-005), curator fix (US-006).\n\n**Interface**\n```typescript\n// src/commands/unlock.ts\nexport interface UnlockOptions {\n  dir?: string;\n  force?: boolean;\n  feature?: string;   // NEW\n}\n// Behavior:\n// - feature provided: resolve <outputDir>/features/<feature>/nax.lock via\n//   findProjectDir → loadConfig → projectOutputDir chain (mirror src/commands/resume.ts:143,172,191-192).\n//   Refuse on live holder; --force overrides.\n// - feature absent: report checkout lock and scan <outputDir>/features/*/nax.lock,\n//   removing only those isLockSuspect accepts (or all of them with --force).\n//   Scan runs whether or not the checkout lock exists.\n\n// bin/nax.ts — unlock command registration gains:\n//   .option(\"-f, --feature <name>\", \"Feature name (scoped unlock)\")\n//   and forwards `feature: options.feature`.\n\n// src/precheck/checks-config.ts\nexport async function checkStaleLock(\n  workdir: string,\n  featureLock?: { outputDir: string; feature: string },\n): Promise<Check>;\n// With featureLock argument: applies isLockSuspect to both locks and names whichever are stale.\n// Without: checks the checkout lock only, exactly as today.\n\n// src/precheck/index.ts\nexport interface PrecheckOptions {\n  format?: \"human\" | \"json\";\n  workdir: string;\n  silent?: boolean;\n  featureLock?: { outputDir: string; feature: string };   // NEW\n}\n\nfunction getEarlyEnvironmentBlockers(\n  workdir: string,\n  featureLock?: { outputDir: string; feature: string },   // NEW\n): CheckFn[];\n// Forwards featureLock to checkStaleLock via _precheckDeps.\n\nexport const _precheckDeps = {\n  checkStorySizeGate: async (...) => { ... },\n  checkStaleLock,    // NEW: injectable seam, mirrors checkStorySizeGate shape\n};\n\n// src/execution/lifecycle/precheck-runner.ts (run path)\n// Re-derive outputDir from ctx.config and ctx.workdir (projectKey is not in\n// scope here; src/execution/lifecycle/run-setup.ts:327 sits inside a bare\n// block closed at :337 and is not in scope at the :342 call).\n// Pass featureLock: ctx.featureName ? { outputDir, feature: ctx.featureName } : undefined.\n// Omit when ctx.featureName is undefined.\n```\n\n**Failure handling** — Pre-existing callers (`src/commands/precheck.ts:87-90`, `src/cli/plan-decompose.ts:246,269`, `src/cli/plan-runtime/index.ts:110`) keep today's checkout-only behavior by omitting the new argument. Feature-lock scan reports the offending lock and leaves live holders in place unless `--force`.",
+      "acceptanceCriteria": [
+        "The `unlock` command accepts a `-f, --feature <name>` option and forwards it to `unlockCommand`.",
+        "`nax unlock -f <feature>` exits `0` and removes `<outputDir>/features/<feature>/nax.lock`.",
+        "`nax unlock -f <feature> --force` removes that feature's lock even when isLockSuspect reports the holder live.",
+        "`nax unlock` with no feature exits `0` and removes the checkout lock.",
+        "`nax unlock` with no feature reports a feature lock whose holder is live and leaves it in place.",
+        "`nax unlock` with no feature runs the feature-lock scan and reports what it finds even when no checkout lock exists.",
+        "`nax unlock --force` with no feature removes a feature lock whose holder is live.",
+        "checkStaleLock called with a feature lock argument returns a failed check naming the feature lock when isLockSuspect reports only the feature lock suspect.",
+        "checkStaleLock called with a feature lock argument returns a failed check naming both locks when isLockSuspect reports both suspect.",
+        "checkStaleLock passes for a checkout lock younger than two hours whose recorded PID is not alive, with or without a feature lock argument.",
+        "checkStaleLock called without a feature lock argument passes when the checkout lock is absent, even when a suspect feature lock exists.",
+        "checkStaleLock returns a passed check when neither lock file exists.",
+        "runEnvironmentPrecheck composes its early blockers without a feature lock argument.",
+        "The run's precheck caller passes the run's feature and output directory through to checkStaleLock.",
+        "The run's precheck caller omits the feature lock argument when the run has no feature name."
+      ],
+      "tags": [
+        "feature",
+        "locking",
+        "tooling"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Mostly additive wiring across precheck + unlock command + CLI option flag. Existing test file `test/unit/commands/unlock.test.ts` and `test/unit/precheck/precheck-checks-tier1-blockers.test.ts` need new cases; the seams already exist as the pattern (`_precheckDeps` already holds checkStorySizeGate)."
+      },
+      "contextFiles": [
+        "src/commands/unlock.ts",
+        "src/precheck/checks-config.ts",
+        "src/precheck/index.ts",
+        "src/execution/lifecycle/precheck-runner.ts",
+        "bin/nax.ts"
+      ],
+      "suggestedCriteria": [
+        "`nax unlock -f <feature>` exits `1` and reports the holder when isLockSuspect reports the holder live and --force is not provided.",
+        "`nax unlock -f <unknown-feature>` reports that the feature's lock was not found and exits 0.",
+        "checkStaleLock with a feature lock argument still passes when only the checkout lock file exists and is fresh."
+      ],
+      "outOfScope": [
+        "Identity-by-remote in claimProjectIdentity and checkInitCollision (covered by US-004).",
+        "Status-file workdir stamping and unified buildRunId (covered by US-005).",
+        "Curator metrics reader fail-closed fix (covered by US-006).",
+        "Threading featureLock through the nax plan precheck path (intentionally excluded per spec's `nax plan` exclusion)."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/precheck/precheck-checks-tier1-blockers.test.ts",
+          "reason": "calls `checkStaleLock` with a single argument and asserts checkout-lock outcomes; those calls stay valid against the optional second parameter, and the suite must add the feature-lock cases the new argument introduces."
+        },
+        {
+          "path": "test/unit/commands/unlock.test.ts",
+          "reason": "asserts the command resolves exactly one lock path and exits early when it is absent; the scan now runs regardless, so the assertions must cover both lock kinds."
+        },
+        {
+          "path": "bin/nax.ts",
+          "reason": "the unlock command registers only the dir and force options; it must also register the feature option and forward it, or the feature-scoped unlock is unreachable from the CLI."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "Project identity matched by remote",
+      "description": "**Goal** — Make worktrees of one repository one project, by sharing one `isSameProject(remoteA, remoteB)` predicate (with normalization) between `claimProjectIdentity` and `checkInitCollision`.\n\n**Motivation** — `.nax/config.json` is tracked, so every worktree carries the same `name` and derives the same `projectKey`. `claimProjectIdentity` throws `RUN_NAME_COLLISION` on any workdir mismatch, while `checkInitCollision` already accepts the same case by raw remote equality. They disagree about what \"the same project\" means, and `nax migrate --merge` is the only workaround. This story must land AFTER US-002 because relaxing the identity guard without the locking changes would let two processes mutate the shared `~/.nax/<projectKey>/` tree.\n\n**Approach** — One `isSameProject` predicate with remote normalization, shared by `claimProjectIdentity` and `checkInitCollision`. Depends on US-002: this is the story that legalizes concurrency, and it must not land before the locks that make it safe.\n\n**Scope** — In: `src/runtime/same-project.ts` with `isSameProject(remoteA: string | null, remoteB: string | null): boolean` and the normalization rules. `claimProjectIdentity` accepts a workdir-mismatched record when `isSameProject` holds, refreshing `lastSeen` and leaving stored `workdir` at the registered value. `checkInitCollision` replaces `sameRemote` with `isSameProject` and retains the `sameWorkdir` (both remotes null + workdirs equal) branch. Out: tooling visibility (US-003), status-file workdir (US-005), curator fix (US-006).\n\n**Interface**\n```typescript\n// src/runtime/same-project.ts\nexport function isSameProject(remoteA: string | null, remoteB: string | null): boolean;\n// Returns false when either argument is null.\n// Normalization, applied to each side before comparison:\n//   1. lowercase\n//   2. strip scheme (e.g. https://, git://, ssh://)\n//   3. strip credentials (user:pass@, user@)\n//   4. strip any port (:1234 after host)\n//   5. convert scp-style \"host:path\" to \"host/path\"\n//   6. strip one trailing \".git\"\n//   7. strip trailing slash\n// Comparison is over the resulting \"host/path\" — host is significant; forks on different hosts remain different projects.\n\n// src/runtime/paths.ts\nexport async function claimProjectIdentity(\n  projectKey: string,\n  workdir: string,\n  remoteUrl: string | null,\n): Promise<void>;\n// Behavior change: when `existing.workdir !== workdir` and `isSameProject(remoteUrl, existing.remoteUrl)` holds,\n// refresh `lastSeen` and leave the stored `workdir` at the registered value.\n// Otherwise (different remotes OR both remotes null with different workdirs) the existing\n// RUN_NAME_COLLISION throw is unchanged.\n\n// src/cli/init.ts\nexport async function checkInitCollision(\n  name: string,\n  currentWorkdir: string,\n  currentRemote: string | null,\n): Promise<InitCollisionResult>;\n// Replaces `sameRemote` (raw string equality) with `isSameProject(currentRemote, identity.remoteUrl)`.\n// Keeps `sameWorkdir` branch unchanged (both remotes falsy + workdirs equal → no collision).\n\n// Barrel re-export: src/runtime/index.ts gains `export { isSameProject } from \"./same-project\";`\n```\n\n**Failure handling** — `git remote get-url origin` failure or non-git project → `remoteUrl` stays null and identity falls back to exact workdir equality (existing behaviour, no change).",
+      "acceptanceCriteria": [
+        "isSameProject(\"git@github.com:o/r.git\", \"https://github.com/o/r\") returns `true`.",
+        "isSameProject returns `false` when the two remotes name the same path on different hosts.",
+        "isSameProject returns `true` for two spellings of one remote differing only by letter case and a trailing slash.",
+        "isSameProject returns `false` when either argument is null.",
+        "claimProjectIdentity with a workdir different from the registered one and an equal normalized remote resolves without throwing and updates the stored `lastSeen`.",
+        "claimProjectIdentity with a workdir different from the registered one and an equal normalized remote leaves the stored `workdir` equal to the originally registered path.",
+        "claimProjectIdentity throws a NaxError with code `RUN_NAME_COLLISION` when the remotes differ.",
+        "claimProjectIdentity throws a NaxError with code `RUN_NAME_COLLISION` when both remotes are null and the workdirs differ.",
+        "claimProjectIdentity with the registered workdir updates the stored `lastSeen`.",
+        "claimProjectIdentity with the registered workdir leaves the stored `name`, `workdir`, `remoteUrl` and `createdAt` unchanged.",
+        "claimProjectIdentity called with a null remoteUrl and the registered workdir resolves without throwing and updates `lastSeen` (preserving the existing workdir-equality fallback when `git remote get-url origin` fails or the project is not a git repository).",
+        "checkInitCollision returns a result whose `collision` is `false` for an ssh remote against a stored identity holding the https form of the same repository.",
+        "checkInitCollision returns a result whose `collision` is `false` when both remotes are absent and the workdir equals the stored one.",
+        "checkInitCollision returns a result whose `collision` is `true` when the stored identity holds a different repository's remote."
+      ],
+      "tags": [
+        "feature",
+        "identity"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single new module (`isSameProject`) with deterministic normalization rules; two existing call sites adopt it. Risk is in the normalization rule ordering, which has explicit spec."
+      },
+      "contextFiles": [
+        "src/runtime/paths.ts",
+        "src/cli/init.ts",
+        "src/commands/migrate.ts",
+        "src/runtime/index.ts"
+      ],
+      "expectedFiles": [
+        "src/runtime/same-project.ts"
+      ],
+      "suggestedCriteria": [
+        "isSameProject strips one trailing `.git` (and only one) — `repo.git.git` does not normalize to `repo`.",
+        "claimProjectIdentity with a workdir different from the registered one and an equal normalized remote writes back to disk (verified by a subsequent readProjectIdentity call).",
+        "isSameProject treats `ssh://git@host:2222/o/r` and `host:o/r` as not equal (different port AND different host representation after strip)."
+      ],
+      "outOfScope": [
+        "Lock primitive and lifecycle wiring (covered by US-001, US-002).",
+        "Tooling visibility (covered by US-003).",
+        "Status-file workdir stamping and unified buildRunId (covered by US-005).",
+        "Curator metrics reader fail-closed fix (covered by US-006)."
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-005",
+      "title": "Run attribution across checkouts",
+      "description": "**Goal** — Stamp `run.workdir` into the status file through `StatusWriterContext`, and build run IDs in one place with a workdir hash, called once per run including on the resume path.\n\n**Motivation** — Two worktrees of one project can both produce `run-<iso>` IDs at the same ISO timestamp and clobber each other's log file and status.json. A single producer keyed on (workdir hash, timestamp) makes the ID unique per checkout while keeping filename safety (no path separators). Stamping `run.workdir` into the status file gives external readers a way to attribute which checkout wrote the run without parsing log lines.\n\n**Approach** — Stamp `run.workdir` into the status file through `StatusWriterContext`, and build run IDs in one place with a workdir hash, called once per run including on the resume path. No dependencies.\n\n**Scope** — In: `src/execution/run-id.ts` with `buildRunId(workdir, now)`. `StatusWriterContext` and `RunStateSnapshot` gain optional `workdir`; `buildStatusSnapshot` reads it; `NaxStatusFile.run.workdir` is the new optional field. The run-setup sole StatusWriter construction site (lines 173-180, with `workdir` already in scope from `:142`) supplies it. `run()` accepts an optional `runId` and uses `buildRunId` when absent; `nax resume` builds one and passes it so the resumed log file matches the run's ID. Out: identity-by-remote (US-004), tooling visibility (US-003), curator fix (US-006).\n\n**Interface**\n```typescript\n// src/execution/run-id.ts\nexport function buildRunId(workdir: string, now: Date): string;\n// Workdir component is a short hash of the absolute working directory — any hash will do, but not the basename\n// (which collides for `git worktree add ../repo-feat`). Output contains no path separator and no character\n// outside [A-Za-z0-9._-] because it is interpolated into filenames and directory names at more than 10 sites.\n// Retains millisecond precision from `now`.\n\n// src/execution/status-writer.ts\nexport interface StatusWriterContext {\n  runId: string;\n  feature: string;\n  startedAt: string;\n  dryRun: boolean;\n  startTimeMs: number;\n  pid: number;\n  workdir?: string;   // NEW: optional, propagated to NaxStatusFile.run.workdir\n}\n\n// src/execution/status-file.ts\nexport interface NaxStatusFile {\n  version: 1;\n  run: {\n    id: string;\n    feature: string;\n    workdir?: string;   // NEW: optional; readers tolerate absence in pre-existing status files\n    startedAt: string;\n    status: \"running\" | \"completed\" | \"failed\" | \"stalled\" | \"crashed\" | \"precheck-failed\" | \"cost-limit\" | \"aborted\";\n    dryRun: boolean;\n    pid: number;\n    crashedAt?: string;\n    crashSignal?: string;\n  };\n  // ... existing fields\n}\n\nexport interface RunStateSnapshot {\n  // ... existing fields\n  workdir?: string;   // NEW\n}\n\nexport function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile;\n// Reads `state.workdir` and projects it onto `snapshot.run.workdir` when present.\n\n// src/execution/runner.ts (line 176)\nexport async function run(options: {\n  // ... existing fields\n  runId?: string;   // NEW\n}): Promise<RunResult>;\n// When `options.runId` is supplied, uses it directly.\n// When absent, generates `buildRunId(workdir, new Date())` once per run.\n\n// src/commands/resume.ts (line 191-201)\n// Replace the local second-resolution ID derivation with a buildRunId call,\n// passing the result as `runId` to `run()`. Log file path uses the same ID\n// (`runs/<feature>/runs/<runId>.jsonl`), so log filename matches the run it records.\n```\n\n**Failure handling** — `status.run.workdir` is optional; readers (TUI, `nax status`) tolerate its absence in files written before this change.",
+      "acceptanceCriteria": [
+        "The status snapshot written for a run carries `run.workdir` equal to that run's working directory.",
+        "Reading a status file whose `run` object has no `workdir` field resolves without throwing and reports the workdir as unknown.",
+        "buildRunId returns different identifiers for two working directories that share a basename but differ in their absolute paths, given the same timestamp.",
+        "buildRunId returns the same identifier for the same working directory and timestamp.",
+        "buildRunId returns an identifier retaining millisecond precision from its timestamp.",
+        "buildRunId returns an identifier containing no path separator and no character outside `[A-Za-z0-9._-]`.",
+        "run uses a caller-supplied `runId` when one is given rather than generating another.",
+        "run invoked without a `runId` produces one through buildRunId, so two runs of one feature from different working directories at the same timestamp receive different identifiers.",
+        "A resumed run writes its log file under a name equal to the run identifier the run itself reports."
+      ],
+      "tags": [
+        "feature",
+        "identity",
+        "status"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "New module + additive optional fields across status-writer/status-file; one call-site update in resume.ts. The existing fixture contract for status files must keep compiling, so optional-everywhere is the rule."
+      },
+      "contextFiles": [
+        "src/execution/status-file.ts",
+        "src/execution/status-writer.ts",
+        "src/execution/runner.ts",
+        "src/commands/resume.ts",
+        "src/execution/lifecycle/run-setup.ts"
+      ],
+      "expectedFiles": [
+        "src/execution/run-id.ts"
+      ],
+      "suggestedCriteria": [
+        "buildRunId returns an identifier that is unique across the (workdir, now) input space for any pair of distinct absolute workdirs at any timestamp.",
+        "buildRunId's output sorts lexicographically the same way its input timestamps sort — log filename ordering matches run ordering.",
+        "StatusWriterContext constructed without workdir produces a status snapshot whose `run.workdir` is absent (not present-but-undefined)."
+      ],
+      "outOfScope": [
+        "Identity-by-remote (covered by US-004).",
+        "Tooling visibility for locks (covered by US-003).",
+        "Curator metrics reader fail-closed fix (covered by US-006)."
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-006",
+      "title": "The curator metrics reader fails closed",
+      "description": "**Goal** — Replace the positional fallback in the curator's metrics reader with a fail-closed match on `runId`, and guard the two shapes that must not change.\n\n**Motivation** — `metrics.json` is a project-level append shared by every feature, locked across processes through `withPathFileLock` (`src/metrics/tracker.ts:20`), so two features' entries coexist and under concurrency `runs.find(r => r.runId === context.runId) ?? runs.at(-1)` attributes another feature's stories to this run's observations. The sibling reader `collectFromReviewAudit` (`src/plugins/builtin/curator/collect.ts:209`) already guards this case by feature name and time window at `:220-227` — the class was anticipated, and one reader was missed.\n\n**Approach** — Replace the positional fallback with a fail-closed match, and guard the two shapes that must not change. Depends on US-004.\n\n**Scope** — In: `collectFromMetrics` returns an empty observations array and warns when no entry matches `context.runId`; preserves the matching-entry case; preserves the corrupt-file skip behaviour. The audit-table disposition from the spec is the binding source of which readers to touch: only `collectFromMetrics` is the defect; `collectFromReviewAudit` (`src/plugins/builtin/curator/collect.ts:209`), `getLastRun` (`src/metrics/aggregator.ts:194`), `<project>-<feature>-<runId>` directory (`src/pipeline/subscribers/registry.ts:53`), `status-features.ts:249-287`, and `metrics/tracker.ts:20` (writer) are NOT changed. Out: identity, locking, run-attribution work in other stories.\n\n**Interface**\n```typescript\n// src/plugins/builtin/curator/collect.ts\nexport async function collectFromMetrics(context: CuratorPostRunContext): Promise<Observation[]>;\n// Behavior change:\n//   const runs = ... (parse metrics.json);\n//   const matching = runs.map(asRecord).find((run) => run?.runId === context.runId);\n//   if (!matching) {\n//     logger.warn(\"curator\", \"metrics.json holds no entry for this run — no metrics-derived observations\",\n//                 { runId: context.runId, runCount: runs.length });\n//     return observations;\n//   }\n//   // Project matching.stories, exactly as before.\n// The `runs.at(-1)` positional fallback is removed.\n\n// src/metrics/aggregator.ts:194 — UNCHANGED (deliberate latest-run semantics).\n// src/plugins/builtin/curator/collect.ts:209 (collectFromReviewAudit) — UNCHANGED (feature + time-window guard).\n// src/pipeline/subscribers/registry.ts:53 — UNCHANGED (keyed directory).\n// src/cli/status-features.ts:249-287 — UNCHANGED (prints from the record it read).\n// src/metrics/tracker.ts:20 — UNCHANGED (writer, not a reader).\n```\n\n**Failure handling** — Missing `runId` match → log at warn level, return empty observations (no fallback). Corrupt metrics file → log and return empty observations (existing behaviour, preserved).",
+      "acceptanceCriteria": [
+        "collectObservations returns no metrics-derived observations when the metrics file holds no entry whose `runId` equals the context's `runId`.",
+        "collectObservations logs at warn level when the metrics file holds no entry whose `runId` equals the context's `runId`.",
+        "collectObservations returns the matching run's story observations when the metrics file holds an entry whose `runId` equals the context's `runId`.",
+        "When the metrics file holds entries for two runs whose `runId` values differ and the context names one of them, every returned observation carries that entry's `runId`.",
+        "getLastRun returns the final element of the runs array, unchanged by this story."
+      ],
+      "tags": [
+        "feature",
+        "concurrency",
+        "curator"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized fix in one function (`collectFromMetrics`); the surrounding reference reader (`:209`) is the pattern; the other audit-table rows are explicitly unchanged. Risk is purely the change in fallback behavior, which the ACs enumerate."
+      },
+      "contextFiles": [
+        "src/plugins/builtin/curator/collect.ts",
+        "src/metrics/aggregator.ts",
+        "src/metrics/tracker.ts"
+      ],
+      "suggestedCriteria": [
+        "collectObservations returns no metrics-derived observations when the metrics file does not exist.",
+        "collectObservations returns no metrics-derived observations when the metrics file is unparseable.",
+        "When the metrics file is empty (an array of zero runs) and the context's runId is non-empty, collectObservations logs at warn level and returns no observations."
+      ],
+      "outOfScope": [
+        "Identity-by-remote (covered by US-004).",
+        "Lock primitive and lifecycle (covered by US-001, US-002).",
+        "Tooling visibility (covered by US-003).",
+        "Status-file workdir stamping and unified buildRunId (covered by US-005).",
+        "Auditing collectFromReviewAudit (`:209`), getLastRun (`aggregator.ts:194`), `<project>-<feature>-<runId>` directory, status-features.ts, or the metrics writer — the spec's audit table explicitly identifies them as correct / reference / writer and leaves them unchanged."
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "## Analysis\n\n### Existing files that need modification\n\n**Lock primitives**\n- `src/execution/lock.ts` (211 lines) — `acquireLock`, `releaseLock`, `tryExclusiveCreate` (module-private at line 38), `_lockDeps.rename` seam (line 20). The checkout lock's BUG-07/BUG-34 stale-reclaim race handling is the pattern the feature lock must mirror. `tryExclusiveCreate` must be exported so the feature lock reuses its `O_CREAT | O_EXCL` semantics and BUG-34 restore behavior instead of copying them. `acquireLock` currently returns `Promise<boolean>` and the record it writes (`{ pid, timestamp }` at line 170-173) must gain `host`; the result becomes a holder-carrying object so the error message can name the holding PID/host without a re-read race.\n- `src/execution/helpers/index.ts` — re-exports `acquireLock`/`releaseLock`/`_lockDeps`; needs to gain `acquireFeatureLock`/`releaseFeatureLock`/`_featureLockDeps`.\n- `src/execution/index.ts` — re-exports `acquireLock`/`releaseLock`/`_lockDeps`; needs to gain `acquireFeatureLock`/`releaseFeatureLock`/`_featureLockDeps`.\n\n**Run lifecycle**\n- `src/execution/lifecycle/run-setup.ts` (423 lines) — single acquire site (`acquireLock` at the line `// Acquire lock to prevent concurrent execution`). The MEM-1 outer try/catch and the call to `initializeAfterLock` are the structure to extend. `_runSetupDeps` (line 62-67) gains `acquireLock` and `acquireFeatureLock` injection points. StatusWriter is constructed here (line 173-180) with `workdir` already in scope from `:142`, so this is the sole StatusWriterContext construction site.\n- `src/execution/lifecycle/run-setup-init.ts` — FIX-H16 inner catch at line 237 (releaseLock on init failure) is the second release site. Both release sites must release both locks in reverse order (feature first, checkout last).\n- `src/execution/lifecycle/run-cleanup.ts` — `releaseLock(workdir)` at the bottom (always-release site). Must release feature lock before checkout lock.\n- `src/execution/lifecycle/precheck-runner.ts` — `runPrecheckValidation` calls `runPrecheck` without a feature lock argument; must thread `featureLock: { outputDir, feature: ctx.featureName }` through (omitted when `ctx.featureName` is undefined).\n\n**Precheck / tooling**\n- `src/precheck/checks-config.ts` — `checkStaleLock(workdir: string): Promise<Check>` must accept an optional `featureLock?: { outputDir: string; feature: string }` and apply the new shared `isLockSuspect` predicate to both locks.\n- `src/precheck/index.ts` — `PrecheckOptions` (lines 102-109) and `getEarlyEnvironmentBlockers(workdir)` (line 134) must accept and forward the optional `featureLock`; `_precheckDeps` (line 191) gains `checkStaleLock` alongside the existing `checkStorySizeGate`.\n- `src/precheck/checks.ts` — re-export barrel; `checkStaleLock` is already exported through it.\n- `src/commands/unlock.ts` (108 lines) — `unlockCommand({ dir?, force? })` must gain optional `feature`; with feature, resolves `<outputDir>/features/<feature>/nax.lock`; without one, runs the feature-lock scan (`features/*/nax.lock`) in addition to the checkout lock. `--force` overrides staleness for both kinds.\n- `bin/nax.ts` (line 1355-1373) — `unlock` command registration must add `-f, --feature <name>` option and forward it.\n\n**Project identity**\n- `src/runtime/paths.ts` — `claimProjectIdentity` (line 75-101) currently throws `RUN_NAME_COLLISION` on any workdir mismatch. Must instead accept workdir mismatches when `isSameProject` holds, refreshing `lastSeen` and leaving stored `workdir` unchanged. `readProjectIdentity`/`writeProjectIdentity`/`projectOutputDir` are read-only symbols used as-is.\n- `src/cli/init.ts` — `checkInitCollision` (line 69-79) has `sameRemote` (raw string equality) and `sameWorkdir` branches. Replace `sameRemote` with `isSameProject`, keep `sameWorkdir`.\n- `src/commands/migrate.ts` — reads the same identity; no changes needed beyond ensuring the new identity record fields stay readable.\n- `src/runtime/index.ts` (line 528+) — barrel; gains `isSameProject` re-export.\n\n**Run identity / status**\n- `src/execution/runner.ts` (line 176) — `run()` generates `run-${iso}` internally; options object gains optional `runId`.\n- `src/commands/resume.ts` (line 191-201) — currently builds its own run ID at second resolution; must call `buildRunId` and pass it as `runId`.\n- `src/execution/status-file.ts` — `NaxStatusFile.run` (line 105-127) gains optional `workdir`; `RunStateSnapshot` (line 255-273) gains optional `workdir`; `buildStatusSnapshot` (line 315-328) reads it.\n- `src/execution/status-writer.ts` — `StatusWriterContext` (line 28-41) gains optional `workdir`.\n\n**Errors**\n- `src/errors.ts` (line 62) — `LockAcquisitionError(workdir)` must split into two distinguishable refusals (checkout vs feature) with holder data in context.\n\n**Curator metrics reader**\n- `src/plugins/builtin/curator/collect.ts:113` — `runs.find(r => r.runId === context.runId) ?? runs.at(-1)` positional fallback is the defect. Must fail-closed (return no observations + warn-log) when no entry matches.\n- `src/plugins/builtin/curator/collect.ts:209` — feature+time-window guard at `:220-227` is the reference pattern, must not be regressed.\n\n### Existing tests that need updating\n- `test/unit/errors.test.ts` — asserts `LockAcquisitionError`'s message and exact-object context.\n- `test/unit/execution/helpers.test.ts` — asserts `acquireLock` boolean result and record fields.\n- `test/unit/utils/utils-helpers.test.ts` — four sites assert `acquireLock` boolean by identity.\n- `test/unit/precheck/precheck-checks-tier1-blockers.test.ts` — five sites call `checkStaleLock(workdir)`; must add feature-lock cases.\n- `test/unit/commands/unlock.test.ts` — asserts only the checkout lock; must cover feature lock and scan.\n\n### Risks\n- **Stale reclaim race (BUG-34)**: the feature lock's `acquireFeatureLock` MUST mirror the rename-then-verify-then-restore pattern from `src/execution/lock.ts:88-160` exactly. Without it, two processes reclaiming the same stale lock would both believe they hold it. The `tryExclusiveCreate` reuse is the key to safe restore.\n- **Lock ordering deadlock**: spec requires fixed acquisition order (checkout → feature) and reverse release. A leaked feature lock is project-level and blocks every checkout until 2h.\n- **Identity fingerprint regression**: workdir-based identity was the only `RUN_NAME_COLLISION` guard; relaxing it without the locking changes would let two processes mutate the same `~/.nax/<projectKey>/` tree.\n- **Status-file schema**: `NaxStatusFile.run.workdir` is optional but readers (TUI, `nax status`) must tolerate its absence in pre-existing status.json files.\n- **Precheck API drift**: `PrecheckOptions.featureLock` is optional, and the three `nax plan` call sites (`src/cli/plan-decompose.ts:246,269`, `src/cli/plan-runtime/index.ts:110`) plus `src/commands/precheck.ts:87-90` must continue working without it (checkout-only behavior).\n- **No `mock.module()`**: `.nax/rules/forbidden-patterns-source.md:31` bans it, so injection points are mandatory; the seams are `_runSetupDeps.acquireLock`, `_runSetupDeps.acquireFeatureLock`, `_precheckDeps.checkStaleLock`, and `_featureLockDeps.featureLockPath`.\n\n### Migration path / sequencing\nThe spec mandates that this feature lands AFTER `worktree-branch-identity`. The dependency chain is: feature-lock primitive (US-001) → run lifecycle holds both locks (US-002) → project identity by remote (US-004 — must not land before the locks that make it safe) → tooling sees both locks (US-003) → run attribution (US-005) → curator fail-closed (US-006). Test files in `test/unit/{errors,execution/helpers,utils/utils-helpers,precheck/precheck-checks-tier1-blockers,commands/unlock}.test.ts` must be updated alongside the ACs they assert.\n\n### Architecture decisions\n- Non-blocking try-locks (never wait) on both sides — no wait cycle possible between them.\n- Two predicates kept distinct: `isLockReclaimable` (acquire semantics) and `isLockSuspect` (precheck semantics). They diverge for `host == this machine && pid alive` (reclaimable, not suspect) versus age-based fallbacks (only suspect at 2h). Collapsing them would flip a verdict.\n- Host comparison is case-insensitive to tolerate Windows/macOS hostname casing differences.\n- Single `buildRunId(workdir, now)` producer with a workdir hash (basename would collide for `git worktree add ../repo-feat`). Output is path-separator-free for safe filename interpolation.\n- `isSameProject` is a pure comparator over two remotes (not identity records), so the normalization is reusable from both `claimProjectIdentity` and `checkInitCollision`.\n- Refusals carry holder data so error messages don't have to re-read the lock file (a TOCTOU race).",
+  "outOfScope": [
+    "Feature-scoped story worktree branch naming is delivered by the `worktree-branch-identity` feature, which must merge before this one.",
+    "Running the same feature concurrently from two checkouts stays refused; the feature lock exists to refuse it.",
+    "Running two different features concurrently from the same checkout stays refused by the checkout lock.",
+    "Retiring or removing `<workdir>/nax.lock`, and removing the `nax.lock` entry from `.gitignore`, are not part of this feature.",
+    "Repositories whose `origin` remotes differ after normalization, including forks, still produce `RUN_NAME_COLLISION`; merging distinct remotes into one project is not delivered.",
+    "`<outputDir>/status.json` stays last-writer-wins across concurrent different-feature runs; a per-feature project-level status file is not delivered.",
+    "Readers of feature-scoped state under `<outputDir>/features/<feature>/` are not audited, because the feature lock serializes every writer of that subtree.",
+    "The project-level directories `cost/`, `usage/`, `prompt-audit/`, `tool-audit/`, `finish-audit/`, `cycle-shadow/` and `mcp/` were not audited for concurrency safety; only the readers listed in the Design's read-surface table were examined.",
+    "The `nax plan` precheck path keeps checkout-only stale-lock checking; threading a feature lock through it is not part of this feature.",
+    "Changing `nax migrate --reclaim` or `--merge` semantics is not part of this feature.",
+    "Reclaiming a lock held on another host by any signal other than age is not delivered; there is no cross-host liveness channel.",
+    "Rewriting run IDs already recorded in the old format is not part of this feature; only newly generated run IDs carry the workdir component."
+  ],
+  "routingProfile": "default"
+}
