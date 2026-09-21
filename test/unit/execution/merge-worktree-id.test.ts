@@ -56,16 +56,13 @@ afterEach(() => {
   _gitDeps.spawn = SAVED_GIT_DEPS_SPAWN;
 });
 
-// Shape produced by the US-002 mergeAll signature. Pre-fix this signature
-// accepts `string[]`; the cast below marks the boundary as a deliberate shape
-// change for the US-002 signature work. Post-fix the cast is no longer needed
-// (the signature accepts this shape directly).
+// Shape produced by the US-002 mergeAll signature. The signature accepts
+// `Array<{ storyId, worktreeId }>` directly; the cast marker used during
+// pre-fix test-writing is no longer needed.
 interface MergeInput {
   storyId: string;
   worktreeId: WorktreeId;
 }
-
-const storiesAsLegacyStrings = (stories: readonly MergeInput[]): string[] => stories as unknown as string[]; // test-ratchet-allow: as-unknown-as
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC-5 — MergeEngine.merge(WorktreeId) invokes git with branch
@@ -134,7 +131,7 @@ describe("US-002 AC-6/AC-7/AC-8: MergeEngine.mergeAll takes {storyId, worktreeId
     ];
     const dependencies: StoryDependencies = {};
 
-    const results = await engine.mergeAll("/fake/repo", storiesAsLegacyStrings(stories), dependencies);
+    const results = await engine.mergeAll("/fake/repo", stories, dependencies);
 
     expect(results.length).toBe(2);
     // Each MergeResult.storyId MUST be the raw storyId, not the worktreeId.
@@ -178,7 +175,7 @@ describe("US-002 AC-6/AC-7/AC-8: MergeEngine.mergeAll takes {storyId, worktreeId
       "US-002": ["US-001"], // US-002 depends on US-001
     };
 
-    const results = await engine.mergeAll("/fake/repo", storiesAsLegacyStrings(stories), dependencies);
+    const results = await engine.mergeAll("/fake/repo", stories, dependencies);
 
     expect(results.length).toBe(2);
     expect(results.every((r) => r.success)).toBe(true);
@@ -219,7 +216,7 @@ describe("US-002 AC-6/AC-7/AC-8: MergeEngine.mergeAll takes {storyId, worktreeId
       "US-002": ["US-001"], // US-002 depends on US-001
     };
 
-    const results = await engine.mergeAll("/fake/repo", storiesAsLegacyStrings(stories), dependencies);
+    const results = await engine.mergeAll("/fake/repo", stories, dependencies);
 
     expect(results.length).toBe(2);
     const depResult = results[0];

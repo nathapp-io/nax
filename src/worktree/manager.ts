@@ -3,12 +3,13 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { validateStoryId } from "../prd/validate";
 import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
 import { naxOrphanRefName } from "./nax-orphan-ref";
 import type { WorktreeInfo } from "./types";
+import type { WorktreeId } from "./worktree-id";
+import { storyBranchName, storyWorktreePath } from "./worktree-id";
 
 /**
  * Injectable git subprocess seam. Tests stub `gitWithTimeout` to drive
@@ -110,17 +111,24 @@ export class WorktreeManager {
   }
 
   /**
-   * US-002: checks for a nax-owned orphan ref on `refs/nax/orphan/<storyId>`.
-   * Written by `removeWorktreeDirectory` in `pipeline-result-handler.ts` when
-   * a non-conflict merge failure leaves a worktree-less branch behind. Read
-   * here as Step-3 evidence that the branch `nax/<storyId>` was created by a
-   * prior nax run — so the force-delete in Step 3 is known-orphaned rather
-   * than a guess. The ref cannot outlive what it records (it is removed in
-   * the same step that deletes the branch), so reading it always describes
-   * state that existed between this run and the previous one.
+   * US-002: checks for a nax-owned orphan ref on
+   * `refs/nax/orphan/<worktreeId>`. Written by `removeWorktreeDirectory`
+   * in `pipeline-result-handler.ts` when a non-conflict merge failure
+   * leaves a worktree-less branch behind. Read here as Step-3 evidence
+   * that the branch `nax/<worktreeId>` was created by a prior nax run —
+   * so the force-delete in Step 3 is known-orphaned rather than a guess.
+   * The ref cannot outlive what it records (it is removed in the same
+   * step that deletes the branch), so reading it always describes state
+   * that existed between this run and the previous one.
+   *
+   * US-002 narrows the parameter to `WorktreeId` — the writer in
+   * `pipeline-result-handler.ts` reaches this same helper through the
+   * composed identity rather than a raw story ID (US-003 closes the
+   * writer site). A raw `refs/nax/orphan/<rawStoryId>` spelling never
+   * enters the system: the brand forbids it at the type level.
    */
-  private async hasNaxOwnershipRecord(projectRoot: string, storyId: string): Promise<boolean> {
-    const orphanRef = naxOrphanRefName(storyId);
+  private async hasNaxOwnershipRecord(projectRoot: string, worktreeId: WorktreeId): Promise<boolean> {
+    const orphanRef = naxOrphanRefName(worktreeId);
     try {
       const { exitCode } = await _worktreeManagerDeps.gitWithTimeout(["cat-file", "-e", orphanRef], projectRoot);
       return exitCode === 0;
@@ -143,19 +151,27 @@ export class WorktreeManager {
   }
 
   /**
-   * Creates a git worktree at .nax-wt/<storyId>/ with branch nax/<storyId>.
-   * Dependency preparation is handled outside WorktreeManager; only non-dependency
-   * runtime files such as .env are mirrored here when present.
+   * Creates a git worktree at `<root>/.nax-wt/<worktreeId>/` with branch
+   * `nax/<worktreeId>`. Dependency preparation is handled outside
+   * WorktreeManager; only non-dependency runtime files such as `.env`
+   * are mirrored here when present.
    *
-   * If a worktree or branch for this story already exists (orphaned from a
-   * previous crashed run), it is removed first so we get a clean slate.
+   * US-002 narrows the second parameter to `WorktreeId` — the parameter
+   * is the COMPOSED identity `story-<feature>-<storyId>` (or `bakeoff-...`),
+   * never a raw story ID. The directory and branch are derived through
+   * `storyWorktreePath(projectRoot, worktreeId)` /
+   * `storyBranchName(worktreeId)` so this function never spells the path
+   * or branch literal itself; the gate enforces the SSOT.
+   *
+   * If a worktree or branch for this identity already exists (orphaned
+   * from a previous crashed run), it is removed first so we get a clean
+   * slate. The orphan-ref probe at `refs/nax/orphan/<worktreeId>` is the
+   * Step-3 evidence described in BUG-28.
    */
-  async create(projectRoot: string, storyId: string): Promise<void> {
-    validateStoryId(storyId);
-
-    const worktreePath = join(projectRoot, ".nax-wt", storyId);
-    const branchName = `nax/${storyId}`;
-    const orphanRef = naxOrphanRefName(storyId);
+  async create(projectRoot: string, worktreeId: WorktreeId): Promise<void> {
+    const worktreePath = storyWorktreePath(projectRoot, worktreeId);
+    const branchName = storyBranchName(worktreeId);
+    const orphanRef = naxOrphanRefName(worktreeId);
 
     // BUG-28: Step 3 below force-deletes `branchName` when remove() (Step 2)
     // found no live worktree to remove it via — that path used to run
@@ -168,14 +184,15 @@ export class WorktreeManager {
     //
     // US-002: `hasNaxOwnershipRecord` is the second form of evidence the
     // owning run may have left behind. `removeWorktreeDirectory` writes
-    // `refs/nax/orphan/<storyId>` after a non-conflict merge failure, so
-    // a retry path can still distinguish a nax-created orphan from a user
-    // branch. Step 3 fires on EITHER signal; the orphan ref is cleared in
-    // the same step that deletes the branch, so the record cannot outlive
-    // what it records. A user branch named `nax/<storyId>` that nax never
-    // created has neither form of evidence and is still never force-deleted.
+    // `refs/nax/orphan/<worktreeId>` after a non-conflict merge failure,
+    // so a retry path can still distinguish a nax-created orphan from a
+    // user branch. Step 3 fires on EITHER signal; the orphan ref is
+    // cleared in the same step that deletes the branch, so the record
+    // cannot outlive what it records. A user branch named
+    // `nax/<something-else>` that nax never created has neither form of
+    // evidence and is still never force-deleted.
     const hadWorktreeRecord = await this.hasWorktreeRecord(projectRoot, branchName);
-    const hadNaxOwnershipRecord = await this.hasNaxOwnershipRecord(projectRoot, storyId);
+    const hadNaxOwnershipRecord = await this.hasNaxOwnershipRecord(projectRoot, worktreeId);
     const orphanCommit = hadNaxOwnershipRecord ? await this.resolveGitRef(projectRoot, orphanRef) : undefined;
     const branchRef = `refs/heads/${branchName}`;
     const branchCommit = await this.resolveGitRef(projectRoot, branchRef);
@@ -200,7 +217,7 @@ export class WorktreeManager {
     try {
       // Step 2: Remove worktree if it still exists as a live worktree (remove()
       // also force-deletes branchName once the worktree removal succeeds).
-      await this.remove(projectRoot, storyId);
+      await this.remove(projectRoot, worktreeId);
       removedLiveWorktree = true;
     } catch (error) {
       // remove() throws WORKTREE_NOT_FOUND when there is nothing to clean up —
@@ -211,7 +228,7 @@ export class WorktreeManager {
       if (!(error instanceof NaxError) || error.code !== "WORKTREE_NOT_FOUND") {
         const logger = getSafeLogger();
         logger?.warn("worktree", "Step-2 remove failed before create", {
-          storyId,
+          worktreeId,
           projectRoot,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -255,7 +272,9 @@ export class WorktreeManager {
     }
 
     try {
-      // Create worktree with new branch
+      // Create worktree with new branch. The branch name and worktree path
+      // are routed through the producers above; this call is the only place
+      // that names them on the git command line.
       const { exitCode, stderr } = await _worktreeManagerDeps.gitWithTimeout(
         ["worktree", "add", worktreePath, "-b", branchName],
         projectRoot,
@@ -263,7 +282,7 @@ export class WorktreeManager {
       if (exitCode !== 0) {
         throw new NaxError(`Failed to create worktree: ${stderr || "unknown error"}`, "WORKTREE_ERROR", {
           stage: "worktree",
-          storyId,
+          worktreeId,
           projectRoot,
           stderr,
         });
@@ -277,36 +296,37 @@ export class WorktreeManager {
         if (error.message.includes("not a git repository")) {
           throw new NaxError(`Not a git repository: ${projectRoot}`, "WORKTREE_ERROR", {
             stage: "worktree",
-            storyId,
+            worktreeId,
             projectRoot,
           });
         }
         throw new NaxError(error.message, "WORKTREE_ERROR", {
           stage: "worktree",
-          storyId,
+          worktreeId,
           projectRoot,
           cause: error,
         });
       }
       throw new NaxError(`Failed to create worktree: ${String(error)}`, "WORKTREE_ERROR", {
         stage: "worktree",
-        storyId,
+        worktreeId,
         projectRoot,
       });
     }
 
-    // Symlink .env if it exists
-    const envSource = join(projectRoot, ".env");
+    // Symlink .env if it exists. worktreePath is the producer-derived
+    // `<root>/.nax-wt/<worktreeId>`; we don't re-spell it inline.
+    const envSource = `${projectRoot}/.env`;
     if (existsSync(envSource)) {
-      const envTarget = join(worktreePath, ".env");
+      const envTarget = `${worktreePath}/.env`;
       try {
         symlinkSync(envSource, envTarget, "file");
       } catch (error) {
         // Clean up worktree if symlinking fails
-        await this.remove(projectRoot, storyId);
+        await this.remove(projectRoot, worktreeId);
         throw new NaxError(`Failed to symlink .env: ${errorMessage(error)}`, "WORKTREE_ERROR", {
           stage: "worktree",
-          storyId,
+          worktreeId,
           envSource,
           envTarget,
         });
@@ -315,13 +335,15 @@ export class WorktreeManager {
   }
 
   /**
-   * Removes worktree and deletes branch
+   * Removes the worktree directory and deletes its branch.
+   *
+   * US-002 narrows the second parameter to `WorktreeId`. The path and
+   * branch are derived through the same producers `create()` uses, so
+   * this method spells neither inline.
    */
-  async remove(projectRoot: string, storyId: string): Promise<void> {
-    validateStoryId(storyId);
-
-    const worktreePath = join(projectRoot, ".nax-wt", storyId);
-    const branchName = `nax/${storyId}`;
+  async remove(projectRoot: string, worktreeId: WorktreeId): Promise<void> {
+    const worktreePath = storyWorktreePath(projectRoot, worktreeId);
+    const branchName = storyBranchName(worktreeId);
 
     // Remove worktree
     try {
@@ -338,13 +360,13 @@ export class WorktreeManager {
         ) {
           throw new NaxError(`Worktree not found: ${worktreePath}`, "WORKTREE_NOT_FOUND", {
             stage: "worktree",
-            storyId,
+            worktreeId,
             worktreePath,
           });
         }
         throw new NaxError(`Failed to remove worktree: ${stderr || "unknown error"}`, "WORKTREE_ERROR", {
           stage: "worktree",
-          storyId,
+          worktreeId,
           worktreePath,
           stderr,
         });
@@ -355,7 +377,7 @@ export class WorktreeManager {
       }
       throw new NaxError(error instanceof Error ? error.message : String(error), "WORKTREE_ERROR", {
         stage: "worktree",
-        storyId,
+        worktreeId,
         worktreePath,
         cause: error instanceof Error ? error : undefined,
       });

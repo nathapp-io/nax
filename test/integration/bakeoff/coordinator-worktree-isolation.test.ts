@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { BakeoffCoordinatorDeps, ContestantOptions, ContestantRunnerDeps } from "@/bakeoff";
 import { runBakeoff, runContestant } from "@/bakeoff";
-import { WorktreeManager } from "@/worktree";
+import { type WorktreeId, WorktreeManager } from "@/worktree";
 
 async function git(args: string[], cwd: string): Promise<void> {
   const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
@@ -49,12 +49,15 @@ describe("runBakeoff worktree isolation (US-002 AC10)", () => {
     const manager = new WorktreeManager();
     const observedPaths: string[] = [];
 
+    // US-002: the runner's worktreeManager.create/remove take a
+    // `WorktreeId` (branded). The adapter below matches the new
+    // signature and passes through to the underlying manager.
     const worktreeManager: ContestantRunnerDeps["worktreeManager"] = {
-      create: async (root: string, storyId: string) => {
-        await manager.create(root, storyId);
-        observedPaths.push(join(root, ".nax-wt", storyId));
+      create: async (root: string, worktreeId: WorktreeId) => {
+        await manager.create(root, worktreeId);
+        observedPaths.push(join(root, ".nax-wt", worktreeId));
       },
-      remove: (root: string, storyId: string) => manager.remove(root, storyId),
+      remove: (root: string, worktreeId: WorktreeId) => manager.remove(root, worktreeId),
     };
     const pipeline: ContestantRunnerDeps["pipeline"] = async () => ({
       results: [{ status: "passed" }],

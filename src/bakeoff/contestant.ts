@@ -9,6 +9,7 @@
 import { basename, join } from "node:path";
 import type { NaxConfig } from "../config";
 import { projectOutputDir } from "../runtime/paths";
+import type { WorktreeId } from "../worktree";
 import type { ContestantResult } from "./types";
 import { deriveBakeoffWorktreeId } from "./worktree-id";
 
@@ -61,8 +62,14 @@ export interface ContestantRunContext {
 
 export interface ContestantRunnerDeps {
   worktreeManager: {
-    create: (projectRoot: string, storyId: string) => Promise<unknown>;
-    remove: (projectRoot: string, storyId: string) => Promise<unknown>;
+    // US-002: the manager's create/remove take a `WorktreeId`. The
+    // bakeoff identity `deriveBakeoffWorktreeId(feature, agent)` is the
+    // composed identity that already flows through this runner, so
+    // passing it through satisfies the brand. Adapters that synthesize a
+    // `WorktreeManager` for a single story (e.g. the coordinator's
+    // isolation test) take the same `WorktreeId` parameter.
+    create: (projectRoot: string, worktreeId: WorktreeId) => Promise<unknown>;
+    remove: (projectRoot: string, worktreeId: WorktreeId) => Promise<unknown>;
   };
   /** Pipeline receives the contestant's isolated run context. */
   pipeline: (ctx: ContestantRunContext) => Promise<ContestantPipelineResult>;

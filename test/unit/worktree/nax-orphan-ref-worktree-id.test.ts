@@ -34,7 +34,7 @@ describe("US-002 AC-4: naxOrphanRefName(WorktreeId) returns the composed orphan 
     // string value — must agree on the spelling. A future change that
     // accidentally switched the separator (e.g. ":" or "|" for "/")
     // would fail this assertion.
-    expect(naxOrphanRefName(typed)).toBe(naxOrphanRefName(String(typed)));
+    expect(naxOrphanRefName(typed)).toBe(naxOrphanRefName(String(typed) as WorktreeId));
   });
 
   test("boundary: naxOrphanRefName rejects identities that fail the SSOT's validation (via validateStoryId)", () => {
@@ -46,7 +46,7 @@ describe("US-002 AC-4: naxOrphanRefName(WorktreeId) returns the composed orphan 
     const tooLong = "A".repeat(65);
     // The validateStoryId path is internal to naxOrphanRefName; we
     // exercise it via the same call the production code would make.
-    expect(() => naxOrphanRefName(tooLong)).toThrow();
+    expect(() => naxOrphanRefName(tooLong as WorktreeId)).toThrow();
     // And we double-pin the contract by checking validateStoryId directly.
     expect(() => validateStoryId(tooLong)).toThrow();
   });

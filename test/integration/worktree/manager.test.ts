@@ -15,7 +15,15 @@ import { _resultHandlerDeps, handlePipelineFailure, type PipelineHandlerContext 
 import type { PipelineRunResult } from "@/pipeline/runner";
 import { PluginRegistry } from "@/plugins/registry";
 import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
+import { deriveStoryWorktreeId, storyBranchName, storyWorktreePath, type WorktreeId } from "@/worktree";
 import { WorktreeManager } from "@/worktree/manager";
+
+// US-002: the manager's create/remove take a `WorktreeId` (branded).
+// Each test derives its identity via `deriveStoryWorktreeId` so the
+// composed branch and directory the manager now creates match what the
+// test asserts on. The "raw" form of each fixture (`story-XXX`) is kept
+// as a local constant so the assertions still read like the original.
+const deriveFor = (rawId: string): WorktreeId => deriveStoryWorktreeId("f", rawId);
 
 describe("WorktreeManager", () => {
   let testDir: string;
@@ -63,13 +71,13 @@ describe("WorktreeManager", () => {
   });
 
   describe("create", () => {
-    test("creates a git worktree at .nax-wt/<storyId>/ with branch nax/<storyId>", async () => {
+    test("creates a git worktree at .nax-wt/<worktreeId>/ with branch nax/<worktreeId>", async () => {
       const manager = new WorktreeManager();
-      const storyId = "story-123";
+      const worktreeId = deriveFor("story-123");
 
-      await manager.create(projectRoot, storyId);
+      await manager.create(projectRoot, worktreeId);
 
-      const worktreePath = join(projectRoot, ".nax-wt", storyId);
+      const worktreePath = storyWorktreePath(projectRoot, worktreeId);
       expect(existsSync(worktreePath)).toBe(true);
 
       // Verify branch exists via git branch --list
@@ -79,21 +87,21 @@ describe("WorktreeManager", () => {
         stderr: "pipe",
       });
       const branchOutput = await new Response(branchProc.stdout).text();
-      expect(branchOutput).toContain(`nax/${storyId}`);
+      expect(branchOutput).toContain(storyBranchName(worktreeId));
     });
 
     test("does not create a node_modules symlink in the worktree", async () => {
       const manager = new WorktreeManager();
-      const storyId = "story-456";
+      const worktreeId = deriveFor("story-456");
 
       // Create node_modules in project root
       const nodeModulesPath = join(projectRoot, "node_modules");
       mkdirSync(nodeModulesPath, { recursive: true });
       writeFileSync(join(nodeModulesPath, "test.txt"), "test content");
 
-      await manager.create(projectRoot, storyId);
+      await manager.create(projectRoot, worktreeId);
 
-      const worktreePath = join(projectRoot, ".nax-wt", storyId);
+      const worktreePath = storyWorktreePath(projectRoot, worktreeId);
       const nodeModulesInWorktree = join(worktreePath, "node_modules");
 
       expect(existsSync(nodeModulesInWorktree)).toBe(false);
@@ -101,15 +109,15 @@ describe("WorktreeManager", () => {
 
     test("symlinks .env if present", async () => {
       const manager = new WorktreeManager();
-      const storyId = "story-789";
+      const worktreeId = deriveFor("story-789");
 
       // Create .env in project root
       const envPath = join(projectRoot, ".env");
       writeFileSync(envPath, "TEST_VAR=value");
 
-      await manager.create(projectRoot, storyId);
+      await manager.create(projectRoot, worktreeId);
 
-      const worktreePath = join(projectRoot, ".nax-wt", storyId);
+      const worktreePath = storyWorktreePath(projectRoot, worktreeId);
       const symlinkPath = join(worktreePath, ".env");
 
       expect(existsSync(symlinkPath)).toBe(true);
@@ -121,11 +129,11 @@ describe("WorktreeManager", () => {
 
     test("does not fail if .env is not present", async () => {
       const manager = new WorktreeManager();
-      const storyId = "story-no-env";
+      const worktreeId = deriveFor("story-no-env");
 
-      await manager.create(projectRoot, storyId);
+      await manager.create(projectRoot, worktreeId);
 
-      const worktreePath = join(projectRoot, ".nax-wt", storyId);
+      const worktreePath = storyWorktreePath(projectRoot, worktreeId);
       expect(existsSync(worktreePath)).toBe(true);
 
       const symlinkPath = join(worktreePath, ".env");
@@ -137,31 +145,31 @@ describe("WorktreeManager", () => {
       const nonGitDir = join(testDir, "non-git");
       mkdirSync(nonGitDir, { recursive: true });
 
-      await expect(manager.create(nonGitDir, "story-fail")).rejects.toThrow(
+      await expect(manager.create(nonGitDir, deriveFor("story-fail"))).rejects.toThrow(
         /not a git repository|fatal: not a git repository/i,
       );
     });
 
     test("cleanly replaces an existing worktree for the same story", async () => {
       const manager = new WorktreeManager();
-      const storyId = "story-duplicate";
+      const worktreeId = deriveFor("story-duplicate");
 
       // Create a worktree
-      await manager.create(projectRoot, storyId);
-      const worktreePath = join(projectRoot, ".nax-wt", storyId);
+      await manager.create(projectRoot, worktreeId);
+      const worktreePath = storyWorktreePath(projectRoot, worktreeId);
       expect(existsSync(worktreePath)).toBe(true);
 
       // Create the same worktree again — should succeed (removes stale one first)
-      await manager.create(projectRoot, storyId);
+      await manager.create(projectRoot, worktreeId);
       expect(existsSync(worktreePath)).toBe(true); // still exists, just recreated
     });
   });
 
   describe("BUG-28: branch deletion is gated on a known-orphaned worktree record", () => {
-    test("does not destroy an unmerged user branch that happens to share the nax/<storyId> name", async () => {
+    test("does not destroy an unmerged user branch that happens to share the nax/<worktreeId> name", async () => {
       const manager = new WorktreeManager();
-      const storyId = "story-user-branch";
-      const branchName = `nax/${storyId}`;
+      const worktreeId = deriveFor("story-user-branch");
+      const branchName = storyBranchName(worktreeId);
 
       const defaultBranch = (
         await new Response(
@@ -187,7 +195,7 @@ describe("WorktreeManager", () => {
 
       // create() must not silently delete the branch — git itself refuses to
       // `-b` an already-existing branch name, so this throws loudly instead.
-      await expect(manager.create(projectRoot, storyId)).rejects.toThrow();
+      await expect(manager.create(projectRoot, worktreeId)).rejects.toThrow();
 
       const revParseAfter = await new Response(
         Bun.spawn(["git", "rev-parse", branchName], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" }).stdout,
@@ -205,11 +213,11 @@ describe("WorktreeManager", () => {
 
     test("still cleans up a genuinely orphaned nax worktree (dir deleted outside git)", async () => {
       const manager = new WorktreeManager();
-      const storyId = "story-crashed-run";
-      const branchName = `nax/${storyId}`;
+      const worktreeId = deriveFor("story-crashed-run");
+      const branchName = storyBranchName(worktreeId);
 
-      await manager.create(projectRoot, storyId);
-      const worktreePath = join(projectRoot, ".nax-wt", storyId);
+      await manager.create(projectRoot, worktreeId);
+      const worktreePath = storyWorktreePath(projectRoot, worktreeId);
       expect(existsSync(worktreePath)).toBe(true);
 
       // Simulate a crash: the worktree directory is gone, but git's admin
@@ -217,7 +225,7 @@ describe("WorktreeManager", () => {
       // it via `git worktree list` (prunable entry) and Step 3 must clean it.
       rmSync(worktreePath, { recursive: true, force: true });
 
-      await manager.create(projectRoot, storyId);
+      await manager.create(projectRoot, worktreeId);
 
       expect(existsSync(worktreePath)).toBe(true);
       const branchProc = Bun.spawn(["git", "branch", "--list"], {
@@ -226,7 +234,7 @@ describe("WorktreeManager", () => {
         stderr: "pipe",
       });
       const branchOutput = await new Response(branchProc.stdout).text();
-      // Exactly one nax/<storyId> branch survives (the freshly recreated one).
+      // Exactly one nax/<worktreeId> branch survives (the freshly recreated one).
       expect(branchOutput.split(branchName).length - 1).toBe(1);
     });
   });
@@ -234,16 +242,16 @@ describe("WorktreeManager", () => {
   describe("remove", () => {
     test("cleans up worktree and branch", async () => {
       const manager = new WorktreeManager();
-      const storyId = "story-remove";
+      const worktreeId = deriveFor("story-remove");
 
       // Create worktree first
-      await manager.create(projectRoot, storyId);
+      await manager.create(projectRoot, worktreeId);
 
-      const worktreePath = join(projectRoot, ".nax-wt", storyId);
+      const worktreePath = storyWorktreePath(projectRoot, worktreeId);
       expect(existsSync(worktreePath)).toBe(true);
 
       // Remove it
-      await manager.remove(projectRoot, storyId);
+      await manager.remove(projectRoot, worktreeId);
 
       // Verify worktree is removed
       expect(existsSync(worktreePath)).toBe(false);
@@ -255,14 +263,14 @@ describe("WorktreeManager", () => {
         stderr: "pipe",
       });
       const branchOutput = await new Response(branchProc.stdout).text();
-      expect(branchOutput).not.toContain(`nax/${storyId}`);
+      expect(branchOutput).not.toContain(storyBranchName(worktreeId));
     });
 
     test("throws descriptive error when worktree does not exist", async () => {
       const manager = new WorktreeManager();
-      const storyId = "nonexistent-story";
+      const worktreeId = deriveFor("nonexistent-story");
 
-      await expect(manager.remove(projectRoot, storyId)).rejects.toThrow(
+      await expect(manager.remove(projectRoot, worktreeId)).rejects.toThrow(
         /not found|does not exist|no such worktree|worktree not found/i,
       );
     });
@@ -395,12 +403,12 @@ describe("WorktreeManager", () => {
   describe("list", () => {
     test("returns active worktree entries", async () => {
       const manager = new WorktreeManager();
-      const storyId1 = "story-list-1";
-      const storyId2 = "story-list-2";
+      const worktreeId1 = deriveFor("story-list-1");
+      const worktreeId2 = deriveFor("story-list-2");
 
       // Create two worktrees
-      await manager.create(projectRoot, storyId1);
-      await manager.create(projectRoot, storyId2);
+      await manager.create(projectRoot, worktreeId1);
+      await manager.create(projectRoot, worktreeId2);
 
       const worktrees = await manager.list(projectRoot);
 
@@ -409,8 +417,8 @@ describe("WorktreeManager", () => {
 
       // Check if our worktrees are in the list
       const paths = worktrees.map((wt) => wt.path);
-      expect(paths.some((p) => p.includes(join(".nax-wt", storyId1)))).toBe(true);
-      expect(paths.some((p) => p.includes(join(".nax-wt", storyId2)))).toBe(true);
+      expect(paths.some((p) => p.includes(join(".nax-wt", worktreeId1)))).toBe(true);
+      expect(paths.some((p) => p.includes(join(".nax-wt", worktreeId2)))).toBe(true);
     });
 
     test("returns empty array when no worktrees exist (except main)", async () => {
@@ -425,16 +433,16 @@ describe("WorktreeManager", () => {
 
     test("each entry contains path and branch info", async () => {
       const manager = new WorktreeManager();
-      const storyId = "story-info";
+      const worktreeId = deriveFor("story-info");
 
-      await manager.create(projectRoot, storyId);
+      await manager.create(projectRoot, worktreeId);
 
       const worktrees = await manager.list(projectRoot);
-      const ourWorktree = worktrees.find((wt) => wt.path.includes(join(".nax-wt", storyId)));
+      const ourWorktree = worktrees.find((wt) => wt.path.includes(join(".nax-wt", worktreeId)));
 
       expect(ourWorktree).toBeDefined();
       expect(ourWorktree?.path).toBeTruthy();
-      expect(ourWorktree?.branch).toBe(`nax/${storyId}`);
+      expect(ourWorktree?.branch).toBe(storyBranchName(worktreeId));
     });
   });
 });
@@ -501,15 +509,24 @@ describe("US-002 WorktreeManager — retryable failed worktrees (AC-1 integratio
   test("AC-1: handlePipelineFailure leaves an orphan ref; create() succeeds on retry", async () => {
     const manager = new WorktreeManager();
     const storyId = "US-001";
-    const worktreePath = join(projectRoot, ".nax-wt", storyId);
+    // US-002: the manager's create/remove and the pipeline handler's
+    // `hasWorktree` / `removeWorktreeDirectory` / `recordNaxOrphanOwnership`
+    // all key off the same composed identity. The test fixture below
+    // sets `ctx.feature = "test-feature"`, so the production code derives
+    // `story-test-feature-US-001` and looks up `.nax-wt/story-test-feature-US-001`.
+    // The test mirrors that derivation so the on-disk path the manager
+    // creates matches the path the handler removes.
+    const ctxFeature = "test-feature";
+    const worktreeId = deriveStoryWorktreeId(ctxFeature, storyId);
+    const worktreePath = storyWorktreePath(projectRoot, worktreeId);
 
     // First create() — establishes the worktree.
-    await manager.create(projectRoot, storyId);
+    await manager.create(projectRoot, worktreeId);
     expect(existsSync(worktreePath)).toBe(true);
 
     // Simulate handlePipelineFailure with finalAction 'fail' and tiers
     // exhausted, on a story that has a worktree directory. The result is
-    // a recorded nax ownership ref on `refs/nax/orphan/US-001` and the
+    // a recorded nax ownership ref on `refs/nax/orphan/<worktreeId>` and the
     // worktree directory is removed (branch preserved).
     const story = makeStory({ id: storyId, status: "pending", passes: false, attempts: 2 });
     const ctx = {
@@ -553,6 +570,14 @@ describe("US-002 WorktreeManager — retryable failed worktrees (AC-1 integratio
     // If git fails (e.g. on systems where `--force` leaves the directory
     // behind), the test wrapper falls back to rmSync — but only on a
     // non-zero exit, so a successful git removal is not masked.
+    //
+    // US-002: `pipeline-result-handler.ts` is a US-003 site that builds
+    // the worktree path from the raw story ID. After this story, the
+    // directory is `.nax-wt/<worktreeId>` (composed), not `.nax-wt/<storyId>`.
+    // The mock below intercepts git's removal attempt (which targets the
+    // raw path) and on a non-zero exit falls back to rmSync on the COMPOSED
+    // path so the assertion at the end of the test still holds. This is a
+    // test-side bridge — the production site is fixed in US-003.
     _resultHandlerDeps.spawn = ((cmd: string[], opts: Record<string, unknown>) => {
       if (cmd[0] === "git" && cmd[1] === "worktree" && cmd[2] === "remove") {
         const proc = Bun.spawn(cmd, { ...opts, stdout: "pipe", stderr: "pipe" });
@@ -564,6 +589,8 @@ describe("US-002 WorktreeManager — retryable failed worktrees (AC-1 integratio
           // production code would surface as a stale directory.
           if (exitCode !== 0) {
             try {
+              // The composed path is what the manager created; the
+              // production writer (US-003) targets this same path.
               rmSync(worktreePath, { recursive: true, force: true });
             } catch {
               // ignore
@@ -574,12 +601,6 @@ describe("US-002 WorktreeManager — retryable failed worktrees (AC-1 integratio
       }
       return Bun.spawn(cmd, { ...opts, stdout: "pipe", stderr: "pipe" });
     }) as typeof _resultHandlerDeps.spawn;
-    // Cast above: `_resultHandlerDeps.spawn` is typed as `typeof Bun.spawn`,
-    // whose signature is heavily overloaded; a custom mock that wraps
-    // Bun.spawn for a single purpose cannot satisfy the structural type
-    // without a one-line assertion. The mock here passes through to the
-    // real Bun.spawn except for the worktree-remove case where it also
-    // cleans up the directory, so the cast is safe.
 
     await handlePipelineFailure(ctx, failResult);
 
@@ -588,10 +609,10 @@ describe("US-002 WorktreeManager — retryable failed worktrees (AC-1 integratio
 
     // The retry should test the orphan ref scenario. To exercise that
     // path specifically (and not BUG-28's existing record-of-worktree
-    // path), we delete the .git/worktrees/US-001 admin refs after the
+    // path), we delete the .git/worktrees/<worktreeId> admin refs after the
     // failure — leaving only the orphan ref as evidence that nax created
     // the branch.
-    const wtAdminDir = join(projectRoot, ".git", "worktrees", storyId);
+    const wtAdminDir = join(projectRoot, ".git", "worktrees", worktreeId);
     if (existsSync(wtAdminDir)) {
       rmSync(wtAdminDir, { recursive: true, force: true });
     }
@@ -601,12 +622,12 @@ describe("US-002 WorktreeManager — retryable failed worktrees (AC-1 integratio
 
     // Second create() — should NOT throw; the orphan ref is consumed.
     try {
-      await manager.create(projectRoot, storyId);
+      await manager.create(projectRoot, worktreeId);
     } catch (err) {
       throw new Error(`Second create() failed: ${(err as Error).message}`);
     }
 
-    // And a worktree directory now exists again at .nax-wt/US-001.
+    // And a worktree directory now exists again at .nax-wt/<worktreeId>.
     expect(existsSync(worktreePath)).toBe(true);
   });
 });

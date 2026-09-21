@@ -92,7 +92,12 @@ export async function runIteration(
     if (!worktreeExists) {
       // First attempt for this story — create a fresh worktree.
       await _iterationRunnerDeps.worktreeManager.ensureGitExcludes(ctx.workdir);
-      await _iterationRunnerDeps.worktreeManager.create(ctx.workdir, story.id);
+      // US-003 site: this cast keeps US-002 compiling. US-003 composes
+      // the brand via `deriveStoryWorktreeId`.
+      await _iterationRunnerDeps.worktreeManager.create(
+        ctx.workdir,
+        story.id as unknown as import("../worktree").WorktreeId,
+      );
     }
     // Escalation reuse: if the worktree already exists (story retried in same worktree),
     // skip creation and continue in the existing worktree directory.
@@ -149,7 +154,12 @@ export async function runIteration(
       markStoryFailed(prd, story.id, "dependency-prep", "worktree-dependencies", ctx.statusWriter);
       await savePRD(prd, ctx.prdPath);
       try {
-        await _iterationRunnerDeps.worktreeManager.remove(ctx.workdir, story.id);
+        // US-003 site: this cast keeps US-002 compiling. US-003 composes
+        // the brand via `deriveStoryWorktreeId`.
+        await _iterationRunnerDeps.worktreeManager.remove(
+          ctx.workdir,
+          story.id as unknown as import("../worktree").WorktreeId,
+        );
       } catch {
         // best-effort cleanup
       }

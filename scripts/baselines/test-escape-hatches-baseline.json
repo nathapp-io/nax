@@ -1,8 +1,8 @@
 {
   "counts": {
     "tsSuppress": 0,
-    "ratchetAllow": 27,
-    "looseCast": 1474
+    "ratchetAllow": 31,
+    "looseCast": 1476
   },
   "updatedAt": "2026-09-21T07:31:31.741Z",
   "byFile": {
@@ -762,6 +762,13 @@
     },
     "test/unit/worktree/manager.test.ts": {
       "looseCast": 1
+    },
+    "test/unit/worktree/nax-orphan-ref.test.ts": {
+      "ratchetAllow": 4
+    },
+
+    "test/unit/worktree/nax-orphan-ref-worktree-id.test.ts": {
+      "looseCast": 2
     },
     "test/unit/runtime/session-run-hop.test.ts": {
       "looseCast": 1

@@ -7,7 +7,6 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
@@ -25,7 +24,14 @@ import type { DispatchContext } from "../runtime/dispatch-context";
 import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
 import { storyPackageDir } from "../utils/path-frame";
-import { MergeEngine, naxOrphanRefName, WorktreeManager } from "../worktree";
+import {
+  deriveStoryWorktreeId,
+  MergeEngine,
+  naxOrphanRefName,
+  storyBranchName,
+  storyWorktreePath,
+  WorktreeManager,
+} from "../worktree";
 import { handleTierEscalation, verifyEscalationQuotes } from "./escalation";
 import { appendProgress } from "./progress";
 
@@ -44,8 +50,8 @@ export const _resultHandlerDeps = {
  * exists, not off the config mode that creation ignored. Sequential shared-mode runs
  * never create a worktree, so this is false there and behaviour is unchanged.
  */
-function hasWorktree(projectRoot: string, storyId: string): boolean {
-  return _resultHandlerDeps.existsSync(join(projectRoot, ".nax-wt", storyId));
+function hasWorktree(projectRoot: string, worktreeId: import("../worktree").WorktreeId): boolean {
+  return _resultHandlerDeps.existsSync(storyWorktreePath(projectRoot, worktreeId));
 }
 
 /**
@@ -63,9 +69,12 @@ function hasWorktree(projectRoot: string, storyId: string): boolean {
  * nax never created never acquires one, so BUG-28's user-branch guard is
  * unchanged.
  */
-async function removeWorktreeDirectory(projectRoot: string, storyId: string): Promise<boolean> {
+async function removeWorktreeDirectory(
+  projectRoot: string,
+  worktreeId: import("../worktree").WorktreeId,
+): Promise<boolean> {
   const logger = getSafeLogger();
-  const worktreePath = join(projectRoot, ".nax-wt", storyId);
+  const worktreePath = storyWorktreePath(projectRoot, worktreeId);
   try {
     const proc = _resultHandlerDeps.spawn(["git", "worktree", "remove", worktreePath, "--force"], {
       cwd: projectRoot,
@@ -86,7 +95,7 @@ async function removeWorktreeDirectory(projectRoot: string, storyId: string): Pr
     ] as const);
     if (exitCode !== 0) {
       logger?.warn("worktree", "Failed to remove worktree directory (non-fatal)", {
-        storyId,
+        worktreeId,
         worktreePath,
         exitCode,
         stderr: stderr.slice(0, 500),
@@ -96,7 +105,7 @@ async function removeWorktreeDirectory(projectRoot: string, storyId: string): Pr
     return true;
   } catch (error) {
     logger?.warn("worktree", "Failed to remove worktree directory (non-fatal)", {
-      storyId,
+      worktreeId,
       worktreePath,
       error: String(error),
     });
@@ -105,15 +114,27 @@ async function removeWorktreeDirectory(projectRoot: string, storyId: string): Pr
 }
 
 /**
- * US-002: Write `refs/nax/orphan/<storyId>` to point at the surviving
- * `nax/<storyId>` branch tip. Best-effort: a non-zero exit logs at warn on
- * stage `worktree` (carrying `storyId`) and returns — matches the existing
+ * US-002: Write `refs/nax/orphan/<worktreeId>` to point at the surviving
+ * `nax/<worktreeId>` branch tip. Best-effort: a non-zero exit logs at warn on
+ * stage `worktree` (carrying `worktreeId`) and returns — matches the existing
  * contract of `removeWorktreeDirectory` above.
+ *
+ * The writer here is the only US-002-mandated cross-cuts in
+ * `pipeline-result-handler.ts`: the failure paths must produce the COMPOSED
+ * orphan ref (pair with `WorktreeManager.create`'s composed read) so a
+ * retry that consumes the ref can match. The composition is done at the
+ * call site via `deriveStoryWorktreeId(ctx.feature, ctx.story.id)`;
+ * `feature` is in the pipeline handler context. Earlier direct
+ * interpolation of `<storyId>` in the writer would have written a
+ * dangling ref the manager would never consume.
  */
-async function recordNaxOrphanOwnership(projectRoot: string, storyId: string): Promise<void> {
+async function recordNaxOrphanOwnership(
+  projectRoot: string,
+  worktreeId: import("../worktree").WorktreeId,
+): Promise<void> {
   const logger = getSafeLogger();
-  const orphanRef = naxOrphanRefName(storyId);
-  const sourceBranch = `refs/heads/nax/${storyId}`;
+  const orphanRef = naxOrphanRefName(worktreeId);
+  const sourceBranch = `refs/heads/${storyBranchName(worktreeId)}`;
   try {
     const proc = _resultHandlerDeps.spawn(["git", "update-ref", orphanRef, sourceBranch], {
       cwd: projectRoot,
@@ -127,7 +148,7 @@ async function recordNaxOrphanOwnership(projectRoot: string, storyId: string): P
     ] as const);
     if (exitCode !== 0) {
       logger?.warn("worktree", "Failed to record nax orphan ownership ref (non-fatal)", {
-        storyId,
+        worktreeId,
         orphanRef,
         sourceBranch,
         exitCode,
@@ -136,7 +157,7 @@ async function recordNaxOrphanOwnership(projectRoot: string, storyId: string): P
     }
   } catch (error) {
     logger?.warn("worktree", "Failed to record nax orphan ownership ref (non-fatal)", {
-      storyId,
+      worktreeId,
       orphanRef,
       sourceBranch,
       error: String(error),
@@ -287,7 +308,12 @@ export async function handlePipelineSuccess(
   // EXEC-002: In worktree mode, merge the story's branch into main after pipeline passes.
   if (ctx.config.execution.storyIsolation === "worktree") {
     const story = ctx.story;
-    const mergeResult = await _resultHandlerDeps.mergeEngine.merge(ctx.workdir, story.id);
+    // US-002: compose the brand via `deriveStoryWorktreeId(feature, story.id)`
+    // so the merge uses the same composed `nax/<worktreeId>` branch the
+    // manager created. The `_resultHandlerDeps.mergeEngine` slot is the
+    // pre-construction mergeEngine at module init; it accepts the brand.
+    const worktreeId = deriveStoryWorktreeId(ctx.feature, story.id);
+    const mergeResult = await _resultHandlerDeps.mergeEngine.merge(ctx.workdir, worktreeId);
     // Only an explicit "error" diverts away from rectification. A failure with no
     // failureKind keeps the historical behaviour (assume conflict) so a result from
     // outside this module cannot silently lose its rectification pass.
@@ -305,9 +331,9 @@ export async function handlePipelineSuccess(
       // so reclaim the directory. The branch stays for diagnostics, exactly as
       // the `case "fail"` arm does. US-002: on successful removal, also record
       // nax ownership so the retry can clean up the branch.
-      const removeSucceeded = await removeWorktreeDirectory(ctx.workdir, story.id);
+      const removeSucceeded = await removeWorktreeDirectory(ctx.workdir, worktreeId);
       if (removeSucceeded) {
-        await recordNaxOrphanOwnership(ctx.workdir, story.id);
+        await recordNaxOrphanOwnership(ctx.workdir, worktreeId);
       }
       return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: true };
     }
@@ -415,8 +441,9 @@ export async function handlePipelineFailure(
       // path does. Writing it here would make a later resume silently
       // discard the WIP branch via Step-3, instead of failing loudly at
       // `worktree add -b`.
-      if (hasWorktree(ctx.workdir, ctx.story.id)) {
-        await removeWorktreeDirectory(ctx.workdir, ctx.story.id);
+      const pauseWorktreeId = deriveStoryWorktreeId(ctx.feature, ctx.story.id);
+      if (hasWorktree(ctx.workdir, pauseWorktreeId)) {
+        await removeWorktreeDirectory(ctx.workdir, pauseWorktreeId);
       }
       const spend = storySpendUsd(ctx.runtime.costAggregator, ctx.story.id, ctx.totalCost);
       pipelineEventBus.emit({
@@ -451,10 +478,10 @@ export async function handlePipelineFailure(
       prdDirty = true;
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });
       // EXEC-002: All tiers exhausted — remove the worktree directory but keep the branch
-      // (nax/<storyId>) so the failed commits are preserved for diagnostics and re-run cleanup.
+      // (nax/<worktreeId>) so the failed commits are preserved for diagnostics and re-run cleanup.
       //
       // US-002: On a successful removal, additionally record nax ownership of
-      // the surviving branch by writing `refs/nax/orphan/<storyId>` to point
+      // the surviving branch by writing `refs/nax/orphan/<worktreeId>` to point
       // at the branch tip. The retry path consumes this ref as Step-3 evidence
       // so the next `WorktreeManager.create()` can force-delete the branch.
       // The record lives in the same git store as the thing it describes and
@@ -465,16 +492,17 @@ export async function handlePipelineFailure(
       // write it (preserving the "keep branch for diagnostics" promise on
       // resume). A failed `git worktree remove` does NOT write it either —
       // the branch is still checked out in a (surviving) live worktree, so
+      const failWorktreeId = deriveStoryWorktreeId(ctx.feature, ctx.story.id);
       // claiming nax owns an orphan would be a false record that misleads
       // the next create().
-      if (hasWorktree(ctx.workdir, ctx.story.id)) {
-        const removeSucceeded = await removeWorktreeDirectory(ctx.workdir, ctx.story.id);
+      if (hasWorktree(ctx.workdir, failWorktreeId)) {
+        const removeSucceeded = await removeWorktreeDirectory(ctx.workdir, failWorktreeId);
         if (removeSucceeded) {
-          await recordNaxOrphanOwnership(ctx.workdir, ctx.story.id);
+          await recordNaxOrphanOwnership(ctx.workdir, failWorktreeId);
         }
         logger?.info("worktree", "Kept failed story branch", {
           storyId: ctx.story.id,
-          branch: `nax/${ctx.story.id}`,
+          branch: storyBranchName(failWorktreeId),
         });
       }
 

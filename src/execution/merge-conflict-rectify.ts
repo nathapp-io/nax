@@ -262,13 +262,16 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
 
     // Step 1: Remove old worktree
     try {
-      await worktreeManager.remove(workdir, storyId);
+      // US-003 site: this cast keeps US-002 compiling. US-003 composes
+      // the brand via `deriveStoryWorktreeId`.
+      await worktreeManager.remove(workdir, storyId as unknown as import("../worktree").WorktreeId);
     } catch {
       // Ignore — worktree may have already been removed
     }
 
     // Step 2: Create fresh worktree from current HEAD
-    await worktreeManager.create(workdir, storyId);
+    // US-003 site: same cast pattern as Step 1 above.
+    await worktreeManager.create(workdir, storyId as unknown as import("../worktree").WorktreeId);
     const worktreePath = path.join(workdir, ".nax-wt", storyId);
 
     // @design: BUG-122: Close stale ACP session from the original failed run before re-running.
@@ -316,7 +319,13 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     }
 
     // Step 4: Attempt merge on updated base
-    const mergeResults = await mergeEngine.mergeAll(workdir, [storyId], { [storyId]: [] });
+    // US-003 site: this cast keeps US-002 compiling. US-003 composes the
+    // brand via `deriveStoryWorktreeId`.
+    const mergeResults = await mergeEngine.mergeAll(
+      workdir,
+      [{ storyId, worktreeId: storyId as unknown as import("../worktree").WorktreeId }],
+      { [storyId]: [] },
+    );
     const mergeResult = mergeResults[0];
 
     if (!mergeResult?.success) {

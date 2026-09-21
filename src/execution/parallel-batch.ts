@@ -142,7 +142,10 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   for (const story of stories) {
     storyStartTimes.set(story.id, Date.now());
     try {
-      await worktreeManager.create(workdir, story.id);
+      // US-003 site: this cast keeps US-002 compiling. US-003 replaces
+      // `story.id` with `deriveStoryWorktreeId(feature, story.id)` so the
+      // brand is composed rather than asserted.
+      await worktreeManager.create(workdir, story.id as unknown as import("../worktree").WorktreeId);
     } catch (error) {
       logger?.error("parallel-batch", "Failed to create worktree for story", {
         storyId: story.id,
@@ -236,7 +239,9 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
       // batch's wall-clock time instead of the actual (near-instant) failure.
       preExecutionFailureEndTimes.set(story.id, Date.now());
       try {
-        await worktreeManager.remove(workdir, story.id);
+        // US-003 site: this cast keeps US-002 compiling. US-003 composes
+        // the brand via `deriveStoryWorktreeId`.
+        await worktreeManager.remove(workdir, story.id as unknown as import("../worktree").WorktreeId);
       } catch {
         // best-effort cleanup
       }
@@ -280,7 +285,13 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
     const deps: Record<string, string[]> = {};
     for (const s of stories) deps[s.id] = s.dependencies ?? [];
 
-    const mergeResults = await mergeEngine.mergeAll(workdir, successfulIds, deps);
+    // US-003 site: this cast keeps US-002 compiling. US-003 composes the
+    // brand via `deriveStoryWorktreeId` per entry.
+    const successfulStories = successfulIds.map((id) => ({
+      storyId: id,
+      worktreeId: id as unknown as import("../worktree").WorktreeId,
+    }));
+    const mergeResults = await mergeEngine.mergeAll(workdir, successfulStories, deps);
 
     for (const mergeResult of mergeResults) {
       const story = workerResult.pipelinePassed.find((s) => s.id === mergeResult.storyId);

@@ -9,7 +9,14 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { makeSpawn, makeWorktreeManager } from "@test/helpers";
 import { _gitDeps } from "@/utils/git";
 import type { StoryDependencies } from "@/worktree";
-import { MergeEngine } from "@/worktree";
+import { deriveStoryWorktreeId, MergeEngine } from "@/worktree";
+
+// US-002: the engine's merge/mergeAll take a `WorktreeId` (branded).
+// Each test below derives the identity via `deriveStoryWorktreeId` so
+// the composed branch `nax/story-f-US-001` is the form the engine reads
+// off the wire. The "raw" form (`US-001`) stays as the join key in
+// `StoryDependencies` and on `MergeResult.storyId`.
+const deriveFor = (rawId: string): import("@/worktree").WorktreeId => deriveStoryWorktreeId("f", rawId);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -204,23 +211,28 @@ describe("MergeEngine.mergeAll", () => {
 
     const engine = new MergeEngine(mockManager);
 
-    // Mock merge to fail for US-001
+    // Mock merge to fail for US-001. The engine's merge receives a
+    // composed WorktreeId; the mock compares against the derived form.
     const originalMerge = engine.merge;
     let callCount = 0;
+    const failId = deriveFor("US-001");
     engine.merge = async (_projectRoot: string, storyId: string) => {
       callCount++;
-      if (storyId === "US-001") {
+      if (storyId === failId) {
         return { success: false, conflictFiles: ["file.ts"], retryCount: 0 };
       }
       return { success: true, retryCount: 0 };
     };
 
-    const storyIds = ["US-001", "US-002"];
+    const stories = [
+      { storyId: "US-001", worktreeId: deriveFor("US-001") },
+      { storyId: "US-002", worktreeId: deriveFor("US-002") },
+    ];
     const dependencies: StoryDependencies = {
       "US-002": ["US-001"],
     };
 
-    const results = await engine.mergeAll("/tmp/project", storyIds, dependencies);
+    const results = await engine.mergeAll("/tmp/project", stories, dependencies);
 
     expect(results.length).toBe(2);
     expect(results[0].success).toBe(false);
@@ -236,19 +248,25 @@ describe("MergeEngine.mergeAll", () => {
 
     const engine = new MergeEngine(mockManager);
 
-    // Mock merge to fail for US-002 only
+    // Mock merge to fail for US-002 only. US-002's composed worktreeId
+    // is what the engine hands to merge() post-US-002.
     const originalMerge = engine.merge;
+    const failId = deriveFor("US-002");
     engine.merge = async (_projectRoot: string, storyId: string) => {
-      if (storyId === "US-002") {
+      if (storyId === failId) {
         return { success: false, conflictFiles: ["file.ts"], retryCount: 0 };
       }
       return { success: true, retryCount: 0 };
     };
 
-    const storyIds = ["US-001", "US-002", "US-003"];
+    const stories = [
+      { storyId: "US-001", worktreeId: deriveFor("US-001") },
+      { storyId: "US-002", worktreeId: deriveFor("US-002") },
+      { storyId: "US-003", worktreeId: deriveFor("US-003") },
+    ];
     const dependencies: StoryDependencies = {};
 
-    const results = await engine.mergeAll("/tmp/project", storyIds, dependencies);
+    const results = await engine.mergeAll("/tmp/project", stories, dependencies);
 
     expect(results.length).toBe(3);
     expect(results[0].success).toBe(true); // US-001 succeeds
@@ -306,7 +324,7 @@ describe("MergeEngine — non-conflict git failures", () => {
     // repo left clean (no MERGE_HEAD, no unmerged files). Previously this threw
     // out of mergeAll, discarding US-001's recorded success and never trying US-003.
     _gitDeps.spawn = fakeSpawn((cmd) => {
-      if (isMergeCmd(cmd) && cmd[3] === "nax/US-002") return { exit: 2, stderr: DIRTY_TREE_STDERR };
+      if (isMergeCmd(cmd) && cmd[3] === "nax/story-f-US-002") return { exit: 2, stderr: DIRTY_TREE_STDERR };
       if (isMergeCmd(cmd)) return { exit: 0 };
       if (isMergeHeadProbe(cmd)) return { exit: 1 }; // never mid-merge
       if (isUnmergedProbe(cmd)) return { exit: 0, stdout: "" }; // no unmerged files
@@ -314,7 +332,12 @@ describe("MergeEngine — non-conflict git failures", () => {
     });
 
     const engine = new MergeEngine(mockWorktreeManager);
-    const results = await engine.mergeAll("/repo", ["US-001", "US-002", "US-003"], {});
+    const stories = [
+      { storyId: "US-001", worktreeId: deriveFor("US-001") },
+      { storyId: "US-002", worktreeId: deriveFor("US-002") },
+      { storyId: "US-003", worktreeId: deriveFor("US-003") },
+    ];
+    const results = await engine.mergeAll("/repo", stories, {});
 
     expect(results.length).toBe(3);
     expect(results[0]).toMatchObject({ storyId: "US-001", success: true });
@@ -343,7 +366,7 @@ describe("MergeEngine — non-conflict git failures", () => {
     });
 
     const engine = new MergeEngine(mockWorktreeManager);
-    const result = await engine.merge("/repo", "US-001");
+    const result = await engine.merge("/repo", deriveFor("US-001"));
 
     expect(result.success).toBe(false);
     expect(result.failureKind).toBe("error");
@@ -361,7 +384,7 @@ describe("MergeEngine — non-conflict git failures", () => {
     });
 
     const engine = new MergeEngine(mockWorktreeManager);
-    const result = await engine.merge("/repo", "US-001");
+    const result = await engine.merge("/repo", deriveFor("US-001"));
 
     expect(result.success).toBe(false);
     expect(result.failureKind).toBe("error");
@@ -401,7 +424,7 @@ describe("MergeEngine — non-conflict git failures", () => {
     _gitDeps.spawn = conflictingRepo({ abortExit: 128, unmerged: "f.txt\n" });
 
     const engine = new MergeEngine(mockWorktreeManager);
-    const result = await engine.merge("/repo", "US-001");
+    const result = await engine.merge("/repo", deriveFor("US-001"));
 
     expect(result.success).toBe(false);
     expect(result.failureKind).toBe("error");
@@ -411,7 +434,7 @@ describe("MergeEngine — non-conflict git failures", () => {
     _gitDeps.spawn = conflictingRepo({ abortExit: 0, unmerged: "f.txt\nsrc/g.ts\n" });
 
     const engine = new MergeEngine(mockWorktreeManager);
-    const result = await engine.merge("/repo", "US-001");
+    const result = await engine.merge("/repo", deriveFor("US-001"));
 
     expect(result.success).toBe(false);
     expect(result.failureKind).toBe("conflict");
@@ -427,7 +450,11 @@ describe("MergeEngine — non-conflict git failures", () => {
     });
 
     const engine = new MergeEngine(mockWorktreeManager);
-    const results = await engine.mergeAll("/repo", ["US-001", "US-002"], {});
+    const stories = [
+      { storyId: "US-001", worktreeId: deriveFor("US-001") },
+      { storyId: "US-002", worktreeId: deriveFor("US-002") },
+    ];
+    const results = await engine.mergeAll("/repo", stories, {});
 
     expect(results.length).toBe(2);
     expect(results.every((r) => !r.success && r.failureKind === "error")).toBe(true);
@@ -494,7 +521,7 @@ describe("MergeEngine — BUG-5 git-with-timeout regression", () => {
 
     const engine = new MergeEngine(mockWorktreeManager);
     const start = Date.now();
-    const result = await engine.merge("/repo", "US-001");
+    const result = await engine.merge("/repo", deriveFor("US-001"));
     const elapsed = Date.now() - start;
 
     // TEST_GIT_TIMEOUT_MS + slack. Pre-fix: hangs forever. Post-fix:
