@@ -4,7 +4,7 @@
  * attach onPidSpawned/onPidExited to the adapter automatically.
  */
 
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { assertDefined, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { PidRegistry } from "@/execution/pid-registry";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
@@ -13,8 +13,13 @@ function makeRegistry(workdir = "/tmp/test-pid-session"): PidRegistry {
   return new PidRegistry(workdir);
 }
 
+const _origWriteDescriptor = _sessionManagerDeps.writeDescriptor;
 beforeEach(() => {
   _sessionManagerDeps.writeDescriptor = async () => {};
+});
+
+afterEach(() => {
+  _sessionManagerDeps.writeDescriptor = _origWriteDescriptor;
 });
 
 describe("SessionManager PID lifecycle — configureRuntime", () => {

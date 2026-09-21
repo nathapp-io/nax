@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine/orchestrator";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
 
@@ -13,9 +13,16 @@ const BASE_REQUEST: ContextRequest = {
   extraProviderIds: [],
 };
 
+const _origUuid = _orchestratorDeps.uuid;
+const _origNow = _orchestratorDeps.now;
 beforeEach(() => {
   _orchestratorDeps.uuid = () => "00000000-0000-4000-8000-000000000001";
   _orchestratorDeps.now = () => Date.now();
+});
+
+afterEach(() => {
+  _orchestratorDeps.uuid = _origUuid;
+  _orchestratorDeps.now = _origNow;
 });
 
 function makeProvider(id: string, fetch: () => Promise<ContextProviderResult>): IContextProvider {

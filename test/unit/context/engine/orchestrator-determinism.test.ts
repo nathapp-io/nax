@@ -6,7 +6,7 @@
  * (no field or deterministic: true) are always included.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine/orchestrator";
 import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/context/engine/types";
 
@@ -15,10 +15,17 @@ import type { ContextProviderResult, ContextRequest, IContextProvider } from "@/
 // ─────────────────────────────────────────────────────────────────────────────
 
 let _seq = 0;
+const _origUuid = _orchestratorDeps.uuid;
+const _origNow = _orchestratorDeps.now;
 beforeEach(() => {
   _seq = 0;
   _orchestratorDeps.uuid = () => `test-uuid-${++_seq}` as `${string}-${string}-${string}-${string}-${string}`;
   _orchestratorDeps.now = () => Date.now();
+});
+
+afterEach(() => {
+  _orchestratorDeps.uuid = _origUuid;
+  _orchestratorDeps.now = _origNow;
 });
 
 const BASE_REQUEST: ContextRequest = {

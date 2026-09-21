@@ -698,4 +698,30 @@ whole argument, and it is why the rule moved to the gate rather than the gate to
 
 Counts unchanged: 19,599 tests / 1,539 files / 45,298 expect() / 43 skip.
 
-### 9.4 — next entry goes here
+### 9.4 — 2026-09-21, Task 3 confirmed, Task 2 landed (no tests changed in count)
+
+Confirmed §0.3/§1.1/§1.4/§1.5 before the first merge: the target is -233 files / -11,185
+lines, not the test count; mirrors (54) and nested bases are handled by the ranker and
+must not be merged; the runtime test/`expect()` invariant is the only detector of a
+dropped `describe` since coverage is 12,000 lines of slack above its floor; nothing in
+§1.5's forbidden list (delete test, merge mirror, weaken assertion, escape hatch,
+re-baseline, touch `src/`, move between phases) was exercised.
+
+Task 2: 10 files restored. Eight stubbed `_deps` from a top-level `beforeEach`
+(`orchestrator{,-extra-provider-ids,-us004,-determinism}`,
+`session/manager-{pid-lifecycle,bind-handle,lifecycle}`, `cli/auth-prompt`): captured the
+origins as module constants and added an `afterEach` that assigns them back
+(`orchestrator.test.ts` and `manager-lifecycle.test.ts` per the §1.6 top-level rule; the
+6 satellites share the same shape, so the same recipe). `runtime/cost-aggregator` and
+`finish/commit` mutate inside test bodies only, so `withDepsRestore` worked:
+`cost-aggregator` scoped to its single describe, `commit` at module top (no prior
+stubbing hook). `?deps` file `execution/lifecycle/test-baseline-capture.test.ts` read:
+its `afterEach` calls `resetCaptureDeps()` which reassigns all 10 `_captureDeps` fields
+(shipped resolvers restored, others deterministically stubbed) — a complete restore the
+ranker cannot see because the hook body is a call, not an assignment. **Fine as-is.**
+
+Proof: ranker `_deps unrestored 0`; `bun run test` 0 fail, 19,599 tests / 45,298 expect()
+/ 43 skip, unchanged; `check:all` 0; both `tsc --noEmit` clean; coverage 96.32% lines /
+93.40% functions, 0 below floor.
+
+### 9.5 — next entry goes here

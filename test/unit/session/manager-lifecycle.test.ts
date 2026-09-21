@@ -4,7 +4,7 @@
  *   - closeStory(storyId)   — force-close all non-terminal sessions for a story
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 
@@ -14,6 +14,9 @@ import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 
 let _uuidSeq = 0;
 let _timeSeq = 0;
+const _origUuid = _sessionManagerDeps.uuid;
+const _origNow = _sessionManagerDeps.now;
+const _origWriteDescriptor = _sessionManagerDeps.writeDescriptor;
 
 beforeEach(() => {
   _uuidSeq = 0;
@@ -23,6 +26,12 @@ beforeEach(() => {
   _sessionManagerDeps.now = () => `2025-01-01T00:${String(_timeSeq++).padStart(2, "0")}:00.000Z`;
   // Suppress disk writes during unit tests
   _sessionManagerDeps.writeDescriptor = async () => {};
+});
+
+afterEach(() => {
+  _sessionManagerDeps.uuid = _origUuid;
+  _sessionManagerDeps.now = _origNow;
+  _sessionManagerDeps.writeDescriptor = _origWriteDescriptor;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

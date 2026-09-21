@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { withDepsRestore } from "@test/helpers";
 import { NaxError } from "@/errors";
 import {
   _finishGitDeps,
@@ -12,6 +13,8 @@ import {
 
 type GitCall = { args: string[]; workdir: string; timeoutMs?: number };
 type GitResult = { stdout: string; stderr: string; exitCode: number };
+
+withDepsRestore(_finishGitDeps, ["git"]);
 
 /** Records every call so a test can assert argv shape and per-call timeout. */
 function makeGitStub(handler: (call: GitCall) => GitResult) {

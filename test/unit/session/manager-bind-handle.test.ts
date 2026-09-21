@@ -3,16 +3,23 @@
  * Extracted from manager.test.ts to keep file under the 400-line limit.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { NaxError } from "@/errors";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 
 let _timeSeq = 0;
+const _origNow = _sessionManagerDeps.now;
+const _origWriteDescriptor = _sessionManagerDeps.writeDescriptor;
 
 beforeEach(() => {
   _timeSeq = 0;
   _sessionManagerDeps.now = () => `2025-01-01T00:${String(_timeSeq++).padStart(2, "0")}:00.000Z`;
   _sessionManagerDeps.writeDescriptor = async () => {};
+});
+
+afterEach(() => {
+  _sessionManagerDeps.now = _origNow;
+  _sessionManagerDeps.writeDescriptor = _origWriteDescriptor;
 });
 
 describe("SessionManager.bindHandle()", () => {

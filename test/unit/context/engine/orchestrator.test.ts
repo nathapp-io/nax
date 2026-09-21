@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { NeutralityLintError } from "@/context";
 import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine/orchestrator";
 import type {
@@ -14,10 +14,17 @@ import type {
 // ─────────────────────────────────────────────────────────────────────────────
 
 let _reqSeq = 0;
+const _origUuid = _orchestratorDeps.uuid;
+const _origNow = _orchestratorDeps.now;
 beforeEach(() => {
   _reqSeq = 0;
   _orchestratorDeps.uuid = () => `test-uuid-${++_reqSeq}` as `${string}-${string}-${string}-${string}-${string}`;
   _orchestratorDeps.now = () => Date.now();
+});
+
+afterEach(() => {
+  _orchestratorDeps.uuid = _origUuid;
+  _orchestratorDeps.now = _origNow;
 });
 
 const BASE_REQUEST: ContextRequest = {

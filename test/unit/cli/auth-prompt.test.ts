@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   _authPromptDeps,
   PromptCancelledError,
@@ -41,6 +41,8 @@ function makeStdin() {
 }
 
 let written: string[];
+const _origWrite = _authPromptDeps.write;
+const _origStdin = _authPromptDeps.stdin;
 
 beforeEach(() => {
   written = [];
@@ -48,6 +50,11 @@ beforeEach(() => {
     written.push(text);
     return true;
   };
+});
+
+afterEach(() => {
+  _authPromptDeps.write = _origWrite;
+  _authPromptDeps.stdin = _origStdin;
 });
 
 describe("promptForSecret", () => {

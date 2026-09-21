@@ -23,7 +23,7 @@
  * document behaviour the implementer must preserve.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "@/context/engine/types";
 
@@ -32,10 +32,17 @@ import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk 
 // ─────────────────────────────────────────────────────────────────────────────
 
 let _reqSeq = 0;
+const _origUuid = _orchestratorDeps.uuid;
+const _origNow = _orchestratorDeps.now;
 beforeEach(() => {
   _reqSeq = 0;
   _orchestratorDeps.uuid = () => `test-uuid-${++_reqSeq}` as `${string}-${string}-${string}-${string}-${string}`;
   _orchestratorDeps.now = () => Date.now();
+});
+
+afterEach(() => {
+  _orchestratorDeps.uuid = _origUuid;
+  _orchestratorDeps.now = _origNow;
 });
 
 const BASE_REQUEST: ContextRequest = {
