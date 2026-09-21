@@ -76,6 +76,8 @@ describe("`nax resume` — AC-9: log filename matches the run identifier", () =>
     // Lay down a minimal .nax project + a passed-story PRD so the runner
     // completes without spawning an agent and writes its final state.
     writeProjectFixture(tempDir, "ac9-feature");
+    const outputDir = join(tempDir, "run-output");
+    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({ outputDir }));
 
     // Stub process.exit so the resume action's "process.exit(...)" call
     // does not kill the test runner. The action always reaches
@@ -95,10 +97,6 @@ describe("`nax resume` — AC-9: log filename matches the run identifier", () =>
 
     await program.parseAsync(["node", "nax", "resume", "-f", "ac9-feature", "-d", tempDir]);
 
-    // projectKey defaults to basename(tempDir); the runner writes status
-    // and log files under `<globalDir>/<projectKey>/...`.
-    const projectKey = tempDir.split("/").pop() ?? "";
-    const outputDir = join(globalDir, projectKey);
     const runsDir = join(outputDir, "features", "ac9-feature", "runs");
 
     const logFiles = existsSync(runsDir) ? readdirSync(runsDir).filter((f) => f.endsWith(".jsonl")) : [];
