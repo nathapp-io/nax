@@ -72,7 +72,9 @@ describe("LockAcquisitionError", () => {
     expect(err).toBeInstanceOf(NaxError);
     expect(err.name).toBe("LockAcquisitionError");
     expect(err.code).toBe("LOCK_ACQUISITION_FAILED");
-    expect(err.message).toBe("Another nax process is already running in this directory (PID 4242 on h1)");
+    // AC3 requires the message to name the working directory — "in this
+    // directory" alone is an anaphoric reference, not a path.
+    expect(err.message).toBe("Another nax process is already running in /repo (PID 4242 on h1)");
     expect(err.context).toEqual({ workdir: "/repo", pid: 4242, host: "h1" });
   });
 

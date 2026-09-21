@@ -36,6 +36,25 @@ function getSafeLogger() {
 }
 
 /**
+ * Parse a lock-record holder from raw on-disk content. Returns the holder's
+ * `pid` and (when present) `host`, or null when the content is missing,
+ * unreadable, or unparseable — callers fall back to a generic refusal in
+ * that case.
+ */
+function parseHolder(raw: string | null): { pid: number; host?: string } | null {
+  if (raw === null) return null;
+  try {
+    const parsed = JSON.parse(raw) as { pid?: unknown; host?: unknown };
+    if (typeof parsed.pid !== "number") return null;
+    const holder: { pid: number; host?: string } = { pid: parsed.pid };
+    if (typeof parsed.host === "string") holder.host = parsed.host;
+    return holder;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Write `content` to `targetPath` only if it doesn't already exist
  * (O_CREAT | O_EXCL). Returns false (instead of throwing) on EEXIST — used by
  * the BUG-34 fix to restore a wrongly-stolen lock without ever overwriting a
@@ -192,8 +211,19 @@ export async function acquireLock(workdir: string): Promise<LockAcquisitionResul
     fs.closeSync(fd);
     return { acquired: true };
   } catch (error) {
-    // EEXIST means another process won the race
+    // EEXIST means another process won the race — re-read the lock file so
+    // the refusal names the actual holder rather than `pid: 0`. AC3 mandates
+    // a holder-named refusal; reporting `pid: 0` would propagate through to
+    // the LockAcquisitionError message and the AC3 audit would name an
+    // impossible holder.
     if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      const racerContent = await Bun.file(lockPath)
+        .text()
+        .catch(() => null);
+      const racerHolder = parseHolder(racerContent);
+      if (racerHolder !== null) {
+        return { acquired: false, holder: racerHolder };
+      }
       return { acquired: false, holder: { pid: 0 } };
     }
     const logger = getSafeLogger();

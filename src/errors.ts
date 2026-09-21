@@ -65,12 +65,15 @@ export class StoryLimitExceededError extends NaxError {
  * `holderWorkdir` distinguish the feature-lock refusal.
  *
  * Two distinguishable message forms:
- *   checkout: "Another nax process is already running in this directory (PID <pid> on <host>)"
+ *   checkout: "Another nax process is already running in <workdir> (PID <pid> on <host>)"
  *   feature:  "Feature \"<feature>\" is locked by another run (PID <pid> on <host>, workdir <holderWorkdir>)"
  *
  * The feature refusal takes precedence whenever `feature` is supplied on the
  * args — callers acquire the checkout lock first, so by the time we know we
  * are emitting the feature refusal both locks may have been attempted.
+ *
+ * AC3 mandates the checkout message name the working directory; "in this
+ * directory" alone would be an anaphoric reference, not a path.
  */
 export class LockAcquisitionError extends NaxError {
   constructor(args: { workdir: string; pid?: number; host?: string; feature?: string; holderWorkdir?: string }) {
@@ -94,7 +97,10 @@ export class LockAcquisitionError extends NaxError {
     }
     const holderHost = args.host ?? "?";
     const holderPid = args.pid ?? 0;
-    return `Another nax process is already running in this directory (PID ${holderPid} on ${holderHost})`;
+    // AC3: the message must name the working directory — "in this directory"
+    // is an anaphoric reference, not a path. Embed the workdir explicitly so
+    // the refusal self-identifies where to investigate.
+    return `Another nax process is already running in ${args.workdir} (PID ${holderPid} on ${holderHost})`;
   }
 
   private static buildContext(args: {
