@@ -16,29 +16,29 @@ to re-measure after every task, and §6 tells you when to stop rather than push 
 
 ---
 
-## 0. Current state - measured 2026-09-21 on `main` @ 4af3c680e (after the debate-delete merge)
+## 0. Current state - re-measured 2026-09-21 @ 9bd1b8bab (after Task 14; original main measurement @ 4af3c680e in §9.0)
 
 ```
 bun run report:test-consolidation
   scope              test/unit + test/integration + test/ui  (test/e2e/ excluded — separate CI step)
-  scanned            1539 files, 376725 lines, 35616 expect()
+  scanned            1458 files, 375268 lines, 35616 expect()
   static test sites  17457  + 543 .each sites — NOT the runtime count, use `bun test`
   satellite groups   142  (nested bases collapsed into their outermost ancestor)
-  satellites         385  (292 encode a ticket — rule §2 violations)
+  satellites         304  (223 encode a ticket — rule §2 violations)
   mirrors            54  EXCLUDED — each is its own src module's test file (--mirrors)
-  _deps unrestored   10 files with no restore; 1 need a read (hook, no visible restore)
-  removable files    233   (packed to 650, hard cap 800)
-  removable lines    11185
+  _deps unrestored   0 files with no restore; 1 need a read (hook, no visible restore)
+  removable files    151   (packed to 650, hard cap 800; 233 at drain start)
+  removable lines    6012   (11,185 at drain start)
 ```
 
 ### 0.1 Runtime state — measured with `bun test`, which is the only authority on test counts
 
 | Suite | Tests | Files | `expect()` | Skip | Wall | Cap |
 |:--|--:|--:|--:|--:|--:|--:|
-| `test/unit/` | 18,247 | 1,405 | 42,169 | 7 | 44–49s | 120s |
-| `test/integration/` | 1,254 | 124 | 2,980 | 36 | 16–17s | 120s |
+| `test/unit/` | 18,247 | 1,320 | 42,169 | 7 | 44–50s | 120s |
+| `test/integration/` | 1,254 | 124 | 2,980 | 36 | 16–18s | 120s |
 | `test/ui/` | 98 | 10 | 149 | 0 | 0.85s | 30s |
-| **Total (`bun run test`)** | **19,599** | **1,539** | **45,298** | **43** | **~61s** | — |
+| **Total (`bun run test`)** | **19,599** | **1,454** | **45,298** | **43** | **~62–90s** | — |
 
 0 fail. **Do not mix these with the ranker's static counts.** The ranker reports 17,457
 static `test(`/`it(` sites because it cannot expand the 543 `.each` sites, and 35,616
@@ -49,13 +49,13 @@ static `expect(` occurrences because it cannot count calls inside loops. Every i
 
 | Reading | Value | Source |
 |:--|--:|:--|
-| Test lines / src lines | **376,725 / 166,420 — 2.26:1** | ranker; `wc -l` over `src/**/*.ts{,x}` |
-| Preamble (lines before the first `describe`) | **70,169 — 18.6% of test lines, 46/file** | ranker definition |
-| Files importing `@test/helpers` | 937 (60.9%) of 1,539 | grep |
+| Test lines / src lines | **375,268 / 166,420 — 2.26:1** | ranker; `wc -l` over `src/**/*.ts{,x}` |
+| Preamble (lines before the first `describe`) | **~68,700 — 18.3% of test lines** | ranker definition |
+| Files importing `@test/helpers` | 889 (61.1%) of 1,454 | grep |
 | Helper modules available | 48 in `test/helpers/` (excl. `index.ts`, `e2e/`) | `ls` |
-| Satellite groups / satellites / mirrors | **142 / 385 / 54** | ranker |
-| Satellites encoding a ticket | **292 of 385 (76%)** | ranker |
-| Removable files / lines | **233** (1,539 → 1,306) / **11,185** | ranker |
+| Satellite groups / satellites / mirrors | **142 / 304 / 54** | ranker |
+| Satellites encoding a ticket | **223 of 304 (73%)** | ranker |
+| Removable files / lines | **151** (1,454 → 1,303) / **6,012** | ranker |
 | Line coverage | **96.32%** (74,694/77,549), floor 80% | `bun run test:coverage` |
 | Function coverage | **93.39–93.41%** (7,047–7,049/7,546), floor 80% | same, varies run to run |
 | Files below the per-file floor | **0**, baseline empty | same |
@@ -1038,4 +1038,53 @@ tier-escalation (-6), adapter (-6) = **-32 files, -2,320 lines** — exactly on 
 plan's Wave-2 target. §9.9's Wave-1 shortfall (-3 vs -52) stands; cumulative now
 -81 files against the plan's cumulative -84 for Waves 1+2.
 
-### 9.15 — next entry goes here
+### 9.15 — 2026-09-21, Task 14 landed — buildHopCallback group 7 → 3 files (-125 lines)
+
+Re-ranked first per §2.2: the floor moved (Waves 1–2 landed), and buildHopCallback
+became the top remaining group (rank 5, +4 removable files). Target was 7 → 3
+(-4 f, packer claims -341 l); **landed 7 → 3 (-4 f, -125 l)** — the packer's
+line projection again followed the §9.5/§9.13 understatement pattern.
+
+All 72 tests / (unit-phase) 42,169 expect() preserved: unit phase 18,247 /
+42,169 (unchanged), full suite 0 fail, `check:all` 0, both tsc clean,
+coverage 96.32% lines / 93.41% functions, 0 below floor. Ranker `_deps
+unrestored 0` throughout (group carried no `⚠deps` flag).
+
+Seams (packer's bin 2 mixes four unrelated preambles; mine pair what shares
+fixtures):
+
+- Receiver A — `build-hop-callback-diff-access.test.ts` absorbs
+  `coding-tools` + `context-tools` (run-path reachability: all three assert
+  "what reaches `runAsSession`" — nax#1744 pull tools, nax#1744 coding tools,
+  #1800 diff-access substitution). **692l — over the 650 fill target, 108
+  short of the cap.** Rationale: three genuinely different `makeCtx` fixture
+  families with different record shapes (DispatchRecord vs Dispatch) cannot
+  dedupe into one preamble; the realistic seam floor here is ~660–700, and
+  §9.5's call-op-retry precedent landed 799. Renames: `makeDiffAccessCtx` /
+  `makeContextToolsCtx` / `makeCodingToolsCtx`, `makeContextToolsOptions` /
+  `makeCodingToolsOptions`, `CODING_TOOLS_SESSION_ID`; deduped the byte
+  identical `only()` and `Dispatch` from the two tool files (the only() side
+  drops one STATIC expect site — runtime count unchanged, verified via
+  junit). `createContextToolRuntime` mock hoisted to the shared top-level
+  deps pair after verifying the preamble is gated on `pullTools.length`
+  (src/operations/build-hop-callback.ts:278), so diff-access's empty-bundle
+  assertions are unaffected.
+- Receiver B — `build-hop-callback-stale-retry.test.ts` absorbs `model-pin`
+  (nax#1722 re-resolution) + `tier` (hopTier/hopModelId): hop mechanics,
+  449l. `SWAP_FAILURE` byte-identical in stale-retry and tier → deduped;
+  model-pin's `STUB_TURN` differed in tokenUsage → renamed `PIN_STUB_TURN`;
+  `SESSION_ID` literal inlined per absorbed member.
+- Base (794l, mirror) untouched. No `src/` change, no escape hatches, no
+  baselines moved.
+
+Deletes (4): `build-hop-callback-coding-tools`, `build-hop-callback-context-tools`,
+`build-hop-callback-model-pin`, `build-hop-callback-tier`.
+
+Mutation check: flipped one assertion per receiver — 2 distinct failures (AC5
+native-rendering `toContain("SHELL BODY")` negated; stale-retry
+`openSession.not.toHaveBeenCalled()` → `toHaveBeenCalledTimes(1)`), 45
+unrelated pass, reverted both. Post-commit re-run clean.
+
+Runtime invariants (junit-measured): unit 18,247 t / 42,169 a / 7 skip;
+integration 1,254 / 2,980 / 36; ui 98 / 149 / 0. **45,298 expect() total —
+unchanged, the mandatory invariant.**
