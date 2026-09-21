@@ -1593,3 +1593,51 @@ Wave 4 running total: **-12 files**. Cumulative: **-125** (vs the plan's Waves
 1-4 cumulative -141; the six remaining Wave-4 groups carry -13). The persistent
 3-file shortfall remains the documented over-target landings in §9.5 (callOp)
 and §9.8 (orchestrator).
+
+### 9.26 — 2026-09-21, Task 26 landed — pid-registry group 4 → 1 file (-7 lines)
+
+Wave 4 continued after a `git fetch origin && git rebase origin/main` (§2.2/§5):
+2 new `origin/main` commits (`fix: mute test:coverage output under AGENT=1`,
+touching `scripts/check-coverage.ts` + `test/unit/scripts/check-coverage.test.ts`)
+came in underneath. Re-measured the baseline before merging: **unit 18,311 t /
+42,334 a / 7 skip** (up from §0.1's 18,309 / 42,331 — main's new check-coverage
+tests, not drift). Integration/ui unchanged. **18,311 / 42,334 is the Wave-4
+continuation baseline** for the remaining tasks.
+
+Hit the packed target exactly: 4 → 1 file, 627 → 620 lines (-7). All 27 group
+tests / 130 runtime expects preserved (base 17 + race 4 + freeze 5 +
+serialization 1). Unit phase 18,311 / 42,334 unchanged; full suite 0 fail,
+`check:all` 0, both tsc clean, coverage 96.36% lines / 93.39% functions, 0 below
+floor. Ranker `_deps unrestored 0` (group carried no `⚠deps` flag).
+
+T2 (absorb into base): `pid-registry.test.ts` (mirror base of
+`src/execution/pid-registry.ts`, 412l → 620l, under the 650 fill target) absorbs
+all three satellites. The four files were pure seam splits of the same class —
+`race` (concurrent register/coordinate writes, RACE-34 durability), `freeze`
+(shutdown no-op guard), `serialization` (interleaved register/unregister disk
+consistency). **No renames needed:** every absorbed fixture (`tempDir`,
+`registry`, `workdir`, `dir`, `reg`) was already scoped inside its own
+`describe`, and all five describe names were distinct. Imports merged only:
+`tmpdir` (`node:os`), `join` (`node:path`), `cleanupTempDir`/`makeTempDir`
+extended onto the existing `@test/helpers` import. Every absorbed `beforeEach`/
+`afterEach` stays scoped inside its own describe, so the base's `TEST_WORKDIR`
+lifecycle is untouched (§1.6: never give every test in the result both hooks).
+The base's existing top-level `withDepsRestore(_pidRegistryDeps, ["spawn",
+"sleep"])` is the only deps restore, and only the base's own tests mutate deps —
+the three satellites never touch `_pidRegistryDeps`.
+
+Deletes (3): `pid-registry-race`, `pid-registry-freeze`,
+`pid-registry-serialization`. **Group dissolved** — the ranker now lists no
+pid-registry group (groups 141 → 140, satellites 263 → 260, removable 107 →
+104).
+
+Mutation check: 3 merged describes × one flipped assertion — race
+`lines.length === pidCount` (+1), freeze `isFrozen()` false→true, serialization
+`Set(onDisk)` vs `Set(["MUTATION"])` → 3 distinct failures, 24 pass; all
+reverted with exact reverse edits, working diff byte-identical before/after.
+
+Wave 4 running total: **-15 files**. Cumulative: **-128**. Remaining Wave-4
+groups (per §3): `context/engine/rebuild` (5→3), `context/engine/effectiveness`
+(5→3), `operations/verify-op` (4→2), `context/engine/manifest-builder` (4→2),
+`execution/pipeline-result-handler` (4→2) — plus the re-rank's next rows
+(`acceptance-loop`, `parallel-batch`, `plan`, …) which carry the tail.
