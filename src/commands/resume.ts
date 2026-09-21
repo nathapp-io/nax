@@ -141,7 +141,7 @@ export function registerResumeCommand(program: Command): void {
     .requiredOption("-f, --feature <name>", "Feature name")
     .option("-d, --dir <path>", "Working directory", process.cwd())
     .action(async (cmdOpts: { feature: string; dir: string }) => {
-      const { findProjectDir } = await import("../config");
+      const { findProjectDir, validateDirectory } = await import("../config");
       const { run } = await import("../execution");
       const { applyResumeModeDeps } = await import("../execution/checkpoint");
       const { existsSync, mkdirSync } = await import("node:fs");
@@ -150,7 +150,23 @@ export function registerResumeCommand(program: Command): void {
       const { loadHooksConfig } = await import("../hooks");
       const { initLogger } = await import("../logger");
 
-      const naxDir = findProjectDir(cmdOpts.dir);
+      // Resolve `-d` exactly as `nax run` does (`bin/nax.ts` →
+      // `validateDirectory`): absolute, symlinks resolved. US-005 hashes this
+      // value into the run id and stamps it onto status.json as
+      // `run.workdir`, whose contract is "the absolute working directory the
+      // run was bound to" (`buildRunId`/`NaxStatusFile`). Hashing and
+      // persisting the raw command-line value made `nax resume -d .` record a
+      // relative workdir — unattributable to a checkout, and never the same
+      // string a sibling `nax run -d <abs>` records for that same directory.
+      let dir: string;
+      try {
+        dir = validateDirectory(cmdOpts.dir);
+      } catch (err) {
+        process.stderr.write(`Invalid directory: ${(err as Error).message}\n`);
+        process.exit(1);
+      }
+
+      const naxDir = findProjectDir(dir);
       if (!naxDir) {
         process.stderr.write("nax not initialized. Run: nax init\n");
         process.exit(1);
@@ -189,7 +205,7 @@ export function registerResumeCommand(program: Command): void {
           // path resolves to `process.cwd()` inside `StatusWriter`, so every
           // write fails silently and consumers of status.json (TUI, `nax
           // status`) see nothing for the whole resumed run.
-          const projectKey = config.name?.trim() || basename(cmdOpts.dir);
+          const projectKey = config.name?.trim() || basename(dir);
           const outputDir = projectOutputDir(projectKey, config.outputDir);
           const statusFilePath = join(outputDir, "status.json");
 
@@ -202,14 +218,19 @@ export function registerResumeCommand(program: Command): void {
           // US-005: route the resumed run's id through `buildRunId` so the
           // resumed log file matches the run it records (the same id flows
           // back into `run()` as `runId`, keeping log filename and the run
-          // record in sync — AC-9).
-          const runId = buildRunId(cmdOpts.dir, new Date());
+          // record in sync — AC-9). `dir` is the resolved absolute workdir —
+          // the same normalization `nax run` applies before its own
+          // `buildRunId` call.
+          const runId = buildRunId(dir, new Date());
           const logFilePath = join(runsDir, `${runId}.jsonl`);
           initLogger({ level: "info", filePath: logFilePath, useChalk: true, headless: true, suppressConsole: false });
 
           const result = await run({
             prdPath,
-            workdir: cmdOpts.dir,
+            // US-005: the absolute workdir the run is attributed to — both
+            // hashed into `runId` above and persisted as
+            // `NaxStatusFile.run.workdir` below. Never the raw `-d` argument.
+            workdir: dir,
             config,
             hooks,
             feature,

@@ -16,9 +16,18 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { Command } from "commander";
 import { registerResumeCommand } from "@/commands";
 import { globalConfigDir } from "@/config/paths";
@@ -34,6 +43,13 @@ describe("`nax resume` — AC-9: log filename matches the run identifier", () =>
     origCwd = process.cwd();
     origExit = process.exit;
     tempDir = mkdtempSync(join(tmpdir(), "nax-resume-ac9-"));
+    // Canonicalize the fixture dir: `nax resume` resolves `-d` exactly as
+    // `nax run` does (`validateDirectory` — absolute, symlinks resolved), so
+    // the `status.run.workdir` comparison below must spell the same path. On
+    // macOS tmpdir() is `/var/folders/...` while its realpath is
+    // `/private/var/folders/...` — the same realpath convention
+    // test/unit/cli/*.test.ts and flake-triage-seam.test.ts already use.
+    tempDir = realpathSync(tempDir);
     // The runner writes its status file under the isolated global config dir
     // (set by test/preload.ts via NAX_GLOBAL_CONFIG_DIR). Pin that here so
     // the assertions can find the file without scanning the filesystem.
@@ -106,6 +122,61 @@ describe("`nax resume` — AC-9: log filename matches the run identifier", () =>
     // file (AC-1) — readers can now attribute which checkout wrote the
     // run without parsing log lines.
     expect(status.run.workdir).toBe(tempDir);
+  }, 30000);
+
+  // Adversarial follow-up (US-005): the workdir component of the run id — and
+  // the value persisted as `run.workdir` — is contractually the *absolute*
+  // working directory. An explicitly relative `-d ./repo` used to be hashed
+  // and persisted verbatim, so the status file recorded `./repo`: unusable for
+  // attributing the run to a checkout, and never the string a sibling
+  // `nax run -d <abs>` writes for that same directory.
+  test("AC-1: a relative `-d` is resolved before it is hashed and persisted", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "nax-resume-rel-"));
+    const projectDir = join(parent, "repo");
+    mkdirSync(projectDir, { recursive: true });
+    writeProjectFixture(projectDir, "rel-feature");
+    // Captured before the fixture is torn down below.
+    const expectedWorkdir = realpathSync(projectDir);
+
+    // The action always terminates with `process.exit`, which would kill the
+    // test runner — stub it out (its exit code is irrelevant here; the
+    // assertions read the artifacts the action wrote).
+    const origExit = process.exit;
+    Object.assign(process, {
+      exit: (() => {}) as typeof process.exit,
+    });
+
+    try {
+      // Invoke from the parent with a relative directory — exactly the shape
+      // that leaked the raw argument.
+      process.chdir(parent);
+      const program = new Command();
+      registerResumeCommand(program);
+      await program.parseAsync(["node", "nax", "resume", "-f", "rel-feature", "-d", "./repo"]);
+    } finally {
+      process.exit = origExit;
+      process.chdir(origCwd);
+      rmSync(parent, { recursive: true, force: true });
+    }
+
+    // projectKey defaults to basename(workdir) — "repo" once resolved, "." if
+    // the raw `./repo` had survived.
+    const outputDir = join(globalDir, "repo");
+    const statusPath = join(outputDir, "status.json");
+    expect(existsSync(statusPath)).toBe(true);
+    const status = JSON.parse(readFileSync(statusPath, "utf8")) as { run: { id: string; workdir?: string } };
+
+    // The persisted workdir is the absolute canonical checkout dir — not
+    // `./repo`, not a bare basename.
+    expect(status.run.workdir).toBe(expectedWorkdir);
+    expect(isAbsolute(status.run.workdir ?? "")).toBe(true);
+
+    // AC-9 still holds under a relative invocation: the log the resumed run
+    // writes is named for the id it reports.
+    const runsDir = join(outputDir, "features", "rel-feature", "runs");
+    const logFiles = readdirSync(runsDir).filter((f) => f.endsWith(".jsonl"));
+    expect(logFiles).toHaveLength(1);
+    expect((logFiles[0] ?? "").replace(/\.jsonl$/, "")).toBe(status.run.id);
   }, 30000);
 });
 
