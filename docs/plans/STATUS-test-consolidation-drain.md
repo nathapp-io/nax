@@ -1038,7 +1038,7 @@ tier-escalation (-6), adapter (-6) = **-32 files, -2,320 lines** — exactly on 
 plan's Wave-2 target. §9.9's Wave-1 shortfall (-3 vs -52) stands; cumulative now
 -81 files against the plan's cumulative -84 for Waves 1+2.
 
-### 9.15 — 2026-09-21, Task 14 landed — buildHopCallback group 7 → 3 files (-125 lines)
+### 9.15 — 2026-09-21, Task 15 landed — buildHopCallback group 7 → 3 files (-125 lines)
 
 Re-ranked first per §2.2: the floor moved (Waves 1–2 landed), and buildHopCallback
 became the top remaining group (rank 5, +4 removable files). Target was 7 → 3
