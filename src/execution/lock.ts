@@ -20,10 +20,19 @@ import { getLogger } from "../logger";
  * `host` is the hostname used to populate the lock record's `host` field
  * (US-002 AC11). Production reads `os.hostname()`; tests override it to keep
  * the assertion deterministic.
+ *
+ * `readLockText` wraps the lock-content read between `acquireLock`'s
+ * `exists()` check and its `.text()` call — the same two-step race shape as
+ * the rename step above, but for the read side. Under real concurrency a
+ * racer can win the stale-lock rename (or `releaseLock`) in that window, so
+ * the file this racer just saw can be gone by the time it reads. Tests
+ * override this to force that window deterministically instead of relying on
+ * real scheduling, which only hits it some of the time.
  */
 export const _lockDeps = {
   rename: rename as typeof rename,
   host: (): string => hostname(),
+  readLockText: (lockPath: string): Promise<string> => Bun.file(lockPath).text(),
 };
 
 /** Safely get logger instance, returns null if not initialized */
@@ -98,9 +107,20 @@ export async function acquireLock(workdir: string): Promise<LockAcquisitionResul
   try {
     // @design: BUG-2 fix: First check for stale lock before attempting atomic create
     const exists = await lockFile.exists();
-    if (exists) {
-      // Read lock data
-      const lockContent = await lockFile.text();
+    // BUG-?? (race under heavy concurrency): exists() and the read below are
+    // two separate async steps. Another racer can win the stale-lock rename
+    // (or release the lock) in between, so the file this racer just saw can
+    // be gone by the time it reads — Bun.file().text() throws ENOENT rather
+    // than returning empty. Treat that exactly like `exists === false`: fall
+    // through to our own exclusive-create attempt instead of surfacing the
+    // read failure as a fatal I/O error.
+    const lockContent = exists
+      ? await _lockDeps.readLockText(lockPath).catch((readError) => {
+          if ((readError as NodeJS.ErrnoException).code === "ENOENT") return null;
+          throw readError;
+        })
+      : null;
+    if (lockContent !== null) {
       let lockData: { pid: number; host?: string } | null;
       try {
         lockData = JSON.parse(lockContent);

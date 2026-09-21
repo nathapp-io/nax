@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { spawn } from "bun";
@@ -429,6 +430,53 @@ describe("acquireLock and releaseLock", () => {
       const { readdirSync } = await import("node:fs");
       const entries = readdirSync(testDir);
       expect(entries.some((e) => e.includes(".stale."))).toBe(false);
+    });
+  });
+
+  describe("read-vs-exists race: lock file vanishes between exists() and the read (deterministic)", () => {
+    // BUG-07's own concurrency test only exercises this window when real OS
+    // scheduling happens to interleave racers so one's exists() sees the file
+    // and another's rename/release removes it before the first racer reads —
+    // observed to fail intermittently in CI without ever reproducing locally.
+    // Force the window deterministically via `_lockDeps.readLockText`.
+    let originalReadLockText: typeof _lockDeps.readLockText;
+
+    beforeEach(() => {
+      originalReadLockText = _lockDeps.readLockText;
+    });
+
+    afterEach(() => {
+      _lockDeps.readLockText = originalReadLockText;
+    });
+
+    test("treats a vanished lock file as absent and acquires successfully", async () => {
+      const stalePid = 999999;
+      await Bun.write(lockPath, JSON.stringify({ pid: stalePid, timestamp: Date.now() - 60000 }));
+
+      _lockDeps.readLockText = async (path: string) => {
+        // Simulate another racer removing the lock in the window between our
+        // exists() check (which already observed the file) and this read.
+        await unlink(path).catch(() => {});
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      };
+
+      const acquired = await acquireLock(testDir);
+      expect(acquired.acquired).toBe(true);
+
+      const lockData = JSON.parse(await Bun.file(lockPath).text());
+      expect(lockData.pid).toBe(process.pid);
+
+      await releaseLock(testDir);
+    });
+
+    test("propagates a non-ENOENT read failure instead of masking it", async () => {
+      await Bun.write(lockPath, JSON.stringify({ pid: 999999, timestamp: Date.now() - 60000 }));
+
+      _lockDeps.readLockText = async () => {
+        throw new Error("EIO: simulated disk failure");
+      };
+
+      await expect(acquireLock(testDir)).rejects.toThrow("EIO");
     });
   });
 
