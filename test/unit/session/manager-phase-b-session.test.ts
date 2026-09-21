@@ -1,7 +1,8 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { assertDefined, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import type { OpenSessionOpts, SessionHandle } from "@/agents/types";
-import { SessionManager } from "@/session/manager";
+import { NaxError } from "@/errors";
+import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 import type { NameForRequest, OpenSessionRequest } from "@/session/types";
 
 const WORKDIR = "/tmp/nax-phase-b-test";
@@ -338,5 +339,91 @@ describe("closeSession()", () => {
     await expect(sm.sendPrompt(handle, "second")).rejects.toMatchObject({
       code: "SESSION_TERMINAL_STATE",
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// bindHandle() — descriptor handle/protocolIds binding
+//
+// Carries its own deterministic now/writeDescriptor hooks, scoped to this
+// block so the suites above keep running against real deps.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionManager.bindHandle()", () => {
+  let _timeSeq = 0;
+  const _origNow = _sessionManagerDeps.now;
+  const _origWriteDescriptor = _sessionManagerDeps.writeDescriptor;
+
+  beforeEach(() => {
+    _timeSeq = 0;
+    _sessionManagerDeps.now = () => `2025-01-01T00:${String(_timeSeq++).padStart(2, "0")}:00.000Z`;
+    _sessionManagerDeps.writeDescriptor = async () => {};
+  });
+
+  afterEach(() => {
+    _sessionManagerDeps.now = _origNow;
+    _sessionManagerDeps.writeDescriptor = _origWriteDescriptor;
+  });
+
+  test("sets handle and protocolIds on the descriptor", () => {
+    const mgr = new SessionManager();
+    const sess = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
+
+    mgr.bindHandle(sess.id, "nax-abc12345-feat-US-001-implementer", {
+      recordId: "rec-aaa",
+      sessionId: "sid-bbb",
+    });
+
+    const updated = mgr.get(sess.id);
+    expect(updated?.handle).toBe("nax-abc12345-feat-US-001-implementer");
+    expect(updated?.protocolIds.recordId).toBe("rec-aaa");
+    expect(updated?.protocolIds.sessionId).toBe("sid-bbb");
+  });
+
+  test("does not change state", () => {
+    const mgr = new SessionManager();
+    const sess = mgr.create({ role: "implementer", agent: "claude", workdir: "/p" });
+    mgr.bindHandle(sess.id, "nax-handle", { recordId: null, sessionId: null });
+    expect(mgr.get(sess.id)?.state).toBe("CREATED");
+  });
+
+  test("null protocolIds are stored as-is", () => {
+    const mgr = new SessionManager();
+    const sess = mgr.create({ role: "implementer", agent: "claude", workdir: "/p" });
+    mgr.bindHandle(sess.id, "nax-handle", { recordId: null, sessionId: null });
+    const updated = mgr.get(sess.id);
+    expect(updated?.protocolIds.recordId).toBeNull();
+    expect(updated?.protocolIds.sessionId).toBeNull();
+  });
+
+  test("overwrites previous handle and protocolIds on re-bind", () => {
+    const mgr = new SessionManager();
+    const sess = mgr.create({ role: "implementer", agent: "claude", workdir: "/p" });
+    mgr.bindHandle(sess.id, "nax-first", { recordId: "r1", sessionId: "s1" });
+    mgr.bindHandle(sess.id, "nax-second", { recordId: "r2", sessionId: "s2" });
+    const updated = mgr.get(sess.id);
+    expect(updated?.handle).toBe("nax-second");
+    expect(updated?.protocolIds.recordId).toBe("r2");
+  });
+
+  test("throws NaxError for unknown session id", () => {
+    const mgr = new SessionManager();
+    expect(() => mgr.bindHandle("sess-unknown", "nax-handle", { recordId: null, sessionId: null })).toThrow(NaxError);
+  });
+
+  test("returns an immutable copy (mutations don't affect registry)", () => {
+    const mgr = new SessionManager();
+    const sess = mgr.create({ role: "implementer", agent: "claude", workdir: "/p" });
+    const result = mgr.bindHandle(sess.id, "nax-handle", { recordId: "r1", sessionId: null });
+    (result as { handle: string }).handle = "mutated";
+    expect(mgr.get(sess.id)?.handle).toBe("nax-handle");
+  });
+
+  test("updates lastActivityAt", () => {
+    const mgr = new SessionManager();
+    const sess = mgr.create({ role: "implementer", agent: "claude", workdir: "/p" });
+    const before = sess.lastActivityAt;
+    mgr.bindHandle(sess.id, "nax-handle", { recordId: null, sessionId: null });
+    expect(mgr.get(sess.id)?.lastActivityAt).not.toBe(before);
   });
 });

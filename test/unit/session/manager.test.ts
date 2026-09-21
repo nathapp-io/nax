@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { assertDefined, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import type { OpenSessionOpts, SessionHandle } from "@/agents/types";
 import { NaxError } from "@/errors";
+import { PidRegistry } from "@/execution/pid-registry";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
-import type { SessionState } from "@/session/types";
+import type { OpenSessionRequest, SessionState } from "@/session/types";
 import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -460,5 +463,197 @@ describe("SessionManager.handoff()", () => {
     expect(updated.agent).toBe("codex");
     expect(mgr.get(sess.id)?.agent).toBe("codex");
     expect(() => mgr.handoff("sess-unknown", "codex", "fail-quota")).toThrow(NaxError);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PID lifecycle (configureRuntime autowiring)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionManager PID lifecycle — configureRuntime", () => {
+  function makeRegistry(workdir = "/tmp/test-pid-session"): PidRegistry {
+    return new PidRegistry(workdir);
+  }
+
+  const _origWriteDescriptor = _sessionManagerDeps.writeDescriptor;
+  beforeEach(() => {
+    _sessionManagerDeps.writeDescriptor = async () => {};
+  });
+
+  afterEach(() => {
+    _sessionManagerDeps.writeDescriptor = _origWriteDescriptor;
+  });
+
+  test("attaches onPidSpawned and onPidExited when pidRegistry is configured", async () => {
+    const adapter = makeAgentAdapter();
+    let capturedOnPidSpawned: ((pid: number) => void) | undefined;
+    let capturedOnPidExited: ((pid: number) => void) | undefined;
+
+    adapter.openSession = mock(async (_name, opts) => {
+      capturedOnPidSpawned = opts?.onPidSpawned;
+      capturedOnPidExited = opts?.onPidExited;
+      return { id: "mock-session", agentName: "mock" };
+    });
+
+    const registry = makeRegistry();
+    const originalRegister = registry.register.bind(registry);
+    const originalUnregister = registry.unregister.bind(registry);
+    const registerSpy = mock<PidRegistry["register"]>((pid: number) => originalRegister(pid));
+    const unregisterSpy = mock<PidRegistry["unregister"]>((pid: number) => originalUnregister(pid));
+    registry.register = registerSpy;
+    registry.unregister = unregisterSpy;
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({
+      config: makeNaxConfig(),
+      pidRegistry: registry,
+    });
+
+    const modelDef = { model: "claude-3-5-sonnet-20241022", provider: "anthropic" };
+    await sm.openSession("test-session", {
+      agentName: "mock",
+      workdir: "/tmp",
+      pipelineStage: "run",
+      modelDef,
+      timeoutSeconds: 30,
+      role: "main",
+      storyId: "s-001",
+      featureName: "test",
+    });
+
+    expect(capturedOnPidSpawned).toBeDefined();
+    expect(capturedOnPidExited).toBeDefined();
+    assertDefined(capturedOnPidSpawned, "capturedOnPidSpawned");
+    assertDefined(capturedOnPidExited, "capturedOnPidExited");
+
+    capturedOnPidSpawned(42);
+    expect(registerSpy).toHaveBeenCalledWith(42);
+
+    capturedOnPidExited(42);
+    expect(unregisterSpy).toHaveBeenCalledWith(42);
+  });
+
+  test("passes undefined callbacks when no pidRegistry is configured", async () => {
+    const adapter = makeAgentAdapter();
+    let capturedOnPidSpawned: unknown = "NOT_SET";
+    let capturedOnPidExited: unknown = "NOT_SET";
+
+    adapter.openSession = mock(async (_name, opts) => {
+      capturedOnPidSpawned = opts?.onPidSpawned;
+      capturedOnPidExited = opts?.onPidExited;
+      return { id: "mock-session", agentName: "mock" };
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ config: makeNaxConfig() });
+
+    const modelDef = { model: "claude-3-5-sonnet-20241022", provider: "anthropic" };
+    await sm.openSession("test-session-no-pid", {
+      agentName: "mock",
+      workdir: "/tmp",
+      pipelineStage: "run",
+      modelDef,
+      timeoutSeconds: 30,
+      role: "main",
+      storyId: "s-002",
+      featureName: "test",
+    });
+
+    expect(capturedOnPidSpawned).toBeUndefined();
+    expect(capturedOnPidExited).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Endpoint-aware reuse (nax#1965)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionManager endpoint-aware reuse (nax#1965)", () => {
+  const WORKDIR = "/tmp/nax-endpoint-reuse";
+  const NAME = "nax-endpoint-reuse-implementer";
+
+  function request(modelId: string, agentName = "native"): OpenSessionRequest {
+    return {
+      agentName,
+      role: "implementer",
+      workdir: WORKDIR,
+      pipelineStage: "run",
+      modelDef: { provider: modelId.split("/")[0] ?? "unknown", model: modelId },
+      timeoutSeconds: 30,
+    };
+  }
+
+  /** Adapter that echoes the endpoint it was opened with, and counts closes. */
+  function tracked() {
+    const opened: OpenSessionOpts[] = [];
+    const closed: SessionHandle[] = [];
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts): Promise<SessionHandle> => {
+        opened.push(opts);
+        return { id: name, agentName: opts.agentName, modelDef: opts.modelDef };
+      }),
+      closeSession: mock(async (handle: SessionHandle) => {
+        closed.push(handle);
+      }),
+    });
+    return { adapter, opened, closed };
+  }
+
+  test("a same-agent re-open with a different model dispatches the new model", async () => {
+    const { adapter, opened } = tracked();
+    const sm = new SessionManager({ getAdapter: () => adapter });
+
+    await sm.openSession(NAME, request("minimax/MiniMax-M3"));
+    const hop1 = await sm.openSession(NAME, request("opencode-go/deepseek-v4-flash[high]"));
+
+    expect(hop1.modelDef?.model).toBe("opencode-go/deepseek-v4-flash[high]");
+    expect(opened).toHaveLength(2);
+  });
+
+  test("it closes the previous physical session rather than orphaning it", async () => {
+    const { adapter, closed } = tracked();
+    const sm = new SessionManager({ getAdapter: () => adapter });
+
+    await sm.openSession(NAME, request("minimax/MiniMax-M3"));
+    await sm.openSession(NAME, request("opencode-go/deepseek-v4-flash[high]"));
+
+    expect(closed).toHaveLength(1);
+    expect(closed[0]?.modelDef?.model).toBe("minimax/MiniMax-M3");
+  });
+
+  test("a cross-agent re-open closes the prior handle (acp -> native leak)", async () => {
+    const { adapter, closed } = tracked();
+    const sm = new SessionManager({ getAdapter: () => adapter });
+
+    await sm.openSession(NAME, request("sonnet[medium]", "claude"));
+    const hop1 = await sm.openSession(NAME, request("minimax/MiniMax-M3", "native"));
+
+    expect(hop1.agentName).toBe("native");
+    expect(closed).toHaveLength(1);
+    expect(closed[0]?.agentName).toBe("claude");
+  });
+
+  test("an unchanged endpoint still reuses the live handle", async () => {
+    const { adapter, opened, closed } = tracked();
+    const sm = new SessionManager({ getAdapter: () => adapter });
+
+    const first = await sm.openSession(NAME, request("minimax/MiniMax-M3"));
+    const second = await sm.openSession(NAME, request("minimax/MiniMax-M3"));
+
+    expect(second).toBe(first);
+    expect(opened).toHaveLength(1);
+    expect(closed).toHaveLength(0);
+  });
+
+  test("the single-flight guard survives a close-then-reopen", async () => {
+    const { adapter } = tracked();
+    const sm = new SessionManager({ getAdapter: () => adapter });
+
+    await sm.openSession(NAME, request("minimax/MiniMax-M3"));
+    await sm.openSession(NAME, request("opencode-go/deepseek-v4-flash[high]"));
+
+    // A third open must still be permitted: the busy marker was re-armed and then
+    // released, not left set by the intermediate closeSession.
+    await expect(sm.openSession(NAME, request("openrouter/z-ai/glm-5.3-flash[high]"))).resolves.toBeDefined();
   });
 });
