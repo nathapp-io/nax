@@ -1,23 +1,39 @@
 /**
- * Unit tests — buildHopCallback stale-retry session reuse (#977).
+ * Unit tests — buildHopCallback hop mechanics: session reuse, run counters,
+ * pull-budget registration, handoff, and model/tier resolution when a hop runs
+ * on an agent the caller's pin does not belong to.
  *
- * Verifies that on { kind: "stale-retry" }:
- * - getLiveHandle is called to find the cached handle
- * - openSession is NOT called when the handle is found
- * - closeSession is NOT called (handle stays open for the next attempt)
+ * stale-retry session reuse (#977): on `{ kind: "stale-retry" }` getLiveHandle
+ * finds the cached handle, openSession/closeSession are skipped; on
+ * `{ kind: "primary" }`/`{ kind: "swap" }` openSession IS called and
+ * closeSession IS called in the finally block.
  *
- * And that on { kind: "primary" } and { kind: "swap" }:
- * - openSession IS called
- * - closeSession IS called in the finally block
+ * Pinned model re-resolution (nax#1722): found by the `fallback-probe` smoke
+ * run, not by the suite — `resolveStartAgent` starts an operation on a
+ * fallback agent when the primary is already unavailable, and that hop is
+ * still `{ kind: "primary" }`. The caller resolved `modelDef` for the PRIMARY,
+ * so carrying it onto the substituted agent produced `acpx --model haiku ...
+ * codex`, which the ACP agent rejects outright. `pinnedModelAgent` names the
+ * agent the pin was resolved for; any other agent re-resolves from its own
+ * tier map.
+ *
+ * Tier/model id resolution: the run path resolves its model HERE in the caller
+ * (unlike the complete path, which re-resolves inside the manager via
+ * modelDefFor), and `{ agent, model }` may name a tier OR a literal model id —
+ * a literal pin reaches here with `model` set and the tier lookup cannot serve
+ * it. Covering only one leaves `{ agent, tier }` working for complete ops and
+ * silently ignored for run ops (or vice versa).
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeContextBundle, makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
+import { resolveModel, resolveModelForAgent } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 import type { BuildHopCallbackContext } from "@/operations/build-hop-callback";
-import type { SessionDescriptor } from "@/session/types";
+import { hopModelId, hopTier } from "@/operations/build-hop-callback";
+import type { OpenSessionRequest, SessionDescriptor } from "@/session/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared stubs
@@ -25,18 +41,18 @@ import type { SessionDescriptor } from "@/session/types";
 
 const STUB_HANDLE: SessionHandle = { id: "nax-abc123", agentName: "claude" };
 
-const STUB_TURN: TurnResult = {
-  output: "done",
-  tokenUsage: { inputTokens: 10, outputTokens: 5 },
-  estimatedCostUsd: 0.001,
-  internalRoundTrips: 1,
-};
-
 const SWAP_FAILURE: AdapterFailure = {
   category: "availability",
   outcome: "fail-auth",
   retriable: false,
   message: "401",
+};
+
+const STUB_TURN: TurnResult = {
+  output: "done",
+  tokenUsage: { inputTokens: 10, outputTokens: 5 },
+  estimatedCostUsd: 0.001,
+  internalRoundTrips: 1,
 };
 
 const HANDOFF_DESCRIPTOR: SessionDescriptor = {
@@ -60,6 +76,18 @@ const STUB_RUN_OPTIONS: AgentRunOptions = {
   sessionRole: "implementer",
   timeoutSeconds: 30,
   config: makeNaxConfig(),
+};
+
+const PIN_STUB_TURN: TurnResult = {
+  output: "done",
+  tokenUsage: { inputTokens: 1, outputTokens: 1 },
+  estimatedCostUsd: 0,
+  internalRoundTrips: 1,
+};
+
+const PIN_MODELS = {
+  claude: { balanced: { provider: "anthropic", model: "haiku" } },
+  codex: { balanced: { provider: "openai", model: "gpt-5.6-luna" } },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,6 +132,41 @@ function makeCtx(sessionMgr: ReturnType<typeof makeSessionManager>) {
     defaultAgent: "claude",
     pipelineStage: "run" as const,
   };
+}
+
+function harness(pinnedModelAgent?: string) {
+  const config = makeNaxConfig({ models: PIN_MODELS });
+  // Record the model the session was opened with rather than casting mock.calls back
+  // into a shape — the adapter's own signature types it.
+  const opened: string[] = [];
+  const sessionManager = makeSessionManager({
+    openSession: mock(async (name: string, opts: OpenSessionRequest) => {
+      opened.push(opts.modelDef.model);
+      return { id: name, agentName: opts.agentName } satisfies SessionHandle;
+    }),
+    closeSession: mock(async () => {}),
+  });
+  const ctx: BuildHopCallbackContext = {
+    sessionManager,
+    agentManager: makeMockAgentManager({ runAsSessionFn: mock(async () => PIN_STUB_TURN) }),
+    story: makeStory({ id: "US-001" }),
+    config,
+    featureName: "fallback-probe",
+    workdir: "/tmp/nax-model-pin",
+    effectiveTier: "balanced",
+    defaultAgent: "claude",
+    pipelineStage: "run",
+    ...(pinnedModelAgent !== undefined && { pinnedModelAgent }),
+  };
+  const options: AgentRunOptions = {
+    prompt: "do the work",
+    workdir: "/tmp/nax-model-pin",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "haiku" },
+    timeoutSeconds: 30,
+    config,
+  };
+  return { ctx, options, opened };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -276,5 +339,112 @@ describe("buildHopCallback — stale-retry session reuse", () => {
     expect(result.result.success).toBe(false);
     // Handle must NOT be closed — it stays open for the next hop
     expect(closeSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildHopCallback — pinned model vs dispatching agent", () => {
+  test("a primary hop on another agent re-resolves the model from that agent's tier map", async () => {
+    const { ctx, options, opened } = harness("claude");
+
+    await buildHopCallback(ctx, "session-1", options)("codex", makeContextBundle(), { kind: "primary" }, options);
+
+    expect(opened[0]).toBe("gpt-5.6-luna");
+  });
+
+  test("the pin still applies on the agent it was resolved for", async () => {
+    const { ctx, options, opened } = harness("claude");
+
+    await buildHopCallback(ctx, "session-1", options)("claude", makeContextBundle(), { kind: "primary" }, options);
+
+    expect(opened[0]).toBe("haiku");
+  });
+
+  test("without pinnedModelAgent the pin is trusted (pre-nax#1722 behaviour for other callers)", async () => {
+    const { ctx, options, opened } = harness();
+
+    await buildHopCallback(ctx, "session-1", options)("codex", makeContextBundle(), { kind: "primary" }, options);
+
+    expect(opened[0]).toBe("haiku");
+  });
+});
+
+describe("hopTier", () => {
+  test("a primary hop uses the caller's effective tier", () => {
+    expect(hopTier({ kind: "primary" }, "balanced")).toBe("balanced");
+  });
+
+  test("a start-on-fallback primary hop that named a tier uses it", () => {
+    expect(hopTier({ kind: "primary", tier: "cheap" }, "balanced")).toBe("cheap");
+  });
+
+  test("a swap with no tier uses the caller's effective tier", () => {
+    expect(hopTier({ kind: "swap", failure: SWAP_FAILURE }, "balanced")).toBe("balanced");
+  });
+
+  test("a swap that named a tier uses it", () => {
+    expect(hopTier({ kind: "swap", failure: SWAP_FAILURE, tier: "cheap" }, "balanced")).toBe("cheap");
+  });
+
+  test("a tierless pinned resolution swaps onto the target's balanced rung (spec §7 last resort)", () => {
+    // hop ctx with effectiveTier "balanced" (the call.ts:69 default for a pin, modelTier absent),
+    // swap to an agent with a balanced entry, no fallback-map tier for the candidate.
+    // Assert the dispatched modelDef is the swap target's balanced entry.
+    const tier = hopTier({ kind: "swap", failure: SWAP_FAILURE }, "balanced");
+    expect(tier).toBe("balanced");
+    const modelDef = resolveModelForAgent(
+      {
+        claude: { balanced: "claude-sonnet-4-5", powerful: "claude-opus-4-5" },
+        native: { cheap: "opencode-go/glm-4-5" },
+      },
+      "claude",
+      tier,
+      "claude",
+    );
+    expect(modelDef.model).toBe("claude-sonnet-4-5");
+  });
+
+  test("a timeout retry retains its fallback target's tier", () => {
+    expect(hopTier({ kind: "timeout-retry", attempt: 1, tier: "cheap" }, "balanced")).toBe("cheap");
+  });
+
+  test("a stale-retry uses the caller's effective tier", () => {
+    expect(hopTier({ kind: "stale-retry", attempt: 1 }, "balanced")).toBe("balanced");
+  });
+});
+
+describe("hopModelId", () => {
+  test("a primary hop names no literal model", () => {
+    expect(hopModelId({ kind: "primary" })).toBeUndefined();
+  });
+
+  test("a swap that named a tier names no literal model", () => {
+    expect(hopModelId({ kind: "swap", failure: SWAP_FAILURE, tier: "cheap" })).toBeUndefined();
+  });
+
+  test("a swap that named a literal model returns it", () => {
+    expect(hopModelId({ kind: "swap", failure: SWAP_FAILURE, model: "openrouter/z-ai/glm-5.3-flash[high]" })).toBe(
+      "openrouter/z-ai/glm-5.3-flash[high]",
+    );
+  });
+
+  test("a start-on-fallback primary hop that named a literal model returns it", () => {
+    expect(hopModelId({ kind: "primary", model: "openrouter/z-ai/glm-5.3-flash[high]" })).toBe(
+      "openrouter/z-ai/glm-5.3-flash[high]",
+    );
+  });
+
+  test("a timeout retry retains its fallback target's literal model", () => {
+    expect(hopModelId({ kind: "timeout-retry", attempt: 1, model: "openrouter/z-ai/glm-5.3-flash[high]" })).toBe(
+      "openrouter/z-ai/glm-5.3-flash[high]",
+    );
+  });
+
+  test("the literal pin resolves to the same ModelDef the tier map would produce for that id", () => {
+    // The dispatched def must be indistinguishable from writing the same id as a
+    // `models.native.<tier>` entry — that equivalence is the whole contract of a
+    // literal pin, and on the native path the provider is read from the id string
+    // (nax#1851), not from ModelDef.provider.
+    const id = "openrouter/z-ai/glm-5.3-flash[high]";
+    expect(resolveModel(id)).toEqual(resolveModelForAgent({ native: { glm: id } }, "native", "glm", "native"));
   });
 });
