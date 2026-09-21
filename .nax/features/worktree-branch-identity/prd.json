@@ -1,0 +1,257 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "worktree-branch-identity",
+  "branchName": "feat/worktree-branch-identity",
+  "createdAt": "2026-01-26T00:00:00.000Z",
+  "updatedAt": "2026-09-21T05:44:45.859Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "The identity module and its static gate",
+      "description": "**Goal** — Create the branded `WorktreeId`, the story derivation, and the path/branch/ref producers in one module, and add the static gate that fails when any other file spells a `.nax-wt` path or a `nax/` branch.\n\n**Motivation** — Fifteen production sites spell worktree paths, branch names or orphan refs (five through a parameter, ten by direct string construction). The current `bakeoff/worktree-id.ts` already implements the sanitize/cap/hash-suffix derivation for bakeoff worktrees; this story moves the shared parts into one module and adds one producer per spelling so the SSOT is checkable rather than remembered.\n\n**Approach** — Compose an opaque, feature-scoped worktree identity; give every spelling one producer; and gate the spellings statically. A branded identity type alone is not sufficient (the eight direct-construction sites have no parameter type to constrain), so the design has three parts: (1) one producer per spelling — `storyWorktreePath(projectRoot, worktreeId)`, `storyBranchName(worktreeId)`, `naxOrphanRefName(worktreeId)` are the only functions that spell `.nax-wt/<id>`, `nax/<id>` and `refs/nax/orphan/<id>`; (2) a branded `WorktreeId` (a `string` carrying a unique type tag), produced only by `deriveStoryWorktreeId` or `deriveBakeoffWorktreeId`; (3) a static gate `scripts/check-worktree-id-ssot.ts` that fails when a literal `.nax-wt` path segment or `nax/`-prefixed branch string is built outside the identity module, carrying an explicit allowlist as well as a per-line comment escape hatch (like `scripts/check-feature-dir-ssot.ts:28, :36`). The allowlist members — the producers themselves; `src/runtime/packages.ts` (`:109` and `:237` compare the first path segment; ACs pin their unchanged behaviour); `src/utils/gitignore.ts:62` (gitignore entry); `src/review/runner/index.ts:247` (ignore regex); `src/precheck/checks-git.ts:55` (porcelain-status regex); `src/precheck/checks-warnings.ts:235` (ignore entry); `src/bakeoff/preflight.ts:18` (composes the separate `nax/bakeoff-` branch namespace) — are consumer sites whose spelling must stay exactly as it is.\n\n**Scope** — In: move shared sanitize/cap/hash-suffix derivation from `src/bakeoff/worktree-id.ts` into `src/worktree/worktree-id.ts`; introduce branded `WorktreeId` type and `deriveStoryWorktreeId`/`deriveBakeoffWorktreeId`/`storyWorktreePath`/`storyBranchName`; add `scripts/check-worktree-id-ssot.ts`; register the gate in `package.json` so `bun run check:all-without-biome` invokes it and `scripts/check-gate-reachability.ts` is satisfied; ensure the bakeoff helper's returned values are unchanged for the same inputs.\nOut: changing `WorktreeManager.create`/`remove`, `MergeEngine.merge`/`mergeAll`, `naxOrphanRefName`'s parameter type, or any execution-layer site spelling — those belong to US-002 and US-003.\n\n**Interface**\n```typescript\n// src/worktree/worktree-id.ts (new)\nexport type WorktreeId = string & { readonly __brand: \"WorktreeId\" };\n\nexport function deriveStoryWorktreeId(feature: string, storyId: string): WorktreeId;\nexport function deriveBakeoffWorktreeId(feature: string, profile: string): WorktreeId;\nexport function storyWorktreePath(projectRoot: string, worktreeId: WorktreeId): string;\nexport function storyBranchName(worktreeId: WorktreeId): string;\n```\nThe natural identity is `story-<feature>-<storyId>`, sanitized to `validateStoryId`'s alphabet and capped at 64 characters, with a distinguishing hash suffix when truncation would collide two distinct inputs. Depth stays at two path segments. The `bakeoff-` namespace stays disjoint from `story-`.",
+      "acceptanceCriteria": [
+        "When given feature `\"my-feature\"` and storyId `\"US-001\"`, `deriveStoryWorktreeId` returns the string `story-my-feature-US-001`.",
+        "When the feature name contains characters outside `[a-zA-Z0-9._-]`, `deriveStoryWorktreeId` returns an identity accepted by `validateStoryId` (no `STORY_ID_INVALID` thrown).",
+        "When the natural `story-<feature>-<storyId>` form exceeds 64 characters, `deriveStoryWorktreeId` returns an identity whose length is at most 64.",
+        "When an identity is produced by the truncating path, that identity is accepted by `validateStoryId`.",
+        "When two distinct feature-and-story pairs are chosen whose natural identities share their first 64 characters, `deriveStoryWorktreeId` returns different results for the two pairs.",
+        "`deriveStoryWorktreeId` returns an identity beginning with the prefix `story-`.",
+        "`deriveBakeoffWorktreeId` returns an identity beginning with the prefix `bakeoff-`, unchanged in value from before this feature for the same inputs.",
+        "`storyWorktreePath(\"/repo\", \"story-f-US-001\")` returns the absolute path string `/repo/.nax-wt/story-f-US-001`.",
+        "`storyBranchName(\"story-f-US-001\")` returns the branch name string `nax/story-f-US-001`.",
+        "When invoked on a non-allowlisted source file that builds a string containing a `.nax-wt` path segment, the static check `scripts/check-worktree-id-ssot.ts` exits with a non-zero status.",
+        "When invoked on a non-allowlisted source file that builds a branch string prefixed `nax/`, the static check `scripts/check-worktree-id-ssot.ts` exits with a non-zero status.",
+        "When invoked on a source file that carries the documented per-line allow comment on the matching line, the static check `scripts/check-worktree-id-ssot.ts` exits with status zero.",
+        "When invoked on a source file named in the check's allowlist that spells `.nax-wt`, the static check `scripts/check-worktree-id-ssot.ts` exits with status zero.",
+        "When `bun run check:all-without-biome` runs, it invokes the worktree-id gate.",
+        "When the worktree-id gate script is not registered as a `check:worktree-id-ssot` entry reachable from `check:all-without-biome`, `scripts/check-gate-reachability.ts` exits with a non-zero status.",
+        "`src/runtime/packages.ts` `packageOverrideKey` returns the same value as before this feature for the same input.",
+        "`src/runtime/packages.ts` `storyExecRoot` returns the same value as before this feature for the same input."
+      ],
+      "tags": [
+        "feature",
+        "worktree",
+        "ssot"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two new files plus a small migration of bakeoff's existing derivation; one shared module per spelling, with a static gate that mirrors `check-feature-dir-ssot.ts`. Single-session TDD is sufficient because every AC is a pure function call or a deterministic static-gate result."
+      },
+      "contextFiles": [
+        "src/bakeoff/worktree-id.ts",
+        "src/bakeoff/contestant.ts",
+        "src/prd/validate.ts",
+        "scripts/check-feature-dir-ssot.ts",
+        "scripts/check-gate-reachability.ts"
+      ],
+      "expectedFiles": [
+        "src/worktree/worktree-id.ts",
+        "scripts/check-worktree-id-ssot.ts"
+      ],
+      "suggestedCriteria": [
+        "When a pre-existing branch named `nax/US-001` is present in the repository and a fresh `WorktreeManager.create` is invoked with the identity `story-f-US-001`, that pre-existing branch is left untouched and not deleted, matching the spec's failure-mode behaviour for legacy branches.",
+        "When `deriveStoryWorktreeId` is called with inputs that produce a length of exactly 64 characters (no truncation needed), no hash suffix is appended."
+      ],
+      "outOfScope": [
+        "Changing `WorktreeManager.create`/`remove`, `MergeEngine.merge`/`mergeAll`, `naxOrphanRefName`'s parameter type, or any execution-layer site spelling — those belong to US-002 and US-003.",
+        "Two concurrent runs of the **same** feature against one repository still collide on `nax/story-<feature>-US-001`; serializing them is the feature lock delivered by the `project-identity-run-locking` feature, not this one.",
+        "Matching project identity by git remote, and the `RUN_NAME_COLLISION` behaviour of `claimProjectIdentity`, are delivered by the `project-identity-run-locking` feature.",
+        "Run locking of any kind is delivered by the `project-identity-run-locking` feature.",
+        "Introducing branded types anywhere outside the worktree identity is not part of this feature."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/bakeoff/worktree-id.ts",
+          "reason": "its sanitize, cap and hash-suffix helpers move into the new module and it re-exports or delegates; its own tests pin the returned strings, which do not change."
+        },
+        {
+          "path": "package.json",
+          "reason": "the new gate script must be registered as a check:worktree-id-ssot entry reachable from check:all-without-biome, or the CI-reachability meta-gate fails the run."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "The worktree API takes the identity",
+      "description": "**Goal** — Change `WorktreeManager.create`/`remove`, `MergeEngine.merge`/`mergeAll` and `naxOrphanRefName` to accept `WorktreeId` and to take every spelling from US-001's producers, while keeping `MergeResult.storyId` and `StoryDependencies` keyed by raw story IDs.\n\n**Motivation** — The five parameter sites in `src/worktree/manager.ts`, `src/worktree/merge.ts` and `src/worktree/nax-orphan-ref.ts` are the API surface where a raw story ID becomes a path or branch. If they alone are composed and the eight direct-construction sites under `src/execution/` and `src/bakeoff/` are not, three sites silently fail (iteration-runner's `effectiveWorkdir` resolves to a non-existent directory, the result-handler's `hasWorktree` returns false and disables the BUG-28 evidence path, the orphan-ref writer names a branch that does not exist because of the raw `refs/heads/nax/<storyId>` source). Composition at the API also lets `src/bakeoff/contestant.ts:143` pass an already-composed bakeoff identity through the same `create()` without re-composing.\n\n**Approach** — The branded parameter is required by `WorktreeManager.create`, `WorktreeManager.remove`, `MergeEngine.merge`, `MergeEngine.mergeAll`, and `naxOrphanRefName`; each takes its directory, branch and ref from `storyWorktreePath`/`storyBranchName`/`naxOrphanRefName` (the third name on the same module). `deriveBakeoffWorktreeId` returns `WorktreeId` so `src/bakeoff/contestant.ts:143` keeps typechecking against the branded `create`. The structural `ContestantRunnerDeps.worktreeManager` declaration narrows its `create`/`remove` signatures to take `WorktreeId`. `MergeEngine.mergeAll` receives `Array<{ storyId: string; worktreeId: WorktreeId }>` so each result's `storyId` is the raw story ID while the merge uses the composed branch. `MergeResult.storyId` and `StoryDependencies` stay keyed by raw story IDs (the join keys into `pipelinePassed`, `storyCosts` and `prd.userStories`, and the keys `topologicalSort`/`failedStories` use to order and skip).\n\n**Scope** — In: change the five worktree-API signatures; route their string constructions through US-001's producers; update existing test call sites in `test/integration/worktree/manager.test.ts`, `test/integration/worktree/worktree-merge.test.ts`, `test/unit/worktree/manager.test.ts`, `test/unit/worktree/nax-orphan-ref.test.ts`, `test/unit/execution/merge.test.ts`, `test/integration/bakeoff/coordinator-worktree-isolation.test.ts`, `test/integration/bakeoff/preflight-reclaim.test.ts` to derive an identity before calling.\nOut: any direct-construction site under `src/execution/` (iteration-runner.ts:90, parallel-batch.ts:164, merge-conflict-rectify.ts:272, pipeline-result-handler.ts:48/:68/:116/:477, run-initialization.ts:239/:254) and `src/bakeoff/contestant.ts:124` — those belong to US-003.\n\n**Interface**\n```typescript\n// WorktreeManager.create\n//   baseline: create(projectRoot: string, storyId: string): Promise<void>\n//   target:   create(projectRoot: string, worktreeId: WorktreeId): Promise<void>\n//   directory from storyWorktreePath(projectRoot, worktreeId)\n//   branch   from storyBranchName(worktreeId)\n\n// WorktreeManager.remove\n//   baseline: remove(projectRoot: string, storyId: string)\n//   target:   remove(projectRoot: string, worktreeId: WorktreeId)\n//   through the same two producers\n\n// MergeEngine.merge\n//   baseline: merge(projectRoot: string, storyId: string): Promise<Omit<MergeResult, \"storyId\">>\n//   target:   merge(projectRoot: string, worktreeId: WorktreeId): Promise<Omit<MergeResult, \"storyId\">>\n//   branch from storyBranchName(worktreeId); return type unchanged\n\n// MergeEngine.mergeAll\n//   baseline: mergeAll(projectRoot: string, storyIds: string[], dependencies: StoryDependencies)\n//   target:   mergeAll(\n//               projectRoot: string,\n//               stories: Array<{ storyId: string; worktreeId: WorktreeId }>,\n//               dependencies: StoryDependencies,\n//             ): Promise<MergeResult[]>\n//   dependencies stays keyed by raw story IDs; each MergeResult.storyId stays raw\n\n// naxOrphanRefName\n//   baseline: naxOrphanRefName(storyId: string): string  // \"refs/nax/orphan/<storyId>\"\n//   target:   naxOrphanRefName(worktreeId: WorktreeId): string  // \"refs/nax/orphan/<worktreeId>\"\n\n// ContestantRunnerDeps.worktreeManager (src/bakeoff/contestant.ts:62-66)\n//   target:\n//     create: (projectRoot: string, worktreeId: WorktreeId) => Promise<unknown>;\n//     remove: (projectRoot: string, worktreeId: WorktreeId) => Promise<unknown>;\n\n// deriveBakeoffWorktreeId (src/bakeoff/worktree-id.ts:29)\n//   baseline: deriveBakeoffWorktreeId(feature: string, profile: string): string\n//   target:   deriveBakeoffWorktreeId(feature: string, profile: string): WorktreeId\n```",
+      "acceptanceCriteria": [
+        "When `WorktreeManager.create` is given the identity derived for feature `f` and storyId `US-001`, the created worktree directory ends in `.nax-wt/story-f-US-001`.",
+        "When `WorktreeManager.create` is given the identity derived for feature `f` and storyId `US-001`, a branch named `nax/story-f-US-001` is created.",
+        "When `WorktreeManager.remove` is given the identity derived for feature `f` and storyId `US-001`, the branch `nax/story-f-US-001` is removed.",
+        "When `naxOrphanRefName` is given the identity `story-f-US-001`, it returns the ref name `refs/nax/orphan/story-f-US-001`.",
+        "When `MergeEngine.merge` is given the identity `story-f-US-001`, it invokes git with the branch name `nax/story-f-US-001`.",
+        "When `MergeEngine.mergeAll` returns a `MergeResult` for storyId `US-001`, that result carries `storyId` equal to the raw string `US-001`.",
+        "When `MergeEngine.mergeAll` orders two stories by a dependency map keyed by their raw story IDs, merging the dependency before the dependent, the dependency is merged before the dependent.",
+        "When `MergeEngine.mergeAll` is given a story whose raw-ID dependency failed in the same call, that story is reported with `success: false` and `failureKind: \"error\"` and not retried, reporting it unmerged.",
+        "When `WorktreeManager.create` is given the identity `story-f-US-001` and the branch `nax/story-f-US-001` already exists, it throws `NaxError` with code `WORKTREE_ERROR` and the thrown message names the composed branch `nax/story-f-US-001`.",
+        "In a repository with a linked git worktree, when story `US-001` for feature `a` is created from the main checkout and story `US-001` for feature `b` is created from the linked worktree, both `create()` calls resolve without throwing.",
+        "After the linked-worktree create above, the branch `nax/story-a-US-001` created from the main checkout still exists in the repository.",
+        "`deriveBakeoffWorktreeId(\"f\", \"agent\")` returns the same string value as before this feature for the same inputs."
+      ],
+      "tags": [
+        "feature",
+        "worktree",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Five worktree-API signatures change, ~30+ call sites across eight test files must derive an identity, and a structural type in bakeoff must mirror the new branded signature. The three-step cleanup in `WorktreeManager.create` and the merge ordering in `mergeAll` both touch subtle invariants, so test/implement/verify isolation is warranted."
+      },
+      "contextFiles": [
+        "src/worktree/manager.ts",
+        "src/worktree/merge.ts",
+        "src/worktree/nax-orphan-ref.ts",
+        "src/worktree/index.ts",
+        "src/bakeoff/contestant.ts"
+      ],
+      "suggestedCriteria": [
+        "When `MergeEngine.mergeAll` is given a `stories` array whose entries carry distinct `storyId`s and distinct `worktreeId`s, the returned `MergeResult` array has one entry per input story and each entry's `storyId` matches the corresponding input story's raw `storyId`.",
+        "When `WorktreeManager.create` is given an identity whose composed branch name contains only characters in `validateStoryId`'s alphabet, `validateStoryId` does not throw.",
+        "When `ContestantRunnerDeps.worktreeManager.create` is passed an identity derived for bakeoff feature `f` and profile `agent`, the call typechecks against the structural type."
+      ],
+      "outOfScope": [
+        "Any direct-construction site under `src/execution/` (iteration-runner.ts:90, parallel-batch.ts:164, merge-conflict-rectify.ts:272, pipeline-result-handler.ts:48/:68/:116/:477, run-initialization.ts:239/:254) and `src/bakeoff/contestant.ts:124` — those belong to US-003.",
+        "Changing bakeoff's composition inputs or its `bakeoff-` prefix is not part of this feature; only `deriveBakeoffWorktreeId`'s return type narrows.",
+        "Two concurrent runs of the **same** feature against one repository still collide on `nax/story-<feature>-US-001`; serializing them is the feature lock delivered by the `project-identity-run-locking` feature, not this one.",
+        "Run locking of any kind is delivered by the `project-identity-run-locking` feature."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/integration/worktree/manager.test.ts",
+          "reason": "calls `manager.create` and `manager.remove` with a raw string story ID, which the branded parameter no longer accepts; the calls must derive an identity and the branch and directory assertions must read the derived value."
+        },
+        {
+          "path": "test/integration/worktree/worktree-merge.test.ts",
+          "reason": "asserts the merge commit message and post-cleanup branch absence against a branch name built from a raw story ID; both must be derived through `storyBranchName`."
+        },
+        {
+          "path": "test/unit/worktree/manager.test.ts",
+          "reason": "passes raw string story IDs into `manager.create`, `manager.remove` and `naxOrphanRefName` at fourteen call sites, which the branded parameters no longer accept; each must derive an identity."
+        },
+        {
+          "path": "test/unit/worktree/nax-orphan-ref.test.ts",
+          "reason": "calls `naxOrphanRefName` with raw string story IDs at six sites and asserts the returned ref; each must pass a derived identity and assert the composed ref."
+        },
+        {
+          "path": "test/unit/execution/merge.test.ts",
+          "reason": "passes raw string story IDs into `engine.merge` and `engine.mergeAll` at nine sites, which the branded parameters no longer accept; each must pass a derived identity while the dependency map stays keyed by raw story IDs."
+        },
+        {
+          "path": "test/integration/bakeoff/coordinator-worktree-isolation.test.ts",
+          "reason": "its worktree-manager adapter declares `storyId: string`, which no longer satisfies the branded parameter; the adapter must take `WorktreeId`."
+        },
+        {
+          "path": "test/integration/bakeoff/preflight-reclaim.test.ts",
+          "reason": "calls `manager.create` and `manager.remove` with a raw string identifier; both must pass a derived identity."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Every execution-layer site derives the identity",
+      "description": "**Goal** — Update the nine sites under `src/execution/` and the bakeoff worktree-path site that build a worktree path, branch string or orphan-ref string from a raw story ID, so each derives an identity from its run's feature, while metrics, costs and status keep the raw story ID.\n\n**Motivation** — Composing only the parameter sites (US-002) leaves three silent failures: `src/execution/iteration-runner.ts:90` builds the path the story actually runs in (`:99` assigns it to `effectiveWorkdir`), so a composed `create()` beside a raw path means every sequential worktree-mode story runs in a directory that does not exist; `src/execution/pipeline-result-handler.ts:48` (`hasWorktree`) would return `false` for every composed worktree, so failed-story cleanup never fires and `recordNaxOrphanOwnership` is never called — silently disabling the BUG-28 Step-3 evidence path; `src/execution/pipeline-result-handler.ts:116` pairs a composed ref name with a raw `refs/heads/nax/<storyId>` source branch, so `git update-ref` names a branch that does not exist. The other sites — `src/execution/parallel-batch.ts:164`, `src/execution/merge-conflict-rectify.ts:272`, `src/execution/pipeline-result-handler.ts:68/:477`, `src/execution/lifecycle/run-initialization.ts:239/:254`, `src/bakeoff/contestant.ts:124` — are correctness gaps: a raw path/branch against a composed worktree cannot find what it is looking for.\n\n**Approach** — Every execution-layer site that builds a worktree path or branch string derives an identity from its run's feature and reads the spelled string from US-001's producers. `runParallelBatch` derives `storyWorktreeId(feature, story.id)` for each story and calls `WorktreeManager.create`/`remove`/`MergeEngine.mergeAll` with the identity, mapping `worktreePaths` to `storyWorktreePath(workdir, worktreeId)`; the returned `completed` list is keyed by raw story ID and `storyCosts` is keyed by raw story ID. The iteration runner derives the identity from `ctx.feature`, calls `WorktreeManager.create` with the identity, and uses `storyWorktreePath(workdir, worktreeId)` for `effectiveWorkdir`. The merge-conflict rectifier calls `WorktreeManager.create`/`remove` with the identity and uses `storyWorktreePath` for `worktreePath`. The result handler's `hasWorktree`, `removeWorktreeDirectory` and `recordNaxOrphanOwnership` derive the identity from `ctx.feature`; `recordNaxOrphanOwnership` reads both the composed ref and the composed source branch from `naxOrphanRefName`/`storyBranchName`; the merge call passes the identity to `MergeEngine.merge`. Run initialization deletes the composed branch and logs the composed branch name. Bakeoff's `runContestant` reads the worktree path from `storyWorktreePath(projectRoot, bakeoffWorktreeId)` so the path matches the bakeoff identity passed to `create`. Two structured-log fields — `pipeline-result-handler.ts:477` (failure-log branch) and `run-initialization.ts:254` (stale-branch-log branch) — log the composed branch name. Metrics, costs and status keep the raw story ID throughout.\n\n**Scope** — In: update the nine `src/execution/` sites and `src/bakeoff/contestant.ts:124`; update test files `test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts`, `test/unit/execution/merge-conflict-rectify.test.ts`, `test/unit/execution/iteration-runner.test.ts`, `test/unit/execution/lifecycle/run-initialization.test.ts` to read composed spellings.\nOut: legacy `nax/<storyId>` branches created before this change — out of scope for the whole feature; changing `.nax-wt` directory depth; introducing branded types outside the worktree identity.\n\n**Interface** (verbatim sites)\n```\nsrc/execution/iteration-runner.ts:90        dir            (direct join)\nsrc/execution/parallel-batch.ts:164          dir            (direct join)\nsrc/execution/merge-conflict-rectify.ts:272  dir            (direct join)\nsrc/execution/pipeline-result-handler.ts:48  dir            (direct join, hasWorktree)\nsrc/execution/pipeline-result-handler.ts:68  dir            (direct join, removeWorktreeDirectory)\nsrc/execution/pipeline-result-handler.ts:116 branch         (direct interpolation, recordNaxOrphanOwnership source)\nsrc/execution/pipeline-result-handler.ts:477 branch (log)   (direct interpolation)\nsrc/execution/lifecycle/run-initialization.ts:239 branch    (direct interpolation in git argv)\nsrc/execution/lifecycle/run-initialization.ts:254 branch(log)(direct interpolation)\nsrc/bakeoff/contestant.ts:124                dir            (direct join)\n```\nThe run's feature name reaches every site: `options.prd.feature` (`src/execution/parallel-batch.ts:122`), `ctx.feature` (`src/execution/iteration-runner.ts:267`, `src/execution/pipeline-result-handler.ts:209`) and `prd.feature` (`src/execution/merge-conflict-rectify.ts:281`, `src/execution/lifecycle/run-initialization.ts:208`). `PipelineContext` has no plain `feature` field, so sites reading a PRD use `prd.feature`.",
+      "acceptanceCriteria": [
+        "When `runParallelBatch` runs for story `US-001` under feature `f`, the call to `WorktreeManager.create` receives the `WorktreeId` `story-f-US-001`.",
+        "When `runParallelBatch` runs for story `US-001` under feature `f`, the returned `worktreePaths` maps that story's raw ID to a path ending in `.nax-wt/story-f-US-001`.",
+        "When a story merged by `runParallelBatch` under feature `f` is returned in the `completed` list, that list contains the story keyed by its raw story ID.",
+        "When `runParallelBatch` completes for story `US-001`, the returned `storyCosts` map is keyed by the raw string `US-001`.",
+        "When the iteration runner runs a story whose worktree directory does not yet exist, with `execution.storyIsolation` set to `worktree`, the call to `WorktreeManager.create` receives the `WorktreeId` `story-f-US-001`.",
+        "When the iteration runner runs that story, the pipeline's working directory is the path ending in `.nax-wt/story-f-US-001`.",
+        "When merge-conflict rectification runs for story `US-001` under feature `f`, the call to `WorktreeManager.create` receives the `WorktreeId` `story-f-US-001` and the rectification's `worktreePath` ends in `.nax-wt/story-f-US-001`.",
+        "When the result handler checks worktree existence for story `US-001` under feature `f`, it tests the path ending in `.nax-wt/story-f-US-001`.",
+        "When the result handler removes the worktree directory for story `US-001` under feature `f`, it removes the directory ending in `.nax-wt/story-f-US-001`.",
+        "When the result handler writes the orphan-ref record for story `US-001` under feature `f`, the recorded git argv names the ref `refs/nax/orphan/story-f-US-001` and the source branch `refs/heads/nax/story-f-US-001`.",
+        "When the result handler merges story `US-001` under feature `f`, the call to `MergeEngine.merge` receives the `WorktreeId` `story-f-US-001`.",
+        "When run initialization resets story `US-001` from failed to pending under `execution.storyIsolation` set to `worktree`, the `git branch -D` argv names the branch `nax/story-f-US-001`.",
+        "When the story metrics recorded for story `US-001` are inspected, the recorded `storyId` equals the raw string `US-001`.",
+        "When the result handler emits the failure log for story `US-001` under feature `f`, the log's `branch` field equals the string `nax/story-f-US-001`.",
+        "When run initialization emits the stale-branch cleanup log for story `US-001` under feature `f`, the log's `branch` field equals the string `nax/story-f-US-001`."
+      ],
+      "tags": [
+        "feature",
+        "worktree",
+        "execution"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Nine sites across five files under `src/execution/` plus one bakeoff site each derive an identity and route through the SSOT producers. Three sites have downstream effects (effectiveWorkdir assignment, hasWorktree gate, orphan-ref pairing with source branch) that, if missed, silently disable parts of the feature; cross-module coordination with BUG-28 evidence path and structured logs justifies test/implement/verify isolation."
+      },
+      "contextFiles": [
+        "src/execution/parallel-batch.ts",
+        "src/execution/iteration-runner.ts",
+        "src/execution/pipeline-result-handler.ts",
+        "src/execution/merge-conflict-rectify.ts",
+        "src/execution/lifecycle/run-initialization.ts"
+      ],
+      "suggestedCriteria": [
+        "When the iteration runner runs a story whose worktree directory already exists (escalation reuse), the `WorktreeManager.create` call is skipped and `effectiveWorkdir` still equals the path ending in `.nax-wt/story-f-US-001`.",
+        "When merge-conflict rectification's `worktreeManager.remove` is called for story `US-001` under feature `f`, it receives the `WorktreeId` `story-f-US-001`.",
+        "When bakeoff's `runContestant` builds the contestant worktree, the value of `context.worktree` ends in `.nax-wt/<bakeoff-identity>` matching the identity passed to `WorktreeManager.create`.",
+        "When a legacy branch named `nax/US-001` is present and a fresh failure cleanup runs for story `US-001` under feature `f`, the orphan-ref record is NOT written against the legacy branch and that legacy branch is left untouched."
+      ],
+      "outOfScope": [
+        "Legacy `nax/<storyId>` branches created before this change are not detected, reused or deleted, and must be removed manually with `git branch -D`.",
+        "Changing the `.nax-wt/<id>` worktree directory to more than two path segments is not part of this feature.",
+        "Introducing branded types anywhere outside the worktree identity is not part of this feature.",
+        "Two concurrent runs of the **same** feature against one repository still collide on `nax/story-<feature>-US-001`; serializing them is the feature lock delivered by the `project-identity-run-locking` feature, not this one.",
+        "Run locking of any kind is delivered by the `project-identity-run-locking` feature."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts",
+          "reason": "pins the worktree directory and branch for story `US-001` at their raw spellings; both must read the composed spellings."
+        },
+        {
+          "path": "test/unit/execution/merge-conflict-rectify.test.ts",
+          "reason": "pins the rectification worktree directory at its raw spelling; it must read the composed spelling."
+        },
+        {
+          "path": "test/unit/execution/iteration-runner.test.ts",
+          "reason": "asserts by exact equality that the story's execution root is the raw `.nax-wt` path for that story; it must assert the composed path."
+        },
+        {
+          "path": "test/unit/execution/lifecycle/run-initialization.test.ts",
+          "reason": "matches the git argv for the stale-branch delete against the raw branch name; it must match the composed branch name."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Story worktrees of one git repository currently share a single ref namespace and a single worktree directory prefix (`.nax-wt/<storyId>` + branch `nax/<storyId>`). With two features running against the same repo, both run `hasWorktreeRecord()` against the same `git worktree list --porcelain` output, and Step 3 of `WorktreeManager.create()` can either fail (refused by git because the branch is checked out elsewhere) or silently delete the wrong branch via `update-ref -d` on `orphanMatchesBranch`. Fifteen production sites spell `.nax-wt`/branch/orphan-ref strings. Five reach them through a function parameter (manager.ts, merge.ts, nax-orphan-ref.ts); ten build the string directly (iteration-runner.ts:90, parallel-batch.ts:164, merge-conflict-rectify.ts:272, pipeline-result-handler.ts:48/:68/:116/:477, run-initialization.ts:239/:254, bakeoff/contestant.ts:124). Three of the direct sites fail silently if only the parameter sites are composed: iteration-runner.ts:90 sets `effectiveWorkdir` to a non-existent directory; pipeline-result-handler.ts:48 makes `hasWorktree` always return false, disabling the BUG-28 Step-3 evidence path; pipeline-result-handler.ts:116 pairs a composed ref with a raw source branch.\n\nKey files to modify:\n- src/worktree/manager.ts — `create()` and `remove()` derive dir + branch from storyId at :156-157 and :323-324; the three-step cleanup at :204-272 depends on the orphan-ref/branch naming\n- src/worktree/merge.ts — `merge()` interpolates `nax/${storyId}` at :67; `mergeAll()` sorts by `topologicalSort` over raw storyIds at :165 and reads `dependencies[storyId]` at :181; `MergeResult.storyId` is matched against `workerResult.pipelinePassed.find((s) => s.id === mergeResult.storyId)` at parallel-batch.ts:286\n- src/worktree/nax-orphan-ref.ts — current SSOT for the ref name, baseline param is `storyId: string`\n- src/bakeoff/worktree-id.ts — sanitize + cap + hash-suffix derivation to move; bakeoff prefix and call site unchanged\n- src/bakeoff/contestant.ts — passes an already-composed `deriveBakeoffWorktreeId(feature, agent)` into `create()` at :143; the structural `ContestantRunnerDeps.worktreeManager` type at :62-66 must mirror the new branded signature\n- src/worktree/index.ts — barrel that re-exports `naxOrphanRefName`; US-003 imports producers through it\n- src/runtime/packages.ts — :107 (`packageOverrideKey`) and :227 (`storyExecRoot`) parse `.nax-wt` paths by segment position; ACs pin their unchanged behaviour\n- src/execution/* — iteration-runner.ts:90/:99, parallel-batch.ts:164, merge-conflict-rectify.ts:272, pipeline-result-handler.ts:48/:68/:116/:477, run-initialization.ts:239/:254\n\nRisks:\n- The branded `WorktreeId` narrows every parameter type at the worktree API surface — bakeoff's `ContestantRunnerDeps.worktreeManager` structural type at contestant.ts:62-66 must mirror it, the bakeoff coordinator integration test adapter must take it, and ~14 unit-test + 6 unit + 9 unit test sites must derive an identity before calling. Existing tests pin the literal `nax/US-001` strings, which must now be derived.\n- `MergeResult.storyId` stays raw (it is the join key into `pipelinePassed`, `storyCosts`, and `prd.userStories`); `StoryDependencies` stays keyed by raw story IDs so `topologicalSort` and the failed-dep skip resolve.\n- Depth of `.nax-wt/<id>` must stay at two path segments — deepening breaks `packageOverrideKey` (packages.ts:107) and `storyExecRoot` (packages.ts:227), which parse by position and would silently derive the wrong package key (nax#2111 defect class).\n- A legacy `nax/<storyId>` branch from before this change is not recognised as this feature's orphan and is left untouched; no automatic sweep, to avoid force-deleting a branch another checkout may still hold. The orphan-ref ownership record must NOT fire for such a legacy branch.\n- A new gate script that is not reachable from `check:all-without-biome` is itself caught by `scripts/check-gate-reachability.ts`; the script and its `package.json` registration land together.\n- An empty feature name yields `story--<storyId>` (tolerated; bakeoff already passes `options.feature ?? \"\"`).\n\nArchitecture decisions:\n- One producer per spelling: `storyWorktreePath`, `storyBranchName`, `naxOrphanRefName`. All thirteen sites go through one of them.\n- Branded `WorktreeId` (`string` with a unique type tag), produced only by `deriveStoryWorktreeId` or `deriveBakeoffWorktreeId`. Shared sanitize/cap/hash-suffix moves out of `src/bakeoff/worktree-id.ts` into `src/worktree/worktree-id.ts`; bakeoff delegates or re-exports to keep its `bakeoff-` namespace disjoint.\n- Static gate `scripts/check-worktree-id-ssot.ts` scans `src/**/*.{ts,tsx}` for open-coded `.nax-wt` path segments and `nax/` branch strings, with an explicit allowlist (worktree-id.ts itself; packages.ts:109 and :237 which compare the segment; gitignore.ts:62 ignore entry; review/runner/index.ts:247 ignore regex; precheck/checks-git.ts:55 porcelain-status regex; precheck/checks-warnings.ts:235 ignore entry; bakeoff/preflight.ts:18 composing the separate `nax/bakeoff-` branch namespace) and a per-line `// nax-worktree-id-allow: <reason>` escape hatch mirroring `check-feature-dir-ssot.ts`.\n- Read-only dependencies verified at shape: `validateStoryId` (src/prd/validate.ts), `_worktreeManagerDeps.gitWithTimeout` (manager.ts:19), `_iterationRunnerDeps.existsSync` (iteration-runner.ts:325), `_parallelBatchDeps.createWorktreeManager` (parallel-batch.ts:100), `_resultHandlerDeps.spawn` (pipeline-result-handler.ts), `packageOverrideKey` (packages.ts:107), `storyExecRoot` (packages.ts:227). Feature name reaches every site: `options.prd.feature` (parallel-batch.ts:122), `ctx.feature` (iteration-runner.ts:267, pipeline-result-handler.ts:209), `prd.feature` (merge-conflict-rectify.ts:281, run-initialization.ts:208).\n\nMigration: tests that pin literal `nax/US-001` strings derive through `storyBranchName`; tests that pin `.nax-wt/US-001` paths derive through `storyWorktreePath`; tests that pin `refs/nax/orphan/US-001` derive through `naxOrphanRefName`. No data migration — legacy branches are out of scope.\n\nStories are sequenced by dependency: US-001 (identity module + gate) → US-002 (worktree API takes identity) → US-003 (every execution site derives identity).",
+  "outOfScope": [
+    "Legacy `nax/<storyId>` branches created before this feature are not detected, reused or deleted, and must be removed manually with `git branch -D`; an automatic sweep would have to force-delete a branch a pre-upgrade run in another checkout may still hold.",
+    "Legacy `nax/<storyId>` branches created before this change are not detected, reused or deleted, and must be removed manually with `git branch -D`; an automatic sweep would have to force-delete a branch a pre-upgrade run in another checkout may still hold.",
+    "Changing the `.nax-wt/<id>` worktree directory to more than two path segments is not part of this feature.",
+    "Changing bakeoff's composition inputs or its `bakeoff-` prefix is not part of this feature; only `deriveBakeoffWorktreeId`'s return type narrows.",
+    "Two concurrent runs of the **same** feature against one repository still collide on `nax/story-<feature>-US-001`; serializing them is the feature lock delivered by the `project-identity-run-locking` feature, not this one.",
+    "Matching project identity by git remote, and the `RUN_NAME_COLLISION` behaviour of `claimProjectIdentity`, are delivered by the `project-identity-run-locking` feature.",
+    "Run locking of any kind is delivered by the `project-identity-run-locking` feature.",
+    "Introducing branded types anywhere outside the worktree identity is not part of this feature.",
+    "An empty feature name yields the identity `story--<storyId>` and is accepted; rejecting it is not part of this feature, because `src/bakeoff/contestant.ts:100` already tolerates an empty feature through `options.feature ?? \"\"`."
+  ],
+  "routingProfile": "default"
+}
