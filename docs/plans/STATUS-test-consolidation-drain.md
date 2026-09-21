@@ -1681,3 +1681,49 @@ diff byte-identical before/after.
 Wave 4 running total: **-17 files**. Cumulative: **-130**. Four Wave-4 groups
 remain per §3: `effectiveness` (5→3), `verify-op` (4→2), `manifest-builder`
 (4→2), `pipeline-result-handler` (4→2).
+
+### 9.28 — 2026-09-21, Task 28 landed — context/engine/effectiveness group 5 → 3 files (-46 lines)
+
+Hit the packed target exactly: 5 → 3 files, 2,042 → 1,996 lines. All 84 group
+static sites / 26 receiver runtime tests preserved (base 18 + barrel 4 + gate
+4); group runtime expect count 36. Unit phase 18,311 / 42,334 unchanged; full
+suite 0 fail, `check:all` 0, both tsc clean, coverage 96.36% lines / 93.42%
+functions, 0 below floor. Ranker `_deps unrestored 0` (group carried no `⚠deps`
+flag).
+
+One receiver, per the packer's bin 3: `effectiveness.test.ts` (mirror base,
+421l → **677l**) absorbs `effectiveness-barrel` (barrel-import convention,
+US-003 adversarial finding) + `effectiveness-gate` (fixture-scored regression
+gate, US-003 AC11/AC12). The pinned 677l mirror `effectiveness-eval.test.ts`
+and the 642l `effectiveness-scoped.test.ts` stay alone (scoped is bin 2 on its
+own).
+
+**Landed 677l, over the 650 fill target but 123 under the cap** — the packer's
+547l estimate again followed the preamble-dedup understatement class
+(§9.5/§9.13/§9.22): the three files' preambles are genuinely disjoint (base =
+classify fixtures; barrel = a source-text reading harness with its own
+`ImportRecord`/regex/loader; gate = a whole-diff + scoped classifier pair over
+a committed JSON fixture), so only the import block deduped. Files hit the
+target; lines are the honest seam floor. Precedent: §9.12 landed 705/701/696,
+§9.5 799.
+
+Imports merged: `join` (`node:path`) and
+`{ type Classifier, type LabelCase, loadLabelSet, scoreEffectiveness }` from
+`@/context/engine/effectiveness-eval`. No collisions: the base's only `join`
+use is an `Array.prototype.join("\n")` method call, and none of the barrel/gate
+identifiers (`IMPORT_REGEX`, `loadSourceImports`, `COMMITTED_FIXTURE`,
+`makeScopedClassifier`, `tokenizeLocally`, …) existed in the base. The
+`import.meta.dir`-relative paths in both absorbed bodies resolve identically
+from `test/unit/context/engine/`.
+
+Deletes (2): `effectiveness-barrel`, `effectiveness-gate`.
+
+Mutation check: 3 merged describes × one flipped assertion — barrel
+`offending` `toHaveLength(0)` → `toHaveLength(1)`, gate AC11
+`sizeCorrelation` `toBeLessThan` → `toBeGreaterThan`, gate AC12
+`perSignal.followed.f1 > baseline.f1` → `<` → 3 distinct failures, 23 pass; all
+reverted with exact reverse edits, working diff byte-identical before/after.
+
+Wave 4 running total: **-19 files**. Cumulative: **-132**. Three Wave-4 groups
+remain per §3: `verify-op` (4→2), `manifest-builder` (4→2),
+`pipeline-result-handler` (4→2).
