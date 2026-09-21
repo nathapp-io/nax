@@ -4,9 +4,14 @@
  * Verifies that signal handlers are correctly registered and removed.
  * BUG-1: unhandledRejection handler must use a stable reference so
  * removeListener can actually deregister it.
+ *
+ * Idempotency + AbortController (Issue 5 fix): once a shutdown path has started,
+ * subsequent fatal signals log and no-op; `abortController` is aborted on the first
+ * signal and `onShutdown` receives the signal.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeStatusWriter } from "@test/helpers";
 import type { SignalHandlerContext } from "@/execution/crash-signals";
 import {
   _crashSignalsDeps,
@@ -276,4 +281,138 @@ describe("fatal teardown deadline (BUG-37)", () => {
       }
     },
   );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Idempotency + AbortController (Issue 5 fix)
+//
+// Signals are not fired via `process.kill` (that would kill the test runner).
+// Instead we invoke the listener directly — same code path, no process exit
+// because we mock `process.exit`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const noopStatusWriter = makeStatusWriter();
+
+function makePidRegistryStub(overrides: Partial<PidRegistry> = {}): PidRegistry {
+  const stub = new PidRegistry("/tmp/crash-signals-idempotency");
+  stub.killAll = async () => {};
+  stub.register = async () => {};
+  stub.unregister = async () => {};
+  stub.cleanupStale = async () => {};
+  stub.freeze = () => {};
+  stub.isFrozen = () => false;
+  stub.getPids = () => [];
+  stub.snapshot = () => [];
+  return Object.assign(stub, overrides);
+}
+
+/** Invoke every SIGTERM listener registered on `process`. */
+async function fireSignal(signal: NodeJS.Signals): Promise<void> {
+  const listeners = process.listeners(signal) as Array<() => Promise<void> | void>;
+  for (const fn of listeners) {
+    await fn();
+  }
+}
+
+describe("crash-signals idempotency", () => {
+  let cleanup: (() => void) | undefined;
+  let originalExit: typeof process.exit;
+  let exitCalls: number[] = [];
+
+  beforeEach(() => {
+    originalExit = process.exit;
+    exitCalls = [];
+    // Prevent the real process.exit from killing the test runner.
+    process.exit = ((code?: number) => {
+      exitCalls.push(code ?? 0);
+    }) as typeof process.exit;
+  });
+
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+    process.exit = originalExit;
+  });
+
+  test("second signal after shutdown has started is ignored (no duplicate onShutdown/killAll)", async () => {
+    const onShutdown = mock(async () => {});
+    const killAll = mock(async () => {});
+    const abortController = new AbortController();
+
+    const ctx: SignalHandlerContext = {
+      statusWriter: noopStatusWriter,
+      getTotalCost: () => 0,
+      getIterations: () => 0,
+      onShutdown,
+      pidRegistry: makePidRegistryStub({ killAll }),
+      abortController,
+    };
+
+    cleanup = installSignalHandlers(ctx);
+
+    // First SIGINT fires the full path.
+    await fireSignal("SIGINT");
+
+    expect(onShutdown).toHaveBeenCalledTimes(1);
+    expect(killAll).toHaveBeenCalledTimes(1);
+    expect(abortController.signal.aborted).toBe(true);
+
+    // Second fatal signal must NOT re-run onShutdown / killAll.
+    await fireSignal("SIGTERM");
+
+    expect(onShutdown).toHaveBeenCalledTimes(1);
+    expect(killAll).toHaveBeenCalledTimes(1);
+  });
+
+  test("first signal aborts the shared AbortController", async () => {
+    const abortController = new AbortController();
+    const ctx: SignalHandlerContext = {
+      statusWriter: noopStatusWriter,
+      getTotalCost: () => 0,
+      getIterations: () => 0,
+      abortController,
+    };
+
+    cleanup = installSignalHandlers(ctx);
+
+    expect(abortController.signal.aborted).toBe(false);
+    await fireSignal("SIGINT");
+    expect(abortController.signal.aborted).toBe(true);
+  });
+
+  test("onShutdown receives the abort signal so it can short-circuit long awaits", async () => {
+    let received: AbortSignal | undefined;
+    const abortController = new AbortController();
+
+    const ctx: SignalHandlerContext = {
+      statusWriter: noopStatusWriter,
+      getTotalCost: () => 0,
+      getIterations: () => 0,
+      abortController,
+      onShutdown: async (signal) => {
+        received = signal;
+      },
+    };
+
+    cleanup = installSignalHandlers(ctx);
+    await fireSignal("SIGINT");
+
+    expect(received).toBeDefined();
+    expect(received?.aborted).toBe(true);
+  });
+
+  test("pidRegistry.freeze() is called on first signal", async () => {
+    const freeze = mock(() => {});
+    const ctx: SignalHandlerContext = {
+      statusWriter: noopStatusWriter,
+      getTotalCost: () => 0,
+      getIterations: () => 0,
+      pidRegistry: makePidRegistryStub({ freeze }),
+    };
+
+    cleanup = installSignalHandlers(ctx);
+    await fireSignal("SIGINT");
+
+    expect(freeze).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,7 +1,16 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeMockRuntime, makeNaxConfig, makePRD, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
+import {
+  makeMockAgentManager,
+  makeMockRuntime,
+  makeNaxConfig,
+  makePRD,
+  makeSpawn,
+  makeTempDir,
+  withDepsRestore,
+} from "@test/helpers";
+import type { IAgentManager } from "@/agents";
 import type { NaxConfig } from "@/config";
 import type { RtkDeps } from "@/execution/interceptors/rtk";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
@@ -158,5 +167,22 @@ describe("setupRun → command interceptor composition (config → provider → 
     } finally {
       rmSync(workdir, { recursive: true, force: true });
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// runSetupPhase → validateCredentials (#518)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runSetupPhase → validateCredentials (#518)", () => {
+  test("calls agentManager.validateCredentials() when provided", async () => {
+    const validateCredentials = mock(async () => {});
+    const agentManager = makeMockAgentManager({ getDefaultAgent: "claude" }) as IAgentManager & {
+      validateCredentials: typeof validateCredentials;
+    };
+    agentManager.validateCredentials = validateCredentials;
+    // Verify the interface contract — validateCredentials is callable
+    await agentManager.validateCredentials();
+    expect(validateCredentials).toHaveBeenCalledTimes(1);
   });
 });

@@ -160,3 +160,49 @@ describe("rtk interceptor", () => {
     expect(entries[0].data).toEqual({ enabled: true, version: "0.45.0", verbs: ["log"] });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// postProcess — strip rtk's appended hints from a tool result
+// ─────────────────────────────────────────────────────────────────────────────
+
+const postProcessReq = { kind: "argv" as const, argv: ["git", "log"], cwd: "/repo", site: "git" as const };
+
+/** Narrows `postProcess?` once, so no test needs a non-null assertion. */
+function postProcess() {
+  const { postProcess: fn } = createRtkInterceptor({
+    enabled: true,
+    verbs: ["log"],
+    _deps: present,
+  });
+  if (fn === undefined) throw new Error("rtk interceptor must define postProcess");
+  return fn;
+}
+
+describe("rtk postProcess", () => {
+  test("strips a full-diff hint and the newline before it", () => {
+    expect(postProcess()("diff body\n[full diff: rtk git diff --no-compact]", postProcessReq).output).toBe("diff body");
+  });
+
+  test("strips a hidden-lines hint", () => {
+    const { output } = postProcess()("body\n[+12 hidden: rtk recall 3f9c2a81d4e7]", postProcessReq);
+    expect(output).toBe("body");
+    expect(output).not.toContain("rtk recall");
+  });
+
+  test("strips a full-output hint", () => {
+    // US-005 item 1 names `[full output: rtk recall <hash>]` as the third hint
+    // shape rtk appends — the acceptance is "no rtk hint string survives into
+    // a tool result".
+    expect(postProcess()("body\n[full output: rtk recall 3f9c2a81d4e7]", postProcessReq).output).toBe("body");
+  });
+
+  test("leaves output with no hints untouched", () => {
+    expect(postProcess()("plain body", postProcessReq).output).toBe("plain body");
+  });
+
+  test("does not eat trailing whitespace when there is no hint to strip", () => {
+    // Stripping is hint-shaped, not a general trim: trimEnd happens later at
+    // the call site, and postProcess must not pre-empt it.
+    expect(postProcess()("plain body\n\n", postProcessReq).output).toBe("plain body\n\n");
+  });
+});
