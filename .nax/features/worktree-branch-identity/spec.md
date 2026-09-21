@@ -32,20 +32,23 @@ The collision is reachable today through `execution.storyIsolation: "worktree"` 
 one project.
 
 **Partial composition is worse than none, and the surface is wider than the worktree API.**
-Thirteen production sites spell a worktree path, a branch name or an orphan ref. Five reach them
-through a function parameter, and eight build the string directly:
+Fifteen production sites spell a worktree path, a branch name or an orphan ref. Five reach them
+through a function parameter, and ten build the string directly:
 
 | Site | Spelling | Reached via |
 |:--|:--|:--|
 | `src/worktree/manager.ts:156-157`, `:323-324` | dir + branch | `create`/`remove` parameter |
 | `src/worktree/merge.ts:67`, `:314` | branch, dir | `merge`/`mergeAll` parameter |
-| `src/worktree/nax-orphan-ref.ts:16` | ref | `naxOrphanRefName` parameter |
+| `src/worktree/nax-orphan-ref.ts:17` | ref | `naxOrphanRefName` parameter |
 | `src/execution/iteration-runner.ts:90` | dir | direct `join` |
 | `src/execution/parallel-batch.ts:164` | dir | direct `join` |
 | `src/execution/merge-conflict-rectify.ts:272` | dir | direct `join` |
 | `src/execution/pipeline-result-handler.ts:48`, `:68` | dir | direct `join` |
 | `src/execution/pipeline-result-handler.ts:116` | branch | direct interpolation |
 | `src/execution/lifecycle/run-initialization.ts:239` | branch | direct interpolation in git argv |
+| `src/execution/lifecycle/run-initialization.ts:254` | branch (log field) | direct interpolation |
+| `src/execution/pipeline-result-handler.ts:477` | branch (log field) | direct interpolation |
+| `src/bakeoff/contestant.ts:124` | dir | direct `join` |
 
 Three of the direct sites fail silently if the parameter sites alone are composed.
 `src/execution/iteration-runner.ts:90` builds the path the story actually runs in — `:99` assigns
@@ -100,12 +103,31 @@ parameter type is involved. The design therefore has three parts:
    expected. There is no existing branded type in this codebase; this introduces the pattern, in
    one module.
 3. **A static gate.** `scripts/check-worktree-id-ssot.ts` fails when a literal `.nax-wt` path
-   segment or a `nax/`-prefixed branch string is built outside `src/worktree/worktree-id.ts`.
-   This is what makes completeness checkable rather than remembered, and it is the mechanism this
-   repository already uses for exactly this class — `scripts/check-feature-dir-ssot.ts` for the
-   feature tree, `scripts/check-no-real-global-nax.ts` for `~/.nax`, and
-   `scripts/check-permission-mode-ssot.ts` for permission literals. Like those, it takes a
-   comment escape hatch for genuine prose, and it is reachable from `check:all-without-biome`.
+   segment or a `nax/`-prefixed branch string is built outside the identity module. This is what
+   makes completeness checkable rather than remembered, and it is the mechanism this repository
+   already uses for exactly this class — `scripts/check-feature-dir-ssot.ts` for the feature
+   tree, `scripts/check-no-real-global-nax.ts` for `~/.nax`, and
+   `scripts/check-permission-mode-ssot.ts` for permission literals. Like `check-feature-dir-ssot`
+   (`:28`, `:36`), it carries an explicit allowlist as well as a per-line comment escape hatch.
+
+   **The allowlist, and why each member is on it.** Several existing sites spell `.nax-wt` as a
+   *consumer* — they compare or ignore the segment rather than construct a worktree path — and
+   the design depends on them staying exactly as they are:
+
+   | Allowlisted file | Why |
+   |:--|:--|
+   | `src/worktree/worktree-id.ts` | the producers themselves |
+   | `src/runtime/packages.ts` | `:109` and `:237` compare the first path segment; ACs pin their unchanged behaviour |
+   | `src/utils/gitignore.ts` | `:62` is a gitignore entry, not a path build |
+   | `src/review/runner/index.ts` | `:247` is an ignore regex |
+   | `src/precheck/checks-git.ts` | `:55` is a porcelain-status regex |
+   | `src/precheck/checks-warnings.ts` | `:235` is an ignore entry |
+   | `src/bakeoff/preflight.ts` | `:18` composes the separate `nax/bakeoff-` branch namespace |
+
+   **CI registration.** `scripts/check-gate-reachability.ts` is a meta-gate asserting that every
+   `scripts/check-*` script is reachable from a CI entry point, and it is itself the last link of
+   `check:all-without-biome`. A new gate script that is not registered in `package.json` fails
+   that meta-gate, so the script and its `package.json` entry land together.
 
 Adding a `feature: string` parameter to the worktree API instead was rejected:
 `src/bakeoff/contestant.ts:143` already passes an **already-composed** identity
@@ -190,17 +212,18 @@ implement.
 - Baseline: `merge(projectRoot: string, storyId: string)`, interpolating
   `` const branchName = `nax/${storyId}` `` at `:67`.
 - Target: `merge(projectRoot: string, worktreeId: WorktreeId)`, taking the branch from
-  `storyBranchName`. The returned `MergeResult.storyId` is unchanged and still carries the raw
-  story ID.
+  `storyBranchName`. Its return type stays `Omit<MergeResult, "storyId">` — `merge` has never
+  returned `storyId`; `mergeAll` attaches the raw story ID to each result it builds.
 
 **`MergeEngine.mergeAll`** — `src/worktree/merge.ts:157`
 
 - Baseline: `mergeAll(projectRoot: string, storyIds: string[], dependencies: StoryDependencies)`,
   sorting by `topologicalSort(storyIds, dependencies)` at `:165` and reading
   `dependencies[storyId]` at `:181`.
-- Target: takes each story's raw ID paired with its `WorktreeId`, keeps `dependencies` keyed by
-  raw story IDs so the sort and the failed-dependency skip still resolve, and keeps
-  `MergeResult.storyId` raw.
+- Target: `mergeAll(projectRoot: string, stories: Array<{ storyId: string; worktreeId: WorktreeId }>,
+  dependencies: StoryDependencies)`. `dependencies` stays keyed by raw story IDs so the sort at
+  `:165` and the failed-dependency skip at `:181` still resolve, and each `MergeResult.storyId`
+  stays raw.
 
 **`naxOrphanRefName`** — `src/worktree/nax-orphan-ref.ts:15`
 
@@ -252,9 +275,9 @@ to accept `WorktreeId` and to take every spelling from US-001's producers, keepi
 `MergeResult.storyId` and the `StoryDependencies` map keyed by raw story IDs. Depends on US-001.
 
 **US-003 — Every execution-layer site derives the identity**
-Update the eight sites outside `src/worktree/` that build a worktree path or branch string from a
-raw story ID, so each derives an identity from its run's feature, while metrics, costs and status
-keep the raw story ID. Depends on US-002.
+Update the nine sites under `src/execution/` that build a worktree path or branch string from a
+raw story ID — including the two structured-log branch fields — so each derives an identity from
+its run's feature, while metrics, costs and status keep the raw story ID. Depends on US-002.
 
 ### Context Files
 
@@ -264,14 +287,15 @@ keep the raw story ID. Depends on US-002.
 - `src/bakeoff/contestant.ts` — the second declaration of the worktree-manager signature, and the already-composed bakeoff identity
 - `src/prd/validate.ts` — the alphabet the derivation sanitizes to
 - `scripts/check-feature-dir-ssot.ts` — the static-gate pattern to follow, including its comment escape hatch
-- `scripts/check-no-real-global-nax.ts` — a second gate of the same shape, for the allowlist style
+- `scripts/check-gate-reachability.ts` — the meta-gate requiring every check script to be CI-reachable
 
 **US-002**
 
 - `src/worktree/manager.ts` — worktree and branch construction, and the three-step cleanup
 - `src/worktree/merge.ts` — the branch interpolation, the dependency map and `MergeResult`
 - `src/worktree/nax-orphan-ref.ts` — the existing one-helper-per-ref-name precedent
-- `src/worktree/worktree-id.ts` — created by US-001, consumed here
+- `src/worktree/index.ts` — the barrel US-003 imports the producers through
+- `src/bakeoff/contestant.ts` — the second declaration of the worktree-manager signature, and the bakeoff worktree path at `:124`
 
 **US-003**
 
@@ -293,14 +317,15 @@ keep the raw story ID. Depends on US-002.
 **US-001**
 
 - `src/bakeoff/worktree-id.ts` — its sanitize, cap and hash-suffix helpers move into the new module and it re-exports or delegates; its own tests pin the returned strings, which do not change.
+- `package.json` — the new gate script must be registered as a check:worktree-id-ssot entry reachable from check:all-without-biome, or the CI-reachability meta-gate fails the run.
 
 **US-002**
 
 - `test/integration/worktree/manager.test.ts` — calls `manager.create` and `manager.remove` with a raw string story ID, which the branded parameter no longer accepts; the calls must derive an identity and the branch and directory assertions must read the derived value.
 - `test/integration/worktree/worktree-merge.test.ts` — asserts the merge commit message and post-cleanup branch absence against a branch name built from a raw story ID; both must be derived through `storyBranchName`.
-- `test/unit/worktree/manager.test.ts` — passes raw string story IDs into `manager.create`, `manager.remove` and `naxOrphanRefName` at twelve call sites, which the branded parameters no longer accept; each must derive an identity.
+- `test/unit/worktree/manager.test.ts` — passes raw string story IDs into `manager.create`, `manager.remove` and `naxOrphanRefName` at fourteen call sites, which the branded parameters no longer accept; each must derive an identity.
 - `test/unit/worktree/nax-orphan-ref.test.ts` — calls `naxOrphanRefName` with raw string story IDs at six sites and asserts the returned ref; each must pass a derived identity and assert the composed ref.
-- `test/unit/execution/merge.test.ts` — passes raw string story IDs into `engine.merge` and `engine.mergeAll` at ten sites, which the branded parameters no longer accept; each must pass a derived identity while the dependency map stays keyed by raw story IDs.
+- `test/unit/execution/merge.test.ts` — passes raw string story IDs into `engine.merge` and `engine.mergeAll` at nine sites, which the branded parameters no longer accept; each must pass a derived identity while the dependency map stays keyed by raw story IDs.
 - `test/integration/bakeoff/coordinator-worktree-isolation.test.ts` — its worktree-manager adapter declares `storyId: string`, which no longer satisfies the branded parameter; the adapter must take `WorktreeId`.
 - `test/integration/bakeoff/preflight-reclaim.test.ts` — calls `manager.create` and `manager.remove` with a raw string identifier; both must pass a derived identity.
 
@@ -308,12 +333,14 @@ keep the raw story ID. Depends on US-002.
 
 - `test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts` — pins the worktree directory and branch for story `US-001` at their raw spellings; both must read the composed spellings.
 - `test/unit/execution/merge-conflict-rectify.test.ts` — pins the rectification worktree directory at its raw spelling; it must read the composed spelling.
-- `test/unit/execution/parallel-batch.test.ts` — pins the mapped worktree path at its raw spelling; it must read the composed spelling.
+- `test/unit/execution/iteration-runner.test.ts` — asserts by exact equality that the story's execution root is the raw `.nax-wt` path for that story; it must assert the composed path.
+- `test/unit/execution/lifecycle/run-initialization.test.ts` — matches the git argv for the stale-branch delete against the raw branch name; it must match the composed branch name.
 
 ### Seams
 
 - `[unit]` set `_parallelBatchDeps.createWorktreeManager` to a recording double; run `runParallelBatch` over one story under feature `f`; assert the double's `create` received `story-f-US-001`.
 - `[unit]` set `_iterationRunnerDeps.worktreeManager` to a recording double and `_iterationRunnerDeps.existsSync` to report the worktree absent; run the iteration runner for one story under feature `f` with `execution.storyIsolation` set to `worktree`; assert the double's `create` received `story-f-US-001`.
+- `[unit]` set `_parallelBatchDeps.createMergeEngine` to a recording double; run `runParallelBatch` over one story under feature `f`; assert `mergeAll` received that story paired with the identity `story-f-US-001` and a dependency map keyed by `US-001`.
 - `[unit]` set `_resultHandlerDeps.spawn` to a recording double; drive the result handler's orphan-ref path for story `US-001` under feature `f`; assert the recorded git arguments name both the composed ref and the composed source branch.
 
 ## Acceptance Criteria
@@ -329,10 +356,11 @@ keep the raw story ID. Depends on US-002.
 - `[unit]` `deriveBakeoffWorktreeId` returns an identity beginning with `bakeoff-`, unchanged in value from before this feature for the same inputs.
 - `[unit]` `storyWorktreePath("/repo", "story-f-US-001")` returns the path `/repo/.nax-wt/story-f-US-001`.
 - `[unit]` `storyBranchName("story-f-US-001")` returns `nax/story-f-US-001`.
-- `[cli]` the static check exits non-zero when a source file outside the identity module builds a string containing a `.nax-wt` path segment.
-- `[cli]` the static check exits non-zero when a source file outside the identity module builds a branch string prefixed `nax/`.
+- `[cli]` the static check exits non-zero when a non-allowlisted source file builds a string containing a `.nax-wt` path segment.
+- `[cli]` the static check exits non-zero when a non-allowlisted source file builds a branch string prefixed `nax/`.
 - `[cli]` the static check exits zero for a file carrying the documented allow comment on that line.
-- `[cli]` the static check exits zero against the repository once every site derives its spellings.
+- `[cli]` the static check exits zero for a file named in its allowlist that spells `.nax-wt`.
+- `[cli]` `bun run check:all-without-biome` invokes the worktree-id gate.
 
 ### US-002 — The worktree API takes the identity
 
@@ -341,7 +369,7 @@ keep the raw story ID. Depends on US-002.
 - `[integration]` `WorktreeManager.remove` given that identity removes the `nax/story-f-US-001` branch.
 - `[unit]` `naxOrphanRefName` given that identity returns `refs/nax/orphan/story-f-US-001`.
 - `[unit]` `MergeEngine.merge` given that identity invokes git with the branch name `nax/story-f-US-001`.
-- `[unit]` the `MergeResult` returned by `MergeEngine.merge` for story `US-001` carries `storyId` equal to `US-001`.
+- `[unit]` each `MergeResult` returned by `MergeEngine.mergeAll` for story `US-001` carries `storyId` equal to `US-001`.
 - `[unit]` `MergeEngine.mergeAll` orders two stories by a dependency map keyed by their raw story IDs, merging the dependency before the dependent.
 - `[unit]` `MergeEngine.mergeAll` skips a story whose raw-ID dependency failed, reporting it unmerged.
 - `[unit]` `WorktreeManager.create` reports `WORKTREE_ERROR` naming `nax/story-f-US-001` when that branch already exists.
@@ -363,5 +391,5 @@ keep the raw story ID. Depends on US-002.
 - `[unit]` the result handler merges story `US-001` under feature `f` by calling `MergeEngine.merge` with the identity `story-f-US-001`.
 - `[unit]` run initialization, for a story reset from failed to pending under `execution.storyIsolation` set to `worktree`, deletes the branch `nax/story-f-US-001`.
 - `[unit]` the story metrics recorded for story `US-001` carry `storyId` equal to `US-001`.
-- `[unit]` `packageOverrideKey` applied to `.nax-wt/story-f-US-001/packages/core` returns `packages/core`.
-- `[unit]` `storyExecRoot` applied to a repo root with package directory `.nax-wt/story-f-US-001/packages/core` returns the path ending in `.nax-wt/story-f-US-001`.
+- `[unit]` the result handler's failure log for story `US-001` under feature `f` records the branch `nax/story-f-US-001`.
+- `[unit]` run initialization's stale-branch log for story `US-001` under feature `f` records the branch `nax/story-f-US-001`.
