@@ -924,4 +924,30 @@ Mutation check: 5 merged receivers × one flipped assertion → 5 distinct failu
 reverted. Delegated to a subagent; post-verification by me: 192/358 reproduced, all
 receivers ≤ 770l.
 
-### 9.11 — next entry goes here
+### 9.11 — 2026-09-21, Task 10 landed — static-rules group 12 → 5 files (-386 lines)
+
+Hit the packed target: 12 → 5 files, 3,064 → 2,678 lines, all 132 tests / 269
+expect() preserved. Unit phase 18,247 / 42,169 unchanged, full suite 0 fail,
+`check:all` 0, both tsc clean, coverage 96.32% / 93.40%, 0 below floor.
+
+Bins per the packer, seam assignment mine:
+
+- `static-rules-sections` absorbs `static-rules-paths` (677l).
+- `static-rules-us002` absorbs `static-rules-authoring-scope` + `static-rules-us006`
+  + `static-rules-path-frame` (743l).
+- `static-rules-budget-derivation` absorbs `static-rules-inert-warn`
+  + `static-rules-budget-warnings` + `static-rules-legacy-default` (445l).
+- `static-rules.test.ts` frozen base (803l) and mirror `static-rules-scoping` (250l)
+  untouched.
+
+Deletes (7): `static-rules-paths`, `static-rules-authoring-scope`,
+`static-rules-us006`, `static-rules-path-frame`, `static-rules-inert-warn`,
+`static-rules-budget-warnings`, `static-rules-legacy-default`.
+
+Delegated to a subagent; post-verification by me: 132/269 reproduced, all receivers
+≤ 743l. Collisions renamed with `*_BASE_REQUEST` / `*Canonical` prefixes; subset
+`beforeEach`/`afterEach` hook pairs merged away. Mutation check: 3 merged receivers
+× one flipped assertion → 5 distinct failures (us002's mutation failed 3 tests,
+the others 1 each), all reverted.
+
+### 9.12 — next entry goes here

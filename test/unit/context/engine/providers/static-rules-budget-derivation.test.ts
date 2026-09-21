@@ -5,9 +5,11 @@
  * capped at the configured global budgetTokens.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
+import { NaxConfigSchema } from "@/config/schemas";
 import { _staticRulesDeps, type CanonicalRule, type ContextRequest, StaticRulesProvider } from "@/context/engine";
+import { addSink, initLogger, type LogEntry, type Logger, resetLogger } from "@/logger";
 
 let origReadFile: typeof _staticRulesDeps.readFile;
 let origFileExists: typeof _staticRulesDeps.fileExists;
@@ -208,5 +210,236 @@ describe("StaticRulesProvider — US-003 per-stage rules budget derivation", () 
     } finally {
       _staticRulesDeps.applySectionBudget = origApply;
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// nax#1775 — appliesTo inert-scoping warning — absorbed from
+// static-rules-inert-warn.test.ts
+//
+// A rule declaring `appliesTo:` that gets admitted only because
+// `request.scopeFiles` is empty is a silent scoping bug, not a benign
+// default. `appliesToInertCount` already existed on the scoping report but
+// was invisible outside manifest telemetry — this pins the accompanying
+// `logger.warn`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let warnSpy: Mock<Logger["warn"]> | undefined;
+
+const INERT_BASE_REQUEST: ContextRequest = {
+  storyId: "US-001",
+  repoRoot: "/project",
+  packageDir: "/project",
+  stage: "execution",
+  role: "implementer",
+  budgetTokens: 8000,
+};
+
+function setupInertCanonical(rules: CanonicalRule[]) {
+  _staticRulesDeps.loadCanonicalRules = async () => rules;
+}
+
+describe("StaticRulesProvider — appliesTo inert-scoping warning (nax#1775)", () => {
+  beforeEach(async () => {
+    const { resetLogger, initLogger } = await import("@/logger");
+    resetLogger();
+    const logger = initLogger({ level: "silent" });
+    warnSpy = spyOn(logger, "warn");
+  });
+
+  afterEach(async () => {
+    warnSpy?.mockRestore();
+    warnSpy = undefined;
+    const { resetLogger } = await import("@/logger");
+    resetLogger();
+  });
+
+  test("warns when an appliesTo: rule is admitted because scopeFiles is empty", async () => {
+    setupInertCanonical([{ fileName: "agents.md", content: "Agent-specific rules", appliesTo: ["src/agents/**"] }]);
+    const provider = new StaticRulesProvider();
+
+    await provider.fetch({ ...INERT_BASE_REQUEST, scopeFiles: [] });
+
+    const call = warnSpy?.mock.calls.find(
+      (c) => c[0] === "static-rules" && c[1] === "appliesTo rules admitted unconditionally — scope-file set is empty",
+    );
+    expect(call).toBeDefined();
+    expect(call?.[2]).toMatchObject({ storyId: "US-001", appliesToInertCount: 1 });
+  });
+
+  test("warns when scopeFiles is entirely absent (undefined)", async () => {
+    setupInertCanonical([{ fileName: "agents.md", content: "Agent-specific rules", appliesTo: ["src/agents/**"] }]);
+    const provider = new StaticRulesProvider();
+
+    await provider.fetch({ ...INERT_BASE_REQUEST, scopeFiles: undefined });
+
+    const call = warnSpy?.mock.calls.find(
+      (c) => c[0] === "static-rules" && c[1] === "appliesTo rules admitted unconditionally — scope-file set is empty",
+    );
+    expect(call).toBeDefined();
+  });
+
+  test("does not warn when scopeFiles is populated (appliesTo scoping is live)", async () => {
+    setupInertCanonical([{ fileName: "agents.md", content: "Agent-specific rules", appliesTo: ["src/agents/**"] }]);
+    const provider = new StaticRulesProvider();
+
+    await provider.fetch({ ...INERT_BASE_REQUEST, scopeFiles: ["src/agents/manager.ts"] });
+
+    const call = warnSpy?.mock.calls.find(
+      (c) => c[0] === "static-rules" && c[1] === "appliesTo rules admitted unconditionally — scope-file set is empty",
+    );
+    expect(call).toBeUndefined();
+  });
+
+  test("does not warn when no rule declares appliesTo:", async () => {
+    setupInertCanonical([{ fileName: "global.md", content: "Global rules" }]);
+    const provider = new StaticRulesProvider();
+
+    await provider.fetch({ ...INERT_BASE_REQUEST, scopeFiles: [] });
+
+    const call = warnSpy?.mock.calls.find(
+      (c) => c[0] === "static-rules" && c[1] === "appliesTo rules admitted unconditionally — scope-file set is empty",
+    );
+    expect(call).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003 budget warnings — absorbed from static-rules-budget-warnings.test.ts
+// ─────────────────────────────────────────────────────────────────────────────
+
+const WARN_BASE_REQUEST: ContextRequest = {
+  storyId: "US-003",
+  repoRoot: "/project",
+  packageDir: "/project",
+  stage: "execution",
+  role: "implementer",
+  budgetTokens: 8000,
+};
+
+function setupWarnCanonical(rules: CanonicalRule[]): void {
+  _staticRulesDeps.loadCanonicalRules = async () => rules;
+}
+
+async function captureWarnCalls(fetch: () => Promise<unknown>): Promise<LogEntry[]> {
+  const calls: LogEntry[] = [];
+  initLogger({ level: "silent", suppressConsole: true });
+  const unsubscribe = addSink((entry) => {
+    if (entry.level === "warn") calls.push(entry);
+  });
+  try {
+    await fetch();
+    return calls;
+  } finally {
+    unsubscribe();
+  }
+}
+
+function overBudgetRules(tokens: number): CanonicalRule[] {
+  return [
+    { fileName: "a.md", id: "a", content: "A".repeat(40), tokens, priority: 1 },
+    { fileName: "b.md", id: "b", content: "B".repeat(40), tokens, priority: 2 },
+    { fileName: "c.md", id: "c", content: "C".repeat(40), tokens, priority: 3 },
+  ];
+}
+
+describe("StaticRulesProvider budget warnings — US-003", () => {
+  afterEach(() => {
+    resetLogger();
+  });
+
+  test("AC1: soft-budget truncation warning is counterfactual and names enforceBudget", async () => {
+    setupWarnCanonical(overBudgetRules(200));
+    const calls = await captureWarnCalls(() =>
+      new StaticRulesProvider({ budgetTokens: 400, enforceBudget: false }).fetch(WARN_BASE_REQUEST),
+    );
+
+    const message = calls.find((call) => call.message.includes("Rule sections"))?.message;
+    expect(message).toMatch(/would be truncated/i);
+    expect(message).not.toMatch(/were truncated/i);
+    // MSG-1 — the message names the real config path, not a bare knob name.
+    expect(message).toContain("context.v2.rules.enforceBudget");
+  });
+
+  test("AC2: enforced-budget truncation warning retains its existing wording", async () => {
+    setupWarnCanonical(overBudgetRules(200));
+    const calls = await captureWarnCalls(() =>
+      new StaticRulesProvider({ budgetTokens: 400, enforceBudget: true }).fetch(WARN_BASE_REQUEST),
+    );
+
+    expect(calls.find((call) => call.message.includes("Rule sections"))?.message).toBe(
+      "Rule sections truncated by static rules budget",
+    );
+  });
+
+  test("AC5: rules within a soft budget emit no truncation warning", async () => {
+    setupWarnCanonical(overBudgetRules(50));
+    const calls = await captureWarnCalls(() =>
+      new StaticRulesProvider({ budgetTokens: 1000, enforceBudget: false }).fetch(WARN_BASE_REQUEST),
+    );
+
+    expect(calls.filter((call) => call.message.includes("truncated"))).toHaveLength(0);
+  });
+
+  test("AC6: soft approaching-budget warning names enforceBudget without claiming drops", async () => {
+    setupWarnCanonical(overBudgetRules(150));
+    const calls = await captureWarnCalls(() =>
+      new StaticRulesProvider({ budgetTokens: 400, enforceBudget: false }).fetch(WARN_BASE_REQUEST),
+    );
+
+    const message = calls.find((call) => call.message.includes("approaching"))?.message;
+    expect(message).toContain("context.v2.rules.enforceBudget");
+    expect(message).not.toMatch(/were truncated|were dropped/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #508-M3 allowLegacyClaudeMd default tests — absorbed from
+// static-rules-legacy-default.test.ts
+//
+// AC-28/AC-31: The default for allowLegacyClaudeMd must be false.
+// Legacy CLAUDE.md fallback must be opt-in, not opt-out.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LEGACY_BASE_REQUEST: ContextRequest = {
+  storyId: "US-001",
+  repoRoot: "/project",
+  packageDir: "/project",
+  stage: "execution",
+  role: "implementer",
+  budgetTokens: 8_000,
+};
+
+describe("StaticRulesProvider — #508-M3 allowLegacyClaudeMd defaults to false", () => {
+  test("returns empty chunks by default when no canonical rules and CLAUDE.md exists", async () => {
+    // Canonical rules: empty (no .nax/rules/)
+    _staticRulesDeps.loadCanonicalRules = async () => [];
+    // CLAUDE.md exists and has content — legacy fallback would pick this up
+    _staticRulesDeps.fileExists = async (path: string) => path.endsWith("CLAUDE.md");
+    _staticRulesDeps.readFile = async () => "# Project rules\n\nUse async/await.";
+
+    // RED: current default is true — provider falls back to CLAUDE.md and returns a chunk.
+    // GREEN: default false — no legacy fallback, returns empty.
+    const provider = new StaticRulesProvider(); // no options
+    const result = await provider.fetch(LEGACY_BASE_REQUEST);
+    expect(result.chunks).toHaveLength(0);
+  });
+
+  test("returns legacy chunks when explicitly opted in with allowLegacyClaudeMd: true", async () => {
+    _staticRulesDeps.loadCanonicalRules = async () => [];
+    _staticRulesDeps.fileExists = async (path: string) => path.endsWith("CLAUDE.md");
+    _staticRulesDeps.readFile = async () => "# Rules\n\nUse async/await.";
+
+    const provider = new StaticRulesProvider({ allowLegacyClaudeMd: true });
+    const result = await provider.fetch(LEGACY_BASE_REQUEST);
+    // Explicit opt-in must still work
+    expect(result.chunks.length).toBeGreaterThan(0);
+  });
+
+  test("NaxConfigSchema default for allowLegacyClaudeMd is false", () => {
+    const config = NaxConfigSchema.parse({});
+    // RED: current schema default is true.
+    // GREEN: flipped to false.
+    expect(config.context?.v2?.rules?.allowLegacyClaudeMd).toBe(false);
   });
 });
