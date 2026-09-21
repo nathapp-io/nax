@@ -512,6 +512,38 @@ describe("createPiProtocol event mapping", () => {
     expect(events[0]).toEqual({ type: "text-delta", text: "reading" });
     expect(events.at(-1)).toMatchObject({ type: "error", error: { kind: "bad-request" } });
   });
+
+  /**
+   * Scripted, not recorded: no fixture in test/fixtures/recorded carries a
+   * `responseModel`, because pi sets it only when the provider names a model
+   * different from the one requested (openai-completions.js:375-377) and no
+   * recording captured a remap. This proves the mapping, not that any
+   * particular provider remaps.
+   */
+  it("forwards responseModel when the provider remapped the model", async () => {
+    const events = await drain([
+      {
+        type: "done",
+        reason: "stop",
+        message: message({ responseId: "r-1", responseModel: "deepseek-v4-flash-0711" }),
+      },
+    ] as AssistantMessageEvent[]);
+
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      stopReason: "stop",
+      responseId: "r-1",
+      responseModel: "deepseek-v4-flash-0711",
+    });
+  });
+
+  it("omits both when the provider reported neither, rather than sending undefined", async () => {
+    const events = await drain([{ type: "done", reason: "stop", message: message() }] as AssistantMessageEvent[]);
+
+    const done = events.at(-1);
+    expect(done).toEqual({ type: "done", stopReason: "stop" });
+    expect(done !== undefined && "responseId" in done).toBe(false);
+  });
 });
 
 /** Replays scripted events after reporting an HTTP response, as pi-ai does. */

@@ -29,6 +29,83 @@ const result = await client.complete(model, { messages: [{ role: "user", content
 
 While the API is unstable, `latest` and `next` both point at the current 0.x release, so `npm install @nathapp/nax-ai` and `npm install @nathapp/nax-ai@next` are equivalent. Canary builds are published to `canary` and are not covered by either.
 
+### Provider overrides
+
+The bundled catalog comes from pi-ai and is a snapshot: it can carry stale pricing, and it will not know a model your provider added last week. `providerOverrides` amends it — per provider, and only with declaration data.
+
+```ts
+import { createClient, defaultProtocols, piProviders, type ProviderOverride } from "@nathapp/nax-ai";
+
+const providerOverrides: readonly ProviderOverride[] = [
+  {
+    provider: "openrouter",
+    models: [
+      {
+        id: "z-ai/glm-5.3-flash",
+        provider: "openrouter",
+        protocol: "openai-completions",
+        pricing: { input: 0.15, output: 0.5, cacheRead: 0.015, cacheWrite: 0 },
+        contextWindow: 200_000,
+        maxTokens: 32_768,
+        supportsTools: true,
+        thinkingLevels: ["off", "high"],
+      },
+    ],
+  },
+];
+
+const client = createClient({
+  providers: await piProviders(["openrouter"]),
+  // The factory form hands the client's own overrides to the protocol side, so
+  // the array is written once. Prefer it whenever overrides are in play — and
+  // add `credentials` here too if you use a credential store (see below).
+  protocols: (o) => defaultProtocols({ ...o }),
+  providerOverrides,
+});
+```
+
+**An override must reach both catalogs.** The client prices and resolves against one; the wire resolves against another. Declaring the array on `createClient` alone is a real bug with no symptom until the first request, so `createClient` rejects it at construction. The factory form above is how you avoid writing the array twice; passing the same array to both `createClient` and `defaultProtocols({ providerOverrides })` works too.
+
+**What an override can say.** A `ProviderOverride` carries `baseUrl`, `headers` and `models`. `baseUrl` and `headers` replace rather than merge, and apply to every model of that provider, bundled ones included — that is how a proxy or a tenant header is wired. Each entry in `models` is a full `ResolvedModel`: `pricing`, `contextWindow`, `maxTokens`, `supportsTools`, `thinkingLevels`, `thinkingLevelMap` and `supportsStrictToolSampling`.
+
+**What it cannot say.** Declaration data only: behaviour belongs in a protocol backend, not here. An override also amends a provider — it cannot introduce one, since there would be no `stream` implementation to inherit.
+
+**Two rules that throw rather than warn.** A model's own `provider` field must equal the override's `provider` (otherwise the request would be signed against a provider you never named), and a model the base catalog does not carry must be declared on both sides.
+
+**Fields you do not state are inherited from a sibling.** `ResolvedModel` is narrower than the wire's model, so `name`, `baseUrl`, `input` and the provider compatibility settings come from another model of the same provider on the same protocol — preferring one that supports your declared thinking levels, and preferring this model's own bundled entry when the catalog already carries that id. State `maxTokens` and `thinkingLevelMap` explicitly when they matter: an inherited ceiling is a silent truncation, and an inherited thinking map can mark a level you declared unsupported.
+
+### Pinning an OpenRouter endpoint
+
+Against an aggregator, one model id is many endpoints: different machines, different prices, different quantizations, chosen per request. A `ResolvedModel` carried on a `ProviderOverride` can pin that choice with `openRouterRouting`, which is sent verbatim as the request's `provider` field:
+
+```ts
+const overrides = [
+  {
+    provider: "openrouter",
+    models: [
+      {
+        id: "deepseek/deepseek-v4-flash",
+        provider: "openrouter",
+        protocol: "openai-completions",
+        pricing: { input: 0.25, output: 1, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 163840,
+        supportsTools: true,
+        thinkingLevels: [],
+        openRouterRouting: { allow_fallbacks: false, only: ["deepinfra"], quantizations: ["fp8"] },
+      },
+    ],
+  },
+];
+```
+
+Pass the same array to both `createClient` and `defaultProtocols` — declaring it on the client alone fails at construction with a message explaining why.
+
+This is declaration data on a model, not a per-request option: pinning belongs to the model entry so that two runs of one configuration are served the same way. Only `protocol: "openai-completions"` can send it, and declaring it on any other protocol throws rather than being ignored.
+
+### Knowing which response you got
+
+`CompleteResult` and the `done` protocol event carry `responseId` and `responseModel` when the provider reports them. Against an aggregator these are the only handle on what actually served a request: one model id can resolve to different upstream endpoints at different prices and quantizations per call, so a cost ledger that multiplies tokens by the catalog rate is approximate, and `responseId` is what lets you reconcile it afterwards (OpenRouter resolves it through `/generation?id=`). `responseModel` appears only when the provider names a model different from the one requested, so its absence is not a statement that no remap happened.
+
 ### Constrained sampling
 
 A `ToolDefinition` can carry an optional `constrainedSampling: { type: "json_schema"; strict: "prefer" | "require" }` to ask the provider to constrain a tool's arguments to its schema. Support is per-model, not caller-controllable — some models simply cannot honour it. `"prefer"` degrades silently to an unconstrained tool when the model lacks support, so a well-formed response is not evidence the constraint was applied; `"require"` throws instead of degrading.

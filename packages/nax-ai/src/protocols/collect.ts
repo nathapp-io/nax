@@ -25,6 +25,7 @@ export async function collectStream(events: AsyncIterable<ProtocolEvent>): Promi
   const thinking: ThinkingBlock[] = [];
   let usage: TokenUsage | undefined;
   let stopReason: CompleteResult["stopReason"] | undefined;
+  let identity: { responseId?: string; responseModel?: string } = {};
 
   for await (const event of events) {
     switch (event.type) {
@@ -46,6 +47,10 @@ export async function collectStream(events: AsyncIterable<ProtocolEvent>): Promi
         throw new ProtocolStreamError(event.error);
       case "done":
         stopReason = event.stopReason;
+        identity = {
+          ...(event.responseId !== undefined ? { responseId: event.responseId } : {}),
+          ...(event.responseModel !== undefined ? { responseModel: event.responseModel } : {}),
+        };
         break;
       // Thinking text is not part of the answer, and a partial tool call is
       // superseded by the "tool-call" event that follows it.
@@ -65,6 +70,7 @@ export async function collectStream(events: AsyncIterable<ProtocolEvent>): Promi
     stopReason,
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
     ...(thinking.length > 0 ? { thinking } : {}),
+    ...identity,
   };
   return result;
 }

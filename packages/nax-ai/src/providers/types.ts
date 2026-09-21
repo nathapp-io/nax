@@ -45,6 +45,56 @@ export type ProviderAuth =
    */
   { readonly kind: "api-key"; readonly env?: string } | { readonly kind: "oauth"; readonly flow: string };
 
+/**
+ * OpenRouter-compatible provider routing preferences, sent verbatim as the
+ * request's `provider` field.
+ *
+ * Named after the vendor on purpose. Unlike `protocols/types.ts`, which keeps
+ * one provider's shape out of the wire vocabulary, this is catalog declaration
+ * data about a specific aggregator's behaviour, and a neutral name
+ * (`routing`) would imply a portability that does not exist: pi sends this
+ * field from `openai-completions` only, and only an OpenRouter-compatible
+ * endpoint reads it.
+ *
+ * Keys stay snake_case because they are the wire field names and pass through
+ * unmapped — a camelCase mirror would be a translation layer with nothing to
+ * gain and a rename to get wrong.
+ *
+ * Why this is declaration data rather than a behaviour override: it lives on
+ * pi's `Model`, beside `cost` and `contextWindow`, exactly as `maxTokens` and
+ * `thinkingLevelMap` do. So carrying it on `ProviderOverride.models` does not
+ * cross the "declaration only" line in `ProviderOverride`'s docstring below.
+ *
+ * Narrower than pi's own type: `max_price`, `preferred_min_throughput`,
+ * `preferred_max_latency` and `enforce_distillable_text` are omitted because
+ * nothing needs them yet and every field here is tested. Widening later is
+ * source-compatible; narrowing is not.
+ */
+export interface OpenRouterRouting {
+  /** Whether backup providers may serve the request. Upstream default: true. */
+  readonly allow_fallbacks?: boolean;
+  /** Restrict to providers supporting every parameter in the request. */
+  readonly require_parameters?: boolean;
+  /** `"deny"` keeps the request off endpoints that may store or train on it. */
+  readonly data_collection?: "deny" | "allow";
+  /** Restrict to Zero Data Retention endpoints. */
+  readonly zdr?: boolean;
+  /** Ordered provider slugs to try in sequence. */
+  readonly order?: readonly string[];
+  /** The only provider slugs allowed to serve this request. */
+  readonly only?: readonly string[];
+  /** Provider slugs to skip. */
+  readonly ignore?: readonly string[];
+  /**
+   * Quantization levels to filter endpoints by, e.g. `["fp8"]`. This is the
+   * reproducibility lever: one model id can otherwise be served fp4 on one
+   * call and fp8 on the next, which confounds any A/B across models.
+   */
+  readonly quantizations?: readonly string[];
+  /** Routing strategy. Omitted means OpenRouter's own default ordering. */
+  readonly sort?: "price" | "throughput" | "latency";
+}
+
 export interface ResolvedProvider {
   readonly id: string;
   readonly baseUrl: string;
@@ -102,6 +152,13 @@ export interface ResolvedModel {
    * `synthesiseModel` derives.
    */
   readonly thinkingLevelMap?: Readonly<Partial<Record<ThinkingLevel, string | null>>>;
+  /**
+   * Endpoint routing for an OpenRouter-compatible aggregator, when this model
+   * pins one. Reaches the wire only through `ProviderOverride.models` and only
+   * on `protocol: "openai-completions"`; declaring it elsewhere is rejected at
+   * construction rather than silently ignored (issue #43).
+   */
+  readonly openRouterRouting?: OpenRouterRouting;
 }
 
 /**

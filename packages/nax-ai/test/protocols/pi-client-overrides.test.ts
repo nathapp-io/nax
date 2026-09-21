@@ -75,6 +75,41 @@ function stubStream() {
 }
 
 /**
+ * Drives an override model's synthesised pi Model through pi-ai's REAL
+ * openai-completions wire-body builder, capturing the payload via its
+ * `onPayload` hook before any network call is attempted (`fetch` is
+ * stubbed to throw, so the request never actually leaves the process).
+ * This is the only way to prove a `reasoning_effort`/`thinking` value
+ * reaches the wire correctly, short of hitting a real provider.
+ */
+async function wirePayload(
+  model: Model<Api>,
+  reasoning: "off" | "low" | "high" | "max" | "xhigh",
+): Promise<Record<string, unknown> | undefined> {
+  let captured: Record<string, unknown> | undefined;
+  const events = openaiCompletionsStreamSimple(
+    model as Parameters<typeof openaiCompletionsStreamSimple>[0],
+    { messages: [] } as Context,
+    {
+      reasoning,
+      apiKey: "test-key",
+      fetch: async () => {
+        throw new Error("stubbed — no network call should be needed to capture the payload");
+      },
+      onPayload: (params: unknown) => {
+        captured = params as Record<string, unknown>;
+        return params;
+      },
+    } as SimpleStreamOptions,
+  );
+  for await (const _ of events) {
+    // Draining is what runs buildParams/onPayload; the eventual "error"
+    // event (from the stubbed fetch) is expected and ignored.
+  }
+  return captured;
+}
+
+/**
  * A client whose one protocol entry is the real pi protocol over a stubbed
  * stream. Built by hand rather than through `defaultProtocols` so the stub can
  * be injected; the options object is the same one both layers see.
@@ -294,41 +329,6 @@ describe("provider overrides at the protocol seam", () => {
  * actually produced the bug report.
  */
 describe("thinkingLevelMap synthesis (issue #47)", () => {
-  /**
-   * Drives an override model's synthesised pi Model through pi-ai's REAL
-   * openai-completions wire-body builder, capturing the payload via its
-   * `onPayload` hook before any network call is attempted (`fetch` is
-   * stubbed to throw, so the request never actually leaves the process).
-   * This is the only way to prove a `reasoning_effort`/`thinking` value
-   * reaches the wire correctly, short of hitting a real provider.
-   */
-  async function wirePayload(
-    model: Model<Api>,
-    reasoning: "off" | "low" | "high" | "max" | "xhigh",
-  ): Promise<Record<string, unknown> | undefined> {
-    let captured: Record<string, unknown> | undefined;
-    const events = openaiCompletionsStreamSimple(
-      model as Parameters<typeof openaiCompletionsStreamSimple>[0],
-      { messages: [] } as Context,
-      {
-        reasoning,
-        apiKey: "test-key",
-        fetch: async () => {
-          throw new Error("stubbed — no network call should be needed to capture the payload");
-        },
-        onPayload: (params: unknown) => {
-          captured = params as Record<string, unknown>;
-          return params;
-        },
-      } as SimpleStreamOptions,
-    );
-    for await (const _ of events) {
-      // Draining is what runs buildParams/onPayload; the eventual "error"
-      // event (from the stubbed fetch) is expected and ignored.
-    }
-    return captured;
-  }
-
   const OVERRIDE: ResolvedModel = {
     id: "deepseek-v4.1-flash",
     provider: "opencode-go",
@@ -468,5 +468,120 @@ describe("thinkingLevelMap synthesis (issue #47)", () => {
 
     const payload = await wirePayload(model, "high");
     expect(payload).toMatchObject({ reasoning_effort: "custom-high" });
+  });
+});
+
+/**
+ * OpenRouter endpoint pinning (issue #43).
+ *
+ * Asserted at the wire body through pi-ai's real openai-completions builder,
+ * not at the synthesised `Model`: `compat.openRouterRouting` sitting on a model
+ * object proves nothing about what pi sends, and this whole field exists to
+ * change a request body. The ids are real entries in pi-ai's bundled
+ * `openrouter` catalog, matching this file's house style.
+ */
+describe("openRouterRouting (issue #43)", () => {
+  const PINNED: ResolvedModel = {
+    id: "deepseek/deepseek-chat",
+    provider: "openrouter",
+    protocol: "openai-completions",
+    pricing: { input: 0.25, output: 1, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 163840,
+    supportsTools: true,
+    thinkingLevels: [],
+    openRouterRouting: { allow_fallbacks: false, only: ["deepinfra"], quantizations: ["fp8"], sort: "price" },
+  };
+
+  it("sends the declaration as the request body's provider field", async () => {
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [PINNED] }] });
+    const model = await deps.resolveModel(PINNED.id, "openrouter");
+
+    await expect(wirePayload(model, "off")).resolves.toMatchObject({
+      provider: { allow_fallbacks: false, only: ["deepinfra"], quantizations: ["fp8"], sort: "price" },
+    });
+  });
+
+  it("sends no provider field for a model that declares no routing", async () => {
+    // The control. Without it, a change that unconditionally set `provider`
+    // would pass the test above while pinning every model in the catalog.
+    const deps = createPiDeps({});
+    const model = await deps.resolveModel("deepseek/deepseek-chat", "openrouter");
+
+    const payload = await wirePayload(model, "off");
+    expect(payload).not.toHaveProperty("provider");
+  });
+
+  it("keeps the template's other compat settings rather than replacing the object", async () => {
+    // `thinkingFormat: "openrouter"` is detected for this provider and is what
+    // translates a thinking level on the wire; a compat object rebuilt from
+    // routing alone would silently drop it.
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [PINNED] }] });
+    const model = await deps.resolveModel(PINNED.id, "openrouter");
+
+    expect(model.compat).toMatchObject({ thinkingFormat: "openrouter" });
+  });
+
+  it("refuses a routing declaration the wire could never send", async () => {
+    // Same rule as the client-side catalog, raised from the same module, so
+    // the two catalogs cannot disagree about which configs are legal.
+    const unreachable: ResolvedModel = {
+      ...PINNED,
+      id: "anthropic/claude-on-openrouter",
+      protocol: "anthropic-messages",
+    };
+
+    expect(() => createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [unreachable] }] })).toThrow(
+      /openai-completions/,
+    );
+  });
+});
+
+/**
+ * Amending a model the base catalog already carries (issue #43, hardening).
+ *
+ * `pickTemplate` answers "what does a model of this provider on this api look
+ * like", which is the right question for a phantom id and the wrong one for an
+ * id the catalog already has: the honest template for `deepseek/deepseek-chat`
+ * is `deepseek/deepseek-chat`. Real bundled ids, because a synthetic fixture
+ * would not reproduce the size ordering that causes this.
+ */
+describe("amending a bundled model (issue #43)", () => {
+  const AMENDED: ResolvedModel = {
+    id: "deepseek/deepseek-chat",
+    provider: "openrouter",
+    protocol: "openai-completions",
+    // Corrected pricing is the usual reason to amend a bundled entry; no
+    // maxTokens is declared, which is what exposes the inherited one.
+    pricing: { input: 0.25, output: 1, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 163840,
+    supportsTools: true,
+    thinkingLevels: [],
+  };
+
+  it("inherits the model's own output ceiling, not the largest sibling's", async () => {
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [AMENDED] }] });
+    const [bundled] = (await defaultProviders(["openrouter"]))
+      .flatMap((p) => p.models)
+      .filter((m) => m.id === AMENDED.id);
+    const amended = await deps.resolveModel(AMENDED.id, "openrouter");
+
+    expect(bundled?.maxTokens).toBeDefined();
+    expect(amended.maxTokens).toBe(bundled?.maxTokens);
+  });
+
+  it("does not inherit image support the model does not have", async () => {
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [AMENDED] }] });
+    const amended = await deps.resolveModel(AMENDED.id, "openrouter");
+
+    expect(amended.input).toEqual(["text"]);
+  });
+
+  it("still templates a phantom id off a sibling, since it has no entry of its own", async () => {
+    // The rule only fires on an id the base catalog carries; everything the
+    // #39 and #47 template rules do for a phantom must be unchanged.
+    const phantom: ResolvedModel = { ...AMENDED, id: "deepseek/deepseek-v9-not-in-snapshot" };
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [phantom] }] });
+
+    await expect(deps.resolveModel(phantom.id, "openrouter")).resolves.toMatchObject({ id: phantom.id });
   });
 });

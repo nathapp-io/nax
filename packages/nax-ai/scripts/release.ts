@@ -245,7 +245,20 @@ async function bumpRelease() {
   try {
     const result = execFileSync(
       "gh",
-      ["pr", "create", "--title", commitMsg, "--body", prBody, "--base", "main", "--head", branchName, "--label", "skip-changelog"],
+      [
+        "pr",
+        "create",
+        "--title",
+        commitMsg,
+        "--body",
+        prBody,
+        "--base",
+        "main",
+        "--head",
+        branchName,
+        "--label",
+        "skip-changelog",
+      ],
       { encoding: "utf8" },
     );
     console.log(`\nPR created: ${result.trim()}`);

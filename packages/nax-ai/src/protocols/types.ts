@@ -209,7 +209,29 @@ export type ProtocolEvent =
   | { readonly type: "tool-call"; readonly call: ToolCall }
   | { readonly type: "usage"; readonly usage: TokenUsage }
   | { readonly type: "error"; readonly error: ProtocolError }
-  | { readonly type: "done"; readonly stopReason: StopReason };
+  | {
+      readonly type: "done";
+      readonly stopReason: StopReason;
+      /**
+       * The provider's own identifier for this response, when it sent one.
+       *
+       * Opaque and provider-shaped — never parsed, compared or synthesised
+       * here. It exists because an aggregator's model id does not say which
+       * upstream endpoint answered: two calls to one id can be served at
+       * different prices and different quantizations, and this is the only
+       * handle a consumer has for asking the aggregator afterwards (OpenRouter
+       * resolves it through `/generation?id=`). Absent means the provider sent
+       * no id, which is different from an empty one.
+       */
+      readonly responseId?: string;
+      /**
+       * The model the provider says actually answered, when it names one that
+       * differs from the id that was requested. Present only on a remap, so
+       * absence means "not remapped, or not reported" — never assume it equals
+       * the requested id.
+       */
+      readonly responseModel?: string;
+    };
 
 /**
  * A wire protocol.

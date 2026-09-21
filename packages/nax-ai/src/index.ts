@@ -96,6 +96,7 @@ export type {
 export { type Catalog, normaliseCatalog, type RawModel, type RawProvider } from "./providers/catalog.ts";
 export { defaultProviders, piProviders } from "./providers/pi-catalog.ts";
 export type {
+  OpenRouterRouting,
   Pricing,
   PricingRates,
   PricingTier,

@@ -310,4 +310,115 @@ describe("normaliseCatalog", () => {
     expect(catalog.model("deepseek", "strict-override-supported")?.supportsStrictToolSampling).toBe(true);
     expect(catalog.model("deepseek", "strict-override-unsupported")?.supportsStrictToolSampling).toBe(false);
   });
+
+  it("carries an override model's openRouterRouting into the resolved catalog", () => {
+    const catalog = normaliseCatalog(
+      [
+        {
+          id: "openrouter",
+          baseUrl: "https://openrouter.ai/api/v1",
+          auth: { kind: "api-key" },
+          defaultProtocol: "openai-completions",
+          models: [],
+        },
+      ],
+      [
+        {
+          provider: "openrouter",
+          models: [
+            {
+              id: "deepseek/deepseek-v4-flash",
+              provider: "openrouter",
+              protocol: "openai-completions",
+              pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 163840,
+              supportsTools: true,
+              thinkingLevels: [],
+              openRouterRouting: { allow_fallbacks: false, only: ["deepinfra"], quantizations: ["fp8"] },
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(catalog.model("openrouter", "deepseek/deepseek-v4-flash")?.openRouterRouting).toEqual({
+      allow_fallbacks: false,
+      only: ["deepinfra"],
+      quantizations: ["fp8"],
+    });
+  });
+
+  /**
+   * pi applies `compat.openRouterRouting` in dist/api/openai-completions.js
+   * only — anthropic-messages has zero occurrences of it, and OpenRouter
+   * serves models on BOTH apis. So a routing declaration on any other
+   * protocol is a declared-but-unreachable field, and this repo rejects that
+   * at construction rather than at the wire (the precedent
+   * `assertOverrideModelProvider` already sets).
+   */
+  it("rejects routing declared on a protocol that cannot send it", () => {
+    expect(() =>
+      normaliseCatalog(
+        [
+          {
+            id: "openrouter",
+            baseUrl: "https://openrouter.ai/api/v1",
+            auth: { kind: "api-key" },
+            defaultProtocol: "openai-completions",
+            models: [],
+          },
+        ],
+        [
+          {
+            provider: "openrouter",
+            models: [
+              {
+                id: "anthropic/claude-on-openrouter",
+                provider: "openrouter",
+                protocol: "anthropic-messages",
+                pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 200000,
+                supportsTools: true,
+                thinkingLevels: [],
+                openRouterRouting: { only: ["deepinfra"] },
+              },
+            ],
+          },
+        ],
+      ),
+    ).toThrow(/openai-completions/);
+  });
+
+  it("rejects an empty routing declaration rather than sending an empty provider block", () => {
+    expect(() =>
+      normaliseCatalog(
+        [
+          {
+            id: "openrouter",
+            baseUrl: "https://openrouter.ai/api/v1",
+            auth: { kind: "api-key" },
+            defaultProtocol: "openai-completions",
+            models: [],
+          },
+        ],
+        [
+          {
+            provider: "openrouter",
+            models: [
+              {
+                id: "deepseek/deepseek-v4-flash",
+                provider: "openrouter",
+                protocol: "openai-completions",
+                pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 163840,
+                supportsTools: true,
+                thinkingLevels: [],
+                openRouterRouting: {},
+              },
+            ],
+          },
+        ],
+      ),
+    ).toThrow(/states no preference/);
+  });
 });

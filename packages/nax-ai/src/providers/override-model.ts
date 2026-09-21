@@ -31,3 +31,41 @@ export function assertOverrideModelProvider(provider: string, model: ResolvedMod
       `either declare this model under "${model.provider}" or set its provider to "${provider}".`,
   );
 }
+
+/**
+ * The second consistency rule: a routing declaration that cannot reach the
+ * wire is rejected rather than ignored.
+ *
+ * pi sends `compat.openRouterRouting` from its `openai-completions` adapter
+ * and from no other (`dist/api/openai-completions.js:745-747`; zero
+ * occurrences in `anthropic-messages.js`). OpenRouter itself serves models on
+ * both apis, so "declared routing on an OpenRouter model" is not enough for it
+ * to be sent — and a consumer who pinned `quantizations: ["fp8"]` and silently
+ * got the routing lottery anyway has no way to notice. Same reasoning as
+ * `assertOverrideModelProvider`: there is no configuration this shape
+ * expresses correctly.
+ *
+ * An empty object is rejected for a different reason: pi's check is
+ * truthiness, not emptiness, so `{}` would reach the wire as `provider: {}` —
+ * a request field that says nothing, sent because a caller declared something
+ * that says nothing. Rejecting it turns a no-op into a question.
+ */
+export function assertOverrideModelRouting(model: ResolvedModel): void {
+  const routing = model.openRouterRouting;
+  if (routing === undefined) return;
+
+  if (model.protocol !== "openai-completions") {
+    throw new Error(
+      `Model "${model.id}" declares openRouterRouting but its protocol is "${model.protocol}". Only ` +
+        `"openai-completions" sends the OpenRouter "provider" request field, so this declaration could never ` +
+        `reach the wire: either declare the model on "openai-completions" or drop the routing.`,
+    );
+  }
+
+  if (Object.keys(routing).length === 0) {
+    throw new Error(
+      `Model "${model.id}" declares openRouterRouting that states no preference. An empty declaration would be ` +
+        `sent as an empty "provider" block and change nothing: state at least one preference, or omit the field.`,
+    );
+  }
+}

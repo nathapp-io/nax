@@ -91,4 +91,27 @@ describe("collectStream", () => {
     );
     expect("thinking" in result).toBe(false);
   });
+
+  it("carries the response identity off the done event", async () => {
+    const result = await collectStream(
+      emit(
+        { type: "text-delta", text: "hi" },
+        { type: "usage", usage },
+        { type: "done", stopReason: "stop", responseId: "r-1", responseModel: "gpt-5.4-mini-0711" },
+      ),
+    );
+
+    expect(result.responseId).toBe("r-1");
+    expect(result.responseModel).toBe("gpt-5.4-mini-0711");
+  });
+
+  it("omits the response identity entirely when the provider reported none", async () => {
+    // Absent must stay absent: a consumer reconciling a cost ledger has to be
+    // able to tell "this provider names no response" from "this one named an
+    // empty string", and an `undefined`-valued key blurs that in JSON.
+    const result = await collectStream(emit({ type: "done", stopReason: "stop" }));
+
+    expect("responseId" in result).toBe(false);
+    expect("responseModel" in result).toBe(false);
+  });
 });

@@ -62,6 +62,14 @@ export interface CompleteResult {
    * this field there is no way to construct that follow-up turn.
    */
   readonly thinking?: readonly import("./protocols/types.ts").ThinkingBlock[];
+  /**
+   * The provider's own identifier for this response, when it sent one, and the
+   * model it says actually answered, when that differs from the one requested.
+   * Both come straight off the `done` event — see `ProtocolEvent` for why they
+   * are opaque and why absence is meaningful.
+   */
+  readonly responseId?: string;
+  readonly responseModel?: string;
 }
 
 /**

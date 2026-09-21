@@ -27,8 +27,8 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
 import type { AuthResolver } from "../auth/resolver.ts";
-import { assertOverrideModelProvider } from "../providers/override-model.ts";
-import type { Pricing, ProviderOverride, ResolvedModel } from "../providers/types.ts";
+import { assertOverrideModelProvider, assertOverrideModelRouting } from "../providers/override-model.ts";
+import type { OpenRouterRouting, Pricing, ProviderOverride, ResolvedModel } from "../providers/types.ts";
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { vendorAppHeaders } from "./client-app.ts";
@@ -336,7 +336,17 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
                 };
                 return;
               }
-              yield { type: "done", stopReason };
+              // pi holds both on the terminal message and nax-ai used to drop
+              // them. Conditional spreads because `exactOptionalPropertyTypes`
+              // is on and "the provider reported nothing" must stay
+              // distinguishable from "reported an empty string".
+              const { responseId, responseModel } = event.message;
+              yield {
+                type: "done",
+                stopReason,
+                ...(responseId !== undefined ? { responseId } : {}),
+                ...(responseModel !== undefined ? { responseModel } : {}),
+              };
               return;
             }
 
@@ -528,6 +538,10 @@ function isBetterTemplate(candidate: Model<Api>, best: Model<Api>): boolean {
  * it sent (`model.maxTokens ?? template.maxTokens`) rather than clamped to the
  * template's.
  *
+ * When the base catalog already carries this id on this api, that entry is the
+ * template and none of the selection rules below apply: an amendment inherits
+ * from the model it amends.
+ *
  * `thinkingLevelMap` (and the `compat.thinkingFormat` bundled inside
  * `compat`) is inherited from the template `pickTemplate` selects, which is
  * now itself thinking-aware (issue #47) — so an inherited map is expected to
@@ -545,7 +559,15 @@ function isBetterTemplate(candidate: Model<Api>, best: Model<Api>): boolean {
  *    — see `deriveThinkingLevelMap`.
  */
 function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
-  const template = pickTemplate(base.getModels(), model.protocol, model.thinkingLevels);
+  // An override may amend a model the base catalog already carries — correcting
+  // stale pricing is the usual reason, pinning routing (issue #43) the new one.
+  // For that id the honest template is that model itself: `pickTemplate` answers
+  // "what does a model of this provider on this api look like", which for an id
+  // the catalog already has would hand it a size-picked stranger's `maxTokens`
+  // and `input`. The api must match too, since `compat` is api-typed and an
+  // override is free to re-declare the protocol.
+  const own = base.getModels().find((candidate) => candidate.id === model.id && candidate.api === model.protocol);
+  const template = own ?? pickTemplate(base.getModels(), model.protocol, model.thinkingLevels);
   if (template === undefined) {
     throw new Error(
       `Provider "${base.id}" has no model on api "${model.protocol}" to template override model "${model.id}" from.`,
@@ -576,7 +598,36 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
     // pi's `reasoning` is the boolean form of our level list. "off" alone is
     // no thinking support, which is exactly what `false` means here.
     reasoning: model.thinkingLevels.some((level) => level !== "off"),
+    // Merged onto the template's compat, never replacing it: `thinkingFormat`
+    // and the rest of the provider's detected settings live in the same object
+    // and are what translate a thinking level on the wire.
+    ...(model.openRouterRouting !== undefined
+      ? { compat: { ...template.compat, openRouterRouting: toPiOpenRouterRouting(model.openRouterRouting) } }
+      : {}),
     ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
+  };
+}
+
+/**
+ * Our routing declaration, in the shape pi's `compat` wants.
+ *
+ * A copy rather than a pass-through for one reason: our arrays are `readonly`
+ * and pi's are not, so spreading each present one is what makes the object
+ * assignable without a cast. Conditional spreads keep an undeclared preference
+ * out of the request entirely — `exactOptionalPropertyTypes`, and an
+ * `undefined`-valued key would be serialised as a stated non-preference.
+ */
+function toPiOpenRouterRouting(routing: OpenRouterRouting) {
+  return {
+    ...(routing.allow_fallbacks !== undefined ? { allow_fallbacks: routing.allow_fallbacks } : {}),
+    ...(routing.require_parameters !== undefined ? { require_parameters: routing.require_parameters } : {}),
+    ...(routing.data_collection !== undefined ? { data_collection: routing.data_collection } : {}),
+    ...(routing.zdr !== undefined ? { zdr: routing.zdr } : {}),
+    ...(routing.order !== undefined ? { order: [...routing.order] } : {}),
+    ...(routing.only !== undefined ? { only: [...routing.only] } : {}),
+    ...(routing.ignore !== undefined ? { ignore: [...routing.ignore] } : {}),
+    ...(routing.quantizations !== undefined ? { quantizations: [...routing.quantizations] } : {}),
+    ...(routing.sort !== undefined ? { sort: routing.sort } : {}),
   };
 }
 
@@ -672,6 +723,7 @@ function applyOverrides(models: MutableModels, overrides: readonly ProviderOverr
       // with the same message rather than one of them building a model whose
       // provider field would then pick the wrong credentials at the wire.
       assertOverrideModelProvider(override.provider, model);
+      assertOverrideModelRouting(model);
       byId.set(model.id, synthesiseModel(base, model));
     }
     const synthesised = [...byId.values()];

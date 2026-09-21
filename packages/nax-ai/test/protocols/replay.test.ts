@@ -41,6 +41,32 @@ describe("recorded fixtures", () => {
       it("carries a note saying what it is evidence of", () => {
         expect(loadFixture(name).meta.note.length).toBeGreaterThan(20);
       });
+
+      /**
+       * Real evidence, not a script: every non-example fixture in this
+       * directory was recorded off a live provider and its `done` event
+       * carries the provider's own response id (a `resp_…` for the OpenAI
+       * shapes, a bare hex id for anthropic-messages, a `router-…` for the
+       * opencode-go aggregator). Asserting equality with what the fixture
+       * recorded — including the absent case — is what proves the mapper
+       * forwards the value rather than inventing one.
+       */
+      it("forwards the provider's own response id from the recorded done event", async () => {
+        const fixture = loadFixture(name);
+        if (fixture.response.status >= 400) return;
+
+        const recorded = fixture.events.find((e) => e.type === "done");
+        const expected = recorded?.type === "done" ? recorded.message.responseId : undefined;
+
+        const events = await drainFixture(fixture);
+        const done = events.find((e) => e.type === "done");
+        expect(done?.type).toBe("done");
+        if (expected === undefined) {
+          expect(done === undefined || "responseId" in done).toBe(false);
+          return;
+        }
+        expect(done).toMatchObject({ responseId: expected });
+      });
     });
   }
 });
