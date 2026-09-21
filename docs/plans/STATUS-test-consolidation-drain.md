@@ -1773,3 +1773,36 @@ before/after.
 
 Wave 4 running total: **-21 files**. Cumulative: **-134**. Two Wave-4 groups
 remain per §3: `manifest-builder` (4→2), `pipeline-result-handler` (4→2).
+
+### 9.30 — 2026-09-21, Task 30 landed — context/engine/manifest-builder group 4 → 2 files (-119 lines)
+
+Hit the packed target exactly: 4 → 2 files, 997 → 878 lines. All 44 group
+static sites / 33 receiver runtime tests preserved (base 13 + stale 14 +
+eviction 6). Unit phase 18,311 / 42,334 unchanged; full suite 0 fail,
+`check:all` 0, both tsc clean, coverage 96.36% lines / 93.39% functions, 0 below
+floor. Ranker `_deps unrestored 0` (group carried no `⚠deps` flag).
+
+One receiver, per the packer's bin 1: `manifest-builder.test.ts` (mirror base,
+305l → **605l**, under the 650 fill target) absorbs
+`manifest-builder-stale` (US-001 stale attribution AC1–AC6) +
+`manifest-builder-eviction` (Finding 5 chunkTokens/floorOverageTokens).
+`manifest-builder-us003.test.ts` (273l) stays alone (bin 2).
+
+**Cleanest fixture dedup of the drain so far.** All three files carried the same
+`makePacked`/`REQUEST`/`makeInputs` trio; eviction's copy was byte-identical to
+the base's and stale's differed only in an unasserted `requestId`/`storyId`
+default, so the eviction fixtures were dropped whole and stale contributed only
+`findExcluded`. That is why the file landed 605l (under the fill target) rather
+than the packer's 585l-plus-understatement pattern. No renames, no hook
+manipulation (none of the three has hooks), no describe-name collisions.
+
+Deletes (2): `manifest-builder-stale`, `manifest-builder-eviction`.
+
+Mutation check: 4 flipped assertions across the absorbed describes — stale AC1
+`stale === true`, stale AC6 `excludedChunks` length 4→5, eviction chunkTokens
+lookup `{ "c:1": 100 }` → `999`, eviction floorOverage `floorOverageTokens ===
+900` → 901 → 4 distinct failures, 29 pass; all reverted with exact reverse
+edits, working diff byte-identical before/after.
+
+Wave 4 running total: **-23 files**. Cumulative: **-136**. One Wave-4 group
+remains per §3: `pipeline-result-handler` (4→2).
