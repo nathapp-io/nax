@@ -16,32 +16,40 @@ to re-measure after every task, and §6 tells you when to stop rather than push 
 
 ---
 
-## 0. Current state - re-measured 2026-09-21 @ 36a7c5c14 (after Task 21, Wave 3 complete; original main measurement @ 4af3c680e in §9.0)
+## 0. Current state - re-measured 2026-09-21 @ f06f5ead7 (after Task 22, Wave 4 task 1; original main measurement @ 4af3c680e in §9.0)
 
 ```
 bun run report:test-consolidation
   scope              test/unit + test/integration + test/ui  (test/e2e/ excluded — separate CI step)
-  scanned            1426 files, 374655 lines, 35615 expect()
-  static test sites  17457  + 543 .each sites — NOT the runtime count, use `bun test`
-  satellite groups   141  (nested bases collapsed into their outermost ancestor)
-  satellites         272  (202 encode a ticket — rule §2 violations)
+  scanned            1429 files, 376304 lines, 35796 expect()
+  static test sites  17526  + 543 .each sites — NOT the runtime count, use `bun test`
+  satellite groups   142  (nested bases collapsed into their outermost ancestor)
+  satellites         272  (204 encode a ticket — rule §2 violations)
   mirrors            54  EXCLUDED — each is its own src module's test file (--mirrors)
   _deps unrestored   0 files with no restore; 1 need a read (hook, no visible restore)
-  removable files    119   (packed to 650, hard cap 800; 233 at drain start)
-  removable lines    4449   (11,185 at drain start)
+  removable files    116   (packed to 650, hard cap 800; 233 at drain start)
+  removable lines    4250   (11,185 at drain start)
 ```
+
+> **Wave 4 starts on a re-based branch.** Between Task 21's measurement (36a7c5c14)
+> and Wave 4, `git fetch origin && git rebase origin/main` (§2.2) pulled in 18 new
+> `origin/main` commits (the worktree-branch-identity feature). All §0.1 runtime
+> numbers below are therefore **up ~62 unit tests / 162 expects and up 7 integration
+> tests / 19 expects relative to the §9.4–§9.22 invariant** — that is main's new
+> tests, not drift. The count-invariant comparison for every Wave-4 task is against
+> §9.23's numbers, not the older §0.1 row in §9.x entries.
 
 ### 0.1 Runtime state — measured with `bun test`, which is the only authority on test counts
 
 | Suite | Tests | Files | `expect()` | Skip | Wall | Cap |
 |:--|--:|--:|--:|--:|--:|--:|
-| `test/unit/` | 18,247 | 1,292 | 42,169 | 7 | 44–50s | 120s |
-| `test/integration/` | 1,254 | 124 | 2,980 | 36 | 16–18s | 120s |
+| `test/unit/` | 18,309 | 1,294 | 42,331 | 7 | 48–52s | 120s |
+| `test/integration/` | 1,261 | 125 | 2,999 | 36 | 18–22s | 120s |
 | `test/ui/` | 98 | 10 | 149 | 0 | 0.85s | 30s |
-| **Total (`bun run test`)** | **19,599** | **1,426** | **45,298** | **43** | **~62–90s** | — |
+| **Total (`bun run test`)** | **19,668** | **1,429** | **45,479** | **43** | **~68–90s** | — |
 
-0 fail. **Do not mix these with the ranker's static counts.** The ranker reports 17,457
-static `test(`/`it(` sites because it cannot expand the 543 `.each` sites, and 35,616
+0 fail. **Do not mix these with the ranker's static counts.** The ranker reports 17,526
+static `test(`/`it(` sites because it cannot expand the 543 `.each` sites, and 35,796
 static `expect(` occurrences because it cannot count calls inside loops. Every invariant in
 §4 is a *runtime* number, read off `bun test`.
 
@@ -49,15 +57,15 @@ static `expect(` occurrences because it cannot count calls inside loops. Every i
 
 | Reading | Value | Source |
 |:--|--:|:--|
-| Test lines / src lines | **374,655 / 166,420 — 2.25:1** | ranker; `wc -l` over `src/**/*.ts{,x}` |
-| Preamble (lines before the first `describe`) | **~68,700 — 18.3% of test lines** | ranker definition |
-| Files importing `@test/helpers` | 889 (61.1%) of 1,426 | grep |
+| Test lines / src lines | **376,304 / 166,420 — 2.26:1** | ranker; `wc -l` over `src/**/*.ts{,x}` |
+| Preamble (lines before the first `describe`) | **~74,100 — 19.7% of test lines** | ranker definition |
+| Files importing `@test/helpers` | 874 (61.2%) of 1,429 | grep |
 | Helper modules available | 48 in `test/helpers/` (excl. `index.ts`, `e2e/`) | `ls` |
-| Satellite groups / satellites / mirrors | **141 / 272 / 54** | ranker |
-| Satellites encoding a ticket | **202 of 272 (74%)** | ranker |
-| Removable files / lines | **119** (1,426 → 1,307) / **4,449** | ranker |
-| Line coverage | **96.32%** (74,694/77,549), floor 80% | `bun run test:coverage` |
-| Function coverage | **93.39%** (7,047/7,546), floor 80% | same, varies run to run |
+| Satellite groups / satellites / mirrors | **142 / 272 / 54** | ranker |
+| Satellites encoding a ticket | **204 of 272 (75%)** | ranker |
+| Removable files / lines | **116** (1,429 → 1,313) / **4,250** | ranker |
+| Line coverage | **96.36%** (74,769/77,597), floor 80% | `bun run test:coverage` |
+| Function coverage | **93.39%** (7,054/7,553), floor 80% | same, varies run to run |
 | Files below the per-file floor | **0**, baseline empty | same |
 
 **Everything is green. This is a debt drain, not a fix for a broken thing.** Coverage is 16
@@ -1388,3 +1396,59 @@ the plan's Wave-3 target of -32. Cumulative: -49 (W1) + -32 (W2) + -32 (W3)
 = **-113 files** against the plan's cumulative -116 for Waves 1-3 (the
 3-file shortfall is the documented over-target landings in §9.5 callOp and
 §9.8 orchestrator).
+
+### 9.23 — 2026-09-21, Task 22 landed — code-neighbor group 7 → 4 files (-118 lines)
+
+Wave 4, first task — **on a re-based branch.** Per §2.2 this session started
+with `git fetch origin && git rebase origin/main`; 18 new `origin/main`
+commits (worktree-branch-identity feature) came in underneath. Re-measured
+before the merge: unit 18,309 t / 42,331 a / 7 skip / 1,297 files (up from
+§9.4–9.22's 18,247 / 42,169 — main's new tests, not drift); integration
+1,261 / 2,999 / 36. **These are the Wave-4 invariant baselines** (recorded
+in §0.1).
+
+Target 7 → 4 (-3 f, packer claims -207 l); **landed 7 → 4 (-3 f, -118 l)** —
+the packer's line projection again understated (union preambles, same class
+as §9.5/§9.13/§9.22). All 31 merged tests / 75 runtime expects preserved:
+unit phase 18,309 / 42,331 (unchanged), full suite 0 fail, `check:all` 0,
+both tsc clean, coverage 96.36% lines / 93.39% functions, 0 below floor.
+Ranker `_deps unrestored 0` (group carried no `⚠deps` flag).
+
+Bins per the packer, seam assignment mine:
+
+- Receiver A — `code-neighbor-cap.test.ts` (177l) absorbs
+  `code-neighbor-scan-cost` (scan-once-per-fetch) + `code-neighbor-cache-budget`
+  (aggregate cache budget) — glob/cap/scan-cost family, **343l**. The three
+  files' `makeRequest` differ in assertion-relevant defaults (US-895 with
+  resolvedTestPatterns vs US-001/GROWTH-2 without) → kept cap's as the
+  file-level one, renamed `makeScanCostRequest` / `makeCacheBudgetRequest`
+  (3 call sites). Deps save/restore merged into one 6-key top-level pair
+  (cap's 5-key + fileSize from cache-budget; quiet defaults
+  fileExists/readFile/detectLanguage/getLogger only — fileSize and glob
+  untouched, matching cap's prior behavior). scan-cost's barrel imports
+  flattened to the specific `@/context/engine/{providers/code-neighbor,types}`
+  style. **My mutation check:** `globCallCount.toBe(1)` → `toBe(99)` failed
+  both scan-cost tests; reverted.
+- Receiver B — `code-neighbor-frame.test.ts` (499l) absorbs
+  `code-neighbor-size-cap` (GROWTH-2 size cap + fileSize observability) —
+  path-frame family, **682l** (over the 650 fill target, under cap; the
+  excess is carried preamble: 6-key hook pair, size-cap's
+  OVERSIZED_BYTES/spyLogger/warnCount trio, makeSizeCapRequest — none
+  trimmable, packageDir differs from frame's so the builders cannot unify).
+  frame's 4-key `orig` hook extended to 6 keys (fileSize, getLogger added,
+  no defaults in either file). Barrel imports flattened + `makeLogger`/
+  `MockLogger` from `@test/helpers`. **My mutation check:**
+  `readCalls.some(...huge-generated.ts).toBe(false)` → `toBe(true)` failed
+  the size-cap skip test; reverted.
+
+Deletes (3): `code-neighbor-scan-cost`, `code-neighbor-cache-budget`,
+`code-neighbor-size-cap`.
+
+Mirror (`code-neighbor-chunk`, 393l) and base (`code-neighbor.test.ts`,
+745l — header's "794/800" comment now stale but left as-is) untouched.
+Group at floor per ranker (4 files, -0; 81 static sites / 192 static
+expects preserved).
+
+Wave 4 running total: **-3 files**. Cumulative: -113 (W1-3) + -3 = **-116
+files** — the plan's cumulative Waves 1-3 target (-116) is now met; against
+the plan's Waves 1-4 cumulative (-141) we are at -116 + next task's yield.
