@@ -328,3 +328,138 @@ describe("ContextOrchestrator.assemble() — US-004 budgetPressure propagation (
     expect(Object.hasOwn(entry ?? {}, "budgetPressure")).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC-24: Determinism mode
+//
+// When ContextRequest.deterministic === true, the orchestrator skips any
+// provider that declares `deterministic: false`. Deterministic providers
+// (no field or deterministic: true) are always included.
+//
+// Split back out of orchestrator-pull-tools.test.ts when that file crossed the
+// 800-line test limit during the consolidation drain.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ContextOrchestrator — determinism mode (AC-24)", () => {
+  let _detSeq = 0;
+  const _detOrigUuid = _orchestratorDeps.uuid;
+  const _detOrigNow = _orchestratorDeps.now;
+  beforeEach(() => {
+    _detSeq = 0;
+    _orchestratorDeps.uuid = () => `test-uuid-${++_detSeq}` as `${string}-${string}-${string}-${string}-${string}`;
+    _orchestratorDeps.now = () => Date.now();
+  });
+
+  afterEach(() => {
+    _orchestratorDeps.uuid = _detOrigUuid;
+    _orchestratorDeps.now = _detOrigNow;
+  });
+
+  const DET_BASE_REQUEST: ContextRequest = {
+    storyId: "US-001",
+    repoRoot: "/project",
+    packageDir: "/project",
+    stage: "execution",
+    role: "implementer",
+    budgetTokens: 10_000,
+    providerIds: ["det-provider", "non-det-provider", "implicit-det"],
+  };
+
+  function makeDetChunk(id: string): ContextProviderResult {
+    return {
+      chunks: [
+        {
+          id,
+          kind: "feature",
+          scope: "feature",
+          role: ["implementer"],
+          content: `content for ${id}`,
+          tokens: 100,
+          rawScore: 1.0,
+        },
+      ],
+    };
+  }
+
+  function makeDetProvider(id: string, deterministic?: boolean): IContextProvider {
+    const provider: IContextProvider = {
+      id,
+      kind: "feature",
+      fetch: async () => makeDetChunk(id),
+    };
+    if (deterministic !== undefined) {
+      (provider as IContextProvider & { deterministic: boolean }).deterministic = deterministic;
+    }
+    return provider;
+  }
+
+  test("non-deterministic: false request does not skip any providers", async () => {
+    const det = makeDetProvider("det-provider", true);
+    const nonDet = makeDetProvider("non-det-provider", false);
+    const orch = new ContextOrchestrator([det, nonDet]);
+    const bundle = await orch.assemble({ ...DET_BASE_REQUEST, deterministic: false });
+
+    const providerIds = bundle.manifest.providerResults?.map((p) => p.providerId) ?? [];
+    expect(providerIds).toContain("det-provider");
+    expect(providerIds).toContain("non-det-provider");
+  });
+
+  test("deterministic: true skips provider with deterministic: false", async () => {
+    const det = makeDetProvider("det-provider", true);
+    const nonDet = makeDetProvider("non-det-provider", false);
+    const orch = new ContextOrchestrator([det, nonDet]);
+    const bundle = await orch.assemble({ ...DET_BASE_REQUEST, deterministic: true });
+
+    const providerIds = bundle.manifest.providerResults?.map((p) => p.providerId) ?? [];
+    expect(providerIds).toContain("det-provider");
+    expect(providerIds).not.toContain("non-det-provider");
+  });
+
+  test("deterministic: true keeps provider with no deterministic field (default: deterministic)", async () => {
+    const implicit = makeDetProvider("implicit-det");
+    const orch = new ContextOrchestrator([implicit]);
+    const bundle = await orch.assemble({ ...DET_BASE_REQUEST, deterministic: true });
+
+    const providerIds = bundle.manifest.providerResults?.map((p) => p.providerId) ?? [];
+    expect(providerIds).toContain("implicit-det");
+  });
+
+  test("deterministic: true keeps provider with deterministic: true", async () => {
+    const det = makeDetProvider("det-provider", true);
+    const orch = new ContextOrchestrator([det]);
+    const bundle = await orch.assemble({ ...DET_BASE_REQUEST, deterministic: true });
+
+    const providerIds = bundle.manifest.providerResults?.map((p) => p.providerId) ?? [];
+    expect(providerIds).toContain("det-provider");
+  });
+
+  test("deterministic: undefined (absent) does not skip non-deterministic providers", async () => {
+    const nonDet = makeDetProvider("non-det-provider", false);
+    const orch = new ContextOrchestrator([nonDet]);
+    const bundle = await orch.assemble({ ...DET_BASE_REQUEST });
+
+    const providerIds = bundle.manifest.providerResults?.map((p) => p.providerId) ?? [];
+    expect(providerIds).toContain("non-det-provider");
+  });
+
+  test("deterministic mode: included chunks come only from deterministic providers", async () => {
+    const det = makeDetProvider("det-provider", true);
+    const nonDet = makeDetProvider("non-det-provider", false);
+    const orch = new ContextOrchestrator([det, nonDet]);
+    const bundle = await orch.assemble({ ...DET_BASE_REQUEST, deterministic: true });
+
+    expect(bundle.manifest.includedChunks.every((id) => id.startsWith("det-provider"))).toBe(true);
+  });
+
+  test("schema: ContextV2ConfigSchema includes deterministic field defaulting to false", async () => {
+    const { ContextV2ConfigSchema } = await import("@/config/schemas");
+    const parsed = ContextV2ConfigSchema.parse({});
+    expect(parsed.deterministic).toBe(false);
+  });
+
+  test("schema: ContextV2ConfigSchema accepts deterministic: true", async () => {
+    const { ContextV2ConfigSchema } = await import("@/config/schemas");
+    const parsed = ContextV2ConfigSchema.parse({ deterministic: true });
+    expect(parsed.deterministic).toBe(true);
+  });
+});

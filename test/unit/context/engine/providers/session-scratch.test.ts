@@ -42,6 +42,13 @@ const TDD_ENTRY = JSON.stringify({
   outputTail: "Implemented the missing edge-case handling.",
 });
 
+const TOOL_DIAGNOSTICS_ENTRY = JSON.stringify({
+  kind: "tool-diagnostics",
+  timestamp: "2026-01-01T00:00:00.000Z",
+  storyId: "US-001",
+  diagnostics: [{ file: "src/a.ts", line: 12, severity: "error", message: "Cannot find name 'foo'.", tool: "tsc" }],
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -479,5 +486,69 @@ describe("SessionScratchProvider — content budget drops the oldest entries, no
     // Guard the guard: the fixture must actually have overflowed, or a
     // balanced-fence assertion proves nothing about the fit loop.
     expect(content).not.toContain("OLDEST-");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 SessionScratchProvider — tool-diagnostics filtering
+//
+// The `tool-diagnostics` scratch entry kind carries authoritative lint/typecheck
+// provenance that the `ToolDiagnosticsProvider` and `query_scratch` consume. The
+// push-style `SessionScratchProvider` must filter it OUT before its 20-entry
+// recency cap so a flood of tool-diagnostics entries can't crowd out
+// verify-result context for a rectifier.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SessionScratchProvider — tool-diagnostics filtering", () => {
+  beforeEach(() => {
+    mockNoIgnoreFile();
+  });
+
+  describe("SessionScratchProvider — AC9: tool-diagnostics filtering", () => {
+    test("AC9: scratch dir with one tool-diagnostics + one verify-result produces chunk that includes verify text and excludes the literal 'tool-diagnostics'", async () => {
+      mockScratchFile(`${TOOL_DIAGNOSTICS_ENTRY}\n${VERIFY_ENTRY}\n`);
+
+      const provider = new SessionScratchProvider();
+      const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
+
+      expect(result.chunks).toHaveLength(1);
+      const content = result.chunks[0].content;
+      expect(content).toContain("Verify");
+      expect(content).toContain("FAIL");
+      // The literal kind string must not leak into the rendered chunk.
+      expect(content).not.toContain("tool-diagnostics");
+    });
+  });
+
+  // AC10: 25 tool-diagnostics + 1 verify-result → verify text included
+  // (pre-cap filtering — without it, the 20-entry cap would drop verify)
+  describe("SessionScratchProvider — AC10: pre-cap filtering of tool-diagnostics", () => {
+    test("AC10: 25 tool-diagnostics entries followed by one verify-result entry → output includes the verify text", async () => {
+      const lines: string[] = [];
+      for (let i = 0; i < 25; i++) {
+        // Vary timestamp so each line is distinct
+        lines.push(
+          JSON.stringify({
+            kind: "tool-diagnostics",
+            timestamp: `2026-01-01T00:${String(i).padStart(2, "0")}:00.000Z`,
+            storyId: "US-001",
+            diagnostics: [{ file: `src/diag-${i}.ts`, line: 1, severity: "error", message: `m-${i}`, tool: "tsc" }],
+          }),
+        );
+      }
+      lines.push(VERIFY_ENTRY);
+      mockScratchFile(`${lines.join("\n")}\n`);
+
+      const provider = new SessionScratchProvider();
+      const result = await provider.fetch(makeRequest({ storyScratchDirs: ["/sess/dir"] }));
+
+      expect(result.chunks).toHaveLength(1);
+      const content = result.chunks[0].content;
+      // The verify entry sits at position 26 (index 25). Without pre-cap filtering
+      // only the last 20 entries would be included — all tool-diagnostics — and
+      // the verify text would be dropped. Pre-cap filtering must keep it.
+      expect(content).toContain("Verify");
+      expect(content).toContain("FAIL");
+    });
   });
 });
