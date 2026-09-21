@@ -67,12 +67,40 @@ describe("StoryLimitExceededError", () => {
 });
 
 describe("LockAcquisitionError", () => {
-  test("carries workdir in context, with the LOCK_ACQUISITION_FAILED code", () => {
-    const err = new LockAcquisitionError("/repo");
+  test("US-002 AC3/AC5: checkout refusal carries workdir + holder PID in context, with the LOCK_ACQUISITION_FAILED code", () => {
+    const err = new LockAcquisitionError({ workdir: "/repo", pid: 4242, host: "h1" });
     expect(err).toBeInstanceOf(NaxError);
     expect(err.name).toBe("LockAcquisitionError");
     expect(err.code).toBe("LOCK_ACQUISITION_FAILED");
-    expect(err.message).toBe("Another nax process is already running in this directory");
+    expect(err.message).toBe("Another nax process is already running in this directory (PID 4242 on h1)");
+    expect(err.context).toEqual({ workdir: "/repo", pid: 4242, host: "h1" });
+  });
+
+  test("US-002 AC4/AC5: feature refusal names feature, holder PID, host and holder workdir, with the LOCK_ACQUISITION_FAILED code", () => {
+    const err = new LockAcquisitionError({
+      workdir: "/repo/checkout",
+      feature: "auth",
+      pid: 7,
+      host: "h2",
+      holderWorkdir: "/other/checkout",
+    });
+    expect(err).toBeInstanceOf(NaxError);
+    expect(err.name).toBe("LockAcquisitionError");
+    expect(err.code).toBe("LOCK_ACQUISITION_FAILED");
+    expect(err.message).toBe('Feature "auth" is locked by another run (PID 7 on h2, workdir /other/checkout)');
+    expect(err.context).toEqual({
+      workdir: "/repo/checkout",
+      feature: "auth",
+      pid: 7,
+      host: "h2",
+      holderWorkdir: "/other/checkout",
+    });
+  });
+
+  test("US-002: workdir alone remains valid (backwards-compatible shape)", () => {
+    const err = new LockAcquisitionError({ workdir: "/repo" });
+    expect(err).toBeInstanceOf(NaxError);
+    expect(err.code).toBe("LOCK_ACQUISITION_FAILED");
     expect(err.context).toEqual({ workdir: "/repo" });
   });
 });

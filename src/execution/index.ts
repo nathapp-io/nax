@@ -56,6 +56,7 @@ export {
   formatProgress,
   getAllReadyStories,
   hookCtx,
+  type LockAcquisitionResult,
   maybeGetContext,
   releaseLock,
   type StoryCounts,

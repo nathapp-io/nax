@@ -58,10 +58,21 @@ export class StoryLimitExceededError extends NaxError {
 
 /**
  * Another nax process is already running.
+ *
+ * US-002: the refusal is shape-discriminated between the checkout lock and the
+ * feature lock. Backwards-compatible shape preserved — `context` still carries
+ * `workdir`. New `pid`/`host` describe the holder when available; `feature` +
+ * `holderWorkdir` distinguish the feature-lock refusal.
+ *
+ * STUB: constructor accepts the new args shape so call sites and tests compile,
+ * but still emits the single legacy message/context — the two distinguishable
+ * message forms are the implementer's work.
  */
 export class LockAcquisitionError extends NaxError {
-  constructor(workdir: string) {
-    super("Another nax process is already running in this directory", "LOCK_ACQUISITION_FAILED", { workdir });
+  constructor(args: { workdir: string; pid?: number; host?: string; feature?: string; holderWorkdir?: string }) {
+    super("Another nax process is already running in this directory", "LOCK_ACQUISITION_FAILED", {
+      workdir: args.workdir,
+    });
     this.name = "LockAcquisitionError";
   }
 }

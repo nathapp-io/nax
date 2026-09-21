@@ -42,6 +42,7 @@ import { discoverWorkspacePackages } from "@/test-runners";
 import { _gitToolDeps } from "@/tools";
 import { errorMessage } from "@/utils/errors";
 import { installCrashHandlers } from "../crash-recovery";
+import { acquireFeatureLock } from "../feature-lock";
 import { acquireLock } from "../helpers";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
@@ -64,6 +65,11 @@ export const _runSetupDeps = {
   createRuntime,
   installCrashHandlers,
   sweepFeatureTranscripts,
+  // US-002 seams: `setupRun` acquires the checkout lock then the feature lock
+  // through these injectable entries. Added so tests can force refusals /
+  // record ordering; the acquisition sequence itself is the implementer's work.
+  acquireLock,
+  acquireFeatureLock,
 };
 
 export interface RunSetupOptions {
@@ -369,7 +375,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       // EXEC-2: this throw is caught by the outer try/catch above (MEM-1), whose catch
       // calls cleanupCrashHandlers() and closes the runtime — no site-specific cleanup
       // needed here any more.
-      throw new LockAcquisitionError(workdir);
+      throw new LockAcquisitionError({ workdir });
     }
 
     // Delegate post-lock initialization. `initializeAfterLock` owns its own

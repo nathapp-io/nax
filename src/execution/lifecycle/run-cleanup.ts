@@ -30,6 +30,7 @@ import { clearWorkspaceCache } from "@/test-runners/detect";
 import { errorMessage } from "@/utils/errors";
 import { clearGitRootCache } from "@/verification";
 import { resetRuntimeCrashRetryCounts } from "../escalation";
+import { releaseFeatureLock } from "../feature-lock";
 import { releaseLock } from "../helpers";
 // Sibling import: the wipe is a local lifecycle module, and routing it through
 // the lifecycle barrel would point this module at its own barrel to reach the
@@ -53,6 +54,11 @@ export const _runCleanupDeps = {
   // US-004 — end-of-run scratchpad wipe. Injected so the test can stub a
   // fail-open path without monkey-patching Bun.file / fs.rm.
   wipeScratchpad,
+  // US-002 release seams: `cleanupRun` must release both locks at the bottom
+  // (feature first, then checkout). Injected so a test can observe ordering;
+  // the always-release call itself is the implementer's work.
+  releaseLock,
+  releaseFeatureLock,
 };
 
 export interface RunCleanupOptions {

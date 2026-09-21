@@ -49,9 +49,19 @@ export async function tryExclusiveCreate(targetPath: string, content: string): P
 }
 
 /**
+ * Outcome of `acquireLock`. On refusal the `holder` carries the recorded PID
+ * (and host when the on-disk record carries one).
+ *
+ * STUB: the type ships so call sites compile; the holder-population inside
+ * `acquireLock` is only partially threaded (see the refusal returns below).
+ */
+export type LockAcquisitionResult = { acquired: true } | { acquired: false; holder: { pid: number; host?: string } };
+
+/**
  * Acquire execution lock to prevent concurrent runs in same directory.
  * Creates nax.lock file with PID and timestamp.
- * Returns true if lock acquired, false if another process holds it.
+ * Returns `{ acquired: true }` if lock acquired, `{ acquired: false, holder }`
+ * if another process holds it.
  *
  * Handles stale locks from crashed/OOM-killed processes:
  * - Reads PID from existing lock file
@@ -59,7 +69,7 @@ export async function tryExclusiveCreate(targetPath: string, content: string): P
  * - Removes stale lock if process is dead
  * - Re-acquires lock after removal
  */
-export async function acquireLock(workdir: string): Promise<boolean> {
+export async function acquireLock(workdir: string): Promise<LockAcquisitionResult> {
   const lockPath = path.join(workdir, "nax.lock");
   const lockFile = Bun.file(lockPath);
 
@@ -69,7 +79,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
     if (exists) {
       // Read lock data
       const lockContent = await lockFile.text();
-      let lockData: { pid: number } | null;
+      let lockData: { pid: number; host?: string } | null;
       try {
         lockData = JSON.parse(lockContent);
       } catch {
@@ -90,7 +100,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
         // Check if the process is still alive
         if (isProcessAlive(lockPid)) {
           // Process is alive, lock is valid
-          return false;
+          return { acquired: false, holder: { pid: lockPid, host: lockData.host } };
         }
 
         // BUG-07: two processes racing this same staleness check must not
@@ -116,7 +126,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
           if ((renameError as NodeJS.ErrnoException).code === "ENOENT") {
             // Another process already claimed cleanup of this stale lock —
             // let it proceed; we back off rather than racing ahead.
-            return false;
+            return { acquired: false, holder: { pid: lockData.pid, host: lockData.host } };
           }
           throw renameError;
         }
@@ -155,7 +165,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
               lockPath,
             });
           }
-          return false;
+          return { acquired: false, holder: { pid: lockPid, host: lockData.host } };
         }
 
         const logger = getSafeLogger();
@@ -176,17 +186,17 @@ export async function acquireLock(workdir: string): Promise<boolean> {
     const fd = fs.openSync(lockPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o644);
     fs.writeSync(fd, JSON.stringify(lockData));
     fs.closeSync(fd);
-    return true;
+    return { acquired: true };
   } catch (error) {
     // EEXIST means another process won the race
     if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      return false;
+      return { acquired: false, holder: { pid: 0 } };
     }
     const logger = getSafeLogger();
     logger?.warn("execution", "Failed to acquire lock", {
       error: (error as Error).message,
     });
-    return false;
+    return { acquired: false, holder: { pid: 0 } };
   }
 }
 

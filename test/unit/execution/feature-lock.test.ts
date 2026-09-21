@@ -429,4 +429,33 @@ describe("releaseFeatureLock", () => {
     await releaseFeatureLock({ outputDir: dir, feature: "f", runId: "run-1" });
     expect(await Bun.file(recordPath).exists()).toBe(false);
   });
+
+  // US-002 AC9/AC10 — these are the same primitives US-001 shipped, re-pinned
+  // under the run-lifecycle story's IDs since the run-lifecycle release sites
+  // (run-setup / run-cleanup) depend on them.
+  test("US-002 AC9: leaves the lock file in place when the on-disk record's runId is not the releasing run's", async () => {
+    const recordPath = lockPath(dir, "f");
+    mkdirSync(join(dir, "features", "f"), { recursive: true });
+    await Bun.write(
+      recordPath,
+      JSON.stringify({
+        pid: 1,
+        host: "other",
+        workdir: join(dir, "other-checkout"),
+        feature: "f",
+        runId: "other-run",
+        startedAt: new Date().toISOString(),
+        timestamp: Date.now(),
+      }),
+    );
+    await releaseFeatureLock({ outputDir: dir, feature: "f", runId: "caller-run" });
+    expect(await Bun.file(recordPath).exists()).toBe(true);
+    expect(await Bun.file(recordPath).text()).toContain("other-run");
+  });
+
+  test("US-002 AC10: resolves without error when the lock file is already absent", async () => {
+    const recordPath = lockPath(dir, "f");
+    await expect(releaseFeatureLock({ outputDir: dir, feature: "f", runId: "run-1" })).resolves.toBeUndefined();
+    expect(await Bun.file(recordPath).exists()).toBe(false);
+  });
 });
