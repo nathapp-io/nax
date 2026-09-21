@@ -1,11 +1,11 @@
 /**
  * Run Setup — Post-Lock Initialization
  *
- * Owns the body of work that runs after `acquireLock` succeeds in setupRun.
+ * Owns the body of work that runs after both locks are held in setupRun.
  * Extracted from run-setup.ts (which was at the 600-line hard cap) so the
  * orchestrator stays focused on wiring and lock acquisition.
  *
- * Responsibilities (run in this order, all under the held lock):
+ * Responsibilities (run in this order, all under the held locks):
  *   1. Sweep retained feature transcripts (US-002 AC10/AC11)
  *   2. Wipe scratchpad + reconcile .gitignore (US-004)
  *   3. Detect project profile (US-003) and log explicit vs auto-detected values
@@ -15,10 +15,11 @@
  *   7. warnProfileMismatch — re-validate story agentProfileId references
  *   8. Prompt for paused stories (skip in headless mode)
  *
- * The inner try/catch that owns `releaseLock` lives here too (FIX-H16): if any
- * step throws, the lock is released before re-raising. setupRun's outer
- * try/catch (MEM-1) handles crash-handler + runtime.close cleanup and runs
- * AFTER this helper's catch has released the lock.
+ * The inner try/catch that owns `releaseLock` lives here too (FIX-H16, US-002):
+ * if any step throws, the feature lock is released first, then the checkout
+ * lock, before re-raising. setupRun's outer try/catch (MEM-1) handles
+ * crash-handler + runtime.close cleanup and runs AFTER this helper's catch has
+ * released both locks.
  *
  * Deps injection: takes `deps` as a parameter so setupRun can thread
  * `_runSetupDeps.detectProjectProfile` / `sweepFeatureTranscripts` through at
@@ -38,6 +39,7 @@ import type { NaxRuntime } from "@/runtime";
 import type { sweepFeatureTranscripts } from "@/session";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "@/version";
+import { releaseFeatureLock } from "../feature-lock";
 import { releaseLock } from "../helpers";
 import type { StatusWriter } from "../status-writer";
 import { warnProfileMismatch } from "./run-setup-warnings";
@@ -85,8 +87,8 @@ export interface InitializeAfterLockResult {
 }
 
 /**
- * Execute post-lock initialization. Releases the run lock on failure before
- * re-raising (FIX-H16).
+ * Execute post-lock initialization. Releases both run locks (feature first,
+ * then checkout) on failure before re-raising (FIX-H16, US-002).
  */
 export async function initializeAfterLock(options: InitializeAfterLockOptions): Promise<InitializeAfterLockResult> {
   const logger = getSafeLogger();
@@ -233,7 +235,16 @@ export async function initializeAfterLock(options: InitializeAfterLockOptions): 
       interactionChain,
     };
   } catch (error) {
-    // Release lock before re-throwing so the directory isn't permanently locked
+    // FIX-H16: release both locks in reverse acquisition order before
+    // re-throwing so the directory isn't permanently locked. Feature lock
+    // comes down first (it was acquired second), then the checkout lock.
+    // On-disk `runId` mismatch on release leaves the feature lock file in
+    // place — releaseFeatureLock is a no-op in that case (US-001).
+    await releaseFeatureLock({
+      outputDir: runtime.outputDir,
+      feature,
+      runId,
+    });
     await releaseLock(workdir);
     throw error;
   }

@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { calculateAggregateMetrics } from "@/metrics/aggregator";
+import { calculateAggregateMetrics, getLastRun } from "@/metrics/aggregator";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
 
 // ---------------------------------------------------------------------------
@@ -206,5 +206,23 @@ describe("calculateAggregateMetrics — modelEfficiency.avgCost", () => {
 
     const eff = aggregate.modelEfficiency["claude-mixed"];
     expect(eff.avgCost).toBe(5); // 10/2, not 10/1
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-006 AC5: getLastRun keeps its deliberate latest-run semantics — the
+// curator's fail-closed metrics reader must not change this reader.
+// ---------------------------------------------------------------------------
+
+describe("getLastRun — US-006 AC5", () => {
+  test("returns the final element of the runs array", () => {
+    const older = makeRun([makeStoryMetrics({ storyId: "US-001" })]);
+    const newer = makeRun([makeStoryMetrics({ storyId: "US-002" })]);
+    newer.runId = "run-002";
+
+    // Identity, not merely an equal runId: the final element is what callers
+    // (status-cost, report) present as "last run".
+    expect(getLastRun([older, newer])).toBe(newer);
+    expect(getLastRun([older, newer])?.runId).toBe("run-002");
   });
 });

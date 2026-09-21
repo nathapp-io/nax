@@ -112,6 +112,13 @@ export interface NaxStatusFile {
     id: string;
     /** Feature name */
     feature: string;
+    /**
+     * Absolute working directory the run was bound to. US-005: readers
+     * (TUI, `nax status`) use this to attribute which checkout wrote the
+     * status file. Optional — pre-existing files written before this field
+     * was added do not carry it, and readers must tolerate absence.
+     */
+    workdir?: string;
     /** ISO 8601 start timestamp */
     startedAt: string;
     /** Current run status */
@@ -265,6 +272,13 @@ export interface RunStateSnapshot {
   dryRun: boolean;
   /** Process ID for crash detection */
   pid: number;
+  /**
+   * Absolute working directory this run was bound to (US-005). Optional —
+   * when present, it is projected onto `NaxStatusFile.run.workdir` so
+   * external readers can attribute the run to a checkout. Status files
+   * written before US-005 omit this field.
+   */
+  workdir?: string;
   /** Loaded PRD (for progress counting) */
   prd: PRD;
   /** Accumulated cost in USD */
@@ -323,6 +337,10 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
       status: state.runStatus,
       dryRun: state.dryRun,
       pid: state.pid,
+      // US-005: project `state.workdir` onto the snapshot when present.
+      // Absent on status files written before this field existed; readers
+      // (TUI, `nax status`) tolerate its absence as "unknown".
+      ...(state.workdir && { workdir: state.workdir }),
       ...(state.crashedAt && { crashedAt: state.crashedAt }),
       ...(state.crashSignal && { crashSignal: state.crashSignal }),
     },

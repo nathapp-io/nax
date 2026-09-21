@@ -31,6 +31,7 @@ import { stopHeartbeat } from "./crash-recovery";
 import type { RunCleanupOptions } from "./lifecycle/run-cleanup";
 import { sumReviewsFailedOpen } from "./post-run-review-summary";
 import { liveRunTotalCost } from "./run-cost-reconcile";
+import { buildRunId } from "./run-id";
 import { runCompletionPhase } from "./runner-completion";
 import { runExecutionPhase } from "./runner-execution";
 import { runSetupPhase } from "./runner-setup";
@@ -116,6 +117,17 @@ export interface RunOptions {
    * Driven by `nax run --fresh` / `--no-resume` flags.
    */
   resumeMode?: import("./checkpoint").ResumeMode;
+  /**
+   * Run identifier. When supplied (e.g. by `nax resume`, which builds one
+   * via `buildRunId` so the resumed log file matches the run it records),
+   * used verbatim — every phase of the run, the log file name, the
+   * status.json `run.id`, and the cleanup hook all see the same id.
+   *
+   * When absent, the runner builds one with `buildRunId(workdir, new Date())`
+   * so two worktrees of one project at the same ISO timestamp no longer
+   * collide on `run-<iso>`. US-005.
+   */
+  runId?: string;
 }
 
 /** Run result */
@@ -156,6 +168,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     skipPrecheck = false,
     agentStreamEvents,
     resumeMode = "auto",
+    runId: callerRunId,
   } = options;
 
   // Reentrant/concurrent `run()` would race on the module-global
@@ -173,7 +186,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
-  const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  // US-005: a caller (e.g. `nax resume`) may pin a runId so the resumed log
+  // file matches the run it records. When absent, build one through
+  // `buildRunId` — a single producer keyed on (workdir hash, ms-precision
+  // timestamp) — so two worktrees of one project at the same ISO timestamp
+  // no longer collide on `run-<iso>`.
+  const runId = callerRunId ?? buildRunId(workdir, new Date(startTime));
 
   // US-004 — wire the orchestrator's checkpoint deps based on the resume mode.
   // Auto: read real checkpoint.jsonl when present. Fresh / no-resume: ignore any

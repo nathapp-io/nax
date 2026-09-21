@@ -38,6 +38,15 @@ export interface StatusWriterContext {
   startTimeMs: number;
   /** Process ID for crash detection */
   pid: number;
+  /**
+   * Absolute working directory this run was bound to (US-005). When
+   * supplied, it is projected onto `NaxStatusFile.run.workdir` so
+   * external readers can attribute the run to a checkout. Optional —
+   * the sole StatusWriter construction site in `run-setup` reads the
+   * workdir from the run options; callers that pre-date US-005 may
+   * omit it.
+   */
+  workdir?: string;
 }
 
 // ============================================================================
@@ -205,6 +214,10 @@ export class StatusWriter {
       runStatus: this._runStatus,
       dryRun: this.ctx.dryRun,
       pid: this.ctx.pid,
+      // US-005: forward the run's workdir to the snapshot so it lands in
+      // NaxStatusFile.run.workdir. Conditional spread keeps pre-US-005
+      // callers (and tests) free of an `undefined` field on disk.
+      ...(this.ctx.workdir !== undefined ? { workdir: this.ctx.workdir } : {}),
       prd: this._prd,
       totalCost,
       costLimit: this.costLimit,

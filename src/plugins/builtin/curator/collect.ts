@@ -110,8 +110,20 @@ async function collectFromMetrics(context: CuratorPostRunContext): Promise<Obser
   try {
     const data = await readJsonFile(metricsPath);
     const runs = Array.isArray(data) ? data : [data];
-    const currentRun = runs.map(asRecord).find((run) => run?.runId === context.runId) ?? runs.map(asRecord).at(-1);
-    if (!currentRun) return observations;
+    // Fail closed on `runId` (US-006). metrics.json is a project-level append
+    // shared by every feature, so entries belonging to OTHER runs coexist
+    // here; a positional `runs.at(-1)` fallback attributed another feature's
+    // stories to this run's observations. The sibling reader
+    // `collectFromReviewAudit` guards the same class of collision by feature
+    // name and time window.
+    const currentRun = runs.map(asRecord).find((run) => run?.runId === context.runId);
+    if (!currentRun) {
+      context.logger.warn("metrics.json holds no entry for this run — no metrics-derived observations", {
+        runId: context.runId,
+        runCount: runs.length,
+      });
+      return observations;
+    }
 
     for (const rawStory of asArray(currentRun.stories)) {
       const story = asRecord(rawStory);

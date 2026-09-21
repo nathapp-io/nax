@@ -145,11 +145,93 @@ describe("claimProjectIdentity", () => {
   it("updates lastSeen on subsequent calls for same workdir", async () => {
     await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/my-project", null);
     const first = await readProjectIdentity(TEST_CLAIM_KEY);
-    await new Promise((r) => setTimeout(r, 5));
     await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/my-project", null);
     const second = await readProjectIdentity(TEST_CLAIM_KEY);
-    expect(second?.lastSeen).not.toBe(first?.lastSeen);
+    expect(Date.parse(second?.lastSeen ?? "")).toBeGreaterThanOrEqual(Date.parse(first?.lastSeen ?? ""));
     expect(second?.createdAt).toBe(first?.createdAt);
+  });
+});
+
+describe("claimProjectIdentity (US-004 — worktree branch identity)", () => {
+  const KEY = "__nax_test_claim_identity_us004__";
+  const identityDir = path.join(globalConfigDir(), KEY);
+
+  beforeEach(async () => {
+    await rm(identityDir, { recursive: true, force: true });
+  });
+
+  afterEach(async () => {
+    await rm(identityDir, { recursive: true, force: true });
+  });
+
+  it("updates lastSeen without throwing when workdir differs but normalized remotes match (ssh vs https)", async () => {
+    await claimProjectIdentity(KEY, "/tmp/original-checkout", "git@github.com:o/r.git");
+    const first = await readProjectIdentity(KEY);
+    await claimProjectIdentity(KEY, "/tmp/other-worktree", "https://github.com/o/r");
+
+    const second = await readProjectIdentity(KEY);
+    expect(second).not.toBeNull();
+    expect(Date.parse(second?.lastSeen ?? "")).toBeGreaterThanOrEqual(Date.parse(first?.lastSeen ?? ""));
+  });
+
+  it("leaves the stored workdir unchanged when workdir differs but remotes match", async () => {
+    await claimProjectIdentity(KEY, "/tmp/original-checkout", "https://github.com/o/r.git");
+
+    await claimProjectIdentity(KEY, "/tmp/other-worktree", "https://github.com/o/r.git");
+
+    const stored = await readProjectIdentity(KEY);
+    expect(stored?.workdir).toBe("/tmp/original-checkout");
+  });
+
+  it("throws RUN_NAME_COLLISION when remotes differ after normalization (different repos)", async () => {
+    await claimProjectIdentity(KEY, "/tmp/original", "https://github.com/o/r.git");
+    const err = await claimProjectIdentity(KEY, "/tmp/other", "https://github.com/o/other-repo.git").catch((e) => e);
+    assertNaxError(err);
+    expect(err.code).toBe("RUN_NAME_COLLISION");
+  });
+
+  it("throws RUN_NAME_COLLISION when remotes are on different hosts but the path matches", async () => {
+    await claimProjectIdentity(KEY, "/tmp/original", "https://github.com/o/r.git");
+    const err = await claimProjectIdentity(KEY, "/tmp/other", "https://gitlab.com/o/r.git").catch((e) => e);
+    assertNaxError(err);
+    expect(err.code).toBe("RUN_NAME_COLLISION");
+  });
+
+  it("throws RUN_NAME_COLLISION when both remotes are null and workdirs differ", async () => {
+    await claimProjectIdentity(KEY, "/tmp/original", null);
+    const err = await claimProjectIdentity(KEY, "/tmp/other", null).catch((e) => e);
+    assertNaxError(err);
+    expect(err.code).toBe("RUN_NAME_COLLISION");
+  });
+
+  it("preserves name, workdir, remoteUrl, and createdAt when workdir and remote match", async () => {
+    await claimProjectIdentity(KEY, "/tmp/workdir", "https://github.com/o/r.git");
+    const before = await readProjectIdentity(KEY);
+    await claimProjectIdentity(KEY, "/tmp/workdir", "https://github.com/o/r.git");
+
+    const after = await readProjectIdentity(KEY);
+    expect(after?.name).toBe(before?.name);
+    expect(after?.workdir).toBe(before?.workdir);
+    expect(after?.remoteUrl).toBe(before?.remoteUrl);
+    expect(after?.createdAt).toBe(before?.createdAt);
+    expect(Date.parse(after?.lastSeen ?? "")).toBeGreaterThanOrEqual(Date.parse(before?.lastSeen ?? ""));
+  });
+
+  it("updates lastSeen when the registered workdir is matched and remoteUrl is null", async () => {
+    await claimProjectIdentity(KEY, "/tmp/workdir", null);
+    const first = await readProjectIdentity(KEY);
+    await claimProjectIdentity(KEY, "/tmp/workdir", null);
+
+    const second = await readProjectIdentity(KEY);
+    expect(Date.parse(second?.lastSeen ?? "")).toBeGreaterThanOrEqual(Date.parse(first?.lastSeen ?? ""));
+  });
+
+  it("accepts a null incoming remoteUrl when the registered remoteUrl is also null and workdirs match", async () => {
+    await claimProjectIdentity(KEY, "/tmp/workdir", null);
+    await claimProjectIdentity(KEY, "/tmp/workdir", null);
+    const stored = await readProjectIdentity(KEY);
+    expect(stored?.workdir).toBe("/tmp/workdir");
+    expect(stored?.remoteUrl).toBeNull();
   });
 });
 

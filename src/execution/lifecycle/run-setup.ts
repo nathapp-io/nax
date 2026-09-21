@@ -2,17 +2,18 @@
  * Run Setup — Orchestrator
  *
  * Phase 1 of runner.run(). Wires the run-scoped state (status writer, runtime,
- * crash handlers, lock, plugins, PRD) before the execution phase begins.
+ * crash handlers, locks, plugins, PRD) before the execution phase begins.
  *
  * Structure:
- *   - setupRun() body: pre-lock wiring → acquireLock → delegate to
- *     initializeAfterLock → assemble RunSetupResult.
+ *   - setupRun() body: pre-lock wiring → acquire checkout lock → acquire
+ *     feature lock → delegate to initializeAfterLock → assemble RunSetupResult.
+ *   - Lock acquisition wraps in try/catch: feature-lock refusal releases the
+ *     checkout lock before throwing; post-lock init failure is caught by the
+ *     FIX-H16 inner catch in `run-setup-init.ts` which releases both locks in
+ *     reverse order.
  *   - MEM-1 outer try/catch: uninstalls crash handlers and closes the runtime
  *     if anything in setup throws (loadPRD failure, lock acquisition failure,
  *     etc.). See the rationale comment above the catch for the full story.
- *   - The inner try/catch that owns releaseLock (FIX-H16) lives in
- *     initializeAfterLock — anything inside the held lock is the helper's
- *     concern, including its own lock release on failure.
  *   - Pre-flight warnings (warnFallbackMisconfiguration, warnProfileMismatch)
  *     live in run-setup-warnings.ts and are re-exported here for back-compat
  *     with existing imports of `@/execution/lifecycle/run-setup`.
@@ -42,7 +43,8 @@ import { discoverWorkspacePackages } from "@/test-runners";
 import { _gitToolDeps } from "@/tools";
 import { errorMessage } from "@/utils/errors";
 import { installCrashHandlers } from "../crash-recovery";
-import { acquireLock } from "../helpers";
+import { acquireFeatureLock, type FeatureLockResult } from "../feature-lock";
+import { acquireLock, releaseLock } from "../helpers";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
 import { initializeAfterLock } from "./run-setup-init";
@@ -64,6 +66,11 @@ export const _runSetupDeps = {
   createRuntime,
   installCrashHandlers,
   sweepFeatureTranscripts,
+  // US-002 seams: `setupRun` acquires the checkout lock then the feature lock
+  // through these injectable entries. Added so tests can force refusals /
+  // record ordering; the acquisition sequence itself is the implementer's work.
+  acquireLock,
+  acquireFeatureLock,
 };
 
 export interface RunSetupOptions {
@@ -122,10 +129,11 @@ export interface RunSetupResult {
 /**
  * Execute initial setup phase.
  *
- * Layout: pre-lock wiring → acquireLock → delegate post-lock init to
- * `initializeAfterLock` → assemble and return RunSetupResult. The MEM-1
- * outer try/catch below ensures crash handlers are uninstalled and the
- * runtime is closed on any setup failure, even before the lock was acquired.
+ * Layout: pre-lock wiring → acquire checkout lock → acquire feature lock →
+ * delegate post-lock init to `initializeAfterLock` → assemble and return
+ * RunSetupResult. The MEM-1 outer try/catch below ensures crash handlers are
+ * uninstalled and the runtime is closed on any setup failure, even before
+ * either lock was acquired.
  */
 export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult> {
   const logger = getSafeLogger();
@@ -177,6 +185,10 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     dryRun,
     startTimeMs: startTime,
     pid: process.pid,
+    // US-005: thread the run's workdir through so the snapshot written to
+    // disk carries `run.workdir` for external readers (TUI, `nax status`).
+    // The `workdir` local above has been in scope since :142.
+    workdir,
   });
 
   // ── PID registry constructed by createRuntime (BUG-002) ────────
@@ -361,20 +373,69 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       logger?.info("session", "Swept orphan sessions at run setup", { sweptOrphans });
     }
 
-    // Acquire lock to prevent concurrent execution
-    const lockAcquired = await acquireLock(workdir);
-    if (!lockAcquired) {
-      logger?.error("execution", "Another nax process is already running in this directory");
-      logger?.error("execution", "If you believe this is an error, remove nax.lock manually");
+    // Acquire both locks in fixed order — checkout first, then feature — so
+    // a partial acquire is always unwound before the error escapes. The
+    // checkout lock (project-scoped) keeps two nax processes in the same
+    // directory from racing; the feature lock (outputDir-scoped) refuses a
+    // second run on the same feature. Both must be held together; either
+    // alone leaves a window for unsynchronised mutation.
+    const checkoutLock = await _runSetupDeps.acquireLock(workdir);
+    if (!checkoutLock.acquired) {
+      // `storyId: "_setup"` follows the convention every other log call in
+      // this file uses (e.g. the auto-migration call below at line ~313).
+      // Replay/reconstruct (src/replay/reconstruct.ts) falls back to
+      // `entry.data?.storyId` when the top-level `entry.storyId` is absent,
+      // so a missing data.storyId would orphan the refusal from the run's
+      // log filter.
+      logger?.error("execution", "Another nax process is already running in this directory", {
+        storyId: "_setup",
+      });
+      logger?.error("execution", "If you believe this is an error, remove nax.lock manually", {
+        storyId: "_setup",
+      });
       // EXEC-2: this throw is caught by the outer try/catch above (MEM-1), whose catch
       // calls cleanupCrashHandlers() and closes the runtime — no site-specific cleanup
       // needed here any more.
-      throw new LockAcquisitionError(workdir);
+      throw new LockAcquisitionError({
+        workdir,
+        pid: checkoutLock.holder.pid,
+        host: checkoutLock.holder.host,
+      });
+    }
+
+    let featureLock: FeatureLockResult;
+    try {
+      featureLock = await _runSetupDeps.acquireFeatureLock({
+        outputDir: runtime.outputDir,
+        feature,
+        workdir,
+        runId,
+      });
+    } catch (err) {
+      // acquireFeatureLock THREW (mkdir failure, rename EACCES, exclusive
+      // create EIO, …) after the checkout lock was already taken. Release
+      // the checkout lock before propagating so the directory isn't
+      // permanently locked. The refusal branch below is a separate code path
+      // (acquireFeatureLock returned `{ acquired: false }` rather than threw).
+      await releaseLock(workdir);
+      throw err;
+    }
+    if (!featureLock.acquired) {
+      // Feature lock refused: release the checkout lock we just took so
+      // the directory isn't permanently locked, then surface the refusal.
+      await releaseLock(workdir);
+      throw new LockAcquisitionError({
+        workdir,
+        feature,
+        pid: featureLock.holder.pid,
+        host: featureLock.holder.host,
+        holderWorkdir: featureLock.holder.workdir,
+      });
     }
 
     // Delegate post-lock initialization. `initializeAfterLock` owns its own
-    // try/catch that calls `releaseLock` on failure (FIX-H16), so the lock is
-    // released before any error escapes this scope.
+    // try/catch that releases both locks in reverse on failure (FIX-H16),
+    // so the locks are released before any error escapes this scope.
     const initResult = await initializeAfterLock({
       config,
       workdir,

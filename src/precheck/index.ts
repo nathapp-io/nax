@@ -106,6 +106,8 @@ export interface PrecheckOptions {
   workdir: string;
   /** Suppress console output (for programmatic use) */
   silent?: boolean;
+  /** Feature-scoped lock ref (resolved project output dir + feature). US-003. */
+  featureLock?: { outputDir: string; feature: string };
 }
 
 /** Extended result with exit code for CLI usage */
@@ -130,9 +132,21 @@ type CheckFn = () => Promise<Check | Check[]>;
  * Early environment checks — git repo, clean tree, stale lock.
  * Fast checks that run first in both runEnvironmentPrecheck and runPrecheck.
  * In runPrecheck, PRD validation is inserted after these (original order preserved).
+ *
+ * US-003: when `featureLock` is provided, the stale-lock check is resolved
+ * via `_precheckDeps.checkStaleLock` so the run path can thread the run's
+ * feature and output directory through. Without it, the no-arg `checkStaleLock`
+ * runs and the behaviour is unchanged from before US-003.
  */
-function getEarlyEnvironmentBlockers(workdir: string): CheckFn[] {
-  return [() => checkGitRepoExists(workdir), () => checkWorkingTreeClean(workdir), () => checkStaleLock(workdir)];
+function getEarlyEnvironmentBlockers(workdir: string, featureLock?: { outputDir: string; feature: string }): CheckFn[] {
+  return [
+    () => checkGitRepoExists(workdir),
+    () => checkWorkingTreeClean(workdir),
+    // Re-bind featureLock per closure so the run-time call site can mutate
+    // (well, it doesn't — but the dep pattern matches checkStorySizeGate's
+    // shape so the seam reads uniformly).
+    () => _precheckDeps.checkStaleLock(workdir, featureLock),
+  ];
 }
 
 /**
@@ -158,8 +172,12 @@ function getLateEnvironmentBlockers(config: PrecheckConfig, workdir: string): Ch
 }
 
 /** All environment checks — no PRD needed. Used by runEnvironmentPrecheck. */
-function getEnvironmentBlockers(config: PrecheckConfig, workdir: string): CheckFn[] {
-  return [...getEarlyEnvironmentBlockers(workdir), ...getLateEnvironmentBlockers(config, workdir)];
+function getEnvironmentBlockers(
+  config: PrecheckConfig,
+  workdir: string,
+  featureLock?: { outputDir: string; feature: string },
+): CheckFn[] {
+  return [...getEarlyEnvironmentBlockers(workdir, featureLock), ...getLateEnvironmentBlockers(config, workdir)];
 }
 
 /** Environment warnings — no PRD needed. */
@@ -193,6 +211,16 @@ export const _precheckDeps = {
     const { checkStorySizeGate } = await import("./story-size-gate");
     return checkStorySizeGate(config, prd);
   },
+  /**
+   * US-003: injectable seam for `checkStaleLock` so the run-time precheck
+   * caller can thread the run's feature and output directory through without
+   * going through the closure bound inside `getEarlyEnvironmentBlockers`.
+   * Mirrors `checkStorySizeGate`'s shape (one async function, no closure).
+   */
+  checkStaleLock: async (
+    workdir: string,
+    featureLock?: { outputDir: string; feature: string },
+  ): ReturnType<typeof checkStaleLock> => checkStaleLock(workdir, featureLock),
 };
 
 /** Normalize check result to array (some checks return Check[]) */
@@ -296,7 +324,7 @@ export async function runPrecheck(
   // checkPRDValid at position 4 ensures test environments that lack agent CLI
   // still get EXIT_CODES.INVALID_PRD (2) rather than a generic blocker (1)
   const tier1Checks = [
-    ...getEarlyEnvironmentBlockers(workdir),
+    ...getEarlyEnvironmentBlockers(workdir, options.featureLock),
     ...getProjectBlockers(prd),
     ...getLateEnvironmentBlockers(config, workdir),
   ];
