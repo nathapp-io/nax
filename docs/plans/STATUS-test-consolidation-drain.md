@@ -16,13 +16,13 @@ to re-measure after every task, and §6 tells you when to stop rather than push 
 
 ---
 
-## 0. Current state - re-measured 2026-09-21 @ f944cc6b5 (after Wave 7, the tail; original main measurement @ 4af3c680e in §9.0)
+## 0. Current state - re-measured 2026-09-21 (Wave 6 / Task 35 close, the retirement; Wave 7 structural close @ f944cc6b5; original main measurement @ 4af3c680e in §9.0)
 
 ```
 bun run report:test-consolidation
   scope              test/unit + test/integration + test/ui  (test/e2e/ excluded — separate CI step)
-  scanned            1314 files, 374280 lines, 35823 expect()
-  static test sites  17388  + 543 .each sites — NOT the runtime count, use `bun test`
+  scanned            1312 files, 373707 lines, 35769 expect()
+  static test sites  17345  + 543 .each sites — NOT the runtime count, use `bun test`
   satellite groups   94   (nested bases collapsed into their outermost ancestor)
   satellites         156  (121 encode a ticket — rule §2 violations)
   mirrors            54   EXCLUDED — each is its own src module's test file (--mirrors)
@@ -31,45 +31,48 @@ bun run report:test-consolidation
   removable lines    0    (11,185 at drain start)
 ```
 
-> **Waves 1–7 are complete. The drain's structural target is met: `removable files 0`.**
+> **Waves 1–7 are complete and Wave 6 is closed. The drain's structural target is met:
+> `removable files 0`.**
 > Tasks 1–31 (Waves 1–4) landed -137 files against the plan's -141 (the 4-file
 > shortfall: §9.5 callOp +2, §9.8 orchestrator +1, §9.31 pipeline-result-handler
 > +1). Task 32 (Wave 5) removed no files but **-154 runtime tests / -659 lines**
 > with `expect()` unchanged (§9.33). Wave 7 (the tail) drained the remaining **95
 > files / -1,081 lines** across nine batches (§9.34), taking `removable files 95 →
-> 0` and `files 1,409 → 1,314`. Runtime is **19,526 tests / 45,505 expect() / 43
-> skip / 0 fail** — Wave 7 preserved every test and assertion (only preambles
-> dedupe). Remaining: Wave 6 Task 35 — **ruled 2026-09-21 as RETIRE BOTH (§9.35),
-> execution pending**; Tasks 1–34 are landed.
+> 0` and `files 1,409 → 1,314`. Task 35 (Wave 6) retired the two alias-blind report
+> scripts — the drain's one sanctioned test-count reduction outside Wave 5
+> (§9.35 ruling, §9.36 close), `files 1,314 → 1,312`, **-32 tests / -53 expect()**.
+> Runtime is **19,494 tests / 45,452 expect() / 43 skip / 0 fail**. **Tasks 1–35 are
+> all landed; the drain is complete.**
 
 ### 0.1 Runtime state — measured with `bun test`, which is the only authority on test counts
 
 | Suite | Tests | Files | `expect()` | Skip | Wall | Cap |
 |:--|--:|--:|--:|--:|--:|--:|
-| `test/unit/` | 18,168 | 1,185 | 42,357 | 7 | 46–53s | 120s |
+| `test/unit/` | 18,136 | 1,183 | 42,304 | 7 | 46–53s | 120s |
 | `test/integration/` | 1,260 | 119 | 2,999 | 36 | 17–22s | 120s |
 | `test/ui/` | 98 | 10 | 149 | 0 | 0.8–1.1s | 30s |
-| **Total (`bun run test`)** | **19,526** | **1,314** | **45,505** | **43** | **~65–72s** | — |
+| **Total (`bun run test`)** | **19,494** | **1,312** | **45,452** | **43** | **~64–72s** | — |
 
-0 fail. **Do not mix these with the ranker's static counts.** The ranker reports 17,388
-static `test(`/`it(` sites because it cannot expand the 543 `.each` sites, and 35,823
+0 fail. **Do not mix these with the ranker's static counts.** The ranker reports 17,345
+static `test(`/`it(` sites because it cannot expand the 543 `.each` sites, and 35,769
 static `expect(` occurrences because it cannot count calls inside loops. Every invariant in
 §4 is a *runtime* number, read off `bun test`. (Wave 7 merged 95 files without changing a
-single runtime test or expect — test and assert counts are identical to §9.33's close.)
+single runtime test or expect; Task 35's retirement (§9.36) is the only later change to
+these counts.)
 
 ### 0.2 Structural state
 
 | Reading | Value | Source |
 |:--|--:|:--|
-| Test lines / src lines | **374,280 / 166,497 — 2.25:1** | ranker; `git ls-files` + `wc -l` over `src/**/*.ts{,x}` |
+| Test lines / src lines | **373,707 / 166,497 — 2.24:1** | ranker; `git ls-files` + `wc -l` over `src/**/*.ts{,x}` |
 | Preamble (lines before the first `describe`) | **not re-measured this pass** | ranking rule (`^describe(`); the drain's win is now merged preambles, not a separately tracked figure |
-| Files importing `@test/helpers` | 874 (61.2%) of ~1,314 | grep — **not re-measured this pass** |
+| Files importing `@test/helpers` | 874 (61.2%) of ~1,312 | grep — **not re-measured this pass** |
 | Helper modules available | 52 `test/helpers/*.ts` (51 excl. `index.ts`) | `git ls-files` |
 | Satellite groups / satellites / mirrors | **94 / 156 / 54** | ranker |
 | Satellites encoding a ticket | **121 of 156 (78%)** | ranker — the remainder are the 6 gate-baselined no-base files (§9.32) plus group members the packing cannot legally collapse |
-| Removable files / lines | **0** (1,314 → 1,314) / **0** | ranker |
+| Removable files / lines | **0** (1,312 → 1,312) / **0** | ranker |
 | Line coverage | **96.37%** (74,777/77,597), floor 80% | `bun run test:coverage` |
-| Function coverage | **93.39–93.43%** (7,055/7,554), floor 80% | same, varies run to run |
+| Function coverage | **93.43%** (7,058/7,554), floor 80% | same, varies run to run |
 | Files below the per-file floor | **0**, baseline empty | same |
 
 **Everything is green. This is a debt drain, not a fix for a broken thing.** Coverage is 16
@@ -293,11 +296,15 @@ not as proof of correctness.
 - **Snapshots.** Five files use `toMatchSnapshot`; `.snap` entries are keyed by file *and*
   test name. None is currently in a group, but never move a snapshot-bearing test between
   files without moving its `.snap` entry.
-- **`report:test-overlap` and `report:dead-tests` are blind. Do not use them.** Both parse
-  only `src/`-prefixed specifiers while the tests use `@/` — **4,549 alias imports vs 27
-  literal**. `report:dead-tests` reports 0 dead imports having examined ~0.6% of them;
-  `report:test-overlap` reports "0 redundant, 0 partial, 124 unique", 124 being the
-  integration file count. They report success by not looking. Task 32 fixes or retires them.
+- **`report:test-overlap` and `report:dead-tests` were RETIRED 2026-09-21 (§9.36).** Both
+  parsed only `src/`-prefixed specifiers while the tests use `@/` — **4,549 alias imports vs
+  27 literal**. `report:dead-tests` reported 0 dead imports having examined ~0.6% of them;
+  `report:test-overlap` reported "0 redundant, 0 partial, 124 unique", 124 being the
+  integration file count. They reported success by not looking. Retired rather than fixed
+  because every recorded effect either tool had on the repo was a destructive false positive
+  (`report-dead-tests` alone cost five real test files at 98b27affe and the 24-test
+  `rule-based` optimizer built-in), and fixing the alias would only have armed
+  `report-test-overlap`'s delete-an-integration-test heuristic across 4,549 imports.
 
 ---
 
@@ -488,8 +495,8 @@ generated `.claude/rules/` copy regenerated via `bun bin/nax.ts rules export --a
 If you edit the rule, regenerate — `bun run check:rules-drift` fails otherwise.
 
 **Task 35: fix or retire `report:test-overlap` and `report:dead-tests`** (§1.6).
-**RULED 2026-09-21: RETIRE BOTH. See §9.35 for the argument. Not yet landed — this is
-the last open task in the drain.** The work is mechanical and fully specified below; it
+**RULED AND LANDED 2026-09-21: RETIRE BOTH — see §9.35 for the argument and §9.36 for
+the close (the last task in the drain).** The work was mechanical and fully specified below; it
 needs no re-derivation of the analysis.
 
 Delete, in one commit (`chore: retire the alias-blind test-report scripts`):
@@ -2142,3 +2149,53 @@ sanctioned test-count reduction in the drain outside Wave 5's collapses.
 Nothing is landed. Counts at ruling time are unchanged from §9.34: 19,526 tests / 1,314 files
 / 45,505 `expect()` / 43 skip / 0 fail. §3 Task 35 carries the deletion list and the expected
 post-change numbers.
+
+### 9.36 — 2026-09-21, Task 35 landed — the two alias-blind report scripts retired (Wave 6 / drain close, −32 tests)
+
+Executed the §9.35 ruling in one commit; deletions only, plus the two surviving
+references brought into agreement:
+
+| Path | Note |
+|:--|:--|
+| `scripts/report-dead-tests.ts` | removed |
+| `scripts/report-test-overlap.ts` | removed |
+| `test/unit/scripts/report-dead-tests.test.ts` | removed (350 lines) |
+| `test/unit/scripts/report-test-overlap.test.ts` | removed (223 lines) |
+| `docs/dead-tests-report.md` | removed — checked-in stale output whose one "finding" was its own test file |
+| `package.json` | the `report:test-overlap` / `report:dead-tests` entries removed |
+
+Also updated the two trap notes that named the tools: §1.6's bullet now records the
+retirement and why, and the "why not scripts/report-test-overlap.ts or
+report-dead-tests.ts" paragraph in `scripts/report-test-consolidation.ts`'s header was
+put in the past tense. The remaining mentions are historical and left alone — the
+`docs/superpowers/specs/2026-09-08-acp-catalog-pricing-design.md:240` warning, the
+archived `docs/plans/archive/LOG-no-explicit-any-drain.md`, and
+`test/unit/optimizer/index.test.ts`'s comment recording the `rule-based` built-in lost
+to a false positive.
+
+Runtime, read off `bun test` after the change — measured, not predicted:
+
+| | before | after |
+|:--|--:|--:|
+| unit tests / `expect()` / files | 18,168 / 42,357 / 1,185 | **18,136 / 42,304 / 1,183** |
+| integration tests / `expect()` / files | 1,260 / 2,999 / 119 | **1,260 / 2,999 / 119** |
+| ui tests / `expect()` / files | 98 / 149 / 10 | **98 / 149 / 10** |
+| **total tests** | **19,526** | **19,494** |
+| **`expect()`** | **45,505** | **45,452** |
+| skip / fail | 43 / 0 | **43 / 0** |
+| ranker files scanned | 1,314 | **1,312** |
+| ranker static sites / expects | 17,388 / 35,823 | **17,345 / 35,769** |
+
+Every figure matches §3's predicted table exactly. The −32 tests / −53 `expect()` is
+the drain's one sanctioned count reduction outside Wave 5's collapses — an explicitly
+recorded retirement of tests that pinned the blind behaviour of tools being deleted
+(§9.35), not the §0.3 red flag.
+
+Gates: `bun run check:all` 0 (including `check:test-satellites`, `check:file-sizes`
+and `check:gate-reachability`); both `tsc --noEmit` invocations clean; `bun run test`
+0 fail across all three phases; `test:coverage` **96.37% lines / 93.43% functions, 0
+files below the floor, empty grandfather baseline** — nothing re-baselined. No
+baseline in `scripts/baselines/` changed and no `src/` file was touched.
+
+**Wave 6 complete; the drain is done — Tasks 1–35 all landed.** §0 re-measured at
+this close.

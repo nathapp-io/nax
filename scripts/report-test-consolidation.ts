@@ -29,10 +29,10 @@
  *     Note the baseline records a file's size when it was grandfathered; a file that has
  *     since shrunk has real headroom up to its RECORDED number, which this accounts for.
  *
- * Why not scripts/report-test-overlap.ts or report-dead-tests.ts: both parse only
- * `src/`-prefixed import specifiers, but this repo's tests import through the `@/` alias
- * (measured 2026-09-21: 4,549 alias imports vs 27 literal `src/` ones). Both therefore
- * report ~nothing. See §1.5 of the STATUS doc.
+ * Why not scripts/report-test-overlap.ts or report-dead-tests.ts: both were RETIRED
+ * 2026-09-21 (STATUS §9.36). Both parsed only `src/`-prefixed import specifiers, but this
+ * repo's tests import through the `@/` alias (measured 2026-09-21: 4,549 alias imports vs
+ * 27 literal `src/` ones), so both reported ~nothing. See §1.6 of the STATUS doc.
  *
  * Usage:
  *   bun run report:test-consolidation                          # ranked table + headline counts

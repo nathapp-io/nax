@@ -56,8 +56,6 @@
     "test:coverage:report": "bun run scripts/check-coverage.ts --report",
     "test:coverage:update": "bun run scripts/check-coverage.ts --update-baseline",
     "test:coverage:list": "bun run scripts/check-coverage.ts --list",
-    "report:test-overlap": "bun run scripts/report-test-overlap.ts",
-    "report:dead-tests": "bun run scripts/report-dead-tests.ts",
     "report:test-consolidation": "bun run scripts/report-test-consolidation.ts",
     "check:test-mocks": "bun scripts/quiet-run.ts bun scripts/check-inline-test-mocks.ts --strict",
     "check:dispatch-context": "bun scripts/quiet-run.ts bash scripts/check-dispatch-context.sh",
