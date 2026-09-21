@@ -1727,3 +1727,49 @@ reverted with exact reverse edits, working diff byte-identical before/after.
 Wave 4 running total: **-19 files**. Cumulative: **-132**. Three Wave-4 groups
 remain per §3: `verify-op` (4→2), `manifest-builder` (4→2),
 `pipeline-result-handler` (4→2).
+
+### 9.29 — 2026-09-21, Task 29 landed — operations/verify-op group 4 → 2 files (-55 lines)
+
+Hit the packed target exactly: 4 → 2 files, 1,016 → 961 lines. All 50 group
+static sites / 49 receiver runtime tests preserved. Unit phase 18,311 / 42,334
+unchanged; full suite 0 fail, `check:all` 0, both tsc clean, coverage 96.36%
+lines / 93.42% functions, 0 below floor. Ranker `_deps unrestored 0` (group
+carried no `⚠deps` flag).
+
+One receiver, per the packer's bin 1: `verify-op.test.ts` (375l → **742l**)
+absorbs `verify-op-normalized-findings` (AC1/AC2/AC3 normalizedFindings) +
+`verify-op-parse-retry` (parse success, retry declaration, recover fail-closed).
+`verify-op-recover.test.ts` (219l) stays alone (bin 2).
+
+**Landed 742l, over the 650 fill target but 58 under the cap** — the packer's
+626l estimate again followed the preamble-dedup understatement (§9.5/9.13/9.22/
+9.28): base = package-view/parse-ctx fixtures, normalized = five verdict-builder
+helpers, parse-retry = its own verdict object + tempdir recover harness. Only
+the `makePackageView`/`makeParseCtx` pair and the import block deduped.
+Alternative seam (parse-retry's recover describe into `verify-op-recover`) was
+considered and rejected: it would pull `verify-op-recover` in as a second
+receiver with its own colliding `STORY`/`makePackageView`/`ctx`, for a net
+reduction of ~130l off one file at the cost of a much larger collision surface.
+742l is within the 700–799 precedent (§9.5 799, §9.12 705/701/696, §9.20 726,
+§9.22 725) and files hit the target.
+
+Dedup: base's `makePackageView` gained an optional `packageDir = ""` (parse-retry
+called it with a dir; base/normalized with none); normalized's `makeCtx` was an
+exact duplicate of the base's `makeParseCtx` and its call sites now use that, so
+only parse-retry's disk-aware `makeCtx(packageDir)` remains. parse-retry's
+`VALID_VERDICT`/`VALID_VERDICT_JSON` renamed `RETRY_VALID_VERDICT`/
+`RETRY_VALID_VERDICT_JSON` to survive the base's own `VALID_VERDICT_JSON`.
+Imports merged: `join` (`node:path`), `cleanupTempDir`/`makeTempDir`
+(`@test/helpers`). All absorbed `beforeEach`/`afterEach` (logger spy; tempdir)
+stay scoped inside their own describes (§1.6). No describe-name collisions.
+
+Deletes (2): `verify-op-normalized-findings`, `verify-op-parse-retry`.
+
+Mutation check: 4 flipped assertions across the absorbed describes — AC1
+`category === "tests-failed"`, AC3 `fixTarget === "test"`, parse-success
+`out.success === true`, recover `reviewReason` regex → 4 distinct failures,
+45 pass; all reverted with exact reverse edits, working diff byte-identical
+before/after.
+
+Wave 4 running total: **-21 files**. Cumulative: **-134**. Two Wave-4 groups
+remain per §3: `manifest-builder` (4→2), `pipeline-result-handler` (4→2).
