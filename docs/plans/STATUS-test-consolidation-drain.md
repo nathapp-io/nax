@@ -1088,3 +1088,40 @@ unrelated pass, reverted both. Post-commit re-run clean.
 Runtime invariants (junit-measured): unit 18,247 t / 42,169 a / 7 skip;
 integration 1,254 / 2,980 / 36; ui 98 / 149 / 0. **45,298 expect() total —
 unchanged, the mandatory invariant.**
+
+### 9.16 — 2026-09-21, Task 14 landed — coding-tool-support group 7 → 2 files (-52 lines)
+
+Hit the packed target exactly: 7 → 2 files, 1,499 → 1,447 lines, all 65 tests /
+(unit-phase) 42,169 expect() preserved. Unit phase 18,247 / 42,169 unchanged,
+full suite 0 fail, `check:all` 0, both tsc clean, coverage 96.32% lines /
+93.39–93.41% functions, 0 below floor. Ranker `_deps unrestored 0` (group
+carried no `⚠deps` flag; the one `_argvExecDeps.spawn` stub is try/finally
+restored inline).
+
+One receiver: `coding-tool-support-scratchpad.test.ts` (686l — largest member,
+absorbs all five siblings: bash, exec-package, exec, providers, session-name —
+all suites of the same module above the pinned base, which stays alone at
+761l). **686l is over the 650 fill target but 114 under the 800 cap** (§9.12
+landed 705/701/696, §9.5 landed 799). The packer's 629l bin charged a 42-line
+max-preamble for six members whose fixture families do not dedupe
+(staticProvider/ctx/names vs execPwdGrants/cwdLines vs scratchpadRoot
+beforeAll vs bashRoot/rootA/rootB hooks vs buildAt) — the same
+understatement class as §9.5/§9.13.
+
+Renames: `scratchpadRoot` (was `root` ×2: scratchpad + bash, plus the
+resolvePackageName describe-scoped `root` kept local), `bashRoot`/`rootA`/
+`rootB` in one shared top-level pair (bash + providers hooks merged — every
+test creates and cleans all three dirs, harmless), `buildAt` (was bash's
+`support` wrapper). Hooks merged: three tempdir families → one beforeEach/
+afterEach pair + the pre-existing unreaped scratchpad `beforeAll`.
+
+Deletes (5): `coding-tool-support-bash`, `coding-tool-support-exec-package`,
+`coding-tool-support-exec`, `coding-tool-support-providers`,
+`coding-tool-support-session-name`.
+
+Mutation check: flipped two assertions in distinct describes (AC6
+`not.toContain("Write")` → `toContain`; session-name fallback
+`"US-001"` → `"US-001-does-not-exist"`) → 2 distinct failures, 63 unrelated
+pass; reverted. Post-commit re-run clean (0 fail, 65 tests). Group now at
+floor per ranker. Static expect sites 147 = group baseline (no `only()`-style
+dedup this time; the baseline static count matches).
