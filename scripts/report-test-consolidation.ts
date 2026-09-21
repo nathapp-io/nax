@@ -41,6 +41,13 @@
  *   bun run report:test-consolidation --json                   # machine-readable
  *
  * Exit codes: 0 on a successful report; 1 if --group names no group or an ambiguous one.
+ *
+ * The pure primitives (`walk`, `readStat`, `buildGroups`, `packGroup`, and the
+ * constants above them) are exported so `scripts/check-test-satellites.ts` and its
+ * unit test can reuse one definition of "satellite"/"ticket"/"mirror" instead of
+ * re-implementing them. Everything that scans the repo or writes to stdout lives in
+ * `main()`, run only under `import.meta.main`, so importing this module is free of
+ * side effects (it used to scan and `process.exit` at module load).
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -48,7 +55,7 @@ import { basename, dirname, join } from "node:path";
 const ROOT = join(import.meta.dir, "..");
 
 /** `check-file-sizes.ts` TEST_LIMIT. A merged file above this breaks `bun run lint`. */
-const TEST_LINE_LIMIT = 800;
+export const TEST_LINE_LIMIT = 800;
 
 /**
  * Target fill for a merged file, below the hard cap.
@@ -57,31 +64,31 @@ const TEST_LINE_LIMIT = 800;
  * full and a new `<module>-<ticket>.test.ts` is what this drain exists to remove. Leaving
  * ~150 lines per file keeps the drain from creating the problem it fixes.
  */
-const FILL_TARGET = 650;
+export const FILL_TARGET = 650;
 
 /** Scanned population. `test/e2e/` is its own CI step (`bun run test:e2e`) and is out of scope. */
-const SCAN_DIRS = ["test/unit", "test/integration", "test/ui"];
+export const SCAN_DIRS = ["test/unit", "test/integration", "test/ui"];
 
 /** Names/headers matching this encode a ticket rather than a concern — rule §2 violations. */
-const TICKET_RE = /(#\s?\d{3,4}|nax#\d+|\bUS-\d+\b|\bAC\d+\b|ADR-\d+|issue\s?\d+|BUG-\d+|Task \d+)/i;
+export const TICKET_RE = /(#\s?\d{3,4}|nax#\d+|\bUS-\d+\b|\bAC\d+\b|ADR-\d+|issue\s?\d+|BUG-\d+|Task \d+)/i;
 
 /**
  * Only the shared-helper and fixture ROOTS are skipped, not every directory named
  * `helpers`: `test/unit/helpers/*.test.ts` are real tests of the helpers and belong in
  * the population (the first version skipped them and under-counted by 3).
  */
-const SKIP_ROOTS = new Set(["test/helpers", "test/fixtures", "test/.tmp", "test/tmp"]);
+export const SKIP_ROOTS = new Set(["test/helpers", "test/fixtures", "test/.tmp", "test/tmp"]);
 
 const BASELINE_PATH = join(import.meta.dir, "baselines", "file-sizes-baseline.json");
 
 /** Match `check-file-sizes.ts` countLines exactly: a trailing newline is not a line. */
-function countLines(text: string): number {
+export function countLines(text: string): number {
   if (text.length === 0) return 0;
   const n = text.split("\n").length;
   return text.endsWith("\n") ? n - 1 : n;
 }
 
-type RestoreKind =
+export type RestoreKind =
   /** Mutates `_deps` and restores it (afterEach / finally / withDepsRestore). */
   | "restored"
   /** Mutates `_deps` with no restore of any kind — a genuine merge hazard. */
@@ -91,7 +98,7 @@ type RestoreKind =
   /** Does not mutate a module-level `_deps`. */
   | "n/a";
 
-type FileStat = {
+export type FileStat = {
   path: string;
   /** Static `test(`/`it(` sites. NOT the runtime test count — `.each` expands at runtime. */
   staticTests: number;
@@ -110,7 +117,7 @@ type FileStat = {
   describes: string[];
 };
 
-function walk(dir: string, out: string[] = []): string[] {
+export function walk(dir: string, out: string[] = []): string[] {
   if (SKIP_ROOTS.has(dir)) return out;
   let entries: string[];
   try {
@@ -127,7 +134,7 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 /** Does a `src/` module of the same name exist for this test path? */
-function mirrorsSrcModule(testPath: string): boolean {
+export function mirrorsSrcModule(testPath: string): boolean {
   const stem = testPath.replace(/^test\/(unit|integration|ui)\//, "src/").replace(/\.test\.tsx?$/, "");
   return [".ts", ".tsx", "/index.ts", "/index.tsx"].some((suffix) => existsSync(join(ROOT, stem + suffix)));
 }
@@ -161,7 +168,7 @@ const DEPS_ASSIGN = /_\w*[Dd]eps\s*(?:\.\s*\w+\s*=|\[)|Object\.assign\(\s*_\w*[D
  * positives sent Task 1 at correct code, the false negatives hid real hazards inside
  * groups the table showed as clean.
  */
-function classifyRestore(content: string): RestoreKind {
+export function classifyRestore(content: string): RestoreKind {
   if (!DEPS_ASSIGN.test(content)) return "n/a";
   if (/withDepsRestore/.test(content)) return "restored";
   if (/finally\s*\{/.test(content)) return "restored";
@@ -171,11 +178,7 @@ function classifyRestore(content: string): RestoreKind {
   return "unrestored";
 }
 
-const frozen: Record<string, number> = existsSync(BASELINE_PATH)
-  ? (JSON.parse(readFileSync(BASELINE_PATH, "utf8")).byFile ?? {})
-  : {};
-
-function readStat(path: string): FileStat {
+export function readStat(path: string, frozen: Record<string, number> = {}): FileStat {
   const content = readFileSync(join(ROOT, path), "utf8");
   const firstDescribe = content.search(/^describe\s*\(/m);
   return {
@@ -197,7 +200,7 @@ function readStat(path: string): FileStat {
  * Assign each file to its OUTERMOST base — the SHORTEST hyphen-prefix in the same
  * directory that is itself a test file — so nested groups collapse into one.
  */
-function buildGroups(paths: string[]): Map<string, string[]> {
+export function buildGroups(paths: string[]): Map<string, string[]> {
   const present = new Set(paths);
   const groups = new Map<string, string[]>();
   for (const path of paths) {
@@ -221,7 +224,7 @@ function buildGroups(paths: string[]): Map<string, string[]> {
   return groups;
 }
 
-type Bin = { lines: number; members: string[]; frozen: boolean };
+export type Bin = { lines: number; members: string[]; frozen: boolean };
 
 /**
  * First-fit-decreasing pack of a group's mergeable members into files.
@@ -233,7 +236,7 @@ type Bin = { lines: number; members: string[]; frozen: boolean };
  *     the budget gets its own bin and is reported as unmergeable.
  *   - A frozen base is pinned as a bin that receives nothing, up to its RECORDED size.
  */
-function packGroup(members: FileStat[], basePath: string): { bins: Bin[]; unmergeable: string[] } {
+export function packGroup(members: FileStat[], basePath: string): { bins: Bin[]; unmergeable: string[] } {
   const bins: Bin[] = [];
   const unmergeable: string[] = [];
 
@@ -267,11 +270,7 @@ function packGroup(members: FileStat[], basePath: string): { bins: Bin[]; unmerg
   return { bins, unmergeable };
 }
 
-const paths = SCAN_DIRS.flatMap((d) => walk(d));
-const stats = new Map(paths.map((p) => [p, readStat(p)] as const));
-const groups = buildGroups(paths);
-
-type Row = {
+export type Row = {
   base: string;
   members: number;
   /** Satellites excluding mirrors — the population this drain may touch. */
@@ -291,179 +290,195 @@ type Row = {
   frozenBases: string[];
 };
 
-const rows: Row[] = [];
-for (const [base, satellites] of groups) {
-  const all = [base, ...satellites].map((p) => stats.get(p) as FileStat);
-  const { bins, unmergeable } = packGroup(all, base);
-  const lines = all.reduce((a, m) => a + m.lines, 0);
-  const packedLines = bins.reduce((a, b) => a + b.lines, 0);
-  rows.push({
-    base,
-    members: all.length,
-    satellites: satellites.filter((p) => !stats.get(p)?.mirror).length,
-    mirrors: all.filter((m) => m.mirror && m.path !== base).map((m) => m.path),
-    staticTests: all.reduce((a, m) => a + m.staticTests, 0),
-    expects: all.reduce((a, m) => a + m.expects, 0),
-    lines,
-    packedFiles: bins.length,
-    packedLines,
-    removableFiles: all.length - bins.length,
-    removableLines: lines - packedLines,
-    ticketSatellites: satellites.filter((p) => stats.get(p)?.ticket && !stats.get(p)?.mirror).length,
-    unrestored: all.filter((m) => m.restore === "unrestored").map((m) => m.path),
-    unclear: all.filter((m) => m.restore === "unclear").map((m) => m.path),
-    unmergeable,
-    frozenBases: all.filter((m) => m.frozenAt !== undefined).map((m) => m.path),
-  });
-}
-rows.sort((a, b) => b.removableFiles - a.removableFiles || b.removableLines - a.removableLines);
+async function main() {
+  const frozen: Record<string, number> = existsSync(BASELINE_PATH)
+    ? (JSON.parse(readFileSync(BASELINE_PATH, "utf8")).byFile ?? {})
+    : {};
 
-const argv = process.argv.slice(2);
+  const paths = SCAN_DIRS.flatMap((d) => walk(d));
+  const stats = new Map(paths.map((p) => [p, readStat(p, frozen)] as const));
+  const groups = buildGroups(paths);
 
-if (argv.includes("--mirrors")) {
-  const satellitePaths = new Set([...groups.values()].flat());
-  const mirrors = paths.filter((p) => stats.get(p)?.mirror && satellitePaths.has(p));
-  console.log(`Mirrors — satellites that ARE the per-source test file. NEVER merge these. (${mirrors.length})`);
-  for (const p of mirrors.sort()) {
-    const stem = p.replace(/^test\/(unit|integration|ui)\//, "src/").replace(/\.test\.tsx?$/, "");
-    const src = [".ts", ".tsx", "/index.ts"].map((s) => stem + s).find((s) => existsSync(join(ROOT, s)));
-    console.log(`  ${p}\n      → ${src}`);
+  const rows: Row[] = [];
+  for (const [base, satellites] of groups) {
+    const all = [base, ...satellites].map((p) => stats.get(p) as FileStat);
+    const { bins, unmergeable } = packGroup(all, base);
+    const lines = all.reduce((a, m) => a + m.lines, 0);
+    const packedLines = bins.reduce((a, b) => a + b.lines, 0);
+    rows.push({
+      base,
+      members: all.length,
+      satellites: satellites.filter((p) => !stats.get(p)?.mirror).length,
+      mirrors: all.filter((m) => m.mirror && m.path !== base).map((m) => m.path),
+      staticTests: all.reduce((a, m) => a + m.staticTests, 0),
+      expects: all.reduce((a, m) => a + m.expects, 0),
+      lines,
+      packedFiles: bins.length,
+      packedLines,
+      removableFiles: all.length - bins.length,
+      removableLines: lines - packedLines,
+      ticketSatellites: satellites.filter((p) => stats.get(p)?.ticket && !stats.get(p)?.mirror).length,
+      unrestored: all.filter((m) => m.restore === "unrestored").map((m) => m.path),
+      unclear: all.filter((m) => m.restore === "unclear").map((m) => m.path),
+      unmergeable,
+      frozenBases: all.filter((m) => m.frozenAt !== undefined).map((m) => m.path),
+    });
   }
-  process.exit(0);
-}
+  rows.sort((a, b) => b.removableFiles - a.removableFiles || b.removableLines - a.removableLines);
 
-if (argv.includes("--group")) {
-  const requested = argv[argv.indexOf("--group") + 1];
-  if (!requested) {
-    console.error("--group needs a base test path. Run without --group to list the groups.");
-    process.exit(1);
-  }
-  const matches = rows.filter((r) => r.base === requested || r.base.endsWith(`/${requested}`));
-  if (matches.length === 0) {
-    console.error(`No group with base ${requested}. Run without --group to list them.`);
-    process.exit(1);
-  }
-  if (matches.length > 1) {
-    console.error(`Ambiguous: ${requested} matches ${matches.length} groups. Use the full path:`);
-    for (const m of matches) console.error(`    ${m.base}`);
-    process.exit(1);
-  }
-  const row = matches[0];
-  const all = [row.base, ...(groups.get(row.base) ?? [])];
-  const { bins } = packGroup(
-    all.map((p) => stats.get(p) as FileStat),
-    row.base,
-  );
-  console.log(`GROUP ${row.base}`);
-  console.log(
-    `  ${row.members} files, ${row.staticTests} static test sites, ${row.expects} expect(), ${row.lines} lines`,
-  );
-  console.log(
-    `  packs to ${row.packedFiles} files / ${row.packedLines} lines  (-${row.removableFiles} files, -${row.removableLines} lines)`,
-  );
-  console.log(`  fill target ${FILL_TARGET}, hard cap ${TEST_LINE_LIMIT}`);
-  if (row.mirrors.length) {
-    console.log(`\n  MIRRORS — do NOT merge, each is its own src module's test file:`);
-    for (const p of row.mirrors) console.log(`      ${p}`);
-  }
-  if (row.frozenBases.length) {
-    console.log(`\n  FROZEN (file-sizes-baseline) — receives nothing:`);
-    for (const p of row.frozenBases) {
-      const s = stats.get(p) as FileStat;
-      const head = (s.frozenAt ?? 0) - s.lines;
-      console.log(
-        `      ${p}  ${s.lines}l, recorded ${s.frozenAt}l${head > 0 ? ` (${head}l headroom)` : " (no headroom)"}`,
-      );
+  const argv = process.argv.slice(2);
+
+  if (argv.includes("--mirrors")) {
+    const satellitePaths = new Set([...groups.values()].flat());
+    const mirrors = paths.filter((p) => stats.get(p)?.mirror && satellitePaths.has(p));
+    console.log(`Mirrors — satellites that ARE the per-source test file. NEVER merge these. (${mirrors.length})`);
+    for (const p of mirrors.sort()) {
+      const stem = p.replace(/^test\/(unit|integration|ui)\//, "src/").replace(/\.test\.tsx?$/, "");
+      const src = [".ts", ".tsx", "/index.ts"].map((s) => stem + s).find((s) => existsSync(join(ROOT, s)));
+      console.log(`  ${p}\n      → ${src}`);
     }
+    process.exit(0);
   }
-  if (row.unrestored.length) {
-    console.log(`\n  ⚠ mutates _deps with NO restore — fix before merging:`);
-    for (const p of row.unrestored) console.log(`      ${p}`);
-  }
-  if (row.unclear.length) {
-    console.log(`\n  ? mutates _deps, has a hook, no restore detected — READ before merging:`);
-    for (const p of row.unclear) console.log(`      ${p}`);
-  }
-  console.log(`\n  proposed packing:`);
-  for (const [i, b] of bins.entries()) {
-    console.log(`    bin ${i + 1}: ${b.lines}l${b.frozen ? " (pinned)" : ""}`);
-    for (const p of b.members) {
-      const s = stats.get(p) as FileStat;
-      console.log(
-        `        ${String(s.lines).padStart(4)}l (preamble ${String(s.preamble).padStart(3)}, body ${String(s.lines - s.preamble).padStart(4)})  ${p}`,
-      );
+
+  if (argv.includes("--group")) {
+    const requested = argv[argv.indexOf("--group") + 1];
+    if (!requested) {
+      console.error("--group needs a base test path. Run without --group to list the groups.");
+      process.exit(1);
     }
+    const matches = rows.filter((r) => r.base === requested || r.base.endsWith(`/${requested}`));
+    if (matches.length === 0) {
+      console.error(`No group with base ${requested}. Run without --group to list them.`);
+      process.exit(1);
+    }
+    if (matches.length > 1) {
+      console.error(`Ambiguous: ${requested} matches ${matches.length} groups. Use the full path:`);
+      for (const m of matches) console.error(`    ${m.base}`);
+      process.exit(1);
+    }
+    const row = matches[0];
+    const all = [row.base, ...(groups.get(row.base) ?? [])];
+    const { bins } = packGroup(
+      all.map((p) => stats.get(p) as FileStat),
+      row.base,
+    );
+    console.log(`GROUP ${row.base}`);
+    console.log(
+      `  ${row.members} files, ${row.staticTests} static test sites, ${row.expects} expect(), ${row.lines} lines`,
+    );
+    console.log(
+      `  packs to ${row.packedFiles} files / ${row.packedLines} lines  (-${row.removableFiles} files, -${row.removableLines} lines)`,
+    );
+    console.log(`  fill target ${FILL_TARGET}, hard cap ${TEST_LINE_LIMIT}`);
+    if (row.mirrors.length) {
+      console.log(`\n  MIRRORS — do NOT merge, each is its own src module's test file:`);
+      for (const p of row.mirrors) console.log(`      ${p}`);
+    }
+    if (row.frozenBases.length) {
+      console.log(`\n  FROZEN (file-sizes-baseline) — receives nothing:`);
+      for (const p of row.frozenBases) {
+        const s = stats.get(p) as FileStat;
+        const head = (s.frozenAt ?? 0) - s.lines;
+        console.log(
+          `      ${p}  ${s.lines}l, recorded ${s.frozenAt}l${head > 0 ? ` (${head}l headroom)` : " (no headroom)"}`,
+        );
+      }
+    }
+    if (row.unrestored.length) {
+      console.log(`\n  ⚠ mutates _deps with NO restore — fix before merging:`);
+      for (const p of row.unrestored) console.log(`      ${p}`);
+    }
+    if (row.unclear.length) {
+      console.log(`\n  ? mutates _deps, has a hook, no restore detected — READ before merging:`);
+      for (const p of row.unclear) console.log(`      ${p}`);
+    }
+    console.log(`\n  proposed packing:`);
+    for (const [i, b] of bins.entries()) {
+      console.log(`    bin ${i + 1}: ${b.lines}l${b.frozen ? " (pinned)" : ""}`);
+      for (const p of b.members) {
+        const s = stats.get(p) as FileStat;
+        console.log(
+          `        ${String(s.lines).padStart(4)}l (preamble ${String(s.preamble).padStart(3)}, body ${String(s.lines - s.preamble).padStart(4)})  ${p}`,
+        );
+      }
+    }
+    console.log(`\n  members in detail:`);
+    for (const p of all) {
+      const s = stats.get(p) as FileStat;
+      const flags = [
+        s.mirror ? "MIRROR" : "",
+        s.ticket ? "ticket" : "",
+        s.restore === "unrestored" ? "deps!" : "",
+        s.restore === "unclear" ? "deps?" : "",
+      ]
+        .filter(Boolean)
+        .join(",");
+      console.log(`  ${String(s.staticTests).padStart(3)}t ${String(s.lines).padStart(4)}l ${flags.padEnd(20)} ${p}`);
+      for (const d of s.describes) console.log(`        describe: ${d.slice(0, 96)}`);
+    }
+    process.exit(0);
   }
-  console.log(`\n  members in detail:`);
-  for (const p of all) {
-    const s = stats.get(p) as FileStat;
+
+  const allStats = [...stats.values()];
+  const totals = {
+    scope: SCAN_DIRS.join(" + "),
+    files: paths.length,
+    staticTests: allStats.reduce((a, s) => a + s.staticTests, 0),
+    eachSites: allStats.reduce((a, s) => a + s.eachSites, 0),
+    expects: allStats.reduce((a, s) => a + s.expects, 0),
+    lines: allStats.reduce((a, s) => a + s.lines, 0),
+    groups: rows.length,
+    satellites: rows.reduce((a, r) => a + r.satellites, 0),
+    mirrors: rows.reduce((a, r) => a + r.mirrors.length, 0),
+    ticketSatellites: rows.reduce((a, r) => a + r.ticketSatellites, 0),
+    removableFiles: rows.reduce((a, r) => a + r.removableFiles, 0),
+    removableLines: rows.reduce((a, r) => a + r.removableLines, 0),
+    unrestored: [...new Set(rows.flatMap((r) => r.unrestored))].length,
+    unclear: [...new Set(rows.flatMap((r) => r.unclear))].length,
+  };
+
+  if (argv.includes("--json")) {
+    console.log(JSON.stringify({ totals, rows }, null, 2));
+    process.exit(0);
+  }
+
+  console.log("Test-consolidation ranker");
+  console.log(`  scope              ${totals.scope}  (test/e2e/ excluded — separate CI step)`);
+  console.log(`  scanned            ${totals.files} files, ${totals.lines} lines, ${totals.expects} expect()`);
+  console.log(
+    `  static test sites  ${totals.staticTests}  + ${totals.eachSites} .each sites — NOT the runtime count, use \`bun test\``,
+  );
+  console.log(`  satellite groups   ${totals.groups}  (nested bases collapsed into their outermost ancestor)`);
+  console.log(
+    `  satellites         ${totals.satellites}  (${totals.ticketSatellites} encode a ticket — rule §2 violations)`,
+  );
+  console.log(`  mirrors            ${totals.mirrors}  EXCLUDED — each is its own src module's test file (--mirrors)`);
+  console.log(
+    `  _deps unrestored   ${totals.unrestored} files with no restore; ${totals.unclear} need a read (hook, no visible restore)`,
+  );
+  console.log(
+    `  removable files    ${totals.removableFiles}   (packed to ${FILL_TARGET}, hard cap ${TEST_LINE_LIMIT})`,
+  );
+  console.log(`  removable lines    ${totals.removableLines}`);
+  console.log("");
+  console.log("  -files  -lines  files→packed  base");
+  for (const r of rows.filter((x) => x.removableFiles > 0)) {
     const flags = [
-      s.mirror ? "MIRROR" : "",
-      s.ticket ? "ticket" : "",
-      s.restore === "unrestored" ? "deps!" : "",
-      s.restore === "unclear" ? "deps?" : "",
+      r.unrestored.length ? "⚠deps" : "",
+      r.unclear.length ? "?deps" : "",
+      r.mirrors.length ? `${r.mirrors.length}mirror` : "",
+      r.unmergeable.length ? "pinned" : "",
     ]
       .filter(Boolean)
-      .join(",");
-    console.log(`  ${String(s.staticTests).padStart(3)}t ${String(s.lines).padStart(4)}l ${flags.padEnd(20)} ${p}`);
-    for (const d of s.describes) console.log(`        describe: ${d.slice(0, 96)}`);
+      .join(" ");
+    console.log(
+      `  ${String(r.removableFiles).padStart(6)}  ${String(r.removableLines).padStart(6)}  ${String(r.members).padStart(5)}→${String(r.packedFiles).padEnd(5)}  ${r.base}${flags ? `  ${flags}` : ""}`,
+    );
   }
-  process.exit(0);
+  console.log("");
+  console.log(`  groups already at their floor: ${rows.filter((r) => r.removableFiles <= 0).length}`);
 }
 
-const allStats = [...stats.values()];
-const totals = {
-  scope: SCAN_DIRS.join(" + "),
-  files: paths.length,
-  staticTests: allStats.reduce((a, s) => a + s.staticTests, 0),
-  eachSites: allStats.reduce((a, s) => a + s.eachSites, 0),
-  expects: allStats.reduce((a, s) => a + s.expects, 0),
-  lines: allStats.reduce((a, s) => a + s.lines, 0),
-  groups: rows.length,
-  satellites: rows.reduce((a, r) => a + r.satellites, 0),
-  mirrors: rows.reduce((a, r) => a + r.mirrors.length, 0),
-  ticketSatellites: rows.reduce((a, r) => a + r.ticketSatellites, 0),
-  removableFiles: rows.reduce((a, r) => a + r.removableFiles, 0),
-  removableLines: rows.reduce((a, r) => a + r.removableLines, 0),
-  unrestored: [...new Set(rows.flatMap((r) => r.unrestored))].length,
-  unclear: [...new Set(rows.flatMap((r) => r.unclear))].length,
-};
-
-if (argv.includes("--json")) {
-  console.log(JSON.stringify({ totals, rows }, null, 2));
-  process.exit(0);
+if (import.meta.main) {
+  await main();
 }
-
-console.log("Test-consolidation ranker");
-console.log(`  scope              ${totals.scope}  (test/e2e/ excluded — separate CI step)`);
-console.log(`  scanned            ${totals.files} files, ${totals.lines} lines, ${totals.expects} expect()`);
-console.log(
-  `  static test sites  ${totals.staticTests}  + ${totals.eachSites} .each sites — NOT the runtime count, use \`bun test\``,
-);
-console.log(`  satellite groups   ${totals.groups}  (nested bases collapsed into their outermost ancestor)`);
-console.log(
-  `  satellites         ${totals.satellites}  (${totals.ticketSatellites} encode a ticket — rule §2 violations)`,
-);
-console.log(`  mirrors            ${totals.mirrors}  EXCLUDED — each is its own src module's test file (--mirrors)`);
-console.log(
-  `  _deps unrestored   ${totals.unrestored} files with no restore; ${totals.unclear} need a read (hook, no visible restore)`,
-);
-console.log(`  removable files    ${totals.removableFiles}   (packed to ${FILL_TARGET}, hard cap ${TEST_LINE_LIMIT})`);
-console.log(`  removable lines    ${totals.removableLines}`);
-console.log("");
-console.log("  -files  -lines  files→packed  base");
-for (const r of rows.filter((x) => x.removableFiles > 0)) {
-  const flags = [
-    r.unrestored.length ? "⚠deps" : "",
-    r.unclear.length ? "?deps" : "",
-    r.mirrors.length ? `${r.mirrors.length}mirror` : "",
-    r.unmergeable.length ? "pinned" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  console.log(
-    `  ${String(r.removableFiles).padStart(6)}  ${String(r.removableLines).padStart(6)}  ${String(r.members).padStart(5)}→${String(r.packedFiles).padEnd(5)}  ${r.base}${flags ? `  ${flags}` : ""}`,
-  );
-}
-console.log("");
-console.log(`  groups already at their floor: ${rows.filter((r) => r.removableFiles <= 0).length}`);
