@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { assertCaughtInstanceOf } from "@test/helpers";
-import { _acpAdapterDeps, AcpAgentAdapter } from "@/agents/acp/adapter";
+import { _acpAdapterDeps, AcpAgentAdapter, computeAcpHandle } from "@/agents/acp/adapter";
 import type { AgentRunOptions } from "@/agents/types";
 import { CompleteError } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
@@ -580,5 +580,23 @@ describe("_acpAdapterDeps", () => {
   test("is exported from the module", () => {
     expect(_acpAdapterDeps).toBeDefined();
     expect(typeof _acpAdapterDeps).toBe("object");
+  });
+});
+
+// computeAcpHandle() — stable ACP session names (Phase 1 plumbing, from
+// adapter-phase1.test.ts). protocolIds tests (adapter.run() calls) were
+// removed in ADR-019 Phase D.
+describe("computeAcpHandle", () => {
+  const workdir = "/tmp/test-project";
+
+  test("produces stable handle for implementer role", () => {
+    const actual = computeAcpHandle(workdir, "my-feat", "US-001", "implementer");
+    const again = computeAcpHandle(workdir, "my-feat", "US-001", "implementer");
+    expect(actual).toBe(again);
+  });
+
+  test("includes role suffix for reviewer session", () => {
+    const actual = computeAcpHandle(workdir, "my-feat", "US-001", "reviewer-semantic");
+    expect(actual.endsWith("-reviewer-semantic")).toBe(true);
   });
 });
