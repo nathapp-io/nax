@@ -849,4 +849,38 @@ corrupted a sibling assertion via blanket replace; fixed by restoring the specif
 `toBeUndefined()` at the budgetPressure AC-2 line). `_deps` hooks merged to one
 top-level pair per file (Task 2's restores preserved).
 
-### 9.9 — next entry goes here
+### 9.9 — 2026-09-21, Task 8 landed — story-orchestrator group 20 → 12 files (-587 lines)
+
+Hit the packed target: 20 → 12 files, 8,581 → 7,994 lines, all 264 tests / 532
+expect() preserved. Unit phase 18,247 / 42,169 unchanged, full suite 0 fail,
+`check:all` 0, both tsc clean, coverage 96.32% / 93.40%, 0 below floor.
+
+Bins per the packer, seam assignment mine:
+
+- `resume-integration` absorbs `rectification-no-dispatch` (794l).
+- `rectification-exhaustion` absorbs `bail` + `revalidation-repo-scope` (724l).
+- `revalidation` absorbs `check-ops` + `duplicate-phase` (714l).
+- `resume-guard` absorbs `review-continuation` (708l).
+- `run-phase-events` absorbs `review-no-dispatch` + `extract-findings` (795l).
+- `flake-integration` (757l), `carveout-staleness` (666l), `logs` (415l),
+  `no-progress-bail` (402l), `revalidation-carveout` (369l) stay alone (bodies too
+  large to share at the 650 fill target).
+- `story-orchestrator.test.ts` frozen base (1998l) and `story-orchestrator-logging`
+  (MIRROR) untouched.
+
+Deletes (8): `rectification-no-dispatch`, `bail`, `revalidation-repo-scope`,
+`check-ops`, `duplicate-phase`, `review-continuation`, `review-no-dispatch`,
+`extract-findings`.
+
+Delegated to a subagent (recipe proven in §9.7/§9.8); post-delegation verification by
+me: 264/532 reproduced, all receivers ≤ 795l, mutation check 5 merged receivers × one
+flipped assertion → 5 distinct failures, reverted (one revert needed a manual restore
+of a `toHaveLength(1)` value verified against the receiver's HEAD version). `_deps`
+hooks merged to one top-level pair per file where same-key.
+
+Wave 1 complete: callOp (-11 f), curator (-11 f), agents/manager (-11 f),
+orchestrator (-8 f), story-orchestrator (-8 f) = **-49 files** against the plan's
+Wave-1 target of -52 (the 3-file shortfall is the documented over-target landings in
+§9.5 callOp and §9.8 orchestrator).
+
+### 9.10 — next entry goes here

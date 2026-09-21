@@ -14,12 +14,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeTestRuntime } from "@test/helpers";
+import { assertNaxError, makeStory, makeTestRuntime } from "@test/helpers";
+import { pickSelector } from "@/config";
+import { NaxError } from "@/errors";
 import { _storyOrchestratorDeps, orderGateLast, StoryOrchestratorBuilder } from "@/execution";
 import type { PhaseKind } from "@/execution/story-orchestrator/types";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
-import type { CallContext } from "@/operations";
+import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import {
   LINT_FINDING,
@@ -510,5 +512,203 @@ describe("orderGateLast — pure ordering helper", () => {
   test("is a no-op when there is no full-suite-gate phase", () => {
     const input = [mk("lint-check"), mk("typecheck-check"), mk("semantic-review")];
     expect(orderGateLast(input).map((p) => p.kind)).toEqual(["lint-check", "typecheck-check", "semantic-review"]);
+  });
+});
+
+// ===========================================================================
+// StoryOrchestratorBuilder — Check Ops (absorbed from
+// story-orchestrator-check-ops.test.ts)
+// ===========================================================================
+
+const testSel = pickSelector("test-orchestrator-sel", "execution");
+
+/** The op fixtures' config slice, derived from the selector so the two cannot drift. */
+type TestOpConfig = ReturnType<(typeof testSel)["select"]>;
+
+const checkOpsMockImplementerOp: RunOperation<{ code: string }, { success: boolean }, TestOpConfig> = {
+  kind: "run",
+  name: "mock-implementer",
+  stage: "run",
+  config: testSel,
+  session: { role: "implementer", lifetime: "warm" },
+  build: () => ({
+    role: { id: "r", content: "impl", overridable: false },
+    task: { id: "t", content: "", overridable: false },
+  }),
+  parse: () => ({ success: true }),
+};
+
+function makeCheckOp(
+  name: string,
+): DeterministicOperation<
+  { workdir: string; storyId: string },
+  { success: boolean; findings: never[]; durationMs: number },
+  TestOpConfig
+> {
+  return {
+    kind: "deterministic",
+    name,
+    stage: "review",
+    config: testSel,
+    async execute() {
+      return { success: true, findings: [], durationMs: 0 };
+    },
+  };
+}
+
+let checkOpsRuntime: NaxRuntime;
+
+function checkOpsMakeCtx(): CallContext {
+  checkOpsRuntime = makeTestRuntime();
+  return {
+    runtime: checkOpsRuntime,
+    packageView: checkOpsRuntime.packages.repo(),
+    packageDir: "/tmp",
+    agentName: "claude",
+    storyId: "US-003",
+  };
+}
+
+afterEach(async () => {
+  await checkOpsRuntime?.close();
+});
+
+describe("StoryOrchestratorBuilder — AC7: CANONICAL_ORDER includes new check phases", () => {
+  test("AC7: phaseNames includes lint-check when addLintCheck is called", () => {
+    const ctx = checkOpsMakeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .addLintCheck({ workdir: "/tmp", storyId: "US-003" })
+      .build(ctx);
+    expect(plan.phaseNames()).toContain("lint-check");
+  });
+
+  test("AC7: phaseNames includes typecheck-check when addTypecheckCheck is called", () => {
+    const ctx = checkOpsMakeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .addTypecheckCheck({ workdir: "/tmp", storyId: "US-003" })
+      .build(ctx);
+    expect(plan.phaseNames()).toContain("typecheck-check");
+  });
+
+  test("AC7: phaseNames includes verify-scoped when addVerifyScoped is called", () => {
+    const ctx = checkOpsMakeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .addVerifyScoped({ workdir: "/tmp", storyId: "US-003" })
+      .build(ctx);
+    expect(plan.phaseNames()).toContain("verify-scoped");
+  });
+
+  test("AC7: verify-scoped appears before lint-check in CANONICAL_ORDER", () => {
+    const ctx = checkOpsMakeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .addVerifyScoped({ workdir: "/tmp", storyId: "US-003" })
+      .addLintCheck({ workdir: "/tmp", storyId: "US-003" })
+      .build(ctx);
+    const names = plan.phaseNames();
+    expect(names.indexOf("verify-scoped")).toBeLessThan(names.indexOf("lint-check"));
+  });
+
+  test("AC7: lint-check appears before typecheck-check in CANONICAL_ORDER", () => {
+    const ctx = checkOpsMakeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .addLintCheck({ workdir: "/tmp", storyId: "US-003" })
+      .addTypecheckCheck({ workdir: "/tmp", storyId: "US-003" })
+      .build(ctx);
+    const names = plan.phaseNames();
+    expect(names.indexOf("lint-check")).toBeLessThan(names.indexOf("typecheck-check"));
+  });
+
+  test("lint-check not in phaseNames when addLintCheck not called", () => {
+    const ctx = checkOpsMakeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .build(ctx);
+    expect(plan.phaseNames()).not.toContain("lint-check");
+  });
+
+  test("typecheck-check not in phaseNames when addTypecheckCheck not called", () => {
+    const ctx = checkOpsMakeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .build(ctx);
+    expect(plan.phaseNames()).not.toContain("typecheck-check");
+  });
+
+  test("verify-scoped not in phaseNames when addVerifyScoped not called", () => {
+    const ctx = checkOpsMakeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .build(ctx);
+    expect(plan.phaseNames()).not.toContain("verify-scoped");
+  });
+});
+
+describe("StoryOrchestratorBuilder — AC8: builder methods accept OrchestratorSlot overload", () => {
+  test("AC8: addLintCheck accepts OrchestratorSlot with custom op", () => {
+    const ctx = checkOpsMakeCtx();
+    const customOp = makeCheckOp("custom-lint");
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .addLintCheck({ op: customOp, input: { workdir: "/tmp", storyId: "US-003" } })
+      .build(ctx);
+    expect(plan.phaseNames()).toContain("custom-lint");
+  });
+
+  test("AC8: addTypecheckCheck accepts OrchestratorSlot with custom op", () => {
+    const ctx = checkOpsMakeCtx();
+    const customOp = makeCheckOp("custom-typecheck");
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .addTypecheckCheck({ op: customOp, input: { workdir: "/tmp", storyId: "US-003" } })
+      .build(ctx);
+    expect(plan.phaseNames()).toContain("custom-typecheck");
+  });
+
+  test("AC8: addVerifyScoped accepts OrchestratorSlot with custom op", () => {
+    const ctx = checkOpsMakeCtx();
+    const customOp = makeCheckOp("custom-verify-scoped");
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: checkOpsMockImplementerOp, input: { code: "" } })
+      .addVerifyScoped({ op: customOp, input: { workdir: "/tmp", storyId: "US-003" } })
+      .build(ctx);
+    expect(plan.phaseNames()).toContain("custom-verify-scoped");
+  });
+});
+
+// ===========================================================================
+// Duplicate phase guard (absorbed from story-orchestrator-duplicate-phase.test.ts)
+// ===========================================================================
+
+const INPUT = { story: makeStory({ id: "S1", title: "t" }), contextMarkdown: "c" };
+
+describe("StoryOrchestratorBuilder — duplicate phase guard", () => {
+  test("addImplementer called twice throws ORCHESTRATOR_PHASE_DUPLICATE", () => {
+    const b = new StoryOrchestratorBuilder();
+    b.addImplementer(INPUT);
+    expect(() => b.addImplementer(INPUT)).toThrow(NaxError);
+  });
+
+  test("thrown NaxError has code ORCHESTRATOR_PHASE_DUPLICATE", () => {
+    const b = new StoryOrchestratorBuilder();
+    b.addImplementer(INPUT);
+    try {
+      b.addImplementer(INPUT);
+      expect(true).toBe(false); // should not reach
+    } catch (err) {
+      assertNaxError(err);
+      expect(err.code).toBe("ORCHESTRATOR_PHASE_DUPLICATE");
+    }
+  });
+
+  test("addTestWriter called twice throws ORCHESTRATOR_PHASE_DUPLICATE", () => {
+    const b = new StoryOrchestratorBuilder();
+    const writerInput = { story: makeStory({ id: "S1", title: "t" }), contextMarkdown: "c" };
+    b.addTestWriter(writerInput);
+    expect(() => b.addTestWriter(writerInput)).toThrow(NaxError);
   });
 });

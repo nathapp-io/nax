@@ -15,8 +15,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { assertDefined, makeTestRuntime } from "@test/helpers";
 import { pickSelector } from "@/config";
-import type { StoryOrchestratorResult } from "@/execution";
-import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
+import type { PhaseKind, StoryOrchestratorResult } from "@/execution";
+import {
+  _storyOrchestratorDeps,
+  phasesToRevalidate,
+  StoryOrchestratorBuilder,
+  withIncreasingFailuresBail,
+} from "@/execution";
+import { type InternalPhase, STRATEGY_TO_REVALIDATION_PHASES } from "@/execution/story-orchestrator";
+import type { FixStrategy, Iteration } from "@/findings";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import type { CallContext, RunOperation } from "@/operations";
@@ -547,5 +554,171 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     if (!Array.isArray(validateResult)) {
       expect(validateResult.shortCircuited).toBe(true);
     }
+  });
+});
+
+// ===========================================================================
+// withIncreasingFailuresBail — consecutive-increase bail predicate (absorbed
+// from story-orchestrator-bail.test.ts)
+// ===========================================================================
+
+function finding(message: string): Finding {
+  return { severity: "error", category: "test", source: "tdd-verifier", message };
+}
+
+function iter(beforeCount: number, afterCount: number, num = 1): Iteration<Finding> {
+  return {
+    iterationNum: num,
+    findingsBefore: Array.from({ length: beforeCount }, (_, i) => finding(`before-${i}`)),
+    findingsAfter: Array.from({ length: afterCount }, (_, i) => finding(`after-${i}`)),
+    fixesApplied: [{ strategyName: "s", op: "noop-op", targetFiles: [], summary: "" }],
+    outcome: afterCount > beforeCount ? "regressed" : "unchanged",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    finishedAt: "2026-01-01T00:00:01.000Z",
+  };
+}
+
+function baseStrategy(): FixStrategy<Finding, unknown, unknown, unknown> {
+  const fixOp: FixStrategy<Finding, unknown, unknown, unknown>["fixOp"] = {
+    name: "noop",
+    kind: "complete",
+    stage: "verify",
+    config: [],
+    build: () => ({
+      role: { id: "role", content: "", overridable: false },
+      task: { id: "task", content: "", overridable: false },
+    }),
+    parse: () => null,
+  };
+  return {
+    name: "autofix-test-writer",
+    appliesTo: () => true,
+    fixOp,
+    buildInput: () => ({}),
+    maxAttempts: 3,
+    coRun: "co-run-sequential",
+  };
+}
+
+function bailOf(
+  strategies: FixStrategy<Finding, unknown, unknown, unknown>[],
+): (iters: Iteration<Finding>[]) => string | null {
+  const fn = strategies[0]?.bailWhen;
+  if (!fn) throw new Error("expected bailWhen to be wrapped");
+  return fn;
+}
+
+describe("withIncreasingFailuresBail — consecutive threshold", () => {
+  test("disabled: returns strategies unchanged (no bailWhen wrapping)", () => {
+    const original = baseStrategy();
+    const [wrapped] = withIncreasingFailuresBail([original], false, 2);
+    expect(wrapped).toBe(original);
+    expect(wrapped.bailWhen).toBeUndefined();
+  });
+
+  test("threshold 2: a single regressing iteration does NOT bail", () => {
+    const bail = bailOf(withIncreasingFailuresBail([baseStrategy()], true, 2));
+    // The flailing scenario from the log: churn (1->1) then one increase (1->2).
+    expect(bail([iter(1, 1, 1)])).toBeNull();
+    expect(bail([iter(1, 1, 1), iter(1, 2, 2)])).toBeNull();
+  });
+
+  test("threshold 2: two consecutive regressing iterations bail", () => {
+    const bail = bailOf(withIncreasingFailuresBail([baseStrategy()], true, 2));
+    const reason = bail([iter(1, 2, 1), iter(2, 3, 2)]);
+    expect(reason).toContain("2 consecutive");
+    expect(reason).toContain("1 -> 3");
+  });
+
+  test("threshold 2: a non-regressing iteration between increases resets the run", () => {
+    const bail = bailOf(withIncreasingFailuresBail([baseStrategy()], true, 2));
+    // increase, then flat — trailing window [flat, ...] is not all-regressed.
+    expect(bail([iter(1, 2, 1), iter(2, 2, 2)])).toBeNull();
+    // ...but two increases AFTER the flat one do bail.
+    expect(bail([iter(1, 2, 1), iter(2, 2, 2), iter(2, 3, 3), iter(3, 4, 4)])).toContain("2 consecutive");
+  });
+
+  test("threshold 1: reproduces legacy bail-on-first-increase behaviour", () => {
+    const bail = bailOf(withIncreasingFailuresBail([baseStrategy()], true, 1));
+    expect(bail([iter(1, 1, 1)])).toBeNull();
+    expect(bail([iter(1, 2, 1)])).toContain("1 -> 2");
+  });
+
+  test("user-supplied bailWhen wins over the increasing-failures predicate", () => {
+    const strat = { ...baseStrategy(), bailWhen: () => "user-reason" };
+    const bail = bailOf(withIncreasingFailuresBail([strat], true, 2));
+    expect(bail([iter(1, 2, 1), iter(2, 3, 2)])).toBe("user-reason");
+  });
+});
+
+// ===========================================================================
+// Revalidation routing for the repo-scoped test-fix strategy (#1654) (absorbed
+// from story-orchestrator-revalidation-repo-scope.test.ts)
+// ===========================================================================
+
+const ALL_PHASE_KINDS: PhaseKind[] = [
+  "test-writer",
+  "greenfield-gate",
+  "implementer",
+  "test-presence-gate",
+  "full-suite-gate",
+  "mutation-check",
+  "verifier",
+  "verify-scoped",
+  "lint-check",
+  "typecheck-check",
+  "semantic-review",
+  "adversarial-review",
+];
+
+const repoScopeTestSel = pickSelector("test-revalidation-sel", "execution");
+
+/** Real InternalPhase fixtures — phasesToRevalidate only reads `kind`, but the slot is typed. */
+const allPhases: InternalPhase[] = ALL_PHASE_KINDS.map(
+  (kind): InternalPhase => ({
+    kind,
+    slot: {
+      op: {
+        kind: "deterministic",
+        name: `${kind}-op`,
+        stage: "run",
+        config: repoScopeTestSel,
+        execute: async () => ({}),
+      },
+      input: {},
+    },
+  }),
+);
+
+describe("repo-scoped-test-fix revalidation mapping (#1654)", () => {
+  test("is declared in the SSOT map, not left to the unknown-strategy fallback", () => {
+    expect(STRATEGY_TO_REVALIDATION_PHASES["repo-scoped-test-fix"]).toBeDefined();
+  });
+
+  test("re-runs the same phases as full-suite-rectify", () => {
+    // It fixes failing tests through the same op and may edit tests via the same
+    // declaration protocol, so the verifier and both reviews go stale in exactly
+    // the same way. A wider file scope does not change which phases are affected.
+    expect(STRATEGY_TO_REVALIDATION_PHASES["repo-scoped-test-fix"]).toEqual(
+      STRATEGY_TO_REVALIDATION_PHASES["full-suite-rectify"],
+    );
+  });
+
+  test("does not re-run the story's authoring phases", () => {
+    const kinds = phasesToRevalidate(["repo-scoped-test-fix"], allPhases).map((p) => p.kind);
+    expect(kinds).not.toContain("test-writer");
+    expect(kinds).not.toContain("implementer");
+    expect(kinds).not.toContain("greenfield-gate");
+  });
+
+  test("re-runs the gate that produced the finding", () => {
+    const kinds = phasesToRevalidate(["repo-scoped-test-fix"], allPhases).map((p) => p.kind);
+    expect(kinds).toContain("full-suite-gate");
+  });
+
+  test("co-running with full-suite-rectify does not widen the set", () => {
+    const solo = phasesToRevalidate(["repo-scoped-test-fix"], allPhases).map((p) => p.kind);
+    const both = phasesToRevalidate(["full-suite-rectify", "repo-scoped-test-fix"], allPhases).map((p) => p.kind);
+    expect(both).toEqual(solo);
   });
 });
