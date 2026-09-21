@@ -40,19 +40,43 @@ describe("WorktreeId — branded string identity", () => {
   });
 
   it("US-001 AC5: returns different results for two distinct pairs whose natural identities share their first 64 characters", () => {
-    // Two distinct pairs whose natural identities (story-<feature>-<storyId>)
-    // share their first 64 characters — i.e. truncation would collide if no
-    // distinguishing suffix were appended. The hash-suffix path must fire
-    // and yield distinct identities.
-    const commonLongPrefix = "x".repeat(55); // fits inside the cap
-    const pairA = deriveStoryWorktreeId("feature-a", `US-${commonLongPrefix}-tailA`);
-    const pairB = deriveStoryWorktreeId("feature-b", `US-${commonLongPrefix}-tailB`);
+    // Two distinct pairs whose NATURAL identities
+    // (`story-<feature>-<storyId>`) share their first 64 characters
+    // character-for-character. A naive truncating implementation that
+    // simply sliced the first 64 chars would return the same string for
+    // both pairs, so the implementation MUST append a distinguishing
+    // suffix (a stable hash of the raw inputs) to keep them distinct.
+    //
+    // Construction: the prefix `story-common-` is 13 chars; padding the
+    // storyId with 51 'x' chars gives 13 + 51 = 64 chars of identical
+    // natural-form prefix. The pair-specific suffix `-tailA` / `-tailB`
+    // sits past position 64, so a truncating impl drops it. Both pairs
+    // are 70 chars in their natural form — well past the 64-char cap, so
+    // the truncation path is forced to run.
+    const sharedStoryIdPrefix = "x".repeat(51);
+    const feature = "common";
+    const pairA = deriveStoryWorktreeId(feature, `${sharedStoryIdPrefix}-tailA`);
+    const pairB = deriveStoryWorktreeId(feature, `${sharedStoryIdPrefix}-tailB`);
 
-    // Sanity: both must be within the 64-char cap (truncating path).
+    // Pin the collision property: both natural forms share their first
+    // 64 characters character-for-character, so a slice-only truncation
+    // would yield identical 64-char strings. A broken impl that omits
+    // the hash suffix would still match this expected value for both
+    // pairs.
+    const naturalA = `story-${feature}-${sharedStoryIdPrefix}-tailA`;
+    const naturalB = `story-${feature}-${sharedStoryIdPrefix}-tailB`;
+    expect(naturalA.slice(0, 64)).toBe(naturalB.slice(0, 64));
+    expect(naturalA.length).toBeGreaterThan(64);
+    expect(naturalB.length).toBeGreaterThan(64);
+
+    // Sanity: both derived IDs must respect the 64-char cap.
     expect(pairA.length).toBeLessThanOrEqual(64);
     expect(pairB.length).toBeLessThanOrEqual(64);
 
-    // And the two pairs must be distinct despite sharing their natural prefix.
+    // The contract: distinct pairs whose natural forms collide on the
+    // first 64 chars MUST still produce distinct identities. A
+    // slice-only implementation would return identical strings here,
+    // so this assertion catches a missing hash suffix.
     expect(pairA).not.toBe(pairB);
   });
 

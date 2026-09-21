@@ -87,6 +87,19 @@ describe("findWorktreeIdViolations", () => {
     expect(findWorktreeIdViolations(tempDir).length).toBeGreaterThan(0);
   });
 
+  // Regression: the allow marker only counts when it sits in a `//`
+  // comment. Scanning the full line would let
+  // `const m = "nax-worktree-id-allow";` mask a real `.nax-wt/<id>`
+  // spelling on the same line.
+  test("the allow marker inside an executable string literal does NOT escape", () => {
+    const src = 'const marker = "nax-worktree-id-allow"; const worktreePath = join(root, ".nax-wt", storyId);\n';
+    writeSource(tempDir, "src/execution/marker-in-string.ts", src);
+
+    const violations = findWorktreeIdViolations(tempDir);
+    expect(violations.length).toBeGreaterThan(0);
+    expect(violations[0]?.file).toBe("src/execution/marker-in-string.ts");
+  });
+
   // AC-13: an allowlisted consumer file that spells `.nax-wt` MUST pass.
   test("US-001 AC13: allows src/utils/gitignore.ts (the gitignore entry)", () => {
     writeSource(tempDir, "src/utils/gitignore.ts", 'const ENTRY = ".nax-wt/";\n');

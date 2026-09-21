@@ -252,7 +252,15 @@ export function findWorktreeIdViolations(repoRoot: string): WorktreeIdViolation[
 
     for (let index = 0; index < lines.length; index++) {
       const line = lines[index] ?? "";
-      if (isCommentLine(line) || line.includes(ALLOW_MARKER)) continue;
+      if (isCommentLine(line)) continue;
+      const commentStart = line.indexOf("//");
+      const comment = commentStart === -1 ? "" : line.slice(commentStart);
+      // The allow marker only counts when it appears inside a trailing
+      // `//` comment. Scanning the full line would let a string literal
+      // like `const m = "nax-worktree-id-allow";` mask a real violation
+      // on the same line — the marker must be a comment to be an
+      // exemption.
+      if (comment.includes(ALLOW_MARKER)) continue;
       const code = stripTrailingComment(line);
 
       // Pick the most-specific match so the violation kind reported to the
