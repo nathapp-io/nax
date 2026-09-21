@@ -2,9 +2,8 @@
  * rules.ts CLI commands — unit tests
  *
  * Covers neutralizeContent, rulesExportCommand, rulesLintCommand, and
- * globCanonicalRuleFiles. Migrate-command coverage lives in
- * rules-migrate.test.ts.
- *
+ * globCanonicalRuleFiles, plus the rulesMigrateCommand dry-run/prod parity
+ * (AC-7..AC-14) and the US-001 AC9 description migrate-then-load round-trip.
  * Filesystem calls are intercepted via _rulesCLIDeps injection.
  */
 
@@ -14,9 +13,11 @@ import { join } from "node:path";
 import { assertDefined, assertNaxError, makeLogger, withTempDir } from "@test/helpers";
 import {
   _rulesCLIDeps,
+  type MigrationOutcome,
   neutralizeContent,
   rulesExportCommand,
   rulesLintCommand,
+  rulesMigrateCommand,
   translateLegacyFrontmatter,
 } from "@/cli/rules";
 import { lintForNeutrality } from "@/context/rules/canonical-loader";
@@ -507,5 +508,168 @@ describe("globCanonicalRuleFiles", () => {
       expect(found).toContain(".nax/rules/root.md");
       expect(found).toContain("packages/api/.nax/rules/api.md");
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 AC9: legacy .claude/rules/ entry declaring description + paths
+// migrates and the migrated file loads with description intact.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rulesMigrateCommand + loadCanonicalRules — US-001 AC9 description round-trips through migrate", () => {
+  test("[AC9] loadCanonicalRules does not throw and the loaded rule's description equals the original legacy value", async () => {
+    const { _canonicalLoaderDeps, loadCanonicalRules } = await import("@/context/rules/canonical-loader");
+    const legacyPath = "/repo/.claude/rules/ctrl-rule.md";
+    const targetPath = "/repo/.nax/rules/ctrl-rule.md";
+    _rulesCLIDeps.globInDir = () => [legacyPath];
+    _rulesCLIDeps.fileExists = async (p: string) => p.startsWith("/repo/.claude/");
+    _rulesCLIDeps.readFile = async () =>
+      [
+        "---",
+        "description: Use when editing controllers",
+        "paths:",
+        '  - "src/controllers/**"',
+        "---",
+        "",
+        "Body.",
+      ].join("\n");
+
+    await rulesMigrateCommand({ dir: "/repo" });
+
+    const migrated = written[targetPath];
+    expect(migrated).toBeDefined();
+    expect(migrated).toContain("description: Use when editing controllers");
+
+    // Now load the migrated store. The loader's deps are independent of the
+    // migrate side, so we can re-route its I/O through the snapshot of what
+    // migrate wrote.
+    const origGlobInDir = _canonicalLoaderDeps.globInDir;
+    const origReadFile = _canonicalLoaderDeps.readFile;
+    const origGetLogger = _canonicalLoaderDeps.getLogger;
+    _canonicalLoaderDeps.globInDir = () => [targetPath];
+    _canonicalLoaderDeps.readFile = async (p: string) => {
+      if (p === targetPath) return migrated;
+      throw new Error(`unexpected file: ${p}`);
+    };
+    _canonicalLoaderDeps.getLogger = () => makeLogger();
+    try {
+      const rules = await loadCanonicalRules("/repo");
+      expect(rules).toHaveLength(1);
+      expect(rules[0]?.description).toBe("Use when editing controllers");
+    } finally {
+      _canonicalLoaderDeps.globInDir = origGlobInDir;
+      _canonicalLoaderDeps.readFile = origReadFile;
+      _canonicalLoaderDeps.getLogger = origGetLogger;
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001: dry-run preview must equal the real run.
+//
+// The original defect: dry-run reported writes it did not earn (it skipped
+// the existing-target check), counted those targets as written, and
+// suppressed the summary. Both modes must now go through the same
+// planMigration and the same write-or-skip decision, with dry-run producing
+// a parallel outcome and a summary line that matches the real run.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rulesMigrateCommand — dry-run / real-run parity", () => {
+  test("AC-7: dry-run with an existing target does not call writeFile", async () => {
+    const calls: Array<[string, string]> = [];
+    _rulesCLIDeps.writeFile = async (path, content) => {
+      calls.push([path, content]);
+    };
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
+    await rulesMigrateCommand({ dir: "/project", dryRun: true });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("AC-8: dry-run with an existing target returns that target as skipped", async () => {
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
+    const outcome = await rulesMigrateCommand({ dir: "/project", dryRun: true });
+    expect(outcome.skipped).toEqual(["project-conventions.md"]);
+  });
+
+  test("AC-9: dry-run and real-run report equal written file-name sets (force=true)", async () => {
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
+    const dryRun = await rulesMigrateCommand({ dir: "/project", force: true, dryRun: true });
+    for (const k of Object.keys(written)) delete written[k];
+    const realRun = await rulesMigrateCommand({ dir: "/project", force: true, dryRun: false });
+    expect(new Set(dryRun.written)).toEqual(new Set(realRun.written));
+  });
+
+  test("AC-10: dry-run and real-run report equal skipped file-name sets (force=false)", async () => {
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
+    const dryRun = await rulesMigrateCommand({ dir: "/project", dryRun: true });
+    for (const k of Object.keys(written)) delete written[k];
+    const realRun = await rulesMigrateCommand({ dir: "/project", dryRun: false });
+    expect(new Set(dryRun.skipped)).toEqual(new Set(realRun.skipped));
+  });
+
+  test("AC-11: dry-run does not call the injected mkdir dependency", async () => {
+    const mkdirCalls: string[] = [];
+    _rulesCLIDeps.mkdir = async (dir) => {
+      mkdirCalls.push(dir);
+    };
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
+    await rulesMigrateCommand({ dir: "/project", dryRun: true });
+    expect(mkdirCalls).toHaveLength(0);
+  });
+
+  test("AC-12: dry-run summary reports the same counts as the real run, with dry-run wording", async () => {
+    const originalLog = console.log;
+    const lines: string[] = [];
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    };
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
+    let dryRun: MigrationOutcome | undefined;
+    try {
+      dryRun = await rulesMigrateCommand({ dir: "/project", dryRun: true });
+    } finally {
+      console.log = originalLog;
+    }
+    for (const k of Object.keys(written)) delete written[k];
+    const realRun = await rulesMigrateCommand({ dir: "/project", dryRun: false });
+    const summary = lines.find((line) => /^\s*Dry run: \d+ file\(s\) would be written, \d+ skipped\.$/.test(line));
+    expect(summary).toBeDefined();
+    expect(summary).toContain(
+      `Dry run: ${realRun.written.length} file(s) would be written, ${realRun.skipped.length} skipped.`,
+    );
+    expect(dryRun?.written).toEqual(realRun.written);
+    expect(dryRun?.skipped).toEqual(realRun.skipped);
+  });
+
+  test("AC-13: an existing unforced target is skipped in both dry-run and real-run", async () => {
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
+    const dryRun = await rulesMigrateCommand({ dir: "/project", dryRun: true });
+    for (const k of Object.keys(written)) delete written[k];
+    const realRun = await rulesMigrateCommand({ dir: "/project", dryRun: false });
+    expect(dryRun.skipped).toContain("project-conventions.md");
+    expect(realRun.skipped).toContain("project-conventions.md");
+  });
+
+  test("AC-14: an existing unforced target is absent from writes in both dry-run and real-run", async () => {
+    _rulesCLIDeps.globInDir = () => ["/project/.claude/rules/project-conventions.md"];
+    _rulesCLIDeps.fileExists = async (p) => p === "/project/.nax/rules/project-conventions.md";
+    _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
+    const dryRun = await rulesMigrateCommand({ dir: "/project", dryRun: true });
+    for (const k of Object.keys(written)) delete written[k];
+    const realRun = await rulesMigrateCommand({ dir: "/project", dryRun: false });
+    expect(dryRun.written).not.toContain("project-conventions.md");
+    expect(realRun.written).not.toContain("project-conventions.md");
   });
 });

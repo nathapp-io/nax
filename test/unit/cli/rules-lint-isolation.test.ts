@@ -9,10 +9,15 @@
  * monkey-patching the collector.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { LogCall } from "@test/helpers";
 import { assertNaxError, makeLogger } from "@test/helpers";
-import { _rulesCLIDeps, _rulesLintDeps, rulesLintCommandDirect as rulesLintCommandFromLint } from "@/cli";
+import {
+  _rulesCLIDeps,
+  _rulesLintDeps,
+  rulesExportCommand,
+  rulesLintCommandDirect as rulesLintCommandFromLint,
+} from "@/cli";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -400,5 +405,226 @@ describe("US-002 rulesLintCommand — AC10 at least one rule file: no empty-stor
         /empty store|no.*rule|canonical.*rules.*store/i.test(c.message),
     );
     expect(emptyStoreWarn).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// rules export (claude) — scope and description (rulesExportCommand family)
+//
+// Absorbed from rules-export-description.test.ts (US-002 description in
+// Claude frontmatter) and rules-export-scope.test.ts (package scope becomes a
+// file glob). Both share the same injection harness, so one describe-scoped
+// hook pair serves both; the top-level hooks above stay scoped to the
+// US-002 lint suites they were written for.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rules export (claude) — scope becomes a file glob, description in frontmatter", () => {
+  let origExportWriteFile: typeof _rulesCLIDeps.writeFile;
+  let origExportGlobInDir: typeof _rulesCLIDeps.globInDir;
+  let origExportMkdir: typeof _rulesCLIDeps.mkdir;
+  let origExportLoadCanonicalRules: typeof _rulesCLIDeps.loadCanonicalRules;
+  let origExportGetLogger: typeof _rulesCLIDeps.getLogger;
+
+  const exportWritten: Record<string, string> = {};
+  let exportWarnings: Array<{ msg: string; data: unknown }> = [];
+
+  beforeEach(() => {
+    origExportWriteFile = _rulesCLIDeps.writeFile;
+    origExportGlobInDir = _rulesCLIDeps.globInDir;
+    origExportMkdir = _rulesCLIDeps.mkdir;
+    origExportLoadCanonicalRules = _rulesCLIDeps.loadCanonicalRules;
+    origExportGetLogger = _rulesCLIDeps.getLogger;
+
+    for (const k of Object.keys(exportWritten)) delete exportWritten[k];
+    exportWarnings = [];
+
+    _rulesCLIDeps.writeFile = async (path, content) => {
+      exportWritten[path] = content;
+    };
+    _rulesCLIDeps.globInDir = () => [];
+    _rulesCLIDeps.mkdir = async () => {};
+    _rulesCLIDeps.loadCanonicalRules = async () => [];
+    _rulesCLIDeps.getLogger = () => {
+      const logger = makeLogger();
+      logger.warn = mock((_s: string, msg: string, data: unknown) =>
+        exportWarnings.push({ msg, data }),
+      ) as typeof logger.warn;
+      return logger;
+    };
+  });
+
+  afterEach(() => {
+    _rulesCLIDeps.writeFile = origExportWriteFile;
+    _rulesCLIDeps.globInDir = origExportGlobInDir;
+    _rulesCLIDeps.mkdir = origExportMkdir;
+    _rulesCLIDeps.loadCanonicalRules = origExportLoadCanonicalRules;
+    _rulesCLIDeps.getLogger = origExportGetLogger;
+  });
+
+  /** Export one rule and return the generated file body. */
+  async function exportOne(rule: Partial<CanonicalRule>): Promise<string> {
+    _rulesCLIDeps.loadCanonicalRules = async () => [{ fileName: "r.md", content: "Body.", ...rule }];
+    await rulesExportCommand({ dir: "/project", agent: "claude" });
+    return exportWritten["/project/.claude/rules/r.md"] ?? "";
+  }
+
+  /** Strip the leading frontmatter block; returns the body the agent will read. */
+  function bodyAfterFrontmatter(out: string): string {
+    // claudeFrontmatter emits `---\n...\n---\n` and then the body. If there is
+    // no frontmatter, the input is returned unchanged.
+    const m = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(out);
+    return m ? out.slice(m[0].length) : out;
+  }
+
+  /** Return the YAML block delimited by the FIRST pair of `---` markers. */
+  function frontmatterBlock(out: string): string {
+    const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(out);
+    return m?.[1] ?? "";
+  }
+
+  test("[AC1] description appears before paths in the generated frontmatter", async () => {
+    const out = await exportOne({ description: "Use when editing OAuth controllers", appliesTo: ["src/**/*.ts"] });
+
+    expect(out.startsWith("---\n")).toBe(true);
+    const fm = frontmatterBlock(out);
+    const descIdx = fm.indexOf("description:");
+    const pathsIdx = fm.indexOf("paths:");
+    expect(descIdx).toBeGreaterThanOrEqual(0);
+    expect(pathsIdx).toBeGreaterThanOrEqual(0);
+    expect(descIdx).toBeLessThan(pathsIdx);
+  });
+
+  test("[AC2] description with no scope still emits a frontmatter block, with no paths entry", async () => {
+    const out = await exportOne({ description: "Standalone rule" });
+
+    expect(out.startsWith("---\n")).toBe(true);
+    const fm = frontmatterBlock(out);
+    expect(fm).toContain("description:");
+    expect(fm).not.toContain("paths:");
+    // The body still follows the frontmatter.
+    expect(bodyAfterFrontmatter(out)).toContain("Body.");
+  });
+
+  test("[AC3] canonical package scope becomes the corresponding file glob next to description", async () => {
+    const out = await exportOne({ description: "API-only rule", paths: ["packages/api/*"] });
+
+    expect(out.startsWith("---\n")).toBe(true);
+    const fm = frontmatterBlock(out);
+    expect(fm).toContain("description:");
+    expect(fm).toContain('  - "packages/api/**"');
+    expect(fm).not.toContain('packages/api/*"');
+
+    // No "dropping package scope" warning — translating is not dropping.
+    expect(exportWarnings.find((w) => w.msg.includes("package scope"))).toBeUndefined();
+  });
+
+  test("[AC4] neither description nor scope => no frontmatter block at all", async () => {
+    const out = await exportOne({});
+
+    expect(out.startsWith("---")).toBe(false);
+    // Body still present.
+    expect(out).toContain("Body.");
+  });
+
+  test("[AC5] description with colon, hash, double quote, and backslash parses as YAML and round-trips exactly", async () => {
+    const tricky = 'status: ok # note "quote"\\';
+    const out = await exportOne({ description: tricky, appliesTo: ["src/**/*.ts"] });
+
+    expect(out.startsWith("---\n")).toBe(true);
+    const fm = frontmatterBlock(out);
+    expect(fm).toContain(`description: ${JSON.stringify(tricky)}`);
+
+    // The block — the same substring the YAML parser would see — must parse
+    // cleanly and yield back the original, unescaped text.
+    const parsed = Bun.YAML.parse(fm) as { description?: unknown; paths?: unknown };
+    expect(typeof parsed.description).toBe("string");
+    expect(parsed.description).toBe(tricky);
+    // paths still present alongside description.
+    expect(parsed.paths).toEqual(["src/**/*.ts"]);
+  });
+
+  test("[AC6] the both-scopes warning carries the rule's description through to its structured data", async () => {
+    const description = "Auth-facing controller rules";
+    const out = await exportOne({
+      description,
+      appliesTo: ["src/**/*.ts"],
+      paths: ["packages/api/*"],
+    });
+
+    // The file keeps appliesTo and drops paths (Claude cannot express both).
+    expect(out).toContain('  - "src/**/*.ts"');
+    expect(out).not.toContain("packages/api");
+
+    const w = exportWarnings.find((x) => x.msg.includes("package scope"));
+    expect(w).toBeDefined();
+    const payload = JSON.stringify(w?.data);
+    expect(payload).toContain(`"description":${JSON.stringify(description)}`);
+  });
+
+  test("[AC7] a rule with appliesTo but no description emits no description entry", async () => {
+    const out = await exportOne({ appliesTo: ["src/**/*.ts"] });
+
+    expect(out.startsWith("---\n")).toBe(true);
+    const fm = frontmatterBlock(out);
+    expect(fm).not.toContain("description:");
+    expect(fm).toContain("paths:");
+    expect(fm).toContain('  - "src/**/*.ts"');
+  });
+
+  describe("rules export (claude) — the scopes that cannot be combined", () => {
+    test.each([
+      // [canonical paths:, expected Claude paths:]
+      ["packages/nestjs-oauth/*", "packages/nestjs-oauth/**"],
+      ["packages/api/**", "packages/api/**"],
+      ["apps/web", "apps/web/**"],
+      ["packages/*/core", "packages/*/core/**"],
+      // A trailing slash names the same directory and must not change the result.
+      ["packages/api/", "packages/api/**"],
+      ["packages/api/*/", "packages/api/**"],
+    ])("canonical paths %p exports as Claude glob %p", async (canonical, expected) => {
+      const out = await exportOne({ paths: [canonical] });
+      expect(out.startsWith("---\n")).toBe(true);
+      expect(out).toContain(`  - ${JSON.stringify(expected)}`);
+    });
+
+    test("a package-scoped rule is no longer emitted without frontmatter", async () => {
+      const out = await exportOne({ paths: ["packages/nestjs-oauth/*"] });
+      expect(out.startsWith("---\n")).toBe(true);
+      expect(out).toContain("paths:");
+    });
+
+    test("translating is not a drop, so nothing warns about lost package scope", async () => {
+      await exportOne({ paths: ["packages/nestjs-oauth/*"] });
+      expect(exportWarnings.find((w) => w.msg.includes("package scope"))).toBeUndefined();
+    });
+
+    test("every canonical path is carried, not just the first", async () => {
+      const out = await exportOne({ paths: ["packages/a/*", "packages/b/*"] });
+      expect(out).toContain('  - "packages/a/**"');
+      expect(out).toContain('  - "packages/b/**"');
+    });
+
+    test("nax's own paths: spelling never reaches the generated file", async () => {
+      const out = await exportOne({ paths: ["packages/api/*"] });
+      expect(out).not.toContain("appliesTo:");
+      // Claude reads `paths:`; the canonical key name means nothing to it.
+      expect(out.split("---")[1]).toContain("paths:");
+    });
+
+    test("keeps the file glob and warns when both scopes are set", async () => {
+      const out = await exportOne({ appliesTo: ["src/**/*.ts"], paths: ["packages/api/*"] });
+      expect(out).toContain('  - "src/**/*.ts"');
+      expect(out).not.toContain("packages/api");
+
+      const w = exportWarnings.find((x) => x.msg.includes("package scope"));
+      expect(w).toBeDefined();
+      expect(JSON.stringify(w?.data)).toContain("packages/api/*");
+    });
+
+    test("an unscoped rule still gets no frontmatter block", async () => {
+      const out = await exportOne({});
+      expect(out.startsWith("---")).toBe(false);
+      expect(out).toContain("Body.");
+    });
   });
 });
