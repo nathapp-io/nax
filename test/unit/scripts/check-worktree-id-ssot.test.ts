@@ -137,6 +137,56 @@ describe("findWorktreeIdViolations", () => {
     expect(violations[0]?.file).toBe("src/execution/terminator-then-code.ts");
   });
 
+  // Regression (adversarial review): a line whose trimmed form begins with
+  // `*` was skipped as "block-comment continuation" even when no block
+  // comment was open. A continuation line may legitimately begin with `*` as
+  // a multiplication operator — ASI does not break the expression — so an
+  // open-coded spelling on such a line evaded the gate entirely.
+  test("US-001 AC10 (boundary): a line beginning with `*` that continues executable code is NOT skipped as prose", () => {
+    // `const factor = 1 * ".nax-wt/"` — valid syntax; the `*` lands at the
+    // start of line 2 because the initializer continues across the newline.
+    writeSource(tempDir, "src/execution/star-continuation.ts", 'const factor = 1\n* ".nax-wt/"\n');
+
+    const violations = findWorktreeIdViolations(tempDir);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.file).toBe("src/execution/star-continuation.ts");
+    expect(violations[0]?.line).toBe(2);
+  });
+
+  // The same evasion with a `nax/` branch prefix on the asterisk-led line.
+  test("US-001 AC11 (boundary): a line beginning with `*` that continues executable code is NOT skipped as prose for a `nax/` branch", () => {
+    writeSource(tempDir, "src/execution/star-continuation-branch.ts", 'const label = 1\n* "nax/story-f-US-001"\n');
+
+    const violations = findWorktreeIdViolations(tempDir);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.file).toBe("src/execution/star-continuation-branch.ts");
+    expect(violations[0]?.line).toBe(2);
+  });
+
+  // Same root cause, other direction: a block comment that CLOSES mid-line
+  // with executable code after it must still be scanned — even though the
+  // line begins with `*`. The old heuristic skipped it as prose.
+  test("US-001 AC10 (boundary): code after a block comment closing mid-line is scanned", () => {
+    writeSource(tempDir, "src/execution/close-then-code.ts", '/* prose\n * more prose */ const p = ".nax-wt/x";\n');
+
+    const violations = findWorktreeIdViolations(tempDir);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.file).toBe("src/execution/close-then-code.ts");
+    expect(violations[0]?.line).toBe(2);
+  });
+
+  // The behaviour the asterisk rule was trying to provide is preserved:
+  // genuine multi-line block-comment prose is still not a violation.
+  test("does not flag prose inside a multi-line block comment", () => {
+    writeSource(
+      tempDir,
+      "src/doc.ts",
+      "/**\n * The worktree lives at `.nax-wt/<id>` and the ref at `refs/nax/orphan/<id>`.\n * The branch is `nax/<id>`.\n */\nconst x = 1;\n",
+    );
+
+    expect(findWorktreeIdViolations(tempDir)).toEqual([]);
+  });
+
   // AC-13: an allowlisted consumer file that spells `.nax-wt` MUST pass.
   test("US-001 AC13: allows src/utils/gitignore.ts (the gitignore entry)", () => {
     writeSource(tempDir, "src/utils/gitignore.ts", 'const ENTRY = ".nax-wt/";\n');

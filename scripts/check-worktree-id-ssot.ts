@@ -197,78 +197,74 @@ const FORBIDDEN_PATTERNS: ReadonlyArray<{ kind: Kind; pattern: RegExp }> = [
 /** Opt-out marker for prose that must live in a string literal. */
 const ALLOW_MARKER = "nax-worktree-id-allow";
 
-/**
- * True only when the line is PURE comment — no executable code on the
- * line after the comment is closed. The earlier `startsWith("*")` and
- * `startsWith("/*")` form skipped a closed block comment followed by
- * code on the same line, and a block-comment terminator followed by
- * code, as if they were prose, hiding real violations. The refined
- * check skips a line only when:
- *   - line comment, e.g. double-slash
- *   - self-contained block comment, opens and closes on the same line
- *     with nothing executable after
- *   - multi-line block comment opener
- *   - multi-line block comment continuation (asterisk-prefixed)
- * Anything else — including a closed block comment followed by code,
- * a block-comment terminator followed by code, and code with a
- * trailing comment — falls through to the pattern check.
- */
-function isCommentLine(line: string): boolean {
-  const trimmed = line.trim();
-  if (trimmed.startsWith("//")) return true;
-  // Self-contained block comment: opens with `/*`, closes with `*/`,
-  // AND there is nothing executable after the closing `*/`. A pure
-  // comment ends with `*/`; a comment+code has code after the `*/`.
-  if (trimmed.startsWith("/*") && trimmed.endsWith("*/")) return true;
-  // Multi-line block comment opener: opens with `/*` but the closing
-  // `*/` is on a LATER line. Note this excludes `/* ... */ code`,
-  // which the second branch skips when the line ends with `*/`.
-  if (trimmed.startsWith("/*") && !trimmed.includes("*/")) return true;
-  // Multi-line block comment continuation: asterisk-prefixed but NOT
-  // the terminator (`*/`).
-  if (trimmed.startsWith("*") && !trimmed.startsWith("*/")) return true;
-  return false;
+/** Whether a multi-line block comment opened on an earlier line is still open. */
+interface BlockCommentState {
+  inBlock: boolean;
+}
+
+interface ScannedLine {
+  /** The line with every comment span removed — the executable text. */
+  code: string;
+  /** The trailing `//` comment (including its `//`), or `null` when absent. */
+  lineComment: string | null;
 }
 
 /**
- * Find the index of a `//` comment that starts OUTSIDE any string literal.
+ * Splits one line into its executable text and its trailing `//` comment,
+ * carrying block-comment state across lines.
  *
- * A simple `indexOf("//")` would treat a `//` inside a string literal
- * (`const m = "//nax-worktree-id-allow: r";`) as a comment start, which
- * lets a marker hidden in a string literal mask a real violation on the
- * same line. Tracking single/double/template quote state keeps the
- * check string-aware without a full parser.
+ * The state has to be carried, not guessed from a line's first character.
+ * The earlier heuristic skipped every line whose trimmed form began with
+ * `*` as a "block-comment continuation" even when no block comment was
+ * open — and such a line can be executable: `const n = 1` followed by
+ * `* ".nax-wt/"` is one multiplication expression (ASI does not break it),
+ * so an open-coded spelling on an asterisk-led line evaded the gate. Only a
+ * span this scanner has actually seen opened as a comment is dropped.
  *
- * Returns -1 when no such comment exists.
+ * String literals are honoured: a `//` or `/*` inside a string is not a
+ * comment start, and the string's own text stays in `code`, so a hardcoded
+ * ".nax-wt/" literal is still reported. Regex literals are not modelled — a
+ * regex body containing `/*` would open a phantom block comment; no such
+ * literal exists in the scanned tree.
  */
-function findCommentStart(line: string): number {
-  let quote: '"' | "'" | "`" | null = null;
-  for (let i = 0; i < line.length - 1; i++) {
-    const ch = line[i];
-    if (quote !== null) {
-      if (ch === "\\") {
-        i++; // skip the escaped character
-        continue;
-      }
-      if (ch === quote) quote = null;
+function scanLine(line: string, state: BlockCommentState): ScannedLine {
+  let code = "";
+  let i = 0;
+
+  while (i < line.length) {
+    if (state.inBlock) {
+      const close = line.indexOf("*/", i);
+      if (close === -1) return { code, lineComment: null };
+      state.inBlock = false;
+      i = close + 2;
       continue;
     }
+
+    const ch = line.charAt(i);
+
     if (ch === '"' || ch === "'" || ch === "`") {
-      quote = ch;
+      let end = i + 1;
+      while (end < line.length && line.charAt(end) !== ch) {
+        end += line.charAt(end) === "\\" ? 2 : 1;
+      }
+      if (end < line.length) end += 1; // consume the closing quote
+      code += line.slice(i, Math.min(end, line.length));
+      i = Math.min(end, line.length);
       continue;
     }
-    if (ch === "/" && line[i + 1] === "/") return i;
-  }
-  return -1;
-}
 
-/**
- * Drop a trailing `//` comment so prose after real code is not matched.
- * String-literal-aware so a `//` inside a string doesn't truncate the line.
- */
-function stripTrailingComment(line: string): string {
-  const idx = findCommentStart(line);
-  return idx === -1 ? line : line.slice(0, idx);
+    if (ch === "/" && line.charAt(i + 1) === "/") return { code, lineComment: line.slice(i) };
+    if (ch === "/" && line.charAt(i + 1) === "*") {
+      state.inBlock = true;
+      i += 2;
+      continue;
+    }
+
+    code += ch;
+    i += 1;
+  }
+
+  return { code, lineComment: null };
 }
 
 function collectTypeScriptFiles(dir: string, out: string[] = []): string[] {
@@ -307,20 +303,18 @@ export function findWorktreeIdViolations(repoRoot: string): WorktreeIdViolation[
     if (ALLOWED_DIRS.some((dir) => relPath.startsWith(dir))) continue;
 
     const lines = readFileSync(file, "utf8").split("\n");
+    const state: BlockCommentState = { inBlock: false };
 
     for (let index = 0; index < lines.length; index++) {
       const line = lines[index] ?? "";
-      if (isCommentLine(line)) continue;
-      const commentStart = findCommentStart(line);
-      const comment = commentStart === -1 ? "" : line.slice(commentStart);
-      // The allow marker only counts when it appears inside a trailing
-      // `//` comment. Scanning the full line would let a string literal
-      // like `const m = "nax-worktree-id-allow";` mask a real violation
-      // on the same line — and `commentStart` is string-literal-aware so
-      // the marker can't be smuggled in via a string that contains `//`
+      const { code, lineComment } = scanLine(line, state);
+      // The allow marker only counts when it sits in a trailing `//`
+      // comment on the offending line. Scanning the whole line would let a
+      // string literal like `const m = "nax-worktree-id-allow";` mask a
+      // real violation on the same line — and `scanLine` is string-aware,
+      // so the marker cannot be smuggled in via a string containing `//`
       // either.
-      if (comment.includes(ALLOW_MARKER)) continue;
-      const code = stripTrailingComment(line);
+      if (lineComment?.includes(ALLOW_MARKER)) continue;
 
       // Pick the most-specific match so the violation kind reported to the
       // developer is precise (e.g. "you hardcoded the orphan ref, not just

@@ -13,7 +13,7 @@
 
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { validateStoryId } from "../prd/validate";
+import { validateStoryId } from "@/prd";
 
 const MAX_WORKTREE_ID_LENGTH = 64;
 const HASH_SUFFIX_LENGTH = 8;
