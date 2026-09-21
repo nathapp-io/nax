@@ -1125,3 +1125,55 @@ Mutation check: flipped two assertions in distinct describes (AC6
 pass; reverted. Post-commit re-run clean (0 fail, 65 tests). Group now at
 floor per ranker. Static expect sites 147 = group baseline (no `only()`-style
 dedup this time; the baseline static count matches).
+
+### 9.17 — 2026-09-21, Task 16 landed — metrics/tracker group 8 → 4 files (-96 lines)
+
+Target 8 → 4 (-4 f, packer claims -296 l); **landed 8 → 4 (-4 f, -96 l)**.
+All 93 tests / 45,298 expect() preserved: unit phase 18,247 / 42,169 unchanged,
+full suite 0 fail, `check:all` 0 (after the mock-exemption carry-forward below),
+both tsc clean, coverage 96.32% lines / 93.39–93.41% functions, 0 below floor.
+Ranker `_deps unrestored 0` (group carried no `⚠deps` flag).
+
+Bins per the packer, seam assignment mine:
+
+- `tracker.test.ts` (base/mirror) absorbs `tracker-batch-fallback` (nax#1709
+  batch agent-swap + crash attribution) — the base already carried batch
+  token attribution and #1707 hops, so batch metrics is the seam. **679l —
+  over the 650 fill target** (the packer's 623 charged its 102-line preamble
+  against the absorbed file's, but batchCtx/hop/twoStories are new
+  helpers); the absorbed file's helper `makePRD`/`makeStory` imports were
+  aliased `makeBatchPRD`/`makeBatchStory` to survive collision with the
+  base's local factories.
+- `tracker-escalation.test.ts` absorbs `tracker-story-spend` (#1960 spend
+  shape) — cost/attempt/flag accounting family, 648l.
+- `tracker-provider-cost.test.ts` absorbs `tracker-full-suite-gate` (RL-005)
+  + `tracker-runtime-crashes` (BUG-070) — StoryMetrics field accounting,
+  641l. fsg's and runtime-crashes' `makeStory`/`makePRD` are byte-identical
+  → deduped to one; provider-cost's helper imports aliased
+  `makeProviderStory`/`makeProviderPRD`; `makeCtx(id, featureId)` renamed
+  `makeProviderCtx`; runtime-crashes' `WORKDIR` renamed `CRASH_WORKDIR`.
+- `tracker-context-metrics.test.ts` (656l) stays alone — 554-line body, no
+  room at the 650 fill target.
+
+Deletes (4): `tracker-batch-fallback`, `tracker-story-spend`,
+`tracker-full-suite-gate`, `tracker-runtime-crashes`.
+
+Two non-trivial items, both handled plan-consistently:
+
+1. **Missed deletion caught by the count invariant.** After appending the
+   batch-fallback describes I forgot `git rm` the absorbed file — unit phase
+   read 18,254 (+7). The §2.1 count check caught it; deleting the file
+   restored exactly 18,247 / 42,169. The invariant earns its keep.
+2. **Mock-gate carry-forward:** `tracker-full-suite-gate` and
+   `tracker-runtime-crashes` were on `check-inline-test-mocks.ts` SKIP_FILES
+   (Pattern B — local `makeStory`). Merging them into `tracker-provider-cost`
+   surfaced the pair as a new violation. The receiver was added to SKIP_FILES
+   (Pattern B) per §9.10's precedent — the local factory's defaults (status
+   `"passed"`, `attempts: 1` vs helpers' `"pending"`/`0`) are assertion-
+   relevant, so rewriting to the shared helper would change test semantics.
+
+Mutation check: 3 merged receivers × one flipped assertion each →
+`toHaveLength(1)` in batch hops, `!expectedFirstPassSuccess` in escalation
+(each-row, 3 rows failed), `toBe(0.1)` in provider-cost → 5 distinct
+failures (escalation's each spans 3), all reverted; 65 unrelated pass.
+Group now at floor per ranker (5 files).
