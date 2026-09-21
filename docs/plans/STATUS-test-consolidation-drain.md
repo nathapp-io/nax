@@ -1219,3 +1219,45 @@ rules.test.ts 38 = 28+1+9; lint-isolation 29 = 10+7+12 (export-scope's
 Mutation check: flipped `migrated.toBeDefined()` → `toBeUndefined()` (AC9)
 and `out.startsWith("---\n")` → `toBe(false)` (export AC1) → 2 distinct
 failures, all others pass; reverted. Group at floor (5 files, -0).
+
+### 9.19 — 2026-09-21, Task 18 landed — session/manager group 9 → 5 files (-302 lines)
+
+Target 9 → 5 (-4 f, packer claims -124 l); **landed 9 → 5 (-4 f, -302 l)**.
+All 93 tests / 45,298 expect() preserved: unit phase 18,247 / 42,169
+unchanged, full suite 0 fail, `check:all` 0, both tsc clean, coverage 96.32%
+lines / 93.41% functions, 0 below floor. Ranker `_deps unrestored 0`
+(group carried no `⚠deps` flag; Task 2's restores carried in).
+
+Bins per the packer, seam assignment retained:
+
+- `manager.test.ts` (base/mirror) absorbs `manager-pid-lifecycle`
+  (configureRuntime PID autowiring) + `manager-endpoint-reuse` (nax#1965) —
+  core SessionManager operation family. Both absorbed files' hooks are
+  describe-scoped inside their blocks (pid's writeDescriptor stub cannot be
+  top-level: the base's own persistence describes capture the real
+  writeDescriptor). 947 → wait, base grew 468 → 675l? No — **675l** landed.
+- `manager-phase-b-prompt.test.ts` absorbs `manager-lifecycle` (resume() /
+  closeStory(), Phase 3 #477) — the lifecycle suites carry their own
+  deterministic uuid/now/writeDescriptor hooks, wrapped describe-scoped so
+  the host file's sendPrompt/runInSession suites keep running against real
+  deps (§1.6 — do not give every test in the result both hooks). 632l.
+- `manager-phase-b-session.test.ts` absorbs `manager-bind-handle
+  (bindHandle descriptor binding) — same describe-scoped hook pattern
+  (now/writeDescriptor). 392l.
+
+Mirrors untouched (`manager-deps`, `manager-sweep`). Collision renames: none
+needed beyond hook localisation (each absorbed block re-declares its own
+`_timeSeq`/`_origWriteDescriptor` inside its describe).
+
+Deletes (4): `manager-bind-handle`, `manager-endpoint-reuse`,
+`manager-lifecycle`, `manager-pid-lifecycle`.
+
+**Recurring near-miss, caught by the count invariant again (same as §9.17):**
+appending absorbs into receivers without `git rm`-ing the absorbed files
+left `manager-pid-lifecycle` + `manager-endpoint-reuse` on disk → unit phase
+read 18,254 (+7). Deleting restored exactly 18,247 / 42,169. The §2.1 count
+check is the only thing that catches this class; both incidents now recorded.
+
+Mutation check: 3 merged receivers × one flipped assertion (pid register
+42→43; resume CREATED→RUNNING; bindHandle handle "mutated") → 3 distinct
+failures, no collateral; reverted. Group at floor (5 files, -0).
