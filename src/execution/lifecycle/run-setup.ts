@@ -43,7 +43,7 @@ import { discoverWorkspacePackages } from "@/test-runners";
 import { _gitToolDeps } from "@/tools";
 import { errorMessage } from "@/utils/errors";
 import { installCrashHandlers } from "../crash-recovery";
-import { acquireFeatureLock } from "../feature-lock";
+import { acquireFeatureLock, type FeatureLockResult } from "../feature-lock";
 import { acquireLock, releaseLock } from "../helpers";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
@@ -389,12 +389,23 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       });
     }
 
-    const featureLock = await _runSetupDeps.acquireFeatureLock({
-      outputDir: runtime.outputDir,
-      feature,
-      workdir,
-      runId,
-    });
+    let featureLock: FeatureLockResult;
+    try {
+      featureLock = await _runSetupDeps.acquireFeatureLock({
+        outputDir: runtime.outputDir,
+        feature,
+        workdir,
+        runId,
+      });
+    } catch (err) {
+      // acquireFeatureLock THREW (mkdir failure, rename EACCES, exclusive
+      // create EIO, …) after the checkout lock was already taken. Release
+      // the checkout lock before propagating so the directory isn't
+      // permanently locked. The refusal branch below is a separate code path
+      // (acquireFeatureLock returned `{ acquired: false }` rather than threw).
+      await releaseLock(workdir);
+      throw err;
+    }
     if (!featureLock.acquired) {
       // Feature lock refused: release the checkout lock we just took so
       // the directory isn't permanently locked, then surface the refusal.
