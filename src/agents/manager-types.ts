@@ -195,6 +195,13 @@ export interface RunAsSessionOpts {
   readonly callId?: string;
   /** Caller-supplied region id forwarded to dispatch events. */
   readonly scopeId?: string;
+  /**
+   * IGNORED when supplied: `runAsSession` always mints a fresh turnId and
+   * overwrites this field on its way to the dispatch event and transport. The
+   * field exists only so the options object type-checks against the hop's
+   * spread — a caller cannot inject its own per-turn identity.
+   */
+  readonly turnId?: string;
 }
 
 export interface IAgentManager {

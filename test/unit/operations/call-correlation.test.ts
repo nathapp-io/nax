@@ -5,14 +5,14 @@
  */
 
 import type { mock } from "bun:test";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock as mockFn, test } from "bun:test";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
 import type { CompleteResult } from "@/agents/types";
 import type { DEFAULT_CONFIG } from "@/config";
 import { pickSelector } from "@/config";
 import type { CompleteOperation, RunOperation } from "@/operations";
 import { callOp, newCorrelationId } from "@/operations";
-import type { NaxRuntime } from "@/runtime";
+import { createNoOpCostAggregator, type NaxRuntime } from "@/runtime";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => {
@@ -105,6 +105,60 @@ describe("newCorrelationId (AC10)", () => {
 // ─── callOp kind:complete — callId stamping (ACs 7, 8) ─────────────────────
 
 describe("callOp kind:complete — callId/scopeId forwarding (ACs 7, 8)", () => {
+  test("opens and closes a scope when the caller supplies none", async () => {
+    let observedScopeId: string | undefined;
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (_agentName, _prompt, opts) => {
+        observedScopeId = opts?.scopeId;
+        return okCompleteResult;
+      },
+    });
+    const close = mockFn(() => {});
+    const costAggregator = createNoOpCostAggregator();
+    costAggregator.openScope = mockFn(() => ({
+      scopeId: "call-op-scope",
+      snapshot: () => costAggregator.snapshot(),
+      close,
+    }));
+    runtime = makeTestRuntime({ agentManager, costAggregator });
+
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude" },
+      echoCompleteOp,
+      { text: "hi" },
+    );
+
+    expect(observedScopeId).toBe("call-op-scope");
+    expect(costAggregator.openScope).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  test("closes an owned scope when dispatch throws", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => {
+        throw new Error("dispatch failed");
+      },
+    });
+    const close = mockFn(() => {});
+    const costAggregator = createNoOpCostAggregator();
+    costAggregator.openScope = mockFn(() => ({
+      scopeId: "failed-call-scope",
+      snapshot: () => costAggregator.snapshot(),
+      close,
+    }));
+    runtime = makeTestRuntime({ agentManager, costAggregator });
+
+    await expect(
+      callOp(
+        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude" },
+        echoCompleteOp,
+        { text: "hi" },
+      ),
+    ).rejects.toThrow("dispatch failed");
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   test("stamps a fresh callId when ctx.callId is absent", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => okCompleteResult,
@@ -153,7 +207,11 @@ describe("callOp kind:complete — callId/scopeId forwarding (ACs 7, 8)", () => 
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => okCompleteResult,
     });
-    runtime = makeTestRuntime({ agentManager });
+    const costAggregator = createNoOpCostAggregator();
+    costAggregator.openScope = mockFn(() => {
+      throw new Error("caller-owned scope must not be replaced");
+    });
+    runtime = makeTestRuntime({ agentManager, costAggregator });
 
     await callOp(
       {
@@ -171,6 +229,7 @@ describe("callOp kind:complete — callId/scopeId forwarding (ACs 7, 8)", () => 
       | { scopeId?: string }
       | undefined;
     expect(opts?.scopeId).toBe("review-round-1");
+    expect(costAggregator.openScope).not.toHaveBeenCalled();
   });
 
   test("two calls without ctx.callId get distinct callIds", async () => {
@@ -204,6 +263,45 @@ describe("callOp kind:complete — callId/scopeId forwarding (ACs 7, 8)", () => 
 // ─── callOp kind:run — callId/scopeId forwarding (ACs 7, 9) ────────────────
 
 describe("callOp kind:run — callId/scopeId forwarding (ACs 7, 9)", () => {
+  test("opens and closes a scope when the caller supplies none", async () => {
+    let observedScopeId: string | undefined;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        observedScopeId = req.runOptions.scopeId;
+        return {
+          result: {
+            success: true,
+            exitCode: 0,
+            output: "ran",
+            rateLimited: false,
+            durationMs: 1,
+            estimatedCostUsd: 0,
+            agentFallbacks: [],
+          },
+          fallbacks: [],
+        };
+      },
+    });
+    const close = mockFn(() => {});
+    const costAggregator = createNoOpCostAggregator();
+    costAggregator.openScope = mockFn(() => ({
+      scopeId: "call-op-run-scope",
+      snapshot: () => costAggregator.snapshot(),
+      close,
+    }));
+    runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager(), costAggregator });
+
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude" },
+      echoRunOp,
+      { text: "hi" },
+    );
+
+    expect(observedScopeId).toBe("call-op-run-scope");
+    expect(costAggregator.openScope).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   test("stamps a fresh callId in runOptions when ctx.callId is absent (AC7, AC9)", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (_req) => ({

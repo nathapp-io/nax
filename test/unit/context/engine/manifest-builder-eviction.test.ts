@@ -53,10 +53,12 @@ function makeInputs(overrides: Partial<ManifestInputs> = {}): ManifestInputs {
     dedupeDropped: [],
     budgetExcludedIds: [],
     chunkTokenLookup: new Map(),
+    chunkProviderLookup: new Map(),
     floorPackedIds: [],
     floorOverageIds: [],
     floorOverageTokens: 0,
     effectiveBudget: 8_000,
+    staleIds: new Set(),
     ...overrides,
   };
 }

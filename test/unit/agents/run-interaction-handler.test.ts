@@ -51,4 +51,25 @@ describe("buildRunInteractionHandler — coding tools", () => {
     const handler = buildRunInteractionHandler({});
     expect(await handler.onInteraction({ kind: "coding-tool", name: "Read", input: {} })).toBeNull();
   });
+
+  test("forwards the turn context into callTool", async () => {
+    const seen: Array<{ name: string; input: Record<string, unknown>; context?: unknown }> = [];
+    const runtime: CodingToolRuntime = {
+      advertised: () => [],
+      callTool: async (name, input, context) => {
+        seen.push({ name, input, context });
+        return { kind: "ok", content: "ok" };
+      },
+    };
+    const handler = buildRunInteractionHandler({ codingToolRuntime: runtime });
+    await handler.onInteraction({
+      kind: "coding-tool",
+      name: "Read",
+      input: { path: "a.ts" },
+      turnId: "turn-1",
+      roundTrips: 2,
+      toolCallId: "toolu_x",
+    });
+    expect(seen[0]?.context).toEqual({ turnId: "turn-1", roundTrips: 2, toolCallId: "toolu_x" });
+  });
 });

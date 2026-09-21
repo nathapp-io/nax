@@ -150,6 +150,10 @@ export interface DispatchErrorEvent {
   readonly resolvedPermissions: ResolvedPermissions;
   readonly callId?: string;
   readonly scopeId?: string;
+  /** Identity of the turn that failed; mirrors `protocolIds.turnId` on a
+   *  successful `SessionTurnDispatchEvent`. Flat, because this event has no
+   *  `protocolIds` object — see `CompleteDispatchEvent`. */
+  readonly turnId?: string;
   // US-001 (failed-dispatch cost attribution). Forwarded from a thrown
   // SessionTurnError so a run-op whose turn throws still records its spent
   // usage and role attribution. All four are optional; existing

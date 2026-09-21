@@ -340,6 +340,21 @@ describe("sendPrompt()", () => {
     await sm.sendPrompt(handle, "test", { maxInteractions: 5 });
     expect(capturedMaxInteractions).toBe(5);
   });
+
+  test("forwards turnId to adapter.sendTurn", async () => {
+    let capturedTurnId: string | undefined;
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string): Promise<SessionHandle> => ({ id: name, agentName: "claude" })),
+      sendTurn: mock(async (_h: SessionHandle, _p: string, opts: SendTurnOpts) => {
+        capturedTurnId = opts.turnId;
+        return MOCK_TURN;
+      }),
+    });
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const handle = await sm.openSession("nax-turnid-test", makeOpenRequest());
+    await sm.sendPrompt(handle, "test", { turnId: "turn-42" });
+    expect(capturedTurnId).toBe("turn-42");
+  });
 });
 
 // ─── runInSession() — prompt form ─────────────────────────────────────────────

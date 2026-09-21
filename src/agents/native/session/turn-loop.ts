@@ -452,7 +452,23 @@ export async function runNativeTurn(
           if (kind === "coding-tool") codingToolsCalled.push(call.name);
           const answer = await opts.interactionHandler.onInteraction(
             kind === "coding-tool"
-              ? { kind, name: call.name, input: (input ?? {}) as Record<string, unknown> }
+              ? {
+                  kind,
+                  name: call.name,
+                  // MUST be `input`, NOT `call.input`. #2162's US-002 added a
+                  // `before_tool` `allow` outcome that may REWRITE the input;
+                  // the merged line is `input: (input ?? {}) as Record<...>`
+                  // where `input = rewritten ?? call.input` (turn-loop.ts:448).
+                  // Using `call.input` here runs the tool on the model's
+                  // original arguments while `rewriteToolCallInput` has already
+                  // recorded the corrected ones — execution and transcript
+                  // diverge, silently, with no test in this plan covering it.
+                  input: (input ?? {}) as Record<string, unknown>,
+                  ...(opts.turnId !== undefined ? { turnId: opts.turnId } : {}),
+                  roundTrips,
+                  toolCallId: call.id,
+                  deferModelTruncation: true,
+                }
               : { kind, name: call.name, input },
           );
           const answerText = answer?.answer ?? "";
@@ -462,11 +478,8 @@ export async function runNativeTurn(
           // through untouched — a refused Write is not a crashed Write
           // (ADR-029 s5) — and `nudge` prefixes the surviving content.
           const patch = loopEvents.afterTool(call, { content: answerText, denied: answer?.denied });
-          // US-003: the model-facing truncation runs at the same chokepoint —
-          // after the handlers have had their say, before the message is built
-          // — so nothing this policy produces can be rewritten into history
-          // either. See ./truncation-handler for why it is not itself a
-          // registered handler.
+          // US-003: model-facing truncation runs after handlers and before the
+          // message is built. See ./truncation-handler for the async rationale.
           const shaped = await truncateNativeToolResult(handle.id, patch.content ?? answerText, {
             toolName: call.name,
             callId: call.id,
@@ -474,10 +487,12 @@ export async function runNativeTurn(
             // result's budget -- not added after the ceiling was enforced.
             ...(nudgeText !== undefined ? { reserveBytes: nudgeOverheadBytes(nudgeText) } : {}),
           });
+          const finalContent = withNudge(nudgeText, shaped);
+          answer?.finalizeAudit?.(finalContent);
           messages.push(
             buildToolResult({
               toolCallId: call.id,
-              content: withNudge(nudgeText, shaped),
+              content: finalContent,
               isError: patch.isError,
               denied: answer?.denied,
             }),

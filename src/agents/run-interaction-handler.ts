@@ -83,14 +83,22 @@ export function buildRunInteractionHandler(options: RunInteractionOptions): Inte
       if (req.kind === "coding-tool") {
         const runtime = options.codingToolRuntime;
         if (!runtime) return null;
-        const outcome = await runtime.callTool(req.name, req.input ?? {});
+        const outcome = await runtime.callTool(req.name, req.input ?? {}, {
+          ...(req.turnId !== undefined ? { turnId: req.turnId } : {}),
+          ...(req.roundTrips !== undefined ? { roundTrips: req.roundTrips } : {}),
+          ...(req.toolCallId !== undefined ? { toolCallId: req.toolCallId } : {}),
+          ...(req.deferModelTruncation !== undefined ? { deferModelTruncation: req.deferModelTruncation } : {}),
+        });
         if (outcome.kind === "denied") {
           return {
             answer: `Denied: ${outcome.reason}`,
             denied: { reason: outcome.reason, breach: outcome.breach },
           };
         }
-        return { answer: outcome.content };
+        return {
+          answer: outcome.content,
+          ...(outcome.finalizeAudit !== undefined ? { finalizeAudit: outcome.finalizeAudit } : {}),
+        };
       }
       return null;
     },

@@ -8,6 +8,7 @@
 import { mkdir } from "node:fs/promises";
 import * as path from "node:path";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
+import { getCuratorRetention, maybePruneRollup } from "./auto-prune";
 import { collectObservations } from "./collect";
 import type { CuratorThresholds } from "./heuristics";
 import { runHeuristics } from "./heuristics";
@@ -103,6 +104,29 @@ const curatorAction: IPostRunAction = {
         // run-scoped collection is what keeps each finding in it exactly once.
         await appendToRollup(observations, rollupPath);
 
+        // Size-gated auto-prune (US-004). The gate reads the rollup byte size
+        // and only invokes pruneRollup above `retention.pruneThresholdBytes`;
+        // below it, this is a free no-op. Rejections are caught inside
+        // `maybePruneRollup` — this hook stays an observer, so a prune miss
+        // must never fail the run that triggered it.
+        const retention = getCuratorRetention(context);
+        const pruneOutcome = await maybePruneRollup({
+          rollupPath,
+          projectKey: curatorContext.projectKey,
+          retention,
+        });
+        if (pruneOutcome.error !== undefined) {
+          context.logger.warn("Curator auto-prune failed", {
+            error: pruneOutcome.error,
+            rollupPath,
+          });
+        } else if (pruneOutcome.pruned) {
+          context.logger.info("Curator auto-prune completed", {
+            rollupPath,
+            ...pruneOutcome.result,
+          });
+        }
+
         const thresholds = getCuratorThresholds(context);
         const window = await readHeuristicWindow(rollupPath, HEURISTIC_WINDOW_RUNS, {
           projectKey: curatorContext.projectKey,
@@ -122,7 +146,17 @@ const curatorAction: IPostRunAction = {
           window.observations.length > 0 ? window.observations : observations,
           thresholds,
         );
-        const markdown = renderProposals(proposals, context.runId, observations.length);
+        // Provenance describes the heuristic window the proposals were drawn
+        // from: a multi-run rollup carries its own run count and observation
+        // count, distinct from this run's observation count. When the
+        // rollup is empty (no window yet) we fall back to "this run only"
+        // rather than "0 runs" — the heuristic window IS this run's
+        // observations by definition (#1929).
+        const windowHasObservations = window.observations.length > 0;
+        const provenance = windowHasObservations
+          ? { runCount: window.runIds.length, observationCount: window.observations.length }
+          : { runCount: 1, observationCount: observations.length };
+        const markdown = renderProposals(proposals, context.runId, observations.length, provenance);
 
         const proposalsMdPath = path.join(runDir, "curator-proposals.md");
         await Bun.write(proposalsMdPath, markdown);
@@ -170,11 +204,17 @@ export const curatorPlugin: NaxPlugin = {
   },
 };
 
+// US-004 — auto-prune retention gate. Re-exported so tests reach them through
+// the barrel rather than only its callers.
+export type { CuratorRetentionConfig } from "./auto-prune";
+export { DEFAULT_RETENTION, getCuratorRetention, maybePruneRollup } from "./auto-prune";
 // Both rollup readers depend on this reassembling rows across chunk boundaries;
 // exported so it is reachable through the barrel rather than only its callers.
 export { streamJsonlLines } from "./jsonl-stream";
 export type { HeuristicWindow, HeuristicWindowOptions } from "./rollup";
 export { readHeuristicWindow } from "./rollup";
+// Re-export so callers that prune via the curator barrel reach the type.
+export type { PruneResult } from "./rollup-prune";
 // Re-export types for use in tests and other modules
 export type {
   AcceptanceVerdictObservation,

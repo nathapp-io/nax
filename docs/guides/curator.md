@@ -145,14 +145,16 @@ Cleans up per-run proposal and observation files from older runs. Does not delet
 
 ## Proposal Review Flow
 
-Each run produces a proposal file at `<outputDir>/runs/<runId>/curator-proposals.md`:
+Each run writes a proposal file at `<outputDir>/runs/<runId>/curator-proposals.md`.
+The proposals themselves derive from the rolling heuristic window (the most
+recent up-to-20 runs the curator tracks in the cross-run rollup), not from
+the current run's observations alone — a single run is rarely enough
+evidence to trip a recurrence threshold. The header reflects both facts:
 
 ```markdown
-# Curator proposals — run abc123
+# Curator Proposals
 
-Generated: 2026-05-04T10:00:00Z
-Heuristics fired: 4
-Observations: 47
+> generated at 2026-05-04T10:00:00Z · run abc123 · 20 run(s) · 4000 window observation(s) · 1294 run observation(s)
 
 ## Add to .nax/features/auth/context.md
 - [ ] [HIGH] (H3) Postgres connection pool sizing — story story-001 ran 3 rectify cycles

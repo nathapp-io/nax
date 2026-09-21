@@ -95,6 +95,21 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.manifest.includedChunks).toContain("c:1");
   });
 
+  test("rejects duplicate chunk IDs before provider attribution becomes ambiguous", async () => {
+    const orch = new ContextOrchestrator([
+      makeProvider("p1", makeChunkResult({ id: "opaque-id", content: "alpha content" })),
+      makeProvider("p2", makeChunkResult({ id: "opaque-id", content: "beta content" })),
+    ]);
+
+    await expect(orch.assemble(BASE_REQUEST)).rejects.toMatchObject({
+      code: "CONTEXT_DUPLICATE_CHUNK_ID",
+      context: {
+        chunkId: "opaque-id",
+        providerIds: ["p1", "p2"],
+      },
+    });
+  });
+
   test("manifest records each packed chunk's token cost (#1421)", async () => {
     // Without this the curator can only record tokens:0 for every chunk, and the
     // context budget cannot be tuned against real data.
@@ -127,6 +142,7 @@ describe("ContextOrchestrator.assemble()", () => {
     // The excluded chunk's token cost is recorded (Finding 5)...
     expect(bundle.manifest.excludedChunks.map((c) => c.id)).toContain("c:3");
     expect(tokenMap["c:3"]).toBe(50);
+    expect(bundle.manifest.chunkProviders?.["c:3"]).toBe("p3");
     // ...while the accounting invariant holds over the INCLUDED keys only.
     const includedSum = bundle.manifest.includedChunks.reduce((sum, id) => sum + (tokenMap[id] ?? 0), 0);
     const priorDigestTokens = 0; // BASE_REQUEST supplies no priorStageDigest
@@ -167,6 +183,7 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.chunks).toHaveLength(0);
     const excluded = bundle.manifest.excludedChunks.find((c) => c.id === "reviewer:chunk");
     expect(excluded?.reason).toBe("role-filter");
+    expect(bundle.manifest.chunkProviders?.["reviewer:chunk"]).toBe("p1");
   });
 
   test("provider timeout: failed provider returns empty, does not throw", async () => {
@@ -481,6 +498,7 @@ describe("US-001 — ContextOrchestrator budget arithmetic", () => {
     // Only the 200-token chunk should fit under the reserved budget — the
     // 1600-token chunk must be excluded, proving the reserve was subtracted.
     expect(bundle.manifest.includedChunks).not.toContain("non-floor:2");
+    expect(bundle.manifest.chunkProviders?.["non-floor:2"]).toBe("p4");
     const { DIGEST_RESERVE_TOKENS } = await import("@/context");
     expect(nonFloorPacked).toBeLessThanOrEqual(stageBudget - DIGEST_RESERVE_TOKENS);
   });

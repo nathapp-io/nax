@@ -192,17 +192,22 @@ export function rebuild(
   const chunkScopePaths = prior.manifest.chunkScopePaths
     ? Object.fromEntries(Object.entries(prior.manifest.chunkScopePaths).filter(([id]) => includedChunkIds.has(id)))
     : undefined;
-  // Mirror the chunkScopePaths/chunkEffectiveness pattern: a chunk dropped
-  // during rebuild (e.g. budget repack) must not keep its provider-attribution
-  // entry forever — a future direct consumer of chunkProviders (rather than
-  // deriving it via chunkEffectiveness's keys) would otherwise double-count
-  // or misattribute chunks that are no longer part of the bundle.
+  // Provider attribution covers the complete rebuilt manifest domain. Unlike
+  // scope/effectiveness data, providers are also consumed for excluded-chunk
+  // observations, so budget exclusions must retain their prior mapping.
+  const manifestChunkIds = new Set([...includedChunkIds, ...packResult.budgetExcludedIds]);
   const chunkProviders = prior.manifest.chunkProviders
-    ? Object.fromEntries(Object.entries(prior.manifest.chunkProviders).filter(([id]) => includedChunkIds.has(id)))
+    ? Object.fromEntries(Object.entries(prior.manifest.chunkProviders).filter(([id]) => manifestChunkIds.has(id)))
     : undefined;
+  // US-001: stamp `stale` onto every rebuilt budget-excluded entry. The flag
+  // is stamped uniformly whether or not the chunk is stale; the mechanical
+  // `reason` is preserved unchanged. Derivation uses `packedChunks` (the
+  // input to the packer) since it carries `staleCandidate` for every chunk
+  // that the pack saw, regardless of whether the chunk survived packing.
+  const staleCandidateById = new Map<string, boolean>(packedChunks.map((c) => [c.id, c.staleCandidate === true]));
   const excludedChunks = packResult.budgetExcludedIds
     .filter((id) => !includedChunkIds.has(id))
-    .map((id) => ({ id, reason: "budget" as const }));
+    .map((id) => ({ id, reason: "budget" as const, stale: staleCandidateById.get(id) === true }));
 
   // #1421: `chunkTokens` must cover every chunk that reached packing, included
   // and excluded alike (manifest-types.ts). The excluded entries have no chunk

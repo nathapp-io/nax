@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { compileToolPolicy } from "@/tools/policy";
 import type { CodingTool } from "@/tools/registry";
 import { createCodingToolRuntime } from "@/tools/runtime";
-import { createToolAuditSink } from "@/tools/tool-audit";
+import { createToolAuditSink, TOOL_AUDIT_SCHEMA_VERSION } from "@/tools/tool-audit";
 
 describe("createToolAuditSink", () => {
   test("writes one file holding every recorded call", async () => {
@@ -99,6 +99,48 @@ describe("createToolAuditSink", () => {
     expect(parsed.calls[0].tool).toBe("Exec");
   });
 
+  test("records the correlation ids supplied to the runtime", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const sink = createToolAuditSink({ dir, sessionName: "s1" });
+    sink.record({
+      tool: "Read",
+      outcome: "ok",
+      input: {},
+      resultBytes: 1,
+      at: "2026-09-20T00:00:00.000Z",
+      callId: "call-1",
+      scopeId: "scope-1",
+    });
+    await sink.flush();
+
+    const files = await readdir(dir);
+    const parsed = JSON.parse(await readFile(join(dir, files[0] as string), "utf8"));
+    expect(parsed.calls[0].callId).toBe("call-1");
+    expect(parsed.calls[0].scopeId).toBe("scope-1");
+  });
+
+  test("records turn context alongside the tool call", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const sink = createToolAuditSink({ dir, sessionName: "s1" });
+    sink.record({
+      tool: "Read",
+      outcome: "ok",
+      input: {},
+      resultBytes: 1,
+      at: "2026-09-20T00:00:00.000Z",
+      turnId: "turn-1",
+      roundTrips: 3,
+      toolCallId: "toolu_abc",
+    });
+    await sink.flush();
+
+    const files = await readdir(dir);
+    const parsed = JSON.parse(await readFile(join(dir, files[0] as string), "utf8"));
+    expect(parsed.calls[0].turnId).toBe("turn-1");
+    expect(parsed.calls[0].roundTrips).toBe(3);
+    expect(parsed.calls[0].toolCallId).toBe("toolu_abc");
+  });
+
   test('the runtime writes tool "Exec" for an argv call all the way into the ledger file', async () => {
     const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
     const sink = createToolAuditSink({ dir, sessionName: "US-001-implementer" });
@@ -138,4 +180,68 @@ test("the runtime records a denial through the sink, not only the logger", async
   expect(recorded).toHaveLength(1);
   expect((recorded[0] as { outcome: string }).outcome).toBe("denied");
   expect((recorded[0] as { tool: string }).tool).toBe("GitCommit");
+});
+
+test("writes schemaVersion and the header fields", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const sink = createToolAuditSink({
+    dir,
+    sessionName: "US-001-implementer",
+    header: {
+      runId: "run-abc",
+      featureName: "telemetry-keys",
+      storyId: "US-001",
+      sessionRole: "implementer",
+    },
+  });
+  sink.record({
+    tool: "Read",
+    outcome: "ok",
+    input: { path: "a.ts" },
+    resultBytes: 10,
+    at: "2026-09-20T00:00:00.000Z",
+  });
+  await sink.flush();
+
+  const files = await readdir(dir);
+  const parsed = JSON.parse(await readFile(join(dir, files[0] as string), "utf8"));
+  expect(parsed.schemaVersion).toBe(TOOL_AUDIT_SCHEMA_VERSION);
+  expect(parsed.runId).toBe("run-abc");
+  expect(parsed.featureName).toBe("telemetry-keys");
+  expect(parsed.storyId).toBe("US-001");
+  expect(parsed.sessionRole).toBe("implementer");
+  expect(parsed.sessionName).toBe("US-001-implementer");
+});
+
+test("the filename carries the runId when one is known", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const sink = createToolAuditSink({ dir, sessionName: "s1", header: { runId: "run-fn" } });
+  sink.record({ tool: "Read", outcome: "ok", input: {}, resultBytes: 1, at: "2026-09-20T00:00:00.000Z" });
+  await sink.flush();
+
+  const [name] = await readdir(dir);
+  expect(name).toMatch(/^run-fn-\d+-s1\.json$/);
+});
+
+test("falls back to the unprefixed name when no runId is known", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const sink = createToolAuditSink({ dir, sessionName: "s2" });
+  sink.record({ tool: "Read", outcome: "ok", input: {}, resultBytes: 1, at: "2026-09-20T00:00:00.000Z" });
+  await sink.flush();
+
+  const [name] = await readdir(dir);
+  expect(name).toMatch(/^\d+-s2\.json$/);
+});
+
+test("omits header keys that were not supplied", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+  const sink = createToolAuditSink({ dir, sessionName: "s1" });
+  sink.record({ tool: "Read", outcome: "ok", input: {}, resultBytes: 1, at: "2026-09-20T00:00:00.000Z" });
+  await sink.flush();
+
+  const files = await readdir(dir);
+  const parsed = JSON.parse(await readFile(join(dir, files[0] as string), "utf8"));
+  expect(parsed.schemaVersion).toBe(TOOL_AUDIT_SCHEMA_VERSION);
+  expect("runId" in parsed).toBe(false);
+  expect("featureName" in parsed).toBe(false);
 });

@@ -31,12 +31,29 @@ export interface ManifestInputs {
    * requires. IDs absent from the lookup leave no key.
    */
   chunkTokenLookup: ReadonlyMap<string, number>;
+  /**
+   * Provider ID by chunk ID for every scored chunk, included or excluded.
+   * Optional for compatibility with legacy and synthetic callers.
+   */
+  chunkProviderLookup?: ReadonlyMap<string, string>;
   floorPackedIds: string[];
   floorOverageIds: string[];
   /** Sum of the `tokens` of the chunks in `floorOverageIds` (Ruling 11). */
   floorOverageTokens: number;
   /** Effective ceiling actually used by `packChunks` (US-003). */
   effectiveBudget: number;
+  /**
+   * Set of chunk IDs that the orchestrator classified as stale at assembly
+   * time (Amendment A AC-46/47). US-001 attribute: `buildManifest` stamps
+   * `stale: true` onto every `excludedChunks` entry whose ID is in this set,
+   * preserving the mechanical `reason` alongside the staleness signal.
+   *
+   * Derived in the orchestrator from `scored`, which is documented as a
+   * superset of every chunk that reaches the exclusion lists — so a chunk
+   * in any of `roleFiltered`, `belowMin`, `dedupeDropped`, `budgetExcludedIds`
+   * is reachable from the set even if it never reached `packed`.
+   */
+  staleIds: ReadonlySet<string>;
 }
 
 /**
@@ -60,10 +77,12 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     dedupeDropped,
     budgetExcludedIds,
     chunkTokenLookup,
+    chunkProviderLookup,
     floorPackedIds,
     floorOverageIds,
     floorOverageTokens,
     effectiveBudget,
+    staleIds,
   } = inputs;
 
   // Amendment A: stale chunk IDs and content summaries for post-story
@@ -103,11 +122,16 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     }
   }
 
+  // US-001: stamp `stale` onto every excludedChunks entry uniformly on all
+  // four exclusion paths. The mechanical `reason` is preserved unchanged —
+  // staleness is an orthogonal axis, not an alternative cause. The flag is
+  // stamped on every mapping whether or not the chunk is stale (uniform
+  // stamping: production reachability is narrower than the contract).
   const excludedChunks: ContextManifest["excludedChunks"] = [
-    ...roleFiltered.map((c) => ({ id: c.id, reason: "role-filter" as const })),
-    ...belowMin.map((c) => ({ id: c.id, reason: "below-min-score" as const })),
-    ...dedupeDropped.map((id) => ({ id, reason: "dedupe" as const })),
-    ...budgetExcludedIds.map((id) => ({ id, reason: "budget" as const })),
+    ...roleFiltered.map((c) => ({ id: c.id, reason: "role-filter" as const, stale: staleIds.has(c.id) })),
+    ...belowMin.map((c) => ({ id: c.id, reason: "below-min-score" as const, stale: staleIds.has(c.id) })),
+    ...dedupeDropped.map((id) => ({ id, reason: "dedupe" as const, stale: staleIds.has(id) })),
+    ...budgetExcludedIds.map((id) => ({ id, reason: "budget" as const, stale: staleIds.has(id) })),
   ];
 
   // Finding 5 (#2061): record excluded chunks' token costs too, so the manifest
@@ -117,6 +141,10 @@ export function buildManifest(inputs: ManifestInputs): ContextManifest {
     const tokens = chunkTokenLookup.get(id);
     if (tokens !== undefined && chunkTokens[id] === undefined) {
       chunkTokens[id] = tokens;
+    }
+    const providerId = chunkProviderLookup?.get(id);
+    if (providerId !== undefined && chunkProviders[id] === undefined) {
+      chunkProviders[id] = providerId;
     }
   }
 

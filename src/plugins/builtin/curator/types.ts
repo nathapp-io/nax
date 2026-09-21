@@ -57,6 +57,13 @@ export interface ChunkIncludedObservation extends BaseObservation {
     chunkId: string;
     label: string;
     tokens: number;
+    /**
+     * Provider that produced this chunk. Carried verbatim from the manifest's
+     * `chunkProviders` sibling map (US-002). Absent when the manifest has no
+     * entry for this chunk ID — a missing entry omits the key rather than
+     * setting a placeholder.
+     */
+    provider?: string;
   };
 }
 
@@ -67,6 +74,21 @@ export interface ChunkExcludedObservation extends BaseObservation {
     chunkId: string;
     label: string;
     reason?: string;
+    /**
+     * Provider that produced this chunk. Carried verbatim from the manifest's
+     * `chunkProviders` sibling map (US-002). Absent when the manifest has no
+     * entry for this chunk ID — a missing entry omits the key rather than
+     * setting a placeholder.
+     */
+    provider?: string;
+    /**
+     * Stale flag attributed at assembly time and projected onto the
+     * chunk-excluded observation (US-001/002). Orthogonal to `reason` —
+     * the mechanical cause of exclusion is preserved unchanged, and the
+     * `stale` signal is layered on top. Absent when the manifest entry
+     * carries no `stale` flag (legacy / pre-#2061 manifests).
+     */
+    stale?: boolean;
   };
 }
 

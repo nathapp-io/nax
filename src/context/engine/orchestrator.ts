@@ -152,6 +152,24 @@ function enrichRaw(chunk: RawChunk, providerId: string): RawChunk {
   return { ...chunk, providerId };
 }
 
+function assertUniqueChunkIds(chunks: RawChunk[], request: ContextRequest): void {
+  const providerByChunkId = new Map<string, string>();
+  for (const chunk of chunks) {
+    const providerId = chunk.providerId ?? "unknown";
+    const existingProviderId = providerByChunkId.get(chunk.id);
+    if (existingProviderId !== undefined) {
+      throw new NaxError(`[context-v2] Duplicate context chunk ID: ${chunk.id}`, "CONTEXT_DUPLICATE_CHUNK_ID", {
+        stage: "context-v2",
+        storyId: request.storyId,
+        requestStage: request.stage,
+        chunkId: chunk.id,
+        providerIds: [existingProviderId, providerId],
+      });
+    }
+    providerByChunkId.set(chunk.id, providerId);
+  }
+}
+
 function buildProviderSourceMap(
   stageProviderIds: string[],
   extraProviderIds: string[],
@@ -363,6 +381,8 @@ export class ContextOrchestrator {
       });
     }
 
+    assertUniqueChunkIds(allRaw, request);
+
     // Phase 4: build pull tool descriptors from stage config + PULL_TOOL_REGISTRY.
     // Provider-level result.pullTools is reserved for Phase 7 and ignored here.
     // AC-33: gate pull tools on agent capability. When the agent cannot invoke
@@ -442,6 +462,17 @@ export class ContextOrchestrator {
     // not only the packed ones. `scored` is a superset of every chunk that
     // reaches the exclusion lists.
     const chunkTokenLookup = new Map<string, number>(scored.map((c) => [c.id, c.tokens]));
+    const chunkProviderLookup = new Map<string, string>(
+      scored.flatMap((c) => (c.providerId === undefined ? [] : [[c.id, c.providerId]])),
+    );
+
+    // US-001: derive staleIds from `scored`, which is a superset of every
+    // chunk that reaches the exclusion lists (roleFiltered, belowMin,
+    // dedupeDropped, budgetExcludedIds). This guarantees the buildManifest
+    // attribution is correct on every exclusion path even though only
+    // `dedupe` and `role-filter` can carry a stale chunk in production
+    // (stale chunks are floor-kind and exempt from budget / below-min).
+    const staleIds = new Set<string>(scored.filter((c) => c.staleCandidate === true).map((c) => c.id));
 
     const manifest = buildManifest({
       requestId,
@@ -456,10 +487,12 @@ export class ContextOrchestrator {
       dedupeDropped,
       budgetExcludedIds,
       chunkTokenLookup,
+      chunkProviderLookup,
       floorPackedIds,
       floorOverageIds,
       floorOverageTokens,
       effectiveBudget,
+      staleIds,
     });
 
     // #1776: floor items (static rules, feature/test-coverage floor chunks)

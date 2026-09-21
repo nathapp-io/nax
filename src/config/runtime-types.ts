@@ -545,7 +545,7 @@ export interface NaxConfig {
   /** Project profile — language and tooling metadata (US-001) */
   project?: import("./runtime-types-project").ProjectProfile;
   /** Curator configuration */
-  curator?: CuratorConfig;
+  curator?: import("./runtime-types-curator").CuratorConfig;
   autoPr: import("./runtime-types-autopr").AutoPrConfig;
   /** Configuration profile name. For a multi-profile chain this is the composite, e.g. "a+b" (default: "default") */
   profile: string;
@@ -554,23 +554,6 @@ export interface NaxConfig {
    * excluding implicit "default" entries. Empty when no profile overlay applied.
    */
   profileChain?: string[];
-}
-export interface CuratorThresholds {
-  repeatedFinding: number;
-  emptyKeyword: number;
-  rectifyAttempts: number;
-  escalationChain: number;
-  staleChunkRuns: number;
-  unchangedOutcome: number;
-}
-
-export interface CuratorConfig {
-  /** Whether curator is enabled (default: true) */
-  enabled?: boolean;
-  /** Path to the rollup JSONL file for aggregated run results */
-  rollupPath?: string;
-  /** Thresholds for observation filtering */
-  thresholds?: CuratorThresholds;
 }
 export type {
   AgentAcpConfig,
@@ -582,3 +565,4 @@ export type {
   PromptAuditConfig,
   UsageAuditConfig,
 } from "./runtime-types-agent";
+export type { CuratorConfig, CuratorRetentionConfig, CuratorThresholds } from "./runtime-types-curator";

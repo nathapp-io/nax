@@ -144,10 +144,15 @@ export interface ContextManifest {
   usedTokens: number;
   /** IDs of chunks that were packed into the push markdown */
   includedChunks: string[];
-  /** Chunks that were excluded, with reason */
+  /** Chunks that were excluded, with reason. US-001: an orthogonal `stale` flag
+   *  attributes staleness on every exclusion mapping without overwriting the
+   *  mechanical `reason` (the original cause stays intact alongside the
+   *  staleness signal). The five exclusion-stamping sites stamp `stale`
+   *  uniformly on every path whether or not the chunk is stale. */
   excludedChunks: Array<{
     id: string;
-    reason: "below-min-score" | "budget" | "dedupe" | "role-filter" | "stale";
+    reason: "below-min-score" | "budget" | "dedupe" | "role-filter";
+    stale?: boolean;
   }>;
   /**
    * All chunk IDs that were floor-packed (static + feature kinds).
@@ -305,16 +310,17 @@ export interface ContextManifest {
   /**
    * Per-chunk provider attribution carrier (US-003).
    *
-   * Populated by `buildManifest()` from `PackedChunk.providerId` (stamped by
-   * `enrichRaw()` in the orchestrator before scoring) for every packed chunk
-   * that carries one. Keyed by chunk ID; the value is the provider ID string.
+   * Populated by `buildManifest()` from provider IDs stamped by `enrichRaw()`
+   * before scoring. Keys may belong to either `includedChunks` or
+   * `excludedChunks`; the value is the provider ID string.
    *
    * Used by `deriveProviderWeights()` to aggregate chunkEffectiveness verdicts
    * per provider — the manifest records no chunk-ID → provider mapping
    * otherwise, and splitting the chunk ID on `:` is a convention, not an
    * invariant. Chunks without a `providerId` leave no key. Omitted entirely
-   * when no packed chunk carries a `providerId` (legacy manifests / synthetic
-   * callers) — same "absent means unknown" contract as `chunkScopePaths`.
+   * when no included or excluded chunk has known attribution (legacy
+   * manifests / synthetic callers) — the same "absent means unknown" contract
+   * as `chunkScopePaths`.
    */
   chunkProviders?: Record<string, string>;
 }
