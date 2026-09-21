@@ -41,13 +41,9 @@ function wrapped(): string {
 // AC1 — wrapDiffAccess + applyDiffAccess("acp") ⇒ ACP body, byte-identical
 // ---------------------------------------------------------------------------
 describe("AC1 — wrapDiffAccess + acp protocol yields the ACP body byte-for-byte", () => {
-  test("acp renders exactly the shell body between the surrounding prompt characters", () => {
+  test("acp renders exactly the shell body between the surrounding prompt characters; acp strips the legacy DIFF_ACCESS_MARKER_PREFIX from the output", () => {
     const out = applyDiffAccess(wrapped(), "acp");
     expect(out).toBe(`before\n${SHELL_BODY}after\n`);
-  });
-
-  test("acp strips the legacy DIFF_ACCESS_MARKER_PREFIX from the output", () => {
-    const out = applyDiffAccess(wrapped(), "acp");
     expect(out).not.toContain(DIFF_ACCESS_MARKER_PREFIX);
   });
 

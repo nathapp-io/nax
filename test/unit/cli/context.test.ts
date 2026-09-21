@@ -66,9 +66,13 @@ describe("formatContextInspect", () => {
     expect(joined).toContain("US-001");
   });
 
-  test("shows story ID in header", () => {
+  test("shows story ID in header; shows included chunk count; shows excluded chunk count; shows buildMs; shows digestTokens", () => {
     const output = lines(formatContextInspect("US-001", [makeEntry("verify")]));
     expect(output.join("\n")).toContain("US-001");
+    expect(output.join("\n")).toContain("3");
+    expect(output.join("\n")).toContain("2");
+    expect(output.join("\n")).toContain("42");
+    expect(output.join("\n")).toContain("120");
   });
 
   test("shows feature ID and stage", () => {
@@ -83,21 +87,6 @@ describe("formatContextInspect", () => {
     const joined = output.join("\n");
     expect(joined).toContain("1200");
     expect(joined).toContain("2000");
-  });
-
-  test("shows included chunk count", () => {
-    const output = lines(formatContextInspect("US-001", [makeEntry("verify")]));
-    expect(output.join("\n")).toContain("3");
-  });
-
-  test("shows excluded chunk count", () => {
-    const output = lines(formatContextInspect("US-001", [makeEntry("verify")]));
-    expect(output.join("\n")).toContain("2");
-  });
-
-  test("shows buildMs", () => {
-    const output = lines(formatContextInspect("US-001", [makeEntry("verify")]));
-    expect(output.join("\n")).toContain("42");
   });
 
   test("shows provider ID, status, chunkCount, tokensProduced, durationMs", () => {
@@ -180,11 +169,6 @@ describe("formatContextInspect", () => {
     });
     const output = lines(formatContextInspect("US-001", [entry]));
     expect(output.join("\n")).toContain("overage"); // shown in floor line
-  });
-
-  test("shows digestTokens", () => {
-    const output = lines(formatContextInspect("US-001", [makeEntry("verify")]));
-    expect(output.join("\n")).toContain("120");
   });
 
   test("shows provider error message when present", () => {

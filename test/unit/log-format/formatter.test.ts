@@ -274,13 +274,9 @@ describe("formatAdvisorySummary", () => {
     expect(output).toContain("no-action");
   });
 
-  test("omits the no-action line when every finding asks for a change (#1359)", () => {
+  test("omits the no-action line when every finding asks for a change (#1359); omits the coverage-gap line when no finding was demoted", () => {
     const output = plain(formatAdvisorySummary([advisoryFinding()], { mode: "normal", useColor: false }));
     expect(output).not.toContain("asked for no change");
-  });
-
-  test("omits the coverage-gap line when no finding was demoted", () => {
-    const output = plain(formatAdvisorySummary([advisoryFinding()], { mode: "normal", useColor: false }));
     expect(output).not.toContain("coverage-gap demotions");
   });
 

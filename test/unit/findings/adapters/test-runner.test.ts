@@ -26,9 +26,10 @@ describe("acFailureToFinding", () => {
     expect(finding.fixTarget).toBe("source");
   });
 
-  test("extracts an excerpt containing the AC ID as the message", () => {
+  test("extracts an excerpt containing the AC ID as the message; file is always undefined — no per-line file extraction", () => {
     const finding = acFailureToFinding("AC-1", BUN_OUTPUT);
     expect(finding.message).toContain("AC-1");
+    expect(finding.file).toBeUndefined();
   });
 
   test("falls back to '<acId> failed' when AC ID not found in output", () => {
@@ -44,11 +45,6 @@ describe("acFailureToFinding", () => {
   test("fixTarget is always 'source'", () => {
     const finding = acFailureToFinding("AC-2", BUN_OUTPUT);
     expect(finding.fixTarget).toBe("source");
-  });
-
-  test("file is always undefined — no per-line file extraction", () => {
-    const finding = acFailureToFinding("AC-1", BUN_OUTPUT);
-    expect(finding.file).toBeUndefined();
   });
 });
 

@@ -53,25 +53,17 @@ describe("verifierOp — RunOperation shape", () => {
     expect(verifierOp.kind).toBe("run");
   });
 
-  test("verifierOp.session.role equals 'verifier'", async () => {
+  test("verifierOp.session.role equals 'verifier'; verifierOp.session.lifetime equals 'fresh'; verifierOp has a config selector", async () => {
     const { verifierOp } = await import("@/operations");
     expect(verifierOp.session.role).toBe("verifier");
-  });
-
-  test("verifierOp.session.lifetime equals 'fresh'", async () => {
-    const { verifierOp } = await import("@/operations");
     expect(verifierOp.session.lifetime).toBe("fresh");
+    expect(verifierOp.config).toBeDefined();
   });
 
   test.each([["name" as const], ["stage" as const]])("verifierOp has a non-empty %s string", async (field) => {
     const { verifierOp } = await import("@/operations");
     expect(typeof verifierOp[field]).toBe("string");
     expect(verifierOp[field]).toBeTruthy();
-  });
-
-  test("verifierOp has a config selector", async () => {
-    const { verifierOp } = await import("@/operations");
-    expect(verifierOp.config).toBeDefined();
   });
 
   test.each([["build" as const], ["parse" as const]])("verifierOp has a %s function", async (method) => {
@@ -316,13 +308,9 @@ function tddBuildCtx(sessionTiers?: SessionTiers) {
 }
 
 describe("verifierOp.model — tdd.sessionTiers.verifier", () => {
-  test("returns the configured verifier tier", () => {
+  test("returns the configured verifier tier; returns undefined when sessionTiers is absent", () => {
     const resolver = verifierOp.model as (i: unknown, c: unknown) => unknown;
     expect(resolver({}, tddBuildCtx({ verifier: "fast" }))).toBe("fast");
-  });
-
-  test("returns undefined when sessionTiers is absent", () => {
-    const resolver = verifierOp.model as (i: unknown, c: unknown) => unknown;
     expect(resolver({}, tddBuildCtx(undefined))).toBeUndefined();
   });
 });

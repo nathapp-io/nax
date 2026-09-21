@@ -45,14 +45,11 @@ function makeRectifyInput(scope: "story" | "repo" = "repo"): FullSuiteRectifyInp
 }
 
 describe("makeFullSuiteRectifyStrategy", () => {
-  test("name is full-suite-rectify", () => {
+  test("name is full-suite-rectify; coRun is exclusive; fixOp references implementerOp (name=implementer)", () => {
     const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig());
     expect(strategy.name).toBe("full-suite-rectify");
-  });
-
-  test("coRun is exclusive", () => {
-    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig());
     expect(strategy.coRun).toBe("exclusive");
+    expect(strategy.fixOp.name).toBe("implementer");
   });
 
   test("appliesTo returns true for test-runner + failed-test findings", () => {
@@ -77,11 +74,6 @@ describe("makeFullSuiteRectifyStrategy", () => {
     const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig());
     const finding = makeTestFinding({ category: "execution-failed" });
     expect(strategy.appliesTo(finding)).toBe(true);
-  });
-
-  test("fixOp references implementerOp (name=implementer)", () => {
-    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig());
-    expect(strategy.fixOp.name).toBe("implementer");
   });
 
   test("buildInput produces ImplementerInput with story and contextMarkdown", () => {

@@ -34,13 +34,9 @@ describe("isTestLevelFailure — all semanticVerdicts passed", () => {
     expect(isTestLevelFailure(["AC-1"], 10, verdicts)).toBe(true);
   });
 
-  test("returns true when all verdicts passed even with zero failedACs", () => {
+  test("returns true when all verdicts passed even with zero failedACs; returns true when all verdicts passed with numeric zero failedCount", () => {
     const verdicts = [makePassingVerdict("US-001")];
     expect(isTestLevelFailure([], 10, verdicts)).toBe(true);
-  });
-
-  test("returns true when all verdicts passed with numeric zero failedCount", () => {
-    const verdicts = [makePassingVerdict("US-001")];
     expect(isTestLevelFailure(0, 10, verdicts)).toBe(true);
   });
 
@@ -60,18 +56,14 @@ describe("isTestLevelFailure — all semanticVerdicts passed", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("isTestLevelFailure — heuristic fallback when semanticVerdicts undefined or empty", () => {
-  test("returns true when >80% ACs fail and semanticVerdicts is undefined", () => {
+  test("returns true when >80% ACs fail and semanticVerdicts is undefined; returns true when >80% ACs fail and semanticVerdicts is empty array", () => {
     const failedACs = Array.from({ length: 9 }, (_, i) => `AC-${i + 1}`);
     expect(isTestLevelFailure(failedACs, 10, undefined)).toBe(true);
+    expect(isTestLevelFailure(failedACs, 10, [])).toBe(true);
   });
 
   test("returns false when <=80% ACs fail and semanticVerdicts is undefined", () => {
     expect(isTestLevelFailure(["AC-1", "AC-2", "AC-3"], 10, undefined)).toBe(false);
-  });
-
-  test("returns true when >80% ACs fail and semanticVerdicts is empty array", () => {
-    const failedACs = Array.from({ length: 9 }, (_, i) => `AC-${i + 1}`);
-    expect(isTestLevelFailure(failedACs, 10, [])).toBe(true);
   });
 
   test("returns false when <=80% ACs fail and semanticVerdicts is empty array", () => {

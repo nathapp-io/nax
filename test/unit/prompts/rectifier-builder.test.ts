@@ -326,9 +326,10 @@ describe("repoScopedRectification", () => {
     expect(RectifierPromptBuilder.failingTestRectification([failing], STORY)).toContain("sibling_scope");
   });
 
-  test("states that out-of-scope is not a reason to decline", () => {
+  test("states that out-of-scope is not a reason to decline; routes a nondeterministic failure to UNRESOLVED rather than to a fix", () => {
     const prompt = repoScopedRectification([failing], STORY);
     expect(prompt.toLowerCase()).toContain("not a reason to decline");
+    expect(prompt.toLowerCase()).toContain("flaky");
   });
 
   test("keeps the UNRESOLVED protocol for genuinely unsatisfiable tests", () => {
@@ -341,17 +342,6 @@ describe("repoScopedRectification", () => {
     const prompt = repoScopedRectification([failing], STORY);
     expect(prompt).toContain("TEST_EDIT_REASON");
     expect(prompt.toLowerCase()).toContain("weaken");
-  });
-
-  test("routes a nondeterministic failure to UNRESOLVED rather than to a fix", () => {
-    // Flake triage normally quarantines these before rectification, but it has
-    // skip paths (probe cap exceeded, unresolvable baseline diff, framework not
-    // detected) that leave a flaky test looking deterministic. An agent
-    // authorised to edit any file and told to make the test pass is the worst
-    // possible reader of a test that fails at random — it will weaken it. Name
-    // the case and give it the terminal channel instead.
-    const prompt = repoScopedRectification([failing], STORY);
-    expect(prompt.toLowerCase()).toContain("flaky");
   });
 
   test("the stated exception count matches the exceptions actually present", () => {

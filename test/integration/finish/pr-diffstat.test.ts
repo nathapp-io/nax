@@ -99,15 +99,9 @@ describe("finish PR diffstat — nax artifact exclusion", () => {
     expect(ctx.diffstat).not.toContain("packages/api/.nax");
   });
 
-  test("keeps genuine source that merely sits beside a .nax/ directory", async () => {
-    // `packages/api/` contains an artifact dir; excluding the package wholesale
-    // would be just as wrong as excluding nothing.
+  test("keeps genuine source that merely sits beside a .nax/ directory; reports the excluded artifacts so the body still reconciles with the diff", async () => {
     const ctx = await load();
     expect(ctx.diffstat).toContain("packages/api/src/app.py");
-  });
-
-  test("reports the excluded artifacts so the body still reconciles with the diff", async () => {
-    const ctx = await load();
     expect(ctx.artifactSummary).toContain("2 files changed");
   });
 

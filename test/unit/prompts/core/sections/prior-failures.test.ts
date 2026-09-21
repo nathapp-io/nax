@@ -25,9 +25,10 @@ describe("priorFailuresSection()", () => {
     expect(result?.content).toContain("null pointer exception");
   });
 
-  test("includes PRIOR FAILURES header", () => {
+  test("includes PRIOR FAILURES header; omits file line when file is not provided", () => {
     const result = priorFailuresSection([{ message: "x" }]);
     expect(result?.content).toContain("# PRIOR FAILURES");
+    expect(result?.content).not.toContain("File:");
   });
 
   test("numbers multiple failures sequentially", () => {
@@ -49,10 +50,5 @@ describe("priorFailuresSection()", () => {
   test("includes output in fenced code block when provided", () => {
     const result = priorFailuresSection([{ message: "x", output: "stderr: panic" }]);
     expect(result?.content).toContain("```\nstderr: panic\n```");
-  });
-
-  test("omits file line when file is not provided", () => {
-    const result = priorFailuresSection([{ message: "x" }]);
-    expect(result?.content).not.toContain("File:");
   });
 });

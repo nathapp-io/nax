@@ -18,7 +18,7 @@ describe("buildSelfVerificationSection", () => {
   // US-003 AC1: the section's output for a configured typecheck command
   // contains no "if that tool is available to you" hedge. The hedge has been
   // replaced by a region whose body IS the shell string.
-  test("configured typecheck rendering contains no 'if that tool is available to you' phrase (US-003 AC1)", () => {
+  test("configured typecheck rendering contains no 'if that tool is available to you' phrase (US-003 AC1); configured lint rendering also contains no 'if that tool is available to you' phrase (US-003 AC1)", () => {
     const section = buildSelfVerificationSection("implementer", {
       packageDir: "/repo/packages/api",
       language: "typescript",
@@ -26,15 +26,6 @@ describe("buildSelfVerificationSection", () => {
       typecheckCommand: "bun x tsc --noEmit",
     });
     expect(section).not.toContain("if that tool is available to you");
-  });
-
-  test("configured lint rendering also contains no 'if that tool is available to you' phrase (US-003 AC1)", () => {
-    const section = buildSelfVerificationSection("implementer", {
-      packageDir: "/repo/packages/api",
-      language: "typescript",
-      lintCommand: "biome check .",
-      typecheckCommand: "bun x tsc --noEmit",
-    });
     expect(section).not.toContain("if that tool is available to you");
   });
 

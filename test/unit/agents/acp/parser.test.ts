@@ -9,28 +9,16 @@ const REAL_ACPX_OUTPUT = [
 ].join("\n");
 
 describe("parseAcpxJsonOutput — JSON-RPC envelope format", () => {
-  test("extracts text from agent_message_chunk", () => {
+  test("extracts text from agent_message_chunk; captures exact cost from usage_update; captures token breakdown (camelCase) from final result; captures stopReason from final result", () => {
     const result = parseAcpxJsonOutput(REAL_ACPX_OUTPUT);
     expect(result.text).toBe("hello");
-  });
-
-  test("captures exact cost from usage_update", () => {
-    const result = parseAcpxJsonOutput(REAL_ACPX_OUTPUT);
     expect(result.exactCostUsd).toBe(0.15539);
-  });
-
-  test("captures token breakdown (camelCase) from final result", () => {
-    const result = parseAcpxJsonOutput(REAL_ACPX_OUTPUT);
     expect(result.tokenUsage).toEqual({
       input_tokens: 3,
       output_tokens: 4,
       cache_read_input_tokens: 0,
       cache_creation_input_tokens: 24844,
     });
-  });
-
-  test("captures stopReason from final result", () => {
-    const result = parseAcpxJsonOutput(REAL_ACPX_OUTPUT);
     expect(result.stopReason).toBe("end_turn");
   });
 

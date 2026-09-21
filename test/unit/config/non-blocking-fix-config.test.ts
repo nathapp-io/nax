@@ -39,7 +39,7 @@ function probe(root: unknown, keys: readonly string[]): unknown {
 }
 
 describe("NonBlockingFixConfigSchema — defaults and validation (AC1, AC2)", () => {
-  test("AC1: empty object resolves to the documented default shape", () => {
+  test("AC1: empty object resolves to the documented default shape; AC2: sources defaults to [\"adversarial\"]; scope: defaults to 'both' when unset", () => {
     const parsed = NonBlockingFixConfigSchema.parse({});
     expect(parsed).toEqual({
       enabled: false,
@@ -49,11 +49,8 @@ describe("NonBlockingFixConfigSchema — defaults and validation (AC1, AC2)", ()
       sourceDiffCap: { maxFiles: 10, maxLines: 500 },
       sources: ["adversarial"],
     });
-  });
-
-  test('AC2: sources defaults to ["adversarial"]', () => {
-    const parsed = NonBlockingFixConfigSchema.parse({});
     expect(parsed.sources).toEqual(["adversarial"]);
+    expect(parsed.scope).toBe("both");
   });
 
   test('AC3: sources ["adversarial", "semantic"] preserves both entries in declared order', () => {
@@ -87,11 +84,6 @@ describe("NonBlockingFixConfigSchema — defaults and validation (AC1, AC2)", ()
   test("scope: 'triage' parses successfully", () => {
     const parsed = NonBlockingFixConfigSchema.parse({ enabled: true, scope: "triage" });
     expect(parsed.scope).toBe("triage");
-  });
-
-  test("scope: defaults to 'both' when unset", () => {
-    const parsed = NonBlockingFixConfigSchema.parse({});
-    expect(parsed.scope).toBe("both");
   });
 
   test("scope: rejects values outside source|both|triage", () => {

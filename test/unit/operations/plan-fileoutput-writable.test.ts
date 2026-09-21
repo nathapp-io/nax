@@ -53,13 +53,9 @@ describe("plan ops can write their own declared fileOutput (nax#2115)", () => {
       expect(declaredOutput).toBe(outputPath);
     });
 
-    test(`${name} may write that path under its own compiled policy`, () => {
+    test(`${name} may write that path under its own compiled policy, but not a PRD it does not own`, () => {
       const policy = compileToolPolicy(grants, root, { ownedWriteExemption: outputPath });
       expect(policy.check("Write", PATH_SCOPE, { path: OWNED_REL }).allowed).toBe(true);
-    });
-
-    test(`${name} still may NOT write a PRD it does not own`, () => {
-      const policy = compileToolPolicy(grants, root, { ownedWriteExemption: outputPath });
       expect(policy.check("Write", PATH_SCOPE, { path: ".nax/features/other/prd.json" }).allowed).toBe(false);
     });
   }

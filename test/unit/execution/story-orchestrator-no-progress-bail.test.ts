@@ -101,9 +101,11 @@ describe("withNoProgressBail — US-002", () => {
     expect(bail(iterations)).toBeNull();
   });
 
-  test("US-002 AC3: returns null for exactly two no-progress iterations", () => {
+  test("US-002 AC3: returns null for exactly two no-progress iterations; US-002 AC10: reason reports three consecutive iterations; US-002 AC11: reason reports two persisted findings", () => {
     const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
     expect(bail(stalledIterations([finding("same")], 2))).toBeNull();
+    expect(bail(stalledIterations([finding("one"), finding("two")], 3))).toContain("3 consecutive iteration(s)");
+    expect(bail(stalledIterations([finding("one"), finding("two")], 3))).toContain("2 finding(s) persisted");
   });
 
   test("US-002 AC4: returns a reason when a third no-progress iteration is appended", () => {
@@ -144,16 +146,6 @@ describe("withNoProgressBail — US-002", () => {
     const iterations = Array.from({ length: 3 }, (_, index) => iteration([], [finding(`new-${index}`)], index + 1));
     const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
     expect(bail(iterations)).toBeNull();
-  });
-
-  test("US-002 AC10: reason reports three consecutive iterations", () => {
-    const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
-    expect(bail(stalledIterations([finding("one"), finding("two")], 3))).toContain("3 consecutive iteration(s)");
-  });
-
-  test("US-002 AC11: reason reports two persisted findings", () => {
-    const bail = bailWhen(withNoProgressBail([strategy()], true, 3));
-    expect(bail(stalledIterations([finding("one"), finding("two")], 3))).toContain("2 finding(s) persisted");
   });
 
   test("nax#1581: bails on an LLM finding reworded every iteration at the same file:line:rule", () => {

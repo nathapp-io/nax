@@ -11,18 +11,10 @@ import { describe, expect, test } from "bun:test";
 import { PlanPromptBuilder } from "@/prompts";
 
 describe("PlanPromptBuilder.jsonRepair()", () => {
-  test("static method exists and returns a string", () => {
+  test("static method exists and returns a string; returns non-empty string; output contains the word JSON", () => {
     const result = PlanPromptBuilder.jsonRepair(0, "Invalid JSON");
     expect(typeof result).toBe("string");
-  });
-
-  test("returns non-empty string", () => {
-    const result = PlanPromptBuilder.jsonRepair(0, "Invalid JSON");
     expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("output contains the word JSON", () => {
-    const result = PlanPromptBuilder.jsonRepair(0, "Invalid JSON");
     expect(result).toContain("JSON");
   });
 

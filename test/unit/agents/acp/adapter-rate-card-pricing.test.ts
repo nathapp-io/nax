@@ -545,7 +545,7 @@ describe("complete() — degraded results carry the resolved card source", () =>
 // buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true
 // (from adapter-output-timedout.test.ts; rates card renamed TIMED_OUT_CARD)
 describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", () => {
-  test("returns TurnResult with timedOut=true when timedOut flag is passed", () => {
+  test("returns TurnResult with timedOut=true when timedOut flag is passed; returns output='' when timedOut flag is passed (AC2)", () => {
     const result = buildTurnResult({
       lastResponse: null,
       totalTokenUsage: { inputTokens: 0, outputTokens: 0 },
@@ -556,18 +556,6 @@ describe("buildTurnResult — AC1: wall-clock timeout surfaces timedOut=true", (
       rateCard: TIMED_OUT_CARD,
     });
     expect(result.timedOut).toBe(true);
-  });
-
-  test("returns output='' when timedOut flag is passed (AC2)", () => {
-    const result = buildTurnResult({
-      lastResponse: null,
-      totalTokenUsage: { inputTokens: 0, outputTokens: 0 },
-      totalExactCostUsd: undefined,
-      turnCount: 1,
-      interactions: [],
-      timedOut: true,
-      rateCard: TIMED_OUT_CARD,
-    });
     expect(result.output).toBe("");
   });
 

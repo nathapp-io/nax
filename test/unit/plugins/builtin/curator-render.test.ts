@@ -84,15 +84,9 @@ describe("renderProposals", () => {
     expect(markdown).toContain(".nax/features/feat-1/context.md");
   });
 
-  test("includes severity in brackets on proposal lines", () => {
+  test("includes severity in brackets on proposal lines; includes heuristic ID on proposal lines", () => {
     const markdown = renderProposals([baseProposal], "run-1", 5);
-
     expect(markdown).toContain("[MED]");
-  });
-
-  test("includes heuristic ID on proposal lines", () => {
-    const markdown = renderProposals([baseProposal], "run-1", 5);
-
     expect(markdown).toContain("H1");
   });
 

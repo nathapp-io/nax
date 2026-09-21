@@ -218,12 +218,9 @@ describe("adversarialReviewOp.parse()", () => {
       adversarialReviewOp.parse(JSON.stringify({ passed: true, findings: [] }), SAMPLE_INPUT, ctx).normalizedFindings,
     ).toEqual([]);
   });
-  test("throws ParseValidationError on unparseable output (triggers retry)", () => {
+  test("throws ParseValidationError on unparseable output (triggers retry); throws ParseValidationError on missing passed field (triggers retry)", () => {
     const ctx = makeBuildCtx();
     expect(() => adversarialReviewOp.parse("no json here", SAMPLE_INPUT, ctx)).toThrow();
-  });
-  test("throws ParseValidationError on missing passed field (triggers retry)", () => {
-    const ctx = makeBuildCtx();
     expect(() => adversarialReviewOp.parse(JSON.stringify({ findings: [] }), SAMPLE_INPUT, ctx)).toThrow();
   });
   test("parses fence-wrapped JSON response", () => {

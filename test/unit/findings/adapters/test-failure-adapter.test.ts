@@ -22,30 +22,19 @@ const BASE: TestFailure = {
 };
 
 describe("testFailureToFinding", () => {
-  test("keeps the parsed message as the leading line", () => {
+  test("keeps the parsed message as the leading line; puts each frame on its own line so the contract is `error\\\\nframe1\\\\nframe2`; caps the appended frames at two", () => {
     const f = testFailureToFinding(BASE);
     expect(f.message.split("\n")[0]).toBe(BASE.error);
-  });
-
-  test("puts each frame on its own line so the contract is `error\\nframe1\\nframe2`", () => {
-    // Earlier "leading line" assertion would also pass if a future change put
-    // frames on the same line as the error (`error | frame1 | frame2`),
-    // making the wire shape drift invisible. Pin the shape explicitly.
-    const f = testFailureToFinding(BASE);
     expect(f.message).toBe(
       [BASE.error, "at <anonymous> (test/unit/tools/policy.test.ts:84:20)", "at run (bun:test:1:1)"].join("\n"),
     );
+    expect(f.message).not.toContain("at third (bun:test:2:2)");
   });
 
   test("appends the first two stack frames so the agent gets a location", () => {
     const f = testFailureToFinding(BASE);
     expect(f.message).toContain("at <anonymous> (test/unit/tools/policy.test.ts:84:20)");
     expect(f.message).toContain("at run (bun:test:1:1)");
-  });
-
-  test("caps the appended frames at two", () => {
-    const f = testFailureToFinding(BASE);
-    expect(f.message).not.toContain("at third (bun:test:2:2)");
   });
 
   test("a failure with no stack frames yields the message alone, with no trailing blank", () => {

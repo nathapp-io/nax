@@ -35,23 +35,11 @@ describe("buildRoleTaskSection — implementer standard", () => {
     expect(result).toContain("feat(story-42):");
   });
 
-  test("(d) when no storyId, commit falls back to feat: <description>", () => {
+  test("(d) when no storyId, commit falls back to feat: <description>; contains 'make failing tests pass' intent; contains git commit -m instruction; contains Do NOT modify test files", () => {
     const result = buildRoleTaskSection("implementer", "standard");
     expect(result).toContain("feat: <description>");
-  });
-
-  test("contains 'make failing tests pass' intent", () => {
-    const result = buildRoleTaskSection("implementer", "standard");
     expect(result.toLowerCase()).toMatch(/make.*failing.*test|failing.*test.*pass/);
-  });
-
-  test("contains git commit -m instruction", () => {
-    const result = buildRoleTaskSection("implementer", "standard");
     expect(result).toContain("git commit -m");
-  });
-
-  test("contains Do NOT modify test files", () => {
-    const result = buildRoleTaskSection("implementer", "standard");
     expect(result).toContain("Do NOT modify test files");
   });
 });
@@ -80,13 +68,9 @@ describe("buildRoleTaskSection — implementer lite", () => {
     expect(result).not.toMatch(/\btest\//);
   });
 
-  test("acknowledges test-writer session", () => {
+  test("acknowledges test-writer session; contains git commit -m instruction", () => {
     const result = buildRoleTaskSection("implementer", "lite");
     expect(result.toLowerCase()).toMatch(/test.?writer.*session|session.*test.?writer/);
-  });
-
-  test("contains git commit -m instruction", () => {
-    const result = buildRoleTaskSection("implementer", "lite");
     expect(result).toContain("git commit -m");
   });
 });
@@ -147,13 +131,9 @@ describe("buildRoleTaskSection — test-writer strict", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildRoleTaskSection — test-writer lite", () => {
-  test("(a) hard-caps stub body at 3 lines", () => {
+  test("(a) hard-caps stub body at 3 lines; (b) contains verify-RED instruction with 'compile AND fail'", () => {
     const result = buildRoleTaskSection("test-writer", undefined, undefined, "lite");
     expect(result).toMatch(/3 lines|three lines|≤\s*3|no more than 3/i);
-  });
-
-  test("(b) contains verify-RED instruction with 'compile AND fail'", () => {
-    const result = buildRoleTaskSection("test-writer", undefined, undefined, "lite");
     expect(result.toLowerCase()).toMatch(/compile.*and.*fail|compile.*fail/);
   });
 

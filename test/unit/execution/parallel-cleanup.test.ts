@@ -102,15 +102,9 @@ describe("story.complete event uses runElapsedMs field instead of durationMs", (
     expect(src).not.toMatch(/pipelineEventBus\.emit\(\{[\s\S]{0,50}type:\s*"story:completed"/);
   });
 
-  test("reporters.ts consumes runElapsedMs not durationMs from story:completed event", async () => {
+  test("reporters.ts consumes runElapsedMs not durationMs from story:completed event; reporters.ts does NOT reference ev.durationMs from story:completed event", async () => {
     const src = await readSrc("pipeline/subscribers/reporters.ts");
-
     expect(src).toMatch(/ev\.runElapsedMs/);
-  });
-
-  test("reporters.ts does NOT reference ev.durationMs from story:completed event", async () => {
-    const src = await readSrc("pipeline/subscribers/reporters.ts");
-
     expect(src).not.toMatch(/ev\.durationMs/);
   });
 

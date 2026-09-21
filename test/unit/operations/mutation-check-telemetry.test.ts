@@ -102,9 +102,11 @@ async function runAndCaptureInfo(
 }
 
 describe("mutationCheckOp — outcome telemetry is durable (G12)", () => {
-  test("emits one mutation-check info record when the gate ran", async () => {
+  test("emits one mutation-check info record when the gate ran; storyId is the first key in the record's data object; a completed check carries no skipReason", async () => {
     const { calls } = await runAndCaptureInfo({ status: "TEST_FAILURE", failCount: 1 });
     expect(calls.length).toBe(1);
+    expect(Object.keys(calls[0]?.[2] as object)[0]).toBe("storyId");
+    expect(calls[0]?.[2]).not.toHaveProperty("skipReason");
   });
 
   test("the record carries the full outcome counts and the candidate denominator", async () => {
@@ -129,11 +131,6 @@ describe("mutationCheckOp — outcome telemetry is durable (G12)", () => {
     expect(out.outcomes.killed).toBeGreaterThan(0);
     expect(calls.length).toBe(1);
     expect((calls[0]?.[2] as { killed: number } | undefined)?.killed).toBe(out.outcomes.killed);
-  });
-
-  test("storyId is the first key in the record's data object", async () => {
-    const { calls } = await runAndCaptureInfo({ status: "TEST_FAILURE", failCount: 1 });
-    expect(Object.keys(calls[0]?.[2] as object)[0]).toBe("storyId");
   });
 
   /**
@@ -174,11 +171,6 @@ describe("mutationCheckOp — outcome telemetry is durable (G12)", () => {
       candidates: 0,
       skipReason: "changed-line-ranges-unavailable",
     });
-  });
-
-  test("a completed check carries no skipReason", async () => {
-    const { calls } = await runAndCaptureInfo({ status: "TEST_FAILURE", failCount: 1 });
-    expect(calls[0]?.[2]).not.toHaveProperty("skipReason");
   });
 });
 

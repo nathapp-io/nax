@@ -21,18 +21,10 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
 }
 
 describe("makeAutofixTestWriterStrategy", () => {
-  test("name is autofix-test-writer", () => {
+  test("name is autofix-test-writer; fixOp name is autofix-test-writer; maxAttempts is a positive number", () => {
     const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
     expect(strategy.name).toBe("autofix-test-writer");
-  });
-
-  test("fixOp name is autofix-test-writer", () => {
-    const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
     expect(strategy.fixOp.name).toBe("autofix-test-writer");
-  });
-
-  test("maxAttempts is a positive number", () => {
-    const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
     expect(strategy.maxAttempts).toBeGreaterThan(0);
   });
 

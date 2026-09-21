@@ -31,9 +31,10 @@ describe("buildAcceptanceSection — single entry", () => {
     content: 'import { foo } from "@test/unit/src/foo";\ntest("foo works", () => {});',
   };
 
-  test("includes the test file path as a heading", () => {
+  test("includes the test file path as a heading; returns a non-empty string", () => {
     const result = buildAcceptanceSection([entry]);
     expect(result).toContain("test/unit/foo.test.ts");
+    expect(result.length).toBeGreaterThan(0);
   });
 
   test("wraps content in a fenced TypeScript code block", () => {
@@ -50,11 +51,6 @@ describe("buildAcceptanceSection — single entry", () => {
     expect(headingIdx).toBeGreaterThanOrEqual(0);
     expect(fenceIdx).toBeGreaterThanOrEqual(0);
     expect(headingIdx).toBeLessThan(fenceIdx);
-  });
-
-  test("returns a non-empty string", () => {
-    const result = buildAcceptanceSection([entry]);
-    expect(result.length).toBeGreaterThan(0);
   });
 });
 

@@ -31,13 +31,9 @@ describe("expandProviderGrants", () => {
     expect(granted).not.toContain("codebase-memory");
   });
 
-  test("a granted provider tool passes the policy check", () => {
+  test("a granted provider tool passes the policy check; an ungranted provider tool is denied", () => {
     const policy = compileToolPolicy(expandProviderGrants([{ providerId: "rtk", localNames: ["recall"] }]), "/tmp");
     expect(policy.check("rtk__recall", { pathFields: [] }, {}).allowed).toBe(true);
-  });
-
-  test("an ungranted provider tool is denied", () => {
-    const policy = compileToolPolicy(expandProviderGrants([{ providerId: "rtk", localNames: ["recall"] }]), "/tmp");
     expect(policy.check("rtk__other", { pathFields: [] }, {}).allowed).toBe(false);
   });
 });

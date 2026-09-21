@@ -378,10 +378,10 @@ describe("PlanPromptBuilder.buildSpecDriftRepair()", () => {
     expect(prompt).toContain("- US-002 AC[3] (shell-command): [file] src/b.ts contains a guard");
   });
 
-  test("keeps the violations in the order given, so the list matches the checker's output", () => {
+  test("keeps the violations in the order given, so the list matches the checker's output; guards the correct ACs: the model is told not to weaken what is already right", () => {
     const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
-
     expect(prompt.indexOf("US-001 AC[0]")).toBeLessThan(prompt.indexOf("US-002 AC[3]"));
+    expect(prompt).toContain("Do not remove or weaken acceptance criteria that are already correct.");
   });
 
   test("names the deprecated tags to strip and the runtime tags that replace them", () => {
@@ -396,12 +396,6 @@ describe("PlanPromptBuilder.buildSpecDriftRepair()", () => {
 
     expect(prompt).toContain("Write the corrected PRD to this file path: /tmp/feature/prd.json");
     expect(prompt).toContain("Do not output the PRD in chat.");
-  });
-
-  test("guards the correct ACs: the model is told not to weaken what is already right", () => {
-    const prompt = new PlanPromptBuilder().buildSpecDriftRepair(VIOLATIONS, "/tmp/prd.json");
-
-    expect(prompt).toContain("Do not remove or weaken acceptance criteria that are already correct.");
   });
 });
 

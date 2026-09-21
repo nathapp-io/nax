@@ -26,24 +26,16 @@ describe("resolveSpecifier", () => {
   });
   afterEach(() => cleanupTempDir(root));
 
-  test("resolves a relative specifier to a .ts file", () => {
+  test("resolves a relative specifier to a .ts file; resolves a .js specifier to its .ts source (TypeScript ESM convention); returns null for a bare package specifier", () => {
     const from = join(root, "src/a/index.ts");
     expect(resolveSpecifier(root, from, "./leaf")).toBe(join(root, "src/a/leaf.ts"));
+    expect(resolveSpecifier(root, from, "./leaf.js")).toBe(join(root, "src/a/leaf.ts"));
+    expect(resolveSpecifier(root, from, "zod")).toBeNull();
   });
 
   test("resolves an @/ alias to src/", () => {
     const from = join(root, "src/a/leaf.ts");
     expect(resolveSpecifier(root, from, "@/a")).toBe(join(root, "src/a/index.ts"));
-  });
-
-  test("resolves a .js specifier to its .ts source (TypeScript ESM convention)", () => {
-    const from = join(root, "src/a/index.ts");
-    expect(resolveSpecifier(root, from, "./leaf.js")).toBe(join(root, "src/a/leaf.ts"));
-  });
-
-  test("returns null for a bare package specifier", () => {
-    const from = join(root, "src/a/index.ts");
-    expect(resolveSpecifier(root, from, "zod")).toBeNull();
   });
 });
 

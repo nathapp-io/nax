@@ -19,13 +19,9 @@ describe("classifyEmptyOutputFailure — AC4/AC5/AC6: timed out empty output", (
     expect(failure?.outcome).toBe("fail-timeout");
   });
 
-  test("maps empty output + timedOut=true to quality category", () => {
+  test("maps empty output + timedOut=true to quality category; maps empty output + timedOut=true to retriable=true", () => {
     const failure = classifyEmptyOutputFailure(makeTurnResult({ timedOut: true }));
     expect(failure?.category).toBe("quality");
-  });
-
-  test("maps empty output + timedOut=true to retriable=true", () => {
-    const failure = classifyEmptyOutputFailure(makeTurnResult({ timedOut: true }));
     expect(failure?.retriable).toBe(true);
   });
 });

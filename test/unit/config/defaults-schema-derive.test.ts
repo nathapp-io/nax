@@ -57,13 +57,9 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
   });
 
   describe("NaxConfigSchema.parse({}) produces DEFAULT_CONFIG", () => {
-    test("schema parse returns object with same sessionTimeoutSeconds", () => {
+    test("schema parse returns object with same sessionTimeoutSeconds; schema parse returns object with same rectification.maxAttemptsTotal", () => {
       const parsed = NaxConfigSchema.parse({});
       expect(parsed.execution.sessionTimeoutSeconds).toBe(3600);
-    });
-
-    test("schema parse returns object with same rectification.maxAttemptsTotal", () => {
-      const parsed = NaxConfigSchema.parse({});
       expect(parsed.execution.rectification.maxAttemptsTotal).toBe(12);
     });
 

@@ -174,13 +174,13 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
 // ─── embedded mode ────────────────────────────────────────────────────────────
 
 describe("AdversarialReviewPromptBuilder — embedded mode", () => {
-  test("prompt contains the full diff in a diff code block", () => {
+  test("prompt contains the full diff in a diff code block; prompt still contains diff when testInventory is not provided", () => {
     const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
       mode: "embedded",
       diff: DIFF,
     });
-
     expect(result).toContain(`\`\`\`diff\n${DIFF}`);
+    expect(result).toContain(DIFF);
   });
 
   test("prompt includes untested source files from testInventory", () => {
@@ -196,15 +196,6 @@ describe("AdversarialReviewPromptBuilder — embedded mode", () => {
     expect(result).toContain("src/auth/login.ts");
     expect(result).toContain("src/auth/session.ts");
     expect(result).toContain("## Test Audit");
-  });
-
-  test("prompt still contains diff when testInventory is not provided", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "embedded",
-      diff: DIFF,
-    });
-
-    expect(result).toContain(DIFF);
   });
 
   test("test audit block is omitted when all source files have matching tests", () => {
@@ -469,13 +460,9 @@ describe("AdversarialReviewPromptBuilder — verifiedBy implementation-axis grou
 // ─── AC-grounding prohibition text (#1033 Obs 1) ──────────────────────────────
 
 describe("AdversarialReviewPromptBuilder — AC-grounding explicit prohibition", () => {
-  test("prompt contains explicit Do NOT write acQuote prohibition", () => {
+  test("prompt contains explicit Do NOT write acQuote prohibition; prompt instructs to set severity to warning rather than fabricating", () => {
     const prompt = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
     expect(prompt).toContain("Do NOT write an `acQuote` that does not appear verbatim");
-  });
-
-  test("prompt instructs to set severity to warning rather than fabricating", () => {
-    const prompt = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
     expect(prompt).toContain("never approximate, paraphrase, or synthesise a quote");
   });
 });

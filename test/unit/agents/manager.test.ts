@@ -97,15 +97,11 @@ describe("AgentManager — Phase 1 pass-through", () => {
 
   // Was "returns false when hasBundle is false" — nax#1722 removed that gate. DEFAULT_CONFIG
   // leaves fallback disabled, which is the gate that actually declines here.
-  test("shouldSwap() returns false when fallback is disabled", () => {
+  test("shouldSwap() returns false when fallback is disabled; nextCandidate() returns null when no fallback map configured", () => {
     const manager = new AgentManager(DEFAULT_CONFIG);
     expect(
       manager.shouldSwap({ category: "availability", outcome: "fail-auth", message: "x", retriable: false }, 0),
     ).toBe(false);
-  });
-
-  test("nextCandidate() returns null when no fallback map configured", () => {
-    const manager = new AgentManager(DEFAULT_CONFIG);
     expect(manager.nextCandidate("claude", 0)).toBeNull();
   });
 

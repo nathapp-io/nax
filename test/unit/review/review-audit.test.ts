@@ -587,9 +587,11 @@ describe("toPersistedEntry", () => {
     expect(JSON.parse(toPersistedEntry(base, 1_700_000_000_000)).acks).toBeNull();
   });
 
-  test("resolves blockingThreshold to 'error' when unset (never null)", () => {
+  test("resolves blockingThreshold to 'error' when unset (never null) (+2 more assertions)", () => {
     const json = JSON.parse(toPersistedEntry(base, 1_700_000_000_000));
     expect(json.blockingThreshold).toBe("error");
+    expect(json.modelPassed).toBeNull();
+    expect(json.noDispatch).toBeNull();
   });
 
   test("preserves an explicit blockingThreshold", () => {
@@ -613,11 +615,6 @@ describe("toPersistedEntry", () => {
     expect(json.modelPassed).toBe(false);
   });
 
-  test("writes modelPassed:null when the entry does not declare it (matches adversarial-only optional-field convention)", () => {
-    const json = JSON.parse(toPersistedEntry(base, 1_700_000_000_000));
-    expect(json.modelPassed).toBeNull();
-  });
-
   // US-002 (dispatch-truth-and-model-validation) — a zero-dispatch review is
   // persisted as its own state, not as a fail-open give-up: noDispatch:true with
   // failOpen:false in the same record.
@@ -628,11 +625,6 @@ describe("toPersistedEntry", () => {
     expect(json.noDispatch).toBe(true);
     expect(json.failOpen).toBe(false);
     expect(json.passed).toBe(false);
-  });
-
-  test("writes noDispatch:null when the entry does not declare it (matches modelPassed's convention)", () => {
-    const json = JSON.parse(toPersistedEntry(base, 1_700_000_000_000));
-    expect(json.noDispatch).toBeNull();
   });
 
   // US-002 — adversarial-review finding: end-to-end persistence of the

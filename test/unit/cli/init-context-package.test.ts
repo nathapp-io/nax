@@ -9,24 +9,16 @@ import { makeTempDir } from "@test/helpers";
 import { generatePackageContextTemplate, initPackage } from "@/cli/init-context";
 
 describe("generatePackageContextTemplate (MW-005)", () => {
-  test("uses the last path segment as package name", () => {
+  test("uses the last path segment as package name; includes root context.md reference comment; includes a Commands table with bun test", () => {
     const content = generatePackageContextTemplate("packages/api");
     expect(content).toContain("# api — Context");
+    expect(content).toContain("Root context.md");
+    expect(content).toContain("bun test");
   });
 
   test("uses single-segment path as package name", () => {
     const content = generatePackageContextTemplate("api");
     expect(content).toContain("# api — Context");
-  });
-
-  test("includes root context.md reference comment", () => {
-    const content = generatePackageContextTemplate("packages/api");
-    expect(content).toContain("Root context.md");
-  });
-
-  test("includes a Commands table with bun test", () => {
-    const content = generatePackageContextTemplate("packages/api");
-    expect(content).toContain("bun test");
   });
 
   test("includes Tech Stack and Development Guidelines sections", () => {

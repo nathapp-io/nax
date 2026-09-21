@@ -5,13 +5,9 @@ import { buildTddLanguageSection } from "@/prompts/sections/tdd-conventions";
 
 describe("buildTddLanguageSection", () => {
   describe("go", () => {
-    test("returns a non-empty string for 'go'", () => {
+    test("returns a non-empty string for 'go'; contains '<filename>_test.go' naming convention", () => {
       const result = buildTddLanguageSection("go");
       expect(result).not.toBe("");
-    });
-
-    test("contains '<filename>_test.go' naming convention", () => {
-      const result = buildTddLanguageSection("go");
       expect(result).toContain("_test.go");
     });
 
@@ -23,13 +19,9 @@ describe("buildTddLanguageSection", () => {
   });
 
   describe("rust", () => {
-    test("returns a non-empty string for 'rust'", () => {
+    test("returns a non-empty string for 'rust'; contains '#[cfg(test)]' attribute", () => {
       const result = buildTddLanguageSection("rust");
       expect(result).not.toBe("");
-    });
-
-    test("contains '#[cfg(test)]' attribute", () => {
-      const result = buildTddLanguageSection("rust");
       expect(result).toContain("#[cfg(test)]");
     });
 
@@ -41,20 +33,16 @@ describe("buildTddLanguageSection", () => {
   });
 
   describe("python", () => {
-    test("returns a non-empty string for 'python'", () => {
+    test("returns a non-empty string for 'python'; mentions tests/ directory", () => {
       const result = buildTddLanguageSection("python");
       expect(result).not.toBe("");
+      expect(result).toContain("tests/");
     });
 
     test("contains 'test_<source_filename>.py' naming convention", () => {
       const result = buildTddLanguageSection("python");
       expect(result).toContain("test_");
       expect(result).toContain(".py");
-    });
-
-    test("mentions tests/ directory", () => {
-      const result = buildTddLanguageSection("python");
-      expect(result).toContain("tests/");
     });
   });
 

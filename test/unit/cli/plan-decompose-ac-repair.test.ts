@@ -542,15 +542,9 @@ describe("planCommand — callOp migration (US-003)", () => {
  */
 
 describe("bin/nax.ts plan command — --decompose wiring (AC-11)", () => {
-  test("AC-11: bin/nax.ts imports planDecomposeCommand", async () => {
+  test("AC-11: bin/nax.ts imports planDecomposeCommand; AC-11: bin/nax.ts registers --decompose <storyId> option on plan command", async () => {
     const binSource = await Bun.file(join(import.meta.dir, "../../../bin/nax.ts")).text();
-
     expect(binSource).toContain("planDecomposeCommand");
-  });
-
-  test("AC-11: bin/nax.ts registers --decompose <storyId> option on plan command", async () => {
-    const binSource = await Bun.file(join(import.meta.dir, "../../../bin/nax.ts")).text();
-
     expect(binSource).toContain("--decompose");
   });
 

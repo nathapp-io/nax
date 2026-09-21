@@ -395,14 +395,11 @@ describe("mutationCheckOp — outcomes aggregation (US-003)", () => {
     }
   }
 
-  test("AC9: TEST_FAILURE with both counts 0 -> outcomes.errored is 1", async () => {
+  test("AC9: TEST_FAILURE with both counts 0 -> outcomes.errored is 1; AC10: TEST_FAILURE with both counts 0 -> outcomes.killed is 0; AC13: TEST_FAILURE with both counts 0 -> survivors has length 0", async () => {
     const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 0 });
     expect(out.outcomes.errored).toBe(1);
-  });
-
-  test("AC10: TEST_FAILURE with both counts 0 -> outcomes.killed is 0", async () => {
-    const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 0 });
     expect(out.outcomes.killed).toBe(0);
+    expect(out.survivors).toHaveLength(0);
   });
 
   test("AC11: TEST_FAILURE with failCount 1 -> outcomes.killed is 1", async () => {
@@ -421,11 +418,6 @@ describe("mutationCheckOp — outcomes aggregation (US-003)", () => {
     const out = await runWithRegression({ status: "SUCCESS" });
     expect(out.outcomes.errored).toBe(1);
     expect(out.outcomes.survived).toBe(0);
-  });
-
-  test("AC13: TEST_FAILURE with both counts 0 -> survivors has length 0", async () => {
-    const out = await runWithRegression({ status: "TEST_FAILURE", passCount: 0, failCount: 0 });
-    expect(out.survivors).toHaveLength(0);
   });
 
   test("regression throw increments outcomes.errored (rectification review)", async () => {

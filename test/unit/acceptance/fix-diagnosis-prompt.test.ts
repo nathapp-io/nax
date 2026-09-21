@@ -128,7 +128,7 @@ describe("buildDiagnosisPrompt — partial semantic verdicts section (AC-3)", ()
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildDiagnosisPrompt — semantic verdicts section basic inclusion", () => {
-  test("includes a semantic verdicts section when verdicts are provided", () => {
+  test("includes a semantic verdicts section when verdicts are provided; includes SEMANTIC VERDICTS header in the section", () => {
     const prompt = buildDiagnosisPrompt({
       testOutput: "FAIL",
       testFileContent: "test content",
@@ -136,6 +136,7 @@ describe("buildDiagnosisPrompt — semantic verdicts section basic inclusion", (
       semanticVerdicts: [makePassingVerdict("US-001")],
     });
     expect(prompt).toContain("US-001");
+    expect(prompt).toContain("SEMANTIC VERDICTS");
   });
 
   test("does not include semantic verdicts section when semanticVerdicts is undefined", () => {
@@ -170,16 +171,6 @@ describe("buildDiagnosisPrompt — semantic verdicts section basic inclusion", (
     expect(prompt).toContain("US-001");
     expect(prompt).toContain("US-002");
     expect(prompt).toContain("US-003");
-  });
-
-  test("includes SEMANTIC VERDICTS header in the section", () => {
-    const prompt = buildDiagnosisPrompt({
-      testOutput: "FAIL",
-      testFileContent: "test content",
-      sourceFiles: [],
-      semanticVerdicts: [makePassingVerdict("US-001")],
-    });
-    expect(prompt).toContain("SEMANTIC VERDICTS");
   });
 
   test("buildDiagnosisPrompt is callable with all-passing verdicts (all-pass scenario)", () => {

@@ -33,23 +33,11 @@ function fragmentsBlock(config: Record<string, unknown>): Record<string, unknown
 }
 
 describe("ContextV2ConfigSchema — fragments block (US-001)", () => {
-  test("[US-001 AC 1] context.v2.fragments.enabled defaults to false", () => {
+  test("[US-001 AC 1] context.v2.fragments.enabled defaults to false (+3 more assertions)", () => {
     const config = NaxConfigSchema.parse({});
     expect(fragmentsBlock(config as Record<string, unknown>).enabled).toBe(false);
-  });
-
-  test("[US-001 AC 2] context.v2.fragments.decay defaults to 0.6", () => {
-    const config = NaxConfigSchema.parse({});
     expect(fragmentsBlock(config as Record<string, unknown>).decay).toBe(0.6);
-  });
-
-  test("[US-001 AC 3] context.v2.fragments.maxTokens defaults to 400", () => {
-    const config = NaxConfigSchema.parse({});
     expect(fragmentsBlock(config as Record<string, unknown>).maxTokens).toBe(400);
-  });
-
-  test("[US-001 AC 4] context.v2.fragments.extractor defaults to 'deterministic'", () => {
-    const config = NaxConfigSchema.parse({});
     expect(fragmentsBlock(config as Record<string, unknown>).extractor).toBe("deterministic");
   });
 

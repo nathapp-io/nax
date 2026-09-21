@@ -494,13 +494,9 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
 });
 
 describe("autoRoute config foundation (US-001)", () => {
-  test("autoRoute.enabled defaults to false", () => {
+  test("autoRoute.enabled defaults to false; autoRoute.minSamples defaults to 8", () => {
     const config = NaxConfigSchema.parse({});
     expect(config.autoRoute.enabled).toBe(false);
-  });
-
-  test("autoRoute.minSamples defaults to 8", () => {
-    const config = NaxConfigSchema.parse({});
     expect(config.autoRoute.minSamples).toBe(8);
   });
 
