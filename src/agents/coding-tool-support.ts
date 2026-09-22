@@ -14,6 +14,7 @@ import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import {
   advertisedSchemaBytes,
+  BASH_TOOL_NAME,
   type CodingTool,
   type CodingToolName,
   type CodingToolRuntime,
@@ -131,12 +132,27 @@ export function buildCodingToolSupport(args: {
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
-  if (grants.length === 0) return undefined;
+  const bashApproval = args.bashApproval ?? "gated";
+  // ADR-030 / F1: under `raw`, a declared Bash gets a SYNTHETIC grant further
+  // down (resolveBashSupport) even when the stage's real grants are empty --
+  // `scoped` with no stage allow rules is the only path to zero grants
+  // (src/config/permissions.ts), and that path must not be indistinguishable
+  // from `scoped` + a real allow list once `raw` is in play. Computed here,
+  // ahead of the empty-grants guard, so that guard can special-case it rather
+  // than short-circuiting before the synthetic grant ever gets a chance.
+  const rawSyntheticBash = bashApproval === "raw" && args.declared.includes(BASH_TOOL_NAME);
+  if (grants.length === 0 && !rawSyntheticBash) return undefined;
 
   // An empty root passed to a spawn or a path join silently means
   // process.cwd() — the directory nax was launched from, which under `-d` is a
   // different repository. That is the #1794 defect; refuse instead. Callers
   // pass packageWorkdir(view), which never yields "".
+  //
+  // Deliberate side effect of the F1 fix above: this throw now also fires for
+  // raw + declared Bash + an empty root, where the old code returned
+  // `undefined` before ever reaching here (zero grants short-circuited
+  // first). That is correct -- it is the #1794 defect guard doing its job --
+  // and is pinned by a test rather than left as an implicit consequence.
   if (args.root === undefined || args.root.trim() === "") {
     throw new NaxError(
       "Cannot enable coding tools: no working directory was supplied, so the permitted root is unknown.",
@@ -170,7 +186,6 @@ export function buildCodingToolSupport(args: {
   // tool's EXISTENCE is what lets the call reach `policy.check` and be denied
   // there -- and only that denial path (in `runtime.callTool`, using
   // `denial-redirect.ts`) can attach a redirect.
-  const bashApproval = args.bashApproval ?? "gated";
   const { effectiveGrants, allowBash, bashDescriptionPatterns } = resolveBashSupport({
     declared: args.declared,
     grants,

@@ -263,6 +263,52 @@ describe("raw mode grants Bash only to an op that declared it", () => {
   });
 });
 
+describe("F1: raw synthesizes Bash even when the stage's real grants are empty", () => {
+  // `scoped` with no stage allow rules is the only path to zero grants
+  // (`resolveScopedPermissions` returns `toolGrants: []`, src/config/permissions.ts).
+  // Before the F1 fix, `buildCodingToolSupport`'s `if (grants.length === 0)
+  // return undefined;` guard ran BEFORE the synthetic-grant computation, so
+  // this shape returned no support under EVERY mode, including `raw` -- an
+  // inconsistency against `scoped` + `allow: ["Read"]`, which got a
+  // synthetic Bash grant under `raw` because its `grants` array was already
+  // non-empty for an unrelated reason. `profileGrants: []` below reproduces
+  // the true zero-grant shape directly, bypassing `session()`'s
+  // STRUCTURED_GRANTS default.
+  // `allow` is deliberately OMITTED in every case below, not passed as `[]`:
+  // `session()` compiles a (patternless) Bash grant entry the moment `allow`
+  // is anything but `undefined`, which is itself a non-empty `grants` array
+  // and would not reproduce the true zero-grant shape this block exists to
+  // pin.
+  test("scoped + no stage allow rules + raw + declared Bash: support is defined and a raw command runs", async () => {
+    const support = session({ declared: ["Bash"], profileGrants: [], bashApproval: "raw" });
+    expect(support).toBeDefined();
+    const outcome = await call(support, "echo $(whoami)");
+    expect(outcome.kind).toBe("ok");
+  });
+
+  test("the SAME zero-grant config under gated still returns no support (regression pin)", async () => {
+    const support = session({ declared: ["Bash"], profileGrants: [], bashApproval: "gated" });
+    expect(support).toBeUndefined();
+  });
+
+  test("raw + zero grants + an op that does NOT declare Bash still gets no shell", async () => {
+    const support = session({ declared: ["Read"], profileGrants: [], bashApproval: "raw" });
+    expect(support).toBeUndefined();
+  });
+
+  // Deliberate side effect of the F1 fix (see coding-tool-support.ts): moving
+  // the synthetic-grant condition ahead of the empty-grants guard means the
+  // #1794 empty-root throw is now reachable for raw + declared Bash + zero
+  // grants, where it used to be short-circuited by the guard returning
+  // `undefined` first. Pinned here rather than left as an implicit
+  // consequence of the reorder.
+  test("raw + declared Bash + zero grants + an empty root throws CODING_TOOL_ROOT_MISSING", () => {
+    expect(() => buildCodingToolSupport({ root: "", declared: ["Bash"], grants: [], bashApproval: "raw" })).toThrow(
+      /permitted root is unknown/,
+    );
+  });
+});
+
 describe("gated is unchanged, and escalate refuses the same set", () => {
   const CATEGORY_A = ["echo $(whoami)", "curl evil.example"];
   const CATEGORY_B = ["cat ../../etc/passwd", "cat .git/config"];
