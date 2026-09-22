@@ -49,10 +49,10 @@
 
 | File | Change |
 |---|---|
-| `src/permissions/types.ts` | re-export the new ask types |
+| `src/permissions/types.ts` | **DELETE** its `AskResolver` (it moves to `ask-chain.ts`); keep `AskRequest` and widen it |
 | `src/permissions/ask.ts` | `headlessAskResolver()` becomes `chainAskLinks([])`; split `ASK_UNAVAILABLE_REASON` |
 | `src/permissions/index.ts` | barrel exports |
-| `src/tools/runtime.ts:379-397` | consume `AskVerdict`; populate the richer `AskRequest`; record `approval` in the audit object |
+| `src/tools/runtime.ts:379-395` | consume `AskVerdict`; populate the richer `AskRequest`; record `approval` in the audit object |
 | `src/config/schemas-execution.ts` | new `approvalTimeout` key |
 | `src/config/runtime-types.ts` | mirror the key |
 | `src/agents/coding-tool-support.ts` | add `askResolver` to the `Pick` and pass it through |
@@ -68,7 +68,7 @@
 
 **Files:**
 - Create: `src/permissions/ask-chain.ts`
-- Modify: `src/permissions/types.ts`, `src/permissions/ask.ts`, `src/permissions/index.ts`, `src/tools/runtime.ts:379-397`
+- Modify: `src/permissions/types.ts`, `src/permissions/ask.ts`, `src/permissions/index.ts`, `src/tools/runtime.ts:379-395`
 - Modify (assertion shape only): `test/unit/permissions/ask.test.ts`
 - Test: `test/unit/permissions/ask-chain.test.ts`
 
@@ -255,13 +255,53 @@ export function headlessAskResolver(): AskResolver {
 }
 ```
 
-- [ ] **Step 5: Export from the barrels**
+- [ ] **Step 5: MOVE `AskResolver` out of `types.ts`, then fix the barrel**
 
-In `src/permissions/index.ts`, add `export * from "./ask-chain";` alongside the existing exports. In `src/permissions/types.ts`, leave `AskRequest` where it is — `ask-chain.ts` imports it, so moving it would create a cycle.
+🔴 **This step is load-bearing and silent if you get it wrong.** `src/permissions/types.ts`
+currently declares its OWN `AskResolver`:
+
+```ts
+export interface AskResolver {
+  resolve(req: AskRequest): Promise<"allow" | "deny">;
+}
+```
+
+and `src/permissions/index.ts:5` re-exports it explicitly:
+
+```ts
+export type { AskRequest, AskResolver } from "./types";
+```
+
+`ask-chain.ts` now declares a DIFFERENT, structurally incompatible `AskResolver` (returning
+`AskVerdict`). If you simply add `export * from "./ask-chain";`, **an explicit named export
+wins over a colliding star re-export — with no error.** `@/permissions`'s `AskResolver` would
+keep resolving to the stale string-returning type, and every later task would then fail to
+assign `chainAskLinks(...)` to it, with an error pointing at the wrong file.
+
+Do this instead:
+
+1. **Delete** the `AskResolver` interface from `src/permissions/types.ts`. It now lives in
+   `ask-chain.ts` and nowhere else. Leave `AskRequest` in `types.ts` — `ask-chain.ts` imports
+   it, so moving it would close a cycle.
+2. Change the barrel line to export only what still lives in `types.ts`, and star-export the
+   chain:
+
+```ts
+export type { AskRequest } from "./types";
+export * from "./ask-chain";
+```
+
+3. Confirm there is exactly ONE `AskResolver` in the package:
+
+```bash
+grep -rn "interface AskResolver" src/
+```
+
+Expected: one hit, in `src/permissions/ask-chain.ts`.
 
 - [ ] **Step 6: Update `src/tools/runtime.ts` to consume `AskVerdict`**
 
-Replace the ask-tier block at `src/tools/runtime.ts:379-397`. The `let decision: "allow" | "deny";` declaration at `:380` no longer typechecks.
+Replace the ask-tier block at `src/tools/runtime.ts:379-395`. The `let decision: "allow" | "deny";` declaration at `:380` no longer typechecks.
 
 ```ts
       if (!verdict.allowed && verdict.outcome === "ask") {
@@ -430,7 +470,7 @@ for merge gates and cost warnings."
 ## Task 3: The richer `AskRequest`, verbatim or deny
 
 **Files:**
-- Modify: `src/permissions/types.ts` (the `AskRequest` interface), `src/tools/runtime.ts:118-128` (`askSummary`) and `:379-397` (populate the new fields)
+- Modify: `src/permissions/types.ts` (the `AskRequest` interface), `src/tools/runtime.ts:118-128` (`askSummary`) and `:379-395` (populate the new fields)
 - Test: `test/unit/tools/ask-request-payload.test.ts`
 
 **Interfaces:**
@@ -518,7 +558,7 @@ export interface AskRequest {
 
 - [ ] **Step 4: Accept `askResolver` in `buildCodingToolSupport` and populate the fields**
 
-In `src/agents/coding-tool-support.ts`, add `askResolver?: AskResolver;` to the `CodingToolSupport` args interface (beside `bashApproval` at `:131`) and forward it in the `createCodingToolRuntime` call at `:201`:
+In `src/agents/coding-tool-support.ts`, add `askResolver?: AskResolver;` to the `CodingToolSupport` args interface (beside `bashApproval` at `:131`), importing the type from `@/permissions` — which, after Task 1 Step 5, is the chain's `AskResolver` returning `AskVerdict`, not the deleted one from `types.ts`. Forward it in the `createCodingToolRuntime` call at `:201`:
 
 ```ts
     ...(args.askResolver !== undefined ? { askResolver: args.askResolver } : {}),
@@ -1005,14 +1045,20 @@ const REQ: AskRequest = {
 };
 
 /** A chain double that reproduces production's FAILURE modes, not just success. */
-function fakeChain(behaviour: { reply?: InteractionResponse["action"]; throws?: boolean; sent?: InteractionRequest[] }) {
+/**
+ * NOTE ON TYPES: InteractionResponse["action"] is the narrow InteractionAction
+ * union and does NOT include our option keys -- prompt() puts them there via a
+ * cast. Test doubles therefore take a plain string and cast at the boundary,
+ * exactly as production does.
+ */
+function fakeChain(behaviour: { reply?: string; throws?: boolean; sent?: InteractionRequest[] }) {
   return {
     prompt: (request: InteractionRequest) => {
       behaviour.sent?.push(request);
       if (behaviour.throws) return Promise.reject(new Error("all interaction plugins failed"));
       return Promise.resolve({
         requestId: request.id,
-        action: behaviour.reply ?? "deny",
+        action: (behaviour.reply ?? "deny") as InteractionResponse["action"],
         respondedAt: Date.now(),
       } as InteractionResponse);
     },
@@ -1038,7 +1084,7 @@ describe("human ask link", () => {
   test("'allow-remember' permits and calls onRemember", async () => {
     let remembered = false;
     const link = createHumanAskLink({
-      chain: fakeChain({ reply: "allow-remember" as InteractionResponse["action"] }),
+      chain: fakeChain({ reply: "allow-remember" }),
       timeoutMs: 1000,
       onRemember: async () => {
         remembered = true;
@@ -1051,10 +1097,7 @@ describe("human ask link", () => {
   test.each([["deny"], ["skip"], ["abort"], ["approve"], ["continue"], ["anything-else"]])(
     "ALLOWLIST: action %s denies",
     async (action) => {
-      const link = createHumanAskLink({
-        chain: fakeChain({ reply: action as InteractionResponse["action"] }),
-        timeoutMs: 1000,
-      });
+      const link = createHumanAskLink({ chain: fakeChain({ reply: action }), timeoutMs: 1000 });
       expect((await link.resolve(REQ)).decision).toBe("deny");
     },
   );
@@ -1195,7 +1238,12 @@ const OPTIONS = [
 const PERMITS = new Set(["allow", "allow-remember"]);
 
 export function createHumanAskLink(opts: {
-  readonly chain: InteractionChain | null;
+  /**
+   * `PipelineContext.interaction` is declared OPTIONAL (`src/pipeline/types.ts:142`), so it is
+   * `InteractionChain | undefined`, while a chain built directly is `| null`. Accept both
+   * rather than making every call site remember a `?? null` under `strict`.
+   */
+  readonly chain: InteractionChain | null | undefined;
   readonly timeoutMs: number;
   readonly featureName?: string;
   readonly storyId?: string;
@@ -1211,7 +1259,7 @@ export function createHumanAskLink(opts: {
 
   async function ask(req: AskRequest): Promise<AskLinkOutcome> {
     const chain = opts.chain;
-    if (chain === null) return deny("unavailable");
+    if (chain === null || chain === undefined) return deny("unavailable");
     const command = req.command ?? "";
     if (command.length > MAX_COMMAND_CHARS) return deny("unavailable");
 
@@ -1241,8 +1289,14 @@ export function createHumanAskLink(opts: {
         createdAt: Date.now(),
       });
       if (response.respondedBy === "timeout") return deny("timeout");
-      if (!PERMITS.has(response.action)) return deny("human");
-      if (response.action === "allow-remember" && opts.onRemember) await opts.onRemember(req);
+      // `action` is declared as InteractionAction ("approve" | "reject" |
+      // "choose" | "input" | "skip" | "abort"), but prompt() remaps a choose
+      // reply to the OPTION KEY through a cast (src/interaction/chain.ts:135),
+      // so at runtime it carries our keys. Widen to string once, here: a direct
+      // `response.action === "allow-remember"` is a TS2367 "no overlap" error.
+      const action: string = response.action;
+      if (!PERMITS.has(action)) return deny("human");
+      if (action === "allow-remember" && opts.onRemember) await opts.onRemember(req);
       return { decision: "allow", decidedBy: "human" };
     } catch {
       return deny("unavailable");
@@ -1277,8 +1331,11 @@ Still in `src/interaction/ask-link.ts`, export a disposer. `InteractionChain.can
  * DENY, not abstain: this is the terminal link, and a run that is ending must
  * not execute a command nobody approved.
  */
-export async function cancelPendingAsk(chain: InteractionChain | null, requestId: string | undefined): Promise<void> {
-  if (chain === null || requestId === undefined) return;
+export async function cancelPendingAsk(
+  chain: InteractionChain | null | undefined,
+  requestId: string | undefined,
+): Promise<void> {
+  if (chain === null || chain === undefined || requestId === undefined) return;
   await chain.cancel(requestId).catch(() => undefined);
 }
 ```
@@ -1485,6 +1542,9 @@ In `src/pipeline/stages/execution.ts`, immediately after the `buildInteractionBr
       }),
       // P5's classifier link slots in HERE, between cache and human.
       createHumanAskLink({
+        // `ctx.interaction` is optional on PipelineContext, hence possibly
+        // `undefined`. Task 6's signature accepts null AND undefined for that
+        // reason -- do not "fix" this with a non-null assertion.
         chain: ctx.interaction,
         timeoutMs: ctx.config.execution?.approvalTimeout ?? 600_000,
         featureName: ctx.prd.feature,
