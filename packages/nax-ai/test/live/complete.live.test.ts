@@ -82,7 +82,12 @@ const TARGETS: readonly Target[] = [
     fixture: "openai-codex-responses-text",
     provider: "openai-codex",
     protocol: "openai-codex-responses",
-    model: "gpt-5.4-mini",
+    // openai-codex stopped bundling gpt-5.4-mini in pi-ai 0.87.0. The id is
+    // NOT retired from the catalog — it still appears under openai,
+    // azure-openai-responses, github-copilot, cloudflare-ai-gateway, opencode
+    // and radius — so only this provider-scoped target had to move.
+    // gpt-5.6-luna is the cheapest model openai-codex still bundles.
+    model: "gpt-5.6-luna",
     api: "openai-codex-responses",
     request: { messages: [{ role: "user", content: "Reply with the single word: ok" }], maxTokens: 16 },
     note: 'Recorded from openai-codex, a first-party provider rather than a gateway, over SSE — createPiDeps defaults transport to "sse" because pi-ai would otherwise prefer WebSocket here and no HTTP status could be captured. Evidence of openai-codex-responses event shape and that onResponse observes a real response; not evidence of any error status.',

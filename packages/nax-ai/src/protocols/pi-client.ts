@@ -15,6 +15,7 @@ import type {
   Api,
   AssistantMessageEvent,
   Context,
+  JsonObject,
   Model,
   MutableModels,
   Message as PiMessage,
@@ -143,7 +144,12 @@ function toPiMessages(messages: readonly ConversationMessage[], model: Model<Api
             type: "toolCall" as const,
             id: call.id,
             name: call.name,
-            arguments: (call.input ?? {}) as Record<string, unknown>,
+            // pi-ai 0.86.0 narrowed ToolCall.arguments from Record<string,
+            // unknown> to its own JsonObject. nax-ai does not validate tool
+            // arguments — it forwards what the consumer was given, the same
+            // way toPiTool forwards an unvalidated schema — so this asserts
+            // the shape rather than proving it.
+            arguments: (call.input ?? {}) as JsonObject,
           })),
         ],
         api: model.api,

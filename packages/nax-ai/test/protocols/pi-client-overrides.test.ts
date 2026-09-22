@@ -16,6 +16,7 @@ import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } 
 // synthesised Model. `check-pi-ai-imports` scans `src/`, not `test/`, so this
 // does not weaken the adapter boundary the gate protects.
 import { streamSimple as openaiCompletionsStreamSimple } from "@earendil-works/pi-ai/api/openai-completions";
+import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 import { describe, expect, it } from "vitest";
 import { createClient } from "../../src/client.ts";
 import { createPiDeps, createPiProtocol } from "../../src/protocols/pi-client.ts";
@@ -89,7 +90,11 @@ async function wirePayload(
   let captured: Record<string, unknown> | undefined;
   const events = openaiCompletionsStreamSimple(
     model as Parameters<typeof openaiCompletionsStreamSimple>[0],
-    { messages: [] } as Context,
+    // pi-ai 0.86.0 brands the provider-facing context: only normalizeContext()
+    // produces a TranscriptContext, so a raw Context can no longer reach an
+    // api/ module. Normalising rather than casting also means this test folds
+    // the context exactly as the public stream path does.
+    normalizeContext({ messages: [] }),
     {
       reasoning,
       apiKey: "test-key",
@@ -327,10 +332,33 @@ describe("provider overrides at the protocol seam", () => {
  * deliberate, matching this file's existing style (`gpt-4`/`openai`) — a
  * synthetic fixture would not prove the fix against the catalog that
  * actually produced the bug report.
+ *
+ * Load-bearing since pi-ai 0.87.0, and worth re-checking on the next bump:
+ * that release added `deepseek-v4.1-flash` to `opencode-go` with the SAME
+ * `contextWindow` (1,000,000) as `deepseek-v4-flash`, so `pickTemplate` now
+ * falls through to `isBetterTemplate`'s `id` tie-break. `deepseek-v4-flash`
+ * wins only because "-" (0x2D) sorts before "." (0x2E). The newcomer carries
+ * `thinkingLevelMap.off: null`, which makes pi clamp a request for "off" up
+ * to "low" — so if an upstream rename ever flips that tie, "never invents an
+ * 'off' value on the wire" is the test that will catch it.
  */
 describe("thinkingLevelMap synthesis (issue #47)", () => {
+  /**
+   * Absent from pi-ai's bundled snapshot, which is the premise of the whole
+   * describe: an override only synthesises a model when pi has never heard of
+   * the id. `deepseek-v4.1-flash` used to serve here and pi-ai 0.87.0 added
+   * it, which turned this suite red for a reason that had nothing to do with
+   * issue #47 — so the premise is now asserted rather than assumed.
+   */
+  const ABSENT = "deepseek-v9.9-not-in-snapshot";
+
+  it("rests on an id pi-ai does not bundle", async () => {
+    const [provider] = await defaultProviders(["opencode-go"]);
+    expect(provider?.models.map((model) => model.id)).not.toContain(ABSENT);
+  });
+
   const OVERRIDE: ResolvedModel = {
-    id: "deepseek-v4.1-flash",
+    id: ABSENT,
     provider: "opencode-go",
     protocol: "openai-completions",
     pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },

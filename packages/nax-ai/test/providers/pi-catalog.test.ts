@@ -114,12 +114,46 @@ describe("piProviders", () => {
   });
 
   it("does not invent a strict-tool declaration when pi exposes none", async () => {
-    const upstream = getBuiltinModels("deepseek");
-    const source = upstream.find((model) => model.compat?.supportsStrictMode === undefined);
-    expect(source).toBeDefined();
+    // The provider is searched for rather than named. Pinning one (deepseek,
+    // until 0.87.0 gave every model a supportsStrictMode) makes this test
+    // fail the day upstream fills that provider in, which is churn in the
+    // catalog rather than a regression in the projection under test.
+    const candidates = ["deepseek", "groq", "mistral", "cerebras", "xai", "together", "minimax"] as const;
+    let source: { readonly id: string } | undefined;
+    let providerId: (typeof candidates)[number] | undefined;
+    for (const id of candidates) {
+      // Cast for the same reason the sibling test above casts: across a union
+      // of provider ids, `compat` resolves to an intersection TS narrows to
+      // `never`. Only the one flag is read.
+      const upstream = getBuiltinModels(id) as ReadonlyArray<{
+        readonly id: string;
+        readonly api: string;
+        readonly compat?: { readonly supportsStrictMode?: boolean; readonly supportsStrictTools?: boolean };
+      }>;
+      // Mirrors explicitStrictToolSamplingDeclaration: the anthropic-messages
+      // branch reads a different flag. Filtering on supportsStrictMode alone
+      // would select an anthropic-messages model that DOES declare
+      // supportsStrictTools, and the projection would correctly emit the
+      // property this test asserts is absent — a false failure.
+      source = upstream.find(
+        (model) =>
+          (model.api === "anthropic-messages"
+            ? model.compat?.supportsStrictTools
+            : model.compat?.supportsStrictMode) === undefined,
+      );
+      if (source !== undefined) {
+        providerId = id;
+        break;
+      }
+    }
+    expect(source, `no bundled provider in ${candidates.join(", ")} omits supportsStrictMode`).toBeDefined();
 
-    const [deepseek] = await piProviders(["deepseek"]);
-    const projected = deepseek?.models.find((model) => model.id === source?.id);
+    const [provider] = await piProviders([providerId as (typeof candidates)[number]]);
+    const projected = provider?.models.find((model) => model.id === source?.id);
+    // Without this, a lookup miss would make the assertion below pass against
+    // `undefined` and prove nothing. The provider is chosen dynamically now,
+    // which is exactly what makes a miss plausible later.
+    expect(projected, `projection dropped ${providerId}/${source?.id}`).toBeDefined();
     expect(projected).not.toHaveProperty("supportsStrictToolSampling");
   });
 });

@@ -177,7 +177,7 @@ describe("header option absence", () => {
       seen = options;
       return emptyStream();
     });
-    const model = await deps.resolveModel("gpt-5.4", "openai-codex");
+    const model = await deps.resolveModel("gpt-5.5", "openai-codex");
 
     for await (const _ of deps.stream(model, { messages: [] }, {}, () => {})) {
       // drain
