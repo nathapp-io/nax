@@ -20,3 +20,19 @@ export type BashApprovalMode = z.infer<typeof BashApprovalModeSchema>;
  * the field's own default the moment either changes.
  */
 export const DEFAULT_BASH_APPROVAL_MODE: BashApprovalMode = BashApprovalModeSchema.parse("raw");
+
+/**
+ * `bashApprovalOps` (ADR-030): the named surface of mode resolution.
+ *
+ * Deliberately a pure function, not an async provider chain. The human
+ * resolver is the existing `AskResolver`, which the `ask` tier already reaches
+ * (`src/tools/runtime.ts:378`); a second chain would duplicate it. A future
+ * model-based classifier attaches at the POST-ALLOW seam in `runtime.ts`
+ * instead, narrowing allow → ask, which is a different insertion point.
+ */
+export function resolveBashApproval(
+  global: BashApprovalMode | undefined,
+  perStage: BashApprovalMode | undefined,
+): BashApprovalMode {
+  return perStage ?? global ?? DEFAULT_BASH_APPROVAL_MODE;
+}

@@ -12,7 +12,7 @@ import { getSafeLogger } from "@/logger";
 import { parseRuleList } from "@/permissions";
 import type { CodingToolName, ToolGrant } from "@/tools";
 import { EXEC_TOOL_NAME } from "@/tools";
-import { type BashApprovalMode, DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
+import { type BashApprovalMode, resolveBashApproval } from "./bash-approval";
 import type { AgentManagerConfig } from "./selectors";
 
 export type PermissionProfile = "unrestricted" | "safe" | "scoped";
@@ -222,8 +222,7 @@ function stageRules(config: AgentManagerConfig | undefined, stage: PipelineStage
     allow: parseRuleList(block?.allow ?? block?.allowedTools ?? []),
     deny: parseRuleList(block?.deny ?? []),
     ask: parseRuleList(block?.ask ?? []),
-    // Per-stage beats global beats the schema default.
-    bashApproval: block?.bashApproval ?? config?.execution?.bashApproval ?? DEFAULT_BASH_APPROVAL_MODE,
+    bashApproval: resolveBashApproval(config?.execution?.bashApproval, block?.bashApproval),
   };
 }
 

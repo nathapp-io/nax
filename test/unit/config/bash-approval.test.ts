@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE } from "@/config/bash-approval";
+import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE, resolveBashApproval } from "@/config/bash-approval";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { resolvePermissions } from "@/config/permissions";
 import { NaxConfigSchema } from "@/config/schemas";
@@ -98,6 +98,20 @@ describe("resolvePermissions bashApproval", () => {
       const cfg = makeNaxConfig({ execution: { permissionProfile, bashApproval: "escalate" } });
       expect(resolvePermissions(cfg, "run").bashApproval).toBe("escalate");
     }
+  });
+});
+
+describe("resolveBashApproval", () => {
+  test("per-stage wins", () => {
+    expect(resolveBashApproval("gated", "escalate")).toBe("escalate");
+  });
+
+  test("falls back to global", () => {
+    expect(resolveBashApproval("escalate", undefined)).toBe("escalate");
+  });
+
+  test("falls back to the default when both are absent", () => {
+    expect(resolveBashApproval(undefined, undefined)).toBe("raw");
   });
 });
 
