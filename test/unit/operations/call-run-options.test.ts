@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 import { buildRunDispatchOptions } from "@/operations/call-run-options";
 import type { CallContext } from "@/operations/types";
+import type { AskResolver } from "@/permissions";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -137,5 +138,44 @@ describe("buildRunDispatchOptions — codingToolWorkdirLabel (single-frame redes
 
   test("falls back to '.' for the root package when no story is in scope", () => {
     expect(build("").codingToolWorkdirLabel).toBe(".");
+  });
+});
+
+describe("buildRunDispatchOptions — askResolver (P2 threading)", () => {
+  function build(askResolver?: AskResolver) {
+    const config = makeNaxConfig();
+    const runtime = makeTestRuntime({ config, workdir: "/repo" });
+    createdRuntimes.push(runtime);
+    const ctx: CallContext = {
+      runtime,
+      packageView: runtime.packages.resolve("packages/api"),
+      packageDir: "packages/api",
+      config,
+      agentName: "claude",
+      ...(askResolver !== undefined ? { askResolver } : {}),
+    };
+    return buildRunDispatchOptions(ctx, {
+      prompt: "hi",
+      effectiveTier: "balanced",
+      dispatchModelDef: { provider: "claude", model: "sonnet" },
+      config,
+      callId: "call-1",
+      pipelineStage: "run",
+      declaredTools: ["Read"],
+      keepOpen: false,
+    });
+  }
+
+  test("forwards the caller's askResolver by reference", () => {
+    const askResolver: AskResolver = {
+      resolve: async () => ({ decision: "deny", decidedBy: "unavailable", latencyMs: 0 }),
+    };
+    // Identity, not deep equality: the runtime must consult the SAME resolver
+    // instance the execution stage built and holds for its run-end teardown.
+    expect(build(askResolver).askResolver).toBe(askResolver);
+  });
+
+  test("omits askResolver when the caller supplies none", () => {
+    expect("askResolver" in build()).toBe(false);
   });
 });
