@@ -3,11 +3,11 @@ import type { LoopEvent, LoopEventMap } from "@/agents/native/session/loop-event
 
 describe("loop event map", () => {
   test("every LoopEvent member has a map entry", () => {
-    // Compile-time exhaustiveness: this assignment fails to typecheck if a
-    // LoopEvent member is missing from LoopEventMap.
     type Missing = Exclude<LoopEvent, keyof LoopEventMap>;
-    const none: Missing[] = [];
-    expect(none).toEqual([]);
+    // Compile-time exhaustiveness: this type is `true` only when every LoopEvent
+    // member has a LoopEventMap entry — a missing entry fails the typecheck.
+    const exhaustive: [Missing] extends [never] ? true : false = true;
+    expect(exhaustive).toBe(true);
   });
 
   test("the eight events are the full set", () => {
