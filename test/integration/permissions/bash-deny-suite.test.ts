@@ -8,7 +8,7 @@
  * A green build in which these do not run is a failed build of this feature.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
@@ -347,6 +347,53 @@ describe("raw mode executes in the permitted root", () => {
     // Carried from nax#2182: a gate that passes while running somewhere
     // unintended adjudicates nothing. Pin the cwd, not just the verdict.
     expect(readFileSync(join(root, "raw-cwd-proof.txt"), "utf8").trim()).toBe("marker");
+  });
+});
+
+describe("F2: raw's protected-path screen tracks cd across segments", () => {
+  // The screen is advisory, but its whole remit is catching a naive mistake
+  // (ADR-030). `.queue.txt` carries PAUSE/ABORT/SKIP, so a miss here lets a
+  // raw command abort its own run. Each row pins an EXECUTED outcome, not a
+  // verdict alone: a screen that denies while the write still lands, or
+  // passes while nothing is written, would satisfy a kind-only assertion.
+  const rawSession = () => session({ declared: FIX_TOOLS, allow: [], bashApproval: "raw" });
+
+  test("a cd'd relative redirect into the root's queue file is refused", async () => {
+    mkdirSync(join(root, "child"), { recursive: true });
+    const result = await call(rawSession(), "cd child && echo ABORT > ../.queue.txt");
+    expect(result.kind).toBe("denied");
+    expect(existsSync(join(root, ".queue.txt"))).toBe(false);
+  });
+
+  test("the same name under the cd'd directory is an ordinary file and runs", async () => {
+    mkdirSync(join(root, "child"), { recursive: true });
+    const result = await call(rawSession(), "cd child && echo hi > .queue.txt");
+    expect(result.kind).toBe("ok");
+    expect(readFileSync(join(root, "child", ".queue.txt"), "utf8").trim()).toBe("hi");
+  });
+
+  // An unmodellable `cd` must not become a skeleton key. An earlier revision
+  // returned allow for the WHOLE command on one, so prefixing any everyday
+  // idiom disabled the screen for every later segment -- strictly worse than
+  // the initialPath-pinned code the frame tracking replaced.
+  test.each([
+    ["an option-shaped cd", "cd -P child && echo ABORT > .queue.txt"],
+    ["a bare cd -", "cd - ; echo ABORT > .queue.txt"],
+    ["an opaque cd", "cd $TARGET && echo ABORT > .queue.txt"],
+    ["a cd with no target", "cd ; echo ABORT > .queue.txt"],
+    ["a cd out of the root", "cd ../outside ; echo ABORT > .queue.txt"],
+  ])("%s does not disable the screen for a later segment", async (_label, command) => {
+    const result = await call(rawSession(), command);
+    expect(result.kind).toBe("denied");
+    expect(existsSync(join(root, ".queue.txt"))).toBe(false);
+  });
+
+  // The other half of the asymmetry, still intact: gated REFUSES an
+  // unmodellable cd outright; raw must not, or it has re-gated itself.
+  test("an unmodellable cd is not itself a denial under raw", async () => {
+    const result = await call(rawSession(), "cd -P . && echo marker > cd-open-proof.txt");
+    expect(result.kind).toBe("ok");
+    expect(readFileSync(join(root, "cd-open-proof.txt"), "utf8").trim()).toBe("marker");
   });
 });
 

@@ -83,11 +83,30 @@ names or redirects into a path nax owns — `.nax/config.json`, `.nax/mono/*/con
 `.nax/features/**/prd.json`, the root queue-control files — the command is denied. If it
 **cannot** parse the command, the command runs.
 
-**This screen is advisory by construction and must never be described otherwise.** A command
-using substitution is not parsed, and therefore is not screened:
-`sh -c "$(echo rm) .nax/features/f/prd.json"` passes straight through. It catches a naive
-mistake at near-zero cost, which is exactly the threat model below. It is not a boundary, and
-it must never be grown into a general gate — gating lives in policy, once.
+A parseable `cd` moves every later segment's frame of reference, so the screen tracks it
+across segments (shared with the gated path via `src/tools/bash-cwd.ts`). Where the gated
+policy REFUSES a `cd` it cannot model — an option-shaped target, an opaque one, one leaving
+the root — this screen must not, or `raw` has re-gated itself through the back door of `cd`
+modelling. Instead the frame set holds its last known value and screening continues. Failing
+open on the `cd` must never mean abandoning the screen for the rest of the command: that
+would make any everyday idiom a skeleton key (`cd - ; echo ABORT > .queue.txt`), which is
+strictly worse than pinning every candidate to the initial directory.
+
+**This screen is advisory by construction and must never be described otherwise.** Three gaps
+are known and accepted, not defects to be closed:
+
+1. A command using substitution is not parsed, and therefore is not screened:
+   `sh -c "$(echo rm) .nax/features/f/prd.json"` passes straight through.
+2. After an unmodellable `cd` the tracked frame is an ESTIMATE, so the screen can refuse a
+   write the shell would in fact have placed somewhere harmless. A false refusal costs one
+   turn and states its reason; a false pass can abort the run, so the trade is deliberate.
+3. That same estimate admits a residual miss in the other direction: an unmodellable `cd`
+   INTO a protected directory (`cd -P .nax && echo x > config.json`) is screened against the
+   pre-`cd` frame and passes. Closing it would require modelling every `cd` form, which is
+   the containment gate `raw` exists not to be.
+
+It catches a naive mistake at near-zero cost, which is exactly the threat model below. It is
+not a boundary, and it must never be grown into a general gate — gating lives in policy, once.
 
 ## Consequences
 

@@ -4,13 +4,23 @@ import { screenRawBashCommand } from "@/tools/policy-bash-raw";
 
 const ROOT = "/tmp/raw-screen-root";
 
+/**
+ * Mirrors production's containment callback (`resolveWithin(root, ...)` via
+ * policy.ts), which returns null for anything that escapes the root. A stub
+ * that always resolves would make `cd ../outside` look MODELLABLE here while
+ * production cannot model it at all, and the frame-tracking tests below turn
+ * on exactly that distinction.
+ */
 function screen(command: unknown) {
   return screenRawBashCommand({
     tool: "Bash",
     command,
     initialPath: ROOT,
     root: ROOT,
-    resolvePath: (candidate, cwd) => resolve(cwd, candidate),
+    resolvePath: (candidate, cwd) => {
+      const resolved = resolve(cwd, candidate);
+      return resolved === ROOT || resolved.startsWith(`${ROOT}/`) ? resolved : null;
+    },
   });
 }
 
@@ -79,16 +89,39 @@ describe("screenRawBashCommand tracks a parseable cd", () => {
     expect(screen("echo ABORT > .queue.txt").kind).toBe("deny");
   });
 
-  test("ALLOWS a `cd` to an option-shaped target -- fails open, does not re-gate raw", () => {
-    expect(screen("cd -P child && echo ABORT > .queue.txt").kind).toBe("allow");
+  // An unmodelled `cd` is never ITSELF a denial, but it does not end the
+  // screen either -- the frame set holds its last known value and later
+  // segments are still checked against it. An earlier revision returned
+  // `allow` for the whole command here, which let `cd - ; echo ABORT >
+  // .queue.txt` write the run-control file unscreened: strictly worse than
+  // the initialPath-pinned code this tracking replaced.
+  test("an option-shaped `cd` does not disable the screen for later segments", () => {
+    expect(screen("cd -P child && echo ABORT > .queue.txt").kind).toBe("deny");
   });
 
-  test("ALLOWS a `cd` to an opaque ($-expansion) target -- fails open", () => {
-    expect(screen("cd $TARGET && echo ABORT > .queue.txt").kind).toBe("allow");
+  test("an opaque ($-expansion) `cd` does not disable the screen", () => {
+    expect(screen("cd $TARGET && echo ABORT > .queue.txt").kind).toBe("deny");
   });
 
-  test("ALLOWS a `cd` that leaves the root -- fails open, raw enforces no containment", () => {
-    expect(screen("cd ../outside && echo ABORT > .queue.txt").kind).toBe("allow");
+  test("a `cd` that leaves the root does not disable the screen", () => {
+    expect(screen("cd ../outside && echo ABORT > .queue.txt").kind).toBe("deny");
+  });
+
+  test("a `cd` with no target does not disable the screen", () => {
+    expect(screen("cd ; echo ABORT > .queue.txt").kind).toBe("deny");
+  });
+
+  test("`cd -` before a protected write is refused (the regression this pins)", () => {
+    expect(screen("cd - ; echo ABORT > .queue.txt").kind).toBe("deny");
+  });
+
+  // The fail-open half of the asymmetry, still intact: an unmodellable `cd`
+  // is not a denial on its own account, unlike gated mode, which refuses it.
+  test("an unmodellable `cd` is not itself a denial", () => {
+    expect(screen("cd -P child && bun test").kind).toBe("allow");
+    expect(screen("cd $TARGET && bun test").kind).toBe("allow");
+    expect(screen("cd ../outside && bun test").kind).toBe("allow");
+    expect(screen("cd -").kind).toBe("allow");
   });
 
   test("a `;`-separated cd keeps both frames live: a hit from EITHER frame denies", () => {

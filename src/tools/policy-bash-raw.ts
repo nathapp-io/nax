@@ -24,16 +24,25 @@
  *
  * THE CRITICAL ASYMMETRY, read this before touching the `cd` handling below:
  * where `checkBashCommand` DENIES a `cd` it cannot model (an option-shaped
- * target, an opaque one, one that fails to resolve), this screen must FAIL
- * OPEN on the exact same cases -- stop tracking and allow the rest of the
- * command. Raw enforces no containment by definition; a denial here would
- * silently re-gate raw into a containment gate through the back door of `cd`
- * modelling, which is precisely the mode this file exists to NOT be. A `cd`
- * that leaves the root (`cd ../outside`) is the common case: `resolvePath` is
- * `resolveWithin(root, ...)`, which returns `null` for anything outside the
- * root, so it yields no trackable frame and falls into this same fail-open
- * path -- as it should, since raw never claimed to contain the shell to the
- * root in the first place. Do not "fix" this into a denial.
+ * target, an opaque one, one that fails to resolve), this screen must NOT --
+ * raw enforces no containment by definition, and denying there would silently
+ * re-gate raw into a containment gate through the back door of `cd` modelling.
+ * A `cd` that leaves the root (`cd ../outside`) is the common case:
+ * `resolvePath` is `resolveWithin(root, ...)`, which returns `null` for
+ * anything outside the root, so it yields no trackable frame at all. Do not
+ * "fix" the unmodelled cases into a denial.
+ *
+ * But failing open on the `cd` is NOT the same as abandoning the screen. An
+ * earlier revision returned `allow` for the WHOLE command on an unmodelled
+ * `cd`, which meant a single everyday idiom disabled the screen for every
+ * later segment: `cd - ; echo ABORT > .queue.txt` wrote the run-control file
+ * unscreened -- strictly worse than the initialPath-pinned code this tracking
+ * replaced, which caught it by accident. So an unmodelled `cd` leaves the
+ * frame set at its LAST KNOWN value and screening continues. The frame is
+ * then an estimate, and the screen may refuse a write that the shell would
+ * actually have placed somewhere harmless. That is the correct trade for an
+ * advisory mistake-catcher: a false refusal costs one turn and says why,
+ * while a false pass can abort the run.
  */
 import { relative, sep } from "node:path";
 import { lexBashCommand } from "@/permissions";
@@ -110,14 +119,14 @@ export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
       }
     }
 
-    // See the file header ("THE CRITICAL ASYMMETRY"): every unmodelled `cd`
-    // case fails OPEN here, never denied -- that inversion from gated mode is
-    // deliberate.
+    // See the file header ("THE CRITICAL ASYMMETRY"). An unmodelled `cd` is
+    // never itself a denial -- that inversion from gated mode is deliberate --
+    // but it does not end the screen either: the frame set simply stays where
+    // it was and the later segments are still checked against it. Returning
+    // `allow` here instead would let `cd - ; echo ABORT > .queue.txt` through.
     const cdResult = cdTargetsFor(segment, cwd, args.resolvePath);
     if (cdResult.kind === "resolved") {
       cwd = nextWorkingDirectories(segment, cwd, cdResult.targets);
-    } else if (cdResult.kind !== "not-cd") {
-      return { kind: "allow" };
     }
   }
 
