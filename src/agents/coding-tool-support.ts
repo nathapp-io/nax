@@ -14,7 +14,6 @@ import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import {
   advertisedSchemaBytes,
-  BASH_TOOL_NAME,
   type CodingTool,
   type CodingToolName,
   type CodingToolRuntime,
@@ -27,7 +26,6 @@ import {
   EXEC_TOOL_NAME,
   expandMcpRuleGrants,
   mcpRuleAdmits,
-  narrowGrants,
   partitionMcpRules,
   type ResolvedProviderTools,
   resolveProviderTools,
@@ -42,6 +40,7 @@ import { resolvePermissions } from "../config/permissions";
 import type { QualityCommandSpec } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { errorMessage } from "../utils/errors";
+import { resolveBashSupport } from "./coding-tool-bash";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
 
@@ -171,25 +170,13 @@ export function buildCodingToolSupport(args: {
   // tool's EXISTENCE is what lets the call reach `policy.check` and be denied
   // there -- and only that denial path (in `runtime.callTool`, using
   // `denial-redirect.ts`) can attach a redirect.
-  // Narrowed, not raw: `narrowGrants` is what the POLICY compiles, so reading
-  // the raw list here would name forms in the tool's description that the
-  // policy then refuses -- the wasted turn the `patterns` option exists to
-  // prevent, inverted.
-  const narrowedGrants = narrowGrants(grants, args.toolPatterns);
-  const bashGrant = narrowedGrants.findLast((grant) => grant.tool === BASH_TOOL_NAME);
-  const allowBash = args.declared.includes(BASH_TOOL_NAME);
-
-  // ADR-030: `raw` changes GATING, not GRANTING — the Bash tool still has to be
-  // granted or `callTool` never reaches the policy. The grant is synthetic
-  // (no human wrote a `Bash(...)` rule) and is deliberately conditioned on the
-  // op having DECLARED Bash. That condition is what keeps review ops and the
-  // verifier shell-free under every mode: they declare no Bash, so no mode can
-  // hand them one. Never grant unconditionally here.
   const bashApproval = args.bashApproval ?? "gated";
-  const effectiveGrants =
-    bashApproval === "raw" && allowBash && bashGrant === undefined
-      ? [...narrowedGrants, { tool: BASH_TOOL_NAME, patterns: ["*"] as readonly string[] }]
-      : narrowedGrants;
+  const { effectiveGrants, allowBash, bashDescriptionPatterns } = resolveBashSupport({
+    declared: args.declared,
+    grants,
+    toolPatterns: args.toolPatterns,
+    bashApproval,
+  });
 
   const declaredCommands = args.declaredCommands ?? new Map<string, QualityCommandSpec>();
   const sink =
@@ -257,7 +244,7 @@ export function buildCodingToolSupport(args: {
               ...(args.stripEnvVars !== undefined ? { stripEnvVars: args.stripEnvVars } : {}),
               // The compiled grant, so the description names what THIS stage
               // may run rather than a generic sentence.
-              patterns: bashGrant?.patterns ?? [],
+              patterns: bashDescriptionPatterns,
             }),
           ]
         : []),
