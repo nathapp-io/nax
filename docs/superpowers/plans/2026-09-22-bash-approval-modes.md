@@ -291,14 +291,26 @@ Change it to:
     if (result.kind === "deny") return deny(result.reason, result.breach, result.escalatable);
 ```
 
-Then update the local `deny` helper in `policy.ts` to accept and carry the flag, and add `escalatable` to the `PolicyVerdict` type. Locate them with:
+Then carry the flag through the verdict. `PolicyVerdict` lives in **`src/tools/types.ts:146-156`**, not in `policy.ts`. Add the field to its DENY arm only:
 
-```bash
-grep -n "function deny(" src/tools/policy.ts
-grep -rn "interface PolicyVerdict\|type PolicyVerdict" src/tools/
+```ts
+export type PolicyVerdict =
+  | { readonly allowed: true; readonly resolvedPaths: readonly string[] }
+  | {
+      readonly allowed: false;
+      readonly reason: string;
+      readonly breach: boolean;
+      readonly outcome?: "denied" | "ask";
+      readonly resolvedPaths?: readonly string[];
+      /** Present only with outcome "ask": the matching configured rule expression. */
+      readonly rule?: string;
+      /** See BashCheck.escalatable in policy-bash.ts. Bash-branch only; other
+       * branches leave it undefined, which reads as not-escalatable. */
+      readonly escalatable?: boolean;
+    };
 ```
 
-Add `readonly escalatable?: boolean;` to the verdict type, and default the helper's new parameter to `false` so no other call site changes.
+Then update `policy.ts`'s local `deny` helper (`grep -n "function deny(" src/tools/policy.ts`) to take a third parameter defaulting to `false`, so no other call site changes.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
@@ -895,10 +907,12 @@ function stageRules(config: AgentManagerConfig | undefined, stage: PipelineStage
 }
 ```
 
-In `withRules`, always attach it — unlike the rule lists, this field is never conditional:
+In `withRules`, always attach it — unlike the rule lists, this field is never conditional.
+
+**Change the `base` parameter's type to `Omit<ResolvedPermissions, "bashApproval">`.** Leaving it as `ResolvedPermissions` makes all three call sites (`:238`, `:257`, `:294`) fail to typecheck, because each passes a base literal that does not yet carry the field — `withRules` is precisely what adds it:
 
 ```ts
-function withRules(base: ResolvedPermissions, rules: StageRules): ResolvedPermissions {
+function withRules(base: Omit<ResolvedPermissions, "bashApproval">, rules: StageRules): ResolvedPermissions {
   return {
     ...base,
     bashApproval: rules.bashApproval,
@@ -909,7 +923,7 @@ function withRules(base: ResolvedPermissions, rules: StageRules): ResolvedPermis
 }
 ```
 
-Now fix the two `resolvePermissions` return paths that do NOT go through `withRules`. The `scoped` case delegates to `resolveScopedPermissions` — make that function call `withRules` too, or add the field to its return. The fail-closed default arm currently returns `{ mode: INVALID_PROFILE_MODE }`; make it:
+Now fix the ONE return path that does not go through `withRules`. (`resolveScopedPermissions` at `:294` already ends in `withRules(...)`, so it needs no change — verify that before touching it.) The fail-closed default arm at `:269` currently returns `{ mode: INVALID_PROFILE_MODE }`; make it:
 
 ```ts
       return { mode: INVALID_PROFILE_MODE, bashApproval: "gated" };
@@ -1065,7 +1079,12 @@ Rewrite `commandBranch`'s body after the `scope.commandField` guard:
       // escalating those would dissolve the `breach` signal into an approval
       // prompt. See ADR-030 and the two escalatable sites in policy-bash.ts.
       if (bashApproval === "escalate" && result.escalatable) {
-        return askVerdict([], result.reason);
+        // NOT `askVerdict(...)`: that helper REWRITES reason as
+        // `matched ask rule "<rule>"`, which is false here — no ask rule
+        // matched. Build the verdict directly so the original denial reason
+        // survives into the ledger and into the human prompt. `rule` is
+        // omitted; `runtime.ts` falls back to `verdict.reason`.
+        return { allowed: false, reason: result.reason, breach: false, outcome: "ask", resolvedPaths: [] };
       }
       return deny(result.reason, result.breach, result.escalatable);
     }
@@ -1169,6 +1188,14 @@ Use `effectiveGrants` in the `compileToolPolicy` call and add the option:
 
 Add `bashApproval?: BashApprovalMode` to this function's args interface, and at the `resolveCodingToolSupport` layer (`:330-332`) pass `resolved.bashApproval` down. Follow the existing optional-spread style used for the other fields.
 
+Import the type as **type-only**:
+
+```ts
+import type { BashApprovalMode } from "@/config/bash-approval";
+```
+
+`check-alias-internals` forbids VALUE-level `@/<dir>/<internal>` imports (you would have to go through the `@/config` barrel), but exempts `import type` — which is why every cross-directory reference to this type in `src/` must be type-only. The same applies to the import added in Task 7.
+
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `bun run test:integration ./test/integration/permissions/bash-deny-suite.test.ts`
@@ -1256,20 +1283,42 @@ describe("raw mode executes in the permitted root", () => {
 
 Add `import { readFileSync } from "node:fs";` and `import { join } from "node:path";` at the top if absent. `root` is the temp root the existing `beforeEach` creates — check its variable name at `:32-43` and use it.
 
-- [ ] **Step 3: Write the default-mode pin**
+- [ ] **Step 3: Write the default-mode pin — at the layer that actually decides it**
 
-Append:
+⚠️ **Do not pin the default through `session()`.** That helper calls
+`buildCodingToolSupport` DIRECTLY with hand-built grants (`bash-deny-suite.test.ts:45-63`); it
+never goes through `resolvePermissions`, so the config default cannot reach it. With no
+`bashApproval` passed, `buildCodingToolSupport`'s own `?? "gated"` fallback applies — which is
+correct and deliberate for a direct caller, but it means an integration test here would assert
+`gated` and tell you nothing about the shipped posture.
+
+The default lives in the config layer and is already pinned there by Task 6
+(`resolvePermissions(makeNaxConfig({}), "run").bashApproval === "raw"`) and Task 5
+(`NaxConfigSchema.parse({}).execution.bashApproval === "raw"`). Add one explicit posture guard
+beside them rather than a misleading one here. Append to `test/unit/config/bash-approval.test.ts`:
 
 ```ts
-test("the shipped default mode is raw", async () => {
-  // Pins the posture itself. If this flips, it must flip deliberately, with an
-  // ADR amendment — not as a side effect of a schema edit.
-  const support = await session({ declared: FIX_TOOLS, allow: [] });
-  expect((await call(support, "echo $(whoami)")).kind).toBe("ok");
+test("POSTURE GUARD: the shipped default is raw", () => {
+  // If this flips it must flip deliberately, with an ADR-030 amendment — never
+  // as a side effect of a schema edit. See ADR-029 §3's 2026-09-22 amendment
+  // for what `raw` by default gives up.
+  expect(NaxConfigSchema.parse({}).execution.bashApproval).toBe("raw");
+  expect(resolvePermissions(makeNaxConfig({}), "run").bashApproval).toBe("raw");
 });
 ```
 
-Note this requires `session()` to fall through to the resolved default when no `bashApproval` is passed. If the helper currently hardcodes `"gated"`, change it to pass the field through only when supplied.
+Then add the complementary assertion HERE, which is what this file can honestly prove — that a
+direct `buildCodingToolSupport` caller still gets today's behaviour when it passes nothing:
+
+```ts
+test("a direct buildCodingToolSupport caller defaults to gated, not raw", async () => {
+  // `session()` bypasses resolvePermissions, so this pins the LOCAL fallback,
+  // not the shipped posture. Both matter: a direct caller must never silently
+  // acquire a shell it did not ask for.
+  const support = await session({ declared: FIX_TOOLS, allow: [] });
+  expect((await call(support, "echo $(whoami)")).kind).toBe("denied");
+});
+```
 
 - [ ] **Step 4: Run the full suite**
 
