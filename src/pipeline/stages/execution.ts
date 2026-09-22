@@ -12,7 +12,13 @@
 import { join } from "node:path";
 import { validateAgentForTier } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
-import { type BashApprovalMode, isThreeSessionStrategy, type NaxConfig, resolveBashApproval } from "@/config";
+import {
+  type BashApprovalMode,
+  isThreeSessionStrategy,
+  loadConfigForPackage,
+  type NaxConfig,
+  resolveBashApproval,
+} from "@/config";
 import { assembleForStage } from "@/context/engine";
 import { NaxError } from "@/errors";
 import {
@@ -37,6 +43,7 @@ import {
   createApprovalsLink,
 } from "@/permissions";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
+import { storyPackageDir } from "@/utils/path-frame";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -115,8 +122,7 @@ export const executionStage: PipelineStage = {
     // chain appends its own terminal deny, so an empty or exhausted chain
     // denies rather than runs.
     const approvalsFile = approvalsPath(ctx.runtime.outputDir);
-    // Built ONCE and shared: the chain uses it, and the run-end teardown below
-    // reads `humanLink.pending()` from this same instance.
+    // Built once and shared by every operation dispatched for this story.
     const humanLink = createHumanAskLink({
       // `ctx.interaction` is optional on PipelineContext, hence possibly
       // `undefined`. The human link's signature accepts null AND undefined.
@@ -124,6 +130,7 @@ export const executionStage: PipelineStage = {
       timeoutMs: ctx.config.execution?.approvalTimeout ?? 600_000,
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,
+      abortSignal: ctx.abortSignal,
       onRemember: async (req) =>
         appendApproval(approvalsFile, {
           stage: req.stage,
@@ -140,7 +147,7 @@ export const executionStage: PipelineStage = {
       createApprovalsLink({
         approvalsFile,
         repoRoot: ctx.workdir,
-        stageModes: collectStageModes(ctx.config),
+        stageModes: await collectEffectiveRunStageModes(ctx),
       }),
       // P5's classifier link slots in HERE, between cache and human.
       humanLink,
@@ -259,11 +266,11 @@ export const executionStage: PipelineStage = {
       throw err;
     } finally {
       unsubscribe();
-      // A prompt in flight when the run ends is cancelled and denied, rather
-      // than hanging until approvalTimeout. Effective for Telegram; CLI settles
-      // at approvalTimeout and webhook leaks at process end -- their plugins'
-      // cancel() does not settle the in-flight receive (parked, Task 6).
-      await cancelPendingAsk(ctx.interaction, humanLink.pending());
+      // A prompt in flight when the run ends is cancelled and denied. The human
+      // link races its own pending decision with cancellation, so this settles
+      // even when a channel's cancel() only clears transport bookkeeping.
+      await cancelPendingAsk(humanLink);
+      humanLink.dispose();
     }
 
     // US-002: map the run-time repo-scoped dispatch records onto the live
@@ -307,13 +314,26 @@ export const _executionDeps = {
  * because a raw shell can forge the cache file. Precedence lives in
  * `resolveBashApproval` — this helper only enumerates.
  */
-function collectStageModes(config: NaxConfig): BashApprovalMode[] {
-  const execution = config.execution;
-  const global = execution?.bashApproval;
+export function collectRunStageModes(configs: readonly (NaxConfig | undefined)[]): BashApprovalMode[] {
   const modes = new Set<BashApprovalMode>();
-  modes.add(resolveBashApproval(global, undefined));
-  for (const block of Object.values(execution?.permissions ?? {})) {
-    modes.add(resolveBashApproval(global, block?.bashApproval));
+  for (const config of configs) {
+    if (config === undefined) return ["raw"];
+    const execution = config.execution;
+    const global = execution?.bashApproval;
+    modes.add(resolveBashApproval(global, undefined));
+    for (const block of Object.values(execution?.permissions ?? {})) {
+      modes.add(resolveBashApproval(global, block?.bashApproval));
+    }
   }
   return [...modes];
+}
+
+async function collectEffectiveRunStageModes(ctx: PipelineContext): Promise<BashApprovalMode[]> {
+  const packageDirs = [...new Set(ctx.runStoryWorkdirs ?? ctx.stories.map(storyPackageDir))];
+  const packageConfigs = await Promise.all(
+    packageDirs.map((packageDir) =>
+      loadConfigForPackage(ctx.projectDir, packageDir, ctx.rootConfig).catch(() => undefined),
+    ),
+  );
+  return collectRunStageModes([ctx.rootConfig, ctx.config, ...packageConfigs]);
 }

@@ -41,6 +41,7 @@ describe("human ask link", () => {
     await link.resolve(REQ);
     expect(sent[0]?.type).toBe("choose");
     expect(sent[0]?.options?.map((o) => o.key)).toEqual(["allow", "allow-remember", "deny"]);
+    expect(sent[0]?.metadata).toEqual({ approvalPrompt: true });
     expect(JSON.stringify(sent[0])).toContain("bun run test 2>&1 | tail -n 40");
   });
 
@@ -159,17 +160,12 @@ describe("human ask link", () => {
   });
 
   // SPEC CASE 15
-  test("run-end cancellation settles a pending prompt as deny", async () => {
+  test("run-end cancellation settles a pending prompt even when the channel cancel does not", async () => {
     let cancelled: string | undefined;
-    let release: ((r: AskChannelResponse) => void) | undefined;
     const hangingChain: AskChannel = {
-      prompt: () =>
-        new Promise<AskChannelResponse>((resolve) => {
-          release = resolve;
-        }),
+      prompt: () => new Promise<AskChannelResponse>(() => {}),
       cancel: (id: string) => {
         cancelled = id;
-        release?.({ requestId: id, action: "abort", respondedBy: "system", respondedAt: Date.now() });
         return Promise.resolve();
       },
     };
@@ -179,7 +175,7 @@ describe("human ask link", () => {
     await new Promise<void>((r) => setTimeout(r, 10));
     expect(link.pending()).toBeDefined();
 
-    await cancelPendingAsk(hangingChain, link.pending());
+    await cancelPendingAsk(link);
     const outcome = await Promise.race([inFlight, new Promise<null>((r) => setTimeout(() => r(null), 2000))]);
     expect(cancelled).toBeDefined();
     expect(outcome).not.toBeNull();
@@ -191,5 +187,30 @@ describe("human ask link", () => {
     await link.resolve(REQ);
     const second = await Promise.race([link.resolve(REQ), new Promise<null>((r) => setTimeout(() => r(null), 2000))]);
     expect(second).not.toBeNull();
+  });
+
+  test("identical concurrent asks join the pending prompt", async () => {
+    let promptCalls = 0;
+    let release: ((response: AskChannelResponse) => void) | undefined;
+    const chain: AskChannel = {
+      prompt: () => {
+        promptCalls++;
+        return new Promise<AskChannelResponse>((resolve) => {
+          release = resolve;
+        });
+      },
+      cancel: () => Promise.resolve(),
+    };
+    const link = createHumanAskLink({ chain, timeoutMs: 1000 });
+
+    const first = link.resolve(REQ);
+    const second = link.resolve(REQ);
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    expect(promptCalls).toBe(1);
+
+    release?.({ action: "allow", respondedAt: Date.now() });
+    expect(await first).toEqual({ decision: "allow", decidedBy: "human" });
+    expect(await second).toEqual({ decision: "allow", decidedBy: "human" });
+    expect(promptCalls).toBe(1);
   });
 });

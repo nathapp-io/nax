@@ -49,6 +49,8 @@ const PERMITS = new Set(["allow", "allow-remember"]);
 /** An AskLink that also exposes the prompt currently awaiting a human. */
 export interface HumanAskLink extends AskLink {
   pending(): string | undefined;
+  cancel(): Promise<void>;
+  dispose(): void;
 }
 
 export function createHumanAskLink(opts: {
@@ -62,12 +64,19 @@ export function createHumanAskLink(opts: {
   readonly featureName?: string;
   readonly storyId?: string;
   readonly onRemember?: (req: AskRequest) => Promise<void>;
+  readonly abortSignal?: AbortSignal;
 }): HumanAskLink {
   // One prompt in flight per run. CLI's readline is single-in-flight
   // (plugins/cli.ts:150-160) while Telegram is concurrent, so serializing HERE
   // makes gate behaviour independent of which channel is configured.
   let queue: Promise<unknown> = Promise.resolve();
-  let pendingRequestId: string | undefined;
+  let active:
+    | {
+        readonly id: string;
+        cancel: () => void;
+      }
+    | undefined;
+  const inFlight = new Map<string, Promise<AskLinkOutcome>>();
 
   const deny = (decidedBy: "human" | "timeout" | "unavailable"): AskLinkOutcome => ({
     decision: "deny",
@@ -81,32 +90,45 @@ export function createHumanAskLink(opts: {
     if (command.length > MAX_COMMAND_CHARS) return deny("unavailable");
 
     const id = `ask-${Math.random().toString(16).slice(2, 10)}`;
-    pendingRequestId = id;
+    let cancelled = false;
+    let settleCancel: (() => void) | undefined;
+    const cancelledPrompt = new Promise<undefined>((resolve) => {
+      settleCancel = () => {
+        cancelled = true;
+        resolve(undefined);
+      };
+    });
+    active = { id, cancel: () => settleCancel?.() };
     try {
-      const response = await chain.prompt({
-        id,
-        type: "choose",
-        featureName: opts.featureName ?? "unknown",
-        ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
-        stage: "execution",
-        summary: `${req.tool} - approval required`,
-        detail: [
-          // A Write/Edit ask carries no command: showing `req.summary` keeps the
-          // operator informed about what is being approved instead of an empty
-          // code block. The command is still shown verbatim when present.
-          ...(command.length > 0 ? ["```", command, "```"] : []),
-          `request: ${req.summary}`,
-          `runs in: ${req.root ?? "unknown"}`,
-          `reason:  ${req.reason ?? req.rule}`,
-          `stage:   ${req.stage}`,
-        ].join("\n"),
-        options: OPTIONS,
-        timeout: opts.timeoutMs,
-        // Recorded for the message footer only. This link NEVER consults
-        // applyFallback: it maps "continue" AND "escalate" to approve.
-        fallback: "abort",
-        createdAt: Date.now(),
-      });
+      const response = await Promise.race([
+        chain.prompt({
+          id,
+          type: "choose",
+          featureName: opts.featureName ?? "unknown",
+          ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
+          stage: "execution",
+          summary: `${req.tool} - approval required`,
+          detail: [
+            // A Write/Edit ask carries no command: showing `req.summary` keeps the
+            // operator informed about what is being approved instead of an empty
+            // code block. The command is still shown verbatim when present.
+            ...(command.length > 0 ? ["```", command, "```"] : []),
+            `request: ${req.summary}`,
+            `runs in: ${req.root ?? "unknown"}`,
+            `reason:  ${req.reason ?? req.rule}`,
+            `stage:   ${req.stage}`,
+          ].join("\n"),
+          options: OPTIONS,
+          timeout: opts.timeoutMs,
+          // Recorded for the message footer only. This link NEVER consults
+          // applyFallback: it maps "continue" AND "escalate" to approve.
+          fallback: "abort",
+          createdAt: Date.now(),
+          metadata: { approvalPrompt: true },
+        }),
+        cancelledPrompt,
+      ]);
+      if (cancelled || response === undefined) return deny("unavailable");
       if (response.respondedBy === "timeout") return deny("timeout");
       // `action` is declared as InteractionAction ("approve" | "reject" |
       // "choose" | "input" | "skip" | "abort"), but prompt() remaps a choose
@@ -134,23 +156,43 @@ export function createHumanAskLink(opts: {
     } catch {
       return deny("unavailable");
     } finally {
-      pendingRequestId = undefined;
+      if (active?.id === id) active = undefined;
     }
   }
+
+  async function cancel(): Promise<void> {
+    const current = active;
+    if (current === undefined) return;
+    current.cancel();
+    const chain = opts.chain;
+    if (chain !== null && chain !== undefined) await chain.cancel(current.id).catch(() => undefined);
+  }
+
+  const onAbort = () => {
+    void cancel();
+  };
+  opts.abortSignal?.addEventListener("abort", onAbort, { once: true });
 
   return {
     name: "human",
     resolve(req: AskRequest): Promise<AskLinkOutcome> {
       // Chain onto the queue and ALWAYS clear it, so a throw cannot leave the
       // mutex held and deadlock every later ask in the run.
+      const key = `${req.stage}\u0000${req.command ?? ""}`;
+      const existing = inFlight.get(key);
+      if (existing !== undefined) return existing;
       const result = queue.then(() => ask(req));
-      queue = result.then(
+      const shared = result.finally(() => inFlight.delete(key));
+      inFlight.set(key, shared);
+      queue = shared.then(
         () => undefined,
         () => undefined,
       );
-      return result;
+      return shared;
     },
-    pending: () => pendingRequestId,
+    pending: () => active?.id,
+    cancel,
+    dispose: () => opts.abortSignal?.removeEventListener("abort", onAbort),
   };
 }
 
@@ -159,10 +201,6 @@ export function createHumanAskLink(opts: {
  * DENY, not abstain: this is the terminal link, and a run that is ending must
  * not execute a command nobody approved.
  */
-export async function cancelPendingAsk(
-  chain: AskChannel | null | undefined,
-  requestId: string | undefined,
-): Promise<void> {
-  if (chain === null || chain === undefined || requestId === undefined) return;
-  await chain.cancel(requestId).catch(() => undefined);
+export async function cancelPendingAsk(link: HumanAskLink): Promise<void> {
+  await link.cancel();
 }
