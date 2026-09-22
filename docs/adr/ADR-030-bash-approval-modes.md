@@ -118,7 +118,8 @@ Two properties bound the blast radius, and neither may regress:
 **`escalate` ships against the existing deny-always resolver.** The `AskResolver` seam's only
 implementation refuses (ADR-029 §3's reopen condition). So `escalate` refuses in exactly the
 cases `gated` refuses, and differs only in the ledger outcome it records: `denied:ask` rather
-than `denied`, with the matched rule attached. That difference is the metering ADR-029 §3 asks
+than `denied`, with the original denial reason attached (a Category-A denial matched no rule;
+the runtime records `verdict.rule ?? verdict.reason`). That difference is the metering ADR-029 §3 asks
 for before an interactive approval channel is built. The measured baseline before this change is
 **zero** such rows.
 

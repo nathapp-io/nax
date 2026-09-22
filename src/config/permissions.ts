@@ -226,8 +226,8 @@ function stageRules(config: AgentManagerConfig | undefined, stage: PipelineStage
   };
 }
 
-/** Attach rule fields only when non-empty, so no-block configs stay
- * byte-identical to the pre-rules shape (the regression gate). */
+/** Attach rule fields only when non-empty. `bashApproval` always attaches, so
+ * the resolved shape is the pre-rules shape PLUS that always-present field. */
 function withRules(base: Omit<ResolvedPermissions, "bashApproval">, rules: StageRules): ResolvedPermissions {
   return {
     ...base,
@@ -296,8 +296,8 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
 function resolveScopedPermissions(config: AgentManagerConfig | undefined, stage: PipelineStage): ResolvedPermissions {
   // No baseline: withRules concatenates the block's allow rules onto []. When
   // the lookup finds no block (or a block with no allow list) and the block
-  // declared no deny/ask, withRules returns `{ mode: "approve-reads",
-  // toolGrants: [] }` unchanged.
+  // declared no deny/ask, withRules returns the pre-rules shape plus the
+  // always-present `bashApproval` field, not that shape unchanged.
   //
   // The bounded inherit chain lives in lookupStageBlock now. It backstops a
   // config that never went through the loader: validatePermissionsBlock refuses

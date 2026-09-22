@@ -153,8 +153,9 @@ export type PolicyVerdict =
       readonly resolvedPaths?: readonly string[];
       /** Present only with outcome "ask": the matching configured rule expression. */
       readonly rule?: string;
-      /** See BashCheck.escalatable in policy-bash.ts. Bash-branch only; other
-       * branches leave it undefined, which reads as not-escalatable. */
+      /** See BashCheck.escalatable in policy-bash.ts. `false` on every
+       * non-escalatable denial (the shared deny helper materializes it on
+       * every branch), which reads as not-escalatable. */
       readonly escalatable?: boolean;
     };
 

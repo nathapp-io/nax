@@ -27,8 +27,9 @@ describe("config defaulting (BUG-20)", () => {
   });
 
   test("a PARTIAL execution object still carries the default", () => {
-    // This is the BUG-20 shape: a hand-written default literal in schemas.ts
-    // that omits the key leaves it undefined here.
+    // The empty-config test above guards key omission; this one guards DRIFT:
+    // a default literal that disagrees with the schema's own field default
+    // (the BUG-20 shape) survives the merge and shows up here.
     //
     // NaxConfigSchema rejects a bare partial execution object (required fields
     // have no field-level defaults), so this seeds the merged base the loader
