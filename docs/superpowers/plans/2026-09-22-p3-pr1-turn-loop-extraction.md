@@ -72,15 +72,15 @@ TURN_TESTS="test/unit/agents/native/turn-loop.test.ts test/unit/agents/native/tu
 
 **Files:**
 - Create: `src/agents/native/session/turn-accumulator.ts`
-- Modify: `src/agents/native/session/turn-loop.ts:86-96` (declarations), `:192-210`, `:282-300`, `:307-348`, `:575-585` (result assembly reads)
+- Modify: `src/agents/native/session/turn-loop.ts:87-96` (declarations), `:192-210`, `:282-300`, `:307-348`, `:542-550` (failure path), `:579-590` (result assembly)
 - Test: none new — the existing suite is the test (see Global Constraints)
 
 **Interfaces:**
 - Consumes: `TokenUsage` from `@/agents/session-types`, `ResolvedRates` from `../../cost`, `addRateTotals`/`aggregateRates`/`createRateTotals` from `./rate-provenance`, `cacheUsageFields` from `./turn-types`
 - Produces:
   - `createTurnAccumulator(): TurnAccumulator`
-  - `interface TurnAccumulator { add(usage, costUsd, rates?): void; totals(): TurnUsageTotals; rates(): ResolvedRates | undefined }`
-  - `interface TurnUsageTotals { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; costUsd: number }`
+  - `interface TurnAccumulator { add(usage, costUsd, rates?): void; tokens(): TurnTokenTotals; costUsd(): number; rates(): ResolvedRates | undefined }`
+  - `interface TurnTokenTotals { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number }` — **no `costUsd` field**, see Step 5
   - `usageBeat(usage: TokenUsage, costUsd: number, roundTrip?: number): AgentActivity`
   - Tasks 3, 4 and 5 all take a `TurnAccumulator` parameter.
 
@@ -115,7 +115,13 @@ import type { ResolvedRates } from "../../cost";
 import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance";
 import { cacheUsageFields } from "./turn-types";
 
-export interface TurnUsageTotals {
+/**
+ * Token counts ONLY. `costUsd` is deliberately NOT a field here: both readers
+ * (`recordNativeTurnFailureUsage` at turn-loop.ts:542 and the TurnResult at
+ * :580) take `tokenUsage` and the cost as SEPARATE arguments, so folding cost
+ * in would force every call site to destructure it back out.
+ */
+export interface TurnTokenTotals {
   readonly inputTokens: number;
   readonly outputTokens: number;
   /**
@@ -126,12 +132,12 @@ export interface TurnUsageTotals {
    */
   readonly cacheReadInputTokens?: number;
   readonly cacheCreationInputTokens?: number;
-  readonly costUsd: number;
 }
 
 export interface TurnAccumulator {
   add(usage: TokenUsage, costUsd: number, rates?: ResolvedRates): void;
-  totals(): TurnUsageTotals;
+  tokens(): TurnTokenTotals;
+  costUsd(): number;
   /** Aggregated rate provenance, or undefined when nothing priced. */
   rates(): ResolvedRates | undefined;
 }
@@ -158,14 +164,17 @@ export function createTurnAccumulator(): TurnAccumulator {
       addRateTotals(rateTotals, usage, rates);
     },
 
-    totals() {
+    tokens() {
       return {
         inputTokens,
         outputTokens,
         ...(cacheReadInputTokens !== undefined ? { cacheReadInputTokens } : {}),
         ...(cacheCreationInputTokens !== undefined ? { cacheCreationInputTokens } : {}),
-        costUsd,
       };
+    },
+
+    costUsd() {
+      return costUsd;
     },
 
     rates() {
@@ -213,7 +222,9 @@ Replace `usageBeat`'s return annotation with the actual named type. If `cacheUsa
 
 - [ ] **Step 4: Rewire the three call sites in `turn-loop.ts`**
 
-Delete the six declarations at `:86-96` (`inputTokens`, `outputTokens`, `cacheReadInputTokens`, `cacheCreationInputTokens`, `costUsd`, `rateTotals`) and add:
+Delete the six declarations at **`:87-96`** (`inputTokens`, `outputTokens`, the four-line cache comment, `cacheReadInputTokens`, `cacheCreationInputTokens`, `costUsd`, `rateTotals`) and add:
+
+🚨 **`let roundTrips = 0;` is line 86 and MUST STAY.** It is incremented at `:306`, read by `usageBeat`'s third argument and by the `TurnResult`. Deleting it is the single easiest way to break this task. Likewise `let output = "";` at `:97` stays.
 
 ```typescript
 const usage = createTurnAccumulator();
@@ -240,31 +251,29 @@ deps.onActivity?.(usageBeat(res.usage, res.costUsd, roundTrips));
 
 - [ ] **Step 5: Rewire the two readers**
 
-The failure path (`:539-549`) and the result assembly (`:575-585`) both read the counters. Replace with `usage.totals()`:
+The failure path (`:542-550`) and the result assembly (`:579-582`) both read the counters. Replace with `usage.tokens()` and `usage.costUsd()`:
+
+Both readers take the tokens and the cost as separate arguments, which is why `tokens()` and `costUsd()` are separate accessors.
 
 ```typescript
-// failure path, inside the outer catch
+// failure path, was :542-550 (inside the outer catch)
 recordNativeTurnFailureUsage(err, {
-  tokenUsage: usage.totals(),
-  costUsd: usage.totals().costUsd,
+  tokenUsage: usage.tokens(),
+  costUsd: usage.costUsd(),
 });
 ```
 
 ```typescript
-// result assembly
+// result assembly, was :579-582
 const rates = usage.rates();
 return {
   output,
-  tokenUsage: usage.totals(),
-  estimatedCostUsd: usage.totals().costUsd,
-  // ... rest unchanged
+  tokenUsage: usage.tokens(),
+  estimatedCostUsd: usage.costUsd(),
+  // ... the eight conditional spreads unchanged
 ```
 
-⚠️ **`recordNativeTurnFailureUsage` takes `tokenUsage` WITHOUT `costUsd` inside it** — check its signature before assuming `totals()` drops in whole. `TurnUsageTotals` includes `costUsd`; if the ledger type excludes it, destructure:
-
-```bash
-grep -n "recordNativeTurnFailureUsage" -A 12 src/agents/native/session/turn-types.ts
-```
+Verified at `turn-loop.ts:542-550` and `:579-582`: neither `tokenUsage` object carries `costUsd` — it sits beside them as `costUsd` and `estimatedCostUsd` respectively.
 
 - [ ] **Step 6: Typecheck**
 
@@ -309,7 +318,7 @@ beats do not. No behaviour change."
 
 **Files:**
 - Create: `src/agents/native/session/turn-ask-human.ts`
-- Modify: `src/agents/native/session/turn-loop.ts:373-408` (the `if (call.name === ASK_HUMAN_TOOL_NAME)` block)
+- Modify: `src/agents/native/session/turn-loop.ts:372-410` (the `if (call.name === ASK_HUMAN_TOOL_NAME)` block, opening `if` through its closing `}`)
 
 **Interfaces:**
 - Consumes: `buildToolResult` from `./tool-result`, `InteractionExchange` from `@/agents/session-types`, `SendTurnOpts["interactionHandler"]`
@@ -329,7 +338,7 @@ This task is first among the code moves because the branch is already self-conta
 - [ ] **Step 1: Read the branch being moved**
 
 ```bash
-sed -n '373,408p' src/agents/native/session/turn-loop.ts
+sed -n '372,410p' src/agents/native/session/turn-loop.ts
 ```
 
 Note the three exits, all of which push a tool result and `continue`:
@@ -406,7 +415,7 @@ export async function handleAskHumanCall(args: {
 
 - [ ] **Step 3: Rewire the call site**
 
-Replace `turn-loop.ts:373-408` with:
+Replace `turn-loop.ts:372-410` with:
 
 ```typescript
 if (call.name === ASK_HUMAN_TOOL_NAME) {
@@ -468,7 +477,7 @@ No behaviour change."
 
 **Files:**
 - Create: `src/agents/native/session/turn-compaction-step.ts`
-- Modify: `src/agents/native/session/turn-loop.ts:155-224` (proactive) and `:275-303` (reactive overflow)
+- Modify: `src/agents/native/session/turn-loop.ts:156-226` (proactive, `let summarizeFailed` through the closing `}`) and `:276-304` (reactive, the `} else {` branch body)
 
 **Interfaces:**
 - Consumes: `TurnAccumulator` + `usageBeat` (Task 1); `applyCompaction`, `estimateContextTokens`, `keepBudget`, `prepareCompaction`, `shouldCompact` from `./compaction`
@@ -492,8 +501,8 @@ export async function runOverflowCompaction(args): Promise<CompactionStepResult>
 - [ ] **Step 1: Read both branches and note the three differences**
 
 ```bash
-sed -n '150,225p' src/agents/native/session/turn-loop.ts
-sed -n '272,305p' src/agents/native/session/turn-loop.ts
+sed -n '150,226p' src/agents/native/session/turn-loop.ts   # proactive, incl. the bound comment at :150-154
+sed -n '274,305p' src/agents/native/session/turn-loop.ts   # reactive, the `} else {` at :276
 ```
 
 The two branches differ in exactly three ways, and **all three must survive the extraction**:
@@ -549,7 +558,7 @@ if (
 
 - [ ] **Step 4: Rewire the reactive site**
 
-Replace the `else` branch at `:275-303`, keeping the `res = await deps.complete(messages, tools)` retry at the end and the "Retried once" comment.
+Replace the body of the `} else {` branch (opens `:276`, body `:277-304`), keeping the `res = await deps.complete(messages, tools)` retry at `:303` and the "Retried once" comment at `:301-302`.
 
 - [ ] **Step 5: Typecheck, test, confirm no test edits**
 
@@ -583,7 +592,7 @@ the overflow branch below it. No behaviour change."
 
 **Files:**
 - Create: `src/agents/native/session/turn-complete-step.ts`
-- Modify: `src/agents/native/session/turn-loop.ts:226-305` (the `try { res = await deps.complete(...) } catch { ... }`)
+- Modify: `src/agents/native/session/turn-loop.ts:227-305` (`let res: NativeTurnResponse;` at `:227` through the catch's closing `}` at `:305`)
 
 **Interfaces:**
 - Consumes: `runOverflowCompaction` (Task 3), `TurnAccumulator` (Task 1), `retryTransportFault`/`realSleep` from `./turn-retry`, `isContextOverflow` (currently private at `turn-loop.ts:46`)
@@ -605,7 +614,7 @@ It is private to `turn-loop.ts` at `:46-50` and used only by this branch. Move i
 
 - [ ] **Step 2: Create the module**
 
-The function body is `turn-loop.ts:226-305` with `messages` passed in and returned rather than closed over. Preserve verbatim:
+The function body is `turn-loop.ts:227-305` with `messages` passed in and returned rather than closed over. Preserve verbatim:
 - the "Written as one guarded `if` (not a separate `canRetry` boolean)" comment at `:230-232`
 - the nax#1870 comment at `:242-246`
 - the whole `onRetry` logger call including the "All-zero is honest, not fabricated" comment
@@ -628,7 +637,7 @@ if (step.compacted) {
 }
 ```
 
-⚠️ `res` is declared `let res: NativeTurnResponse;` at `:226` and assigned in three places. After extraction it is a `const` from one return. Confirm nothing below `:305` reassigns it:
+⚠️ `res` is declared `let res: NativeTurnResponse;` at `:227` and assigned in three places (`:229`, `:248`, `:303`). After extraction it is a `const` from one return. Confirm nothing below `:305` reassigns it:
 
 ```bash
 awk 'NR>305 && /res *=[^=]/' src/agents/native/session/turn-loop.ts
@@ -765,7 +774,7 @@ spinBreaker.noteResult keys on that same value. No behaviour change."
 
 **Files:**
 - Create: `src/agents/native/session/turn-result.ts`
-- Modify: `src/agents/native/session/turn-loop.ts:553-599` (the two tail warnings and the return)
+- Modify: `src/agents/native/session/turn-loop.ts:555-599` (the two tail warnings at `:555-573`, then the return at `:579-599`; `saveTranscript` at `:577` stays)
 
 **Interfaces:**
 - Consumes: `TurnAccumulator` (Task 1)
@@ -782,7 +791,7 @@ Expected: `tool-result.ts` only. If the similarity feels too high during impleme
 - [ ] **Step 1: Read the tail**
 
 ```bash
-sed -n '550,599p' src/agents/native/session/turn-loop.ts
+sed -n '555,599p' src/agents/native/session/turn-loop.ts
 ```
 
 Two warnings — `!completedNormally` (with its acp/adapter.ts:555 parity comment) and `spinStopped` — then `saveTranscript`, then the return with eight conditional spreads.
