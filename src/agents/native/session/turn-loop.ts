@@ -140,6 +140,10 @@ export async function runNativeTurn(
           sessionName: handle.id,
           lastUsage,
           anchorIndex,
+          // The loop's local, not deps.loopEvents — the same registry
+          // completeWithRecovery and runToolBatch receive below, so every
+          // dispatch seam observes the same handlers.
+          loopEvents,
           // Copied, not the `deps` object itself: the guard above narrows the
           // three properties to defined, and a fresh object is what carries that
           // narrowing into the step's `CompactionStepDeps` parameter.

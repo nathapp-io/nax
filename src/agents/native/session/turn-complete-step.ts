@@ -193,6 +193,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
         sessionName,
         lastUsage,
         anchorIndex,
+        loopEvents,
         deps: {
           summarize: deps.summarize,
           contextWindow: deps.contextWindow,
