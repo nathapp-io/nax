@@ -512,7 +512,7 @@ describe("Bash as a redirect target (spec US-008)", () => {
 });
 
 describe("the denied:ask message (spec US-007/US-008)", () => {
-  test("names the rule and the headless limitation, not a prohibition", async () => {
+  test("names the rule and the missing approval channel, not a prohibition", async () => {
     const root = makeTempDir("ask-message-");
     try {
       const runtime = createCodingToolRuntime({
@@ -526,7 +526,7 @@ describe("the denied:ask message (spec US-007/US-008)", () => {
       expect(outcome.kind).toBe("denied");
       if (outcome.kind === "denied") {
         expect(outcome.reason).toContain("Bash(rm *)");
-        expect(outcome.reason).toContain("headless");
+        expect(outcome.reason).toContain("approval channel");
       }
     } finally {
       cleanupTempDir(root);

@@ -140,12 +140,12 @@ describe("deny suite (spec §6)", () => {
     expect((await call(session({ allow: ["*"], deny: ["rm *"] }), command)).kind).toBe("denied");
   });
 
-  test("row 9: an ask rule is refused headless, naming the rule", async () => {
+  test("row 9: an ask rule is refused with no approval channel, naming the rule", async () => {
     const outcome = await call(session({ allow: ["rm *"], ask: ["rm *"] }), "rm file.txt");
     expect(outcome.kind).toBe("denied");
     if (outcome.kind === "denied") {
       expect(outcome.reason).toContain("Bash(rm *)");
-      expect(outcome.reason).toContain("headless");
+      expect(outcome.reason).toContain("approval channel");
     }
   });
 
@@ -325,7 +325,7 @@ describe("gated is unchanged, and escalate refuses the same set", () => {
     // The headless AskResolver denies, so the OUTCOME is the same and only the
     // ledger reason differs — that difference is the demand signal ADR-029 asks
     // for before an interactive channel is built.
-    if (result.kind === "denied") expect(result.reason).toContain("headless");
+    if (result.kind === "denied") expect(result.reason).toContain("approval channel");
   });
 
   test.each(CATEGORY_B)("escalate does NOT soften %s", async (command) => {
@@ -334,7 +334,7 @@ describe("gated is unchanged, and escalate refuses the same set", () => {
     expect(result.kind).toBe("denied");
     if (result.kind === "denied") {
       expect(result.breach).toBe(true);
-      expect(result.reason).not.toContain("headless");
+      expect(result.reason).not.toContain("approval channel");
     }
   });
 });
@@ -405,6 +405,6 @@ describe("bashApproval default at the direct-caller seam", () => {
     const support = session({ declared: FIX_TOOLS, allow: [] });
     const outcome = await call(support, "echo $(whoami)");
     expect(outcome.kind).toBe("denied");
-    if (outcome.kind === "denied") expect(outcome.reason).not.toContain("headless");
+    if (outcome.kind === "denied") expect(outcome.reason).not.toContain("approval channel");
   });
 });

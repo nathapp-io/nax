@@ -20,12 +20,4 @@ export interface AskRequest {
   readonly summary: string;
 }
 
-/**
- * The seam an interactive approval channel later plugs into (spec R1).
- * Injected where the runtime is created — a runtime capability, not config.
- */
-export interface AskResolver {
-  resolve(req: AskRequest): Promise<"allow" | "deny">;
-}
-
 export type { ToolGrant };

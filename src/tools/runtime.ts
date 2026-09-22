@@ -11,7 +11,7 @@
 
 import { randomUUID } from "node:crypto";
 import { getSafeLogger } from "@/logger";
-import { ASK_UNAVAILABLE_REASON, type AskResolver, headlessAskResolver } from "@/permissions";
+import { ASK_UNAVAILABLE_REASON, type AskResolver, type AskVerdict, headlessAskResolver } from "@/permissions";
 import { errorMessage } from "@/utils/errors";
 import { deleteTool } from "./delete";
 import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect";
@@ -377,9 +377,9 @@ export function createCodingToolRuntime(opts: {
       }
 
       if (!verdict.allowed && verdict.outcome === "ask") {
-        let decision: "allow" | "deny";
+        let askVerdict: AskVerdict;
         try {
-          decision = await askResolver.resolve({
+          askVerdict = await askResolver.resolve({
             tool: policyIdentity,
             stage: opts.pipelineStage ?? "unknown",
             rule: verdict.rule ?? verdict.reason,
@@ -390,8 +390,7 @@ export function createCodingToolRuntime(opts: {
           log(policyIdentity, "error", content.length, input, context, false, content);
           return { kind: "error", content };
         }
-        if (decision === "allow") {
-          // Approved: run with what the policy resolved for this call.
+        if (askVerdict.decision === "allow") {
           return runTool(tool, input, verdict.resolvedPaths ?? []);
         }
         const reason = `${verdict.reason} -- ${ASK_UNAVAILABLE_REASON}`;

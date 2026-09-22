@@ -113,7 +113,9 @@ describe("callTool — ask resolution (spec US-007)", () => {
   });
 
   test("an approving resolver lets the call run", async () => {
-    const approveAll: AskResolver = { resolve: () => Promise.resolve("allow") };
+    const approveAll: AskResolver = {
+      resolve: () => Promise.resolve({ decision: "allow", decidedBy: "cache", latencyMs: 0 }),
+    };
     const runtime = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
         askRules: [{ tool: "Read", patterns: ["*"] }],
@@ -130,7 +132,7 @@ describe("callTool — ask resolution (spec US-007)", () => {
     const resolver: AskResolver = {
       resolve: (received) => {
         request = received;
-        return Promise.resolve("deny");
+        return Promise.resolve({ decision: "deny", decidedBy: "cache", latencyMs: 0 });
       },
     };
     const runtime = createCodingToolRuntime({
@@ -149,7 +151,7 @@ describe("callTool — ask resolution (spec US-007)", () => {
     const resolver: AskResolver = {
       resolve: (received) => {
         request = received;
-        return Promise.resolve("deny");
+        return Promise.resolve({ decision: "deny", decidedBy: "cache", latencyMs: 0 });
       },
     };
     const runtime = createCodingToolRuntime({
@@ -184,7 +186,7 @@ describe("callTool — ask resolution (spec US-007)", () => {
     const counting: AskResolver = {
       resolve: () => {
         consulted++;
-        return Promise.resolve("allow");
+        return Promise.resolve({ decision: "allow", decidedBy: "cache", latencyMs: 0 });
       },
     };
     const runtime = createCodingToolRuntime({
