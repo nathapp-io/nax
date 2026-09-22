@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { isNaxConfigFile, NAX_OWNED_WRITE_TOOLS, naxOwnedWriteRefusal } from "@/tools/nax-owned-writes";
+import {
+  isNaxConfigFile,
+  isNaxOwnedWritePath,
+  NAX_OWNED_WRITE_TOOLS,
+  naxOwnedWriteRefusal,
+} from "@/tools/nax-owned-writes";
 
 const ROOT = "/repo";
 
@@ -141,5 +146,27 @@ describe("naxOwnedWriteRefusal — plan-op exemption (nax#2115)", () => {
       expect(naxOwnedWriteRefusal(tool, PRD, PRD)).toBeUndefined();
       expect(naxOwnedWriteRefusal(tool, PRD)).toBeUndefined();
     }
+  });
+});
+
+describe("isNaxOwnedWritePath", () => {
+  test("a feature PRD is owned", () => {
+    expect(isNaxOwnedWritePath(".nax/features/my-feature/prd.json")).toBe(true);
+  });
+
+  test("a root queue-control file is owned", () => {
+    expect(isNaxOwnedWritePath(".queue.txt")).toBe(true);
+  });
+
+  test("a nested file merely named like the queue file is not owned", () => {
+    expect(isNaxOwnedWritePath("sub/.queue.txt")).toBe(false);
+  });
+
+  test("an ordinary source file is not owned", () => {
+    expect(isNaxOwnedWritePath("src/index.ts")).toBe(false);
+  });
+
+  test("a non-prd file under a feature dir is not owned", () => {
+    expect(isNaxOwnedWritePath(".nax/features/my-feature/notes.md")).toBe(false);
   });
 });

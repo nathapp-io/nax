@@ -437,6 +437,48 @@ rows justifies building an interactive approval channel; zero rows means the
 seam stays dormant. Metering first, mechanism later — the discipline this ADR
 already applied to `RequestCapability`.
 
+#### Amendment, 2026-09-22: `raw` mode reverses safe-by-refusal, deliberately
+
+ADR-030 introduces a `bashApproval` mode axis whose default, `raw`, bypasses this section's
+safe-by-refusal posture: no lexer refusal, no per-segment allow matching, no root containment.
+Only a best-effort protected-path screen remains, and that screen is advisory by construction —
+a command using substitution is not parsed and therefore is not screened at all.
+
+**One sentence in this section is overturned.** §3 states:
+
+> Config can narrow this ceiling, never widen it.
+
+Under `raw` it widens: `Bash` is granted by a synthetic grant rather than by a human-written
+`Bash(...)` allow rule. The narrowing that survives is structural rather than configured — an
+operation that does not declare `Bash` receives no shell under any mode, because the synthetic
+grant is conditioned on that declaration. Review operations and the verifier are therefore
+untouched by any mode, which is the same ceiling this section set, enforced at a different
+layer. The rest of §3 stands unchanged.
+
+**What this section said about containment still understates it.** Above:
+
+> a granted command runs with the privileges of the nax process, inside the permitted root. The
+> gate bounds WHICH commands run and WHERE their paths may point; it does not contain what a
+> granted command then does.
+
+Under `raw` the second sentence no longer holds either: the gate bounds neither. The sentence
+after it — that nobody should read this section for a containment guarantee — applies with more
+force, not less. OS-level sandboxing remains out of scope and unclaimed, and is the intended
+precondition for `raw`.
+
+**The reopen condition below is now instrumented rather than dormant.** `escalate` mode routes
+a denial the gate could not adjudicate — a lexer refusal, or no matching allow rule — to the
+`ask` tier instead of `deny`. The `AskResolver` still has only its deny-always implementation,
+so the call is still refused; what changes is that it is recorded as `denied:ask` with the
+matched rule attached. Denials that are affirmatively out of bounds (root escape, `.git/`,
+denied flags, an explicit deny rule) are never escalated, so the `breach` signal this section
+relies on is preserved intact. The measured baseline before this change is zero `denied:ask`
+rows.
+
+**Two corrections to this section, noted while amending it.** The deny suite is described above
+as "eleven rows"; it is now 21 cases. And the parity note that only fix-shaped roles declare
+`Bash` remains accurate and load-bearing — it is what makes the paragraph above true.
+
 ### 4. Permission policy stays in nax
 
 nax-ai executes nothing and holds no policy — its own scope statement excludes

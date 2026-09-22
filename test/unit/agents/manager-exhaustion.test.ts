@@ -144,7 +144,7 @@ describe("exhaustion on the complete path", () => {
     await manager.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
-      resolvedPermissions: { mode: "approve-reads" as const },
+      resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
       storyId: "s1",
     });
 

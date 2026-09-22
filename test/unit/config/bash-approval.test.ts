@@ -1,0 +1,125 @@
+import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
+import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE, resolveBashApproval } from "@/config/bash-approval";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { resolvePermissions } from "@/config/permissions";
+import { NaxConfigSchema } from "@/config/schemas";
+
+describe("BashApprovalModeSchema", () => {
+  test("accepts the three modes", () => {
+    for (const mode of ["raw", "gated", "escalate"] as const) {
+      expect(BashApprovalModeSchema.parse(mode)).toBe(mode);
+    }
+  });
+
+  test("rejects a profile name, which is a different axis", () => {
+    expect(() => BashApprovalModeSchema.parse("unrestricted")).toThrow();
+  });
+
+  test("the default is raw", () => {
+    expect(DEFAULT_BASH_APPROVAL_MODE).toBe("raw");
+  });
+});
+
+describe("config defaulting (BUG-20)", () => {
+  test("an empty config carries the default", () => {
+    expect(NaxConfigSchema.parse({}).execution.bashApproval).toBe("raw");
+  });
+
+  test("a PARTIAL execution object still carries the default", () => {
+    // The empty-config test above guards key omission; this one guards DRIFT:
+    // a default literal that disagrees with the schema's own field default
+    // (the BUG-20 shape) survives the merge and shows up here.
+    //
+    // NaxConfigSchema rejects a bare partial execution object (required fields
+    // have no field-level defaults), so this seeds the merged base the loader
+    // itself starts from (loader.ts structuredClone(DEFAULT_CONFIG) +
+    // deepMergeConfig) and overrides one unrelated key.
+    const parsed = NaxConfigSchema.parse({
+      execution: { ...DEFAULT_CONFIG.execution, maxIterations: 3 },
+    });
+    expect(parsed.execution.bashApproval).toBe("raw");
+  });
+
+  test("an explicit value survives", () => {
+    const parsed = NaxConfigSchema.parse({
+      execution: { ...DEFAULT_CONFIG.execution, bashApproval: "gated" },
+    });
+    expect(parsed.execution.bashApproval).toBe("gated");
+  });
+
+  test("a per-stage override parses", () => {
+    const parsed = NaxConfigSchema.parse({
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        permissions: { run: { bashApproval: "escalate" } },
+      },
+    });
+    expect(parsed.execution.permissions?.run?.bashApproval).toBe("escalate");
+  });
+
+  test("an invalid per-stage value is rejected", () => {
+    expect(() =>
+      NaxConfigSchema.parse({
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          permissions: { run: { bashApproval: "nope" } },
+        },
+      }),
+    ).toThrow();
+  });
+});
+
+describe("resolvePermissions bashApproval", () => {
+  test("defaults to raw with no config", () => {
+    expect(resolvePermissions(makeNaxConfig({}), "run").bashApproval).toBe("raw");
+  });
+
+  test("honours the global setting", () => {
+    const cfg = makeNaxConfig({ execution: { bashApproval: "gated" } });
+    expect(resolvePermissions(cfg, "run").bashApproval).toBe("gated");
+  });
+
+  test("a per-stage override beats the global setting", () => {
+    const cfg = makeNaxConfig({
+      execution: { bashApproval: "gated", permissions: { run: { bashApproval: "escalate" } } },
+    });
+    expect(resolvePermissions(cfg, "run").bashApproval).toBe("escalate");
+  });
+
+  test("a per-stage override applies only to its own stage", () => {
+    const cfg = makeNaxConfig({
+      execution: { bashApproval: "gated", permissions: { run: { bashApproval: "raw" } } },
+    });
+    expect(resolvePermissions(cfg, "verify").bashApproval).toBe("gated");
+  });
+
+  test("resolves for every profile, not just scoped", () => {
+    for (const permissionProfile of ["unrestricted", "safe", "scoped"] as const) {
+      const cfg = makeNaxConfig({ execution: { permissionProfile, bashApproval: "escalate" } });
+      expect(resolvePermissions(cfg, "run").bashApproval).toBe("escalate");
+    }
+  });
+});
+
+describe("resolveBashApproval", () => {
+  test("per-stage wins", () => {
+    expect(resolveBashApproval("gated", "escalate")).toBe("escalate");
+  });
+
+  test("falls back to global", () => {
+    expect(resolveBashApproval("escalate", undefined)).toBe("escalate");
+  });
+
+  test("falls back to the default when both are absent", () => {
+    expect(resolveBashApproval(undefined, undefined)).toBe("raw");
+  });
+});
+
+test("POSTURE GUARD: the shipped default is raw", () => {
+  // If this flips it must flip deliberately, with an ADR-030 amendment — never
+  // as a side effect of a schema edit. See ADR-029 §3's 2026-09-22 amendment
+  // for what `raw` by default gives up.
+  expect(NaxConfigSchema.parse({}).execution.bashApproval).toBe("raw");
+  expect(resolvePermissions(makeNaxConfig({}), "run").bashApproval).toBe("raw");
+});

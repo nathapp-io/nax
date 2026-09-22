@@ -66,7 +66,7 @@ describe("NaxRuntime.close() resets the shared AgentManager (MEM-12)", () => {
       const options: ResolvedCompleteOptions = {
         modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
         workdir: dir,
-        resolvedPermissions: { mode: "approve-reads" as const },
+        resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
         storyId: "us-001",
       };
 

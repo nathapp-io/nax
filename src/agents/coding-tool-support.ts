@@ -9,6 +9,7 @@
  * both dispatch hops use — see its comment for why that matters.
  */
 
+import type { BashApprovalMode } from "@/config/bash-approval";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import {
@@ -26,7 +27,6 @@ import {
   EXEC_TOOL_NAME,
   expandMcpRuleGrants,
   mcpRuleAdmits,
-  narrowGrants,
   partitionMcpRules,
   type ResolvedProviderTools,
   resolveProviderTools,
@@ -41,6 +41,7 @@ import { resolvePermissions } from "../config/permissions";
 import type { QualityCommandSpec } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { errorMessage } from "../utils/errors";
+import { resolveBashSupport } from "./coding-tool-bash";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
 
@@ -127,15 +128,27 @@ export function buildCodingToolSupport(args: {
    * forwarded to `compileToolPolicy` as its `ownedWriteExemption`.
    */
   fileOutputPath?: string;
+  bashApproval?: BashApprovalMode;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
-  if (grants.length === 0) return undefined;
+  const bashApproval = args.bashApproval ?? "gated";
+  // ADR-030 / F1: under `raw`, a declared Bash gets a SYNTHETIC grant further
+  // down (resolveBashSupport) even with zero real grants -- `scoped` with no
+  // stage allow rules is the only path there, and must not be
+  // indistinguishable from `scoped` + an unrelated allow list. Computed
+  // ahead of the guard so the guard can special-case it.
+  const rawSyntheticBash = bashApproval === "raw" && args.declared.includes(BASH_TOOL_NAME);
+  if (grants.length === 0 && !rawSyntheticBash) return undefined;
 
   // An empty root passed to a spawn or a path join silently means
   // process.cwd() — the directory nax was launched from, which under `-d` is a
   // different repository. That is the #1794 defect; refuse instead. Callers
   // pass packageWorkdir(view), which never yields "".
+  //
+  // F1 side effect: this throw now also fires for raw + declared Bash + an
+  // empty root, where the old guard returned `undefined` first. Correct --
+  // the #1794 guard should fire there -- and pinned by a test.
   if (args.root === undefined || args.root.trim() === "") {
     throw new NaxError(
       "Cannot enable coding tools: no working directory was supplied, so the permitted root is unknown.",
@@ -169,13 +182,12 @@ export function buildCodingToolSupport(args: {
   // tool's EXISTENCE is what lets the call reach `policy.check` and be denied
   // there -- and only that denial path (in `runtime.callTool`, using
   // `denial-redirect.ts`) can attach a redirect.
-  // Narrowed, not raw: `narrowGrants` is what the POLICY compiles, so reading
-  // the raw list here would name forms in the tool's description that the
-  // policy then refuses -- the wasted turn the `patterns` option exists to
-  // prevent, inverted.
-  const narrowedGrants = narrowGrants(grants, args.toolPatterns);
-  const bashGrant = narrowedGrants.findLast((grant) => grant.tool === BASH_TOOL_NAME);
-  const allowBash = args.declared.includes(BASH_TOOL_NAME);
+  const { effectiveGrants, allowBash, bashDescriptionPatterns } = resolveBashSupport({
+    declared: args.declared,
+    grants,
+    toolPatterns: args.toolPatterns,
+    bashApproval,
+  });
 
   const declaredCommands = args.declaredCommands ?? new Map<string, QualityCommandSpec>();
   const sink =
@@ -187,7 +199,8 @@ export function buildCodingToolSupport(args: {
         })
       : createNoOpToolAuditSink();
   const runtime = createCodingToolRuntime({
-    policy: compileToolPolicy(narrowedGrants, args.root, {
+    policy: compileToolPolicy(effectiveGrants, args.root, {
+      bashApproval,
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
@@ -240,9 +253,11 @@ export function buildCodingToolSupport(args: {
             createBashTool({
               ...(args.shell !== undefined ? { shell: args.shell } : {}),
               ...(args.stripEnvVars !== undefined ? { stripEnvVars: args.stripEnvVars } : {}),
-              // The compiled grant, so the description names what THIS stage
-              // may run rather than a generic sentence.
-              patterns: bashGrant?.patterns ?? [],
+              // The EFFECTIVE grant, so the description names what THIS
+              // stage may actually run, incl. the synthetic grant under
+              // `raw` (ADR-030 / F3) -- ignored under `raw` regardless.
+              patterns: bashDescriptionPatterns,
+              bashApproval,
             }),
           ]
         : []),
@@ -559,6 +574,7 @@ export async function resolveCodingToolSupport(
       : {}),
     commandCwd,
     grants: [...allow.grants, ...providerResult.grants],
+    bashApproval: resolved.bashApproval,
     declared: declaredWithProviders,
     extraTools: providerResult.tools,
     providerIdByTool: providerResult.providerIdByTool,

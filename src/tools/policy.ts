@@ -15,11 +15,12 @@
  */
 
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { BashApprovalMode } from "@/config/bash-approval";
 import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
 import { isNaxConfigFile, naxOwnedWriteRefusal } from "./nax-owned-writes";
 import { pathListElements } from "./path-list";
-import { checkBashCommand } from "./policy-bash";
+import { commandBranch } from "./policy-command-branch";
 import { pathFieldValue } from "./policy-input";
 import {
   type CompiledEntry,
@@ -119,6 +120,16 @@ export interface ToolPolicyOptions {
    * CONFIG refusal is deliberately not exempted.
    */
   readonly ownedWriteExemption?: string;
+  /**
+   * How a bash command string is adjudicated (ADR-030). Absent means `gated` —
+   * today's behaviour — so every caller that does not opt in is unchanged.
+   *
+   * `raw` is a COMPILE-TIME input rather than a post-check transform on
+   * purpose: `checkBashCommand` lexes before it evaluates grants, so a `Bash(*)`
+   * grant cannot produce pass-through, and a post-check deny→allow would widen
+   * genuine containment denials too.
+   */
+  readonly bashApproval?: BashApprovalMode;
 }
 
 function isFieldlessScope(scope: ToolScope): boolean {
@@ -144,6 +155,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       : relative(resolvedRoot, realOrRaw(options.ownedWriteExemption)).split(sep).join("/");
   const denyBy = compileRuleMap(options?.denyRules);
   const askBy = compileRuleMap(options?.askRules);
+  const bashApproval: BashApprovalMode = options?.bashApproval ?? "gated";
   const compiled = new Map<
     string,
     {
@@ -179,8 +191,8 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     return verbs === undefined ? matchers : matchers.filter((m) => !verbs.includes(m.source));
   }
 
-  function deny(reason: string, breach = false): PolicyVerdict {
-    return { allowed: false, reason, breach, outcome: "denied" };
+  function deny(reason: string, breach = false, escalatable = false): PolicyVerdict {
+    return { allowed: false, reason, breach, escalatable, outcome: "denied" };
   }
 
   /**
@@ -321,35 +333,6 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     if (askEntry !== undefined && (askEntry.unconditional || matchesArgvGrant(askEntry.argvPatterns, argv))) {
       return askVerdict([], ruleExpr(tool, askEntry, askEntry.unconditional ? "*" : matchedArgvSource(askEntry, argv)));
     }
-    return { allowed: true, resolvedPaths: [] };
-  }
-
-  /**
-   * The Bash branch. Checked entirely in policy-bash.ts and never falling
-   * through: a command string is not a verb and not a path, so neither of the
-   * other branches can judge it. Containment is handed over as a callback
-   * because policy-bash.ts may not import this module back.
-   */
-  function commandBranch(
-    tool: string,
-    scope: ToolScope,
-    input: Record<string, unknown>,
-    grant: CompiledEntry,
-  ): PolicyVerdict | undefined {
-    if (scope.commandField === undefined) return undefined;
-    const denyEntry = denyBy.get(tool);
-    const askEntry = askBy.get(tool);
-    const result = checkBashCommand({
-      tool,
-      command: input[scope.commandField],
-      grant,
-      ...(denyEntry !== undefined ? { denyEntry } : {}),
-      ...(askEntry !== undefined ? { askEntry } : {}),
-      initialPath: resolvedRoot,
-      resolvePath: (candidate, cwd) => resolveWithin(resolvedRoot, resolve(cwd, candidate)),
-    });
-    if (result.kind === "deny") return deny(result.reason, result.breach);
-    if (result.kind === "ask") return askVerdict([], result.rule);
     return { allowed: true, resolvedPaths: [] };
   }
 
@@ -573,7 +556,19 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
 
       const state: RuleState = {};
       return (
-        commandBranch(tool, scope, input, grant) ??
+        commandBranch({
+          tool,
+          scope,
+          input,
+          grant,
+          bashApproval,
+          resolvedRoot,
+          denyBy,
+          askBy,
+          resolvePath: (candidate, cwd) => resolveWithin(resolvedRoot, resolve(cwd, candidate)),
+          deny,
+          askVerdict,
+        }) ??
         argvBranch(tool, scope, input, grant) ??
         verbBranch(tool, scope, input, grant, state) ??
         pathsBranch(tool, scope, input, grant, state)

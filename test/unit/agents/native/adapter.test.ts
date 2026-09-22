@@ -62,7 +62,7 @@ function options(): ResolvedCompleteOptions {
     // provider is what resolveModel() infers for this string: "unknown".
     modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
     workdir: process.cwd(),
-    resolvedPermissions: { mode: "approve-all" },
+    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
   };
 }
 
@@ -203,7 +203,7 @@ describe("NativeAgentAdapter.sendTurn pricingSource", () => {
     const handle = await adapter.openSession("sess-pricing-source", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir,
@@ -240,7 +240,7 @@ describe("NativeAgentAdapter.closeSession after a failed turn", () => {
     const handle = await adapter.openSession("sess-keep", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir,
@@ -266,7 +266,7 @@ describe("NativeAgentAdapter.closeSession after a failed turn", () => {
     const handle = await adapter.openSession("sess-drop", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir,
@@ -293,7 +293,7 @@ describe("NativeAgentAdapter.closeSession after a failed turn", () => {
     const handle = await adapter.openSession("sess-recover", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir,
@@ -333,7 +333,7 @@ describe("NativeAgentAdapter shape", () => {
     const handle = await adapter.openSession("sess-adapter", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-turn-")),
@@ -374,7 +374,7 @@ describe("NativeAgentAdapter shape", () => {
     const handle = await adapter.openSession("sess-deadline", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       // Short, but not so short it races the turn loop's own pre-flight
       // `deadline.expired()` check (turn-deadline-arc task 2): that check runs
@@ -409,7 +409,7 @@ describe("NativeAgentAdapter shape", () => {
     const handle = await adapter.openSession("sess-caller-signal", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       // Long enough that the deadline itself never fires during this test.
       timeoutSeconds: 60,
@@ -587,7 +587,7 @@ describe("NativeAgentAdapter session identity", () => {
     const handle = await adapter.openSession("sess-affinity", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "opencode-go/deepseek-v4-flash" },
       timeoutSeconds: 60,
       transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-affinity-")),
@@ -615,7 +615,7 @@ describe("NativeAgentAdapter session identity", () => {
     const handle = await adapter.openSession("sess-thinking", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini[high]" },
       timeoutSeconds: 60,
       transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-thinking-")),
@@ -635,7 +635,7 @@ describe("NativeAgentAdapter session identity", () => {
     const handle = await adapter.openSession("sess-no-thinking", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-no-thinking-")),
@@ -671,7 +671,7 @@ describe("NativeAgentAdapter compaction wiring", () => {
     const handle = await adapter.openSession(name, {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir,

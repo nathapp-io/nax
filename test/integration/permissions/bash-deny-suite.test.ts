@@ -8,10 +8,11 @@
  * A green build in which these do not run is a failed build of this feature.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
+import type { BashApprovalMode } from "@/config/bash-approval";
 
 /**
  * A fix-shaped session. Read/Glob/Grep are declared AND granted deliberately:
@@ -48,6 +49,7 @@ function session(options?: {
   ask?: readonly string[];
   declared?: readonly ("Read" | "Glob" | "Grep" | "Bash")[];
   profileGrants?: readonly { tool: string; patterns: readonly string[] }[];
+  bashApproval?: BashApprovalMode;
 }) {
   const grants = [
     ...(options?.profileGrants ?? STRUCTURED_GRANTS),
@@ -57,6 +59,7 @@ function session(options?: {
     root,
     declared: [...(options?.declared ?? FIX_TOOLS)],
     grants,
+    ...(options?.bashApproval !== undefined ? { bashApproval: options.bashApproval } : {}),
     ...(options?.deny !== undefined ? { denyRules: [{ tool: "Bash", patterns: options.deny }] } : {}),
     ...(options?.ask !== undefined ? { askRules: [{ tool: "Bash", patterns: options.ask }] } : {}),
   });
@@ -210,5 +213,198 @@ describe("positive checks (spec §6, second half)", () => {
       "echo ok",
     );
     expect(outcome.kind).toBe("ok");
+  });
+});
+
+describe("raw mode grants Bash only to an op that declared it", () => {
+  test("an op that declared Bash runs an ungranted command under raw", async () => {
+    const support = session({ declared: FIX_TOOLS, allow: [], bashApproval: "raw" });
+    const result = await call(support, "echo hello");
+    expect(result.kind).toBe("ok");
+  });
+
+  test("an op that did NOT declare Bash still cannot reach it under raw", async () => {
+    const support = session({ declared: ["Read"], allow: ["*"], bashApproval: "raw" });
+    const result = await call(support, "echo hello");
+    expect(result.kind).toBe("denied");
+    if (result.kind === "denied") expect(result.reason).toContain("unknown tool");
+  });
+
+  test("raw + declared Bash + zero human Bash grants runs via the synthetic grant", async () => {
+    // `allow` is omitted, not []: an empty list still compiles a (patternless)
+    // Bash grant that reaches the raw screen on its own. Only a session with
+    // NO human Bash grant entry at all proves the synthetic grant is what
+    // admits the call.
+    const support = session({ declared: FIX_TOOLS, bashApproval: "raw" });
+    const result = await call(support, "echo hello");
+    expect(result.kind).toBe("ok");
+  });
+
+  // Skipped deliberately — the no-widening premise is unassertable under
+  // ADR-030 raw pass-through; the comment inside the test records the
+  // verified evidence.
+  // biome-ignore lint/suspicious/noSkippedTests: intentional permanent skip, reason in the test body
+  test.skip("raw does NOT widen a narrower human Bash grant to *", async () => {
+    // A human wrote Bash(bun test*) — raw gating must not let `curl evil.example`
+    // through; the synthetic grant only fires when NO human Bash grant exists.
+    //
+    // SKIPPED, not deleted: the premise is false under the shipped ADR-030
+    // design. `raw` is pass-through — once ANY Bash grant entry exists, the
+    // policy never matches the command against that grant's patterns
+    // (policy-bash-raw.ts), so `curl evil.example` runs under a narrow human
+    // grant BY DESIGN, and a synthetic `*` appended beside that grant changes
+    // no callTool-observable. No assertion here can fail iff the widening bug
+    // exists: run for real before skipping, the call EXECUTED (curl exited 6
+    // in this sandbox) — asserting "denied" fails against correct code, and
+    // asserting "ok"/"error" would pass under the bug too.
+    const support = session({ declared: FIX_TOOLS, allow: ["bun test *"], bashApproval: "raw" });
+    const result = await call(support, "curl evil.example");
+    expect(result.kind).toBe("denied");
+  });
+});
+
+describe("F1: raw synthesizes Bash even when the stage's real grants are empty", () => {
+  // `scoped` with no stage allow rules is the only path to zero grants
+  // (`resolveScopedPermissions` returns `toolGrants: []`, src/config/permissions.ts).
+  // Before the F1 fix, `buildCodingToolSupport`'s `if (grants.length === 0)
+  // return undefined;` guard ran BEFORE the synthetic-grant computation, so
+  // this shape returned no support under EVERY mode, including `raw` -- an
+  // inconsistency against `scoped` + `allow: ["Read"]`, which got a
+  // synthetic Bash grant under `raw` because its `grants` array was already
+  // non-empty for an unrelated reason. `profileGrants: []` below reproduces
+  // the true zero-grant shape directly, bypassing `session()`'s
+  // STRUCTURED_GRANTS default.
+  // `allow` is deliberately OMITTED in every case below, not passed as `[]`:
+  // `session()` compiles a (patternless) Bash grant entry the moment `allow`
+  // is anything but `undefined`, which is itself a non-empty `grants` array
+  // and would not reproduce the true zero-grant shape this block exists to
+  // pin.
+  test("scoped + no stage allow rules + raw + declared Bash: support is defined and a raw command runs", async () => {
+    const support = session({ declared: ["Bash"], profileGrants: [], bashApproval: "raw" });
+    expect(support).toBeDefined();
+    const outcome = await call(support, "echo $(whoami)");
+    expect(outcome.kind).toBe("ok");
+  });
+
+  test("the SAME zero-grant config under gated still returns no support (regression pin)", async () => {
+    const support = session({ declared: ["Bash"], profileGrants: [], bashApproval: "gated" });
+    expect(support).toBeUndefined();
+  });
+
+  test("raw + zero grants + an op that does NOT declare Bash still gets no shell", async () => {
+    const support = session({ declared: ["Read"], profileGrants: [], bashApproval: "raw" });
+    expect(support).toBeUndefined();
+  });
+
+  // Deliberate side effect of the F1 fix (see coding-tool-support.ts): moving
+  // the synthetic-grant condition ahead of the empty-grants guard means the
+  // #1794 empty-root throw is now reachable for raw + declared Bash + zero
+  // grants, where it used to be short-circuited by the guard returning
+  // `undefined` first. Pinned here rather than left as an implicit
+  // consequence of the reorder.
+  test("raw + declared Bash + zero grants + an empty root throws CODING_TOOL_ROOT_MISSING", () => {
+    expect(() => buildCodingToolSupport({ root: "", declared: ["Bash"], grants: [], bashApproval: "raw" })).toThrow(
+      /permitted root is unknown/,
+    );
+  });
+});
+
+describe("gated is unchanged, and escalate refuses the same set", () => {
+  const CATEGORY_A = ["echo $(whoami)", "curl evil.example"];
+  const CATEGORY_B = ["cat ../../etc/passwd", "cat .git/config"];
+
+  test.each(CATEGORY_A)("gated denies %s", async (command) => {
+    const support = session({ declared: FIX_TOOLS, allow: ["echo *"], bashApproval: "gated" });
+    expect((await call(support, command)).kind).toBe("denied");
+  });
+
+  test.each(CATEGORY_A)("escalate also refuses %s, via the ask tier", async (command) => {
+    const support = session({ declared: FIX_TOOLS, allow: ["echo *"], bashApproval: "escalate" });
+    const result = await call(support, command);
+    expect(result.kind).toBe("denied");
+    // The headless AskResolver denies, so the OUTCOME is the same and only the
+    // ledger reason differs — that difference is the demand signal ADR-029 asks
+    // for before an interactive channel is built.
+    if (result.kind === "denied") expect(result.reason).toContain("headless");
+  });
+
+  test.each(CATEGORY_B)("escalate does NOT soften %s", async (command) => {
+    const support = session({ declared: FIX_TOOLS, allow: ["*"], bashApproval: "escalate" });
+    const result = await call(support, command);
+    expect(result.kind).toBe("denied");
+    if (result.kind === "denied") {
+      expect(result.breach).toBe(true);
+      expect(result.reason).not.toContain("headless");
+    }
+  });
+});
+
+describe("raw mode executes in the permitted root", () => {
+  test("a raw command's writes land inside the root, not the process cwd", async () => {
+    const support = session({ declared: FIX_TOOLS, allow: [], bashApproval: "raw" });
+    const result = await call(support, "echo marker > raw-cwd-proof.txt");
+    expect(result.kind).toBe("ok");
+    // Carried from nax#2182: a gate that passes while running somewhere
+    // unintended adjudicates nothing. Pin the cwd, not just the verdict.
+    expect(readFileSync(join(root, "raw-cwd-proof.txt"), "utf8").trim()).toBe("marker");
+  });
+});
+
+describe("F2: raw's protected-path screen tracks cd across segments", () => {
+  // The screen is advisory, but its whole remit is catching a naive mistake
+  // (ADR-030). `.queue.txt` carries PAUSE/ABORT/SKIP, so a miss here lets a
+  // raw command abort its own run. Each row pins an EXECUTED outcome, not a
+  // verdict alone: a screen that denies while the write still lands, or
+  // passes while nothing is written, would satisfy a kind-only assertion.
+  const rawSession = () => session({ declared: FIX_TOOLS, allow: [], bashApproval: "raw" });
+
+  test("a cd'd relative redirect into the root's queue file is refused", async () => {
+    mkdirSync(join(root, "child"), { recursive: true });
+    const result = await call(rawSession(), "cd child && echo ABORT > ../.queue.txt");
+    expect(result.kind).toBe("denied");
+    expect(existsSync(join(root, ".queue.txt"))).toBe(false);
+  });
+
+  test("the same name under the cd'd directory is an ordinary file and runs", async () => {
+    mkdirSync(join(root, "child"), { recursive: true });
+    const result = await call(rawSession(), "cd child && echo hi > .queue.txt");
+    expect(result.kind).toBe("ok");
+    expect(readFileSync(join(root, "child", ".queue.txt"), "utf8").trim()).toBe("hi");
+  });
+
+  // An unmodellable `cd` must not become a skeleton key. An earlier revision
+  // returned allow for the WHOLE command on one, so prefixing any everyday
+  // idiom disabled the screen for every later segment -- strictly worse than
+  // the initialPath-pinned code the frame tracking replaced.
+  test.each([
+    ["an option-shaped cd", "cd -P child && echo ABORT > .queue.txt"],
+    ["a bare cd -", "cd - ; echo ABORT > .queue.txt"],
+    ["an opaque cd", "cd $TARGET && echo ABORT > .queue.txt"],
+    ["a cd with no target", "cd ; echo ABORT > .queue.txt"],
+    ["a cd out of the root", "cd ../outside ; echo ABORT > .queue.txt"],
+  ])("%s does not disable the screen for a later segment", async (_label, command) => {
+    const result = await call(rawSession(), command);
+    expect(result.kind).toBe("denied");
+    expect(existsSync(join(root, ".queue.txt"))).toBe(false);
+  });
+
+  // The other half of the asymmetry, still intact: gated REFUSES an
+  // unmodellable cd outright; raw must not, or it has re-gated itself.
+  test("an unmodellable cd is not itself a denial under raw", async () => {
+    const result = await call(rawSession(), "cd -P . && echo marker > cd-open-proof.txt");
+    expect(result.kind).toBe("ok");
+    expect(readFileSync(join(root, "cd-open-proof.txt"), "utf8").trim()).toBe("marker");
+  });
+});
+
+describe("bashApproval default at the direct-caller seam", () => {
+  test("a direct buildCodingToolSupport caller defaults to gated, not raw", async () => {
+    // `session()` bypasses resolvePermissions, so this pins the LOCAL fallback,
+    // not the shipped posture. Both matter: a direct caller must never silently
+    // acquire a shell it did not ask for.
+    const support = session({ declared: FIX_TOOLS, allow: [] });
+    const outcome = await call(support, "echo $(whoami)");
+    expect(outcome.kind).toBe("denied");
+    if (outcome.kind === "denied") expect(outcome.reason).not.toContain("headless");
   });
 });

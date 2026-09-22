@@ -145,7 +145,7 @@ describe("completeWithFallback reports a declined swap too (#1713)", () => {
       modelDef: { provider: "anthropic", model: "m", env: {} },
       workdir: "/tmp",
       storyId: "US-001",
-      resolvedPermissions: { mode: "default" as const },
+      resolvedPermissions: { mode: "default" as const, bashApproval: "raw" },
     });
 
     expect(declines(sink)).toHaveLength(1);

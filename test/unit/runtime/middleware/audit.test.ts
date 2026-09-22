@@ -4,7 +4,7 @@ import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachAuditSubscriber } from "@/runtime/middleware/audit";
 import { createNoOpPromptAuditor, type PromptAuditEntry, type PromptAuditErrorEntry } from "@/runtime/prompt-auditor";
 
-const PERMS = { mode: "approve-reads" as const };
+const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
 function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {}): SessionTurnDispatchEvent {
   return {

@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
 import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
 
 const ComplexityRungSchema = z.union([
@@ -184,6 +185,12 @@ const PermissionBlockSchema = z
   .object({
     // Declares the vocabulary the SSOT resolver reads; decides nothing.
     mode: z.enum(["approve-all", "approve-reads", "scoped"]).optional(), // nax-permission-mode-allow: schema declares the field's accepted values, resolvePermissions decides
+    /**
+     * Per-stage override of `execution.bashApproval` (ADR-030). Unlike the
+     * sibling `mode` field above, this one IS read — see `stageRules` in
+     * `src/config/permissions.ts`. A declared-but-unread key is a defect.
+     */
+    bashApproval: BashApprovalModeSchema.optional(),
     /** Legacy alias of `allow` (#374 shape). A block may carry one, never both. */
     allowedTools: z.array(z.string()).optional(),
     /** Rule lists (spec 2026-09-13 §4 US-002). Precedence: deny > ask > allow. */
@@ -254,6 +261,7 @@ export const ExecutionConfigSchema = z.object({
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
   permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).default("unrestricted"),
+  bashApproval: BashApprovalModeSchema.default(DEFAULT_BASH_APPROVAL_MODE),
   permissions: PermissionsBlockSchema.optional(),
   /**
    * Repo-configurable glob denylist that narrows Delete beyond the

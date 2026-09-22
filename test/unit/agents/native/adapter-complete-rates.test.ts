@@ -60,7 +60,7 @@ function makeOptions(): ResolvedCompleteOptions {
   return {
     modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
     workdir: process.cwd(),
-    resolvedPermissions: { mode: "approve-all" },
+    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
   };
 }
 
@@ -263,7 +263,7 @@ describe("NativeAgentAdapter.sendTurn failure classification", () => {
     const handle = await adapter.openSession(name, {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir: await mkdtemp(join(tmpdir(), `nax-adapter-${name}-`)),
@@ -417,7 +417,7 @@ async function openSessionWithModelDef(
   const handle = await adapter.openSession(name, {
     agentName: "native",
     workdir: process.cwd(),
-    resolvedPermissions: { mode: "approve-all" },
+    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
     modelDef,
     timeoutSeconds: 60,
     transcriptDir: dir,
@@ -518,7 +518,7 @@ function costRatesOptions(): ResolvedCompleteOptions {
   return {
     modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
     workdir: process.cwd(),
-    resolvedPermissions: { mode: "approve-all" },
+    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
   };
 }
 
@@ -579,7 +579,7 @@ describe("catalog cache rates reach cost through the adapter, not just estimateC
     const handle = await adapter.openSession("sess-cost-rates", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-cost-rates-")),
@@ -606,7 +606,7 @@ function cacheRetentionOptions(): ResolvedCompleteOptions {
     // provider is what resolveModel() infers for this string: "unknown".
     modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
     workdir: process.cwd(),
-    resolvedPermissions: { mode: "approve-all" },
+    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
   };
 }
 
@@ -637,7 +637,7 @@ describe("NativeAgentAdapter cacheRetention wiring", () => {
     const handle = await adapter.openSession("sess-cache-retention", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-cache-retention-")),
@@ -706,7 +706,7 @@ function collectionsHolding(name: string): string[] {
 const openOpts = (over: Partial<OpenSessionOpts> = {}): OpenSessionOpts => ({
   agentName: "native",
   workdir: closeDir,
-  resolvedPermissions: { mode: "approve-all" },
+  resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
   modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash" },
   timeoutSeconds: 60,
   transcriptDir: closeDir,

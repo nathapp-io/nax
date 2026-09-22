@@ -82,7 +82,7 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
     await m.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
-      resolvedPermissions: { mode: "approve-reads" as const },
+      resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
     });
 
     expect(capturedOptions?.onPidSpawned).toBeDefined();
@@ -111,7 +111,7 @@ describe("AgentManager PID lifecycle — configureRuntime", () => {
     await m.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
-      resolvedPermissions: { mode: "approve-reads" as const },
+      resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
     });
 
     expect(capturedOptions?.onPidSpawned).toBeUndefined();
@@ -156,7 +156,7 @@ describe("AgentManager.completeWithFallback (#567)", () => {
     const outcome = await m.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
-      resolvedPermissions: { mode: "approve-reads" as const },
+      resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
     });
     expect(outcome.result.output).toBe("hello");
     expect(outcome.fallbacks).toHaveLength(0);
@@ -171,7 +171,7 @@ describe("AgentManager.completeWithFallback (#567)", () => {
     const outcome = await m.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
-      resolvedPermissions: { mode: "approve-reads" as const },
+      resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
     });
     expect(outcome.result.output).toBe("from codex");
     expect(outcome.fallbacks).toHaveLength(1);
@@ -194,7 +194,7 @@ describe("AgentManager.completeWithFallback (#567)", () => {
     const outcome = await m.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
-      resolvedPermissions: { mode: "approve-reads" as const },
+      resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
     });
     expect(outcome.result.adapterFailure?.outcome).toBe("fail-auth");
   });
@@ -210,7 +210,7 @@ describe("AgentManager.completeWithFallback — hard-exception classification (B
     const outcome = await m.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
-      resolvedPermissions: { mode: "approve-reads" as const },
+      resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
     });
     expect(outcome.result.output).toBe("from codex");
     expect(outcome.fallbacks).toHaveLength(1);
@@ -232,7 +232,7 @@ describe("AgentManager.completeWithFallback — hard-exception classification (B
     await m.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
-      resolvedPermissions: { mode: "approve-reads" as const },
+      resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
     });
 
     expect(m.isUnavailable("claude")).toBe(true);
@@ -248,7 +248,7 @@ describe("AgentManager.completeWithFallback — hard-exception classification (B
     const outcome = await m.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
-      resolvedPermissions: { mode: "approve-reads" as const },
+      resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
     });
     expect(outcome.result.adapterFailure).toEqual({
       category: "quality",
@@ -361,7 +361,7 @@ describe("AgentManager.completeWithFallback — depth vs event count (nax#1965 f
     const outcome = await m.completeWithFallback("prompt", {
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
       workdir: "/tmp/test",
-      resolvedPermissions: { mode: "approve-reads" as const },
+      resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
     });
 
     // First call: still on the primary — depth 0, no swap has happened yet.

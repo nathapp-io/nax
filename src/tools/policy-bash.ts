@@ -18,13 +18,27 @@
 
 import type { BashSegment, BashToken } from "@/permissions";
 import { lexBashCommand } from "@/permissions";
+import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd";
 import { deniedFlag } from "./exec-guard";
 import type { CompiledEntry, CompiledPattern } from "./policy-match";
 
 export type BashCheck =
   | { readonly kind: "allow" }
   | { readonly kind: "ask"; readonly rule: string }
-  | { readonly kind: "deny"; readonly reason: string; readonly breach: boolean };
+  | {
+      readonly kind: "deny";
+      readonly reason: string;
+      readonly breach: boolean;
+      /**
+       * True when the gate could not ADJUDICATE the command — the lexer refused
+       * it, or no allow rule covered a segment. False when the command is
+       * affirmatively out of bounds (root escape, `.git/`, a denied flag, an
+       * explicit deny rule). Only the former may be escalated to the ask tier
+       * by `escalate` mode; escalating the latter would dissolve the `breach`
+       * signal into an approval prompt. See ADR-030.
+       */
+      readonly escalatable: boolean;
+    };
 
 export interface BashCheckArgs {
   readonly tool: string;
@@ -41,8 +55,8 @@ export interface BashCheckArgs {
   readonly initialPath: string;
 }
 
-function deny(reason: string, breach = false): BashCheck {
-  return { kind: "deny", reason, breach };
+function deny(reason: string, breach = false, escalatable = false): BashCheck {
+  return { kind: "deny", reason, breach, escalatable };
 }
 
 /**
@@ -163,22 +177,24 @@ function checkPayload(
 
   let cdTargets: readonly string[] | undefined;
   // `cd` moves every LATER segment's frame of reference, so its target is
-  // containment-checked even when it carries no separator (`cd ..`).
-  if (words[0] === "cd") {
-    const target = segment.tokens[1];
-    if (target === undefined) return { refusal: deny("`cd` with no target is refused") };
-    // `cd -` returns to $OLDPWD and `cd -P x` puts the path in a later slot:
-    // both leave this branch tracking `<root>/-` as the new frame of reference
-    // while the shell is somewhere else. An option-shaped target is refused
-    // rather than modelled, for the same reason the lexer refuses a construct
-    // it cannot read.
-    if (target.text.startsWith("-")) {
-      return { refusal: deny(`cd target "${target.text}" is option-shaped, and this gate does not model it`) };
-    }
-    const targets = resolveAll(args, target.text, cwd);
-    if (target.opaque || targets === undefined)
-      return { refusal: deny(`cd target "${target.text}" is not inside the permitted root`, true) };
-    cdTargets = targets;
+  // containment-checked even when it carries no separator (`cd ..`). The
+  // resolution and the WHY-unmodellable reasoning are shared with the raw
+  // screen via `cdTargetsFor` (bash-cwd.ts). Gated denies every unmodelled
+  // case, because containment is the whole point of this mode.
+  const cdResult = cdTargetsFor(segment, cwd, args.resolvePath);
+  switch (cdResult.kind) {
+    case "no-target":
+      return { refusal: deny("`cd` with no target is refused") };
+    case "option-shaped":
+      return { refusal: deny(`cd target "${cdResult.text}" is option-shaped, and this gate does not model it`) };
+    case "opaque":
+    case "unresolved":
+      return { refusal: deny(`cd target "${cdResult.text}" is not inside the permitted root`, true) };
+    case "resolved":
+      cdTargets = cdResult.targets;
+      break;
+    case "not-cd":
+      break;
   }
 
   for (const redirect of segment.redirects) {
@@ -209,17 +225,6 @@ function checkPayload(
   return { cdTargets };
 }
 
-function nextWorkingDirectories(
-  segment: BashSegment,
-  current: readonly string[],
-  cdTargets: readonly string[] | undefined,
-): readonly string[] {
-  if (cdTargets === undefined) return current;
-  if (segment.separator === "&&") return cdTargets;
-  if (segment.separator === ";") return [...new Set([...current, ...cdTargets])];
-  return current;
-}
-
 export function checkBashCommand(args: BashCheckArgs): BashCheck {
   const { command, tool } = args;
   if (typeof command !== "string") return deny(`"command" must be a string`);
@@ -230,6 +235,8 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
     return deny(
       `command contains ${lexed.construct}, which cannot be analysed and is therefore refused -- ` +
         "rewrite it without that construct, or use a structured tool",
+      false,
+      true,
     );
   }
 
@@ -245,7 +252,7 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
     if (args.grant.unconditional || matchesSegment(args.grant, segment)) continue;
     const granted = args.grant.raw.filter((pattern) => pattern !== "*").join(", ");
     const alternatives = granted === "" ? "no command forms are granted for this stage" : `granted forms: ${granted}`;
-    return deny(`${tool} is not granted "${render(segment)}" -- ${alternatives}`);
+    return deny(`${tool} is not granted "${render(segment)}" -- ${alternatives}`, false, true);
   }
 
   let cwd: readonly string[] = [args.initialPath];

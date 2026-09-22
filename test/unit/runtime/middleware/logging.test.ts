@@ -7,7 +7,7 @@ import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEven
 import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachLoggingSubscriber } from "@/runtime/middleware/logging";
 
-const PERMS = { mode: "approve-reads" as const };
+const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
 function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {}): SessionTurnDispatchEvent {
   return {

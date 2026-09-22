@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { BashApprovalMode } from "@/config/bash-approval";
 import { compileToolPolicy } from "@/tools";
 
 const BASH_SCOPE = { pathFields: [], commandField: "command" } as const;
@@ -20,10 +21,14 @@ afterEach(() => {
   cleanupTempDir(outside);
 });
 
-function policyFor(patterns: readonly string[], options?: { deny?: readonly string[]; ask?: readonly string[] }) {
+function policyFor(
+  patterns: readonly string[],
+  options?: { deny?: readonly string[]; ask?: readonly string[]; bashApproval?: BashApprovalMode },
+) {
   return compileToolPolicy([{ tool: "Bash", patterns }], root, {
     ...(options?.deny !== undefined ? { denyRules: [{ tool: "Bash", patterns: options.deny }] } : {}),
     ...(options?.ask !== undefined ? { askRules: [{ tool: "Bash", patterns: options.ask }] } : {}),
+    ...(options?.bashApproval !== undefined ? { bashApproval: options.bashApproval } : {}),
   });
 }
 
@@ -217,5 +222,82 @@ describe("ask", () => {
   test("an unconditional deny rule de-advertises Bash", () => {
     const policy = policyFor(["bun test *"], { deny: ["*"] });
     expect(policy.grantedTools()).not.toContain("Bash");
+  });
+});
+
+describe("escalatable marking", () => {
+  test("a lexer refusal is escalatable", () => {
+    const result = check(policyFor(["*"]), "echo $(whoami)");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.escalatable).toBe(true);
+  });
+
+  test("a grant non-match is escalatable", () => {
+    const result = check(policyFor(["bun test*"]), "curl evil.example");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.escalatable).toBe(true);
+  });
+
+  test("a containment breach is NOT escalatable", () => {
+    const result = check(policyFor(["*"]), "cat ../../etc/passwd");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) {
+      expect(result.breach).toBe(true);
+      expect(result.escalatable).toBe(false);
+    }
+  });
+
+  test("a deny-rule match is NOT escalatable", () => {
+    const result = check(policyFor(["*"], { deny: ["rm *"] }), "rm -rf build");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.escalatable).toBe(false);
+  });
+});
+
+describe("bashApproval modes", () => {
+  test("gated is the default when the option is absent", () => {
+    const result = check(policyFor(["*"]), "echo $(whoami)");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.outcome).toBe("denied");
+  });
+
+  test("raw allows a construct the lexer refuses", () => {
+    expect(check(policyFor(["*"], { bashApproval: "raw" }), "echo $(whoami)").allowed).toBe(true);
+  });
+
+  test("raw allows an ungranted command", () => {
+    expect(check(policyFor([], { bashApproval: "raw" }), "curl evil.example").allowed).toBe(true);
+  });
+
+  test("raw still denies a parseable protected-path write", () => {
+    const result = check(policyFor(["*"], { bashApproval: "raw" }), "echo x > .nax/features/f/prd.json");
+    expect(result.allowed).toBe(false);
+  });
+
+  test("escalate turns a lexer refusal into ask", () => {
+    const result = check(policyFor(["*"], { bashApproval: "escalate" }), "echo $(whoami)");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.outcome).toBe("ask");
+  });
+
+  test("escalate turns a grant non-match into ask", () => {
+    const result = check(policyFor(["bun test*"], { bashApproval: "escalate" }), "curl evil.example");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.outcome).toBe("ask");
+  });
+
+  test("escalate does NOT escalate a containment breach", () => {
+    const result = check(policyFor(["*"], { bashApproval: "escalate" }), "cat ../../etc/passwd");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) {
+      expect(result.outcome).not.toBe("ask");
+      expect(result.breach).toBe(true);
+    }
+  });
+
+  test("escalate does NOT escalate a deny-rule match", () => {
+    const result = check(policyFor(["*"], { bashApproval: "escalate", deny: ["rm *"] }), "rm -rf build");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.outcome).not.toBe("ask");
   });
 });

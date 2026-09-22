@@ -67,6 +67,22 @@ export const NAX_OWNED_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edi
 const QUEUE_CONTROL_FILES: ReadonlySet<string> = new Set([".queue.txt", ".queue.txt.processing"]);
 
 /**
+ * Is this path one nax owns the writes to, independent of WHICH tool is asking?
+ *
+ * `naxOwnedWriteRefusal` answers the same question for the four file-writing
+ * tools and returns prose. This predicate is the tool-agnostic half, extracted
+ * so the `raw` bash screen (ADR-030) can consult exactly the same path set
+ * without being in `NAX_OWNED_WRITE_TOOLS`. One definition, two callers.
+ *
+ * @param rel - Path relative to the permitted root, `/`-joined.
+ */
+export function isNaxOwnedWritePath(rel: string): boolean {
+  const segments = rel.split("/");
+  if (segments.length === 1 && QUEUE_CONTROL_FILES.has(segments[0] ?? "")) return true;
+  return segments[0] === ".nax" && segments[1] === "features" && segments[segments.length - 1] === "prd.json";
+}
+
+/**
  * Why `tool` may not touch `rel`, or `undefined` when it may.
  *
  * `rel` MUST be the canonical, posix-separated, root-relative spelling the
@@ -84,16 +100,14 @@ const QUEUE_CONTROL_FILES: ReadonlySet<string> = new Set([".queue.txt", ".queue.
  */
 export function naxOwnedWriteRefusal(tool: string, rel: string, exemptRel?: string): string | undefined {
   if (!NAX_OWNED_WRITE_TOOLS.has(tool)) return undefined;
+  if (!isNaxOwnedWritePath(rel)) return undefined;
   const segments = rel.split("/");
   // SEC-5: the run-control file lives at the root, so match it exactly
   // there and not at any other depth -- a nested `sub/.queue.txt` is an
   // ordinary file, not the queue nax reads.
-  if (segments.length === 1 && QUEUE_CONTROL_FILES.has(segments[0] ?? "")) {
+  if (segments.length === 1) {
     return `"${rel}" is nax's own run state: it carries the PAUSE/ABORT/SKIP commands that control this run, so no tool may modify it. Change the run through the queue command, not by writing its file.`;
   }
-  const isFeaturePrd =
-    segments[0] === ".nax" && segments[1] === "features" && segments[segments.length - 1] === "prd.json";
-  if (!isFeaturePrd) return undefined;
   // nax#2115: the plan session is the ONE writer of a PRD -- its op declares
   // `fileOutput: (input) => input.outputPath` and every plan prompt instructs
   // the agent to write the PRD there rather than reply with it. #2095 added

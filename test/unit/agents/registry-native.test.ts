@@ -101,7 +101,7 @@ describe("registry catalog-override wiring", () => {
     await registry.getAgent("native")?.complete("hi", {
       modelDef: { provider: "opencode-go", model: "opencode-go/deepseek-flash" },
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
     });
 
     expect(seen).toEqual(overrides);

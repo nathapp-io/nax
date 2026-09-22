@@ -40,7 +40,7 @@ import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { _costSubscriberDeps, attachCostSubscriber, COST_ROW_SCHEMA_VERSION } from "@/runtime/middleware/cost";
 import { NAX_AI_VERSION } from "@/version";
 
-const PERMS = { mode: "approve-reads" as const };
+const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
 function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {}): SessionTurnDispatchEvent {
   return {

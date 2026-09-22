@@ -67,7 +67,7 @@ async function runOneTurn(over: { transcriptOwner?: string } = {}): Promise<Turn
   const handle = await adapter.openSession("sess-scope-id", {
     agentName: "native",
     workdir: process.cwd(),
-    resolvedPermissions: { mode: "approve-all" },
+    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
     modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
     timeoutSeconds: 60,
     transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-scope-id-")),
@@ -177,7 +177,7 @@ describe("NativeAgentAdapter catalog overrides", () => {
     await new NativeAgentAdapter(undefined, OVERRIDES).complete("hi", {
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
     });
 
     expect(seen).toEqual(OVERRIDES);
@@ -193,7 +193,7 @@ describe("NativeAgentAdapter catalog overrides", () => {
     const handle = await adapter.openSession("sess-overrides", {
       agentName: "native",
       workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all" },
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
       modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
       timeoutSeconds: 60,
       transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-overrides-")),

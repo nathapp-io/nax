@@ -6,7 +6,7 @@ import { attachAuditSubscriber } from "@/runtime/middleware/audit";
 import { attachCostSubscriber, COST_ROW_SCHEMA_VERSION } from "@/runtime/middleware/cost";
 import { createNoOpPromptAuditor, type PromptAuditEntry } from "@/runtime/prompt-auditor";
 
-const PERMS = { mode: "approve-reads" as const };
+const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
 function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {}): SessionTurnDispatchEvent {
   return {

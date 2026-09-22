@@ -19,7 +19,7 @@ import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachAuditSubscriber } from "@/runtime/middleware/audit";
 import { PromptAuditor } from "@/runtime/prompt-auditor";
 
-const PERMS = { mode: "approve-reads" as const };
+const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
 function makeAcceptanceGenEvent(): CompleteDispatchEvent {
   return {
