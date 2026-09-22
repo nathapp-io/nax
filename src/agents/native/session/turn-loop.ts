@@ -30,14 +30,14 @@ import { createInvalidCallBudget, rewriteToolCallInput } from "./handle-invalid-
 import { createLoopEventRegistry } from "./loop-events";
 import { registerBuiltinLoopHandlers } from "./loop-handlers";
 import { nudgeOverheadBytes, withNudge } from "./nudge";
-import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance";
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { buildToolResult } from "./tool-result";
 import { loadTranscript, saveTranscript } from "./transcript-store";
 import { truncateNativeToolResult } from "./truncation-handler";
+import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
 import { realSleep, retryTransportFault } from "./turn-retry";
-import { cacheUsageFields, type NativeTurnResponse, recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
+import { type NativeTurnResponse, recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
 
 /**
  * Structural, matching adapter.ts's guard: nax-ai's error class is not importable
@@ -84,16 +84,7 @@ export async function runNativeTurn(
   ];
 
   let roundTrips = 0;
-  let inputTokens = 0;
-  let outputTokens = 0;
-  // Undefined until the first round trip reports cache data, then a running
-  // sum from there. Staying undefined when nothing ever reports it preserves
-  // the absent/zero distinction toNaxTokenUsage establishes: "no cache data"
-  // and "zero cache tokens" must stay distinguishable downstream.
-  let cacheReadInputTokens: number | undefined;
-  let cacheCreationInputTokens: number | undefined;
-  let costUsd = 0;
-  const rateTotals = createRateTotals();
+  const usage = createTurnAccumulator();
   let output = "";
   // Reported on the result so the review guards can corroborate a reviewer's
   // self-declared inspection trail against calls it actually made.
@@ -189,25 +180,10 @@ export async function runNativeTurn(
               messagesDropped: plan.toSummarize.length,
               summaryLength: summary.text.length,
             });
-            inputTokens += summary.usage.inputTokens;
-            outputTokens += summary.usage.outputTokens;
-            if (summary.usage.cacheReadInputTokens !== undefined) {
-              cacheReadInputTokens = (cacheReadInputTokens ?? 0) + summary.usage.cacheReadInputTokens;
-            }
-            if (summary.usage.cacheCreationInputTokens !== undefined) {
-              cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + summary.usage.cacheCreationInputTokens;
-            }
-            costUsd += summary.costUsd;
-            addRateTotals(rateTotals, summary.usage, summary.rates);
+            usage.add(summary.usage, summary.costUsd, summary.rates);
             // Resets the watchdog's lastActivityAt between the summary and the
             // round trip, so the two silent spans do not add up against one budget.
-            deps.onActivity?.({
-              kind: "usage",
-              inputTokens: summary.usage.inputTokens,
-              outputTokens: summary.usage.outputTokens,
-              costUsd: summary.costUsd,
-              ...cacheUsageFields(summary.usage),
-            });
+            deps.onActivity?.(usageBeat(summary.usage, summary.costUsd));
             // The anchor described the pre-compaction array; it is meaningless now.
             lastUsage = undefined;
             anchorIndex = undefined;
@@ -279,23 +255,8 @@ export async function runNativeTurn(
           if (plan === undefined) throw err;
           const summary = await deps.summarize(plan.toSummarize, plan.previousSummary);
           messages = applyCompaction(messages, plan, summary.text);
-          inputTokens += summary.usage.inputTokens;
-          outputTokens += summary.usage.outputTokens;
-          if (summary.usage.cacheReadInputTokens !== undefined) {
-            cacheReadInputTokens = (cacheReadInputTokens ?? 0) + summary.usage.cacheReadInputTokens;
-          }
-          if (summary.usage.cacheCreationInputTokens !== undefined) {
-            cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + summary.usage.cacheCreationInputTokens;
-          }
-          costUsd += summary.costUsd;
-          addRateTotals(rateTotals, summary.usage, summary.rates);
-          deps.onActivity?.({
-            kind: "usage",
-            inputTokens: summary.usage.inputTokens,
-            outputTokens: summary.usage.outputTokens,
-            costUsd: summary.costUsd,
-            ...cacheUsageFields(summary.usage),
-          });
+          usage.add(summary.usage, summary.costUsd, summary.rates);
+          deps.onActivity?.(usageBeat(summary.usage, summary.costUsd));
           lastUsage = undefined;
           anchorIndex = undefined;
           // Retried once. A second overflow propagates: compacting further would be
@@ -304,16 +265,7 @@ export async function runNativeTurn(
         }
       }
       roundTrips += 1;
-      inputTokens += res.usage.inputTokens;
-      outputTokens += res.usage.outputTokens;
-      if (res.usage.cacheReadInputTokens !== undefined) {
-        cacheReadInputTokens = (cacheReadInputTokens ?? 0) + res.usage.cacheReadInputTokens;
-      }
-      if (res.usage.cacheCreationInputTokens !== undefined) {
-        cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + res.usage.cacheCreationInputTokens;
-      }
-      costUsd += res.costUsd;
-      addRateTotals(rateTotals, res.usage, res.rates);
+      usage.add(res.usage, res.costUsd, res.rates);
       output = res.text;
 
       // nax#1852: the anchor is the whole prompt the provider charged for, not
@@ -325,18 +277,8 @@ export async function runNativeTurn(
       anchorIndex = messages.length - 1;
       nativeSessionLastUsage.set(handle.id, { promptTokens, anchorIndex });
 
-      deps.onActivity?.({
-        kind: "usage",
-        inputTokens: res.usage.inputTokens,
-        outputTokens: res.usage.outputTokens,
-        costUsd: res.costUsd,
-        // Absent stays absent (never 0): `cacheReadInputTokens` stays
-        // `number | undefined` so "no cache data" and "zero cache tokens"
-        // remain distinguishable downstream (nax#2045).
-        ...cacheUsageFields(res.usage),
-        // 1-based; `roundTrips` is incremented above, before this beat fires.
-        roundTrip: roundTrips,
-      });
+      // 1-based; `roundTrips` is incremented above, before this beat fires.
+      deps.onActivity?.(usageBeat(res.usage, res.costUsd, roundTrips));
       if (res.text.length > 0) deps.onActivity?.({ kind: "message", bytes: res.text.length });
       if (res.thinking !== undefined && res.thinking.length > 0) {
         deps.onActivity?.({
@@ -540,13 +482,8 @@ export async function runNativeTurn(
     // identity so the error itself is rethrown byte-for-byte unmodified.
     if (typeof err === "object" && err !== null) {
       recordNativeTurnFailureUsage(err, {
-        tokenUsage: {
-          inputTokens,
-          outputTokens,
-          ...(cacheReadInputTokens !== undefined ? { cacheReadInputTokens } : {}),
-          ...(cacheCreationInputTokens !== undefined ? { cacheCreationInputTokens } : {}),
-        },
-        costUsd,
+        tokenUsage: usage.tokens(),
+        costUsd: usage.costUsd(),
       });
     }
     throw err;
@@ -576,16 +513,11 @@ export async function runNativeTurn(
   // removed from the pipeline (ADR-028 s4).
   await saveTranscript(dir, handle.id, messages, transcriptOwner);
 
-  const rates = aggregateRates(rateTotals);
+  const rates = usage.rates();
   return {
     output,
-    tokenUsage: {
-      inputTokens,
-      outputTokens,
-      ...(cacheReadInputTokens !== undefined ? { cacheReadInputTokens } : {}),
-      ...(cacheCreationInputTokens !== undefined ? { cacheCreationInputTokens } : {}),
-    },
-    estimatedCostUsd: costUsd,
+    tokenUsage: usage.tokens(),
+    estimatedCostUsd: usage.costUsd(),
     internalRoundTrips: roundTrips,
     ...(codingTools.length > 0 ? { codingToolUse: { advertised: codingTools.length, called: codingToolsCalled } } : {}),
     ...(completedNormally ? {} : { turnIncomplete: true }),
