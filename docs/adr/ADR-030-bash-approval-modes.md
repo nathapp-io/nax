@@ -6,7 +6,7 @@
 **Builds on:** ADR-029 (Phase C scope and constraints), ADR-028 (native sessions and the pull-tool loop)
 **Amends:** ADR-029 §3 — see the 2026-09-22 amendment appended to that section
 **Design:** `docs/superpowers/specs/2026-09-22-bash-approval-modes-design.md`
-**Implementation:** none yet — plan at `docs/superpowers/plans/2026-09-22-bash-approval-modes.md`
+**Implementation:** P1 modes merged in PR #2184 (`7b37dbf74`); P2 ask-tier resolver chain on branch `feat/p2-interactive-approval-gate` (PR/merge pending) — plan at `docs/superpowers/plans/2026-09-22-p2-interactive-approval-gate.md`
 
 ---
 
