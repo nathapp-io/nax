@@ -50,7 +50,7 @@
 
 ## Task 1: ADR-030 and the ADR-029 amendment — ✅ DONE
 
-> **Completed 2026-09-22 in commit `269e02a1b`.** Both documents are already on this branch;
+> **Completed 2026-09-22 in commit `76044fe7b`.** Both documents are already on this branch;
 > the steps below are retained as the record of what was written. **Start at Task 2.**
 > If you disagree with the posture ADR-030 records, raise it before writing code — do not
 > silently implement something else.
