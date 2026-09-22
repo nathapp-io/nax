@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod";
+import { DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
 import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "./schema-types";
 import { ContextConfigSchema } from "./schemas-context";
 import {
@@ -140,6 +141,8 @@ export const NaxConfigSchema = z
       regressionGate: RegressionGateConfigSchema.parse({}),
       contextProviderTokenBudget: 2000,
       permissionProfile: "unrestricted",
+      // BUG-20 — derived, not hand-written; see DEFAULT_BASH_APPROVAL_MODE.
+      bashApproval: DEFAULT_BASH_APPROVAL_MODE,
       smartTestRunner: true,
       worktreeDependencies: {
         mode: "off",

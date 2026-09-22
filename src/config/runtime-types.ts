@@ -133,6 +133,8 @@ export interface ExecutionConfig {
   typecheckCommand?: string | null;
   /** Permission profile for the agent (default: "unrestricted") */
   permissionProfile?: "unrestricted" | "safe" | "scoped";
+  /** ADR-030. Global default; `permissions.<stage>.bashApproval` overrides it. */
+  bashApproval?: "raw" | "gated" | "escalate";
   /** Per-stage tool policy (GitHub #374). Read by resolveScopedPermissions; enforced by src/tools/. */
   permissions?: Record<
     string,
@@ -141,6 +143,7 @@ export interface ExecutionConfig {
       mode?: "approve-all" | "approve-reads" | "scoped"; // nax-permission-mode-allow: type declares the field's accepted values, resolvePermissions decides
       allowedTools?: string[];
       inherit?: string;
+      bashApproval?: "raw" | "gated" | "escalate";
     }
   >;
   /** Enable smart test runner to scope test runs to changed files (default: true).
