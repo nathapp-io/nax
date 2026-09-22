@@ -1,3 +1,4 @@
+export * from "./approvals-link";
 export * from "./approvals-store";
 export { ASK_UNAVAILABLE_REASON, headlessAskResolver } from "./ask";
 export * from "./ask-chain";
