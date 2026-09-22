@@ -134,12 +134,10 @@ export function buildCodingToolSupport(args: {
   const grants = args.grants ?? [];
   const bashApproval = args.bashApproval ?? "gated";
   // ADR-030 / F1: under `raw`, a declared Bash gets a SYNTHETIC grant further
-  // down (resolveBashSupport) even when the stage's real grants are empty --
-  // `scoped` with no stage allow rules is the only path to zero grants
-  // (src/config/permissions.ts), and that path must not be indistinguishable
-  // from `scoped` + a real allow list once `raw` is in play. Computed here,
-  // ahead of the empty-grants guard, so that guard can special-case it rather
-  // than short-circuiting before the synthetic grant ever gets a chance.
+  // down (resolveBashSupport) even with zero real grants -- `scoped` with no
+  // stage allow rules is the only path there, and must not be
+  // indistinguishable from `scoped` + an unrelated allow list. Computed
+  // ahead of the guard so the guard can special-case it.
   const rawSyntheticBash = bashApproval === "raw" && args.declared.includes(BASH_TOOL_NAME);
   if (grants.length === 0 && !rawSyntheticBash) return undefined;
 
@@ -148,11 +146,9 @@ export function buildCodingToolSupport(args: {
   // different repository. That is the #1794 defect; refuse instead. Callers
   // pass packageWorkdir(view), which never yields "".
   //
-  // Deliberate side effect of the F1 fix above: this throw now also fires for
-  // raw + declared Bash + an empty root, where the old code returned
-  // `undefined` before ever reaching here (zero grants short-circuited
-  // first). That is correct -- it is the #1794 defect guard doing its job --
-  // and is pinned by a test rather than left as an implicit consequence.
+  // F1 side effect: this throw now also fires for raw + declared Bash + an
+  // empty root, where the old guard returned `undefined` first. Correct --
+  // the #1794 guard should fire there -- and pinned by a test.
   if (args.root === undefined || args.root.trim() === "") {
     throw new NaxError(
       "Cannot enable coding tools: no working directory was supplied, so the permitted root is unknown.",
@@ -257,9 +253,11 @@ export function buildCodingToolSupport(args: {
             createBashTool({
               ...(args.shell !== undefined ? { shell: args.shell } : {}),
               ...(args.stripEnvVars !== undefined ? { stripEnvVars: args.stripEnvVars } : {}),
-              // The compiled grant, so the description names what THIS stage
-              // may run rather than a generic sentence.
+              // The EFFECTIVE grant, so the description names what THIS
+              // stage may actually run, incl. the synthetic grant under
+              // `raw` (ADR-030 / F3) -- ignored under `raw` regardless.
               patterns: bashDescriptionPatterns,
+              bashApproval,
             }),
           ]
         : []),

@@ -23,11 +23,14 @@ export interface BashSupportResolution {
   /** Whether the op should receive a Bash tool at all (the declaration ceiling). */
   readonly allowBash: boolean;
   /**
-   * The compiled (pre-synthetic) human `Bash(...)` grant's patterns, for the
-   * tool description -- so it names what THIS stage's own rules permit
-   * rather than a generic sentence. Carried over verbatim from the
-   * pre-extraction call site; F3 (ADR-030) later widens what the caller
-   * passes into the description to the EFFECTIVE grant under `raw`.
+   * The patterns the Bash tool's description should name -- the EFFECTIVE
+   * grant (post-synthetic), not the pre-synthetic human grant, so a `raw`
+   * stage with no human `Bash(...)` rule still names what it can actually
+   * run instead of the stale "no command forms are granted" (ADR-030 / F3).
+   * `createBashTool` ignores this entirely under `raw` (it has its own
+   * static raw description), so the distinction only matters for
+   * `gated`/`escalate`, where it is identical to the pre-synthetic grant --
+   * `raw` is the only mode that ever synthesizes one.
    */
   readonly bashDescriptionPatterns: readonly string[];
 }
@@ -63,10 +66,11 @@ export function resolveBashSupport(args: {
       ? { tool: BASH_TOOL_NAME, patterns: ["*"] }
       : undefined;
   const effectiveGrants = syntheticGrant !== undefined ? [...narrowedGrants, syntheticGrant] : narrowedGrants;
+  const effectiveBashGrant = bashGrant ?? syntheticGrant;
 
   return {
     effectiveGrants,
     allowBash,
-    bashDescriptionPatterns: bashGrant?.patterns ?? [],
+    bashDescriptionPatterns: effectiveBashGrant?.patterns ?? [],
   };
 }
