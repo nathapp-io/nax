@@ -21,6 +21,7 @@ import { askHumanToolDefinition } from "./ask-human";
 import { estimateContextTokens, type TranscriptMessage as NativeTranscriptMessage, shouldCompact } from "./compaction";
 import { createInvalidCallBudget } from "./handle-invalid-tool-call";
 import { createLoopEventRegistry } from "./loop-events";
+import { applyHistoryPatch } from "./loop-events/cache-boundary";
 import { registerBuiltinLoopHandlers } from "./loop-handlers";
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
@@ -31,6 +32,28 @@ import { completeWithRecovery } from "./turn-complete-step";
 import { buildTurnResult, logTurnTailWarnings } from "./turn-result";
 import { runToolBatch } from "./turn-tool-batch";
 import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
+
+/**
+ * The messages `before_turn` appends as the turn's seed: the handler's patch
+ * when it is a non-empty user-role array (spec 6.1's stop rule), otherwise the
+ * prompt the caller handed the turn. A bad patch is rejected the way a bad
+ * history patch is — warn, original kept (spec 3.7) — because a seed that is
+ * empty or speaks with another role hands the model a conversation it cannot
+ * answer as itself.
+ */
+function beforeTurnSeed(
+  patch: readonly NativeTranscriptMessage[] | undefined,
+  prompt: string,
+): NativeTranscriptMessage[] {
+  if (patch === undefined) return [{ role: "user", content: prompt }];
+  if (patch.length > 0 && patch.every((m) => m.role === "user")) return [...patch];
+  getSafeLogger()?.warn(
+    "native-loop-events",
+    "before_turn seed patch rejected: seed must be a non-empty user-role array",
+    { seedLength: patch.length },
+  );
+  return [{ role: "user", content: prompt }];
+}
 
 export async function runNativeTurn(
   handle: SessionHandle,
@@ -49,7 +72,61 @@ export async function runNativeTurn(
   // invocation's history cannot ride along on the first request of this one.
   const transcriptOwner = nativeSessionTranscriptOwners.get(handle.id);
   let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id, transcriptOwner))];
-  messages.push({ role: "user", content: prompt });
+
+  const spinBreaker = deps.spinBreaker;
+  // Set ONLY when the breaker ended the turn, so the wiring layer can classify
+  // it as `fail-spin` rather than a generic incomplete turn.
+  let spinStopped = false;
+  // nax#2120: the first stop verdict spends a terminal round trip rather than
+  // tearing the turn down, so a false positive does not cost the transcript.
+  let spinWarned = false;
+  const invalidCallBudget = createInvalidCallBudget();
+  // nax#2151: the invalid-call repair and the spin breaker are `before_tool`
+  // registrations rather than inline branches. Absent a caller-supplied
+  // registry the loop owns one, so both built-ins run exactly as they did
+  // before the seam. The block sits above `before_turn` now: the dispatch
+  // needs the registry, and the built-ins must be installed before ANY event
+  // fires, exactly as they were installed before any round trip ran.
+  const loopEvents = deps.loopEvents ?? createLoopEventRegistry();
+  registerBuiltinLoopHandlers(loopEvents, {
+    budget: invalidCallBudget,
+    ...(spinBreaker !== undefined ? { spinBreaker } : {}),
+    onSpinStop: () => {
+      spinWarned = true;
+    },
+  });
+
+  const anchor = nativeSessionLastUsage.get(handle.id);
+  let lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
+  let anchorIndex = anchor?.anchorIndex;
+
+  // P3 `before_turn` (spec 6.1): fires ONCE, after the transcript loads and
+  // before the seed push. `boundary` is dispatcher-computed (spec 3.4) and
+  // false until PR 3 records the model on TranscriptFile (§8.3), so the
+  // history channel below exists but is closed today — an off-boundary patch
+  // is rejected + warned by applyHistoryPatch and the turn proceeds on the
+  // loaded history. `previousModel`/`currentModel` stay undefined for the
+  // same reason: adding `model` to TranscriptFile is PR 3's job, not this.
+  const turnStart = await loopEvents.dispatch("before_turn", {
+    prompt,
+    history: messages,
+    sessionName: handle.id,
+    boundary: false,
+  });
+  // An honoured history patch (reachable only at an undefined anchor today)
+  // rewrites the IN-MEMORY array, and the saveTranscript at the turn's end
+  // persists it — before_turn is the conversation-rewriting event, unlike
+  // transform_context's wire-copy-only ruling (spec 6.6).
+  messages = [
+    ...applyHistoryPatch({
+      before: messages,
+      patched: turnStart.history,
+      anchorIndex,
+      boundary: false,
+      event: "before_turn",
+    }).messages,
+  ];
+  messages.push(...beforeTurnSeed(turnStart.seed, prompt));
 
   const codingTools = opts.codingTools ?? [];
   const codingToolNames = new Set(codingTools.map((t) => t.name));
@@ -78,31 +155,6 @@ export async function runNativeTurn(
   let completedNormally = false;
   let timedOut = false;
   const interactions: InteractionExchange[] = [];
-
-  const spinBreaker = deps.spinBreaker;
-  // Set ONLY when the breaker ended the turn, so the wiring layer can classify
-  // it as `fail-spin` rather than a generic incomplete turn.
-  let spinStopped = false;
-  // nax#2120: the first stop verdict spends a terminal round trip rather than
-  // tearing the turn down, so a false positive does not cost the transcript.
-  let spinWarned = false;
-  const invalidCallBudget = createInvalidCallBudget();
-  // nax#2151: the invalid-call repair and the spin breaker are `before_tool`
-  // registrations rather than inline branches. Absent a caller-supplied
-  // registry the loop owns one, so both built-ins run exactly as they did
-  // before the seam.
-  const loopEvents = deps.loopEvents ?? createLoopEventRegistry();
-  registerBuiltinLoopHandlers(loopEvents, {
-    budget: invalidCallBudget,
-    ...(spinBreaker !== undefined ? { spinBreaker } : {}),
-    onSpinStop: () => {
-      spinWarned = true;
-    },
-  });
-
-  const anchor = nativeSessionLastUsage.get(handle.id);
-  let lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
-  let anchorIndex = anchor?.anchorIndex;
 
   // nax#1838: the save below the loop is the clean exit's alone. A turn that
   // throws must persist too — the retry reopens the same deterministic session
@@ -216,23 +268,46 @@ export async function runNativeTurn(
         });
       }
 
+      // P3 `after_response` (spec 6.1): fires once per round trip on the
+      // settled assistant message, BEFORE it enters the array — a patch is
+      // safe by construction because it shapes the message, never the array,
+      // so the anchorIndex recorded above (`messages.length - 1`, which runs
+      // before this push) keeps describing the prefix the provider charged
+      // for. `usage`/`costUsd` are surfaced readonly: the registry reads only
+      // the patchable fields off a return, so billing truth cannot surface
+      // even from a handler that bypasses the type.
+      const afterResponse = await loopEvents.dispatch("after_response", {
+        text: res.text,
+        ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
+        ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
+        usage: res.usage,
+        costUsd: res.costUsd,
+        roundTrip: roundTrips,
+      });
+      // The pushed message carries the patched shape, and the loop acts on
+      // what it records: answering the ORIGINAL calls while recording patched
+      // ones would desync the transcript from what actually executed.
+      const assistantText = afterResponse.text ?? res.text;
+      const assistantToolCalls = afterResponse.toolCalls ?? res.toolCalls;
+      const assistantThinking = afterResponse.thinking ?? res.thinking;
+
       // Thinking blocks are appended, not merely representable: Anthropic needs
       // the exact block back to continue a thinking conversation (ADR-028 s8).
       messages.push({
         role: "assistant",
-        content: res.text,
-        ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
-        ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
+        content: assistantText,
+        ...(assistantToolCalls !== undefined ? { toolCalls: assistantToolCalls } : {}),
+        ...(assistantThinking !== undefined ? { thinking: assistantThinking } : {}),
       });
 
-      if (res.toolCalls === undefined || res.toolCalls.length === 0) {
+      if (assistantToolCalls === undefined || assistantToolCalls.length === 0) {
         completedNormally = true;
         break;
       }
 
       const batch = await runToolBatch({
         messages,
-        toolCalls: res.toolCalls,
+        toolCalls: assistantToolCalls,
         tools,
         codingToolNames,
         roundTrips,
