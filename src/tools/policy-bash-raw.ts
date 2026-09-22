@@ -15,9 +15,29 @@
  * passes straight through. This is a mistake-catcher, not a boundary, and it
  * must never grow into a general gate — gating lives in policy, once
  * (`src/tools/bash.ts:14-19`).
+ *
+ * A parseable `cd` moves every LATER segment's frame of reference, exactly as
+ * it does for `checkBashCommand`, so this screen tracks it too via the shared
+ * `cdTargetsFor` / `nextWorkingDirectories` (bash-cwd.ts) -- otherwise
+ * `cd child && echo ABORT > ../.queue.txt` would be screened against the
+ * wrong directory and let a run-control write through unnoticed.
+ *
+ * THE CRITICAL ASYMMETRY, read this before touching the `cd` handling below:
+ * where `checkBashCommand` DENIES a `cd` it cannot model (an option-shaped
+ * target, an opaque one, one that fails to resolve), this screen must FAIL
+ * OPEN on the exact same cases -- stop tracking and allow the rest of the
+ * command. Raw enforces no containment by definition; a denial here would
+ * silently re-gate raw into a containment gate through the back door of `cd`
+ * modelling, which is precisely the mode this file exists to NOT be. A `cd`
+ * that leaves the root (`cd ../outside`) is the common case: `resolvePath` is
+ * `resolveWithin(root, ...)`, which returns `null` for anything outside the
+ * root, so it yields no trackable frame and falls into this same fail-open
+ * path -- as it should, since raw never claimed to contain the shell to the
+ * root in the first place. Do not "fix" this into a denial.
  */
 import { relative, sep } from "node:path";
 import { lexBashCommand } from "@/permissions";
+import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd";
 import { isNaxConfigFile, isNaxOwnedWritePath } from "./nax-owned-writes";
 import type { BashCheck } from "./policy-bash";
 
@@ -38,14 +58,24 @@ function deny(reason: string): BashCheck {
   return { kind: "deny", reason, breach: false, escalatable: false };
 }
 
-/** A protected path, named for the refusal message, or undefined. */
-function protectedHit(args: RawScreenArgs, candidate: string): string | undefined {
-  const resolved = args.resolvePath(candidate, args.initialPath);
-  if (resolved === null) return undefined;
-  if (isNaxConfigFile(args.root, resolved)) return candidate;
-  const rel = relative(args.root, resolved).split(sep).join("/");
-  if (rel.startsWith("..")) return undefined;
-  return isNaxOwnedWritePath(rel) ? candidate : undefined;
+/**
+ * A protected path, named for the refusal message, or undefined.
+ *
+ * Checked against EVERY frame in `cwd`, mirroring the conservatism of gated
+ * mode's own `resolveAll`: a `;`-joined `cd` can leave more than one frame
+ * live at once (see `nextWorkingDirectories`), and a candidate that is safe
+ * from one frame but hits a protected path from another must still deny.
+ */
+function protectedHit(args: RawScreenArgs, candidate: string, cwd: readonly string[]): string | undefined {
+  for (const directory of cwd) {
+    const resolved = args.resolvePath(candidate, directory);
+    if (resolved === null) continue;
+    if (isNaxConfigFile(args.root, resolved)) return candidate;
+    const rel = relative(args.root, resolved).split(sep).join("/");
+    if (rel.startsWith("..")) continue;
+    if (isNaxOwnedWritePath(rel)) return candidate;
+  }
+  return undefined;
 }
 
 export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
@@ -57,10 +87,11 @@ export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
   // The inversion: unreadable means unscreened, and unscreened means allowed.
   if (lexed.kind === "refused") return { kind: "allow" };
 
+  let cwd: readonly string[] = [args.initialPath];
   for (const segment of lexed.segments) {
     for (const token of segment.tokens) {
       if (token.opaque) continue;
-      const hit = protectedHit(args, token.text);
+      const hit = protectedHit(args, token.text, cwd);
       if (hit !== undefined) {
         return deny(
           `${tool} command names "${hit}", which nax owns and no tool may modify -- ` +
@@ -70,13 +101,23 @@ export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
     }
     for (const redirect of segment.redirects) {
       if (redirect.opaque) continue;
-      const hit = protectedHit(args, redirect.target);
+      const hit = protectedHit(args, redirect.target, cwd);
       if (hit !== undefined) {
         return deny(
           `${tool} command redirects into "${hit}", which nax owns and no tool may modify -- ` +
             "change it through nax rather than by writing its file",
         );
       }
+    }
+
+    // See the file header ("THE CRITICAL ASYMMETRY"): every unmodelled `cd`
+    // case fails OPEN here, never denied -- that inversion from gated mode is
+    // deliberate.
+    const cdResult = cdTargetsFor(segment, cwd, args.resolvePath);
+    if (cdResult.kind === "resolved") {
+      cwd = nextWorkingDirectories(segment, cwd, cdResult.targets);
+    } else if (cdResult.kind !== "not-cd") {
+      return { kind: "allow" };
     }
   }
 

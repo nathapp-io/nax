@@ -18,6 +18,7 @@
 
 import type { BashSegment, BashToken } from "@/permissions";
 import { lexBashCommand } from "@/permissions";
+import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd";
 import { deniedFlag } from "./exec-guard";
 import type { CompiledEntry, CompiledPattern } from "./policy-match";
 
@@ -176,22 +177,24 @@ function checkPayload(
 
   let cdTargets: readonly string[] | undefined;
   // `cd` moves every LATER segment's frame of reference, so its target is
-  // containment-checked even when it carries no separator (`cd ..`).
-  if (words[0] === "cd") {
-    const target = segment.tokens[1];
-    if (target === undefined) return { refusal: deny("`cd` with no target is refused") };
-    // `cd -` returns to $OLDPWD and `cd -P x` puts the path in a later slot:
-    // both leave this branch tracking `<root>/-` as the new frame of reference
-    // while the shell is somewhere else. An option-shaped target is refused
-    // rather than modelled, for the same reason the lexer refuses a construct
-    // it cannot read.
-    if (target.text.startsWith("-")) {
-      return { refusal: deny(`cd target "${target.text}" is option-shaped, and this gate does not model it`) };
-    }
-    const targets = resolveAll(args, target.text, cwd);
-    if (target.opaque || targets === undefined)
-      return { refusal: deny(`cd target "${target.text}" is not inside the permitted root`, true) };
-    cdTargets = targets;
+  // containment-checked even when it carries no separator (`cd ..`). The
+  // resolution and the WHY-unmodellable reasoning are shared with the raw
+  // screen via `cdTargetsFor` (bash-cwd.ts). Gated denies every unmodelled
+  // case, because containment is the whole point of this mode.
+  const cdResult = cdTargetsFor(segment, cwd, args.resolvePath);
+  switch (cdResult.kind) {
+    case "no-target":
+      return { refusal: deny("`cd` with no target is refused") };
+    case "option-shaped":
+      return { refusal: deny(`cd target "${cdResult.text}" is option-shaped, and this gate does not model it`) };
+    case "opaque":
+    case "unresolved":
+      return { refusal: deny(`cd target "${cdResult.text}" is not inside the permitted root`, true) };
+    case "resolved":
+      cdTargets = cdResult.targets;
+      break;
+    case "not-cd":
+      break;
   }
 
   for (const redirect of segment.redirects) {
@@ -220,17 +223,6 @@ function checkPayload(
   }
 
   return { cdTargets };
-}
-
-function nextWorkingDirectories(
-  segment: BashSegment,
-  current: readonly string[],
-  cdTargets: readonly string[] | undefined,
-): readonly string[] {
-  if (cdTargets === undefined) return current;
-  if (segment.separator === "&&") return cdTargets;
-  if (segment.separator === ";") return [...new Set([...current, ...cdTargets])];
-  return current;
 }
 
 export function checkBashCommand(args: BashCheckArgs): BashCheck {
