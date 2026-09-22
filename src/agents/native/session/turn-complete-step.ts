@@ -6,9 +6,12 @@
  * site: one round trip is issued, and a throw gets exactly one of the two
  * recoveries. They were two branches of the loop's single try/catch; folding
  * them into a step is what will let one seam observe every round trip. P3
- * attaches `transform_context` and `before_request` here — `before_request`
- * fires per request attempt from the private `request()` wrapper below, and
- * `transform_context` joins it there (spec 6.5).
+ * attaches `transform_context` and `before_request` here: both fire per request
+ * attempt from the private `request()` wrapper below (spec 6.5, 6.6) —
+ * before_request shapes the per-call options, transform_context shapes the WIRE
+ * COPY only, and the array the caller holds (which saveTranscript persists) is
+ * returned untouched. An honoured rewrite is reported as `honoured` so the
+ * caller can clear the cache anchor (spec 3.6).
  *
  * The private `isContextOverflow` guard is this module's alone: it decides
  * which recovery a thrown round trip gets.
@@ -17,6 +20,7 @@
 import { getSafeLogger } from "@/logger";
 import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
 import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events";
+import { applyHistoryPatch } from "./loop-events/cache-boundary";
 import type { TurnAccumulator } from "./turn-accumulator";
 import { runOverflowCompaction } from "./turn-compaction-step";
 import { realSleep, retryTransportFault } from "./turn-retry";
@@ -38,6 +42,13 @@ export interface CompleteStepResult {
   readonly messages: readonly NativeTranscriptMessage[];
   /** True when the overflow branch ran: it always rebinds messages (and the caller clears lastUsage/anchorIndex). */
   readonly compacted: boolean;
+  /**
+   * True when the provider was sent an honoured `transform_context` rewrite
+   * (spec 6.6) — the last attempt to reach the wire is the one that counts. The
+   * caller clears lastUsage/anchorIndex on it (spec 3.6): the prefix the
+   * provider saw changed even though the saved array did not.
+   */
+  readonly honoured: boolean;
 }
 
 export interface CompleteStepArgs {
@@ -82,6 +93,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
   } = args;
   let messages: readonly NativeTranscriptMessage[] = args.messages;
   let compacted = false;
+  let honoured = false;
   let res: NativeTurnResponse;
   // Model, thinking level and timeout are bound in the adapter's closure above
   // the loop (spec 6.3), so the bag this dispatches starts empty; a handler's
@@ -99,7 +111,32 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       options: baseOptions,
     });
     const options = patch.options === undefined ? baseOptions : { ...baseOptions, ...patch.options };
-    return deps.complete(msgs, tools, options);
+    // transform_context fires here too, per attempt (spec 6.6). The patch
+    // shapes ONLY the wire copy handed to deps.complete below: `msgs` — the
+    // caller's array, the one saveTranscript persists — is returned untouched,
+    // so the transcript stays the true record. `boundary` is this step's
+    // overflow fact (`compacted`): true only on the post-compaction retry,
+    // where a prefix rewrite is free. A model change is a turn-start fact and
+    // is NOT consulted here (spec 8.2 — it belongs to before_turn, PR 3).
+    const transformed = await loopEvents.dispatch("transform_context", {
+      messages: msgs,
+      tools,
+      anchorIndex,
+      boundary: compacted,
+      ...(model !== undefined ? { model } : {}),
+    });
+    const wire = applyHistoryPatch({
+      before: msgs,
+      patched: transformed.messages,
+      anchorIndex,
+      boundary: compacted,
+      event: "transform_context",
+    });
+    // Last write wins: a failed attempt is discarded wholesale, so the
+    // successful attempt is the last one to reach this line — `honoured`
+    // describes the wire the provider actually answered (spec 3.6).
+    honoured = wire.honoured;
+    return deps.complete(wire.messages, tools, options);
   };
   try {
     res = await request(messages);
@@ -173,5 +210,5 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       res = await request(messages);
     }
   }
-  return { res, messages, compacted };
+  return { res, messages, compacted, honoured };
 }

@@ -181,8 +181,11 @@ export async function runNativeTurn(
       });
       const res = step.res;
       messages = [...step.messages];
-      if (step.compacted) {
-        // The anchor described the pre-compaction array; it is meaningless now.
+      if (step.compacted || step.honoured) {
+        // The anchor described the pre-compaction array (compacted), or a
+        // prefix the provider was never sent (an honoured transform_context
+        // rewrite — spec 3.6: the wire changed even though the saved array did
+        // not); it is meaningless now.
         lastUsage = undefined;
         anchorIndex = undefined;
       }
