@@ -1,11 +1,11 @@
 # Interactive approval gate — design
 
-**Date:** 2026-09-22 · **Status:** design approved, not implemented
+**Date:** 2026-09-22 · **Status:** implemented (PR/merge pending)
 **Baseline:** `main` @ `7b37dbf74` (PR #2184 merge) — every citation verified at that commit
 **Implements:** phase 2 of the native-coding-agent arc
 **Master plan:** `nax-native-coding-agent-master-plan.md` (workspace, not this repo)
 **Builds on:** ADR-030 (bash approval modes), ADR-029 §3 (ask tier, safe-by-refusal)
-**Plan:** `docs/superpowers/plans/2026-09-22-p2-interactive-approval-gate.md` (not yet written)
+**Plan:** `docs/superpowers/plans/2026-09-22-p2-interactive-approval-gate.md` (written; this spec is its design)
 
 ---
 
