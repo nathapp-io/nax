@@ -2,6 +2,8 @@
  * Interaction System — Barrel Exports (v0.15.0)
  */
 
+export type { AskChannel, AskChannelResponse, HumanAskLink } from "./ask-link";
+export { cancelPendingAsk, createHumanAskLink } from "./ask-link";
 export type { BridgeContext, InteractionBridge } from "./bridge-builder";
 export { buildInteractionBridge } from "./bridge-builder";
 export type { ChainConfig } from "./chain";
