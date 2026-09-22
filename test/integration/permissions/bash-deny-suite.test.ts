@@ -310,6 +310,8 @@ describe("bashApproval default at the direct-caller seam", () => {
     // not the shipped posture. Both matter: a direct caller must never silently
     // acquire a shell it did not ask for.
     const support = session({ declared: FIX_TOOLS, allow: [] });
-    expect((await call(support, "echo $(whoami)")).kind).toBe("denied");
+    const outcome = await call(support, "echo $(whoami)");
+    expect(outcome.kind).toBe("denied");
+    if (outcome.kind === "denied") expect(outcome.reason).not.toContain("headless");
   });
 });

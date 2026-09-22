@@ -256,7 +256,9 @@ describe("escalatable marking", () => {
 
 describe("bashApproval modes", () => {
   test("gated is the default when the option is absent", () => {
-    expect(check(policyFor(["*"]), "echo $(whoami)").allowed).toBe(false);
+    const result = check(policyFor(["*"]), "echo $(whoami)");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.outcome).toBe("denied");
   });
 
   test("raw allows a construct the lexer refuses", () => {
