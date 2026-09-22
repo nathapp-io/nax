@@ -147,22 +147,38 @@ export type AskDecision = "allow" | "deny" | "abstain";
 export interface AskResolver { resolve(req: AskRequest): Promise<AskDecision>; }
 ```
 
-First non-`abstain` wins.
+First non-`abstain` wins. The full contract:
 
-**`headlessAskResolver()` keeps returning `"deny"` and stays TOTAL.** It becomes the chain
-builder invoked with zero links — whose appended terminal deny supplies the same answer — NOT
-a bare abstaining link. `test/unit/permissions/ask.test.ts:5-13` pins
-`expect(decision).toBe("deny")`, and that pin must stay green; an implementer who reads "empty
-chain" as "abstains" breaks it and, worse, would make a chain-less runtime abstain into
-nothing.
+```ts
+export type AskDecision  = "allow" | "deny" | "abstain";
+export type AskDecidedBy = "cache" | "model" | "human" | "timeout" | "unavailable";
 
-**This widening breaks a typecheck that must be fixed in the same task.**
-`src/tools/runtime.ts:380` declares `let decision: "allow" | "deny";` and assigns
-`await askResolver.resolve(...)` into it at `:384`. Once `resolve` returns `AskDecision` that
-no longer compiles. `runtime.ts` must widen the local to `AskDecision` and treat `abstain`
-defensively — the existing `if (decision === "allow") ... else deny` shape already denies
-anything that is not `"allow"`, so behaviour is fail-safe, but the compile break is real and
-`runtime.ts` is a touched module (§6.1).
+/** One adjudicator. Always names who decided, so the ledger never guesses. */
+export interface AskLinkOutcome { decision: AskDecision; decidedBy: AskDecidedBy; }
+export interface AskLink { readonly name: string; resolve(req: AskRequest): Promise<AskLinkOutcome>; }
+
+/** What the runtime consumes. Never `abstain`. */
+export interface AskVerdict { decision: "allow" | "deny"; decidedBy: AskDecidedBy; latencyMs: number; }
+export interface AskResolver { resolve(req: AskRequest): Promise<AskVerdict>; }
+
+export function chainAskLinks(links: readonly AskLink[]): AskResolver;
+```
+
+**`AskResolver.resolve` changes shape, and that is deliberate rather than free.** §7.1 requires
+`decidedBy` in the ledger on the ALLOW path as well as the deny path, so the value must travel
+back to `runtime.ts` — a bare `"allow" | "deny"` cannot carry it. Consequences, all of which
+belong to the first task:
+
+- `src/tools/runtime.ts:380-384` declares `let decision: "allow" | "deny";` and assigns the
+  resolver's result into it. It becomes an `AskVerdict`, and `if (decision === "allow")`
+  becomes `if (verdict.decision === "allow")`.
+- `test/unit/permissions/ask.test.ts:5-13` asserts `expect(decision).toBe("deny")` on
+  `headlessAskResolver()`. It becomes `expect(verdict.decision).toBe("deny")`. **The
+  behaviour is unchanged — a headless run still denies — but the assertion shape changes, and
+  an earlier draft of this spec wrongly claimed the widening was observably invisible.**
+- `headlessAskResolver()` is reimplemented as `chainAskLinks([])`: zero links, so the chain's
+  own terminal supplies `{decision: "deny", decidedBy: "unavailable"}`. It stays TOTAL — it is
+  not a bare abstaining link.
 
 > **Invariant, enforced by construction:** abstain is only safe for a link followed by a
 > stricter one. **The terminal link may never abstain.** The chain builder always appends a
