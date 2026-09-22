@@ -59,7 +59,7 @@ The load-bearing constraint on this design. Audit of what is already approval-sh
 | `bashApprovalOps` (`src/config/bash-approval.ts`) | a pure **mode selector**, ruled not-a-resolver by ADR-030 | leave pure |
 | `RequestCapability` (`src/tools/request-capability.ts`) | telemetry; grants nothing, asks nobody | not a competitor |
 | `src/hooks/` `validateHookCommand` | shell-out orchestration screening | out of scope; do not unify |
-| `src/cli/confirm.ts` `promptForConfirmation` | a second stdin prompt implementation, **zero callers in `src/`** | **do not build on it** — see §3.2 |
+| `src/cli/confirm.ts` `promptForConfirmation` | a second stdin prompt implementation, reached by **no interaction path** (only `bin/nax.ts`) | **do not build on it** — see §3.2 |
 
 > **The direction, stated so it can be checked:** `src/interaction/` decides *how to ask a
 > human*. The ask-tier resolver chain decides *what an answer means for a permission*.
@@ -84,17 +84,19 @@ D13a fail-open shape in a new place and is pinned by a test (§7).
 ### 3.2 Correction to master-plan D3 — the TUI link
 
 D3 says the TUI resolver comes "via `src/cli/confirm.ts`". **That instruction is reversed by
-this design.** `src/cli/confirm.ts` has zero callers in `src/` (only a barrel re-export at
-`src/cli/index.ts:17`), offers yes/no with no timeout, cancel or request identity, and
+this design.** `src/cli/confirm.ts` is reached by no interaction path: its only
+callers are two CLI entrypoint confirmations in `bin/nax.ts:302,467` ("Proceed with bake-off
+run?", "Proceed with execution?"), plus a barrel re-export at `src/cli/index.ts:17`. Nothing
+in `src/` calls it. It offers yes/no with no timeout, cancel or request identity, and
 duplicates the `readline` prompting `CLIInteractionPlugin` already does
-(`src/interaction/plugins/cli.ts:43`).
+(`src/interaction/plugins/cli.ts:43`). It is a CLI entrypoint helper, not an interaction
+mechanism — which is exactly why building the gate's TUI on it would fork the channel.
 
 A full-screen TUI cannot be built on either file — `readline` owns stdin line-wise — so a
 future rich TUI is a **new `InteractionPlugin`** regardless. Written as a plugin it serves the
 ask gate *and* triggers *and* `interactionBridge`: one implementation, three consumers.
 Built on `confirm.ts` it would serve the ask gate only, leaving a second one owed. **The TUI
-link therefore goes through `CLIInteractionPlugin`.** `confirm.ts` is untouched; its deadness
-is a separate cleanup.
+link therefore goes through `CLIInteractionPlugin`.** `confirm.ts` is untouched and stays in use by `bin/nax.ts`.
 
 ### 3.3 Channel limits inherited knowingly
 
@@ -135,7 +137,7 @@ ask verdict
 
 ### 4.2 Contract change: `abstain`
 
-`AskResolver.resolve` returns `Promise<"allow" | "deny">` (`src/permissions/types.ts:41-43`).
+`AskResolver.resolve` returns `Promise<"allow" | "deny">` (`src/permissions/types.ts:27-29`).
 A chain needs a third outcome: the cache must say *"no opinion, try the next link"*, and P5's
 classifier must say *"below threshold, escalate to the human"*. Without it the cache has to be
 fused into the human resolver and P5 has nowhere clean to attach.
@@ -145,9 +147,22 @@ export type AskDecision = "allow" | "deny" | "abstain";
 export interface AskResolver { resolve(req: AskRequest): Promise<AskDecision>; }
 ```
 
-First non-`abstain` wins. `headlessAskResolver()` stops being "the resolver that always
-denies" and becomes **the empty chain** — identical observable behaviour today, correct
-semantics for P5. One implementation exists, so the change is cheap now and expensive later.
+First non-`abstain` wins.
+
+**`headlessAskResolver()` keeps returning `"deny"` and stays TOTAL.** It becomes the chain
+builder invoked with zero links — whose appended terminal deny supplies the same answer — NOT
+a bare abstaining link. `test/unit/permissions/ask.test.ts:5-13` pins
+`expect(decision).toBe("deny")`, and that pin must stay green; an implementer who reads "empty
+chain" as "abstains" breaks it and, worse, would make a chain-less runtime abstain into
+nothing.
+
+**This widening breaks a typecheck that must be fixed in the same task.**
+`src/tools/runtime.ts:380` declares `let decision: "allow" | "deny";` and assigns
+`await askResolver.resolve(...)` into it at `:384`. Once `resolve` returns `AskDecision` that
+no longer compiles. `runtime.ts` must widen the local to `AskDecision` and treat `abstain`
+defensively — the existing `if (decision === "allow") ... else deny` shape already denies
+anything that is not `"allow"`, so behaviour is fail-safe, but the compile break is real and
+`runtime.ts` is a touched module (§6.1).
 
 > **Invariant, enforced by construction:** abstain is only safe for a link followed by a
 > stricter one. **The terminal link may never abstain.** The chain builder always appends a
@@ -280,8 +295,12 @@ stage:   implementer
 ### 5.5 Fail-closed rendering details
 
 - `choose` still appends Skip/Abort rows (`telegram-format.ts:209-212`). They are not in
-  `options`, so `prompt()`'s remap leaves `action` as `"skip"`/`"abort"`. **The resolver maps
-  any action not in `options` to `deny`.** No channel change, no ambiguity at the gate.
+  `options`, so `prompt()`'s remap leaves `action` as `"skip"`/`"abort"`. **The resolver
+  ALLOWLISTS: only the exact strings `"allow"` and `"allow-remember"` permit; every other
+  value — `"deny"`, `"skip"`, `"abort"`, and any unrecognised string — denies.** Written as a
+  denylist of the two known extras it would admit anything a malformed or future plugin
+  returned: `prompt()` only remaps when `action === "choose"` with a matching option
+  (`chain.ts:130-137`) and otherwise passes the response through verbatim.
 - The footer states `-> deny`, not `Fallback: {{fallback}}` (§3.1).
 - **`type: "choose"` is pinned by a test.** `notify` and `webhook` both return
   `action: "approve"` with `respondedBy: "system"` and no human involved
@@ -303,6 +322,7 @@ extraction surface.
 |---|---|---|
 | `src/permissions/ask-chain.ts` | `AskDecision`, chain combinator, terminal deny | nothing new; stays extractable |
 | `src/permissions/approvals-store.ts` | `.nax/approvals.json` read/append, exact lookup | fs + config paths |
+| `src/tools/runtime.ts` (modify, `:380-384`) | widen `decision` to `AskDecision`; record `approval` in the audit object | unchanged |
 | `src/interaction/ask-link.ts` | human link: `AskRequest` -> `InteractionRequest{type:"choose"}` -> `chain.prompt()` -> decision | `InteractionChain` + **type-only** import of `AskRequest`/`AskDecision` |
 
 The human link lives in `src/interaction/`, **not** `src/permissions/`. In permissions it
@@ -342,7 +362,7 @@ Every path resolves to a decision; none throws.
 | operator taps Deny / Skip / Abort | deny | `human` |
 | approvals file missing, unreadable or malformed | **cache link abstains**; human link still asked | (whatever answers) |
 
-> **The resolver must never let an exception escape.** `src/tools/runtime.ts:381-392` wraps
+> **The resolver must never let an exception escape.** `src/tools/runtime.ts:380-393` wraps
 > `askResolver.resolve` in try/catch and converts a throw into `{kind: "error"}` — a tool error
 > surfaced to the model, not a denial. That loses the `denied:ask` row and hands the agent an
 > error it may retry around. Every failure path catches internally and returns `"deny"`.
@@ -373,6 +393,25 @@ headless run indefinitely.
 This is the same separation §3.1 makes for `fallback`, applied to the other half of the
 timeout contract: **reuse the channel's transport, not its timing or fallback policy.**
 
+### 6.5a Mutex discipline and run-end cancellation
+
+**The mutex releases in a `finally`.** Acquire around the whole prompt-and-resolve path and
+release unconditionally; a throw mid-prompt that left it held would deadlock every later ask
+in the run, silently, because the next caller simply waits.
+
+**A pending prompt must settle when the run ends.** `InteractionChain.cancel()` exists and
+delegates to `plugin.cancel()`, which both the Telegram (`plugins/telegram.ts:253`) and CLI
+(`plugins/cli.ts:105`) plugins implement — but **nothing in `src/` calls it.** Run cleanup
+calls only `destroy()`, unconditionally, at `src/execution/lifecycle/run-cleanup.ts:286-289`.
+So today a `destroy()` during an in-flight `receive()` tears the transport down underneath a
+promise with nothing guaranteeing it settles — it can hang until `execution.approvalTimeout`
+(up to an hour) expires, long after the run finished.
+
+P2 therefore owns the abort path for its own prompt: the human link registers the in-flight
+request id and, on run end or abort, calls `chain.cancel(requestId)` and resolves the pending
+decision as `deny`. **Deny, not abstain** — this is the terminal link (§4.2), and a run that is
+ending must not execute a command nobody approved.
+
 ### 6.6 The approvals file
 
 `~/.nax/<project-name>/approvals.json`, written only by nax. **Not repo-local** — see the
@@ -401,6 +440,11 @@ storage note below.
   they cannot. Two commands differing only in whitespace are two cache entries; that is the
   intended cost.
 - `root` is recorded for audit, **not** part of the key.
+- **Appends take a file lock.** Worktree-isolated parallel stories share one project-scoped
+  file by design (that is why `root` is not keyed), so two "Allow + remember" taps can race a
+  read-modify-write. Use the existing primitive — `src/utils/path-file-lock.ts` — rather than
+  a bespoke one. A lost update or a torn file would degrade to "always ask again" per §6.3,
+  which is safe but silently erodes the feature.
 - `origin` distinguishes an escalated non-match from a deliberate operator `ask:` rule, so a
   later `nax approvals list` can show where a human-written rule was silenced by a button.
   That auditability is what makes "no expiry" defensible.
@@ -414,12 +458,50 @@ team's, which is a security regression, not an inconvenience.
 `features/`, `prompt-audit/`, `tool-audit/`). Construct the path with the approved helper:
 `scripts/check-no-real-global-nax.ts` forbids open-coded `~/.nax` paths.
 
-> **This relocation is also the security mechanism.** The file sits **outside repoRoot**, so
-> `resolveWithin(root, ...)` returns null for it and every path-bearing tool is refused it —
-> reads included — by containment, which is already tested. That is stronger than an entry in
-> `nax-owned-writes.ts` (whose `NAX_OWNED_WRITE_TOOLS` set at `:57` covers only
-> Write/Edit/Delete/GitCommit and would leave the file readable) and costs nothing. Pin it with
-> a test rather than assuming it.
+**🔴 The trust boundary, stated honestly (corrected 2026-09-22 after adversarial review).**
+An earlier draft of this section claimed the location alone made the file unreachable. **That
+is false for Bash**, which is the very tool this design exists to gate.
+
+Containment (`resolveWithin`) protects the file from the TYPED path-bearing tools — Read,
+Write, Edit, Delete, Grep, Glob. Bash is deliberately outside that mechanism, as
+`src/tools/nax-owned-writes.ts:52-58` says in terms: *"Bash and Exec are absent because they
+carry no path fields — a shell redirect into `.nax/` is gated by the human-authored
+`Bash(...)` rules and the lexer, which is a different seam from this one."* And that seam does
+not exist under `raw`: `screenRawBashCommand`'s `protectedHit` skips **every path outside the
+root** — `policy-bash-raw.ts:84`, `if (rel.startsWith("..")) continue;` — so
+`~/.nax/<project>/approvals.json` is never screened. Under the shipped default an agent can
+`cat` it, or overwrite it with forged entries.
+
+**Why that is nonetheless not a new vulnerability, and where the real risk is.** Under `raw`
+the agent already holds an unrestricted shell; ADR-030 says so outright (*"a `raw` bash call
+runs with the privileges of the nax process and may write anywhere that process can reach"*),
+and D1 accepts it as the posture until P4's sandbox. An agent that can run any command has no
+need to forge permission to run one. Forgery buys it something in exactly one configuration:
+**a mixed-mode run, where a `raw` stage poisons the cache that an `escalate` stage later
+trusts.** That is a genuine cross-stage privilege escalation — the ungated stage widens the
+gated one — and the ledger would record `decidedBy: "cache"` with no human ever involved.
+
+**So the cache carries two preconditions, both checked at construction, both fail-closed:**
+
+1. **No stage in the effective config resolves to `bashApproval: "raw"`.** If any does, the
+   cache link is DISABLED — it abstains unconditionally and logs one warning naming the
+   offending stage — and every ask reaches the human. This costs nothing real: if every stage
+   is `raw` the ask tier never fires, so there is nothing to cache; the only configuration it
+   degrades is the mixed one, which is precisely the unsafe one.
+2. **The resolved approvals path lies outside repoRoot.** `projectOutputDir` accepts any
+   absolute `outputDir` override (`src/runtime/paths.ts:26-28`), including one inside the
+   repo, which would hand the file back to the typed tools as well. If the path resolves
+   inside repoRoot, the cache link is DISABLED on the same terms.
+
+Disabling the cache means abstaining, and abstaining escalates to the human (§4.2), so both
+failures cost prompts rather than safety. **P4's sandbox is what closes the underlying hole;
+until then it is bounded by precondition 1 and disclosed here, not fixed.** Do not re-open it
+as a defect — it is the same disclosed-not-fixed shape as D13a's third gap.
+
+**Integrity is deliberately NOT attempted.** No signature or HMAC: any key readable by the nax
+process is readable by a `raw` shell running as that process, so it would signal a guarantee
+the threat model cannot deliver. `approvedBy` is provenance for humans reading an audit, not
+an authentication claim.
 
 **Why `root` is recorded but not keyed.** Keying on root would miss the cache on every
 worktree-isolated run — each story gets its own `.nax-wt/<storyId>` root — i.e. it would
@@ -486,6 +568,23 @@ entry, asserting **executed outcomes** and not verdicts alone (master-plan §5).
 12. The dispatched `InteractionRequest` has `type: "choose"` and carries the command verbatim;
     a command exceeding the message budget denies rather than truncating.
 
+13. **Cache preconditions (§6.6).** With any stage set to `bashApproval: "raw"`, the cache
+    link abstains and the human is asked even for an entry that matches exactly. Same with an
+    `outputDir` override placing the approvals file inside repoRoot. Both log a warning.
+14. **Mutex releases on a throw.** A first ask whose `chain.prompt()` throws must not block a
+    second ask; assert the second resolves rather than hanging (use a bounded timeout in the
+    test, so a regression fails instead of stalling CI).
+15. **Run-end cancellation.** With a prompt in flight, ending the run resolves the pending
+    decision as `deny` and calls `chain.cancel(requestId)`; assert both, and assert the
+    promise settles rather than waiting out `approvalTimeout`.
+16. **Action allowlist.** A plugin response with an arbitrary `action` string (e.g.
+    `"approve"`, `"continue"`, `"✓"`) denies. This is distinct from case 11's named
+    `skip`/`abort`.
+17. **The existing pin stays green**: `test/unit/permissions/ask.test.ts` must still assert
+    `headlessAskResolver()` resolves `"deny"` after the `AskDecision` widening.
+18. **Concurrent remember.** Two simultaneous `allow-remember` appends produce a file
+    containing BOTH entries and valid JSON.
+
 **Test-double warning (master-plan §5):** a double that cannot fail the way production fails
 hides criticals. A fake `InteractionChain` must reproduce `prompt()`'s **throwing** and
 **timeout** modes, not only its success mode; a fake approvals store must reproduce
@@ -521,7 +620,8 @@ ruling). Gate on artifacts, never on exit codes — nax exits 0 on failure.
 - **The model link itself** (P5).
 - Multi-plugin registration / channel fallback (§3.3) — a channel change, not a gate change.
 - A rich TUI plugin (§3.2) — this phase uses `CLIInteractionPlugin` for attended runs.
-- `src/cli/confirm.ts` deletion — separate dead-code cleanup.
+- Any change to `src/cli/confirm.ts` — it keeps serving `bin/nax.ts`; it is simply not the
+  gate's TUI base.
 - `src/hooks/` command screening — different seam, deliberately not unified.
 - Capturing `callback_query.from` for per-user approval attribution (§10 item 2) — a channel
   enhancement, not a gate change.
