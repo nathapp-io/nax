@@ -384,6 +384,12 @@ export function createCodingToolRuntime(opts: {
             stage: opts.pipelineStage ?? "unknown",
             rule: verdict.rule ?? verdict.reason,
             summary: askSummary(policyIdentity, tool.scope, input),
+            ...(typeof input[tool.scope.commandField ?? ""] === "string"
+              ? { command: input[tool.scope.commandField as string] as string }
+              : {}),
+            root: opts.policy.root,
+            reason: verdict.reason,
+            ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
           });
         } catch (err) {
           const content = errorMessage(err);

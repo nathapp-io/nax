@@ -12,6 +12,7 @@
 import type { BashApprovalMode } from "@/config/bash-approval";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
+import type { AskResolver } from "@/permissions";
 import {
   advertisedSchemaBytes,
   BASH_TOOL_NAME,
@@ -44,6 +45,7 @@ import { errorMessage } from "../utils/errors";
 import { resolveBashSupport } from "./coding-tool-bash";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
+import { UNIVERSAL_CODING_TOOLS } from "./universal-coding-tools";
 
 export interface CodingToolSupport {
   readonly runtime: CodingToolRuntime;
@@ -129,6 +131,8 @@ export function buildCodingToolSupport(args: {
    */
   fileOutputPath?: string;
   bashApproval?: BashApprovalMode;
+  /** Injectable ask resolver (Task 3); defaults to the headless deny resolver. */
+  askResolver?: AskResolver;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -206,6 +210,7 @@ export function buildCodingToolSupport(args: {
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
     }),
     declaredCommands: new Set(declaredCommands.keys()),
+    ...(args.askResolver !== undefined ? { askResolver: args.askResolver } : {}),
     ...(args.pipelineStage !== undefined ? { pipelineStage: args.pipelineStage } : {}),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     ...(args.callId !== undefined ? { callId: args.callId } : {}),
@@ -310,17 +315,6 @@ export function buildLedgerSessionName(opts: { storyId?: string; sessionRole?: s
 export const _codingToolSupportDeps = {
   loadConfigForPackage,
 };
-
-/**
- * Tools appended to the declaration of every op that receives coding tools.
- *
- * Kept separate from DEFAULT_CODING_TOOLS (which is also the fallback
- * `resolveDeclaredTools` returns for an op that omits `tools`) so the append
- * can filter out the copies such a declaration already carries: advertising a
- * name twice puts two entries into `runtime.advertised()`'s output, and from
- * there a duplicate ToolDefinition in the provider request.
- */
-const UNIVERSAL_CODING_TOOLS: readonly CodingToolName[] = ["ScratchpadWrite", "ScratchpadRead", "ScratchpadList"];
 
 export async function resolveCodingToolSupport(
   options: Pick<
