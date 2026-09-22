@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeLogger } from "@test/helpers";
-import type { AskResolver } from "@/permissions";
+import { ASK_DENIED_REASON, ASK_NO_CHANNEL_REASON, ASK_TIMEOUT_REASON, type AskResolver } from "@/permissions";
 import {
   _codingToolDeps,
   _resetBuiltinsForTest,
@@ -164,6 +164,42 @@ describe("callTool — ask resolution (spec US-007)", () => {
     expect(outcome.kind).toBe("denied");
     expect(records.at(-1)?.outcome).toBe("denied:ask");
     expect(records.at(-1)?.approval).toEqual({ decidedBy: "human", remembered: false, latencyMs: 99 });
+  });
+
+  test("a timeout denial ledgers the timeout reason, distinct from no-channel", async () => {
+    const records: ToolCallRecord[] = [];
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+        askRules: [{ tool: "Read", patterns: ["*"] }],
+      }),
+      askResolver: { resolve: () => Promise.resolve({ decision: "deny", decidedBy: "timeout", latencyMs: 5 }) },
+      sink: { record: (e) => void records.push(e), flush: async () => {} },
+    });
+    runtime.advertised(["Read"]);
+    const outcome = await runtime.callTool("Read", { path: "file.txt" });
+    expect(outcome.kind).toBe("denied");
+    expect(records.at(-1)?.outcome).toBe("denied:ask");
+    expect(records.at(-1)?.reason).toContain(ASK_TIMEOUT_REASON);
+    expect(records.at(-1)?.reason).not.toContain(ASK_NO_CHANNEL_REASON);
+    if (outcome.kind === "denied") expect(outcome.reason).toContain(ASK_TIMEOUT_REASON);
+  });
+
+  test("a human denial ledgers the operator-denied reason, distinct from no-channel", async () => {
+    const records: ToolCallRecord[] = [];
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+        askRules: [{ tool: "Read", patterns: ["*"] }],
+      }),
+      askResolver: { resolve: () => Promise.resolve({ decision: "deny", decidedBy: "human", latencyMs: 7 }) },
+      sink: { record: (e) => void records.push(e), flush: async () => {} },
+    });
+    runtime.advertised(["Read"]);
+    const outcome = await runtime.callTool("Read", { path: "file.txt" });
+    expect(outcome.kind).toBe("denied");
+    expect(records.at(-1)?.outcome).toBe("denied:ask");
+    expect(records.at(-1)?.reason).toContain(ASK_DENIED_REASON);
+    expect(records.at(-1)?.reason).not.toContain(ASK_NO_CHANNEL_REASON);
+    if (outcome.kind === "denied") expect(outcome.reason).toContain(ASK_DENIED_REASON);
   });
 
   test("passes the matched rule expression to an ask resolver", async () => {

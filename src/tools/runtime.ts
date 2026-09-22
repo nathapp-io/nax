@@ -11,7 +11,14 @@
 
 import { randomUUID } from "node:crypto";
 import { getSafeLogger } from "@/logger";
-import { ASK_UNAVAILABLE_REASON, type AskResolver, type AskVerdict, headlessAskResolver } from "@/permissions";
+import {
+  ASK_DENIED_REASON,
+  ASK_NO_CHANNEL_REASON,
+  ASK_TIMEOUT_REASON,
+  type AskResolver,
+  type AskVerdict,
+  headlessAskResolver,
+} from "@/permissions";
 import { errorMessage } from "@/utils/errors";
 import { deleteTool } from "./delete";
 import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect";
@@ -125,6 +132,19 @@ function askSummary(tool: string, scope: ToolScope, input: Record<string, unknow
     else if (Array.isArray(value)) parts.push(`${field}=${value.filter((v) => typeof v === "string").join(" ")}`);
   }
   return `${tool} ${parts.join(" ")}`.trim().slice(0, MAX_ASK_SUMMARY_CHARS);
+}
+
+/**
+ * The reason a `denied:ask` ledger row carries, chosen by WHO refused.
+ *
+ * One constant for every ask denial asserted "no approval channel is
+ * configured" even when a human answered (deny) or nobody answered in time
+ * (timeout). Those are materially different facts; see ASK_*_REASON.
+ */
+function askDenyReason(decidedBy: AskVerdict["decidedBy"]): string {
+  if (decidedBy === "timeout") return ASK_TIMEOUT_REASON;
+  if (decidedBy === "human") return ASK_DENIED_REASON;
+  return ASK_NO_CHANNEL_REASON;
 }
 
 export function createCodingToolRuntime(opts: {
@@ -411,7 +431,7 @@ export function createCodingToolRuntime(opts: {
         if (askVerdict.decision === "allow") {
           return runTool(tool, input, verdict.resolvedPaths ?? [], approval);
         }
-        const reason = `${verdict.reason} -- ${ASK_UNAVAILABLE_REASON}`;
+        const reason = `${verdict.reason} -- ${askDenyReason(askVerdict.decidedBy)}`;
         log(policyIdentity, "denied:ask", reason.length, input, context, false, reason, undefined, { approval });
         return { kind: "denied", reason, breach: false };
       }

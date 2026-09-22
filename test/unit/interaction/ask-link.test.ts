@@ -62,6 +62,41 @@ describe("human ask link", () => {
     expect(remembered).toBe(true);
   });
 
+  test("a failed onRemember still allows the approved call", async () => {
+    const link = createHumanAskLink({
+      chain: fakeChain({ reply: "allow-remember" }),
+      timeoutMs: 1000,
+      onRemember: async () => {
+        throw new Error("approvals.json lock timeout");
+      },
+    });
+    expect(await link.resolve(REQ)).toEqual({ decision: "allow", decidedBy: "human" });
+  });
+
+  test("a non-command request's detail carries its summary", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "deny", sent }), timeoutMs: 1000 });
+    const { command: _omit, ...noCommand } = REQ;
+    await link.resolve({ ...noCommand, tool: "Write", summary: "Write path=src/a.ts" });
+    expect(JSON.stringify(sent[0])).toContain("Write path=src/a.ts");
+  });
+
+  test("a command of exactly 3500 chars is dispatched", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+    const out = await link.resolve({ ...REQ, command: "x".repeat(3500) });
+    expect(out.decision).toBe("allow");
+    expect(sent).toHaveLength(1);
+  });
+
+  test("a command of 3501 chars denies without dispatching", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+    const out = await link.resolve({ ...REQ, command: "x".repeat(3501) });
+    expect(out.decision).toBe("deny");
+    expect(sent).toHaveLength(0);
+  });
+
   test.each([["deny"], ["skip"], ["abort"], ["approve"], ["continue"], ["anything-else"]])(
     "ALLOWLIST: action %s denies",
     async (action) => {

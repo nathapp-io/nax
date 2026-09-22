@@ -52,6 +52,16 @@ describe("approvals store", () => {
     expect(findApproval(entries, "verifier", "bun run test")).toBeUndefined();
   });
 
+  test("a null element is dropped so a valid sibling still resolves without throwing", async () => {
+    const dir = makeTempDir("approvals-");
+    const path = join(dir, "approvals.json");
+    writeFileSync(path, JSON.stringify({ entries: [null, entry("bun run test")] }));
+    const entries = await readApprovals(path);
+    expect(entries).toHaveLength(1);
+    expect(findApproval(entries, "implementer", "bun run test")).toBeDefined();
+    cleanupTempDir(dir);
+  });
+
   test("concurrent appends keep both entries and valid JSON", async () => {
     const dir = makeTempDir("approvals-");
     const path = join(dir, "approvals.json");

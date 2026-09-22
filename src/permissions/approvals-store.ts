@@ -37,11 +37,24 @@ export function approvalsPath(outputDir: string): string {
   return join(outputDir, "approvals.json");
 }
 
+/**
+ * The shape findApproval relies on. A malformed element (null, a string, an
+ * object missing `stage`/`command`) is DROPPED rather than returned: an
+ * unvalidated array makes `findApproval`'s `e.stage` throw, and a poisoned
+ * cache read would fail the whole ask chain instead of just this entry.
+ */
+function isApprovalEntry(value: unknown): value is ApprovalEntry {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("stage" in value) || !("command" in value)) return false;
+  return typeof value.stage === "string" && typeof value.command === "string";
+}
+
 /** Missing or malformed reads as empty: the CACHE fails, the chain does not. */
 export async function readApprovals(path: string): Promise<readonly ApprovalEntry[]> {
   try {
     const parsed = JSON.parse(await readFile(path, "utf8")) as { entries?: unknown };
-    return Array.isArray(parsed.entries) ? (parsed.entries as ApprovalEntry[]) : [];
+    if (!Array.isArray(parsed.entries)) return [];
+    return parsed.entries.filter(isApprovalEntry);
   } catch {
     return [];
   }

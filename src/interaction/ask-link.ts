@@ -13,6 +13,7 @@
  * structurally.
  */
 import type { AskLink, AskLinkOutcome, AskRequest } from "@/permissions";
+import { getSafeLogger } from "../logger";
 import type { InteractionRequest } from "./types";
 
 /** Headroom under MAX_MESSAGE_CHARS (4000) for the header, reason and footer. */
@@ -90,9 +91,11 @@ export function createHumanAskLink(opts: {
         stage: "execution",
         summary: `${req.tool} - approval required`,
         detail: [
-          "```",
-          command,
-          "```",
+          // A Write/Edit ask carries no command: showing `req.summary` keeps the
+          // operator informed about what is being approved instead of an empty
+          // code block. The command is still shown verbatim when present.
+          ...(command.length > 0 ? ["```", command, "```"] : []),
+          `request: ${req.summary}`,
           `runs in: ${req.root ?? "unknown"}`,
           `reason:  ${req.reason ?? req.rule}`,
           `stage:   ${req.stage}`,
@@ -112,7 +115,21 @@ export function createHumanAskLink(opts: {
       // `response.action === "allow-remember"` is a TS2367 "no overlap" error.
       const action: string = response.action;
       if (!PERMITS.has(action)) return deny("human");
-      if (action === "allow-remember" && opts.onRemember) await opts.onRemember(req);
+      if (action === "allow-remember" && opts.onRemember) {
+        // Remembering is AUXILIARY: the human already approved this exact call,
+        // so a failed persistence (lock timeout, disk) must not revoke that
+        // approval. Isolated from the outer try, which maps any throw to
+        // deny("unavailable").
+        try {
+          await opts.onRemember(req);
+        } catch (err) {
+          getSafeLogger()?.warn("permissions", "[ask] approved call not remembered; allowing anyway", {
+            tool: req.tool,
+            stage: req.stage,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
       return { decision: "allow", decidedBy: "human" };
     } catch {
       return deny("unavailable");
