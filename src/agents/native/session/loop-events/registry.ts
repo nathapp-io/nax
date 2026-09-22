@@ -12,8 +12,10 @@
  * redesigning the seam:
  *
  *  1. Results are partial patches, never mutations. A handler returns only what
- *     it wants changed and the dispatcher merges. No handler receives the
- *     message array.
+ *     it wants changed and the dispatcher merges. Payloads carry the live
+ *     message array, readonly-TYPED only — mutation is not prevented at
+ *     runtime; what §3 enforces mechanically is history REWRITING across the
+ *     cache boundary, not object immutability.
  *  2. Handlers chain, each seeing the previous handler's output, in
  *     registration order.
  *  3. A throwing handler is logged at warn and skipped — it never fails the
@@ -43,9 +45,20 @@ export interface LoopEventRegistry {
 /**
  * The fields each event's patch type declares, keyed by event. Only these are
  * read off a handler's return, so a handler that bypasses the type cannot
- * surface a non-patchable field. The `satisfies` keeps this map aligned with
- * the patch types in `./types`: a patch field must appear here under its own
- * event, or typecheck fails.
+ * surface a non-patchable field. Two compile-time pins keep this map aligned
+ * with the patch types in `./types`, in both directions:
+ *
+ *  - the `satisfies` pins every event to an entry whose members are valid
+ *    patch keys for that event;
+ *  - `_patchableFieldsExhaustive` below pins the converse — every patch key
+ *    appears under its own event.
+ *
+ * Together: a patch field must appear here, or typecheck fails — either
+ * because the entry is invalid, or because the field was added to a patch
+ * type without an entry. The second direction is the load-bearing one: an
+ * unlisted field compiles fine on the type and would be silently stripped by
+ * `pickPatchFields`, which is exactly the failure this map exists to make
+ * impossible.
  */
 const PATCHABLE_FIELDS = {
   // A decision, not a field patch — chained in dispatchBeforeTool below.
@@ -58,6 +71,26 @@ const PATCHABLE_FIELDS = {
   before_compaction: ["decline", "summary"],
   before_turn_end: ["followUp"],
 } as const satisfies { [E in LoopEvent]: readonly (keyof PatchOf<E>)[] };
+
+/**
+ * `before_tool` is exempt from the exhaustiveness pin: its patch
+ * (`BeforeToolOutcome`) is a decision union, not a field bag, so it has no
+ * field list to mirror.
+ */
+type UnmappedPatchField = {
+  [E in Exclude<LoopEvent, "before_tool">]: Exclude<keyof PatchOf<E>, (typeof PATCHABLE_FIELDS)[E][number]>;
+}[Exclude<LoopEvent, "before_tool">];
+
+/**
+ * Type-only assertion (fully erased, no runtime code) — the same device as
+ * `_AssertNoKeyDrift` in src/review/types.ts. `_T extends never` resolves
+ * only when `UnmappedPatchField` has no members, i.e. no patch key lacks a
+ * `PATCHABLE_FIELDS` entry. If one does, TypeScript's "does not satisfy the
+ * constraint 'never'" error names it right there. Do not silence this by
+ * widening either side to `unknown`/`any`.
+ */
+type _AssertNoPatchFieldDrift<_T extends never> = true;
+type _patchableFieldsExhaustive = _AssertNoPatchFieldDrift<UnmappedPatchField>;
 
 /**
  * Only the patchable fields are read, so a handler that returns a

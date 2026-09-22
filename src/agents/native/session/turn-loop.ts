@@ -253,11 +253,14 @@ export async function runNativeTurn(
         });
         const res = step.res;
         messages = [...step.messages];
-        if (step.compacted || step.honoured) {
-          // The anchor described the pre-compaction array (compacted), or a
-          // prefix the provider was never sent (an honoured transform_context
-          // rewrite — spec 3.6: the wire changed even though the saved array did
-          // not); it is meaningless now.
+        // The anchor described the pre-compaction array (compacted), or a
+        // prefix the provider was never sent (a boundary-exempt transform_context
+        // rewrite — spec 3.6: the wire changed even though the saved array did
+        // not); it is meaningless now. Compaction invalidates it unconditionally;
+        // a transform_context honour clears only when it rode the boundary
+        // exemption — a prefix-stable honour leaves the anchor valid (spec 6.6:
+        // wire and persisted prefix are reference-identical, nothing to invalidate).
+        if (step.compacted || (step.honoured && step.boundary)) {
           lastUsage = undefined;
           anchorIndex = undefined;
         }

@@ -10,8 +10,10 @@
  * attempt from the private `request()` wrapper below (spec 6.5, 6.6) —
  * before_request shapes the per-call options, transform_context shapes the WIRE
  * COPY only, and the array the caller holds (which saveTranscript persists) is
- * returned untouched. An honoured rewrite is reported as `honoured` so the
- * caller can clear the cache anchor (spec 3.6).
+ * returned untouched. An honoured rewrite is reported as `honoured`, with the
+ * boundary fact that produced it as `boundary`, so the caller can clear the
+ * cache anchor exactly when spec 3.6 says to — a prefix-stable honour leaves
+ * the anchor valid (spec 6.6).
  *
  * The private `isContextOverflow` guard is this module's alone: it decides
  * which recovery a thrown round trip gets.
@@ -44,11 +46,23 @@ export interface CompleteStepResult {
   readonly compacted: boolean;
   /**
    * True when the provider was sent an honoured `transform_context` rewrite
-   * (spec 6.6) — the last attempt to reach the wire is the one that counts. The
-   * caller clears lastUsage/anchorIndex on it (spec 3.6): the prefix the
-   * provider saw changed even though the saved array did not.
+   * (spec 6.6) — the last attempt to reach the wire is the one that counts.
+   * The caller clears lastUsage/anchorIndex on it ONLY together with
+   * `boundary`: a prefix-stable honour leaves the anchor valid (spec 6.6 —
+   * wire and persisted prefix are reference-identical, nothing to
+   * invalidate), while a boundary-exempt honour changed the prefix the
+   * provider saw even though the saved array did not (spec 3.6).
    */
   readonly honoured: boolean;
+  /**
+   * True when the honoured rewrite (if any) rode the boundary exemption —
+   * the post-compaction retry is the only boundary this step can produce
+   * (`compacted`; spec 3.4: a handler may never assert one). Paired with
+   * `honoured` rather than folded into it: the step-level contract keeps both
+   * facts, and `before_turn` (PR 3) gets its own consumption seam for the
+   * flag rather than borrowing this one.
+   */
+  readonly boundary: boolean;
 }
 
 export interface CompleteStepArgs {
@@ -211,5 +225,5 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       res = await request(messages);
     }
   }
-  return { res, messages, compacted, honoured };
+  return { res, messages, compacted, honoured, boundary: compacted };
 }

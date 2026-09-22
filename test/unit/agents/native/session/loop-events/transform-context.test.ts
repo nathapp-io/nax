@@ -168,6 +168,9 @@ describe("completeWithRecovery — the honoured flag", () => {
       },
     });
     expect(result.honoured).toBe(true);
+    // Prefix-stable and off-boundary: the anchor stays valid (spec 6.6), so
+    // turn-loop.ts's clear (`honoured && boundary`) must NOT fire.
+    expect(result.boundary).toBe(false);
     // spec 6.6: the kept array is the caller's — the patch never rebinds it.
     expect(result.messages).toBe(input);
     expect(result.messages).toEqual([{ role: "user", content: "hi" }]);
@@ -201,5 +204,61 @@ describe("completeWithRecovery — the honoured flag", () => {
     expect(result.messages).toBe(input);
     // Dormancy is free: no clone between the caller's array and the provider.
     expect(wireRef).toBe(input);
+  });
+
+  test("a honoured rewrite riding the overflow boundary reports BOTH honoured and boundary", async () => {
+    // The boundary fact is the post-compaction retry (`compacted`): attempt 1
+    // throws context-overflow, the backstop compacts, attempt 2 re-requests at
+    // boundary=true — where the appended rewrite is honoured by the exemption,
+    // and the anchor clear MUST fire (spec 3.6).
+    class ProtocolStreamError extends Error {
+      constructor(readonly protocolError: { kind: string; message: string }) {
+        super(protocolError.message);
+        this.name = "ProtocolStreamError";
+      }
+    }
+    // Sizing borrowed from before-compaction.test.ts: at a 20000-token window
+    // the aggressive keep budget is 3000 and this transcript is ~8006 tokens,
+    // so the overflow backstop finds a cut and compacts.
+    const messages: NativeTranscriptMessage[] = [
+      { role: "user", content: "the task" },
+      { role: "assistant", content: "a".repeat(16_000) },
+      { role: "user", content: "keep going" },
+      { role: "assistant", content: "b".repeat(16_000) },
+    ];
+    const registry = createLoopEventRegistry();
+    registry.register("transform_context", (p) => ({
+      messages: [...p.messages, { role: "user", content: "wire-only" }],
+    }));
+    let attempts = 0;
+    const result = await completeWithRecovery({
+      messages,
+      tools: [],
+      usage: createTurnAccumulator(),
+      summarizeFailed: false,
+      sessionName: "sess-transform",
+      lastUsage: { promptTokens: 100 },
+      anchorIndex: 0,
+      loopEvents: registry,
+      roundTrip: 1,
+      deps: {
+        complete: async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            throw new ProtocolStreamError({ kind: "context-overflow", message: "prompt is too long" });
+          }
+          return reply();
+        },
+        summarize: async () => ({ text: "summary", usage, costUsd: 0 }),
+        contextWindow: 20_000,
+        compaction: { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 },
+      },
+    });
+    // Non-vacuous: the overflow backstop actually ran, so the retry that was
+    // honoured really did ride the boundary.
+    expect(attempts).toBe(2);
+    expect(result.compacted).toBe(true);
+    expect(result.honoured).toBe(true);
+    expect(result.boundary).toBe(true);
   });
 });

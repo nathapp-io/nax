@@ -3,7 +3,7 @@ import { createLoopEventRegistry } from "@/agents/native/session/loop-events";
 import type { AfterResponsePatch } from "@/agents/native/session/loop-events/types";
 
 describe("loop event registry", () => {
-  test("dispatch returns the input by reference when no handler is registered", async () => {
+  test("dispatch returns an empty patch without touching the payload when no handler is registered", async () => {
     const registry = createLoopEventRegistry();
     const payload = { messages: [{ role: "user", content: "x" }], tools: [], boundary: false } as const;
     const patch = await registry.dispatch("transform_context", payload);
