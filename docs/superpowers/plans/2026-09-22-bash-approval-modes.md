@@ -48,7 +48,13 @@
 
 ---
 
-## Task 1: ADR-030 and the ADR-029 amendment
+## Task 1: ADR-030 and the ADR-029 amendment — ✅ DONE
+
+> **Completed 2026-09-22 in commit `269e02a1b`.** Both documents are already on this branch;
+> the steps below are retained as the record of what was written. **Start at Task 2.**
+> If you disagree with the posture ADR-030 records, raise it before writing code — do not
+> silently implement something else.
+
 
 Documentation only. It goes first because the posture reversal is the decision the code implements, and a reviewer should be able to reject the posture before any code exists.
 
@@ -60,7 +66,7 @@ Documentation only. It goes first because the posture reversal is the decision t
 - Consumes: nothing.
 - Produces: nothing code-level. Later tasks cite ADR-030 in doc comments.
 
-- [ ] **Step 1: Write ADR-030**
+- [x] **Step 1: Write ADR-030**
 
 Create `docs/adr/ADR-030-bash-approval-modes.md` with this content:
 
@@ -122,7 +128,7 @@ the cases `gated` refuses — but it records the ledger outcome `denied:ask` rat
 which is the demand signal ADR-029 §3 asks for before an interactive channel is built.
 ```
 
-- [ ] **Step 2: Write the ADR-029 amendment**
+- [x] **Step 2: Write the ADR-029 amendment**
 
 In `docs/adr/ADR-029-phase-c-native-coding-agent-scope.md`, find the line:
 
@@ -155,7 +161,7 @@ deny-always — `escalate` routes more denials through it, which is how the reop
 below gets its data.
 ```
 
-- [ ] **Step 3: Verify the docs render and nothing else changed**
+- [x] **Step 3: Verify the docs render and nothing else changed**
 
 Run: `git diff --stat`
 Expected: exactly two files — `docs/adr/ADR-030-bash-approval-modes.md` (new) and `docs/adr/ADR-029-phase-c-native-coding-agent-scope.md` (modified, additions only).
@@ -163,7 +169,7 @@ Expected: exactly two files — `docs/adr/ADR-030-bash-approval-modes.md` (new) 
 Run: `grep -n "Config can narrow this ceiling" docs/adr/ADR-029-phase-c-native-coding-agent-scope.md`
 Expected: two hits — the original sentence in §3, and the quotation inside the new amendment.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/adr/ADR-030-bash-approval-modes.md docs/adr/ADR-029-phase-c-native-coding-agent-scope.md
