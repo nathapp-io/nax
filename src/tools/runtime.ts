@@ -207,7 +207,11 @@ export function createCodingToolRuntime(opts: {
     breach?: boolean,
     reason?: string,
     routineErrors?: boolean,
-    audit?: { executed?: readonly string[]; target?: "package" | "repoRoot" },
+    audit?: {
+      executed?: readonly string[];
+      target?: "package" | "repoRoot";
+      approval?: { decidedBy: string; remembered: boolean; latencyMs: number };
+    },
     resultBytesPreTruncation?: number,
   ): void {
     // The level is the console filter: `normal` mode drops debug, and the file
@@ -252,6 +256,7 @@ export function createCodingToolRuntime(opts: {
       ...(reason !== undefined && reason.length > 0 ? { reason } : {}),
       ...(audit?.executed !== undefined ? { executed: audit.executed } : {}),
       ...(audit?.target !== undefined ? { target: audit.target } : {}),
+      ...(audit?.approval !== undefined ? { approval: audit.approval } : {}),
       ...(provider !== undefined ? { provider } : {}),
       ...(resultBytesPreTruncation !== undefined ? { resultBytesPreTruncation } : {}),
       ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
@@ -326,6 +331,7 @@ export function createCodingToolRuntime(opts: {
         target: CodingTool,
         callInput: Record<string, unknown>,
         resolvedPaths: readonly string[],
+        approval?: { decidedBy: string; remembered: boolean; latencyMs: number },
       ): Promise<CodingToolOutcome> {
         try {
           const result = await target.run(callInput, {
@@ -348,7 +354,7 @@ export function createCodingToolRuntime(opts: {
               false,
               kind === "error" ? result.content : undefined,
               target.routineErrors,
-              result.audit,
+              { ...result.audit, ...(approval ? { approval } : {}) },
               result.resultBytesPreTruncation,
             );
           if (context?.deferModelTruncation === true) return { kind, content, finalizeAudit: record };
@@ -367,6 +373,7 @@ export function createCodingToolRuntime(opts: {
               false,
               rawContent,
               target.routineErrors,
+              approval ? { approval } : undefined,
             );
           if (context?.deferModelTruncation === true) {
             return { kind: "error", content, finalizeAudit: record };
@@ -396,11 +403,16 @@ export function createCodingToolRuntime(opts: {
           log(policyIdentity, "error", content.length, input, context, false, content);
           return { kind: "error", content };
         }
+        const approval = {
+          decidedBy: askVerdict.decidedBy,
+          remembered: false,
+          latencyMs: askVerdict.latencyMs,
+        };
         if (askVerdict.decision === "allow") {
-          return runTool(tool, input, verdict.resolvedPaths ?? []);
+          return runTool(tool, input, verdict.resolvedPaths ?? [], approval);
         }
         const reason = `${verdict.reason} -- ${ASK_UNAVAILABLE_REASON}`;
-        log(policyIdentity, "denied:ask", reason.length, input, context, false, reason);
+        log(policyIdentity, "denied:ask", reason.length, input, context, false, reason, undefined, { approval });
         return { kind: "denied", reason, breach: false };
       }
 

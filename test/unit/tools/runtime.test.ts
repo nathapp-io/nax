@@ -127,6 +127,45 @@ describe("callTool — ask resolution (spec US-007)", () => {
     expect(outcome.kind).toBe("ok");
   });
 
+  test("an approved ask records decidedBy on the allow path", async () => {
+    const records: ToolCallRecord[] = [];
+    const approve: AskResolver = {
+      resolve: () => Promise.resolve({ decision: "allow", decidedBy: "human", latencyMs: 4210 }),
+    };
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+        askRules: [{ tool: "Read", patterns: ["*"] }],
+      }),
+      askResolver: approve,
+      sink: { record: (e) => void records.push(e), flush: async () => {} },
+    });
+    runtime.advertised(["Read"]);
+    const outcome = await runtime.callTool("Read", { path: "file.txt" });
+    expect(outcome.kind).toBe("ok");
+    // The record must actually reach the sink: a human-approved execution has
+    // to be distinguishable in the ledger from a mechanically-allowed one.
+    expect(records.at(-1)?.approval).toEqual({ decidedBy: "human", remembered: false, latencyMs: 4210 });
+  });
+
+  test("a denied ask records decidedBy on the deny path", async () => {
+    const records: ToolCallRecord[] = [];
+    const deny: AskResolver = {
+      resolve: () => Promise.resolve({ decision: "deny", decidedBy: "human", latencyMs: 99 }),
+    };
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+        askRules: [{ tool: "Read", patterns: ["*"] }],
+      }),
+      askResolver: deny,
+      sink: { record: (e) => void records.push(e), flush: async () => {} },
+    });
+    runtime.advertised(["Read"]);
+    const outcome = await runtime.callTool("Read", { path: "file.txt" });
+    expect(outcome.kind).toBe("denied");
+    expect(records.at(-1)?.outcome).toBe("denied:ask");
+    expect(records.at(-1)?.approval).toEqual({ decidedBy: "human", remembered: false, latencyMs: 99 });
+  });
+
   test("passes the matched rule expression to an ask resolver", async () => {
     let request: Parameters<AskResolver["resolve"]>[0] | undefined;
     const resolver: AskResolver = {

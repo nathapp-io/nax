@@ -9,6 +9,7 @@
  *   → applyPostRunInspection → decideStageAction.
  */
 
+import { join } from "node:path";
 import { validateAgentForTier } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
 import { type BashApprovalMode, isThreeSessionStrategy, type NaxConfig, resolveBashApproval } from "@/config";
@@ -27,7 +28,14 @@ import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
 import { buildInteractionBridge, cancelPendingAsk, createHumanAskLink } from "@/interaction";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
-import { appendApproval, approvalsPath, chainAskLinks, createApprovalsLink } from "@/permissions";
+import {
+  type AskRequest,
+  appendApproval,
+  appendApprovalAudit,
+  approvalsPath,
+  chainAskLinks,
+  createApprovalsLink,
+} from "@/permissions";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -128,7 +136,7 @@ export const executionStage: PipelineStage = {
           naxCommit: process.env.NAX_COMMIT ?? "unknown",
         }),
     });
-    const askResolver = chainAskLinks([
+    const baseResolver = chainAskLinks([
       createApprovalsLink({
         approvalsFile,
         repoRoot: ctx.workdir,
@@ -137,6 +145,22 @@ export const executionStage: PipelineStage = {
       // P5's classifier link slots in HERE, between cache and human.
       humanLink,
     ]);
+    // Every resolved ask appends a ground-truth corpus row (P2 design 7.2).
+    // The write is best-effort: a full disk must not turn a granted approval
+    // into a tool error, so a failed append is swallowed.
+    const askResolver = {
+      resolve: async (req: AskRequest) => {
+        const verdict = await baseResolver.resolve(req);
+        await appendApprovalAudit(join(ctx.runtime.outputDir, "approval-audit"), ctx.runtime.runId, {
+          request: req,
+          decision: verdict.decision,
+          decidedBy: verdict.decidedBy,
+          latencyMs: verdict.latencyMs,
+          at: new Date().toISOString(),
+        }).catch(() => undefined);
+        return verdict;
+      },
+    };
 
     const callCtx: CallContext = {
       runtime: ctx.runtime,
