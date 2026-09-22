@@ -100,3 +100,11 @@ describe("resolvePermissions bashApproval", () => {
     }
   });
 });
+
+test("POSTURE GUARD: the shipped default is raw", () => {
+  // If this flips it must flip deliberately, with an ADR-030 amendment — never
+  // as a side effect of a schema edit. See ADR-029 §3's 2026-09-22 amendment
+  // for what `raw` by default gives up.
+  expect(NaxConfigSchema.parse({}).execution.bashApproval).toBe("raw");
+  expect(resolvePermissions(makeNaxConfig({}), "run").bashApproval).toBe("raw");
+});
