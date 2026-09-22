@@ -17,21 +17,18 @@ import { inputClassTokens } from "@/agents/cost";
 import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
-import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
+import { askHumanToolDefinition } from "./ask-human";
 import { estimateContextTokens, type TranscriptMessage as NativeTranscriptMessage, shouldCompact } from "./compaction";
-import { createInvalidCallBudget, rewriteToolCallInput } from "./handle-invalid-tool-call";
+import { createInvalidCallBudget } from "./handle-invalid-tool-call";
 import { createLoopEventRegistry } from "./loop-events";
 import { registerBuiltinLoopHandlers } from "./loop-handlers";
-import { nudgeOverheadBytes, withNudge } from "./nudge";
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
-import { buildToolResult } from "./tool-result";
 import { loadTranscript, saveTranscript } from "./transcript-store";
-import { truncateNativeToolResult } from "./truncation-handler";
 import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
-import { handleAskHumanCall } from "./turn-ask-human";
 import { runProactiveCompaction } from "./turn-compaction-step";
 import { completeWithRecovery } from "./turn-complete-step";
+import { runToolBatch } from "./turn-tool-batch";
 import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
 
 export async function runNativeTurn(
@@ -217,150 +214,28 @@ export async function runNativeTurn(
         break;
       }
 
-      for (const [callIndex, call] of res.toolCalls.entries()) {
-        if (spinWarned) {
-          spinStopped = true;
-          // The terminal round trip is answer-only. Any subsequent tool call
-          // is neither executed nor answered; the fail-spin retry starts from
-          // a fresh session and deliberately drops this unanswered request.
-          break;
-        }
-        deps.onActivity?.({ kind: "tool", toolName: call.name });
-        try {
-          if (call.name === ASK_HUMAN_TOOL_NAME) {
-            const question = String((call.input as { text?: unknown } | undefined)?.text ?? "");
-            // These push sites — and the spin notice below — are answers to a call no
-            // tool produced. They use the chokepoint and deliberately fire no
-            // `after_tool` event: a policy that shapes tool output has nothing to
-            // shape here.
-            const outcome = await handleAskHumanCall({
-              toolCallId: call.id,
-              question,
-              interactionsSoFar: interactions.length,
-              maxInteractions,
-              roundTrips,
-              interactionHandler: opts.interactionHandler,
-            });
-            if (outcome.exchange !== undefined) interactions.push(outcome.exchange);
-            messages.push(outcome.result);
-            continue;
-          }
-          const outcome = loopEvents.beforeTool(call, tools);
-          // nax#2047 Task 4: a tripped invalid-call budget ends the batch with
-          // NO result — "a result nobody reads only grows the transcript". None
-          // of the four seam outcomes can express that (each answers the call),
-          // so the halt is read from the budget the repair handler counts into,
-          // and checked before the outcome is applied.
-          if (invalidCallBudget.exceeded) break;
-          // The spin breaker's stop is a batch-level outcome (nax#2120): every
-          // OUTSTANDING call in this batch is answered, not just the triggering
-          // one, or the next `complete()` is sent a tool_call with no matching
-          // result, which strict providers reject. Answer-only — the loop
-          // continues so the model can close the turn out — and synthetic, so
-          // no `after_tool` handler sees it.
-          if (outcome.kind === "terminate") {
-            for (const outstanding of res.toolCalls.slice(callIndex)) {
-              messages.push(
-                buildToolResult({
-                  toolCallId: outstanding.id,
-                  content: outcome.content,
-                  isError: outcome.isError,
-                }),
-              );
-            }
-            break;
-          }
-          if (outcome.kind === "block") {
-            // Answered on the tool's behalf: the call never runs. A blocked
-            // call may still carry a corrected input, which is recorded before
-            // the answer — the point of the repair being visible to the model.
-            if (outcome.input !== undefined) messages = rewriteToolCallInput(messages, call.id, outcome.input);
-            messages.push(buildToolResult({ toolCallId: call.id, content: outcome.content, isError: outcome.isError }));
-            continue;
-          }
-          // `allow` may rewrite the call's input; the rewritten value is what
-          // the transcript records and what the tool is invoked with, so the
-          // model's own history stays a truthful account of what ran.
-          const rewritten = outcome.kind === "allow" ? outcome.input : undefined;
-          const input = rewritten ?? call.input;
-          if (rewritten !== undefined) messages = rewriteToolCallInput(messages, call.id, rewritten);
-          const nudgeText = outcome.kind === "nudge" ? outcome.text : undefined;
-          const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
-          if (kind === "coding-tool") codingToolsCalled.push(call.name);
-          const answer = await opts.interactionHandler.onInteraction(
-            kind === "coding-tool"
-              ? {
-                  kind,
-                  name: call.name,
-                  // MUST be `input`, NOT `call.input`. #2162's US-002 added a
-                  // `before_tool` `allow` outcome that may REWRITE the input;
-                  // the merged line is `input: (input ?? {}) as Record<...>`
-                  // where `input = rewritten ?? call.input` (turn-loop.ts:448).
-                  // Using `call.input` here runs the tool on the model's
-                  // original arguments while `rewriteToolCallInput` has already
-                  // recorded the corrected ones — execution and transcript
-                  // diverge, silently, with no test in this plan covering it.
-                  input: (input ?? {}) as Record<string, unknown>,
-                  ...(opts.turnId !== undefined ? { turnId: opts.turnId } : {}),
-                  roundTrips,
-                  toolCallId: call.id,
-                  deferModelTruncation: true,
-                }
-              : { kind, name: call.name, input },
-          );
-          const answerText = answer?.answer ?? "";
-          // Genuine execution: the result is shaped by `after_tool` BEFORE it
-          // enters the array, which is what makes the event safe by
-          // construction (no handler can rewrite history). `denied` is threaded
-          // through untouched — a refused Write is not a crashed Write
-          // (ADR-029 s5) — and `nudge` prefixes the surviving content.
-          const patch = loopEvents.afterTool(call, { content: answerText, denied: answer?.denied });
-          // US-003: model-facing truncation runs after handlers and before the
-          // message is built. See ./truncation-handler for the async rationale.
-          const shaped = await truncateNativeToolResult(handle.id, patch.content ?? answerText, {
-            toolName: call.name,
-            callId: call.id,
-            // The nudge is prepended below, so its bytes are spent out of this
-            // result's budget -- not added after the ceiling was enforced.
-            ...(nudgeText !== undefined ? { reserveBytes: nudgeOverheadBytes(nudgeText) } : {}),
-          });
-          const finalContent = withNudge(nudgeText, shaped);
-          answer?.finalizeAudit?.(finalContent);
-          messages.push(
-            buildToolResult({
-              toolCallId: call.id,
-              content: finalContent,
-              isError: patch.isError,
-              denied: answer?.denied,
-            }),
-          );
-          // The breaker observed the call through the seam, i.e. with whatever
-          // input a handler rewrote in place — so the result has to be noted
-          // against that same input, or the key misses and result-based
-          // repetition detection silently stops for rewritten calls.
-          spinBreaker?.noteResult(call.name, input, answerText);
-        } catch (err) {
-          // A tool failure is data, not a turn failure: the existing pull-tool
-          // contract already surfaces a handler throw as status "error". The
-          // event still fires — a policy that bounds result size has to see the
-          // results that arrive as errors too.
-          const errorText = err instanceof Error ? err.message : String(err);
-          const patch = loopEvents.afterTool(call, { content: errorText, isError: true });
-          const shaped = await truncateNativeToolResult(handle.id, patch.content ?? errorText, {
-            toolName: call.name,
-            callId: call.id,
-          });
-          messages.push(
-            buildToolResult({
-              toolCallId: call.id,
-              content: shaped,
-              isError: patch.isError ?? true,
-            }),
-          );
-        }
-      }
-      if (spinStopped) break;
-      if (invalidCallBudget.exceeded) break;
+      const batch = await runToolBatch({
+        messages,
+        toolCalls: res.toolCalls,
+        tools,
+        codingToolNames,
+        roundTrips,
+        sessionName: handle.id,
+        opts,
+        deps,
+        loopEvents,
+        invalidCallBudget,
+        spinBreaker,
+        maxInteractions,
+        spinWarned,
+        interactionsSoFar: interactions.length,
+      });
+      messages = [...batch.messages];
+      interactions.push(...batch.interactions);
+      codingToolsCalled.push(...batch.codingToolsCalled);
+      if (batch.spinStopped) spinStopped = true;
+      if (batch.spinStopped) break;
+      if (batch.budgetExceeded) break;
     }
   } catch (err) {
     // Best-effort, and deliberately unlike the clean-exit save: there a write
