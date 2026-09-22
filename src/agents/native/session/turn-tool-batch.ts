@@ -118,7 +118,7 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
         messages.push(outcome.result);
         continue;
       }
-      const outcome = loopEvents.beforeTool(call, tools);
+      const outcome = await loopEvents.dispatch("before_tool", { call, tools });
       // nax#2047 Task 4: a tripped invalid-call budget ends the batch with
       // NO result — "a result nobody reads only grows the transcript". None
       // of the four seam outcomes can express that (each answers the call),
@@ -187,7 +187,7 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
       // construction (no handler can rewrite history). `denied` is threaded
       // through untouched — a refused Write is not a crashed Write
       // (ADR-029 s5) — and `nudge` prefixes the surviving content.
-      const patch = loopEvents.afterTool(call, { content: answerText, denied: answer?.denied });
+      const patch = await loopEvents.dispatch("after_tool", { content: answerText, denied: answer?.denied });
       // US-003: model-facing truncation runs after handlers and before the
       // message is built. See ./truncation-handler for the async rationale.
       const shaped = await truncateNativeToolResult(sessionName, patch.content ?? answerText, {
@@ -218,7 +218,7 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
       // event still fires — a policy that bounds result size has to see the
       // results that arrive as errors too.
       const errorText = err instanceof Error ? err.message : String(err);
-      const patch = loopEvents.afterTool(call, { content: errorText, isError: true });
+      const patch = await loopEvents.dispatch("after_tool", { content: errorText, isError: true });
       const shaped = await truncateNativeToolResult(sessionName, patch.content ?? errorText, {
         toolName: call.name,
         callId: call.id,

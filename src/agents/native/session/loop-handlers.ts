@@ -55,8 +55,8 @@ export function registerBuiltinLoopHandlers(registry: LoopEventRegistry, deps: B
   // before the spin breaker counts it. The empty string produced no rejected
   // keys, so counting a malformed call as spin evidence is how nax#2047's 69
   // identical bad calls stayed invisible.
-  registry.registerBeforeTool((call, tools) => repairInvalidCall(state, call, tools));
-  registry.registerBeforeTool((call) => observeSpin(state, call));
+  registry.register("before_tool", ({ call, tools }) => repairInvalidCall(state, call, tools));
+  registry.register("before_tool", ({ call }) => observeSpin(state, call));
 }
 
 function repairInvalidCall(
