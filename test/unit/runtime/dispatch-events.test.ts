@@ -9,7 +9,7 @@ import {
   type SessionTurnDispatchEvent,
 } from "@/runtime/dispatch-events";
 
-const PERMS = { mode: "approve-reads" as const };
+const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
 function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {}): SessionTurnDispatchEvent {
   return {

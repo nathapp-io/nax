@@ -39,7 +39,7 @@ afterEach(async () => {
 const opts = (over: Partial<OpenSessionOpts> = {}): OpenSessionOpts => ({
   agentName: "native",
   workdir: "/tmp",
-  resolvedPermissions: { mode: "approve-all" },
+  resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
   modelDef: { provider: "unknown", model: "openrouter/deepseek/deepseek-v4-flash" },
   timeoutSeconds: 60,
   transcriptDir: dir,

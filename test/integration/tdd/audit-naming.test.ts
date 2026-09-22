@@ -27,7 +27,7 @@ import { attachAuditSubscriber } from "@/runtime/middleware/audit";
 import { PromptAuditor } from "@/runtime/prompt-auditor";
 import type { SessionRole } from "@/runtime/session-role";
 
-const PERMS = { mode: "approve-reads" as const };
+const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
 function makeTddTurnEvent(role: SessionRole, roundTrips = 1): SessionTurnDispatchEvent {
   const sessionName = `nax-abcd1234-tdd-calc-US-001-${role}`;

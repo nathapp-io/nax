@@ -18,7 +18,7 @@ import type { DispatchErrorEvent } from "@/runtime/dispatch-events";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachCostSubscriber } from "@/runtime/middleware/cost";
 
-const PERMS = { mode: "approve-reads" as const };
+const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
 function makeDispatchErrorEvent(overrides: Partial<DispatchErrorEvent> = {}): DispatchErrorEvent {
   return {

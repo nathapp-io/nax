@@ -302,7 +302,12 @@ describe("resolvePermissions — rules under every profile (spec R10)", () => {
       cfg({ permissionProfile: "scoped", permissions: { plan: { allow: ["Read"] } } }),
       "run",
     );
-    expect(resolved).toEqual({ mode: "approve-reads", providerScope: "rules", toolGrants: [] });
+    expect(resolved).toEqual({
+      mode: "approve-reads",
+      providerScope: "rules",
+      toolGrants: [],
+      bashApproval: "raw",
+    });
   });
 });
 

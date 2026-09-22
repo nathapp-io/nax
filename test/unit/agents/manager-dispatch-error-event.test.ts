@@ -418,7 +418,7 @@ describe("AgentManager.completeAsWithFallback dispatch-error path", () => {
 const baseOptions = {
   modelDef: { provider: "anthropic" as const, model: "claude-sonnet-4-6", env: {} as Record<string, string> },
   workdir: "/tmp/test",
-  resolvedPermissions: { mode: "approve-reads" as const },
+  resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" as const },
 };
 
 /** Build a NaxConfig slice for watchdog + fallback tuning used by these tests. */

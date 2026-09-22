@@ -4,7 +4,7 @@ import type { ReviewDecisionEvent, SessionTurnDispatchEvent } from "@/runtime/di
 import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachReviewAuditSubscriber } from "@/runtime/middleware/review-audit";
 
-const PERMS = { mode: "approve-reads" as const };
+const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
 function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {}): SessionTurnDispatchEvent {
   return {

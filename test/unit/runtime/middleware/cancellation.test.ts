@@ -14,7 +14,7 @@ function makeCtx(aborted = false): MiddlewareContext {
     request: null,
     config: DEFAULT_CONFIG,
     signal: ctrl.signal,
-    resolvedPermissions: { mode: "approve-reads" },
+    resolvedPermissions: { mode: "approve-reads", bashApproval: "raw" },
   };
 }
 
@@ -39,7 +39,7 @@ describe("cancellationMiddleware", () => {
       kind: "run",
       request: null,
       config: DEFAULT_CONFIG,
-      resolvedPermissions: { mode: "approve-reads" },
+      resolvedPermissions: { mode: "approve-reads", bashApproval: "raw" },
     };
     assertDefined(mw.before, "mw.before");
     await expect(mw.before(ctx)).resolves.toBeUndefined();
@@ -56,7 +56,7 @@ describe("cancellationMiddleware", () => {
       request: null,
       config: DEFAULT_CONFIG,
       signal: ctrl.signal,
-      resolvedPermissions: { mode: "approve-reads" },
+      resolvedPermissions: { mode: "approve-reads", bashApproval: "raw" },
     };
     assertDefined(mw.before, "mw.before");
     await expect(mw.before(ctx)).rejects.toThrow("Agent call cancelled");

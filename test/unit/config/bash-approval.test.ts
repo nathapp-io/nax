@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE } from "@/config/bash-approval";
 import { DEFAULT_CONFIG } from "@/config/defaults";
+import { resolvePermissions } from "@/config/permissions";
 import { NaxConfigSchema } from "@/config/schemas";
 
 describe("BashApprovalModeSchema", () => {
@@ -64,5 +66,37 @@ describe("config defaulting (BUG-20)", () => {
         },
       }),
     ).toThrow();
+  });
+});
+
+describe("resolvePermissions bashApproval", () => {
+  test("defaults to raw with no config", () => {
+    expect(resolvePermissions(makeNaxConfig({}), "run").bashApproval).toBe("raw");
+  });
+
+  test("honours the global setting", () => {
+    const cfg = makeNaxConfig({ execution: { bashApproval: "gated" } });
+    expect(resolvePermissions(cfg, "run").bashApproval).toBe("gated");
+  });
+
+  test("a per-stage override beats the global setting", () => {
+    const cfg = makeNaxConfig({
+      execution: { bashApproval: "gated", permissions: { run: { bashApproval: "escalate" } } },
+    });
+    expect(resolvePermissions(cfg, "run").bashApproval).toBe("escalate");
+  });
+
+  test("a per-stage override applies only to its own stage", () => {
+    const cfg = makeNaxConfig({
+      execution: { bashApproval: "gated", permissions: { run: { bashApproval: "raw" } } },
+    });
+    expect(resolvePermissions(cfg, "verify").bashApproval).toBe("gated");
+  });
+
+  test("resolves for every profile, not just scoped", () => {
+    for (const permissionProfile of ["unrestricted", "safe", "scoped"] as const) {
+      const cfg = makeNaxConfig({ execution: { permissionProfile, bashApproval: "escalate" } });
+      expect(resolvePermissions(cfg, "run").bashApproval).toBe("escalate");
+    }
   });
 });

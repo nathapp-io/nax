@@ -12,6 +12,7 @@ import { getSafeLogger } from "@/logger";
 import { parseRuleList } from "@/permissions";
 import type { CodingToolName, ToolGrant } from "@/tools";
 import { EXEC_TOOL_NAME } from "@/tools";
+import { type BashApprovalMode, DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
 import type { AgentManagerConfig } from "./selectors";
 
 export type PermissionProfile = "unrestricted" | "safe" | "scoped";
@@ -58,6 +59,13 @@ export interface ResolvedPermissions {
    * a permission decision, which lives in this file by rule.
    */
   providerScope?: "all" | "rules" | "none";
+  /**
+   * How a model-authored bash command string is adjudicated for this stage
+   * (ADR-030). Always present: the global default is `raw`, and a per-stage
+   * `permissions.<stage>.bashApproval` overrides it. Compiled into the policy
+   * by src/tools/, like the rule lists above — the DECISION stays here.
+   */
+  bashApproval: BashApprovalMode;
 }
 
 /**
@@ -179,6 +187,7 @@ interface StageBlock {
   deny?: string[];
   ask?: string[];
   inherit?: string;
+  bashApproval?: BashApprovalMode;
 }
 
 /** Stage -> inherit chain -> `default` -> undefined. The walk formerly inside
@@ -203,6 +212,7 @@ interface StageRules {
   readonly allow: readonly ToolGrant[];
   readonly deny: readonly ToolGrant[];
   readonly ask: readonly ToolGrant[];
+  readonly bashApproval: BashApprovalMode;
 }
 
 function stageRules(config: AgentManagerConfig | undefined, stage: PipelineStage): StageRules {
@@ -212,14 +222,17 @@ function stageRules(config: AgentManagerConfig | undefined, stage: PipelineStage
     allow: parseRuleList(block?.allow ?? block?.allowedTools ?? []),
     deny: parseRuleList(block?.deny ?? []),
     ask: parseRuleList(block?.ask ?? []),
+    // Per-stage beats global beats the schema default.
+    bashApproval: block?.bashApproval ?? config?.execution?.bashApproval ?? DEFAULT_BASH_APPROVAL_MODE,
   };
 }
 
 /** Attach rule fields only when non-empty, so no-block configs stay
  * byte-identical to the pre-rules shape (the regression gate). */
-function withRules(base: ResolvedPermissions, rules: StageRules): ResolvedPermissions {
+function withRules(base: Omit<ResolvedPermissions, "bashApproval">, rules: StageRules): ResolvedPermissions {
   return {
     ...base,
+    bashApproval: rules.bashApproval,
     ...(rules.allow.length > 0 ? { toolGrants: [...(base.toolGrants ?? []), ...rules.allow] } : {}),
     ...(rules.deny.length > 0 ? { denyRules: rules.deny } : {}),
     ...(rules.ask.length > 0 ? { askRules: rules.ask } : {}),
@@ -266,7 +279,8 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
         stage: _stage,
         mode: INVALID_PROFILE_MODE,
       });
-      return { mode: INVALID_PROFILE_MODE };
+      // Fail closed here on purpose: an unrecognised profile must not also hand out raw bash.
+      return { mode: INVALID_PROFILE_MODE, bashApproval: "gated" };
   }
 }
 

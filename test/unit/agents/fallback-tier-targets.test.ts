@@ -419,7 +419,7 @@ describe("resolveHopCompleteOptions", () => {
     modelDef: { provider: "anthropic", model: "primary-model" },
     modelDefFor: (agent: string, tier?: string) => ({ provider: "p", model: `${agent}:${tier ?? "default"}` }),
     workdir: "/tmp",
-    resolvedPermissions: { mode: "approve-all" },
+    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
   };
 
   test("the primary hop is untouched", () => {
@@ -475,7 +475,7 @@ describe("resolveFinalDispatch", () => {
     modelDefFor: (agent: string, tier?: string) => ({ provider: "p", model: `${agent}:${tier ?? "default"}` }),
     modelTier: "balanced",
     workdir: "/tmp",
-    resolvedPermissions: { mode: "approve-all" },
+    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
   };
   const swapped: AgentFallbackRecord[] = [
     {

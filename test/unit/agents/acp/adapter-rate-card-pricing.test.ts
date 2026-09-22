@@ -66,7 +66,7 @@ function makeOpenSessionOpts(overrides: Partial<OpenSessionOpts> = {}): OpenSess
   return {
     agentName: "claude",
     workdir: ACP_WORKDIR,
-    resolvedPermissions: { mode: "approve-reads" },
+    resolvedPermissions: { mode: "approve-reads", bashApproval: "raw" },
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
     timeoutSeconds: 30,
     ...overrides,
@@ -79,7 +79,7 @@ function makeCompleteOptions(
   return {
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
     workdir: ACP_WORKDIR,
-    resolvedPermissions: { mode: "approve-reads" as const },
+    resolvedPermissions: { mode: "approve-reads" as const, bashApproval: "raw" },
     ...overrides,
   } as import("@/agents/types").ResolvedCompleteOptions;
 }
