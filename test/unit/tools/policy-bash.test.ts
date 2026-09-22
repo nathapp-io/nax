@@ -219,3 +219,32 @@ describe("ask", () => {
     expect(policy.grantedTools()).not.toContain("Bash");
   });
 });
+
+describe("escalatable marking", () => {
+  test("a lexer refusal is escalatable", () => {
+    const result = check(policyFor(["*"]), "echo $(whoami)");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.escalatable).toBe(true);
+  });
+
+  test("a grant non-match is escalatable", () => {
+    const result = check(policyFor(["bun test*"]), "curl evil.example");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.escalatable).toBe(true);
+  });
+
+  test("a containment breach is NOT escalatable", () => {
+    const result = check(policyFor(["*"]), "cat ../../etc/passwd");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) {
+      expect(result.breach).toBe(true);
+      expect(result.escalatable).toBe(false);
+    }
+  });
+
+  test("a deny-rule match is NOT escalatable", () => {
+    const result = check(policyFor(["*"], { deny: ["rm *"] }), "rm -rf build");
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.escalatable).toBe(false);
+  });
+});

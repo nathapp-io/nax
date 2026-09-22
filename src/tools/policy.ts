@@ -179,8 +179,8 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     return verbs === undefined ? matchers : matchers.filter((m) => !verbs.includes(m.source));
   }
 
-  function deny(reason: string, breach = false): PolicyVerdict {
-    return { allowed: false, reason, breach, outcome: "denied" };
+  function deny(reason: string, breach = false, escalatable = false): PolicyVerdict {
+    return { allowed: false, reason, breach, escalatable, outcome: "denied" };
   }
 
   /**
@@ -348,7 +348,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       initialPath: resolvedRoot,
       resolvePath: (candidate, cwd) => resolveWithin(resolvedRoot, resolve(cwd, candidate)),
     });
-    if (result.kind === "deny") return deny(result.reason, result.breach);
+    if (result.kind === "deny") return deny(result.reason, result.breach, result.escalatable);
     if (result.kind === "ask") return askVerdict([], result.rule);
     return { allowed: true, resolvedPaths: [] };
   }

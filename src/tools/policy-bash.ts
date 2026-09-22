@@ -24,7 +24,20 @@ import type { CompiledEntry, CompiledPattern } from "./policy-match";
 export type BashCheck =
   | { readonly kind: "allow" }
   | { readonly kind: "ask"; readonly rule: string }
-  | { readonly kind: "deny"; readonly reason: string; readonly breach: boolean };
+  | {
+      readonly kind: "deny";
+      readonly reason: string;
+      readonly breach: boolean;
+      /**
+       * True when the gate could not ADJUDICATE the command — the lexer refused
+       * it, or no allow rule covered a segment. False when the command is
+       * affirmatively out of bounds (root escape, `.git/`, a denied flag, an
+       * explicit deny rule). Only the former may be escalated to the ask tier
+       * by `escalate` mode; escalating the latter would dissolve the `breach`
+       * signal into an approval prompt. See ADR-030.
+       */
+      readonly escalatable: boolean;
+    };
 
 export interface BashCheckArgs {
   readonly tool: string;
@@ -41,8 +54,8 @@ export interface BashCheckArgs {
   readonly initialPath: string;
 }
 
-function deny(reason: string, breach = false): BashCheck {
-  return { kind: "deny", reason, breach };
+function deny(reason: string, breach = false, escalatable = false): BashCheck {
+  return { kind: "deny", reason, breach, escalatable };
 }
 
 /**
@@ -230,6 +243,8 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
     return deny(
       `command contains ${lexed.construct}, which cannot be analysed and is therefore refused -- ` +
         "rewrite it without that construct, or use a structured tool",
+      false,
+      true,
     );
   }
 
@@ -245,7 +260,7 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
     if (args.grant.unconditional || matchesSegment(args.grant, segment)) continue;
     const granted = args.grant.raw.filter((pattern) => pattern !== "*").join(", ");
     const alternatives = granted === "" ? "no command forms are granted for this stage" : `granted forms: ${granted}`;
-    return deny(`${tool} is not granted "${render(segment)}" -- ${alternatives}`);
+    return deny(`${tool} is not granted "${render(segment)}" -- ${alternatives}`, false, true);
   }
 
   let cwd: readonly string[] = [args.initialPath];
