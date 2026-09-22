@@ -97,6 +97,7 @@ export async function runNativeTurn(
   // fires, exactly as they were installed before any round trip ran.
   const loopEvents = deps.loopEvents ?? createLoopEventRegistry();
   registerBuiltinLoopHandlers(loopEvents, {
+    sessionName: handle.id,
     budget: invalidCallBudget,
     ...(spinBreaker !== undefined ? { spinBreaker } : {}),
     onSpinStop: () => {
@@ -326,7 +327,6 @@ export async function runNativeTurn(
           tools,
           codingToolNames,
           roundTrips,
-          sessionName: handle.id,
           opts,
           deps,
           loopEvents,

@@ -1,13 +1,18 @@
 /**
- * The two built-in `before_tool` handlers the seam carries today (nax#2151,
- * US-002). Both were inline branches in `turn-loop.ts` before the seam; they
- * are ordinary registrations now, and the order they register in is the order
- * the loop consulted them before.
+ * The built-in handlers the seam carries today (nax#2151, US-002): the two
+ * `before_tool` handlers — invalid-call repair and the spin breaker — plus the
+ * `after_tool` truncation handler (US-003). The first two were inline branches
+ * in `turn-loop.ts` before the seam; they are ordinary registrations now, and
+ * the order they register in is the order the loop consulted them before.
+ * Truncation registers LAST among `after_tool` handlers, which is the position
+ * the loop's hardcoded call held: after the dispatcher, before the result is
+ * built.
  *
- * They are PER-TURN — the invalid-call budget and the spin reprieve both reset
+ * They are PER-TURN — the invalid-call budget, the spin reprieve and the
+ * session whose spill root truncation resolves all reset or are re-supplied
  * with the turn — but they are installed ONCE per registry, with the per-turn
- * state swapped underneath them. Registering a fresh pair every turn would
- * accumulate handlers on a registry a caller reuses across turns, each pair
+ * state swapped underneath them. Registering a fresh set every turn would
+ * accumulate handlers on a registry a caller reuses across turns, each set
  * still closing over the turn that created it: a later turn would be judged by
  * an earlier turn's budget, and the shared breaker would be advanced once per
  * installed pair, halving every threshold it is supposed to enforce.
@@ -17,8 +22,15 @@ import type { ToolCall, ToolDefinition } from "@nathapp/nax-ai";
 import { type SpinBreaker, spinTerminalNotice } from "@/runtime/spin-breaker";
 import type { InvalidCallBudget } from "./handle-invalid-tool-call";
 import type { BeforeToolOutcome, LoopEventRegistry } from "./loop-events";
+import { createTruncationHandler } from "./truncation-handler";
 
 export interface BuiltinLoopHandlerDeps {
+  /**
+   * The session the handlers run for. Truncation resolves its spill root
+   * against it; read through `state.current` at dispatch like every other
+   * per-turn dep, so a repointed registry never keeps a stale session.
+   */
+  readonly sessionName: string;
   /** Per-turn invalid-call budget. The loop reads `exceeded` for the halt. */
   readonly budget: InvalidCallBudget;
   /** Absent disables the breaker, exactly as `TurnDeps.spinBreaker` does. */
@@ -57,6 +69,12 @@ export function registerBuiltinLoopHandlers(registry: LoopEventRegistry, deps: B
   // identical bad calls stayed invisible.
   registry.register("before_tool", ({ call, tools }) => repairInvalidCall(state, call, tools));
   registry.register("before_tool", ({ call }) => observeSpin(state, call));
+  // Registered LAST among after_tool handlers, which is the pre-seam position:
+  // the loop's hardcoded truncation call ran after the dispatcher, so it shaped
+  // whatever the handlers produced. The handler is rebuilt per dispatch so the
+  // session name is read through `state.current` — the same lifetime the other
+  // per-turn deps use — rather than frozen at install time.
+  registry.register("after_tool", (payload) => createTruncationHandler(state.current.sessionName)(payload));
 }
 
 function repairInvalidCall(

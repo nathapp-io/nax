@@ -70,6 +70,18 @@ export interface AfterToolPayload {
   readonly isError?: boolean;
   /** Surfaced to handlers, never writable by them. */
   readonly denied?: DenialInfo;
+  /** The name of the tool call the result answers, from the dispatched call. */
+  readonly toolName?: string;
+  /** The provider tool-call id the result answers, from the dispatched call. */
+  readonly callId?: string;
+  /**
+   * Present when `before_tool` produced a nudge that will be PREPENDED to the
+   * surviving content. The model-facing truncation handler spends these bytes
+   * out of the result's own budget (`nudgeOverheadBytes`), so the ceiling
+   * stays unconditional — without them a nudged result would exceed
+   * `MODEL_MAX_BYTES` by exactly the nudge's width.
+   */
+  readonly nudgeText?: string;
 }
 
 /** `before_turn` — fires once as a turn starts, after the transcript loads. */

@@ -156,8 +156,14 @@ async function dispatchChain<E extends LoopEvent>(
       // exactly like a throw (spec 4.2).
       returned = await handler(current);
     } catch (err) {
+      // When the payload carries a tool name (after_tool does), the warn
+      // names the tool the failing handler was shaping — the context the
+      // first-argument dispatcher carried as `tool: call.name` before the
+      // single-payload signature replaced it.
+      const { toolName } = payload as { readonly toolName?: string };
       getSafeLogger()?.warn("native-loop-events", `${event} handler threw; skipping it`, {
         event,
+        ...(toolName !== undefined ? { tool: toolName } : {}),
         error: errorMessage(err),
       });
       continue;
