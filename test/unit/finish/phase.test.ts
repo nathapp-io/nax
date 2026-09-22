@@ -464,6 +464,153 @@ describe("runFinishPhase — gate skip observability (#1671)", () => {
   });
 });
 
+/**
+ * Each skip reason produces a human-readable line distinct from the others (#2176).
+ *
+ * The original message was the same for all six reasons ("Finish phase skipped —
+ * gate did not pass") and carried the gating field name as `reason`. For three
+ * reasons (`enabled` meaning disabled, `completed` meaning zero stories, `branch`
+ * meaning non-feature branch) the rendered line read as a contradiction and
+ * "gate did not pass" suggested a quality gate had failed when nothing of the
+ * kind was evaluated. The machine-readable `reason` value is unchanged for
+ * `status.json`; the message and detail payload are the parts that changed.
+ */
+describe("runFinishPhase — gate skip log wording (#2176)", () => {
+  type LogCall = [string, string, Record<string, unknown>];
+  function findSkipLog(calls: unknown[][]): LogCall | undefined {
+    const found = calls.find(
+      (c) => c[0] === "finish" && typeof c[1] === "string" && c[1].startsWith("Finish phase skipped"),
+    );
+    return found as LogCall | undefined;
+  }
+
+  test("disabled config logs a distinct message that names the cause", async () => {
+    await withInfoSpy(async (infoSpy) => {
+      await runFinishPhase({ ...makeCtx(), config: { finish: { enabled: false } } });
+      const call = findSkipLog(infoSpy.mock.calls);
+      expect(call).toBeDefined();
+      expect(call?.[1]).toBe("Finish phase skipped — finish is disabled in config");
+      expect(call?.[1]).not.toContain("gate did not pass");
+      expect(call?.[2].reason).toBe("enabled");
+    });
+  });
+
+  test("dry run logs a distinct message that does not assert a gate failure", async () => {
+    const ctx: FinishPhaseContext = {
+      ...makeCtx(),
+      runtime: makeTestRuntime({ dryRun: true }),
+    };
+    await withInfoSpy(async (infoSpy) => {
+      await runFinishPhase(ctx);
+      const call = findSkipLog(infoSpy.mock.calls);
+      expect(call).toBeDefined();
+      expect(call?.[1]).toBe("Finish phase skipped — dry run");
+      expect(call?.[1]).not.toContain("gate did not pass");
+      expect(call?.[2].reason).toBe("dry-run");
+    });
+  });
+
+  test("zero completed stories logs a distinct message", async () => {
+    await withInfoSpy(async (infoSpy) => {
+      await runFinishPhase({ ...makeCtx(), storySummary: { completed: 0, failed: 0, paused: 0 } });
+      const call = findSkipLog(infoSpy.mock.calls);
+      expect(call).toBeDefined();
+      expect(call?.[1]).toBe("Finish phase skipped — no stories completed");
+      expect(call?.[1]).not.toContain("gate did not pass");
+      expect(call?.[2].reason).toBe("completed");
+    });
+  });
+
+  test("a single failed story logs the count and uses singular", async () => {
+    await withInfoSpy(async (infoSpy) => {
+      await runFinishPhase({
+        ...makeCtx(),
+        storySummary: { completed: 2, failed: 1, paused: 0 },
+      });
+      const call = findSkipLog(infoSpy.mock.calls);
+      expect(call).toBeDefined();
+      expect(call?.[1]).toBe("Finish phase skipped — 1 story failed");
+      expect(call?.[2].reason).toBe("failed");
+      expect(call?.[2].failed).toBe(1);
+    });
+  });
+
+  test("multiple failed stories log the count and use plural", async () => {
+    await withInfoSpy(async (infoSpy) => {
+      await runFinishPhase({
+        ...makeCtx(),
+        storySummary: { completed: 2, failed: 3, paused: 0 },
+      });
+      const call = findSkipLog(infoSpy.mock.calls);
+      expect(call).toBeDefined();
+      expect(call?.[1]).toBe("Finish phase skipped — 3 stories failed");
+      expect(call?.[2].reason).toBe("failed");
+      expect(call?.[2].failed).toBe(3);
+    });
+  });
+
+  test("a paused story logs the count and uses singular", async () => {
+    await withInfoSpy(async (infoSpy) => {
+      await runFinishPhase({
+        ...makeCtx(),
+        storySummary: { completed: 2, failed: 0, paused: 1 },
+      });
+      const call = findSkipLog(infoSpy.mock.calls);
+      expect(call).toBeDefined();
+      expect(call?.[1]).toBe("Finish phase skipped — 1 story paused");
+      expect(call?.[2].reason).toBe("paused");
+      expect(call?.[2].paused).toBe(1);
+    });
+  });
+
+  test("a main branch logs the branch name in the message", async () => {
+    await withInfoSpy(async (infoSpy) => {
+      await runFinishPhase({ ...makeCtx(), branch: "main" });
+      const call = findSkipLog(infoSpy.mock.calls);
+      expect(call).toBeDefined();
+      expect(call?.[1]).toBe('Finish phase skipped — "main" is not a feature branch');
+      expect(call?.[1]).not.toContain("gate did not pass");
+      expect(call?.[2].reason).toBe("branch");
+      expect(call?.[2].branch).toBe("main");
+    });
+  });
+
+  test("a master branch logs the branch name in the message", async () => {
+    await withInfoSpy(async (infoSpy) => {
+      await runFinishPhase({ ...makeCtx(), branch: "master" });
+      const call = findSkipLog(infoSpy.mock.calls);
+      expect(call).toBeDefined();
+      expect(call?.[1]).toBe('Finish phase skipped — "master" is not a feature branch');
+      expect(call?.[2].reason).toBe("branch");
+      expect(call?.[2].branch).toBe("master");
+    });
+  });
+
+  test("no skip log line ever asserts that a gate did not pass", async () => {
+    // Belt-and-braces over the per-reason assertions above: the misleading
+    // "gate did not pass" phrase must not appear in *any* skip path, since
+    // for the disabled and dry-run cases no gate was evaluated at all.
+    const variants: Array<Partial<FinishPhaseContext>> = [
+      { config: { finish: { enabled: false } } },
+      { runtime: makeTestRuntime({ dryRun: true }) },
+      { storySummary: { completed: 0, failed: 0, paused: 0 } },
+      { storySummary: { completed: 2, failed: 1, paused: 0 } },
+      { storySummary: { completed: 2, failed: 3, paused: 0 } },
+      { storySummary: { completed: 2, failed: 0, paused: 1 } },
+      { branch: "main" },
+      { branch: "master" },
+    ];
+    for (const variant of variants) {
+      await withInfoSpy(async (infoSpy) => {
+        await runFinishPhase({ ...makeCtx(), ...variant });
+        const call = findSkipLog(infoSpy.mock.calls);
+        expect(call).toBeDefined();
+        expect(call?.[1]).not.toContain("gate did not pass");
+      });
+    }
+  });
+});
+
 describe("runFinishPhase — ledger skip observability (#1674 part 1)", () => {
   test("a machine result with skipReason 'already-finished' writes status: skipped, not passed", async () => {
     const updates: Array<Record<string, unknown>> = [];

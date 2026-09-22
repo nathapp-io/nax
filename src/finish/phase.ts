@@ -115,6 +115,62 @@ export function shouldRunFinish(args: {
 }
 
 /**
+ * The human-readable skip log line for each gate clause (#2176).
+ *
+ * Previously the phase logged one message for all six clauses
+ * (`"Finish phase skipped — gate did not pass"`) with the gating field
+ * name as `reason`. Three of the six rendered as a contradiction when
+ * read alongside "gate did not pass": `enabled` meant disabled,
+ * `completed` meant zero stories, `branch` meant non-feature branch —
+ * and "gate did not pass" implied a quality gate had failed when none
+ * had been evaluated. The machine-readable `reason` value is kept
+ * as-is for `status.json` (and for every other consumer); the message
+ * and detail payload are the parts that changed.
+ */
+function finishSkipLog(
+  reason: FinishSkipReason,
+  storySummary: { completed: number; failed: number; paused: number },
+  branch: string,
+): { message: string; detail: Record<string, unknown> } {
+  switch (reason) {
+    case "enabled":
+      return {
+        message: "Finish phase skipped — finish is disabled in config",
+        detail: {},
+      };
+    case "dry-run":
+      return {
+        message: "Finish phase skipped — dry run",
+        detail: {},
+      };
+    case "completed":
+      return {
+        message: "Finish phase skipped — no stories completed",
+        detail: {},
+      };
+    case "failed": {
+      const noun = storySummary.failed === 1 ? "story" : "stories";
+      return {
+        message: `Finish phase skipped — ${storySummary.failed} ${noun} failed`,
+        detail: { failed: storySummary.failed },
+      };
+    }
+    case "paused": {
+      const noun = storySummary.paused === 1 ? "story" : "stories";
+      return {
+        message: `Finish phase skipped — ${storySummary.paused} ${noun} paused`,
+        detail: { paused: storySummary.paused },
+      };
+    }
+    case "branch":
+      return {
+        message: `Finish phase skipped — "${branch || "(empty)"}" is not a feature branch`,
+        detail: { branch },
+      };
+  }
+}
+
+/**
  * The phase's own deadline: `finish.timeouts.flowMs`, combined with the run's
  * signal so either can stop it.
  *
@@ -163,9 +219,11 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
     // other clause is both logged and recorded — those runs already have
     // `finish.enabled: true`, so a `finish` status entry is expected there
     // regardless.
-    getSafeLogger()?.info("finish", "Finish phase skipped — gate did not pass", {
+    const skip = finishSkipLog(skipReason, ctx.storySummary, ctx.branch);
+    getSafeLogger()?.info("finish", skip.message, {
       storyId: "_run",
       reason: skipReason,
+      ...skip.detail,
     });
     if (skipReason !== "enabled" && skipReason !== "dry-run") {
       writeFinishStatus(ctx, { status: "skipped", reason: skipReason });
