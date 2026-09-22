@@ -28,6 +28,7 @@ import { loadTranscript, saveTranscript } from "./transcript-store";
 import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
 import { runProactiveCompaction } from "./turn-compaction-step";
 import { completeWithRecovery } from "./turn-complete-step";
+import { buildTurnResult, logTurnTailWarnings } from "./turn-result";
 import { runToolBatch } from "./turn-tool-batch";
 import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
 
@@ -259,43 +260,31 @@ export async function runNativeTurn(
     throw err;
   }
 
-  // Parity with acp/adapter.ts:555, which warns in exactly this situation. A
-  // native turn that stops here is indistinguishable from a finished one
-  // without this line plus the `turnIncomplete` fact below.
-  if (!completedNormally) {
-    getSafeLogger()?.warn("native-adapter", "turn ended with tool calls outstanding", {
-      sessionName: handle.id,
-      roundTrips,
-      timedOut,
-    });
-  }
-
-  if (spinStopped) {
-    getSafeLogger()?.error("native-adapter", "turn ended by the spin breaker", {
-      sessionName: handle.id,
-      roundTrips,
-      ...spinBreaker?.summary(),
-    });
-  }
+  logTurnTailWarnings({
+    sessionName: handle.id,
+    completedNormally,
+    spinStopped,
+    roundTrips,
+    timedOut,
+    spinBreaker,
+  });
 
   // Persisted before returning, and a write failure fails the turn: continuing
   // on a history that could not be stored is the silent degradation #1794
   // removed from the pipeline (ADR-028 s4).
   await saveTranscript(dir, handle.id, messages, transcriptOwner);
 
-  const rates = usage.rates();
-  return {
+  return buildTurnResult({
     output,
-    tokenUsage: usage.tokens(),
-    estimatedCostUsd: usage.costUsd(),
-    internalRoundTrips: roundTrips,
-    ...(codingTools.length > 0 ? { codingToolUse: { advertised: codingTools.length, called: codingToolsCalled } } : {}),
-    ...(completedNormally ? {} : { turnIncomplete: true }),
-    ...(timedOut ? { timedOut: true } : {}),
-    ...(spinStopped ? { spinStopped: true as const } : {}),
-    ...(invalidCallBudget.exceeded ? { invalidCallBudgetExceeded: true as const } : {}),
-    ...(interactions.length > 0 ? { interactions } : {}),
-    ...(deps.pricingSource !== undefined ? { pricingSource: deps.pricingSource } : {}),
-    ...(rates !== undefined ? { rates } : {}),
-  };
+    usage,
+    roundTrips,
+    codingTools,
+    codingToolsCalled,
+    completedNormally,
+    timedOut,
+    spinStopped,
+    budgetExceeded: invalidCallBudget.exceeded,
+    interactions,
+    pricingSource: deps.pricingSource,
+  });
 }
