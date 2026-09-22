@@ -360,7 +360,8 @@ defensive — but it is what makes the gate behave identically on Telegram (conc
 
 ### 6.5 The approvals file
 
-`.nax/approvals.json`, repo-local, written only by nax.
+`~/.nax/<project-name>/approvals.json`, written only by nax. **Not repo-local** — see the
+storage note below.
 
 ```json
 { "entries": [
@@ -386,11 +387,27 @@ defensive — but it is what makes the gate behave identically on Telegram (conc
 - `origin` distinguishes an escalated non-match from a deliberate operator `ask:` rule, so a
   later `nax approvals list` can show where a human-written rule was silenced by a button.
   That auditability is what makes "no expiry" defensible.
-- **The file must be refused to every tool, reads included** — the `isNaxConfigFile` treatment
-  (`src/tools/nax-owned-writes.ts:34-46`), not the `NAX_OWNED_WRITE_TOOLS` treatment at `:57`,
-  which covers only Write/Edit/Delete/GitCommit and would leave the file readable.
-  **If the agent can write this file, the agent writes its own approvals and the gate is
-  decorative. This is the highest-severity item in the phase.**
+**Storage — why not the repo.** `root` is `storyExecRoot`: the repo **or worktree** root,
+`<repo>/.nax-wt/<storyId>` under isolation (`src/agents/coding-tool-support.ts:58-64`). A
+repo-local `.nax/approvals.json` would therefore be ephemeral under worktree isolation, and in
+the main checkout it risks being committed — turning one operator's approvals into the whole
+team's, which is a security regression, not an inconvenience.
+
+`~/.nax/<project-name>/` is the established home for per-project durable state (`cost/`,
+`features/`, `prompt-audit/`, `tool-audit/`). Construct the path with the approved helper:
+`scripts/check-no-real-global-nax.ts` forbids open-coded `~/.nax` paths.
+
+> **This relocation is also the security mechanism.** The file sits **outside repoRoot**, so
+> `resolveWithin(root, ...)` returns null for it and every path-bearing tool is refused it —
+> reads included — by containment, which is already tested. That is stronger than an entry in
+> `nax-owned-writes.ts` (whose `NAX_OWNED_WRITE_TOOLS` set at `:57` covers only
+> Write/Edit/Delete/GitCommit and would leave the file readable) and costs nothing. Pin it with
+> a test rather than assuming it.
+
+**Why `root` is recorded but not keyed.** Keying on root would miss the cache on every
+worktree-isolated run — each story gets its own `.nax-wt/<storyId>` root — i.e. it would
+disable "remember" in nax's normal mode. A cached approval therefore applies across roots
+within a project; the project scoping is what bounds it.
 
 ## 7. Ledger and corpus
 
@@ -441,8 +458,9 @@ entry, asserting **executed outcomes** and not verdicts alone (master-plan §5).
 8. Cache exactness: an entry for `bun run test` does **not** authorize `bun run test --x`.
    This is the direct anti-regression for the §4.3 prefix hazard.
 9. A malformed `.nax/approvals.json` abstains the cache and still reaches the human link.
-10. `.nax/approvals.json` is refused to Write, Edit, Delete, GitCommit **and Read**, through
-    `runtime.callTool`, asserting the file is unchanged on disk afterwards.
+10. The approvals file is refused to Write, Edit, Delete, GitCommit **and Read** through
+    `runtime.callTool` — by containment, since it lives outside repoRoot (§6.5) — asserting the
+    file is unchanged on disk afterwards. Assert the EXECUTED outcome, not the verdict alone.
 11. Any reply action outside `options` (`skip`, `abort`) maps to deny.
 12. The dispatched `InteractionRequest` has `type: "choose"` and carries the command verbatim;
     a command exceeding the message budget denies rather than truncating.
@@ -460,17 +478,36 @@ unreadable-file failure, not only miss and hit.
 - A rich TUI plugin (§3.2) — this phase uses `CLIInteractionPlugin` for attended runs.
 - `src/cli/confirm.ts` deletion — separate dead-code cleanup.
 - `src/hooks/` command screening — different seam, deliberately not unified.
+- Capturing `callback_query.from` for per-user approval attribution (§10 item 2) — a channel
+  enhancement, not a gate change.
 - Promoting `RequestCapability` into an ask — a plausible future feeder into the same one
   gate, not this phase.
 - Changing the `bashApproval` default away from `raw`.
 
-## 10. Open items for the plan
+## 10. Open items — resolved
 
-1. **`-d` root divergence.** Should a cached approval apply when the hop's root differs from
-   the `root` recorded on the entry? Instinct: no — different root, different blast radius.
-   To be pinned by a test, not decided in the abstract.
-2. **Which chat may approve.** The existing telegram config allowlist
-   (`plugins/telegram-config.ts`) probably covers it; confirm rather than assume, and confirm
-   what happens when an unauthorized chat taps a button.
-3. **Request-id scheme** — short, unique, no `:`, within the 42-byte budget of §5.5.
-4. **Artifact path** for the corpus JSONL, so `nax-run-telemetry` can find it.
+All four are closed against the code; none is left to the implementer's judgement.
+
+1. **Root divergence — RESOLVED: a cached approval applies regardless of root.** `root` is
+   `storyExecRoot`, which is per-STORY under worktree isolation
+   (`coding-tool-support.ts:58-64`), so keying on it would disable "remember" in nax's normal
+   mode. Recorded for audit, not keyed (§6.5). Scoping is by project, via the file's location.
+2. **Approval authority — RESOLVED: membership of the configured Telegram chat.** The
+   ingestion filter compares `String(update.chat.id)` against the single configured `chatId`
+   (`plugins/telegram.ts:435-436`), so an unauthorized chat's tap is never ingested — no
+   response arrives, the prompt times out, and §3.1 makes that a deny. Fail-closed already, no
+   new code.
+   **Two limitations, documented not fixed:** in a GROUP chat (negative id) *any member* can
+   approve, because the filter is per-chat not per-user; and `respondedBy` is the constant
+   `"telegram"` (`plugins/telegram.ts:493,514`), with `callback_query.from` not captured in the
+   wire types, so **per-user attribution does not exist**. `approvedBy` is therefore
+   `telegram:<chatId>`. Capturing `from` is a channel enhancement benefiting every interaction
+   consumer — it is deliberately NOT done here, because reaching into the channel for a
+   gate-specific reason is what §3 exists to prevent. Listed in §9.
+3. **Request-id scheme — RESOLVED:** `ask-<8 hex chars>`, 12 chars. No `:` (which
+   `buildCallbackData` throws on), and well inside the 42-byte budget of §5.5 once the
+   `:choose:allow-remember` suffix is subtracted. Uniqueness only needs to hold within a run,
+   where receivers are keyed per request id.
+4. **Corpus artifact path — RESOLVED:** `~/.nax/<project-name>/approval-audit/<runId>.jsonl`,
+   mirroring the existing `tool-audit/` / `prompt-audit/` / `review-audit/` convention
+   (`src/config/paths/index.ts:154`) so `nax-run-telemetry` finds it without new wiring.
