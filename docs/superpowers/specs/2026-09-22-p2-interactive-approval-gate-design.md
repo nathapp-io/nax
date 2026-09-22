@@ -184,7 +184,7 @@ As a chain link instead:
 
 - a remembered approval can never override a breach, a denied flag or an explicit deny rule —
   structurally, because those never reach the ask tier;
-- matching is **exact** on the command string (§6.5), because the link does not go through
+- matching is **exact** on the command string (§6.6), because the link does not go through
   the glob matcher, so the entry means the string the human actually read;
 - `compileToolPolicy` is untouched, so P1's 21-case deny suite remains the regression spine and
   cannot be regressed by an approvals file;
@@ -274,7 +274,7 @@ reason:  segment 2 (`tail`) matched no allow rule
 stage:   implementer
 
 [ Allow once ] [ Allow + remember ] [ Deny ]
-120s -> deny
+10m -> deny
 ```
 
 ### 5.5 Fail-closed rendering details
@@ -338,7 +338,7 @@ Every path resolves to a decision; none throws.
 | cache hit | allow | `cache` |
 | no chain (`ctx.interaction` null: no config, or headless + `cli`) | deny | `unavailable` |
 | `chain.prompt()` throws (all plugins failed) | deny | `unavailable` |
-| no reply within `interaction.defaults.timeout` | deny | `timeout` |
+| no reply within `execution.approvalTimeout` (§6.5) | deny | `timeout` |
 | operator taps Deny / Skip / Abort | deny | `human` |
 | approvals file missing, unreadable or malformed | **cache link abstains**; human link still asked | (whatever answers) |
 
@@ -358,7 +358,22 @@ different ones queue. The native turn-loop executes tools serially today, so thi
 defensive — but it is what makes the gate behave identically on Telegram (concurrent) and CLI
 (serial, §3.3).
 
-### 6.5 The approvals file
+### 6.5 Approval timeout (user, 2026-09-22)
+
+**New config key `execution.approvalTimeout`, default 600000 ms (10 minutes)**, bounded like
+its siblings (min 30 s, max 1 h). It is **independent of `interaction.defaults.timeout`** and
+the human link reads only this one.
+
+A permission prompt has a different cost profile from a pipeline gate: timing out DENIES, which
+can cost a turn or fail a story, so its patience must not be coupled to a value an operator
+would change for unrelated reasons (merge gates, cost warnings). Ten minutes is the schema's
+own interaction default and is long enough for a phone in another room without stalling a
+headless run indefinitely.
+
+This is the same separation §3.1 makes for `fallback`, applied to the other half of the
+timeout contract: **reuse the channel's transport, not its timing or fallback policy.**
+
+### 6.6 The approvals file
 
 `~/.nax/<project-name>/approvals.json`, written only by nax. **Not repo-local** — see the
 storage note below.
@@ -376,7 +391,9 @@ storage note below.
 ] }
 ```
 
-- **Key is `(stage, command)`, byte-exact.** No glob, no prefix, no expiry, and **no
+- **Key is `(stage, command)`, byte-exact.** No glob, no prefix, **no expiry** (user,
+  2026-09-22 — an entry stands until removed; `origin` + `approvedAt` + `naxCommit` and a
+  `nax approvals list/rm` surface are what make a standing grant auditable), and **no
   normalization** — not trimming, not whitespace collapsing, not quote folding. The stored
   string is the command string exactly as `policy.check` received it and exactly as it was
   rendered to the operator. Any normalization step is a place where the string that was
@@ -449,8 +466,12 @@ entry, asserting **executed outcomes** and not verdicts alone (master-plan §5).
 1. All 21 existing deny-suite cases still refuse, unchanged — the regression spine.
 2. `escalate` + a resolver that allows -> the command **executes** (via `stubRunArgv`);
    `escalate` + a resolver that denies -> `denied:ask`, nothing spawned.
-3. Timeout denies **even when `interaction.defaults.fallback` is `"continue"`** (§3.1). This
-   is the fail-open regression test; it must fail against a resolver built on `applyFallback`.
+3. Timeout denies **even when `interaction.defaults.fallback` is `"continue"` or
+   `"escalate"`** (§3.1) — `applyFallback` maps BOTH to `approve` (`chain.ts:186-193`), and
+   `"escalate"` is what this author's own global config sets, so the fail-open case is live and
+   not hypothetical. This test must fail against a resolver built on `applyFallback`.
+3b. The human link reads `execution.approvalTimeout`, never `interaction.defaults.timeout`
+   (§6.5) — assert with the two set to different values.
 4. No chain -> deny with `decidedBy: "unavailable"`, distinct from timeout's reason string.
 5. A throwing `chain.prompt()` yields `denied:ask`, **not** `{kind:"error"}` (§6.3).
 6. Terminal link cannot abstain: a chain of all-abstaining links denies.
@@ -459,7 +480,7 @@ entry, asserting **executed outcomes** and not verdicts alone (master-plan §5).
    This is the direct anti-regression for the §4.3 prefix hazard.
 9. A malformed `.nax/approvals.json` abstains the cache and still reaches the human link.
 10. The approvals file is refused to Write, Edit, Delete, GitCommit **and Read** through
-    `runtime.callTool` — by containment, since it lives outside repoRoot (§6.5) — asserting the
+    `runtime.callTool` — by containment, since it lives outside repoRoot (§6.6) — asserting the
     file is unchanged on disk afterwards. Assert the EXECUTED outcome, not the verdict alone.
 11. Any reply action outside `options` (`skip`, `abort`) maps to deny.
 12. The dispatched `InteractionRequest` has `type: "choose"` and carries the command verbatim;
@@ -470,7 +491,31 @@ hides criticals. A fake `InteractionChain` must reproduce `prompt()`'s **throwin
 **timeout** modes, not only its success mode; a fake approvals store must reproduce
 unreadable-file failure, not only miss and hit.
 
-## 9. Out of scope
+## 9. Exit criteria (user, 2026-09-22)
+
+**The shipped default stays `bashApproval: raw`.** P2 does not change any default, so no
+existing project's behaviour moves.
+
+**But P2 does not exit dormant.** Its exit requires the gate exercised end to end on real
+traffic: set `bashApproval: escalate` on the P0 baseline corpora (`p0-baseline/native-smoke`,
+`p0-baseline/monorepo-prompt`) and run them, with a reachable Telegram chat.
+
+Exit is met when, from the artifacts:
+
+1. a real escalated command reached the phone, was approved, and **executed** — with the
+   ledger recording `decidedBy: "human"` on the allow path;
+2. a denial and a timeout each produced a `denied:ask` row with distinct `decidedBy` values;
+3. `allow-remember` wrote an entry, and a later identical command resolved from the cache with
+   `decidedBy: "cache"` and no interaction request dispatched;
+4. the approval-audit JSONL exists and carries the first ground-truth rows for P5.
+
+This also yields the first real `denied:ask` measurements in the project's history — as
+telemetry, not as a gate (§2.1).
+
+**These are billed `nax run`s and need explicit approval at the launch moment** (standing
+ruling). Gate on artifacts, never on exit codes — nax exits 0 on failure.
+
+## 10. Out of scope
 
 - **D4's post-allow seam** in `runtime.ts` — that is P5's, and P2 builds only the chain slot.
 - **The model link itself** (P5).
@@ -484,14 +529,14 @@ unreadable-file failure, not only miss and hit.
   gate, not this phase.
 - Changing the `bashApproval` default away from `raw`.
 
-## 10. Open items — resolved
+## 11. Open items — resolved
 
 All four are closed against the code; none is left to the implementer's judgement.
 
 1. **Root divergence — RESOLVED: a cached approval applies regardless of root.** `root` is
    `storyExecRoot`, which is per-STORY under worktree isolation
    (`coding-tool-support.ts:58-64`), so keying on it would disable "remember" in nax's normal
-   mode. Recorded for audit, not keyed (§6.5). Scoping is by project, via the file's location.
+   mode. Recorded for audit, not keyed (§6.6). Scoping is by project, via the file's location.
 2. **Approval authority — RESOLVED: membership of the configured Telegram chat.** The
    ingestion filter compares `String(update.chat.id)` against the single configured `chatId`
    (`plugins/telegram.ts:435-436`), so an unauthorized chat's tap is never ingested — no
