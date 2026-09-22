@@ -30,19 +30,9 @@ import { loadTranscript, saveTranscript } from "./transcript-store";
 import { truncateNativeToolResult } from "./truncation-handler";
 import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
 import { handleAskHumanCall } from "./turn-ask-human";
-import { runOverflowCompaction, runProactiveCompaction } from "./turn-compaction-step";
-import { realSleep, retryTransportFault } from "./turn-retry";
-import { type NativeTurnResponse, recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
-
-/**
- * Structural, matching adapter.ts's guard: nax-ai's error class is not importable
- * here and the kind is what matters.
- */
-function isContextOverflow(err: unknown): boolean {
-  if (typeof err !== "object" || err === null || !("protocolError" in err)) return false;
-  const { protocolError } = err as { protocolError?: { kind?: unknown } };
-  return protocolError?.kind === "context-overflow";
-}
+import { runProactiveCompaction } from "./turn-compaction-step";
+import { completeWithRecovery } from "./turn-complete-step";
+import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
 
 export async function runNativeTurn(
   handle: SessionHandle,
@@ -172,80 +162,23 @@ export async function runNativeTurn(
           anchorIndex = undefined;
         }
       }
-      let res: NativeTurnResponse;
-      try {
-        res = await deps.complete(messages, tools);
-      } catch (err) {
-        // Written as one guarded `if` (not a separate `canRetry` boolean) so
-        // TypeScript's narrowing carries deps.summarize/contextWindow/compaction
-        // as defined below — a boolean flag loses that narrowing.
-        if (
-          !isContextOverflow(err) ||
-          summarizeFailed ||
-          deps.summarize === undefined ||
-          deps.contextWindow === undefined ||
-          deps.compaction === undefined ||
-          !deps.compaction.enabled
-        ) {
-          // nax#1870: not an overflow this branch can handle. One more
-          // guarded branch beside the overflow backstop above, not a second
-          // loop or a second try/catch here — the retry's own looping and
-          // backoff live in retryTransportFault (./turn-retry), called once.
-          if (deps.transportRetry === undefined) throw err;
-          res = await retryTransportFault(err, {
-            attempt: () => deps.complete(messages, tools),
-            config: deps.transportRetry,
-            deadline: deps.deadline,
-            signal: opts.signal,
-            sleep: deps.sleep ?? realSleep,
-            onRetry: (retryNumber, delayMs, fault) => {
-              getSafeLogger()?.warn("native-adapter", `retrying after a ${fault.protocolError.kind} fault`, {
-                sessionName: handle.id,
-                retryNumber,
-                delayMs,
-                kind: fault.protocolError.kind,
-                message: fault.protocolError.message,
-                ...(fault.protocolError.status !== undefined ? { status: fault.protocolError.status } : {}),
-                ...(fault.protocolError.retryAfter !== undefined ? { retryAfter: fault.protocolError.retryAfter } : {}),
-              });
-              // Resets the watchdog's lastActivityAt so a call being retried
-              // is not mistaken for an idle one — same mechanism the
-              // compaction summary above uses. All-zero is honest, not
-              // fabricated: a pre-first-event transport throw bills nothing
-              // (see nax-ai's retry.ts), so this beat truly carries zero
-              // tokens, not a guessed non-zero number.
-              deps.onActivity?.({ kind: "usage", inputTokens: 0, outputTokens: 0, costUsd: 0 });
-            },
-          });
-          // Falls through to the shared round-trip bookkeeping and tool
-          // execution below, exactly like the overflow-retry branch's own
-          // `res = await deps.complete(...)` two lines down — one success
-          // path, reached from either recovery, not a second copy of it.
-        } else {
-          const step = await runOverflowCompaction({
-            messages,
-            usage,
-            sessionName: handle.id,
-            lastUsage,
-            anchorIndex,
-            deps: {
-              summarize: deps.summarize,
-              contextWindow: deps.contextWindow,
-              compaction: deps.compaction,
-              onActivity: deps.onActivity,
-              deadline: deps.deadline,
-            },
-            error: err,
-            ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-          });
-          messages = [...step.messages];
-          // The anchor described the pre-compaction array; it is meaningless now.
-          lastUsage = undefined;
-          anchorIndex = undefined;
-          // Retried once. A second overflow propagates: compacting further would be
-          // guessing, and the failure now carries a correct diagnosis.
-          res = await deps.complete(messages, tools);
-        }
+      const step = await completeWithRecovery({
+        messages,
+        tools,
+        usage,
+        summarizeFailed,
+        sessionName: handle.id,
+        lastUsage,
+        anchorIndex,
+        deps,
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+      });
+      const res = step.res;
+      messages = [...step.messages];
+      if (step.compacted) {
+        // The anchor described the pre-compaction array; it is meaningless now.
+        lastUsage = undefined;
+        anchorIndex = undefined;
       }
       roundTrips += 1;
       usage.add(res.usage, res.costUsd, res.rates);
