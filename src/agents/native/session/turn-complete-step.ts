@@ -6,8 +6,9 @@
  * site: one round trip is issued, and a throw gets exactly one of the two
  * recoveries. They were two branches of the loop's single try/catch; folding
  * them into a step is what will let one seam observe every round trip. P3
- * attaches `transform_context` and `before_request` here; today no event fires
- * from this module.
+ * attaches `transform_context` and `before_request` here — `before_request`
+ * fires per request attempt from the private `request()` wrapper below, and
+ * `transform_context` joins it there (spec 6.5).
  *
  * The private `isContextOverflow` guard is this module's alone: it decides
  * which recovery a thrown round trip gets.
@@ -15,6 +16,7 @@
 
 import { getSafeLogger } from "@/logger";
 import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
+import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events";
 import type { TurnAccumulator } from "./turn-accumulator";
 import { runOverflowCompaction } from "./turn-compaction-step";
 import { realSleep, retryTransportFault } from "./turn-retry";
@@ -50,17 +52,57 @@ export interface CompleteStepArgs {
   readonly sessionName: string;
   readonly lastUsage: { readonly promptTokens: number } | undefined;
   readonly anchorIndex: number | undefined;
+  /**
+   * The registry actually in use — the loop's local (`deps.loopEvents ??
+   * createLoopEventRegistry()`), not `deps.loopEvents` itself, which is
+   * usually absent and would dispatch to nothing.
+   */
+  readonly loopEvents: LoopEventRegistry;
+  /** The round trip this request belongs to, as counted by the loop. */
+  readonly roundTrip: number;
+  /** The session's resolved model; undefined when driven without a modelDef. */
+  readonly model?: string;
   readonly deps: TurnDeps;
   readonly signal?: AbortSignal;
 }
 
 export async function completeWithRecovery(args: CompleteStepArgs): Promise<CompleteStepResult> {
-  const { tools, usage, summarizeFailed, sessionName, lastUsage, anchorIndex, deps, signal } = args;
+  const {
+    tools,
+    usage,
+    summarizeFailed,
+    sessionName,
+    lastUsage,
+    anchorIndex,
+    loopEvents,
+    roundTrip,
+    model,
+    deps,
+    signal,
+  } = args;
   let messages: readonly NativeTranscriptMessage[] = args.messages;
   let compacted = false;
   let res: NativeTurnResponse;
+  // Model, thinking level and timeout are bound in the adapter's closure above
+  // the loop (spec 6.3), so the bag this dispatches starts empty; a handler's
+  // patch is the only thing that ever fills it.
+  const baseOptions: CompleteCallOptions = {};
+  // One wrapper, three call sites (spec 6.5). The wrapper owns `attempt`, so
+  // the retry machinery reports 2..n without knowing an event exists.
+  let attempt = 0;
+  const request = async (msgs: readonly NativeTranscriptMessage[]): Promise<NativeTurnResponse> => {
+    attempt += 1;
+    const patch = await loopEvents.dispatch("before_request", {
+      ...(model !== undefined ? { model } : {}),
+      roundTrip,
+      attempt,
+      options: baseOptions,
+    });
+    const options = patch.options === undefined ? baseOptions : { ...baseOptions, ...patch.options };
+    return deps.complete(msgs, tools, options);
+  };
   try {
-    res = await deps.complete(messages, tools);
+    res = await request(messages);
   } catch (err) {
     // Written as one guarded `if` (not a separate `canRetry` boolean) so
     // TypeScript's narrowing carries deps.summarize/contextWindow/compaction
@@ -79,7 +121,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       // backoff live in retryTransportFault (./turn-retry), called once.
       if (deps.transportRetry === undefined) throw err;
       res = await retryTransportFault(err, {
-        attempt: () => deps.complete(messages, tools),
+        attempt: () => request(messages),
         config: deps.transportRetry,
         deadline: deps.deadline,
         signal,
@@ -105,7 +147,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       });
       // Falls through to the shared round-trip bookkeeping and tool
       // execution below, exactly like the overflow-retry branch's own
-      // `res = await deps.complete(...)` two lines down — one success
+      // `res = await request(messages)` two lines down — one success
       // path, reached from either recovery, not a second copy of it.
     } else {
       const step = await runOverflowCompaction({
@@ -128,7 +170,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       compacted = true;
       // Retried once. A second overflow propagates: compacting further would be
       // guessing, and the failure now carries a correct diagnosis.
-      res = await deps.complete(messages, tools);
+      res = await request(messages);
     }
   }
   return { res, messages, compacted };

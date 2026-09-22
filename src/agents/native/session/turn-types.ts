@@ -19,7 +19,7 @@ import type { ResolvedRates, TokenUsage } from "@/agents/cost";
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import type { SpinBreaker } from "@/runtime/spin-breaker";
 import type { TranscriptMessage as NativeTranscriptMessage, ResolvedCompaction } from "./compaction";
-import type { LoopEventRegistry } from "./loop-events";
+import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events";
 import type { toToolDefinitions } from "./tool-mapping";
 import type { TurnRetryConfig } from "./turn-retry";
 
@@ -54,6 +54,7 @@ export interface TurnDeps {
   complete(
     messages: readonly ConversationMessage[],
     tools: ReturnType<typeof toToolDefinitions>,
+    options?: CompleteCallOptions,
   ): Promise<NativeTurnResponse>;
   /**
    * One model call, no tools, used only to summarize a dropped span. Separate

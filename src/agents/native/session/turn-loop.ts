@@ -168,6 +168,11 @@ export async function runNativeTurn(
         sessionName: handle.id,
         lastUsage,
         anchorIndex,
+        // The loop's local, not deps.loopEvents — the same registry runToolBatch
+        // below receives, so both dispatch seams observe the same handlers.
+        loopEvents,
+        roundTrip: roundTrips,
+        ...(handle.modelDef?.model !== undefined ? { model: handle.modelDef.model } : {}),
         deps,
         ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
       });
