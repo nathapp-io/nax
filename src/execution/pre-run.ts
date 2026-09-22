@@ -15,6 +15,7 @@ import type { PRD } from "@/prd/types";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { logPipelineOutcome, runPipeline } from "../pipeline/runner";
 import type { PipelineContext, PipelineStage } from "../pipeline/types";
+import { storyPackageDir } from "../utils/path-frame";
 
 /**
  * Derived from PipelineContext with Pick rather than re-declared, so a new
@@ -54,6 +55,7 @@ export async function runPreRunPipeline(
     featureDir: deps.featureDir,
     story: prd.userStories[0],
     stories: prd.userStories,
+    runStoryWorkdirs: prd.userStories.map(storyPackageDir),
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     hooks: deps.hooks,
     agentGetFn: deps.agentGetFn,

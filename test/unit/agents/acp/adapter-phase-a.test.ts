@@ -185,9 +185,9 @@ describe("sendTurn()", () => {
       promptFn: () => new Promise(() => {}),
       cancelFn: async () => {},
     });
-    const handle = await openHandle(session, {}, { timeoutSeconds: 0.001 }); // 1ms
+    const handle = await openHandle(session, {}, { timeoutSeconds: 0.1 }); // 100ms
     const impl = handle as AcpSessionHandleImpl;
-    expect(impl._timeoutSeconds).toBe(0.001);
+    expect(impl._timeoutSeconds).toBe(0.1);
 
     const result = await adapter.sendTurn(handle, "prompt", {
       interactionHandler: NO_OP_INTERACTION_HANDLER,

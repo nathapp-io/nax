@@ -143,6 +143,10 @@ export const NaxConfigSchema = z
       permissionProfile: "unrestricted",
       // BUG-20 — derived, not hand-written; see DEFAULT_BASH_APPROVAL_MODE.
       bashApproval: DEFAULT_BASH_APPROVAL_MODE,
+      // BUG-20 — derived, not hand-written (same rationale as `bashApproval`
+      // above): a literal here would shadow the field's own default and leave
+      // `execution.approvalTimeout` undefined from NaxConfigSchema.parse({}).
+      approvalTimeout: ExecutionConfigSchema.shape.approvalTimeout.parse(undefined),
       smartTestRunner: true,
       worktreeDependencies: {
         mode: "off",

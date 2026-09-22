@@ -10,6 +10,7 @@ import { _clearRootConfigCache } from "@/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { verifierOp } from "@/operations";
+import type { AskResolver } from "@/permissions";
 import { VERDICT_FILE } from "@/tdd";
 import { _codingToolDeps } from "@/tools";
 import { gitWithTimeout } from "@/utils/git";
@@ -754,6 +755,41 @@ describe("resolveCodingToolSupport — run correlation ids", () => {
       expect(parsed.calls[0].outcome).toBe("error");
       expect(parsed.calls[0].callId).toBe("call-wired");
       expect(parsed.calls[0].scopeId).toBe("scope-wired");
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
+});
+
+describe("resolveCodingToolSupport — askResolver (P2 threading)", () => {
+  test("forwards an askResolver from options into the runtime's ask path", async () => {
+    const root = makeTempDir("nax-askresolver-");
+    try {
+      const commands: string[] = [];
+      const askResolver: AskResolver = {
+        resolve: async (req) => {
+          commands.push(req.command ?? "");
+          return { decision: "allow", decidedBy: "human", latencyMs: 0 };
+        },
+      };
+      // Widened: `ExecutionConfig.permissions` omits `allow` (zod carries it); same pattern as the PR4 test above.
+      const execution: Record<string, unknown> = {
+        bashApproval: "escalate",
+        permissions: { run: { allow: ["Bash(echo *)"] } },
+      };
+      const support = await resolveCodingToolSupport({
+        declaredTools: ["Bash"],
+        codingToolRoot: root,
+        pipelineStage: "run",
+        config: makeNaxConfig({ execution }),
+        askResolver,
+      });
+
+      // `touch marker` is unmatched by `echo *`, so escalate must consult the
+      // resolver before the compound command may run.
+      const outcome = await support?.runtime.callTool("Bash", { command: "echo hi && touch marker" });
+      expect(outcome?.kind).toBe("ok");
+      expect(commands).toEqual(["echo hi && touch marker"]);
     } finally {
       cleanupTempDir(root);
     }

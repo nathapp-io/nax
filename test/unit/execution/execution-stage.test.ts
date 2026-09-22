@@ -21,7 +21,7 @@ import type { PostRunInspectionResult } from "@/execution/post-run";
 import { decideStageAction } from "@/execution/post-run";
 import { ExecutionPlan } from "@/execution/story-orchestrator";
 import type { CallContext } from "@/operations";
-import { executionStage, routeTddFailure } from "@/pipeline/stages/execution";
+import { collectRunStageModes, executionStage, routeTddFailure } from "@/pipeline/stages/execution";
 import type { PipelineContext } from "@/pipeline/types";
 import type { FailureCategory } from "@/tdd";
 import { makeInspectionOpts, makePlanResult } from "./_post-run-fixtures";
@@ -33,6 +33,15 @@ import { makeInspectionOpts, makePlanResult } from "./_post-run-fixtures";
 interface MockContext {
   retryAsLite?: boolean;
 }
+
+describe("collectRunStageModes", () => {
+  it("includes a raw package config so the shared approval cache is disabled", () => {
+    const root = makeNaxConfig({ execution: { bashApproval: "escalate" } });
+    const rawPackage = makeNaxConfig({ execution: { bashApproval: "raw" } });
+
+    expect(collectRunStageModes([root, rawPackage])).toContain("raw");
+  });
+});
 
 function makeInspection(overrides: Partial<PostRunInspectionResult> = {}): PostRunInspectionResult {
   return {

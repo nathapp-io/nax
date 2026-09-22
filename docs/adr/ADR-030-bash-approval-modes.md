@@ -6,7 +6,7 @@
 **Builds on:** ADR-029 (Phase C scope and constraints), ADR-028 (native sessions and the pull-tool loop)
 **Amends:** ADR-029 §3 — see the 2026-09-22 amendment appended to that section
 **Design:** `docs/superpowers/specs/2026-09-22-bash-approval-modes-design.md`
-**Implementation:** none yet — plan at `docs/superpowers/plans/2026-09-22-bash-approval-modes.md`
+**Implementation:** P1 modes merged in PR #2184 (`7b37dbf74`); P2 ask-tier resolver chain on branch `feat/p2-interactive-approval-gate` (PR/merge pending) — plan at `docs/superpowers/plans/2026-09-22-p2-interactive-approval-gate.md`
 
 ---
 
@@ -176,3 +176,79 @@ still fails closed to `gated`.
   concrete instance of the first half. The narrower gate would be a richer typed `Git` surface,
   not a shell. That decision is deferred pending measurement after this ships, because `raw`
   changes nothing for the roles that never declare `Bash`.
+
+---
+
+## Amendment — 2026-09-22: the ask tier gets a resolver (P2)
+
+**Supersedes:** the "Any interactive approval channel" bullet under "What this does not decide".
+`escalate` no longer only produces a demand signal; P2 builds the channel that consumes it.
+
+Phase 2 of the native-coding-agent arc shipped on branch `feat/p2-interactive-approval-gate`
+(PR/merge pending). This ADR is amended because its central claim about `escalate` — that it
+refuses in exactly the cases `gated` refuses, and "differs only in the ledger outcome it records"
+(Consequences) — is no longer true.
+
+### The resolver is now a chain, and the single permission decision point
+
+The `AskResolver` seam now has a real implementation: `chainAskLinks(...)`
+(`src/permissions/ask-chain.ts`), a first-non-abstain chain that appends its OWN terminal deny.
+It is the ONE decision point for the ask tier; the interaction channel is not a peer of it — the
+human link talks to the channel. The chain, in order:
+
+1. **approvals cache** (`createApprovalsLink`) — a remembered human decision, matched byte-exact
+   on `(stage, command)`. A hit allows as `decidedBy: "cache"`.
+2. **[P5 classifier slot]** — reserved and empty. P5's typed-decision auto-approval attaches here,
+   narrowing allow → ask. Not part of P2.
+3. **human** (`createHumanAskLink`) — an adapter that renders the request into the interaction
+   subsystem's existing `choose` vocabulary and dispatches through the configured chain. Resolves
+   `human` on a tap, `timeout` when nobody answers, `unavailable` when no channel is configured
+   or the command exceeds the prompt budget.
+4. **terminal deny** — appended by the chain itself, so an exhausted or all-abstaining chain
+   denies whether or not the last link is total. A link that throws abstains, never allows.
+
+Fail-closed by construction: an empty chain (`chainAskLinks([])`) denies as `unavailable`,
+preserving `headlessAskResolver()`'s old totality.
+
+### `escalate`'s advertised description was revisited and deliberately kept conservative
+
+During P1, `escalate`'s Bash tool description was byte-identical to `gated`'s *because the
+resolver always denied* — advertising a human channel would have been false. That reason has now
+expired: the resolver is real and a human can approve.
+
+It was revisited and deliberately kept byte-identical anyway. `bashToolDescription(shell, opts)`
+knows only the mode and the configured patterns; it cannot see whether an interaction channel is
+configured, which is a SEPARATE config axis. Reachability is config-dependent: a headless or
+unconfigured run resolves to `unavailable` and denies. Advertising "a human can approve" from the
+mode alone would be false in exactly those runs — the D13a fail-open shape stated in prose. The
+pin test (`test/unit/agents/coding-tool-bash.test.ts`) that asserts `escalate`'s description
+equals `gated`'s therefore stays.
+
+**The default remains `raw`.** This amendment adds a consumer for `escalate`'s demand signal; it
+does not change the posture chosen above, and it does not change the default.
+
+### The approvals cache's trust boundary
+
+A remembered approval is a CACHED HUMAN DECISION, not a rule: a synthesized `Bash(...)` rule would
+be broader than what was approved, because rule matching is a token-wise prefix match with no
+length ceiling (`src/tools/policy-bash.ts:72-83`). The cache is therefore a resolver-side
+byte-exact link, never a grant.
+
+Living outside `repoRoot` protects the approvals file from the typed path-bearing tools but **not
+from Bash**: `src/tools/nax-owned-writes.ts:52-58` excludes Bash by design, and under `raw` mode
+`screenRawBashCommand`'s protected-path screen skips every path outside the root
+(`src/tools/policy-bash-raw.ts:84`). A `raw` shell can forge entries. That is not a new
+vulnerability — a `raw` shell needs no forged permission to run a command — but it IS a
+cross-stage escalation in a MIXED-mode run, where a `raw` stage poisons the cache an `escalate`
+stage later trusts.
+
+Two fail-closed preconditions bound that, both implemented in `createApprovalsLink`:
+
+1. **No stage in the run resolves to `raw`.** If any does, the cache disables itself.
+2. **The approvals file must lie outside `repoRoot`.** If it resolves inside, the cache disables
+   itself.
+
+Both fail by **abstaining**, which escalates to the human, so a failure costs prompts rather than
+safety. Integrity signing was deliberately not attempted: any key the nax process can read, a
+`raw` shell as that process can read. P4's sandbox closes the underlying hole; disclosed, not
+fixed.

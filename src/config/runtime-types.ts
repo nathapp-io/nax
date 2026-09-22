@@ -135,6 +135,8 @@ export interface ExecutionConfig {
   permissionProfile?: "unrestricted" | "safe" | "scoped";
   /** ADR-030. Global default; `permissions.<stage>.bashApproval` overrides it. */
   bashApproval?: "raw" | "gated" | "escalate";
+  /** P2. Milliseconds a permission prompt waits before denying. */
+  approvalTimeout?: number;
   /** Per-stage tool policy (GitHub #374). Read by resolveScopedPermissions; enforced by src/tools/. */
   permissions?: Record<
     string,

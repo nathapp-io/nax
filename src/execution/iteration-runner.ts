@@ -185,6 +185,7 @@ export async function runIteration(
     prd,
     story,
     stories: storiesToExecute,
+    runStoryWorkdirs: prd.userStories.map(storyPackageDir),
     routing,
     projectDir: ctx.workdir,
     workdir: resolvedWorkdir,

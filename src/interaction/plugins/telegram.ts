@@ -1,14 +1,14 @@
 /**
  * Telegram Interaction Plugin (v0.15.0 US-005)
  *
- * Send interaction requests via Telegram Bot API with inline keyboard.
- * Poll for callback query or reply message responses.
+ * Send interaction requests via Telegram Bot API with inline keyboard and poll replies.
  */
 
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
+import { assertTelegramApprovalFitsOneMessage } from "./telegram-approval";
 import { normalizeChatId, TelegramConfigSchema, type TelegramMessage, type TelegramUpdate } from "./telegram-config";
 import {
   buildBody,
@@ -172,9 +172,9 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     }
     const body = buildBody(request);
 
-    // Split body into chunks that fit within Telegram's 4000-char limit.
-    // Header is prepended to the first chunk; subsequent chunks get a part label.
+    // Split body into chunks that fit within Telegram's 4000-char limit; subsequent chunks get a part label.
     const chunks = splitText(body, MAX_MESSAGE_CHARS - header.length - 10); // 10 = buffer for part label
+    assertTelegramApprovalFitsOneMessage(request, chunks);
 
     try {
       const sentIds: number[] = [];

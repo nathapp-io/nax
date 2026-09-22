@@ -99,7 +99,7 @@ describe("createBashTool -- bashApproval-aware description", () => {
     expect(description).toContain("advisory");
   });
 
-  test("escalate is byte-identical to gated (the P1 decision: no promise of a human channel)", () => {
+  test("escalate is byte-identical to gated (P2: reachability is config-dependent, no promise of a human)", () => {
     const opts = { patterns: ["git *"] } as const;
     const gated = createBashTool({ ...opts, bashApproval: "gated" }).description;
     const escalate = createBashTool({ ...opts, bashApproval: "escalate" }).description;

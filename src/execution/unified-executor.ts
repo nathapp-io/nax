@@ -290,6 +290,7 @@ export async function executeUnified(
                 config: ctx.config,
                 rootConfig: ctx.config,
                 prd,
+                runStoryWorkdirs: prd.userStories.map(storyPackageDir),
                 skipPrdPersistence: true, // CR-1: worktree pipelines must not persist PRD
                 prdPath: ctx.prdPath, // BUG-36: carried through to the rectification re-run
                 projectDir: ctx.workdir,
@@ -638,8 +639,6 @@ export async function executeUnified(
     if (ctx.config.acceptance?.enabled) {
       logger?.info("execution", "Running post-run pipeline (acceptance tests)");
       const { postRunPipeline } = await import("../pipeline/stages");
-      // Same defect class as the pre-run call site: discarding this result loses
-      // the only record of the acceptance gate failing to reach its verdict.
       const postRunResult = await runPipeline(
         postRunPipeline,
         {

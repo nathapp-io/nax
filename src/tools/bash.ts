@@ -112,14 +112,15 @@ function rawDescription(shell: string): string {
 
 function bashToolDescription(shell: string, opts: BashToolOptions): string {
   if (opts.bashApproval === "raw") return rawDescription(shell);
-  // `escalate` ships against the existing `AskResolver` seam, whose only
-  // implementation denies unconditionally until an interactive approval
-  // channel exists (ADR-030 "What this does not decide"). Advertising
-  // "unmatched commands go to a human" would be a lie for the whole of P1,
-  // whose own exit criterion is metering `denied:ask` volume against that
-  // lie never having been told -- so `escalate`'s description is IDENTICAL
-  // to `gated`'s, deliberately, and must stay that way until P2 ships a real
-  // resolver. Do not "improve" this by describing escalation.
+  // `escalate`'s description stays IDENTICAL to `gated`'s (ADR-030, amended
+  // for P2). During P1 that was because the `AskResolver` seam always denied;
+  // P2 shipped a real resolver chain, so that reason has expired. It stays
+  // conservative anyway: this function sees only the mode and the configured
+  // patterns, while whether a human is reachable at all is a SEPARATE config
+  // axis (is an interaction channel configured?). A headless or unconfigured
+  // run still resolves to `unavailable` and denies, so advertising "a human
+  // can approve" from the mode alone would be false there. Do not "improve"
+  // this by describing escalation. The default remains `raw`.
   return gatedDescription(shell, opts.patterns);
 }
 

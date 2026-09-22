@@ -18,14 +18,18 @@ export interface AskRequest {
   readonly rule: string;
   /** One human-readable line describing the attempted call. */
   readonly summary: string;
-}
-
-/**
- * The seam an interactive approval channel later plugs into (spec R1).
- * Injected where the runtime is created — a runtime capability, not config.
- */
-export interface AskResolver {
-  resolve(req: AskRequest): Promise<"allow" | "deny">;
+  /**
+   * The command string VERBATIM, never truncated. `summary` is capped at 200
+   * chars for logs; a human deciding whether to permit a command must see all
+   * of it, or they are approving a string they never read.
+   */
+  readonly command?: string;
+  /** The permitted root -- where the shell actually starts (src/tools/bash.ts:165). */
+  readonly root?: string;
+  /** The verdict's original reason, NOT rewritten as `matched ask rule "..."`. */
+  readonly reason?: string;
+  readonly storyId?: string;
+  readonly featureName?: string;
 }
 
 export type { ToolGrant };

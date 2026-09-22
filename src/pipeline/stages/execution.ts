@@ -9,9 +9,16 @@
  *   → applyPostRunInspection → decideStageAction.
  */
 
+import { join } from "node:path";
 import { validateAgentForTier } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
-import { isThreeSessionStrategy } from "@/config";
+import {
+  type BashApprovalMode,
+  isThreeSessionStrategy,
+  loadConfigForPackage,
+  type NaxConfig,
+  resolveBashApproval,
+} from "@/config";
 import { assembleForStage } from "@/context/engine";
 import { NaxError } from "@/errors";
 import {
@@ -24,10 +31,19 @@ import {
 } from "@/execution";
 import type { TddMode } from "@/execution/post-run";
 import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
-import { buildInteractionBridge } from "@/interaction";
+import { buildInteractionBridge, cancelPendingAsk, createHumanAskLink } from "@/interaction";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
+import {
+  type AskRequest,
+  appendApproval,
+  appendApprovalAudit,
+  approvalsPath,
+  chainAskLinks,
+  createApprovalsLink,
+} from "@/permissions";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
+import { storyPackageDir } from "@/utils/path-frame";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -101,6 +117,58 @@ export const executionStage: PipelineStage = {
       stage: "execution",
     });
 
+    // The ask chain is built HERE because this is the only layer that can see
+    // both the permission types and the interaction chain. Fail-closed: the
+    // chain appends its own terminal deny, so an empty or exhausted chain
+    // denies rather than runs.
+    const approvalsFile = approvalsPath(ctx.runtime.outputDir);
+    // Built once and shared by every operation dispatched for this story.
+    const humanLink = createHumanAskLink({
+      // `ctx.interaction` is optional on PipelineContext, hence possibly
+      // `undefined`. The human link's signature accepts null AND undefined.
+      chain: ctx.interaction,
+      timeoutMs: ctx.config.execution?.approvalTimeout ?? 600_000,
+      featureName: ctx.prd.feature,
+      storyId: ctx.story.id,
+      abortSignal: ctx.abortSignal,
+      onRemember: async (req) =>
+        appendApproval(approvalsFile, {
+          stage: req.stage,
+          command: req.command ?? "",
+          root: req.root ?? ctx.workdir,
+          origin: "escalate",
+          matchedRule: null,
+          approvedAt: new Date().toISOString(),
+          approvedBy: "telegram",
+          naxCommit: process.env.NAX_COMMIT ?? "unknown",
+        }),
+    });
+    const baseResolver = chainAskLinks([
+      createApprovalsLink({
+        approvalsFile,
+        repoRoot: ctx.workdir,
+        stageModes: await collectEffectiveRunStageModes(ctx),
+      }),
+      // P5's classifier link slots in HERE, between cache and human.
+      humanLink,
+    ]);
+    // Every resolved ask appends a ground-truth corpus row (P2 design 7.2).
+    // The write is best-effort: a full disk must not turn a granted approval
+    // into a tool error, so a failed append is swallowed.
+    const askResolver = {
+      resolve: async (req: AskRequest) => {
+        const verdict = await baseResolver.resolve(req);
+        await appendApprovalAudit(join(ctx.runtime.outputDir, "approval-audit"), ctx.runtime.runId, {
+          request: req,
+          decision: verdict.decision,
+          decidedBy: verdict.decidedBy,
+          latencyMs: verdict.latencyMs,
+          at: new Date().toISOString(),
+        }).catch(() => undefined);
+        return verdict;
+      },
+    };
+
     const callCtx: CallContext = {
       runtime: ctx.runtime,
       packageView,
@@ -144,6 +212,7 @@ export const executionStage: PipelineStage = {
       story: ctx.story,
       ...(ctx.featureDir ? { featureDir: ctx.featureDir } : {}),
       ...(interactionBridge ? { interactionBridge } : {}),
+      ...(askResolver ? { askResolver } : {}),
       phaseTelemetry: {
         testStrategy: ctx.routing.testStrategy,
         sessionModel: isThreeSessionStrategy(ctx.routing.testStrategy) ? "three-session" : "single-session",
@@ -197,6 +266,11 @@ export const executionStage: PipelineStage = {
       throw err;
     } finally {
       unsubscribe();
+      // A prompt in flight when the run ends is cancelled and denied. The human
+      // link races its own pending decision with cancellation, so this settles
+      // even when a channel's cancel() only clears transport bookkeeping.
+      await cancelPendingAsk(humanLink);
+      humanLink.dispose();
     }
 
     // US-002: map the run-time repo-scoped dispatch records onto the live
@@ -232,3 +306,34 @@ export const _executionDeps = {
   assembleForStage,
   resolveScopeFiles,
 };
+
+/**
+ * Every stage's resolved `bashApproval` in this run, plus the global default.
+ *
+ * The approvals-cache link disables itself when ANY stage resolves to `raw`,
+ * because a raw shell can forge the cache file. Precedence lives in
+ * `resolveBashApproval` — this helper only enumerates.
+ */
+export function collectRunStageModes(configs: readonly (NaxConfig | undefined)[]): BashApprovalMode[] {
+  const modes = new Set<BashApprovalMode>();
+  for (const config of configs) {
+    if (config === undefined) return ["raw"];
+    const execution = config.execution;
+    const global = execution?.bashApproval;
+    modes.add(resolveBashApproval(global, undefined));
+    for (const block of Object.values(execution?.permissions ?? {})) {
+      modes.add(resolveBashApproval(global, block?.bashApproval));
+    }
+  }
+  return [...modes];
+}
+
+async function collectEffectiveRunStageModes(ctx: PipelineContext): Promise<BashApprovalMode[]> {
+  const packageDirs = [...new Set(ctx.runStoryWorkdirs ?? ctx.stories.map(storyPackageDir))];
+  const packageConfigs = await Promise.all(
+    packageDirs.map((packageDir) =>
+      loadConfigForPackage(ctx.projectDir, packageDir, ctx.rootConfig).catch(() => undefined),
+    ),
+  );
+  return collectRunStageModes([ctx.rootConfig, ctx.config, ...packageConfigs]);
+}

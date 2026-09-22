@@ -76,6 +76,8 @@ export interface PipelineContext extends DispatchContext {
   story: UserStory;
   /** Batch of stories (length 1 for single-story execution) */
   stories: UserStory[];
+  /** Package directories for every story selected for this run, preserved across parallel workers. */
+  runStoryWorkdirs?: readonly (string | undefined)[];
   /** Routing result from complexity classification */
   routing: RoutingResult;
   /**

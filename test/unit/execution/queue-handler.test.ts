@@ -30,6 +30,7 @@ describe("readQueueFile", () => {
   let logFile: string;
 
   beforeEach(() => {
+    resetLogger();
     workdir = makeTempDir("nax-queue-handler-");
     logFile = join(workdir, "audit.jsonl");
     initLogger({ level: "silent", filePath: logFile });
@@ -105,6 +106,7 @@ describe("clearQueueFile", () => {
   let logFile: string;
 
   beforeEach(() => {
+    resetLogger();
     workdir = makeTempDir("nax-queue-handler-clear-");
     logFile = join(workdir, "audit.jsonl");
     initLogger({ level: "silent", filePath: logFile });
@@ -159,6 +161,7 @@ describe("processQueueFile — read/process/clear in one lock (BUG-11)", () => {
   let logFile: string;
 
   beforeEach(() => {
+    resetLogger();
     workdir = makeTempDir("nax-queue-handler-process-");
     logFile = join(workdir, "audit.jsonl");
     initLogger({ level: "silent", filePath: logFile });
@@ -234,6 +237,7 @@ describe("drainQueueAtBatchBoundary (BUG-9)", () => {
   let logFile: string;
 
   beforeEach(() => {
+    resetLogger();
     workdir = makeTempDir("nax-queue-drain-");
     logFile = join(workdir, "audit.jsonl");
     initLogger({ level: "silent", filePath: logFile });

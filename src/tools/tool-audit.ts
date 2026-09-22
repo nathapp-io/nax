@@ -43,6 +43,15 @@ export interface ToolCallRecord {
   readonly executed?: readonly string[];
   /** Which workspace root the argv branch executed against. */
   readonly target?: "package" | "repoRoot";
+  /**
+   * Who approved an ask-matched call and how long the decision took. Recorded
+   * on BOTH the allow and deny paths so a human-approved execution is
+   * distinguishable in the ledger from a mechanically-allowed one.
+   *
+   * `remembered` is always false today: `AskVerdict` carries no "remembered"
+   * signal, so this is a placeholder for when the cache reports a hit.
+   */
+  readonly approval?: { readonly decidedBy: string; readonly remembered: boolean; readonly latencyMs: number };
   /** Provider id for a provider-supplied tool; absent for built-ins. */
   readonly provider?: string;
   /**

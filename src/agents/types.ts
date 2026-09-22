@@ -121,6 +121,8 @@ export interface AgentRunOptions {
     detectQuestion: (text: string) => Promise<boolean>;
     onQuestionDetected: (text: string) => Promise<string>;
   };
+  /** Answers an `ask` verdict (P2); built at the execution stage. */
+  askResolver?: import("@/permissions").AskResolver;
   /**
    * Explicit ACP session handle override. When set, the adapter uses this
    * name instead of auto-deriving from featureName/storyId/sessionRole.

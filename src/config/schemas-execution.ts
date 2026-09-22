@@ -262,6 +262,14 @@ export const ExecutionConfigSchema = z.object({
   typecheckCommand: z.string().nullable().optional(),
   permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).default("unrestricted"),
   bashApproval: BashApprovalModeSchema.default(DEFAULT_BASH_APPROVAL_MODE),
+  /**
+   * How long an interactive permission prompt waits before DENYING (P2 design
+   * section 6.5). Deliberately separate from `interaction.defaults.timeout`:
+   * a permission prompt's timeout denies -- costing a turn or a story -- so its
+   * patience must not be coupled to a value an operator tunes for merge gates
+   * and cost warnings. Reuse the channel's transport, not its timing.
+   */
+  approvalTimeout: z.number().int().min(30_000).max(3_600_000).default(600_000),
   permissions: PermissionsBlockSchema.optional(),
   /**
    * Repo-configurable glob denylist that narrows Delete beyond the

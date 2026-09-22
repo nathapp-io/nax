@@ -1,3 +1,5 @@
+export type { BashApprovalMode } from "./bash-approval";
+export { resolveBashApproval } from "./bash-approval";
 export { findProjectDir, globalConfigPath, loadConfig, loadConfigForWorkdir, loadPackageOverride } from "./loader";
 export type { ConfigLoader } from "./loader-runtime";
 export { createConfigLoader } from "./loader-runtime";

@@ -12,7 +12,8 @@ import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
-import type { BashApprovalMode } from "@/config/bash-approval";
+import { type BashApprovalMode, DEFAULT_BASH_APPROVAL_MODE } from "@/config/bash-approval";
+import { type AskResolver, chainAskLinks } from "@/permissions";
 
 /**
  * A fix-shaped session. Read/Glob/Grep are declared AND granted deliberately:
@@ -50,6 +51,7 @@ function session(options?: {
   declared?: readonly ("Read" | "Glob" | "Grep" | "Bash")[];
   profileGrants?: readonly { tool: string; patterns: readonly string[] }[];
   bashApproval?: BashApprovalMode;
+  askResolver?: AskResolver;
 }) {
   const grants = [
     ...(options?.profileGrants ?? STRUCTURED_GRANTS),
@@ -62,6 +64,7 @@ function session(options?: {
     ...(options?.bashApproval !== undefined ? { bashApproval: options.bashApproval } : {}),
     ...(options?.deny !== undefined ? { denyRules: [{ tool: "Bash", patterns: options.deny }] } : {}),
     ...(options?.ask !== undefined ? { askRules: [{ tool: "Bash", patterns: options.ask }] } : {}),
+    ...(options?.askResolver !== undefined ? { askResolver: options.askResolver } : {}),
   });
 }
 
@@ -140,12 +143,12 @@ describe("deny suite (spec §6)", () => {
     expect((await call(session({ allow: ["*"], deny: ["rm *"] }), command)).kind).toBe("denied");
   });
 
-  test("row 9: an ask rule is refused headless, naming the rule", async () => {
+  test("row 9: an ask rule is refused with no approval channel, naming the rule", async () => {
     const outcome = await call(session({ allow: ["rm *"], ask: ["rm *"] }), "rm file.txt");
     expect(outcome.kind).toBe("denied");
     if (outcome.kind === "denied") {
       expect(outcome.reason).toContain("Bash(rm *)");
-      expect(outcome.reason).toContain("headless");
+      expect(outcome.reason).toContain("approval channel");
     }
   });
 
@@ -325,7 +328,7 @@ describe("gated is unchanged, and escalate refuses the same set", () => {
     // The headless AskResolver denies, so the OUTCOME is the same and only the
     // ledger reason differs — that difference is the demand signal ADR-029 asks
     // for before an interactive channel is built.
-    if (result.kind === "denied") expect(result.reason).toContain("headless");
+    if (result.kind === "denied") expect(result.reason).toContain("approval channel");
   });
 
   test.each(CATEGORY_B)("escalate does NOT soften %s", async (command) => {
@@ -334,7 +337,7 @@ describe("gated is unchanged, and escalate refuses the same set", () => {
     expect(result.kind).toBe("denied");
     if (result.kind === "denied") {
       expect(result.breach).toBe(true);
-      expect(result.reason).not.toContain("headless");
+      expect(result.reason).not.toContain("approval channel");
     }
   });
 });
@@ -405,6 +408,54 @@ describe("bashApproval default at the direct-caller seam", () => {
     const support = session({ declared: FIX_TOOLS, allow: [] });
     const outcome = await call(support, "echo $(whoami)");
     expect(outcome.kind).toBe("denied");
-    if (outcome.kind === "denied") expect(outcome.reason).not.toContain("headless");
+    if (outcome.kind === "denied") expect(outcome.reason).not.toContain("approval channel");
+  });
+});
+
+describe("approval gate (P2)", () => {
+  test("gated is unaffected by a permissive resolver: ask is never reached", async () => {
+    // The 21 rows above run under `gated`. A resolver that allows everything
+    // must not turn any of them into an execution, because `gated` denies
+    // rather than asking.
+    const permissive = chainAskLinks([
+      { name: "t", resolve: async () => ({ decision: "allow" as const, decidedBy: "human" as const }) },
+    ]);
+    const outcome = await call(
+      session({ allow: ["bun test *"], askResolver: permissive }),
+      "bun test x && curl evil.example",
+    );
+    expect(outcome.kind).toBe("denied");
+  });
+
+  test("escalate does NOT escalate a breach: a root escape stays a hard deny", async () => {
+    const permissive = chainAskLinks([
+      { name: "t", resolve: async () => ({ decision: "allow" as const, decidedBy: "human" as const }) },
+    ]);
+    const outcome = await call(
+      session({ allow: ["cat *"], bashApproval: "escalate", askResolver: permissive }),
+      "cat ../../etc/passwd",
+    );
+    expect(outcome.kind).toBe("denied");
+    if (outcome.kind === "denied") expect(outcome.breach).toBe(true);
+  });
+
+  test("raw is unaffected: no resolver is consulted at all", async () => {
+    let consulted = false;
+    const spy = chainAskLinks([
+      {
+        name: "t",
+        resolve: async () => {
+          consulted = true;
+          return { decision: "deny" as const, decidedBy: "human" as const };
+        },
+      },
+    ]);
+    await call(session({ bashApproval: "raw", askResolver: spy }), "echo hi | tail -1");
+    expect(consulted).toBe(false);
+  });
+
+  test("the default mode is still raw", () => {
+    // Pinned at the config layer, so a default flip cannot pass unnoticed.
+    expect(DEFAULT_BASH_APPROVAL_MODE).toBe("raw");
   });
 });
