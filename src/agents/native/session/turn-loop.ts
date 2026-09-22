@@ -36,6 +36,7 @@ import { buildToolResult } from "./tool-result";
 import { loadTranscript, saveTranscript } from "./transcript-store";
 import { truncateNativeToolResult } from "./truncation-handler";
 import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
+import { handleAskHumanCall } from "./turn-ask-human";
 import { realSleep, retryTransportFault } from "./turn-retry";
 import { type NativeTurnResponse, recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
 
@@ -313,41 +314,20 @@ export async function runNativeTurn(
         try {
           if (call.name === ASK_HUMAN_TOOL_NAME) {
             const question = String((call.input as { text?: unknown } | undefined)?.text ?? "");
-            // An unset budget (maxInteractions undefined -> 0) keeps the tool unadvertised
-            // above AND refuses a call made anyway. "No budget configured" must not
-            // read as "unlimited" — that inverts the property this budget provides.
-            //
-            // These three push sites — and the spin notice below — are answers to
-            // a call no tool produced. They use the chokepoint and deliberately
-            // fire no `after_tool` event: a policy that shapes tool output has
-            // nothing to shape here.
-            if (interactions.length >= maxInteractions) {
-              messages.push(
-                buildToolResult({
-                  toolCallId: call.id,
-                  content: "The human Q&A budget for this turn is spent. Proceed on your best judgement.",
-                  isError: true,
-                }),
-              );
-              continue;
-            }
-            const answer = await opts.interactionHandler.onInteraction({ kind: "question", text: question });
-            // A null answer means no operator is reachable — run-interaction-handler
-            // returns null for kind:"question" when no interactionBridge is
-            // configured. That is not an exchange: it must not consume budget and
-            // must not be recorded as a question the operator answered with "".
-            if (answer === null) {
-              messages.push(
-                buildToolResult({
-                  toolCallId: call.id,
-                  content: "No human operator is available for this run. Proceed on your best judgement.",
-                  isError: true,
-                }),
-              );
-              continue;
-            }
-            interactions.push({ turnIndex: roundTrips, question, reply: answer.answer });
-            messages.push(buildToolResult({ toolCallId: call.id, content: answer.answer }));
+            // These push sites — and the spin notice below — are answers to a call no
+            // tool produced. They use the chokepoint and deliberately fire no
+            // `after_tool` event: a policy that shapes tool output has nothing to
+            // shape here.
+            const outcome = await handleAskHumanCall({
+              toolCallId: call.id,
+              question,
+              interactionsSoFar: interactions.length,
+              maxInteractions,
+              roundTrips,
+              interactionHandler: opts.interactionHandler,
+            });
+            if (outcome.exchange !== undefined) interactions.push(outcome.exchange);
+            messages.push(outcome.result);
             continue;
           }
           const outcome = loopEvents.beforeTool(call, tools);
