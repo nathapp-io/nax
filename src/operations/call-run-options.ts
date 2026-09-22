@@ -95,6 +95,7 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     ...(ctx.scopeId !== undefined ? { scopeId: ctx.scopeId } : {}),
     ...(ctx.runtime?.runId !== undefined ? { runId: ctx.runtime.runId } : {}),
     ...(ctx.interactionBridge ? { interactionBridge: ctx.interactionBridge } : {}),
+    ...(ctx.askResolver !== undefined ? { askResolver: ctx.askResolver } : {}),
     ...(ctx.maxInteractionTurns !== undefined ? { maxInteractionTurns: ctx.maxInteractionTurns } : {}),
   };
 }

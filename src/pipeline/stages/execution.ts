@@ -11,7 +11,7 @@
 
 import { validateAgentForTier } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
-import { isThreeSessionStrategy } from "@/config";
+import { type BashApprovalMode, isThreeSessionStrategy, type NaxConfig, resolveBashApproval } from "@/config";
 import { assembleForStage } from "@/context/engine";
 import { NaxError } from "@/errors";
 import {
@@ -24,9 +24,10 @@ import {
 } from "@/execution";
 import type { TddMode } from "@/execution/post-run";
 import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
-import { buildInteractionBridge } from "@/interaction";
+import { buildInteractionBridge, cancelPendingAsk, createHumanAskLink } from "@/interaction";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
+import { appendApproval, approvalsPath, chainAskLinks, createApprovalsLink } from "@/permissions";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -101,6 +102,42 @@ export const executionStage: PipelineStage = {
       stage: "execution",
     });
 
+    // The ask chain is built HERE because this is the only layer that can see
+    // both the permission types and the interaction chain. Fail-closed: the
+    // chain appends its own terminal deny, so an empty or exhausted chain
+    // denies rather than runs.
+    const approvalsFile = approvalsPath(ctx.runtime.outputDir);
+    // Built ONCE and shared: the chain uses it, and the run-end teardown below
+    // reads `humanLink.pending()` from this same instance.
+    const humanLink = createHumanAskLink({
+      // `ctx.interaction` is optional on PipelineContext, hence possibly
+      // `undefined`. The human link's signature accepts null AND undefined.
+      chain: ctx.interaction,
+      timeoutMs: ctx.config.execution?.approvalTimeout ?? 600_000,
+      featureName: ctx.prd.feature,
+      storyId: ctx.story.id,
+      onRemember: async (req) =>
+        appendApproval(approvalsFile, {
+          stage: req.stage,
+          command: req.command ?? "",
+          root: req.root ?? ctx.workdir,
+          origin: "escalate",
+          matchedRule: null,
+          approvedAt: new Date().toISOString(),
+          approvedBy: "telegram",
+          naxCommit: process.env.NAX_COMMIT ?? "unknown",
+        }),
+    });
+    const askResolver = chainAskLinks([
+      createApprovalsLink({
+        approvalsFile,
+        repoRoot: ctx.workdir,
+        stageModes: collectStageModes(ctx.config),
+      }),
+      // P5's classifier link slots in HERE, between cache and human.
+      humanLink,
+    ]);
+
     const callCtx: CallContext = {
       runtime: ctx.runtime,
       packageView,
@@ -144,6 +181,7 @@ export const executionStage: PipelineStage = {
       story: ctx.story,
       ...(ctx.featureDir ? { featureDir: ctx.featureDir } : {}),
       ...(interactionBridge ? { interactionBridge } : {}),
+      ...(askResolver ? { askResolver } : {}),
       phaseTelemetry: {
         testStrategy: ctx.routing.testStrategy,
         sessionModel: isThreeSessionStrategy(ctx.routing.testStrategy) ? "three-session" : "single-session",
@@ -197,6 +235,11 @@ export const executionStage: PipelineStage = {
       throw err;
     } finally {
       unsubscribe();
+      // A prompt in flight when the run ends is cancelled and denied, rather
+      // than hanging until approvalTimeout. Effective for Telegram; CLI settles
+      // at approvalTimeout and webhook leaks at process end -- their plugins'
+      // cancel() does not settle the in-flight receive (parked, Task 6).
+      await cancelPendingAsk(ctx.interaction, humanLink.pending());
     }
 
     // US-002: map the run-time repo-scoped dispatch records onto the live
@@ -232,3 +275,21 @@ export const _executionDeps = {
   assembleForStage,
   resolveScopeFiles,
 };
+
+/**
+ * Every stage's resolved `bashApproval` in this run, plus the global default.
+ *
+ * The approvals-cache link disables itself when ANY stage resolves to `raw`,
+ * because a raw shell can forge the cache file. Precedence lives in
+ * `resolveBashApproval` — this helper only enumerates.
+ */
+function collectStageModes(config: NaxConfig): BashApprovalMode[] {
+  const execution = config.execution;
+  const global = execution?.bashApproval;
+  const modes = new Set<BashApprovalMode>();
+  modes.add(resolveBashApproval(global, undefined));
+  for (const block of Object.values(execution?.permissions ?? {})) {
+    modes.add(resolveBashApproval(global, block?.bashApproval));
+  }
+  return [...modes];
+}

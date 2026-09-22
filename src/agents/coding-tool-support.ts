@@ -335,6 +335,7 @@ export async function resolveCodingToolSupport(
     | "runId"
     | "callId"
     | "scopeId"
+    | "askResolver"
   >,
 ): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
@@ -588,5 +589,6 @@ export async function resolveCodingToolSupport(
     allowScripts,
     ...(denyPaths !== undefined ? { denyPaths } : {}),
     ...(options.codingToolFileOutput !== undefined ? { fileOutputPath: options.codingToolFileOutput } : {}),
+    ...(options.askResolver !== undefined ? { askResolver: options.askResolver } : {}),
   });
 }

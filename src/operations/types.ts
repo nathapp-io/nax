@@ -95,6 +95,8 @@ export interface CallContext {
     detectQuestion: (text: string) => Promise<boolean>;
     onQuestionDetected: (text: string) => Promise<string>;
   };
+  /** Answers an `ask` verdict (P2); built at the execution stage. */
+  readonly askResolver?: import("../permissions").AskResolver;
   /** Max interaction round-trips when interactionBridge is active (default: 10). */
   readonly maxInteractionTurns?: number;
   /** Optional region id forwarded onto every dispatch event the op produces. */
