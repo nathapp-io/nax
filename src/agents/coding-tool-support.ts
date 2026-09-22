@@ -9,6 +9,7 @@
  * both dispatch hops use — see its comment for why that matters.
  */
 
+import type { BashApprovalMode } from "@/config/bash-approval";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import {
@@ -127,6 +128,7 @@ export function buildCodingToolSupport(args: {
    * forwarded to `compileToolPolicy` as its `ownedWriteExemption`.
    */
   fileOutputPath?: string;
+  bashApproval?: BashApprovalMode;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -177,6 +179,18 @@ export function buildCodingToolSupport(args: {
   const bashGrant = narrowedGrants.findLast((grant) => grant.tool === BASH_TOOL_NAME);
   const allowBash = args.declared.includes(BASH_TOOL_NAME);
 
+  // ADR-030: `raw` changes GATING, not GRANTING — the Bash tool still has to be
+  // granted or `callTool` never reaches the policy. The grant is synthetic
+  // (no human wrote a `Bash(...)` rule) and is deliberately conditioned on the
+  // op having DECLARED Bash. That condition is what keeps review ops and the
+  // verifier shell-free under every mode: they declare no Bash, so no mode can
+  // hand them one. Never grant unconditionally here.
+  const bashApproval = args.bashApproval ?? "gated";
+  const effectiveGrants =
+    bashApproval === "raw" && allowBash && bashGrant === undefined
+      ? [...narrowedGrants, { tool: BASH_TOOL_NAME, patterns: ["*"] as readonly string[] }]
+      : narrowedGrants;
+
   const declaredCommands = args.declaredCommands ?? new Map<string, QualityCommandSpec>();
   const sink =
     args.auditDir !== undefined
@@ -187,7 +201,8 @@ export function buildCodingToolSupport(args: {
         })
       : createNoOpToolAuditSink();
   const runtime = createCodingToolRuntime({
-    policy: compileToolPolicy(narrowedGrants, args.root, {
+    policy: compileToolPolicy(effectiveGrants, args.root, {
+      bashApproval,
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
@@ -559,6 +574,7 @@ export async function resolveCodingToolSupport(
       : {}),
     commandCwd,
     grants: [...allow.grants, ...providerResult.grants],
+    bashApproval: resolved.bashApproval,
     declared: declaredWithProviders,
     extraTools: providerResult.tools,
     providerIdByTool: providerResult.providerIdByTool,

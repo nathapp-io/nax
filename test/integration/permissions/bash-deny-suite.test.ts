@@ -12,6 +12,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
+import type { BashApprovalMode } from "@/config/bash-approval";
 
 /**
  * A fix-shaped session. Read/Glob/Grep are declared AND granted deliberately:
@@ -48,6 +49,7 @@ function session(options?: {
   ask?: readonly string[];
   declared?: readonly ("Read" | "Glob" | "Grep" | "Bash")[];
   profileGrants?: readonly { tool: string; patterns: readonly string[] }[];
+  bashApproval?: BashApprovalMode;
 }) {
   const grants = [
     ...(options?.profileGrants ?? STRUCTURED_GRANTS),
@@ -57,6 +59,7 @@ function session(options?: {
     root,
     declared: [...(options?.declared ?? FIX_TOOLS)],
     grants,
+    ...(options?.bashApproval !== undefined ? { bashApproval: options.bashApproval } : {}),
     ...(options?.deny !== undefined ? { denyRules: [{ tool: "Bash", patterns: options.deny }] } : {}),
     ...(options?.ask !== undefined ? { askRules: [{ tool: "Bash", patterns: options.ask }] } : {}),
   });
@@ -210,5 +213,20 @@ describe("positive checks (spec §6, second half)", () => {
       "echo ok",
     );
     expect(outcome.kind).toBe("ok");
+  });
+});
+
+describe("raw mode grants Bash only to an op that declared it", () => {
+  test("an op that declared Bash runs an ungranted command under raw", async () => {
+    const support = session({ declared: FIX_TOOLS, allow: [], bashApproval: "raw" });
+    const result = await call(support, "echo hello");
+    expect(result.kind).toBe("ok");
+  });
+
+  test("an op that did NOT declare Bash still cannot reach it under raw", async () => {
+    const support = session({ declared: ["Read"], allow: ["*"], bashApproval: "raw" });
+    const result = await call(support, "echo hello");
+    expect(result.kind).toBe("denied");
+    if (result.kind === "denied") expect(result.reason).toContain("unknown tool");
   });
 });
