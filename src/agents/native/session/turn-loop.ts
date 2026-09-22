@@ -18,14 +18,7 @@ import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } fro
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { ASK_HUMAN_TOOL_NAME, askHumanToolDefinition } from "./ask-human";
-import {
-  applyCompaction,
-  estimateContextTokens,
-  keepBudget,
-  type TranscriptMessage as NativeTranscriptMessage,
-  prepareCompaction,
-  shouldCompact,
-} from "./compaction";
+import { estimateContextTokens, type TranscriptMessage as NativeTranscriptMessage, shouldCompact } from "./compaction";
 import { createInvalidCallBudget, rewriteToolCallInput } from "./handle-invalid-tool-call";
 import { createLoopEventRegistry } from "./loop-events";
 import { registerBuiltinLoopHandlers } from "./loop-handlers";
@@ -37,6 +30,7 @@ import { loadTranscript, saveTranscript } from "./transcript-store";
 import { truncateNativeToolResult } from "./truncation-handler";
 import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
 import { handleAskHumanCall } from "./turn-ask-human";
+import { runOverflowCompaction, runProactiveCompaction } from "./turn-compaction-step";
 import { realSleep, retryTransportFault } from "./turn-retry";
 import { type NativeTurnResponse, recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
 
@@ -152,53 +146,30 @@ export async function runNativeTurn(
         deps.compaction !== undefined &&
         shouldCompact(estimateContextTokens(messages, lastUsage, anchorIndex), deps.contextWindow, deps.compaction)
       ) {
-        const preCompactionTokens = estimateContextTokens(messages, lastUsage, anchorIndex);
-        const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction));
-        if (plan !== undefined) {
-          try {
-            const summary = await deps.summarize(plan.toSummarize, plan.previousSummary);
-            // Rebound, not spliced in place: `messages` is a local accumulator and
-            // rebinding it keeps the compacted array a fresh value.
-            messages = applyCompaction(messages, plan, summary.text);
-            // Finding 2 (whole-branch review, 2026-09-04): a previous-summary merge
-            // can produce a same-size (or larger) array — a paid model call that
-            // shrank nothing. Not fatal (the reactive backstop is the real safety
-            // net if this repeats into an overflow) but worth surfacing, since it
-            // would otherwise burn a model call every round trip with no signal.
-            const postCompactionTokens = estimateContextTokens(messages, undefined, undefined);
-            if (postCompactionTokens >= preCompactionTokens) {
-              getSafeLogger()?.warn("native-adapter", "compaction made no size progress", {
-                sessionName: handle.id,
-                preCompactionTokens,
-                postCompactionTokens,
-              });
-            }
-            getSafeLogger()?.info("native-adapter", "compaction completed", {
-              sessionName: handle.id,
-              // Keep token counts under the plural `tokens` metric key so the
-              // logger's credential redactor does not mistake them for secrets.
-              tokens: { before: preCompactionTokens, after: postCompactionTokens },
-              messagesDropped: plan.toSummarize.length,
-              summaryLength: summary.text.length,
-            });
-            usage.add(summary.usage, summary.costUsd, summary.rates);
-            // Resets the watchdog's lastActivityAt between the summary and the
-            // round trip, so the two silent spans do not add up against one budget.
-            deps.onActivity?.(usageBeat(summary.usage, summary.costUsd));
-            // The anchor described the pre-compaction array; it is meaningless now.
-            lastUsage = undefined;
-            anchorIndex = undefined;
-          } catch (err) {
-            if (deps.deadline?.expired() === true || opts.signal?.aborted === true) throw err;
-            // Not fatal: the request may still fit, and if it does not it fails
-            // through the path #1837 and #1839 made correct. Killing a story
-            // because a summarizer hiccuped would be worse than the problem.
-            summarizeFailed = true;
-            getSafeLogger()?.warn("native-adapter", "compaction summary failed; sending uncompacted", {
-              sessionName: handle.id,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
+        const step = await runProactiveCompaction({
+          messages,
+          usage,
+          sessionName: handle.id,
+          lastUsage,
+          anchorIndex,
+          // Copied, not the `deps` object itself: the guard above narrows the
+          // three properties to defined, and a fresh object is what carries that
+          // narrowing into the step's `CompactionStepDeps` parameter.
+          deps: {
+            summarize: deps.summarize,
+            contextWindow: deps.contextWindow,
+            compaction: deps.compaction,
+            onActivity: deps.onActivity,
+            deadline: deps.deadline,
+          },
+          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+        });
+        messages = [...step.messages];
+        summarizeFailed = step.summarizeFailed;
+        if (step.compacted) {
+          // The anchor described the pre-compaction array; it is meaningless now.
+          lastUsage = undefined;
+          anchorIndex = undefined;
         }
       }
       let res: NativeTurnResponse;
@@ -251,13 +222,24 @@ export async function runNativeTurn(
           // `res = await deps.complete(...)` two lines down — one success
           // path, reached from either recovery, not a second copy of it.
         } else {
-          // Same code path, half the keep budget. Not a second algorithm.
-          const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction, true));
-          if (plan === undefined) throw err;
-          const summary = await deps.summarize(plan.toSummarize, plan.previousSummary);
-          messages = applyCompaction(messages, plan, summary.text);
-          usage.add(summary.usage, summary.costUsd, summary.rates);
-          deps.onActivity?.(usageBeat(summary.usage, summary.costUsd));
+          const step = await runOverflowCompaction({
+            messages,
+            usage,
+            sessionName: handle.id,
+            lastUsage,
+            anchorIndex,
+            deps: {
+              summarize: deps.summarize,
+              contextWindow: deps.contextWindow,
+              compaction: deps.compaction,
+              onActivity: deps.onActivity,
+              deadline: deps.deadline,
+            },
+            error: err,
+            ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+          });
+          messages = [...step.messages];
+          // The anchor described the pre-compaction array; it is meaningless now.
           lastUsage = undefined;
           anchorIndex = undefined;
           // Retried once. A second overflow propagates: compacting further would be
