@@ -129,7 +129,37 @@ could say "trust me, I'm at a boundary" is master-plan D13a's failure mode in a 
 an advisory screen the caller can switch off. The dispatcher has both facts at hand: the
 compaction step knows it just compacted, and the model comparison is §8's prerequisite.
 
-### 3.5 What stops
+### 3.5 Where the anchor comes from, and the undefined case
+
+The "cache anchor" is `anchorIndex`, tracked at `turn-loop.ts:325` (`anchorIndex =
+messages.length - 1` after each response) and persisted across turns via
+`nativeSessionLastUsage` (`:326`). Elements **after** it are new and uncached, so rewriting
+them is free; elements up to it are the cached prefix the checker protects.
+
+`anchorIndex` is `undefined` in two situations, and both mean *there is no cached prefix to
+protect*: a fresh session that has not completed a round trip, and immediately after a
+compaction, which sets it to `undefined` deliberately (`:212-213`, "the anchor described the
+pre-compaction array; it is meaningless now").
+
+> **`anchorIndex === undefined` permits a full rewrite.** That is not the permissive-on-
+> ignorance failure §8.4 guards against: an absent anchor is positive knowledge that nothing
+> is cached, whereas §8.4's absent `model` field is genuine ignorance about whether a warm
+> cache exists. Unknown-that-there-is-nothing permits; unknown-whether permits nothing.
+
+### 3.6 A boundary rewrite invalidates the anchor
+
+**Any honoured history rewrite must clear `lastUsage` and `anchorIndex`, exactly as the
+compaction path already does at `:212-213`** — and clear the persisted
+`nativeSessionLastUsage` entry with them.
+
+This is not optional bookkeeping. `anchorIndex` indexes *into the array that was rewritten*;
+after §8's handler strips thinking blocks from loaded history, the stored index points at a
+different message, or past the end. It is read by `estimateContextTokens(messages, lastUsage,
+anchorIndex)` at `:161`, which decides whether to compact — so a stale anchor silently
+mis-sizes the context and either compacts a small conversation or fails to compact a large
+one. The dispatcher clears it, not the handler (§3.4).
+
+### 3.7 What stops
 
 Per the master plan's §5 standing trap, every rule in this spec names what stops. Here: **the
 patch stops.** The turn continues on the unpatched array. A handler defect degrades to a warn
@@ -286,7 +316,10 @@ steps.
 **Fourteen test files exercise `runNativeTurn`**, roughly 150 KB of them — `turn-loop.test.ts`,
 `turn-loop-compaction`, `turn-loop-transport-retry`, `turn-loop-usage`, `turn-loop-seam`,
 `turn-loop-seam-regressions`, `session-lifetime-spin`, `native-truncation-chokepoint`,
-`us-003-acs`, and more. Critically they drive the **exported entry point**, not internals.
+`us-003-acs`, and more. Critically they drive the **exported entry point**, not internals. Verified, not assumed:
+`turn-loop.ts` has **exactly one export** (`runNativeTurn`, `:52`), and all eleven test files
+that import from the module import only that symbol; the remaining three reach it through
+`adapter.ts`. There is no internal surface for a test to have coupled itself to.
 
 > **PR 1's entire proof is that all fourteen pass unedited.** If a test needs an edit, the
 > refactor has stopped being pure — stop, say so, and re-scope. This converts "did I break
@@ -440,7 +473,11 @@ rejected **and the original preserved**. Asserting the rejection alone would pas
 implementation that drops the messages entirely.
 
 **PR 3 (#2150):** same model → rewrite rejected; changed model → rewrite honoured; **absent
-`model` field → rewrite rejected** (§8.4).
+`model` field → rewrite rejected** (§8.4); and **an honoured rewrite clears `lastUsage`,
+`anchorIndex` and the persisted `nativeSessionLastUsage` entry** (§3.6). The last one needs a
+test that reads the anchor *after* the rewrite rather than only asserting the messages — a
+stale anchor is invisible in the message array and only shows up as a mis-sized compaction
+decision one turn later.
 
 ### 9.1 The test-double rule bites hardest on the checker
 
