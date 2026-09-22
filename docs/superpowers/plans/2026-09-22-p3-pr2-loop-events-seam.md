@@ -63,7 +63,31 @@ TURN_TESTS="test/unit/agents/native/turn-loop.test.ts test/unit/agents/native/tu
 sed -n '1,80p' src/agents/native/session/loop-events.ts
 ```
 
-The four invariants in that docblock (`:11-26`) are the contract. They move to `registry.ts` in Task 2 **verbatim**, extended per §4.7. `AfterToolPatch`, `AfterToolPayload` and `BeforeToolOutcome` keep their exact current shapes — renaming or reshaping them would ripple into `loop-handlers.ts` and four test files for no gain.
+The four invariants in that docblock (`:11-26`) are the contract. They move to `registry.ts` in Task 2 **verbatim**, extended per §4.7.
+
+**`AfterToolPatch`, `AfterToolPayload` and `BeforeToolOutcome` MOVE into `types.ts` in this task, byte-identical.** `loop-events.ts` is deleted in Task 2, so they have to live somewhere; copy them across unchanged, docblocks included (the `denied`-is-not-patchable docblock cites ADR-029 §5 and is the only record of that rule). Renaming or reshaping them would ripple into `loop-handlers.ts` and four test files for no gain.
+
+Verified current shape (`loop-events.ts:46-56`) — do not "improve" it:
+
+```typescript
+export type AfterToolPatch = { content?: string; isError?: boolean };
+
+export interface AfterToolPayload {
+  readonly content: string;
+  readonly isError?: boolean;
+  /** Surfaced to handlers, never writable by them. */
+  readonly denied?: DenialInfo;
+}
+```
+
+**`BeforeToolPayload` is NEW** and belongs in `types.ts` too — `before_tool` takes two arguments today (`(call, tools)`), and `HandlerOf<E>` is single-payload:
+
+```typescript
+export interface BeforeToolPayload {
+  readonly call: ToolCall;
+  readonly tools: readonly ToolDefinition[];
+}
+```
 
 - [ ] **Step 2: Write the types**
 
@@ -82,7 +106,7 @@ The four invariants in that docblock (`:11-26`) are the contract. They move to `
  * nax has no branch navigation.
  */
 
-import type { ToolCall, ToolDefinition } from "@nathapp/nax-ai";
+import type { ThinkingBlock, ToolCall, ToolDefinition } from "@nathapp/nax-ai";
 import type { TokenUsage } from "@/agents/session-types";
 import type { TranscriptMessage as NativeTranscriptMessage } from "../compaction";
 import type { DenialInfo } from "../tool-result";
@@ -157,7 +181,7 @@ export interface CompleteCallOptions {
 export interface AfterResponsePayload {
   readonly text: string;
   readonly toolCalls?: readonly ToolCall[];
-  readonly thinking?: readonly { readonly text: string }[];
+  readonly thinking?: readonly ThinkingBlock[];
   /** Surfaced, NEVER patchable: billing truth is not a handler's to rewrite. */
   readonly usage: TokenUsage;
   readonly costUsd: number;
@@ -167,8 +191,13 @@ export interface AfterResponsePayload {
 export interface AfterResponsePatch {
   readonly text?: string;
   readonly toolCalls?: readonly ToolCall[];
-  readonly thinking?: readonly { readonly text: string }[];
+  readonly thinking?: readonly ThinkingBlock[];
 }
+
+⚠️ **Use `ThinkingBlock` from `@nathapp/nax-ai`, never a hand-rolled `{ text: string }`.**
+`NativeTurnResponse.thinking` is `readonly ThinkingBlock[]` (`turn-types.ts:29`), and a
+structural stand-in would compile until the block gains a field, then silently drop it — which
+is exactly nax#2150's `thinkingSignature` problem in a new place.
 
 /** `before_compaction` — fires in both the proactive and overflow branches. */
 export interface BeforeCompactionPayload {
@@ -378,7 +407,7 @@ Core rules, each already pinned by a test above:
 1. `const handlers = byEvent.get(event); if (handlers === undefined || handlers.length === 0) return {} as PatchOf<E>;` — **return before touching the payload**, never clone.
 2. Serial `for`, each handler awaited **inside** the `try`, so a rejection is caught exactly like a throw.
 3. Accumulate patches in registration order, each handler seeing the previous one's output.
-4. Read only the fields the patch type declares — a handler returning `usage` on `after_response` must not surface one. This is the same defence `afterTool` already applies to `denied` (`loop-events.ts:154-157`).
+4. Read only the fields the patch type declares — a handler returning `usage` on `after_response` must not surface one. This is the same defence `afterTool` already applies to `denied` (`loop-events.ts:158-159`, "Only the patchable fields are read, so a handler that returns a denied-bearing object (bypassing the type) cannot surface one").
 5. `before_tool`'s `block`/`terminate` short-circuit, exactly as today.
 
 - [ ] **Step 5: Adapt `loop-handlers.ts`**
@@ -719,6 +748,12 @@ const wire = applyHistoryPatch({
 return deps.complete(wire.messages, tools, options);
 ```
 
+ℹ️ **Type note, verified:** the step holds `readonly NativeTranscriptMessage[]`
+(`turn-complete-step.ts:59`) while `TurnDeps.complete` declares `readonly ConversationMessage[]`
+(`turn-types.ts:55`). `TranscriptMessage` is `ConversationMessage` widened with the
+coding-tool denial marker (`compaction.ts:22-31`, ADR-029 §5) and the call already typechecks
+today, so the payload type is `NativeTranscriptMessage[]` and no conversion is introduced.
+
 `boundary` is `compacted` for this step: `completeWithRecovery` knows whether the overflow branch just ran. A model change is a turn-start fact and belongs to `before_turn` (spec §8.2), so it is **not** consulted here.
 
 - [ ] **Step 4: Verify the anchor is cleared on an honoured rewrite**
@@ -787,7 +822,7 @@ test("a replacement summary skips the summarizer call", async () => {
 
 - [ ] **Step 3: Implement in both functions**
 
-⚠️ `CompactionStepArgs` (`turn-compaction-step.ts:46-55`) does **not** carry `loopEvents` either — thread it in the same way Task 4 threads it into `CompleteStepArgs`, from the `turn-loop.ts` local rather than from `deps`.
+⚠️ `CompactionStepArgs` (`turn-compaction-step.ts:46-54`) does **not** carry `loopEvents` either — thread it in the same way Task 4 threads it into `CompleteStepArgs`, from the `turn-loop.ts` local rather than from `deps`. Note its `deps` field is `CompactionStepDeps` (a narrowed subset), **not** `TurnDeps`, so widening `TurnDeps` does not reach this module.
 
 Dispatch before `deps.summarize` in each. In `runOverflowCompaction`, when `decline` is returned:
 
@@ -965,7 +1000,7 @@ export function createTruncationHandler(sessionName: string): HandlerOf<"after_t
 }
 ```
 
-`AfterToolPayload` must therefore also carry `toolName` and `callId`. Check whether it does; today the dispatcher receives `call` separately, so thread them into the payload.
+**Verified on `f849ca9b7`: `AfterToolPayload` is `{ content, isError?, denied? }` and carries NEITHER `toolName` NOR `callId`** (`loop-events.ts:50-56`). The dispatcher receives `call` as a separate first argument, which is exactly what Task 1's single-payload `HandlerOf<E>` removes. So all three fields — `toolName`, `callId`, `nudgeText` — are additions to `AfterToolPayload` in this task.
 
 - [ ] **Step 4: Register it LAST**
 
