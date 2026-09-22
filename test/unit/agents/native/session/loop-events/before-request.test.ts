@@ -73,9 +73,11 @@ describe("native turn loop — before_request event", () => {
 
   test("a handler's options patch reaches deps.complete for that attempt", async () => {
     const seen: (CompleteCallOptions | undefined)[] = [];
+    const rounds: number[] = [];
     const registry = createLoopEventRegistry();
     registry.register("before_request", (p) => {
       seen.push(p.options);
+      rounds.push(p.roundTrip);
       return { options: { temperature: 0.2 } };
     });
     await runNativeTurn(handle, "hi", opts(), {
@@ -87,6 +89,9 @@ describe("native turn loop — before_request event", () => {
     });
     // The payload's options is the pre-patch bag the attempt would send.
     expect(seen).toEqual([{}]);
+    // 1-based, matching the usage beat (turn-loop.ts fires it after the
+    // roundTrips increment) — a paired after_response must agree on the trip.
+    expect(rounds).toEqual([1]);
   });
 
   test("with no handler, the request still goes out and no options are fabricated", async () => {

@@ -171,7 +171,10 @@ export async function runNativeTurn(
         // The loop's local, not deps.loopEvents — the same registry runToolBatch
         // below receives, so both dispatch seams observe the same handlers.
         loopEvents,
-        roundTrip: roundTrips,
+        // 1-based, matching the usage beat below: the request being issued is
+        // round trip roundTrips + 1 — before_request(0-based N) and a later
+        // after_response(1-based N) would otherwise disagree on the same trip.
+        roundTrip: roundTrips + 1,
         ...(handle.modelDef?.model !== undefined ? { model: handle.modelDef.model } : {}),
         deps,
         ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
