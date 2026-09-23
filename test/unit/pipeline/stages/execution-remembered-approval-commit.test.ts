@@ -181,8 +181,8 @@ describe("US-002: remembered approval commit", () => {
       },
     });
 
-    // We only test this when NAX_COMMIT is a real commit (not "dev" or "unknown")
-    const isRealCommit = NAX_COMMIT !== "dev" && NAX_COMMIT !== "unknown";
+    // `dev` is the documented source fallback and must be covered too.
+    const hasKnownCommit = NAX_COMMIT !== "unknown";
 
     const restore = withExecutionDeps({
       createHumanAskLink: (opts) => {
@@ -239,8 +239,8 @@ describe("US-002: remembered approval commit", () => {
       const entries = await readApprovals(join(testOutputDir, "approvals.json"));
       expect(entries).toHaveLength(1);
 
-      // If we have a real commit, it should not be "unknown"
-      if (isRealCommit) {
+      // Any known build identifier, including the source fallback `dev`, must not become "unknown".
+      if (hasKnownCommit) {
         expect(entries[0]?.naxCommit).not.toBe("unknown");
       }
     } finally {
