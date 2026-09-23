@@ -123,6 +123,7 @@ export interface AgentRunOptions {
   };
   /** Answers an `ask` verdict (P2); built at the execution stage. */
   askResolver?: import("@/permissions").AskResolver;
+  commandShadow?: import("@/command-safety").CommandShadow; // P5 shadow; built + drained at the execution stage
   /**
    * Explicit ACP session handle override. When set, the adapter uses this
    * name instead of auto-deriving from featureName/storyId/sessionRole.

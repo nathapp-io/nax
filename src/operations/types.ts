@@ -97,6 +97,8 @@ export interface CallContext {
   };
   /** Answers an `ask` verdict (P2); built at the execution stage. */
   readonly askResolver?: import("../permissions").AskResolver;
+  /** P5 shadow command classifier; built and drained at the execution stage. */
+  readonly commandShadow?: import("../command-safety").CommandShadow;
   /** Max interaction round-trips when interactionBridge is active (default: 10). */
   readonly maxInteractionTurns?: number;
   /** Optional region id forwarded onto every dispatch event the op produces. */

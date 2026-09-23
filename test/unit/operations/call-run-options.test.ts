@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
+import type { CommandShadow } from "@/command-safety";
 import { buildRunDispatchOptions } from "@/operations/call-run-options";
 import type { CallContext } from "@/operations/types";
 import type { AskResolver } from "@/permissions";
@@ -177,5 +178,40 @@ describe("buildRunDispatchOptions — askResolver (P2 threading)", () => {
 
   test("omits askResolver when the caller supplies none", () => {
     expect("askResolver" in build()).toBe(false);
+  });
+});
+
+describe("buildRunDispatchOptions — commandShadow (P5 threading)", () => {
+  function build(commandShadow?: CommandShadow) {
+    const config = makeNaxConfig();
+    const runtime = makeTestRuntime({ config, workdir: "/repo" });
+    createdRuntimes.push(runtime);
+    const ctx: CallContext = {
+      runtime,
+      packageView: runtime.packages.resolve("packages/api"),
+      packageDir: "packages/api",
+      config,
+      agentName: "claude",
+      ...(commandShadow !== undefined ? { commandShadow } : {}),
+    };
+    return buildRunDispatchOptions(ctx, {
+      prompt: "hi",
+      effectiveTier: "balanced",
+      dispatchModelDef: { provider: "claude", model: "sonnet" },
+      config,
+      callId: "call-1",
+      pipelineStage: "run",
+      declaredTools: ["Read"],
+      keepOpen: false,
+    });
+  }
+
+  test("forwards the caller's commandShadow by reference", () => {
+    const shadow: CommandShadow = { observe: () => {}, settle: () => {}, drain: async () => {} };
+    expect(build(shadow).commandShadow).toBe(shadow);
+  });
+
+  test("omits commandShadow when the caller supplies none", () => {
+    expect("commandShadow" in build()).toBe(false);
   });
 });

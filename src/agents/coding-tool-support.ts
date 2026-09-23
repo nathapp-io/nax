@@ -318,6 +318,7 @@ export async function resolveCodingToolSupport(
     | "callId"
     | "scopeId"
     | "askResolver"
+    | "commandShadow"
   >,
 ): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
@@ -584,6 +585,7 @@ export async function resolveCodingToolSupport(
     ...(denyPaths !== undefined ? { denyPaths } : {}),
     ...(options.codingToolFileOutput !== undefined ? { fileOutputPath: options.codingToolFileOutput } : {}),
     ...(options.askResolver !== undefined ? { askResolver: options.askResolver } : {}),
+    ...(options.commandShadow !== undefined ? { commandShadow: options.commandShadow } : {}),
     ...(launcher !== undefined ? { launcher } : {}),
   });
 }
