@@ -15,6 +15,7 @@ import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
 import { waitForCondition } from "@test/helpers";
 import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
+import { createLoopEventRegistry } from "@/agents/native/session/loop-events";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
 import { nativeSessionId } from "@/agents/native/session-affinity";
 import type { ResolvedCompleteOptions } from "@/agents/types";
@@ -643,6 +644,52 @@ describe("NativeAgentAdapter session identity", () => {
 
     await adapter.sendTurn(handle, "hi", {
       interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+    });
+
+    expect(seen[0] && "thinking" in seen[0]).toBe(false);
+  });
+
+  test("sendTurn forwards before_request options to the provider request", async () => {
+    const { client, seen } = capturingClient(MODEL);
+    _clientDeps.build = async () => client;
+    const adapter = new NativeAgentAdapter();
+    const handle = await adapter.openSession("sess-before-request-options", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-before-request-options-")),
+    });
+    const loopEvents = createLoopEventRegistry();
+    loopEvents.register("before_request", () => ({ options: { temperature: 0.2 } }));
+
+    await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+      loopEvents,
+    });
+
+    expect(seen[0]?.temperature).toBe(0.2);
+  });
+
+  test("before_request may disable the session's inherited thinking level", async () => {
+    const { client, seen } = capturingClient(MODEL);
+    _clientDeps.build = async () => client;
+    const adapter = new NativeAgentAdapter();
+    const handle = await adapter.openSession("sess-before-request-thinking", {
+      agentName: "native",
+      workdir: process.cwd(),
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini[high]" },
+      timeoutSeconds: 60,
+      transcriptDir: await mkdtemp(join(tmpdir(), "nax-adapter-before-request-thinking-")),
+    });
+    const loopEvents = createLoopEventRegistry();
+    loopEvents.register("before_request", () => ({ options: { thinking: false } }));
+
+    await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+      loopEvents,
     });
 
     expect(seen[0] && "thinking" in seen[0]).toBe(false);

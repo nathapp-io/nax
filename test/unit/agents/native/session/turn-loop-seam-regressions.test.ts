@@ -82,7 +82,7 @@ describe("runNativeTurn — loop event seam regressions", () => {
     const registry = createLoopEventRegistry();
     // Every call is rewritten to one canonical input, so the breaker sees a
     // single repeated key while the model asks for a different one each time.
-    registry.registerBeforeTool(() => ({ kind: "allow", input: { path: "canonical.ts" } }));
+    registry.register("before_tool", () => ({ kind: "allow", input: { path: "canonical.ts" } }));
 
     const result = await runNativeTurn(handle, "hi", baseOpts(), {
       complete: loopingComplete("Read", (nth) => ({ path: `f${nth}.ts` }), 12),

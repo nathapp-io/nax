@@ -1,12 +1,14 @@
 # Full native loop events — design
 
-**Date:** 2026-09-22 · **Status:** designed (no implementation started)
-**Baseline:** `main` @ `3459ca6d6` (PR #2185 merge) — every citation verified at that commit
+**Date:** 2026-09-22 · **Status:** PR 1 MERGED · PR 2 planned · PR 3 not started
+**Baseline:** originally written against `main` @ `3459ca6d6`. **PR 1 merged as `f849ca9b7`
+(#2186) and moved every cited line**; §6.1 and §5.6 now carry post-extraction homes. Citations
+outside those sections still name pre-extraction lines — re-derive before trusting one.
 **Implements:** phase 3 of the native-coding-agent arc (goal 3)
 **Master plan:** `nax-native-coding-agent-master-plan.md` (workspace, not this repo)
 **Supersedes in part:** `docs/specs/SPEC-native-loop-events.md` — its "Out of Scope" list
-**Branches:** PR 1 `feat/p3-turn-loop-extraction` (this spec lives here) · PR 2 and PR 3 take
-their own branches off PR 1
+**Branches:** PR 1 `feat/p3-turn-loop-extraction` ✅ merged (`f849ca9b7`) · PR 2
+`feat/p3-loop-events-seam` · PR 3 branches off PR 2
 
 ---
 
@@ -331,6 +333,26 @@ PR 1 contains **zero** new events, zero behaviour change, and zero test edits.
 
 ## 6. The events
 
+### 6.0 Post-extraction homes (verified on `f849ca9b7`)
+
+PR 1 landed the §5.4 carve-up: `turn-loop.ts` 599 → **290** lines, six new modules, **zero test
+edits**. The insertion points are now:
+
+| event | module | anchor |
+|---|---|---|
+| `before_turn` | `turn-loop.ts` | the seed push, `:52` |
+| `transform_context` | `turn-complete-step.ts` | the `request()` wrapper of §6.5 |
+| `before_request` | `turn-complete-step.ts` | same wrapper |
+| `after_response` | `turn-loop.ts` | the assistant push, `:206` |
+| `before_compaction` | `turn-compaction-step.ts` | `runProactiveCompaction:95` and `runOverflowCompaction:143` |
+| `before_turn_end` | `turn-loop.ts` | before `buildTurnResult`, `:277` |
+| truncation migration (§7) | `turn-tool-batch.ts` | `:190-199` and `:221-224` |
+
+🚨 **`deps.complete` is invoked THREE times, not once** — `turn-complete-step.ts:63` (primary),
+`:82` (inside `retryTransportFault`'s `attempt` closure) and `:131` (the post-overflow retry).
+The §1 claim that extraction collapses the two `complete` sites into one was about the
+*module*, not the call count. See §6.5.
+
 ### 6.1 Table
 
 | event | site (after §5) | payload | returns | stop rule |
@@ -377,6 +399,43 @@ those breakers exist to close, through the back door.
 
 The dispatcher therefore does not fire `before_turn_end`'s followUp channel at all when the
 turn ended by a stop, and caps injections per turn regardless.
+
+### 6.5 One `request()` wrapper, because `complete` is called three times
+
+`completeWithRecovery` invokes `deps.complete` at three points (§6.0). All three are genuine
+provider requests, and pi's `before_request` is explicitly *per request attempt*. Dispatching
+at each call site by hand would be the drift §1 exists to prevent, three ways this time.
+
+**Both events dispatch from one private `request(messages, tools, attempt)` helper inside
+`turn-complete-step.ts`, and all three call sites route through it.** The helper is what
+increments and reports `attempt`, so the retry closure at `:82` reports attempt 2..n without
+the retry machinery knowing an event exists.
+
+### 6.6 `transform_context` patches the WIRE COPY, not the array
+
+**User ruling, 2026-09-22.** In nax, `messages` is both the transcript and the wire payload —
+`saveTranscript` persists the same array `deps.complete` receives. pi keeps those separate, so
+this question does not arise there.
+
+> An honoured `transform_context` patch shapes **only what `deps.complete` receives**. The
+> array `saveTranscript` persists is untouched. The transcript stays the true record of the
+> conversation, and the event stays what its name says: transform the context for *this
+> request*, not rewrite history.
+
+This is also why §8.2's placement of nax#2150 on `before_turn` is the right split rather than
+an accident: nax#2150 genuinely must edit persisted history, so it needs the event that does.
+A handler wanting to rewrite the conversation has `before_turn`; a handler wanting to shape one
+request has `transform_context`; neither can do the other's job by mistake.
+
+**The anchor is still cleared when a boundary rewrite is honoured** (§3.6), even though the
+persisted array did not change — because the prefix the provider actually saw did. Not clearing
+it would size the next compaction decision against an array the model was never sent.
+
+**Consequence for the checker:** it compares the returned array against the array passed *in*,
+which is the untransformed one. When no element before the anchor changed, indices align and
+the wire copy and the persisted array share their prefix — nothing to invalidate. When
+something before the anchor did change, it is a boundary case, where the anchor is being
+cleared anyway.
 
 ---
 
@@ -498,9 +557,9 @@ isolation for at least the boundary cases.
 
 | PR | branch | contents |
 |---|---|---|
-| 1 | `feat/p3-turn-loop-extraction` | §5 only. Zero new events, zero behaviour change, zero test edits. This spec. |
-| 2 | own branch off PR 1 | §4 registry, §6 events, §3 checker, §6.3 widened `complete`, §7 truncation migration |
-| 3 | own branch off PR 2 | §8 — `model` on `TranscriptFile` and the `before_turn` handler |
+| 1 | `feat/p3-turn-loop-extraction` | ✅ **MERGED** `f849ca9b7` (#2186). turn-loop.ts 599 → 290, six modules, **zero test edits** — the proof obligation held. |
+| 2 | `feat/p3-loop-events-seam` | §4 registry, §6 events, §3 checker, §6.3 widened `complete`, §6.5 request wrapper, §7 truncation migration |
+| 3 | branches off PR 2 | §8 — `model` on `TranscriptFile` and the `before_turn` handler |
 
 A pure-refactor diff is reviewable by inspection; a diff that both moves 400 lines and adds
 six events is not. Every real finding on P1's PR #2184 was found by a reviewer, not by the

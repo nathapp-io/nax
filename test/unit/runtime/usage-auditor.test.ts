@@ -54,6 +54,10 @@ describe("UsageAuditor", () => {
   let origAppend: typeof _usageAuditorDeps.appendLine;
 
   beforeEach(() => {
+    // The logger is process-global across Bun test files. This suite owns the
+    // logger it initializes below, so clear a prior suite's instance before a
+    // test reaches initLogger().
+    resetLogger();
     files = appendBuffer();
     origAppend = _usageAuditorDeps.appendLine;
     _usageAuditorDeps.appendLine = async (path: string, data: string) => {
@@ -63,6 +67,7 @@ describe("UsageAuditor", () => {
 
   afterEach(() => {
     _usageAuditorDeps.appendLine = origAppend;
+    resetLogger();
   });
 
   test("appends one line per entry without rewriting earlier lines", async () => {

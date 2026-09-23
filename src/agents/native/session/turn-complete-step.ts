@@ -6,8 +6,14 @@
  * site: one round trip is issued, and a throw gets exactly one of the two
  * recoveries. They were two branches of the loop's single try/catch; folding
  * them into a step is what will let one seam observe every round trip. P3
- * attaches `transform_context` and `before_request` here; today no event fires
- * from this module.
+ * attaches `transform_context` and `before_request` here: both fire per request
+ * attempt from the private `request()` wrapper below (spec 6.5, 6.6) —
+ * before_request shapes the per-call options, transform_context shapes the WIRE
+ * COPY only, and the array the caller holds (which saveTranscript persists) is
+ * returned untouched. An honoured rewrite is reported as `honoured`, with the
+ * boundary fact that produced it as `boundary`, so the caller can clear the
+ * cache anchor exactly when spec 3.6 says to — a prefix-stable honour leaves
+ * the anchor valid (spec 6.6).
  *
  * The private `isContextOverflow` guard is this module's alone: it decides
  * which recovery a thrown round trip gets.
@@ -15,6 +21,8 @@
 
 import { getSafeLogger } from "@/logger";
 import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
+import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events";
+import { applyHistoryPatch } from "./loop-events/cache-boundary";
 import type { TurnAccumulator } from "./turn-accumulator";
 import { runOverflowCompaction } from "./turn-compaction-step";
 import { realSleep, retryTransportFault } from "./turn-retry";
@@ -36,6 +44,25 @@ export interface CompleteStepResult {
   readonly messages: readonly NativeTranscriptMessage[];
   /** True when the overflow branch ran: it always rebinds messages (and the caller clears lastUsage/anchorIndex). */
   readonly compacted: boolean;
+  /**
+   * True when the provider was sent an honoured `transform_context` rewrite
+   * (spec 6.6) — the last attempt to reach the wire is the one that counts.
+   * The caller clears lastUsage/anchorIndex on it ONLY together with
+   * `boundary`: a prefix-stable honour leaves the anchor valid (spec 6.6 —
+   * wire and persisted prefix are reference-identical, nothing to
+   * invalidate), while a boundary-exempt honour changed the prefix the
+   * provider saw even though the saved array did not (spec 3.6).
+   */
+  readonly honoured: boolean;
+  /**
+   * True when the honoured rewrite (if any) rode the boundary exemption —
+   * the post-compaction retry is the only boundary this step can produce
+   * (`compacted`; spec 3.4: a handler may never assert one). Paired with
+   * `honoured` rather than folded into it: the step-level contract keeps both
+   * facts, and `before_turn` (PR 3) gets its own consumption seam for the
+   * flag rather than borrowing this one.
+   */
+  readonly boundary: boolean;
 }
 
 export interface CompleteStepArgs {
@@ -50,17 +77,83 @@ export interface CompleteStepArgs {
   readonly sessionName: string;
   readonly lastUsage: { readonly promptTokens: number } | undefined;
   readonly anchorIndex: number | undefined;
+  /**
+   * The registry actually in use — the loop's local (`deps.loopEvents ??
+   * createLoopEventRegistry()`), not `deps.loopEvents` itself, which is
+   * usually absent and would dispatch to nothing.
+   */
+  readonly loopEvents: LoopEventRegistry;
+  /** The round trip this request belongs to, as counted by the loop. */
+  readonly roundTrip: number;
+  /** The session's resolved model; undefined when driven without a modelDef. */
+  readonly model?: string;
   readonly deps: TurnDeps;
   readonly signal?: AbortSignal;
 }
 
 export async function completeWithRecovery(args: CompleteStepArgs): Promise<CompleteStepResult> {
-  const { tools, usage, summarizeFailed, sessionName, lastUsage, anchorIndex, deps, signal } = args;
+  const {
+    tools,
+    usage,
+    summarizeFailed,
+    sessionName,
+    lastUsage,
+    anchorIndex,
+    loopEvents,
+    roundTrip,
+    model,
+    deps,
+    signal,
+  } = args;
   let messages: readonly NativeTranscriptMessage[] = args.messages;
   let compacted = false;
+  let honoured = false;
   let res: NativeTurnResponse;
+  // Model, thinking level and timeout are bound in the adapter's closure above
+  // the loop (spec 6.3), so the bag this dispatches starts empty; a handler's
+  // patch is the only thing that ever fills it.
+  const baseOptions: CompleteCallOptions = {};
+  // One wrapper, three call sites (spec 6.5). The wrapper owns `attempt`, so
+  // the retry machinery reports 2..n without knowing an event exists.
+  let attempt = 0;
+  const request = async (msgs: readonly NativeTranscriptMessage[]): Promise<NativeTurnResponse> => {
+    attempt += 1;
+    const patch = await loopEvents.dispatch("before_request", {
+      ...(model !== undefined ? { model } : {}),
+      roundTrip,
+      attempt,
+      options: baseOptions,
+    });
+    const options = patch.options === undefined ? baseOptions : { ...baseOptions, ...patch.options };
+    // transform_context fires here too, per attempt (spec 6.6). The patch
+    // shapes ONLY the wire copy handed to deps.complete below: `msgs` — the
+    // caller's array, the one saveTranscript persists — is returned untouched,
+    // so the transcript stays the true record. `boundary` is this step's
+    // overflow fact (`compacted`): true only on the post-compaction retry,
+    // where a prefix rewrite is free. A model change is a turn-start fact and
+    // is NOT consulted here (spec 8.2 — it belongs to before_turn, PR 3).
+    const transformed = await loopEvents.dispatch("transform_context", {
+      messages: msgs,
+      tools,
+      anchorIndex,
+      boundary: compacted,
+      ...(model !== undefined ? { model } : {}),
+    });
+    const wire = applyHistoryPatch({
+      before: msgs,
+      patched: transformed.messages,
+      anchorIndex,
+      boundary: compacted,
+      event: "transform_context",
+    });
+    // Last write wins: a failed attempt is discarded wholesale, so the
+    // successful attempt is the last one to reach this line — `honoured`
+    // describes the wire the provider actually answered (spec 3.6).
+    honoured = wire.honoured;
+    return deps.complete(wire.messages, tools, options);
+  };
   try {
-    res = await deps.complete(messages, tools);
+    res = await request(messages);
   } catch (err) {
     // Written as one guarded `if` (not a separate `canRetry` boolean) so
     // TypeScript's narrowing carries deps.summarize/contextWindow/compaction
@@ -79,7 +172,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       // backoff live in retryTransportFault (./turn-retry), called once.
       if (deps.transportRetry === undefined) throw err;
       res = await retryTransportFault(err, {
-        attempt: () => deps.complete(messages, tools),
+        attempt: () => request(messages),
         config: deps.transportRetry,
         deadline: deps.deadline,
         signal,
@@ -105,7 +198,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       });
       // Falls through to the shared round-trip bookkeeping and tool
       // execution below, exactly like the overflow-retry branch's own
-      // `res = await deps.complete(...)` two lines down — one success
+      // `res = await request(messages)` two lines down — one success
       // path, reached from either recovery, not a second copy of it.
     } else {
       const step = await runOverflowCompaction({
@@ -114,6 +207,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
         sessionName,
         lastUsage,
         anchorIndex,
+        loopEvents,
         deps: {
           summarize: deps.summarize,
           contextWindow: deps.contextWindow,
@@ -128,8 +222,8 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       compacted = true;
       // Retried once. A second overflow propagates: compacting further would be
       // guessing, and the failure now carries a correct diagnosis.
-      res = await deps.complete(messages, tools);
+      res = await request(messages);
     }
   }
-  return { res, messages, compacted };
+  return { res, messages, compacted, honoured, boundary: compacted };
 }

@@ -316,6 +316,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         ...(nativeSessionSpinBreaker.get(handle.id) !== undefined
           ? { spinBreaker: nativeSessionSpinBreaker.get(handle.id) }
           : {}),
+        ...(opts.loopEvents !== undefined ? { loopEvents: opts.loopEvents } : {}),
         pricingSource,
         onActivity: (activity) => {
           hooks?.onStreamActivity?.(buildNativeStreamEvent(eventBase, activity, Date.now()));
@@ -345,7 +346,7 @@ export class NativeAgentAdapter implements AgentAdapter {
             if (timer !== undefined) clearTimeout(timer);
           }
         },
-        complete: async (messages, tools) => {
+        complete: async (messages, tools, requestOptions) => {
           // The controller is armed with what is LEFT of the turn, so N
           // round-trips can no longer add up to N x timeoutSeconds. Still
           // combined with any caller-supplied opts.signal via AbortSignal.any so
@@ -358,6 +359,11 @@ export class NativeAgentAdapter implements AgentAdapter {
               ? [opts.signal, controller.signal, turnController.signal]
               : [controller.signal, turnController.signal],
           );
+          // The loop-event bag speaks in booleans: `false` explicitly drops
+          // the session's inherited thinking level for this request, while
+          // `true` leaves that resolved level in place. nax-ai accepts a
+          // thinking LEVEL rather than a boolean, so normalize at this boundary.
+          const requestThinking = requestOptions?.thinking === false ? undefined : thinking;
 
           try {
             const res = await client.complete(resolved, {
@@ -365,7 +371,8 @@ export class NativeAgentAdapter implements AgentAdapter {
               ...(tools.length > 0 ? { tools } : {}),
               sessionId,
               signal,
-              ...(thinking !== undefined ? { thinking } : {}),
+              ...(requestThinking !== undefined ? { thinking: requestThinking } : {}),
+              ...(requestOptions?.temperature !== undefined ? { temperature: requestOptions.temperature } : {}),
               // nax#1835: "short" is fixed, not config-driven (this repo's
               // precedent -- the compaction design -- rejects knobs added
               // before evidence). The turn loop's round trips are seconds

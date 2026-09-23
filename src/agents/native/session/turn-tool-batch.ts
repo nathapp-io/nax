@@ -24,9 +24,8 @@ import { ASK_HUMAN_TOOL_NAME } from "./ask-human";
 import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
 import { type InvalidCallBudget, rewriteToolCallInput } from "./handle-invalid-tool-call";
 import type { LoopEventRegistry } from "./loop-events";
-import { nudgeOverheadBytes, withNudge } from "./nudge";
+import { withNudge } from "./nudge";
 import { buildToolResult } from "./tool-result";
-import { truncateNativeToolResult } from "./truncation-handler";
 import { handleAskHumanCall } from "./turn-ask-human";
 import type { TurnDeps } from "./turn-types";
 
@@ -47,7 +46,6 @@ export interface ToolBatchArgs {
   readonly tools: readonly ToolDefinition[];
   readonly codingToolNames: ReadonlySet<string>;
   readonly roundTrips: number;
-  readonly sessionName: string;
   readonly opts: SendTurnOpts;
   readonly deps: TurnDeps;
   readonly loopEvents: LoopEventRegistry;
@@ -66,7 +64,6 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
     tools,
     codingToolNames,
     roundTrips,
-    sessionName,
     opts,
     deps,
     loopEvents,
@@ -118,7 +115,7 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
         messages.push(outcome.result);
         continue;
       }
-      const outcome = loopEvents.beforeTool(call, tools);
+      const outcome = await loopEvents.dispatch("before_tool", { call, tools });
       // nax#2047 Task 4: a tripped invalid-call budget ends the batch with
       // NO result — "a result nobody reads only grows the transcript". None
       // of the four seam outcomes can express that (each answers the call),
@@ -187,17 +184,18 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
       // construction (no handler can rewrite history). `denied` is threaded
       // through untouched — a refused Write is not a crashed Write
       // (ADR-029 s5) — and `nudge` prefixes the surviving content.
-      const patch = loopEvents.afterTool(call, { content: answerText, denied: answer?.denied });
-      // US-003: model-facing truncation runs after handlers and before the
-      // message is built. See ./truncation-handler for the async rationale.
-      const shaped = await truncateNativeToolResult(sessionName, patch.content ?? answerText, {
+      // Model-facing truncation (US-003) is the LAST of those handlers, so it
+      // shapes whatever earlier handlers produced; the payload carries the
+      // tool identity and the pending nudge, whose bytes the handler reserves
+      // out of this result's budget before `withNudge` prepends it below.
+      const patch = await loopEvents.dispatch("after_tool", {
+        content: answerText,
+        denied: answer?.denied,
         toolName: call.name,
         callId: call.id,
-        // The nudge is prepended below, so its bytes are spent out of this
-        // result's budget -- not added after the ceiling was enforced.
-        ...(nudgeText !== undefined ? { reserveBytes: nudgeOverheadBytes(nudgeText) } : {}),
+        ...(nudgeText !== undefined ? { nudgeText } : {}),
       });
-      const finalContent = withNudge(nudgeText, shaped);
+      const finalContent = withNudge(nudgeText, patch.content ?? answerText);
       answer?.finalizeAudit?.(finalContent);
       messages.push(
         buildToolResult({
@@ -218,15 +216,16 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
       // event still fires — a policy that bounds result size has to see the
       // results that arrive as errors too.
       const errorText = err instanceof Error ? err.message : String(err);
-      const patch = loopEvents.afterTool(call, { content: errorText, isError: true });
-      const shaped = await truncateNativeToolResult(sessionName, patch.content ?? errorText, {
+      const patch = await loopEvents.dispatch("after_tool", {
+        content: errorText,
+        isError: true,
         toolName: call.name,
         callId: call.id,
       });
       messages.push(
         buildToolResult({
           toolCallId: call.id,
-          content: shaped,
+          content: patch.content ?? errorText,
           isError: patch.isError ?? true,
         }),
       );

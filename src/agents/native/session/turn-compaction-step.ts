@@ -11,7 +11,11 @@
  *   2. a summarizer throw is swallowed by the proactive step (the request may
  *      still fit) and propagates out of the backstop;
  *   3. only the proactive step logs its progress (Finding 2, whole-branch
- *      review 2026-09-04).
+ *      review 2026-09-04);
+ *   4. a `before_compaction` decline is HONOURED proactively — the branch runs
+ *      before any request, so sending uncompacted is a legitimate outcome — and
+ *      IGNORED + logged at overflow, where the request has already failed with
+ *      a context overflow and declining would leave no recovery (spec 6.2).
  *
  * They share only the summarize-and-apply core below. The failure semantics
  * stay with the callers on purpose — see each function's catch.
@@ -26,6 +30,7 @@ import {
   type TranscriptMessage as NativeTranscriptMessage,
   prepareCompaction,
 } from "./compaction";
+import type { LoopEventRegistry } from "./loop-events";
 import { type TurnAccumulator, usageBeat } from "./turn-accumulator";
 import type { NativeSummaryResponse, TurnDeps } from "./turn-types";
 
@@ -49,6 +54,13 @@ export interface CompactionStepArgs {
   readonly sessionName: string;
   readonly lastUsage: { readonly promptTokens: number } | undefined;
   readonly anchorIndex: number | undefined;
+  /**
+   * The registry actually in use — the loop's local (`deps.loopEvents ??
+   * createLoopEventRegistry()`), not `deps.loopEvents` itself, which is
+   * usually absent and would dispatch to nothing. Threaded from `turn-loop.ts`
+   * and from `completeWithRecovery`'s own arg, the same as `CompleteStepArgs`.
+   */
+  readonly loopEvents: LoopEventRegistry;
   readonly deps: CompactionStepDeps;
   readonly signal?: AbortSignal;
 }
@@ -75,6 +87,18 @@ interface AppliedSummary {
   readonly summary: NativeSummaryResponse;
 }
 
+/** What `summarizeAndApply` should use as the summary text. */
+interface SummarySource {
+  /**
+   * A `before_compaction` handler's replacement summary. When defined the
+   * summarizer call is skipped entirely, and the response below carries the
+   * handler's text with all-zero usage: no model call billed anything, so zero
+   * is honest (the same ruling as the transport-retry beat), and the beat the
+   * callers emit still resets the watchdog between apply and round trip.
+   */
+  readonly replacementSummary?: string;
+}
+
 /**
  * The half both branches share: summarize the dropped span, then apply the
  * summary to the transcript. A throw here is left to propagate — catching it is
@@ -84,8 +108,12 @@ async function summarizeAndApply(
   messages: readonly NativeTranscriptMessage[],
   plan: CompactionPlan,
   deps: CompactionStepDeps,
+  source: SummarySource = {},
 ): Promise<AppliedSummary> {
-  const summary = await deps.summarize(plan.toSummarize, plan.previousSummary);
+  const summary =
+    source.replacementSummary !== undefined
+      ? { text: source.replacementSummary, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0 }
+      : await deps.summarize(plan.toSummarize, plan.previousSummary);
   // Rebound, not spliced in place: `messages` is a local accumulator and
   // rebinding it keeps the compacted array a fresh value.
   const compacted = applyCompaction(messages, plan, summary.text);
@@ -93,14 +121,28 @@ async function summarizeAndApply(
 }
 
 export async function runProactiveCompaction(args: CompactionStepArgs): Promise<CompactionStepResult> {
-  const { messages, usage, sessionName, lastUsage, anchorIndex, deps, signal } = args;
+  const { messages, usage, sessionName, lastUsage, anchorIndex, deps, signal, loopEvents } = args;
   const preCompactionTokens = estimateContextTokens(messages, lastUsage, anchorIndex);
   const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction));
   if (plan === undefined) {
     return { messages, compacted: false, summarizeFailed: false };
   }
   try {
-    const applied = await summarizeAndApply(messages, plan, deps);
+    const patch = await loopEvents.dispatch("before_compaction", {
+      reason: "proactive",
+      toSummarize: plan.toSummarize,
+      ...(plan.previousSummary !== undefined ? { previousSummary: plan.previousSummary } : {}),
+      estimatedTokens: preCompactionTokens,
+    });
+    // Nothing has been requested yet, so sending uncompacted is a legitimate
+    // outcome — the decline is HONOURED here (spec 6.2). `summarizeFailed`
+    // stays false: the overflow backstop must remain armed for the uncompacted
+    // try. A decline wins over a replacement summary — not compacting at all
+    // subsumes replacing what the summarizer would say.
+    if (patch.decline === true) {
+      return { messages, compacted: false, summarizeFailed: false };
+    }
+    const applied = await summarizeAndApply(messages, plan, deps, { replacementSummary: patch.summary });
     // Finding 2 (whole-branch review, 2026-09-04): a previous-summary merge
     // can produce a same-size (or larger) array — a paid model call that
     // shrank nothing. Not fatal (the reactive backstop is the real safety
@@ -141,11 +183,26 @@ export async function runProactiveCompaction(args: CompactionStepArgs): Promise<
 }
 
 export async function runOverflowCompaction(args: OverflowCompactionArgs): Promise<CompactionStepResult> {
-  const { messages, usage, deps, error } = args;
+  const { messages, usage, sessionName, lastUsage, anchorIndex, deps, error, loopEvents } = args;
   // Same code path, half the keep budget. Not a second algorithm.
   const plan = prepareCompaction(messages, keepBudget(deps.contextWindow, deps.compaction, true));
   if (plan === undefined) throw error;
-  const applied = await summarizeAndApply(messages, plan, deps);
+  const patch = await loopEvents.dispatch("before_compaction", {
+    reason: "overflow",
+    toSummarize: plan.toSummarize,
+    ...(plan.previousSummary !== undefined ? { previousSummary: plan.previousSummary } : {}),
+    estimatedTokens: estimateContextTokens(messages, lastUsage, anchorIndex),
+  });
+  // The request has ALREADY failed with a context overflow: there is no
+  // uncompacted path left, so a decline has nothing to decline into and
+  // honouring it would kill the story. The signal stops, the compaction does
+  // not (spec 6.2), and the ignore is on the record.
+  if (patch.decline === true) {
+    getSafeLogger()?.warn("native-loop-events", "before_compaction decline ignored at overflow", {
+      sessionName,
+    });
+  }
+  const applied = await summarizeAndApply(messages, plan, deps, { replacementSummary: patch.summary });
   usage.add(applied.summary.usage, applied.summary.costUsd, applied.summary.rates);
   deps.onActivity?.(usageBeat(applied.summary.usage, applied.summary.costUsd));
   return { messages: applied.messages, compacted: true, summarizeFailed: false };

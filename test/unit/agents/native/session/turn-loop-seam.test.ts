@@ -78,7 +78,7 @@ const baseOpts = (over: Partial<SendTurnOpts> = {}): SendTurnOpts => ({
 function withCounter(registry: LoopEventRegistry): { count: { value: number }; payloads: unknown[] } {
   const count = { value: 0 };
   const payloads: unknown[] = [];
-  registry.registerAfterTool((_call, payload) => {
+  registry.register("after_tool", (payload) => {
     count.value += 1;
     payloads.push(payload);
     return {};
@@ -372,7 +372,7 @@ describe("runNativeTurn — before_tool outcomes (AC5–AC8)", () => {
     const registry = createLoopEventRegistry();
     // Handler returns allow with a rewritten input. The interaction handler
     // must observe the rewritten input, NOT the model's original argument.
-    registry.registerBeforeTool(() => ({ kind: "allow", input: { path: "rewritten.ts" } }));
+    registry.register("before_tool", () => ({ kind: "allow", input: { path: "rewritten.ts" } }));
     const seen: unknown[] = [];
     let roundTrip = 0;
     await runNativeTurn(
@@ -408,7 +408,7 @@ describe("runNativeTurn — before_tool outcomes (AC5–AC8)", () => {
 
   test("AC6: before_tool block pushes a tool-result carrying handler content without invoking the tool", async () => {
     const registry = createLoopEventRegistry();
-    registry.registerBeforeTool(() => ({ kind: "block", content: "blocked-by-seam", isError: true }));
+    registry.register("before_tool", () => ({ kind: "block", content: "blocked-by-seam", isError: true }));
     let invoked = 0;
     let roundTrip = 0;
     await runNativeTurn(
@@ -452,7 +452,7 @@ describe("runNativeTurn — before_tool outcomes (AC5–AC8)", () => {
 
   test("AC7: before_tool terminate pushes one tool-result per outstanding call in the batch", async () => {
     const registry = createLoopEventRegistry();
-    registry.registerBeforeTool(() => ({ kind: "terminate", content: "ended-by-seam" }));
+    registry.register("before_tool", () => ({ kind: "terminate", content: "ended-by-seam" }));
     let invoked = 0;
     let roundTrip = 0;
     await runNativeTurn(
@@ -500,7 +500,7 @@ describe("runNativeTurn — before_tool outcomes (AC5–AC8)", () => {
 
   test("AC8: before_tool nudge prepends the handler text to the eventual tool-result content", async () => {
     const registry = createLoopEventRegistry();
-    registry.registerBeforeTool(() => ({ kind: "nudge", text: "nudge-prefix" }));
+    registry.register("before_tool", () => ({ kind: "nudge", text: "nudge-prefix" }));
     let roundTrip = 0;
     await runNativeTurn(
       handle,
