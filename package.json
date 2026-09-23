@@ -81,7 +81,7 @@
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.77",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@nathapp/nax-ai": "0.1.13",
+    "@nathapp/nax-ai": "0.1.15",
     "chalk": "^5.6.2",
     "commander": "^13.1.0",
     "ink": "^6.7.0",

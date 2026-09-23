@@ -162,6 +162,13 @@ export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[
       ...(model.maxTokens !== undefined ? { maxTokens: model.maxTokens } : {}),
       supportsTools: model.supportsTools,
       thinkingLevels: model.thinkingLevels,
+      // nax#2191: forwarded verbatim. nax-ai's `assertOverrideModelRouting`
+      // rejects an empty `{}` (pi's check is truthiness, not emptiness — issue
+      // #43), so omission is the only safe absent shape. The protocol-side
+      // rejection on a non-`openai-completions` model is nax-ai's; nax's
+      // schema refuses an empty declaration at config load so the user gets
+      // the error there rather than on first dispatch.
+      ...(model.openRouterRouting !== undefined ? { openRouterRouting: model.openRouterRouting } : {}),
     })),
   }));
 }

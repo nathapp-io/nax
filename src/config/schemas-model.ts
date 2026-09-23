@@ -50,6 +50,37 @@ export const CatalogPricingSchema = z
   })
   .strict();
 
+/**
+ * nax#2191: mirror of nax-ai 0.1.15's `OpenRouterRouting`. Keys stay
+ * snake_case because they are the wire field names and pass through
+ * unmapped. `.strict()` so a casing typo (`quantizaton`) is a load error,
+ * not a stripped field that leaves the routing request going to OpenRouter's
+ * own default ordering (the same silent-drop trap as pricing.tiers #1847 and
+ * contextWindow #1848).
+ *
+ * nax-ai owns the protocol and emptiness checks (`assertOverrideModelRouting`
+ * rejects routing on a non-`openai-completions` protocol and on `{}`); nax's
+ * only role is the schema gate, and an empty declaration is rejected here so
+ * the user gets a config-load error rather than an opaque runtime failure on
+ * the first dispatch.
+ */
+export const OpenRouterRoutingSchema = z
+  .object({
+    allow_fallbacks: z.boolean().optional(),
+    require_parameters: z.boolean().optional(),
+    data_collection: z.enum(["deny", "allow"]).optional(),
+    zdr: z.boolean().optional(),
+    order: z.array(z.string().min(1)).optional(),
+    only: z.array(z.string().min(1)).optional(),
+    ignore: z.array(z.string().min(1)).optional(),
+    quantizations: z.array(z.string().min(1)).optional(),
+    sort: z.enum(["price", "throughput", "latency"]).optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, {
+    message: "openRouterRouting must not be empty — omit the key to leave the model's routing unset",
+  });
+
 export const CatalogModelOverrideSchema = z
   .object({
     id: z.string().min(1, "id must be non-empty"),
@@ -63,6 +94,12 @@ export const CatalogModelOverrideSchema = z
     supportsTools: z.boolean(),
     thinkingLevels: z.array(ThinkingLevelSchema),
     pricing: CatalogPricingSchema,
+    // nax#2191: forwarded verbatim to nax-ai's `ResolvedModel.openRouterRouting`.
+    // Omitted when undeclared — the mapper (`src/agents/native/models.ts`
+    // `toProviderOverrides`) is conditional on `!== undefined`, and nax-ai's
+    // protocol-side check rejects both an empty declaration and routing on a
+    // non-`openai-completions` protocol.
+    openRouterRouting: OpenRouterRoutingSchema.optional(),
   })
   .strict();
 

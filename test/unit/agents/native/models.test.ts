@@ -394,6 +394,39 @@ describe("toProviderOverrides", () => {
     expect(mapped).not.toHaveProperty("headers");
   });
 
+  test("carries a declared openRouterRouting into the nax-ai override (nax#2191)", () => {
+    // nax-ai 0.1.15 exposes ResolvedModel.openRouterRouting and asserts the
+    // routing block reaches the wire only through ProviderOverride.models on
+    // the openai-completions protocol (providers/override-model.ts). nax's
+    // only job here is to forward the declaration verbatim.
+    const withRouting: ProviderCatalogOverride = {
+      ...override,
+      models: [{ ...override.models[0], openRouterRouting: { sort: "latency", quantizations: ["fp8"] } }],
+    };
+    expect(toProviderOverrides([withRouting])[0]?.models?.[0]).toMatchObject({
+      openRouterRouting: { sort: "latency", quantizations: ["fp8"] },
+    });
+  });
+
+  test("omits openRouterRouting entirely when undeclared, so nax-ai reads it as unset", () => {
+    // nax-ai's assertOverrideModelRouting rejects an empty `{}` because pi's
+    // check is truthiness, not emptiness — so the only safe absent shape is
+    // no key at all. An explicit `openRouterRouting: undefined` would be a
+    // declaration, not a silence (same reasoning as baseUrl/headers).
+    const mapped = toProviderOverrides([override])[0]?.models?.[0];
+    expect(mapped).not.toHaveProperty("openRouterRouting");
+    // Note: no `.not.toBe` alias-defensive assertion, unlike the `headers`
+    // test above. `headers` lives on the provider and reaches every model of
+    // the provider (including bundled ones), so a config mutation reaching an
+    // already-built client has a wide blast radius — nax-ai's catalog also
+    // stores the reference rather than copying. `openRouterRouting` is
+    // per-model and is read through `ProviderOverride.models`, a `readonly
+    // ResolvedModel[]`, so the lifetime concern is bounded and the copy
+    // would be slightly wasteful. Mirroring the headers test pattern here
+    // would be defensive against a future nax-ai change rather than against
+    // a current bug.
+  });
+
   test("the config thinking levels mirror the nax-ai union exactly", () => {
     // THINKING_LEVELS is a Record<ThinkingLevel, true> over nax-ai's union, so
     // it fails to compile if nax-ai adds a level. This pins the config enum to
