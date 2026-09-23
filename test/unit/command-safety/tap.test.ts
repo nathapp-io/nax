@@ -122,6 +122,26 @@ describe("openShadowTap", () => {
     });
     expect(() => tap.settle("ok")).not.toThrow();
   });
+
+  test("a throwing settle is caught inside the live tap", () => {
+    const r = recorder();
+    const boomSettle: CommandShadow = {
+      ...r.shadow,
+      settle: () => {
+        throw new Error("y");
+      },
+    };
+    const tap = openShadowTap(boomSettle, {
+      key: "k",
+      identity: "Bash",
+      command: "x",
+      argv: undefined,
+      verdict: allow,
+      stage: "run",
+    });
+    expect(r.observed).toHaveLength(1);
+    expect(() => tap.settle("ok")).not.toThrow();
+  });
 });
 
 describe("toMechanical", () => {
