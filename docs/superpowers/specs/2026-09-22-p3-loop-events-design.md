@@ -547,9 +547,16 @@ real work on healthy transcripts. Re-measure first.
 ### 8.3 What PR 3 builds
 
 **Why build anything if the bug is unreachable.** "A model change on a session name never
-replays history" holds today only because three decisions in two layers happen to combine:
-#1965 in nax's `src/session/`, and #1838/#1877 in the native close. Nothing names the
-guarantee, so a change to `decideReuse` could reopen nax#2150 silently.
+replays history" holds today only because separate decisions happen to combine:
+- #1965's `decideReuse` routes a model change to a close;
+- #1838/#1877's native close then removes the transcript.
+
+Nothing names the guarantee. So a change to the close semantics, for example keeping a
+successful session's transcript for continuity, or a future open path that reaches a native
+session without that close, would reopen nax#2150 silently.
+
+(A `decideReuse` regression would not: the old handle, still carrying the old model, would be
+reused. That is #1965's bug, not a cross-model replay.)
 
 Master-plan D8 makes this sharper. P6 extracts the native session loop and the transcript store
 into `nax-coding`, while `SessionManager` stays nax-side. After that extraction the package
@@ -704,16 +711,23 @@ original §8.
   **only by the effort suffix** gets the history replayed — without it, a store that rejects
   every load would pass the rejection test.
 - **The anchor, read directly** (§8.3(d)). An entry recorded under model A, then a turn on
-  model B: the entry is ignored, which shows up as `before_turn` seeing no anchor-protected
-  prefix, and the entry left after the turn is B's own, recording B. Assert on the entry, not
+  model B: the entry is ignored, which shows up as the first request's `transform_context`
+  payload carrying no `anchorIndex`, and the entry left after the turn is B's own, recording
+  B. (A one-round-trip turn records anchor **0**: `anchorIndex = messages.length - 1` runs
+  before the assistant push.) Assert on the entry, not
   on the messages; a stale anchor is invisible in the message array and only surfaces as a
   mis-sized compaction decision one turn later. The control: an entry with **no** model is
   kept. That pins the PR 2 fixtures' behaviour (`transform-context.test.ts:50`) as intended
   rather than accidental.
 - **One composite guard through the real `SessionManager`** (the §8.1 spike, rebuilt on the
   shared helpers): a model change on a session name yields a fresh conversation. It proves the
-  guarantee end to end through production wiring, and it keeps passing if either layer alone
-  regresses — which is the point of having two.
+  guarantee end to end through production wiring.
+  - Once `decideReuse` routes the change to a close, the test keeps passing if either layer
+    alone regresses: the close removing the transcript, or the store refusing it. That is the
+    point of having two.
+  - A `decideReuse` regression makes it **fail** instead, because the old handle and its old
+    model get reused: #1965's bug, also worth catching.
+  - The sabotage check therefore disables the close's delete, never `decideReuse`.
 - **Removal pinned:** `turn-lifecycle.test.ts:102-103`'s `not.toHaveProperty` assertions stay
   and now pin §8.3(f).
 
@@ -766,9 +780,9 @@ it was unreachable (§8.1).
 5. **PR 3's signature change** (§8.3(e)) touches 12 test call sites. Mechanical — the owner
    string becomes `{ owner }` — but a reviewer should see it named here rather than discover
    it in the diff. Call sites passing no owner are untouched.
-6. **The guarantee now lives in two layers** (`decideReuse` and the store). If a future
-   design wants cross-model continuity (§8.2), **both** must change, and §8.2's measurement
-   must be redone first.
+6. **The guarantee now lives in two layers**: the close removing the transcript (reached via
+   `decideReuse`), and the store. If a future design wants cross-model continuity (§8.2),
+   **both** must change, and §8.2's measurement must be redone first.
 
 ---
 

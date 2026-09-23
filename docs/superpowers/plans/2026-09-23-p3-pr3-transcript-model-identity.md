@@ -20,8 +20,13 @@ No change to `SessionManager`, `decideReuse`, the close semantics or nax-ai.
 before starting: they explain why the check exists although no production path triggers it
 today.
 
-**Branch:** `feat/p3-transcript-model-identity` (already exists, off `main` @ `fc4dcfcc9`; it
-carries the spec commits `33cc3145a` and `5062fe9af`).
+**Branch:** `feat/p3-transcript-model-identity` (already exists, off `main` @ `fc4dcfcc9`).
+It carries docs only: spec commits `33cc3145a` and `5062fe9af`, this plan, and its review
+fixes. No `src/` change yet.
+
+**Line numbers** are as of `fc4dcfcc9`. Tasks 1–3 all edit `turn-loop.ts`, so after Task 1 its
+cited lines drift by a few. Every edit below quotes the code it replaces; locate by that
+text, not by the number.
 
 ## Global Constraints
 
@@ -175,9 +180,9 @@ describe("transcriptModelIdentity", () => {
 
 Run: `timeout 30 bun test test/unit/agents/native/transcript-store.test.ts --timeout=5000`
 
-Expected: FAIL. `transcriptModelIdentity` is not exported, and the migrated `{ owner }`
-arguments are not yet accepted: typecheck-level errors surface as failed tests or import
-errors.
+Expected: FAIL. The file fails to load, because `transcriptModelIdentity` is not exported
+(`bun test` does not typecheck, so the missing export is the first thing to surface). Every
+test in the file reports failure until Step 4.
 
 - [ ] **Step 4: Implement the store change**
 
@@ -213,16 +218,19 @@ export function transcriptModelIdentity(rawModel: string | undefined): string | 
 }
 ```
 
-Replace the `TranscriptFile` interface (keep its existing docblock, and append the sentence
-shown):
+Keep the `TranscriptFile` docblock as it is, but insert these lines immediately before its
+closing `*/`:
 
 ```ts
- * ... (existing docblock text unchanged) ...
  *
  * `model` (nax#2150, P3 spec 8.3) records which model wrote the messages, so a
  * different model reads the file as a new conversation rather than replaying
  * thinking blocks that are meaningless to it.
- */
+```
+
+Then replace the interface body:
+
+```ts
 interface TranscriptFile {
   readonly owner?: string;
   readonly model?: string;
@@ -241,7 +249,7 @@ export async function loadTranscript(
   sessionName: string,
   identity: TranscriptIdentity = {},
 ): Promise<ConversationMessage[]> {
-  // ... readFile + JSON.parse block exactly as today ...
+  // (the existing `let raw` / readFile / JSON.parse block goes here, unchanged)
 
   if (isLegacyTranscript(parsed)) {
     // Unowned history is foreign history to a reader that has an identity.
@@ -587,6 +595,12 @@ observable is `transform_context`'s `anchorIndex`: the dispatcher passes the tur
 into that payload (`turn-complete-step.ts:138`), so the first payload shows exactly which
 anchor the first request used.
 
+**The anchor of a one-round-trip turn is 0, not 1.** `turn-loop.ts:277` records
+`anchorIndex = messages.length - 1` *before* the assistant message is pushed (the comment at
+`:293` says so), so after a single `[user]` request it is 0. The assertions below depend on
+that. The model-less seed uses 5, a value no real turn in these tests produces, so its
+assertion cannot pass by coincidence.
+
 ```ts
 describe("runNativeTurn — the persisted anchor is per model (P3 spec 8.3(d))", () => {
   /** Runs one turn and returns the anchorIndex its FIRST request was sized against. */
@@ -603,23 +617,25 @@ describe("runNativeTurn — the persisted anchor is per model (P3 spec 8.3(d))",
 
   test("a turn on another model does not read the previous model's anchor", async () => {
     await turn(onModel("openai/model-a"), "first");
-    expect(nativeSessionLastUsage.get(SESSION)).toMatchObject({ model: "openai/model-a", anchorIndex: 1 });
+    // Recorded before the assistant push: [user "first"] -> index 0.
+    expect(nativeSessionLastUsage.get(SESSION)).toMatchObject({ model: "openai/model-a", anchorIndex: 0 });
 
     expect(await firstAnchorSeen(onModel("anthropic/model-b"))).toBeUndefined();
-    // The entry left behind is B's own: [user "second", assistant] -> index 1.
-    expect(nativeSessionLastUsage.get(SESSION)).toMatchObject({ model: "anthropic/model-b", anchorIndex: 1 });
+    // The entry left behind is B's own (B's history was refused: [user "second"] -> 0).
+    expect(nativeSessionLastUsage.get(SESSION)).toMatchObject({ model: "anthropic/model-b", anchorIndex: 0 });
   });
 
   test("control: a turn on the same model reads its anchor", async () => {
     await turn(onModel("openai/model-a"), "first");
-    expect(await firstAnchorSeen(onModel("openai/model-a"))).toBe(1);
+    expect(await firstAnchorSeen(onModel("openai/model-a"))).toBe(0);
   });
 
   test("an anchor with no recorded model is still read (the PR 2 fixtures' state)", async () => {
-    // transform-context.test.ts:50 seeds exactly this: an anchor, no model, no
+    // transform-context.test.ts:50 seeds this shape: an anchor, no model, no
     // transcript. Pinned so the fixture's behaviour is intended, not accidental.
-    nativeSessionLastUsage.set(SESSION, { promptTokens: 100, anchorIndex: 0 });
-    expect(await firstAnchorSeen(onModel("openai/model-a"))).toBe(0);
+    // 5, not 0: no real turn here records 5, so this cannot pass by coincidence.
+    nativeSessionLastUsage.set(SESSION, { promptTokens: 100, anchorIndex: 5 });
+    expect(await firstAnchorSeen(onModel("openai/model-a"))).toBe(5);
   });
 });
 ```
@@ -632,21 +648,26 @@ Expected:
 - FAIL: `session-lifecycle.test.ts` fails to load, because `sessionAnchorFor` is not exported.
   That fails every test in the file until Step 4.
 - FAIL: "a turn on another model does not read the previous model's anchor". The entry has
-  no `model` (the first `toMatchObject` fails).
+  no `model`, so the first `toMatchObject` fails.
 - PASS: "control: a turn on the same model reads its anchor" and "an anchor with no recorded
   model is still read". Both already hold, and they must keep holding after Step 4.
 
 - [ ] **Step 4: Implement**
 
-In `src/agents/native/session/session.ts`, replace the `nativeSessionLastUsage` declaration
-(keep its docblock, and append the sentence shown):
+In `src/agents/native/session/session.ts`, keep the `nativeSessionLastUsage` docblock as it is
+but insert these lines immediately before its closing `*/`:
 
 ```ts
- * ... (existing docblock text unchanged) ...
  *
  * `model` is the transcript model identity the anchor was measured under
  * (P3 spec 8.3(d)); read it through `sessionAnchorFor`, never directly.
- */
+```
+
+Then replace the single line
+`export const nativeSessionLastUsage = new Map<string, { promptTokens: number; anchorIndex: number }>();`
+with:
+
+```ts
 export interface SessionAnchor {
   readonly promptTokens: number;
   readonly anchorIndex: number;
@@ -672,9 +693,10 @@ export function sessionAnchorFor(sessionName: string, model: string | undefined)
 In `src/agents/native/session/turn-loop.ts`:
 - add `sessionAnchorFor` to the `./session` import (keep `nativeSessionLastUsage`, which the
   write still uses);
-- line 108: `const anchor = nativeSessionLastUsage.get(handle.id);` becomes
+- `const anchor = nativeSessionLastUsage.get(handle.id);` (originally `:108`) becomes
   `const anchor = sessionAnchorFor(handle.id, transcriptIdentity.model);`
-- line 278 becomes:
+- `nativeSessionLastUsage.set(handle.id, { promptTokens, anchorIndex });` (originally `:278`)
+  becomes:
 
 ```ts
         nativeSessionLastUsage.set(handle.id, {
@@ -845,16 +867,25 @@ stale 'PR 3' comments go with them. Spec: P3 section 8.3(f)."
 - Consumes: `SessionManager`, `openNativeSession`, `closeNativeSession`, `runNativeTurn`, and
   `makeAgentAdapter` from `@test/helpers`.
 
-This test proves the guarantee end to end and keeps passing if **either** layer alone
-regresses: `decideReuse` closing on the model change, or the store's model check (spec §9).
-It has no RED phase against the current tree, because both layers already hold. Its RED check
-is Step 2's deliberate sabotage.
+This test proves the guarantee end to end. `decideReuse` routes a model change to a close;
+after that, two layers each keep the old history away from the new model:
+1. the native close deletes (or renames) the transcript;
+2. the store refuses a recorded different model (this PR).
+
+The test keeps passing if **either** of those regresses alone. A `decideReuse` regression is
+different: the old handle, carrying the OLD model, would be reused (#1965's bug). The history
+would then replay to that same model and this test **fails**, which is also a regression worth
+catching.
+
+It has no RED phase against the current tree, because every layer already holds. Its RED
+check is Step 2's deliberate sabotage.
 
 - [ ] **Step 1: Write the test**
 
-In `test/unit/agents/native/session-lifecycle.test.ts`, add
-`import { runNativeTurn } from "@/agents/native/session/turn-loop";` to the imports, then
-append:
+In `test/unit/agents/native/session-lifecycle.test.ts`:
+- add `import { runNativeTurn } from "@/agents/native/session/turn-loop";`;
+- add `clearNativeSessionState` to the existing `@/agents/native/session/session` import;
+- then append:
 
 ```ts
 describe("a model change on a session name is a new conversation, end to end (nax#2150)", () => {
@@ -863,6 +894,11 @@ describe("a model change on a session name is a new conversation, end to end (na
   // refuses another model's history (P3 spec 8.3). Real SessionManager, native
   // open/close, runNativeTurn and store — only the provider is faked.
   const NAME = "nax-model-change-us-001-implementer";
+  afterEach(() => {
+    // A failed assertion skips the closeSession at the end of a test; do not
+    // let this name's native session state leak into the next one.
+    clearNativeSessionState(NAME);
+  });
 
   const request = (model: string): OpenSessionRequest => ({
     agentName: "native",
@@ -931,13 +967,21 @@ Run: `timeout 30 bun test test/unit/agents/native/session-lifecycle.test.ts --ti
 Expected: all pass.
 
 Sabotage check. Do **not** commit these edits:
-1. In `src/session/endpoint-identity.ts` `decideReuse`, temporarily make the last line
-   `return "reuse";`. Re-run: the new test **still passes**, because the store layer holds.
+1. In `src/agents/native/session/session.ts` `closeNativeSession`, temporarily comment out the
+   `await deleteTranscript(dir, handle.id);` line in the non-failed branch. Re-run: the new
+   test **still passes**, because the store layer refuses model A's transcript.
 2. Additionally, in `transcript-store.ts` `isForeignTranscript`, temporarily delete the model
-   branch. Re-run: "the second model's first request carries only its own prompt" **fails**
-   (3 messages sent).
-3. Revert both with `git checkout src/session/endpoint-identity.ts src/agents/native/session/transcript-store.ts`
-   and confirm `git status --short src/` is empty.
+   branch (the second `if`). Re-run: "the second model's first request carries only its own
+   prompt" **fails**, with 3 messages sent.
+3. Revert both with
+   `git checkout src/agents/native/session/session.ts src/agents/native/session/transcript-store.ts`.
+   **Careful:** `git checkout <file>` restores from the INDEX, so commit Task 3's `session.ts`
+   change before doing this (Task 3's commit step already does). Confirm
+   `git status --short src/` is empty.
+
+Do not sabotage `decideReuse` to prove the store: a reused handle keeps the OLD model, so the
+store sees the same model and cannot help. That regression makes this test fail, as intended
+(see above).
 
 - [ ] **Step 3: Commit**
 
@@ -946,10 +990,10 @@ git add test/unit/agents/native/session-lifecycle.test.ts
 git commit -m "test(native): a model change on a session name is a new conversation, end to end
 
 Drives the real SessionManager, native open/close, runNativeTurn and transcript
-store with only the provider faked. It passes as long as either layer holds -
-decideReuse closing on the endpoint change, or the store refusing another
-model's history - and fails only if both regress. Same-model control included.
-Spec: P3 section 9."
+store with only the provider faked. Once decideReuse routes the model change to
+a close, it passes as long as either layer holds - the close removing the
+transcript, or the store refusing another model's history - and fails only if
+both regress. Same-model control included. Spec: P3 section 9."
 ```
 
 ---
@@ -983,7 +1027,7 @@ Re-read spec §8.3(a)–(g) and §9 "PR 3 (re-scoped)", and tick each item again
 | (d) per-model anchor | 3 |
 | (e) `TranscriptIdentity`, 12 test sites | 1 |
 | (f) dead fields + comments removed; `boundary` kept | 4 |
-| (g) no change to `decideReuse`, close, nax-ai | verify `git diff main --stat` touches none of `src/session/`, `node_modules`, `package.json` |
+| (g) no change to `decideReuse`, close, nax-ai | `git diff main...HEAD --stat -- src/session/ package.json bun.lock` prints nothing |
 | §9 store rows, turn level, anchor read directly, composite guard, removal pinned | 1, 2, 3, 5, 4 |
 
 - [ ] **Step 3: Code review BEFORE push**
