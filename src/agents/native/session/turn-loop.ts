@@ -25,7 +25,7 @@ import { applyHistoryPatch } from "./loop-events/cache-boundary";
 import { registerBuiltinLoopHandlers } from "./loop-handlers";
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
-import { loadTranscript, saveTranscript, type TranscriptIdentity } from "./transcript-store";
+import { loadTranscript, saveTranscript, type TranscriptIdentity, transcriptModelIdentity } from "./transcript-store";
 import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
 import { runProactiveCompaction } from "./turn-compaction-step";
 import { completeWithRecovery } from "./turn-complete-step";
@@ -78,7 +78,12 @@ export async function runNativeTurn(
 
   // nax#1877: an owner mismatch reads as a new conversation, so an abandoned
   // invocation's history cannot ride along on the first request of this one.
-  const transcriptIdentity: TranscriptIdentity = { owner: nativeSessionTranscriptOwners.get(handle.id) };
+  // nax#2150 (P3 spec 8.3): so does a recorded different model — the store
+  // owns that guarantee, whatever the session layer above decided.
+  const transcriptIdentity: TranscriptIdentity = {
+    owner: nativeSessionTranscriptOwners.get(handle.id),
+    model: transcriptModelIdentity(handle.modelDef?.model),
+  };
   let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id, transcriptIdentity))];
 
   const spinBreaker = deps.spinBreaker;
