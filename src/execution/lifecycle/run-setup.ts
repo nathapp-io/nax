@@ -48,11 +48,11 @@ import { acquireLock, releaseLock } from "../helpers";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
 import { initializeAfterLock } from "./run-setup-init";
-import { warnFallbackMisconfiguration } from "./run-setup-warnings";
+import { warnFallbackMisconfiguration, warnInertBashStages } from "./run-setup-warnings";
 
 // Re-export warnings for back-compat with tests and other callers that import
 // from `@/execution/lifecycle/run-setup` directly.
-export { warnFallbackMisconfiguration, warnProfileMismatch } from "./run-setup-warnings";
+export { warnFallbackMisconfiguration, warnInertBashStages, warnProfileMismatch } from "./run-setup-warnings";
 
 /**
  * Injectable deps for run-setup (enables testing without heavy side-effects).
@@ -140,6 +140,10 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
   // AC-35: pre-flight warning for unconfigured fallback candidates
   warnFallbackMisconfiguration(options.config, options.agentGetFn, logger);
+
+  // US-003 AC14/AC15: pre-flight warning for stages whose resolved Bash
+  // grants are empty under a gated/escalate mode — silent otherwise (AC13).
+  warnInertBashStages(options.config, logger);
 
   if (options.agentManager) {
     await options.agentManager.validateCredentials();

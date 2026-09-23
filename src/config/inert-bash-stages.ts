@@ -16,7 +16,9 @@
  * offer cannot disagree.
  */
 
+import { BASH_TOOL_NAME } from "@/tools";
 import type { PipelineStage } from "./permissions";
+import { resolvePermissions } from "./permissions";
 import type { NaxConfig } from "./runtime-types";
 
 /**
@@ -34,9 +36,20 @@ export const BASH_DECLARING_STAGES: readonly PipelineStage[] = ["run", "review",
  * Stages whose resolved `bashApproval` is `gated`/`escalate` AND whose resolved
  * grants hold no `Bash` entry.
  *
- * @stub — the implementer replaces the placeholder body; the detection rule is
- * described in the story's approach.
+ * Reads `resolvePermissions(config, stage)` for each candidate — the same
+ * grant list `resolveBashSupport` searches — so the warning and the tool
+ * offer cannot disagree. A stage with no `Bash(...)` allow rule resolves with
+ * `toolGrants` containing every tool the profile grants but no `Bash` entry,
+ * which is exactly the "inert" condition.
  */
-export function findInertBashStages(_config: NaxConfig): readonly PipelineStage[] {
-  return [];
+export function findInertBashStages(config: NaxConfig): readonly PipelineStage[] {
+  const inert: PipelineStage[] = [];
+  for (const stage of BASH_DECLARING_STAGES) {
+    const resolved = resolvePermissions(config, stage);
+    if (resolved.bashApproval !== "gated" && resolved.bashApproval !== "escalate") continue;
+    const grants = resolved.toolGrants ?? [];
+    if (grants.some((grant) => grant.tool === BASH_TOOL_NAME)) continue;
+    inert.push(stage);
+  }
+  return inert;
 }

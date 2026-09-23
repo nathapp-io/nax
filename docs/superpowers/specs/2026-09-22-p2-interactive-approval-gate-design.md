@@ -612,8 +612,21 @@ unreadable-file failure, not only miss and hit.
 existing project's behaviour moves.
 
 **But P2 does not exit dormant.** Its exit requires the gate exercised end to end on real
-traffic: set `bashApproval: escalate` on the P0 baseline corpora (`p0-baseline/native-smoke`,
-`p0-baseline/monorepo-prompt`) and run them, with a reachable Telegram chat.
+traffic: set `bashApproval: escalate` AND a stage's `Bash(...)` allow rule on the P0 baseline
+corpora (`p0-baseline/native-smoke`, `p0-baseline/monorepo-prompt`) and run them, with a
+reachable Telegram chat. Under `gated`/`escalate` the Bash tool is offered for a stage only when
+its resolved grants contain a `Bash` entry — and that entry comes solely from a human-written
+`Bash(...)` allow rule, so an `escalate` config with no such rule sends no prompts at all (US-003
+warns once per inert stage at run start). Example rule that un-inerts a stage:
+
+```jsonc
+"permissions": {
+  "run": { "allow": ["Bash(ls *, cat *, git status*)"] }
+}
+```
+
+One expression per stage; a second `Bash(...)` entry in one stage's allow list is a config load
+error.
 
 Exit is met when, from the artifacts:
 

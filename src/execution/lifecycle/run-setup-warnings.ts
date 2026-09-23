@@ -16,6 +16,7 @@
  */
 
 import type { NaxConfig } from "@/config";
+import { findInertBashStages, resolvePermissions } from "@/config";
 import type { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd";
 
@@ -109,9 +110,18 @@ export function warnFallbackMisconfiguration(
  * reading — "the agent can ask, and a human approves" — is what the mode name
  * suggests and is not what happens.
  *
- * @stub — the implementer logs one warning per stage `findInertBashStages`
- * returns; see the story's approach for the message and data shape.
+ * The message names the stage, the mode, and the rule that would fix it so a
+ * reader who only sees the log line can act on it. The data object carries
+ * `{ storyId: "_setup", stage, bashApproval }` for downstream tooling.
  */
-export function warnInertBashStages(_config: NaxConfig, _logger: ReturnType<typeof getSafeLogger>): void {
-  // Stub: one warning per inert stage goes here.
+export function warnInertBashStages(config: NaxConfig, logger: ReturnType<typeof getSafeLogger>): void {
+  const inertStages = findInertBashStages(config);
+  for (const stage of inertStages) {
+    const resolved = resolvePermissions(config, stage).bashApproval;
+    logger?.warn(
+      "permissions",
+      `bashApproval "${resolved}" on stage "${stage}" grants no Bash (no Bash(...) allow rule) -- the agent is not offered Bash, so nothing can escalate. Add one rule: "allow": ["Bash(ls *, cat *, git status*)"]`,
+      { storyId: "_setup", stage, bashApproval: resolved },
+    );
+  }
 }
