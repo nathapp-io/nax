@@ -5,14 +5,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import {
+  clearNativeSessionState,
   closeNativeSession,
   nativeSessionCompaction,
   nativeSessionLastUsage,
   nativeSessionTranscriptOwners,
   nativeSessionTransportRetry,
   openNativeSession,
+  sessionAnchorFor,
 } from "@/agents/native/session/session";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
+import { runNativeTurn } from "@/agents/native/session/turn-loop";
 import { nativeSessionId } from "@/agents/native/session-affinity";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "@/agents/session-types";
 import { SessionManager } from "@/session/manager";
@@ -69,15 +72,15 @@ describe("native session lifecycle", () => {
   });
 
   test("opening without resume clears a transcript an earlier session left behind", async () => {
-    await saveTranscript(dir, "sess-a", [{ role: "user", content: "stale" }], "call-1");
+    await saveTranscript(dir, "sess-a", [{ role: "user", content: "stale" }], { owner: "call-1" });
     await openNativeSession("sess-a", opts({ resume: false }));
     expect(await loadTranscript(dir, "sess-a")).toEqual([]);
   });
 
   test("opening with resume keeps the transcript the retry needs", async () => {
-    await saveTranscript(dir, "sess-a", [{ role: "user", content: "keep me" }], "call-1");
+    await saveTranscript(dir, "sess-a", [{ role: "user", content: "keep me" }], { owner: "call-1" });
     await openNativeSession("sess-a", opts({ resume: true }));
-    expect(await loadTranscript(dir, "sess-a", "call-1")).toHaveLength(1);
+    expect(await loadTranscript(dir, "sess-a", { owner: "call-1" })).toHaveLength(1);
   });
 
   test("the transcript owner declared at open is what the turn loop reads back", async () => {
@@ -473,5 +476,110 @@ describe("native session compaction settings", () => {
     await closeNativeSession(handle, false);
     expect(nativeSessionCompaction.has("sess-cfg2")).toBe(false);
     expect(nativeSessionLastUsage.has("sess-cfg2")).toBe(false);
+  });
+});
+
+describe("sessionAnchorFor — the persisted anchor is per model (P3 spec 8.3(d))", () => {
+  const NAME = "sess-anchor";
+  afterEach(() => {
+    nativeSessionLastUsage.delete(NAME);
+  });
+
+  test("an anchor measured under another model is dropped", () => {
+    // Prefix stability is a property of (model, prefix) (spec 3.3): this anchor
+    // indexes history the transcript store refused.
+    nativeSessionLastUsage.set(NAME, { promptTokens: 10, anchorIndex: 3, model: "openai/model-a" });
+    expect(sessionAnchorFor(NAME, "anthropic/model-b")).toBeUndefined();
+    expect(nativeSessionLastUsage.has(NAME)).toBe(false);
+  });
+
+  test("an anchor measured under the same model is kept", () => {
+    const entry = { promptTokens: 10, anchorIndex: 3, model: "openai/model-a" };
+    nativeSessionLastUsage.set(NAME, entry);
+    expect(sessionAnchorFor(NAME, "openai/model-a")).toEqual(entry);
+    expect(nativeSessionLastUsage.has(NAME)).toBe(true);
+  });
+
+  test("an anchor with no recorded model makes no claim", () => {
+    const entry = { promptTokens: 10, anchorIndex: 0 };
+    nativeSessionLastUsage.set(NAME, entry);
+    expect(sessionAnchorFor(NAME, "openai/model-b")).toEqual(entry);
+  });
+
+  test("a turn with no model makes no claim", () => {
+    const entry = { promptTokens: 10, anchorIndex: 3, model: "openai/model-a" };
+    nativeSessionLastUsage.set(NAME, entry);
+    expect(sessionAnchorFor(NAME, undefined)).toEqual(entry);
+  });
+});
+
+describe("a model change on a session name is a new conversation, end to end (nax#2150)", () => {
+  // Two layers hold this: SessionManager's decideReuse closes on an endpoint
+  // change (#1965) and the native close deletes the transcript; and the store
+  // refuses another model's history (P3 spec 8.3). Real SessionManager, native
+  // open/close, runNativeTurn and store — only the provider is faked.
+  const NAME = "nax-model-change-us-001-implementer";
+  afterEach(() => {
+    // A failed assertion skips the closeSession at the end of a test; do not
+    // let this name's native session state leak into the next one.
+    clearNativeSessionState(NAME);
+  });
+
+  const request = (model: string): OpenSessionRequest => ({
+    agentName: "native",
+    workdir: "/tmp",
+    pipelineStage: "run",
+    modelDef: { provider: "unknown", model },
+    timeoutSeconds: 60,
+    transcriptDir: dir,
+    transcriptOwner: "call-1",
+  });
+
+  const turnOpts: SendTurnOpts = { interactionHandler: { onInteraction: async () => ({ answer: "" }) } };
+
+  async function sendOn(handle: SessionHandle, prompt: string): Promise<unknown[][]> {
+    const sent: unknown[][] = [];
+    await runNativeTurn(handle, prompt, turnOpts, {
+      complete: async (messages) => {
+        sent.push([...messages]);
+        return {
+          text: "done",
+          thinking: [{ text: "pondering", signature: "sig-first-model" }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          costUsd: 0,
+        };
+      },
+    });
+    return sent;
+  }
+
+  const nativeManager = (): SessionManager => {
+    const adapter = makeAgentAdapter({
+      openSession: (name: string, o: OpenSessionOpts) => openNativeSession(name, o),
+      closeSession: (h: SessionHandle) => closeNativeSession(h),
+    });
+    return new SessionManager({ getAdapter: () => adapter });
+  };
+
+  test("the second model's first request carries only its own prompt", async () => {
+    const sm = nativeManager();
+    const first = await sm.openSession(NAME, request("openai/model-a"));
+    await sendOn(first, "first");
+    const second = await sm.openSession(NAME, request("anthropic/model-b"));
+    const sent = await sendOn(second, "second");
+    expect(sent[0]).toEqual([{ role: "user", content: "second" }]);
+    await sm.closeSession(second);
+  });
+
+  test("control: the same model on the same name keeps the conversation", async () => {
+    // Without this, a harness that never replays anything would pass the test above.
+    const sm = nativeManager();
+    const first = await sm.openSession(NAME, request("openai/model-a"));
+    await sendOn(first, "first");
+    const again = await sm.openSession(NAME, request("openai/model-a"));
+    expect(again).toBe(first);
+    const sent = await sendOn(again, "second");
+    expect(sent[0]).toHaveLength(3);
+    await sm.closeSession(again);
   });
 });

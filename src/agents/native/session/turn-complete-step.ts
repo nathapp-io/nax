@@ -59,8 +59,7 @@ export interface CompleteStepResult {
    * the post-compaction retry is the only boundary this step can produce
    * (`compacted`; spec 3.4: a handler may never assert one). Paired with
    * `honoured` rather than folded into it: the step-level contract keeps both
-   * facts, and `before_turn` (PR 3) gets its own consumption seam for the
-   * flag rather than borrowing this one.
+   * facts.
    */
   readonly boundary: boolean;
 }
@@ -130,8 +129,8 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
     // caller's array, the one saveTranscript persists — is returned untouched,
     // so the transcript stays the true record. `boundary` is this step's
     // overflow fact (`compacted`): true only on the post-compaction retry,
-    // where a prefix rewrite is free. A model change is a turn-start fact and
-    // is NOT consulted here (spec 8.2 — it belongs to before_turn, PR 3).
+    // where a prefix rewrite is free. A model change never reaches this step:
+    // the transcript store refuses another model's history (spec 8.3).
     const transformed = await loopEvents.dispatch("transform_context", {
       messages: msgs,
       tools,

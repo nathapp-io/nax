@@ -12,9 +12,32 @@ import { join } from "node:path";
 import type { ConversationMessage } from "@nathapp/nax-ai";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
+import { parseModelSpec } from "../models";
 
 export function transcriptPath(dir: string, sessionName: string): string {
   return join(dir, `${sessionName}.transcript.json`);
+}
+
+/**
+ * Who may resume a transcript. `owner` is the op invocation (nax#1877); `model`
+ * is the native model that wrote it (nax#2150, P3 spec 8.3). A field the caller
+ * leaves undefined makes no claim, so non-op callers and tests read whatever is
+ * there.
+ */
+export interface TranscriptIdentity {
+  readonly owner?: string;
+  readonly model?: string;
+}
+
+/**
+ * The model half of `TranscriptIdentity`: the native `provider/model` id with
+ * the reasoning-effort suffix stripped. A thinking signature binds to the
+ * model, not to the effort — pi-ai's own `isSameModel` compares
+ * provider/api/model for the same reason. `parseModelSpec`, not
+ * `parseNativeModel`: this must never throw.
+ */
+export function transcriptModelIdentity(rawModel: string | undefined): string | undefined {
+  return rawModel === undefined ? undefined : parseModelSpec(rawModel).model;
 }
 
 /**
@@ -27,9 +50,14 @@ export function transcriptPath(dir: string, sessionName: string): string {
  * and hops of one invocation, different for every new stage entry, run and
  * process. Keying on it preserves nax#1838's retry continuity, which is a
  * within-invocation requirement, while denying cross-invocation inheritance.
+ *
+ * `model` (nax#2150, P3 spec 8.3) records which model wrote the messages, so a
+ * different model reads the file as a new conversation rather than replaying
+ * thinking blocks that are meaningless to it.
  */
 interface TranscriptFile {
   readonly owner?: string;
+  readonly model?: string;
   readonly savedAt: string;
   readonly messages: ConversationMessage[];
 }
@@ -43,11 +71,16 @@ function isLegacyTranscript(parsed: unknown): parsed is ConversationMessage[] {
  * Missing file means a new conversation. Anything else is a real failure.
  *
  * Returns `[]` — a new conversation — when the transcript on disk belongs to a
- * different `owner` than the caller (nax#1877). A reader that declares no owner
- * is not making an ownership claim and reads whatever is there, which keeps
- * non-op callers and unit tests working unchanged.
+ * different `owner` or a different recorded `model` than the caller (nax#1877,
+ * nax#2150). A reader that declares no identity is not making a claim and
+ * reads whatever is there, which keeps non-op callers and unit tests working
+ * unchanged.
  */
-export async function loadTranscript(dir: string, sessionName: string, owner?: string): Promise<ConversationMessage[]> {
+export async function loadTranscript(
+  dir: string,
+  sessionName: string,
+  identity: TranscriptIdentity = {},
+): Promise<ConversationMessage[]> {
   let raw: string;
   try {
     raw = await readFile(transcriptPath(dir, sessionName), "utf8");
@@ -74,30 +107,52 @@ export async function loadTranscript(dir: string, sessionName: string, owner?: s
     // Unowned history is foreign history to a reader that has an identity.
     // Dropping it is the safe direction: the cost is one re-exploration, where
     // inheriting it silently bills a conversation this session never had.
-    return owner === undefined ? parsed : [];
+    return identity.owner === undefined ? parsed : [];
   }
 
   const file = parsed as TranscriptFile;
+  if (isForeignTranscript(file, identity, sessionName)) return [];
+  return file.messages ?? [];
+}
+
+/**
+ * Another invocation's history (nax#1877) or another model's (nax#2150, P3
+ * spec 8.3(c)) reads as a new conversation. An ABSENT file model reads, unlike
+ * an absent owner: every native production turn records one (the adapter parses
+ * the model before the loop runs), so an absent field is a pre-upgrade file —
+ * which the owner check already keeps out of new processes.
+ */
+function isForeignTranscript(file: TranscriptFile, identity: TranscriptIdentity, sessionName: string): boolean {
+  const { owner, model } = identity;
   if (owner !== undefined && file.owner !== owner) {
     getLogger().debug("native-session", "Ignoring a transcript owned by another invocation", {
       sessionName,
       storedOwner: file.owner,
       owner,
     });
-    return [];
+    return true;
   }
-  return file.messages ?? [];
+  if (model !== undefined && file.model !== undefined && file.model !== model) {
+    getLogger().debug("native-session", "Ignoring a transcript written by another model", {
+      sessionName,
+      storedModel: file.model,
+      model,
+    });
+    return true;
+  }
+  return false;
 }
 
 export async function saveTranscript(
   dir: string,
   sessionName: string,
   messages: readonly ConversationMessage[],
-  owner?: string,
+  identity: TranscriptIdentity = {},
 ): Promise<void> {
   await mkdir(dir, { recursive: true });
   const file: TranscriptFile = {
-    ...(owner !== undefined ? { owner } : {}),
+    ...(identity.owner !== undefined ? { owner: identity.owner } : {}),
+    ...(identity.model !== undefined ? { model: identity.model } : {}),
     savedAt: new Date().toISOString(),
     messages: [...messages],
   };

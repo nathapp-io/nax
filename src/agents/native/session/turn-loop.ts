@@ -23,9 +23,14 @@ import { createInvalidCallBudget } from "./handle-invalid-tool-call";
 import { createLoopEventRegistry } from "./loop-events";
 import { applyHistoryPatch } from "./loop-events/cache-boundary";
 import { registerBuiltinLoopHandlers } from "./loop-handlers";
-import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
+import {
+  nativeSessionLastUsage,
+  nativeSessionTranscriptOwners,
+  nativeTranscriptDirs,
+  sessionAnchorFor,
+} from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
-import { loadTranscript, saveTranscript } from "./transcript-store";
+import { loadTranscript, saveTranscript, type TranscriptIdentity, transcriptModelIdentity } from "./transcript-store";
 import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
 import { runProactiveCompaction } from "./turn-compaction-step";
 import { completeWithRecovery } from "./turn-complete-step";
@@ -78,8 +83,13 @@ export async function runNativeTurn(
 
   // nax#1877: an owner mismatch reads as a new conversation, so an abandoned
   // invocation's history cannot ride along on the first request of this one.
-  const transcriptOwner = nativeSessionTranscriptOwners.get(handle.id);
-  let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id, transcriptOwner))];
+  // nax#2150 (P3 spec 8.3): so does a recorded different model — the store
+  // owns that guarantee, whatever the session layer above decided.
+  const transcriptIdentity: TranscriptIdentity = {
+    owner: nativeSessionTranscriptOwners.get(handle.id),
+    model: transcriptModelIdentity(handle.modelDef?.model),
+  };
+  let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id, transcriptIdentity))];
 
   const spinBreaker = deps.spinBreaker;
   // Set ONLY when the breaker ended the turn, so the wiring layer can classify
@@ -105,17 +115,17 @@ export async function runNativeTurn(
     },
   });
 
-  const anchor = nativeSessionLastUsage.get(handle.id);
+  const anchor = sessionAnchorFor(handle.id, transcriptIdentity.model);
   let lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
   let anchorIndex = anchor?.anchorIndex;
 
   // P3 `before_turn` (spec 6.1): fires ONCE, after the transcript loads and
   // before the seed push. `boundary` is dispatcher-computed (spec 3.4) and
-  // false until PR 3 records the model on TranscriptFile (§8.3), so the
-  // history channel below exists but is closed today — an off-boundary patch
-  // is rejected + warned by applyHistoryPatch and the turn proceeds on the
-  // loaded history. `previousModel`/`currentModel` stay undefined for the
-  // same reason: adding `model` to TranscriptFile is PR 3's job, not this.
+  // always false: the model-change boundary never arises, because the
+  // transcript store refuses another model's history (spec 8.3), so the
+  // history channel is honoured only at an undefined anchor (spec 3.5) — an
+  // off-boundary patch is rejected + warned by applyHistoryPatch and the turn
+  // proceeds on the loaded history.
   const turnStart = await loopEvents.dispatch("before_turn", {
     prompt,
     history: messages,
@@ -275,7 +285,11 @@ export async function runNativeTurn(
         const promptTokens = inputClassTokens(res.usage);
         lastUsage = { promptTokens };
         anchorIndex = messages.length - 1;
-        nativeSessionLastUsage.set(handle.id, { promptTokens, anchorIndex });
+        nativeSessionLastUsage.set(handle.id, {
+          promptTokens,
+          anchorIndex,
+          ...(transcriptIdentity.model !== undefined ? { model: transcriptIdentity.model } : {}),
+        });
 
         // 1-based; `roundTrips` is incremented above, before this beat fires.
         deps.onActivity?.(usageBeat(res.usage, res.costUsd, roundTrips));
@@ -391,7 +405,7 @@ export async function runNativeTurn(
     // failure fails the turn, because continuing on unstored history is silent
     // degradation. Here a failure is already in flight, and masking it with a
     // write error would lose the cause.
-    await saveTranscript(dir, handle.id, messages, transcriptOwner).catch((saveErr: unknown) => {
+    await saveTranscript(dir, handle.id, messages, transcriptIdentity).catch((saveErr: unknown) => {
       getSafeLogger()?.warn("native-adapter", "could not persist the transcript of a failed turn", {
         sessionName: handle.id,
         error: saveErr instanceof Error ? saveErr.message : String(saveErr),
@@ -420,7 +434,7 @@ export async function runNativeTurn(
   // Persisted before returning, and a write failure fails the turn: continuing
   // on a history that could not be stored is the silent degradation #1794
   // removed from the pipeline (ADR-028 s4).
-  await saveTranscript(dir, handle.id, messages, transcriptOwner);
+  await saveTranscript(dir, handle.id, messages, transcriptIdentity);
 
   return buildTurnResult({
     output,

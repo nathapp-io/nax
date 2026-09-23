@@ -13,6 +13,8 @@ import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { parseModelSpec } from "../model-spec";
 
+export { parseModelSpec };
+
 /** nax-ai's usage shape. Declared locally: this file must not import nax-ai types into nax's surface. */
 export interface NativeUsage {
   readonly inputTokens: number;
