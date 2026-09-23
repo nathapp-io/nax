@@ -121,11 +121,11 @@ export async function runNativeTurn(
 
   // P3 `before_turn` (spec 6.1): fires ONCE, after the transcript loads and
   // before the seed push. `boundary` is dispatcher-computed (spec 3.4) and
-  // false until PR 3 records the model on TranscriptFile (§8.3), so the
-  // history channel below exists but is closed today — an off-boundary patch
-  // is rejected + warned by applyHistoryPatch and the turn proceeds on the
-  // loaded history. `previousModel`/`currentModel` stay undefined for the
-  // same reason: adding `model` to TranscriptFile is PR 3's job, not this.
+  // always false: the model-change boundary never arises, because the
+  // transcript store refuses another model's history (spec 8.3), so the
+  // history channel is honoured only at an undefined anchor (spec 3.5) — an
+  // off-boundary patch is rejected + warned by applyHistoryPatch and the turn
+  // proceeds on the loaded history.
   const turnStart = await loopEvents.dispatch("before_turn", {
     prompt,
     history: messages,

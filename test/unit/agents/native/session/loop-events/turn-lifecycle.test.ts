@@ -68,9 +68,10 @@ async function captureWarnings(run: () => Promise<unknown>): Promise<LogEntry[]>
  * and `after_response` fires per round trip on the settled assistant message,
  * before it enters the array. `after_response` is safe by construction: it
  * shapes the message, never the array. `before_turn`'s history channel exists
- * but is CLOSED today: the boundary is dispatcher-computed and false until
- * PR 3 records the model on TranscriptFile (spec 8.3), so every off-boundary
- * history patch is rejected — the channel is pinned shut, not stubbed away.
+ * but is closed: the boundary is dispatcher-computed and always false — the
+ * transcript store refuses another model's history (spec 8.3) — so every
+ * off-boundary history patch is rejected; the channel is pinned shut, not
+ * stubbed away.
  */
 describe("native turn loop — before_turn and after_response", () => {
   test("before_turn may shape the seed", async () => {
@@ -98,7 +99,8 @@ describe("native turn loop — before_turn and after_response", () => {
       boundary: false,
       history: [],
     });
-    // previousModel/currentModel are PR 3's (spec 8.3): undefined until then.
+    // previousModel/currentModel were removed (spec 8.3(f)): cross-model
+    // history never reaches before_turn. These assertions pin the removal.
     expect(payloads[0]).not.toHaveProperty("previousModel");
     expect(payloads[0]).not.toHaveProperty("currentModel");
     // THE assertion: the provider saw the SHAPED seed, not the prompt.

@@ -90,9 +90,6 @@ export interface BeforeTurnPayload {
   /** The loaded transcript. Readonly: only a boundary rewrite may touch it. */
   readonly history: readonly NativeTranscriptMessage[];
   readonly sessionName: string;
-  /** PR 3 populates these from TranscriptFile.model; undefined until then. */
-  readonly previousModel?: string;
-  readonly currentModel?: string;
   /** Dispatcher-computed (spec 3.4). A handler may never assert a boundary. */
   readonly boundary: boolean;
 }
