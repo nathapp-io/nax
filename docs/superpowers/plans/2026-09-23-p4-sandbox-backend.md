@@ -32,7 +32,7 @@
 
 ## Known pre-existing defect — OUT OF SCOPE for this plan
 
-Found during the plan's final review and reproduced on `e0625f27c` through `buildCodingToolSupport` → `runtime.callTool` (macOS): under `raw` with NO sandbox, `echo x > .nax/config.json` returns `ok` and overwrites the file, while the same write to `.nax/features/<f>/prd.json` is correctly denied. The protected-path check involved is `isNaxConfigFile` (`src/tools/nax-owned-writes.ts:34`, called from `policy-bash-raw.ts:82`). Do NOT fix it inside this plan and do not weaken any test to accommodate it: it is being handled separately. The sandbox (this plan) closes it only when `execution.sandbox.enabled` is true; Task 12's live D13a test runs WITH the sandbox, so it is unaffected.
+Found during the plan's final review and reproduced on `e0625f27c` through `buildCodingToolSupport` → `runtime.callTool` (macOS): under `raw` with NO sandbox, `echo x > .nax/config.json` returns `ok` and overwrites the file, while the same write to `.nax/features/<f>/prd.json` is correctly denied. The protected-path check involved is `isNaxConfigFile` (`src/tools/nax-owned-writes.ts:34`, called from `policy-bash-raw.ts:82`). Root cause: `resolveWithin` returns `null` for nax config files and the raw screen's `protectedHit` reads `null` as out-of-root (`policy-bash-raw.ts:80-81`). Tracked as **nax#2189**. Do NOT fix it inside this plan and do not weaken any test to accommodate it. The sandbox (this plan) closes it only when `execution.sandbox.enabled` is true; Task 12's live D13a test runs WITH the sandbox, so it is unaffected.
 
 ## Review Focus
 
