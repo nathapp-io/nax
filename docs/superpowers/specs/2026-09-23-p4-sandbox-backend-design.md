@@ -1,6 +1,6 @@
 # Sandbox backend for agent-authored commands — design
 
-**Date:** 2026-09-23 · **Status:** designed, not planned, no `src/` code
+**Date:** 2026-09-23 · **Status:** designed + independently reviewed (§12), not implemented
 **Baseline:** `main` @ `e0625f27c` (P3 PR 3 merged). Every citation below was read on this commit.
 **Implements:** phase 4 of the native-coding-agent arc (goal 1's end state: `raw` bash with the
 blast radius capped)
@@ -49,9 +49,9 @@ Throwaway spike: `@anthropic-ai/sandbox-runtime` (srt) **0.0.77** driven through
 | network open (no `allowedDomains`) | ✅ | — |
 | `bun install` | ✅ | ✅ |
 | overhead per call (wrap + spawn − bare spawn) | +12 ms | +14 ms |
-| srt changes the child env | no | no |
+| srt's returned `env` | **is `process.env` itself** (same object) — see F6 | same |
 
-Five findings the design must carry — each is a requirement below, not a note:
+Six findings the design must carry — each is a requirement below, not a note:
 
 - **F1 🚨 Linux silently drops glob `denyWrite` entries.** `.nax/features/**/prd.json` was
   overwritten on Linux and blocked on macOS. srt `sandbox-manager.js:1033-1038` filters any
@@ -65,8 +65,14 @@ Five findings the design must carry — each is a requirement below, not a note:
   `<repo>/.git/hooks/pre-commit`, and git in the MAIN checkout then found that hook. Explicit
   literal denies of `<common>/hooks` and `<common>/config` block it on both platforms and
   commits still succeed. → §5.3.
-- **F3 `$TMPDIR` is not `/tmp` on macOS.** It is `/var/folders/.../T/`; without it `bun install`
-  fails `EPERM` ("unable to write files to tempdir"). → §5.3.
+- **F3 temp directories differ per platform, and srt overrides one of them.** On macOS srt's
+  argv is `env SANDBOX_RUNTIME=1 TMPDIR=/tmp/claude /usr/bin/sandbox-exec …`, so inside the
+  sandbox `TMPDIR` is `/tmp/claude` (one of srt's default write paths) — and srt does NOT create
+  it; it exists on the spike machine only because Claude Code made it. On Linux srt sets no
+  `TMPDIR`, so tools fall back to `/tmp`. The spike's `bun install` failure was cured by adding
+  the bun cache (bun stages its temp files there), not by adding `os.tmpdir()`. So: the
+  package-manager cache is REQUIRED; `/tmp` is required on Linux; `os.tmpdir()` stays for tools
+  that ignore `TMPDIR`; the backend creates `/tmp/claude` on macOS. → §5.1, §5.3.
 - **F4 🚨 "Dependencies installed" ≠ "sandbox works".** In a default Docker container bwrap is
   present and every command fails `bwrap: Can't mount proc on /proc: Operation not permitted`;
   `--security-opt systempaths=unconfined` fixes it. Availability must be decided by a real
@@ -75,8 +81,15 @@ Five findings the design must carry — each is a requirement below, not a note:
   on `.nax/features/f2/prd.json`, `mkdir .nax/features/f2` is refused on macOS (Linux: the
   `mkdir` succeeds, the file write is refused). Harmless — nax's own writes are not sandboxed —
   but the agent's Bash cannot create a feature directory. → §5.3.
+- **F6 🚨 srt's `env` must NEVER reach the child.** `wrapWithSandboxArgv(...).env` is
+  `process.env` itself, and `runArgv` applies its `env` overlay AFTER stripping
+  (`src/utils/argv-exec.ts:47-53`). Passing srt's `env` as the overlay re-adds every
+  `quality.stripEnvVars` secret — reproduced: with the overlay a stripped `FAKE_SECRET` printed
+  `s3cret`, without it empty. The spike never set `stripEnvVars`, so it could not catch this
+  (found by the §12 review). → §5.1, §8.4.
 
-Also verified: bwrap's `/dev/null` mount placeholders leave no artifacts on the host.
+Also verified: bwrap's `/dev/null` mount placeholders leave no artifacts on the host after a
+single command. srt's `cleanupAfterCommand()` only removes those placeholders (Linux).
 
 ## 3. Decisions (user, 2026-09-23)
 
@@ -114,10 +127,10 @@ from the orchestrator (`src/pipeline`, `src/execution`, `src/prd`, …).
 | File | Responsibility |
 |---|---|
 | `types.ts` | `SandboxPolicy { writeRoots; denyWrite; denyRead; network: { allowedDomains?: readonly string[] } }` — every path absolute and literal. `SandboxBackend { name; probe(): Promise<ProbeResult>; wrap(command, shell, policy, cwd, commandId): Promise<{ argv; env }>; annotate(commandId, stderr): string; reset(): Promise<void> }`. `ProbeResult { available: boolean; reason?: string }`. |
-| `srt-backend.ts` | The ONLY importer of `@anthropic-ai/sandbox-runtime` (§8.4). Lazy `SandboxManager.initialize` on first `probe`/`wrap`, with `network` built from config (open ⇒ `{ deniedDomains: [] }` with no `allowedDomains` — `initialize` dereferences `runtimeConfig.network`, so the object must exist). `wrap` → `wrapWithSandboxArgv(command, shell, customConfig, undefined, cwd, { commandId })`. |
+| `srt-backend.ts` | The ONLY importer of `@anthropic-ai/sandbox-runtime` (§8.5). On macOS, `mkdir -p /tmp/claude` at initialize (F3). Keeps an in-flight counter and calls `SandboxManager.cleanupAfterCommand()` only when the LAST in-flight wrapped command finishes — never while another is running, since it removes bwrap mount placeholders a running sandbox may still depend on. Lazy `SandboxManager.initialize` on first `probe`/`wrap`, with `network` built from config (open ⇒ `{ deniedDomains: [] }` with no `allowedDomains` — `initialize` dereferences `runtimeConfig.network`, so the object must exist). `wrap` → `wrapWithSandboxArgv(command, shell, customConfig, undefined, cwd, { commandId })`. |
 | `policy-builder.ts` | Pure `buildSandboxPolicy(input) → SandboxPolicy` (§5.3). Rebuilt PER CALL — cheap (~1 ms), and a feature directory created mid-run gets its `prd.json` deny. |
 | `probe.ts` | Real probe (§5.4); result cached per process per backend. |
-| `launcher.ts` | `createCommandLauncher({ backend?, policyFor, logger })` → `run({ command | argv, cwd, timeoutMs, stripEnvVars, env, commandId })` returning `ArgvExecResult & { sandbox: SandboxRecord }`. Disabled ⇒ byte-identical pass-through to `runArgv`. Enabled ⇒ wrap, then `runArgv` (keeps MEM-4 group kill, BUG-13 deadline, concurrent drain). |
+| `launcher.ts` | `createCommandLauncher(...)` → `run({ command | argv, root, cwd, timeoutMs, stripEnvVars, env })` returning `ArgvExecResult & { sandbox: SandboxRecord }`. `root` (the policy root, write roots derive from it) and `cwd` (where the command starts — the PACKAGE dir for Exec) are separate inputs; `cwd` goes to both `wrap` and `runArgv`. Disabled ⇒ byte-identical pass-through to `runArgv`. Enabled ⇒ wrap, then `runArgv` (keeps MEM-4 group kill, BUG-13 deadline, concurrent drain). **srt's returned `env` is discarded (F6)**: `runArgv` gets only the caller's own `env` overlay (Exec's Yarn `normalized.env`) and strips from `process.env` as today. **A wrap that throws after the probe said available is a tool ERROR — the command never runs unwrapped** (what stops is the command, never the sandbox). |
 | `argv-quote.ts` | POSIX single-quote quoting for the Exec path (§5.2). |
 | `defaults.ts` | The built-in cache list and credential read-deny list, as one auditable constant each. |
 
@@ -151,10 +164,10 @@ the sandbox. A sandboxed Exec therefore runs `sh -c '<argv, each element single-
 
 | Kind | Entries |
 |---|---|
-| Write roots — fixed | the story root `ctx.root` (repo or `.nax-wt/<storyId>`; the session scratchpad `<root>/.nax/scratchpad`, `src/tools/scratchpad.ts:25`, is inside it and needs no entry); `os.tmpdir()` and `/tmp` (F3); for a worktree root, the git common dir (`git rev-parse --git-common-dir`, resolved once per session) (F2) |
+| Write roots — fixed | the story root `ctx.root` (repo or `.nax-wt/<storyId>`; the session scratchpad `<root>/.nax/scratchpad`, `src/tools/scratchpad.ts:25`, is inside it and needs no entry); `os.tmpdir()`, `/tmp` and (macOS) `/tmp/claude` (F3); for a worktree root, the git common dir (`git rev-parse --git-common-dir`, resolved once per session) (F2) |
 | Write roots — built-in caches (`defaults.ts`) | `~/.bun/install/cache`, `~/.npm`, `~/.cache`, `~/.cargo/registry`, `~/.cargo/git`, `~/go/pkg/mod`, `~/.gradle/caches`, `~/.m2/repository`, `~/.pnpm-store`, `~/Library/Caches` (macOS only) |
 | Write roots — config | `execution.sandbox.filesystem.allowWrite`, `~` expanded, relative paths resolved against the repo root |
-| Write denies | `<root>/.nax/config.json`; `<root>/.nax/mono` (the whole directory — a deliberate superset of `nax-owned-writes.ts`'s `.nax/mono/*/config.json`; agent-authored Bash has no business there); `<root>/.nax/features/<f>/prd.json` for each `<f>` present on disk at call time; each root queue-control file from `QUEUE_CONTROL_FILES` (`nax-owned-writes.ts:67`, **exported** for this, not copied); for a worktree root, `<common>/hooks` and `<common>/config` (F2) |
+| Write denies | `<root>/.nax/config.json`; `<root>/.nax/mono` (the whole directory — a deliberate superset of `nax-owned-writes.ts`'s `.nax/mono/*/config.json`; agent-authored Bash has no business there); `<root>/.nax/features/<f>/prd.json` for each `<f>` present on disk at call time; each root queue-control file from `QUEUE_CONTROL_FILES` (`nax-owned-writes.ts:67`, **exported** for this, not copied); for a worktree root, `<common>/hooks`, `<common>/config`, `<root>/.git` (the worktree's gitdir pointer FILE), `<common>/worktrees/<id>/gitdir` and `<common>/worktrees/<id>/commondir` (F2 — otherwise the pointer could be repointed at an agent-written config with `core.hooksPath`, which nax's own unsandboxed git would then honour); the resolved approvals file `approvalsPath(outputDir)` ALWAYS (§5.6) |
 | Read denies — built-in (`defaults.ts`) | `~/.nax/credentials*` expanded to literals at build time, `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.docker/config.json`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/.config/gh` |
 | Read denies — config | `execution.sandbox.filesystem.denyRead`, `~` expanded |
 | Network | from config (S2) |
@@ -166,11 +179,23 @@ Consequences, stated so nobody "fixes" them:
   cannot authenticate. Intended under D1; the description says credential files are unreadable.
 - F5: on macOS the agent's Bash cannot create a new `.nax/features/<f>/` directory.
 - The builder must never emit a glob character in `denyWrite` (§8.1 pins it).
+- **Every path the builder emits is passed through `realOrRaw` (`src/utils/realpath.ts`, the
+  ancestor-walking resolver `compileToolPolicy` already uses, `policy.ts:148`).** srt realpaths
+  only paths that EXIST; a deny for a not-yet-created `prd.json` spelled `/var/folders/…` would
+  otherwise stay unresolved while Seatbelt sees `/private/var/…` (§12 finding 3).
+- **Known limitation, recorded in the ADR so nobody later calls it a regression:** with the git
+  common dir writable in worktree mode, an agent mistake can move `main` or another story's refs
+  (`refs/`, `packed-refs`). Under D1 this is accepted; hooks and config — the code-execution
+  paths — are what is denied.
 
 ### 5.4 Probe (F4)
 
 One wrapped command, built from the real policy shape against a private temp directory:
-write `allowed/marker` (in a write root) and attempt `denied/marker` (listed in `denyWrite`).
+write `allowed/marker` (in a write root) and attempt `denied/marker`, which is listed in
+`denyWrite` as a LITERAL, `realOrRaw`-resolved path. The probe directory may sit under a tmp
+write root: srt's deny-within-allow wins on both platforms (`macos-sandbox-utils.js:611,641`,
+`linux-sandbox-utils.js:1642`; spike check 3). A marker that is merely "outside the roots" would
+be inside a tmp root and falsely read as a leak — it must be in `denyWrite`.
 
 | Outcome | Result |
 |---|---|
@@ -215,15 +240,23 @@ either way.
 - **Approvals-cache precondition relaxes** (`approvals-link.ts:37-39`). Today: disabled if any
   stage resolves to `raw`. New: disabled if any stage resolves to `raw` **and**
   `execution.sandbox.enabled` is false. Config-only — no dependency on the probe: with the
-  sandbox enabled, a `raw` stage is either wrapped (cannot write under `~/.nax`) or refused
-  outright (§5.5), so neither can forge the file. The in-repo precondition is unchanged.
+  sandbox enabled, a `raw` stage is either wrapped or refused outright (§5.5). Wrapped is safe
+  only because the approvals file is ALWAYS in `denyWrite` (§5.3) — NOT because it lies outside
+  the write roots: `outputDir` is configurable (`schemas.ts:75-79`, any absolute or `~/` path)
+  and `approvalsPath(outputDir)` (`approvals-store.ts:37`) can land under `~/.cache` or `/tmp`,
+  which ARE write roots (§12 finding 5). The in-repo precondition is unchanged.
 
 ### 5.7 Telemetry
 
-- `ToolCallRecord` and the tool-audit row gain `sandbox: { backend: "srt" | "none"; wrapped:
-  boolean; reason?: string }` on every Bash / Exec row.
-- The run's start log line carries the probe result.
-- A per-run count of annotated likely-denials goes to the ledger.
+- The tool-audit row (`ToolCallRecord`, `src/tools/tool-audit.ts`) gains `sandbox: { backend:
+  "srt" | "none"; wrapped: boolean; reason?: string; denialHint?: true }` on every Bash / Exec
+  row. It travels the same way `executed`/`target` do: the tool returns it on
+  `ToolResult.audit`, `runtime.ts` forwards it to `log()`.
+- The probe result is logged ONCE per process, at `info`, when the probe resolves (the probe is
+  lazy, so it cannot sit on the run's start line). The "unwrapped" warning for
+  `gated`/`escalate` is likewise once per process, held beside the process-cached probe result.
+- No per-run counter: likely-denial counts are derived from rows carrying `denialHint` (§12
+  finding 10).
 
 These are the fields the exit runs gate on (§10) — never exit codes.
 
@@ -295,7 +328,10 @@ Through `resolveCodingToolSupport` → `runtime.callTool` against a real temp ro
 file system afterwards, not the verdict (master plan §5):
 - `cd -P .nax && echo x > config.json` — the composite case (unmodellable `cd` followed by the
   protected write): **file unchanged**.
-- a `prd.json` in a feature directory created after session start; `approvals.json` under a
+- F6: with `stripEnvVars: ["NAX_P4_FAKE_SECRET"]` and that variable set in the test process, a
+  sandboxed Bash `echo "[$NAX_P4_FAKE_SECRET]"` prints `[]`;
+- a `prd.json` in a feature directory created after session start, with the root under
+  `os.tmpdir()` so a symlinked spelling (`/var` → `/private/var` on macOS) is exercised; `approvals.json` under a
   temp `~/.nax`; `<common>/hooks/pre-commit` from a worktree; a write outside the root — each
   **unchanged/absent**.
 - `git commit` inside a worktree succeeds; a timeout kills grandchildren.
@@ -348,3 +384,22 @@ launch moment. Gate on artifacts, never exit codes (nax exits 0 on failure):
 - **Annotation reliability** — nax's own deterministic line is the guarantee; srt's is extra.
 - **Cache list gaps** — a package manager writing elsewhere fails `EPERM` with the annotation
   line naming the writable roots; `filesystem.allowWrite` is the escape hatch.
+
+## 12. Review record (2026-09-23)
+
+Independent review (citation pass + adversarial design pass) against `e0625f27c`. Every cited
+line verified except two internal mislabels, fixed. Findings adopted into this spec:
+
+| # | Severity | Finding | Where |
+|---|---|---|---|
+| 1 | BLOCKER | srt's `env` is `process.env`; as a `runArgv` overlay it re-adds stripped secrets — reproduced | F6, §5.1, §8.4 |
+| 2 | SHOULD-FIX | F3's cause mis-stated: srt forces `TMPDIR=/tmp/claude` on macOS (not created by srt), sets none on Linux; the bun cache was the real cure | F3, §5.1, §5.3 |
+| 3 | SHOULD-FIX | srt realpaths only existing paths; nax must `realOrRaw` everything | §5.3, §8.4 |
+| 4 | SHOULD-FIX | worktree `.git` pointer file + `gitdir`/`commondir` writable ⇒ hooks via a repointed config | §5.3 |
+| 5 | SHOULD-FIX | `outputDir` is configurable, so `approvals.json` can sit inside a write root; deny it always | §5.3, §5.6 |
+| 6 | NOTE | probe validity rests on deny-within-allow; marker must be in `denyWrite` | §5.4 |
+| 7 | NOTE | probe awaited in async `resolveCodingToolSupport`, passed as data into sync `buildCodingToolSupport` | plan |
+| 8 | NOTE | Exec `cwd` (package dir) ≠ policy root | §5.1 |
+| 9 | NOTE | no other production spawn sites — D14 by construction holds | — |
+| 10 | SHOULD-FIX | per-run denial counter is YAGNI | §5.7 |
+| 11 | NOTE | warn-once scope, `cleanupAfterCommand`, empty annotation | §5.1, §5.7 |
