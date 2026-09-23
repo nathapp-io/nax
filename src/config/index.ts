@@ -72,6 +72,8 @@ export {
   resolveModelForAgent,
   resolveTierMembership,
 } from "./schema";
+export type { CommandSafetyConfig } from "./schemas-command-safety";
+export { CommandSafetyConfigSchema } from "./schemas-command-safety";
 export {
   AutoRouteConfigSchema,
   DEFAULT_VERIFICATION_TIMEOUT_SECONDS,

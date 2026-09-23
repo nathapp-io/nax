@@ -28,6 +28,7 @@ import type {
   RoutingStrategyName,
   TddStrategy,
 } from "./schema-types";
+import type { CommandSafetyConfig } from "./schemas-command-safety";
 import type { AgentRoutingConfig } from "./schemas-infra";
 import type { SandboxConfig } from "./schemas-sandbox";
 
@@ -140,6 +141,8 @@ export interface ExecutionConfig {
   approvalTimeout?: number;
   /** P4: OS sandbox for agent-authored commands. */
   sandbox?: SandboxConfig;
+  /** P5: shadow command classifier; absent = off. */
+  commandSafety?: CommandSafetyConfig;
   /** Per-stage tool policy (GitHub #374). Read by resolveScopedPermissions; enforced by src/tools/. */
   permissions?: Record<
     string,
