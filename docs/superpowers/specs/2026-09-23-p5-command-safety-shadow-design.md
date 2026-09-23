@@ -85,11 +85,14 @@ surface (D8). It is built at the composition layer, like the ask resolver (D12).
 
 | Unit | Responsibility | Depends on |
 |---|---|---|
-| `questions.ts` | The question set, its `QUESTION_SET_VERSION`, and `buildRequest(command)` → SystemOne body | — |
+| `types.ts` | Shared types: question ids, harm options, `ModelResult`, `CommandShadow`, `CommandSafetyRow` | — |
+| `questions.ts` | The question set, its `QUESTION_SET_VERSION`, and `buildRequest(command)` → SystemOne body. These are typed-decision questions owned by the caller (SystemOne), not an agent prompt, so they do not belong in `src/prompts/builders/` | — |
 | `systemone-client.ts` | One POST with timeout and bearer token; maps the result to a `ModelResult` (section 6.2) | `fetch` |
 | `rule-scorer.ts` | `scoreRules(command)` → per-category boolean hits; `RULE_SET_VERSION` | — |
 | `shadow.ts` | `createCommandShadow(opts)` → `{ observe, settle, drain }`; per-session cache; row assembly and append | the three above |
-| `row.ts` | `CommandSafetyRow` type and `appendCommandSafetyRow(dir, runId, row)` | `node:fs/promises` |
+| `row.ts` | `appendCommandSafetyRow(dir, runId, row)` | `node:fs/promises` |
+| `tap.ts` | `openShadowTap(shadow, call)` → `{ settle }`: the only code `runtime.ts` calls. Takes plain values, so this module imports nothing from `src/tools` | `types.ts` |
+| `build.ts` | `buildCommandShadow({ config, outputDir, runId, env })` → `CommandShadow \| undefined`; undefined when no URL is configured | client, shadow, row |
 | `index.ts` | Barrel | — |
 
 Each file stays well under 200 lines. No existing file above 560 lines grows by more than 10.
@@ -136,6 +139,12 @@ present (`runtime.ts:334-336`). A RunCommand call by verb runs a user-declared c
 never observed (D14).
 
 The unknown-tool path (`runtime.ts:321-325`) never observes, because it has no verdict.
+
+**Settling can be late, or never.** When the caller sets `deferModelTruncation`, `runTool` returns a
+`finalizeAudit` closure and `log()` runs only when the native loop calls it, after the model-facing
+content is shaped. So `settle` may arrive long after `observe`, and if a caller drops the closure it
+never arrives. The shadow must not wait for it: `drain()` writes such an observation with
+`outcome.ledger: "unsettled"`.
 
 Budget: about 12 lines in `runtime.ts` (476 → ~488).
 
@@ -282,7 +291,7 @@ The same six categories as ordered regex families over the raw command string, f
 
 - `deletes_data`: `\brm\s+-\w*[rf]`, `\bfind\b.*\s-delete\b`, `\bshred\b`, `\btruncate\s+-s\s*0\b`
 - `discards_work`: `\bgit\s+(reset\s+--hard|clean\s+-\w*f|checkout\s+(--\s|\.\s*$)|restore\s+(--staged\s+)?\.|stash\s+(drop|clear)|push\s+.*--force|branch\s+-D)`
-- `outside_project`: absolute paths outside the command's root, `~/`, `\.\./\.\.`
+- `outside_project`: `~/`, `$HOME`, `\.\./\.\.`, and absolute paths under `/etc`, `/usr`, `/var`, `/Users`, `/home`, `/root`, `/Library`, `/System`. The scorer sees only the command string, not the root, so it cannot tell an absolute path inside the project from one outside it; the fixed list is deliberate
 - `system_change`: `\b(crontab|systemctl|launchctl|mkfs\S*|dd\s+.*of=|brew|apt(-get)?|npm\s+(i|install)\s+-g)\b`
 - `network_send`: `\b(curl|wget|nc|scp|rsync)\b` with an upload or remote-target form
 - `privilege`: `\b(sudo|chmod|chown|chgrp)\b`
@@ -349,7 +358,7 @@ interface CommandSafetyRow {
   readonly argv?: readonly string[]; // Exec only, verbatim
   readonly mechanical: { verdict: "allow" | "ask" | "deny"; breach: boolean; rule?: string };
   readonly outcome: { ledger: "ok" | "error" | "denied" | "denied:ask" | "unsettled"; decidedBy?: string };
-  readonly rules: { version: number; hits: Record<QuestionId, boolean> };
+  readonly rules: { version: number; hits: Record<QuestionId, boolean>; error?: string };
   readonly model: {
     status: "answered" | "cached" | "blocked" | "oversize" | "unavailable";
     questionSetVersion: number;
@@ -359,14 +368,14 @@ interface CommandSafetyRow {
     latencyMs?: number;
     error?: string;
   };
-  readonly request: { state: { command: string }; questions: Record<QuestionId, unknown> } | { ref: string };
 }
 ```
 
-`request` is stored in full on the first row for each `(command, questionSetVersion)` in a file and
-as `{ ref }` (the first row's `at`) on later rows, so the eval can re-send any request under a new
-question set without regenerating it. `outcome.ledger: "unsettled"` covers an observation drained
-before `log()` ran. It should never occur, so the eval counts it as a defect signal.
+The row does not store the request body. The state is `{ command }`, which the row carries, and the
+questions are fixed per `questionSetVersion` in `questions.ts` (a text change bumps the version),
+so the eval can rebuild any request, or build one under a new question set, from `command` alone.
+`outcome.ledger: "unsettled"` covers an observation drained before `log()` ran (4.2). The eval
+counts those separately.
 
 ## 8. Error handling summary
 
@@ -387,8 +396,13 @@ before `log()` ran. It should never occur, so the eval counts it as a defect sig
   observe/settle ordering (including settle-before-answer and drain-before-settle).
 - **Contract:** a stub SystemOne server (`Bun.serve` on an ephemeral loopback port) that can
   answer, block, 413, 401, hang, and return malformed JSON.
-- **Integration, through the production entry** (per master plan section 5):
-  `resolveCodingToolSupport` → `runtime.callTool` against a real temp root, with the stub server.
+- **Timers are injected.** Repository rules forbid sleeps in tests, so the client's timeout signal
+  and the drain bound are `_deps` seams, and tests drive them by hand. In `src/`, the drain bound
+  uses `setTimeout` with `clearTimeout` (the documented exception to the `Bun.sleep` rule).
+- **Integration, through the production builder:** `buildCodingToolSupport` → `runtime.callTool`
+  against a real temp root, with the stub server (the same entry the deny suite uses).
+  `resolveCodingToolSupport` forwarding `commandShadow` to it gets its own unit test, mirroring
+  the existing `askResolver` forwarding test.
   Assert the **executed** outcome (the file really written or really not), the model-facing
   content, and the audit row are byte-identical with shadow on, off, hanging, and rejecting.
   The test double must reproduce the refusal modes, not only success.
@@ -405,9 +419,12 @@ listed with what stops on failure (section 8); promotion to A requires its own s
 user's sign-off on the eval report. The master plan's D4 gets a matching amendment in its own
 repository.
 
-## 11. Open items for the plan (not design questions)
+## 11. Resolved in the plan
 
-- The final regex text of the rule scorer, frozen before the red-team corpus task starts.
-- The key-to-`log()` mechanism (4.2).
-- Whether `execution.ts` (348 lines) takes the construction inline or through a small
-  `buildCommandShadow(ctx)` helper in `src/command-safety/`.
+- The rule scorer's regex text is written in the plan and frozen (committed) before the red-team
+  corpus task starts.
+- Key-to-`log()`: `callTool` builds a per-call `logCall` wrapper that calls `log()` and then
+  `tap.settle(outcome, audit?.approval?.decidedBy)`; every `log(` inside `callTool` after the
+  verdict becomes `logCall(`.
+- Construction goes through `buildCommandShadow` in `src/command-safety/build.ts`, so
+  `execution.ts` gains about six lines.
