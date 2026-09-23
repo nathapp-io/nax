@@ -167,7 +167,7 @@ compaction path already does at `:212-213`** — and clear the persisted
 
 This is not optional bookkeeping. `anchorIndex` indexes *into the array that was rewritten*;
 after any honoured rewrite of loaded history, the stored index points at a different message,
-or past the end. (PR 3's §8.3(d) applies the same reasoning to an *empty* load.) It is read by `estimateContextTokens(messages, lastUsage,
+or past the end. (PR 3's §8.3(d) applies the same reasoning to a model change: the anchor records its model.) It is read by `estimateContextTokens(messages, lastUsage,
 anchorIndex)` at `:161`, which decides whether to compact — so a stale anchor silently
 mis-sizes the context and either compacts a small conversation or fails to compact a large
 one. The dispatcher clears it, not the handler (§3.4).
@@ -593,15 +593,33 @@ This does not contradict the retired §8.4 ("unknown does not grant"). There the
 branch was a history *rewrite*. Here the permissive branch is today's behaviour, loading, so
 unknown keeps today's behaviour.
 
-**(d) An empty load discards the persisted anchor.** `nativeSessionLastUsage` survives across
-the turns of a live session, and its `anchorIndex` indexes the history it was measured against
-(§3.6). If the store returns `[]` while an anchor is held, `turn-loop.ts:108-110` would hand
-`estimateContextTokens` an index into an empty array.
+**(d) The persisted anchor records the model it was measured under, and a turn on a
+different model ignores it.** `nativeSessionLastUsage` survives across the turns of a live
+session, and its `anchorIndex` indexes the history it was measured against (§3.6). If the
+store refuses a cross-model load while an anchor from the previous model is still held,
+`turn-loop.ts:108-110` would hand `estimateContextTokens` an index into history that is no
+longer there. That mis-sizes the next compaction decision, and nothing in the message array
+would show it.
 
-Rule: **when the loaded history is empty, `runNativeTurn` ignores the persisted anchor and
-deletes the entry.** That is correct whatever emptied the history, because empty history has
-no cached prefix. It also covers the owner-mismatch path, which has the same latent shape. On a
-fresh session, the history is empty and no anchor exists, so the rule is a no-op.
+§3.3 already names the invalidating fact: prefix stability is a property of **`(model,
+prefix)`**. So:
+
+- **The anchor is written with the model.** `turn-loop.ts:278` sets
+  `nativeSessionLastUsage` to `{ promptTokens, anchorIndex, model }`, using the same identity
+  as (b). `model` is optional on the entry's type, so existing seeders compile unchanged.
+- **The anchor is read under the model.** When the entry records a model and the turn's
+  identity is a *different* model, `runNativeTurn` ignores the entry and deletes it. An entry
+  with no model, or a turn with no identity, keeps today's behaviour, the same "no claim"
+  rule as (c).
+
+Because the previous turn writes the transcript and the anchor together, a load refused under
+(c) always comes with an anchor refused under (d). Each check is self-contained.
+
+*Rejected during spec review (2026-09-23): "an empty load discards the anchor".* It keys on a
+symptom rather than the cause, and it broke a legitimate PR 2 fixture.
+`transform-context.test.ts:50` seeds an anchor with no transcript, to give the checker a prefix
+to protect. That test would have lost its anchor and started honouring the rewrite it exists
+to reject.
 
 **(e) Signature.** Owner and model are one concept, "who may resume this file", and they are
 compared in one place. They travel together as `TranscriptIdentity = { owner?: string; model?:
@@ -614,9 +632,10 @@ saveTranscript(dir, sessionName, messages, identity?)
 
 This replaces the positional `owner`, so `saveTranscript` stays at four positional parameters
 instead of growing to five. Callers are migrated mechanically: 3 `src/` sites in
-`turn-loop.ts`, and the 20 test call sites that pass an owner string (counted 2026-09-23:
-`transcript-store.test.ts` 13, `session-lifecycle.test.ts` 5, `turn-loop-compaction.test.ts`
-1, `transcript-sweep.test.ts` 1). Call sites that pass no owner compile unchanged.
+`turn-loop.ts` (`:82`, `:394`, `:423`), and the **12** test call sites that pass an owner
+string (counted 2026-09-23 with a bracket-aware scan: `transcript-store.test.ts` 9,
+`session-lifecycle.test.ts` 3). An earlier regex count of 20 split on commas inside the
+`messages` array literals. Call sites that pass no owner compile unchanged.
 
 **(f) The dead payload fields are removed.** `BeforeTurnPayload.previousModel`/`currentModel`
 (`loop-events/types.ts:93-95`) were reserved for the original §8. They can never be populated
@@ -624,8 +643,9 @@ now, because cross-model history never reaches `before_turn`. §12's rule agains
 channel that writes nowhere, applied there to `systemPrompt`, applies here too.
 
 Remove the fields and their "PR 3" comments: `turn-loop.ts:112-118`,
-`turn-complete-step.ts:58-64` and `:133-134`, `types.ts:93`, and the comment at
-`turn-lifecycle.test.ts:101`. That test's `not.toHaveProperty` assertions stay; they now pin
+`turn-complete-step.ts:58-64` and `:133-134`, `types.ts:93`, the describe docblock at
+`turn-lifecycle.test.ts:64-73`, and the comment at `turn-lifecycle.test.ts:101`. (Swept with
+`grep -rn "PR 3\|spec 8\." src test` on 2026-09-23; those are the only hits.) That test's `not.toHaveProperty` assertions stay; they now pin
 the removal.
 
 **`boundary` on `BeforeTurnPayload` stays.** It is truthful (always `false`, §3.3), it is part
@@ -683,10 +703,13 @@ original §8.
   `before_turn` receives `history: []`. The control: a handle whose model differs from A's
   **only by the effort suffix** gets the history replayed — without it, a store that rejects
   every load would pass the rejection test.
-- **The anchor, read directly** (§8.3(d)): with a persisted `nativeSessionLastUsage` entry and
-  a load that comes back empty, the entry is discarded — assert on the entry after the turn,
-  not on the messages. A stale anchor is invisible in the message array and only surfaces as a
-  mis-sized compaction decision one turn later.
+- **The anchor, read directly** (§8.3(d)). An entry recorded under model A, then a turn on
+  model B: the entry is ignored, which shows up as `before_turn` seeing no anchor-protected
+  prefix, and the entry left after the turn is B's own, recording B. Assert on the entry, not
+  on the messages; a stale anchor is invisible in the message array and only surfaces as a
+  mis-sized compaction decision one turn later. The control: an entry with **no** model is
+  kept. That pins the PR 2 fixtures' behaviour (`transform-context.test.ts:50`) as intended
+  rather than accidental.
 - **One composite guard through the real `SessionManager`** (the §8.1 spike, rebuilt on the
   shared helpers): a model change on a session name yields a fresh conversation. It proves the
   guarantee end to end through production wiring, and it keeps passing if either layer alone
@@ -740,7 +763,7 @@ it was unreachable (§8.1).
    the ADR so a later reader does not read dead seams as oversight.
 4. **`before_turn_end`'s `followUp`** is the only event that can spend money unprompted.
    §6.4's stop rules are what keep it from becoming a cost incident.
-5. **PR 3's signature change** (§8.3(e)) touches 20 test call sites. Mechanical — the owner
+5. **PR 3's signature change** (§8.3(e)) touches 12 test call sites. Mechanical — the owner
    string becomes `{ owner }` — but a reviewer should see it named here rather than discover
    it in the diff. Call sites passing no owner are untouched.
 6. **The guarantee now lives in two layers** (`decideReuse` and the store). If a future
