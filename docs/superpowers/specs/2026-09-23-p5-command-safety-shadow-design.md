@@ -162,6 +162,10 @@ Promise<ModelResult>>` keyed on the **exact** command string plus `QUESTION_SET_
 no normalization of any kind (the D17 rule: a normalized key is where the classified string and
 the executed string diverge). A hit still writes its own row, with `status: "cached"` and the
 cached answers, so frequencies stay honest. Failed results (`unavailable`) are **not** cached.
+Two consequences, both deliberate: an identical command observed while the first is still in
+flight shares that first result, even if it ends `unavailable` (it is dropped from the cache only
+after it resolves); and a hit on a `blocked` or `oversize` result keeps that status rather than
+`cached`, because those are answers about the command, not about the endpoint's health.
 
 ### 4.5 Construction and threading
 
@@ -195,7 +199,7 @@ New optional block under `execution` (`src/config/schemas-execution.ts`, beside 
   "shadow": {
     "url": "http://127.0.0.1:8020/t/nax-command-safety/v1/systemone",
     "timeoutMs": 3000,            // 200-30000, default 3000
-    "tokenEnv": "NAX_COMMAND_SAFETY_TOKEN", // default; the NAME of an env var, never a value
+    "authEnv": "NAX_COMMAND_SAFETY_AUTH", // default; the NAME of an env var, never a value
     "allowRemote": false          // default false
   }
 }
@@ -206,10 +210,12 @@ New optional block under `execution` (`src/config/schemas-execution.ts`, beside 
   scheme `http` or `https`; otherwise config validation fails. The exception is
   `allowRemote: true`, which exists for operators who deliberately accept network on the tool
   path. The check is in the Zod schema, so `nax config` reports it.
-- The token is read from `process.env[tokenEnv]` when the shadow is built. If it is unset, requests
+- The token is read from `process.env[authEnv]` when the shadow is built. If it is unset, requests
   go without an `Authorization` header (a plain local server needs none), and a 401 is recorded as
   `unavailable` with `error: "unauthorized"`.
-- No secret is ever stored in config. `tokenEnv` holds a variable name.
+- No secret is ever stored in config. `authEnv` holds a variable name. It is deliberately not named
+  `tokenEnv`: `nax config` masks any key matching its secret-key pattern (`TOKEN`, ...), which would
+  hide the variable name from the operator.
 
 **Disclosure for operators:** whatever serves the URL may forward commands elsewhere (for example
 a proxy that mirrors requests to a hosted model for comparison). nax cannot see that. The loopback
@@ -341,7 +347,7 @@ Per scorer (`rule`, `model:harm` = 1 - P(`none`), `model:noul-max`, `model:mean`
 - rows with `status` `blocked`, `oversize` or `unavailable`, counted separately and never dropped
   silently
 
-Extra combining rules (weights, rank averaging) are selected on the command line, so the sweep needs no code change. The
+An extra weighted combination (`--weights harm=<n>,noulMax=<n>`) is selected on the command line, so the sweep needs no code change. Narrowing cost is reported for the rule and `rule OR` scorers too, per run and per story. Live rows that mix question-set versions are refused. The
 report is Markdown written to `--out`. **The script refuses an `--out` path inside the repository**,
 because model-specific numbers must not be committed to this public repo.
 
@@ -384,7 +390,7 @@ counts those separately.
 | Classifier hangs past `timeoutMs` | the model half (`unavailable`) | the call, the run |
 | Classifier rejects / throws | the model half | the call |
 | Rule scorer throws | the rule half (`hits` empty, `error` set) | the call, the model half |
-| Row append fails (disk) | that row (logged at `warn` once per run) | the call |
+| Row append fails (disk) | that row (logged at `warn` once per story, i.e. per shadow) | the call |
 | `drain` exceeds its bound | pending model halves (`drained`) | the story, the run |
 | Invalid config (remote URL) | config load, loudly | — |
 
