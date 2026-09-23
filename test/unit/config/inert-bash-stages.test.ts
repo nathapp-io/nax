@@ -16,10 +16,12 @@
 
 import { describe, expect, test } from "bun:test";
 import { type DeepPartial, makeNaxConfig } from "@test/helpers";
+import type { z } from "zod";
 import { resolveBashSupport } from "@/agents/coding-tool-bash";
 import type { NaxConfig, PipelineStage } from "@/config";
 import { BASH_DECLARING_STAGES, findInertBashStages } from "@/config";
 import { resolvePermissions } from "@/config/permissions";
+import { PermissionsBlockSchema } from "@/config/schemas-execution";
 import {
   acceptanceFixSourceOp,
   acceptanceFixTestOp,
@@ -41,20 +43,29 @@ function configWith(execution: DeepPartial<NaxConfig["execution"]> = {}): NaxCon
 }
 
 /**
- * `permissions.<stage>.allow` is not declared on the runtime `NaxConfig`
- * execution type — that interface predates the rule lists the resolver reads
- * (it carries only the legacy `allowedTools`), while the zod schema does carry
- * them and `resolvePermissions` reads them through its own structural view.
- * The deny suite builds the same shape through a `Record<string, unknown>` for
- * the same reason; doing it here keeps the AC-literal `allow` key and adds no
- * cast. The rest of the slice stays type-checked at the call site.
+ * The `permissions` block as a CALLER writes it: `PermissionsBlockSchema` is
+ * the SSOT that declares `allow` / `deny` / `ask` (and validates them at load),
+ * so the AC-literal `allow` key is checked against the schema's own input type
+ * and then parsed by it — no widening, no cast.
+ *
+ * KNOWN SOURCE GAP the tests must not paper over: `ExecutionConfig`
+ * (`src/config/runtime-types.ts:144-152`) still declares only the legacy
+ * `allowedTools` field, so the public `NaxConfig` type cannot express the
+ * documented `permissions.<stage>.allow` configuration. That is why the parsed
+ * block is handed to `makeNaxConfig` as a value rather than written inline as a
+ * literal — the only construction a typed caller has. Widening
+ * `ExecutionConfig` with the three rule lists is the real fix; nothing here
+ * asserts the narrow type.
  */
+type PermissionsBlockInput = z.input<typeof PermissionsBlockSchema>;
+
 function configWithPermissions(
   execution: DeepPartial<NaxConfig["execution"]>,
-  permissions: Record<string, unknown>,
+  permissions: PermissionsBlockInput,
 ): NaxConfig {
-  const merged: Record<string, unknown> = { ...execution, permissions };
-  return makeNaxConfig({ execution: merged });
+  return makeNaxConfig({
+    execution: { ...execution, permissions: PermissionsBlockSchema.parse(permissions) },
+  });
 }
 
 /** Order-insensitive view: the story pins membership, not the result's order. */

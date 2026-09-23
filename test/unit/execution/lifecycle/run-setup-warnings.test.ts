@@ -18,6 +18,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   cleanupTempDir,
+  type DeepPartial,
   makeLogger,
   makeMockRuntime,
   makeNaxConfig,
@@ -26,7 +27,9 @@ import {
   withDepsRestore,
   withWarnSpy,
 } from "@test/helpers";
+import type { z } from "zod";
 import type { NaxConfig } from "@/config";
+import { PermissionsBlockSchema } from "@/config/schemas-execution";
 import { _runSetupDeps, type RunSetupOptions, setupRun } from "@/execution/lifecycle/run-setup";
 import { warnInertBashStages } from "@/execution/lifecycle/run-setup-warnings";
 import type { NaxRuntime } from "@/runtime";
@@ -36,36 +39,47 @@ import type { NaxRuntime } from "@/runtime";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * `permissions.<stage>.allow` is not declared on the runtime `NaxConfig`
- * execution type — that interface predates the rule lists the resolver reads
- * (it carries only the legacy `allowedTools`), while the zod schema does carry
- * them and `resolvePermissions` reads them through its own structural view.
- * The deny suite builds the same shape through a `Record<string, unknown>` for
- * the same reason; doing it here keeps the AC-literal `allow` key and adds no
- * cast.
+ * The `permissions` block as a CALLER writes it: `PermissionsBlockSchema` is
+ * the SSOT that declares `allow` / `deny` / `ask` (and validates them at load),
+ * so the AC-literal `allow` key is checked against the schema's own input type
+ * and then parsed by it — no widening, no cast.
+ *
+ * KNOWN SOURCE GAP the tests must not paper over: `ExecutionConfig`
+ * (`src/config/runtime-types.ts:144-152`) still declares only the legacy
+ * `allowedTools` field, so the public `NaxConfig` type cannot express the
+ * documented `permissions.<stage>.allow` configuration. That is why the parsed
+ * block is handed to `makeNaxConfig` as a value rather than written inline as a
+ * literal — the only construction a typed caller has. Widening
+ * `ExecutionConfig` with the three rule lists is the real fix; nothing here
+ * asserts the narrow type.
  */
-function configWithPermissions(permissions: Record<string, unknown>): NaxConfig {
-  const execution: Record<string, unknown> = { bashApproval: "escalate", permissions };
-  return makeNaxConfig({ execution });
+type PermissionsBlockInput = z.input<typeof PermissionsBlockSchema>;
+
+function configWithPermissions(
+  execution: DeepPartial<NaxConfig["execution"]>,
+  permissions: PermissionsBlockInput,
+): NaxConfig {
+  return makeNaxConfig({
+    execution: { ...execution, permissions: PermissionsBlockSchema.parse(permissions) },
+  });
 }
 
 /** Escalate, with a single Bash(...) rule on `run`. */
 function escalateWithRunGranted(): NaxConfig {
-  return configWithPermissions({ run: { allow: ["Bash(ls *)"] } });
+  return configWithPermissions({ bashApproval: "escalate" }, { run: { allow: ["Bash(ls *)"] } });
 }
 
 /** A Bash(...) rule on every stage that declares the tool. */
 function configWithEveryStageGranted(bashApproval: "gated" | "escalate"): NaxConfig {
-  const execution: Record<string, unknown> = {
-    bashApproval,
-    permissions: {
+  return configWithPermissions(
+    { bashApproval },
+    {
       run: { allow: ["Bash(ls *)"] },
       review: { allow: ["Bash(git status*)"] },
       rectification: { allow: ["Bash(bun test*)"] },
       acceptance: { allow: ["Bash(bun run*)"] },
     },
-  };
-  return makeNaxConfig({ execution });
+  );
 }
 
 const INERT_STAGES = ["acceptance", "rectification", "review"] as const;
