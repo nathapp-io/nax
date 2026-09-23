@@ -148,6 +148,7 @@ export const executionStage: PipelineStage = {
         approvalsFile,
         repoRoot: ctx.workdir,
         stageModes: await collectEffectiveRunStageModes(ctx),
+        sandboxEnabled: ctx.config.execution?.sandbox?.enabled === true,
       }),
       // P5's classifier link slots in HERE, between cache and human.
       humanLink,

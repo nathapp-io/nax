@@ -135,7 +135,10 @@ describe("approval gate, end to end", () => {
 
     const outcome = await session(
       root,
-      [createApprovalsLink({ approvalsFile, repoRoot: root, stageModes: ["escalate"] }), humanSpy],
+      [
+        createApprovalsLink({ approvalsFile, repoRoot: root, stageModes: ["escalate"], sandboxEnabled: false }),
+        humanSpy,
+      ],
       "run",
     )?.runtime.callTool("Bash", { command });
 
