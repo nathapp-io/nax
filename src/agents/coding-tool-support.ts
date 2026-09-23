@@ -9,6 +9,7 @@
  * both dispatch hops use — see its comment for why that matters.
  */
 
+import type { CommandShadow } from "@/command-safety";
 import type { BashApprovalMode } from "@/config/bash-approval";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
@@ -134,6 +135,8 @@ export function buildCodingToolSupport(args: {
   bashApproval?: BashApprovalMode;
   /** Injectable ask resolver (Task 3); defaults to the headless deny resolver. */
   askResolver?: AskResolver;
+  /** P5 shadow classifier; observational only. */
+  commandShadow?: CommandShadow;
   /** P4: resolved by resolveCodingToolSupport (async); data only here. */
   launcher?: CommandLauncher;
 }): CodingToolSupport | undefined {
@@ -218,6 +221,7 @@ export function buildCodingToolSupport(args: {
     }),
     declaredCommands: new Set(declaredCommands.keys()),
     ...(args.askResolver !== undefined ? { askResolver: args.askResolver } : {}),
+    ...(args.commandShadow !== undefined ? { commandShadow: args.commandShadow } : {}),
     ...(args.pipelineStage !== undefined ? { pipelineStage: args.pipelineStage } : {}),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     ...(args.callId !== undefined ? { callId: args.callId } : {}),

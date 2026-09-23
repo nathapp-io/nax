@@ -10,6 +10,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { type CommandShadow, openShadowTap } from "@/command-safety";
 import { getSafeLogger } from "@/logger";
 import {
   ASK_DENIED_REASON,
@@ -191,6 +192,11 @@ export function createCodingToolRuntime(opts: {
    * writes -- so it is threaded in rather than defaulted at the call site.
    */
   pipelineStage?: string;
+  /**
+   * P5 shadow classifier (spec 2026-09-23-p5-command-safety-shadow-design.md).
+   * Observational only: it never changes a verdict, delays or fails a call.
+   */
+  commandShadow?: CommandShadow;
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its
@@ -337,6 +343,24 @@ export function createCodingToolRuntime(opts: {
 
       const verdict = opts.policy.check(policyIdentity, tool.scope, input);
 
+      // P5: observe the command now (not awaited), settle from logCall below.
+      const tap = openShadowTap(opts.commandShadow, {
+        key: randomUUID(),
+        identity: policyIdentity,
+        command: tool.scope.commandField === undefined ? undefined : input[tool.scope.commandField],
+        argv: hasArgv && argvField !== undefined ? input[argvField] : undefined,
+        verdict,
+        stage: opts.pipelineStage ?? "unknown",
+        ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
+      });
+      // Every ledger outcome of this call settles the tap exactly once, with
+      // `denied:ask` and `decidedBy` intact -- which CodingToolOutcome.kind
+      // alone would lose (spec 4.2).
+      const logCall: typeof log = (...args) => {
+        log(...args);
+        tap.settle(args[1], args[8]?.approval?.decidedBy);
+      };
+
       /**
        * Executes a permitted call and records its outcome. Shared by the
        * ordinary allow path and an ask verdict an AskResolver approved, so an
@@ -368,7 +392,7 @@ export function createCodingToolRuntime(opts: {
           const kind = result.isError === true ? "error" : "ok";
           const content = await shapeToolResult(result.content, policyIdentity, context);
           const record = (finalContent: string) =>
-            log(
+            logCall(
               policyIdentity,
               kind,
               finalContent.length,
@@ -387,7 +411,7 @@ export function createCodingToolRuntime(opts: {
           const rawContent = err instanceof Error ? err.message : String(err);
           const content = await shapeToolResult(rawContent, policyIdentity, context);
           const record = (finalContent: string) =>
-            log(
+            logCall(
               policyIdentity,
               "error",
               finalContent.length,
@@ -423,7 +447,7 @@ export function createCodingToolRuntime(opts: {
           });
         } catch (err) {
           const content = errorMessage(err);
-          log(policyIdentity, "error", content.length, input, context, false, content);
+          logCall(policyIdentity, "error", content.length, input, context, false, content);
           return { kind: "error", content };
         }
         const approval = {
@@ -435,7 +459,7 @@ export function createCodingToolRuntime(opts: {
           return runTool(tool, input, verdict.resolvedPaths ?? [], approval);
         }
         const reason = `${verdict.reason} -- ${askDenyReason(askVerdict.decidedBy)}`;
-        log(policyIdentity, "denied:ask", reason.length, input, context, false, reason, undefined, { approval });
+        logCall(policyIdentity, "denied:ask", reason.length, input, context, false, reason, undefined, { approval });
         return { kind: "denied", reason, breach: false };
       }
 
@@ -466,7 +490,7 @@ export function createCodingToolRuntime(opts: {
                 ? redirectForVerb(name, rawVerb, advertisedNames, declared)
                 : undefined;
         const reason = extra === undefined ? verdict.reason : `${verdict.reason} -- ${extra}`;
-        log(policyIdentity, "denied", reason.length, input, context, verdict.breach, reason);
+        logCall(policyIdentity, "denied", reason.length, input, context, verdict.breach, reason);
         return { kind: "denied", reason, breach: verdict.breach };
       }
 
