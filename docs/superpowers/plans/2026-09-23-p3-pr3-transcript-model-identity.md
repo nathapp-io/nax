@@ -30,6 +30,7 @@ text, not by the number.
 
 ## Global Constraints
 
+- **Imports:** `biome.json` bans `../../` relative imports; see Task 1 Step 4 for the route.
 - **Model identity** is `parseModelSpec(raw).model`, the native `provider/model` id with the
   `[effort]` suffix stripped (spec §8.3(b)). Never use `parseNativeModel`, which throws.
 - **Load rule** (spec §8.3(c)): if the reader declares no model, read. Same model: read.
@@ -57,6 +58,7 @@ text, not by the number.
 
 | File | Change | Responsibility |
 |---|---|---|
+| `src/agents/native/models.ts` | modify | re-export `parseModelSpec` (one line; `biome.json` bans the `../../` import) |
 | `src/agents/native/session/transcript-store.ts` | modify | `TranscriptIdentity`, `transcriptModelIdentity`, `model` on `TranscriptFile`, the load rule (`isForeignTranscript`) |
 | `src/agents/native/session/session.ts` | modify | `SessionAnchor` (gains `model?`), `sessionAnchorFor` |
 | `src/agents/native/session/turn-loop.ts` | modify | derive `transcriptIdentity` once; pass it to load/save; read the anchor via `sessionAnchorFor`; write `model` on the anchor; comment at `:112-118` |
@@ -186,11 +188,22 @@ test in the file reports failure until Step 4.
 
 - [ ] **Step 4: Implement the store change**
 
-In `src/agents/native/session/transcript-store.ts`, add the import beside the existing ones:
+`biome.json:41` forbids `../../` imports, so `transcript-store.ts` cannot reach
+`src/agents/model-spec.ts` directly. `src/agents/native/models.ts` already imports
+`parseModelSpec` (`:14`), so re-export it there, directly under that import:
 
 ```ts
-import { parseModelSpec } from "../../model-spec";
+export { parseModelSpec };
 ```
+
+Then, in `src/agents/native/session/transcript-store.ts`, add beside the existing imports:
+
+```ts
+import { parseModelSpec } from "../models";
+```
+
+(Verified 2026-09-23 by a dry run: this passes typecheck, biome, `check:all` and the
+import-cycle gate.)
 
 Add these declarations directly after `transcriptPath`:
 
@@ -341,7 +354,7 @@ Expected: clean.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/agents/native/session/transcript-store.ts src/agents/native/session/turn-loop.ts \
+git add src/agents/native/models.ts src/agents/native/session/transcript-store.ts src/agents/native/session/turn-loop.ts \
   test/unit/agents/native/transcript-store.test.ts test/unit/agents/native/session-lifecycle.test.ts
 git commit -m "feat(native): the transcript store refuses a recorded different model (nax#2150)
 
