@@ -96,7 +96,7 @@ single command. srt's `cleanupAfterCommand()` only removes those placeholders (L
 | # | Decision |
 |---|---|
 | S1 | **Opt-in first.** `execution.sandbox.enabled` defaults to `false`. The flip to default-on is a separate, later PR gated on the P4 exit runs (§10). Nothing changes at merge. |
-| S2 | **Network open by default.** `network.allowedDomains` absent/`null` = unrestricted; an array = allow-list; `[]` = no network. |
+| S2 | **Network open by default.** `network.allowedDomains` absent = unrestricted (not `null`: the repo's `DeepPartial<ExecutionConfig>` cannot map it); an array = allow-list; `[]` = no network. |
 | S3 | **Write roots = fixed roots + a built-in cache list + config `allowWrite`.** |
 | S4 | **Read denies = a built-in credential-store list + config `denyRead`.** |
 | S5 | **All modes are wrapped.** Unavailable: `raw` REFUSES with a reason; `gated`/`escalate` run unwrapped with one warn. **The agent is always told** whether it is sandboxed, what it may write, and — on a likely sandbox denial — that the sandbox caused it. |
@@ -279,7 +279,7 @@ roots isolated). One nax process = one project, so one network config per proces
       "allowWrite": [],                     // S3, added to the built-ins
       "denyRead":  []                       // S4, added to the built-ins
     },
-    "network": { "allowedDomains": null }   // S2: null = open; [] = none; array = allow-list
+    "network": { }                          // S2: allowedDomains absent = open; [] = none; array = allow-list
   }
 }
 ```
@@ -382,6 +382,9 @@ launch moment. Gate on artifacts, never exit codes (nax exits 0 on failure):
 - **Linux CI/containers** — probe reports unavailable; with the sandbox opt-in (S1) nothing
   breaks until someone enables it, and then `raw` refuses with a reason naming the fix.
 - **Annotation reliability** — nax's own deterministic line is the guarantee; srt's is extra.
+- **Per-call overhead on real repos** — on Linux srt runs a depth-limited ripgrep scan of the cwd on
+  every wrap (`linux-sandbox-utils.js:209-250`); the spike's +14 ms was a tiny fixture. Measure it
+  on the real corpus during the exit runs (§10).
 - **Cache list gaps** — a package manager writing elsewhere fails `EPERM` with the annotation
   line naming the writable roots; `filesystem.allowWrite` is the escape hatch.
 

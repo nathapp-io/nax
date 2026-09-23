@@ -26,8 +26,13 @@
 - No `mock.module()`; inject via exported `_xxxDeps` objects and restore with `withDepsRestore` from `@test/helpers`.
 - Never construct `join(homedir(), ".nax", …)` — use `globalConfigDir()` from `src/config/paths`.
 - Test commands: targeted `bun test <file> --timeout=30000`; full `bun run test`. NEVER bare `bun test` with no path. `bun run typecheck` is NOT part of `check:all` — run it explicitly. The pre-commit hook runs typecheck + `check:all`; a commit that fails it did not happen — fix and re-commit, never `--no-verify`.
+- Run `bun run lint:fix` before every commit: the pre-commit hook runs `biome check --error-on-warnings`, and import order / formatting in the snippets below is not guaranteed to match Biome. Biome also bans `../../*` relative imports (`style.noRestrictedImports`) — use the `@/` alias from two levels deep.
 - Conventional commits (`feat(sandbox): …`, `refactor(agents): …`, `test(sandbox): …`, `docs(adr): …`). No emojis in code or comments.
 - nax is a PUBLIC repo: never name private projects in code, comments, ADR text or commit messages.
+
+## Known pre-existing defect — OUT OF SCOPE for this plan
+
+Found during the plan's final review and reproduced on `e0625f27c` through `buildCodingToolSupport` → `runtime.callTool` (macOS): under `raw` with NO sandbox, `echo x > .nax/config.json` returns `ok` and overwrites the file, while the same write to `.nax/features/<f>/prd.json` is correctly denied. The protected-path check involved is `isNaxConfigFile` (`src/tools/nax-owned-writes.ts:34`, called from `policy-bash-raw.ts:82`). Do NOT fix it inside this plan and do not weaken any test to accommodate it: it is being handled separately. The sandbox (this plan) closes it only when `execution.sandbox.enabled` is true; Task 12's live D13a test runs WITH the sandbox, so it is unaffected.
 
 ## Review Focus
 
@@ -292,6 +297,13 @@ describe("check-sandbox-imports", () => {
     expect(out).toContain("orchestrator");
   });
 
+  test("fails when src/sandbox imports an orchestrator module through the @/ alias", () => {
+    const root = tree({ "src/sandbox/launcher.ts": 'import { x } from "@/pipeline/stages";\n' });
+    const { code } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).not.toBe(0);
+  });
+
   test("ignores the specifier inside comments", () => {
     const root = tree({ "src/tools/bash.ts": '// see @anthropic-ai/sandbox-runtime\n * @anthropic-ai/sandbox-runtime\n' });
     const { code } = runGate(root);
@@ -329,7 +341,7 @@ const SCAN = join(ROOT, "src");
 const ALLOWED_FILE = join("src", "sandbox", "srt-backend.ts");
 const SANDBOX_DIR = join("src", "sandbox") + sep;
 const SRT = /@anthropic-ai\/sandbox-runtime/;
-const ORCHESTRATOR = /from\s+["'](?:\.\.\/)+(pipeline|execution|operations|prd|runtime)(?:\/|["'])/;
+const ORCHESTRATOR = /from\s+["'](?:@\/|(?:\.\.\/)+)(pipeline|execution|operations|prd|runtime)(?:\/|["'])/;
 
 async function* walk(dir: string): AsyncGenerator<string> {
   let entries: Dirent[];
@@ -412,11 +424,11 @@ git commit -m "feat(sandbox): pin sandbox-runtime 0.0.77, keep it external, gate
 
 **Files:**
 - Create: `src/config/schemas-sandbox.ts`
-- Modify: `src/config/schemas-execution.ts` (add one field after `approvalTimeout`), `src/config/schemas.ts` (the `execution` default literal, beside `approvalTimeout`)
+- Modify: `src/config/schemas-execution.ts` (add one field after `approvalTimeout`), `src/config/schemas.ts` (the `execution` default literal, beside `approvalTimeout`), `src/config/runtime-types.ts` (the HAND-WRITTEN `ExecutionConfig` interface at ~line 103 — it is not `z.infer`, so `config.execution.sandbox` does not typecheck without it)
 - Test: `test/unit/config/schemas-sandbox.test.ts`
 
 **Interfaces:**
-- Produces: `SandboxConfigSchema`, `type SandboxConfig = { enabled: boolean; backend: "srt"; filesystem: { allowWrite: string[]; denyRead: string[] }; network: { allowedDomains: string[] | null } }`, `DEFAULT_SANDBOX_CONFIG`. Reached at runtime as `config.execution.sandbox`.
+- Produces: `SandboxConfigSchema`, `type SandboxConfig = { enabled: boolean; backend: "srt"; filesystem: { allowWrite: string[]; denyRead: string[] }; network: { allowedDomains?: string[] } }`, `DEFAULT_SANDBOX_CONFIG`. `allowedDomains` ABSENT = open network — not `null`: the repo's `DeepPartial<ExecutionConfig>` cannot map `null`, and a nullable field breaks seven existing test files under `tsconfig.test.json`. Reached at runtime as `config.execution.sandbox`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -431,13 +443,13 @@ describe("execution.sandbox", () => {
       enabled: false,
       backend: "srt",
       filesystem: { allowWrite: [], denyRead: [] },
-      network: { allowedDomains: null },
+      network: {},
     });
   });
 
   test("nested defaults apply when only a parent key is given (zod 4 prefault, not default)", () => {
     expect(SandboxConfigSchema.parse({ filesystem: {} }).filesystem).toEqual({ allowWrite: [], denyRead: [] });
-    expect(SandboxConfigSchema.parse({ network: {} }).network).toEqual({ allowedDomains: null });
+    expect(SandboxConfigSchema.parse({ network: {} }).network).toEqual({});
   });
 
   test("an allow-list and an empty no-network list both survive", () => {
@@ -491,8 +503,8 @@ export const SandboxConfigSchema = z.object({
     .prefault({}),
   network: z
     .object({
-      /** null = unrestricted (spec S2); [] = no network; a list = allow-list. */
-      allowedDomains: z.array(z.string()).nullable().default(null),
+      /** absent = unrestricted (spec S2); [] = no network; a list = allow-list. */
+      allowedDomains: z.array(z.string()).optional(),
     })
     .prefault({}),
 });
@@ -519,15 +531,24 @@ In `src/config/schemas.ts`, in the `execution` default literal right after the `
 
 with `import { DEFAULT_SANDBOX_CONFIG } from "./schemas-sandbox";`. If `src/config/index.ts` re-exports schema types, also export `SandboxConfig` and `DEFAULT_SANDBOX_CONFIG` there.
 
+In `src/config/runtime-types.ts`, inside `ExecutionConfig` right after `approvalTimeout?: number;`, add:
+
+```ts
+  /** P4: OS sandbox for agent-authored commands. */
+  sandbox?: SandboxConfig;
+```
+
+with `import type { SandboxConfig } from "./schemas-sandbox";`.
+
 - [ ] **Step 4: Verify**
 
 Run: `bun test test/unit/config/ --timeout=60000 2>&1 | tail -5` — all pass (existing default-snapshot tests may need the new key; if a test compares the whole `execution` default to a literal, that is the BUG-20 drift the test exists to catch — add `sandbox: DEFAULT_SANDBOX_CONFIG` to its expectation, nothing else).
-Run: `bun run typecheck`
+Run: `bun run typecheck` — BOTH tsconfigs (the script runs `tsconfig.test.json` too); it must be clean before you commit.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/config/schemas-sandbox.ts src/config/schemas-execution.ts src/config/schemas.ts src/config/index.ts test/unit/config/
+git add src/config/schemas-sandbox.ts src/config/schemas-execution.ts src/config/schemas.ts src/config/runtime-types.ts src/config/index.ts test/unit/config/
 git commit -m "feat(config): add execution.sandbox (opt-in, open network by default)"
 ```
 
@@ -645,6 +666,7 @@ const CORPUS: readonly (readonly string[])[] = [
   ["bun", "add", "left-pad"],
   ["echo", "it's"],
   ["echo", "a'b'c", "''", "'"],
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell syntax is the input under test
   ["echo", "$(touch /tmp/nax-pwned)", "`id`", "${HOME}", "$HOME"],
   ["echo", "a;b", "a&&b", "a|b", "a>b", "a<b", "a&"],
   ["echo", "line1\nline2", "tab\there"],
@@ -785,7 +807,7 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy;
 
 - [ ] **Step 1: Export the queue-control set**
 
-In `src/tools/nax-owned-writes.ts` change `const QUEUE_CONTROL_FILES` to `export const QUEUE_CONTROL_FILES` (keep its comment) and add it to the `nax-owned-writes` re-export in `src/tools/index.ts`. Run `bun run typecheck`.
+In `src/tools/nax-owned-writes.ts` change `const QUEUE_CONTROL_FILES` to `export const QUEUE_CONTROL_FILES` (keep its comment). No barrel change: `policy-builder.ts` imports the file directly. Run `bun run typecheck`.
 
 - [ ] **Step 2: Write the failing policy-builder test**
 
@@ -920,7 +942,7 @@ describe("buildSandboxPolicy", () => {
     expect(policy.writeRoots).toContain(real);
   });
 
-  test("network: null config is open (no allowedDomains key); a list passes through", () => {
+  test("network: absent allowedDomains is open (no key); a list passes through", () => {
     expect(buildSandboxPolicy(input()).network).toEqual({});
     const config: SandboxConfig = { ...DEFAULT_SANDBOX_CONFIG, network: { allowedDomains: ["registry.npmjs.org"] } };
     expect(buildSandboxPolicy(input({ config })).network).toEqual({ allowedDomains: ["registry.npmjs.org"] });
@@ -1063,9 +1085,11 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     ...config.filesystem.denyRead.map((p) => resolve(root, expandHome(p, home))),
   ]);
   const allowed = config.network.allowedDomains;
-  return { writeRoots, denyWrite, denyRead, network: allowed === null ? {} : { allowedDomains: [...allowed] } };
+  return { writeRoots, denyWrite, denyRead, network: allowed === undefined ? {} : { allowedDomains: [...allowed] } };
 }
 ```
+
+**Rule: only emit a write-deny whose PARENT directory exists.** On Linux, srt/bwrap makes writes beneath a missing ancestor of a deny path land somewhere ephemeral and vanish silently (spike, Linux run 3: `mkdir -p .nax/features/f2` succeeded in the sandbox, yet `f2` never appeared on the host). Every deny this builder emits satisfies the rule today (feature dirs are listed from disk; `.nax`, the root, the approvals file's `outputDir` and the worktree pointer files all exist) — keep it that way when adding entries.
 
 `check:feature-dir-ssot` forbids open-coding `join(root, ".nax", "features", …)` in `src/`. This file does NOT build a features path (the prd paths arrive as input, built in `policy-inputs.ts` via `featuresDir`). `join(root, ".nax", "config.json")` and `".nax", "mono"` are not features paths. If `check:no-real-global-nax` or `check:feature-dir-ssot` flags a line anyway, use `projectConfigDir(root)` from `src/config/paths` for the `.nax` dir rather than adding an allow comment.
 
@@ -1079,7 +1103,7 @@ Run: `bun test test/unit/sandbox/policy-builder.test.ts --timeout=30000` — PAS
 
 ```ts
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { globalConfigDir } from "@/config/paths";
@@ -1127,7 +1151,7 @@ describe("listFeaturePrdPaths", () => {
     mkdirSync(join(base, ".nax", "features", "a"), { recursive: true });
     mkdirSync(join(base, ".nax", "features", "b"), { recursive: true });
     writeFileSync(join(base, ".nax", "features", "a", "prd.json"), "{}");
-    const paths = (await listFeaturePrdPaths(base)).sort();
+    const paths = (await listFeaturePrdPaths(base)).sort((a, b) => a.localeCompare(b));
     expect(paths).toEqual([
       join(base, ".nax", "features", "a", "prd.json"),
       join(base, ".nax", "features", "b", "prd.json"),
@@ -1143,13 +1167,16 @@ describe("listCredentialFiles", () => {
   test("every credentials* file in the global nax dir, as literals", async () => {
     const dir = globalConfigDir();
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "credentials"), "{}");
-    writeFileSync(join(dir, "credentials-bak-2"), "{}");
-    writeFileSync(join(dir, "config.json"), "{}");
-    const files = await listCredentialFiles();
-    expect(files).toContain(join(dir, "credentials"));
-    expect(files).toContain(join(dir, "credentials-bak-2"));
-    expect(files).not.toContain(join(dir, "config.json"));
+    const made = ["credentials", "credentials-bak-2", "config.json"].map((n) => join(dir, n));
+    try {
+      for (const f of made) writeFileSync(f, "{}");
+      const files = await listCredentialFiles();
+      expect(files).toContain(join(dir, "credentials"));
+      expect(files).toContain(join(dir, "credentials-bak-2"));
+      expect(files).not.toContain(join(dir, "config.json"));
+    } finally {
+      for (const f of made) rmSync(f, { force: true });
+    }
   });
 });
 ```
@@ -1252,7 +1279,7 @@ Run: `bun run typecheck && bun run check:import-cycles && bun run check:feature-
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/sandbox/ src/tools/nax-owned-writes.ts src/tools/index.ts test/unit/sandbox/
+git add src/sandbox/ src/tools/nax-owned-writes.ts test/unit/sandbox/
 git commit -m "feat(sandbox): literal, realpath-resolved per-call sandbox policy"
 ```
 
@@ -1518,9 +1545,9 @@ export const _srtBackendDeps = {
  * an srt bump that changes it fails a test rather than silently restricting.
  */
 function srtNetwork(allowedDomains: readonly string[] | undefined): SrtNetwork {
-  return allowedDomains === undefined
-    ? ({ deniedDomains: [] } as SrtNetwork)
-    : { allowedDomains: [...allowedDomains], deniedDomains: [] };
+  if (allowedDomains !== undefined) return { allowedDomains: [...allowedDomains], deniedDomains: [] };
+  const open: Pick<SrtNetwork, "deniedDomains"> = { deniedDomains: [] };
+  return open as SrtNetwork;
 }
 
 function customConfig(policy: SandboxPolicy): Partial<SrtRuntimeConfig> {
@@ -1540,7 +1567,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       const mod = await _srtBackendDeps.load();
       if (_srtBackendDeps.platform() === "darwin") await _srtBackendDeps.mkdir(SRT_MACOS_TMPDIR, { recursive: true });
       await mod.SandboxManager.initialize({
-        network: srtNetwork(network.allowedDomains ?? undefined),
+        network: srtNetwork(network.allowedDomains),
         filesystem: { denyRead: [], allowWrite: [], denyWrite: [] },
       } as SrtRuntimeConfig);
       loaded = mod;
@@ -1594,7 +1621,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
 }
 ```
 
-If `typecheck` rejects the `as SrtRuntimeConfig` on the `initialize` argument (the `as SrtNetwork` inside `srtNetwork` already covers the missing field), remove the outer cast; keep exactly one cast in the file. If srt's `wrapWithSandboxArgv` options type is named differently, read `node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-manager.d.ts:75-79` — the sixth parameter is `options?: WrapWithSandboxOptions` with `commandId`.
+The `Pick<…>` intermediate is required: a bare `({ deniedDomains: [] } as SrtNetwork)` fails TS2352 (`never[]` is not comparable). Verified to compile together with the outer `as SrtRuntimeConfig` on `initialize`. If srt's `wrapWithSandboxArgv` options type is named differently, read `node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-manager.d.ts:75-79` — the sixth parameter is `options?: WrapWithSandboxOptions` with `commandId`.
 
 - [ ] **Step 7: Registry**
 
@@ -1705,7 +1732,12 @@ describe("sandbox registry", () => {
 
   test("reset drops the backend (reset() called) but keeps the probe result", async () => {
     let resets = 0;
-    const fake = { ...makeFakeSandboxBackend(), reset: async () => void (resets += 1) };
+    const fake = {
+      ...makeFakeSandboxBackend(),
+      reset: async () => {
+        resets += 1;
+      },
+    };
     _sandboxRegistryDeps.createBackend = () => fake;
     let probes = 0;
     _sandboxRegistryDeps.probe = async () => {
@@ -1729,7 +1761,7 @@ describe("sandbox registry", () => {
 import { afterAll, describe, expect, test } from "bun:test";
 import { createSrtBackend, probeSandbox } from "@/sandbox";
 
-const backend = createSrtBackend({ allowedDomains: null });
+const backend = createSrtBackend({});
 const probe = await probeSandbox(backend);
 const label = probe.available ? "available" : `SKIPPED: ${probe.reason}`;
 
@@ -1973,6 +2005,9 @@ describe("createCommandLauncher", () => {
     expect(r.stdout.trim()).toBe("a b $(id)");
   });
 
+  // A regression PIN, not the F6 proof: the fake never returns an env, so it
+  // cannot reproduce the original bug. The proof is the argv-only `wrap`
+  // return type plus the live test in Task 12.
   test("F6: a stripped variable stays stripped inside a wrapped command", async () => {
     process.env.NAX_P4_LAUNCHER_SECRET = "s3cret";
     try {
@@ -2568,7 +2603,32 @@ describe("Exec through the launcher", () => {
 });
 ```
 
-If `normalizeExec` rejects `["bun","--version"]` for this fixture (it may require a manifest), pick an argv the existing `test/unit/tools/run-command-exec.test.ts` uses successfully and copy its fixture setup. Add a second test with a Yarn fixture copied from that same file asserting the launcher receives `env` containing `YARN_ENABLE_SCRIPTS` (wrap the fake's `run` by inspecting `_launcherDeps.runArgv` calls via `withDepsRestore(_launcherDeps)`).
+Add the Yarn overlay test to the same file (it captures the spawn instead of running yarn; `runExecBranch` passes no `yarnMajor`, so `yarn add` always gets the Berry `YARN_ENABLE_SCRIPTS=false` overlay — `src/tools/package-managers-table.ts:256`):
+
+```ts
+describe("Exec env overlay through the launcher", () => {
+  withDepsRestore(_launcherDeps);
+
+  test("Review Focus 5: the Yarn no-scripts env overlay survives wrapping", async () => {
+    const seen: { env?: Readonly<Record<string, string>> }[] = [];
+    _launcherDeps.runArgv = async (o) => {
+      seen.push(o);
+      return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+    };
+    const launcher = createCommandLauncher({
+      state: { kind: "available", backend: "srt", network: "open" },
+      backend: makeFakeSandboxBackend(),
+      policyFor: async (r) => ({ writeRoots: [r], denyWrite: [], denyRead: [], network: {} }),
+    });
+    await runExecBranch({ argv: ["yarn", "add", "left-pad"], target: "repoRoot" }, ctx(), {
+      exec: { repoRoot: root, packageWorkdir: root, allowScripts: false, patterns: ["yarn *"], launcher },
+    });
+    expect(seen[0]?.env).toEqual({ YARN_ENABLE_SCRIPTS: "false" });
+  });
+});
+```
+
+Add `_launcherDeps` to the `@/sandbox` import and `withDepsRestore` to the `@test/helpers` import. If `normalizeExec` rejects `["bun","--version"]` in the first test for this fixture (it may require a manifest), use an argv the existing `test/unit/tools/run-command-exec.test.ts` runs successfully.
 
 - [ ] **Step 6: Implement Exec**
 
@@ -2814,7 +2874,7 @@ export async function resolveSessionSandbox(args: {
       platform: _sessionSandboxDeps.platform(),
       config,
     });
-  const network = config.network.allowedDomains ?? "open";
+  const network = config.network.allowedDomains ?? "open"; // absent = open (spec S2)
   return createCommandLauncher({ state: { kind: "available", backend: backend.name, network }, backend, policyFor });
 }
 
@@ -2872,7 +2932,7 @@ import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir } from "@test/helpe
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import type { BashApprovalMode } from "@/config/bash-approval";
 import { type CommandLauncher, createCommandLauncher, rawBashRefusalReason } from "@/sandbox";
-import type { ToolCallRecord } from "@/tools/tool-audit";
+import { realOrRaw } from "@/utils/realpath";
 
 let root: string;
 beforeEach(() => {
@@ -2900,7 +2960,8 @@ describe("sandbox wiring (production seam)", () => {
     const support = session("raw", unavailable());
     const out = await support.runtime.callTool("Bash", { command: "echo hi > canary.txt" });
     expect(out.kind).toBe("denied");
-    if (out.kind === "denied") expect(out.reason).toBe(rawBashRefusalReason("no bwrap"));
+    // toStartWith: the runtime may append a " -- <redirect>" to any denial (runtime.ts:456-465).
+    if (out.kind === "denied") expect(out.reason).toStartWith(rawBashRefusalReason("no bwrap"));
     expect(existsSync(join(root, "canary.txt"))).toBe(false);
   });
 
@@ -2921,7 +2982,8 @@ describe("sandbox wiring (production seam)", () => {
     const out = await session("raw", launcher).runtime.callTool("Bash", { command: "echo hi > canary.txt" });
     expect(out.kind).toBe("ok");
     expect(existsSync(join(root, "canary.txt"))).toBe(true);
-    expect(backend.calls[0]?.cwd).toBe(root);
+    // ctx.root arrives realpath-resolved (compileToolPolicy -> realOrRaw): /var -> /private/var on macOS.
+    expect(backend.calls[0]?.cwd).toBe(realOrRaw(root));
   });
 
   test("D14: a declared RunCommand command never reaches the launcher", async () => {
@@ -2942,7 +3004,7 @@ describe("sandbox wiring (production seam)", () => {
 });
 ```
 
-If `RunCommand`'s grant pattern syntax differs (check `test/unit/tools/run-command.test.ts` for how a declared command is granted), match it; the assertion that matters is `backend.calls` staying empty. The `ToolCallRecord` import is unused unless you add a sink — drop it if Biome flags it.
+If `RunCommand`'s grant pattern syntax differs (check `test/unit/tools/run-command.test.ts` for how a declared command is granted), match it; the assertion that matters is `backend.calls` staying empty.
 
 - [ ] **Step 6: Verify**
 
@@ -2972,7 +3034,6 @@ git commit -m "feat(agents): probe the sandbox per session and hand it to the to
 
 Add to the existing approvals-link test file (find it: `rg -l createApprovalsLink test/`), a `test.each`:
 
-```ts
 ```ts
 test.each([
   { raw: false, sandbox: false, disabled: false },
@@ -3031,7 +3092,7 @@ In `run-cleanup.ts` after the interaction-chain block:
   }
 ```
 
-and add `resetSandbox: resetSandboxBackend` to `_runCleanupDeps` (import from `"../../sandbox"`).
+and add `resetSandbox: resetSandboxBackend` to `_runCleanupDeps`, importing it as `import { resetSandboxBackend } from "@/sandbox";` (Biome bans `../../*` relative imports).
 
 `test/unit/execution/lifecycle/run-cleanup-sandbox.test.ts`:
 
@@ -3294,7 +3355,7 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
 });
 ```
 
-No fixed sleeps anywhere (`.nax/rules/forbidden-patterns-tests.md`): the timeout test waits with `waitForCondition`. If `waitForCondition` resolves rather than rejects on timeout in this repo's version, follow it with `expect(survivors()).toBe("")`.
+**Give every `test(...)` in this file an explicit third argument `30_000`** (e.g. `test("…", async () => { … }, 30_000);`): `bunfig.toml` and `scripts/run-tests.ts:60` impose a 5 s default, and the worktree and timeout tests have too little margin under it. No fixed sleeps anywhere (`.nax/rules/forbidden-patterns-tests.md`): the timeout test waits with `waitForCondition`. If `waitForCondition` resolves rather than rejects on timeout in this repo's version, follow it with `expect(survivors()).toBe("")`.
 
 - [ ] **Step 2: Run locally (macOS)**
 
