@@ -8,6 +8,16 @@ export {
   listFeaturePrdPaths,
   resolveGitLayout,
 } from "./policy-inputs";
+export { _probeDeps, probeSandbox } from "./probe";
+export {
+  _resetSandboxRegistryForTests,
+  _sandboxRegistryDeps,
+  probeSandboxOnce,
+  resetSandboxBackend,
+  sandboxBackendFor,
+  warnSandboxUnavailableOnce,
+} from "./registry";
+export { _srtBackendDeps, createSrtBackend } from "./srt-backend";
 export type {
   CommandLauncher,
   LaunchRequest,
