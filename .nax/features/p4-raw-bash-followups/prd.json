@@ -3,7 +3,7 @@
   "feature": "p4-raw-bash-followups",
   "branchName": "feat/p4-raw-bash-followups",
   "createdAt": "2026-09-24T00:00:00Z",
-  "updatedAt": "2026-09-23T15:36:44.724Z",
+  "updatedAt": "2026-09-23T16:09:42.152Z",
   "userStories": [
     {
       "id": "US-001",
@@ -135,8 +135,8 @@
         "documentation"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
