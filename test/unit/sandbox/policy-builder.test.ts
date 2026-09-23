@@ -115,6 +115,25 @@ describe("buildSandboxPolicy", () => {
     expect(policy.denyRead).toContain(join(home, "secrets"));
   });
 
+  test("F1: config extras are pinned glob-free too", () => {
+    const config: SandboxConfig = {
+      ...DEFAULT_SANDBOX_CONFIG,
+      filesystem: { allowWrite: ["~/.cache/custom", "build-out"], denyRead: ["~/secrets"] },
+    };
+    const policy = buildSandboxPolicy(input({ config }));
+    for (const p of [...policy.denyWrite, ...policy.denyRead, ...policy.writeRoots]) expect(p).not.toMatch(GLOB);
+  });
+
+  test("F1: a glob that bypassed the schema throws instead of reaching the backend", () => {
+    const withAllow: SandboxConfig = { ...DEFAULT_SANDBOX_CONFIG, filesystem: { allowWrite: ["out-*"], denyRead: [] } };
+    const withDeny: SandboxConfig = {
+      ...DEFAULT_SANDBOX_CONFIG,
+      filesystem: { allowWrite: [], denyRead: ["~/secret*"] },
+    };
+    expect(() => buildSandboxPolicy(input({ config: withAllow }))).toThrow(/glob/);
+    expect(() => buildSandboxPolicy(input({ config: withDeny }))).toThrow(/glob/);
+  });
+
   test("finding 3: a nonexistent deny under a symlinked parent is emitted in its resolved spelling", () => {
     const real = join(base, "real");
     mkdirSync(join(real, ".nax", "features", "f9"), { recursive: true });

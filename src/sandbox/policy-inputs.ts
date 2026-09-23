@@ -6,6 +6,7 @@ import { readdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { featuresDir, globalConfigDir } from "../config/paths";
+import { isValidFeatureName } from "../utils/feature-name";
 import { gitWithTimeout } from "../utils/git";
 import { realOrRaw } from "../utils/realpath";
 
@@ -39,12 +40,18 @@ export async function resolveGitLayout(root: string): Promise<GitLayout> {
   return gitDir === commonDir ? { kind: "main", gitDir } : { kind: "worktree", gitDir, commonDir };
 }
 
-/** One `<features>/<f>/prd.json` per feature directory present now (existing file or not). */
+/**
+ * One `<features>/<f>/prd.json` per feature directory present now (existing file or not).
+ * Directories that are not valid feature names are skipped: no PRD can live there, and a
+ * glob-named one (agent-creatable) would make every policy build throw (F1).
+ */
 export async function listFeaturePrdPaths(root: string): Promise<string[]> {
   const dir = featuresDir(root);
   try {
     const entries = await _policyInputDeps.readdir(dir, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => join(dir, e.name, "prd.json"));
+    return entries
+      .filter((e) => e.isDirectory() && isValidFeatureName(e.name))
+      .map((e) => join(dir, e.name, "prd.json"));
   } catch {
     return [];
   }

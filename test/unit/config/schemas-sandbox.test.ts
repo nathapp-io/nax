@@ -28,6 +28,20 @@ describe("execution.sandbox", () => {
     expect(SandboxConfigSchema.safeParse({ backend: "docker" }).success).toBe(false);
   });
 
+  test("F1: rejects glob characters in allowWrite and denyRead (Linux silently drops glob entries)", () => {
+    for (const glob of ["out-*", "~/secret?", "a[b]", "{x,y}"]) {
+      expect(SandboxConfigSchema.safeParse({ filesystem: { allowWrite: [glob] } }).success).toBe(false);
+      expect(SandboxConfigSchema.safeParse({ filesystem: { denyRead: [glob] } }).success).toBe(false);
+    }
+  });
+
+  test("F1: literal paths, ~ and relative paths are still accepted", () => {
+    const fs = SandboxConfigSchema.parse({
+      filesystem: { allowWrite: ["~/.cache/custom", "build-out", "/abs/dir"], denyRead: ["~/secrets"] },
+    }).filesystem;
+    expect(fs).toEqual({ allowWrite: ["~/.cache/custom", "build-out", "/abs/dir"], denyRead: ["~/secrets"] });
+  });
+
   test("BUG-20: the NaxConfig execution default carries the schema-derived sandbox default", () => {
     expect(NaxConfigSchema.parse({}).execution.sandbox).toEqual(DEFAULT_SANDBOX_CONFIG);
   });

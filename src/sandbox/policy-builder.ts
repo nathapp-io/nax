@@ -7,7 +7,8 @@
  * would otherwise keep a spelling the kernel never sees (spec 12, finding 3).
  */
 import { isAbsolute, join, resolve } from "node:path";
-import type { SandboxConfig } from "../config/schemas-sandbox";
+import { SANDBOX_GLOB_CHARS, type SandboxConfig } from "../config/schemas-sandbox";
+import { NaxError } from "../errors";
 import { QUEUE_CONTROL_FILES } from "../tools/nax-owned-writes";
 import { realOrRaw } from "../utils/realpath";
 import {
@@ -36,8 +37,17 @@ function expandHome(p: string, home: string): string {
   return p.startsWith("~/") ? join(home, p.slice(2)) : p;
 }
 
+/** Throws on a glob: a Linux backend would drop it silently (F1), so fail closed instead. */
 function literal(paths: readonly string[]): string[] {
-  return [...new Set(paths.map((p) => realOrRaw(p)))];
+  const resolved = [...new Set(paths.map((p) => realOrRaw(p)))];
+  const glob = resolved.find((p) => SANDBOX_GLOB_CHARS.test(p));
+  if (glob !== undefined) {
+    throw new NaxError(`[sandbox] policy path is not literal (glob character): ${glob}`, "SANDBOX_POLICY_NOT_LITERAL", {
+      stage: "sandbox",
+      path: glob,
+    });
+  }
+  return resolved;
 }
 
 function gitDenies(root: string, git: GitLayout): string[] {

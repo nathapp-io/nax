@@ -8,6 +8,16 @@
  */
 import { z } from "zod";
 
+/**
+ * Glob metacharacters. srt on Linux silently DROPS a policy entry containing
+ * any of them (spec F1), so every sandbox path must be literal.
+ */
+export const SANDBOX_GLOB_CHARS = /[*?[\]{}]/;
+
+const literalPath = z
+  .string()
+  .refine((p) => !SANDBOX_GLOB_CHARS.test(p), "sandbox paths must be literal: no * ? [ ] { } (spec F1)");
+
 export const SandboxConfigSchema = z.object({
   /** Opt-in until the P4 exit runs (spec S1). */
   enabled: z.boolean().default(false),
@@ -16,9 +26,9 @@ export const SandboxConfigSchema = z.object({
   filesystem: z
     .object({
       /** Extra write roots, "~" expanded, relative paths resolved against the story root. */
-      allowWrite: z.array(z.string()).default([]),
+      allowWrite: z.array(literalPath).default([]),
       /** Extra read denies, "~" expanded. */
-      denyRead: z.array(z.string()).default([]),
+      denyRead: z.array(literalPath).default([]),
     })
     .prefault({}),
   network: z

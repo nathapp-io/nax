@@ -54,6 +54,13 @@ describe("listFeaturePrdPaths", () => {
     ]);
   });
 
+  test("F1: a directory that is not a valid feature name is skipped (a glob name would poison every policy build)", async () => {
+    mkdirSync(join(base, ".nax", "features", "ok"), { recursive: true });
+    mkdirSync(join(base, ".nax", "features", "x*"), { recursive: true });
+    mkdirSync(join(base, ".nax", "features", "a[1]"), { recursive: true });
+    expect(await listFeaturePrdPaths(base)).toEqual([join(base, ".nax", "features", "ok", "prd.json")]);
+  });
+
   test("no features directory -> empty", async () => {
     expect(await listFeaturePrdPaths(base)).toEqual([]);
   });
