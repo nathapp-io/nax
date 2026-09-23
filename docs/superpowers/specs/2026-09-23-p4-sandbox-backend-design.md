@@ -1,6 +1,6 @@
 # Sandbox backend for agent-authored commands — design
 
-**Date:** 2026-09-23 · **Status:** designed + independently reviewed (§12), not implemented
+**Date:** 2026-09-23 · **Status:** implemented on feat/p4-sandbox-backend (PR pending); exit runs pending (§10)
 **Baseline:** `main` @ `e0625f27c` (P3 PR 3 merged). Every citation below was read on this commit.
 **Implements:** phase 4 of the native-coding-agent arc (goal 1's end state: `raw` bash with the
 blast radius capped)

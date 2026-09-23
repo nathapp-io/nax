@@ -252,3 +252,88 @@ Both fail by **abstaining**, which escalates to the human, so a failure costs pr
 safety. Integrity signing was deliberately not attempted: any key the nax process can read, a
 `raw` shell as that process can read. P4's sandbox closes the underlying hole; disclosed, not
 fixed.
+
+---
+
+## Amendment — 2026-09-23: the sandbox backend (P4)
+
+**Supersedes:** the "OS-level sandboxing" bullet under "What this does not decide". The intended
+precondition for `raw` is now implemented, and that bullet's stated expectation — `raw`
+requires it and refuses, naming the fallback, rather than silently downgrading — is the posture
+below.
+
+Phase 4 of the native-coding-agent arc shipped on branch `feat/p4-sandbox-backend` (PR/merge
+pending). Design: `docs/superpowers/specs/2026-09-23-p4-sandbox-backend-design.md`. The default
+flip is not part of this phase.
+
+### Decision
+
+`execution.sandbox` wraps the two agent-authored spawn sites — Bash and RunCommand `Exec` — in
+an OS sandbox behind a `SandboxBackend` interface (`src/sandbox/`); srt
+(`@anthropic-ai/sandbox-runtime`, pinned exactly `0.0.77`) is the first backend, and a
+container backend would implement the same interface without touching a call site. Opt-in
+(`enabled: false`) until the P4 exit runs; the flip to default-on is a separate change. The
+launcher is handed to those two sites and nothing else, so nax's own declared-command runs
+(quality commands, acceptance, worktree installs) cannot be wrapped — D14 holds by
+construction — and the launcher changes HOW a command runs, never WHETHER: the single-gate
+rule is preserved.
+
+### Posture when enabled
+
+`raw` requires the sandbox. If the probe finds it unavailable, every raw Bash call is refused
+with a reason naming `gated`/`escalate` — a policy verdict compiled in
+(`src/tools/policy-command-branch.ts`), not a runtime downgrade — and the tool description says
+the same, so the model does not spend a turn discovering it. `gated`/`escalate` run unwrapped
+with one warning per process; their mechanical gate is still the boundary. No mode silently
+changes posture in either direction. The probe is a real wrapped command that also proves
+enforcement (an allowed write lands, a denied write does not), never a dependency check: a
+sandbox that runs but does not enforce is treated as absent.
+
+### Threat model unchanged (D1)
+
+The sandbox is a blast-radius limiter for the agent's own mistakes, not a security boundary
+against hostile repository content. Network is open by default for that reason; an allow-list
+(`network.allowedDomains`) exists, but the default posture bounds writes and credential reads,
+not egress.
+
+### Literal paths, and why
+
+srt on Linux silently drops glob `denyWrite` entries, logged at debug only — a glob deny is a
+guarantee that exists on macOS only. Every policy path is therefore literal and
+`realOrRaw`-resolved; the builder never emits a glob character, and the policy is rebuilt per
+call so a feature directory created mid-run still gets its `prd.json` deny.
+
+### Worktrees
+
+From a worktree, `git commit` needs the git common dir writable, which strips srt's hook guard
+(scoped to the cwd's `.git`). The policy adds the common dir as a write root and denies
+`<common>/hooks`, `<common>/config` and every worktree pointer file explicitly. Known
+limitation, recorded so nobody later calls it a regression: an agent mistake can move other
+refs in the common dir (`refs/`, `packed-refs`). Accepted under D1 — hooks and config, the
+code-execution paths, are what is denied.
+
+### Two disclosed holes close when sandboxed
+
+D13a gap 3 — the screen's third accepted gap, an unmodellable `cd` into a protected directory
+followed by the protected write — is blocked by containment instead of an estimated frame. The
+P2 approvals-cache forgery closes because the approvals file is ALWAYS write-denied (its
+`outputDir` is configurable and can land inside a write root, so "outside the roots" was never
+the guarantee). The cache's raw precondition relaxes accordingly: disabled only when a stage
+resolves to `raw` AND the sandbox is disabled — config-only, no dependency on the probe, since
+an enabled sandbox leaves `raw` either wrapped or refused outright. Unsandboxed, both holes
+remain disclosed, not fixed.
+
+### Environment
+
+srt's returned `env` is `process.env` itself; applied as a `runArgv` overlay it re-adds every
+stripped secret (reproduced during the design review). It is discarded. `stripEnvVars` applies
+exactly as before, and the launcher forwards only the caller's own env overlay.
+
+### Platform requirements
+
+macOS: `sandbox-exec` (built in). Linux: `bwrap`, `socat`, `rg`; in a container
+`--security-opt systempaths=unconfined` or the probe reports unavailable; on Ubuntu 24.04
+`kernel.apparmor_restrict_unprivileged_userns=0`. Windows: unavailable (probe). The live suite
+runs in CI with bubblewrap, socat and ripgrep installed and `NAX_SANDBOX_REQUIRED=1`; nothing
+beyond the requirements above is known to be needed yet — the first PR CI run is what
+confirms.
