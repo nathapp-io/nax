@@ -8,6 +8,9 @@
  *    the PRD-level check that the resolved profile matches what plan used.
  *  - `warnFallbackMisconfiguration` — AC-35 pre-flight: fallback candidates that
  *    `agentGetFn` cannot resolve.
+ *  - `warnInertBashStages` — ADR-030 pre-flight: stages that declare the Bash
+ *    tool while their resolved grants hold no `Bash` entry, so the tool is
+ *    never offered and nothing can escalate.
  *
  * No behaviour change from the original inline versions — pure code move.
  */
@@ -95,4 +98,20 @@ export function warnFallbackMisconfiguration(
       }
     }
   }
+}
+
+/**
+ * Warn once per stage that declares the Bash tool but whose resolved
+ * permissions cannot offer it (ADR-030).
+ *
+ * A warning, never an error: `gated` without a `Bash(...)` rule is a legitimate
+ * "no shell" posture. It is only worth saying out loud because the alternative
+ * reading — "the agent can ask, and a human approves" — is what the mode name
+ * suggests and is not what happens.
+ *
+ * @stub — the implementer logs one warning per stage `findInertBashStages`
+ * returns; see the story's approach for the message and data shape.
+ */
+export function warnInertBashStages(_config: NaxConfig, _logger: ReturnType<typeof getSafeLogger>): void {
+  // Stub: one warning per inert stage goes here.
 }
