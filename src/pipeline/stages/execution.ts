@@ -44,6 +44,7 @@ import {
 } from "@/permissions";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
 import { storyPackageDir } from "@/utils/path-frame";
+import { NAX_COMMIT } from "@/version";
 import { resolveScopeFiles } from "../scope-files";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -123,7 +124,7 @@ export const executionStage: PipelineStage = {
     // denies rather than runs.
     const approvalsFile = approvalsPath(ctx.runtime.outputDir);
     // Built once and shared by every operation dispatched for this story.
-    const humanLink = createHumanAskLink({
+    const humanLink = _executionDeps.createHumanAskLink({
       // `ctx.interaction` is optional on PipelineContext, hence possibly
       // `undefined`. The human link's signature accepts null AND undefined.
       chain: ctx.interaction,
@@ -140,7 +141,7 @@ export const executionStage: PipelineStage = {
           matchedRule: null,
           approvedAt: new Date().toISOString(),
           approvedBy: "telegram",
-          naxCommit: process.env.NAX_COMMIT ?? "unknown",
+          naxCommit: NAX_COMMIT,
         }),
     });
     const baseResolver = chainAskLinks([
@@ -314,6 +315,7 @@ export const _executionDeps = {
   decideStageAction,
   assembleForStage,
   resolveScopeFiles,
+  createHumanAskLink,
 };
 
 /**
