@@ -69,15 +69,15 @@ describe("native session lifecycle", () => {
   });
 
   test("opening without resume clears a transcript an earlier session left behind", async () => {
-    await saveTranscript(dir, "sess-a", [{ role: "user", content: "stale" }], "call-1");
+    await saveTranscript(dir, "sess-a", [{ role: "user", content: "stale" }], { owner: "call-1" });
     await openNativeSession("sess-a", opts({ resume: false }));
     expect(await loadTranscript(dir, "sess-a")).toEqual([]);
   });
 
   test("opening with resume keeps the transcript the retry needs", async () => {
-    await saveTranscript(dir, "sess-a", [{ role: "user", content: "keep me" }], "call-1");
+    await saveTranscript(dir, "sess-a", [{ role: "user", content: "keep me" }], { owner: "call-1" });
     await openNativeSession("sess-a", opts({ resume: true }));
-    expect(await loadTranscript(dir, "sess-a", "call-1")).toHaveLength(1);
+    expect(await loadTranscript(dir, "sess-a", { owner: "call-1" })).toHaveLength(1);
   });
 
   test("the transcript owner declared at open is what the turn loop reads back", async () => {

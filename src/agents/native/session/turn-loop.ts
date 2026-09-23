@@ -25,7 +25,7 @@ import { applyHistoryPatch } from "./loop-events/cache-boundary";
 import { registerBuiltinLoopHandlers } from "./loop-handlers";
 import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
-import { loadTranscript, saveTranscript } from "./transcript-store";
+import { loadTranscript, saveTranscript, type TranscriptIdentity } from "./transcript-store";
 import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
 import { runProactiveCompaction } from "./turn-compaction-step";
 import { completeWithRecovery } from "./turn-complete-step";
@@ -78,8 +78,8 @@ export async function runNativeTurn(
 
   // nax#1877: an owner mismatch reads as a new conversation, so an abandoned
   // invocation's history cannot ride along on the first request of this one.
-  const transcriptOwner = nativeSessionTranscriptOwners.get(handle.id);
-  let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id, transcriptOwner))];
+  const transcriptIdentity: TranscriptIdentity = { owner: nativeSessionTranscriptOwners.get(handle.id) };
+  let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id, transcriptIdentity))];
 
   const spinBreaker = deps.spinBreaker;
   // Set ONLY when the breaker ended the turn, so the wiring layer can classify
@@ -391,7 +391,7 @@ export async function runNativeTurn(
     // failure fails the turn, because continuing on unstored history is silent
     // degradation. Here a failure is already in flight, and masking it with a
     // write error would lose the cause.
-    await saveTranscript(dir, handle.id, messages, transcriptOwner).catch((saveErr: unknown) => {
+    await saveTranscript(dir, handle.id, messages, transcriptIdentity).catch((saveErr: unknown) => {
       getSafeLogger()?.warn("native-adapter", "could not persist the transcript of a failed turn", {
         sessionName: handle.id,
         error: saveErr instanceof Error ? saveErr.message : String(saveErr),
@@ -420,7 +420,7 @@ export async function runNativeTurn(
   // Persisted before returning, and a write failure fails the turn: continuing
   // on a history that could not be stored is the silent degradation #1794
   // removed from the pipeline (ADR-028 s4).
-  await saveTranscript(dir, handle.id, messages, transcriptOwner);
+  await saveTranscript(dir, handle.id, messages, transcriptIdentity);
 
   return buildTurnResult({
     output,

@@ -1,6 +1,6 @@
 // RE-ARCH: keep
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConversationMessage } from "@nathapp/nax-ai";
@@ -12,6 +12,7 @@ import {
   pruneRetainedTranscripts,
   retainTranscript,
   saveTranscript,
+  transcriptModelIdentity,
   transcriptPath,
 } from "@/agents/native/session/transcript-store";
 
@@ -60,40 +61,40 @@ describe("transcript store", () => {
   });
 
   test("a transcript loads for the owner that saved it", async () => {
-    await saveTranscript(dir, "sess-a", msgs, "call-1");
-    expect(await loadTranscript(dir, "sess-a", "call-1")).toEqual(msgs);
+    await saveTranscript(dir, "sess-a", msgs, { owner: "call-1" });
+    expect(await loadTranscript(dir, "sess-a", { owner: "call-1" })).toEqual(msgs);
   });
 
   test("a transcript saved by one owner does not load for another (nax#1877)", async () => {
     // The failure this encodes: an abandoned op invocation leaves a transcript
     // at the deterministic session name, and the next invocation of the same
     // name silently resumes 150k tokens of someone else's conversation.
-    await saveTranscript(dir, "sess-a", msgs, "call-1");
-    expect(await loadTranscript(dir, "sess-a", "call-2")).toEqual([]);
+    await saveTranscript(dir, "sess-a", msgs, { owner: "call-1" });
+    expect(await loadTranscript(dir, "sess-a", { owner: "call-2" })).toEqual([]);
   });
 
   test("a legacy owner-less transcript is not resumed by an owned session", async () => {
     // Pre-upgrade transcripts are bare arrays. Unowned history is foreign
     // history: the safe direction is to drop it, not to inherit it.
     await writeFile(transcriptPath(dir, "sess-a"), JSON.stringify(msgs), "utf8");
-    expect(await loadTranscript(dir, "sess-a", "call-1")).toEqual([]);
+    expect(await loadTranscript(dir, "sess-a", { owner: "call-1" })).toEqual([]);
   });
 
   test("an owner-less reader still sees an owned transcript", async () => {
     // Callers that do not thread an owner (tests, non-op paths) keep working;
     // enforcement applies only when the reader actually declares an identity.
-    await saveTranscript(dir, "sess-a", msgs, "call-1");
+    await saveTranscript(dir, "sess-a", msgs, { owner: "call-1" });
     expect(await loadTranscript(dir, "sess-a")).toEqual(msgs);
   });
 
   test("retainTranscript moves the file off the loadable path", async () => {
-    await saveTranscript(dir, "sess-a", msgs, "call-1");
+    await saveTranscript(dir, "sess-a", msgs, { owner: "call-1" });
     await retainTranscript(dir, "sess-a");
     // Still on disk for a human to read...
     const kept = (await readdir(dir)).filter((n) => n.startsWith("sess-a.transcript.failed-"));
     expect(kept).toHaveLength(1);
     // ...but no longer reachable by the next session of the same name.
-    expect(await loadTranscript(dir, "sess-a", "call-1")).toEqual([]);
+    expect(await loadTranscript(dir, "sess-a", { owner: "call-1" })).toEqual([]);
   });
 
   test("retainTranscript is safe when there is nothing to retain", async () => {
@@ -150,7 +151,7 @@ describe("pruneRetainedTranscripts", () => {
 
   test("prunes retained (failed) transcripts, which is the set that accumulates", async () => {
     for (const name of ["sess-a", "sess-b", "sess-c"]) {
-      await saveTranscript(dir, name, msgs, "call-1");
+      await saveTranscript(dir, name, msgs, { owner: "call-1" });
       await retainTranscript(dir, name);
     }
     await pruneRetainedTranscripts(dir, 1);
@@ -256,5 +257,67 @@ describe("pruneRetainedTranscripts — US-002 return value", () => {
     // not a thrown ENOENT.
     const deleted = await pruneRetainedTranscripts(join(dir, "never-created"), 50);
     expect(deleted).toBe(0);
+  });
+});
+
+describe("transcript store — model identity (nax#2150, P3 spec 8.3)", () => {
+  const A = "openai/model-a";
+  const B = "anthropic/model-b";
+
+  test("a transcript loads for the model that saved it", async () => {
+    await saveTranscript(dir, "sess-a", msgs, { model: A });
+    expect(await loadTranscript(dir, "sess-a", { model: A })).toEqual(msgs);
+  });
+
+  test("a transcript saved by one model does not load for another", async () => {
+    // The replay nax#2150 described: another model's thinking signatures are
+    // meaningless (or a hard 400) to this one. Unreachable today because the
+    // session layer closes on a model change; this is the store's own guard.
+    await saveTranscript(dir, "sess-a", msgs, { model: A });
+    expect(await loadTranscript(dir, "sess-a", { model: B })).toEqual([]);
+  });
+
+  test("a reader that declares no model still sees a transcript that records one", async () => {
+    await saveTranscript(dir, "sess-a", msgs, { model: A });
+    expect(await loadTranscript(dir, "sess-a")).toEqual(msgs);
+  });
+
+  test("a transcript with no recorded model loads for a reader that declares one", async () => {
+    // Deliberately unlike an absent OWNER: every native production turn records
+    // a model, so an absent one is a pre-upgrade file, which the owner check
+    // already keeps out of new processes (spec 8.3(c)).
+    await saveTranscript(dir, "sess-a", msgs);
+    expect(await loadTranscript(dir, "sess-a", { model: A })).toEqual(msgs);
+  });
+
+  test("the owner is still enforced when the models agree", async () => {
+    await saveTranscript(dir, "sess-a", msgs, { owner: "call-1", model: A });
+    expect(await loadTranscript(dir, "sess-a", { owner: "call-2", model: A })).toEqual([]);
+  });
+
+  test("the model is enforced when the owners agree", async () => {
+    await saveTranscript(dir, "sess-a", msgs, { owner: "call-1", model: A });
+    expect(await loadTranscript(dir, "sess-a", { owner: "call-1", model: B })).toEqual([]);
+  });
+
+  test("save records the model when given and omits the key otherwise", async () => {
+    await saveTranscript(dir, "sess-a", msgs, { model: A });
+    const withModel: unknown = JSON.parse(await readFile(transcriptPath(dir, "sess-a"), "utf8"));
+    expect(withModel).toMatchObject({ model: A });
+
+    await saveTranscript(dir, "sess-b", msgs, { owner: "call-1" });
+    const withoutModel: unknown = JSON.parse(await readFile(transcriptPath(dir, "sess-b"), "utf8"));
+    expect(withoutModel).not.toHaveProperty("model");
+  });
+});
+
+describe("transcriptModelIdentity", () => {
+  test("keeps provider/model and strips the reasoning-effort suffix", () => {
+    expect(transcriptModelIdentity("openai/gpt-5.4-mini[high]")).toBe("openai/gpt-5.4-mini");
+    expect(transcriptModelIdentity("openai/gpt-5.4-mini")).toBe("openai/gpt-5.4-mini");
+  });
+
+  test("no model declares no identity", () => {
+    expect(transcriptModelIdentity(undefined)).toBeUndefined();
   });
 });
