@@ -76,25 +76,42 @@ export async function runExecBranch(
   if ("error" in normalized) return { content: normalized.error, isError: true };
 
   try {
-    const result = await runArgv({
-      argv: normalized.argv,
-      cwd: normalized.cwd,
-      timeoutMs: EXEC_TIMEOUT_MS,
-      stripEnvVars: [...(opts.stripEnvVars ?? [])],
-      // Yarn 2+ carries its no-scripts mechanism here rather than in argv.
-      ...(normalized.env !== undefined ? { env: normalized.env } : {}),
-    });
-    const body = result.timedOut
+    const launched =
+      opts.exec.launcher !== undefined
+        ? await opts.exec.launcher.run({
+            spec: { kind: "argv", argv: normalized.argv },
+            root: ctx.root,
+            cwd: normalized.cwd,
+            timeoutMs: EXEC_TIMEOUT_MS,
+            stripEnvVars: opts.stripEnvVars ?? [],
+            ...(normalized.env !== undefined ? { env: normalized.env } : {}),
+          })
+        : {
+            ...(await runArgv({
+              argv: normalized.argv,
+              cwd: normalized.cwd,
+              timeoutMs: EXEC_TIMEOUT_MS,
+              stripEnvVars: [...(opts.stripEnvVars ?? [])],
+              // Yarn 2+ carries its no-scripts mechanism here rather than in argv.
+              ...(normalized.env !== undefined ? { env: normalized.env } : {}),
+            })),
+            sandbox: undefined,
+          };
+    const body = launched.timedOut
       ? `timed out after ${EXEC_TIMEOUT_MS}ms`
-      : `exit ${result.exitCode}\n${result.stdout}\n${result.stderr}`;
+      : `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
 
     return {
       content: cutToByteCap(body, ctx.readCeiling ?? READ_CEILING),
-      isError: result.timedOut || result.exitCode !== 0,
+      isError: launched.timedOut || launched.exitCode !== 0,
       // Task 7 reads this to write `executed` and `target` onto the ledger
       // row. Returning it here, rather than re-deriving it in the runtime,
       // keeps the recorded argv the one that actually ran.
-      audit: { executed: normalized.argv, target },
+      audit: {
+        executed: normalized.argv,
+        target,
+        ...(launched.sandbox !== undefined ? { sandbox: launched.sandbox } : {}),
+      },
     };
   } catch (err) {
     // A spawn-time failure (e.g. an unresolvable cwd) throws rather than
