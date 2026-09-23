@@ -1,4 +1,12 @@
 export { quoteArgvForShell } from "./argv-quote";
+export { _launcherDeps, type CommandLauncherOptions, createCommandLauncher, DISABLED_SANDBOX_STATE } from "./launcher";
+export {
+  denialHintLine,
+  LIKELY_SANDBOX_DENIAL,
+  rawBashRefusalReason,
+  sandboxSentence,
+  unsandboxedSentence,
+} from "./messages";
 export { buildSandboxPolicy, type SandboxPolicyInput } from "./policy-builder";
 export {
   _policyInputDeps,
