@@ -56,4 +56,18 @@ describe("sandbox registry", () => {
     await probeSandboxOnce(sandboxBackendFor(DEFAULT_SANDBOX_CONFIG));
     expect(probes).toBe(1);
   });
+
+  test("a throwing probe resolves to a cached unavailable result, not a rejection", async () => {
+    let probes = 0;
+    _sandboxRegistryDeps.probe = () => {
+      probes += 1;
+      return Promise.reject(new Error("boom"));
+    };
+    const b = makeFakeSandboxBackend();
+    const first = await probeSandboxOnce(b);
+    expect(first).toEqual({ available: false, reason: "sandbox probe failed: boom" });
+    const second = await probeSandboxOnce(b);
+    expect(second).toBe(first);
+    expect(probes).toBe(1);
+  });
 });

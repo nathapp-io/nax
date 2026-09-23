@@ -24,15 +24,23 @@ export function sandboxBackendFor(config: SandboxConfig): SandboxBackend {
 }
 
 export function probeSandboxOnce(target: SandboxBackend, storyId = "_sandbox"): Promise<ProbeResult> {
-  probed ??= _sandboxRegistryDeps.probe(target).then((result) => {
-    getSafeLogger()?.info("sandbox", "Sandbox probe", {
-      storyId,
-      backend: target.name,
-      available: result.available,
-      ...(result.available ? {} : { reason: result.reason }),
-    });
-    return result;
-  });
+  probed ??= _sandboxRegistryDeps.probe(target).then(
+    (result) => {
+      getSafeLogger()?.info("sandbox", "Sandbox probe", {
+        storyId,
+        backend: target.name,
+        available: result.available,
+        ...(result.available ? {} : { reason: result.reason }),
+      });
+      return result;
+    },
+    (err: unknown) => {
+      const reason = `sandbox probe failed: ${err instanceof Error ? err.message : String(err)}`;
+      getSafeLogger()?.warn("sandbox", "Sandbox probe threw; treating as unavailable", { storyId, reason });
+      const unavailable: ProbeResult = { available: false, reason };
+      return unavailable;
+    },
+  );
   return probed;
 }
 
