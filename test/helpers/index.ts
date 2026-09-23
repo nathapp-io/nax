@@ -78,6 +78,8 @@ export { type FakeSandboxMode, makeFakeSandboxBackend } from "./sandbox";
 export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
 export { makeSpawn, makeSpawnResult } from "./spawn";
 export { type MockStatusWriter, makeStatusWriter } from "./status-writer";
+export type { StubMode } from "./systemone-stub";
+export { startSystemOneStub, stubAnswerBody } from "./systemone-stub";
 export { cleanupTempDir, makeTempDir, withTempDir } from "./temp";
 export { waitForCondition, withTimeout } from "./timeout";
 export type { TimerSpyResult } from "./timer-spy";
