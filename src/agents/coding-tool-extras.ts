@@ -7,6 +7,7 @@
  * explains a field below travelled with it.
  */
 import type { BashApprovalMode } from "@/config/bash-approval";
+import type { CommandLauncher } from "@/sandbox";
 import { type CodingTool, createBashTool, createRunCommandTool, type ToolGrant } from "@/tools";
 import type { QualityCommandSpec } from "../quality";
 
@@ -25,6 +26,8 @@ export interface DeclaredCommandToolsArgs {
   readonly packageName?: string;
   readonly stripEnvVars?: readonly string[];
   readonly shell?: string;
+  /** P4: how Bash and Exec-branch commands run; absent = direct spawn (tests). */
+  readonly launcher?: CommandLauncher;
 }
 
 export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): CodingTool[] {
@@ -57,6 +60,7 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
                     // site; the fallback exists only for the type.
                     patterns: args.execGrant?.patterns ?? [],
                     ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
+                    ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
                   },
                 }
               : {}),
@@ -73,6 +77,7 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
             // `raw` (ADR-030 / F3) -- ignored under `raw` regardless.
             patterns: args.bashDescriptionPatterns,
             bashApproval: args.bashApproval,
+            ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
           }),
         ]
       : []),
