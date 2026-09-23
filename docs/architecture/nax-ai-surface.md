@@ -1,6 +1,6 @@
 # The nax-ai surface the native adapter consumes
 
-Reference for `@nathapp/nax-ai` (pinned at **0.1.11**, exact — see `package.json`). It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
+Reference for `@nathapp/nax-ai` (pinned at **0.1.15**, exact — see `package.json`). It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
 
 `src/agents/native/client.ts` and its siblings are the ONLY files in `src/` permitted to import nax-ai (`scripts/check-nax-ai-imports.ts` enforces it).
 

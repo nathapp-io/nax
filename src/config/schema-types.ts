@@ -114,6 +114,33 @@ export interface CatalogPricing {
 }
 
 /**
+ * nax#2191: OpenRouter-compatible provider routing, mirrored from nax-ai
+ * 0.1.15's `OpenRouterRouting`. Snake_case on purpose — keys are wire field
+ * names and pass through unmapped. The protocol-side rejection (non-
+ * `openai-completions` protocols, empty declaration) is nax-ai's, owned in
+ * `providers/override-model.ts`'s `assertOverrideModelRouting`.
+ *
+ * `sort: "latency"` / `"throughput"` pair with `quantizations` in the typical
+ * case: OpenRouter's default routing for a slug is overwhelmingly a single
+ * quantization from a single endpoint, and a sort change may otherwise pick
+ * a lower-precision endpoint that the call site never intended (the issue's
+ * own note). The schema does not enforce the pairing — that is UX clutter
+ * for an opt-in override — but `docs/guides/configuration.md` and the config
+ * description should call it out.
+ */
+export interface OpenRouterRouting {
+  allow_fallbacks?: boolean;
+  require_parameters?: boolean;
+  data_collection?: "deny" | "allow";
+  zdr?: boolean;
+  order?: readonly string[];
+  only?: readonly string[];
+  ignore?: readonly string[];
+  quantizations?: readonly string[];
+  sort?: "price" | "throughput" | "latency";
+}
+
+/**
  * One complete catalog entry for a model the bundled pi-ai snapshot does not
  * know. Complete, not a patch: nax-ai's `normaliseCatalog` replaces any
  * same-id entry wholesale and lazily creates the provider bucket, so nothing
@@ -133,6 +160,12 @@ export interface CatalogModelOverride {
   supportsTools: boolean;
   thinkingLevels: ThinkingLevel[];
   pricing: CatalogPricing;
+  /**
+   * nax#2191: OpenRouter-compatible provider routing forwarded verbatim to
+   * nax-ai's `ResolvedModel.openRouterRouting`. Reaches the wire only on
+   * `protocol: "openai-completions"` (nax-ai `assertOverrideModelRouting`).
+   */
+  openRouterRouting?: OpenRouterRouting;
 }
 
 /** Provider-scoped catalog overrides — maps 1:1 onto nax-ai's `ProviderOverride[]`. */

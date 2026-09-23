@@ -153,6 +153,52 @@ each has bitten someone:
 `headers` values are masked in `nax config` and `nax config profile show`; header
 names and `baseUrl` stay readable so a misrouted request is still diagnosable.
 
+**Pinning OpenRouter routing (nax#2191).** A model entry may declare an
+OpenRouter-compatible routing block — the same `provider` payload pi sends from
+its `openai-completions` adapter. Snake_case keys are the wire field names and
+pass through unmapped:
+
+```json
+"catalogOverrides": [{
+  "provider": "openrouter",
+  "models": [{
+    "id": "deepseek-v4-flash-latest",
+    "protocol": "openai-completions",
+    "contextWindow": 1000000,
+    "supportsTools": true,
+    "thinkingLevels": ["off", "low", "medium", "high"],
+    "pricing": { "input": 0.05, "output": 0.1, "cacheRead": 0.005, "cacheWrite": 0 },
+    "openRouterRouting": { "sort": "latency", "quantizations": ["fp8"] }
+  }]
+}]
+```
+
+Three things about routing declarations that are easy to miss:
+
+- **Routing reaches the wire only on `protocol: "openai-completions"`.** pi
+  sends `compat.openRouterRouting` from that adapter and from no other, so
+  declaring routing on a non-OpenAI-completions entry is rejected at the
+  protocol layer. OpenRouter serves models on both APIs, so the protocol on
+  the override is what gates it.
+- **`sort: "latency"` / `"throughput"` pair with `quantizations`.** Default
+  routing for a slug is overwhelmingly a single quantization from a single
+  endpoint; a sort change can otherwise pick a lower-precision endpoint that
+  the call site never intended. When you want a different quantization but
+  don't care about latency, leave `sort` unset and let `quantizations` do the
+  filtering — the `sort` lever is the one that can pick a different endpoint.
+- **Routing changes break run-to-run comparability.** Two runs at the same
+  model id but different `openRouterRouting` may hit different providers with
+  different latency, throughput, and quantization. Baseline and exit-run
+  comparisons should keep routing fixed across arms. A/B-comparing models
+  should pin `quantizations` to remove that axis entirely.
+
+An empty `openRouterRouting: {}` is rejected at config load — the protocol
+check is truthiness, not emptiness, and a `provider: {}` body would reach
+the wire as a request field that says nothing. Omit the key to leave routing
+unset. An unknown key (e.g. a `quantizaton` typo) is also rejected; the
+override schema is `.strict()`, so the error surfaces at load with the same
+shape as any other validation failure.
+
 Select it with an ordinary `{ agent, model }` pin — native reads provider and model
 from the model **string**, so the declared id is the whole address:
 
