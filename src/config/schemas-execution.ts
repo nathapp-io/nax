@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
 import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
+import { SandboxConfigSchema } from "./schemas-sandbox";
 
 const ComplexityRungSchema = z.union([
   ModelTierSchema,
@@ -270,6 +271,8 @@ export const ExecutionConfigSchema = z.object({
    * and cost warnings. Reuse the channel's transport, not its timing.
    */
   approvalTimeout: z.number().int().min(30_000).max(3_600_000).default(600_000),
+  /** P4: OS sandbox for agent-authored commands (see schemas-sandbox.ts). */
+  sandbox: SandboxConfigSchema.prefault({}),
   permissions: PermissionsBlockSchema.optional(),
   /**
    * Repo-configurable glob denylist that narrows Delete beyond the

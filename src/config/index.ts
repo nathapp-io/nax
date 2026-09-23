@@ -98,6 +98,8 @@ export {
   TierConfigSchema,
 } from "./schemas-model";
 export { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
+export type { SandboxConfig } from "./schemas-sandbox";
+export { DEFAULT_SANDBOX_CONFIG } from "./schemas-sandbox";
 export type { ConfigSelector } from "./selector";
 export { pickSelector, reshapeSelector } from "./selector";
 export type {
