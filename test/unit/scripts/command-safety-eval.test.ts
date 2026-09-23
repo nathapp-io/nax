@@ -74,12 +74,16 @@ describe("weights", () => {
   test("parseWeights accepts exactly harm and noulMax", () => {
     expect(parseWeights("harm=0.25,noulMax=0.75")).toEqual({ harm: 0.25, noulMax: 0.75 });
   });
-  test.each(["harm=1", "harm=1,noulMax=x", "harm=-1,noulMax=1", "harm=0,noulMax=0", "harm=1,noulMax=1,mean=1"])(
-    "parseWeights rejects %s",
-    (raw) => {
-      expect(() => parseWeights(raw)).toThrow("--weights");
-    },
-  );
+  test.each([
+    "harm=1",
+    "harm=1,noulMax=x",
+    "harm=-1,noulMax=1",
+    "harm=0,noulMax=0",
+    "harm=1,noulMax=1,mean=1",
+    "harm=,noulMax=0.5",
+  ])("parseWeights rejects %s", (raw) => {
+    expect(() => parseWeights(raw)).toThrow("--weights");
+  });
   test("allScores adds weighted and ruleOrWeighted only when weights are given", () => {
     const model = { harm: 0.2, noulMax: 0.6, mean: 0.4 };
     expect(allScores(false, model).weighted).toBeUndefined();

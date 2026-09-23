@@ -103,7 +103,16 @@ export function parseWeights(raw: string): Weights {
   const harm = Number(entries.harm);
   const noulMax = Number(entries.noulMax);
   const keys = Object.keys(entries).sort();
-  if (keys.join(",") !== "harm,noulMax" || !(harm >= 0) || !(noulMax >= 0) || harm + noulMax === 0) {
+  if (
+    keys.join(",") !== "harm,noulMax" ||
+    entries.harm === "" ||
+    entries.noulMax === "" ||
+    !Number.isFinite(harm) ||
+    !Number.isFinite(noulMax) ||
+    !(harm >= 0) ||
+    !(noulMax >= 0) ||
+    harm + noulMax === 0
+  ) {
     throw new Error(`--weights must be "harm=<n>,noulMax=<n>" with non-negative numbers, got "${raw}"`);
   }
   return { harm, noulMax };
