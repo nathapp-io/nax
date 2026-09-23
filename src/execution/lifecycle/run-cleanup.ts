@@ -26,6 +26,7 @@ import type {
 } from "@/plugins";
 import { countStories, type PRD } from "@/prd";
 import { clearLanguageCache } from "@/project";
+import { resetSandboxBackend } from "@/sandbox";
 import { clearWorkspaceCache } from "@/test-runners/detect";
 import { errorMessage } from "@/utils/errors";
 import { clearGitRootCache } from "@/verification";
@@ -54,6 +55,9 @@ export const _runCleanupDeps = {
   // US-004 — end-of-run scratchpad wipe. Injected so the test can stub a
   // fail-open path without monkey-patching Bun.file / fs.rm.
   wipeScratchpad,
+  // P4 — end-of-run sandbox reset. Injected alongside wipeScratchpad so the
+  // test can observe the call without spawning real proxy/bridge processes.
+  resetSandbox: resetSandboxBackend,
   // US-002 release seams: `cleanupRun` must release both locks at the bottom
   // (feature first, then checkout). Injected so a test can observe ordering;
   // the always-release call itself is the implementer's work.
@@ -290,6 +294,13 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
     } catch (error) {
       logger?.warn("interaction", "Interaction chain cleanup failed", { error });
     }
+  }
+
+  // P4: srt keeps proxy servers and (Linux) bridge processes per process.
+  try {
+    await _runCleanupDeps.resetSandbox();
+  } catch (error) {
+    logger?.warn("sandbox", "Sandbox reset failed", { error });
   }
 
   // Release per-workdir feature resolver index to prevent memory leak across runs

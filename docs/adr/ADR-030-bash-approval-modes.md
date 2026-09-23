@@ -252,3 +252,153 @@ Both fail by **abstaining**, which escalates to the human, so a failure costs pr
 safety. Integrity signing was deliberately not attempted: any key the nax process can read, a
 `raw` shell as that process can read. P4's sandbox closes the underlying hole; disclosed, not
 fixed.
+
+---
+
+## Amendment — 2026-09-23: the sandbox backend (P4)
+
+**Supersedes:** the "OS-level sandboxing" bullet under "What this does not decide". The intended
+precondition for `raw` is now implemented, and that bullet's stated expectation — `raw`
+requires it and refuses, naming the fallback, rather than silently downgrading — is the posture
+below.
+
+Phase 4 of the native-coding-agent arc shipped on branch `feat/p4-sandbox-backend` (PR/merge
+pending). Design: `docs/superpowers/specs/2026-09-23-p4-sandbox-backend-design.md`. The default
+flip is not part of this phase.
+
+### Decision
+
+`execution.sandbox` wraps the two agent-authored spawn sites — Bash and RunCommand `Exec` — in
+an OS sandbox behind a `SandboxBackend` interface (`src/sandbox/`); srt
+(`@anthropic-ai/sandbox-runtime`, pinned exactly `0.0.77`) is the first backend, and a
+container backend would implement the same interface without touching a call site. Opt-in
+(`enabled: false`) until the P4 exit runs; the flip to default-on is a separate change. The
+launcher is handed to those two sites and nothing else, so nax's own declared-command runs
+(quality commands, acceptance, worktree installs) cannot be wrapped — D14 holds by
+construction — and the launcher changes HOW a command runs, never WHETHER: the single-gate
+rule is preserved.
+
+### Posture when enabled
+
+`raw` requires the sandbox. If the probe finds it unavailable, every raw Bash call is refused
+with a reason naming `gated`/`escalate` — a policy verdict compiled in
+(`src/tools/policy-command-branch.ts`), not a runtime downgrade — and the tool description says
+the same, so the model does not spend a turn discovering it. `gated`/`escalate` run unwrapped
+with one warning per process; their mechanical gate is still the boundary. No mode silently
+changes posture in either direction. The probe is a real wrapped command that also proves
+enforcement (an allowed write lands, a denied write does not), never a dependency check: a
+sandbox that runs but does not enforce is treated as absent.
+
+### Threat model unchanged (D1)
+
+The sandbox is a blast-radius limiter for the agent's own mistakes, not a security boundary
+against hostile repository content. Network is open by default for that reason; an allow-list
+(`network.allowedDomains`) exists, but the default posture bounds writes and credential reads,
+not egress.
+
+### Literal paths, and why
+
+srt on Linux silently drops glob `denyWrite` entries, logged at debug only — a glob deny is a
+guarantee that exists on macOS only. Every policy path is therefore literal and
+`realOrRaw`-resolved; the builder never emits a glob character, and the policy is rebuilt per
+call so a feature directory created mid-run still gets its `prd.json` deny.
+
+### Worktrees
+
+From a worktree, `git commit` needs the git common dir writable, which strips srt's hook guard
+(scoped to the cwd's `.git`). The policy adds the common dir as a write root and denies
+`<common>/hooks`, `<common>/config` and every worktree pointer file explicitly. Known
+limitation, recorded so nobody later calls it a regression: an agent mistake can move other
+refs in the common dir (`refs/`, `packed-refs`). Accepted under D1 — hooks and config, the
+code-execution paths, are what is denied.
+
+### Two disclosed holes close when sandboxed
+
+D13a gap 3 — the screen's third accepted gap, an unmodellable `cd` into a protected directory
+followed by the protected write — is blocked by containment instead of an estimated frame. The
+P2 approvals-cache forgery closes because the approvals file is ALWAYS write-denied (its
+`outputDir` is configurable and can land inside a write root, so "outside the roots" was never
+the guarantee). The cache's raw precondition relaxes accordingly: disabled only when a stage
+resolves to `raw` AND the sandbox is disabled — config-only, no dependency on the probe, since
+an enabled sandbox leaves `raw` either wrapped or refused outright. Unsandboxed, both holes
+remain disclosed, not fixed.
+
+### Environment
+
+srt's returned `env` is `process.env` itself; applied as a `runArgv` overlay it re-adds every
+stripped secret (reproduced during the design review). It is discarded. `stripEnvVars` applies
+exactly as before, and the launcher forwards only the caller's own env overlay.
+
+### Platform requirements
+
+macOS: `sandbox-exec` (built in). Linux: `bwrap`, `socat`, `rg`; in a container
+`--security-opt systempaths=unconfined` or the probe reports unavailable; on Ubuntu 24.04
+`kernel.apparmor_restrict_unprivileged_userns=0`. Windows: unavailable (probe). The live suite
+runs in CI with bubblewrap, socat and ripgrep installed and `NAX_SANDBOX_REQUIRED=1`; nothing
+beyond the requirements above was needed — the first PR CI run passed the live suite 9/9 on
+Linux (2026-09-23).
+
+## Amendment — 2026-09-23: `escalate` describes escalation when a human is reachable
+
+**Supersedes:** "`escalate`'s advertised description was revisited and deliberately kept
+conservative" (2026-09-22 amendment, above). The pin that `escalate`'s description equals
+`gated`'s now holds only when no human is reachable.
+
+### Why the conservative wording was dropped
+
+That amendment kept `escalate` byte-identical to `gated`, telling the model "anything else is
+refused". Its reason was mechanical: `bashToolDescription` could see only the mode and the
+patterns, not whether an interaction channel exists, and promising a human in a headless run
+would be the D13a fail-open shape stated in prose.
+
+The reason was a missing input, not a design limit. P4 had the same shape for the sandbox
+(availability resolved once, passed to the tool as data), and reachability is resolved the same
+way. The cost of the conservative wording was measured in the P2 exit runs (2026-09-23): across
+two `escalate` runs totalling about 2¼ hours of agent time, only **6** commands reached the
+human. The agent, told everything else is refused, composed around the grant instead of
+producing the Category A denials that are `escalate`'s entire output and P5's training corpus.
+
+### Decision
+
+- The execution stage marks its `AskResolver` with `humanReachable`: true when the run has an
+  interaction chain (`ctx.interaction` present) and, for the `cli` plugin, stdin is a TTY.
+  `initInteractionChain` already returns none for a headless CLI run and for an unconfigured
+  one, and a `cli` chain without a TTY stdin never opens readline, so all of these resolve false.
+  Every other `AskResolver` (the headless default used outside the execution stage) leaves the
+  flag absent, which reads as false. One known over-promise remains and fails closed: Telegram
+  with a non-numeric `chatId` gets a chain but can never match a reply, so every ask times out.
+- `buildCodingToolSupport` forwards it to the Bash tool as `humanApproval`. Only `escalate`
+  reads it.
+- **Reachable:** the description states `checkBashCommand`'s actual evaluation order. A command
+  whose every segment is granted is payload-checked: a path outside the root, `.git/` access, a
+  denied flag, an unexpanded `$VAR`, glob or brace characters, `~`, or a bare or option-shaped
+  `cd` is refused without asking. A command outside the granted forms, or one the lexer cannot
+  analyse, is sent to a human and, if allowed, runs exactly as written; a deny rule is refused
+  without asking unless the command cannot be analysed. The model is told to prefer the granted
+  forms. A test pins these claims against the policy (`coding-tool-bash-escalate-truth.test.ts`).
+- **Not reachable:** byte-identical to `gated`, as before.
+- The verdict path is unchanged. The flag shapes only the description; a channel that fails
+  mid-run still resolves `unavailable` and denies, so an over-promising description fails
+  closed.
+
+### A disclosed divergence: Category B does not always stay out of the ask tier
+
+"Why `escalate` splits denials in two" states that Category B denials never escalate. That holds
+only for granted commands. `checkBashCommand` returns the escalatable grant-miss denial before
+`checkPayload`, and the escalatable lexer refusal before deny rules. So an ungranted command that
+escapes the root, touches `.git/`, carries a denied flag (e.g. `--registry`) or an unexpanded
+`$VAR`/glob/`~` token, or matches a deny rule while also failing to lex reaches the human, and
+runs as written if allowed. The deny suite did not catch it because its Category B
+cases all run under `allow: ["*"]`. Under D1 the human still sees the full command. Reordering
+the checks changes the gate's behaviour and is tracked as nax#2194, not done here. The
+description above tells the truth about today's order and flips with that fix.
+
+### Consequences
+
+- More prompts reach the human in `escalate` runs. That is the mode's purpose, and it grows the
+  P5 corpus.
+- Runs before and after this change are not comparable on escalation counts or Bash usage under
+  `escalate`.
+- `escalate` still offers no Bash at all without a human-written `Bash(...)` allow rule
+  (ADR-029 §3); nax#2192 tracks documenting and warning about that.
+

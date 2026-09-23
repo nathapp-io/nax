@@ -54,6 +54,17 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # P4: the live sandbox suite needs a working bubblewrap. Ubuntu 24.04
+      # restricts unprivileged user namespaces through AppArmor, which makes
+      # bwrap fail every command; the sysctl lifts that for this job only.
+      # NAX_SANDBOX_REQUIRED (below) turns an unavailable sandbox into a test
+      # FAILURE, so the suite cannot pass here by skipping.
+      - name: Enable the OS sandbox (bubblewrap)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap socat ripgrep
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
       # Runs first since it's ~1-2s — fail fast before the slower steps below.
       - name: Typecheck
         run: bun run typecheck
@@ -77,6 +88,8 @@ jobs:
 
       - name: Test (integration)
         run: bun test test/integration/ --timeout=60000 --bail
+        env:
+          NAX_SANDBOX_REQUIRED: "1"
 
       - name: Test (ui)
         run: bun test test/ui/ --timeout=60000 --bail

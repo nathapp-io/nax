@@ -29,6 +29,7 @@ import type {
   TddStrategy,
 } from "./schema-types";
 import type { AgentRoutingConfig } from "./schemas-infra";
+import type { SandboxConfig } from "./schemas-sandbox";
 
 export interface EscalationEntry {
   from: string;
@@ -137,6 +138,8 @@ export interface ExecutionConfig {
   bashApproval?: "raw" | "gated" | "escalate";
   /** P2. Milliseconds a permission prompt waits before denying. */
   approvalTimeout?: number;
+  /** P4: OS sandbox for agent-authored commands. */
+  sandbox?: SandboxConfig;
   /** Per-stage tool policy (GitHub #374). Read by resolveScopedPermissions; enforced by src/tools/. */
   permissions?: Record<
     string,

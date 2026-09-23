@@ -22,6 +22,16 @@ export function validateFeatureName(feature: string): void {
   }
 }
 
+/** Non-throwing form of validateFeatureName. */
+export function isValidFeatureName(feature: string): boolean {
+  try {
+    validateFeatureName(feature);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function featureNameError(message: string, feature: string): NaxError {
   return new NaxError(message, "FEATURE_NAME_INVALID", { stage: "feature-name", feature });
 }

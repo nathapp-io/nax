@@ -130,6 +130,14 @@ export interface ToolPolicyOptions {
    * genuine containment denials too.
    */
   readonly bashApproval?: BashApprovalMode;
+  /**
+   * P4: set when `execution.sandbox.enabled` is true and the probe found the
+   * sandbox unavailable. Under `raw`, every Bash call is then denied with this
+   * reason -- raw requires the sandbox once it is enabled, and a silent
+   * fallback to unsandboxed raw would be a posture downgrade (spec S5).
+   * Ignored under gated/escalate, which run unwrapped with a warning.
+   */
+  readonly rawBashRefusal?: string;
 }
 
 function isFieldlessScope(scope: ToolScope): boolean {
@@ -562,6 +570,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
           input,
           grant,
           bashApproval,
+          rawBashRefusal: options?.rawBashRefusal,
           resolvedRoot,
           denyBy,
           askBy,

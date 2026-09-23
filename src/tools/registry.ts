@@ -12,6 +12,7 @@
 
 import type { JSONSchema } from "@/context/engine";
 import { NaxError } from "@/errors";
+import type { SandboxRecord } from "../sandbox";
 import type { CodingToolName, ToolScope } from "./types";
 
 export interface ToolResult {
@@ -33,6 +34,8 @@ export interface ToolResult {
   readonly audit?: {
     readonly executed: readonly string[];
     readonly target?: "repoRoot" | "package";
+    /** P4: how an agent-authored Bash/Exec command ran; absent for every other tool. */
+    readonly sandbox?: SandboxRecord;
   };
   /**
    * Result size in bytes BEFORE the tool truncated to `ctx.maxBytes`. Set by

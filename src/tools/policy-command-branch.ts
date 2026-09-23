@@ -22,6 +22,8 @@ export interface BashCommandBranchArgs {
   readonly input: Record<string, unknown>;
   readonly grant: CompiledEntry;
   readonly bashApproval: BashApprovalMode;
+  /** P4: when set, the enabled sandbox is unavailable and `raw` denies every call (spec S5). */
+  readonly rawBashRefusal?: string;
   readonly resolvedRoot: string;
   readonly denyBy: ReadonlyMap<string, CompiledEntry>;
   readonly askBy: ReadonlyMap<string, CompiledEntry>;
@@ -31,10 +33,24 @@ export interface BashCommandBranchArgs {
 }
 
 export function commandBranch(args: BashCommandBranchArgs): PolicyVerdict | undefined {
-  const { tool, scope, input, grant, bashApproval, resolvedRoot, denyBy, askBy, resolvePath, deny, askVerdict } = args;
+  const {
+    tool,
+    scope,
+    input,
+    grant,
+    bashApproval,
+    rawBashRefusal,
+    resolvedRoot,
+    denyBy,
+    askBy,
+    resolvePath,
+    deny,
+    askVerdict,
+  } = args;
   if (scope.commandField === undefined) return undefined;
 
   if (bashApproval === "raw") {
+    if (rawBashRefusal !== undefined) return deny(rawBashRefusal, false, false);
     const screened = screenRawBashCommand({
       tool,
       command: input[scope.commandField],

@@ -41,6 +41,12 @@ export interface AskVerdict {
 }
 
 export interface AskResolver {
+  /**
+   * Whether a human can answer at all (ADR-030, amended for P4): an interaction
+   * channel exists for this run. Absent means false. Only the escalate Bash
+   * DESCRIPTION reads it; the verdict never depends on it.
+   */
+  readonly humanReachable?: boolean;
   resolve(req: AskRequest): Promise<AskVerdict>;
 }
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 /**
- * Gate: the two build-time resolution invariants the published bundle depends on.
+ * Gate: the three build-time resolution invariants the published bundle depends on.
  *
- * Both are the same class of trap -- a packaging decision whose breakage shows up
+ * All are the same class of trap -- a packaging decision whose breakage shows up
  * only in `dist/nax.js`, never in the test suite, because the suite runs from
- * source where neither bug can reproduce.
+ * source where no bug can reproduce.
  *
  * 1. `@nathapp/nax-ai` must stay `--external`.
  *
@@ -45,16 +45,21 @@
  *    canary.8 failure -- `rg react-devtools-core` finds no source reference,
  *    because the consumer is inside node_modules. Hence this gate.
  *
+ * 3. `@anthropic-ai/sandbox-runtime` must stay `--external` -- it resolves
+ *    vendored seccomp binaries and `srt-win.exe` relative to its own files,
+ *    which a bundle would not carry.
+ *
  * Usage:
  *   bun scripts/check-bundle-externals.ts
  *
  * Exit codes:
- *   0 -- both invariants hold
+ *   0 -- all three invariants hold
  *   1 -- one of them is broken
  */
 import { existsSync, readFileSync } from "node:fs";
 
 const REQUIRED_EXTERNAL = '--external "@nathapp/nax-ai"';
+const REQUIRED_SANDBOX_EXTERNAL = '--external "@anthropic-ai/sandbox-runtime"';
 const STUB_SPECIFIER = "file:./stubs/react-devtools-core";
 const STUB_ENTRY = "stubs/react-devtools-core/index.js";
 
@@ -75,6 +80,14 @@ if (build === undefined) {
       "Without it, pi-ai's OAuth flow modules cannot be resolved from the\n" +
       "bundle and `nax auth login <oauth-provider>` fails with\n" +
       `"Cannot find module './<provider>.js'".\nFound: ${build}`,
+  );
+}
+
+if (build !== undefined && !build.includes(REQUIRED_SANDBOX_EXTERNAL)) {
+  failures.push(
+    `the build script must pass ${REQUIRED_SANDBOX_EXTERNAL}.\n` +
+      "srt locates its vendored sandbox binaries relative to its own files; bundled,\n" +
+      "they are not beside dist/nax.js and every sandboxed command fails.",
   );
 }
 
@@ -102,4 +115,6 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("check-bundle-externals: nax-ai stays external; react-devtools-core resolves to the stub");
+console.log(
+  "check-bundle-externals: nax-ai and sandbox-runtime stay external; react-devtools-core resolves to the stub",
+);

@@ -74,6 +74,7 @@ export {
   makeTestRuntime,
   type TestRuntimeOptions,
 } from "./runtime";
+export { type FakeSandboxMode, makeFakeSandboxBackend } from "./sandbox";
 export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
 export { makeSpawn, makeSpawnResult } from "./spawn";
 export { type MockStatusWriter, makeStatusWriter } from "./status-writer";

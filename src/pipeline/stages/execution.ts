@@ -148,6 +148,7 @@ export const executionStage: PipelineStage = {
         approvalsFile,
         repoRoot: ctx.workdir,
         stageModes: await collectEffectiveRunStageModes(ctx),
+        sandboxEnabled: ctx.config.execution?.sandbox?.enabled === true,
       }),
       // P5's classifier link slots in HERE, between cache and human.
       humanLink,
@@ -156,6 +157,13 @@ export const executionStage: PipelineStage = {
     // The write is best-effort: a full disk must not turn a granted approval
     // into a tool error, so a failed append is swallowed.
     const askResolver = {
+      // No chain = every ask resolves `unavailable`, so nothing may promise a
+      // human. The cli plugin also needs a TTY stdin: without one its init
+      // skips readline and every prompt fails (plugins/cli.ts).
+      humanReachable:
+        ctx.interaction !== undefined &&
+        ctx.interaction !== null &&
+        (ctx.config.interaction?.plugin !== "cli" || _executionDeps.stdinIsTTY()),
       resolve: async (req: AskRequest) => {
         const verdict = await baseResolver.resolve(req);
         await appendApprovalAudit(join(ctx.runtime.outputDir, "approval-audit"), ctx.runtime.runId, {
@@ -295,6 +303,7 @@ export const executionStage: PipelineStage = {
 /** Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x). */
 export const _executionDeps = {
   getAgent: (_name: string): AgentAdapter | undefined => undefined,
+  stdinIsTTY: (): boolean => process.stdin.isTTY === true,
   validateAgentForTier,
   captureGitRef,
   getUntrackedPaths,

@@ -16,6 +16,7 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { SandboxRecord } from "../sandbox";
 
 export interface ToolCallRecord {
   readonly tool: string;
@@ -52,6 +53,12 @@ export interface ToolCallRecord {
    * signal, so this is a placeholder for when the cache reports a hit.
    */
   readonly approval?: { readonly decidedBy: string; readonly remembered: boolean; readonly latencyMs: number };
+  /**
+   * P4: `{ backend, wrapped, reason?, denialHint? }` on every Bash / Exec row;
+   * the exit runs gate on `wrapped`. Additive and optional, so
+   * `TOOL_AUDIT_SCHEMA_VERSION` stays 1 (as `approval` did).
+   */
+  readonly sandbox?: SandboxRecord;
   /** Provider id for a provider-supplied tool; absent for built-ins. */
   readonly provider?: string;
   /**

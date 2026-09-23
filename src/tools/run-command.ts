@@ -16,6 +16,7 @@
 import { statSync } from "node:fs";
 import type { QualityCommandSpec } from "../quality/command-spec";
 import { runQualityCommand } from "../quality/runner";
+import { type CommandLauncher, sandboxSentence, unsandboxedSentence } from "../sandbox";
 import { describeValuesType } from "../utils/describe-value-type";
 import { shellQuoteArg } from "../verification/shell-quote";
 import { describeExecAllowlist } from "./exec-allowlist-text";
@@ -50,6 +51,8 @@ export interface RunCommandExecOptions {
    * widen what actually executes.
    */
   readonly patterns: readonly string[];
+  /** P4: how the argv runs. Absent = direct runArgv (unit tests). */
+  readonly launcher?: CommandLauncher;
 }
 
 export interface RunCommandToolOptions {
@@ -255,6 +258,13 @@ function otherCommandsDeclaring(
   return names;
 }
 
+function execSandboxNote(launcher: CommandLauncher | undefined): string {
+  const state = launcher?.state;
+  if (state?.kind === "available") return ` An "argv" call runs ${sandboxSentence(state.network)}`;
+  if (state?.kind === "unavailable") return ` ${unsandboxedSentence(state.reason)}`;
+  return "";
+}
+
 export function createRunCommandTool(
   declared: ReadonlyMap<string, QualityCommandSpec>,
   opts: RunCommandToolOptions = {},
@@ -269,7 +279,7 @@ export function createRunCommandTool(
     routineErrors: true,
     description:
       exec !== undefined
-        ? `Two ways to run something. (1) Run one of this project's declared commands: ${commandDescriptions} — supply "command" and, optionally, "values" for its placeholders. (2) Run an allowlisted external command via "argv" (an array, e.g. ["bun","add","left-pad"]) — no shell, so no quoting and no shell metacharacters; ${describeExecAllowlist(exec.patterns)}. Supply exactly one of "command" or "argv".`
+        ? `Two ways to run something. (1) Run one of this project's declared commands: ${commandDescriptions} — supply "command" and, optionally, "values" for its placeholders. (2) Run an allowlisted external command via "argv" (an array, e.g. ["bun","add","left-pad"]) — no shell, so no quoting and no shell metacharacters; ${describeExecAllowlist(exec.patterns)}. Supply exactly one of "command" or "argv".${execSandboxNote(exec.launcher)}`
         : `Run one of this project's declared commands: ${commandDescriptions}. Supply values for its placeholders; you cannot write a command of your own.`,
     inputSchema: {
       type: "object",

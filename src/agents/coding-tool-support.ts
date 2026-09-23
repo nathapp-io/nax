@@ -13,6 +13,7 @@ import type { BashApprovalMode } from "@/config/bash-approval";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { AskResolver } from "@/permissions";
+import type { CommandLauncher } from "@/sandbox";
 import {
   advertisedSchemaBytes,
   BASH_TOOL_NAME,
@@ -20,10 +21,8 @@ import {
   type CodingToolName,
   type CodingToolRuntime,
   compileToolPolicy,
-  createBashTool,
   createCodingToolRuntime,
   createNoOpToolAuditSink,
-  createRunCommandTool,
   createToolAuditSink,
   EXEC_TOOL_NAME,
   expandMcpRuleGrants,
@@ -43,6 +42,8 @@ import type { QualityCommandSpec } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { errorMessage } from "../utils/errors";
 import { resolveBashSupport } from "./coding-tool-bash";
+import { buildDeclaredCommandTools } from "./coding-tool-extras";
+import { rawRefusalFor, resolveSessionSandbox } from "./coding-tool-sandbox";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
 import { UNIVERSAL_CODING_TOOLS } from "./universal-coding-tools";
@@ -133,6 +134,8 @@ export function buildCodingToolSupport(args: {
   bashApproval?: BashApprovalMode;
   /** Injectable ask resolver (Task 3); defaults to the headless deny resolver. */
   askResolver?: AskResolver;
+  /** P4: resolved by resolveCodingToolSupport (async); data only here. */
+  launcher?: CommandLauncher;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -194,6 +197,9 @@ export function buildCodingToolSupport(args: {
   });
 
   const declaredCommands = args.declaredCommands ?? new Map<string, QualityCommandSpec>();
+  // P4 (Task 8): under `raw`, an UNAVAILABLE launcher refuses every Bash call
+  // at the policy, so the sandbox's absence cannot silently widen raw bash.
+  const rawBashRefusal = rawRefusalFor(args.launcher);
   const sink =
     args.auditDir !== undefined
       ? createToolAuditSink({
@@ -205,6 +211,7 @@ export function buildCodingToolSupport(args: {
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(effectiveGrants, args.root, {
       bashApproval,
+      ...(rawBashRefusal !== undefined ? { rawBashRefusal } : {}),
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
@@ -219,53 +226,24 @@ export function buildCodingToolSupport(args: {
     sink,
     extraTools: [
       ...(args.extraTools ?? []),
-      ...(declaredCommands.size > 0 || allowExec
-        ? [
-            createRunCommandTool(declaredCommands, {
-              stripEnvVars: args.stripEnvVars,
-              commandCwd: args.commandCwd ?? args.root,
-              ...(allowExec
-                ? {
-                    exec: {
-                      repoRoot: args.repoRoot ?? args.root,
-                      // Post-root-move: `args.root` is the repo root, so the
-                      // fallback only matters for single-package repos where
-                      // the two coincide (and for tests not threading
-                      // `packageWorkdir`). Production always threads it via
-                      // `commandCwd` plumbing in `resolveCodingToolSupport`
-                      // (Task 10), which makes `effectiveTarget`'s
-                      // `packageRelPath === ""` collapse impossible for a
-                      // package story.
-                      packageWorkdir: args.packageWorkdir ?? args.root,
-                      allowScripts: args.allowScripts ?? false,
-                      // The compiled grant, not BUILT_IN_EXEC_PATTERNS -- a
-                      // project's own Exec(...) expression replaces that
-                      // list rather than extending it (see the comment on
-                      // BUILT_IN_EXEC_PATTERNS in src/config/permissions.ts).
-                      // `allowExec` is true only when execGrant is defined,
-                      // so this array is never actually empty at this call
-                      // site; the fallback exists only for the type.
-                      patterns: execGrant?.patterns ?? [],
-                      ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
-                    },
-                  }
-                : {}),
-            }),
-          ]
-        : []),
-      ...(allowBash
-        ? [
-            createBashTool({
-              ...(args.shell !== undefined ? { shell: args.shell } : {}),
-              ...(args.stripEnvVars !== undefined ? { stripEnvVars: args.stripEnvVars } : {}),
-              // The EFFECTIVE grant, so the description names what THIS
-              // stage may actually run, incl. the synthetic grant under
-              // `raw` (ADR-030 / F3) -- ignored under `raw` regardless.
-              patterns: bashDescriptionPatterns,
-              bashApproval,
-            }),
-          ]
-        : []),
+      ...buildDeclaredCommandTools({
+        declaredCommands,
+        allowExec,
+        execGrant,
+        allowBash,
+        bashDescriptionPatterns,
+        bashApproval,
+        humanApproval: args.askResolver?.humanReachable === true,
+        root: args.root,
+        ...(args.repoRoot !== undefined ? { repoRoot: args.repoRoot } : {}),
+        ...(args.packageWorkdir !== undefined ? { packageWorkdir: args.packageWorkdir } : {}),
+        ...(args.commandCwd !== undefined ? { commandCwd: args.commandCwd } : {}),
+        ...(args.allowScripts !== undefined ? { allowScripts: args.allowScripts } : {}),
+        ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
+        ...(args.stripEnvVars !== undefined ? { stripEnvVars: args.stripEnvVars } : {}),
+        ...(args.shell !== undefined ? { shell: args.shell } : {}),
+        ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
+      }),
     ],
     ...(args.providerIdByTool !== undefined ? { providerIdByTool: args.providerIdByTool } : {}),
   });
@@ -547,6 +525,18 @@ export async function resolveCodingToolSupport(
   // one tool from an otherwise fully-granted provider.
   const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
   const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
+  // P4: the probe is async, so it runs here and reaches the sync seam as data.
+  // Read from the ROOT config: execution.sandbox is global-only (spec 6).
+  const launcher =
+    options.codingToolRoot !== undefined && options.codingToolRoot.trim() !== ""
+      ? await resolveSessionSandbox({
+          config: options.config?.execution?.sandbox,
+          root: options.codingToolRoot,
+          ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
+          needsLauncher: declared.includes(BASH_TOOL_NAME) || declared.includes(EXEC_TOOL_NAME),
+          ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
+        })
+      : undefined;
   return buildCodingToolSupport({
     root: options.codingToolRoot,
     pipelineStage: options.pipelineStage ?? "run",
@@ -590,5 +580,6 @@ export async function resolveCodingToolSupport(
     ...(denyPaths !== undefined ? { denyPaths } : {}),
     ...(options.codingToolFileOutput !== undefined ? { fileOutputPath: options.codingToolFileOutput } : {}),
     ...(options.askResolver !== undefined ? { askResolver: options.askResolver } : {}),
+    ...(launcher !== undefined ? { launcher } : {}),
   });
 }

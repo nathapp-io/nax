@@ -20,6 +20,7 @@ import {
   headlessAskResolver,
 } from "@/permissions";
 import { errorMessage } from "@/utils/errors";
+import type { SandboxRecord } from "../sandbox";
 import { deleteTool } from "./delete";
 import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect";
 import { editTool } from "./edit";
@@ -231,6 +232,7 @@ export function createCodingToolRuntime(opts: {
       executed?: readonly string[];
       target?: "package" | "repoRoot";
       approval?: { decidedBy: string; remembered: boolean; latencyMs: number };
+      sandbox?: SandboxRecord;
     },
     resultBytesPreTruncation?: number,
   ): void {
@@ -277,6 +279,7 @@ export function createCodingToolRuntime(opts: {
       ...(audit?.executed !== undefined ? { executed: audit.executed } : {}),
       ...(audit?.target !== undefined ? { target: audit.target } : {}),
       ...(audit?.approval !== undefined ? { approval: audit.approval } : {}),
+      ...(audit?.sandbox !== undefined ? { sandbox: audit.sandbox } : {}),
       ...(provider !== undefined ? { provider } : {}),
       ...(resultBytesPreTruncation !== undefined ? { resultBytesPreTruncation } : {}),
       ...(opts.callId !== undefined ? { callId: opts.callId } : {}),

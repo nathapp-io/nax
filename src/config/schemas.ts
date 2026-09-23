@@ -44,6 +44,7 @@ import { ConfiguredModelSchema, ModelMapSchema } from "./schemas-model";
 import { validateProtocolGate } from "./schemas-protocol-gate";
 import { ReportersConfigSchema } from "./schemas-reporters";
 import { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
+import { DEFAULT_SANDBOX_CONFIG } from "./schemas-sandbox";
 
 export { ContextConfigSchema, ContextV2ConfigSchema } from "./schemas-context";
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
@@ -147,6 +148,8 @@ export const NaxConfigSchema = z
       // above): a literal here would shadow the field's own default and leave
       // `execution.approvalTimeout` undefined from NaxConfigSchema.parse({}).
       approvalTimeout: ExecutionConfigSchema.shape.approvalTimeout.parse(undefined),
+      // BUG-20 -- derived, not hand-written (same rationale as `bashApproval`).
+      sandbox: DEFAULT_SANDBOX_CONFIG,
       smartTestRunner: true,
       worktreeDependencies: {
         mode: "off",

@@ -16,9 +16,11 @@
  * stage's `Bash(...)` rules and containment-checked its paths and redirects
  * (src/tools/policy-bash.ts). This module must never be given a "safe enough"
  * check of its own: two gates in two places drift, and the second one is the
- * one nobody tests.
+ * one nobody tests. The launcher (P4) changes HOW the command runs -- inside
+ * an OS sandbox when enabled -- never WHETHER.
  */
 import type { BashApprovalMode } from "../config/bash-approval";
+import { type CommandLauncher, rawBashRefusalReason, sandboxSentence, unsandboxedSentence } from "../sandbox";
 import { runArgv } from "../utils/argv-exec";
 import type { CodingTool } from "./registry";
 import { cutToByteCap, READ_CEILING } from "./truncate";
@@ -55,6 +57,19 @@ export interface BashToolOptions {
    * grant.
    */
   readonly bashApproval?: BashApprovalMode;
+  /**
+   * Whether a human can answer an escalated command (ADR-030, amended for P4).
+   * Read only under `escalate`; absent or false keeps `gated`'s wording, since
+   * a run with no interaction channel denies every ask as `unavailable`.
+   */
+  readonly humanApproval?: boolean;
+  /**
+   * P4: how the command runs. Absent = today's direct spawn through
+   * `_bashToolDeps.runArgv` (unit tests). Production always passes one --
+   * disabled, available or unavailable -- and its state also shapes the
+   * description, so the agent always knows whether it is sandboxed.
+   */
+  readonly launcher?: CommandLauncher;
 }
 
 /** Injectable seam, mirroring `_argvExecDeps` / `_gitToolDeps`. */
@@ -72,9 +87,8 @@ const PREFER_STRUCTURED_TOOLS_SENTENCE =
   "bounded, parseable output, and Bash exists for what they cannot express. ";
 
 /**
- * `gated`'s description, also used verbatim for `escalate` -- see the
- * comment on the `escalate` branch of `bashToolDescription` for why the two
- * must not diverge.
+ * `gated`'s description, also used verbatim for `escalate` when no human is
+ * reachable -- see the `escalate` branch of `bashToolDescription`.
  */
 function gatedDescription(shell: string, patterns: readonly string[] | undefined): string {
   return (
@@ -83,6 +97,31 @@ function gatedDescription(shell: string, patterns: readonly string[] | undefined
     "Each segment of a `&&`/`||`/`;`/`|` chain is checked separately, and command substitution ($(...), backticks), " +
     "process substitution, here-documents and `2>&1` are refused outright because they cannot be analysed. " +
     "Paths and redirect targets must stay inside the repository root."
+  );
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * `escalate`'s description when a human is reachable (ADR-030, amended
+ * 2026-09-23). It states checkBashCommand's ACTUAL order: a grant miss or a
+ * lexer refusal returns (escalatably) BEFORE the payload checks, so those only
+ * bind granted commands, and an approved command runs as written (nax#2194).
+ * Pinned against the policy in coding-tool-bash-escalate-truth.test.ts.
+ */
+function escalateDescription(shell: string, patterns: readonly string[] | undefined): string {
+  return (
+    `Run one shell command string under ${shell}. ${PREFER_STRUCTURED_TOOLS_SENTENCE}` +
+    `${capitalize(describeGrants(patterns))}. A command whose every segment matches a granted form is checked further: paths ` +
+    "and redirect targets must stay inside the repository root, and `.git/` access, denied flags, unexpanded " +
+    "`$VAR`, glob or brace characters, `~`, and a bare or option-shaped `cd` are refused without asking. A command " +
+    "outside the granted forms, or one using a construct that cannot be analysed (e.g. command or process " +
+    "substitution, backticks, here-documents, subshells, `2>&1`, `#` comments), is not refused: it is sent to a " +
+    "human for approval (unless an identical command was already approved and remembered) and, if they allow it, " +
+    "runs exactly as written; it is refused if they deny it or do not answer in time, so prefer the granted forms. A command matching a deny rule is refused without asking unless it cannot " +
+    "be analysed. Each segment of a `&&`/`||`/`;`/`|` chain is checked separately."
   );
 }
 
@@ -95,14 +134,18 @@ function gatedDescription(shell: string, patterns: readonly string[] | undefined
  * workaround (reading whole files instead of piping/grepping them) this ADR
  * exists to stop paying for.
  */
-function rawDescription(shell: string): string {
+const RAW_UNCONTAINED =
+  "The command runs from the repository root, but paths are NOT contained to it: a command may read or write anywhere the nax process " +
+  "itself can reach, inside the repository or outside it. ";
+
+function rawDescription(shell: string, containment: string = RAW_UNCONTAINED): string {
   return (
     `Run one shell command string under ${shell}. ${PREFER_STRUCTURED_TOOLS_SENTENCE}` +
     "This stage runs under raw mode (ADR-030): pipes, redirects, command substitution ($(...), backticks), " +
     "process substitution, here-documents and subshells all work here -- nothing is refused for being unparseable, " +
-    "and Bash allow/deny/ask rules configured for this stage are NOT consulted. The command runs from the " +
-    "repository root, but paths are NOT contained to it: a command may read or write anywhere the nax process " +
-    "itself can reach, inside the repository or outside it. The only refusal is a command the lexer CAN parse " +
+    "and Bash allow/deny/ask rules configured for this stage are NOT consulted. " +
+    containment +
+    "The only refusal is a command the lexer CAN parse " +
     "that names or redirects into a path nax owns -- .nax/config.json, .nax/mono/*/config.json, " +
     ".nax/features/**/prd.json, or the root queue-control files -- change those through nax rather than by " + // nax-feature-dir-allow: prose naming the raw-mode protected-path screen, not a path construction
     "writing them directly; that screen is advisory, not a boundary, and a command using substitution skips it " +
@@ -110,18 +153,36 @@ function rawDescription(shell: string): string {
   );
 }
 
+function rawUnavailableDescription(shell: string, reason: string): string {
+  return (
+    `Run one shell command string under ${shell} -- but on this machine ${rawBashRefusalReason(reason)} ` +
+    "Under raw mode every call is refused; use the structured tools (Read, Glob, Grep, Git, RunCommand) instead."
+  );
+}
+
 function bashToolDescription(shell: string, opts: BashToolOptions): string {
-  if (opts.bashApproval === "raw") return rawDescription(shell);
-  // `escalate`'s description stays IDENTICAL to `gated`'s (ADR-030, amended
-  // for P2). During P1 that was because the `AskResolver` seam always denied;
-  // P2 shipped a real resolver chain, so that reason has expired. It stays
-  // conservative anyway: this function sees only the mode and the configured
-  // patterns, while whether a human is reachable at all is a SEPARATE config
-  // axis (is an interaction channel configured?). A headless or unconfigured
-  // run still resolves to `unavailable` and denies, so advertising "a human
-  // can approve" from the mode alone would be false there. Do not "improve"
-  // this by describing escalation. The default remains `raw`.
-  return gatedDescription(shell, opts.patterns);
+  const state = opts.launcher?.state ?? { kind: "disabled" as const };
+  if (opts.bashApproval === "raw") {
+    if (state.kind === "available")
+      return rawDescription(shell, `The command runs from the repository root ${sandboxSentence(state.network)} `);
+    if (state.kind === "unavailable") return rawUnavailableDescription(shell, state.reason);
+    return rawDescription(shell);
+  }
+  // `escalate` describes escalation ONLY when a human is reachable (ADR-030,
+  // amended for P4). Reachability is a separate config axis -- is an
+  // interaction channel configured? -- resolved at the execution stage and
+  // passed in as data. Without one every ask resolves `unavailable` and
+  // denies, so the wording stays byte-identical to `gated`'s: promising a
+  // human there would be the D13a fail-open shape stated in prose.
+  const policyDescription =
+    opts.bashApproval === "escalate" && opts.humanApproval === true
+      ? escalateDescription(shell, opts.patterns)
+      : gatedDescription(shell, opts.patterns);
+  if (state.kind === "available") {
+    return `${policyDescription} Commands that pass run ${sandboxSentence(state.network)}`;
+  }
+  if (state.kind === "unavailable") return `${policyDescription} ${unsandboxedSentence(state.reason)}`;
+  return policyDescription;
 }
 
 export function createBashTool(opts: BashToolOptions = {}): CodingTool {
@@ -161,15 +222,28 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
       const argv = [shell, "-c", command];
 
       try {
-        const result = await _bashToolDeps.runArgv({
-          argv,
-          cwd: ctx.root,
-          timeoutMs,
-          stripEnvVars: [...(opts.stripEnvVars ?? [])],
-        });
-        const body = result.timedOut
+        const launched =
+          opts.launcher !== undefined
+            ? await opts.launcher.run({
+                spec: { kind: "shell", shell, command },
+                root: ctx.root,
+                cwd: ctx.root,
+                timeoutMs,
+                stripEnvVars: opts.stripEnvVars ?? [],
+              })
+            : {
+                ...(await _bashToolDeps.runArgv({
+                  argv,
+                  cwd: ctx.root,
+                  timeoutMs,
+                  stripEnvVars: [...(opts.stripEnvVars ?? [])],
+                })),
+                executed: argv,
+                sandbox: undefined,
+              };
+        const body = launched.timedOut
           ? `timed out after ${timeoutMs}ms`
-          : `exit ${result.exitCode}\n${result.stdout}\n${result.stderr}`;
+          : `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
         // The tool's own bound is the I/O ceiling, not the model-facing cap:
         // `maxBytes` shapes what the model is told and belongs to the session's
         // truncation policy (which also spills what it cuts), while this one
@@ -177,9 +251,12 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
         // full size still rides out on `resultBytesPreTruncation`.
         return {
           content: cutToByteCap(body, ctx.readCeiling ?? READ_CEILING),
-          isError: result.timedOut || result.exitCode !== 0,
+          isError: launched.timedOut || launched.exitCode !== 0,
           // The ledger records what actually ran, not what was requested.
-          audit: { executed: argv },
+          audit: {
+            executed: launched.executed,
+            ...(launched.sandbox !== undefined ? { sandbox: launched.sandbox } : {}),
+          },
           resultBytesPreTruncation: Buffer.byteLength(body, "utf8"),
         };
       } catch (err) {

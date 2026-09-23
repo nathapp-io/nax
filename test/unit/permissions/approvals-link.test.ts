@@ -33,6 +33,7 @@ describe("approvals link", () => {
       approvalsFile: await seeded(dir),
       repoRoot: "/repo",
       stageModes: ["gated", "escalate"],
+      sandboxEnabled: false,
     });
     expect(await link.resolve(REQ)).toEqual({ decision: "allow", decidedBy: "cache" });
     cleanupTempDir(dir);
@@ -44,6 +45,7 @@ describe("approvals link", () => {
       approvalsFile: await seeded(dir),
       repoRoot: "/repo",
       stageModes: ["escalate"],
+      sandboxEnabled: false,
     });
     const out = await link.resolve({ ...REQ, command: "bun run test --x" });
     expect(out.decision).toBe("abstain");
@@ -56,6 +58,7 @@ describe("approvals link", () => {
       approvalsFile: await seeded(dir),
       repoRoot: "/repo",
       stageModes: ["escalate", "raw"],
+      sandboxEnabled: false,
     });
     // The entry matches exactly, and it is STILL not honoured.
     expect((await link.resolve(REQ)).decision).toBe("abstain");
@@ -68,6 +71,7 @@ describe("approvals link", () => {
       approvalsFile: await seeded(repoRoot),
       repoRoot,
       stageModes: ["escalate"],
+      sandboxEnabled: false,
     });
     expect((await link.resolve(REQ)).decision).toBe("abstain");
     cleanupTempDir(repoRoot);
@@ -79,9 +83,28 @@ describe("approvals link", () => {
       approvalsFile: await seeded(dir),
       repoRoot: "/repo",
       stageModes: ["escalate"],
+      sandboxEnabled: false,
     });
     const { command: _omit, ...noCommand } = REQ;
     expect((await link.resolve(noCommand)).decision).toBe("abstain");
+    cleanupTempDir(dir);
+  });
+
+  test.each([
+    { raw: false, sandbox: false, disabled: false },
+    { raw: true, sandbox: false, disabled: true },
+    { raw: true, sandbox: true, disabled: false },
+    { raw: false, sandbox: true, disabled: false },
+  ])("P4: raw=$raw sandbox=$sandbox -> cache disabled=$disabled", async ({ raw, sandbox, disabled }) => {
+    const dir = makeTempDir("link-");
+    const link = createApprovalsLink({
+      approvalsFile: await seeded(dir),
+      repoRoot: "/repo",
+      stageModes: raw ? ["escalate", "raw"] : ["escalate"],
+      sandboxEnabled: sandbox,
+    });
+    const out = await link.resolve(REQ);
+    expect(out.decision).toBe(disabled ? "abstain" : "allow");
     cleanupTempDir(dir);
   });
 });
