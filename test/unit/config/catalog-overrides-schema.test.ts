@@ -196,4 +196,84 @@ describe("agent.native.catalogOverrides", () => {
     // entry; a user carrying that spelling over must not get it stripped.
     expect(() => parseNative({ catalogOverride: VALID_OVERRIDE })).toThrow();
   });
+
+  describe("openRouterRouting (nax#2191)", () => {
+    test("round-trips a valid declaration through to the typed output", () => {
+      // nax-ai 0.1.15 exposes ResolvedModel.openRouterRouting and asserts the
+      // routing block reaches the wire only through ProviderOverride.models on
+      // the openai-completions protocol (providers/override-model.ts). nax's
+      // only role here is the schema gate; the protocol check lives upstream.
+      const routing = { sort: "latency" as const, quantizations: ["fp8"] };
+      const model = { ...VALID_OVERRIDE.models[0], openRouterRouting: routing };
+      const config = parseNative({ catalogOverrides: [{ provider: "opencode-go", models: [model] }] });
+      const parsed = config.agent?.native?.catalogOverrides?.[0]?.models?.[0];
+      expect(parsed?.openRouterRouting).toEqual(routing);
+    });
+
+    test.each<[string, Record<string, unknown>]>([
+      ["allow_fallbacks", { allow_fallbacks: true }],
+      ["require_parameters", { require_parameters: false }],
+      ["data_collection: deny", { data_collection: "deny" }],
+      ["data_collection: allow", { data_collection: "allow" }],
+      ["zdr", { zdr: true }],
+      ["order", { order: ["fireworks", "together"] }],
+      ["only", { only: ["fireworks"] }],
+      ["ignore", { ignore: ["deepinfra"] }],
+      ["quantizations", { quantizations: ["fp8", "fp16"] }],
+      ["sort: price", { sort: "price" }],
+      ["sort: throughput", { sort: "throughput" }],
+      ["sort: latency", { sort: "latency" }],
+    ])("accepts %s", (_label, openRouterRouting) => {
+      // Mirrors nax-ai's OpenRouterRouting shape verbatim (snake_case on
+      // purpose — the keys are wire field names and pass through unmapped).
+      const model = { ...VALID_OVERRIDE.models[0], openRouterRouting };
+      const config = parseNative({ catalogOverrides: [{ provider: "opencode-go", models: [model] }] });
+      const parsed = config.agent?.native?.catalogOverrides?.[0]?.models?.[0];
+      expect(parsed?.openRouterRouting).toEqual(openRouterRouting);
+    });
+
+    test("rejects an empty declaration instead of letting it reach the wire", () => {
+      // nax-ai's assertOverrideModelRouting rejects `{}` because pi's check is
+      // truthiness, not emptiness — so an empty declaration would reach the
+      // wire as `provider: {}` (issue #43). The right place to refuse it is
+      // here at config load; we surface the load error the same way a typo
+      // would.
+      expect(() =>
+        parseNative({
+          catalogOverrides: [
+            { provider: "opencode-go", models: [{ ...VALID_OVERRIDE.models[0], openRouterRouting: {} }] },
+          ],
+        }),
+      ).toThrow();
+    });
+
+    test.each<[string, Record<string, unknown>]>([
+      ["an unknown inner key", { quantizaton: ["fp8"] }],
+      ["a bad sort value", { sort: "fastest" }],
+      ["a bad data_collection value", { data_collection: "opt-out" }],
+      ["a non-string array element", { quantizations: [42] }],
+      ["an empty array element string", { quantizations: [""] }],
+    ])("rejects %s", (_label, openRouterRouting) => {
+      // .strict() so a casing typo (quantizaton) is a load error, not a
+      // stripped key — same trap as pricing.tiers (#1847) and contextWindow
+      // (#1848). The schema mirrors nax-ai's openRouterRouting shape, not a
+      // superset: a value that nax-ai would refuse must be refused here.
+      expect(() =>
+        parseNative({
+          catalogOverrides: [{ provider: "opencode-go", models: [{ ...VALID_OVERRIDE.models[0], openRouterRouting }] }],
+        }),
+      ).toThrow();
+    });
+
+    test("leaves the key absent on the typed output when undeclared", () => {
+      // nax-ai gates on `!== undefined` and rejects an empty declaration, so
+      // an explicit `openRouterRouting: undefined` would be a declaration, not
+      // a silence. The schema is `.optional()` and the mapper omits the key
+      // outright — this test pins that the omission reaches the typed output
+      // untouched.
+      const config = parseNative({ catalogOverrides: [VALID_OVERRIDE] });
+      const parsed = config.agent?.native?.catalogOverrides?.[0]?.models?.[0];
+      expect(parsed).not.toHaveProperty("openRouterRouting");
+    });
+  });
 });

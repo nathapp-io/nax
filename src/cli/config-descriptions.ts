@@ -269,6 +269,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Provider-wide endpoint redirect. WARNING: applies to EVERY model of that provider, bundled ones included, and the provider's stored credential is sent to this host. https only (http allowed for localhost/127.0.0.1); credentials in the URL are rejected.",
   "agent.native.catalogOverrides.headers":
     "Provider-wide extra request headers. REPLACES the provider's headers rather than merging; omit the key to leave them unchanged. May carry credentials, so values are masked in this output.",
+  "agent.native.catalogOverrides.openRouterRouting":
+    "OpenRouter-compatible provider routing for one model (nax#2191). Snake_case keys are wire field names sent verbatim. Reach the wire only on protocol: 'openai-completions'. Pair `sort: 'latency'|'throughput'` with `quantizations` — default routing is overwhelmingly a single quantization from a single endpoint, and a sort change may otherwise pick a lower-precision one. Routing changes break run-to-run comparability, so keep them fixed across arms.",
+  "agent.native.catalogOverrides.openRouterRouting.sort":
+    "Routing strategy — 'price' | 'throughput' | 'latency'. Omit to use OpenRouter's default ordering.",
+  "agent.native.catalogOverrides.openRouterRouting.quantizations":
+    "Filter endpoints to these quantizations (e.g. ['fp8']). The reproducibility lever: one model id can otherwise be served fp4 on one call and fp8 on the next.",
   "agent.maxInteractionTurns":
     "Max turns in multi-turn interaction loop when interactionBridge is active (default: 10)",
   "agent.usageAudit":
