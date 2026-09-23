@@ -20,10 +20,8 @@ import {
   type CodingToolName,
   type CodingToolRuntime,
   compileToolPolicy,
-  createBashTool,
   createCodingToolRuntime,
   createNoOpToolAuditSink,
-  createRunCommandTool,
   createToolAuditSink,
   EXEC_TOOL_NAME,
   expandMcpRuleGrants,
@@ -43,6 +41,7 @@ import type { QualityCommandSpec } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { errorMessage } from "../utils/errors";
 import { resolveBashSupport } from "./coding-tool-bash";
+import { buildDeclaredCommandTools } from "./coding-tool-extras";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
 import { UNIVERSAL_CODING_TOOLS } from "./universal-coding-tools";
@@ -219,53 +218,22 @@ export function buildCodingToolSupport(args: {
     sink,
     extraTools: [
       ...(args.extraTools ?? []),
-      ...(declaredCommands.size > 0 || allowExec
-        ? [
-            createRunCommandTool(declaredCommands, {
-              stripEnvVars: args.stripEnvVars,
-              commandCwd: args.commandCwd ?? args.root,
-              ...(allowExec
-                ? {
-                    exec: {
-                      repoRoot: args.repoRoot ?? args.root,
-                      // Post-root-move: `args.root` is the repo root, so the
-                      // fallback only matters for single-package repos where
-                      // the two coincide (and for tests not threading
-                      // `packageWorkdir`). Production always threads it via
-                      // `commandCwd` plumbing in `resolveCodingToolSupport`
-                      // (Task 10), which makes `effectiveTarget`'s
-                      // `packageRelPath === ""` collapse impossible for a
-                      // package story.
-                      packageWorkdir: args.packageWorkdir ?? args.root,
-                      allowScripts: args.allowScripts ?? false,
-                      // The compiled grant, not BUILT_IN_EXEC_PATTERNS -- a
-                      // project's own Exec(...) expression replaces that
-                      // list rather than extending it (see the comment on
-                      // BUILT_IN_EXEC_PATTERNS in src/config/permissions.ts).
-                      // `allowExec` is true only when execGrant is defined,
-                      // so this array is never actually empty at this call
-                      // site; the fallback exists only for the type.
-                      patterns: execGrant?.patterns ?? [],
-                      ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
-                    },
-                  }
-                : {}),
-            }),
-          ]
-        : []),
-      ...(allowBash
-        ? [
-            createBashTool({
-              ...(args.shell !== undefined ? { shell: args.shell } : {}),
-              ...(args.stripEnvVars !== undefined ? { stripEnvVars: args.stripEnvVars } : {}),
-              // The EFFECTIVE grant, so the description names what THIS
-              // stage may actually run, incl. the synthetic grant under
-              // `raw` (ADR-030 / F3) -- ignored under `raw` regardless.
-              patterns: bashDescriptionPatterns,
-              bashApproval,
-            }),
-          ]
-        : []),
+      ...buildDeclaredCommandTools({
+        declaredCommands,
+        allowExec,
+        execGrant,
+        allowBash,
+        bashDescriptionPatterns,
+        bashApproval,
+        root: args.root,
+        ...(args.repoRoot !== undefined ? { repoRoot: args.repoRoot } : {}),
+        ...(args.packageWorkdir !== undefined ? { packageWorkdir: args.packageWorkdir } : {}),
+        ...(args.commandCwd !== undefined ? { commandCwd: args.commandCwd } : {}),
+        ...(args.allowScripts !== undefined ? { allowScripts: args.allowScripts } : {}),
+        ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
+        ...(args.stripEnvVars !== undefined ? { stripEnvVars: args.stripEnvVars } : {}),
+        ...(args.shell !== undefined ? { shell: args.shell } : {}),
+      }),
     ],
     ...(args.providerIdByTool !== undefined ? { providerIdByTool: args.providerIdByTool } : {}),
   });
