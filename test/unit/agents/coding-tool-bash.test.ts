@@ -99,11 +99,38 @@ describe("createBashTool -- bashApproval-aware description", () => {
     expect(description).toContain("advisory");
   });
 
-  test("escalate is byte-identical to gated (P2: reachability is config-dependent, no promise of a human)", () => {
+  test("escalate with no reachable human is byte-identical to gated (no promise of a human it cannot keep)", () => {
     const opts = { patterns: ["git *"] } as const;
     const gated = createBashTool({ ...opts, bashApproval: "gated" }).description;
-    const escalate = createBashTool({ ...opts, bashApproval: "escalate" }).description;
-    expect(escalate).toBe(gated);
+    expect(createBashTool({ ...opts, bashApproval: "escalate" }).description).toBe(gated);
+    expect(createBashTool({ ...opts, bashApproval: "escalate", humanApproval: false }).description).toBe(gated);
+  });
+
+  test("escalate with a reachable human says unadjudicable commands go to a human, not that they are refused", () => {
+    const description = createBashTool({
+      patterns: ["git *"],
+      bashApproval: "escalate",
+      humanApproval: true,
+    }).description;
+    expect(description).toContain("Granted command forms: git *");
+    expect(description).not.toContain("anything else is refused");
+    expect(description).toContain("sent to a human for approval");
+    expect(description).toContain("prefer the granted forms");
+    // Accurate to today's evaluation order (nax#2194): payload checks apply to
+    // granted commands only, and an approved command runs as written.
+    expect(description).toContain("exactly as written");
+    expect(description).toContain("refused without asking");
+    expect(description).toContain("inside the repository root");
+    expect(description).not.toContain("never escalate");
+  });
+
+  test("humanApproval changes nothing under gated or raw", () => {
+    const opts = { patterns: ["git *"] } as const;
+    for (const bashApproval of ["gated", "raw"] as const) {
+      expect(createBashTool({ ...opts, bashApproval, humanApproval: true }).description).toBe(
+        createBashTool({ ...opts, bashApproval }).description,
+      );
+    }
   });
 
   test("an omitted bashApproval matches gated (the safe default)", () => {

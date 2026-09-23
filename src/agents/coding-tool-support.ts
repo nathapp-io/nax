@@ -233,6 +233,7 @@ export function buildCodingToolSupport(args: {
         allowBash,
         bashDescriptionPatterns,
         bashApproval,
+        humanApproval: args.askResolver?.humanReachable === true,
         root: args.root,
         ...(args.repoRoot !== undefined ? { repoRoot: args.repoRoot } : {}),
         ...(args.packageWorkdir !== undefined ? { packageWorkdir: args.packageWorkdir } : {}),

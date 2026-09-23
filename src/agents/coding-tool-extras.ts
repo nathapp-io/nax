@@ -18,6 +18,8 @@ export interface DeclaredCommandToolsArgs {
   readonly allowBash: boolean;
   readonly bashDescriptionPatterns: readonly string[];
   readonly bashApproval: BashApprovalMode;
+  /** A human can answer an escalated Bash command (ADR-030, amended for P4). */
+  readonly humanApproval?: boolean;
   readonly root: string;
   readonly repoRoot?: string;
   readonly packageWorkdir?: string;
@@ -77,6 +79,7 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
             // `raw` (ADR-030 / F3) -- ignored under `raw` regardless.
             patterns: args.bashDescriptionPatterns,
             bashApproval: args.bashApproval,
+            ...(args.humanApproval === true ? { humanApproval: true } : {}),
             ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
           }),
         ]

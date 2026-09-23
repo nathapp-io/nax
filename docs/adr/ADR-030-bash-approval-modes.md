@@ -335,5 +335,70 @@ macOS: `sandbox-exec` (built in). Linux: `bwrap`, `socat`, `rg`; in a container
 `--security-opt systempaths=unconfined` or the probe reports unavailable; on Ubuntu 24.04
 `kernel.apparmor_restrict_unprivileged_userns=0`. Windows: unavailable (probe). The live suite
 runs in CI with bubblewrap, socat and ripgrep installed and `NAX_SANDBOX_REQUIRED=1`; nothing
-beyond the requirements above is known to be needed yet — the first PR CI run is what
-confirms.
+beyond the requirements above was needed — the first PR CI run passed the live suite 9/9 on
+Linux (2026-09-23).
+
+## Amendment — 2026-09-23: `escalate` describes escalation when a human is reachable
+
+**Supersedes:** "`escalate`'s advertised description was revisited and deliberately kept
+conservative" (2026-09-22 amendment, above). The pin that `escalate`'s description equals
+`gated`'s now holds only when no human is reachable.
+
+### Why the conservative wording was dropped
+
+That amendment kept `escalate` byte-identical to `gated`, telling the model "anything else is
+refused". Its reason was mechanical: `bashToolDescription` could see only the mode and the
+patterns, not whether an interaction channel exists, and promising a human in a headless run
+would be the D13a fail-open shape stated in prose.
+
+The reason was a missing input, not a design limit. P4 had the same shape for the sandbox
+(availability resolved once, passed to the tool as data), and reachability is resolved the same
+way. The cost of the conservative wording was measured in the P2 exit runs (2026-09-23): across
+two `escalate` runs totalling about 2¼ hours of agent time, only **6** commands reached the
+human. The agent, told everything else is refused, composed around the grant instead of
+producing the Category A denials that are `escalate`'s entire output and P5's training corpus.
+
+### Decision
+
+- The execution stage marks its `AskResolver` with `humanReachable`: true when the run has an
+  interaction chain (`ctx.interaction` present) and, for the `cli` plugin, stdin is a TTY.
+  `initInteractionChain` already returns none for a headless CLI run and for an unconfigured
+  one, and a `cli` chain without a TTY stdin never opens readline, so all of these resolve false.
+  Every other `AskResolver` (the headless default used outside the execution stage) leaves the
+  flag absent, which reads as false. One known over-promise remains and fails closed: Telegram
+  with a non-numeric `chatId` gets a chain but can never match a reply, so every ask times out.
+- `buildCodingToolSupport` forwards it to the Bash tool as `humanApproval`. Only `escalate`
+  reads it.
+- **Reachable:** the description states `checkBashCommand`'s actual evaluation order. A command
+  whose every segment is granted is payload-checked: a path outside the root, `.git/` access, a
+  denied flag, an unexpanded `$VAR`, glob or brace characters, `~`, or a bare or option-shaped
+  `cd` is refused without asking. A command outside the granted forms, or one the lexer cannot
+  analyse, is sent to a human and, if allowed, runs exactly as written; a deny rule is refused
+  without asking unless the command cannot be analysed. The model is told to prefer the granted
+  forms. A test pins these claims against the policy (`coding-tool-bash-escalate-truth.test.ts`).
+- **Not reachable:** byte-identical to `gated`, as before.
+- The verdict path is unchanged. The flag shapes only the description; a channel that fails
+  mid-run still resolves `unavailable` and denies, so an over-promising description fails
+  closed.
+
+### A disclosed divergence: Category B does not always stay out of the ask tier
+
+"Why `escalate` splits denials in two" states that Category B denials never escalate. That holds
+only for granted commands. `checkBashCommand` returns the escalatable grant-miss denial before
+`checkPayload`, and the escalatable lexer refusal before deny rules. So an ungranted command that
+escapes the root, touches `.git/`, carries a denied flag (e.g. `--registry`) or an unexpanded
+`$VAR`/glob/`~` token, or matches a deny rule while also failing to lex reaches the human, and
+runs as written if allowed. The deny suite did not catch it because its Category B
+cases all run under `allow: ["*"]`. Under D1 the human still sees the full command. Reordering
+the checks changes the gate's behaviour and is tracked as nax#2194, not done here. The
+description above tells the truth about today's order and flips with that fix.
+
+### Consequences
+
+- More prompts reach the human in `escalate` runs. That is the mode's purpose, and it grows the
+  P5 corpus.
+- Runs before and after this change are not comparable on escalation counts or Bash usage under
+  `escalate`.
+- `escalate` still offers no Bash at all without a human-written `Bash(...)` allow rule
+  (ADR-029 §3); nax#2192 tracks documenting and warning about that.
+

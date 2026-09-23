@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { chainAskLinks } from "@/permissions";
 
 /**
  * The bashApproval seam: resolvePermissions resolves the mode and
@@ -87,5 +88,29 @@ describe("resolveCodingToolSupport — bashApproval threading", () => {
     const tool = support?.tools.find((t) => t.name === "Bash");
     expect(tool?.description).toContain("granted command forms: echo *");
     expect(tool?.description).toContain("cannot be analysed");
+  });
+
+  test("escalate: the resolver's humanReachable flag reaches the advertised description", async () => {
+    const escalate = async (humanReachable: boolean | undefined) => {
+      const execution: Record<string, unknown> = {
+        bashApproval: "escalate",
+        permissions: { run: { allow: ["Bash(echo *)"] } },
+      };
+      const askResolver = {
+        ...chainAskLinks([]),
+        ...(humanReachable !== undefined ? { humanReachable } : {}),
+      };
+      const support = await resolveCodingToolSupport({
+        declaredTools: ["Bash"],
+        codingToolRoot: root,
+        pipelineStage: "run",
+        config: makeNaxConfig({ execution }),
+        askResolver,
+      });
+      return support?.tools.find((t) => t.name === "Bash")?.description ?? "";
+    };
+    expect(await escalate(true)).toContain("sent to a human for approval");
+    expect(await escalate(false)).toContain("anything else is refused");
+    expect(await escalate(undefined)).toContain("anything else is refused");
   });
 });

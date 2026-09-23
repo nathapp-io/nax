@@ -58,6 +58,12 @@ export interface BashToolOptions {
    */
   readonly bashApproval?: BashApprovalMode;
   /**
+   * Whether a human can answer an escalated command (ADR-030, amended for P4).
+   * Read only under `escalate`; absent or false keeps `gated`'s wording, since
+   * a run with no interaction channel denies every ask as `unavailable`.
+   */
+  readonly humanApproval?: boolean;
+  /**
    * P4: how the command runs. Absent = today's direct spawn through
    * `_bashToolDeps.runArgv` (unit tests). Production always passes one --
    * disabled, available or unavailable -- and its state also shapes the
@@ -81,9 +87,8 @@ const PREFER_STRUCTURED_TOOLS_SENTENCE =
   "bounded, parseable output, and Bash exists for what they cannot express. ";
 
 /**
- * `gated`'s description, also used verbatim for `escalate` -- see the
- * comment on the `escalate` branch of `bashToolDescription` for why the two
- * must not diverge.
+ * `gated`'s description, also used verbatim for `escalate` when no human is
+ * reachable -- see the `escalate` branch of `bashToolDescription`.
  */
 function gatedDescription(shell: string, patterns: readonly string[] | undefined): string {
   return (
@@ -92,6 +97,31 @@ function gatedDescription(shell: string, patterns: readonly string[] | undefined
     "Each segment of a `&&`/`||`/`;`/`|` chain is checked separately, and command substitution ($(...), backticks), " +
     "process substitution, here-documents and `2>&1` are refused outright because they cannot be analysed. " +
     "Paths and redirect targets must stay inside the repository root."
+  );
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * `escalate`'s description when a human is reachable (ADR-030, amended
+ * 2026-09-23). It states checkBashCommand's ACTUAL order: a grant miss or a
+ * lexer refusal returns (escalatably) BEFORE the payload checks, so those only
+ * bind granted commands, and an approved command runs as written (nax#2194).
+ * Pinned against the policy in coding-tool-bash-escalate-truth.test.ts.
+ */
+function escalateDescription(shell: string, patterns: readonly string[] | undefined): string {
+  return (
+    `Run one shell command string under ${shell}. ${PREFER_STRUCTURED_TOOLS_SENTENCE}` +
+    `${capitalize(describeGrants(patterns))}. A command whose every segment matches a granted form is checked further: paths ` +
+    "and redirect targets must stay inside the repository root, and `.git/` access, denied flags, unexpanded " +
+    "`$VAR`, glob or brace characters, `~`, and a bare or option-shaped `cd` are refused without asking. A command " +
+    "outside the granted forms, or one using a construct that cannot be analysed (e.g. command or process " +
+    "substitution, backticks, here-documents, subshells, `2>&1`, `#` comments), is not refused: it is sent to a " +
+    "human for approval (unless an identical command was already approved and remembered) and, if they allow it, " +
+    "runs exactly as written; it is refused if they deny it or do not answer in time, so prefer the granted forms. A command matching a deny rule is refused without asking unless it cannot " +
+    "be analysed. Each segment of a `&&`/`||`/`;`/`|` chain is checked separately."
   );
 }
 
@@ -138,20 +168,21 @@ function bashToolDescription(shell: string, opts: BashToolOptions): string {
     if (state.kind === "unavailable") return rawUnavailableDescription(shell, state.reason);
     return rawDescription(shell);
   }
-  // `escalate` stays identical to `gated` -- see the existing comment block.
-  // `escalate`'s description stays IDENTICAL to `gated`'s (ADR-030, amended
-  // for P2). During P1 that was because the `AskResolver` seam always denied;
-  // P2 shipped a real resolver chain, so that reason has expired. It stays
-  // conservative anyway: this function sees only the mode and the configured
-  // patterns, while whether a human is reachable at all is a SEPARATE config
-  // axis (is an interaction channel configured?). A headless or unconfigured
-  // run still resolves to `unavailable` and denies, so advertising "a human
-  // can approve" from the mode alone would be false there. Do not "improve"
-  // this by describing escalation. The default remains `raw`.
-  const gated = gatedDescription(shell, opts.patterns);
-  if (state.kind === "available") return `${gated} Commands that pass run ${sandboxSentence(state.network)}`;
-  if (state.kind === "unavailable") return `${gated} ${unsandboxedSentence(state.reason)}`;
-  return gated;
+  // `escalate` describes escalation ONLY when a human is reachable (ADR-030,
+  // amended for P4). Reachability is a separate config axis -- is an
+  // interaction channel configured? -- resolved at the execution stage and
+  // passed in as data. Without one every ask resolves `unavailable` and
+  // denies, so the wording stays byte-identical to `gated`'s: promising a
+  // human there would be the D13a fail-open shape stated in prose.
+  const policyDescription =
+    opts.bashApproval === "escalate" && opts.humanApproval === true
+      ? escalateDescription(shell, opts.patterns)
+      : gatedDescription(shell, opts.patterns);
+  if (state.kind === "available") {
+    return `${policyDescription} Commands that pass run ${sandboxSentence(state.network)}`;
+  }
+  if (state.kind === "unavailable") return `${policyDescription} ${unsandboxedSentence(state.reason)}`;
+  return policyDescription;
 }
 
 export function createBashTool(opts: BashToolOptions = {}): CodingTool {
