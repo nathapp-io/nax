@@ -102,3 +102,40 @@ describe("runNativeTurn — transcript model identity (nax#2150, P3 spec 8.3)", 
     expect(sent[0]).toHaveLength(3);
   });
 });
+
+describe("runNativeTurn — the persisted anchor is per model (P3 spec 8.3(d))", () => {
+  /** Runs one turn and returns the anchorIndex its FIRST request was sized against. */
+  async function firstAnchorSeen(handle: SessionHandle): Promise<number | undefined> {
+    const seen: (number | undefined)[] = [];
+    const registry = createLoopEventRegistry();
+    registry.register("transform_context", (p) => {
+      seen.push(p.anchorIndex);
+      return {};
+    });
+    await turn(handle, "second", registry);
+    return seen[0];
+  }
+
+  test("a turn on another model does not read the previous model's anchor", async () => {
+    await turn(onModel("openai/model-a"), "first");
+    // Recorded before the assistant push: [user "first"] -> index 0.
+    expect(nativeSessionLastUsage.get(SESSION)).toMatchObject({ model: "openai/model-a", anchorIndex: 0 });
+
+    expect(await firstAnchorSeen(onModel("anthropic/model-b"))).toBeUndefined();
+    // The entry left behind is B's own (B's history was refused: [user "second"] -> 0).
+    expect(nativeSessionLastUsage.get(SESSION)).toMatchObject({ model: "anthropic/model-b", anchorIndex: 0 });
+  });
+
+  test("control: a turn on the same model reads its anchor", async () => {
+    await turn(onModel("openai/model-a"), "first");
+    expect(await firstAnchorSeen(onModel("openai/model-a"))).toBe(0);
+  });
+
+  test("an anchor with no recorded model is still read (the PR 2 fixtures' state)", async () => {
+    // transform-context.test.ts:50 seeds this shape: an anchor, no model, no
+    // transcript. Pinned so the fixture's behaviour is intended, not accidental.
+    // 5, not 0: no real turn here records 5, so this cannot pass by coincidence.
+    nativeSessionLastUsage.set(SESSION, { promptTokens: 100, anchorIndex: 5 });
+    expect(await firstAnchorSeen(onModel("openai/model-a"))).toBe(5);
+  });
+});

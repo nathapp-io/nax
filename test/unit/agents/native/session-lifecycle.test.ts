@@ -11,6 +11,7 @@ import {
   nativeSessionTranscriptOwners,
   nativeSessionTransportRetry,
   openNativeSession,
+  sessionAnchorFor,
 } from "@/agents/native/session/session";
 import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
 import { nativeSessionId } from "@/agents/native/session-affinity";
@@ -473,5 +474,39 @@ describe("native session compaction settings", () => {
     await closeNativeSession(handle, false);
     expect(nativeSessionCompaction.has("sess-cfg2")).toBe(false);
     expect(nativeSessionLastUsage.has("sess-cfg2")).toBe(false);
+  });
+});
+
+describe("sessionAnchorFor — the persisted anchor is per model (P3 spec 8.3(d))", () => {
+  const NAME = "sess-anchor";
+  afterEach(() => {
+    nativeSessionLastUsage.delete(NAME);
+  });
+
+  test("an anchor measured under another model is dropped", () => {
+    // Prefix stability is a property of (model, prefix) (spec 3.3): this anchor
+    // indexes history the transcript store refused.
+    nativeSessionLastUsage.set(NAME, { promptTokens: 10, anchorIndex: 3, model: "openai/model-a" });
+    expect(sessionAnchorFor(NAME, "anthropic/model-b")).toBeUndefined();
+    expect(nativeSessionLastUsage.has(NAME)).toBe(false);
+  });
+
+  test("an anchor measured under the same model is kept", () => {
+    const entry = { promptTokens: 10, anchorIndex: 3, model: "openai/model-a" };
+    nativeSessionLastUsage.set(NAME, entry);
+    expect(sessionAnchorFor(NAME, "openai/model-a")).toEqual(entry);
+    expect(nativeSessionLastUsage.has(NAME)).toBe(true);
+  });
+
+  test("an anchor with no recorded model makes no claim", () => {
+    const entry = { promptTokens: 10, anchorIndex: 0 };
+    nativeSessionLastUsage.set(NAME, entry);
+    expect(sessionAnchorFor(NAME, "openai/model-b")).toEqual(entry);
+  });
+
+  test("a turn with no model makes no claim", () => {
+    const entry = { promptTokens: 10, anchorIndex: 3, model: "openai/model-a" };
+    nativeSessionLastUsage.set(NAME, entry);
+    expect(sessionAnchorFor(NAME, undefined)).toEqual(entry);
   });
 });

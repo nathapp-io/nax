@@ -115,8 +115,30 @@ export const nativeSessionSpinBreaker = new Map<string, SpinBreaker>();
  * from disk on EVERY turn: without this the second turn of every session would
  * be estimated from scratch. A process restart still loses it, which is the case
  * the reactive backstop covers.
+ *
+ * `model` is the transcript model identity the anchor was measured under
+ * (P3 spec 8.3(d)); read it through `sessionAnchorFor`, never directly.
  */
-export const nativeSessionLastUsage = new Map<string, { promptTokens: number; anchorIndex: number }>();
+export interface SessionAnchor {
+  readonly promptTokens: number;
+  readonly anchorIndex: number;
+  readonly model?: string;
+}
+export const nativeSessionLastUsage = new Map<string, SessionAnchor>();
+
+/**
+ * The persisted anchor a turn on `model` may use. Prefix stability is a
+ * property of (model, prefix) (P3 spec 3.3): an anchor measured under a
+ * different model indexes history the transcript store refused (spec 8.3(c)),
+ * so it is dropped here rather than mis-sizing the next compaction decision.
+ * An entry or a turn with no model makes no claim — the store's own rule.
+ */
+export function sessionAnchorFor(sessionName: string, model: string | undefined): SessionAnchor | undefined {
+  const entry = nativeSessionLastUsage.get(sessionName);
+  if (entry?.model === undefined || model === undefined || entry.model === model) return entry;
+  nativeSessionLastUsage.delete(sessionName);
+  return undefined;
+}
 
 /** Records how the session's latest turn ended, for `closeNativeSession`. */
 export function markNativeTurnOutcome(sessionName: string, failed: boolean): void {

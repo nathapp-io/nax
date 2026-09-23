@@ -23,7 +23,12 @@ import { createInvalidCallBudget } from "./handle-invalid-tool-call";
 import { createLoopEventRegistry } from "./loop-events";
 import { applyHistoryPatch } from "./loop-events/cache-boundary";
 import { registerBuiltinLoopHandlers } from "./loop-handlers";
-import { nativeSessionLastUsage, nativeSessionTranscriptOwners, nativeTranscriptDirs } from "./session";
+import {
+  nativeSessionLastUsage,
+  nativeSessionTranscriptOwners,
+  nativeTranscriptDirs,
+  sessionAnchorFor,
+} from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript, type TranscriptIdentity, transcriptModelIdentity } from "./transcript-store";
 import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
@@ -110,7 +115,7 @@ export async function runNativeTurn(
     },
   });
 
-  const anchor = nativeSessionLastUsage.get(handle.id);
+  const anchor = sessionAnchorFor(handle.id, transcriptIdentity.model);
   let lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
   let anchorIndex = anchor?.anchorIndex;
 
@@ -280,7 +285,11 @@ export async function runNativeTurn(
         const promptTokens = inputClassTokens(res.usage);
         lastUsage = { promptTokens };
         anchorIndex = messages.length - 1;
-        nativeSessionLastUsage.set(handle.id, { promptTokens, anchorIndex });
+        nativeSessionLastUsage.set(handle.id, {
+          promptTokens,
+          anchorIndex,
+          ...(transcriptIdentity.model !== undefined ? { model: transcriptIdentity.model } : {}),
+        });
 
         // 1-based; `roundTrips` is incremented above, before this beat fires.
         deps.onActivity?.(usageBeat(res.usage, res.costUsd, roundTrips));
