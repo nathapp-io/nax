@@ -400,6 +400,67 @@ describe("F2: raw's protected-path screen tracks cd across segments", () => {
   });
 });
 
+// US-001: lexical nax config file detection in the raw Bash screen, reached
+// through the same production entry as the existing `F2` arc. The screen's
+// `args.resolvePath` is `resolveWithin(root, ...)`, which returns null for
+// `.nax/config.json` exactly because typed tools are SUPPOSED to refuse it.
+// The raw screen has no typed seam in front of it, so the redirect fell
+// through to `isNaxOwnedWritePath` -- which does not match nax config files
+// -- and the whole class went unscreened. The fix adds a lexical
+// `isNaxConfigFile` check to `protectedHit`, BEFORE the resolver is consulted.
+describe("US-001: raw screen protects nax config files", () => {
+  const rawSession = () => session({ declared: FIX_TOOLS, allow: [], bashApproval: "raw" });
+
+  test("AC1: a parseable redirect into the root .nax/config.json is denied", async () => {
+    const configPath = join(root, ".nax", "config.json");
+    mkdirSync(join(root, ".nax"), { recursive: true });
+    const before = Buffer.from("original-root-config\n");
+    writeFileSync(configPath, before);
+    const result = await call(rawSession(), "echo x > .nax/config.json");
+    expect(result.kind).toBe("denied");
+    // AC2: bytes must equal the bytes written before the call -- the screen
+    // refused, so the redirect never landed.
+    expect(readFileSync(configPath)).toEqual(before);
+  });
+
+  test("AC3+AC4: a parseable redirect into a per-package mono config is denied (bytes unchanged)", async () => {
+    const configPath = join(root, ".nax", "mono", "packages", "app", "config.json");
+    mkdirSync(join(root, ".nax", "mono", "packages", "app"), { recursive: true });
+    const before = Buffer.from("original-mono-config\n");
+    writeFileSync(configPath, before);
+    const result = await call(rawSession(), "echo x > .nax/mono/packages/app/config.json");
+    expect(result.kind).toBe("denied");
+    expect(readFileSync(configPath)).toEqual(before);
+  });
+
+  test("AC5: a parseable touch into the root config is denied", async () => {
+    const configPath = join(root, ".nax", "config.json");
+    mkdirSync(join(root, ".nax"), { recursive: true });
+    const before = Buffer.from("untouched\n");
+    writeFileSync(configPath, before);
+    const result = await call(rawSession(), "touch .nax/config.json");
+    expect(result.kind).toBe("denied");
+    expect(readFileSync(configPath)).toEqual(before);
+  });
+
+  test("AC6: the existing feature-PRD refusal is unchanged", async () => {
+    const result = await call(rawSession(), "echo x > .nax/features/f1/prd.json");
+    expect(result.kind).toBe("denied");
+    if (result.kind === "denied") expect(result.reason).toContain("prd.json");
+  });
+
+  test("AC7: raw still enforces no containment -- a write outside the root is not denied", async () => {
+    const result = await call(rawSession(), `echo hi > ${join(outside, "outside.txt")}`);
+    expect(result.kind).toBe("ok");
+  });
+
+  test("AC8: an ordinary write at the root is `ok` under raw", async () => {
+    const result = await call(rawSession(), "echo ok > notes.txt");
+    expect(result.kind).toBe("ok");
+    expect(readFileSync(join(root, "notes.txt"), "utf8").trim()).toBe("ok");
+  });
+});
+
 describe("bashApproval default at the direct-caller seam", () => {
   test("a direct buildCodingToolSupport caller defaults to gated, not raw", async () => {
     // `session()` bypasses resolvePermissions, so this pins the LOCAL fallback,
