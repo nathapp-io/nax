@@ -1,14 +1,17 @@
 # Full native loop events — design
 
-**Date:** 2026-09-22 · **Status:** PR 1 MERGED · PR 2 planned · PR 3 not started
+**Date:** 2026-09-22 · **Status:** PR 1 MERGED · PR 2 MERGED · PR 3 designed (§8, re-scoped
+2026-09-23)
 **Baseline:** originally written against `main` @ `3459ca6d6`. **PR 1 merged as `f849ca9b7`
 (#2186) and moved every cited line**; §6.1 and §5.6 now carry post-extraction homes. Citations
-outside those sections still name pre-extraction lines — re-derive before trusting one.
+outside those sections still name pre-extraction lines — re-derive before trusting one. **PR 2
+merged as `fc4dcfcc9` (#2187)**; §8 is re-derived against it.
 **Implements:** phase 3 of the native-coding-agent arc (goal 3)
 **Master plan:** `nax-native-coding-agent-master-plan.md` (workspace, not this repo)
 **Supersedes in part:** `docs/specs/SPEC-native-loop-events.md` — its "Out of Scope" list
 **Branches:** PR 1 `feat/p3-turn-loop-extraction` ✅ merged (`f849ca9b7`) · PR 2
-`feat/p3-loop-events-seam` · PR 3 branches off PR 2
+`feat/p3-loop-events-seam` ✅ merged (`fc4dcfcc9`) · PR 3 `feat/p3-transcript-model-identity`
+(off `main`)
 
 ---
 
@@ -58,10 +61,12 @@ not mistake it for oversight: **most of these events ship with zero production c
 proven by test handlers. pi-gap §9.5's warning stands unretracted — "a seam is not a policy;
 adding eleven events saves zero tokens by itself". P3 buys expressiveness, not tokens.
 
-Two production consumers ship with P3, and only one of them is a new event: the truncation
-migration onto the **existing** `after_tool` (§7), and nax#2150 onto `before_turn` (§8).
-`transform_context`, `before_request`, `after_response`, `before_compaction` and
-`before_turn_end` ship with **no** production consumer.
+~~Two production consumers ship with P3, and only one of them is a new event: the truncation
+migration onto the **existing** `after_tool` (§7), and nax#2150 onto `before_turn` (§8).~~
+**Amended 2026-09-23:** **one** production consumer ships with P3 — the truncation migration
+onto the **existing** `after_tool` (§7). nax#2150 is not a `before_turn` consumer after all:
+it turned out to be unreachable on `main` (§8.1), so **none of the six new events** has a
+production consumer. That is the §2.1 ruling applied without exception, not a new decision.
 
 ### 2.2 Already done — do not rebuild
 
@@ -115,21 +120,25 @@ destroy the cache on their own, before any handler runs:
 - **a model change** — the new model has no cached prefix to preserve, so rewriting history
   at that moment costs exactly nothing.
 
-At either boundary a rewrite is free, and nax#2150 (§8) is a real bug that can only be fixed
-by rewriting there.
+At either boundary a rewrite is free. (This paragraph used to cite nax#2150 as "a real bug that
+can only be fixed by rewriting there"; §8.1 found it unreachable — amended 2026-09-23.)
 
 **The rule governs both history-rewriting events**, `transform_context` and `before_turn` —
-not `transform_context` alone. §8 places nax#2150's handler on `before_turn`, so the model-change
-half of the boundary is exercised there; the compaction half belongs to `transform_context`,
-which ships with no production consumer (§2.1). A blanket ban would have made the seam useless
-for the one real bug it can fix.
+not `transform_context` alone. The compaction half of the boundary belongs to
+`transform_context`. **Amended 2026-09-23:** the model-change half is **never computed**.
+`before_turn` would have been its home, but cross-model history can never reach a turn (§8.1,
+and §8.3 makes that local to the transcript store), so `before_turn`'s `boundary` is always
+`false` and its history channel is honoured only where the anchor is undefined (§3.5). The
+model-change boundary stays in this section as the reason a rewrite *would* be free, not as a
+code path.
 
 ### 3.4 The exemption is computed, never claimed
 
 **The dispatcher computes the boundary. A handler may never assert one.** A handler that
 could say "trust me, I'm at a boundary" is master-plan D13a's failure mode in a new costume —
 an advisory screen the caller can switch off. The dispatcher has both facts at hand: the
-compaction step knows it just compacted, and the model comparison is §8's prerequisite.
+compaction step knows it just compacted. (The model comparison was the other half, retired
+with the original §8 — see §3.3.)
 
 ### 3.5 Where the anchor comes from, and the undefined case
 
@@ -144,9 +153,11 @@ compaction, which sets it to `undefined` deliberately (`:212-213`, "the anchor d
 pre-compaction array; it is meaningless now").
 
 > **`anchorIndex === undefined` permits a full rewrite.** That is not the permissive-on-
-> ignorance failure §8.4 guards against: an absent anchor is positive knowledge that nothing
-> is cached, whereas §8.4's absent `model` field is genuine ignorance about whether a warm
-> cache exists. Unknown-that-there-is-nothing permits; unknown-whether permits nothing.
+> ignorance failure the retired §8.4 guarded against: an absent anchor is positive knowledge
+> that nothing is cached, whereas an absent `model` field was genuine ignorance about whether
+> a warm cache exists. Unknown-that-there-is-nothing permits; unknown-whether permits nothing.
+> (PR 3's §8.3(c) reads an absent file `model` permissively for a different reason: there the
+> permissive branch is a *load*, today's behaviour, not a rewrite.)
 
 ### 3.6 A boundary rewrite invalidates the anchor
 
@@ -155,8 +166,8 @@ compaction path already does at `:212-213`** — and clear the persisted
 `nativeSessionLastUsage` entry with them.
 
 This is not optional bookkeeping. `anchorIndex` indexes *into the array that was rewritten*;
-after §8's handler strips thinking blocks from loaded history, the stored index points at a
-different message, or past the end. It is read by `estimateContextTokens(messages, lastUsage,
+after any honoured rewrite of loaded history, the stored index points at a different message,
+or past the end. (PR 3's §8.3(d) applies the same reasoning to an *empty* load.) It is read by `estimateContextTokens(messages, lastUsage,
 anchorIndex)` at `:161`, which decides whether to compact — so a stale anchor silently
 mis-sizes the context and either compacts a small conversation or fails to compact a large
 one. The dispatcher clears it, not the handler (§3.4).
@@ -357,7 +368,7 @@ The §1 claim that extraction collapses the two `complete` sites into one was ab
 
 | event | site (after §5) | payload | returns | stop rule |
 |---|---|---|---|---|
-| `before_turn` | `turn-loop.ts`, at the seed push (`:69` today) | `prompt`, loaded history (readonly), session identity, `previousModel`/`currentModel` | `{ seed }`, or a history rewrite **only at a boundary** | Seed-only unless the dispatcher reports a model-change boundary (§8). Off-boundary history patch rejected + logged. Seed must be a non-empty user-role array. |
+| `before_turn` | `turn-loop.ts`, at the seed push (`:69` today) | `prompt`, loaded history (readonly), session identity, dispatcher-computed `boundary` (always `false`, §3.3) — **`previousModel`/`currentModel` removed by PR 3 (§8.3)** | `{ seed }`, or a history rewrite **only at a boundary** | Seed-only unless the anchor is undefined (§3.5). Off-boundary history patch rejected + logged. Seed must be a non-empty user-role array. |
 | `transform_context` | `turn-complete-step.ts` | `messages`, `tools`, `model`, dispatcher-computed `boundary` | `{ messages }` | §3's checker. Patch rejected, original kept, warn. |
 | `before_request` | `turn-complete-step.ts` | `model`, `roundTrip`, `attempt`, the per-call options bag (§6.3) | `{ options }` patch | Additive patch only; identity fields (`callId`, `sessionName`) are surfaced readonly and not patchable. |
 | `after_response` | `turn-loop.ts`, the assistant push (`:350`) | `text`, `toolCalls`, `thinking`, `usage` (readonly), `roundTrip` | `{ text, toolCalls, thinking }` | **`usage` and `costUsd` are surfaced but NOT patchable** — the same rule as `denied` on `after_tool`. Billing truth is not a handler's to rewrite. Otherwise safe by construction: shapes the message before it enters the array. |
@@ -422,8 +433,9 @@ this question does not arise there.
 > conversation, and the event stays what its name says: transform the context for *this
 > request*, not rewrite history.
 
-This is also why §8.2's placement of nax#2150 on `before_turn` is the right split rather than
-an accident: nax#2150 genuinely must edit persisted history, so it needs the event that does.
+This is also why the split is right rather than an accident. (It was argued here from the
+original §8.2's placement of nax#2150 on `before_turn`; that consumer is retired, §8.1, but the
+split stands on its own.)
 A handler wanting to rewrite the conversation has `before_turn`; a handler wanting to shape one
 request has `transform_context`; neither can do the other's job by mistake.
 
@@ -462,54 +474,180 @@ earlier handlers produced — which is what the current hardcoded position after
 
 ---
 
-## 8. nax#2150 as the proof consumer (PR 3)
+## 8. PR 3: the transcript store refuses cross-model history (re-scoped 2026-09-23)
 
-### 8.1 The bug
+> **The original §8 is retired.** It made nax#2150 the proof consumer of `before_turn`: record
+> the model on the transcript, let the dispatcher compute a model-change boundary, and have a
+> handler strip the previous model's `thinking` blocks and orphaned `tool_use` from loaded
+> history. Its premise, that a fallback swap loads the previous model's transcript, does not
+> hold on `main` (§8.1). The alternative that the original intent pointed at, keeping history
+> across a swap, was measured and rejected (§8.2). What PR 3 builds instead (§8.3) is smaller,
+> and it puts the guarantee in the layer that owns the data.
 
-A fallback model swap re-opens the same session name with the same transcript owner, so the
-new model is replayed the previous model's `thinking` blocks verbatim. A `thinkingSignature`
-from one provider is meaningless to another: depending on the provider this is silent quality
-degradation, a wasted-token replay, or a hard 400. Measured exposure: **49 of 201 native
-story-stages used more than one model.** Orphaned `tool_use` blocks have the same shape when
-a swap happens mid-batch.
+### 8.1 nax#2150 is unreachable on `main`
 
-### 8.2 It belongs on `before_turn`, not `transform_context`
+Verified on `fc4dcfcc9`:
 
-The swap happens **above** `runNativeTurn`: `completeOptions` is built at `call.ts:125` and
-the retry/swap loop runs at `:150-153`, calling `completeAsWithFallback`, at the operation
-level. (nax#2150 cites `:112` and `:138-140` against its own `d0af01c39` baseline; the file
-has drifted, the structure has not.) Within one `runNativeTurn`
-invocation the model is constant. A swap re-enters `runNativeTurn` on the same session name,
-loading a transcript the *previous* model wrote.
+1. **Every production open goes through `SessionManager.openSession`**:
+   `session-run-hop.ts:92`, `build-hop-callback.ts:414,443`, `session-keeper.ts:96`. Native
+   `complete()` sends one fresh user message and never touches a transcript (`adapter.ts:187`).
+2. **A model change closes the session.** `openSessionImpl` consults `decideReuse`
+   (`endpoint-identity.ts:47-48`). If a live handle is cached under the name with a different
+   agent or a different endpoint (provider + model), the result is `close-then-reopen`.
+3. **The native close removes the transcript from the load path.** `closeNativeSession`
+   (`session.ts:197-216`) deletes it after a clean last turn, and renames it to
+   `.failed-<stamp>.json` after a failed one (nax#1877). Neither is a name `loadTranscript`
+   opens.
+4. **A crashed process's leftover is refused by the owner check.** The owner is
+   `scopeId ?? callId`, and both are random per process (`cost-aggregator.ts:339`,
+   `call.ts:94`).
 
-So the model-change boundary is a **turn-start** fact, and `before_turn` is its event.
+So the new model always loads `[]`. `decideReuse` landed in `cf8e63fe5` (#1965, 2026-09-10),
+before nax#2150's own `d0af01c39` baseline. The issue's chain goes from "same session name,
+same owner" straight to "transcript loaded" and skips step 2.
 
-### 8.3 The prerequisite: the transcript does not record the model
+**Proved, not only read.** A throwaway spike drove the real `SessionManager`, native
+open/close, `runNativeTurn` and transcript store, faking only the provider's `complete`. It was
+deleted and never committed.
 
-`TranscriptFile` is `{ owner?, savedAt, messages }` (`transcript-store.ts:31-34`). **Nothing
-stores which model wrote those messages**, so "has the model changed since this history was
-written?" is currently undecidable — which means nax#2150 cannot be fixed by a loop event
-alone, on either seam.
+| Scenario (same name, same owner) | Model B's first request | Model A's transcript |
+|---|---|---|
+| A's turn succeeded, handle live, B opens | 1 message (its prompt), 0 thinking | deleted |
+| A's turn failed mid tool batch, B opens | 1 message, 0 thinking | renamed `.failed-*` |
+| **Control:** A reopens on the same endpoint | 3 messages, 1 thinking block | reused, replayed |
 
-PR 3 adds `model` to `TranscriptFile`, writes it on save, reads it on load, and hands
-`before_turn` both `previousModel` and `currentModel` so the **dispatcher** computes the
-boundary (§3.4 — never the handler).
+The control is what makes the first two rows mean something: the harness does see a replay
+when one happens.
 
-### 8.4 Backward compatibility, with a stated stop
+### 8.2 Carrying history across a swap: measured, not built
 
-An existing transcript has no `model` field, so `previousModel` is `undefined`.
+The alternative to discarding is to **keep** history across a swap and make it safe:
+- nax-ai stamps each replayed assistant message with the model that actually wrote it, instead
+  of the current one;
+- pi-ai's `transformMessages` then does the cross-model cleanup at the wire (downgrading or
+  dropping thinking, stripping signatures, normalising tool-call ids);
+- the session layer stops closing and discarding on a native-to-native change.
 
-> **Unknown does NOT grant the exemption.** No history rewrite, cache preserved, the handler
-> simply does not fire on the first turn after upgrade. The *exemption* stops, not the turn.
+This was measured against the local run ledgers: native runs from 2026-09-05 to 2026-09-22,
+32 in-session model swaps.
 
-Self-healing: the next save records the model, and every subsequent turn can decide.
+- **27 were one provider's quota 429s**, and 18 of those came at ≤1 round trip, with nothing to
+  carry. Once a plan's quota runs out, every later session fails on its first request.
+- **3 were `fail-spin`.** There the transcript *is* the failure, so carrying it spreads the
+  failure.
+- **Where 20 or more round trips were lost (n = 10)**, the new model reached its first write in
+  a median of 18 round trips, for $0.007-0.057 each. That is no slower than a normal fresh
+  start (median 29.5).
+- **Carrying would cost more.** It would put an estimated 166k-278k uncached tokens on the new
+  provider's first request, more than the whole re-exploration's 66k-122k uncached input.
 
-### 8.5 What the handler does at a boundary
+**Not built.** Re-open this only if the swap mix changes, meaning swaps start landing after
+real work on healthy transcripts. Re-measure first.
 
-Strip the previous model's `thinking` blocks from loaded history, and drop any `tool_use`
-left without a matching result. Prior art is `@earendil-works/pi-ai`'s
-`packages/ai/src/api/transform-messages.ts:93-125`, which nax already depends on at the wire
-layer but does not reach.
+### 8.3 What PR 3 builds
+
+**Why build anything if the bug is unreachable.** "A model change on a session name never
+replays history" holds today only because three decisions in two layers happen to combine:
+#1965 in nax's `src/session/`, and #1838/#1877 in the native close. Nothing names the
+guarantee, so a change to `decideReuse` could reopen nax#2150 silently.
+
+Master-plan D8 makes this sharper. P6 extracts the native session loop and the transcript store
+into `nax-coding`, while `SessionManager` stays nax-side. After that extraction the package
+would not carry the guarantee at all.
+
+So **the transcript store enforces it itself**, the same way it already enforces ownership
+(nax#1877).
+
+**(a) `TranscriptFile` records the model:** `{ owner?, model?, savedAt, messages }`.
+
+**(b) Model identity is `parseModelSpec(handle.modelDef.model).model`.** That is the native
+`provider/model` id with the reasoning-effort suffix stripped. The format is documented at
+`models.ts:49`; the separate `provider` field is ignored on the native path (`adapter.ts:171`).
+- **Effort is stripped** because a thinking signature binds to the model, not to the effort.
+  pi-ai's `isSameModel` compares `provider/api/model` for the same reason.
+- **`parseModelSpec`, not `parseNativeModel`**, because it never throws (`model-spec.ts:33`).
+  That matters: tests drive `runNativeTurn` directly with arbitrary `modelDef`s.
+- **Computed in `turn-loop.ts` from `handle.modelDef`.** A handle with no `modelDef` declares no
+  model.
+
+**(c) The load rule, applied beside the owner check:**
+
+| Reader's model | File's model | Result |
+|---|---|---|
+| none declared | anything | read (no claim, as with owner) |
+| X | X | read |
+| X | Y, not X | **`[]`**: a new conversation, debug-logged like an owner mismatch |
+| X | absent | read |
+
+**An absent file model reads.** This deliberately differs from the owner check, which drops. It
+is safe because every native production turn has a parseable model before the loop runs:
+`adapter.ts:251` parses it and throws if it can't. So every file this code writes carries a
+model, and an absent one can only be a file written before this change. Those never survive
+into a new process: the owner check refuses them (§8.1 step 4).
+
+Dropping would therefore buy nothing in production, and it would break a legitimate test
+pattern: `adapter-complete-rates.test.ts:430` seeds a transcript with no model, then turns with
+a handle that has a `modelDef`.
+
+This does not contradict the retired §8.4 ("unknown does not grant"). There the permissive
+branch was a history *rewrite*. Here the permissive branch is today's behaviour, loading, so
+unknown keeps today's behaviour.
+
+**(d) An empty load discards the persisted anchor.** `nativeSessionLastUsage` survives across
+the turns of a live session, and its `anchorIndex` indexes the history it was measured against
+(§3.6). If the store returns `[]` while an anchor is held, `turn-loop.ts:108-110` would hand
+`estimateContextTokens` an index into an empty array.
+
+Rule: **when the loaded history is empty, `runNativeTurn` ignores the persisted anchor and
+deletes the entry.** That is correct whatever emptied the history, because empty history has
+no cached prefix. It also covers the owner-mismatch path, which has the same latent shape. On a
+fresh session, the history is empty and no anchor exists, so the rule is a no-op.
+
+**(e) Signature.** Owner and model are one concept, "who may resume this file", and they are
+compared in one place. They travel together as `TranscriptIdentity = { owner?: string; model?:
+string }`:
+
+```ts
+loadTranscript(dir, sessionName, identity?)
+saveTranscript(dir, sessionName, messages, identity?)
+```
+
+This replaces the positional `owner`, so `saveTranscript` stays at four positional parameters
+instead of growing to five. Callers are migrated mechanically: 3 `src/` sites in
+`turn-loop.ts`, and the 20 test call sites that pass an owner string (counted 2026-09-23:
+`transcript-store.test.ts` 13, `session-lifecycle.test.ts` 5, `turn-loop-compaction.test.ts`
+1, `transcript-sweep.test.ts` 1). Call sites that pass no owner compile unchanged.
+
+**(f) The dead payload fields are removed.** `BeforeTurnPayload.previousModel`/`currentModel`
+(`loop-events/types.ts:93-95`) were reserved for the original §8. They can never be populated
+now, because cross-model history never reaches `before_turn`. §12's rule against advertising a
+channel that writes nowhere, applied there to `systemPrompt`, applies here too.
+
+Remove the fields and their "PR 3" comments: `turn-loop.ts:112-118`,
+`turn-complete-step.ts:58-64` and `:133-134`, `types.ts:93`, and the comment at
+`turn-lifecycle.test.ts:101`. That test's `not.toHaveProperty` assertions stay; they now pin
+the removal.
+
+**`boundary` on `BeforeTurnPayload` stays.** It is truthful (always `false`, §3.3), it is part
+of the history-event contract `transform_context` shares, and it is the input
+`applyHistoryPatch` reads.
+
+**(g) Not changed:** `decideReuse`, the close semantics, and nax-ai. nax-ai's `toPiMessages`
+stamps every replayed assistant message with the *current* model (`pi-client.js:87-91`), which
+defeats pi-ai's `isSameModel` gate. With §8.1 and (c) in place that is latent with nil blast
+radius, so it is recorded in the PR body, not filed as a new issue.
+
+### 8.4 What stops
+
+A cross-model load stops the **history**, never the turn. The turn proceeds as a new
+conversation, which is exactly what the close path produces today. A false rejection costs one
+re-exploration, which §8.2 measured at under $0.06.
+
+### 8.5 nax#2150
+
+Closed as not reproducible on `main`, citing §8.1's evidence and PR 3's guard. The comment is
+public, so it is posted only after the user approves it.
+
 
 ---
 
@@ -531,12 +669,30 @@ For §3's checker specifically: a handler that rewrites the prefix off-boundary 
 rejected **and the original preserved**. Asserting the rejection alone would pass an
 implementation that drops the messages entirely.
 
-**PR 3 (#2150):** same model → rewrite rejected; changed model → rewrite honoured; **absent
-`model` field → rewrite rejected** (§8.4); and **an honoured rewrite clears `lastUsage`,
-`anchorIndex` and the persisted `nativeSessionLastUsage` entry** (§3.6). The last one needs a
-test that reads the anchor *after* the rewrite rather than only asserting the messages — a
-stale anchor is invisible in the message array and only shows up as a mis-sized compaction
-decision one turn later.
+~~**PR 3 (#2150):** same model → rewrite rejected; changed model → rewrite honoured; absent
+`model` field → rewrite rejected; an honoured rewrite clears the anchor.~~ Retired with the
+original §8.
+
+**PR 3 (re-scoped, §8.3):**
+
+- **Store, every row of §8.3(c)'s table**, plus the owner/model interaction in both
+  directions: an owner mismatch still returns `[]` when the models agree, and a model mismatch
+  returns `[]` when the owners agree. Save writes `model` when given and omits the key when not.
+- **Turn level, driving `runNativeTurn`** (§9.1): history saved by a turn under model A, then
+  a turn on a handle with model B → B's first `complete` receives **only the seed**, and
+  `before_turn` receives `history: []`. The control: a handle whose model differs from A's
+  **only by the effort suffix** gets the history replayed — without it, a store that rejects
+  every load would pass the rejection test.
+- **The anchor, read directly** (§8.3(d)): with a persisted `nativeSessionLastUsage` entry and
+  a load that comes back empty, the entry is discarded — assert on the entry after the turn,
+  not on the messages. A stale anchor is invisible in the message array and only surfaces as a
+  mis-sized compaction decision one turn later.
+- **One composite guard through the real `SessionManager`** (the §8.1 spike, rebuilt on the
+  shared helpers): a model change on a session name yields a fresh conversation. It proves the
+  guarantee end to end through production wiring, and it keeps passing if either layer alone
+  regresses — which is the point of having two.
+- **Removal pinned:** `turn-lifecycle.test.ts:102-103`'s `not.toHaveProperty` assertions stay
+  and now pin §8.3(f).
 
 ### 9.1 The test-double rule bites hardest on the checker
 
@@ -559,15 +715,17 @@ isolation for at least the boundary cases.
 |---|---|---|
 | 1 | `feat/p3-turn-loop-extraction` | ✅ **MERGED** `f849ca9b7` (#2186). turn-loop.ts 599 → 290, six modules, **zero test edits** — the proof obligation held. |
 | 2 | `feat/p3-loop-events-seam` | §4 registry, §6 events, §3 checker, §6.3 widened `complete`, §6.5 request wrapper, §7 truncation migration |
-| 3 | branches off PR 2 | §8 — `model` on `TranscriptFile` and the `before_turn` handler |
+| 3 | `feat/p3-transcript-model-identity` (off `main`) | §8.3 — `model` on `TranscriptFile` + the store's load rule, `TranscriptIdentity`, the empty-load anchor rule, removal of `previousModel`/`currentModel`. ~~The `before_turn` handler~~ retired (§8.1). |
 
 A pure-refactor diff is reviewable by inspection; a diff that both moves 400 lines and adds
 six events is not. Every real finding on P1's PR #2184 was found by a reviewer, not by the
 suite — including D13a, where a "fail open" correction silently became "abandon the screen".
 
-Splitting PR 3 out is also what keeps both of the user's §5 rulings compatible: #2150 is the
-proof consumer, *and* the extraction stays pure. If #2150 turns out to need more than the seam
-offers, PRs 1 and 2 are already merged rather than blocked behind a bug fix.
+Splitting PR 3 out is also what kept both of the user's §5 rulings compatible: #2150 was the
+proof consumer, *and* the extraction stayed pure. If #2150 turned out to need more than the
+seam offers, PRs 1 and 2 would already be merged rather than blocked behind a bug fix — which
+is what happened, in a direction nobody predicted: #2150 needed *less* than the seam, because
+it was unreachable (§8.1).
 
 ---
 
@@ -578,10 +736,16 @@ offers, PRs 1 and 2 are already merged rather than blocked behind a bug fix.
    no-test-edits rule.
 2. **Widening `TurnDeps.complete`** (§6.3) touches the adapter/session boundary P6 cares
    about with no consumer asking yet. Mitigated by keeping the bag minimal and additive.
-3. **Six events, at most two production consumers.** Accepted by the §2.1 ruling; restated in
+3. **Six events, zero production consumers** (amended 2026-09-23 from "at most two"; §2.1). Accepted by the §2.1 ruling; restated in
    the ADR so a later reader does not read dead seams as oversight.
 4. **`before_turn_end`'s `followUp`** is the only event that can spend money unprompted.
    §6.4's stop rules are what keep it from becoming a cost incident.
+5. **PR 3's signature change** (§8.3(e)) touches 20 test call sites. Mechanical — the owner
+   string becomes `{ owner }` — but a reviewer should see it named here rather than discover
+   it in the diff. Call sites passing no owner are untouched.
+6. **The guarantee now lives in two layers** (`decideReuse` and the store). If a future
+   design wants cross-model continuity (§8.2), **both** must change, and §8.2's measurement
+   must be redone first.
 
 ---
 
