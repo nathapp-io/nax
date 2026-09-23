@@ -131,6 +131,8 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
 export interface SendTurnOpts {
   /** Unified callback for context-tool calls and agent questions. */
   interactionHandler: import("./interaction-handler").InteractionHandler;
+  /** Native-only in-process loop-event registrations for this turn. ACP ignores this. */
+  loopEvents?: import("./native/session/loop-events").LoopEventRegistry;
   /** Abort signal for mid-turn cancellation. */
   signal?: AbortSignal;
   /**

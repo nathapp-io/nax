@@ -203,10 +203,18 @@ async function dispatchChain<E extends LoopEvent>(
     }
     const picked = pickPatchFields(returned, fields);
     if (Object.keys(picked).length > 0) {
-      accumulated = { ...accumulated, ...picked };
+      // `before_request.options` is itself a partial patch. Preserve fields
+      // supplied by earlier handlers so independently registered policy hooks
+      // compose (for example, one can set temperature while another disables
+      // thinking for a retry).
+      const merged =
+        event === "before_request" && typeof picked.options === "object" && picked.options !== null
+          ? { ...picked, options: { ...(current as PayloadOf<"before_request">).options, ...picked.options } }
+          : picked;
+      accumulated = { ...accumulated, ...merged };
       // Only patch-declared fields ever overwrite anything, so the next
       // handler sees the previous handler's output and nothing else moved.
-      current = { ...current, ...picked } as PayloadOf<E>;
+      current = { ...current, ...merged } as PayloadOf<E>;
     }
   }
   // Sound: `accumulated` holds only fields PATCHABLE_FIELDS declares for this

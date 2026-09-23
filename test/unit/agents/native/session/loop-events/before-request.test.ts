@@ -94,6 +94,22 @@ describe("native turn loop — before_request event", () => {
     expect(rounds).toEqual([1]);
   });
 
+  test("separate handlers' options patches compose field by field", async () => {
+    const registry = createLoopEventRegistry();
+    registry.register("before_request", () => ({ options: { temperature: 0.2 } }));
+    registry.register("before_request", (p) => {
+      expect(p.options).toEqual({ temperature: 0.2 });
+      return { options: { thinking: true } };
+    });
+    await runNativeTurn(handle, "hi", opts(), {
+      loopEvents: registry,
+      complete: async (_messages, _tools, options) => {
+        expect(options).toEqual({ temperature: 0.2, thinking: true });
+        return reply();
+      },
+    });
+  });
+
   test("with no handler, the request still goes out and no options are fabricated", async () => {
     let calls = 0;
     const seen: (CompleteCallOptions | undefined)[] = [];
