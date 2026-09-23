@@ -64,7 +64,7 @@ export const NAX_OWNED_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edi
  * from (src/execution/queue-handler.ts), so guarding only `.queue.txt` would
  * leave the same hole one rename downstream.
  */
-const QUEUE_CONTROL_FILES: ReadonlySet<string> = new Set([".queue.txt", ".queue.txt.processing"]);
+export const QUEUE_CONTROL_FILES: ReadonlySet<string> = new Set([".queue.txt", ".queue.txt.processing"]);
 
 /**
  * Is this path one nax owns the writes to, independent of WHICH tool is asking?
