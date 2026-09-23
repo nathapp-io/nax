@@ -1,6 +1,8 @@
 export type { SystemOneQuestion, SystemOneRequest } from "./questions";
 export { buildRequest, HARM_QUESTION_ID, QUESTION_SET_VERSION, SYSTEMONE_MODEL_LABEL } from "./questions";
 export { RULE_SET_VERSION, scoreRules } from "./rule-scorer";
+export type { Classify, SystemOneClientOptions } from "./systemone-client";
+export { _systemOneClientDeps, createSystemOneClient, parseAnswer } from "./systemone-client";
 export type {
   CommandSafetyRow,
   CommandShadow,
