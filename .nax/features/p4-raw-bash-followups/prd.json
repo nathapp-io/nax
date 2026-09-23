@@ -3,7 +3,7 @@
   "feature": "p4-raw-bash-followups",
   "branchName": "feat/p4-raw-bash-followups",
   "createdAt": "2026-09-24T00:00:00Z",
-  "updatedAt": "2026-09-23T15:27:40.872Z",
+  "updatedAt": "2026-09-23T15:36:44.724Z",
   "userStories": [
     {
       "id": "US-001",
@@ -78,8 +78,8 @@
         "provenance"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -142,7 +142,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "This adds a new configuration abstraction that must stay aligned with grant resolution and integrates it through a startup logging seam, barrel exports, documentation, and unit plus real setup tests."
+        "reasoning": "This adds a new configuration abstraction that must stay aligned with grant resolution and integrates it through a startup logging seam, barrel exports, documentation, and unit plus real setup tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/config/permissions.ts",
@@ -182,7 +185,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "59ea2d4bd36de78dbdec6fbc2e72423831b4a0e5"
     }
   ],
   "analysis": "This feature changes three established TypeScript seams and needs no config migration. Raw Bash screening is isolated in `src/tools/policy-bash-raw.ts`: `protectedHit` currently calls `args.resolvePath` before `isNaxConfigFile` and skips null results (`src/tools/policy-bash-raw.ts:78-87`). The production resolver is `resolveWithin(resolvedRoot, resolve(cwd, candidate))` (`src/tools/policy.ts:577`), while `isNaxConfigFile` already uses `realOrRaw(root)` and recognizes the root and nested mono config forms (`src/tools/nax-owned-writes.ts:17-43`). The correction belongs only in the raw screen: import and apply `resolve`/`realOrRaw` to every live cwd frame before the existing resolver path, retaining existing null handling and root-relative `isNaxOwnedWritePath` behavior. Do not alter `resolveWithin`, because typed tools rely on its null result for these files. Regression risk is accidentally gating raw outside-root paths or lexer-refused commands; production-entry tests must preserve raw pass-through as well as direct screen tests.\n\nExecution directly calls imported `createHumanAskLink` and persists `process.env.NAX_COMMIT ?? \"unknown\"` in its onRemember callback (`src/pipeline/stages/execution.ts:27,119-139`); `_executionDeps` is the existing test seam (`src/pipeline/stages/execution.ts:304-317`). `NAX_COMMIT` is already exported at `src/version.ts:42`. Add the link factory to that dependency object and use the build constant without changing ask-chain order, approval-store shape, transport behavior, or existing audit flow. Future approval entries gain provenance; historic `unknown` records are intentionally not migrated.\n\nPermissions are centrally resolved in `resolvePermissions`; its invalid-profile arm deliberately returns gated with no `toolGrants` (`src/config/permissions.ts:245-282`). `resolveBashSupport` only synthesizes Bash in raw and otherwise derives Bash availability from the same grant list (`src/agents/coding-tool-bash.ts:43-75`). The new detector must call that resolver for exactly four Bash-declaring stages, normalize an absent grant list to empty, and avoid package overrides and op-level narrowing. The config barrel currently exports only the PipelineStage type from permissions (`src/config/index.ts:17-18`). Setup currently invokes `warnFallbackMisconfiguration` once before credential validation (`src/execution/lifecycle/run-setup.ts:145-150`); `run-setup-warnings.ts` establishes the optional logger and `_setup` warning-data convention (`src/execution/lifecycle/run-setup-warnings.ts:68-98`). Add one sibling warning invocation at that seam. The `bashApproval` schema field is at `src/config/schemas-execution.ts:255-257` and needs documentation only. Risks are detector/tool-offer divergence, invalid profiles throwing, duplicate preflight warnings, source-size limits, and turning a valid no-shell posture into a failure; all changes must remain warning-only and backwards compatible.",
