@@ -3,7 +3,7 @@
   "feature": "audit-row-fidelity",
   "branchName": "feat/audit-row-fidelity",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-24T07:41:49.651Z",
+  "updatedAt": "2026-09-24T08:05:08.047Z",
   "userStories": [
     {
       "id": "US-001",
@@ -34,7 +34,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Four existing modules receive only optional field plumbing using established conditional-spread and recording test seams; no new abstraction or behavior-changing policy path is introduced."
+        "reasoning": "Four existing modules receive only optional field plumbing using established conditional-spread and recording test seams; no new abstraction or behavior-changing policy path is introduced.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/command-safety/tap.ts",
@@ -47,9 +50,6 @@
         "test/unit/command-safety/shadow-call-ids.test.ts",
         "test/unit/tools/runtime-shadow-call-ids.test.ts"
       ],
-      "outOfScope": [
-        "changing the tap `key`"
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/command-safety/tap.test.ts",
@@ -60,7 +60,14 @@
           "reason": "fixtures without identifiers must still produce rows without the identifier keys; existing assertions are unchanged."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b5210aa0eb6f8b8fa8745970f591838494070464",
+      "outOfScope": [
+        "changing the tap `key`"
+      ]
     },
     {
       "id": "US-002",
@@ -101,11 +108,6 @@
       "expectedFiles": [
         "test/unit/sandbox/launcher-sandbox-argv.test.ts"
       ],
-      "outOfScope": [
-        "redacting or truncating the sandbox argv",
-        "changing `executed`",
-        "Linux-specific coverage"
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/sandbox/launcher.test.ts",
@@ -120,7 +122,15 @@
           "reason": "an exact-equality assertion over `audit.sandbox` for a wrapped call may gain `argv`; `executed` assertions are unchanged."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "redacting or truncating the sandbox argv",
+        "changing `executed`",
+        "Linux-specific coverage"
+      ]
     },
     {
       "id": "US-003",
@@ -170,17 +180,20 @@
         "test/unit/command-safety/shadow-executed.test.ts",
         "test/unit/tools/runtime-shadow-executed.test.ts"
       ],
-      "outOfScope": [
-        "classifying the normalized Exec argv",
-        "placing executed on Bash shadow rows"
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/tools/runtime-command-shadow.test.ts",
           "reason": "Bash settle assertions (`toEqual([[key, { ledger: \"ok\" }]])`) stay exactly as they are; the recorder's `settle` may accept a third argument."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "classifying the normalized Exec argv",
+        "placing executed on Bash shadow rows"
+      ]
     }
   ],
   "analysis": "This is an additive enhancement to existing command-safety, runtime audit, and sandbox-launcher flows. `runtime.callTool` opens a shadow tap after `policy.check` with a throwaway `randomUUID()` key and currently sends command, argv, verdict, stage, and storyId only (src/tools/runtime.ts:335-358). Its `log()` already conditionally records `callId`, `scopeId`, `turnId`, `roundTrips`, and `toolCallId` in ToolCallRecord (src/tools/runtime.ts:274-333), while `logCall` currently settles the tap with only ledger and `approval.decidedBy` (src/tools/runtime.ts:359-365). This is the required integration seam: pass the existing IDs to the tap and `args[8]?.executed` at settlement without changing the random tap key. ToolCallRecord defines the same five fields and join semantics (src/tools/tool-audit.ts:75-119), so shadow records must reuse them exactly.\n\nThe shadow is deliberately observational. `toObservation` converts `ShadowCall` to Bash or Exec observations, and `openShadowTap` catches both observe and settle failures (src/command-safety/tap.ts:31-78). `createCommandShadow` scores and classifies `obs.command`, joins model/outcome state, and serializes `toRow` (src/command-safety/shadow.ts:69-177). `Observation`, `CommandSafetyRow`, and `CommandShadow.settle` lack the requested fields today (src/command-safety/types.ts:57-104). Every new optional field must use conditional object spreads so absent sources create no key rather than an `undefined` key. For US-003, retain executed argv in the shadow Entry from settlement to `toRow`; keep `obs.command`, raw `obs.argv`, `scoreRules`, classifier input, and `shadowCacheKey` based on the model input. Tap forwarding must be identity-gated: even if runtime has audit.executed, Bash calls `shadow.settle` with two arguments only.\n\n`logicalArgv` provides the logical shell/argv command, `runUnwrapped` executes and returns it, and `runWrapped` executes the `backend.wrap()` array but currently drops that array while returning logical `executed` (src/sandbox/launcher.ts:35-88). `SandboxRecord` has backend/wrapped/reason/denialHint but no argv (src/sandbox/types.ts:47-53); `LaunchResult.executed` explicitly means logical argv (src/sandbox/types.ts:72-76). US-002 adds wrapper argv only to successful wrapped results, including sandbox-denial results. Disabled and unavailable flows share `runUnwrapped` and must retain no `argv`; wrap failure must remain `SANDBOX_WRAP_FAILED` without a spawn/result. Bash and Exec already propagate `launched.sandbox` into audit and runtime already spreads `audit.sandbox` (src/tools/runtime.ts:304-307), so no production tool/runtime work is required for US-002. Exec's normalized argv is already returned in `audit.executed` only after a launch result; its catch path returns no audit (src/tools/run-command-exec.ts:64-116), providing the intended no-executed shadow outcome.\n\nRelevant test seams are established: `tap.test.ts` records observe/settle tuples (test/unit/command-safety/tap.test.ts:12-164), `shadow.test.ts` has manual classification, captured rows, and drain coverage (test/unit/command-safety/shadow.test.ts:31-235), `runtime-command-shadow.test.ts` asserts raw Bash behavior and shadow isolation (test/unit/tools/runtime-command-shadow.test.ts:20-112), and `launcher.test.ts` injects runArgv and covers all sandbox states, wrap errors, and denial hints (test/unit/sandbox/launcher.test.ts:17-238). Exact sandbox assertions in launcher/Bash/Exec sandbox tests must be updated additively. `test/unit/tools/runtime.test.ts` is already 688 lines, above the 650-line split target, so new runtime tests belong in the specified new files.\n\nRisks are semantic regression rather than migration: never replace or rename existing `executed`, never leak undefined keys, never classify normalized Exec argv, never attach executed to Bash rows, and never let a shadow error impact a call. JSONL schemas remain backward-compatible because all additions are optional; existing rows/readers need no migration and old data cannot be backfilled. US-003 depends on US-001 because both alter the tap/type/runtime shape and its specified seam consumes the identifier-bearing tap call.",
