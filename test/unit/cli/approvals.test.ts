@@ -289,6 +289,28 @@ describe("registerApprovalsCommand", () => {
     expect(help).toContain("--json");
   });
 
+  test("'approvals list --help' does not leak the internal story tag into the user-facing --json description", () => {
+    // Adversarial review: src/cli/approvals.ts:221 set the --json description
+    // to "JSON output (US-004)", which puts the internal story tag into the
+    // user-facing help output. Sibling commands (e.g. status-dispatch's
+    // "--json", described as "Emit cost report in JSON form (requires --cost)")
+    // carry no such tag, so the approved-list help must not carry one either.
+    // Pin the spec here: the substring "(US-" — the shape any internal story
+    // tag takes — must not appear anywhere in the help text.
+    const program = new Command();
+    registerApprovalsCommand(program);
+
+    const approvals = program.commands.find((c) => c.name() === "approvals");
+    expect(approvals).toBeDefined();
+    if (!approvals) throw new Error("approvals group not registered");
+    const list = approvals.commands.find((c) => c.name() === "list");
+    expect(list).toBeDefined();
+    if (!list) throw new Error("approvals list subcommand not registered");
+
+    const help = list.helpInformation();
+    expect(help).not.toContain("(US-");
+  });
+
   test("AC4: 'approvals list -d <workdir>' reads the store once at the path resolveApprovalsFile returns", async () => {
     await withProject(namedProjectConfig, async ({ workdir }) => {
       const readStub = mock(async (_path: string): Promise<ApprovalsFileRead> => OK_READ);
