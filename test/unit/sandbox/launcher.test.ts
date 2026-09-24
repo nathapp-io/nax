@@ -71,6 +71,47 @@ describe("createCommandLauncher", () => {
     expect(backend.finished).toBe(1);
   });
 
+  test("#2198: afterWrapped runs after every wrapped command, even one that fails to wrap", async () => {
+    const trail: string[] = [];
+    const run = (backend: ReturnType<typeof makeFakeSandboxBackend>) =>
+      createCommandLauncher({
+        state: available,
+        backend,
+        policyFor: async (r) => policy(r),
+        afterWrapped: async () => {
+          trail.push(`after:${backend.calls.length}`);
+        },
+      }).run({
+        spec: { kind: "shell", shell: "/bin/sh", command: "true" },
+        root,
+        cwd: root,
+        timeoutMs: 5000,
+        stripEnvVars: [],
+      });
+    await run(makeFakeSandboxBackend("enforce"));
+    await expect(run(makeFakeSandboxBackend("throw"))).rejects.toThrow(/could not wrap/);
+    expect(trail).toEqual(["after:1", "after:1"]);
+  });
+
+  test("afterWrapped never runs for an unwrapped (disabled) command", async () => {
+    let after = 0;
+    _launcherDeps.runArgv = async () => ({ exitCode: 0, stdout: "", stderr: "", timedOut: false });
+    const launcher = createCommandLauncher({
+      state: DISABLED_SANDBOX_STATE,
+      afterWrapped: async () => {
+        after += 1;
+      },
+    });
+    await launcher.run({
+      spec: { kind: "shell", shell: "/bin/sh", command: "true" },
+      root,
+      cwd: root,
+      timeoutMs: 1000,
+      stripEnvVars: [],
+    });
+    expect(after).toBe(0);
+  });
+
   test("available: an argv spec is quoted into one shell command", async () => {
     const backend = makeFakeSandboxBackend("enforce");
     const launcher = createCommandLauncher({ state: available, backend, policyFor: async (r) => policy(r) });

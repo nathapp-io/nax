@@ -17,12 +17,15 @@ import {
   MACOS_CACHE_WRITE_ROOT,
   SRT_MACOS_TMPDIR,
 } from "./defaults";
+import { WORKTREE_CONFIG_FILE } from "./git-guards";
 import type { GitLayout } from "./policy-inputs";
 import type { SandboxPolicy } from "./types";
 
 export interface SandboxPolicyInput {
   readonly root: string;
   readonly git: GitLayout;
+  /** Redirecting git files present now, every worktree included (listGitGuardFiles, #2198). */
+  readonly gitGuardFiles: readonly string[];
   readonly featurePrdPaths: readonly string[];
   readonly credentialFiles: readonly string[];
   readonly approvalsFile?: string;
@@ -53,12 +56,20 @@ function literal(paths: readonly string[]): string[] {
 function gitDenies(root: string, git: GitLayout): string[] {
   if (git.kind === "none") return [];
   const common = git.kind === "worktree" ? git.commonDir : git.gitDir;
-  const hooksAndConfig = [join(common, "hooks"), join(common, "config")];
-  if (git.kind === "main") return hooksAndConfig;
+  // config.worktree is read when extensions.worktreeConfig is on; an absent one
+  // is safe to deny (srt stubs it empty, and empty is valid config) (#2198).
+  const shared = [join(common, "hooks"), join(common, "config"), join(common, WORKTREE_CONFIG_FILE)];
+  if (git.kind === "main") return shared;
   // A worktree's `.git` is a pointer FILE, and gitdir/commondir point back;
   // repointing any of them at an agent-written config (core.hooksPath) would
   // make nax's own unsandboxed git run hooks (spec 12, finding 4).
-  return [...hooksAndConfig, join(root, ".git"), join(git.gitDir, "gitdir"), join(git.gitDir, "commondir")];
+  return [
+    ...shared,
+    join(root, ".git"),
+    join(git.gitDir, "gitdir"),
+    join(git.gitDir, "commondir"),
+    join(git.gitDir, WORKTREE_CONFIG_FILE),
+  ];
 }
 
 export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
@@ -80,6 +91,7 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     ...input.featurePrdPaths,
     ...[...QUEUE_CONTROL_FILES].map((name) => join(root, name)),
     ...gitDenies(root, input.git),
+    ...input.gitGuardFiles,
     ...(input.approvalsFile !== undefined ? [input.approvalsFile] : []),
   ]);
   const denyRead = literal([

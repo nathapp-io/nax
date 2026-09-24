@@ -16,10 +16,12 @@ import {
   defaultTempRoots,
   listCredentialFiles,
   listFeaturePrdPaths,
+  listGitGuardFiles,
   probeSandboxOnce,
   rawBashRefusalReason,
   resolveGitLayout,
   sandboxBackendFor,
+  strayCommonDirTripwire,
   warnSandboxUnavailableOnce,
 } from "@/sandbox";
 
@@ -28,6 +30,8 @@ export const _sessionSandboxDeps = {
   probe: probeSandboxOnce,
   gitLayout: resolveGitLayout,
   featurePrds: listFeaturePrdPaths,
+  gitGuardFiles: listGitGuardFiles,
+  commonDirTripwire: strayCommonDirTripwire,
   credentialFiles: listCredentialFiles,
   tempRoots: defaultTempRoots,
   homedir,
@@ -58,6 +62,8 @@ export async function resolveSessionSandbox(args: {
     buildSandboxPolicy({
       root,
       git,
+      // Per build, like the PRDs: a worktree added mid-run gets its denies too.
+      gitGuardFiles: await _sessionSandboxDeps.gitGuardFiles(git),
       featurePrdPaths: await _sessionSandboxDeps.featurePrds(root),
       credentialFiles,
       ...(approvalsFile !== undefined ? { approvalsFile } : {}),
@@ -66,8 +72,14 @@ export async function resolveSessionSandbox(args: {
       platform: _sessionSandboxDeps.platform(),
       config,
     });
+  const afterWrapped = await _sessionSandboxDeps.commonDirTripwire(git, args.storyId);
   const network = config.network.allowedDomains ?? "open"; // absent = open (spec S2)
-  return createCommandLauncher({ state: { kind: "available", backend: backend.name, network }, backend, policyFor });
+  return createCommandLauncher({
+    state: { kind: "available", backend: backend.name, network },
+    backend,
+    policyFor,
+    ...(afterWrapped !== undefined ? { afterWrapped } : {}),
+  });
 }
 
 /** The compile-time policy refusal for `raw` (Task 8), or undefined. */

@@ -162,6 +162,29 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
     expect(readFileSync(join(wt, ".git"), "utf8")).toBe(pointerBefore);
   }, 30_000);
 
+  test("#2198: a commondir redirect never survives the command; sibling worktree pointers are unwritable", async () => {
+    git(["init", "-q", "-b", "main"], root);
+    writeFileSync(join(root, "seed.txt"), "seed");
+    git(["add", "-A"], root);
+    git(["commit", "-qm", "seed"], root);
+    git(["worktree", "add", "-q", ".nax-wt/US-002", "-b", "wt-us-002"], root);
+    const sibling = join(root, ".git", "worktrees", "US-002");
+    const siblingBefore = readFileSync(join(sibling, "commondir"), "utf8");
+    const pointerBefore = readFileSync(join(root, ".nax-wt", "US-002", ".git"), "utf8");
+
+    const run = await bash();
+    // git inside the sandbox still works: no empty commondir stub was mounted
+    await run("git -c user.email=a@b -c user.name=a commit -q --allow-empty -m inside");
+    expect(git(["log", "--oneline"], root)).toContain("inside");
+
+    await run(`mkdir -p evil && echo "${join(root, "evil")}" > .git/commondir`);
+    await run(`echo /tmp/elsewhere > ${join(sibling, "commondir")}`);
+    await run("echo 'gitdir: /tmp/elsewhere' > .nax-wt/US-002/.git");
+    expect(existsSync(join(root, ".git", "commondir"))).toBe(false);
+    expect(readFileSync(join(sibling, "commondir"), "utf8")).toBe(siblingBefore);
+    expect(readFileSync(join(root, ".nax-wt", "US-002", ".git"), "utf8")).toBe(pointerBefore);
+  }, 30_000);
+
   test("a timeout kills sandboxed grandchildren", async () => {
     const run = await bash();
     const out = await run("sleep 4711 & sleep 4711 & wait", 1000);
