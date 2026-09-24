@@ -1,19 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, IDENTIFIER_KEYS, makeCommandShadowRecorder, makeTempDir, observedOnly } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
-import type { CommandShadow, FinalOutcome, Observation } from "@/command-safety";
-
-const IDENTIFIER_KEYS = ["callId", "scopeId", "turnId", "roundTrips", "toolCallId"] as const;
-
-/** The single Observation the recorder captured, or a loud failure. */
-function observedOnly(r: { observed: [string, Observation][] }): Observation {
-  expect(r.observed).toHaveLength(1);
-  const entry = r.observed[0];
-  if (entry === undefined) throw new Error("no observation was recorded");
-  return entry[1];
-}
 
 /** The tool-audit calls the runtime sink flushed to `dir`. */
 function auditCalls(dir: string): Record<string, unknown>[] {
@@ -36,21 +25,9 @@ const BASE = { declared: ["Read", "Bash"], grants: [{ tool: "Read", patterns: ["
 const session = (extra: Omit<Parameters<typeof buildCodingToolSupport>[0], "root" | "declared" | "grants">) =>
   buildCodingToolSupport({ root, declared: [...BASE.declared], grants: [...BASE.grants], ...extra });
 
-function recorder(overrides: Partial<CommandShadow> = {}) {
-  const observed: [string, Observation][] = [];
-  const settled: [string, FinalOutcome][] = [];
-  const shadow: CommandShadow = {
-    observe: (k, o) => void observed.push([k, o]),
-    settle: (k, o) => void settled.push([k, o]),
-    drain: async () => {},
-    ...overrides,
-  };
-  return { shadow, observed, settled };
-}
-
 describe("runtime.callTool — command shadow tap", () => {
   test("raw Bash: observed as allow, settled ok, same key", async () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     const support = session({ bashApproval: "raw", commandShadow: r.shadow });
     const outcome = await support?.runtime.callTool("Bash", { command: "echo hi > out.txt" });
     expect(outcome?.kind).toBe("ok");
@@ -65,7 +42,7 @@ describe("runtime.callTool — command shadow tap", () => {
   });
 
   test("gated Bash with no grant: observed as deny, settled denied", async () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     const support = session({ bashApproval: "gated", commandShadow: r.shadow });
     const outcome = await support?.runtime.callTool("Bash", { command: "rm -rf src" });
     expect(outcome?.kind).toBe("denied");
@@ -74,7 +51,7 @@ describe("runtime.callTool — command shadow tap", () => {
   });
 
   test("an ask the human refuses: settled denied:ask with decidedBy", async () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     const support = buildCodingToolSupport({
       root,
       declared: ["Bash"],
@@ -90,7 +67,7 @@ describe("runtime.callTool — command shadow tap", () => {
   });
 
   test("US-001 AC6: the recording shadow observes the identifiers from the runtime options and context", async () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     const support = session({ bashApproval: "raw", commandShadow: r.shadow, callId: "c1", scopeId: "s1" });
     await support?.runtime.callTool("Bash", { command: "echo hi" }, { turnId: "t1", roundTrips: 3, toolCallId: "tc1" });
     expect(observedOnly(r)).toMatchObject({
@@ -103,7 +80,7 @@ describe("runtime.callTool — command shadow tap", () => {
   });
 
   test("US-001 AC7: the tool-audit record carries the same callId, turnId and toolCallId as its Observation", async () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     const auditDir = join(root, "audit");
     const support = session({
       bashApproval: "raw",
@@ -124,7 +101,7 @@ describe("runtime.callTool — command shadow tap", () => {
   });
 
   test("US-001 AC8: no callId/scopeId options and no context leaves the Observation without any identifier key", async () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     const support = session({ bashApproval: "raw", commandShadow: r.shadow });
     await support?.runtime.callTool("Bash", { command: "echo hi" });
     const observed = observedOnly(r);
@@ -133,14 +110,14 @@ describe("runtime.callTool — command shadow tap", () => {
 
   test("a non-command tool is never observed", async () => {
     writeFileSync(join(root, "a.txt"), "x");
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     const support = session({ commandShadow: r.shadow });
     await support?.runtime.callTool("Read", { path: "a.txt" });
     expect(r.observed).toHaveLength(0);
   });
 
   test("deferred audit: settle happens only when finalizeAudit runs (Review Focus 1)", async () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     const support = session({ bashApproval: "raw", commandShadow: r.shadow });
     const outcome = await support?.runtime.callTool(
       "Bash",
@@ -154,7 +131,7 @@ describe("runtime.callTool — command shadow tap", () => {
   });
 
   test("a throwing shadow leaves the outcome and the executed effect unchanged", async () => {
-    const boom = recorder({
+    const boom = makeCommandShadowRecorder({
       observe: () => {
         throw new Error("observe");
       },

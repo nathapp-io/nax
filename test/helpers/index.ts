@@ -16,6 +16,12 @@ export { assertDefined, firstCall } from "./assert-defined";
 export { assertCaughtInstanceOf, assertNaxError } from "./assert-nax-error";
 export { makeMockCallContext } from "./call-context";
 export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp } from "./call-op";
+export {
+  IDENTIFIER_KEYS,
+  type IdentifierKeysMatchContract,
+  makeCommandShadowRecorder,
+  observedOnly,
+} from "./command-safety";
 export { opSelector } from "./config-selector";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { type MockContextOrchestrator, makeContextOrchestrator } from "./context-orchestrator";

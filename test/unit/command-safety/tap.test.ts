@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { IDENTIFIER_KEYS, makeCommandShadowRecorder, observedOnly } from "@test/helpers";
 import {
   type CommandShadow,
   type FinalOutcome,
@@ -8,17 +9,6 @@ import {
   type ShadowCall,
   toMechanical,
 } from "@/command-safety";
-
-function recorder() {
-  const observed: [string, Observation][] = [];
-  const settled: [string, FinalOutcome][] = [];
-  const shadow: CommandShadow = {
-    observe: (k, o) => void observed.push([k, o]),
-    settle: (k, o) => void settled.push([k, o]),
-    drain: async () => {},
-  };
-  return { shadow, observed, settled };
-}
 
 /**
  * Like `recorder`, but keeps every argument each `settle` call received, so a
@@ -38,19 +28,9 @@ function arityRecorder() {
 
 const allow = { allowed: true };
 
-const IDENTIFIER_KEYS = ["callId", "scopeId", "turnId", "roundTrips", "toolCallId"] as const;
-
-/** The single Observation the recorder captured, or a loud failure. */
-function observedOnly(r: { observed: [string, Observation][] }): Observation {
-  expect(r.observed).toHaveLength(1);
-  const entry = r.observed[0];
-  if (entry === undefined) throw new Error("no observation was recorded");
-  return entry[1];
-}
-
 describe("openShadowTap", () => {
   test("US-001 AC1: a Bash call's five call identifiers reach the Observation", () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     openShadowTap(r.shadow, {
       key: "k",
       identity: "Bash",
@@ -74,7 +54,7 @@ describe("openShadowTap", () => {
   });
 
   test("US-001 AC2: an Exec call's five call identifiers reach the Observation", () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     openShadowTap(r.shadow, {
       key: "k",
       identity: "Exec",
@@ -98,7 +78,7 @@ describe("openShadowTap", () => {
   });
 
   test("US-001 AC3: a Bash call with no identifiers yields an Observation with none of the five keys", () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     openShadowTap(r.shadow, {
       key: "k",
       identity: "Bash",
@@ -112,7 +92,7 @@ describe("openShadowTap", () => {
   });
 
   test("US-001 AC9: only the identifier sources that are defined reach the Observation", () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     openShadowTap(r.shadow, {
       key: "k",
       identity: "Bash",
@@ -143,7 +123,7 @@ describe("openShadowTap", () => {
   });
 
   test("Bash with a string command is observed, then settled once", () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     const tap = openShadowTap(r.shadow, {
       key: "k",
       identity: "Bash",
@@ -171,7 +151,7 @@ describe("openShadowTap", () => {
   });
 
   test("Exec with a string argv is observed with the joined command and argv verbatim", () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     openShadowTap(r.shadow, {
       key: "k",
       identity: "Exec",
@@ -189,14 +169,14 @@ describe("openShadowTap", () => {
     ["Bash without a string command", { identity: "Bash", command: 42, argv: undefined }],
     ["Exec with a non-string argv entry", { identity: "Exec", command: undefined, argv: ["git", 1] }],
   ])("%s is not observed", (_label, call) => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     openShadowTap(r.shadow, { key: "k", verdict: allow, stage: "run", ...call }).settle("ok");
     expect(r.observed).toHaveLength(0);
     expect(r.settled).toHaveLength(0);
   });
 
   test("settle carries decidedBy when present", () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     openShadowTap(r.shadow, {
       key: "k",
       identity: "Bash",
@@ -257,7 +237,7 @@ describe("openShadowTap", () => {
   });
 
   test("a throwing settle is caught inside the live tap", () => {
-    const r = recorder();
+    const r = makeCommandShadowRecorder();
     const boomSettle: CommandShadow = {
       ...r.shadow,
       settle: () => {

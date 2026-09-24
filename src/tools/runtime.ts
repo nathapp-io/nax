@@ -363,10 +363,23 @@ export function createCodingToolRuntime(opts: {
             });
       // Every ledger outcome of this call settles the tap exactly once, with
       // `denied:ask` and `decidedBy` intact -- which CodingToolOutcome.kind
-      // alone would lose (spec 4.2).
-      const logCall: typeof log = (...args) => {
-        log(...args);
-        tap?.settle(args[1], args[8]?.approval?.decidedBy, args[8]?.executed);
+      // alone would lose (spec 4.2). The audit is a named parameter, not a
+      // rest-array index: `log`'s positional shape can then change without
+      // silently shifting what the tap settles with.
+      const logCall = (
+        tool: string,
+        outcome: CodingToolOutcome["kind"] | "denied:ask",
+        resultBytes: number,
+        input: Record<string, unknown>,
+        context: ToolCallContext | undefined,
+        breach?: boolean,
+        reason?: string,
+        routineErrors?: boolean,
+        audit?: Parameters<typeof log>[8],
+        resultBytesPreTruncation?: number,
+      ): void => {
+        log(tool, outcome, resultBytes, input, context, breach, reason, routineErrors, audit, resultBytesPreTruncation);
+        tap?.settle(outcome, audit?.approval?.decidedBy, audit?.executed);
       };
 
       /**

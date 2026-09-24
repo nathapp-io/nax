@@ -54,9 +54,11 @@ export interface ToolCallRecord {
    */
   readonly approval?: { readonly decidedBy: string; readonly remembered: boolean; readonly latencyMs: number };
   /**
-   * P4: `{ backend, wrapped, reason?, denialHint? }` on every Bash / Exec row;
-   * the exit runs gate on `wrapped`. Additive and optional, so
-   * `TOOL_AUDIT_SCHEMA_VERSION` stays 1 (as `approval` did).
+   * P4: `{ backend, wrapped, reason?, denialHint?, argv? }` on every Bash /
+   * Exec row; the exit runs gate on `wrapped`, and `argv` (wrapped calls only)
+   * is the argv the sandbox actually executed, beside the logical `executed`.
+   * Additive and optional, so `TOOL_AUDIT_SCHEMA_VERSION` stays 1 (as
+   * `approval` did).
    */
   readonly sandbox?: SandboxRecord;
   /** Provider id for a provider-supplied tool; absent for built-ins. */

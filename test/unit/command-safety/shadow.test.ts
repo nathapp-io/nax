@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { IDENTIFIER_KEYS } from "@test/helpers";
 import {
   _commandShadowDeps,
   type Classify,
@@ -62,8 +63,6 @@ const write = async (r: CommandSafetyRow) => {
   rows.push(r);
 };
 const flush = () => new Promise<void>((r) => queueMicrotask(r)).then(() => new Promise<void>((r) => queueMicrotask(r)));
-
-const IDENTIFIER_KEYS = ["callId", "scopeId", "turnId", "roundTrips", "toolCallId"] as const;
 
 /** The single row the shadow wrote, or a loud failure. */
 function writtenRow(): CommandSafetyRow {
