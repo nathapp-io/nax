@@ -148,10 +148,10 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
         messages.push(buildToolResult({ toolCallId: call.id, content: outcome.content, isError: outcome.isError }));
         continue;
       }
-      // `allow` may rewrite the call's input; the rewritten value is what
-      // the transcript records and what the tool is invoked with, so the
-      // model's own history stays a truthful account of what ran.
-      const rewritten = outcome.kind === "allow" ? outcome.input : undefined;
+      // `allow` and `nudge` may rewrite the call's input; the rewritten value
+      // is what the transcript records and what the tool is invoked with, so
+      // the model's own history stays a truthful account of what ran.
+      const rewritten = outcome.input;
       const input = rewritten ?? call.input;
       if (rewritten !== undefined) messages = rewriteToolCallInput(messages, call.id, rewritten);
       const nudgeText = outcome.kind === "nudge" ? outcome.text : undefined;

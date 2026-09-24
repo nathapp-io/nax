@@ -351,6 +351,45 @@ describe("runNativeTurn — invalid tool call input (nax#2047)", () => {
   });
 });
 
+describe("runNativeTurn — null-optional rewrite under a spin-breaker nudge (nax#2200)", () => {
+  const SPIN_NUDGE = "SPIN NUDGE: you already asked this";
+  // The validation handler strips the null and the breaker (registered after
+  // it) nudges the same call. A nudged call still runs, so the strip must
+  // survive the nudge or the tool receives the raw `null`.
+  const alwaysNudging: NonNullable<TurnDeps["spinBreaker"]> = {
+    observe: () => ({ action: "nudge", nudgeNumber: 1, repeats: 3, text: SPIN_NUDGE }),
+    noteResult: () => {},
+    summary: () => ({ totalCalls: 1, newKeyEvents: 1, maxRepeatRun: 1, maxSameKeyRepeats: 3, nudges: 1 }),
+  };
+
+  test("the tool receives the stripped input and the nudge still prefixes its result", async () => {
+    const driving = drivingComplete([{ id: "c1", input: { command: "typecheck", values: null } }]);
+    const observed = driving.observedInputs ?? [];
+    const opts = baseOpts({
+      interactionHandler: {
+        onInteraction: async (req: AdapterInteraction) => {
+          if (req.kind === "coding-tool") observed.push(req.input);
+          return { answer: "29 tests passed" };
+        },
+      },
+    });
+    await runNativeTurn(handle, "hi", opts, { complete: driving.first, spinBreaker: alwaysNudging });
+    const saved = await loadTranscript(dir, handle.id);
+
+    expect(observed).toEqual([{ command: "typecheck" }]);
+    const assistant = saved.find((m) => m.role === "assistant");
+    if (assistant === undefined || assistant.role !== "assistant" || assistant.toolCalls === undefined) {
+      throw new Error("unreachable");
+    }
+    expect(assistant.toolCalls[0]?.input).toEqual({ command: "typecheck" });
+    const toolResults = saved.filter((m) => m.role === "tool-result");
+    expect(toolResults.length).toBe(1);
+    const content = toolResults[0]?.role === "tool-result" ? toolResults[0].content : "";
+    expect(content).toContain(SPIN_NUDGE);
+    expect(content).toContain("29 tests passed");
+  });
+});
+
 type RoundTripPlan = ReadonlyArray<{
   text: string;
   toolCalls?: ReadonlyArray<{ id: string; input: Record<string, unknown> }>;
