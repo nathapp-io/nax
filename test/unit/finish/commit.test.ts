@@ -29,6 +29,9 @@ function makeGitStub(handler: (call: GitCall) => GitResult) {
 
 const ok = (stdout = ""): GitResult => ({ stdout, stderr: "", exitCode: 0 });
 const fail = (stderr = "boom"): GitResult => ({ stdout: "", stderr, exitCode: 1 });
+/** `git diff --cached --quiet` exits 1 when the index differs from HEAD. */
+const isStagedCheck = (args: string[]): boolean => args[0] === "diff" && args.includes("--cached");
+const staged = (): GitResult => ({ stdout: "", stderr: "", exitCode: 1 });
 
 describe("_finishGitDeps.git argv — no leading 'git' element", () => {
   test("commitFixes on a clean tree calls status and rev-parse without a leading 'git'", async () => {
@@ -67,6 +70,7 @@ describe("commitFixes", () => {
     const { git, calls } = makeGitStub((call) => {
       if (call.args[0] === "rev-parse") return ok("newsha\n");
       if (call.args[0] === "status") return ok(" M src/a.ts\n");
+      if (isStagedCheck(call.args)) return staged();
       return ok();
     });
     _finishGitDeps.git = git;
@@ -84,6 +88,7 @@ describe("commitFixes", () => {
     const { git, calls } = makeGitStub((call) => {
       if (call.args[0] === "rev-parse") return ok("sha\n");
       if (call.args[0] === "status") return ok(" M src/a.ts\n");
+      if (isStagedCheck(call.args)) return staged();
       return ok();
     });
     _finishGitDeps.git = git;
@@ -98,6 +103,7 @@ describe("commitFixes", () => {
     const { git } = makeGitStub((call) => {
       if (call.args[0] === "rev-parse") return ok("sha\n");
       if (call.args[0] === "status") return ok(" M src/a.ts\n");
+      if (isStagedCheck(call.args)) return staged();
       if (call.args[0] === "add") return ok();
       if (call.args[0] === "commit") return fail("pre-commit hook rejected");
       return ok();
@@ -111,12 +117,40 @@ describe("commitFixes", () => {
     const { git, calls } = makeGitStub((call) => {
       if (call.args[0] === "rev-parse") return ok("sha\n");
       if (call.args[0] === "status") return ok(" M src/a.ts\n");
+      if (isStagedCheck(call.args)) return staged();
       if (call.args[0] === "add") return fail("disk full");
       return ok();
     });
     _finishGitDeps.git = git;
 
     await expect(commitFixes("/repo", "fix: bad add")).rejects.toThrow(NaxError);
+    expect(calls.some((c) => c.args[0] === "commit")).toBe(false);
+  });
+
+  test("#2210: nothing staged after add returns uncommitted and never runs a status-printing commit", async () => {
+    const { git, calls } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("sha\n");
+      if (call.args[0] === "status") return ok(" M sub\n");
+      return ok(); // diff --cached --quiet exits 0: the index matches HEAD
+    });
+    _finishGitDeps.git = git;
+
+    const result = await commitFixes("/repo", "fix: only a dirty submodule");
+
+    expect(result).toEqual({ committed: false, shaBefore: "sha", shaAfter: "sha" });
+    expect(calls.some((c) => c.args[0] === "commit")).toBe(false);
+  });
+
+  test("#2210: an unanswerable staged check throws instead of committing", async () => {
+    const { git, calls } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("sha\n");
+      if (call.args[0] === "status") return ok(" M src/a.ts\n");
+      if (isStagedCheck(call.args)) return { stdout: "", stderr: "fatal", exitCode: 128 };
+      return ok();
+    });
+    _finishGitDeps.git = git;
+
+    await expect(commitFixes("/repo", "fix: x")).rejects.toThrow(NaxError);
     expect(calls.some((c) => c.args[0] === "commit")).toBe(false);
   });
 
@@ -190,6 +224,7 @@ describe("commitAndPush", () => {
     const { git, calls } = makeGitStub((call) => {
       if (call.args[0] === "rev-parse") return ok("sha\n");
       if (call.args[0] === "status") return ok(" M src/a.ts\n");
+      if (isStagedCheck(call.args)) return staged();
       return ok();
     });
     _finishGitDeps.git = git;

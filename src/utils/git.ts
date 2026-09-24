@@ -4,8 +4,8 @@
 
 import { getSafeLogger } from "../logger";
 import { spawn } from "./bun-deps";
-import { gitlinkSafeAdd } from "./git-add";
-import { hardenedGitEnv } from "./git-env";
+import { gitlinkSafeAdd, hasStagedChanges } from "./git-add";
+import { hardenedGitArgv, hardenedGitEnv } from "./git-env";
 import { realOrRaw } from "./realpath";
 
 /**
@@ -88,7 +88,7 @@ export async function gitWithTimeout(
    *  everyone else gets ["git", ...args] as before. */
   argvOverride?: readonly string[],
 ): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut?: boolean }> {
-  const proc = _gitDeps.spawn([...(argvOverride ?? ["git", ...args])], {
+  const proc = _gitDeps.spawn(hardenedGitArgv(argvOverride ?? ["git", ...args]), {
     cwd: workdir,
     env: hardenedGitEnv(process.env),
     stdout: "pipe",
@@ -455,12 +455,9 @@ export async function autoCommitIfDirty(
     // timeout would otherwise silently skip the auto-commit, leaving the tree
     // dirty and triggering the very escalation this function exists to avoid.
     // Use a longer budget and log (not throw — still best-effort) on failure.
-    // gitlinkSafeAdd, not a bare `git add -A`: git would otherwise run status
-    // inside an agent-made nested repo, under that repo's own config (#2210).
-    const { exitCode: addExit, stderr: addStderr } = await gitlinkSafeAdd(gitWithTimeout, realGitRoot, {
-      flags: ["-A"],
-      timeoutMs: AUTO_COMMIT_GIT_TIMEOUT_MS,
-    });
+    // Never a bare `git add -A`, nor a commit with nothing staged: both run status inside gitlinks (#2210).
+    const addOpts = { flags: ["-A"], timeoutMs: AUTO_COMMIT_GIT_TIMEOUT_MS };
+    const { exitCode: addExit, stderr: addStderr } = await gitlinkSafeAdd(gitWithTimeout, realGitRoot, addOpts);
     if (addExit !== 0) {
       logger?.error(stage, "auto-commit: git add -A failed or timed out", {
         storyId,
@@ -468,6 +465,12 @@ export async function autoCommitIfDirty(
         exitCode: addExit,
         stderr: addStderr.trim(),
       });
+      return;
+    }
+
+    const staged = await hasStagedChanges(gitWithTimeout, realGitRoot, AUTO_COMMIT_GIT_TIMEOUT_MS);
+    if (staged !== true) {
+      logger?.debug(stage, "auto-commit: nothing staged; skipping commit", { storyId, role, staged });
       return;
     }
 

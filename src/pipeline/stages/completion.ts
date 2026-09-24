@@ -25,7 +25,7 @@ import { countStories, markStoryPassed, savePRD } from "@/prd";
 import { storySpendUsd } from "@/runtime";
 import { errorMessage } from "@/utils/errors";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
-import { gitSpawnEnv } from "@/utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
 import { NAX_OWNED_TOP_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
@@ -303,7 +303,7 @@ async function drainAfterExit<T>(streamPromise: Promise<T>, empty: T): Promise<T
 async function getDiffText(workdir: string, baseRef: string | undefined): Promise<string> {
   if (!baseRef) return "";
   try {
-    const proc = _completionDeps.spawn(["git", "diff", `${baseRef}..HEAD`], {
+    const proc = _completionDeps.spawn(hardenedGitArgv(["git", "diff", `${baseRef}..HEAD`]), {
       cwd: workdir,
       env: gitSpawnEnv(),
       stdout: "pipe",
@@ -364,7 +364,7 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
     // and a package dir for a monorepo story, while the output is repo-rooted
     // either way.
     const proc = _completionDeps.spawn(
-      ["git", "diff", "--name-only", `${baseRef}..HEAD`, "--", ...NAX_OWNED_TOP_EXCLUDE_PATHSPECS],
+      hardenedGitArgv(["git", "diff", "--name-only", `${baseRef}..HEAD`, "--", ...NAX_OWNED_TOP_EXCLUDE_PATHSPECS]),
       {
         cwd: workdir,
         env: gitSpawnEnv(),

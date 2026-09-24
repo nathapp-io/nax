@@ -9,7 +9,7 @@ import { spawn } from "bun";
 import type { PluginRegistry } from "../plugins";
 import type { ReviewConfig } from "../review/types";
 import { GIT_TIMEOUT_MS } from "../utils/git";
-import { gitSpawnEnv } from "../utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
 import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /** Injectable deps for testing */
@@ -39,7 +39,7 @@ export interface DeferredReviewResult {
  */
 async function spawnGitWithDeadline(args: string[], workdir: string): Promise<string> {
   const proc = _deferredReviewDeps.spawn({
-    cmd: ["git", ...args],
+    cmd: hardenedGitArgv(["git", ...args]),
     cwd: workdir,
     env: gitSpawnEnv(),
     stdout: "pipe",

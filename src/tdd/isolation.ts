@@ -16,7 +16,7 @@ import { getLogger } from "../logger";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 import { spawn } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
-import { gitSpawnEnv } from "../utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
 import type { IsolationCheck } from "./types";
 
 const GIT_TIMEOUT_MS = 10_000;
@@ -57,7 +57,7 @@ async function runGitBounded(
       stage: "tdd-isolation",
     });
   }
-  const proc = _isolationDeps.spawn(["git", ...args], {
+  const proc = _isolationDeps.spawn(hardenedGitArgv(["git", ...args]), {
     cwd: workdir,
     env: gitSpawnEnv(),
     stdout: "pipe",

@@ -1,7 +1,8 @@
 /**
  * The git-spawn hardening gate (#2198): every git nax spawns carries
  * `gitSpawnEnv` / `hardenedGitEnv`, or is marked as handed to a runner that
- * hardens it. Proven by violating it.
+ * hardens it; a status / diff argv also goes through `hardenedGitArgv` (#2210).
+ * Proven by violating it.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -13,16 +14,23 @@ const SCRIPT = join(import.meta.dir, "../../../scripts/check-git-spawn-env.ts");
 
 describe("findGitSpawnViolations", () => {
   test.each([
-    ["an inline spawn carrying gitSpawnEnv", 'Bun.spawn(["git", "status"], { cwd, env: gitSpawnEnv() });'],
+    [
+      "an inline spawn carrying gitSpawnEnv and hardenedGitArgv",
+      'Bun.spawn(hardenedGitArgv(["git", "status"]), { cwd, env: gitSpawnEnv() });',
+    ],
+    ["a non-status/diff literal with no argv wrapper", 'Bun.spawn(["git", "log"], { cwd, env: gitSpawnEnv() });'],
     [
       "a deps spawn with an overlay",
-      '_deps.spawn(["git", ...args], {\n  cwd,\n  env: gitSpawnEnv({ GIT_DIR: d }),\n});',
+      '_deps.spawn(hardenedGitArgv(["git", ...args]), {\n  cwd,\n  env: gitSpawnEnv({ GIT_DIR: d }),\n});',
     ],
-    ["a cmd-object spawn", 'deps.spawn({\n  cmd: ["git", ...args],\n  cwd,\n  env: gitSpawnEnv(),\n});'],
+    [
+      "a cmd-object spawn",
+      'deps.spawn({\n  cmd: hardenedGitArgv(["git", ...args]),\n  cwd,\n  env: gitSpawnEnv(),\n});',
+    ],
     ["a spawnSync spreading shared options", 'Bun.spawnSync(["git", "config"], { ...opts, env: gitSpawnEnv() });'],
     [
       "an argv inside a grouping paren",
-      'deps.spawn([...(over ?? ["git", ...args])], { env: hardenedGitEnv(process.env) });',
+      'deps.spawn(hardenedGitArgv([...(over ?? ["git", ...args])]), { env: hardenedGitEnv(process.env) });',
     ],
     ["a marked runner hand-off", '// nax-git-env-allow: defaultRun hardens\nawait deps.run(["git", "push"], { cwd });'],
     ["a git literal in a comment", '// Bun.spawn(["git", "status"])\n/* spawn(["git"]) */'],
@@ -38,6 +46,22 @@ describe("findGitSpawnViolations", () => {
         text: 'const p = Bun.spawn(["git", "diff"], { cwd: dir });',
         why: "git spawn without env: gitSpawnEnv(...)",
       },
+      {
+        line: 1,
+        text: 'const p = Bun.spawn(["git", "diff"], { cwd: dir });',
+        why: "git status/diff argv not wrapped in hardenedGitArgv(...)",
+      },
+    ]);
+  });
+
+  test.each([
+    ["a status literal", 'Bun.spawn(["git", "status", "--porcelain"], { env: gitSpawnEnv() });'],
+    ["a diff literal", "Bun.spawn(['git', 'diff', 'HEAD'], { env: gitSpawnEnv() });"],
+    ["a spread argv, whose verb is unknown", '_deps.spawn(["git", ...args], { env: gitSpawnEnv() });'],
+    ["a cmd-object spread", 'deps.spawn({ cmd: ["git", ...args], env: gitSpawnEnv() });'],
+  ])("#2210: flags %s without hardenedGitArgv", (_label, source) => {
+    expect(findGitSpawnViolations(source).map((v) => v.why)).toEqual([
+      "git status/diff argv not wrapped in hardenedGitArgv(...)",
     ]);
   });
 
@@ -92,7 +116,9 @@ describe("check-git-spawn-env CLI", () => {
   }
 
   test("exits 0 on a clean tree", () => {
-    const { code } = runGate({ "src/a.ts": 'Bun.spawn(["git", "status"], { env: gitSpawnEnv() });\n' });
+    const { code } = runGate({
+      "src/a.ts": 'Bun.spawn(hardenedGitArgv(["git", "status"]), { env: gitSpawnEnv() });\n',
+    });
     expect(code).toBe(0);
   });
 

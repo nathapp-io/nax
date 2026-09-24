@@ -21,7 +21,7 @@ import {
   openPr as _openDraft,
 } from "@/forge";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
-import { gitSpawnEnv } from "@/utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
 import { buildBody, buildTitle, type PrBodyContext } from "./pr-body";
 import type { AutoPrConfig, AutoPrDeps } from "./types";
 
@@ -47,7 +47,8 @@ export async function defaultRun(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   // Hardened for every command: `git push` directly, and gh / glab run git
   // underneath; the GIT_CONFIG_* entries are inert to anything else.
-  const proc = Bun.spawn(cmd, { cwd: opts.cwd, env: gitSpawnEnv(), stdout: "pipe", stderr: "pipe" });
+  const argv = cmd[0] === "git" ? hardenedGitArgv(cmd) : cmd; // #2210: status / diff only
+  const proc = Bun.spawn(argv, { cwd: opts.cwd, env: gitSpawnEnv(), stdout: "pipe", stderr: "pipe" });
   const timeoutMs = opts.timeoutMs ?? DEFAULT_SUBPROCESS_TIMEOUT_MS;
   let timedOut = false;
   const timer = setTimeout(() => {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { gitWithTimeout } from "@/utils/git";
-import { type GitRunResult, gitlinkSafeAdd, parseGitlinks } from "@/utils/git-add";
+import { type GitRunResult, gitlinkSafeAdd, hasStagedChanges, parseGitlinks } from "@/utils/git-add";
 import { gitSpawnEnv } from "@/utils/git-env";
 
 const OK: GitRunResult = { stdout: "", stderr: "", exitCode: 0 };
@@ -21,6 +21,23 @@ describe("parseGitlinks", () => {
 
   test("an empty listing has no gitlinks", () => {
     expect(parseGitlinks("")).toEqual([]);
+  });
+});
+
+describe("hasStagedChanges", () => {
+  test.each([
+    [{ ...OK, exitCode: 1 }, true],
+    [OK, false],
+    [{ ...OK, exitCode: 128 }, undefined],
+    [{ ...OK, exitCode: 1, timedOut: true }, undefined],
+  ])("maps %j to %p", async (result, expected) => {
+    const calls: string[][] = [];
+    const run = async (args: string[]) => {
+      calls.push(args);
+      return result;
+    };
+    expect(await hasStagedChanges(run, "/r")).toBe(expected);
+    expect(calls).toEqual([["diff", "--cached", "--quiet"]]);
   });
 });
 
@@ -142,6 +159,45 @@ describe("#2210 nested-repo filter driver never runs under nax's git", () => {
       expect(await ran()).toBe(false);
     },
   );
+
+  describe("with an agent-written `.gitmodules` that sets `ignore = none`", () => {
+    // Config is only a default: this per-submodule entry overrides the env's
+    // diff.ignoreSubmodules, so only the command-line flag holds.
+    beforeEach(async () => {
+      await Bun.write(
+        join(top, ".gitmodules"),
+        '[submodule "n"]\n\tpath = nested\n\turl = ./nested\n\tignore = none\n',
+      );
+      git(["add", ".gitmodules"], top);
+      git(["commit", "-qm", "gitmodules"], top);
+    });
+
+    test("control: the env hardening alone does run the nested filter", async () => {
+      await dirtyNested();
+      Bun.spawnSync(["git", "status", "--porcelain"], { cwd: top, env: gitSpawnEnv() });
+      expect(await ran()).toBe(true);
+    });
+
+    test.each([[["status", "--porcelain"]], [["diff", "--name-only", "HEAD"]], [["-C", ".", "diff", "HEAD"]]])(
+      "gitWithTimeout %j does not run it",
+      async (args) => {
+        await dirtyNested();
+        const r = await gitWithTimeout(args, top);
+        expect(r.exitCode).toBe(0);
+        expect(await ran()).toBe(false);
+      },
+    );
+
+    test("hasStagedChanges answers without running it, both ways", async () => {
+      await dirtyNested();
+      expect(await hasStagedChanges(gitWithTimeout, top)).toBe(false);
+      await Bun.write(join(top, "a.txt"), "changed\n");
+      git(["add", "a.txt"], top);
+      await dirtyNested();
+      expect(await hasStagedChanges(gitWithTimeout, top)).toBe(true);
+      expect(await ran()).toBe(false);
+    });
+  });
 
   test("gitlinkSafeAdd -A does not run it and still stages the gitlink's new HEAD", async () => {
     await Bun.write(join(top, "a.txt"), "changed\n");

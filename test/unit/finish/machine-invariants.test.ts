@@ -120,6 +120,8 @@ function installGitStub(trail: string[], handlers: GitHandlers = {}): void {
       return { stdout: `sha${shaCounter}`, stderr: "", exitCode: 0 };
     }
     if (cmd === "status") return { stdout: " M file.ts\n", stderr: "", exitCode: 0 };
+    // The staged check after add: only reached once status reported dirty.
+    if (cmd === "diff") return { stdout: "", stderr: "", exitCode: 1 };
     if (cmd === "add") return { stdout: "", stderr: "", exitCode: 0 };
     if (cmd === "commit") {
       trail.push("commit");

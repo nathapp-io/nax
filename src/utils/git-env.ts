@@ -14,8 +14,12 @@
  * unlike fsmonitor it cannot be switched off by name. `diff.ignoreSubmodules
  * =dirty` skips that dirty check (a moved gitlink HEAD is still reported,
  * without spawning git in it), and `submodule.recurse=false` keeps checkout /
- * merge from recursing. `git add` ignores diff.ignoreSubmodules, so nax stages
- * through `gitlinkSafeAdd` (`./git-add`) instead of a bare `git add`.
+ * merge from recursing. Config is only a default, though: a
+ * `submodule.<name>.ignore` in the agent-writable `.gitmodules` overrides it,
+ * so status / diff also get `--ignore-submodules=dirty` on the command line
+ * (`hardenedGitArgv`), the one form that beats `.gitmodules`. `git add`
+ * ignores both, so nax stages through `gitlinkSafeAdd` (`./git-add`), which
+ * also refuses to run a commit that would only print status.
  *
  * Passed through GIT_CONFIG_COUNT/KEY/VALUE (git >= 2.31; older git ignores
  * them) rather than `-c` so argv stays unchanged, and because git forwards
@@ -68,4 +72,28 @@ export function gitSpawnEnv(
   overlay?: Readonly<Record<string, string | undefined>>,
 ): Record<string, string | undefined> {
   return hardenedGitEnv(overlay === undefined ? process.env : { ...process.env, ...overlay });
+}
+
+/** Subcommands that dirty-check gitlinks, and so run git inside them unless told not to (#2210). */
+const SUBMODULE_DIRTY_CHECK_VERBS: ReadonlySet<string> = new Set(["status", "diff"]);
+/** Global options that consume the next argument (`-C <dir>`, `-c <k=v>`). */
+const GLOBAL_OPTIONS_WITH_VALUE: ReadonlySet<string> = new Set(["-C", "-c"]);
+export const IGNORE_DIRTY_SUBMODULES_FLAG = "--ignore-submodules=dirty";
+
+/**
+ * `argv` (argv[0] is the git program) with `--ignore-submodules=dirty` placed
+ * right after a `status` / `diff` subcommand. Unlike the config key, the flag
+ * overrides a `submodule.<name>.ignore` from `.gitmodules`. A later explicit
+ * `--ignore-submodules` in `argv` still wins (git takes the last), which the
+ * agent-facing git tool cannot supply: it refuses every `-`-leading element.
+ */
+export function hardenedGitArgv(argv: readonly string[]): string[] {
+  const out = [...argv];
+  let i = 1;
+  while (i < out.length && (out[i] as string).startsWith("-")) {
+    i += GLOBAL_OPTIONS_WITH_VALUE.has(out[i] as string) ? 2 : 1;
+  }
+  const verb = out[i];
+  if (verb !== undefined && SUBMODULE_DIRTY_CHECK_VERBS.has(verb)) out.splice(i + 1, 0, IGNORE_DIRTY_SUBMODULES_FLAG);
+  return out;
 }

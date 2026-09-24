@@ -84,6 +84,8 @@ function installGitStub(dirtySequence: boolean[]): void {
       return { stdout: dirty ? " M file.ts\n" : "", stderr: "", exitCode: 0 };
     }
     if (cmd === "add") return { stdout: "", stderr: "", exitCode: 0 };
+    // The staged check after add: only reached once status reported dirty.
+    if (cmd === "diff") return { stdout: "", stderr: "", exitCode: 1 };
     if (cmd === "commit") return { stdout: "", stderr: "", exitCode: 0 };
     if (cmd === "show") return { stdout: "src/prod.ts\n", stderr: "", exitCode: 0 };
     if (cmd === "push") return { stdout: "", stderr: "", exitCode: 0 };

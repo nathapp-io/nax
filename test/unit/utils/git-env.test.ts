@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { gitWithTimeout } from "@/utils/git";
-import { gitSpawnEnv, hardenedGitEnv } from "@/utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv, hardenedGitEnv } from "@/utils/git-env";
 
 describe("hardenedGitEnv", () => {
   test("adds the hardened entries from index 0 when none are set", () => {
@@ -36,6 +36,42 @@ describe("hardenedGitEnv", () => {
     const base = { PATH: "/bin" };
     hardenedGitEnv(base);
     expect(base).toEqual({ PATH: "/bin" });
+  });
+});
+
+describe("hardenedGitArgv", () => {
+  test.each([
+    [
+      ["git", "status", "--porcelain"],
+      ["git", "status", "--ignore-submodules=dirty", "--porcelain"],
+    ],
+    [
+      ["git", "diff", "HEAD"],
+      ["git", "diff", "--ignore-submodules=dirty", "HEAD"],
+    ],
+    [
+      ["git", "-C", "/r", "-c", "a=b", "--no-pager", "diff"],
+      ["git", "-C", "/r", "-c", "a=b", "--no-pager", "diff", "--ignore-submodules=dirty"],
+    ],
+    [
+      ["/usr/bin/git", "status"],
+      ["/usr/bin/git", "status", "--ignore-submodules=dirty"],
+    ],
+  ])("adds the flag right after a status / diff subcommand: %j", (argv, expected) => {
+    expect(hardenedGitArgv(argv)).toEqual(expected);
+  });
+
+  test.each([[["git", "log", "diff"]], [["git", "commit", "-m", "status"]], [["git"]], [["git", "-C", "status"]]])(
+    "leaves every other argv alone: %j",
+    (argv) => {
+      expect(hardenedGitArgv(argv)).toEqual(argv);
+    },
+  );
+
+  test("does not mutate its input", () => {
+    const argv = ["git", "status"];
+    hardenedGitArgv(argv);
+    expect(argv).toEqual(["git", "status"]);
   });
 });
 

@@ -167,6 +167,7 @@ describe("ops-impl", () => {
     _finishGitDeps.git = async (args: string[]) => {
       gitCalls.push(args);
       if (args[0] === "status") return { exitCode: 0, stdout: " M file.ts\n", stderr: "" };
+      if (args[0] === "diff") return { exitCode: 1, stdout: "", stderr: "" }; // staged
       return { exitCode: 0, stdout: "", stderr: "" };
     };
     await createFinishOps(deps).escalate(state, "needs a human", []);
@@ -258,6 +259,7 @@ describe("ops-impl", () => {
     _finishGitDeps.git = async (args: string[]) => {
       calls.push(args);
       if (args[0] === "status") return { exitCode: 0, stdout: " M some-file.ts\n", stderr: "" };
+      if (args[0] === "diff") return { exitCode: 1, stdout: "", stderr: "" }; // staged
       return { exitCode: 0, stdout: "", stderr: "" };
     };
     await createFinishOps(deps).promotePr(untouched);

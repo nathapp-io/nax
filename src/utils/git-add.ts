@@ -11,6 +11,11 @@
  * reach it. Instead, gitlinks are excluded from the `add` pathspec and
  * restaged with `git update-index`, which records the nested HEAD without
  * spawning git inside it. The staged result is the same as a plain `git add`.
+ *
+ * `git commit` with nothing staged prints a status, and that status honours a
+ * `submodule.<name>.ignore` from `.gitmodules` -- so it can recurse too. The
+ * commit sites therefore ask `hasStagedChanges` first and never run a commit
+ * that would only report "nothing to commit".
  */
 
 export interface GitRunResult {
@@ -57,4 +62,16 @@ export async function gitlinkSafeAdd(git: GitRunner, cwd: string, opts: GitlinkS
   const added = await git(["add", ...(opts.flags ?? []), "--", ...pathspecs, ...excludes], cwd, opts.timeoutMs);
   if (added.exitCode !== 0 || gitlinks.length === 0) return added;
   return git(["update-index", "--add", "--remove", "--", ...gitlinks], cwd, opts.timeoutMs);
+}
+
+/**
+ * Whether the index differs from HEAD: `diff --cached` compares index to HEAD
+ * only, so it never looks at the worktree or inside a gitlink. Undefined when
+ * git could not answer (fail closed: callers do not commit).
+ */
+export async function hasStagedChanges(git: GitRunner, cwd: string, timeoutMs?: number): Promise<boolean | undefined> {
+  const r = await git(["diff", "--cached", "--quiet"], cwd, timeoutMs);
+  if (r.timedOut) return undefined;
+  if (r.exitCode === 0) return false;
+  return r.exitCode === 1 ? true : undefined;
 }
