@@ -14,4 +14,5 @@ export * from "./ask-chain";
 export type { BashLexResult, BashRedirect, BashSegment, BashSegmentSeparator, BashToken } from "./bash-lex";
 export { lexBashCommand } from "./bash-lex";
 export { parseRuleList, parseToolExpression } from "./grammar";
+export * from "./secret-spans";
 export type { AskRequest } from "./types";

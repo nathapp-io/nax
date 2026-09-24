@@ -8,7 +8,8 @@
 
 export { formatConsole, formatJsonl } from "./formatters.js";
 export { addSink, getLogger, getSafeLogger, initLogger, Logger, resetLogger } from "./logger.js";
-export { redactSecrets } from "./redact.js";
+export type { SecretValuePattern } from "./redact.js";
+export { redactSecrets, SECRET_VALUE_PATTERNS } from "./redact.js";
 export type {
   LogEntry,
   LoggerOptions,

@@ -29,20 +29,26 @@ const SECRET_KEY_PATTERN =
  * the `/g` flag (required for `String.replace`). Resetting prevents the stale
  * `lastIndex` bug that skips matches on subsequent calls.
  */
-const SECRET_VALUE_PATTERNS: RegExp[] = [
-  /sk-[A-Za-z0-9_-]{16,}/g,
-  /ghp_[A-Za-z0-9]{16,}/g,
-  /gh[opsu]_[A-Za-z0-9]{16,}/g,
+/** One secret-value pattern and the kind label a masked span shows. */
+export interface SecretValuePattern {
+  readonly kind: string;
+  readonly re: RegExp;
+}
+
+export const SECRET_VALUE_PATTERNS: readonly SecretValuePattern[] = [
+  { kind: "openai", re: /sk-[A-Za-z0-9_-]{16,}/g },
+  { kind: "github", re: /ghp_[A-Za-z0-9]{16,}/g },
+  { kind: "github", re: /gh[opsu]_[A-Za-z0-9]{16,}/g },
   // LOG-1: GitHub fine-grained PATs — gh[opsu]_ above never matches "github_pat_"
   // ("gh" + "i" is not one of [opsu]).
-  /github_pat_[A-Za-z0-9_]{20,}/g,
-  /npm_[A-Za-z0-9]{8,}/g,
-  /AKIA[0-9A-Z]{16}/g,
-  /xox[baprs]-[A-Za-z0-9-]{10,}/g,
+  { kind: "github-pat", re: /github_pat_[A-Za-z0-9_]{20,}/g },
+  { kind: "npm", re: /npm_[A-Za-z0-9]{8,}/g },
+  { kind: "aws", re: /AKIA[0-9A-Z]{16}/g },
+  { kind: "slack", re: /xox[baprs]-[A-Za-z0-9-]{10,}/g },
   // LOG-1: Telegram bot tokens ("<bot-id>:<35-char secret>").
-  /\b\d{6,}:[A-Za-z0-9_-]{30,}\b/g,
+  { kind: "telegram", re: /\b\d{6,}:[A-Za-z0-9_-]{30,}\b/g },
   // KEY=value assignments inside strings (e.g. "NPM_TOKEN=somevalue")
-  /(?:SECRET|TOKEN|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK)=[^\s"',]+/gi,
+  { kind: "assignment", re: /(?:SECRET|TOKEN|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK)=[^\s"',]+/gi },
   // MED-01: PEM-encoded key/cert blocks (private keys, certificates, incl.
   // PGP's " ... BLOCK" suffix). The gap between BEGIN/END is bounded to
   // 64KB — generous enough for any realistic single key or bundled
@@ -50,9 +56,12 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   // unterminated "BEGIN" marker in a pathologically large payload on this
   // synchronous logger write path (a small bound like a few KB risks
   // missing legitimate multi-cert chain bundles entirely).
-  /-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)(?: BLOCK)?-----[\s\S]{0,65536}?-----END [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)(?: BLOCK)?-----/g,
+  {
+    kind: "pem",
+    re: /-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)(?: BLOCK)?-----[\s\S]{0,65536}?-----END [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)(?: BLOCK)?-----/g,
+  },
   // MED-01: JWTs (header.payload.signature, base64url segments).
-  /eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g,
+  { kind: "jwt", re: /eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g },
   // MED-01: Authorization header values (Bearer/Basic schemes). Requires a
   // credential-shaped value (>=8 chars, at least one digit/symbol) so
   // ordinary prose like "Basic authentication failed" or "Bearer token
@@ -61,7 +70,7 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   // essentially never do. Length floor kept at 8 (not raised to 16) so
   // short-but-real base64 credentials (e.g. "user:pass" -> ~16 raw chars,
   // shorter inputs shorter still) aren't under-redacted.
-  /\bBearer\s+(?=[A-Za-z0-9\-._~+/]*[0-9+/_-])[A-Za-z0-9\-._~+/]{8,}={0,2}/gi,
+  { kind: "bearer", re: /\bBearer\s+(?=[A-Za-z0-9\-._~+/]*[0-9+/_-])[A-Za-z0-9\-._~+/]{8,}={0,2}/gi },
   // LOG-1: Basic creds are base64(user:pass) and are frequently pure-alphabetic
   // (no digit/symbol), which the digit-requiring lookahead above misses. Require
   // mixed case instead — real base64 output almost always mixes upper/lower,
@@ -71,17 +80,20 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   // char-by-char to stay case-insensitive for the scheme name only (the
   // scheme is case-insensitive per RFC 7617; "basic"/"BASIC" are as valid as
   // "Basic") while the payload lookaheads remain case-sensitive.
-  /\b[Bb][Aa][Ss][Ii][Cc]\s+(?=[A-Za-z0-9+/]*[A-Z])(?=[A-Za-z0-9+/]*[a-z])[A-Za-z0-9+/]{8,}={0,2}/g,
+  {
+    kind: "basic",
+    re: /\b[Bb][Aa][Ss][Ii][Cc]\s+(?=[A-Za-z0-9+/]*[A-Z])(?=[A-Za-z0-9+/]*[a-z])[A-Za-z0-9+/]{8,}={0,2}/g,
+  },
   // MED-01: header-style key:value / key=value pairs for api-key headers
   // that SECRET_KEY_PATTERN's object-key check can't reach because the
   // key/value are both embedded in one free-text string (e.g. raw HTTP logs).
-  /(?:x-api-key|api[_-]?key)\s*[:=]\s*[^\s"',]+/gi,
+  { kind: "api-key-header", re: /(?:x-api-key|api[_-]?key)\s*[:=]\s*[^\s"',]+/gi },
   // SEC-3: Cookie / Set-Cookie headers interpolated into a free-text string
   // (agent stderr is the common path) — SECRET_KEY_PATTERN only sees object
   // keys, not header text. Consumes the rest of the line; cookie values are
   // opaque and line-delimited in header dumps, so a narrower character class
   // would only risk under-redacting the tail of a multi-cookie header.
-  /\b(?:Set-)?Cookie\s*:\s*[^\r\n]+/gi,
+  { kind: "cookie", re: /\b(?:Set-)?Cookie\s*:\s*[^\r\n]+/gi },
   // SEC-1 (Round 2 review): URL-embedded credentials (scheme://user:pass@host).
   // Matches a scheme name (lowercase letters, digits, +, ., -), then ://, then
   // optional user:password (no /, whitespace, or @), then @. The colon + @
@@ -92,14 +104,14 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   //   postgres://admin:s3cret@db.internal:5432/prod  →  "postgres://admin:s3cret@"
   //   redis://:hunter2@cache.internal:6379/0          →  "redis://:hunter2@"     (empty user)
   //   mongodb://root:mongoPwd@mongo.internal:27017    →  "mongodb://root:mongoPwd@"
-  /\b[a-z][a-z0-9+.-]*:\/\/(?:[^/\s@]*:[^/\s@]+)@/gi,
+  { kind: "url-credentials", re: /\b[a-z][a-z0-9+.-]*:\/\/(?:[^/\s@]*:[^/\s@]+)@/gi },
 ];
 
 const REDACTED = "[REDACTED]";
 
 function redactString(value: string): string {
   let out = value;
-  for (const re of SECRET_VALUE_PATTERNS) {
+  for (const { re } of SECRET_VALUE_PATTERNS) {
     re.lastIndex = 0;
     out = out.replace(re, REDACTED);
   }
