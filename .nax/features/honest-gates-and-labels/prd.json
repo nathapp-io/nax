@@ -3,7 +3,7 @@
   "feature": "honest-gates-and-labels",
   "branchName": "feat/honest-gates-and-labels",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-24T14:45:57.671Z",
+  "updatedAt": "2026-09-24T15:26:53.685Z",
   "userStories": [
     {
       "id": "US-001",
@@ -89,8 +89,8 @@
         "runtime"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -163,14 +163,17 @@
         "observability"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "The near-limit classifier extraction changes outcome precedence and a duplicated serialized union while retaining barrel and breaker compatibility across modules."
+        "reasoning": "The near-limit classifier extraction changes outcome precedence and a duplicated serialized union while retaining barrel and breaker compatibility across modules.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/findings/cycle.ts",
@@ -193,6 +196,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "39944b9cfb96e03ec5bfd9dca0762958c5c127a8",
       "outOfScope": [
         "feeding `rotated` into the oscillation count."
       ]
@@ -233,7 +237,10 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Multi-axis session-scoped stop accounting and nudge telemetry affect failure classification and require isolated verification of laundering-loop regressions."
+        "reasoning": "Multi-axis session-scoped stop accounting and nudge telemetry affect failure classification and require isolated verification of laundering-loop regressions.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "src/runtime/spin-breaker/index.ts",
@@ -259,6 +266,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "bcabd3e479a8430ebddea086bb1d7f16d3fd2972",
       "outOfScope": [
         "relabelling watchdog cancels in `src/session/watchdog-turn-classification.ts`."
       ]
