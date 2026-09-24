@@ -241,6 +241,71 @@ describe("buildHopCallback — stale-retry session reuse", () => {
     expect(closeSession).not.toHaveBeenCalled();
   });
 
+  test("stale-retry on a cancelled warm handle: closes it and opens fresh — the retry dispatches on the new handle (nax#2218)", async () => {
+    // nax#2218: an adapter-error same-agent retry reuses the cached warm handle
+    // ("same-agent retry with fresh session"), but a watchdog/abort-cancelled
+    // warm keepOpen turn left that handle poisoned (SESSION_CANCELLED guard).
+    // Reusing it meant the retry failed 26ms later without reaching a model —
+    // the wasted iteration the issue describes. A cancelled handle must be
+    // closed and reopened before dispatching.
+    const CANCELLED_HANDLE: SessionHandle = { id: "nax-cancelled", agentName: "claude" };
+    const FRESH_HANDLE: SessionHandle = { id: "nax-cancelled", agentName: "claude" };
+    const getLiveHandle = mock((_name: string) => CANCELLED_HANDLE);
+    const isCancelled = mock((_name: string) => true);
+    const openSession = mock(async () => FRESH_HANDLE);
+    const closeSession = mock(async () => {});
+    const sessionMgr = makeSessionManager({ getLiveHandle, isCancelled, openSession, closeSession });
+
+    const dispatchedHandles: SessionHandle[] = [];
+    const agentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async (_agent: string, handle: SessionHandle) => {
+        dispatchedHandles.push(handle);
+        return STUB_TURN;
+      }),
+    });
+    const ctx: BuildHopCallbackContext = {
+      sessionManager: sessionMgr,
+      agentManager,
+      story: makeStory({ id: "US-001" }),
+      config: makeNaxConfig(),
+      projectDir: undefined,
+      featureName: "test-feature",
+      workdir: "/tmp",
+      effectiveTier: "balanced" as const,
+      defaultAgent: "claude",
+      pipelineStage: "run" as const,
+    };
+
+    const cb = buildHopCallback(ctx, undefined, STUB_RUN_OPTIONS);
+    const result = await cb("claude", undefined, { kind: "stale-retry", attempt: 1 }, STUB_RUN_OPTIONS);
+
+    expect(result.result.success).toBe(true);
+    // The poisoned handle was closed, not reused...
+    expect(closeSession).toHaveBeenCalledTimes(1);
+    expect(closeSession).toHaveBeenCalledWith(CANCELLED_HANDLE);
+    // ...and a fresh session was opened for the dispatch.
+    expect(openSession).toHaveBeenCalledTimes(1);
+    expect(dispatchedHandles).toEqual([FRESH_HANDLE]);
+    // The reopened session stays warm for the next attempt (keepOpen semantics).
+    expect(getLiveHandle).toHaveBeenCalledTimes(1);
+  });
+
+  test("stale-retry on a healthy warm handle: still reuses it without openSession or closeSession", async () => {
+    const getLiveHandle = mock((_name: string) => STUB_HANDLE);
+    const isCancelled = mock((_name: string) => false);
+    const openSession = mock(async () => STUB_HANDLE);
+    const closeSession = mock(async () => {});
+    const sessionMgr = makeSessionManager({ getLiveHandle, isCancelled, openSession, closeSession });
+
+    const cb = buildHopCallback(makeCtx(sessionMgr), undefined, STUB_RUN_OPTIONS);
+    const result = await cb("claude", undefined, { kind: "stale-retry", attempt: 1 }, STUB_RUN_OPTIONS);
+
+    expect(result.result.success).toBe(true);
+    expect(getLiveHandle).toHaveBeenCalledTimes(1);
+    expect(openSession).not.toHaveBeenCalled();
+    expect(closeSession).not.toHaveBeenCalled();
+  });
+
   test("stale-retry cache miss: falls back to openSession, closeSession still skipped", async () => {
     const getLiveHandle = mock((_name: string) => undefined as SessionHandle | undefined);
     const openSession = mock(async () => STUB_HANDLE);
