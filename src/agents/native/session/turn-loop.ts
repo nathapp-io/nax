@@ -429,6 +429,7 @@ export async function runNativeTurn(
     roundTrips,
     timedOut,
     spinBreaker,
+    invalidCallHalt: invalidCallBudget.halt,
   });
 
   // Persisted before returning, and a write failure fails the turn: continuing
@@ -445,7 +446,7 @@ export async function runNativeTurn(
     completedNormally,
     timedOut,
     spinStopped,
-    budgetExceeded: invalidCallBudget.exceeded,
+    invalidCallHalt: invalidCallBudget.halt,
     interactions,
     pricingSource: deps.pricingSource,
   });

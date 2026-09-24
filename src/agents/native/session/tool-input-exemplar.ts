@@ -26,7 +26,12 @@ export function exemplarFor(
   }
 
   const propType = propSchema.type;
-  if (propType === "string") {
+  // Enum first (nax#2200): `{type: "string", enum: [...]}` is the common
+  // spelling, and a `<FILL IN>` placeholder there violates the very enum the
+  // exemplar is meant to demonstrate. The first member is a valid value.
+  if (Array.isArray(propSchema.enum) && propSchema.enum.length > 0 && propSchema.enum.every(isString)) {
+    exemplar[violation.property] = (propSchema.enum as readonly string[])[0];
+  } else if (propType === "string") {
     exemplar[violation.property] = `<FILL IN: ${violation.property}>`;
   } else if (propType === "number" || propType === "integer") {
     exemplar[violation.property] = 0;
@@ -47,13 +52,15 @@ export function exemplarFor(
     } else {
       exemplar[violation.property] = { "<FILL IN>": "<FILL IN>" };
     }
-  } else if (Array.isArray(propSchema.enum) && propSchema.enum.every((m) => typeof m === "string")) {
-    exemplar[violation.property] = (propSchema.enum as readonly string[])[0];
   } else {
     exemplar[violation.property] = "<FILL IN>";
   }
 
   return exemplar;
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

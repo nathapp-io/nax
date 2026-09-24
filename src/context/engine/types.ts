@@ -50,6 +50,8 @@ export interface AdapterFailure {
    * outcome's policy is sameAgentRetry "none" + swap "quality-gated", which would
    * hard-fail with no retry or swap when `agent.fallback.onQualityFailure` is off.
    * Retriable on the timeout lane, same as `fail-spin`.
+   * `fail-invalid-tool-call` — the invalid-call budget ended the turn (nax#2047);
+   * not a timeout, so the retry names the rejected call (nax#2200). Timeout lane.
    */
   outcome:
     | "fail-quota"
@@ -63,7 +65,8 @@ export interface AdapterFailure {
     | "fail-quality"
     | "fail-unknown"
     | "fail-spin"
-    | "fail-incomplete";
+    | "fail-incomplete"
+    | "fail-invalid-tool-call";
   /** Human-readable description (≤500 chars) for the failure-note chunk */
   message: string;
   /** True when the same agent/tier could succeed on immediate retry */
@@ -76,6 +79,8 @@ export interface AdapterFailure {
    * "empty-output" (fail-stale synthesized when agent returned no output).
    */
   reason?: string;
+  /** The rejected call behind a `fail-invalid-tool-call`, for the retry prompt. */
+  invalidToolCall?: import("../../agents/session-types").InvalidToolCallDetail;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -219,6 +219,19 @@ describe("loop events — before_tool dispatcher", () => {
     expect(outcome.text).toBe("you already asked this");
   });
 
+  test("AC8 (nax#2200): a nudge keeps the input rewrite an earlier allow accumulated", async () => {
+    const registry = createLoopEventRegistry();
+    registry.register("before_tool", () => ({ kind: "allow", input: { stripped: true } }));
+    let nudgerSaw: unknown;
+    registry.register("before_tool", ({ call }) => {
+      nudgerSaw = call.input;
+      return { kind: "nudge", text: "you already asked this" };
+    });
+    const outcome = await registry.dispatch("before_tool", { call: CALL, tools: [] });
+    expect(nudgerSaw).toEqual({ stripped: true });
+    expect(outcome).toEqual({ kind: "nudge", text: "you already asked this", input: { stripped: true } });
+  });
+
   test("AC8 (boundary): a throwing before_tool handler is skipped and the next handler decides", async () => {
     const registry = createLoopEventRegistry();
     registry.register("before_tool", () => {

@@ -276,6 +276,29 @@ export interface TurnResult {
    * sets `turnIncomplete`, since the third call was left unexecuted.
    */
   invalidCallBudgetExceeded?: true;
+  /**
+   * The call that tripped the invalid-call budget, present exactly when
+   * `invalidCallBudgetExceeded` is (nax#2200). Carried so the wiring layer can
+   * classify the halt as `fail-invalid-tool-call` and the retry prompt can name
+   * the rejected tool and property instead of reporting a timeout.
+   */
+  invalidToolCall?: InvalidToolCallDetail;
+}
+
+/**
+ * A tool call the native loop rejected against the tool's own input schema
+ * (nax#2047, surfaced by nax#2200): the validator's violation plus the tool it
+ * was raised against. Every field is model-facing text for the retry prompt.
+ */
+export interface InvalidToolCallDetail {
+  /** The tool the model called. */
+  readonly tool: string;
+  /** The offending top-level property. */
+  readonly property: string;
+  /** What the schema expects, e.g. "array", "one of: a, b", "present". */
+  readonly expected: string;
+  /** What the model sent, e.g. "a string", "absent". */
+  readonly actual: string;
 }
 
 /**

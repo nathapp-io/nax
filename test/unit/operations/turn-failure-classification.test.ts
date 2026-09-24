@@ -113,6 +113,27 @@ describe("classifyEmptyOutputFailure — transport facts outrank non-empty outpu
     expect(failure?.reason).toBe("turn-incomplete");
   });
 
+  test("an invalid-call budget halt classifies as fail-invalid-tool-call carrying the rejected call, not fail-incomplete (nax#2200)", () => {
+    const invalidToolCall = { tool: "Git", property: "refs", expected: "array", actual: "a string" };
+    const failure = classifyEmptyOutputFailure(
+      makeTurnResult({ turnIncomplete: true, invalidCallBudgetExceeded: true, invalidToolCall }),
+    );
+    expect(failure?.category).toBe("quality");
+    expect(failure?.outcome).toBe("fail-invalid-tool-call");
+    expect(failure?.retriable).toBe(true);
+    expect(failure?.reason).toBe("invalid-call-budget");
+    expect(failure?.invalidToolCall).toEqual(invalidToolCall);
+    expect(failure?.message).toContain('Git call (property "refs" expected array, got a string)');
+  });
+
+  test("an invalid-call budget halt without detail still classifies as fail-invalid-tool-call", () => {
+    const failure = classifyEmptyOutputFailure(
+      makeTurnResult({ turnIncomplete: true, invalidCallBudgetExceeded: true }),
+    );
+    expect(failure?.outcome).toBe("fail-invalid-tool-call");
+    expect(failure?.invalidToolCall).toBeUndefined();
+  });
+
   test("a complete turn with output is still a success", () => {
     const failure = classifyEmptyOutputFailure(makeTurnResult({ output: "done", internalRoundTrips: 2 }));
     expect(failure).toBeNull();
