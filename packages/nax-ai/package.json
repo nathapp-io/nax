@@ -34,7 +34,7 @@
     "catalog:diff": "node scripts/catalog-diff.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.87.0",
+    "@earendil-works/pi-ai": "0.87.1",
     "proper-lockfile": "4.1.2"
   },
   "devDependencies": {
