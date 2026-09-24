@@ -342,6 +342,13 @@ export class NativeAgentAdapter implements AgentAdapter {
         // and the deadline are all absent, `turnSignal` is a non-aborted
         // composite that behaves as the no-signal regression guard requires.
         signal: turnSignal,
+        // US-002 AC14: forward an onWaiting callback the batch can hand to
+        // every coding-tool request. Wired in US-004 to emit the keepalive
+        // activity; today it is a no-op so the field plumbing is real in the
+        // production native path even though the keepalive is not yet
+        // active. The handler copies it onto the tool's `ToolCallContext`
+        // and a tool that blocks on a human approval calls it before the wait.
+        onWaiting: () => {},
         pricingSource,
         onActivity: (activity) => {
           hooks?.onStreamActivity?.(buildNativeStreamEvent(eventBase, activity, Date.now()));

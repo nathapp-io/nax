@@ -99,19 +99,12 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
   let cancelled = false;
 
   for (const [callIndex, call] of toolCalls.entries()) {
-    if (spinWarned) {
-      spinStopped = true;
-      // The terminal round trip is answer-only. Any subsequent tool call
-      // is neither executed nor answered; the fail-spin retry starts from
-      // a fresh session and deliberately drops this unanswered request.
-      break;
-    }
-    // US-002: check the turn signal BEFORE any activity or dispatch so a
-    // cancelled turn stops dispatching subsequent calls. The synthetic
-    // answer mirrors the terminate branch — push results for this call AND
-    // every later call in the batch, then break — so a strict provider that
-    // requires one result per assistant tool-call id is satisfied even when
-    // half the batch never ran. AC1 / AC7 / AC8.
+    // US-002: check the turn signal FIRST (before spinWarned) so a cancelled
+    // turn always synthesises results for every outstanding call. A batch
+    // dispatch that arrives with both a frozen `spinWarned` snapshot AND an
+    // aborted signal must preserve the one-result-per-id invariant — the
+    // cancelled branch is the stronger guarantee, so it wins when both hold.
+    // AC1 / AC7 / AC8.
     if (deps.signal?.aborted === true) {
       cancelled = true;
       for (const outstanding of toolCalls.slice(callIndex)) {
@@ -123,6 +116,13 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
           }),
         );
       }
+      break;
+    }
+    if (spinWarned) {
+      spinStopped = true;
+      // The terminal round trip is answer-only. Any subsequent tool call
+      // is neither executed nor answered; the fail-spin retry starts from
+      // a fresh session and deliberately drops this unanswered request.
       break;
     }
     deps.onActivity?.({ kind: "tool", toolName: call.name });
@@ -214,6 +214,12 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
               // an in-flight tool observes the turn's cancellation. Absent
               // when no signal is in scope (the no-signal regression guard).
               ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
+              // US-002 AC14: forward the per-turn onWaiting callback too.
+              // Without this forwarding the `onWaiting` field on the request
+              // is unreachable from native tool dispatch, leaving the
+              // handler's onWaiting-forwarding plumbing inert in the real
+              // native path. Absent when no watcher is in scope.
+              ...(deps.onWaiting !== undefined ? { onWaiting: deps.onWaiting } : {}),
             }
           : { kind, name: call.name, input },
       );

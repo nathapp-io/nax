@@ -110,6 +110,14 @@ export interface TurnDeps {
    */
   signal?: AbortSignal;
   /**
+   * The native batch forwards this onto every coding-tool `AdapterInteraction`
+   * (US-002). Tools that block on an external wait (e.g. a human approval)
+   * call it before the wait so the wiring layer can observe the activity and
+   * the idle watchdog does not time out the call. Absent when no watcher is
+   * in scope; tests that drive the loop without cancellation may omit it.
+   */
+  onWaiting?: () => void;
+  /**
    * The in-process `before_tool` / `after_tool` seam (nax#2151, US-002).
    * Absent is the normal case for a real session: the loop then builds its own
    * registry, so the built-in handlers (invalid-call repair, spin breaker) run
