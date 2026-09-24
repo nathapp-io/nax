@@ -525,7 +525,6 @@ describe("review #9: secrets in the prompt", () => {
 });
 ```
 
-If `REQ.command` is typed as possibly undefined, spread it with `command: undefined` only where shown; otherwise use `const { command: _c, ...noCommand } = REQ` and pass `{ ...noCommand, unshowable: true as const }`.
 
 - [ ] **Step 2: Run to verify they fail**
 
