@@ -289,4 +289,49 @@ describe("createCommandShadow", () => {
     expect(row.roundTrips).toBe(0);
     for (const key of ["scopeId", "turnId", "toolCallId"] as const) expect(key in row).toBe(false);
   });
+
+  test("US-003 AC3: an executed argv is written alongside the unchanged argv and command", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("bun test", { identity: "Exec", argv: ["bun", "test"] }));
+    s.settle("k", { ledger: "ok" }, ["bun", "test", "--no-scripts"]);
+    await s.drain();
+    const row = writtenRow();
+    expect(row.executed).toEqual(["bun", "test", "--no-scripts"]);
+    expect(row.argv).toEqual(["bun", "test"]);
+    expect(row.command).toBe("bun test");
+  });
+
+  test("US-003 AC4: the classified text is the model argv, never the executed argv", async () => {
+    const calls: string[] = [];
+    const s = createCommandShadow({
+      classify: (command) => {
+        calls.push(command);
+        return Promise.resolve(ANSWERED);
+      },
+      write,
+      runId: "r",
+      timeoutMs: 3000,
+    });
+    s.observe("k", obs("bun test", { identity: "Exec", argv: ["bun", "test"] }));
+    s.settle("k", { ledger: "ok" }, ["bun", "test", "--no-scripts"]);
+    await s.drain();
+    expect(calls).toEqual(["bun test"]);
+  });
+
+  test("US-003 AC5: a row settled with no third argument has no executed key", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("ls"));
+    s.settle("k", { ledger: "ok" });
+    await s.drain();
+    expect("executed" in writtenRow()).toBe(false);
+  });
+
+  test("US-003 AC6: a row drained as unsettled has no executed key", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("ls"));
+    await s.drain();
+    const row = writtenRow();
+    expect(row.outcome.ledger).toBe("unsettled");
+    expect("executed" in row).toBe(false);
+  });
 });

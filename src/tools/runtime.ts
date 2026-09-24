@@ -366,7 +366,7 @@ export function createCodingToolRuntime(opts: {
       // alone would lose (spec 4.2).
       const logCall: typeof log = (...args) => {
         log(...args);
-        tap?.settle(args[1], args[8]?.approval?.decidedBy);
+        tap?.settle(args[1], args[8]?.approval?.decidedBy, args[8]?.executed);
       };
 
       /**

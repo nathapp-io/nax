@@ -71,7 +71,12 @@ export interface Observation extends CallIdentifiers {
 /** Per-story shadow. Every method is total: it never throws. */
 export interface CommandShadow {
   observe(key: string, obs: Observation): void;
-  settle(key: string, outcome: FinalOutcome): void;
+  /**
+   * Attach the ledger outcome and, for an Exec call, the argv that actually
+   * ran (after normalization). `executed` is omitted for every other identity
+   * and whenever the call never ran.
+   */
+  settle(key: string, outcome: FinalOutcome, executed?: readonly string[]): void;
   /** Resolves within one timeout; afterwards every pending row has been written. */
   drain(): Promise<void>;
 }
@@ -91,6 +96,12 @@ export interface CommandSafetyRow extends CallIdentifiers {
   readonly identity: "Bash" | "Exec";
   readonly command: string;
   readonly argv?: readonly string[];
+  /**
+   * Exec only: the argv the Exec tool executed (after normalization); absent
+   * when the call did not run. Distinct from `argv`, which is the model's
+   * requested argv — and the text `command` is classified on.
+   */
+  readonly executed?: readonly string[];
   readonly mechanical: MechanicalVerdict;
   readonly outcome: { readonly ledger: LedgerOutcome | "unsettled"; readonly decidedBy?: string };
   readonly rules: RuleResult;

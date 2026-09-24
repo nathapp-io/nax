@@ -20,6 +20,22 @@ function recorder() {
   return { shadow, observed, settled };
 }
 
+/**
+ * Like `recorder`, but keeps every argument each `settle` call received, so a
+ * test can assert the ARITY: a Bash row is settled with two arguments, an Exec
+ * row with three.
+ */
+function arityRecorder() {
+  const observed: [string, Observation][] = [];
+  const settled: unknown[][] = [];
+  const shadow: CommandShadow = {
+    observe: (k, o) => void observed.push([k, o]),
+    settle: (...args: [string, FinalOutcome, (readonly string[] | undefined)?]) => void settled.push(args),
+    drain: async () => {},
+  };
+  return { shadow, observed, settled };
+}
+
 const allow = { allowed: true };
 
 const IDENTIFIER_KEYS = ["callId", "scopeId", "turnId", "roundTrips", "toolCallId"] as const;
@@ -211,6 +227,33 @@ describe("openShadowTap", () => {
       stage: "run",
     });
     expect(() => tap.settle("ok")).not.toThrow();
+  });
+
+  test("US-003 AC1: an Exec tap forwards executed as settle's third argument", () => {
+    const r = arityRecorder();
+    openShadowTap(r.shadow, {
+      key: "k",
+      identity: "Exec",
+      command: undefined,
+      argv: ["bun", "test"],
+      verdict: allow,
+      stage: "run",
+    }).settle("ok", undefined, ["bun", "run", "--filter", "pkg", "test"]);
+    expect(r.settled).toEqual([["k", { ledger: "ok" }, ["bun", "run", "--filter", "pkg", "test"]]]);
+  });
+
+  test("US-003 AC2: a Bash tap settles with exactly two arguments, dropping executed", () => {
+    const r = arityRecorder();
+    openShadowTap(r.shadow, {
+      key: "k",
+      identity: "Bash",
+      command: "echo hi",
+      argv: undefined,
+      verdict: allow,
+      stage: "run",
+    }).settle("ok", undefined, ["/bin/sh", "-c", "echo hi"]);
+    expect(r.settled).toEqual([["k", { ledger: "ok" }]]);
+    expect(r.settled[0]?.length).toBe(2);
   });
 
   test("a throwing settle is caught inside the live tap", () => {

@@ -55,6 +55,8 @@ interface Entry {
   readonly rules: RuleResult;
   model?: { readonly result: ModelResult; readonly cached: boolean };
   outcome?: { readonly ledger: LedgerOutcome | "unsettled"; readonly decidedBy?: string };
+  /** Exec only: the argv that actually ran, set at settle. */
+  executed?: readonly string[];
   written: boolean;
 }
 
@@ -119,6 +121,7 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
       identity: obs.identity,
       command: obs.command,
       ...(obs.argv !== undefined ? { argv: obs.argv } : {}),
+      ...(entry.executed !== undefined ? { executed: entry.executed } : {}),
       mechanical: obs.mechanical,
       outcome,
       rules: entry.rules,
@@ -157,11 +160,12 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
       }
     },
 
-    settle(key, outcome: FinalOutcome) {
+    settle(key, outcome: FinalOutcome, executed?: readonly string[]) {
       try {
         const entry = entries.get(key);
         if (entry === undefined || entry.outcome !== undefined) return;
         entry.outcome = outcome;
+        if (executed !== undefined) entry.executed = executed;
         flush(key, entry);
       } catch {
         // Total by contract (spec 4.3).
