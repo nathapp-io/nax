@@ -13,6 +13,7 @@ import type { NaxConfig } from "@/config";
 import { purgeStaleManifests } from "@/context/engine";
 import { fireHook } from "@/hooks";
 import type { HooksConfig } from "@/hooks/types";
+import type { InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import { deriveRunFallbackAggregates, saveRunMetrics } from "@/metrics";
@@ -80,6 +81,8 @@ export interface RunCompletionOptions extends DispatchContext {
   deferredReviewStartedAt?: number;
   /** Why the execution phase stopped — used to distinguish a cost-limit stop from a normal completion. */
   exitReason?: ExitReason;
+  /** The run's interaction chain, threaded to the deferred regression rectifier's ask resolver (#2201). */
+  interactionChain?: InteractionChain | null;
 }
 
 export interface RunCompletionResult {
@@ -156,6 +159,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         // triage seam) so a test quarantined earlier in the run is relabeled here
         // without a second probe.
         quarantineMemo: options.runtime.quarantineMemo,
+        interactionChain: options.interactionChain,
         // Per-story gate snapshots enable causal blame attribution (transition
         // pass -> fail). Sequential runs only: in parallel mode story completion
         // order (`completedAt`) is not causal and each story runs in an isolated

@@ -14,9 +14,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { makeDispatchContext, makeNaxConfig, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 import type { NaxConfig } from "@/config";
-import type { RunCompletionResult } from "@/execution/lifecycle/run-completion";
+import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
+import type { RunCompletionOptions, RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
+import type { FinishPhaseContext } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
+import { InteractionChain } from "@/interaction";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { PluginRegistry } from "@/plugins";
 import type { PRD, UserStory } from "@/prd";
@@ -287,5 +290,43 @@ describe("finish phase", () => {
     await runCompletionPhase(opts);
     expect(calls).toHaveLength(1);
     expect((calls[0] as { storySummary: { completed: number } }).storySummary.completed).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #2201: every post-run Bash-dispatching site gets the run's interaction chain
+// (the human link of its ask resolver) and the finish phase the run's package
+// dirs (the approvals cache's run-wide raw check).
+// ---------------------------------------------------------------------------
+
+describe("post-run ask wiring inputs (#2201)", () => {
+  test("the interaction chain reaches acceptance, completion (regression) and finish", async () => {
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+    const chain = new InteractionChain({ defaultTimeout: 1000, defaultFallback: "abort" });
+    const acceptanceCtxs: AcceptanceLoopContext[] = [];
+    const completionOpts: RunCompletionOptions[] = [];
+    const finishCtxs: FinishPhaseContext[] = [];
+    _runnerCompletionDeps.runAcceptanceLoop = mock(async (ctx: AcceptanceLoopContext) => {
+      acceptanceCtxs.push(ctx);
+      return { success: true, prd, totalCost: 0, iterations: 1, storiesCompleted: 1, prdDirty: false };
+    });
+    _runnerCompletionDeps.handleRunCompletion = mock(async (opts: RunCompletionOptions) => {
+      completionOpts.push(opts);
+      return defaultCompletionResult;
+    });
+    _runnerCompletionDeps.runFinishPhase = mock(async (ctx: FinishPhaseContext) => {
+      finishCtxs.push(ctx);
+      return null;
+    });
+
+    await runCompletionPhase({
+      ...makeOptsWithRuntime(makeConfig(true), prd, makeStatusWriter()),
+      interactionChain: chain,
+    });
+
+    expect(acceptanceCtxs[0]?.interactionChain).toBe(chain);
+    expect(completionOpts[0]?.interactionChain).toBe(chain);
+    expect(finishCtxs[0]?.interactionChain).toBe(chain);
+    expect(finishCtxs[0]?.packageDirs).toEqual([undefined]);
   });
 });

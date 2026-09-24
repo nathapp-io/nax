@@ -13,8 +13,8 @@
  * stronger than it is, so it is deliberately not done (ADR-030 said the same).
  *
  * THE DESIGN: a taint marker that only nax writes, at points no agent runs.
- *  1. A forge-capable run TAINTS the store before its story's agents start and
- *     again after they finish: every entry is dropped and a `taint` record is
+ *  1. A forge-capable run TAINTS the store before a dispatch scope's agents
+ *     start (a story, or a post-run fix loop) and again after they finish: every entry is dropped and a `taint` record is
  *     written. The end-of-story re-taint wipes whatever the story's agents
  *     wrote, even an agent that knew to strip the first marker.
  *  2. The cache link ABSTAINS on a tainted store, whatever it contains.
@@ -32,8 +32,11 @@
  *    re-taint;
  *  - a forge-capable run killed between an agent stripping the marker and the
  *    end-of-story re-taint;
- *  - agents outside the execution stage (acceptance, post-run) in a
- *    forge-capable run, which run after the last re-taint.
+ *  - agents in a forge-capable run that are not dispatched inside a
+ *    dispatch-ask scope (e.g. acceptance generation), which can run after
+ *    the last re-taint. The execution stage, the acceptance-fix loop, the
+ *    deferred regression gate and `nax finish` all taint through
+ *    `buildDispatchAskWiring` (src/interaction/dispatch-ask.ts, #2201).
  * An unsandboxed raw shell can equally edit shell rc files or git hooks, so
  * this sits inside the posture ADR-030 already discloses; the sandbox, which
  * always write-denies this file, is the real boundary.
@@ -106,7 +109,8 @@ export async function clearApprovalsTaint(path: string, runId: string): Promise<
 export interface PrepareApprovalsStoreOptions {
   readonly approvalsFile: string;
   readonly runId: string;
-  readonly storyId: string;
+  /** Absent for a run-scoped (post-run) dispatch scope. */
+  readonly storyId?: string;
   readonly forgeCapable: boolean;
 }
 

@@ -388,8 +388,10 @@ do). That is hygiene against a shared `outputDir`, not authentication: a forger 
 Residual, disclosed: this defeats an agent that forges entries during its story, not a
 hostile one that knows the scheme — a process it leaves running past the story's end
 re-taint, a run killed between an agent stripping the marker and that re-taint, and
-agents that run outside the execution stage (acceptance, post-run) in a forge-capable run
-can all still leave trusted-looking entries. An unsandboxed `raw` shell can equally edit
+agents in a forge-capable run that are not dispatched inside a dispatch-ask scope (e.g.
+acceptance generation) can all still leave trusted-looking entries. The execution stage,
+the acceptance-fix loop, the deferred regression gate and `nax finish` all taint and
+re-taint through `buildDispatchAskWiring` (#2201). An unsandboxed `raw` shell can equally edit
 shell rc files or git hooks; the sandbox, which always write-denies the file, remains the
 boundary.
 

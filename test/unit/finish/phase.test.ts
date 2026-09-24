@@ -103,6 +103,7 @@ describe("runFinishPhase — dry run (nax#1809)", () => {
       agentName: "claude",
       abortSignal: new AbortController().signal,
       storySummary: { completed: 1, failed: 0, paused: 0 },
+      packageDirs: [],
       statusWriter: {
         setPostRunPhase: (_phase, _update) => {
           recorded = true;
@@ -167,6 +168,7 @@ function makeCtx(opts?: {
     agentName: "claude",
     abortSignal: new AbortController().signal,
     storySummary: { completed: 1, failed: 0, paused: 0 },
+    packageDirs: [],
   };
 }
 

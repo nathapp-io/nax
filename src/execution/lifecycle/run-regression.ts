@@ -11,6 +11,7 @@
 import type { NaxConfig } from "@/config";
 import type { Finding, FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
 import { runFixCycle, testSummaryToFindings } from "@/findings";
+import { buildRunDispatchAskWiring, type InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import { makeFullSuiteRectifyStrategy } from "@/operations";
 import { pipelineEventBus } from "@/pipeline/event-bus";
@@ -20,6 +21,7 @@ import { renderCommandSpec } from "@/quality";
 import type { NaxRuntime } from "@/runtime";
 import type { TestSummary } from "@/test-runners";
 import { parseTestOutput } from "@/test-runners";
+import { storyPackageDir } from "@/utils/path-frame";
 import {
   type FlakeQuarantineReport,
   fullSuite,
@@ -74,6 +76,7 @@ export const _regressionDeps = {
     input: Parameters<typeof triageFlakyFindings>[0],
   ) => ReturnType<typeof triageFlakyFindings>,
   resolveFlakeBaselineDiff,
+  buildRunDispatchAskWiring,
 };
 
 /**
@@ -109,6 +112,8 @@ export interface DeferredRegressionOptions {
    * already judged flaky. Optional — defaults to a no-op memo when omitted.
    */
   quarantineMemo?: QuarantineMemo;
+  /** The run's interaction chain — the human link of the rectifier's ask resolver (#2201). */
+  interactionChain?: InteractionChain | null;
 }
 
 export interface DeferredRegressionResult {
@@ -441,6 +446,22 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       currentTestOutput,
     );
     const packageView = runtime.packages.repo();
+    // #2201: fullSuiteRectifyOp declares Bash, so the cycle context carries the
+    // ask resolver + command shadow. Built per story (like the execution stage)
+    // and disposed once that story's cycle settles.
+    const dispatchAsk = await _regressionDeps.buildRunDispatchAskWiring({
+      config,
+      rootConfig: config,
+      projectDir: workdir,
+      packageDirs: prd.userStories.map(storyPackageDir),
+      interaction: options.interactionChain,
+      outputDir: runtime.outputDir,
+      runId: runtime.runId,
+      repoRoot: workdir,
+      featureName: prd.feature,
+      storyId: story.id,
+      abortSignal: runtime.signal,
+    });
     const cycleCtx: FixCycleContext = {
       runtime,
       packageView,
@@ -449,6 +470,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       featureName: prd.feature,
       agentName: runtime.agentManager.getDefault() ?? "claude",
       story,
+      askResolver: dispatchAsk.askResolver,
+      ...(dispatchAsk.commandShadow ? { commandShadow: dispatchAsk.commandShadow } : {}),
     };
     const cycle: FixCycle<Finding> = {
       findings: initialFindings,
@@ -466,7 +489,12 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       },
     };
 
-    const cycleResult = await _regressionDeps.runFixCycle(cycle, cycleCtx, "regression");
+    let cycleResult: FixCycleResult<Finding>;
+    try {
+      cycleResult = await _regressionDeps.runFixCycle(cycle, cycleCtx, "regression");
+    } finally {
+      await dispatchAsk.dispose();
+    }
     const succeeded = cycleResult.exitReason === "resolved";
     const cost = cycleResult.costUsd ?? 0;
     const durationMs = Date.now() - storyStartMs;

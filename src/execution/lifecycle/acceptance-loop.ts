@@ -16,9 +16,10 @@ import {
   loadSemanticVerdicts,
 } from "@/acceptance";
 import type { NaxConfig } from "@/config";
-import type { Finding, FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
+import type { Finding, FixCycle, FixCycleResult } from "@/findings";
 import { acFailureToFinding, acSentinelToFinding, runFixCycle } from "@/findings";
 import { fireHook, type LoadedHooksConfig } from "@/hooks";
+import type { InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import { acceptanceFixSourceOp, acceptanceFixTestOp } from "@/operations";
@@ -33,6 +34,7 @@ import type { NaxIgnoreIndex } from "@/utils/path-filters";
 import { hookCtx } from "../helpers";
 import type { StatusWriter } from "../status-writer";
 import { resolveAcceptanceDiagnosis } from "./acceptance-fix";
+import { openAcceptanceFixScope } from "./acceptance-fix-scope";
 import {
   buildFailureResult,
   buildResult,
@@ -83,6 +85,8 @@ export interface AcceptanceLoopContext extends DispatchContext {
    */
   acceptanceRetries?: number;
   skippedPackages?: string[];
+  /** The run's interaction chain — the human link of the fix ops' ask resolver (#2201). */
+  interactionChain?: InteractionChain | null;
 }
 
 export interface AcceptanceLoopResult {
@@ -174,25 +178,6 @@ function findingsForDiagnosis(failedACs: string[], testOutput: string, diagnosis
           { ...f, fixTarget: "test" as const },
         ],
   );
-}
-
-function buildFixCycleCtx(
-  ctx: AcceptanceLoopContext,
-  runtime: NonNullable<AcceptanceLoopContext["runtime"]>,
-  storyId: string,
-  packageDir: string,
-): FixCycleContext {
-  const packageView = runtime.packages.resolve(packageDir);
-  return {
-    runtime,
-    packageView,
-    packageDir,
-    config: packageView.hasOverride ? packageView.config : ctx.config,
-    storyId,
-    featureName: ctx.feature,
-    // agentName captured once at cycle construction time; fallback changes not reflected mid-cycle
-    agentName: ctx.agentManager?.getDefault() ?? "claude",
-  };
 }
 
 function buildAcceptanceContext(ctx: AcceptanceLoopContext, prd: PRD): PipelineContext {
@@ -289,7 +274,6 @@ export async function runAcceptanceFixCycle(
   let currentFailedACs = initialFailures.failedACs;
 
   const storyId = prd.userStories[0]?.id ?? "unknown";
-  const cycleCtx = buildFixCycleCtx(ctx, runtime, storyId, fixTarget?.packageDir ?? ctx.workdir);
 
   const cycle: FixCycle<Finding> = {
     findings: findingsForDiagnosis(initialFailures.failedACs, initialFailures.testOutput, diagnosis),
@@ -346,7 +330,14 @@ export async function runAcceptanceFixCycle(
     verdict: diagnosis.verdict,
   };
 
-  return _acceptanceFixCycleDeps.runFixCycle(cycle, cycleCtx, "acceptance");
+  // #2201: the scope carries the ask resolver + command shadow the Bash-declaring
+  // fix ops need, and owns their lifetime — disposed once the cycle settles.
+  const scope = await openAcceptanceFixScope(ctx, runtime, storyId, fixTarget?.packageDir ?? ctx.workdir);
+  try {
+    return await _acceptanceFixCycleDeps.runFixCycle(cycle, scope.cycleCtx, "acceptance");
+  } finally {
+    await scope.dispose();
+  }
 }
 
 /**

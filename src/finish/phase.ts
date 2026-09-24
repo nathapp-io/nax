@@ -13,6 +13,7 @@
  * stories all passed, so this returns null and emits a failed phase instead.
  */
 import { defaultForgeDeps, detectForge } from "@/forge";
+import { buildRunDispatchAskWiring, type DispatchAskWiring, type InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
@@ -35,6 +36,7 @@ export const _finishPhaseDeps = {
   createFinishOps,
   runFinishMachine,
   sendTelegramNotify,
+  buildRunDispatchAskWiring,
   now: () => new Date().toISOString(),
   /**
    * The cost reading, as a seam.
@@ -61,6 +63,18 @@ export interface FinishPhaseContext {
   storySummary: { completed: number; failed: number; paused: number };
   /** Merged into the phase's status.json entry; absent in tests. */
   statusWriter?: { setPostRunPhase(phase: "finish", update: Record<string, unknown>): void };
+  /**
+   * The run's interaction chain — the human link of `finishFixOp`'s ask
+   * resolver (#2201). Absent/null = headless: escalation denies, but the
+   * approvals cache, the approval-audit row and the command shadow still apply.
+   */
+  interactionChain?: InteractionChain | null;
+  /**
+   * Every story's package dir (`prd.userStories.map(storyPackageDir)`). The
+   * approvals cache disables itself when ANY package resolves `raw`, so the
+   * finish resolver needs the same run-wide view as the execution stage.
+   */
+  packageDirs: readonly (string | undefined)[];
 }
 
 /** A branch nax may open a PR from. `main`/`master` are not feature branches. */
@@ -239,6 +253,7 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
 
   let result: FinishResult | null = null;
   let failure: string | undefined;
+  let dispatchAsk: DispatchAskWiring | undefined;
   try {
     // Resolved before `loadFinishContext` so the ledger's entry check
     // (#1674 part 1) can read `last.json` from the exact directory this run
@@ -266,17 +281,34 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       base: context.base,
       specPath: context.specPath,
     });
+    // Root run config (nax#2066). `FinishPhaseContext.config` is typed
+    // `unknown`; the runtime was created from that same config, so the
+    // loader's typed view is the identical value without a silent cast.
+    const runConfig = ctx.runtime.configLoader.current();
+    // #2201: finishFixOp declares Bash — the context carries the ask resolver
+    // and command shadow, disposed in the finally below.
+    dispatchAsk = await _finishPhaseDeps.buildRunDispatchAskWiring({
+      config: runConfig,
+      rootConfig: runConfig,
+      projectDir: ctx.workdir,
+      packageDirs: ctx.packageDirs,
+      interaction: ctx.interactionChain,
+      outputDir: ctx.runtime.outputDir,
+      runId: ctx.runId,
+      repoRoot: ctx.workdir,
+      featureName: ctx.feature,
+      abortSignal: signal,
+    });
     const callCtx: CallContext = {
       runtime: ctx.runtime,
       packageView: ctx.runtime.packages.resolve(ctx.workdir),
       packageDir: ctx.workdir,
-      // Root run config (nax#2066). `FinishPhaseContext.config` is typed
-      // `unknown`; the runtime was created from that same config, so the
-      // loader's typed view is the identical value without a silent cast.
-      config: ctx.runtime.configLoader.current(),
+      config: runConfig,
       agentName: ctx.agentName,
       featureName: ctx.feature,
       signal,
+      askResolver: dispatchAsk.askResolver,
+      ...(dispatchAsk.commandShadow ? { commandShadow: dispatchAsk.commandShadow } : {}),
     };
     const ops = _finishPhaseDeps.createFinishOps({
       callCtx,
@@ -316,6 +348,9 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
   } catch (err) {
     failure = errorMessage(err);
   } finally {
+    // Before the deadline timer is cleared: a pending approval prompt is
+    // cancelled (denied) and the shadow drained within its own timeout.
+    await dispatchAsk?.dispose();
     dispose();
   }
 

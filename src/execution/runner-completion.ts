@@ -11,6 +11,7 @@ import { loadConfigForPackage, type NaxConfig } from "@/config";
 import type { FinishPhaseContext, FinishResult } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
 import { fireHook } from "@/hooks";
+import type { InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "@/pipeline/event-bus";
@@ -22,6 +23,7 @@ import { countStories, isComplete } from "@/prd";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import { errorMessage } from "@/utils/errors";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
+import { storyPackageDir } from "@/utils/path-frame";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { DeferredReviewResult } from "./deferred-review";
 import type { ExitReason } from "./executor-types";
@@ -77,6 +79,12 @@ export interface RunnerCompletionOptions extends DispatchContext {
   deferredReviewStartedAt?: number;
   /** Why the execution phase stopped — used to distinguish a cost-limit stop from a normal completion. */
   exitReason?: ExitReason;
+  /**
+   * The run's interaction chain (alive until cleanupRun destroys it, after this
+   * phase). Threaded to every post-run Bash-dispatching site — acceptance fix,
+   * deferred regression, finish — as the human link of its ask resolver (#2201).
+   */
+  interactionChain?: InteractionChain | null;
 }
 
 /**
@@ -242,6 +250,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           // (driven by postRunStatus.acceptance.status, see
           // acceptanceAlreadyPassed above) losing it entirely.
           skippedPackages: postRunStatus?.acceptance?.skippedPackages,
+          interactionChain: options.interactionChain,
         });
       } catch (err) {
         // A thrown error here would otherwise leave "acceptance" permanently
@@ -360,6 +369,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     // gate state does not reflect the merged repo — so the regression gate must
     // withhold its snapshots rather than attribute blame from them.
     isSequential: options.parallel === undefined,
+    interactionChain: options.interactionChain,
   });
 
   const { durationMs, runCompletedAt, finalCounts, reportedTotal, pluginGateFailed } = completionResult;
@@ -463,6 +473,8 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       abortSignal: options.abortSignal,
       storySummary: finishStorySummary(options),
       statusWriter: options.statusWriter,
+      interactionChain: options.interactionChain,
+      packageDirs: options.prd.userStories.map(storyPackageDir),
     });
   } catch (err) {
     logger?.warn("finish", "Finish phase failed; the run is unaffected", {
