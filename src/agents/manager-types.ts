@@ -24,7 +24,9 @@ import type { FallbackTarget } from "./swap-decision";
 export type HopKind =
   | { kind: "primary"; tier?: string; model?: string } // tier/model present when an op started on a fallback that named one
   | { kind: "stale-retry"; attempt: number; tier?: string; model?: string } // same agent, reuse existing session
-  | { kind: "timeout-retry"; attempt: number; tier?: string; model?: string } // same agent, fresh session after fail-timeout
+  // same agent, fresh session after a timeout-lane failure; `failure` is that failure, so the retry
+  // prompt can say what actually went wrong (nax#2200 — an invalid tool call is not a timeout)
+  | { kind: "timeout-retry"; attempt: number; tier?: string; model?: string; failure?: AdapterFailure }
   | { kind: "swap"; failure: AdapterFailure; tier?: string; model?: string }; // new agent, fresh session
 
 import type { SessionRunHopFn } from "../runtime/session-run-hop";

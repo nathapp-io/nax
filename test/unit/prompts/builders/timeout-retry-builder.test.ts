@@ -14,6 +14,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { AdapterFailure } from "@/context/engine";
 import { timeoutRetry } from "@/prompts";
 
 describe("timeoutRetry (barrel export AC1)", () => {
@@ -129,5 +130,59 @@ describe("timeoutRetry — generic preamble fallback (AC8)", () => {
     // timeout. We just require a timeout preamble without changed-file guidance.
     const lower = result.toLowerCase();
     expect(lower).toMatch(/timed? ?out|timeout/);
+  });
+});
+
+describe("timeoutRetry — the lane was opened by an invalid tool call (nax#2200)", () => {
+  const invalidCall: AdapterFailure = {
+    category: "quality",
+    outcome: "fail-invalid-tool-call",
+    retriable: true,
+    message: "m",
+    invalidToolCall: { tool: "Git", property: "diffFilter", expected: "one of: A, M, D, R", actual: "null" },
+  };
+
+  test("names the rejected tool, property and expected shape, and never claims a timeout", () => {
+    const result = timeoutRetry({
+      prompt: "original prompt",
+      changedFiles: [],
+      elapsedMs: 42_000,
+      attempt: 1,
+      failure: invalidCall,
+    });
+    expect(result).toContain("`Git`");
+    expect(result).toContain("`diffFilter`");
+    expect(result).toContain("one of: A, M, D, R");
+    expect(result).toContain("got null");
+    expect(result).toContain("This was not a timeout.");
+    expect(result).not.toContain("hit a timeout");
+    expect(result).not.toContain("42000ms");
+    expect(result).toContain("attempt 2");
+    expect(result.endsWith("original prompt")).toBe(true);
+  });
+
+  test("tells the model to continue from files the stopped attempt left on disk", () => {
+    const result = timeoutRetry({
+      prompt: "p",
+      changedFiles: ["src/a.ts"],
+      elapsedMs: 1_000,
+      attempt: 1,
+      failure: invalidCall,
+    });
+    expect(result).toContain("- src/a.ts");
+    expect(result.toLowerCase()).toContain("do not revert");
+  });
+
+  test("without the call's detail it still reports an invalid tool call, not a timeout", () => {
+    const { invalidToolCall: _omit, ...bare } = invalidCall;
+    const result = timeoutRetry({ prompt: "p", changedFiles: [], elapsedMs: 1_000, attempt: 1, failure: bare });
+    expect(result).toContain("invalid tool call");
+    expect(result).not.toContain("hit a timeout");
+  });
+
+  test("any other timeout-lane failure keeps the timeout preamble", () => {
+    const timedOut: AdapterFailure = { category: "quality", outcome: "fail-timeout", retriable: true, message: "m" };
+    const result = timeoutRetry({ prompt: "p", changedFiles: [], elapsedMs: 1_000, attempt: 1, failure: timedOut });
+    expect(result).toContain("hit a timeout");
   });
 });

@@ -317,7 +317,7 @@ describe("tiered fallback retries", () => {
     expect(hops).toEqual([
       { agent: "claude", hopKind: { kind: "primary" } },
       { agent: "native", hopKind: { kind: "swap", failure: AVAIL_FAILURE, tier: "cheap" } },
-      { agent: "native", hopKind: { kind: "timeout-retry", attempt: 1, tier: "cheap" } },
+      { agent: "native", hopKind: { kind: "timeout-retry", attempt: 1, tier: "cheap", failure: TIMEOUT_FAILURE } },
     ]);
   });
 });

@@ -239,12 +239,12 @@ export function buildHopCallback(
       const changedFiles = preAttemptGitRef
         ? await _buildHopCallbackDeps.captureWorkingTreeChanges(workdir, preAttemptGitRef)
         : [];
-      const elapsedMs = elapsedSincePriorHop;
       prompt = _buildHopCallbackDeps.timeoutRetry({
         prompt: resolvedRunOptions.prompt,
         changedFiles,
-        elapsedMs,
+        elapsedMs: elapsedSincePriorHop,
         attempt: hopKind.attempt,
+        ...(hopKind.failure !== undefined ? { failure: hopKind.failure } : {}), // nax#2200
       });
     }
 
