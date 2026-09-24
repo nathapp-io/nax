@@ -67,7 +67,7 @@ describe("createCommandLauncher", () => {
     });
     expect(r.stdout.trim()).toBe("hi");
     expect(r.executed).toEqual(["/bin/sh", "-c", "echo hi"]);
-    expect(r.sandbox).toEqual({ backend: "srt", wrapped: true });
+    expect(r.sandbox).toEqual({ backend: "srt", wrapped: true, argv: ["/bin/sh", "-c", "echo hi"] });
     expect(backend.finished).toBe(1);
   });
 
@@ -189,7 +189,12 @@ describe("createCommandLauncher", () => {
     expect(r.stderr).toContain(
       `note: this command ran in the nax sandbox; that failure may be a sandbox denial -- writable roots: ${root}.`,
     );
-    expect(r.sandbox).toEqual({ backend: "srt", wrapped: true, denialHint: true });
+    expect(r.sandbox).toEqual({
+      backend: "srt",
+      wrapped: true,
+      denialHint: true,
+      argv: ["/bin/sh", "-c", "echo 'x: Operation not permitted' >&2; exit 1"],
+    });
   });
 
   test("a failure that is not a denial gets no hint", async () => {

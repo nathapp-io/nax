@@ -5,13 +5,20 @@
  * nothing from src/tools. Only the `Bash` and `Exec` identities are observed;
  * a RunCommand verb call runs a user-declared command and never is (D14).
  */
+import { type CallIdentifiers, callIdentifiers } from "./identifiers";
 import type { CommandShadow, LedgerOutcome, MechanicalVerdict, Observation } from "./types";
 
 export interface ShadowTap {
-  settle(ledger: LedgerOutcome, decidedBy?: string): void;
+  /**
+   * `executed` is the argv the Exec tool actually ran (after normalization).
+   * It is forwarded to the shadow only for an `Exec` observation; a `Bash` row
+   * drops it, since its executed argv is `[shell, "-c", command]` and adds
+   * nothing to the row.
+   */
+  settle(ledger: LedgerOutcome, decidedBy?: string, executed?: readonly string[]): void;
 }
 
-export interface ShadowCall {
+export interface ShadowCall extends CallIdentifiers {
   readonly key: string;
   readonly identity: string;
   readonly command: unknown;
@@ -42,6 +49,7 @@ function toObservation(call: ShadowCall): Observation | undefined {
     stage: call.stage,
     ...(call.storyId !== undefined ? { storyId: call.storyId } : {}),
     mechanical: toMechanical(call.verdict),
+    ...callIdentifiers(call),
   };
   if (call.identity === "Bash" && typeof call.command === "string") {
     return { command: call.command, identity: "Bash", ...base };
@@ -62,11 +70,19 @@ export function openShadowTap(shadow: CommandShadow | undefined, call: ShadowCal
     shadow.observe(call.key, obs);
     let settled = false;
     return {
-      settle(ledger, decidedBy) {
+      settle(ledger, decidedBy, executed) {
         if (settled) return;
         settled = true;
         try {
-          shadow.settle(call.key, { ledger, ...(decidedBy !== undefined ? { decidedBy } : {}) });
+          const outcome = { ledger, ...(decidedBy !== undefined ? { decidedBy } : {}) };
+          // Forward `executed` for an Exec observation only: a Bash row's
+          // executed argv is `[shell, "-c", command]`, which the row's own
+          // `command` already states, so passing it would add a redundant key.
+          if (obs.identity === "Exec" && executed !== undefined) {
+            shadow.settle(call.key, outcome, executed);
+          } else {
+            shadow.settle(call.key, outcome);
+          }
         } catch {
           // A shadow failure stops the row, never the call (spec 4.3).
         }

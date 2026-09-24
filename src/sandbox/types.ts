@@ -53,6 +53,12 @@ export interface SandboxRecord {
   readonly wrapped: boolean;
   readonly reason?: string;
   readonly denialHint?: true;
+  /**
+   * Wrapped calls only: the argv the sandbox backend returned and runArgv
+   * executed. Absent when nothing was wrapped, where `executed` is already
+   * what ran. Never a substitute for `executed`, which stays the logical argv.
+   */
+  readonly argv?: readonly string[];
 }
 
 export type LaunchSpec =

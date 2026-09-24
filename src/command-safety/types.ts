@@ -6,6 +6,8 @@
  * fail a call; the types exist so the row a later decision reads is exact.
  */
 
+import type { CallIdentifiers } from "./identifiers";
+
 /** The six harm categories. Also the ids of the six `noul` questions. */
 export const QUESTION_IDS = [
   "deletes_data",
@@ -56,7 +58,7 @@ export type ModelResult =
   | { readonly status: "unavailable"; readonly error: string; readonly latencyMs?: number };
 
 /** One agent-authored command, as observed right after `policy.check`. */
-export interface Observation {
+export interface Observation extends CallIdentifiers {
   readonly command: string;
   readonly identity: "Bash" | "Exec";
   /** Exec only: the argv verbatim. `command` is it joined with single spaces. */
@@ -69,7 +71,12 @@ export interface Observation {
 /** Per-story shadow. Every method is total: it never throws. */
 export interface CommandShadow {
   observe(key: string, obs: Observation): void;
-  settle(key: string, outcome: FinalOutcome): void;
+  /**
+   * Attach the ledger outcome and, for an Exec call, the argv that actually
+   * ran (after normalization). `executed` is omitted for every other identity
+   * and whenever the call never ran.
+   */
+  settle(key: string, outcome: FinalOutcome, executed?: readonly string[]): void;
   /** Resolves within one timeout; afterwards every pending row has been written. */
   drain(): Promise<void>;
 }
@@ -81,7 +88,7 @@ export interface RuleResult {
 }
 
 /** One line of `<outputDir>/command-safety/<runId>.jsonl` (spec 7.3). */
-export interface CommandSafetyRow {
+export interface CommandSafetyRow extends CallIdentifiers {
   readonly at: string;
   readonly runId: string;
   readonly storyId?: string;
@@ -89,6 +96,12 @@ export interface CommandSafetyRow {
   readonly identity: "Bash" | "Exec";
   readonly command: string;
   readonly argv?: readonly string[];
+  /**
+   * Exec only: the argv the Exec tool executed (after normalization); absent
+   * when the call did not run. Distinct from `argv`, which is the model's
+   * requested argv — and the text `command` is classified on.
+   */
+  readonly executed?: readonly string[];
   readonly mechanical: MechanicalVerdict;
   readonly outcome: { readonly ledger: LedgerOutcome | "unsettled"; readonly decidedBy?: string };
   readonly rules: RuleResult;

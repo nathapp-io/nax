@@ -33,7 +33,11 @@ describe("Exec through the launcher", () => {
     });
     expect(backend.calls[0]?.cwd).toBe(join(root, "packages", "app"));
     expect(backend.calls[0]?.policy.writeRoots).toEqual([root]);
-    expect(result.audit?.sandbox).toEqual({ backend: "srt", wrapped: true });
+    expect(result.audit?.sandbox).toEqual({
+      backend: "srt",
+      wrapped: true,
+      argv: ["/bin/sh", "-c", "'bun' '--version'"],
+    });
   });
 });
 
