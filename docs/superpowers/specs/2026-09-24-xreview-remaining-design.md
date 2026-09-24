@@ -149,18 +149,21 @@ allow/deny come from. It therefore stays per-package, together with the rest of 
 - **Root-only keys** (`ROOT_ONLY_EXECUTION_KEYS` in new `src/config/root-only-keys.ts`):
   `bashApproval`, `approvalTimeout`, `sandbox`, `commandSafety`. `permissions` and `permissionProfile`
   (SEC-3, `manager-complete.test.ts:288-308`) stay per-package.
-- `pinRootOnlyKeys(merged: NaxConfig, root: NaxConfig, onIgnored?: (msg: string) => void): NaxConfig`
-  returns `merged` with those four keys set from `root.execution`; when a merged value differs from
-  root's (deep-equal), it calls `onIgnored` with
-  `execution.<key> is root-only (ADR-031); the value set for package "<dir>" is ignored`.
-  Takes the package dir via a 4th param `packageDir: string` for the message.
+- Two forms (the loader holds an unparsed record, `packages.ts` a parsed config):
+  - `pinRootOnlyKeys(merged: NaxConfig, root: NaxConfig): NaxConfig` — silent; sets the four keys
+    from `root.execution`.
+  - `pinRootOnlyKeysRaw(raw: Record<string, unknown>, root: NaxConfig, packageDir: string,
+    onIgnored: (msg: string) => void): Record<string, unknown>` — when a value differs from root's
+    (deep-equal) it calls `onIgnored` with
+    `execution.<key> is root-only (ADR-031); the value set for package "<dir>" is ignored`, then
+    replaces the four keys with root's (dropping any root lacks).
 - **Call sites** (every producer of a package-merged config):
   - `loader.ts` `loadConfigForWorkdir`: after the profile loop, before `safeParse`:
-    `rawMerged = pinRootOnlyKeys(rawMerged, rootConfig, warnDedupe.warn, packageDir)` — covers both the
+    `rawMerged = pinRootOnlyKeysRaw(rawMerged, rootConfig, packageDir, warnDedupe.warn)` — covers both the
     overlay and package profiles, warning deduped per resolution. `loader.ts` is at the 600-line gate:
     the edit is net-negative (the call and import add 2 lines; the historical `#574` comment at
     `:579-581` is removed).
-  - `runtime/packages.ts:190` (`hydrate`): wrap the merge, no warning (the loader path warns).
+  - `runtime/packages.ts:190` (`hydrate`): wrap the merge in `pinRootOnlyKeys`, no warning (the loader path warns).
   - `mergePackageConfig` itself does NOT pin (the loader must see the overlay's value to warn).
 - **acceptance-fix-scope.ts:** only the dispatch-wiring argument changes (`:46` `config: ctx.config`).
   `effectiveConfig` stays for `cycleCtx.config` (`:62`), which fix ops read for package quality/models.
