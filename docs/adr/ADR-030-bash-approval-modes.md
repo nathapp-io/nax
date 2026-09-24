@@ -43,11 +43,53 @@ Introduce a mode axis, config key `bashApproval`, resolved per stage in
 
 | mode | behaviour |
 |---|---|
-| `gated` | ADR-029 §3 behaviour, unchanged: lexer refusal → deny; deny rules; per-segment allow matching; payload and containment guards; ask rules. |
-| `escalate` | `gated`, except a denial the gate could not **adjudicate** resolves to the `ask` tier instead of `deny`. |
+| `gated` | ADR-029 §3 behaviour, unchanged: lexer refusal → deny; deny rules; per-segment allow matching; payload and containment guards; ask rules. Bash is offered for the stage only when a SINGLE `Bash(...)` allow rule resolves for that stage in `permissions.<stage>.allow` — see [§ Inert stages](#inert-stages) below. |
+| `escalate` | `gated`, except a denial the gate could not **adjudicate** resolves to the `ask` tier instead of `deny`. Same rule requirement as `gated`: a `Bash(...)` allow rule per stage is required for the tool to be offered at all — without one, nothing ever reaches the ask tier because nothing is ever offered to escalate. |
 | `raw` | Pass-through. No lexer refusal, no per-segment grant matching, no root containment. One exception: a best-effort protected-path screen. |
 
 **The default is `raw`.**
+
+### Inert stages
+
+Under `gated` and `escalate`, the Bash tool is offered for a stage only when the stage's
+resolved grants contain a `Bash` entry — and that entry comes solely from a human-written
+`Bash(...)` allow rule. Nothing else in nax grants Bash: see `unconditionalGrants` in
+`src/config/permissions.ts` and the deny suite at
+`test/integration/permissions/bash-deny-suite.test.ts`. A stage that declares the Bash tool
+while its resolved grants hold no `Bash` entry is therefore *inert* — the mode is configured,
+the tool is never offered, and nothing can escalate.
+
+The warning lives in `src/execution/lifecycle/run-setup-warnings.ts` as `warnInertBashStages`,
+called once from `setupRun` next to `warnFallbackMisconfiguration`. It reads
+`resolvePermissions(config, stage)` directly — the same grant list `resolveBashSupport` searches
+— so the warning and the tool offer cannot disagree. A single warning is emitted per inert stage
+under stage `"permissions"`, with `storyId: "_setup"`, the inert `stage`, and `bashApproval` in
+the data object, and a message that names the rule that would fix it:
+
+```
+bashApproval "escalate" on stage "run" grants no Bash (no Bash(...) allow rule)
+  -- the agent is not offered Bash, so nothing can escalate.
+  Add one rule: "allow": ["Bash(ls *, cat *, git status*)"]
+```
+
+The warning is logged, never raised: `gated` without a `Bash(...)` rule is a legitimate "no shell"
+posture. It is only worth saying out loud because the alternative reading — "the agent can ask,
+and a human approves" — is what the mode name suggests and is not what happens.
+
+The rule that un-inerts a stage is a single expression in the stage's allow list:
+
+```jsonc
+"permissions": {
+  "run": { "allow": ["Bash(ls *, cat *, git status*)"] }
+}
+```
+
+One expression per stage, by design: a second `Bash(...)` entry in the same allow list is a
+config load error (Bash is granted by exactly one rule per stage, not by union). The detector
+mirrors the `stage` field of the nine operations that declare `Bash` — `implementerOp` /
+`testWriterOp` (run), `rectifyOp` (review), the four rectification ops, and the two acceptance
+fix ops — through the `BASH_DECLARING_STAGES` constant, so the warning never fires on a stage
+that cannot declare Bash in the first place.
 
 ### Why `escalate` splits denials in two
 

@@ -8,11 +8,15 @@
  *    the PRD-level check that the resolved profile matches what plan used.
  *  - `warnFallbackMisconfiguration` — AC-35 pre-flight: fallback candidates that
  *    `agentGetFn` cannot resolve.
+ *  - `warnInertBashStages` — ADR-030 pre-flight: stages that declare the Bash
+ *    tool while their resolved grants hold no `Bash` entry, so the tool is
+ *    never offered and nothing can escalate.
  *
  * No behaviour change from the original inline versions — pure code move.
  */
 
 import type { NaxConfig } from "@/config";
+import { findInertBashStages, resolvePermissions } from "@/config";
 import type { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd";
 
@@ -94,5 +98,30 @@ export function warnFallbackMisconfiguration(
         warned.add(candidateName);
       }
     }
+  }
+}
+
+/**
+ * Warn once per stage that declares the Bash tool but whose resolved
+ * permissions cannot offer it (ADR-030).
+ *
+ * A warning, never an error: `gated` without a `Bash(...)` rule is a legitimate
+ * "no shell" posture. It is only worth saying out loud because the alternative
+ * reading — "the agent can ask, and a human approves" — is what the mode name
+ * suggests and is not what happens.
+ *
+ * The message names the stage, the mode, and the rule that would fix it so a
+ * reader who only sees the log line can act on it. The data object carries
+ * `{ storyId: "_setup", stage, bashApproval }` for downstream tooling.
+ */
+export function warnInertBashStages(config: NaxConfig, logger: ReturnType<typeof getSafeLogger>): void {
+  const inertStages = findInertBashStages(config);
+  for (const stage of inertStages) {
+    const resolved = resolvePermissions(config, stage).bashApproval;
+    logger?.warn(
+      "permissions",
+      `bashApproval "${resolved}" on stage "${stage}" grants no Bash (no Bash(...) allow rule) -- the agent is not offered Bash, so nothing can escalate. Add one rule: "allow": ["Bash(ls *, cat *, git status*)"]`,
+      { storyId: "_setup", stage, bashApproval: resolved },
+    );
   }
 }
