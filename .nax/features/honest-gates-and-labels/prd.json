@@ -3,7 +3,7 @@
   "feature": "honest-gates-and-labels",
   "branchName": "feat/honest-gates-and-labels",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-24T12:17:36.637Z",
+  "updatedAt": "2026-09-24T14:39:45.321Z",
   "userStories": [
     {
       "id": "US-001",
@@ -30,7 +30,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Removing three declarations and using the established warn-and-strip config guard is standard cross-file maintenance with one loader-compatibility check."
+        "reasoning": "Removing three declarations and using the established warn-and-strip config guard is standard cross-file maintenance with one loader-compatibility check.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/config/config-guards.ts",
@@ -42,16 +45,20 @@
       "expectedFiles": [
         "test/unit/config/removed-gate-llm-knob.test.ts"
       ],
-      "outOfScope": [
-        "implementing the gate in the story orchestrator (issue Option B)."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/config/semantic-review.test.ts",
           "reason": "the assertions that `gateLLMChecksOnMechanicalPass` parses and round-trips are deleted with the key."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "67a86966e25060186af385dee0f5d998f5da0926",
+      "outOfScope": [
+        "implementing the gate in the story orchestrator (issue Option B)."
+      ]
     },
     {
       "id": "US-002",
@@ -104,9 +111,6 @@
         "test/unit/operations/gate-cwd-wiring.test.ts",
         "test/unit/runtime/packages-overlay.test.ts"
       ],
-      "outOfScope": [
-        "removing `hasOverride`."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/operations/lint-check.test.ts",
@@ -125,7 +129,13 @@
           "reason": "its `hasOverride: true` fixture against the real `resolveGateContext` may gain an `overlay`; its `testCmd` assertion is unchanged."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "removing `hasOverride`."
+      ]
     },
     {
       "id": "US-003",
@@ -169,16 +179,19 @@
         "src/findings/classify-outcome.ts",
         "test/unit/findings/classify-outcome-rotated.test.ts"
       ],
-      "outOfScope": [
-        "feeding `rotated` into the oscillation count."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/execution/oscillation-breaker.test.ts",
           "reason": "a reason-text assertion naming `regressed-different-source` (if any) is updated to the new wording; the count and case-insensitive \"oscillat\" substring assertions are unchanged."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "feeding `rotated` into the oscillation count."
+      ]
     },
     {
       "id": "US-004",
@@ -228,9 +241,6 @@
       "expectedFiles": [
         "test/unit/runtime/spin-breaker-time-axis.test.ts"
       ],
-      "outOfScope": [
-        "relabelling watchdog cancels in `src/session/watchdog-turn-classification.ts`."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/session/spin-breaker-selection.test.ts",
@@ -241,7 +251,13 @@
           "reason": "an exact-equality assertion over `DEFAULT_SPIN_BREAKER_SETTINGS` or a settings fixture gains `stopAfterNoProgressSeconds`; the laundering test's `stoppedAt` (28) and `nudges` (3) expectations are unchanged."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "relabelling watchdog cancels in `src/session/watchdog-turn-classification.ts`."
+      ]
     },
     {
       "id": "US-005",
@@ -290,9 +306,6 @@
         "test/unit/interaction/ask-link-stage.test.ts",
         "test/unit/prompts/builders/timeout-retry-spin-incomplete.test.ts"
       ],
-      "outOfScope": [
-        "extending `InteractionStage`."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/interaction/dispatch-ask.test.ts",
@@ -303,7 +316,13 @@
           "reason": "gains the interaction-chain threading test (278 lines before the change; stays well under 800)."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "extending `InteractionStage`."
+      ]
     }
   ],
   "analysis": "Five independent TypeScript/Bun changes; no story dependencies. US-001: src/config/schemas-review.ts:237, src/config/schemas.ts:249, and src/review/types.ts:297 declare/default/type a key that no live check reads; src/review/types.ts:148 has the orphaned ReviewCheckResult.skipped. src/config/config-guards.ts:269-302 defines REMOVED_NO_OP_KEYS and :320-369 immutably strips and warns once per present key; src/config/loader.ts:244-267 strips after merging and before Zod safeParse, :519,:573 handles package configs. Preserve warn-and-load, not reject or silent Zod stripping. docs/guides/semantic-review.md:230 makes a false claim; test/unit/config/semantic-review.test.ts:137-162 still asserts the old default/override and must be revised. US-002: src/runtime/packages.ts:11-29 defines PackageView, :61-87 constructs it, :132-210 hydrates mergedConfigs, caches views, normalizes worktree override lookup and invalidates cached identities; preserve the same keying for a second raw-overlay map and leave overlay key absent on no-file views. src/config/merge.ts:126-145 bridges per-package quality commands into merged review commands; src/quality/command-resolver.ts:65-97 prefers review.commands.test and can promote scoped orchestrator commands. Consequently merged config/hasOverride cannot identify the raw source of an individual gate command. src/operations/lint-check.ts:97-134 and typecheck-check.ts:106-134 detect missing commands, while verify-scoped.ts:141-147,:234-249 and full-suite-gate.ts:155-189 choose cwd; replace hasOverride cwd tests without changing missing-command skip/error semantics. full-suite-gate.ts:128-132 defines FullSuiteGateContext, :314-317 logs the command cwd; detected full-suite return should also report detected provenance. The src/runtime/packages.ts:15-22 repoRoot comment warns about main-checkout writes under isolation; use precisely the spec's root-vs-workdir rule only at the specified gate sites, not for unrelated Exec/git. Existing operation routing fixtures need raw overlays defining the actual command. US-003: src/findings/cycle.ts:59-113 implements both classifiers at 592/600 lines; :447,:557 calls classifyOutcome. Extract them and re-export via cycle to preserve src/findings/index.ts:29 and src/review/review-iteration-store.ts:2,50 imports. src/findings/cycle-types.ts:17-22 and src/plugins/builtin/curator/types.ts:193 duplicate the outcome union; both need rotated. src/findings/types.ts:260-288 defines message-excluding findingRecurrenceKey. src/execution/oscillation-store.ts:46-63 counts previously resolved finding SOURCE reappearances, not iterations; src/execution/oscillation-breaker.ts:52 and src/execution/post-run.ts:355 mislabel them. Keep the separate counter unchanged. test/unit/findings/cycle.test.ts is baseline 933 lines: new classifier tests belong in a new file. US-004: src/runtime/spin-breaker/index.ts:25-69 contains resolved settings, default and reason union; :217-378 owns bounded per-key state, cumulative nudges, nudge points, stopOrNudge and observe. Add clock and repeat-time check after increment, before repeat-run stop; reset ONLY episode nudge budget on real stop or enough distinct new-key events since last nudge, never on each new key. src/config/schemas-infra.ts:226-258 defines watchdog schema/defaults, :262-306 defines spin schema; optional time knob has no Zod default. src/config/runtime-types-agent.ts:130-148 defines optional settings; src/session/spin-breaker-selection.ts:17-27 resolves concrete transport-neutral settings. src/agents/native/session/turn-result.ts:43 already routes spinStopped into fail-spin; no adapter/session manager change. test/unit/runtime/spin-breaker.test.ts:242-256 pins the laundering stop at call 28 and cumulative 3 nudges; test/unit/session/spin-breaker-selection.test.ts:14 pins exact settings. US-005: src/interaction/types.ts:11 already offers review and merge stages; src/interaction/ask-link.ts:58-72 accepts narrow AskChannel options but :103-110 hard-codes execution on the human-facing prompt. src/interaction/dispatch-ask.ts:64-85 declares options, :112-138 constructs the link, :248-262 already spreads run opts; pass stage only if defined. src/execution/lifecycle/acceptance-fix-scope.ts:45, run-regression.ts:452, and src/finish/phase.ts:290 own post-run wiring; the execution-stage caller should stay untouched. src/prompts/builders/timeout-retry-builder.ts:38-65 handles timeout and :71-99 handles invalid calls; new spin/incomplete variants reuse changed-file state semantics while timeout/no-failure text stays byte-identical. src/execution/runner.ts:330-363 already forwards interactionChain into runCompletionPhase; test/unit/execution/runner-total.test.ts should assert object identity without changing production runner. Migration: retire inert review key with one warning and successful config load; optional spin time defaults to watchdog half-time or 900; serialized finding outcome vocabulary gains rotated, with source-based breaker semantics preserved. Risks are warning placement before Zod strip, distinguishing raw overlays from inherited/bridged commands, classification precedence and message-insensitive identity, laundering loops restoring warnings endlessly, telemetry staying cumulative, and changing prompt presentation without changing permission verdicts.",
