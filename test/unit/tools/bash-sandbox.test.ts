@@ -64,7 +64,10 @@ describe("Bash through the launcher", () => {
     const tool = createBashTool({ launcher: createCommandLauncher({ state: available, backend, policyFor }) });
     const r = await tool.run({ command: "echo hi" }, ctx());
     expect(r.content).toContain("exit 0");
-    expect(r.audit).toEqual({ executed: ["/bin/sh", "-c", "echo hi"], sandbox: { backend: "srt", wrapped: true } });
+    expect(r.audit).toEqual({
+      executed: ["/bin/sh", "-c", "echo hi"],
+      sandbox: { backend: "srt", wrapped: true, argv: ["/bin/sh", "-c", "echo hi"] },
+    });
     expect(backend.calls[0]?.cwd).toBe(root);
   });
 

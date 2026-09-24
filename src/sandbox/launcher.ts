@@ -83,7 +83,12 @@ async function runWrapped(req: LaunchRequest, backend: SandboxBackend, policy: S
       ...result,
       stderr: extra.length > 0 ? `${result.stderr}\n${extra.join("\n")}` : result.stderr,
       executed: logicalArgv(req),
-      sandbox: { backend: backend.name, wrapped: true, ...(denied ? { denialHint: true as const } : {}) },
+      sandbox: {
+        backend: backend.name,
+        wrapped: true,
+        argv,
+        ...(denied ? { denialHint: true as const } : {}),
+      },
     };
   } finally {
     backend.commandFinished();
