@@ -3,7 +3,7 @@
   "feature": "approvals-cli",
   "branchName": "feat/approvals-cli",
   "createdAt": "2026-09-24T00:00:00.000Z",
-  "updatedAt": "2026-09-24T16:50:49.493Z",
+  "updatedAt": "2026-09-24T17:17:40.804Z",
   "userStories": [
     {
       "id": "US-001",
@@ -205,8 +205,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -277,7 +277,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Access revocation requires atomic selector validation and taint preservation across CLI/store integration."
+        "reasoning": "Access revocation requires atomic selector validation and taint preservation across CLI/store integration.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/approvals.ts",
@@ -291,7 +294,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a83293354af7e7f5b452fa99170cf5355dcce1ad"
     },
     {
       "id": "US-006",
