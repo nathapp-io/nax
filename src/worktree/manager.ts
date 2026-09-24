@@ -1,6 +1,6 @@
 import { existsSync, symlinkSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
@@ -21,33 +21,74 @@ export const _worktreeManagerDeps = {
   gitWithTimeout,
 };
 
+/**
+ * The `info/` dir git reads `exclude` from for `projectRoot` (#2216).
+ *
+ * When `.git` is a directory (a main checkout) — or absent, which the unit
+ * suite relies on — this is `<projectRoot>/.git/info`, unchanged. When `.git`
+ * is a FILE (a linked worktree's `gitdir:` pointer) it is the COMMON dir's
+ * `info/`: git reads `info/exclude` only from there, never from the
+ * per-worktree `.git/worktrees/<name>/info/`. `rev-parse` is asked only in
+ * that case, so it can never walk up from a non-repo dir into an enclosing
+ * repository.
+ */
+async function resolveGitInfoDir(projectRoot: string): Promise<string> {
+  const dotGit = join(projectRoot, ".git");
+  // stat, not lstat: a `.git` symlink to a pointer file is still a pointer file.
+  const isPointerFile = await stat(dotGit).then(
+    (s) => s.isFile(),
+    () => false,
+  );
+  if (!isPointerFile) return join(dotGit, "info");
+
+  const { stdout, stderr, exitCode } = await _worktreeManagerDeps.gitWithTimeout(
+    ["rev-parse", "--git-common-dir"],
+    projectRoot,
+  );
+  const commonDir = stdout.trim();
+  if (exitCode !== 0 || commonDir === "") {
+    throw new NaxError(`Could not resolve the git common dir: ${stderr.trim() || "empty output"}`, "WORKTREE_ERROR", {
+      stage: "worktree",
+      projectRoot,
+      stderr,
+    });
+  }
+  // rev-parse prints a path relative to its cwd when the common dir is below it.
+  return join(resolve(projectRoot, commonDir), "info");
+}
+
 export class WorktreeManager {
   /**
    * Ensures nax runtime files are excluded from git in all worktrees by writing
    * to .git/info/exclude — which is never committed and applies across all linked
-   * worktrees sharing this repo.
+   * worktrees sharing this repo. From a linked worktree the file written is the
+   * common dir's (see resolveGitInfoDir).
    *
    * This prevents acp-sessions.json and other nax runtime files from being
    * committed in parallel story worktrees, which causes merge conflicts even when
    * the actual implementation files don't overlap.
    *
    * Call once before creating worktrees for a parallel batch.
+   *
+   * Never throws: any failure, including resolving the git dir, is logged at
+   * warn and the call resolves.
    */
   async ensureGitExcludes(projectRoot: string): Promise<void> {
     const logger = getSafeLogger();
-    const infoDir = join(projectRoot, ".git", "info");
-    const excludePath = join(infoDir, "exclude");
 
-    // BUG-39: serialize the read-modify-write of `.git/info/exclude` via the
-    // path-keyed file lock so two concurrent ensureGitExcludes() callers
-    // (e.g. parallel story setup) don't interleave read-read-write-write
-    // and clobber each other's appended entries. Without this, the last
-    // writer wins and one story's entries silently disappear. mkdir first
-    // so the lock file can land in `.git/info/`.
-    await mkdir(infoDir, { recursive: true });
-
-    const { withPathFileLock } = await import("../utils/path-file-lock");
     try {
+      const infoDir = await resolveGitInfoDir(projectRoot);
+      const excludePath = join(infoDir, "exclude");
+
+      // BUG-39: serialize the read-modify-write of `.git/info/exclude` via the
+      // path-keyed file lock so two concurrent ensureGitExcludes() callers
+      // (e.g. parallel story setup) don't interleave read-read-write-write
+      // and clobber each other's appended entries. Without this, the last
+      // writer wins and one story's entries silently disappear. mkdir first
+      // so the lock file can land in `.git/info/`.
+      await mkdir(infoDir, { recursive: true });
+
+      const { withPathFileLock } = await import("../utils/path-file-lock");
       await withPathFileLock(excludePath, async () => {
         let existing = "";
         if (existsSync(excludePath)) {
@@ -78,6 +119,7 @@ export class WorktreeManager {
       // Non-fatal — log warning and continue. Worktrees may still get conflicts
       // if the project's .gitignore is also missing these entries.
       logger?.warn("worktree", "Failed to update .git/info/exclude", {
+        projectRoot,
         error: errorMessage(error),
       });
     }
