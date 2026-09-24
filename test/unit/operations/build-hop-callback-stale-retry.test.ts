@@ -249,7 +249,10 @@ describe("buildHopCallback — stale-retry session reuse", () => {
     // the wasted iteration the issue describes. A cancelled handle must be
     // closed and reopened before dispatching.
     const CANCELLED_HANDLE: SessionHandle = { id: "nax-cancelled", agentName: "claude" };
-    const FRESH_HANDLE: SessionHandle = { id: "nax-cancelled", agentName: "claude" };
+    // Distinct id so the dispatched-handle assertion proves IDENTITY (the fresh
+    // handle reached runAsSession), not merely structural equality with the
+    // cancelled one.
+    const FRESH_HANDLE: SessionHandle = { id: "nax-fresh", agentName: "claude" };
     const getLiveHandle = mock((_name: string) => CANCELLED_HANDLE);
     const isCancelled = mock((_name: string) => true);
     const openSession = mock(async () => FRESH_HANDLE);

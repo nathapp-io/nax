@@ -12,6 +12,11 @@
  * aborted.") rethrown unmodified. Both must map to fail-stale when the
  * watchdog's wrapped cancel is what fired, or a watchdog-cancelled warm turn
  * poisons the session and the same-agent retry never reaches a model.
+ *
+ * The two shapes diverge on a caller-signal abort, deliberately: the ACP arm
+ * wins over `signalAborted` (fail-stale — bit-for-bit base behaviour, do not
+ * "fix" this asymmetry), while the native abort arm requires the caller signal
+ * to be clean so a tearing-down run never retries.
  */
 
 import { SessionTurnError } from "../agents/types";

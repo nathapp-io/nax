@@ -307,8 +307,11 @@ export interface ISessionManager {
   closeSession(handle: import("../agents/types").SessionHandle): Promise<void>;
 
   /**
-   * Whether sendPrompt's abort branch cancelled this session (watchdog or
-   * caller-signal abort) and it has not been closed or reopened since.
+   * Whether sendPrompt's generic abort branch cancelled this session — a
+   * caller-signalled abort, or an abort-shaped error with empty watchdog
+   * bookkeeping (an unrelated external kill). A watchdog cancel classified
+   * fail-stale deliberately does NOT populate this: the session stays warm
+   * for the immediate same-agent retry.
    * Warm-handle reuse sites (e.g. the stale-retry hop) must treat a cancelled
    * handle as poisoned — close and reopen instead of dispatching into the
    * SESSION_CANCELLED guard (nax#2218).
