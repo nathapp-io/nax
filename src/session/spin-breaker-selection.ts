@@ -28,7 +28,7 @@ function resolveStopAfterNoProgressSeconds(
   if (configured !== undefined) return configured;
   const watchdog = config?.agent?.idleWatchdog;
   const timeoutSeconds = watchdog?.toolCallOnlyIdleTimeoutSeconds;
-  if (watchdog?.mode !== "off" && timeoutSeconds !== undefined && timeoutSeconds > 0) {
+  if (watchdog?.enabled !== false && watchdog?.mode !== "off" && timeoutSeconds !== undefined && timeoutSeconds > 0) {
     return Math.floor(timeoutSeconds / 2);
   }
   return DEFAULT_SPIN_BREAKER_SETTINGS.stopAfterNoProgressSeconds;

@@ -114,7 +114,6 @@ ${prompt}`;
  * failure carries it; otherwise says only that a tool call was rejected.
  */
 function invalidToolCallRetry(input: TimeoutRetryInput, failure: AdapterFailure): string {
-  const { prompt, changedFiles, attempt } = input;
   const detail = failure.invalidToolCall;
   const rejected =
     detail === undefined
@@ -124,17 +123,5 @@ function invalidToolCallRetry(input: TimeoutRetryInput, failure: AdapterFailure)
     detail === undefined
       ? "Before calling a tool, check its input schema. If an optional property has no value, leave it out entirely."
       : `Before calling \`${detail.tool}\` again, make \`${detail.property}\` match its schema (${detail.expected}). If it is optional and you have no value for it, leave it out entirely.`;
-  const state =
-    changedFiles.length === 0
-      ? "The previous attempt left no file changes on disk."
-      : `The previous attempt left these files on disk. Continue from them; do not revert them:\n\n${changedFiles.map((p) => `- ${p}`).join("\n")}`;
-  return `${rejected}
-This was not a timeout. This is attempt ${attempt + 1} of the same story.
-${fix}
-
-${state}
-
----
-
-${prompt}`;
+  return nonTimeoutRetry(input, rejected, fix);
 }

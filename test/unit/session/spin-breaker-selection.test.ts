@@ -61,4 +61,14 @@ describe("selectSpinBreakerSettings", () => {
   test("AC8: falls back to 900 when the config is undefined", () => {
     expect(selectSpinBreakerSettings(undefined).stopAfterNoProgressSeconds).toBe(900);
   });
+
+  // A disabled watchdog never runs, so deriving half its timeout would drive the
+  // time axis off a watchdog that is off — fall back to 900 like `mode: "off"`.
+  test("falls back to 900 when the idle watchdog is disabled", () => {
+    const config = agentManagerConfigSelector.select(
+      makeNaxConfig({ agent: { idleWatchdog: { enabled: false, toolCallOnlyIdleTimeoutSeconds: 1200 } } }),
+    );
+
+    expect(selectSpinBreakerSettings(config).stopAfterNoProgressSeconds).toBe(900);
+  });
 });
