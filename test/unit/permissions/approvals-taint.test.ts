@@ -52,6 +52,19 @@ describe("isForgeCapable", () => {
   });
 });
 
+describe("_approvalsTaintDeps.isProcessAlive", () => {
+  // Above the Linux pid ceiling (2^22) and macOS's: kill() reports ESRCH.
+  const NEVER_A_PID = 2_147_483_646;
+
+  test("reports this process as alive", () => {
+    expect(saved.isProcessAlive(process.pid)).toBe(true);
+  });
+
+  test("reports a pid with no process as dead", () => {
+    expect(saved.isProcessAlive(NEVER_A_PID)).toBe(false);
+  });
+});
+
 describe("taintApprovals", () => {
   test("drops every entry and records the run and process", async () => {
     const dir = makeTempDir("taint-");
@@ -163,6 +176,18 @@ describe("prepareApprovalsStore", () => {
     stubProcess(false);
     await prepareApprovalsStore(opts(file, false));
     expect((await readApprovalsFile(file)).taint).toBeUndefined();
+    cleanupTempDir(dir);
+  });
+
+  test("a trusted run leaves a taint held by a live forge-capable process in place", async () => {
+    const dir = makeTempDir("taint-");
+    const file = join(dir, "approvals.json");
+    await taintedBy(file, OTHER_PID);
+    stubProcess(true);
+    await prepareApprovalsStore(opts(file, false));
+    const store = await readApprovalsFile(file);
+    expect(store.taint?.runId).toBe("run-a");
+    expect(store.taint?.pid).toBe(OTHER_PID);
     cleanupTempDir(dir);
   });
 
