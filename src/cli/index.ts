@@ -7,7 +7,10 @@ export { agentsListCommand } from "./agents";
 export {
   _approvalsCliDeps,
   type ApprovalsListOptions,
+  type ApprovalsRmOptions,
   approvalsListCommand,
+  approvalsRmCommand,
+  formatRemovedLine,
   registerApprovalsCommand,
   resolveApprovalsFile,
   toListJson,

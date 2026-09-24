@@ -2,6 +2,8 @@
  * `nax approvals list` — store resolution, command registration and human
  * output (US-003).
  *
+ * `nax approvals rm` — atomic revocation by full entry id or by stage (US-005).
+ *
  * Terminal I/O only. Every read of `approvals.json` goes through
  * `_approvalsCliDeps.readApprovalsFileDetailed` so the store is read by the
  * same module that owns writes (`src/permissions/approvals-store.ts`); the
@@ -12,7 +14,9 @@
  *   - project key = `config?.name?.trim() || basename(workdir)`.
  *   - `projectOutputDir(key, config?.outputDir)` then `approvalsPath(...)`.
  *
- * US-004 owns missing/unparseable/JSON bodies and US-005 the `rm` subcommand.
+ * US-004 owns missing/unparseable/JSON bodies. US-005 owns selector
+ * validation, id/stage revocation and the per-entry `removed` line. US-006
+ * owns `--all` and the store-error mapping.
  */
 
 import { basename } from "node:path";
@@ -24,6 +28,7 @@ import {
   type ApprovalsFileRead,
   approvalId,
   approvalsPath,
+  type RemovalDecision,
   readApprovalsFileDetailed,
   removeApprovals,
 } from "@/permissions";
@@ -194,8 +199,125 @@ export async function approvalsListCommand(
 }
 
 /**
- * Register the `nax approvals list` command on a Commander program. Returns
- * no value: the registered action forwards its exit code to `deps.exit`.
+ * The maximum length of the `<preview>` in the `removed <id>  <stage>  <preview>`
+ * line (US-005). The preview is the command's first line, so multi-line scripts
+ * are truncated to keep the line single-line and copy-paste-able.
+ */
+const REMOVAL_PREVIEW_LIMIT = 80;
+
+/** The selector-message stderr line for AC15-AC19 (US-005). */
+const SELECTOR_ERROR = "Specify exactly one of <id...>, --stage <stage>, --all";
+
+/** `^[0-9a-f]{8}$` — every well-formed approval id (US-001 + US-005). */
+const APPROVAL_ID_PATTERN = /^[0-9a-f]{8}$/;
+
+/** The single line a removal prints for one entry, per the US-005 interface. */
+export function formatRemovedLine(entry: ApprovalEntry): string {
+  const id = approvalId(entry);
+  const preview = entry.command.split("\n", 1)[0] ?? "";
+  return `removed ${id}  ${entry.stage}  ${preview.slice(0, REMOVAL_PREVIEW_LIMIT)}`;
+}
+
+/** Options accepted by `approvalsRmCommand` (US-005). */
+export interface ApprovalsRmOptions {
+  readonly workdir: string;
+  readonly ids: readonly string[];
+  readonly stage?: string;
+  readonly all: boolean;
+  /** Reserved for US-006's confirmation prompt — not used by US-005. */
+  readonly yes: boolean;
+}
+
+/**
+ * `nax approvals rm` — atomic revocation by full entry id or by stage (US-005).
+ *
+ * Selector validation runs before any store read:
+ *   - zero or several selectors → `Specify exactly one of <id...>, --stage <stage>, --all`
+ *     on stderr, exit 1, no `removeApprovals` call.
+ *   - a malformed id (anything outside `^[0-9a-f]{8}$`) → `Invalid id: <id>` on
+ *     stderr, exit 1, no store access.
+ *
+ * Once a single selector is in hand, the work is delegated to
+ * `removeApprovals`:
+ *   - `stage` → predicate selects every entry whose `stage` matches. An empty
+ *     match returns `unchanged` from the store layer; the CLI prints
+ *     `No entries for stage <stage>` on stdout, exit 0, no write.
+ *   - `ids` → decide checks the read for the supplied ids; any absent id
+ *     produces a `refuse: "Unknown id(s): <absent ids>"`. The CLI writes that
+ *     reason to stderr, exit 1; the all-or-nothing guarantee is the store
+ *     layer's refusal, which writes nothing.
+ *
+ * For each removed entry, `formatRemovedLine` is printed on stdout
+ * (`removed <id>  <stage>  <preview>`). The taint marker survives: the store
+ * layer reads/writes it byte-for-byte, so a forge-capable run's revocation
+ * leaves the cache as tainted as it found it.
+ */
+export async function approvalsRmCommand(
+  opts: ApprovalsRmOptions,
+  deps: typeof _approvalsCliDeps = _approvalsCliDeps,
+): Promise<number> {
+  const selectorCount = (opts.ids.length > 0 ? 1 : 0) + (opts.stage !== undefined ? 1 : 0) + (opts.all ? 1 : 0);
+  if (selectorCount !== 1) {
+    deps.logErr(SELECTOR_ERROR);
+    return 1;
+  }
+
+  const givenIds = opts.ids;
+  if (givenIds.length > 0) {
+    for (const id of givenIds) {
+      if (!APPROVAL_ID_PATTERN.test(id)) {
+        deps.logErr(`Invalid id: ${id}`);
+        return 1;
+      }
+    }
+  }
+
+  const path = await resolveApprovalsFile(opts.workdir);
+
+  let decide: (read: ApprovalsFileRead) => RemovalDecision;
+  if (opts.stage !== undefined) {
+    const stage = opts.stage;
+    decide = () => ({ remove: (entry) => entry.stage === stage });
+  } else {
+    const wanted = givenIds;
+    decide = ({ file }) => {
+      const present = new Set(file.entries.map((entry) => approvalId(entry)));
+      const absent = wanted.filter((id) => !present.has(id));
+      if (absent.length > 0) {
+        return { refuse: `Unknown id(s): ${absent.join(" ")}` };
+      }
+      const wantedSet = new Set(wanted);
+      return { remove: (entry) => wantedSet.has(approvalId(entry)) };
+    };
+  }
+
+  const result = await deps.removeApprovals(path, decide);
+
+  if (result.outcome === "removed") {
+    for (const entry of result.removed) {
+      deps.log(formatRemovedLine(entry));
+    }
+    return 0;
+  }
+
+  if (result.outcome === "unchanged") {
+    // Stage is the only selector that can produce this: ids either refuse or
+    // remove at least one entry (the present-id set is non-empty by the check
+    // above, and `removeApprovals` reports `removed` for any matched entry).
+    if (opts.stage !== undefined) {
+      deps.log(`No entries for stage ${opts.stage}`);
+    }
+    return 0;
+  }
+
+  deps.logErr(result.reason);
+  return 1;
+}
+
+/**
+ * Register the `nax approvals list` and `nax approvals rm` subcommands on a
+ * Commander program. Returns no value: the registered action forwards its
+ * exit code to `deps.exit`.
  */
 export function registerApprovalsCommand(program: Command, deps: typeof _approvalsCliDeps = _approvalsCliDeps): void {
   const group = program.command("approvals").description("Manage remembered approvals");
@@ -214,10 +336,41 @@ export function registerApprovalsCommand(program: Command, deps: typeof _approva
       deps.exit(1);
     }
   };
+  const rmAction = async (
+    ids: readonly string[],
+    options: { dir: string; stage?: unknown; all?: unknown; yes?: unknown },
+  ): Promise<void> => {
+    try {
+      const exitCode = await approvalsRmCommand(
+        {
+          workdir: options.dir,
+          ids,
+          stage: typeof options.stage === "string" ? options.stage : undefined,
+          all: options.all === true,
+          yes: options.yes === true,
+        },
+        deps,
+      );
+      deps.exit(exitCode);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.logErr(`error: ${message}`);
+      deps.exit(1);
+    }
+  };
   group
     .command("list")
     .description("List remembered approvals")
     .option("-d, --dir <path>", "Project directory", process.cwd())
     .option("--json", "Emit the list as a machine-readable JSON object")
     .action(listAction);
+  group
+    .command("rm")
+    .description("Revoke one or more remembered approvals")
+    .option("-d, --dir <path>", "Project directory", process.cwd())
+    .option("--stage <stage>", "Remove every approval for the given stage")
+    .option("--all", "Remove every remembered approval (US-006)")
+    .option("--yes", "Skip the confirmation prompt (US-006)")
+    .argument("[ids...]", "One or more approval ids to revoke")
+    .action(rmAction);
 }
