@@ -44,8 +44,9 @@
  * advisory mistake-catcher: a false refusal costs one turn and says why,
  * while a false pass can abort the run.
  */
-import { relative, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { lexBashCommand } from "@/permissions";
+import { realOrRaw } from "@/utils/realpath";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd";
 import { isNaxConfigFile, isNaxOwnedWritePath } from "./nax-owned-writes";
 import type { BashCheck } from "./policy-bash";
@@ -74,12 +75,42 @@ function deny(reason: string): BashCheck {
  * mode's own `resolveAll`: a `;`-joined `cd` can leave more than one frame
  * live at once (see `nextWorkingDirectories`), and a candidate that is safe
  * from one frame but hits a protected path from another must still deny.
+ *
+ * Two passes, in order:
+ *
+ * 1. LEXICAL nax-config check. The raw screen has no typed seam in front of
+ *    it, and `args.resolvePath` (production: `resolveWithin`) returns null
+ *    for `.nax/config.json` exactly because typed tools are SUPPOSED to refuse
+ *    those writes. Falling through to that null would let the entire class
+ *    of nax-config writes go unscreened. Resolve the candidate lexically
+ *    against each frame -- `realOrRaw` walks to the nearest existing ancestor,
+ *    so a not-yet-created file under a symlinked temp root still compares
+ *    equal to `realOrRaw(root)` -- and refuse on `isNaxConfigFile` BEFORE the
+ *    resolver is consulted.
+ *
+ * 2. Typed-seam resolver pass (unchanged). `args.resolvePath` continues to be
+ *    the gate for everything else: a `null` skips this frame, an out-of-root
+ *    path skips this frame, and `isNaxOwnedWritePath` covers the queue file
+ *    and feature PRD set.
+ *
+ * The two checks do not overlap: pass 1 covers nax config files; pass 2 covers
+ * feature PRDs and the queue run-control files. `isNaxConfigFile` is checked
+ * lexically here because the resolver cannot return it, and lexically in
+ * `resolveWithin` for the same reason; `isNaxOwnedWritePath` is unchanged.
  */
 function protectedHit(args: RawScreenArgs, candidate: string, cwd: readonly string[]): string | undefined {
   for (const directory of cwd) {
+    // Pass 1: lexical nax-config check. Independent of the resolver on
+    // purpose -- see the comment above. `realOrRaw` walks to the nearest
+    // existing ancestor so the comparison holds even when the file does not
+    // yet exist on disk (which is the common case: the screen catches the
+    // write BEFORE the file lands).
+    const lexical = realOrRaw(resolve(directory, candidate));
+    if (isNaxConfigFile(args.root, lexical)) return candidate;
+
+    // Pass 2: typed-seam resolver (unchanged).
     const resolved = args.resolvePath(candidate, directory);
     if (resolved === null) continue;
-    if (isNaxConfigFile(args.root, resolved)) return candidate;
     const rel = relative(args.root, resolved).split(sep).join("/");
     if (rel.startsWith("..")) continue;
     if (isNaxOwnedWritePath(rel)) return candidate;

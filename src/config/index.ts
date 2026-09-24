@@ -1,5 +1,6 @@
 export type { BashApprovalMode } from "./bash-approval";
 export { resolveBashApproval } from "./bash-approval";
+export { BASH_DECLARING_STAGES, findInertBashStages } from "./inert-bash-stages";
 export { findProjectDir, globalConfigPath, loadConfig, loadConfigForWorkdir, loadPackageOverride } from "./loader";
 export type { ConfigLoader } from "./loader-runtime";
 export { createConfigLoader } from "./loader-runtime";
@@ -17,7 +18,7 @@ export {
   projectConfigDir,
 } from "./paths";
 export type { PipelineStage } from "./permissions";
-export { SESSION_CLOSE_PERMISSION_MODE } from "./permissions";
+export { resolvePermissions, SESSION_CLOSE_PERMISSION_MODE } from "./permissions";
 export {
   listProfiles,
   loadProfile,

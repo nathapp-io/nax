@@ -263,6 +263,20 @@ export const ExecutionConfigSchema = z.object({
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
   permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).default("unrestricted"),
+  /**
+   * Bash approval mode (ADR-030). Under `gated` and `escalate`, the Bash tool
+   * is offered for a stage only when a SINGLE `Bash(...)` allow rule resolves
+   * for that stage in `permissions.<stage>.allow`. Without such a rule the
+   * resolved grants contain no `Bash` entry and the tool is never offered —
+   * so an `escalate` config with no rule never produces an escalation prompt.
+   * US-003 warns once per inert stage at run start. Example of the rule that
+   * un-inerts a stage:
+   *
+   *   "permissions": { "run": { "allow": ["Bash(ls *, cat *, git status*)"] } }
+   *
+   * A second `Bash(...)` entry in one stage's allow list is a config load
+   * error — Bash is granted by exactly one rule per stage, not by union.
+   */
   bashApproval: BashApprovalModeSchema.default(DEFAULT_BASH_APPROVAL_MODE),
   /**
    * How long an interactive permission prompt waits before DENYING (P2 design

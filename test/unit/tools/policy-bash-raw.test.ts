@@ -140,3 +140,98 @@ describe("screenRawBashCommand tracks a parseable cd", () => {
     expect(screen("cd child && echo hi > .queue.txt").kind).toBe("allow");
   });
 });
+
+// US-001: lexical nax config file detection in the raw screen. Before this
+// arc the screen consulted `args.resolvePath` first, which returned null for
+// any path typed tools were refusing anyway (a `.nax/config.json` write is
+// refused by the typed seam BEFORE bash is ever called, so resolveWithin
+// never returned a path for it). The raw screen has no typed seam in front
+// of it, so the redirect fell through to `isNaxOwnedWritePath`, which does
+// not match `.nax/config.json` -- the whole class of nax-config writes was
+// unscreened. The fix checks `isNaxConfigFile` LEXICALLY, before the
+// resolver is consulted.
+describe("screenRawBashCommand — US-001: lexical nax config file detection", () => {
+  test("DENIES a parseable redirect into the root .nax/config.json", () => {
+    const result = screen("echo x > .nax/config.json");
+    expect(result.kind).toBe("deny");
+    if (result.kind === "deny") {
+      expect(result.reason).toContain(".nax/config.json");
+      expect(result.escalatable).toBe(false);
+    }
+  });
+
+  test("DENIES a parseable redirect into a single-segment mono config", () => {
+    const result = screen("echo x > .nax/mono/api/config.json");
+    expect(result.kind).toBe("deny");
+    if (result.kind === "deny") {
+      expect(result.reason).toContain(".nax/mono/api/config.json");
+      expect(result.escalatable).toBe(false);
+    }
+  });
+
+  test("DENIES a parseable redirect into a nested mono config (the real per-package override shape)", () => {
+    const result = screen("echo x > .nax/mono/packages/app/config.json");
+    expect(result.kind).toBe("deny");
+    if (result.kind === "deny") {
+      expect(result.reason).toContain(".nax/mono/packages/app/config.json");
+    }
+  });
+
+  test("DENIES a parseable ARGUMENT naming the root config (not only redirects)", () => {
+    expect(screen("rm .nax/config.json").kind).toBe("deny");
+    expect(screen("touch .nax/config.json").kind).toBe("deny");
+  });
+
+  test("DENIES a parseable redirect into a feature PRD (regression pin for the existing screen)", () => {
+    const result = screen("echo x > .nax/features/f1/prd.json");
+    expect(result.kind).toBe("deny");
+    if (result.kind === "deny") expect(result.reason).toContain("prd.json");
+  });
+
+  test("does not deny a write outside the root -- raw enforces no containment", () => {
+    // AC7: a redirect to ../outside.txt escapes the root and must NOT be
+    // denied. `isNaxConfigFile` is lexical so it does not match a path
+    // outside the root, and the existing containment-free semantics stay
+    // intact.
+    expect(screen("echo hi > ../outside.txt").kind).toBe("allow");
+  });
+
+  test("does not deny an ordinary file at the root", () => {
+    // AC8: an ordinary write at the root is `ok` under raw.
+    expect(screen("echo ok > notes.txt").kind).toBe("allow");
+  });
+
+  // AC10: the resolver returning null for every candidate must NOT silence
+  // the nax config check. The lexical pass runs before the resolver, so the
+  // screen still catches `echo x > .nax/config.json`. The reverse -- a
+  // resolver that lets every path through -- does not reach this code path
+  // either, so both extremes are pinned.
+  test("AC10: a null-returning resolver still denies .nax/config.json (lexical pass runs first)", () => {
+    const result = screenRawBashCommand({
+      tool: "Bash",
+      command: "echo x > .nax/config.json",
+      initialPath: ROOT,
+      root: ROOT,
+      resolvePath: () => null,
+    });
+    expect(result.kind).toBe("deny");
+    if (result.kind === "deny") {
+      expect(result.reason).toContain(".nax/config.json");
+      expect(result.escalatable).toBe(false);
+    }
+  });
+
+  // The check is per-FRAME, mirroring the conservatism of gated mode's own
+  // `resolveAll`: a `;`-joined `cd` keeps the pre-cd frame live, and the
+  // redirect relative to that frame resolves to a nax config file. Either
+  // frame is enough to deny, so this is denied from the pre-cd frame even
+  // though the cd'd frame would not catch it.
+  test("DENIES a `;`-shaped redirect into a nax config from the pre-cd frame", () => {
+    // After `cd packages/app ;` both `<root>` and `<root>/packages/app` are
+    // live. The redirect target relative to the pre-cd frame resolves to
+    // `<root>/.nax/config.json` -- a nax config file. Either frame catches it.
+    const result = screen("cd packages/app ; echo x > .nax/config.json");
+    expect(result.kind).toBe("deny");
+    if (result.kind === "deny") expect(result.reason).toContain(".nax/config.json");
+  });
+});

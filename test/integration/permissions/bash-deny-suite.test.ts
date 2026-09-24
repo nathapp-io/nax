@@ -10,8 +10,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { buildCodingToolSupport } from "@/agents/coding-tool-support";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
 import { type CommandShadow, createCommandShadow } from "@/command-safety";
 import { type BashApprovalMode, DEFAULT_BASH_APPROVAL_MODE } from "@/config/bash-approval";
 import { type AskResolver, chainAskLinks } from "@/permissions";
@@ -32,10 +32,7 @@ const STRUCTURED_GRANTS = [
 let root: string;
 let outside: string;
 
-/**
- * P5 (spec §9): every row must refuse identically with a shadow whose
- * classifier never answers. `undefined` = the original suite.
- */
+/** P5: every direct-runtime row must refuse identically with a hanging shadow. */
 const SHADOW_VARIANTS = ["none", "hanging"] as const;
 let suiteShadow: CommandShadow | undefined;
 const hangingShadow = (): CommandShadow =>
@@ -85,6 +82,36 @@ function session(options?: {
 }
 
 const call = async (support: ReturnType<typeof session>, command: string) =>
+  (await support?.runtime.callTool("Bash", { command })) ?? { kind: "error" as const, content: "no support" };
+
+/**
+ * Production-entry variant of `session()` -- reaches `runtime.callTool` through
+ * `resolveCodingToolSupport` (the seam dispatch hops actually use), which
+ * reads `bashApproval` from the resolved config rather than taking it as a
+ * direct parameter. Required for any test whose AC names the production
+ * entry: `session()` would pass even if `resolveCodingToolSupport` silently
+ * dropped the bashApproval forwarding and reverted every real hop to gated.
+ *
+ * The grants stay at the same human-visible shape as `session()`'s STRUCTURED
+ *_GRANTS + Bash allowance, so the screen's behaviour is comparable; only the
+ * bashApproval channel changes.
+ */
+function resolveSession(options?: { bashApproval?: BashApprovalMode; allow?: readonly string[] }) {
+  const bashApproval = options?.bashApproval ?? "raw";
+  const allow = options?.allow ?? [];
+  const execution: Record<string, unknown> = {
+    bashApproval,
+    permissions: { run: { allow: allow.map((p) => `Bash(${p})`) } },
+  };
+  return resolveCodingToolSupport({
+    declaredTools: [...FIX_TOOLS],
+    codingToolRoot: root,
+    pipelineStage: "run",
+    config: makeNaxConfig({ execution }),
+  });
+}
+
+const callResolved = async (support: Awaited<ReturnType<typeof resolveSession>>, command: string) =>
   (await support?.runtime.callTool("Bash", { command })) ?? { kind: "error" as const, content: "no support" };
 
 describe.each([...SHADOW_VARIANTS])("shadow=%s", (variant) => {
@@ -418,6 +445,73 @@ describe.each([...SHADOW_VARIANTS])("shadow=%s", (variant) => {
       const result = await call(rawSession(), "cd -P . && echo marker > cd-open-proof.txt");
       expect(result.kind).toBe("ok");
       expect(readFileSync(join(root, "cd-open-proof.txt"), "utf8").trim()).toBe("marker");
+    });
+  });
+
+  // US-001: lexical nax config file detection in the raw Bash screen, reached
+  // through the same production entry as the existing `F2` arc. The screen's
+  // `args.resolvePath` is `resolveWithin(root, ...)`, which returns null for
+  // `.nax/config.json` exactly because typed tools are SUPPOSED to refuse it.
+  // The raw screen has no typed seam in front of it, so the redirect fell
+  // through to `isNaxOwnedWritePath` -- which does not match nax config files
+  // -- and the whole class went unscreened. The fix adds a lexical
+  // `isNaxConfigFile` check to `protectedHit`, BEFORE the resolver is consulted.
+  //
+  // AC1 names `resolveCodingToolSupport` explicitly, so the tests below go
+  // through `resolveSession()` (not the direct `session()` helper): a regression
+  // that drops the bashApproval forwarding in `resolveCodingToolSupport` would
+  // otherwise leave these tests green while the shipped posture silently reverted
+  // to gated. The seam matters -- pins it.
+  describe("US-001: raw screen protects nax config files", () => {
+    const rawSession = () => resolveSession({ bashApproval: "raw", allow: [] });
+
+    test("AC1: a parseable redirect into the root .nax/config.json is denied", async () => {
+      const configPath = join(root, ".nax", "config.json");
+      mkdirSync(join(root, ".nax"), { recursive: true });
+      const before = Buffer.from("original-root-config\n");
+      writeFileSync(configPath, before);
+      const result = await callResolved(await rawSession(), "echo x > .nax/config.json");
+      expect(result.kind).toBe("denied");
+      // AC2: bytes must equal the bytes written before the call -- the screen
+      // refused, so the redirect never landed.
+      expect(readFileSync(configPath)).toEqual(before);
+    });
+
+    test("AC3+AC4: a parseable redirect into a per-package mono config is denied (bytes unchanged)", async () => {
+      const configPath = join(root, ".nax", "mono", "packages", "app", "config.json");
+      mkdirSync(join(root, ".nax", "mono", "packages", "app"), { recursive: true });
+      const before = Buffer.from("original-mono-config\n");
+      writeFileSync(configPath, before);
+      const result = await callResolved(await rawSession(), "echo x > .nax/mono/packages/app/config.json");
+      expect(result.kind).toBe("denied");
+      expect(readFileSync(configPath)).toEqual(before);
+    });
+
+    test("AC5: a parseable touch into the root config is denied", async () => {
+      const configPath = join(root, ".nax", "config.json");
+      mkdirSync(join(root, ".nax"), { recursive: true });
+      const before = Buffer.from("untouched\n");
+      writeFileSync(configPath, before);
+      const result = await callResolved(await rawSession(), "touch .nax/config.json");
+      expect(result.kind).toBe("denied");
+      expect(readFileSync(configPath)).toEqual(before);
+    });
+
+    test("AC6: the existing feature-PRD refusal is unchanged", async () => {
+      const result = await callResolved(await rawSession(), "echo x > .nax/features/f1/prd.json");
+      expect(result.kind).toBe("denied");
+      if (result.kind === "denied") expect(result.reason).toContain("prd.json");
+    });
+
+    test("AC7: raw still enforces no containment -- a write outside the root is not denied", async () => {
+      const result = await callResolved(await rawSession(), `echo hi > ${join(outside, "outside.txt")}`);
+      expect(result.kind).toBe("ok");
+    });
+
+    test("AC8: an ordinary write at the root is `ok` under raw", async () => {
+      const result = await callResolved(await rawSession(), "echo ok > notes.txt");
+      expect(result.kind).toBe("ok");
+      expect(readFileSync(join(root, "notes.txt"), "utf8").trim()).toBe("ok");
     });
   });
 

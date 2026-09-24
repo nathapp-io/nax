@@ -1,0 +1,205 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "p4-raw-bash-followups",
+  "branchName": "feat/p4-raw-bash-followups",
+  "createdAt": "2026-09-24T00:00:00Z",
+  "updatedAt": "2026-09-23T16:09:42.152Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Protect nax config files in the raw Bash screen",
+      "description": "**Goal** — Deny parseable raw Bash tokens and redirects that name nax configuration files before the production resolver can hide them.\n\n**Motivation** — Under the shipped default `bashApproval: raw`, `screenRawBashCommand` (`src/tools/policy-bash-raw.ts`) is the only thing between an agent mistake and nax's own run configuration.\n\n**Approach** — `protectedHit` keeps its loop over every live frame in `cwd`, but checks nax config files **before and independently of** `args.resolvePath`:\n\n1. For each `directory` in `cwd`, compute the lexical candidate\n   `realOrRaw(resolve(directory, candidate))` (`realOrRaw` from `src/utils/realpath.ts` resolves\n   the nearest existing ancestor, so a not-yet-created file under a symlinked temp root still\n   compares equal to `realOrRaw(root)`).\n2. If `isNaxConfigFile(args.root, lexical)` is true, return `candidate` (a hit).\n3. Otherwise continue exactly as today: `args.resolvePath(candidate, directory)`, `continue` on\n   `null`, then the `isNaxOwnedWritePath` check on the root-relative path.\n\n`resolveWithin` is not changed: typed tools (Read, Grep, Write, Edit, ...) must keep receiving\n`null` for these files. The fix lives entirely in `src/tools/policy-bash-raw.ts`;\n`src/tools/policy.ts` is 587 lines against the 600-line source limit and gains nothing.\n\nThe screen denies any parseable token or redirect that names a nax config file, not only\nwrites; that is the screen's existing contract for every protected path and is unchanged.\n\n**Scope** — In: lexical config-file detection in the raw Bash screen and focused unit/production-entry regression coverage. Out: remembered-approval commit recording and gated/escalate inert-stage warnings; `resolveWithin` in `src/tools/policy.ts` is not modified; typed tools must keep receiving `null` for nax config files; the raw screen does not gain `.git/` protection or any containment check; `raw` enforces no root containment by design; and commands the lexer refuses (substitution, heredocs, backticks) stay unscreened; the screen is an advisory mistake-catcher, and the OS sandbox is what makes the guarantee airtight.\n\n**Interface**\n```typescript\nscreenRawBashCommand(args: RawScreenArgs): BashCheck\nisNaxConfigFile(root: string, resolved: string): boolean\nresolveWithin(root: string, candidate: string): string | null\n```",
+      "acceptanceCriteria": [
+        "Given bashApproval `raw` and a pre-written root `.nax/config.json`, when `runtime.callTool(\"Bash\", { command: \"echo x > .nax/config.json\" })` is invoked on support returned by `resolveCodingToolSupport`, then it returns `kind: \"denied\"`.",
+        "Given the denied root-config Bash call, when the bytes of `.nax/config.json` are read afterward, then they equal the bytes written before the call.",
+        "Given a pre-written `.nax/mono/packages/app/config.json`, when `runtime.callTool(\"Bash\", { command: \"echo x > .nax/mono/packages/app/config.json\" })` is invoked through the production entry, then it returns `kind: \"denied\"`.",
+        "Given the denied mono-config Bash call, when the bytes of `.nax/mono/packages/app/config.json` are read afterward, then they are unchanged.",
+        "When `callTool(\"Bash\", { command: \"touch .nax/config.json\" })` is invoked through the same production entry, then it returns `kind: \"denied\"`.",
+        "When `callTool(\"Bash\", { command: \"echo x > .nax/features/f1/prd.json\" })` is invoked through the same production entry, then it still returns `kind: \"denied\"`.",
+        "When `callTool(\"Bash\", { command: \"echo hi > ../outside.txt\" })` is invoked through the same production entry, then it is not denied by the screen, so raw mode still enforces no containment.",
+        "When `callTool(\"Bash\", { command: \"echo ok > notes.txt\" })` is invoked through the same production entry, then it returns `kind: \"ok\"`.",
+        "When `resolveWithin(root, join(root, \".nax\", \"config.json\"))` is called, then it still returns `null`.",
+        "Given a `screenRawBashCommand` resolver that returns `null` for every candidate, when screening `echo x > .nax/config.json`, then it denies with a reason naming `.nax/config.json`."
+      ],
+      "tags": [
+        "feature",
+        "bash",
+        "policy",
+        "regression"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change is a local policy-ordering correction, but it needs direct and production-entry filesystem regressions across existing resolver seams.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/tools/policy-bash-raw.ts",
+        "src/tools/nax-owned-writes.ts",
+        "src/tools/policy.ts",
+        "test/unit/tools/policy-bash-raw.test.ts",
+        "test/unit/agents/coding-tool-support-bash-approval.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/agents/coding-tool-support-raw-protected-config.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/tools/policy-bash-raw.test.ts",
+          "reason": "may gain cases for the root nax config file and a per-package mono config file; its existing assertions stay valid and must not be weakened."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3e27f8c540258745a69639d447c8d66483b8e6b8"
+    },
+    {
+      "id": "US-002",
+      "title": "Record the build commit on remembered approvals",
+      "description": "**Goal** — Persist `NAX_COMMIT` rather than an unset environment variable when a human remembers an escalated Bash approval.\n\n**Motivation** — Every entry in `approvals.json` is therefore untraceable to the build that asked for it.\n\n**Approach** — `onRemember` in `executionStage.execute` writes `naxCommit: NAX_COMMIT` (imported from\n`@/version`) instead of reading `process.env.NAX_COMMIT`. To make the callback reachable from a\ntest without driving a real Telegram approval, `createHumanAskLink` is added to the existing\n`_executionDeps` object in `src/pipeline/stages/execution.ts`, and the stage calls it through\n`_executionDeps.createHumanAskLink` so a test can capture the options it receives.\n\n**Scope** — In: execution-stage dependency injection and remembered approval provenance, with persisted-store coverage. Out: raw protected-path screening and inert Bash-stage warnings; approval-cache matching, interaction transport, audit `approval.remembered`, and historic approvals migration.\n\n**Interface**\n```typescript\ncreateHumanAskLink(opts: { chain, timeoutMs, featureName?, storyId?, onRemember?, abortSignal? }): HumanAskLink\nNAX_COMMIT: string\n```",
+      "acceptanceCriteria": [
+        "Given `process.env.NAX_COMMIT` is unset, when the `onRemember` callback captured from `_executionDeps.createHumanAskLink` during `executionStage.execute` is invoked, then it appends an entry to `approvalsPath(ctx.runtime.outputDir)` whose `naxCommit` equals `NAX_COMMIT` from `@/version`.",
+        "Given `NAX_COMMIT` is not `\"unknown\"`, when the captured `onRemember` callback appends its approval entry, then that entry's `naxCommit` is not the string `\"unknown\"`.",
+        "When the captured `onRemember` callback receives an `AskRequest`, then its appended approval entry carries `origin: \"escalate\"` and the request's `command`."
+      ],
+      "tags": [
+        "feature",
+        "approvals",
+        "execution",
+        "provenance"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "An existing callback receives one injected factory seam and replaces one persisted field source with the already exported build constant.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/execution.ts",
+        "src/interaction/ask-link.ts",
+        "src/permissions/approvals-store.ts",
+        "src/version.ts",
+        "test/unit/pipeline/stages/execution-ask-reachability.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/pipeline/stages/execution-remember-commit.test.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8b74a049ffd7fa6dee7fbc461a40d59976507ca6"
+    },
+    {
+      "id": "US-003",
+      "title": "Warn when gated or escalate stages cannot offer Bash",
+      "description": "**Goal** — Detect Bash-declaring stages whose resolved gated/escalate permissions contain no Bash grant, warn once per inert stage at run start, and document the required allow rule.\n\n**Motivation** — Under `gated`/`escalate` a stage is offered Bash only when its resolved grants already contain a `Bash` entry, which comes solely from a human-written `Bash(...)` allow rule.\n\n**Approach** — Detection is a pure function in a new module `src/config/inert-bash-stages.ts`, re-exported\nfrom the `src/config` barrel:\n\n```ts\nimport type { PipelineStage } from \"./permissions\";\nimport type { NaxConfig } from \"./runtime-types\";\n\n/** Stages that dispatch at least one operation declaring the Bash tool. */\nexport const BASH_DECLARING_STAGES: readonly PipelineStage[] = [\"run\", \"review\", \"rectification\", \"acceptance\"];\n\n/** Stages whose resolved bashApproval is gated/escalate AND whose resolved grants hold no Bash entry. */\nexport function findInertBashStages(config: NaxConfig): readonly PipelineStage[];\n```\n\nLogging follows the existing run-setup warning precedent: `warnFallbackMisconfiguration(config,\nagentGetFn, logger)` in `src/execution/lifecycle/run-setup-warnings.ts`, called directly from\n`setupRun`. A sibling `warnInertBashStages(config: NaxConfig, logger: ReturnType<typeof getSafeLogger>): void`\ngoes in that same file and logs one warning per stage `findInertBashStages` returns.\n\n`findInertBashStages` decides from `resolvePermissions(config, stage)` alone: the stage is inert\nwhen the returned `bashApproval` is `\"gated\"` or `\"escalate\"` and no entry of `toolGrants` has\n`tool === \"Bash\"`. An absent `toolGrants` counts as an empty list: the fail-closed branch for an\nunrecognised `permissionProfile` returns `{ mode, bashApproval: \"gated\" }` with no `toolGrants`\nfield (`src/config/permissions.ts:281-282`). That is the same grant list `resolveBashSupport` searches, so the warning and\nthe tool offer cannot disagree. `BASH_DECLARING_STAGES` mirrors the `stage` field of the nine\noperations that declare `Bash`: `implementerOp`, `testWriterOp` (`run`); `rectifyOp` (`review`);\n`fullSuiteRectifyOp`, `finishFixOp`, `implementerRectifyOp`, `testWriterRectifyOp`\n(`rectification`); `acceptanceFixSourceOp`, `acceptanceFixTestOp` (`acceptance`).\n\nThe warning is logged with stage `\"permissions\"`, and its message names the stage, the mode and\nthe fix, e.g.\n`bashApproval \"escalate\" on stage \"run\" grants no Bash (no Bash(...) allow rule) -- the agent is not offered Bash, so nothing can escalate. Add one rule: \"allow\": [\"Bash(ls *, cat *, git status*)\"]`.\nIts data object carries `{ storyId: \"_setup\", stage, bashApproval }`, matching the sibling\n`warnFallbackMisconfiguration` warning's `storyId: \"_setup\"`. It is a warning, never an error: `gated`\nwithout a rule is a legitimate \"no shell\" posture.\n\n`setupRun` (`src/execution/lifecycle/run-setup.ts`) calls `warnInertBashStages(options.config,\nlogger)` once, next to its existing `warnFallbackMisconfiguration` call.\n\nDocumentation, same story:\n\n- `docs/adr/ADR-030-bash-approval-modes.md` — the mode table's `gated` and `escalate` rows state\n  that Bash is offered only where a `Bash(...)` allow rule resolves for the stage, with a\n  single-expression example `\"allow\": [\"Bash(ls *, cat *, git status*)\"]`, and that one\n  expression per stage is required (a second `Bash(...)` entry is a config load error).\n- `src/config/schemas-execution.ts` — a docblock on the `bashApproval` field stating the same\n  requirement with the same example.\n- `docs/superpowers/specs/2026-09-22-p2-interactive-approval-gate-design.md` §9 — the exit\n  instruction to set `bashApproval: escalate` also adds the `Bash(...)` allow rule.\n\n**Scope** — In: the pure resolved-permission detector, config-barrel exports, startup warnings, and the specified docs/schema comments. Out: raw-screen protection and approval commit recording; nax#2194 (under `escalate`, Category B checks are skipped for ungranted or unlexable Bash commands) is not part of this feature; `checkBashCommand`'s evaluation order is unchanged; the warning reads the root run config only; per-package `.nax/mono/<pkg>/config.json` overrides of `bashApproval` or permissions are not inspected; op-level `toolPatterns` narrowing is not considered; a stage is inert only when its resolved grants contain no `Bash` entry at all; and an inert stage is never turned into a config error or a run failure.\n\n**Interface**\n```typescript\nexport const BASH_DECLARING_STAGES: readonly PipelineStage[] = [\"run\", \"review\", \"rectification\", \"acceptance\"];\nexport function findInertBashStages(config: NaxConfig): readonly PipelineStage[];\nwarnInertBashStages(config: NaxConfig, logger: ReturnType<typeof getSafeLogger>): void\n```",
+      "acceptanceCriteria": [
+        "Given a config with `bashApproval: \"escalate\"`, `permissionProfile: \"unrestricted\"`, and no `permissions` block, when `findInertBashStages` is called, then it returns every entry of `BASH_DECLARING_STAGES`.",
+        "Given a config with `bashApproval: \"escalate\"` and `permissions.run.allow` set to `[\"Bash(ls *)\"]`, when `findInertBashStages` is called, then its result does not include `\"run\"`.",
+        "Given a config with `bashApproval: \"gated\"` and no `Bash(...)` rule, when `findInertBashStages` is called, then it returns every entry of `BASH_DECLARING_STAGES`.",
+        "Given a config with `bashApproval: \"raw\"`, when `findInertBashStages` is called, then it returns an empty list.",
+        "Given global `bashApproval: \"raw\"` and `permissions.review.bashApproval: \"escalate\"` with no `Bash(...)` rule, when `findInertBashStages` is called, then it returns exactly `[\"review\"]`.",
+        "Given a gated config with no `Bash(...)` rule, when `findInertBashStages` is called, then it never returns a stage outside `BASH_DECLARING_STAGES`, including `\"plan\"` and `\"verify\"`.",
+        "Given `bashApproval: \"escalate\"` and `permissions.run.allow` set to `[\"Bash(ls *)\"]`, when `resolveBashSupport` receives `declared: [\"Bash\"]` and grants returned by `resolvePermissions(config, \"run\")`, then it yields `allowBash: true` with a Bash grant present, agreeing with `findInertBashStages` excluding `\"run\"`.",
+        "Given a config whose `permissionProfile` is outside the schema enum, when `findInertBashStages` is called, then it returns every entry of `BASH_DECLARING_STAGES` without throwing.",
+        "When the stages of `implementerOp`, `testWriterOp`, `rectifyOp`, `fullSuiteRectifyOp`, `finishFixOp`, `implementerRectifyOp`, `testWriterRectifyOp`, `acceptanceFixSourceOp`, and `acceptanceFixTestOp` are examined, then each is an entry of `BASH_DECLARING_STAGES`.",
+        "Given an escalate config with `permissions.run.allow` set to `[\"Bash(ls *)\"]` and a spy logger, when `warnInertBashStages` is called, then its warn calls are exactly three calls with stage `\"permissions\"`, one each for `\"review\"`, `\"rectification\"`, and `\"acceptance\"`.",
+        "When `warnInertBashStages` logs an inert stage for that escalate config, then each warning data object carries `storyId: \"_setup\"`, the inert `stage`, and `bashApproval: \"escalate\"`.",
+        "When `warnInertBashStages` logs an inert stage, then each warning message contains `Bash(`, naming the rule that would fix it.",
+        "Given a raw config and a spy logger, when `warnInertBashStages` is called, then it never calls `warn`.",
+        "Given a config of `bashApproval: \"escalate\"` with no `Bash(...)` rule, when the real `setupRun` is driven under `withWarnSpy`, then it logs a warning with stage `\"permissions\"` whose data object carries `stage: \"run\"`.",
+        "Given a config of `bashApproval: \"raw\"`, when the real `setupRun` is driven under `withWarnSpy`, then it logs no warning with stage `\"permissions\"` whose data object carries a `bashApproval` field."
+      ],
+      "tags": [
+        "feature",
+        "configuration",
+        "permissions",
+        "warnings",
+        "documentation"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This adds a new configuration abstraction that must stay aligned with grant resolution and integrates it through a startup logging seam, barrel exports, documentation, and unit plus real setup tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/permissions.ts",
+        "src/agents/coding-tool-bash.ts",
+        "src/execution/lifecycle/run-setup.ts",
+        "test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts",
+        "test/helpers/warn-spy.ts"
+      ],
+      "expectedFiles": [
+        "src/config/inert-bash-stages.ts",
+        "test/unit/config/inert-bash-stages.test.ts",
+        "test/unit/execution/lifecycle/run-setup-warnings-inert-bash.test.ts",
+        "test/unit/execution/lifecycle/run-setup-inert-bash.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "src/config/index.ts",
+          "reason": "the barrel must re-export BASH_DECLARING_STAGES and findInertBashStages so the run-setup warnings module imports them through the config barrel."
+        },
+        {
+          "path": "src/execution/lifecycle/run-setup-warnings.ts",
+          "reason": "gains `warnInertBashStages(config, logger)` beside `warnFallbackMisconfiguration`; existing warnings are unchanged."
+        },
+        {
+          "path": "src/config/schemas-execution.ts",
+          "reason": "the `bashApproval` field gains a docblock stating that under `gated` and `escalate` Bash is offered only where a single `Bash(...)` allow expression resolves for the stage, with the example `\"allow\": [\"Bash(ls *, cat *, git status*)\"]`; no schema behaviour changes."
+        },
+        {
+          "path": "docs/adr/ADR-030-bash-approval-modes.md",
+          "reason": "the mode table's `gated` and `escalate` rows must state that Bash is offered only where a `Bash(...)` allow rule resolves for the stage, give the single-expression example, and note that a second `Bash(...)` entry in one list is a config load error."
+        },
+        {
+          "path": "docs/superpowers/specs/2026-09-22-p2-interactive-approval-gate-design.md",
+          "reason": "§9's instruction to set `bashApproval: escalate` on the P0 baseline corpora must also add the `Bash(...)` allow rule, or the exit run sends no prompts."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "59ea2d4bd36de78dbdec6fbc2e72423831b4a0e5"
+    }
+  ],
+  "analysis": "This feature changes three established TypeScript seams and needs no config migration. Raw Bash screening is isolated in `src/tools/policy-bash-raw.ts`: `protectedHit` currently calls `args.resolvePath` before `isNaxConfigFile` and skips null results (`src/tools/policy-bash-raw.ts:78-87`). The production resolver is `resolveWithin(resolvedRoot, resolve(cwd, candidate))` (`src/tools/policy.ts:577`), while `isNaxConfigFile` already uses `realOrRaw(root)` and recognizes the root and nested mono config forms (`src/tools/nax-owned-writes.ts:17-43`). The correction belongs only in the raw screen: import and apply `resolve`/`realOrRaw` to every live cwd frame before the existing resolver path, retaining existing null handling and root-relative `isNaxOwnedWritePath` behavior. Do not alter `resolveWithin`, because typed tools rely on its null result for these files. Regression risk is accidentally gating raw outside-root paths or lexer-refused commands; production-entry tests must preserve raw pass-through as well as direct screen tests.\n\nExecution directly calls imported `createHumanAskLink` and persists `process.env.NAX_COMMIT ?? \"unknown\"` in its onRemember callback (`src/pipeline/stages/execution.ts:27,119-139`); `_executionDeps` is the existing test seam (`src/pipeline/stages/execution.ts:304-317`). `NAX_COMMIT` is already exported at `src/version.ts:42`. Add the link factory to that dependency object and use the build constant without changing ask-chain order, approval-store shape, transport behavior, or existing audit flow. Future approval entries gain provenance; historic `unknown` records are intentionally not migrated.\n\nPermissions are centrally resolved in `resolvePermissions`; its invalid-profile arm deliberately returns gated with no `toolGrants` (`src/config/permissions.ts:245-282`). `resolveBashSupport` only synthesizes Bash in raw and otherwise derives Bash availability from the same grant list (`src/agents/coding-tool-bash.ts:43-75`). The new detector must call that resolver for exactly four Bash-declaring stages, normalize an absent grant list to empty, and avoid package overrides and op-level narrowing. The config barrel currently exports only the PipelineStage type from permissions (`src/config/index.ts:17-18`). Setup currently invokes `warnFallbackMisconfiguration` once before credential validation (`src/execution/lifecycle/run-setup.ts:145-150`); `run-setup-warnings.ts` establishes the optional logger and `_setup` warning-data convention (`src/execution/lifecycle/run-setup-warnings.ts:68-98`). Add one sibling warning invocation at that seam. The `bashApproval` schema field is at `src/config/schemas-execution.ts:255-257` and needs documentation only. Risks are detector/tool-offer divergence, invalid profiles throwing, duplicate preflight warnings, source-size limits, and turning a valid no-shell posture into a failure; all changes must remain warning-only and backwards compatible.",
+  "outOfScope": [
+    "nax#2194 (under `escalate`, Category B checks are skipped for ungranted or unlexable Bash commands) is not part of this feature; `checkBashCommand`'s evaluation order is unchanged.",
+    "US-001 only: `resolveWithin` in `src/tools/policy.ts` is not modified; typed tools must keep receiving `null` for nax config files.",
+    "US-001 only: the raw screen does not gain `.git/` protection or any containment check; `raw` enforces no root containment by design.",
+    "US-001 only: commands the lexer refuses (substitution, heredocs, backticks) stay unscreened; the screen is an advisory mistake-catcher, and the OS sandbox is what makes the guarantee airtight.",
+    "US-003 only: the warning reads the root run config only; per-package `.nax/mono/<pkg>/config.json` overrides of `bashApproval` or permissions are not inspected.",
+    "US-003 only: op-level `toolPatterns` narrowing is not considered; a stage is inert only when its resolved grants contain no `Bash` entry at all.",
+    "US-003 only: an inert stage is never turned into a config error or a run failure.",
+    "Tool-audit `approval.remembered` always being `false` is not part of this feature.",
+    "Tool-result truncation in `src/tools/bash.ts` (nax#2151) is not part of this feature."
+  ],
+  "routingProfile": "native+p4-sandbox"
+}
