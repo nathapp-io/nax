@@ -177,7 +177,9 @@ readonly stopAfterNoProgressSeconds: number;
 `DEFAULT_SPIN_BREAKER_SETTINGS.stopAfterNoProgressSeconds` is `900`.
 `AgentSpinBreakerConfigSchema` (`src/config/schemas-infra.ts`) gains
 `stopAfterNoProgressSeconds: z.number().int().min(0).max(86_400).optional()` — optional, no zod
-default, because the effective default depends on another section. `AgentSpinBreakerConfig` gains
+default, because the effective default depends on another section. The schema is module-private
+today; it becomes `export const AgentSpinBreakerConfigSchema` so its validation can be tested
+directly (it is not added to the `src/config/index.ts` barrel). `AgentSpinBreakerConfig` gains
 the matching optional field.
 
 `selectSpinBreakerSettings` (`src/session/spin-breaker-selection.ts`) resolves it as: the configured
@@ -389,7 +391,7 @@ runner test. No dependencies.
 - `test/unit/operations/lint-check.test.ts` — the "per-package override exists" routing test must give its `packageView` an `overlay` defining `quality.commands.lint`; the no-override test is unchanged.
 - `test/unit/operations/typecheck-check.test.ts` — the "per-package override exists" routing test must give its `packageView` an `overlay` defining `quality.commands.typecheck`.
 - `test/unit/operations/verify-scoped.test.ts` — the "per-package override exists" routing test must give its `packageView` an `overlay` defining `quality.commands.test`.
-- `test/unit/operations/full-suite-gate.test.ts` — fixtures that build a `packageView` with `hasOverride: true` and expect the package dir must also carry an `overlay` defining the test command.
+- `test/unit/operations/quality-gate-packageview.test.ts` — its `hasOverride: true` fixture against the real `resolveGateContext` may gain an `overlay`; its `testCmd` assertion is unchanged.
 
 **US-003**
 
@@ -403,7 +405,7 @@ runner test. No dependencies.
 **US-005**
 
 - `test/unit/interaction/dispatch-ask.test.ts` — an exact-equality assertion over the options passed to `createHumanAskLink` may gain `stage` only where the test passes one.
-- `test/unit/execution/runner-total.test.ts` — gains the interaction-chain threading test (278 lines; stays under 800).
+- `test/unit/execution/runner-total.test.ts` — gains the interaction-chain threading test (278 lines before the change; stays well under 800).
 
 `test/unit/findings/cycle.test.ts` (933 lines) is on the file-size baseline and must not grow; new
 `classifyOutcome` tests go in the created file. `src/session/manager.ts` (baseline 679) must not
@@ -472,7 +474,7 @@ change.
 - `[unit]` `AgentSpinBreakerConfigSchema` rejects `stopAfterNoProgressSeconds: -1` and accepts `0`.
 - `[unit]` the laundering loop `[A, B, A, B, ...]` with `noteResult(..., "identical")` after each call still stops at call 28 with `summary().nudges` equal to 3 (unchanged).
 - `[unit]` a loop repeating call `A` with `noteResult(..., "identical")` and a never-before-seen key between every two `A` calls still ends with a `stop` whose reason is `"same-key-cumulative"`, and `summary().nudges` is 3 at that stop (a fresh interleaved key does not restore the budget).
-- `[unit]` a breaker that spends all 3 nudges on a repeat run of `A` (repeats 25 through 27 at the default nudge points), then observes 25 distinct new keys, then repeats one of those keys 25 times, returns a `nudge` verdict with `nudgeNumber` 1 on that second run, and `summary().nudges` is 4.
+- `[unit]` a breaker from `createSpinBreaker(DEFAULT_SPIN_BREAKER_SETTINGS, { now: () => 0 })` (constant clock, so the time axis never fires) that observes `A` once and then 42 repeats of `A` without `noteResult` spends all 3 nudges (at the default nudge points 25, 33 and 42); it then observes 25 distinct new keys, then repeats the last of those keys 25 times, and the 25th repeat returns a `nudge` verdict with `nudgeNumber` 1, and `summary().nudges` is 4.
 - `[unit]` after a real `stop`, the next repeat run of a different key reaching `nudgeAfterRepeats` returns a `nudge` (not a `stop`).
 
 **Out of scope:** relabelling watchdog cancels in `src/session/watchdog-turn-classification.ts`.
