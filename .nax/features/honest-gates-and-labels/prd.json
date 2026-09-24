@@ -3,7 +3,7 @@
   "feature": "honest-gates-and-labels",
   "branchName": "feat/honest-gates-and-labels",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-24T15:26:53.685Z",
+  "updatedAt": "2026-09-24T16:10:49.593Z",
   "userStories": [
     {
       "id": "US-001",
@@ -230,8 +230,8 @@
         "config"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -298,14 +298,17 @@
         "execution"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The approval ask link is a human authorization surface; strict test isolation protects stage/default behavior while several call sites and retry builders change."
+        "reasoning": "The approval ask link is a human authorization surface; strict test isolation protects stage/default behavior while several call sites and retry builders change.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/interaction/ask-link.ts",
@@ -332,6 +335,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "b869c6738f34cbb4fb5aa74a59b250c1e00f8259",
       "outOfScope": [
         "extending `InteractionStage`."
       ]
