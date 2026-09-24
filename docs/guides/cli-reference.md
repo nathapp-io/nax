@@ -353,6 +353,24 @@ remembered approvals, followed by one block per entry:
 
 Commands print raw. There is no expiry: entries are removed via `nax approvals rm`.
 
+A missing store prints a single notice on stdout:
+
+```
+No remembered approvals at <path>/approvals.json
+```
+
+A store whose bytes cannot be parsed warns on stderr (`approvals.json could not
+be parsed; the cache reads it as empty`) and prints the same notice on stdout.
+A store whose JSON parses but holds array elements that are not approval
+entries lists `<n> malformed entries ignored` on stderr and lists the valid
+entries on stdout.
+
+`--json` prints one JSON object on stdout with the keys `path`, `state`,
+`taint` (null when absent), `droppedMalformed` and `entries`; each entry is
+`{ id: approvalId(entry), ...entry }`. `state` is `"missing"`, `"unparseable"`
+or `"ok"`. The unparseable body keeps the parse warning on stderr but writes
+the JSON body alone.
+
 ---
 
 ### `nax agents`

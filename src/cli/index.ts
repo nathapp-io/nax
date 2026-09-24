@@ -10,6 +10,7 @@ export {
   approvalsListCommand,
   registerApprovalsCommand,
   resolveApprovalsFile,
+  toListJson,
 } from "./approvals";
 export { formatEntryBlock, formatTrustLine } from "./approvals-format";
 export {
