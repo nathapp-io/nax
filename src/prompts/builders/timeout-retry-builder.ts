@@ -41,6 +41,23 @@ function formatDuration(ms: number): string {
 export function timeoutRetry(input: TimeoutRetryInput): string {
   const { prompt, changedFiles, elapsedMs, attempt, failure } = input;
   if (failure?.outcome === "fail-invalid-tool-call") return invalidToolCallRetry(input, failure);
+  // nax#2213: the timeout lane is shared (`failure-policy.ts`), so `fail-spin`
+  // and `fail-incomplete` reach here too. Neither is a timeout — say what
+  // actually happened so the model does not "recover" from a timeout it never hit.
+  if (failure?.outcome === "fail-spin") {
+    return nonTimeoutRetry(
+      input,
+      "The previous attempt was stopped because it kept repeating the same tool calls without making progress.",
+      "Do not repeat a call whose result you already have; if a check keeps returning the same result, change the code or the approach before running it again.",
+    );
+  }
+  if (failure?.outcome === "fail-incomplete") {
+    return nonTimeoutRetry(
+      input,
+      "The previous attempt ended its turn before finishing the story.",
+      "Keep working until every acceptance criterion is met, then finish with your final answer.",
+    );
+  }
   const duration = formatDuration(elapsedMs);
   const attemptNumber = attempt + 1;
 
@@ -62,6 +79,30 @@ ${fileList}
 This is attempt ${attemptNumber} of the same story — continue from the existing state above.
 Read the files listed, pick up where the previous attempt stopped, and finish the story.
 Do NOT delete or revert the existing work; treat the working tree as the starting point.
+
+---
+
+${prompt}`;
+}
+
+/**
+ * The shared body for the non-timeout timeout-lane variants (`fail-spin`,
+ * `fail-incomplete`). Same shape as `invalidToolCallRetry`: a first line naming
+ * what happened, the explicit "this was not a timeout" attempt line, a
+ * change-of-approach line, the changed-files state paragraph, then the original
+ * prompt.
+ */
+function nonTimeoutRetry(input: TimeoutRetryInput, firstLine: string, approachLine: string): string {
+  const { prompt, changedFiles, attempt } = input;
+  const state =
+    changedFiles.length === 0
+      ? "The previous attempt left no file changes on disk."
+      : `The previous attempt left these files on disk. Continue from them; do not revert them:\n\n${changedFiles.map((p) => `- ${p}`).join("\n")}`;
+  return `${firstLine}
+This was not a timeout. This is attempt ${attempt + 1} of the same story.
+${approachLine}
+
+${state}
 
 ---
 

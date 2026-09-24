@@ -33,12 +33,12 @@ import {
   _runnerReentrancyGuard,
   _storyOrchestratorDeps,
   type RunCleanupOptions,
-  type RunOptions,
   type RunnerCompletionOptions,
+  type RunOptions,
   run,
 } from "@/execution";
-import { InteractionChain } from "@/interaction";
 import type { RunnerSetupResult } from "@/execution/runner-setup";
+import { InteractionChain } from "@/interaction";
 import type { PRD } from "@/prd";
 import { SessionManager } from "@/session";
 import { _gitDeps } from "@/utils/git";

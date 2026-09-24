@@ -298,6 +298,9 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
       repoRoot: ctx.workdir,
       featureName: ctx.feature,
       abortSignal: signal,
+      // US-005: the finish phase merges the feature — label its approval
+      // prompts "merge", not the execution default.
+      stage: "merge",
     });
     const callCtx: CallContext = {
       runtime: ctx.runtime,
