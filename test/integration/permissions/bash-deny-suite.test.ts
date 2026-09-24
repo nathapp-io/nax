@@ -10,11 +10,18 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeCommandShadowRecorder,
+  makeFakeSandboxBackend,
+  makeNaxConfig,
+  makeTempDir,
+} from "@test/helpers";
 import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
 import { type CommandShadow, createCommandShadow } from "@/command-safety";
 import { type BashApprovalMode, DEFAULT_BASH_APPROVAL_MODE } from "@/config/bash-approval";
 import { type AskResolver, chainAskLinks } from "@/permissions";
+import { type CommandLauncher, createCommandLauncher } from "@/sandbox";
 
 /**
  * A fix-shaped session. Read/Glob/Grep are declared AND granted deliberately:
@@ -64,6 +71,8 @@ function session(options?: {
   profileGrants?: readonly { tool: string; patterns: readonly string[] }[];
   bashApproval?: BashApprovalMode;
   askResolver?: AskResolver;
+  launcher?: CommandLauncher;
+  commandShadow?: CommandShadow;
 }) {
   const grants = [
     ...(options?.profileGrants ?? STRUCTURED_GRANTS),
@@ -78,6 +87,9 @@ function session(options?: {
     ...(options?.ask !== undefined ? { askRules: [{ tool: "Bash", patterns: options.ask }] } : {}),
     ...(options?.askResolver !== undefined ? { askResolver: options.askResolver } : {}),
     ...(suiteShadow !== undefined ? { commandShadow: suiteShadow } : {}),
+    // AFTER the suiteShadow spread: an explicit per-test shadow wins.
+    ...(options?.commandShadow !== undefined ? { commandShadow: options.commandShadow } : {}),
+    ...(options?.launcher !== undefined ? { launcher: options.launcher } : {}),
   });
 }
 
@@ -573,5 +585,41 @@ describe.each([...SHADOW_VARIANTS])("shadow=%s", (variant) => {
       // Pinned at the config layer, so a default flip cannot pass unnoticed.
       expect(DEFAULT_BASH_APPROVAL_MODE).toBe("raw");
     });
+  });
+});
+
+describe("composite: escalate + sandbox + shadow (review test gap 1)", () => {
+  test("the prompt, the shadow and the wrapped launch all see the same command bytes", async () => {
+    const command = `printf '%s\\n' "a  b" > out.txt`;
+    const asked: string[] = [];
+    const askResolver = chainAskLinks([
+      {
+        name: "rec",
+        resolve: async (req) => {
+          asked.push(req.command ?? "");
+          return { decision: "allow" as const, decidedBy: "human" as const };
+        },
+      },
+    ]);
+    const backend = makeFakeSandboxBackend("enforce");
+    const launcher = createCommandLauncher({
+      state: { kind: "available", backend: "srt", network: "open" },
+      backend,
+      policyFor: async (r: string) => ({ writeRoots: [r], denyWrite: [], denyRead: [], network: {} }),
+    });
+    const { shadow, observed } = makeCommandShadowRecorder();
+    const outcome = await call(
+      session({ allow: [], bashApproval: "escalate", askResolver, launcher, commandShadow: shadow }),
+      command,
+    );
+    expect(outcome.kind).toBe("ok");
+    // The ask summary carries the command VERBATIM (AskRequest.command), not a
+    // masked or truncated form -- a human approving must read what will run.
+    expect(asked).toEqual([command]);
+    // The shadow observed the same bytes right after policy.check.
+    expect(observed[0]?.[1].command).toBe(command);
+    // SandboxWrapRequest carries the command directly (`command`), not behind a
+    // `spec` wrapper -- the backend's wrap saw the identical bytes too.
+    expect(backend.calls[0]?.command).toBe(command);
   });
 });

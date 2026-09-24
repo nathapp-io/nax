@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { waitForCondition } from "@test/helpers";
 import { createLoopEventRegistry } from "@/agents/native/session/loop-events";
 import type { AfterResponsePatch } from "@/agents/native/session/loop-events/types";
 import { nativeSessionLastUsage, nativeTranscriptDirs } from "@/agents/native/session/session";
@@ -10,6 +11,7 @@ import { runNativeTurn } from "@/agents/native/session/turn-loop";
 import type { SendTurnOpts } from "@/agents/session-types";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
+import type { CodingTool } from "@/tools";
 
 let dir: string;
 const handle = { id: "sess-turn-lifecycle", agentName: "native" } as const;
@@ -29,6 +31,19 @@ afterEach(async () => {
 
 const usage = { inputTokens: 1, outputTokens: 1 };
 const reply = (over: Record<string, unknown> = {}) => ({ text: "done", usage, costUsd: 0, ...over });
+
+// Copied from before-turn-end.test.ts: declaring Read as a coding tool makes
+// the model's tool call a genuine coding-tool dispatch, the same shape a real
+// permission ask rides on (a call for an undeclared tool never reaches one).
+const fakeRead: CodingTool = {
+  name: "Read",
+  description: "Read a file",
+  inputSchema: { type: "object", properties: { path: { type: "string" } } },
+  scope: { pathFields: ["path"] },
+  async run() {
+    return { content: "body" };
+  },
+};
 
 // interactionHandler is SendTurnOpts' only required field, so a Partial override
 // composes directly into a real SendTurnOpts — no cast needed (the before-request
@@ -258,5 +273,58 @@ describe("native turn loop — before_turn and after_response", () => {
       { role: "user", content: "hi" },
       { role: "assistant", content: "done" },
     ]);
+  });
+});
+
+describe("native turn loop — tool events around a permission ask", () => {
+  test("review test gap 4: before_tool fires before the ask, after_tool only after it settles", async () => {
+    const order: string[] = [];
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    const registry = createLoopEventRegistry();
+    registry.register("before_tool", () => {
+      order.push("before_tool");
+      return { kind: "allow" };
+    });
+    registry.register("after_tool", () => {
+      order.push("after_tool");
+      return {};
+    });
+    let calls = 0;
+    const turn = runNativeTurn(
+      handle,
+      "hi",
+      opts({
+        codingTools: [fakeRead],
+        interactionHandler: {
+          onInteraction: async () => {
+            order.push("ask-open");
+            await held;
+            order.push("ask-settled");
+            return { answer: "ok" };
+          },
+        },
+      }),
+      {
+        loopEvents: registry,
+        complete: async () => {
+          calls += 1;
+          return calls === 1
+            ? { text: "", toolCalls: [{ id: "c1", name: "Read", input: { path: "a.ts" } }], usage, costUsd: 0 }
+            : reply();
+        },
+      },
+    );
+    // Once the ask is open, before_tool has ALREADY fired -- a handler observes
+    // (or rewrites) the call before any human is consulted about it.
+    await waitForCondition(() => order.includes("ask-open"));
+    expect(order).toEqual(["before_tool", "ask-open"]);
+    release();
+    await turn;
+    // And after_tool fired only after the ask settled: no handler sees a tool
+    // result before the interaction that gated it has been answered.
+    expect(order).toEqual(["before_tool", "ask-open", "ask-settled", "after_tool"]);
   });
 });
