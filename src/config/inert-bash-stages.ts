@@ -14,6 +14,18 @@
  * The decision is read from `resolvePermissions(config, stage)` alone — the
  * same grant list `resolveBashSupport` searches — so the warning and the tool
  * offer cannot disagree.
+ *
+ * What this check does NOT look at is the call site. It is sound only because
+ * of an invariant enforced elsewhere: every `CallContext` that can dispatch a
+ * Bash-declaring op carries an ask resolver and a command shadow, built by
+ * `buildDispatchAskWiring` / `buildRunDispatchAskWiring` (src/interaction).
+ * Without one the tool runtime falls back to `headlessAskResolver()` and
+ * escalation always denies even for a stage this reports as healthy — which is
+ * what the finish phase, the acceptance fix cycle and the deferred regression
+ * gate did before #2201. `scripts/check-bash-dispatch-ask.ts` (in
+ * `lint:checks`) fails on any CallContext construction that omits either
+ * field unless it is allowlisted as dispatching no Bash-declaring op (#2202),
+ * so "grantable per stage" here implies "reachable at every call site".
  */
 
 import { BASH_TOOL_NAME } from "@/tools";
@@ -41,6 +53,11 @@ export const BASH_DECLARING_STAGES: readonly PipelineStage[] = ["run", "review",
  * offer cannot disagree. A stage with no `Bash(...)` allow rule resolves with
  * `toolGrants` containing every tool the profile grants but no `Bash` entry,
  * which is exactly the "inert" condition.
+ *
+ * Per stage, not per call site: a stage absent from the result is escalatable
+ * at every site that dispatches it because every such site attaches an ask
+ * resolver — the invariant `scripts/check-bash-dispatch-ask.ts` enforces
+ * (see the module docblock).
  */
 export function findInertBashStages(config: NaxConfig): readonly PipelineStage[] {
   const inert: PipelineStage[] = [];
