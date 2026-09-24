@@ -73,6 +73,11 @@ export interface ToolRunContext {
    * or empty means no additional narrowing.
    */
   readonly denyPaths?: readonly string[];
+  /**
+   * Aborts the turn's process execution; Bash and Exec forward it to the
+   * launcher and runArgv, which SIGKILL the process group. US-001.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface CodingTool {

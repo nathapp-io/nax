@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { CommandLauncher, LaunchRequest } from "@/sandbox";
 import { compileToolPolicy } from "@/tools/policy";
 import type { ToolRunContext } from "@/tools/registry";
 import { createRunCommandTool, type RunCommandExecOptions } from "@/tools/run-command";
@@ -48,6 +49,28 @@ describe("RunCommand argv branch", () => {
     const result = await tool().run({ command: "test", argv: ["bun", "install"] }, ctx);
     expect(result.isError).toBe(true);
     expect(result.content).toContain("exactly one");
+  });
+
+  test("US-001 AC13: ToolRunContext.signal lands on the LaunchRequest when exec runs through a launcher", async () => {
+    const signal = new AbortController().signal;
+    const requests: LaunchRequest[] = [];
+    const launcher: CommandLauncher = {
+      state: { kind: "disabled" },
+      async run(req) {
+        requests.push(req);
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+          executed: req.spec.kind === "argv" ? req.spec.argv : [],
+          sandbox: { backend: "none", wrapped: false },
+        };
+      },
+    };
+    const t = createRunCommandTool(new Map([["test", "bun test"]]), { exec: { ...exec, launcher } });
+    await t.run({ argv: ["bun", "add", "x"] }, { ...ctx, signal });
+    expect(requests[0]?.signal).toBe(signal);
   });
 
   test("the declared branch still works and is unaffected", async () => {

@@ -25,6 +25,11 @@ export interface RunArgvOptions {
    * variable for others, and both must be nax-supplied.
    */
   readonly env?: Readonly<Record<string, string>>;
+  /**
+   * When aborted, the process group is SIGKILLed, both readers are cancelled
+   * and the result resolves with `aborted: true`. US-001.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface ArgvExecResult {
@@ -32,6 +37,10 @@ export interface ArgvExecResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly timedOut: boolean;
+  /** True when an abort killed the process group. Always set by runArgv. */
+  readonly aborted?: boolean;
+  /** True when background processes holding a stream were SIGKILLed on drain. Always set by runArgv. */
+  readonly orphansKilled?: boolean;
 }
 
 /** Injectable seam, mirroring _worktreeDependencyDeps. */
