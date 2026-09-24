@@ -3,7 +3,7 @@
   "feature": "turn-cancellation",
   "branchName": "feat/turn-cancellation",
   "createdAt": "2026-09-24T00:00:00.000Z",
-  "updatedAt": "2026-09-24T07:14:14.547Z",
+  "updatedAt": "2026-09-24T07:27:13.426Z",
   "userStories": [
     {
       "id": "US-001",
@@ -42,7 +42,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Real process groups, drains, abort listeners, and several command forwarding paths have timing-sensitive behavior."
+        "reasoning": "Real process groups, drains, abort listeners, and several command forwarding paths have timing-sensitive behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/utils/argv-exec.ts",
@@ -54,9 +57,6 @@
       "expectedFiles": [
         "test/unit/utils/argv-exec-lifecycle.test.ts"
       ],
-      "outOfScope": [
-        "SIGTERM before SIGKILL; processes that leave the process group."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/sandbox/launcher.test.ts",
@@ -67,7 +67,14 @@
           "reason": "gains a wrapped background-process case beside \"a timeout kills sandboxed grandchildren\"; existing cases are unchanged."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "163ad06ef11a3bb80a9a810fa147883b603a9422",
+      "outOfScope": [
+        "SIGTERM before SIGKILL; processes that leave the process group."
+      ]
     },
     {
       "id": "US-002",
@@ -118,16 +125,19 @@
         "test/unit/agents/native/session/turn-tool-batch-cancel.test.ts",
         "test/unit/agents/native/adapter-turn-signal.test.ts"
       ],
-      "outOfScope": [
-        "`ask_human` questions; context-pull tools."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/agents/native/session/turn-loop-seam.test.ts",
           "reason": "an exact-shape assertion over the object returned by `runToolBatch` or over the coding-tool interaction request may gain `cancelled: false`, `signal` or `onWaiting`; the invariant kept is that a batch with no signal behaves exactly as before."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "`ask_human` questions; context-pull tools."
+      ]
     },
     {
       "id": "US-003",
@@ -176,16 +186,19 @@
       "expectedFiles": [
         "test/unit/interaction/ask-link-cancel.test.ts"
       ],
-      "outOfScope": [
-        "the link-level `abortSignal` still settles `unavailable`; the dedupe key is unchanged."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/interaction/ask-link.test.ts",
           "reason": "tests that call `resolve(req)` with one argument stay valid; an assertion that a cancelled prompt settles `unavailable` through the link-level `abortSignal` stays as it is and must not be changed to `cancelled`."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "the link-level `abortSignal` still settles `unavailable`; the dedupe key is unchanged."
+      ]
     },
     {
       "id": "US-004",
@@ -231,9 +244,6 @@
         "test/unit/interaction/ask-link-keepalive.test.ts",
         "test/unit/runtime/middleware/idle-watchdog-awaiting-human.test.ts"
       ],
-      "outOfScope": [
-        "keep-alive for `ask_human` questions; exposing `ASK_KEEPALIVE_MS` as configuration."
-      ],
       "modifiedFiles": [
         {
           "path": "test/unit/runtime/middleware/agent-stream-logging.test.ts",
@@ -248,7 +258,13 @@
           "reason": "may gain a case showing `agent.awaiting_human` is ignored without error; existing assertions are unchanged."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "outOfScope": [
+        "keep-alive for `ask_human` questions; exposing `ASK_KEEPALIVE_MS` as configuration."
+      ]
     }
   ],
   "analysis": "Audit findings: this enhancement fits existing code, not a greenfield architecture. `src/utils/argv-exec.ts:14-93` currently spawns detached groups, drains streams concurrently, and clears its timeout at direct-child exit; it needs abort-aware readers and post-exit grace while retaining documented MEM-4, BUG-13, and concurrent-drain invariants. Command forwarding is in `src/sandbox/launcher.ts`, `src/tools/bash.ts`, `src/tools/run-command-exec.ts`, plus probe/dependency callers. Native control flow is adapter -> TurnDeps -> tool batch -> loop, with the synthetic spin terminate branch as precedent; interaction propagation is AdapterInteraction -> buildRunInteractionHandler -> ToolCallContext -> ToolRunContext. Ask request serialization and auditing must remain request-only while `ask-link.ts` changes from one shared promise to per-waiter cancellation. Awaiting-human extends the native activity/event union and watchdog switch. Principal risks are process kill/drain races, listener/timer cleanup, exact abort reasons, strict tool result pairing, shared waiter cancellation, and exhaustive stream-event consumers. Optional fields preserve existing literals/test doubles. Existing coverage is in argv-exec, launcher, Bash/Exec, native turn seam/adapter, ask-link/dispatch, and idle-watchdog suites; new lifecycle tests are required. Implement dependency order US-001, US-002, US-003, US-004; no user configuration migration is required.",
