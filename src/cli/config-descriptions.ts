@@ -113,6 +113,26 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.commandInterceptor.provider": "Which interceptor to use. Only 'rtk' exists today.",
   "execution.commandInterceptor.git.verbs":
     "Git subcommands eligible for interception. Measured values: log and diff. status and blame measured no benefit; show is excluded for changing git's exit code.",
+  "execution.bashApproval":
+    "How agent Bash commands are approved: raw (screened only), gated (policy decides), escalate (a human decides on ask). Root-only (ADR-031)",
+  "execution.approvalTimeout":
+    "Milliseconds an interactive permission prompt waits before denying (30000-3600000). Root-only (ADR-031)",
+  "execution.permissions.<stage>.bashApproval": "Per-stage override of execution.bashApproval; stays per-package",
+  "execution.sandbox": "OS sandbox for agent-authored commands. Root-only (ADR-031)",
+  "execution.sandbox.enabled": "Run agent Bash/Exec commands inside the OS sandbox",
+  "execution.sandbox.backend": "Sandbox backend implementation",
+  "execution.sandbox.filesystem": "Filesystem policy additions for the sandbox",
+  "execution.sandbox.filesystem.allowWrite": "Extra literal paths the sandbox may write (no glob characters)",
+  "execution.sandbox.filesystem.denyRead": "Extra literal paths the sandbox may not read (no glob characters)",
+  "execution.sandbox.network": "Network policy for sandboxed commands",
+  "execution.sandbox.network.allowedDomains": "Domains sandboxed commands may reach; absent means open",
+  "execution.commandSafety": "Shadow command classifier; observes every command, decides nothing. Root-only (ADR-031)",
+  "execution.commandSafety.shadow": "Classifier endpoint settings; absent means off",
+  "execution.commandSafety.shadow.url": "Classifier URL (loopback unless allowRemote)",
+  "execution.commandSafety.shadow.timeoutMs": "Per-command classifier timeout in milliseconds",
+  "execution.commandSafety.shadow.authEnv": "Name of the environment variable holding the classifier auth token",
+  "execution.commandSafety.shadow.allowRemote":
+    "Allow a non-loopback classifier URL. Sends every agent command verbatim off-host",
 
   // Quality
   quality: "Quality gate configuration",

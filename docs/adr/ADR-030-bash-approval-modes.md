@@ -134,7 +134,7 @@ open on the `cd` must never mean abandoning the screen for the rest of the comma
 would make any everyday idiom a skeleton key (`cd - ; echo ABORT > .queue.txt`), which is
 strictly worse than pinning every candidate to the initial directory.
 
-**This screen is advisory by construction and must never be described otherwise.** Three gaps
+**This screen is advisory by construction and must never be described otherwise.** Six gaps
 are known and accepted, not defects to be closed:
 
 1. A command using substitution is not parsed, and therefore is not screened:
@@ -146,6 +146,12 @@ are known and accepted, not defects to be closed:
    INTO a protected directory (`cd -P .nax && echo x > config.json`) is screened against the
    pre-`cd` frame and passes. Closing it would require modelling every `cd` form, which is
    the containment gate `raw` exists not to be.
+4. The screen matches exact file paths. A directory target (`cp evil/config.json .nax/`,
+   `cp -R evil/ .nax`) or a glob (`.nax/confi?.json`) names no protected file and passes.
+5. Writers that take the target as an option or a nested script are not modelled:
+   `tar -C .nax -xf x.tar`, `dd of=.nax/config.json`, `sh -c 'echo x > .nax/config.json'`.
+6. A symlink alias (`ln -s .nax n && echo x > n/config.json`) passes: the screen does not
+   resolve links.
 
 It catches a naive mistake at near-zero cost, which is exactly the threat model below. It is
 not a boundary, and it must never be grown into a general gate — gating lives in policy, once.
@@ -245,7 +251,9 @@ human link talks to the channel. The chain, in order:
 3. **human** (`createHumanAskLink`) — an adapter that renders the request into the interaction
    subsystem's existing `choose` vocabulary and dispatches through the configured chain. Resolves
    `human` on a tap, `timeout` when nobody answers, `unavailable` when no channel is configured
-   or the command exceeds the prompt budget.
+   or the command exceeds the prompt budget. Before prompting, the human link masks inert secret
+   spans in the command; when a secret span would contain shell syntax it denies without
+   prompting, attributed `unshowable` (review #9).
 4. **terminal deny** — appended by the chain itself, so an exhausted or all-abstaining chain
    denies whether or not the last link is total. A link that throws abstains, never allows.
 

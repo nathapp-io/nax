@@ -225,4 +225,8 @@ dormant.
   interceptor.
 - [Scoped Permissions](../specs/scoped-permissions.md) — the original per-story allowlist
   spec.
+- [Bash Approval, Sandbox and Command Safety](configuration.md#bash-approval-sandbox-and-command-safety) —
+  the root-only `execution.*` keys behind these modes.
+- [ADR-031](../adr/ADR-031-root-scoped-command-safety-config.md) — why those keys are
+  root-scoped.
 - [Configuration](configuration.md) — the rest of the config surface.

@@ -97,6 +97,9 @@ describe("createBashTool -- bashApproval-aware description", () => {
     expect(description).toContain(".nax/config.json");
     expect(description).toContain(".nax/features/**/prd.json");
     expect(description).toContain("advisory");
+    expect(description).toContain("exact file paths");
+    expect(description).toContain("directory");
+    expect(description).toContain("sh -c");
   });
 
   test("escalate with no reachable human is byte-identical to gated (no promise of a human it cannot keep)", () => {
