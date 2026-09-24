@@ -19,6 +19,7 @@ export type IterationOutcome =
   | "partial" // findingsAfter is a strict subset of findingsBefore
   | "regressed" // findingsAfter contains new findings not in findingsBefore (same source)
   | "unchanged" // findingsAfter equals findingsBefore (same files+rules+lines)
+  | "rotated" // every finding was replaced by a different one — the defect moved, nothing converged (nax#2154)
   | "regressed-different-source"; // before had source A, after has source B
 
 export interface FixApplied {
