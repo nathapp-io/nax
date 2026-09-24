@@ -53,7 +53,8 @@ not extracted: refactoring `runs.ts`/`status-cost.ts` is unrelated churn.
 ### Entry id
 
 `approvalId(entry)` = first 8 hex chars of `sha256(stage + "\0" + command + "\0" + approvedAt)`,
-with a missing/non-string `approvedAt` read as `""`. Computed on read; never stored.
+with a missing/non-string `approvedAt` read as `""`, hashed with `new Bun.CryptoHasher("sha256")`
+(Bun-native, as `pipeline/stages/acceptance-setup.ts:73`). Computed on read; never stored.
 
 - Stable when other entries are added or removed.
 - A duplicate (stage, command) pair recorded twice has two ids, because `approvedAt` differs.
