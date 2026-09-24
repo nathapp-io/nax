@@ -379,10 +379,19 @@ export function attachAgentIdleWatchdog(
         // that window must not declare the call idle. Without the offset,
         // the next tick that lands exactly `idleTimeoutMs` past the beat
         // would cancel even though the prompt is still pending.
+        //
+        // The anchor is `max(event.timestamp, now)`, not the event
+        // timestamp alone, so a delayed or stale beat cannot move the
+        // clocks further back than the watchdog's current view. The
+        // offset still extends past now (otherwise a fresh beat at the
+        // threshold edge would cancel at the very next tick), but a stale
+        // beat is treated as if it arrived right now and gets the same
+        // single-window extension rather than compounding on its age.
         const state = activeStates.get(event.callId);
         if (state) {
+          const anchor = Math.max(event.timestamp, _idleWatchdogDeps.now());
           const offset = Math.max(idleTimeoutMs, toolCallOnlyTimeoutMs);
-          const observedAt = event.timestamp + offset;
+          const observedAt = anchor + offset;
           state.lastNonToolCallActivityAt = observedAt;
           resetActivity(state, observedAt, { clearGrace: true });
         }

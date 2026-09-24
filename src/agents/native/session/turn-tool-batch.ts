@@ -225,11 +225,21 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
               // deps.onWaiting never reaches the activity hook, so the
               // watchdog would still cancel a turn that is legitimately
               // waiting on a human approval prompt.
+              //
+              // Activity is emitted FIRST so a throwing onWaiting does not
+              // suppress the watchdog beat. The onWaiting call is wrapped in
+              // try/catch because it is a notification, not a gate — the
+              // request proceeds either way.
               ...(deps.onWaiting !== undefined || deps.onActivity !== undefined
                 ? {
                     onWaiting: () => {
-                      deps.onWaiting?.();
                       deps.onActivity?.({ kind: "awaiting_human" });
+                      try {
+                        deps.onWaiting?.();
+                      } catch {
+                        // notification only — onWaiting throwing must not
+                        // surface to the tool, the run, or the cancel logic
+                      }
                     },
                   }
                 : {}),

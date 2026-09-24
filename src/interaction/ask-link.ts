@@ -266,133 +266,140 @@ export function createHumanAskLink(opts: {
    */
   async function runSession(req: AskRequest, session: Session): Promise<void> {
     const chain = opts.chain;
-    if (chain === null || chain === undefined) {
-      // No channel: every live waiter settles unavailable, none of them
-      // are ever prompted.
-      for (const w of [...session.waiters]) {
-        w.settle(deny("unavailable"));
-        if (w.signal !== undefined && w.onAbort !== undefined) {
-          w.signal.removeEventListener("abort", w.onAbort);
-        }
-        session.waiters.delete(w);
-      }
-      session.settled = true;
-      return;
-    }
-    // AC9: a queued waiter that aborted before its turn has already
-    // settled cancelled; its session has no live waiters, so we must
-    // NOT call chain.prompt (the test pins `promptCalls === 1` even when
-    // the queued waiter is the only entry for its key).
-    if (session.waiters.size === 0) {
-      session.settled = true;
-      return;
-    }
-    activeId = session.id;
-    // onWaiting is fired in resolve() before the session is queued, so
-    // each caller's watchdog is notified exactly once.
     try {
-      const response = await chain.prompt({
-        id: session.id,
-        type: "choose",
-        featureName: opts.featureName ?? "unknown",
-        ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
-        stage: "execution",
-        summary: `${req.tool} - approval required`,
-        detail: [
-          // A Write/Edit ask carries no command: showing `req.summary` keeps
-          // the operator informed about what is being approved instead of an
-          // empty code block. The command is still shown verbatim when
-          // present.
-          ...((req.command ?? "").length > 0 ? ["```", req.command, "```"] : []),
-          `request: ${req.summary}`,
-          `runs in: ${req.root ?? "unknown"}`,
-          `reason:  ${req.reason ?? req.rule}`,
-          `stage:   ${req.stage}`,
-        ].join("\n"),
-        options: OPTIONS,
-        timeout: opts.timeoutMs,
-        // Recorded for the message footer only. This link NEVER consults
-        // applyFallback: it maps "continue" AND "escalate" to approve.
-        fallback: "abort",
-        createdAt: Date.now(),
-        metadata: { approvalPrompt: true },
-      });
-      let outcome: AskLinkOutcome;
-      if (response.respondedBy === "timeout") {
-        outcome = deny("timeout");
-      } else {
-        // `action` is declared as InteractionAction ("approve" | "reject" |
-        // "choose" | "input" | "skip" | "abort"), but prompt() remaps a
-        // choose reply to the OPTION KEY through a cast
-        // (src/interaction/chain.ts:135), so at runtime it carries our keys.
-        // Widen to string once, here.
-        const action: string = response.action;
-        if (!PERMITS.has(action)) {
-          outcome = deny("human");
-        } else {
-          if (action === "allow-remember" && opts.onRemember) {
-            // Remembering is AUXILIARY: the human already approved this
-            // exact call, so a failed persistence (lock timeout, disk)
-            // must not revoke that approval. AWAITED so the approval is
-            // recorded before the tool runs (adversarial finding:
-            // fire-and-forget let the resolver return allow before the
-            // approval was persisted, racing the next same-key call).
-            try {
-              await opts.onRemember(req);
-            } catch (err) {
-              getSafeLogger()?.warn("permissions", "[ask] approved call not remembered; allowing anyway", {
-                tool: req.tool,
-                stage: req.stage,
-                error: err instanceof Error ? err.message : String(err),
-              });
-            }
+      if (chain === null || chain === undefined) {
+        // No channel: every live waiter settles unavailable, none of them
+        // are ever prompted.
+        for (const w of [...session.waiters]) {
+          w.settle(deny("unavailable"));
+          if (w.signal !== undefined && w.onAbort !== undefined) {
+            w.signal.removeEventListener("abort", w.onAbort);
           }
-          outcome = { decision: "allow", decidedBy: "human" };
+          session.waiters.delete(w);
         }
+        session.settled = true;
+        return;
       }
-      // Settle every still-live waiter with the shared outcome. A waiter
-      // that already aborted (and was removed from the set) is gone; a
-      // waiter that aborts between snapshot and iteration gets the
-      // outcome anyway (it does not matter whether its listener fires
-      // before or after settle -- both are idempotent on `aborted`).
-      for (const w of [...session.waiters]) {
-        w.settle(outcome);
-        // Detach the per-waiter abort listener so the caller's signal
-        // does not retain a reference to this waiter/session forever
-        // (adversarial finding).
-        if (w.signal !== undefined && w.onAbort !== undefined) {
-          w.signal.removeEventListener("abort", w.onAbort);
-        }
-        session.waiters.delete(w);
+      // AC9: a queued waiter that aborted before its turn has already
+      // settled cancelled; its session has no live waiters, so we must
+      // NOT call chain.prompt (the test pins `promptCalls === 1` even when
+      // the queued waiter is the only entry for its key).
+      if (session.waiters.size === 0) {
+        session.settled = true;
+        return;
       }
-    } catch {
-      // Chain threw: every waiter settles unavailable.
-      for (const w of [...session.waiters]) {
-        w.settle(deny("unavailable"));
-        if (w.signal !== undefined && w.onAbort !== undefined) {
-          w.signal.removeEventListener("abort", w.onAbort);
+      activeId = session.id;
+      // onWaiting is fired in resolve() before the session is queued, so
+      // each caller's watchdog is notified exactly once.
+      try {
+        const response = await chain.prompt({
+          id: session.id,
+          type: "choose",
+          featureName: opts.featureName ?? "unknown",
+          ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
+          stage: "execution",
+          summary: `${req.tool} - approval required`,
+          detail: [
+            // A Write/Edit ask carries no command: showing `req.summary` keeps
+            // the operator informed about what is being approved instead of an
+            // empty code block. The command is still shown verbatim when
+            // present.
+            ...((req.command ?? "").length > 0 ? ["```", req.command, "```"] : []),
+            `request: ${req.summary}`,
+            `runs in: ${req.root ?? "unknown"}`,
+            `reason:  ${req.reason ?? req.rule}`,
+            `stage:   ${req.stage}`,
+          ].join("\n"),
+          options: OPTIONS,
+          timeout: opts.timeoutMs,
+          // Recorded for the message footer only. This link NEVER consults
+          // applyFallback: it maps "continue" AND "escalate" to approve.
+          fallback: "abort",
+          createdAt: Date.now(),
+          metadata: { approvalPrompt: true },
+        });
+        let outcome: AskLinkOutcome;
+        if (response.respondedBy === "timeout") {
+          outcome = deny("timeout");
+        } else {
+          // `action` is declared as InteractionAction ("approve" | "reject" |
+          // "choose" | "input" | "skip" | "abort"), but prompt() remaps a
+          // choose reply to the OPTION KEY through a cast
+          // (src/interaction/chain.ts:135), so at runtime it carries our keys.
+          // Widen to string once, here.
+          const action: string = response.action;
+          if (!PERMITS.has(action)) {
+            outcome = deny("human");
+          } else {
+            if (action === "allow-remember" && opts.onRemember) {
+              // Remembering is AUXILIARY: the human already approved this
+              // exact call, so a failed persistence (lock timeout, disk)
+              // must not revoke that approval. AWAITED so the approval is
+              // recorded before the tool runs (adversarial finding:
+              // fire-and-forget let the resolver return allow before the
+              // approval was persisted, racing the next same-key call).
+              try {
+                await opts.onRemember(req);
+              } catch (err) {
+                getSafeLogger()?.warn("permissions", "[ask] approved call not remembered; allowing anyway", {
+                  tool: req.tool,
+                  stage: req.stage,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              }
+            }
+            outcome = { decision: "allow", decidedBy: "human" };
+          }
         }
-        session.waiters.delete(w);
+        // Settle every still-live waiter with the shared outcome. A waiter
+        // that already aborted (and was removed from the set) is gone; a
+        // waiter that aborts between snapshot and iteration gets the
+        // outcome anyway (it does not matter whether its listener fires
+        // before or after settle -- both are idempotent on `aborted`).
+        for (const w of [...session.waiters]) {
+          w.settle(outcome);
+          // Detach the per-waiter abort listener so the caller's signal
+          // does not retain a reference to this waiter/session forever
+          // (adversarial finding).
+          if (w.signal !== undefined && w.onAbort !== undefined) {
+            w.signal.removeEventListener("abort", w.onAbort);
+          }
+          session.waiters.delete(w);
+        }
+      } catch {
+        // Chain threw: every waiter settles unavailable.
+        for (const w of [...session.waiters]) {
+          w.settle(deny("unavailable"));
+          if (w.signal !== undefined && w.onAbort !== undefined) {
+            w.signal.removeEventListener("abort", w.onAbort);
+          }
+          session.waiters.delete(w);
+        }
+      } finally {
+        session.settled = true;
+        // Clear `activeId` so `pending()` no longer reports a stale prompt
+        // id (adversarial finding: activeId is never cleared after a
+        // prompt settles). `activeId` may point at THIS session OR an
+        // earlier one that ran through before the queue caught up; clear
+        // in both cases by re-reading the queue's tail.
+        if (activeId === session.id) activeId = undefined;
+        // Release the liveSessions slot so the next same-key resolve can
+        // build a fresh prompt. The entry stays out of the map (no
+        // re-attachment to a settled session is possible), and we drop the
+        // reference so GC can reclaim the Waiter set.
+        for (const [k, v] of liveSessions) {
+          if (v === session) liveSessions.delete(k);
+        }
       }
     } finally {
-      session.settled = true;
-      // US-004: a settled prompt must never keepalive again. Clear BEFORE
-      // the rest of the teardown so an in-flight timer that fires between
-      // the catch and the rest of finally cannot enqueue a further beat.
+      // US-004: a settled prompt must never keepalive again, even on the
+      // no-chain / queued-aborted early-return paths that bypass the inner
+      // try/finally. Without this outer guard the timer remains armed until
+      // its next 60-second firing and retains the session closure. The
+      // outer guard also handles the chain.prompt path because the inner
+      // finally does not run before this finally on the early-return
+      // branches — and calling clearKeepalive twice is a no-op.
       clearKeepalive(session);
-      // Clear `activeId` so `pending()` no longer reports a stale prompt
-      // id (adversarial finding: activeId is never cleared after a
-      // prompt settles). `activeId` may point at THIS session OR an
-      // earlier one that ran through before the queue caught up; clear
-      // in both cases by re-reading the queue's tail.
-      if (activeId === session.id) activeId = undefined;
-      // Release the liveSessions slot so the next same-key resolve can
-      // build a fresh prompt. The entry stays out of the map (no
-      // re-attachment to a settled session is possible), and we drop the
-      // reference so GC can reclaim the Waiter set.
-      for (const [k, v] of liveSessions) {
-        if (v === session) liveSessions.delete(k);
-      }
     }
   }
 
