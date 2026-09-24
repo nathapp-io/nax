@@ -1,6 +1,7 @@
 # Native turn cancellation: stop means stop (design)
 
-**Status:** design, approved in conversation 2026-09-24; spec awaiting review. No `src/` code.
+**Status:** design, approved in conversation 2026-09-24. No `src/` code.
+**Implementation spec:** `.nax/features/turn-cancellation/spec.md` (supersedes this record where they differ; see section 10).
 **Baseline:** `main` @ `866a90066` (v0.82.0-canary.19; #2198-#2202 merged). All line citations are against that commit.
 **Source:** cross-phase review P0-P5 (2026-09-24), findings #6 (MEDIUM), #7 (MEDIUM), #16 (LOW).
 
@@ -302,3 +303,20 @@ scope.
 - Fake timers for the keep-alive and watchdog tests; no real 60 s waits.
 - The q3 repro script stays in the review folder; its scenario lives on as US-002 criteria 3-5.
 - File-size gate is 600 lines: `runtime.ts` is 503, `turn-tool-batch.ts` about 230.
+
+## 10. Revisions made while writing the implementation spec
+
+Grounding the design against the code and `.nax/rules/` changed five points. The spec is authoritative.
+
+1. **`AskControl`, not `AskRequest` fields.** `AskRequest` is serialized verbatim into approval-audit
+   rows (`src/interaction/dispatch-ask.ts`, `request: req`) and persisted by `onRemember`. The signal
+   and `onWaiting` travel in a second argument: `AskLink.resolve(req, control?)` and
+   `AskResolver.resolve(req, control?)`.
+2. **`aborted` and `orphansKilled` are optional in `ArgvExecResult`** so the many hand-built result
+   doubles in `test/` stay valid; `runArgv` always sets both.
+3. **The keep-alive re-arms a cancellable `setTimeout`**; `setInterval` is banned in `src/`.
+4. **Tests follow the repo's rules**: no fixed sleeps and no `process.kill`; real-process checks use a
+   unique `sleep 47xx` marker, a `ps` survivor check and `waitForCondition` / `waitForFile`, as in
+   `sandbox-live.test.ts`.
+5. **Four stories, not three.** Counted as assertions, the ask story exceeded `maxAcCount` (24), so
+   keep-alive and the watchdog event moved to US-004.
