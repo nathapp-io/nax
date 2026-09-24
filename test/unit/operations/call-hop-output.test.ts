@@ -70,6 +70,16 @@ describe("normalizeHopOutput — transport facts with spinStopped unset (nax#205
     expect(result.adapterFailure?.retriable).toBe(true);
   });
 
+  test("classifies an invalid-call budget halt as fail-invalid-tool-call, not fail-incomplete (nax#2200)", async () => {
+    const invalidToolCall = { tool: "Git", property: "refs", expected: "array", actual: "a string" };
+    const turn = makeTurn({ output: "", turnIncomplete: true, invalidCallBudgetExceeded: true, invalidToolCall });
+
+    const result = await normalizeHopOutput(async () => turn, "prompt", ctx);
+
+    expect(result.adapterFailure?.outcome).toBe("fail-invalid-tool-call");
+    expect(result.adapterFailure?.invalidToolCall).toEqual(invalidToolCall);
+  });
+
   test("classifies a timed-out turn with prose as fail-timeout, not a clean pass", async () => {
     const turn = makeTurn({
       output: "Running the final check now, should be done shortly.",

@@ -604,10 +604,13 @@ describe("buildHopCallback — timeoutRetry wiring (AC6/AC7)", () => {
     const baseOptions = makeBaseOptions("original prompt", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    await cb("claude", makeBundle(), { kind: "timeout-retry", attempt: 1 } satisfies HopKind, baseOptions);
+    // nax#2200: the failure that opened the lane reaches the builder, so it can say what went wrong.
+    const failure = { category: "quality", outcome: "fail-invalid-tool-call", retriable: true, message: "m" } as const;
+    await cb("claude", makeBundle(), { kind: "timeout-retry", attempt: 1, failure } satisfies HopKind, baseOptions);
 
     expect(timeoutRetryMock).toHaveBeenCalledTimes(1);
     const callArgs = timeoutRetryMock.mock.calls[0];
+    expect(callArgs[0].failure).toEqual(failure);
     expect(callArgs[0].prompt).toBe("original prompt");
     expect(Array.isArray(callArgs[0].changedFiles)).toBe(true);
     expect(typeof callArgs[0].elapsedMs).toBe("number");

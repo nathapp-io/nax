@@ -11,10 +11,16 @@
  * what keeps the execution stage, the acceptance-fix loop, the deferred
  * regression gate and `nax finish` from drifting apart.
  *
+ * Approvals provenance (#2199): building the wiring taints the approvals store
+ * when the run is forge-capable (any `raw` stage with the sandbox off) or
+ * clears an earlier run's taint when it is not, BEFORE any agent this scope
+ * serves starts; `dispose()` re-taints a forge-capable store once they are
+ * done. Doing it here gives every Bash-dispatching site the same guarantee.
+ *
  * Lifetime: the caller owns the returned wiring and MUST `await dispose()` once
  * the dispatches it serves have settled — it cancels an in-flight prompt,
- * disposes the human link and drains the shadow (bounded by its own timeout).
- * `dispose()` never throws.
+ * disposes the human link, drains the shadow (bounded by its own timeout) and
+ * re-taints a forge-capable store. `dispose()` never throws.
  */
 
 import { join } from "node:path";
@@ -28,6 +34,8 @@ import {
   approvalsPath,
   chainAskLinks,
   createApprovalsLink,
+  isForgeCapable,
+  prepareApprovalsStore,
 } from "@/permissions";
 import { NAX_COMMIT } from "@/version";
 import { type AskChannel, cancelPendingAsk, createHumanAskLink } from "./ask-link";
@@ -44,6 +52,7 @@ export const _dispatchAskDeps = {
   buildCommandShadow,
   stdinIsTTY: (): boolean => process.stdin.isTTY === true,
   loadConfigForPackage,
+  prepareApprovalsStore,
 };
 
 export type DispatchAskDeps = typeof _dispatchAskDeps;
@@ -58,6 +67,8 @@ export interface DispatchAskOptions {
   readonly runId: string;
   /** Repo root the approvals cache is scoped to, and the fallback `root` of a remembered approval. */
   readonly repoRoot: string;
+  /** The project root (`ctx.projectDir`); approvals-cache entries must lie within it (#2199). */
+  readonly projectRoot: string;
   readonly featureName: string;
   readonly storyId?: string;
   readonly abortSignal?: AbortSignal;
@@ -69,7 +80,7 @@ export interface DispatchAskWiring {
   readonly askResolver: AskResolver;
   /** Absent when `execution.commandSafety` is not configured. */
   readonly commandShadow: CommandShadow | undefined;
-  /** Cancel any in-flight prompt, dispose the human link, drain the shadow. Never throws. */
+  /** Cancel any in-flight prompt, dispose the human link, drain the shadow, re-taint. Never throws. */
   dispose(): Promise<void>;
 }
 
@@ -81,11 +92,21 @@ export interface DispatchAskWiring {
  * ground-truth corpus row (P2 design 7.2); that append is best-effort, since a
  * full disk must not turn a granted approval into a tool error.
  */
-export function buildDispatchAskWiring(
+export async function buildDispatchAskWiring(
   opts: DispatchAskOptions,
   deps: DispatchAskDeps = _dispatchAskDeps,
-): DispatchAskWiring {
+): Promise<DispatchAskWiring> {
   const approvalsFile = approvalsPath(opts.outputDir);
+  const sandboxEnabled = opts.config.execution?.sandbox?.enabled === true;
+  // #2199: the store outlives the run. Taint it (forge-capable run) or clear an
+  // earlier run's taint (trusted run) BEFORE this scope's agents start.
+  const approvalsStore = {
+    approvalsFile,
+    runId: opts.runId,
+    storyId: opts.storyId,
+    forgeCapable: isForgeCapable(opts.stageModes, sandboxEnabled),
+  };
+  await deps.prepareApprovalsStore(approvalsStore);
   const humanLink = deps.createHumanAskLink({
     chain: opts.interaction,
     timeoutMs: opts.config.execution?.approvalTimeout ?? DEFAULT_APPROVAL_TIMEOUT_MS,
@@ -108,8 +129,9 @@ export function buildDispatchAskWiring(
     createApprovalsLink({
       approvalsFile,
       repoRoot: opts.repoRoot,
+      projectRoot: opts.projectRoot,
       stageModes: [...opts.stageModes],
-      sandboxEnabled: opts.config.execution?.sandbox?.enabled === true,
+      sandboxEnabled,
     }),
     // P5's classifier link slots in HERE, between cache and human.
     humanLink,
@@ -147,6 +169,9 @@ export function buildDispatchAskWiring(
       humanLink.dispose();
       // Bounded by the shadow's own timeout; never throws (spec 4.6).
       await commandShadow?.drain();
+      // #2199: re-taint once this scope's agents are done, wiping anything
+      // they wrote -- including an agent that stripped the first marker.
+      if (approvalsStore.forgeCapable) await deps.prepareApprovalsStore(approvalsStore);
     },
   };
 }
@@ -207,7 +232,7 @@ export async function collectEffectiveRunStageModes(
   return collectRunStageModes([opts.rootConfig, ...(opts.extraConfigs ?? []), ...packageConfigs]);
 }
 
-export interface RunDispatchAskOptions extends Omit<DispatchAskOptions, "stageModes"> {
+export interface RunDispatchAskOptions extends Omit<DispatchAskOptions, "stageModes" | "projectRoot"> {
   readonly projectDir: string;
   /** The run's root config — the `from` of every package load (nax#2126). */
   readonly rootConfig: NaxConfig;
@@ -233,5 +258,5 @@ export async function buildRunDispatchAskWiring(
     },
     deps,
   );
-  return buildDispatchAskWiring({ ...opts, stageModes }, deps);
+  return buildDispatchAskWiring({ ...opts, projectRoot: opts.projectDir, stageModes }, deps);
 }

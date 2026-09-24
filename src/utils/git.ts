@@ -4,6 +4,7 @@
 
 import { getSafeLogger } from "../logger";
 import { spawn } from "./bun-deps";
+import { hardenedGitEnv } from "./git-env";
 import { realOrRaw } from "./realpath";
 
 /**
@@ -88,6 +89,7 @@ export async function gitWithTimeout(
 ): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut?: boolean }> {
   const proc = _gitDeps.spawn([...(argvOverride ?? ["git", ...args])], {
     cwd: workdir,
+    env: hardenedGitEnv(process.env),
     stdout: "pipe",
     stderr: "pipe",
   });

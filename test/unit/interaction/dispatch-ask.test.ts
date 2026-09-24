@@ -17,7 +17,7 @@ import {
   buildRunDispatchAskWiring,
   collectEffectiveRunStageModes,
 } from "@/interaction";
-import type { AskRequest } from "@/permissions";
+import type { AskRequest, PrepareApprovalsStoreOptions } from "@/permissions";
 
 const REQ: AskRequest = {
   tool: "Bash",
@@ -54,6 +54,7 @@ function opts(overrides: Partial<DispatchAskOptions> = {}): DispatchAskOptions {
     outputDir: overrides.outputDir ?? outputDir(),
     runId: "run-1",
     repoRoot: "/repo",
+    projectRoot: "/repo",
     featureName: "feat",
     stageModes: ["gated"],
     ...overrides,
@@ -74,7 +75,7 @@ function deps(overrides: Partial<DispatchAskDeps> = {}): DispatchAskDeps {
 
 describe("buildDispatchAskWiring — resolver", () => {
   test("no interaction chain: the resolver is present, unreachable, and denies as unavailable", async () => {
-    const wiring = buildDispatchAskWiring(opts(), deps());
+    const wiring = await buildDispatchAskWiring(opts(), deps());
     expect(wiring.askResolver.humanReachable).toBe(false);
     const verdict = await wiring.askResolver.resolve(REQ);
     expect(verdict).toMatchObject({ decision: "deny", decidedBy: "unavailable" });
@@ -82,15 +83,15 @@ describe("buildDispatchAskWiring — resolver", () => {
   });
 
   test("an interaction chain makes it reachable and a human allow is honoured", async () => {
-    const wiring = buildDispatchAskWiring(opts({ interaction: chainReplying("allow") }), deps());
+    const wiring = await buildDispatchAskWiring(opts({ interaction: chainReplying("allow") }), deps());
     expect(wiring.askResolver.humanReachable).toBe(true);
     expect(await wiring.askResolver.resolve(REQ)).toMatchObject({ decision: "allow", decidedBy: "human" });
     await wiring.dispose();
   });
 
-  test("the cli plugin without a TTY stdin is unreachable", () => {
+  test("the cli plugin without a TTY stdin is unreachable", async () => {
     const config = makeNaxConfig({ interaction: { plugin: "cli" } });
-    const wiring = buildDispatchAskWiring(
+    const wiring = await buildDispatchAskWiring(
       opts({ config, interaction: chainReplying("allow") }),
       deps({ stdinIsTTY: () => false }),
     );
@@ -99,7 +100,7 @@ describe("buildDispatchAskWiring — resolver", () => {
 
   test("every resolved ask appends an approval-audit row under the run output dir", async () => {
     const dir = outputDir();
-    const wiring = buildDispatchAskWiring(opts({ outputDir: dir }), deps());
+    const wiring = await buildDispatchAskWiring(opts({ outputDir: dir }), deps());
     await wiring.askResolver.resolve(REQ);
     const rows = (await Bun.file(join(dir, APPROVAL_AUDIT_DIR, "run-1.jsonl")).text()).trim().split("\n");
     expect(rows).toHaveLength(1);
@@ -108,26 +109,26 @@ describe("buildDispatchAskWiring — resolver", () => {
 
   test("allow-remember persists an approval the cache link then answers without a human", async () => {
     const dir = outputDir();
-    const first = buildDispatchAskWiring(
+    const first = await buildDispatchAskWiring(
       opts({ outputDir: dir, interaction: chainReplying("allow-remember") }),
       deps(),
     );
     expect(await first.askResolver.resolve(REQ)).toMatchObject({ decision: "allow", decidedBy: "human" });
     await first.dispose();
-    const second = buildDispatchAskWiring(opts({ outputDir: dir }), deps());
+    const second = await buildDispatchAskWiring(opts({ outputDir: dir }), deps());
     expect(await second.askResolver.resolve(REQ)).toMatchObject({ decision: "allow", decidedBy: "cache" });
   });
 });
 
 describe("buildDispatchAskWiring — shadow and lifetime", () => {
-  test("no commandSafety config: no shadow is built", () => {
-    expect(buildDispatchAskWiring(opts(), deps()).commandShadow).toBeUndefined();
+  test("no commandSafety config: no shadow is built", async () => {
+    expect((await buildDispatchAskWiring(opts(), deps())).commandShadow).toBeUndefined();
   });
 
   test("the built shadow is exposed with the run and story ids, and drained by dispose", async () => {
     const spy = spyShadow();
     const seen: unknown[] = [];
-    const wiring = buildDispatchAskWiring(
+    const wiring = await buildDispatchAskWiring(
       opts({ storyId: "US-1" }),
       deps({
         buildCommandShadow: (o) => {
@@ -144,7 +145,7 @@ describe("buildDispatchAskWiring — shadow and lifetime", () => {
 
   test("dispose cancels and disposes the human link", async () => {
     const calls: string[] = [];
-    const wiring = buildDispatchAskWiring(
+    const wiring = await buildDispatchAskWiring(
       opts(),
       deps({
         createHumanAskLink: (o) => {
@@ -159,6 +160,36 @@ describe("buildDispatchAskWiring — shadow and lifetime", () => {
     );
     await wiring.dispose();
     expect(calls).toEqual(["cancel", "dispose"]);
+  });
+});
+
+describe("buildDispatchAskWiring — approvals provenance (#2199)", () => {
+  function recordPrepares(): { calls: PrepareApprovalsStoreOptions[]; deps: DispatchAskDeps } {
+    const calls: PrepareApprovalsStoreOptions[] = [];
+    return { calls, deps: deps({ prepareApprovalsStore: async (o) => void calls.push(o) }) };
+  }
+
+  test("a forge-capable scope taints before building and re-taints on dispose", async () => {
+    const spy = recordPrepares();
+    const wiring = await buildDispatchAskWiring(opts({ stageModes: ["raw"], storyId: "US-1" }), spy.deps);
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.calls[0]).toMatchObject({ runId: "run-1", storyId: "US-1", forgeCapable: true });
+    await wiring.dispose();
+    expect(spy.calls.map((c) => c.forgeCapable)).toEqual([true, true]);
+  });
+
+  test("a trusted scope prepares (clears) once and does not re-taint on dispose", async () => {
+    const spy = recordPrepares();
+    const wiring = await buildDispatchAskWiring(opts({ stageModes: ["escalate"] }), spy.deps);
+    await wiring.dispose();
+    expect(spy.calls.map((c) => c.forgeCapable)).toEqual([false]);
+  });
+
+  test("the sandbox makes a raw stage trusted", async () => {
+    const spy = recordPrepares();
+    const config = makeNaxConfig({ execution: { sandbox: { enabled: true } } });
+    await (await buildDispatchAskWiring(opts({ config, stageModes: ["raw"] }), spy.deps)).dispose();
+    expect(spy.calls.map((c) => c.forgeCapable)).toEqual([false]);
   });
 });
 
@@ -192,7 +223,7 @@ describe("collectEffectiveRunStageModes", () => {
 describe("buildRunDispatchAskWiring", () => {
   test("resolves stage modes before building: a raw package disables the approvals cache", async () => {
     const dir = outputDir();
-    const remember = buildDispatchAskWiring(
+    const remember = await buildDispatchAskWiring(
       opts({ outputDir: dir, interaction: chainReplying("allow-remember") }),
       deps(),
     );

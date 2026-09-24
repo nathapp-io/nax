@@ -3,12 +3,14 @@
  */
 
 import { existsSync, statSync } from "node:fs";
+import { gitSpawnEnv } from "../utils/git-env";
 import type { Check } from "./types";
 
 /** Check if directory is a git repository. Uses: git rev-parse --git-dir */
 export async function checkGitRepoExists(workdir: string): Promise<Check> {
   const proc = Bun.spawn(["git", "rev-parse", "--git-dir"], {
     cwd: workdir,
+    env: gitSpawnEnv(),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -62,6 +64,7 @@ export const NAX_RUNTIME_PATTERNS = [
 export async function checkWorkingTreeClean(workdir: string): Promise<Check> {
   const proc = Bun.spawn(["git", "status", "--porcelain"], {
     cwd: workdir,
+    env: gitSpawnEnv(),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -93,8 +96,8 @@ export async function checkGitUserConfigured(workdir?: string): Promise<Check> {
     ...(workdir && { cwd: workdir }),
   };
 
-  const nameProc = Bun.spawn(["git", "config", "user.name"], spawnOptions);
-  const emailProc = Bun.spawn(["git", "config", "user.email"], spawnOptions);
+  const nameProc = Bun.spawn(["git", "config", "user.name"], { ...spawnOptions, env: gitSpawnEnv() });
+  const emailProc = Bun.spawn(["git", "config", "user.email"], { ...spawnOptions, env: gitSpawnEnv() });
 
   const nameOutput = await new Response(nameProc.stdout).text();
   const emailOutput = await new Response(emailProc.stdout).text();

@@ -376,6 +376,7 @@ export const gitTool: CodingTool = {
     if ("error" in built) return { content: built.error, isError: true };
 
     try {
+      // nax-git-env-allow: not a spawn; the (possibly rewritten) argv runs through gitWithTimeout below
       const intercepted = await interceptArgv(["git", ...built], ctx.root, _gitToolDeps.interceptor);
       // The I/O ceiling, not the model-facing cap — see the `cutToByteCap`
       // call below, which bounds the same body at the same value.
@@ -407,6 +408,7 @@ export const gitTool: CodingTool = {
       // rewrite-time fail-open in interceptArgv).
       let body = stdout;
       if (intercepted.rewritten) {
+        // nax-git-env-allow: not a spawn; the postProcess request describing the argv already run
         const req: InterceptRequest = { kind: "argv", argv: ["git", ...built], cwd: ctx.root, site: "git" };
         try {
           body = _gitToolDeps.interceptor?.postProcess?.(stdout, req)?.output ?? stdout;

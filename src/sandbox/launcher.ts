@@ -33,6 +33,8 @@ export interface CommandLauncherOptions {
   readonly state: SandboxState;
   readonly backend?: SandboxBackend;
   readonly policyFor?: (root: string) => Promise<SandboxPolicy>;
+  /** Runs after every wrapped command, before control returns to nax (e.g. a git tripwire, #2198). */
+  readonly afterWrapped?: () => Promise<void>;
 }
 
 function logicalArgv(req: LaunchRequest): readonly string[] {
@@ -102,7 +104,11 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
           stage: "sandbox",
         });
       }
-      return runWrapped(req, opts.backend, await opts.policyFor(req.root));
+      try {
+        return await runWrapped(req, opts.backend, await opts.policyFor(req.root));
+      } finally {
+        await opts.afterWrapped?.();
+      }
     },
   };
 }

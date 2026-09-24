@@ -19,6 +19,7 @@ import type { PrecheckResultWithCode } from "@/precheck";
 import type { NaxRuntime } from "@/runtime";
 import { claimProjectIdentity, createRuntime } from "@/runtime";
 import { errorMessage } from "@/utils/errors";
+import { gitSpawnEnv } from "@/utils/git-env";
 import { createCliInteractionBridge } from "../plan-helpers";
 
 export const DEFAULT_TIMEOUT_SECONDS = 600;
@@ -60,7 +61,7 @@ export function resolvePlanModelSelection(config: NaxConfig, preferredAgent: str
 export function detectProjectName(workdir: string, pkg: Record<string, unknown> | null): string {
   if (pkg?.name && typeof pkg.name === "string") return pkg.name;
 
-  const result = _planDeps.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
+  const result = _planDeps.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir, env: gitSpawnEnv() });
   if (result.exitCode === 0) {
     const url = result.stdout.toString().trim();
     const match = url.match(/\/([^/]+?)(?:\.git)?$/);
@@ -85,8 +86,11 @@ export const _planDeps = {
     Bun.file(join(workdir, "package.json"))
       .json()
       .catch(() => null),
-  spawnSync: (cmd: string[], opts?: { cwd?: string }): { stdout: Buffer; exitCode: number | null } => {
-    const result = Bun.spawnSync(cmd, opts ? { cwd: opts.cwd } : {});
+  spawnSync: (
+    cmd: string[],
+    opts?: { cwd?: string; env?: Record<string, string | undefined> },
+  ): { stdout: Buffer; exitCode: number | null } => {
+    const result = Bun.spawnSync(cmd, opts ? { cwd: opts.cwd, ...(opts.env ? { env: opts.env } : {}) } : {});
     return { stdout: result.stdout as Buffer, exitCode: result.exitCode };
   },
   mkdirp: (path: string): Promise<void> => Bun.spawn(["mkdir", "-p", path]).exited.then(() => {}),

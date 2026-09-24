@@ -17,6 +17,14 @@ const COMMAND_ENUM_SCHEMA = {
   },
 } as const;
 
+const DIFF_FILTER_SCHEMA = {
+  type: "object",
+  properties: {
+    subcommand: { type: "string", enum: ["diff", "log"] },
+    diffFilter: { type: "string", enum: ["A", "M", "D", "R"] },
+  },
+} as const;
+
 const ARGV_STRING_ARRAY_SCHEMA = {
   type: "object",
   properties: {
@@ -43,6 +51,18 @@ const CASES: readonly Case[] = [
     COMMAND_ENUM_SCHEMA,
     { command: 5 },
     { command: "testScoped" },
+  ],
+  [
+    "string property with enum (nax#2200): command is off-enum — uses first enum member, not a <FILL IN> string",
+    RUN_COMMAND_SCHEMA,
+    { command: "nope", values: { a: 1 } },
+    { command: "testScoped", values: { a: 1 } },
+  ],
+  [
+    "string property with enum (nax#2200): Git diffFilter is a number — uses first enum member",
+    DIFF_FILTER_SCHEMA,
+    { subcommand: "diff", diffFilter: 7 },
+    { subcommand: "diff", diffFilter: "A" },
   ],
   [
     "property is array of string: argv is a string — uses array exemplar with property name",

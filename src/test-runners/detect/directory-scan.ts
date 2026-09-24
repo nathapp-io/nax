@@ -7,6 +7,7 @@
  * This tier runs last — only when Tiers 1–3 produce no results.
  */
 
+import { gitSpawnEnv } from "@/utils/git-env";
 import { killProcessGroup } from "@/utils/process-kill";
 import type { DetectionSource } from "./types";
 
@@ -91,6 +92,7 @@ async function listFilesInDir(workdir: string, dir: string): Promise<string[]> {
   try {
     const proc = _directoryScanDeps.spawn(["git", "ls-files", dir], {
       cwd: workdir,
+      env: gitSpawnEnv(),
       stdout: "pipe",
       stderr: "pipe",
       // Bun.spawn does not setpgid children into their own group by default, so

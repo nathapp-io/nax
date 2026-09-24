@@ -8,6 +8,7 @@
  * Excluded: node_modules/, dist/, build/, .nax/, coverage/, .git/
  */
 
+import { gitSpawnEnv } from "@/utils/git-env";
 import { killProcessGroup } from "@/utils/process-kill";
 import type { DetectionSource } from "./types";
 
@@ -116,6 +117,7 @@ async function gitLsFiles(workdir: string): Promise<string[]> {
   try {
     const proc = _fileScanDeps.spawn(["git", "ls-files"], {
       cwd: workdir,
+      env: gitSpawnEnv(),
       stdout: "pipe",
       stderr: "pipe",
       // Bun.spawn does not setpgid children into their own group by default, so

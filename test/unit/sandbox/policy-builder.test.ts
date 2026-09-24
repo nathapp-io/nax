@@ -25,6 +25,7 @@ function input(over: Partial<SandboxPolicyInput> = {}): SandboxPolicyInput {
   return {
     root,
     git: { kind: "main", gitDir: join(root, ".git") },
+    gitGuardFiles: [],
     featurePrdPaths: [join(root, ".nax", "features", "f1", "prd.json")],
     credentialFiles: [join(base, "gnax", "credentials"), join(base, "gnax", "credentials-bak-2")],
     home,
@@ -63,6 +64,11 @@ describe("buildSandboxPolicy", () => {
     expect(policy.writeRoots).not.toContain(join(root, ".git"));
   });
 
+  test("no git repo: no git denies at all", () => {
+    const policy = buildSandboxPolicy(input({ git: { kind: "none" } }));
+    expect(policy.denyWrite.some((p) => p.includes(join(root, ".git")))).toBe(false);
+  });
+
   test("F2 + finding 4: a worktree gets the common dir writable and every pointer denied", () => {
     const common = join(base, "main", ".git");
     const gitDir = join(common, "worktrees", "US-001");
@@ -71,12 +77,41 @@ describe("buildSandboxPolicy", () => {
     for (const p of [
       join(common, "hooks"),
       join(common, "config"),
+      join(common, "config.worktree"),
       join(root, ".git"),
       join(gitDir, "gitdir"),
       join(gitDir, "commondir"),
+      join(gitDir, "config.worktree"),
     ]) {
       expect(policy.denyWrite).toContain(p);
     }
+  });
+
+  test("#2198: main checkout denies config.worktree, which an empty srt stub leaves valid", () => {
+    const policy = buildSandboxPolicy(input());
+    expect(policy.denyWrite).toContain(join(root, ".git", "config.worktree"));
+  });
+
+  test("#2198: main checkout never emits an absent commondir itself (srt would stub it empty and break git)", () => {
+    const policy = buildSandboxPolicy(input());
+    expect(policy.denyWrite).not.toContain(join(root, ".git", "commondir"));
+  });
+
+  test("#2198: every git guard file (commondir, sibling worktree pointers) becomes a literal deny", () => {
+    const common = join(base, "main", ".git");
+    const gitDir = join(common, "worktrees", "US-001");
+    const guards = [
+      join(common, "commondir"),
+      join(common, "worktrees", "US-002", "gitdir"),
+      join(common, "worktrees", "US-002", "commondir"),
+      join(common, "worktrees", "US-002", "config.worktree"),
+      join(base, "main", ".nax-wt", "US-002", ".git"),
+    ];
+    const policy = buildSandboxPolicy(
+      input({ git: { kind: "worktree", gitDir, commonDir: common }, gitGuardFiles: guards }),
+    );
+    for (const p of guards) expect(policy.denyWrite).toContain(p);
+    expect(new Set(policy.denyWrite).size).toBe(policy.denyWrite.length);
   });
 
   test("finding 5: the approvals file is always denied, even inside a write root", () => {

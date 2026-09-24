@@ -109,7 +109,7 @@ describe("AC1 — fail-timeout dispatches exactly one retry by default", () => {
     expect(outcome.result.success).toBe(true);
     expect(calls).toBe(2);
     expect(hopKinds[0]).toEqual({ kind: "primary" });
-    expect(hopKinds[1]).toEqual({ kind: "timeout-retry", attempt: 1 });
+    expect(hopKinds[1]).toEqual({ kind: "timeout-retry", attempt: 1, failure: failTimeoutRetryable });
   });
 
   test("boundary: when noFallback is set, fail-timeout still retries once before terminal failure", async () => {
@@ -306,7 +306,7 @@ describe("AC5 — fail-timeout retry emits { kind: 'timeout-retry', attempt: N }
     expect(outcome.result.success).toBe(true);
     expect(hopKinds).toHaveLength(2);
     expect(hopKinds[0]).toEqual({ kind: "primary" });
-    expect(hopKinds[1]).toEqual({ kind: "timeout-retry", attempt: 1 });
+    expect(hopKinds[1]).toEqual({ kind: "timeout-retry", attempt: 1, failure: failTimeoutRetryable });
   });
 
   test("boundary: timeout-retry attempts increment by 1 on each retry (maxAttempts=2)", async () => {
@@ -341,8 +341,8 @@ describe("AC5 — fail-timeout retry emits { kind: 'timeout-retry', attempt: N }
     expect(calls).toBe(3);
     // Both retries must be present, with distinct attempt counters.
     expect(seenTimeoutRetry).toHaveLength(2);
-    expect(seenTimeoutRetry[0]).toEqual({ kind: "timeout-retry", attempt: 1 });
-    expect(seenTimeoutRetry[1]).toEqual({ kind: "timeout-retry", attempt: 2 });
+    expect(seenTimeoutRetry[0]).toEqual({ kind: "timeout-retry", attempt: 1, failure: failTimeoutRetryable });
+    expect(seenTimeoutRetry[1]).toEqual({ kind: "timeout-retry", attempt: 2, failure: failTimeoutRetryable });
   });
 });
 

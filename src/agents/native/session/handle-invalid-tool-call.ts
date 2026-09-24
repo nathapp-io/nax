@@ -6,9 +6,17 @@
  * as the wrong type, so the spin breaker never saw the repetition as
  * repetition. This module is the gate the loop was missing: validate the
  * call against the tool's JSON Schema before any handler runs. On violation,
- * name the property and offer a schema-conforming exemplar, which the loop
- * writes into the transcript (`before_tool`'s corrected input) so the next
- * round trip sees what the tool would have accepted.
+ * name the property and offer a schema-conforming exemplar so the next round
+ * trip sees what the tool would have accepted.
+ *
+ * Where the exemplar goes (nax#2200): #2047 wrote it over the model's call in
+ * the assistant message, so the malformed value would not persist as a
+ * few-shot example. That kept the purpose but attributed a call the model never
+ * made — `refs: ["<FILL IN: refs>"]` — to the assistant. The recorded call is
+ * now the model's own input with ONLY the rejected property removed: the
+ * malformed value still never persists, nothing fabricated is attributed to
+ * the model, and the exemplar lives in the tool-result's error text, where it
+ * is plainly guidance from the harness.
  *
  * Since nax#2151 this decision is produced by a built-in `before_tool`
  * handler (`loop-handlers.ts`) instead of an inline branch of the loop: the
@@ -30,19 +38,24 @@
  */
 
 import type { ToolCall, ToolDefinition } from "@nathapp/nax-ai";
+import type { InvalidToolCallDetail } from "@/agents/session-types";
 import { byCodePoint } from "@/utils/sort";
 import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
 import { exemplarFor } from "./tool-input-exemplar";
-import { type ToolInputViolation, validateToolInput } from "./tool-input-validation";
+import { stripNullOptionals, type ToolInputViolation, validateToolInput } from "./tool-input-validation";
 
 /** Three identical invalid calls in a turn ends it (Task 4). */
 export const INVALID_CALL_BUDGET_THRESHOLD = 3;
 
 export type InvalidCallOutcome =
-  /** Answer the call with `content` instead of running it, recording `input`. */
+  /**
+   * Answer the call with `content` instead of running it. `input` is what the
+   * transcript records for the call: the model's own input minus the rejected
+   * property (nax#2200), never a fabricated exemplar.
+   */
   | { readonly kind: "repair"; readonly input: Record<string, unknown>; readonly content: string }
   /** The per-key budget is spent: end the turn with no answer at all. */
-  | { readonly kind: "stopped" };
+  | { readonly kind: "stopped"; readonly detail: InvalidToolCallDetail };
 
 export function decideInvalidToolCall(
   call: ToolCall,
@@ -61,10 +74,37 @@ export function decideInvalidToolCall(
   const counterKey = `${call.name}\u0000${stableStringify(call.input)}`;
   const nextCount = (counters.get(counterKey) ?? 0) + 1;
   counters.set(counterKey, nextCount);
-  if (nextCount >= INVALID_CALL_BUDGET_THRESHOLD) return { kind: "stopped" };
+  if (nextCount >= INVALID_CALL_BUDGET_THRESHOLD) {
+    const { property, expected, actual } = violation;
+    return { kind: "stopped", detail: { tool: call.name, property, expected, actual } };
+  }
 
-  const input = exemplarFor(tool.inputSchema, call.input as Record<string, unknown>, violation);
-  return { kind: "repair", input, content: invalidCallMessage(violation, input) };
+  const original = call.input as Record<string, unknown>;
+  const exemplar = exemplarFor(tool.inputSchema, original, violation);
+  const recorded = withoutProperty(original, violation.property);
+  return { kind: "repair", input: recorded, content: invalidCallMessage(violation, exemplar, recorded !== original) };
+}
+
+/**
+ * The call's input with its `null`-valued optional properties removed, or
+ * `undefined` when the tool is not in the catalogue or nothing was removed
+ * (nax#2200). The validator already reads such a `null` as absent; this is
+ * what makes the tool's handler see the same thing.
+ */
+export function normalizeNullOptionals(
+  call: ToolCall,
+  tools: readonly ToolDefinition[],
+): Record<string, unknown> | undefined {
+  const tool = tools.find((t) => t.name === call.name);
+  if (tool === undefined) return undefined;
+  return stripNullOptionals(tool.inputSchema, call.input);
+}
+
+/** `input` without `property`; the same object when the property is not there. */
+function withoutProperty(input: Record<string, unknown>, property: string): Record<string, unknown> {
+  if (property === "" || !(property in input)) return input;
+  const { [property]: _rejected, ...rest } = input;
+  return rest;
 }
 
 /**
@@ -107,11 +147,17 @@ export function rewriteToolCallInput(
   ];
 }
 
-function invalidCallMessage(violation: ToolInputViolation, exemplar: Record<string, unknown>): string {
+function invalidCallMessage(
+  violation: ToolInputViolation,
+  exemplar: Record<string, unknown>,
+  removedFromRecord: boolean,
+): string {
   return (
     `invalid tool call: property "${violation.property}" expected ${violation.expected}, ` +
-    `got ${violation.actual}. ` +
-    `Corrected input written to the transcript as ${JSON.stringify(exemplar)}.`
+    `got ${violation.actual}. The call was not executed. ` +
+    (removedFromRecord ? `The rejected "${violation.property}" value was removed from the recorded call. ` : "") +
+    `An input of the expected shape looks like ${JSON.stringify(exemplar)} — ` +
+    "replace any <FILL IN> placeholder with a real value, and omit an optional property you have no value for."
   );
 }
 
@@ -138,19 +184,27 @@ function invalidCallMessage(violation: ToolInputViolation, exemplar: Record<stri
 export interface InvalidCallBudget {
   /** Whether the budget was tripped on any call so far. Read after the dispatch. */
   readonly exceeded: boolean;
+  /**
+   * The call that tripped the budget — set together with `exceeded`, so the
+   * halt can be logged and classified by what was rejected (nax#2200).
+   */
+  readonly halt: InvalidToolCallDetail | undefined;
   observe(call: ToolCall, tools: readonly ToolDefinition[]): InvalidCallOutcome | undefined;
 }
 
 export function createInvalidCallBudget(): InvalidCallBudget {
   const counters = new Map<string, number>();
-  let exceeded = false;
+  let halt: InvalidToolCallDetail | undefined;
   return {
     get exceeded(): boolean {
-      return exceeded;
+      return halt !== undefined;
+    },
+    get halt(): InvalidToolCallDetail | undefined {
+      return halt;
     },
     observe(call, tools) {
       const outcome = decideInvalidToolCall(call, tools, counters);
-      if (outcome?.kind === "stopped") exceeded = true;
+      if (outcome?.kind === "stopped" && halt === undefined) halt = outcome.detail;
       return outcome;
     },
   };

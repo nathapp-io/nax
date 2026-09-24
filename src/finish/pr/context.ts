@@ -165,6 +165,7 @@ interface DiffstatResult {
 /** Run `git diff <...args>` under `workdir`, or `undefined` on any non-happy path. */
 async function runGitDiff(workdir: string, args: string[]): Promise<string | undefined> {
   try {
+    // nax-git-env-allow: _finishPrDeps.run is defaultForgeDeps.run, which hardens every command
     const res = await _finishPrDeps.run(["git", "diff", ...args], { cwd: workdir });
     if (res.exitCode !== 0) return undefined;
     return res.stdout;

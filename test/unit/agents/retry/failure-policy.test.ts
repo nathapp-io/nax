@@ -15,6 +15,7 @@ const ALL_OUTCOMES: ReadonlyArray<AdapterFailure["outcome"]> = [
   "fail-unknown",
   "fail-spin",
   "fail-incomplete",
+  "fail-invalid-tool-call",
 ];
 
 describe("failurePolicyFor", () => {
@@ -46,6 +47,15 @@ describe("failurePolicyFor", () => {
 
   test("fail-incomplete retries on the same agent with a fresh session, then swaps", () => {
     const policy = failurePolicyFor("fail-incomplete");
+
+    expect(policy.sameAgentRetry).toBe("timeout");
+    expect(policy.swap).toBe("after-retry-lane");
+    expect(policy.cooldown).toBe("none");
+    expect(policy.terminalBackoff).toBe(false);
+  });
+
+  test("fail-invalid-tool-call retries on the same agent with a fresh session, then swaps (nax#2200)", () => {
+    const policy = failurePolicyFor("fail-invalid-tool-call");
 
     expect(policy.sameAgentRetry).toBe("timeout");
     expect(policy.swap).toBe("after-retry-lane");

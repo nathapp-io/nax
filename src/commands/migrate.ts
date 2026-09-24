@@ -15,6 +15,7 @@ import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { projectOutputDir, readProjectIdentity, writeProjectIdentity } from "../runtime";
+import { gitSpawnEnv } from "../utils/git-env";
 
 export interface MigrateCandidate {
   name: string;
@@ -188,7 +189,10 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
     }
     let currentRemote: string | null = null;
     try {
-      const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: options.workdir });
+      const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], {
+        cwd: options.workdir,
+        env: gitSpawnEnv(),
+      });
       if (gitResult.exitCode === 0) {
         currentRemote = new TextDecoder().decode(gitResult.stdout).trim() || null;
       }

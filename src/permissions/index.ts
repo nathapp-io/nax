@@ -1,6 +1,7 @@
 export * from "./approval-audit";
 export * from "./approvals-link";
 export * from "./approvals-store";
+export * from "./approvals-taint";
 export {
   ASK_DENIED_REASON,
   ASK_NO_CHANNEL_REASON,
