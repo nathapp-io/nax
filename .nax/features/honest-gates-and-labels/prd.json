@@ -3,7 +3,7 @@
   "feature": "honest-gates-and-labels",
   "branchName": "feat/honest-gates-and-labels",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-24T14:39:45.321Z",
+  "updatedAt": "2026-09-24T14:45:57.671Z",
   "userStories": [
     {
       "id": "US-001",
@@ -23,8 +23,8 @@
         "compatibility"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -96,7 +96,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "A raw-overlay provenance abstraction spans registry hydration and four gate execution paths, with existing cwd fixtures needing updates."
+        "reasoning": "A raw-overlay provenance abstraction spans registry hydration and four gate execution paths, with existing cwd fixtures needing updates.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/runtime/packages.ts",
@@ -133,6 +136,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "c826fab1902632ddf1b2a4eb5b83bb38174c4d34",
       "outOfScope": [
         "removing `hasOverride`."
       ]
