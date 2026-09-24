@@ -29,4 +29,19 @@ describe("approval audit", () => {
     expect(JSON.parse(lines[0] as string).request.command).toBe("bun run test | tail -5");
     expect(JSON.parse(lines[1] as string).decidedBy).toBe("timeout");
   });
+
+  test("review #9: a secret in the request command is redacted in the row", async () => {
+    tempDir = makeTempDir("approval-audit-");
+    const secret = "ghp_abcdefghijklmnop1234";
+    await appendApprovalAudit(tempDir, "run-1", {
+      request: { tool: "Bash", stage: "run", rule: "Bash(*)", summary: "Bash", command: `gh auth ${secret}` },
+      decision: "deny",
+      decidedBy: "human",
+      latencyMs: 1,
+      at: "2026-09-24T00:00:00.000Z",
+    });
+    const text = readFileSync(join(tempDir, "run-1.jsonl"), "utf8");
+    expect(text).not.toContain(secret);
+    expect(text).toContain("[REDACTED:github]");
+  });
 });

@@ -16,6 +16,7 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { redactRowStrings } from "@/permissions";
 import type { SandboxRecord } from "../sandbox";
 
 export interface ToolCallRecord {
@@ -174,7 +175,7 @@ export function createToolAuditSink(opts: {
           schemaVersion: TOOL_AUDIT_SCHEMA_VERSION,
           ...(opts.header ?? {}),
           sessionName: opts.sessionName,
-          calls,
+          calls: redactRowStrings(calls),
         },
         null,
         2,

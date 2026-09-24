@@ -99,6 +99,25 @@ describe("createToolAuditSink", () => {
     expect(parsed.calls[0].tool).toBe("Exec");
   });
 
+  test("review #9: a secret in the ledger row is redacted", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const sink = createToolAuditSink({ dir, sessionName: "US-001-implementer" });
+    sink.record({
+      tool: "Exec",
+      outcome: "ok",
+      input: { command: "gh auth ghp_abcdefghijklmnop1234" },
+      executed: ["gh", "auth", "ghp_abcdefghijklmnop1234"],
+      target: "repoRoot",
+      resultBytes: 12,
+      at: new Date().toISOString(),
+    });
+    await sink.flush();
+
+    const body = await readFile(join(dir, (await readdir(dir))[0] ?? ""), "utf8");
+    expect(body).not.toContain("ghp_abcdefghijklmnop1234");
+    expect(JSON.parse(body).calls[0].input.command).toContain("[REDACTED:github]");
+  });
+
   test("records the correlation ids supplied to the runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
     const sink = createToolAuditSink({ dir, sessionName: "s1" });
