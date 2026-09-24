@@ -98,11 +98,24 @@ interface StreamDrain {
  *
  * `Response.text()` doesn't honour a deadline, so the reader is its own
  * function (US-001 "Read stdout and stderr incrementally/concurrently").
+ *
+ * When `signal` aborts, the reader is cancelled so the pending `read()`
+ * resolves with `{done: true}`. The caller uses this to bound settlement
+ * after a process-group kill: a child that ignores the kill cannot pin
+ * runArgv forever on its still-open pipe.
  */
-async function drainToEof(stream: ReadableStream<Uint8Array>): Promise<StreamDrain> {
+async function drainToEof(stream: ReadableStream<Uint8Array>, signal?: AbortSignal): Promise<StreamDrain> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let text = "";
+  const onAbort = (): void => {
+    // Closing the stream forces the in-flight `read()` below to resolve with
+    // `{done: true}`; any bytes already captured stay in `text`.
+    reader.cancel().catch(() => {
+      // Cancelling after the pipe already closed is a no-op race; ignore.
+    });
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -115,6 +128,7 @@ async function drainToEof(stream: ReadableStream<Uint8Array>): Promise<StreamDra
     // decide.
   }
   text += decoder.decode();
+  if (signal !== undefined) signal.removeEventListener("abort", onAbort);
   try {
     reader.releaseLock();
   } catch {
@@ -175,8 +189,14 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   // Read stdout/stderr concurrently with the exit wait — a process that
   // fills a pipe's OS buffer before being read would otherwise block on the
   // write and never reach `exited`, defeating the timeout's own SIGKILL.
-  const stdoutPromise = drainToEof(proc.stdout);
-  const stderrPromise = drainToEof(proc.stderr);
+  // Each reader has its own controller so a still-pending one can be forced
+  // to settle (via reader.cancel()) after we kill the process group. US-001
+  // requires that settlement stay bounded even when a background process
+  // inherits the pipe and ignores the SIGKILL.
+  const stdoutController = new AbortController();
+  const stderrController = new AbortController();
+  const stdoutPromise = drainToEof(proc.stdout, stdoutController.signal);
+  const stderrPromise = drainToEof(proc.stderr, stderrController.signal);
   const exitCode = await proc.exited;
   clearTimeout(timerId);
 
@@ -202,8 +222,13 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   if (!stdoutClosed || !stderrClosed) {
     orphansKilled = true;
     killGroup();
-    // The readers will see EOF as the dead process group closes its pipes.
-    // Awaiting them now would block; leave them in flight, they're harmless.
+    // The OS should close the pipes once the group dies; race that against
+    // a small post-kill budget. If a holdout somehow ignores SIGKILL or is
+    // not yet reaped, abort the matching reader controller — that drives
+    // `reader.cancel()` in drainToEof, which forces the pending `read()` to
+    // resolve with `done: true` and bounds settlement.
+    if (!stdoutClosed) stdoutController.abort();
+    if (!stderrClosed) stderrController.abort();
   }
 
   // Always await the readers to harvest whatever they captured.
