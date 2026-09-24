@@ -13,7 +13,7 @@ import { getSafeLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
 import { commandSpecIncludes, normalizeCommandSpec, type QualityCommandSpec, renderCommandSpec } from "@/quality";
-import { gitSpawnEnv } from "@/utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
 import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "@/utils/path-filters";
 import { storyPackageDir } from "@/utils/path-frame";
 import type { AcceptanceLoopResult, AcceptanceTestPathEntry } from "./acceptance-loop";
@@ -224,12 +224,15 @@ export function buildFailureResult(
 /** Injectable dependencies for regenerateAcceptanceTest */
 export const _regenerateDeps = {
   spawnGitDiff: async (workdir: string, gitRef: string, pathspec?: string): Promise<string> => {
-    const proc = Bun.spawn(["git", "diff", "--name-only", gitRef, ...(pathspec ? ["--", pathspec] : [])], {
-      cwd: workdir,
-      env: gitSpawnEnv(),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      hardenedGitArgv(["git", "diff", "--name-only", gitRef, ...(pathspec ? ["--", pathspec] : [])]),
+      {
+        cwd: workdir,
+        env: gitSpawnEnv(),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
     return stdout.trim();
   },

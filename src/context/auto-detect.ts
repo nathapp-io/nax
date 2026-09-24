@@ -8,7 +8,7 @@
 import { getLogger } from "../logger";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 import { errorMessage } from "../utils/errors";
-import { gitSpawnEnv } from "../utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
 
 export interface AutoDetectOptions {
   /** Working directory for git grep */
@@ -149,7 +149,7 @@ export async function autoDetectContextFiles(options: AutoDetectOptions): Promis
   ];
 
   try {
-    const proc = Bun.spawn(["git", ...grepArgs], {
+    const proc = Bun.spawn(hardenedGitArgv(["git", ...grepArgs]), {
       cwd: workdir,
       env: gitSpawnEnv(),
       stdout: "pipe",

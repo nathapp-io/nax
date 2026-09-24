@@ -35,6 +35,7 @@ describe("autoCommitIfDirty", () => {
       calls.push({ cmd, cwd: opts.cwd as string | undefined });
       if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
       if (cmd.includes("status")) return " M src/foo.ts\n";
+      if (cmd.includes("--cached")) return { exitCode: 1 }; // staged
       return "";
     }).spawn;
 
@@ -50,6 +51,7 @@ describe("autoCommitIfDirty", () => {
       calls.push({ cmd, cwd: opts.cwd as string | undefined });
       if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
       if (cmd.includes("status")) return " M src/foo.ts\n";
+      if (cmd.includes("--cached")) return { exitCode: 1 }; // staged
       return "";
     }).spawn;
 
@@ -71,13 +73,14 @@ describe("autoCommitIfDirty", () => {
       calls.push({ cmd, cwd: opts.cwd as string | undefined });
       if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
       if (cmd.includes("status")) return " M src/config.ts\n";
+      if (cmd.includes("--cached")) return { exitCode: 1 }; // staged
       return "";
     }).spawn;
 
     await autoCommitIfDirty(workdir, "tdd", "implementer", "US-004");
 
     const addCall = calls.find((c) => c.cmd.includes("add"));
-    expect(addCall?.cmd).toEqual(["git", "add", "-A"]);
+    expect(addCall?.cmd).toEqual(["git", "add", "-A", "--", ":/"]);
     expect(addCall?.cwd).toBe(gitRoot);
     expect(calls.some((c) => c.cmd.includes("commit"))).toBe(true);
   });
@@ -88,13 +91,14 @@ describe("autoCommitIfDirty", () => {
       calls.push({ cmd, cwd: opts.cwd as string | undefined });
       if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
       if (cmd.includes("status")) return " M src/index.ts\n";
+      if (cmd.includes("--cached")) return { exitCode: 1 }; // staged
       return "";
     }).spawn;
 
     await autoCommitIfDirty(gitRoot, "tdd", "test-writer", "US-001");
 
     const addCall = calls.find((c) => c.cmd.includes("add"));
-    expect(addCall?.cmd).toEqual(["git", "add", "-A"]);
+    expect(addCall?.cmd).toEqual(["git", "add", "-A", "--", ":/"]);
     expect(addCall?.cwd).toBe(gitRoot);
   });
 
@@ -133,6 +137,7 @@ describe("autoCommitIfDirty", () => {
       calls.push({ cmd, cwd: opts.cwd as string | undefined });
       if (cmd.includes("rev-parse")) return `${gitRoot}\n`;
       if (cmd.includes("status")) return " M src/foo.ts\n";
+      if (cmd.includes("--cached")) return { exitCode: 1 }; // staged
       return "";
     }).spawn;
 

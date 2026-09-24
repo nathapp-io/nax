@@ -410,8 +410,9 @@ describe("parsePorcelainForNaxPaths", () => {
 //   1. `git rev-parse --show-toplevel` — guard against non-repo workdirs
 //   2. `git status --porcelain` — read working-tree state
 //   3. (NEW) `git checkout -- <path>` — one call per deleted .nax/ path
-//   4. `git add -A` — stage
-//   5. `git commit -m ...` — commit
+//   4. `git add -A` — stage (gitlinkSafeAdd: `ls-files --stage` first)
+//   5. `git diff --cached --quiet` — anything staged? (#2210)
+//   6. `git commit -m ...` — commit
 
 interface CapturedCall {
   args: string[];
@@ -426,6 +427,9 @@ function captureSpawn(outputs: Array<{ output: string; exitCode?: number; stderr
   let callIdx = 0;
   const stub = makeSpawn(({ cmd, opts }) => {
     calls.push({ args: cmd, cwd: opts.cwd === undefined ? undefined : String(opts.cwd) });
+    // The staged check before commit (#2210) always reports staged changes and
+    // takes no slot, so the sequences below stay the ones the tests describe.
+    if (cmd.includes("--cached")) return { stdout: "", stderr: "", exitCode: 1 };
     const spec = outputs[callIdx++] ?? { output: "", exitCode: 0 };
     return { stdout: spec.output, stderr: spec.stderr ?? "", exitCode: spec.exitCode ?? 0 };
   });
@@ -681,7 +685,7 @@ describe("getUntrackedPaths", () => {
     const result = await getUntrackedPaths("/tmp/repo");
     expect(result).toEqual(["new-file.ts", "dir/other.ts"]);
     const call = (_gitDeps.spawn as ReturnType<typeof mock>).mock.calls[0];
-    expect(call[0]).toEqual(["git", "status", "--porcelain"]);
+    expect(call[0]).toEqual(["git", "status", "--ignore-submodules=dirty", "--porcelain"]);
   });
 
   test("returns an empty array for a clean working tree", async () => {

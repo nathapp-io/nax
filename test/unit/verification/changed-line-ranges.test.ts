@@ -59,7 +59,7 @@ describe("getChangedLineRanges", () => {
 
     await getChangedLineRanges("/workdir", "abc123");
 
-    expect(capturedArgs).toEqual(["git", "diff", "--unified=0", "abc123"]);
+    expect(capturedArgs).toEqual(["git", "diff", "--ignore-submodules=dirty", "--unified=0", "abc123"]);
   });
 
   // ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ describe("getChangedLineRanges", () => {
 
     await getChangedLineRanges("/workdir");
 
-    expect(capturedArgs).toEqual(["git", "diff", "--unified=0", "HEAD~1"]);
+    expect(capturedArgs).toEqual(["git", "diff", "--ignore-submodules=dirty", "--unified=0", "HEAD~1"]);
   });
 
   // ---------------------------------------------------------------------------

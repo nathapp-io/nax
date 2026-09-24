@@ -44,7 +44,14 @@ describe("listChangedFiles() --relative retention (scoped-lint exemption)", () =
     const files = await realListChangedFiles("/repo/packages/api", "abc123");
 
     expect(stub.calls[0]?.cmd).toContain("--relative");
-    expect(stub.calls[0]?.cmd).toEqual(["git", "diff", "--relative", "--name-only", "abc123..HEAD"]);
+    expect(stub.calls[0]?.cmd).toEqual([
+      "git",
+      "diff",
+      "--ignore-submodules=dirty",
+      "--relative",
+      "--name-only",
+      "abc123..HEAD",
+    ]);
     expect(files).toEqual(["src/a.ts"]);
   });
 });

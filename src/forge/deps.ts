@@ -11,7 +11,7 @@
  * cannot hang a run's completion phase.
  */
 
-import { gitSpawnEnv } from "../utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
 import { killProcessGroup } from "../utils/process-kill";
 import type { ForgeDeps } from "./types";
 
@@ -41,7 +41,8 @@ export async function defaultRun(
   cmd: string[],
   opts: { cwd: string; timeoutMs?: number },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(cmd, {
+  // hardenedGitArgv only changes a git status / diff argv (#2210).
+  const proc = Bun.spawn(cmd[0] === "git" ? hardenedGitArgv(cmd) : cmd, {
     cwd: opts.cwd,
     // Hardened for every command, not only argv[0] === "git": gh / glab run
     // git underneath, and the GIT_CONFIG_* entries are inert to anything else.

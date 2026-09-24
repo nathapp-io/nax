@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitWithTimeout } from "@/utils/git";
+import { gitlinkSafeAdd, hasStagedChanges } from "@/utils/git-add";
 import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
@@ -184,9 +185,19 @@ export const gitCommitTool: CodingTool = {
     const built = buildCommitArgvs(effectiveInput);
     if ("error" in built) return { content: built.error, isError: true };
 
-    const staged = await gitWithTimeout(built.add, ctx.root, 30_000);
+    // Through gitlinkSafeAdd: a bare `git add` would run git inside any gitlink
+    // the paths cover, under that nested repo's own config (#2210).
+    const pathspecs = built.add.slice(built.add.indexOf("--") + 1);
+    const staged = await gitlinkSafeAdd(gitWithTimeout, ctx.root, { pathspecs, timeoutMs: 30_000 });
     if (staged.exitCode !== 0) {
       return { content: `git add failed: ${staged.stderr.trim() || `exit ${staged.exitCode}`}`, isError: true };
+    }
+    // The agent chooses the paths, so it can make the add a no-op; a commit with
+    // nothing staged would print status, which can recurse into a gitlink (#2210).
+    const hasStaged = await hasStagedChanges(gitWithTimeout, ctx.root, 30_000);
+    if (hasStaged !== true) {
+      const why = hasStaged === false ? "nothing is staged" : "could not tell whether anything is staged";
+      return { content: `git commit not run: ${why}`, isError: true };
     }
     const committed = await gitWithTimeout(built.commit, ctx.root, 30_000);
     if (committed.exitCode !== 0) {

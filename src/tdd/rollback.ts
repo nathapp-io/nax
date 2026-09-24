@@ -4,7 +4,7 @@ import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { autoCommitIfDirty, getGitRoot, getUntrackedPaths } from "../utils/git";
-import { gitSpawnEnv } from "../utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
 import { killProcessGroup } from "../utils/process-kill";
 
 /**
@@ -69,7 +69,7 @@ async function runGitBounded(
   if (!workdir) {
     throw new Error(`Git rollback failed: git ${args.join(" ")} called with an empty workdir`); // nax-lint-allow: plain-error
   }
-  const proc = _rollbackDeps.spawn(["git", ...args], {
+  const proc = _rollbackDeps.spawn(hardenedGitArgv(["git", ...args]), {
     cwd: workdir,
     env: gitSpawnEnv(),
     stdout: "pipe",

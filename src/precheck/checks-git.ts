@@ -3,7 +3,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { gitSpawnEnv } from "../utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
 import type { Check } from "./types";
 
 /** Check if directory is a git repository. Uses: git rev-parse --git-dir */
@@ -62,7 +62,7 @@ export const NAX_RUNTIME_PATTERNS = [
 
 /** Check if working tree is clean. Uses: git status --porcelain */
 export async function checkWorkingTreeClean(workdir: string): Promise<Check> {
-  const proc = Bun.spawn(["git", "status", "--porcelain"], {
+  const proc = Bun.spawn(hardenedGitArgv(["git", "status", "--porcelain"]), {
     cwd: workdir,
     env: gitSpawnEnv(),
     stdout: "pipe",

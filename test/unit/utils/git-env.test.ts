@@ -2,25 +2,30 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { gitWithTimeout } from "@/utils/git";
-import { gitSpawnEnv, hardenedGitEnv } from "@/utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv, hardenedGitEnv } from "@/utils/git-env";
 
 describe("hardenedGitEnv", () => {
-  test("adds core.fsmonitor=false as config entry 0 when none are set", () => {
+  test("adds the hardened entries from index 0 when none are set", () => {
     const env = hardenedGitEnv({ PATH: "/bin" });
     expect(env).toEqual({
       PATH: "/bin",
-      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_COUNT: "3",
       GIT_CONFIG_KEY_0: "core.fsmonitor",
       GIT_CONFIG_VALUE_0: "false",
+      GIT_CONFIG_KEY_1: "diff.ignoreSubmodules",
+      GIT_CONFIG_VALUE_1: "dirty",
+      GIT_CONFIG_KEY_2: "submodule.recurse",
+      GIT_CONFIG_VALUE_2: "false",
     });
   });
 
   test("appends after the caller's own GIT_CONFIG_COUNT entries, keeping them", () => {
     const env = hardenedGitEnv({ GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "user.name", GIT_CONFIG_VALUE_0: "x" });
-    expect(env.GIT_CONFIG_COUNT).toBe("2");
+    expect(env.GIT_CONFIG_COUNT).toBe("4");
     expect(env.GIT_CONFIG_KEY_0).toBe("user.name");
     expect(env.GIT_CONFIG_KEY_1).toBe("core.fsmonitor");
     expect(env.GIT_CONFIG_VALUE_1).toBe("false");
+    expect(env.GIT_CONFIG_KEY_3).toBe("submodule.recurse");
   });
 
   test("a malformed existing count is left untouched", () => {
@@ -34,13 +39,51 @@ describe("hardenedGitEnv", () => {
   });
 });
 
+describe("hardenedGitArgv", () => {
+  test.each([
+    [
+      ["git", "status", "--porcelain"],
+      ["git", "status", "--ignore-submodules=dirty", "--porcelain"],
+    ],
+    [
+      ["git", "diff", "HEAD"],
+      ["git", "diff", "--ignore-submodules=dirty", "HEAD"],
+    ],
+    [
+      ["git", "-C", "/r", "-c", "a=b", "--no-pager", "diff"],
+      ["git", "-C", "/r", "-c", "a=b", "--no-pager", "diff", "--ignore-submodules=dirty"],
+    ],
+    [
+      ["/usr/bin/git", "status"],
+      ["/usr/bin/git", "status", "--ignore-submodules=dirty"],
+    ],
+  ])("adds the flag right after a status / diff subcommand: %j", (argv, expected) => {
+    expect(hardenedGitArgv(argv)).toEqual(expected);
+  });
+
+  test.each([[["git", "log", "diff"]], [["git", "commit", "-m", "status"]], [["git"]], [["git", "-C", "status"]]])(
+    "leaves every other argv alone: %j",
+    (argv) => {
+      expect(hardenedGitArgv(argv)).toEqual(argv);
+    },
+  );
+
+  test("does not mutate its input", () => {
+    const argv = ["git", "status"];
+    hardenedGitArgv(argv);
+    expect(argv).toEqual(["git", "status"]);
+  });
+});
+
 describe("gitSpawnEnv", () => {
   test("is process.env plus the hardened entries", () => {
     const env = gitSpawnEnv();
     expect(env.PATH).toBe(process.env.PATH);
     const count = Number(env.GIT_CONFIG_COUNT);
-    expect(env[`GIT_CONFIG_KEY_${count - 1}`]).toBe("core.fsmonitor");
-    expect(env[`GIT_CONFIG_VALUE_${count - 1}`]).toBe("false");
+    expect(env[`GIT_CONFIG_KEY_${count - 3}`]).toBe("core.fsmonitor");
+    expect(env[`GIT_CONFIG_VALUE_${count - 3}`]).toBe("false");
+    expect(env[`GIT_CONFIG_KEY_${count - 2}`]).toBe("diff.ignoreSubmodules");
+    expect(env[`GIT_CONFIG_VALUE_${count - 2}`]).toBe("dirty");
   });
 
   test("keeps the caller's overlay and appends after a GIT_CONFIG_COUNT it sets", () => {
@@ -52,7 +95,7 @@ describe("gitSpawnEnv", () => {
     });
     expect(env.GIT_INDEX_FILE).toBe("/tmp/idx");
     expect(env.GIT_CONFIG_KEY_0).toBe("user.name");
-    expect(env.GIT_CONFIG_COUNT).toBe("2");
+    expect(env.GIT_CONFIG_COUNT).toBe("4");
     expect(env.GIT_CONFIG_KEY_1).toBe("core.fsmonitor");
   });
 });

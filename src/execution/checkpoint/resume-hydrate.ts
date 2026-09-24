@@ -1,4 +1,4 @@
-import { gitSpawnEnv } from "@/utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
 import type { ResumePlan } from "./resume-plan";
 import type { TreeState } from "./types";
 
@@ -47,7 +47,7 @@ interface SpawnedProc {
 }
 
 function spawnGit(deps: CaptureTreeStateDeps, args: string[], workdir: string): SpawnedProc {
-  return deps.spawn(["git", ...args], {
+  return deps.spawn(hardenedGitArgv(["git", ...args]), {
     cwd: workdir,
     env: gitSpawnEnv(),
     stdout: "pipe",

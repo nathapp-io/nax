@@ -15,6 +15,11 @@
  * `interceptArgv` → `gitWithTimeout` path) carries
  * `// nax-git-env-allow: <reason>` on its own line or the line above.
  *
+ * #2210: an argv that runs `status` / `diff` -- a literal one, or `["git",
+ * ...args]` whose verb is unknown here -- must also pass through
+ * `hardenedGitArgv(...)` (inside the spawn call), which adds the
+ * `--ignore-submodules=dirty` that a `.gitmodules` entry cannot override.
+ *
  * Comments are masked before matching. Known blind spot: an argv built in a
  * variable without a literal `"git"` head is invisible to a textual gate, so
  * keep the git argv literal at the spawn.
@@ -30,6 +35,9 @@ const ALLOW_MARKER = /nax-git-env-allow:\s*\S/;
 const GIT_ARGV = /\[\s*(["'])git\1\s*[,\]]/g;
 const SPAWN_CALLEE = /\bspawn(?:Sync)?\s*$/;
 const HARDENED_ENV = /\b(?:gitSpawnEnv|hardenedGitEnv)\s*\(/;
+const HARDENED_ARGV_CALLEE = /\bhardenedGitArgv\s*$/;
+/** What follows `["git",`: a status / diff verb, or a spread whose verb is unknown. */
+const NEEDS_ARGV_HARDENING = /^\s*(?:(["'])(?:status|diff)\1|\.\.\.)/;
 
 export interface GitSpawnViolation {
   line: number;
@@ -119,8 +127,15 @@ export function findGitSpawnViolations(source: string): GitSpawnViolation[] {
     if (ALLOW_MARKER.test(lines[line - 1] ?? "") || ALLOW_MARKER.test(lines[line - 2] ?? "")) continue;
     const text = (lines[line - 1] ?? "").trim();
     let open = enclosingCallOpen(shape, at);
-    // A grouping paren (`[...(override ?? ["git", ...args])]`) is not a call: keep climbing.
-    while (open !== -1 && !/[\w$]/.test(prevNonSpace(shape, open))) open = enclosingCallOpen(shape, open);
+    let argvHardened = false;
+    // A grouping paren (`[...(override ?? ["git", ...args])]`) is not a call, and
+    // `hardenedGitArgv(...)` returns the argv it wraps: climb past both.
+    for (;;) {
+      if (open === -1) break;
+      if (HARDENED_ARGV_CALLEE.test(code.slice(Math.max(0, open - 40), open))) argvHardened = true;
+      else if (/[\w$]/.test(prevNonSpace(shape, open))) break;
+      open = enclosingCallOpen(shape, open);
+    }
     if (open === -1 || !SPAWN_CALLEE.test(code.slice(Math.max(0, open - 40), open))) {
       violations.push({
         line,
@@ -131,6 +146,9 @@ export function findGitSpawnViolations(source: string): GitSpawnViolation[] {
     }
     if (!HARDENED_ENV.test(code.slice(open, matchingClose(shape, open) + 1))) {
       violations.push({ line, text, why: "git spawn without env: gitSpawnEnv(...)" });
+    }
+    if (!argvHardened && NEEDS_ARGV_HARDENING.test(code.slice(at + m[0].length))) {
+      violations.push({ line, text, why: "git status/diff argv not wrapped in hardenedGitArgv(...)" });
     }
   }
   return violations;
@@ -161,7 +179,9 @@ if (import.meta.main) {
   if (found.length > 0) {
     console.error("git spawned without the hardened environment (src/utils/git-env.ts):");
     for (const f of found) console.error(f);
-    console.error("Pass `env: gitSpawnEnv(overlay?)`, or mark `// nax-git-env-allow: <reason>`.");
+    console.error(
+      "Pass `env: gitSpawnEnv(overlay?)` and wrap a status/diff argv in `hardenedGitArgv(...)`, or mark `// nax-git-env-allow: <reason>`.",
+    );
     process.exit(1);
   }
   console.log("check-git-spawn-env: clean");

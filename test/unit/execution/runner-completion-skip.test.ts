@@ -455,6 +455,7 @@ describe("runCompletionPhase - dry run", () => {
       calls.push(cmd);
       if (cmd.includes("rev-parse")) return `${WORKDIR}\n`;
       if (cmd.includes("status")) return " M src/foo.ts\n";
+      if (cmd.includes("--cached")) return { exitCode: 1 }; // staged
       return "";
     }).spawn;
     try {

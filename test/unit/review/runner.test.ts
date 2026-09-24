@@ -445,7 +445,7 @@ describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
     // (other suites' afterEach restore the impl by this point in the run).
     const result = await originalGetUncommittedFiles("/tmp/repo");
 
-    expect(stub.calls[0]?.cmd).toEqual(["git", "diff", "--name-only", "HEAD"]);
+    expect(stub.calls[0]?.cmd).toEqual(["git", "diff", "--ignore-submodules=dirty", "--name-only", "HEAD"]);
     expect(stub.calls[0]?.opts.cwd).toBe("/tmp/repo");
     expect(stub.calls[0]?.opts.stdout).toBe("pipe");
     expect(result).toEqual(["src/foo.ts", "src/bar.ts"]);

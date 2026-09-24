@@ -277,6 +277,8 @@ describe("gitCommitTool — unresolved ignore status fails closed (Critical 1)",
         if (target === ".nax/scratchpad/notes.md") return makeSpawnResult({ exitCode: 0 });
         return makeSpawnResult({ exitCode: 128, stderr: "fatal: boom\n" });
       }
+      // The staged check before commit: a.ts is staged.
+      if (cmd.includes("--cached")) return makeSpawnResult({ exitCode: 1 });
       // git add / git commit for the one kept path (a.ts).
       return makeSpawnResult({ exitCode: 0 });
     }).spawn;
@@ -318,6 +320,16 @@ describe("gitCommitTool", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("git add failed:");
+  });
+
+  test("#2210: a path with nothing to stage never reaches git commit (it would print status)", async () => {
+    const repo = await makeRepo();
+    await gitCommitTool.run({ message: "feat: first", paths: ["a.ts"] }, toolContext(repo));
+
+    const again = await gitCommitTool.run({ message: "feat: again", paths: ["a.ts"] }, toolContext(repo));
+
+    expect(again.isError).toBe(true);
+    expect(again.content).toBe("git commit not run: nothing is staged");
   });
 
   test("returns the git commit failure after a successful stage", async () => {
