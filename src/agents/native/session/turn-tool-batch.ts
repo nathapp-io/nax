@@ -142,8 +142,8 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
       }
       if (outcome.kind === "block") {
         // Answered on the tool's behalf: the call never runs. A blocked
-        // call may still carry a corrected input, which is recorded before
-        // the answer — the point of the repair being visible to the model.
+        // call may still carry the input to record in its place (the
+        // invalid-call repair's redacted call), written before the answer.
         if (outcome.input !== undefined) messages = rewriteToolCallInput(messages, call.id, outcome.input);
         messages.push(buildToolResult({ toolCallId: call.id, content: outcome.content, isError: outcome.isError }));
         continue;

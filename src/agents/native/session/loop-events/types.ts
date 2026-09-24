@@ -40,8 +40,9 @@ export interface BeforeToolPayload {
  *   with it.
  * - `nudge` prefixes the eventual result with the handler's text.
  * - `block` answers without invoking the tool. `input` optionally carries the
- *   corrected input the transcript should record, which is how the
- *   invalid-call repair persists the exemplar it refuses to execute.
+ *   input the transcript should record instead, which is how the invalid-call
+ *   repair keeps the rejected value out of history (nax#2047) — recording the
+ *   model's call minus that property, never a fabricated one (nax#2200).
  * - `terminate` answers every outstanding call in the current batch — the spin
  *   breaker's stop is a batch-level outcome, not a per-call one, and a batch
  *   left with an unanswered `tool_call` is rejected by strict providers.

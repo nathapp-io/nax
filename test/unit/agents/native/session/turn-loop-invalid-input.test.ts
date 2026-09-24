@@ -1,7 +1,10 @@
 /**
  * RunCommand's live defect shape (nax#2047): the model passed `values:""` and
- * the loop kept executing it. The validator + exemplar rewrite this input into
- * a schema-conforming one before any of it reaches `interactionHandler`.
+ * the loop kept executing it. The validator rejects this input before any of it
+ * reaches `interactionHandler`; the transcript records the model's own call
+ * minus the rejected property, and the schema-derived exemplar travels in the
+ * error result only (nax#2200 — the exemplar used to be written over the
+ * model's call, attributing a fabricated call to the assistant).
  *
  * These tests drive `runNativeTurn` end to end so the rewrite is observed on
  * the actual persisted transcript — the same artifact the next round trip
@@ -27,6 +30,8 @@ import { loadTranscript } from "@/agents/native/session/transcript-store";
 import { runNativeTurn } from "@/agents/native/session/turn-loop";
 import type { TurnDeps } from "@/agents/native/session/turn-types";
 import type { SendTurnOpts } from "@/agents/session-types";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import type { LogEntry } from "@/logger/types";
 import type { CodingTool } from "@/tools";
 
 // Schema shape copied from src/tools/run-command.ts:270-292 — the live defect
@@ -42,9 +47,13 @@ const RUN_COMMAND_SCHEMA = {
 } as const;
 
 const MALFORMED = { command: "testScoped", values: "" } as const;
+// What the transcript records for MALFORMED: the model's call with only the
+// rejected property removed — nothing the model did not send (nax#2200).
+const RECORDED = { command: "testScoped" } as const;
 // exemplarFor produces this for `{ command: "testScoped", values: "" }` against
 // the schema above (no declared properties on `values`, so the fallback shape
 // `{ "<FILL IN>": "<FILL IN>" }` applies — see tool-input-exemplar.test.ts).
+// It appears in the error result's text, never in the assistant's call.
 const EXEMPLAR = { command: "testScoped", values: { "<FILL IN>": "<FILL IN>" } } as const;
 
 // Same tool, different property violations. Each is invalid but the key
@@ -170,7 +179,7 @@ describe("runNativeTurn — invalid tool call input (nax#2047)", () => {
     expect(onInteractionCalls).toBe(0);
   });
 
-  test("2. invalid call: transcript persists the exemplar, not the malformed input", async () => {
+  test("2. invalid call: transcript records the model's call minus the rejected property, never a fabricated exemplar", async () => {
     const driving = drivingComplete([{ id: "c1", input: { ...MALFORMED } }]);
     const { saved } = await runTurn(driving);
 
@@ -181,13 +190,17 @@ describe("runNativeTurn — invalid tool call input (nax#2047)", () => {
     if (assistantWithCall === undefined || assistantWithCall.role !== "assistant") throw new Error("unreachable");
     expect(assistantWithCall.toolCalls).toBeDefined();
     if (assistantWithCall.toolCalls === undefined) throw new Error("unreachable");
-    expect(assistantWithCall.toolCalls[0]?.input).toEqual(EXEMPLAR);
+    expect(assistantWithCall.toolCalls[0]?.input).toEqual(RECORDED);
 
     // Belt-and-braces: the raw malformed byte sequence is nowhere in the
     // persisted JSON. The error message text legitimately mentions "values"
     // and the exemplar, but never the literal `{"values":""}` shape.
     const serialized = JSON.stringify(saved);
     expect(serialized).not.toContain('{"values":""}');
+    // nax#2200: no placeholder is attributed to the assistant; it lives only
+    // in the harness's error result.
+    const assistants = saved.filter((m) => m.role === "assistant");
+    expect(JSON.stringify(assistants)).not.toContain("<FILL IN");
   });
 
   test("3. invalid call: a tool-result with matching toolCallId, isError:true, and a message naming property and exemplar", async () => {
@@ -200,7 +213,9 @@ describe("runNativeTurn — invalid tool call input (nax#2047)", () => {
     if (errorResult === undefined || errorResult.role !== "tool-result") throw new Error("unreachable");
     expect(errorResult.toolCallId).toBe("c1");
     expect(errorResult.content).toContain("values");
-    expect(errorResult.content).toContain("<FILL IN>");
+    // The exemplar is guidance in the result text, verbatim.
+    expect(errorResult.content).toContain(JSON.stringify(EXEMPLAR));
+    expect(errorResult.content).toContain("not executed");
     // Exactly one tool-result per invalid call (the loop's continue, no second error).
     expect(toolResults.length).toBe(1);
   });
@@ -230,8 +245,9 @@ describe("runNativeTurn — invalid tool call input (nax#2047)", () => {
     // but deep equal is the contract: a fresh array with the same shape is
     // also fine and what the implementation produces.
     expect(assistant.thinking).toEqual(thinking);
-    // Strictly: the assistant's rewritten toolCalls entry is the exemplar.
-    expect(assistant.toolCalls?.[0]?.input).toEqual(EXEMPLAR);
+    // Strictly: the assistant's rewritten toolCalls entry is the model's own
+    // call minus the rejected property.
+    expect(assistant.toolCalls?.[0]?.input).toEqual(RECORDED);
   });
 
   test("5. sibling calls: valid call executes via onInteraction; invalid call is rewritten only", async () => {
@@ -250,7 +266,7 @@ describe("runNativeTurn — invalid tool call input (nax#2047)", () => {
       throw new Error("unreachable");
     }
     const byId = new Map(assistant.toolCalls.map((c) => [c.id, c]));
-    expect(byId.get("c1")?.input).toEqual(EXEMPLAR);
+    expect(byId.get("c1")?.input).toEqual(RECORDED);
     expect(byId.get("c2")?.input).toEqual({ command: "typecheck" });
 
     // Exactly one tool-result: the error for c1. c2 ran through onInteraction
@@ -287,8 +303,8 @@ describe("runNativeTurn — invalid tool call input (nax#2047)", () => {
     // (NOT onto the original message). A naive implementation that re-reads
     // the original assistant message each iteration would leave c1's input as
     // `{ values: "" }` and only rewrite c2.
-    expect(byId.get("c1")?.input).toEqual({ command: "testScoped", values: { "<FILL IN>": "<FILL IN>" } });
-    expect(byId.get("c2")?.input).toEqual({ command: "typecheck", values: { "<FILL IN>": "<FILL IN>" } });
+    expect(byId.get("c1")?.input).toEqual({ command: "testScoped" });
+    expect(byId.get("c2")?.input).toEqual({ command: "typecheck" });
 
     // Both produce tool-results, both error.
     const toolResults = saved.filter((m) => m.role === "tool-result");
@@ -312,6 +328,23 @@ describe("runNativeTurn — invalid tool call input (nax#2047)", () => {
     expect(assistant.toolCalls[0]?.input).toEqual(validInput);
 
     // One tool-result, not an error.
+    const toolResults = saved.filter((m) => m.role === "tool-result");
+    expect(toolResults.length).toBe(1);
+    expect(toolResults[0]?.isError).not.toBe(true);
+  });
+
+  test("8. null on an optional property (nax#2200): the call runs, with the property absent", async () => {
+    const driving = drivingComplete([{ id: "c1", input: { command: "typecheck", values: null } }]);
+    const { saved } = await runTurn(driving);
+
+    // The tool sees the property absent — what the validator judged it as.
+    expect(driving.observedInputs).toEqual([{ command: "typecheck" }]);
+    const assistant = saved.find((m) => m.role === "assistant");
+    if (assistant === undefined || assistant.role !== "assistant" || assistant.toolCalls === undefined) {
+      throw new Error("unreachable");
+    }
+    // The transcript records what ran, so history and execution agree.
+    expect(assistant.toolCalls[0]?.input).toEqual({ command: "typecheck" });
     const toolResults = saved.filter((m) => m.role === "tool-result");
     expect(toolResults.length).toBe(1);
     expect(toolResults[0]?.isError).not.toBe(true);
@@ -488,5 +521,76 @@ describe("runNativeTurn — invalid call budget (nax#2047)", () => {
     expect(ids).not.toContain("c4");
     const c4Ids = toolResults.filter((m) => m.role === "tool-result" && m.toolCallId === "c4");
     expect(c4Ids.length).toBe(0);
+  });
+
+  test("6. the halt carries the rejected tool and property on the TurnResult (nax#2200)", async () => {
+    const driving = budgetDrivingComplete([
+      { text: "", toolCalls: [{ id: "c1", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c2", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c3", input: { ...MALFORMED_A } }] },
+      { text: "done" },
+    ]);
+    const { result } = await runBudgetTurn(driving);
+
+    expect(result.invalidCallBudgetExceeded).toBe(true);
+    expect(result.invalidToolCall).toEqual({
+      tool: "RunCommand",
+      property: "values",
+      expected: "object",
+      actual: "a string",
+    });
+  });
+
+  test("7. the halt is logged at error, naming the tool and property (nax#2200)", async () => {
+    const driving = budgetDrivingComplete([
+      { text: "", toolCalls: [{ id: "c1", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c2", input: { ...MALFORMED_A } }] },
+      { text: "", toolCalls: [{ id: "c3", input: { ...MALFORMED_A } }] },
+      { text: "done" },
+    ]);
+    const entries: LogEntry[] = [];
+    resetLogger();
+    initLogger({ level: "info", suppressConsole: true });
+    addSink((entry) => entries.push(entry));
+    try {
+      await runBudgetTurn(driving);
+    } finally {
+      resetLogger();
+    }
+
+    const halt = entries.find((e) => e.message === "turn ended by the invalid tool call budget");
+    expect(halt?.level).toBe("error");
+    expect(halt?.stage).toBe("native-adapter");
+    expect(halt?.data).toMatchObject({
+      sessionName: budgetHandle.id,
+      tool: "RunCommand",
+      property: "values",
+      expected: "object",
+      actual: "a string",
+    });
+    const outstanding = entries.find((e) => e.message === "turn ended with tool calls outstanding");
+    expect(outstanding?.data).toMatchObject({ invalidCallBudgetExceeded: true });
+  });
+
+  test("8. three identical calls with a null optional property never trip the budget (nax#2200)", async () => {
+    // The #2200 verifier shape: the model spelled "no value" as null three
+    // times. The tools accept that, so the gate must too.
+    const nullValues = { command: "typecheck", values: null };
+    const driving = budgetDrivingComplete([
+      { text: "", toolCalls: [{ id: "c1", input: { ...nullValues } }] },
+      { text: "", toolCalls: [{ id: "c2", input: { ...nullValues } }] },
+      { text: "", toolCalls: [{ id: "c3", input: { ...nullValues } }] },
+      { text: "done" },
+    ]);
+    const { result } = await runBudgetTurn(driving);
+
+    expect(result.invalidCallBudgetExceeded).toBeUndefined();
+    expect(result.invalidToolCall).toBeUndefined();
+    expect(result.output).toBe("done");
+    expect(driving.observedInputs).toEqual([
+      { command: "typecheck" },
+      { command: "typecheck" },
+      { command: "typecheck" },
+    ]);
   });
 });

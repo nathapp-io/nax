@@ -13,6 +13,14 @@
  * keywords such as `anyOf`, a missing or non-object schema, extra properties
  * with no `additionalProperties` -- returns `undefined` (allow), so this
  * validator never breaks a tool that was previously passing.
+ *
+ * `null` on a property the schema does not list as `required` is treated as
+ * absent (nax#2200). The tools already read it that way (`Git` treats a
+ * non-array `refs` as `[]`), and models routinely spell "not supplied" as
+ * `null`; rejecting it made the gate stricter than the tools it guards, and a
+ * verifier that sent `refs: null` three times lost its turn to the budget.
+ * `stripNullOptionals` removes those properties so the handler sees the same
+ * "absent" the validator judged.
  */
 import { describeValuesType } from "@/utils/describe-value-type";
 
@@ -34,17 +42,15 @@ export function validateToolInput(schema: unknown, input: unknown): ToolInputVio
   if (type !== undefined && type !== "object") return undefined;
   if (!isPlainObject(input)) return undefined;
 
-  if (Array.isArray(required)) {
-    for (const entry of required) {
-      if (typeof entry !== "string") continue;
-      if (!(entry in input)) {
-        return {
-          property: entry,
-          expected: "present",
-          actual: "absent",
-          message: `\`${entry}\` is required`,
-        };
-      }
+  const requiredKeys = requiredSet(required);
+  for (const entry of requiredKeys) {
+    if (!(entry in input)) {
+      return {
+        property: entry,
+        expected: "present",
+        actual: "absent",
+        message: `\`${entry}\` is required`,
+      };
     }
   }
 
@@ -52,6 +58,8 @@ export function validateToolInput(schema: unknown, input: unknown): ToolInputVio
     const propSchema = properties[key];
     if (!isPlainObject(propSchema)) continue;
     const value = input[key];
+    // nax#2200: `null` on an optional property reads as "not supplied".
+    if (value === null && !requiredKeys.has(key)) continue;
 
     if (typeof propSchema.type === "string" && PRIMITIVE_TYPES.has(propSchema.type)) {
       if (!typeMatches(propSchema.type, value)) {
@@ -82,6 +90,35 @@ export function validateToolInput(schema: unknown, input: unknown): ToolInputVio
   }
 
   return undefined;
+}
+
+/**
+ * The input with every `null`-valued optional property removed, or `undefined`
+ * when there is nothing to remove (including any schema the validator does not
+ * understand — the same fail-open contract). A property whose own schema
+ * declares `type: "null"` keeps its value: there `null` IS the supplied value.
+ * Never mutates `input`.
+ */
+export function stripNullOptionals(schema: unknown, input: unknown): Record<string, unknown> | undefined {
+  if (!isPlainObject(schema) || !isPlainObject(input)) return undefined;
+  const { properties, required, type } = schema;
+  if (!isPlainObject(properties)) return undefined;
+  if (type !== undefined && type !== "object") return undefined;
+
+  const requiredKeys = requiredSet(required);
+  const stripped = Object.keys(input).filter((key) => {
+    const propSchema = properties[key];
+    if (input[key] !== null || requiredKeys.has(key) || !isPlainObject(propSchema)) return false;
+    return propSchema.type !== "null";
+  });
+  if (stripped.length === 0) return undefined;
+  const drop = new Set(stripped);
+  return Object.fromEntries(Object.entries(input).filter(([key]) => !drop.has(key)));
+}
+
+function requiredSet(required: unknown): ReadonlySet<string> {
+  if (!Array.isArray(required)) return new Set();
+  return new Set(required.filter((entry): entry is string => typeof entry === "string"));
 }
 
 const PRIMITIVE_TYPES: ReadonlySet<string> = new Set([

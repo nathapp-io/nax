@@ -20,7 +20,7 @@
 
 import type { ToolCall, ToolDefinition } from "@nathapp/nax-ai";
 import { type SpinBreaker, spinTerminalNotice } from "@/runtime/spin-breaker";
-import type { InvalidCallBudget } from "./handle-invalid-tool-call";
+import { type InvalidCallBudget, normalizeNullOptionals } from "./handle-invalid-tool-call";
 import type { BeforeToolOutcome, LoopEventRegistry } from "./loop-events";
 import { createTruncationHandler } from "./truncation-handler";
 
@@ -83,7 +83,13 @@ function repairInvalidCall(
   tools: readonly ToolDefinition[],
 ): BeforeToolOutcome {
   const invalid = state.current.budget.observe(call, tools);
-  if (invalid === undefined) return { kind: "allow" };
+  if (invalid === undefined) {
+    // nax#2200: a `null` optional property validated as absent, so the tool
+    // must receive it absent too — the rewrite is what the loop runs and
+    // records. No `null` to drop leaves the success path untouched.
+    const normalized = normalizeNullOptionals(call, tools);
+    return normalized === undefined ? { kind: "allow" } : { kind: "allow", input: normalized };
+  }
   if (invalid.kind === "stopped") {
     // A tripped budget ends the batch with NO tool-result — "a result nobody
     // reads only grows the transcript" (nax#2047 Task 4). None of the four
@@ -92,8 +98,9 @@ function repairInvalidCall(
     // this outcome.
     return { kind: "allow" };
   }
-  // Repaired, not executed: the loop records the corrected input on the
-  // assistant message and answers with the error text.
+  // Repaired, not executed: the loop records the model's input minus the
+  // rejected property on the assistant message, and answers with the error
+  // text, which carries the exemplar (nax#2200).
   return { kind: "block", content: invalid.content, isError: true, input: invalid.input };
 }
 
