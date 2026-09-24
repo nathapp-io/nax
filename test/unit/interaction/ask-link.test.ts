@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertDefined } from "@test/helpers";
+import { assertDefined, waitForCondition } from "@test/helpers";
 import type { AskChannel, AskChannelResponse, InteractionRequest } from "@/interaction";
 import { cancelPendingAsk, createHumanAskLink } from "@/interaction";
 import type { AskRequest } from "@/permissions";
@@ -221,17 +221,21 @@ describe("human ask link", () => {
 // settles the on-screen chain prompt once no live waiter remains, and never
 // prompts for a waiter whose signal is already aborted.
 describe("US-003 — cancel pending human-approval waiters", () => {
-  /** Let the serial queue's promise chain flush before asserting on prompt state. */
-  const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  /**
+   * Wait until the link has dispatched its on-screen prompt. Used in place of
+   * a fixed-duration sleep: the serial queue's runSession is queued on a
+   * promise chain, and `link.pending()` is the observable condition that
+   * fires once chain.prompt has been called.
+   */
+  const waitForOnScreen = (link: ReturnType<typeof createHumanAskLink>) =>
+    waitForCondition(() => link.pending() !== undefined, 1_000);
 
   /**
-   * Bounded race for a waiter that never settles today: the pre-feature link
-   * ignores AskControl, so an aborted waiter never resolves. Bounding with a
-   * null keeps the assertion running instead of hanging the test file.
+   * Wait until the chain's prompt has been dispatched a given number of times.
+   * Used in tests that share a counter across the whole suite so the
+   * condition is observable synchronously on the call to chain.prompt.
    */
-  function raceSettled<T>(promise: Promise<T>, ms = 500): Promise<T | null> {
-    return Promise.race([promise, new Promise<T | null>((resolve) => setTimeout(() => resolve(null), ms))]);
-  }
+  const waitForPromptCount = (count: () => number, target: number) => waitForCondition(() => count() === target, 1_000);
 
   /** A chain whose prompt never resolves until cancelled or released. */
   function hangingChain(cancel: (id: string) => void): AskChannel {
@@ -260,12 +264,12 @@ describe("US-003 — cancel pending human-approval waiters", () => {
     const link = createHumanAskLink({ chain: hangingChain(() => {}), timeoutMs: 1_000_000 });
     const controller = new AbortController();
     const waiter = link.resolve(REQ, { signal: controller.signal });
-    await settle();
+    await waitForOnScreen(link);
     expect(link.pending()).toBeDefined(); // the prompt is on screen
 
     controller.abort();
 
-    expect(await raceSettled(waiter)).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(await waiter).toEqual({ decision: "deny", decidedBy: "cancelled" });
   });
 
   test("AC5: aborting the sole waiter cancels the chain prompt with its id", async () => {
@@ -273,12 +277,12 @@ describe("US-003 — cancel pending human-approval waiters", () => {
     const link = createHumanAskLink({ chain: hangingChain((id) => cancelled.push(id)), timeoutMs: 1_000_000 });
     const controller = new AbortController();
     const waiter = link.resolve(REQ, { signal: controller.signal });
-    await settle();
+    await waitForOnScreen(link);
     const promptId = link.pending();
     assertDefined(promptId, "on-screen prompt id");
 
     controller.abort();
-    await raceSettled(waiter);
+    await waiter;
 
     expect(cancelled).toEqual([promptId]);
   });
@@ -300,14 +304,14 @@ describe("US-003 — cancel pending human-approval waiters", () => {
     const secondCtrl = new AbortController();
     const first = link.resolve(REQ, { signal: firstCtrl.signal });
     const second = link.resolve(REQ, { signal: secondCtrl.signal });
-    await settle();
-    expect(promptCalls).toBe(1); // same key joins the single on-screen prompt
+    await waitForPromptCount(() => promptCalls, 1); // same key joins the single on-screen prompt
+    expect(promptCalls).toBe(1);
 
     firstCtrl.abort();
-    expect(await raceSettled(first)).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(await first).toEqual({ decision: "deny", decidedBy: "cancelled" });
 
     release?.({ action: "allow", respondedAt: Date.now() });
-    expect(await raceSettled(second)).toEqual({ decision: "allow", decidedBy: "human" });
+    expect(await second).toEqual({ decision: "allow", decidedBy: "human" });
     expect(promptCalls).toBe(1);
   });
 
@@ -318,10 +322,10 @@ describe("US-003 — cancel pending human-approval waiters", () => {
     const secondCtrl = new AbortController();
     const first = link.resolve(REQ, { signal: firstCtrl.signal });
     void link.resolve(REQ, { signal: secondCtrl.signal }); // second stays live
-    await settle();
+    await waitForOnScreen(link);
 
     firstCtrl.abort();
-    expect(await raceSettled(first)).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(await first).toEqual({ decision: "deny", decidedBy: "cancelled" });
 
     // The second waiter is still live, so the on-screen prompt is not cancelled.
     expect(cancelled).toEqual([]);
@@ -334,13 +338,13 @@ describe("US-003 — cancel pending human-approval waiters", () => {
     const secondCtrl = new AbortController();
     const first = link.resolve(REQ, { signal: firstCtrl.signal });
     const second = link.resolve(REQ, { signal: secondCtrl.signal });
-    await settle();
+    await waitForOnScreen(link);
 
     firstCtrl.abort();
     secondCtrl.abort();
 
-    expect(await raceSettled(first)).toEqual({ decision: "deny", decidedBy: "cancelled" });
-    expect(await raceSettled(second)).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(await first).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(await second).toEqual({ decision: "deny", decidedBy: "cancelled" });
     expect(cancelled).toHaveLength(1);
   });
 
@@ -361,14 +365,14 @@ describe("US-003 — cancel pending human-approval waiters", () => {
     const queuedCtrl = new AbortController();
     const first = link.resolve(REQ); // takes the serial queue and prompts
     const queued = link.resolve(QUEUED, { signal: queuedCtrl.signal }); // queues behind it
-    await settle();
+    await waitForPromptCount(() => promptCalls, 1);
     expect(promptCalls).toBe(1);
 
     queuedCtrl.abort(); // before the queued waiter's turn
     release?.({ action: "deny", respondedAt: Date.now() });
 
-    expect(await raceSettled(first)).toEqual({ decision: "deny", decidedBy: "human" });
-    expect(await raceSettled(queued)).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(await first).toEqual({ decision: "deny", decidedBy: "human" });
+    expect(await queued).toEqual({ decision: "deny", decidedBy: "cancelled" });
     expect(promptCalls).toBe(1);
   });
 });
