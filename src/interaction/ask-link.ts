@@ -145,6 +145,8 @@ export function createHumanAskLink(opts: {
     settled: boolean;
     /** Whether `chain.cancel(id)` has been called for this session. */
     cancelledOnChain: boolean;
+    /** Releases the serial queue when a channel leaves its prompt pending after cancel. */
+    cancelPrompt?: () => void;
     /**
      * US-004: the cancellable keepalive handle (`setTimeout`, never
      * `setInterval`). Re-armed by `runKeepalive` each time it fires, and
@@ -178,10 +180,12 @@ export function createHumanAskLink(opts: {
       // cancel reaches the chain).
       if (session.waiters.size === 0 && !session.settled && !session.cancelledOnChain) {
         session.cancelledOnChain = true;
+        session.settled = true;
         const chain = opts.chain;
         if (chain !== null && chain !== undefined) {
           void chain.cancel(session.id).catch(() => undefined);
         }
+        session.cancelPrompt?.();
       }
     };
     if (signal !== undefined) {
@@ -289,35 +293,42 @@ export function createHumanAskLink(opts: {
         return;
       }
       activeId = session.id;
+      const promptCancelled = new Promise<null>((resolve) => {
+        session.cancelPrompt = () => resolve(null);
+      });
       // onWaiting is fired in resolve() before the session is queued, so
       // each caller's watchdog is notified exactly once.
       try {
-        const response = await chain.prompt({
-          id: session.id,
-          type: "choose",
-          featureName: opts.featureName ?? "unknown",
-          ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
-          stage: "execution",
-          summary: `${req.tool} - approval required`,
-          detail: [
-            // A Write/Edit ask carries no command: showing `req.summary` keeps
-            // the operator informed about what is being approved instead of an
-            // empty code block. The command is still shown verbatim when
-            // present.
-            ...((req.command ?? "").length > 0 ? ["```", req.command, "```"] : []),
-            `request: ${req.summary}`,
-            `runs in: ${req.root ?? "unknown"}`,
-            `reason:  ${req.reason ?? req.rule}`,
-            `stage:   ${req.stage}`,
-          ].join("\n"),
-          options: OPTIONS,
-          timeout: opts.timeoutMs,
-          // Recorded for the message footer only. This link NEVER consults
-          // applyFallback: it maps "continue" AND "escalate" to approve.
-          fallback: "abort",
-          createdAt: Date.now(),
-          metadata: { approvalPrompt: true },
-        });
+        const response = await Promise.race([
+          chain.prompt({
+            id: session.id,
+            type: "choose",
+            featureName: opts.featureName ?? "unknown",
+            ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
+            stage: "execution",
+            summary: `${req.tool} - approval required`,
+            detail: [
+              // A Write/Edit ask carries no command: showing `req.summary` keeps
+              // the operator informed about what is being approved instead of an
+              // empty code block. The command is still shown verbatim when
+              // present.
+              ...((req.command ?? "").length > 0 ? ["```", req.command, "```"] : []),
+              `request: ${req.summary}`,
+              `runs in: ${req.root ?? "unknown"}`,
+              `reason:  ${req.reason ?? req.rule}`,
+              `stage:   ${req.stage}`,
+            ].join("\n"),
+            options: OPTIONS,
+            timeout: opts.timeoutMs,
+            // Recorded for the message footer only. This link NEVER consults
+            // applyFallback: it maps "continue" AND "escalate" to approve.
+            fallback: "abort",
+            createdAt: Date.now(),
+            metadata: { approvalPrompt: true },
+          }),
+          promptCancelled,
+        ]);
+        if (response === null || session.waiters.size === 0) return;
         let outcome: AskLinkOutcome;
         if (response.respondedBy === "timeout") {
           outcome = deny("timeout");
@@ -383,15 +394,14 @@ export function createHumanAskLink(opts: {
         // earlier one that ran through before the queue caught up; clear
         // in both cases by re-reading the queue's tail.
         if (activeId === session.id) activeId = undefined;
-        // Release the liveSessions slot so the next same-key resolve can
-        // build a fresh prompt. The entry stays out of the map (no
-        // re-attachment to a settled session is possible), and we drop the
-        // reference so GC can reclaim the Waiter set.
-        for (const [k, v] of liveSessions) {
-          if (v === session) liveSessions.delete(k);
-        }
       }
     } finally {
+      session.settled = true;
+      session.cancelPrompt = undefined;
+      if (activeId === session.id) activeId = undefined;
+      for (const [key, current] of liveSessions) {
+        if (current === session) liveSessions.delete(key);
+      }
       // US-004: a settled prompt must never keepalive again, even on the
       // no-chain / queued-aborted early-return paths that bypass the inner
       // try/finally. Without this outer guard the timer remains armed until
@@ -477,6 +487,7 @@ export function createHumanAskLink(opts: {
         session.waiters.delete(w);
       }
       session.settled = true;
+      session.cancelPrompt?.();
     }
   }
 

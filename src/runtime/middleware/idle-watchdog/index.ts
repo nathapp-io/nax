@@ -372,28 +372,10 @@ export function attachAgentIdleWatchdog(
         // approval is exactly the "waiting, not spinning" the
         // tool-call-only cap exists to accommodate.
         //
-        // The activity clocks are pushed forward by the LONGER of the two
-        // timeouts so a beat at the threshold edge is treated as
-        // still-active for the full duration of the next timeout window —
-        // a human prompt is legitimately waiting, and the next tick within
-        // that window must not declare the call idle. Without the offset,
-        // the next tick that lands exactly `idleTimeoutMs` past the beat
-        // would cancel even though the prompt is still pending.
-        //
-        // The anchor is `max(event.timestamp, now)`, not the event
-        // timestamp alone, so a delayed or stale beat cannot move the
-        // clocks further back than the watchdog's current view. The
-        // offset still extends past now (otherwise a fresh beat at the
-        // threshold edge would cancel at the very next tick), but a stale
-        // beat is treated as if it arrived right now and gets the same
-        // single-window extension rather than compounding on its age.
         const state = activeStates.get(event.callId);
         if (state) {
-          const anchor = Math.max(event.timestamp, _idleWatchdogDeps.now());
-          const offset = Math.max(idleTimeoutMs, toolCallOnlyTimeoutMs);
-          const observedAt = anchor + offset;
-          state.lastNonToolCallActivityAt = observedAt;
-          resetActivity(state, observedAt, { clearGrace: true });
+          state.lastNonToolCallActivityAt = event.timestamp;
+          resetActivity(state, event.timestamp, { clearGrace: true });
         }
         break;
       }

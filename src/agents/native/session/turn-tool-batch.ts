@@ -97,6 +97,20 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
   // from the first iteration; an in-flight call (the one that triggered the
   // abort) finishes on its own path, the check begins there.
   let cancelled = false;
+  const isTurnCancelled = (): boolean => deps.signal?.aborted === true;
+
+  function answerCancelledFrom(callIndex: number): void {
+    cancelled = true;
+    for (const outstanding of toolCalls.slice(callIndex)) {
+      messages.push(
+        buildToolResult({
+          toolCallId: outstanding.id,
+          content: "Not run: the turn was cancelled.",
+          isError: true,
+        }),
+      );
+    }
+  }
 
   for (const [callIndex, call] of toolCalls.entries()) {
     // US-002: check the turn signal FIRST (before spinWarned) so a cancelled
@@ -105,17 +119,8 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
     // aborted signal must preserve the one-result-per-id invariant — the
     // cancelled branch is the stronger guarantee, so it wins when both hold.
     // AC1 / AC7 / AC8.
-    if (deps.signal?.aborted === true) {
-      cancelled = true;
-      for (const outstanding of toolCalls.slice(callIndex)) {
-        messages.push(
-          buildToolResult({
-            toolCallId: outstanding.id,
-            content: "Not run: the turn was cancelled.",
-            isError: true,
-          }),
-        );
-      }
+    if (isTurnCancelled()) {
+      answerCancelledFrom(callIndex);
       break;
     }
     if (spinWarned) {
@@ -149,6 +154,10 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
         continue;
       }
       const outcome = await loopEvents.dispatch("before_tool", { call, tools });
+      if (isTurnCancelled()) {
+        answerCancelledFrom(callIndex);
+        break;
+      }
       // nax#2047 Task 4: a tripped invalid-call budget ends the batch with
       // NO result — "a result nobody reads only grows the transcript". None
       // of the four seam outcomes can express that (each answers the call),
@@ -311,6 +320,6 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
     // round trip. A batch that never consulted a signal — the normal
     // pre-feature path — never sees an aborted signal, so this stays false
     // and the result shape is unchanged.
-    cancelled,
+    cancelled: cancelled || isTurnCancelled(),
   };
 }

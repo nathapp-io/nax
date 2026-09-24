@@ -82,6 +82,68 @@ function cancelledOnlyResult(results: readonly NativeTranscriptMessage[]): Array
 }
 
 describe("runToolBatch — turn signal cancellation (US-002)", () => {
+  test("abort during before_tool answers outstanding calls without running the tool", async () => {
+    const controller = new AbortController();
+    const registry = createLoopEventRegistry();
+    registry.register("before_tool", async () => {
+      controller.abort("stopped during hook");
+      return { kind: "allow" };
+    });
+    let interactions = 0;
+    const opts: SendTurnOpts = {
+      interactionHandler: {
+        onInteraction: async () => {
+          interactions++;
+          return { answer: "ran" };
+        },
+      },
+    };
+    const deps: TurnDeps = {
+      signal: controller.signal,
+      complete: async () => {
+        throw new Error("unexpected");
+      },
+    };
+
+    const result = await runToolBatch(batchArgs({ deps, opts, loopEvents: registry }));
+    expect(interactions).toBe(0);
+    expect(result.cancelled).toBe(true);
+    expect(cancelledOnlyResult(result.messages)).toEqual([
+      { toolCallId: "c1", content: CANCELLED_CONTENT, isError: true },
+      { toolCallId: "c2", content: CANCELLED_CONTENT, isError: true },
+    ]);
+  });
+
+  test("abort during the final tool call marks the batch cancelled", async () => {
+    const controller = new AbortController();
+    const opts: SendTurnOpts = {
+      interactionHandler: {
+        onInteraction: async () => {
+          controller.abort("stopped in final call");
+          return { answer: "done" };
+        },
+      },
+    };
+    const deps: TurnDeps = {
+      signal: controller.signal,
+      complete: async () => {
+        throw new Error("unexpected");
+      },
+    };
+    const onlyCall = call("c1", "a.ts");
+
+    const result = await runToolBatch(
+      batchArgs({
+        deps,
+        opts,
+        messages: messagesWith([onlyCall]),
+        toolCalls: [onlyCall],
+      }),
+    );
+    expect(result.cancelled).toBe(true);
+    expect(cancelledOnlyResult(result.messages)).toHaveLength(1);
+  });
+
   test("AC7: an already-aborted batch signal invokes no interactions and synthetically answers every call", async () => {
     const controller = new AbortController();
     controller.abort();

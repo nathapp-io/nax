@@ -31,6 +31,7 @@ import {
   makeIdleWatchdogConfig,
   makeToolCallUpdateEvent,
   restoreWatchdogClock,
+  TICK_MS,
 } from "./_idle-watchdog-harness";
 
 type CancelCallback = () => Promise<void>;
@@ -98,8 +99,8 @@ describe("attachAgentIdleWatchdog — awaiting-human activity (US-004)", () => {
       await clock.advance(500);
       eventBus.emitAgentStream(makeAwaitingHumanEvent({ callId: "call-004a" }));
     }
-    // One more full idle period after the final beat must still not cancel.
-    await clock.advance(IDLE_TIMEOUT_MS);
+    // A beat keeps the call alive until the next idle threshold.
+    await clock.advance(IDLE_TIMEOUT_MS - TICK_MS);
     await getLogger().flush();
 
     expect(cancelWasCalled).toBe(false);
@@ -140,6 +141,32 @@ describe("attachAgentIdleWatchdog — awaiting-human activity (US-004)", () => {
     expect(cancelWasCalled).toBe(false);
   });
 
+  test("a call becomes idle one timeout after its final awaiting-human beat", async () => {
+    let cancelCalls = 0;
+    controllerRegistry.set("call-004e", async () => {
+      cancelCalls++;
+    });
+    const config = makeNaxConfig({
+      agent: {
+        idleWatchdog: makeIdleWatchdogConfig({
+          mode: "cancel",
+          idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
+          activityKinds: ["message_update"],
+          maxRetryAttempts: 1,
+        }),
+      },
+    });
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-004e" }));
+    await clock.advance(TICK_MS);
+    eventBus.emitAgentStream(makeAwaitingHumanEvent({ callId: "call-004e" }));
+
+    await clock.advance(IDLE_TIMEOUT_MS - TICK_MS);
+    expect(cancelCalls).toBe(0);
+    await clock.advance(TICK_MS);
+    expect(cancelCalls).toBe(1);
+  });
+
   test("US-004 AC7: 1s idle / 2s tool-only — tool_call_update + awaiting-human every 500ms never cancels", async () => {
     let cancelCalls = 0;
     controllerRegistry.set("call-004c", async () => {
@@ -170,7 +197,7 @@ describe("attachAgentIdleWatchdog — awaiting-human activity (US-004)", () => {
       eventBus.emitAgentStream(makeToolCallUpdateEvent({ callId: "call-004c" }));
       eventBus.emitAgentStream(makeAwaitingHumanEvent({ callId: "call-004c" }));
     }
-    await clock.advance(IDLE_TIMEOUT_MS * 2);
+    await clock.advance(IDLE_TIMEOUT_MS - TICK_MS);
     await getLogger().flush();
 
     expect(cancelCalls).toBe(0);

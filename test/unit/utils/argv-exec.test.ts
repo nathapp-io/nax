@@ -135,6 +135,17 @@ describe("US-001 runArgv abort & drain", () => {
     expect(result.aborted).toBe(false);
   });
 
+  test("a deadline that expires while background output is draining reports a timeout", async () => {
+    const result = await runArgv({
+      argv: ["sh", "-c", "sleep 4715 & echo started"],
+      cwd: root,
+      timeoutMs: 250,
+    });
+    expect(result.stdout).toContain("started");
+    expect(result.timedOut).toBe(true);
+    await waitForCondition(() => survivors("sleep 4715") === "", 3_000, 50);
+  });
+
   test("US-001 AC10: runArgv removes its abort listener when it settles on a never-aborted signal", async () => {
     const controller = new AbortController();
     const signal = controller.signal;

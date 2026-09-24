@@ -167,6 +167,13 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
     _argvExecDeps.killProcessGroup(proc.pid, "SIGKILL");
   };
 
+  const stdoutController = new AbortController();
+  const stderrController = new AbortController();
+  const stopReaders = (): void => {
+    stdoutController.abort();
+    stderrController.abort();
+  };
+
   // BUG-13: unlike every git call (routed through gitWithTimeout), a spawn
   // with no deadline can block its caller forever on a hung install
   // (registry/NFS stall).
@@ -176,6 +183,7 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
     // grandchildren. killProcessGroup(pid, "SIGKILL") kills the whole group
     // (negative pid), falling back to the single process on ESRCH.
     killGroup();
+    stopReaders();
   }, options.timeoutMs);
 
   // US-001: an abort races the timeout. One listener, removed on every settle
@@ -183,6 +191,7 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   const onAbort = (): void => {
     aborted = true;
     killGroup();
+    stopReaders();
   };
   signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -193,12 +202,9 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   // to settle (via reader.cancel()) after we kill the process group. US-001
   // requires that settlement stay bounded even when a background process
   // inherits the pipe and ignores the SIGKILL.
-  const stdoutController = new AbortController();
-  const stderrController = new AbortController();
   const stdoutPromise = drainToEof(proc.stdout, stdoutController.signal);
   const stderrPromise = drainToEof(proc.stderr, stderrController.signal);
   const exitCode = await proc.exited;
-  clearTimeout(timerId);
 
   // Post-exit drain grace. After exit, the streams MUST close — they were
   // owned by the shell, which is now dead. Background processes that
@@ -241,6 +247,7 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   const stdoutFinal = stdoutClosed ? (stdoutSettled as StreamDrain) : await stdoutPromise;
   const stderrFinal = stderrClosed ? (stderrSettled as StreamDrain) : await stderrPromise;
 
+  clearTimeout(timerId);
   signal?.removeEventListener("abort", onAbort);
 
   return {

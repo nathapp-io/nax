@@ -349,6 +349,28 @@ describe("US-003 — cancel pending human-approval waiters", () => {
     expect(cancelled).toHaveLength(1);
   });
 
+  test("cancelling a hanging prompt releases the serial queue for the next approval", async () => {
+    const prompted: string[] = [];
+    const chain: AskChannel = {
+      prompt: (request) => {
+        prompted.push(request.id);
+        if (prompted.length === 1) return new Promise<AskChannelResponse>(() => {});
+        return Promise.resolve({ action: "allow", respondedAt: Date.now() });
+      },
+      cancel: () => Promise.resolve(),
+    };
+    const link = createHumanAskLink({ chain, timeoutMs: 1_000_000 });
+    const controller = new AbortController();
+    const first = link.resolve(REQ, { signal: controller.signal });
+    await waitForOnScreen(link);
+    controller.abort();
+    expect(await first).toEqual({ decision: "deny", decidedBy: "cancelled" });
+
+    const second = link.resolve({ ...REQ, command: "echo next" });
+    await waitForPromptCount(() => prompted.length, 2);
+    expect(await second).toEqual({ decision: "allow", decidedBy: "human" });
+  });
+
   test("AC9: a queued request that aborts before its turn is never prompted", async () => {
     const QUEUED = { ...REQ, command: "echo queued" };
     let promptCalls = 0;
