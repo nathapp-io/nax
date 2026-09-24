@@ -4,6 +4,9 @@
  *
  * `nax approvals rm` — atomic revocation by full entry id or by stage (US-005).
  *
+ * `nax approvals rm --all` — guarded full revocation and store-failure mapping
+ * (US-006).
+ *
  * Terminal I/O only. Every read of `approvals.json` goes through
  * `_approvalsCliDeps.readApprovalsFileDetailed` so the store is read by the
  * same module that owns writes (`src/permissions/approvals-store.ts`); the
@@ -16,12 +19,13 @@
  *
  * US-004 owns missing/unparseable/JSON bodies. US-005 owns selector
  * validation, id/stage revocation and the per-entry `removed` line. US-006
- * owns `--all` and the store-error mapping.
+ * owns `--all` (the precheck, confirmation gate and store-error mapping).
  */
 
 import { basename } from "node:path";
 import type { Command } from "commander";
 import { loadConfig } from "@/config";
+import { NaxError } from "@/errors";
 import {
   _approvalsTaintDeps,
   type ApprovalEntry,
@@ -221,18 +225,18 @@ export function formatRemovedLine(entry: ApprovalEntry): string {
   return `removed ${id}  ${entry.stage}  ${preview.slice(0, REMOVAL_PREVIEW_LIMIT)}`;
 }
 
-/** Options accepted by `approvalsRmCommand` (US-005). */
+/** Options accepted by `approvalsRmCommand` (US-005 + US-006). */
 export interface ApprovalsRmOptions {
   readonly workdir: string;
   readonly ids: readonly string[];
   readonly stage?: string;
   readonly all: boolean;
-  /** Reserved for US-006's confirmation prompt — not used by US-005. */
   readonly yes: boolean;
 }
 
 /**
- * `nax approvals rm` — atomic revocation by full entry id or by stage (US-005).
+ * `nax approvals rm` — atomic revocation by full entry id, by stage, or
+ * guarded full revocation under `--all` (US-005 + US-006).
  *
  * Selector validation runs before any store read:
  *   - zero or several selectors → `Specify exactly one of <id...>, --stage <stage>, --all`
@@ -249,11 +253,20 @@ export interface ApprovalsRmOptions {
  *     produces a `refuse: "Unknown id(s): <absent ids>"`. The CLI writes that
  *     reason to stderr, exit 1; the all-or-nothing guarantee is the store
  *     layer's refusal, which writes nothing.
+ *   - `--all` → a precheck reads the store; a missing file or a present file
+ *     with no entries prints `No remembered approvals at <path>` on stdout,
+ *     exit 0, no `removeApprovals` call and no write. The confirmation gate
+ *     then runs unless `--yes` was given: a missing TTY refuses without
+ *     prompting (`Aborted` on stderr, exit 1); a TTY consults `deps.confirm`
+ *     once — a `false` answer is `Aborted` / exit 1, a `true` answer revokes
+ *     every entry via `removeApprovals`.
  *
  * For each removed entry, `formatRemovedLine` is printed on stdout
  * (`removed <id>  <stage>  <preview>`). The taint marker survives: the store
  * layer reads/writes it byte-for-byte, so a forge-capable run's revocation
- * leaves the cache as tainted as it found it.
+ * leaves the cache as tainted as it found it. Only `clearApprovalsTaint`
+ * (`approvals-taint.ts`) clears it, and only from a trusted run — the CLI
+ * never touches it.
  */
 export async function approvalsRmCommand(
   opts: ApprovalsRmOptions,
@@ -284,10 +297,44 @@ export async function approvalsRmCommand(
 
   const path = await resolveApprovalsFile(opts.workdir);
 
+  // `--all` precheck: a missing or empty store short-circuits before the
+  // confirmation prompt runs. Operators need to know there is nothing to
+  // revoke without being asked to confirm a no-op — the prompt is for the
+  // destructive case. The precheck goes through the same read helper the
+  // store layer reads through, so the "empty" case is `state: "ok"` with
+  // `entries.length === 0` rather than `state: "missing"` (a present file
+  // holding `{ "entries": [] }` is observed here).
+  if (opts.all) {
+    const read = await deps.readApprovalsFileDetailed(path);
+    if (read.state === "missing" || (read.state === "ok" && read.file.entries.length === 0)) {
+      deps.log(missingNotice(path));
+      return 0;
+    }
+  }
+
+  // `--all` confirmation gate. `--yes` opts out unconditionally. A missing
+  // TTY without `--yes` refuses without prompting: the prompt would either
+  // block forever (a real raw-mode read against a non-TTY stdin) or print a
+  // question and read no answer, both worse than a refused `Aborted`. A TTY
+  // consults `deps.confirm` exactly once; a `false` answer is also an abort.
+  if (opts.all && !opts.yes) {
+    if (!deps.isTTY()) {
+      deps.logErr("Aborted");
+      return 1;
+    }
+    const confirmed = await deps.confirm("Remove all remembered approvals?");
+    if (!confirmed) {
+      deps.logErr("Aborted");
+      return 1;
+    }
+  }
+
   let decide: (read: ApprovalsFileRead) => RemovalDecision;
   if (stageSelected) {
     const stageForPredicate = stage as string;
     decide = () => ({ remove: (entry) => entry.stage === stageForPredicate });
+  } else if (opts.all) {
+    decide = () => ({ remove: () => true });
   } else {
     // Snapshot the ids array so a caller that mutates `opts.ids` between this
     // call and the locked decide cannot change the absent-check or the remove
@@ -304,11 +351,33 @@ export async function approvalsRmCommand(
     };
   }
 
-  const result = await deps.removeApprovals(path, decide);
+  let result: Awaited<ReturnType<typeof deps.removeApprovals>>;
+  try {
+    result = await deps.removeApprovals(path, decide);
+  } catch (err) {
+    // A locked store reports its `NaxError` with `code: "FILE_LOCK_TIMEOUT"`
+    // (`src/utils/file-lock.ts:204-209`). Anything else is treated as a
+    // catch-all store failure; the original error's `message` is forwarded to
+    // operators verbatim. The CLI never rewrites or clears a taint marker —
+    // `clearApprovalsTaint` (`approvals-taint.ts`) is the only place that
+    // does, and only from a trusted run.
+    const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof NaxError && err.code === "FILE_LOCK_TIMEOUT") {
+      deps.logErr(`a nax run is writing ${path}; retry`);
+    } else {
+      deps.logErr(`Failed to update ${path}: ${message}`);
+    }
+    return 1;
+  }
 
   if (result.outcome === "removed") {
     if (result.droppedMalformed > 0) {
-      deps.logErr(`${result.droppedMalformed} malformed entries ignored`);
+      // The `--all` rewrite drops malformed array elements while reading,
+      // which is a different surface than the id/stage selectors' "ignored"
+      // warning. The wording matches the story's `<n> malformed entries
+      // dropped` line so a reader of `nax approvals rm --help` output can
+      // tell which selector produced the warning.
+      deps.logErr(`${result.droppedMalformed} malformed entries dropped`);
     }
     for (const entry of result.removed) {
       deps.log(formatRemovedLine(entry));
@@ -319,7 +388,9 @@ export async function approvalsRmCommand(
   if (result.outcome === "unchanged") {
     // Stage is the only selector that can produce this: ids either refuse or
     // remove at least one entry (the present-id set is non-empty by the check
-    // above, and `removeApprovals` reports `removed` for any matched entry).
+    // above, and `removeApprovals` reports `removed` for any matched entry),
+    // and `--all` either short-circuited the precheck or removed at least one
+    // entry (otherwise the precheck would have already returned 0).
     if (stageSelected) {
       deps.log(`No entries for stage ${stage as string}`);
     }
