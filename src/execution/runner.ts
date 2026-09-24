@@ -359,6 +359,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       exitReason: executionResult.exitReason,
       runtime,
       abortSignal: shutdownController.signal,
+      interactionChain,
     });
 
     const { durationMs, acceptancePassed, pluginGateFailed, reportedTotal } = completionResult;

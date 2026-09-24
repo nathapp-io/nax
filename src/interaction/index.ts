@@ -9,6 +9,22 @@ export { buildInteractionBridge } from "./bridge-builder";
 export type { ChainConfig } from "./chain";
 // Chain
 export { InteractionChain } from "./chain";
+export type {
+  DispatchAskDeps,
+  DispatchAskOptions,
+  DispatchAskWiring,
+  EffectiveRunStageModesOptions,
+  RunDispatchAskOptions,
+} from "./dispatch-ask";
+export {
+  _dispatchAskDeps,
+  APPROVAL_AUDIT_DIR,
+  buildDispatchAskWiring,
+  buildRunDispatchAskWiring,
+  collectEffectiveRunStageModes,
+  collectRunStageModes,
+  DEFAULT_APPROVAL_TIMEOUT_MS,
+} from "./dispatch-ask";
 // Initialization
 export { initInteractionChain } from "./init";
 // Plugins

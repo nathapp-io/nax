@@ -26,12 +26,11 @@ const SITES: readonly { file: string; marker: string; window?: number }[] = [
     marker: "const packageView = ctx.runtime.packages.resolve(packageDir);",
   },
   {
-    file: "src/execution/lifecycle/acceptance-loop.ts",
-    marker: "const packageView = runtime.packages.resolve(packageDir);",
-    // `buildAcceptanceContext`'s unrelated `config:` follows ~446 chars past
-    // this marker; the default 600-char window would reach it and pass even if
-    // `buildFixCycleCtx` itself were unwired. 200 > 71 (this site's own
-    // `config:`) and < 446 (the spurious one).
+    // The acceptance fix cycle's context (split out of acceptance-loop.ts, #2201).
+    file: "src/execution/lifecycle/acceptance-fix-scope.ts",
+    marker: "const cycleCtx: FixCycleContext = {",
+    // The wiring call above the literal has its own `config:`; scanning only
+    // past the marker keeps it from satisfying this entry.
     window: 200,
   },
   { file: "src/finish/phase.ts", marker: "packageView: ctx.runtime.packages.resolve(ctx.workdir)," },
