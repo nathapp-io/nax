@@ -3,7 +3,7 @@
   "feature": "audit-row-fidelity",
   "branchName": "feat/audit-row-fidelity",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-24T08:21:49.710Z",
+  "updatedAt": "2026-09-24T08:27:52.358Z",
   "userStories": [
     {
       "id": "US-001",
@@ -164,8 +164,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
