@@ -3,7 +3,7 @@
   "feature": "audit-row-fidelity",
   "branchName": "feat/audit-row-fidelity",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-24T08:05:08.047Z",
+  "updatedAt": "2026-09-24T08:13:52.556Z",
   "userStories": [
     {
       "id": "US-001",
@@ -27,8 +27,8 @@
         "runtime"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -97,7 +97,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The change spans the shared sandbox type and wrapped launch result, with existing injected launcher and runtime audit seams validating the propagated payload."
+        "reasoning": "The change spans the shared sandbox type and wrapped launch result, with existing injected launcher and runtime audit seams validating the propagated payload.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/sandbox/launcher.ts",
@@ -126,6 +129,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "bf5f08464fae15d3d0c63696557d47c9ebc96e86",
       "outOfScope": [
         "redacting or truncating the sandbox argv",
         "changing `executed`",
