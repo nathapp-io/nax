@@ -42,6 +42,8 @@ import {
   approvalsPath,
   chainAskLinks,
   createApprovalsLink,
+  isForgeCapable,
+  prepareApprovalsStore,
 } from "@/permissions";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
 import { storyPackageDir } from "@/utils/path-frame";
@@ -124,6 +126,17 @@ export const executionStage: PipelineStage = {
     // chain appends its own terminal deny, so an empty or exhausted chain
     // denies rather than runs.
     const approvalsFile = approvalsPath(ctx.runtime.outputDir);
+    const stageModes = await collectEffectiveRunStageModes(ctx);
+    const sandboxEnabled = ctx.config.execution?.sandbox?.enabled === true;
+    // #2199: the store outlives the run. Taint it (forge-capable run) or clear
+    // an earlier run's taint (trusted run) BEFORE this story's agents start.
+    const approvalsStore = {
+      approvalsFile,
+      runId: ctx.runtime.runId,
+      storyId: ctx.story.id,
+      forgeCapable: isForgeCapable(stageModes, sandboxEnabled),
+    };
+    await _executionDeps.prepareApprovalsStore(approvalsStore);
     // Built once and shared by every operation dispatched for this story.
     const humanLink = _executionDeps.createHumanAskLink({
       // `ctx.interaction` is optional on PipelineContext, hence possibly
@@ -149,8 +162,9 @@ export const executionStage: PipelineStage = {
       createApprovalsLink({
         approvalsFile,
         repoRoot: ctx.workdir,
-        stageModes: await collectEffectiveRunStageModes(ctx),
-        sandboxEnabled: ctx.config.execution?.sandbox?.enabled === true,
+        projectRoot: ctx.projectDir,
+        stageModes,
+        sandboxEnabled,
       }),
       // P5's classifier link slots in HERE, between cache and human.
       humanLink,
@@ -294,6 +308,9 @@ export const executionStage: PipelineStage = {
       humanLink.dispose();
       // Bounded by the shadow's own timeout; never throws (spec 4.6).
       await commandShadow?.drain();
+      // #2199: re-taint once this story's agents are done, wiping anything
+      // they wrote -- including an agent that stripped the first marker.
+      if (approvalsStore.forgeCapable) await _executionDeps.prepareApprovalsStore(approvalsStore);
     }
 
     // US-002: map the run-time repo-scoped dispatch records onto the live
@@ -331,6 +348,7 @@ export const _executionDeps = {
   buildCommandShadow,
   resolveScopeFiles,
   createHumanAskLink,
+  prepareApprovalsStore,
 };
 
 /**

@@ -112,6 +112,42 @@ describe("execution stage — ask resolver reachability", () => {
   });
 });
 
+describe("execution stage — approvals store provenance (#2199)", () => {
+  function spyPrepare(): { forgeCapable: boolean; planRan: boolean }[] {
+    const calls: { forgeCapable: boolean; planRan: boolean }[] = [];
+    let planRan = false;
+    _executionDeps.prepareApprovalsStore = async (opts) =>
+      void calls.push({ forgeCapable: opts.forgeCapable, planRan });
+    _executionDeps.buildPlanForStrategy = async (callCtx: CallContext) => {
+      const plan = new ExecutionPlan(callCtx, {}, false);
+      const run = plan.run.bind(plan);
+      plan.run = async () => {
+        planRan = true;
+        return run();
+      };
+      return plan;
+    };
+    return calls;
+  }
+
+  test("a forge-capable run taints before the story's agents and again after them", async () => {
+    const calls = spyPrepare();
+    const config = makeNaxConfig({ execution: { bashApproval: "raw" } });
+    await executionStage.execute(makePipelineContext({ config, rootConfig: config }));
+    expect(calls).toEqual([
+      { forgeCapable: true, planRan: false },
+      { forgeCapable: true, planRan: true },
+    ]);
+  });
+
+  test("a sandboxed escalate run prepares once, before the plan, as trusted", async () => {
+    const calls = spyPrepare();
+    const config = makeNaxConfig({ execution: { bashApproval: "escalate", sandbox: { enabled: true } } });
+    await executionStage.execute(makePipelineContext({ config, rootConfig: config }));
+    expect(calls).toEqual([{ forgeCapable: false, planRan: false }]);
+  });
+});
+
 function spyShadow() {
   const calls = { drained: 0 };
   const shadow: CommandShadow = { observe: () => {}, settle: () => {}, drain: async () => void calls.drained++ };

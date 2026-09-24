@@ -47,6 +47,22 @@ describe("approvals store", () => {
     expect(findApproval(entries, "implementer", "bun  run test")).toBeUndefined();
   });
 
+  test.each([
+    { projectRoot: "/repo", expected: true },
+    { projectRoot: "/", expected: true },
+    { projectRoot: "/repo/pkg", expected: false },
+    { projectRoot: "/repo2", expected: false },
+  ])("with projectRoot=$projectRoot an entry rooted at /repo matches=$expected", ({ projectRoot, expected }) => {
+    const hit = findApproval([entry("bun run test")], "implementer", "bun run test", projectRoot);
+    expect(hit !== undefined).toBe(expected);
+  });
+
+  test("an entry with no usable root never matches a root-scoped lookup", () => {
+    const rootless = { ...entry("bun run test"), root: "" };
+    expect(findApproval([rootless], "implementer", "bun run test", "/repo")).toBeUndefined();
+    expect(findApproval([rootless], "implementer", "bun run test")).toBeDefined();
+  });
+
   test("lookup is stage-scoped", () => {
     const entries = [entry("bun run test", "implementer")];
     expect(findApproval(entries, "verifier", "bun run test")).toBeUndefined();
