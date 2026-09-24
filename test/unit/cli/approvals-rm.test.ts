@@ -268,6 +268,23 @@ describe("registerApprovalsCommand — approvals rm", () => {
     expect(help).toContain("--dir");
   });
 
+  test("'approvals rm --help' does not leak the internal story tag into the user-facing --all or --yes description", () => {
+    // Adversarial review: src/cli/approvals.ts:388-389 set the --all and --yes
+    // descriptions to "Remove every remembered approval (US-006)" and
+    // "Skip the confirmation prompt (US-006)", which puts the internal story
+    // tag into the user-facing help output. Sibling options on this command
+    // (--stage, -d/--dir) carry no such tag, and the approved-list help pins
+    // the same rule for its --json description. Pin the spec here: the
+    // substring "(US-" — the shape any internal story tag takes — must not
+    // appear anywhere in the help text.
+    const { rm } = registeredProgram(makeHarness());
+    expect(rm).toBeDefined();
+    if (!rm) return; // failed above: the subcommand is not registered
+
+    const help = rm.helpInformation();
+    expect(help).not.toContain("(US-");
+  });
+
   test("AC1: 'approvals rm --stage execution -d <workdir>' invokes removeApprovals once at the resolved store path", async () => {
     await withStore([makeEntry()], async (fixture) => {
       const removeStub = makeRemoveStub();
