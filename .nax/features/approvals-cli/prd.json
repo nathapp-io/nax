@@ -1,0 +1,337 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "approvals-cli",
+  "branchName": "feat/approvals-cli",
+  "createdAt": "2026-09-24T00:00:00.000Z",
+  "updatedAt": "2026-09-24T15:35:44.513Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Store read side — entry id and detailed read",
+      "description": "**Goal** — Add stable derived approval IDs and a detailed classified cache read without changing the legacy read's tested outputs.\n\n**Motivation** — A standing grant that cannot be listed or revoked is not the grant D20 approved.\n\n**Approach** — `approvalId(entry)` is the first 8 lowercase hex characters of the SHA-256 digest of `stage + \"\\0\" + command + \"\\0\" + approvedAt`, where a missing or non-string `approvedAt` is read as `\"\"`. It is computed on every read and never stored. It is stable when other entries are added or removed; two entries recorded for the same (stage, command) at different times get different ids; two entries with an identical triple share an id and are removed together. `readApprovalsFileDetailed(path)` classifies the file: absent -> `missing`, `{ entries: [], taint: undefined }`; not JSON, or top level not a non-null non-array object -> `unparseable`, `{ entries: [], taint: undefined }`; top level an object whose `entries` is present and not an array -> `unparseable`, `{ entries: [], taint: parseTaint(taint) }` (the legacy read's result, so a present taint still withholds trust); otherwise -> `ok`, entries filtered by `isApprovalEntry`, taint parsed by `parseTaint` (both unchanged). `droppedMalformed` counts the array elements `isApprovalEntry` rejected (0 unless `ok`). `readApprovalsFile` keeps the same signature, implemented as `(await readApprovalsFileDetailed(path)).file`; its results are unchanged for every input. The reimplementation is behaviour-preserving: the existing `test/unit/permissions/approvals-store.test.ts` and `test/unit/permissions/approvals-link.test.ts` suites must stay green under `bun run test`.\n\n**Scope** — In: store read and barrel exports; existing store tests. Out: locked removal (US-002), CLI listing (US-003/004).\n\n**Interface**\n```ts\nexport type ApprovalsFileState = \"ok\" | \"missing\" | \"unparseable\";\nexport interface ApprovalsFileRead {\n  readonly file: ApprovalsFile;           // entries + taint, exactly what readApprovalsFile returns\n  readonly state: ApprovalsFileState;\n  readonly droppedMalformed: number;      // array elements isApprovalEntry rejected\n}\nexport function approvalId(entry: ApprovalEntry): string;\nexport async function readApprovalsFileDetailed(path: string): Promise<ApprovalsFileRead>;\n```",
+      "acceptanceCriteria": [
+        "`approvalId(entry)` returns a string of exactly 8 lowercase hexadecimal characters.",
+        "`approvalId` returns the same value for two entries whose `stage`, `command` and `approvedAt` are identical.",
+        "`approvalId` returns different values for two entries with the same `stage` and `command` but different `approvedAt`.",
+        "`approvalId(entry)` equals the first 8 hex characters of the SHA-256 digest of `stage + \"\\0\" + command + \"\\0\" + approvedAt`.",
+        "`approvalId` on an entry whose `approvedAt` is missing returns the value computed with `approvedAt` as `\"\"`.",
+        "`readApprovalsFileDetailed(path)` on a path with no file resolves to a value deep-equal to `{ state: \"missing\", file: { entries: [], taint: undefined }, droppedMalformed: 0 }`.",
+        "`readApprovalsFileDetailed` on a file whose content is not valid JSON returns `state: \"unparseable\"`.",
+        "`readApprovalsFileDetailed` on a file whose top-level JSON value is an array returns `state: \"unparseable\"`.",
+        "`readApprovalsFileDetailed` on a file whose `entries` value is a string returns `state: \"unparseable\"`.",
+        "`readApprovalsFileDetailed` on a file whose content is not valid JSON returns `file` deep-equal to `{ entries: [], taint: undefined }`.",
+        "`readApprovalsFileDetailed` on a file holding two valid entries and one `null` element returns `state: \"ok\"`.",
+        "`readApprovalsFileDetailed` on a file holding two valid entries and one `null` element returns `file.entries` deep-equal to the two valid entries.",
+        "`readApprovalsFileDetailed` on a file holding two valid entries and one `null` element returns `droppedMalformed: 1`.",
+        "`readApprovalsFileDetailed` on a file whose `taint` is `{ since: \"s\", runId: \"r\", pid: 7 }` returns `file.taint` deep-equal to that object.",
+        "`readApprovalsFile(path)` on a valid tainted file returns a value deep-equal to `readApprovalsFileDetailed(path).file`.",
+        "`readApprovalsFile(path)` on a file whose `entries` value is a string returns an empty `entries` array.",
+        "`readApprovalsFileDetailed` on a file whose `entries` value is a string and whose `taint` is `{ since: \"s\", runId: \"r\", pid: 7 }` returns `file.taint` deep-equal to that object."
+      ],
+      "tags": [
+        "feature",
+        "permissions",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Approval cache integrity and derived cryptographic identifiers are security-critical; retain legacy cache behavior."
+      },
+      "contextFiles": [
+        "src/permissions/approvals-store.ts",
+        "src/permissions/index.ts",
+        "test/unit/permissions/approvals-store.test.ts",
+        "test/unit/permissions/approvals-link.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Store removal — removeApprovals",
+      "description": "**Goal** — Add a locked, taint-preserving, read-decide-write removal primitive.\n\n**Motivation** — Hand-editing `approvals.json` while a run appends to it can drop the taint marker that keeps the cache off after a forge-capable run.\n\n**Approach** — `removeApprovals(path, decide)` runs entirely inside `withPathFileLock(path)`, in this order: (1) Read with `readApprovalsFileDetailed(path)`. (2) `state === \"unparseable\"` -> `{ outcome: \"refused\", reason: \"approvals.json could not be parsed; not rewriting it\" }`, no write. Rewriting would erase whatever the file holds. (3) `decide(read)` returns `{ refuse }` -> `{ outcome: \"refused\", reason: refuse }`, no write. (4) No entry selected (this includes a `missing` file) -> `{ outcome: \"unchanged\" }`, no write, no file or directory created. (5) Otherwise write `{ taint: read.file.taint, entries: <not selected> }` with `writeApprovalsFile` and return `{ outcome: \"removed\", removed, droppedMalformed }`. The taint marker is written back exactly as read. Nothing in this feature clears a taint; only a trusted run does, through `clearApprovalsTaint` (unchanged). Add one module docblock line naming `src/cli/approvals.ts` as the revocation surface D20 relies on.\n\n**Scope** — In: store removal and its tests. Out: command-level selector validation (US-005), confirmation and error display (US-006), clearing or rewriting the approvals `taint` marker from the CLI.\n\n**Interface**\n```ts\nexport type RemovalDecision =\n  | { readonly remove: (entry: ApprovalEntry) => boolean }\n  | { readonly refuse: string };\nexport type RemovalResult =\n  | { readonly outcome: \"removed\"; readonly removed: readonly ApprovalEntry[]; readonly droppedMalformed: number }\n  | { readonly outcome: \"unchanged\" }\n  | { readonly outcome: \"refused\"; readonly reason: string };\nexport async function removeApprovals(\n  path: string,\n  decide: (read: ApprovalsFileRead) => RemovalDecision,\n): Promise<RemovalResult>;\n```",
+      "acceptanceCriteria": [
+        "`removeApprovals` on a path with no file resolves to `{ outcome: \"unchanged\" }`.",
+        "After `removeApprovals` on a path with no file, no file exists at that path.",
+        "`removeApprovals` on a path with no file invokes `decide` once with a read whose `state` is `\"missing\"`.",
+        "`removeApprovals` on an unparseable file resolves to `{ outcome: \"refused\", reason: \"approvals.json could not be parsed; not rewriting it\" }`.",
+        "After `removeApprovals` on an unparseable file, the file's bytes are unchanged.",
+        "`removeApprovals` on an unparseable file does not invoke `decide`.",
+        "`removeApprovals` whose `decide` returns `{ refuse: \"Unknown id(s): deadbeef\" }` resolves to `{ outcome: \"refused\", reason: \"Unknown id(s): deadbeef\" }`.",
+        "After `removeApprovals` whose `decide` returns a `refuse`, the file's bytes are unchanged.",
+        "`removeApprovals` whose `remove` predicate selects no entry resolves to `{ outcome: \"unchanged\" }`.",
+        "After `removeApprovals` whose `remove` predicate selects no entry, the file's bytes are unchanged.",
+        "`removeApprovals` whose `remove` predicate selects one of three entries resolves with `removed` deep-equal to that one entry.",
+        "After `removeApprovals` removes one of three entries, `readApprovals(path)` returns exactly the other two entries.",
+        "After `removeApprovals` removes an entry from a tainted store, `readApprovalsFile(path).taint` deep-equals the taint read before the call.",
+        "After `removeApprovals` removes an entry from an untainted store, `readApprovalsFile(path).taint` is `undefined`.",
+        "`removeApprovals` removing an entry from a file that also holds one malformed element resolves with `droppedMalformed: 1`.",
+        "Given a store holding only entry A, when `removeApprovals` selecting A and `appendApproval` adding entry B are started concurrently on the same path, `readApprovals(path)` after both settle deep-equals `[B]`."
+      ],
+      "tags": [
+        "feature",
+        "permissions",
+        "security",
+        "concurrency"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Access revocation and taint-preserving concurrent store writes are security-critical."
+      },
+      "contextFiles": [
+        "src/permissions/approvals-store.ts",
+        "src/permissions/approvals-taint.ts",
+        "src/utils/path-file-lock.ts",
+        "test/unit/permissions/approvals-store.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/permissions/approvals-store-remove.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "nax approvals list — command and human output",
+      "description": "**Goal** — Expose a human-readable approvals list through a registered Commander command.\n\n**Motivation** — D20 justified no expiry by saying remembered approvals are auditable and revocable through `nax approvals list/rm`, which does not yet exist.\n\n**Approach** — Deterministic file I/O and terminal output; no LLM, no network. The store module owns every read and write of `approvals.json`; the CLI module is terminal I/O only and reaches the store through the `src/permissions` barrel. Commands print raw: `list` shows each command byte-for-byte as stored. Store resolution copies `src/cli/runs.ts:14-19`: `loadConfig(workdir)` with a failure read as no config, project key `config?.name?.trim() || basename(workdir)`, then `projectOutputDir(key, config?.outputDir)` and `approvalsPath`. `bin/nax.ts` gains one import and one call, `registerApprovalsCommand(program)`, next to the `auth` group. Formatting helpers live in `src/cli/approvals-format.ts`. Register `nax approvals list [--json] [-d <dir>]`, with `-d/--dir` defaulting to the current directory. The registered action passes the command function's return value to `deps.exit`. For an `ok` store print `Approvals store: <path>`, trust line, `<n> remembered approvals`, blank line and each entry block. Entry line: `<id>  <stage>  <origin>  <approvedAt>  <approvedBy>  naxCommit <naxCommit>`, fields separated by two spaces. Then `          root <root>` (10 spaces), then the command's first line as `          $ <line>`, then each further command line prefixed by 12 spaces. Trust line: `Cache: trusted` or `Cache: TAINTED since <since> by run <runId> (pid <n>, alive) -- the cache is OFF; a trusted run will discard these entries.` with `exited` when dead and `(pid unknown)` without pid. Print the count for an empty `ok` store too. Add a `### nax approvals list` section to `docs/guides/cli-reference.md`. US-004 completes missing/unparseable/JSON behavior; US-005 adds rm.\n\n**Scope** — In: registration, store resolution, human output, docs. Out: missing/unparseable and JSON body (US-004), removal (US-005/006), masking or redacting secrets in `nax approvals list` output.\n\n**Interface**\n```ts\nexport const _approvalsCliDeps: {\n  readApprovalsFileDetailed: (path: string) => Promise<ApprovalsFileRead>;\n  removeApprovals: typeof removeApprovals;\n  isProcessAlive: (pid: number) => boolean;   // default: _approvalsTaintDeps.isProcessAlive\n  confirm: (question: string) => Promise<boolean>; // default: promptForConfirmation\n  isTTY: () => boolean;\n  log: (text: string) => void;                // stdout\n  logErr: (text: string) => void;             // stderr\n  exit: (code: number) => void;               // default: process.exit\n};\nexport async function resolveApprovalsFile(workdir: string): Promise<string>;\nexport async function approvalsListCommand(opts: { workdir: string; json: boolean }, deps?: typeof _approvalsCliDeps): Promise<number>;\nexport function registerApprovalsCommand(program: Command, deps?: typeof _approvalsCliDeps): void;\nexport function formatTrustLine(taint: ApprovalsTaint | undefined, isAlive: (pid: number) => boolean): string;\nexport function formatEntryBlock(entry: ApprovalEntry): readonly string[];\n```\n\n**Verification** — The `registerApprovalsCommand(program)` call in `bin/nax.ts` is verified by `bun run typecheck` plus a manual smoke: `bun bin/nax.ts approvals list -d <temp project>`.",
+      "acceptanceCriteria": [
+        "`resolveApprovalsFile(workdir)` for a workdir whose `.nax/config.json` sets `name` and an absolute `outputDir` returns `<outputDir>/approvals.json`.",
+        "`resolveApprovalsFile(workdir)` for a workdir with no `name` in its config returns `approvalsPath(projectOutputDir(basename(workdir), undefined))`.",
+        "`resolveApprovalsFile(workdir)` for a workdir whose `.nax/config.json` is not valid JSON returns `approvalsPath(projectOutputDir(basename(workdir), undefined))`.",
+        "With `_approvalsCliDeps.readApprovalsFileDetailed` stubbed, `program.parseAsync([\"approvals\", \"list\", \"-d\", workdir], { from: \"user\" })` on a fresh `Command` passed to `registerApprovalsCommand` invokes the stub once with the path `resolveApprovalsFile(workdir)` returns.",
+        "`program.parseAsync([\"approvals\", \"list\", \"-d\", workdir], { from: \"user\" })` on a store with one entry calls `deps.exit` with `0`.",
+        "`approvalsListCommand` on an untainted store with entries writes `Approvals store: <path>` and `Cache: trusted` as its first two stdout lines.",
+        "`approvalsListCommand` on a store with 2 entries writes the stdout line `2 remembered approvals`.",
+        "`approvalsListCommand` on an empty untainted store writes the stdout line `0 remembered approvals`.",
+        "`approvalsListCommand` writes each entry's first line as `<approvalId>  <stage>  <origin>  <approvedAt>  <approvedBy>  naxCommit <naxCommit>`.",
+        "`approvalsListCommand` writes each entry's root line as 10 spaces followed by `root <root>`.",
+        "`approvalsListCommand` writes a single-line command as 10 spaces followed by `$ <command>`.",
+        "`approvalsListCommand` writes the second and later lines of a multi-line command each prefixed by 12 spaces.",
+        "`approvalsListCommand` writes a command containing `API_KEY=abc123` to stdout with `API_KEY=abc123` unaltered.",
+        "`approvalsListCommand` on a store tainted with pid 4242 where `isProcessAlive(4242)` is true writes the trust line `Cache: TAINTED since <since> by run <runId> (pid 4242, alive) -- the cache is OFF; a trusted run will discard these entries.`",
+        "`approvalsListCommand` on a store tainted with pid 4242 where `isProcessAlive(4242)` is false writes a trust line containing `(pid 4242, exited)`.",
+        "`approvalsListCommand` on a store whose taint has no pid writes a trust line containing `(pid unknown)`."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "security"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "CLI exposes access-control grants and raw potentially secret commands; integration spans config, store, formatting and Commander."
+      },
+      "contextFiles": [
+        "src/cli/status-dispatch.ts",
+        "test/unit/cli/status-dispatch.test.ts",
+        "src/cli/auth.ts",
+        "src/cli/runs.ts",
+        "bin/nax.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/approvals.ts",
+        "src/cli/approvals-format.ts",
+        "test/unit/cli/approvals.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "nax approvals list — store states and JSON",
+      "description": "**Goal** — Complete listing of missing, corrupt and partly malformed stores and machine-readable JSON output.\n\n**Motivation** — Operators need to see whether the approvals cache is currently trusted or tainted and audit remembered grants.\n\n**Approach** — For a missing store, stdout `No remembered approvals at <path>` and exit 0. For an unparseable store, stderr `approvals.json could not be parsed; the cache reads it as empty`, stdout `No remembered approvals at <path>` (or the JSON body with `--json`), exit 0. For malformed elements, stderr `<n> malformed entries ignored` and continue listing valid entries. `list --json` prints one JSON object on stdout with `path`, `state`, `taint` (null when absent), `droppedMalformed` and `entries`, each entry `{ id: approvalId(entry), ...entry }`; for a store whose content is not valid JSON output `{ path, state: \"unparseable\", taint: null, droppedMalformed: 0, entries: [] }` while keeping the parse warning on stderr. Add `--json` to the `### nax approvals list` documentation.\n\n**Scope** — In: list states, warning and JSON formatting. Out: human output already supplied by US-003, removal by id/stage (US-005), all/confirmation (US-006).\n\n**Interface**\n```ts\nexport function toListJson(path: string, read: ApprovalsFileRead): object;   // the `--json` body\nexport async function approvalsListCommand(opts: { workdir: string; json: boolean }, deps?: typeof _approvalsCliDeps): Promise<number>;\n```",
+      "acceptanceCriteria": [
+        "`approvalsListCommand` on a missing store writes `No remembered approvals at <path>` to stdout.",
+        "`approvalsListCommand` on a missing store resolves to `0`.",
+        "`approvalsListCommand` on an unparseable store writes `approvals.json could not be parsed; the cache reads it as empty` to stderr.",
+        "`approvalsListCommand` on an unparseable store writes `No remembered approvals at <path>` to stdout.",
+        "`approvalsListCommand` on an unparseable store resolves to `0`.",
+        "`approvalsListCommand` on a store with 1 malformed element writes `1 malformed entries ignored` to stderr.",
+        "`approvalsListCommand` on a store with 1 malformed element and 1 valid entry writes the valid entry's first line to stdout.",
+        "`approvalsListCommand` with `json: true` writes to stdout exactly one JSON object whose keys are `path`, `state`, `taint`, `droppedMalformed` and `entries`.",
+        "`approvalsListCommand` with `json: true` writes each element of `entries` deep-equal to `{ id: approvalId(entry), ...entry }`.",
+        "`approvalsListCommand` with `json: true` on an untainted store writes `taint` as `null`.",
+        "`approvalsListCommand` with `json: true` on a tainted store writes `taint` deep-equal to the store's taint.",
+        "`approvalsListCommand` with `json: true` on a missing store writes `state` as `\"missing\"`.",
+        "`approvalsListCommand` with `json: true` on a missing store writes `entries` as an empty array.",
+        "`approvalsListCommand` with `json: true` on a store whose content is not valid JSON writes a stdout JSON object deep-equal to `{ path, state: \"unparseable\", taint: null, droppedMalformed: 0, entries: [] }`.",
+        "`approvalsListCommand` with `json: true` on an unparseable store writes `approvals.json could not be parsed; the cache reads it as empty` to stderr."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "security"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Exposes access-control and taint state; security override applies despite straightforward formatting."
+      },
+      "contextFiles": [
+        "src/cli/approvals.ts",
+        "src/cli/approvals-format.ts",
+        "test/unit/cli/approvals.test.ts",
+        "src/permissions/approvals-store.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/cli/approvals-list-states.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-005",
+      "title": "nax approvals rm — by id and stage",
+      "description": "**Goal** — Implement atomic CLI revocation by full entry ID or stage.\n\n**Motivation** — A standing grant that cannot be revoked is not the grant D20 approved.\n\n**Approach** — `rm` requires exactly one selector: one or more ids, `--stage <stage>`, or `--all`. Ids must match `^[0-9a-f]{8}$`; a malformed id is rejected before the store is read. Id removal is all-or-nothing: if any id matches no entry, nothing is removed. Use `removeApprovals` with the selector decision inside the lock; identical triples share an id and are removed together. Zero or several selectors produce stderr `Specify exactly one of <id...>, --stage <stage>, --all`, exit 1 without reading the store. Malformed id produces stderr `Invalid id: <id>`, exit 1 without reading. Unknown ids produce stderr `Unknown id(s): <ids>`, exit 1 without writing. Stage matches nothing: stdout `No entries for stage <stage>`, exit 0, no write. Each removed entry prints `removed <id>  <stage>  <preview>` on stdout, where `<preview>` is the command's first line cut to 80 characters. No confirmation for IDs or stage. Register `nax approvals rm <id...> [-d <dir>]` and `nax approvals rm --stage <stage> [-d <dir>]`; the registered action passes the command function's return value to `deps.exit`. US-006 finishes `--all` and store error mapping.\n\n**Scope** — In: selector validation, locked ID/stage revocation, result formatting and registration. Out: `--all` prompts and error mapping (US-006), id-prefix matching, confirmation prompt for `rm <id...>` or `rm --stage`.\n\n**Interface**\n```ts\nexport async function approvalsRmCommand(\n  opts: { workdir: string; ids: readonly string[]; stage?: string; all: boolean; yes: boolean },\n  deps?: typeof _approvalsCliDeps,\n): Promise<number>;\nexport function formatRemovedLine(entry: ApprovalEntry): string;             // `removed <id>  <stage>  <preview>`\nexport function registerApprovalsCommand(program: Command, deps?: typeof _approvalsCliDeps): void;\n```",
+      "acceptanceCriteria": [
+        "With `_approvalsCliDeps.removeApprovals` stubbed to resolve `{ outcome: \"unchanged\" }`, `program.parseAsync([\"approvals\", \"rm\", \"--stage\", \"execution\", \"-d\", workdir], { from: \"user\" })` on a fresh `Command` passed to `registerApprovalsCommand` invokes the stub once with the path `resolveApprovalsFile(workdir)` returns.",
+        "`program.parseAsync([\"approvals\", \"rm\", <id>, \"-d\", workdir], { from: \"user\" })` on a store holding that entry calls `deps.exit` with `0`.",
+        "After `program.parseAsync([\"approvals\", \"rm\", <id>, \"-d\", workdir], { from: \"user\" })` on a store holding that entry, `readApprovals(path)` no longer returns that entry.",
+        "`approvalsRmCommand` with one id present in the store writes `removed <id>  <stage>  <preview>` to stdout.",
+        "`approvalsRmCommand` removing an entry whose command's first line is 100 characters writes a removal line whose `<preview>` is that line's first 80 characters.",
+        "After `approvalsRmCommand` with two ids both present, `readApprovals(path)` returns exactly the entries whose ids were not given.",
+        "`approvalsRmCommand` with one present id and one absent id resolves to `1`.",
+        "`approvalsRmCommand` with one present id and one absent id writes `Unknown id(s): <absent id>` to stderr.",
+        "After `approvalsRmCommand` with one present id and one absent id, the store file's bytes are unchanged.",
+        "`approvalsRmCommand` with an id on a missing store resolves to `1`.",
+        "`approvalsRmCommand` with an id on a missing store writes `Unknown id(s): <id>` to stderr.",
+        "`approvalsRmCommand` with id `A3F9C21E` resolves to `1`.",
+        "`approvalsRmCommand` with id `A3F9C21E` writes `Invalid id: A3F9C21E` to stderr.",
+        "`approvalsRmCommand` with id `A3F9C21E` does not invoke `deps.removeApprovals`.",
+        "`approvalsRmCommand` with no ids, no `stage` and `all: false` resolves to `1`.",
+        "`approvalsRmCommand` with no ids, no `stage` and `all: false` writes `Specify exactly one of <id...>, --stage <stage>, --all` to stderr.",
+        "`approvalsRmCommand` with no ids, no `stage` and `all: false` does not invoke `deps.removeApprovals`.",
+        "`approvalsRmCommand` with one id and `all: true` resolves to `1`.",
+        "`approvalsRmCommand` with one id and `all: true` writes `Specify exactly one of <id...>, --stage <stage>, --all` to stderr.",
+        "After `approvalsRmCommand` with `stage: \"execution\"`, `readApprovals(path)` returns exactly the entries whose `stage` is not `execution`.",
+        "`approvalsRmCommand` with `stage: \"review\"` on a store with no `review` entry writes `No entries for stage review` to stdout.",
+        "`approvalsRmCommand` with `stage: \"review\"` on a store with no `review` entry resolves to `0`.",
+        "After `approvalsRmCommand` removes an entry by id from a tainted store, `readApprovalsFile(path).taint` deep-equals the taint read before the call."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "security"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Access revocation requires atomic selector validation and taint preservation across CLI/store integration."
+      },
+      "contextFiles": [
+        "src/cli/approvals.ts",
+        "src/cli/approvals-format.ts",
+        "test/unit/cli/approvals.test.ts",
+        "src/permissions/approvals-store.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/cli/approvals-rm.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-006",
+      "title": "nax approvals rm --all and store failure mapping",
+      "description": "**Goal** — Finish guarded full revocation and translate store failures into actionable CLI messages.\n\n**Motivation** — Operators need a safe way to revoke all remembered grants without accidentally enabling a tainted cache.\n\n**Approach** — `nax approvals rm --all [--yes] [-d <dir>]` asks `promptForConfirmation` unless `--yes` is given; without a TTY and without `--yes` it refuses without prompting. An empty or missing store is reported before any prompt: stdout `No remembered approvals at <path>`, exit 0, no write. Declined confirmation or non-TTY without `--yes`: stderr `Aborted`, exit 1, no write. An unparseable store on rm: stderr `approvals.json could not be parsed; not rewriting it`, exit 1, file untouched. Malformed elements dropped by a rewrite: stderr `<n> malformed entries dropped`. `FILE_LOCK_TIMEOUT`: stderr `a nax run is writing <path>; retry`, exit 1. Any other store error: stderr `Failed to update <path>: <message>`, exit 1. Add a `### nax approvals rm` section to `docs/guides/cli-reference.md`, and add one sentence to `docs/adr/ADR-030-bash-approval-modes.md` (\"The approvals cache's trust boundary\") saying grants are listed and revoked with `nax approvals`, which never clears a taint. stdout is for removal confirmations/nothing-there; stderr for warnings, usage errors, `Aborted` and failures. Only a trusted run clears taint through `clearApprovalsTaint` (unchanged).\n\n**Scope** — In: `--all` confirmation, empty-store precheck, rm error/warning mapping and docs. Out: selector basics and ID/stage removal (US-005), clearing or rewriting the approvals `taint` marker from the CLI.\n\n**Interface**\n```ts\nexport async function approvalsRmCommand(\n  opts: { workdir: string; ids: readonly string[]; stage?: string; all: boolean; yes: boolean },\n  deps?: typeof _approvalsCliDeps,\n): Promise<number>;\n```\n\n**Verification** — Manual smoke: `bun bin/nax.ts approvals rm --all --yes -d <temp project>`.",
+      "acceptanceCriteria": [
+        "After `approvalsRmCommand` with `all: true, yes: true`, `readApprovals(path)` returns an empty array.",
+        "`approvalsRmCommand` with `all: true, yes: true` does not invoke `deps.confirm`.",
+        "After `approvalsRmCommand` with `all: true, yes: false` on a TTY whose `deps.confirm` resolves `true`, `readApprovals(path)` returns an empty array.",
+        "`approvalsRmCommand` with `all: true, yes: false` on a TTY whose `deps.confirm` resolves `false` resolves to `1`.",
+        "`approvalsRmCommand` with `all: true, yes: false` on a TTY whose `deps.confirm` resolves `false` writes `Aborted` to stderr.",
+        "After `approvalsRmCommand` with `all: true, yes: false` on a TTY whose `deps.confirm` resolves `false`, the store file's bytes are unchanged.",
+        "`approvalsRmCommand` with `all: true, yes: false` when `deps.isTTY()` is false resolves to `1`.",
+        "`approvalsRmCommand` with `all: true, yes: false` when `deps.isTTY()` is false writes `Aborted` to stderr.",
+        "`approvalsRmCommand` with `all: true, yes: false` when `deps.isTTY()` is false does not invoke `deps.confirm`.",
+        "`approvalsRmCommand` with `all: true` on a missing store writes `No remembered approvals at <path>` to stdout.",
+        "`approvalsRmCommand` with `all: true` on a missing store resolves to `0`.",
+        "`approvalsRmCommand` with `all: true` on a missing store does not invoke `deps.confirm`.",
+        "`approvalsRmCommand` with `all: true` on an existing store whose `entries` is empty writes `No remembered approvals at <path>` to stdout.",
+        "`approvalsRmCommand` with `all: true` on an existing store whose `entries` is empty resolves to `0`.",
+        "`approvalsRmCommand` with `all: true` on an existing store whose `entries` is empty does not invoke `deps.confirm`.",
+        "`approvalsRmCommand` with `all: true, yes: true` on an unparseable store resolves to `1`.",
+        "`approvalsRmCommand` with `all: true, yes: true` on an unparseable store writes `approvals.json could not be parsed; not rewriting it` to stderr.",
+        "After `approvalsRmCommand` with `all: true, yes: true` on an unparseable store, the store file's bytes are unchanged.",
+        "`approvalsRmCommand` whose removal drops 1 malformed element writes `1 malformed entries dropped` to stderr.",
+        "`approvalsRmCommand` whose `deps.removeApprovals` rejects with a `NaxError` of code `FILE_LOCK_TIMEOUT` resolves to `1`.",
+        "`approvalsRmCommand` whose `deps.removeApprovals` rejects with a `NaxError` of code `FILE_LOCK_TIMEOUT` writes `a nax run is writing <path>; retry` to stderr.",
+        "`approvalsRmCommand` whose `deps.removeApprovals` rejects with `new Error(\"EACCES\")` resolves to `1`.",
+        "`approvalsRmCommand` whose `deps.removeApprovals` rejects with `new Error(\"EACCES\")` writes `Failed to update <path>: EACCES` to stderr."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "security"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Security-critical mass revocation, taint protection, confirmation ordering and lock-error mapping."
+      },
+      "contextFiles": [
+        "src/cli/approvals.ts",
+        "src/cli/confirm.ts",
+        "test/unit/cli/approvals-rm.test.ts",
+        "docs/adr/ADR-030-bash-approval-modes.md",
+        "docs/guides/cli-reference.md"
+      ],
+      "expectedFiles": [
+        "test/unit/cli/approvals-rm-all.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing TypeScript/Bun/Commander project; additive feature, no data migration. src/permissions/approvals-store.ts:19-24 documents byte-exact cache semantics; :26-46 defines ApprovalEntry and taint; :64-85 contains the existing isApprovalEntry and parseTaint parsing SSOT; :88-101 currently swallows all read/JSON errors and treats non-array entries as empty while retaining parsed taint. The new detailed read must distinguish missing from unparseable, count rejected array elements, and keep legacy read results wherever compatible; note the spec's unparseable-empty-taint rule conflicts with legacy taint preservation for an entries:string object, so prioritize explicit ACs and do not change valid-file behavior. src/permissions/approvals-store.ts:109-119 writes whole files and :121-139 serializes append under a path lock; removal must serialize read/decision/write using the same lock, preserve parsed taint, refuse unparseable input, and avoid creating the target on no-op. src/utils/path-file-lock.ts:27-38 delegates to a lock next to the file; src/utils/file-lock.ts:190-210 raises FILE_LOCK_TIMEOUT at 5s; account for absent parent directory when removing a missing store without creating a directory. src/permissions/approvals-taint.ts:51-67 provides isProcessAlive and :93-116 clears taint only on trusted runs; no CLI taint clearing. src/permissions/index.ts:3 already wildcard-exports store symbols, so new exports flow through the barrel. Existing dependent consumers include approvals-link, approvals-taint and ask-chain; regression suites test/unit/permissions/approvals-store.test.ts, approvals-link.test.ts, approvals-taint.test.ts protect existing cache behavior and taint safety. src/cli/runs.ts:14-19 derives config name or basename and calls projectOutputDir; src/runtime/paths.ts:19-34 maps project keys to ~/.nax and validates overrides; src/runtime/index.ts:319 uses the same project key. src/cli/auth.ts:1-25 establishes terminal-only CLI and injected logging/exit-code convention; src/cli/status-dispatch.ts:143-178 registers a Commander action and test/unit/cli/status-dispatch.test.ts:231 drives parseAsync. src/cli/confirm.ts:66-73 defaults to confirmation without a TTY, so the new CLI must check isTTY before invoking it. bin/nax.ts:1194-1230 groups auth and :1269 registers status; register approvals once nearby. docs/guides/cli-reference.md:1-65 is the CLI reference and docs/adr/ADR-030-bash-approval-modes.md:272 contains the trust-boundary section. New pure formatting module avoids the 600-line file gate; human output prints raw commands, JSON stays one stdout object even with warnings on stderr. IDs are computed SHA-256 over the three byte-exact fields and not persisted; identical triples may share IDs and are deleted together. Command functions return numeric exit status; registered actions call injected exit. Removal by id must validate all ids and find all matches inside locked decision, avoiding TOCTOU with concurrent append. --all checks empty before confirmation and refuses non-TTY without --yes. Work is split into six dependency-ordered stories matching the spec; existing file format, cache key and link remain unchanged.",
+  "outOfScope": [
+    "`nax approvals add`, or any other way to create a remembered approval outside the human ask link.",
+    "Expiry, `--older-than`, or any time-based pruning of remembered approvals (D20: expiry NONE).",
+    "Id-prefix or partial-id matching in `nax approvals rm`; ids are exactly 8 hex characters.",
+    "Clearing or rewriting the approvals `taint` marker from the CLI; only a trusted run clears it through `clearApprovalsTaint`.",
+    "Masking or redacting secrets in `nax approvals list` output; commands print raw by ruling.",
+    "Any change to the `approvals.json` file format, the cache key, `findApproval`, `createApprovalsLink` or `approvals-taint.ts`.",
+    "A confirmation prompt for `rm <id...>` or `rm --stage`; revoking a grant can only cost prompts.",
+    "`docs/guides/configuration.md` and `src/cli/config-descriptions.ts`; review #22 owns them.",
+    "Refactoring the duplicated output-dir resolution in `src/cli/runs.ts` and `src/cli/status-cost.ts`."
+  ],
+  "routingProfile": "native-ds"
+}

@@ -150,7 +150,8 @@ ids; two entries with an identical triple share an id and are removed together.
 | File | `state` | `file` |
 |---|---|---|
 | absent | `missing` | `{ entries: [], taint: undefined }` |
-| not JSON, top level not a non-null non-array object, or `entries` present and not an array | `unparseable` | `{ entries: [], taint: undefined }` |
+| not JSON, or top level not a non-null non-array object | `unparseable` | `{ entries: [], taint: undefined }` |
+| top level an object whose `entries` is present and not an array | `unparseable` | `{ entries: [], taint: parseTaint(taint) }` -- the legacy read's result, so a present taint still withholds trust |
 | otherwise | `ok` | entries filtered by `isApprovalEntry`, taint parsed by `parseTaint` (both unchanged) |
 
 `droppedMalformed` counts the array elements `isApprovalEntry` rejected (0 unless `ok`).
@@ -234,7 +235,7 @@ a3f9c21e  execution  escalate  2026-09-22T10:14:03.620Z  telegram  naxCommit 574
 }
 ```
 
-`taint` is `null` when the store has none. For an unparseable store the body carries `state: "unparseable"`,
+`taint` is `null` when the store has none. For a store whose content is not valid JSON the body carries `state: "unparseable"`,
 `taint: null`, `droppedMalformed: 0` and an empty `entries` array, and the parse warning still goes
 to stderr, so stdout stays a single JSON object.
 
@@ -412,6 +413,7 @@ exports or asserts on the full set of `bin/nax.ts` commands.
 14. [unit] `readApprovalsFileDetailed` on a file whose `taint` is `{ since: "s", runId: "r", pid: 7 }` returns `file.taint` deep-equal to that object.
 15. [unit] `readApprovalsFile(path)` on a valid tainted file returns a value deep-equal to `readApprovalsFileDetailed(path).file`.
 16. [unit] `readApprovalsFile(path)` on a file whose `entries` value is a string returns an empty `entries` array.
+17. [unit] `readApprovalsFileDetailed` on a file whose `entries` value is a string and whose `taint` is `{ since: "s", runId: "r", pid: 7 }` returns `file.taint` deep-equal to that object.
 
 **Verification note:** the `readApprovalsFile` reimplementation is behaviour-preserving; the
 existing `test/unit/permissions/approvals-store.test.ts` and `approvals-link.test.ts` suites stay
@@ -473,7 +475,7 @@ green under `bun run test`.
 11. [unit] `approvalsListCommand` with `json: true` on a tainted store writes `taint` deep-equal to the store's taint.
 12. [unit] `approvalsListCommand` with `json: true` on a missing store writes `state` as `"missing"`.
 13. [unit] `approvalsListCommand` with `json: true` on a missing store writes `entries` as an empty array.
-14. [unit] `approvalsListCommand` with `json: true` on an unparseable store writes a stdout JSON object deep-equal to `{ path, state: "unparseable", taint: null, droppedMalformed: 0, entries: [] }`.
+14. [unit] `approvalsListCommand` with `json: true` on a store whose content is not valid JSON writes a stdout JSON object deep-equal to `{ path, state: "unparseable", taint: null, droppedMalformed: 0, entries: [] }`.
 15. [unit] `approvalsListCommand` with `json: true` on an unparseable store writes `approvals.json could not be parsed; the cache reads it as empty` to stderr.
 
 ### US-005: `nax approvals rm` — by id and by stage
