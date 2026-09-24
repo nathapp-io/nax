@@ -14,7 +14,8 @@
  *
  * The file may also carry a `taint` marker (#2199) -- see approvals-taint.ts.
  */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { withPathFileLock } from "../utils/path-file-lock";
 
@@ -47,6 +48,27 @@ export interface ApprovalsFile {
 }
 
 const EMPTY_FILE: ApprovalsFile = { entries: [], taint: undefined };
+
+/**
+ * The classification a `readApprovalsFileDetailed` call reports. `missing` is a
+ * path that resolves to no file at all (ENOENT, or a parent dir that does not
+ * exist); `unparseable` is a file whose contents the read could not turn into
+ * the entries+taint shape the cache needs; `ok` is a file the read accepts.
+ */
+export type ApprovalsFileState = "ok" | "missing" | "unparseable";
+
+/**
+ * What `readApprovalsFileDetailed` returns: the same `ApprovalsFile` shape
+ * `readApprovalsFile` always has, plus a classification and the count of array
+ * elements the read dropped for not being approval entries. `droppedMalformed`
+ * is `0` unless `state === "ok"` -- an unparseable file has no entries to
+ * drop, and a missing file has no file at all.
+ */
+export interface ApprovalsFileRead {
+  readonly file: ApprovalsFile;
+  readonly state: ApprovalsFileState;
+  readonly droppedMalformed: number;
+}
 
 /**
  * The run's output dir, NOT the tool root. `root` is storyExecRoot -- the repo
@@ -84,19 +106,68 @@ function parseTaint(value: unknown): ApprovalsTaint | undefined {
   };
 }
 
+/**
+ * Stable, derived id for an entry. The id is a function of (stage, command,
+ * approvedAt) alone -- NOT of the entry's position in the file, or of any
+ * sibling entry -- so it survives other entries being added or removed and
+ * two entries recorded for the same triple share an id and are removed
+ * together (US-001).
+ *
+ * Computed on every read and never stored. A missing or non-string
+ * `approvedAt` reads as the empty string so the id is still a well-defined
+ * 8-character hex value for the malformed-on-disk entries the cache admits.
+ */
+export function approvalId(entry: ApprovalEntry): string {
+  const approvedAt = typeof entry.approvedAt === "string" ? entry.approvedAt : "";
+  const digest = createHash("sha256");
+  digest.update(`${entry.stage}\0${entry.command}\0${approvedAt}`);
+  return digest.digest("hex").slice(0, 8);
+}
+
+/**
+ * Classify a store read. `missing` means the file is absent (or its parent
+ * directory is); `unparseable` means a file is present but its contents are
+ * not a `{ entries, taint }` object the cache can trust; `ok` means the read
+ * accepted the file and `file.entries` lists every element `isApprovalEntry`
+ * accepted, with `droppedMalformed` counting the rejections.
+ *
+ * A present `taint` is still parsed when the rest of the file is unparseable:
+ * a forged `entries` array must not strip the marker.
+ */
+export async function readApprovalsFileDetailed(path: string): Promise<ApprovalsFileRead> {
+  const file = Bun.file(path);
+  if (!(await file.exists())) {
+    return { state: "missing", file: EMPTY_FILE, droppedMalformed: 0 };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch {
+    return { state: "unparseable", file: EMPTY_FILE, droppedMalformed: 0 };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { state: "unparseable", file: EMPTY_FILE, droppedMalformed: 0 };
+  }
+  const { entries, taint } = parsed as { entries?: unknown; taint?: unknown };
+  if ("entries" in parsed && !Array.isArray(entries)) {
+    return { state: "unparseable", file: { entries: [], taint: parseTaint(taint) }, droppedMalformed: 0 };
+  }
+  const array = Array.isArray(entries) ? entries : [];
+  const kept: ApprovalEntry[] = [];
+  let dropped = 0;
+  for (const element of array) {
+    if (isApprovalEntry(element)) {
+      kept.push(element);
+    } else {
+      dropped += 1;
+    }
+  }
+  return { state: "ok", file: { entries: kept, taint: parseTaint(taint) }, droppedMalformed: dropped };
+}
+
 /** Missing or malformed reads as empty: the CACHE fails, the chain does not. */
 export async function readApprovalsFile(path: string): Promise<ApprovalsFile> {
-  try {
-    const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
-    if (typeof parsed !== "object" || parsed === null) return EMPTY_FILE;
-    const { entries, taint } = parsed as { entries?: unknown; taint?: unknown };
-    return {
-      entries: Array.isArray(entries) ? entries.filter(isApprovalEntry) : [],
-      taint: parseTaint(taint),
-    };
-  } catch {
-    return EMPTY_FILE;
-  }
+  return (await readApprovalsFileDetailed(path)).file;
 }
 
 export async function readApprovals(path: string): Promise<readonly ApprovalEntry[]> {
