@@ -16,7 +16,19 @@ import type { AskRequest } from "./types";
 export type AskDecision = "allow" | "deny" | "abstain";
 
 /** Who actually decided. Carried into the ledger so it never has to be inferred. */
-export type AskDecidedBy = "cache" | "model" | "human" | "timeout" | "unavailable";
+export type AskDecidedBy = "cache" | "model" | "human" | "timeout" | "unavailable" | "cancelled";
+
+/**
+ * Per-ask control (US-003), carried SEPARATELY from the `AskRequest` so the
+ * request the ledger records stays the pure request and a resolver can react
+ * to the orchestrating turn being cancelled.
+ */
+export interface AskControl {
+  /** The turn's abort signal; aborted while a waiter sits on-screen or queued. */
+  readonly signal?: AbortSignal;
+  /** Notifies the turn loop that this ask is waiting on a human. */
+  readonly onWaiting?: () => void;
+}
 
 export interface AskLinkOutcome {
   readonly decision: AskDecision;
@@ -30,7 +42,7 @@ export interface AskLinkOutcome {
  */
 export interface AskLink {
   readonly name: string;
-  resolve(req: AskRequest): Promise<AskLinkOutcome>;
+  resolve(req: AskRequest, control?: AskControl): Promise<AskLinkOutcome>;
 }
 
 /** What the runtime consumes. Never `abstain`. */
@@ -47,7 +59,7 @@ export interface AskResolver {
    * DESCRIPTION reads it; the verdict never depends on it.
    */
   readonly humanReachable?: boolean;
-  resolve(req: AskRequest): Promise<AskVerdict>;
+  resolve(req: AskRequest, control?: AskControl): Promise<AskVerdict>;
 }
 
 /**

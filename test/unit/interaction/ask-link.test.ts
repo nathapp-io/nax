@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import type { AskChannel, AskChannelResponse, InteractionRequest } from "@/interaction";
 import { cancelPendingAsk, createHumanAskLink } from "@/interaction";
 import type { AskRequest } from "@/permissions";
@@ -211,6 +212,163 @@ describe("human ask link", () => {
     release?.({ action: "allow", respondedAt: Date.now() });
     expect(await first).toEqual({ decision: "allow", decidedBy: "human" });
     expect(await second).toEqual({ decision: "allow", decidedBy: "human" });
+    expect(promptCalls).toBe(1);
+  });
+});
+
+// US-003: cancel pending human-approval waiters. The link accepts an optional
+// per-ask AskControl; its signal cancels just that waiter ("deny/cancelled"),
+// settles the on-screen chain prompt once no live waiter remains, and never
+// prompts for a waiter whose signal is already aborted.
+describe("US-003 — cancel pending human-approval waiters", () => {
+  /** Let the serial queue's promise chain flush before asserting on prompt state. */
+  const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  /**
+   * Bounded race for a waiter that never settles today: the pre-feature link
+   * ignores AskControl, so an aborted waiter never resolves. Bounding with a
+   * null keeps the assertion running instead of hanging the test file.
+   */
+  function raceSettled<T>(promise: Promise<T>, ms = 500): Promise<T | null> {
+    return Promise.race([promise, new Promise<T | null>((resolve) => setTimeout(() => resolve(null), ms))]);
+  }
+
+  /** A chain whose prompt never resolves until cancelled or released. */
+  function hangingChain(cancel: (id: string) => void): AskChannel {
+    return {
+      prompt: () => new Promise<AskChannelResponse>(() => {}),
+      cancel: (id) => {
+        cancel(id);
+        return Promise.resolve();
+      },
+    };
+  }
+
+  test("AC10: a request whose signal is already aborted settles cancelled and is never prompted", async () => {
+    const sent: InteractionRequest[] = [];
+    const controller = new AbortController();
+    controller.abort("turn ended");
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+
+    const outcome = await link.resolve(REQ, { signal: controller.signal });
+
+    expect(outcome).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(sent).toHaveLength(0);
+  });
+
+  test("AC4: aborting an on-screen waiter settles it deny/cancelled", async () => {
+    const link = createHumanAskLink({ chain: hangingChain(() => {}), timeoutMs: 1_000_000 });
+    const controller = new AbortController();
+    const waiter = link.resolve(REQ, { signal: controller.signal });
+    await settle();
+    expect(link.pending()).toBeDefined(); // the prompt is on screen
+
+    controller.abort();
+
+    expect(await raceSettled(waiter)).toEqual({ decision: "deny", decidedBy: "cancelled" });
+  });
+
+  test("AC5: aborting the sole waiter cancels the chain prompt with its id", async () => {
+    const cancelled: string[] = [];
+    const link = createHumanAskLink({ chain: hangingChain((id) => cancelled.push(id)), timeoutMs: 1_000_000 });
+    const controller = new AbortController();
+    const waiter = link.resolve(REQ, { signal: controller.signal });
+    await settle();
+    const promptId = link.pending();
+    assertDefined(promptId, "on-screen prompt id");
+
+    controller.abort();
+    await raceSettled(waiter);
+
+    expect(cancelled).toEqual([promptId]);
+  });
+
+  test("AC6: two same-key waiters — aborting the first settles it cancelled, the second still allows", async () => {
+    let promptCalls = 0;
+    let release: ((response: AskChannelResponse) => void) | undefined;
+    const chain: AskChannel = {
+      prompt: () => {
+        promptCalls++;
+        return new Promise<AskChannelResponse>((resolve) => {
+          release = resolve;
+        });
+      },
+      cancel: () => Promise.resolve(),
+    };
+    const link = createHumanAskLink({ chain, timeoutMs: 1_000_000 });
+    const firstCtrl = new AbortController();
+    const secondCtrl = new AbortController();
+    const first = link.resolve(REQ, { signal: firstCtrl.signal });
+    const second = link.resolve(REQ, { signal: secondCtrl.signal });
+    await settle();
+    expect(promptCalls).toBe(1); // same key joins the single on-screen prompt
+
+    firstCtrl.abort();
+    expect(await raceSettled(first)).toEqual({ decision: "deny", decidedBy: "cancelled" });
+
+    release?.({ action: "allow", respondedAt: Date.now() });
+    expect(await raceSettled(second)).toEqual({ decision: "allow", decidedBy: "human" });
+    expect(promptCalls).toBe(1);
+  });
+
+  test("AC7: aborting only the first of two same-key waiters never cancels the chain prompt", async () => {
+    const cancelled: string[] = [];
+    const link = createHumanAskLink({ chain: hangingChain((id) => cancelled.push(id)), timeoutMs: 1_000_000 });
+    const firstCtrl = new AbortController();
+    const secondCtrl = new AbortController();
+    const first = link.resolve(REQ, { signal: firstCtrl.signal });
+    void link.resolve(REQ, { signal: secondCtrl.signal }); // second stays live
+    await settle();
+
+    firstCtrl.abort();
+    expect(await raceSettled(first)).toEqual({ decision: "deny", decidedBy: "cancelled" });
+
+    // The second waiter is still live, so the on-screen prompt is not cancelled.
+    expect(cancelled).toEqual([]);
+  });
+
+  test("AC8: aborting both same-key waiters cancels the chain prompt exactly once", async () => {
+    const cancelled: string[] = [];
+    const link = createHumanAskLink({ chain: hangingChain((id) => cancelled.push(id)), timeoutMs: 1_000_000 });
+    const firstCtrl = new AbortController();
+    const secondCtrl = new AbortController();
+    const first = link.resolve(REQ, { signal: firstCtrl.signal });
+    const second = link.resolve(REQ, { signal: secondCtrl.signal });
+    await settle();
+
+    firstCtrl.abort();
+    secondCtrl.abort();
+
+    expect(await raceSettled(first)).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(await raceSettled(second)).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(cancelled).toHaveLength(1);
+  });
+
+  test("AC9: a queued request that aborts before its turn is never prompted", async () => {
+    const QUEUED = { ...REQ, command: "echo queued" };
+    let promptCalls = 0;
+    let release: ((response: AskChannelResponse) => void) | undefined;
+    const chain: AskChannel = {
+      prompt: () => {
+        promptCalls++;
+        return new Promise<AskChannelResponse>((resolve) => {
+          release = resolve;
+        });
+      },
+      cancel: () => Promise.resolve(),
+    };
+    const link = createHumanAskLink({ chain, timeoutMs: 1_000_000 });
+    const queuedCtrl = new AbortController();
+    const first = link.resolve(REQ); // takes the serial queue and prompts
+    const queued = link.resolve(QUEUED, { signal: queuedCtrl.signal }); // queues behind it
+    await settle();
+    expect(promptCalls).toBe(1);
+
+    queuedCtrl.abort(); // before the queued waiter's turn
+    release?.({ action: "deny", respondedAt: Date.now() });
+
+    expect(await raceSettled(first)).toEqual({ decision: "deny", decidedBy: "human" });
+    expect(await raceSettled(queued)).toEqual({ decision: "deny", decidedBy: "cancelled" });
     expect(promptCalls).toBe(1);
   });
 });
