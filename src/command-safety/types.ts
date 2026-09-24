@@ -6,6 +6,8 @@
  * fail a call; the types exist so the row a later decision reads is exact.
  */
 
+import type { CallIdentifiers } from "./identifiers";
+
 /** The six harm categories. Also the ids of the six `noul` questions. */
 export const QUESTION_IDS = [
   "deletes_data",
@@ -56,7 +58,7 @@ export type ModelResult =
   | { readonly status: "unavailable"; readonly error: string; readonly latencyMs?: number };
 
 /** One agent-authored command, as observed right after `policy.check`. */
-export interface Observation {
+export interface Observation extends CallIdentifiers {
   readonly command: string;
   readonly identity: "Bash" | "Exec";
   /** Exec only: the argv verbatim. `command` is it joined with single spaces. */
@@ -81,7 +83,7 @@ export interface RuleResult {
 }
 
 /** One line of `<outputDir>/command-safety/<runId>.jsonl` (spec 7.3). */
-export interface CommandSafetyRow {
+export interface CommandSafetyRow extends CallIdentifiers {
   readonly at: string;
   readonly runId: string;
   readonly storyId?: string;

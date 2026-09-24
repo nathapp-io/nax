@@ -355,6 +355,11 @@ export function createCodingToolRuntime(opts: {
               verdict,
               stage: opts.pipelineStage ?? "unknown",
               ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
+              ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
+              ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),
+              ...(context?.turnId !== undefined ? { turnId: context.turnId } : {}),
+              ...(context?.roundTrips !== undefined ? { roundTrips: context.roundTrips } : {}),
+              ...(context?.toolCallId !== undefined ? { toolCallId: context.toolCallId } : {}),
             });
       // Every ledger outcome of this call settles the tap exactly once, with
       // `denied:ask` and `decidedBy` intact -- which CodingToolOutcome.kind

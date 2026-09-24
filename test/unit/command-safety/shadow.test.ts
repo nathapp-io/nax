@@ -63,6 +63,16 @@ const write = async (r: CommandSafetyRow) => {
 };
 const flush = () => new Promise<void>((r) => queueMicrotask(r)).then(() => new Promise<void>((r) => queueMicrotask(r)));
 
+const IDENTIFIER_KEYS = ["callId", "scopeId", "turnId", "roundTrips", "toolCallId"] as const;
+
+/** The single row the shadow wrote, or a loud failure. */
+function writtenRow(): CommandSafetyRow {
+  expect(rows).toHaveLength(1);
+  const row = rows[0];
+  if (row === undefined) throw new Error("no row was written");
+  return row;
+}
+
 let origDeps: typeof _commandShadowDeps;
 let fireTimer: () => void;
 let cancelled: number;
@@ -244,5 +254,39 @@ describe("createCommandShadow", () => {
     await s.drain();
     expect(rows[0]?.identity).toBe("Exec");
     expect(rows[0]?.argv).toEqual(["git", "status", "--short"]);
+  });
+
+  test("US-001 AC4: the written row carries all five identifiers from the Observation", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("ls", { callId: "c1", scopeId: "s1", turnId: "t1", roundTrips: 2, toolCallId: "tc1" }));
+    s.settle("k", { ledger: "ok" });
+    await s.drain();
+    expect(writtenRow()).toMatchObject({
+      callId: "c1",
+      scopeId: "s1",
+      turnId: "t1",
+      roundTrips: 2,
+      toolCallId: "tc1",
+    });
+  });
+
+  test("US-001 AC5: a row from an Observation with no identifiers has none of the five keys", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("ls"));
+    s.settle("k", { ledger: "ok" });
+    await s.drain();
+    const row = writtenRow();
+    for (const key of IDENTIFIER_KEYS) expect(key in row).toBe(false);
+  });
+
+  test("US-001 AC9: an undefined identifier source is omitted, never stored as undefined", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("ls", { callId: "c1", roundTrips: 0 }));
+    s.settle("k", { ledger: "ok" });
+    await s.drain();
+    const row = writtenRow();
+    expect(row.callId).toBe("c1");
+    expect(row.roundTrips).toBe(0);
+    for (const key of ["scopeId", "turnId", "toolCallId"] as const) expect(key in row).toBe(false);
   });
 });

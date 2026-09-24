@@ -22,7 +22,97 @@ function recorder() {
 
 const allow = { allowed: true };
 
+const IDENTIFIER_KEYS = ["callId", "scopeId", "turnId", "roundTrips", "toolCallId"] as const;
+
+/** The single Observation the recorder captured, or a loud failure. */
+function observedOnly(r: { observed: [string, Observation][] }): Observation {
+  expect(r.observed).toHaveLength(1);
+  const entry = r.observed[0];
+  if (entry === undefined) throw new Error("no observation was recorded");
+  return entry[1];
+}
+
 describe("openShadowTap", () => {
+  test("US-001 AC1: a Bash call's five call identifiers reach the Observation", () => {
+    const r = recorder();
+    openShadowTap(r.shadow, {
+      key: "k",
+      identity: "Bash",
+      command: "rm -rf x",
+      argv: undefined,
+      verdict: allow,
+      stage: "run",
+      callId: "c1",
+      scopeId: "s1",
+      turnId: "t1",
+      roundTrips: 2,
+      toolCallId: "tc1",
+    });
+    expect(observedOnly(r)).toMatchObject({
+      callId: "c1",
+      scopeId: "s1",
+      turnId: "t1",
+      roundTrips: 2,
+      toolCallId: "tc1",
+    });
+  });
+
+  test("US-001 AC2: an Exec call's five call identifiers reach the Observation", () => {
+    const r = recorder();
+    openShadowTap(r.shadow, {
+      key: "k",
+      identity: "Exec",
+      command: undefined,
+      argv: ["git", "status"],
+      verdict: allow,
+      stage: "run",
+      callId: "c1",
+      scopeId: "s1",
+      turnId: "t1",
+      roundTrips: 2,
+      toolCallId: "tc1",
+    });
+    expect(observedOnly(r)).toMatchObject({
+      callId: "c1",
+      scopeId: "s1",
+      turnId: "t1",
+      roundTrips: 2,
+      toolCallId: "tc1",
+    });
+  });
+
+  test("US-001 AC3: a Bash call with no identifiers yields an Observation with none of the five keys", () => {
+    const r = recorder();
+    openShadowTap(r.shadow, {
+      key: "k",
+      identity: "Bash",
+      command: "ls",
+      argv: undefined,
+      verdict: allow,
+      stage: "run",
+    });
+    const observed = observedOnly(r);
+    for (const key of IDENTIFIER_KEYS) expect(key in observed).toBe(false);
+  });
+
+  test("US-001 AC9: only the identifier sources that are defined reach the Observation", () => {
+    const r = recorder();
+    openShadowTap(r.shadow, {
+      key: "k",
+      identity: "Bash",
+      command: "ls",
+      argv: undefined,
+      verdict: allow,
+      stage: "run",
+      callId: "c1",
+      roundTrips: 0,
+    });
+    const observed = observedOnly(r);
+    expect(observed.callId).toBe("c1");
+    expect(observed.roundTrips).toBe(0);
+    for (const key of ["scopeId", "turnId", "toolCallId"] as const) expect(key in observed).toBe(false);
+  });
+
   test("no shadow -> no-op tap", () => {
     expect(() =>
       openShadowTap(undefined, {

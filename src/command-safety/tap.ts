@@ -5,13 +5,14 @@
  * nothing from src/tools. Only the `Bash` and `Exec` identities are observed;
  * a RunCommand verb call runs a user-declared command and never is (D14).
  */
+import { type CallIdentifiers, callIdentifiers } from "./identifiers";
 import type { CommandShadow, LedgerOutcome, MechanicalVerdict, Observation } from "./types";
 
 export interface ShadowTap {
   settle(ledger: LedgerOutcome, decidedBy?: string): void;
 }
 
-export interface ShadowCall {
+export interface ShadowCall extends CallIdentifiers {
   readonly key: string;
   readonly identity: string;
   readonly command: unknown;
@@ -42,6 +43,7 @@ function toObservation(call: ShadowCall): Observation | undefined {
     stage: call.stage,
     ...(call.storyId !== undefined ? { storyId: call.storyId } : {}),
     mechanical: toMechanical(call.verdict),
+    ...callIdentifiers(call),
   };
   if (call.identity === "Bash" && typeof call.command === "string") {
     return { command: call.command, identity: "Bash", ...base };

@@ -6,6 +6,7 @@
  * written once both halves exist. Every method is total: what stops on a
  * failure is the row's model half (or the row), never the call.
  */
+import { callIdentifiers } from "./identifiers";
 import { QUESTION_SET_VERSION } from "./questions";
 import { scoreRules } from "./rule-scorer";
 import type { Classify } from "./systemone-client";
@@ -121,6 +122,7 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
       mechanical: obs.mechanical,
       outcome,
       rules: entry.rules,
+      ...callIdentifiers(obs),
       model: {
         status: model.cached && r.status === "answered" ? "cached" : r.status,
         questionSetVersion: QUESTION_SET_VERSION,

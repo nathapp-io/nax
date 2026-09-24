@@ -1,9 +1,27 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import type { CommandShadow, FinalOutcome, Observation } from "@/command-safety";
+
+const IDENTIFIER_KEYS = ["callId", "scopeId", "turnId", "roundTrips", "toolCallId"] as const;
+
+/** The single Observation the recorder captured, or a loud failure. */
+function observedOnly(r: { observed: [string, Observation][] }): Observation {
+  expect(r.observed).toHaveLength(1);
+  const entry = r.observed[0];
+  if (entry === undefined) throw new Error("no observation was recorded");
+  return entry[1];
+}
+
+/** The tool-audit calls the runtime sink flushed to `dir`. */
+function auditCalls(dir: string): Record<string, unknown>[] {
+  const files = readdirSync(dir);
+  expect(files).toHaveLength(1);
+  const parsed: { calls: Record<string, unknown>[] } = JSON.parse(readFileSync(join(dir, files[0] ?? ""), "utf8"));
+  return parsed.calls;
+}
 
 let root: string;
 beforeEach(() => {
@@ -69,6 +87,48 @@ describe("runtime.callTool — command shadow tap", () => {
     await support?.runtime.callTool("Bash", { command: "echo hi" });
     expect(r.observed[0]?.[1].mechanical).toMatchObject({ verdict: "ask", rule: expect.any(String) });
     expect(r.settled[0]?.[1]).toEqual({ ledger: "denied:ask", decidedBy: "human" });
+  });
+
+  test("US-001 AC6: the recording shadow observes the identifiers from the runtime options and context", async () => {
+    const r = recorder();
+    const support = session({ bashApproval: "raw", commandShadow: r.shadow, callId: "c1", scopeId: "s1" });
+    await support?.runtime.callTool("Bash", { command: "echo hi" }, { turnId: "t1", roundTrips: 3, toolCallId: "tc1" });
+    expect(observedOnly(r)).toMatchObject({
+      callId: "c1",
+      scopeId: "s1",
+      turnId: "t1",
+      roundTrips: 3,
+      toolCallId: "tc1",
+    });
+  });
+
+  test("US-001 AC7: the tool-audit record carries the same callId, turnId and toolCallId as its Observation", async () => {
+    const r = recorder();
+    const auditDir = join(root, "audit");
+    const support = session({
+      bashApproval: "raw",
+      commandShadow: r.shadow,
+      callId: "c1",
+      scopeId: "s1",
+      auditDir,
+      sessionName: "shadow-ident",
+    });
+    await support?.runtime.callTool("Bash", { command: "echo hi" }, { turnId: "t1", roundTrips: 3, toolCallId: "tc1" });
+    await support?.auditSink.flush();
+    const record = auditCalls(auditDir)[0];
+    const observed = observedOnly(r);
+    expect(record?.callId).toBe(observed.callId);
+    expect(record?.turnId).toBe(observed.turnId);
+    expect(record?.toolCallId).toBe(observed.toolCallId);
+    expect(record).toMatchObject({ callId: "c1", turnId: "t1", toolCallId: "tc1" });
+  });
+
+  test("US-001 AC8: no callId/scopeId options and no context leaves the Observation without any identifier key", async () => {
+    const r = recorder();
+    const support = session({ bashApproval: "raw", commandShadow: r.shadow });
+    await support?.runtime.callTool("Bash", { command: "echo hi" });
+    const observed = observedOnly(r);
+    for (const key of IDENTIFIER_KEYS) expect(key in observed).toBe(false);
   });
 
   test("a non-command tool is never observed", async () => {
