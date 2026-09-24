@@ -92,6 +92,32 @@ describe("runDeferredRegression — rectifier ask wiring (#2201)", () => {
     expect(fake.disposed()).toBe(1);
   });
 
+  test("US-005 AC7: the deferred regression gate labels its approval prompts 'review'", async () => {
+    const fake = fakeWiring();
+    const built: RunDispatchAskOptions[] = [];
+    _regressionDeps.buildRunDispatchAskWiring = async (opts) => {
+      built.push(opts);
+      return fake.wiring;
+    };
+    _regressionDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "resolved" as const,
+      costUsd: 0,
+    }));
+
+    await runDeferredRegression({
+      config,
+      prd: makePRD({ userStories: [makeStory({ id: "US-001", status: "passed" })] }),
+      workdir: "/tmp/test-workdir",
+      runtime: makeMockRuntime(),
+      storyMetrics: SNAPSHOTS,
+    });
+
+    expect(built).toHaveLength(1);
+    expect(built[0]?.stage).toBe("review");
+  });
+
   test("the wiring is disposed even when the fix cycle throws", async () => {
     const fake = fakeWiring();
     _regressionDeps.buildRunDispatchAskWiring = async () => fake.wiring;

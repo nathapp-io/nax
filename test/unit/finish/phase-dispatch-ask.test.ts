@@ -95,6 +95,21 @@ describe("runFinishPhase — finish-fix ask wiring (#2201)", () => {
     expect(fake.disposed()).toBe(1);
   });
 
+  test("US-005 AC8: the finish phase labels its approval prompts 'merge'", async () => {
+    const fake = fakeWiring();
+    const built: RunDispatchAskOptions[] = [];
+    _finishPhaseDeps.buildRunDispatchAskWiring = async (opts) => {
+      built.push(opts);
+      return fake.wiring;
+    };
+    _finishPhaseDeps.runFinishMachine = async () => ({ feature: "f", status: "already-ready" });
+
+    await runFinishPhase(makeCtx());
+
+    expect(built).toHaveLength(1);
+    expect(built[0]?.stage).toBe("merge");
+  });
+
   test("the wiring is disposed when the machine throws (the phase fails open)", async () => {
     const fake = fakeWiring();
     _finishPhaseDeps.buildRunDispatchAskWiring = async () => fake.wiring;

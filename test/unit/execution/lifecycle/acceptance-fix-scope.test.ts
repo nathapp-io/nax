@@ -98,6 +98,21 @@ describe("openAcceptanceFixScope", () => {
     expect(fake.disposed()).toBe(1);
   });
 
+  test("US-005 AC6: the scope labels its approval prompts 'review'", async () => {
+    const fake = fakeWiring();
+    const built: RunDispatchAskOptions[] = [];
+    _acceptanceFixScopeDeps.buildRunDispatchAskWiring = async (opts) => {
+      built.push(opts);
+      return fake.wiring;
+    };
+
+    const scope = await openAcceptanceFixScope(makeSource(), makeMockRuntime(), "US-001", "/tmp/acc-scope");
+
+    expect(built).toHaveLength(1);
+    expect(built[0]?.stage).toBe("review");
+    await scope.dispose();
+  });
+
   test("no shadow configured: the context omits commandShadow but keeps the resolver", async () => {
     const fake = fakeWiring(false);
     _acceptanceFixScopeDeps.buildRunDispatchAskWiring = async () => fake.wiring;
