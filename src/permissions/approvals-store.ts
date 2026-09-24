@@ -243,11 +243,18 @@ export type RemovalResult =
  *      SAME taint that was read. Nothing in this function clears a taint;
  *      only `clearApprovalsTaint` (approvals-taint.ts) does, and only from a
  *      trusted run.
+ *
+ * The parent dir is created before the lock acquisition (matching
+ * `appendApproval`) so a path whose parent does not exist resolves to
+ * `{ outcome: "unchanged" }` via the missing read rather than throwing ENOENT
+ * out of the lock write -- the lock file must live somewhere, and the data
+ * file is what the "no file created" guarantee actually pins.
  */
 export async function removeApprovals(
   path: string,
   decide: (read: ApprovalsFileRead) => RemovalDecision,
 ): Promise<RemovalResult> {
+  await mkdir(dirname(path), { recursive: true });
   return withPathFileLock(path, async () => {
     const read = await readApprovalsFileDetailed(path);
     if (read.state === "unparseable") {
