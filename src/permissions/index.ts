@@ -8,6 +8,7 @@ export {
   ASK_NO_CHANNEL_REASON,
   ASK_TIMEOUT_REASON,
   ASK_UNAVAILABLE_REASON,
+  ASK_UNSHOWABLE_REASON,
   headlessAskResolver,
 } from "./ask";
 export * from "./ask-chain";

@@ -14,9 +14,6 @@ import { type CommandShadow, openShadowTap } from "@/command-safety";
 import { getSafeLogger } from "@/logger";
 import {
   ASK_CANCELLED_REASON,
-  ASK_DENIED_REASON,
-  ASK_NO_CHANNEL_REASON,
-  ASK_TIMEOUT_REASON,
   type AskControl,
   type AskResolver,
   type AskVerdict,
@@ -24,6 +21,7 @@ import {
 } from "@/permissions";
 import { errorMessage } from "@/utils/errors";
 import type { SandboxRecord } from "../sandbox";
+import { askDenyReason, askSummary } from "./ask-request";
 import { deleteTool } from "./delete";
 import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect";
 import { editTool } from "./edit";
@@ -38,14 +36,11 @@ import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./s
 import { applyModelTruncationPolicy } from "./spill";
 import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit";
 import { READ_CEILING } from "./truncate";
-import { EXEC_TOOL_NAME, type ToolPolicy, type ToolScope } from "./types";
+import { EXEC_TOOL_NAME, type ToolPolicy } from "./types";
 import { writeTool } from "./write";
 
 /** Per-call output ceiling, mirroring ToolDescriptor.maxTokensPerCall in spirit. */
 export const DEFAULT_TOOL_MAX_BYTES = 40_000;
-
-/** Ceiling for the one-line call description an AskResolver receives. */
-const MAX_ASK_SUMMARY_CHARS = 200;
 
 /**
  * Largest file a tool will read whole or write at all.
@@ -130,41 +125,6 @@ export function registerBuiltinCodingTools(): void {
 /** @internal Test-only: pairs with _resetRegistryForTest. */
 export function _resetBuiltinsForTest(): void {
   builtinsRegistered = false;
-}
-
-/**
- * One human-readable line describing the call an `ask` rule matched.
- *
- * Built from the scope's DECLARED fields rather than from `JSON.stringify` of
- * the whole input: the input carries a tool's full payload -- file contents on
- * a Write, a commit message, whatever a provider tool takes -- and an
- * AskResolver is by definition an outbound channel to a human. A summary is
- * what approval needs; the payload is what the audit sink already holds.
- */
-function askSummary(tool: string, scope: ToolScope, input: Record<string, unknown>): string {
-  const fields = [scope.commandField, scope.argvField, scope.verbField, ...scope.pathFields];
-  const parts: string[] = [];
-  for (const field of fields) {
-    if (field === undefined) continue;
-    const value = input[field];
-    if (typeof value === "string") parts.push(`${field}=${value}`);
-    else if (Array.isArray(value)) parts.push(`${field}=${value.filter((v) => typeof v === "string").join(" ")}`);
-  }
-  return `${tool} ${parts.join(" ")}`.trim().slice(0, MAX_ASK_SUMMARY_CHARS);
-}
-
-/**
- * The reason a `denied:ask` ledger row carries, chosen by WHO refused.
- *
- * One constant for every ask denial asserted "no approval channel is
- * configured" even when a human answered (deny) or nobody answered in time
- * (timeout). Those are materially different facts; see ASK_*_REASON.
- */
-function askDenyReason(decidedBy: AskVerdict["decidedBy"]): string {
-  if (decidedBy === "timeout") return ASK_TIMEOUT_REASON;
-  if (decidedBy === "human") return ASK_DENIED_REASON;
-  if (decidedBy === "cancelled") return ASK_CANCELLED_REASON;
-  return ASK_NO_CHANNEL_REASON;
 }
 
 export function createCodingToolRuntime(opts: {
@@ -498,6 +458,7 @@ export function createCodingToolRuntime(opts: {
           ...(callSignal !== undefined ? { signal: callSignal } : {}),
           ...(context?.onWaiting !== undefined ? { onWaiting: context.onWaiting } : {}),
         };
+        const ask = askSummary(policyIdentity, tool.scope, input);
         let askVerdict: AskVerdict;
         try {
           askVerdict = await askResolver.resolve(
@@ -505,7 +466,8 @@ export function createCodingToolRuntime(opts: {
               tool: policyIdentity,
               stage: opts.pipelineStage ?? "unknown",
               rule: verdict.rule ?? verdict.reason,
-              summary: askSummary(policyIdentity, tool.scope, input),
+              summary: ask.summary,
+              ...(ask.unshowable ? { unshowable: true as const } : {}),
               ...(typeof input[tool.scope.commandField ?? ""] === "string"
                 ? { command: input[tool.scope.commandField as string] as string }
                 : {}),

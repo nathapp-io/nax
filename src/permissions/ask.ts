@@ -16,6 +16,8 @@ export const ASK_DENIED_REASON = "matched an ask rule requiring human approval; 
  * tool never executed; the message stays short so it reads in a tool error.
  */
 export const ASK_CANCELLED_REASON = "Not run: the turn was cancelled before anyone answered.";
+export const ASK_UNSHOWABLE_REASON =
+  "Not run: the command contains a secret that cannot be shown to the approver safely; pass it through an environment variable instead.";
 
 /** Kept for compatibility with existing callers and tests. */
 export const ASK_UNAVAILABLE_REASON = ASK_NO_CHANNEL_REASON;
