@@ -385,8 +385,8 @@ export function registerApprovalsCommand(program: Command, deps: typeof _approva
     .description("Revoke one or more remembered approvals")
     .option("-d, --dir <path>", "Project directory", process.cwd())
     .option("--stage <stage>", "Remove every approval for the given stage")
-    .option("--all", "Remove every remembered approval (US-006)")
-    .option("--yes", "Skip the confirmation prompt (US-006)")
+    .option("--all", "Remove every remembered approval")
+    .option("--yes", "Skip the confirmation prompt")
     .argument("[ids...]", "One or more approval ids to revoke")
     .action(rmAction);
 }
