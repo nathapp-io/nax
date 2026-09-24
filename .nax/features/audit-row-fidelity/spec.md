@@ -196,7 +196,7 @@ runtime tap call site).
 
 - `test/unit/tools/runtime-command-shadow.test.ts` — Bash settle assertions (`toEqual([[key, { ledger: "ok" }]])`) stay exactly as they are; the recorder's `settle` may accept a third argument.
 
-`test/unit/tools/runtime.test.ts` is over the 600-line gate and must not grow; new tests go in the created files.
+`test/unit/tools/runtime.test.ts` (688 lines) is already past the 650-line split target in `.nax/rules/test-architecture.md` (800 is the hard limit), so it must not grow; new tests go in the created files.
 
 ### Seams
 
