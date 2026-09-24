@@ -3,7 +3,7 @@
   "feature": "approvals-cli",
   "branchName": "feat/approvals-cli",
   "createdAt": "2026-09-24T00:00:00.000Z",
-  "updatedAt": "2026-09-24T16:27:12.376Z",
+  "updatedAt": "2026-09-24T16:50:49.493Z",
   "userStories": [
     {
       "id": "US-001",
@@ -146,8 +146,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -212,7 +212,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Exposes access-control and taint state; security override applies despite straightforward formatting."
+        "reasoning": "Exposes access-control and taint state; security override applies despite straightforward formatting.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/approvals.ts",
@@ -226,7 +229,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9785c89afdfac37ac4085f9b7aa15ef2d9fa1528"
     },
     {
       "id": "US-005",
