@@ -17,7 +17,7 @@ import {
   buildRunDispatchAskWiring,
   collectEffectiveRunStageModes,
 } from "@/interaction";
-import type { AskRequest, PrepareApprovalsStoreOptions } from "@/permissions";
+import type { AskControl, AskRequest, PrepareApprovalsStoreOptions } from "@/permissions";
 
 const REQ: AskRequest = {
   tool: "Bash",
@@ -241,5 +241,49 @@ describe("buildRunDispatchAskWiring", () => {
     );
     expect(await wiring.askResolver.resolve(REQ)).toMatchObject({ decision: "deny", decidedBy: "unavailable" });
     await wiring.dispose();
+  });
+});
+
+describe("US-003 — control through the dispatch resolver", () => {
+  test("AC3: the resolver forwards the same control to the human link, and audits the bare request", async () => {
+    const dir = outputDir();
+    let seenControl: AskControl | undefined;
+    const wiring = await buildDispatchAskWiring(
+      opts({ outputDir: dir, interaction: chainReplying("allow") }),
+      deps({
+        createHumanAskLink: (o) => {
+          const link = _dispatchAskDeps.createHumanAskLink(o);
+          return {
+            ...link,
+            resolve: (req: AskRequest, control?: AskControl) => {
+              seenControl = control;
+              return link.resolve(req, control);
+            },
+          };
+        },
+      }),
+    );
+    const control: AskControl = { signal: new AbortController().signal, onWaiting: () => {} };
+    await wiring.askResolver.resolve(REQ, control);
+    await wiring.dispose();
+
+    expect(seenControl).toBe(control);
+    const rows = (await Bun.file(join(dir, APPROVAL_AUDIT_DIR, "run-1.jsonl")).text()).trim().split("\n");
+    const row = JSON.parse(rows[0] ?? "{}") as { request?: AskRequest };
+    expect(row.request).toEqual(REQ);
+    expect(Object.keys(row.request ?? {})).not.toContain("signal");
+    expect(Object.keys(row.request ?? {})).not.toContain("onWaiting");
+  });
+
+  test("AC13: a cancelled ask resolves through the resolver and is audited as decidedBy cancelled", async () => {
+    const dir = outputDir();
+    const controller = new AbortController();
+    controller.abort("turn ended");
+    const wiring = await buildDispatchAskWiring(opts({ outputDir: dir, interaction: chainReplying("allow") }), deps());
+    await wiring.askResolver.resolve(REQ, { signal: controller.signal });
+    await wiring.dispose();
+
+    const rows = (await Bun.file(join(dir, APPROVAL_AUDIT_DIR, "run-1.jsonl")).text()).trim().split("\n");
+    expect(JSON.parse(rows[0] ?? "{}")).toMatchObject({ decision: "deny", decidedBy: "cancelled" });
   });
 });

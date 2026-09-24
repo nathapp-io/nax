@@ -88,6 +88,13 @@ export function buildRunInteractionHandler(options: RunInteractionOptions): Inte
           ...(req.roundTrips !== undefined ? { roundTrips: req.roundTrips } : {}),
           ...(req.toolCallId !== undefined ? { toolCallId: req.toolCallId } : {}),
           ...(req.deferModelTruncation !== undefined ? { deferModelTruncation: req.deferModelTruncation } : {}),
+          // US-002 AC14: forward the per-turn signal + onWaiting so the tool
+          // can stop in-flight work (Bash/Exec SIGKILL) when the turn is
+          // cancelled. Without this, the `signal` field was dropped at the
+          // handler boundary and an aborted turn left the tool's
+          // ToolRunContext.signal undefined.
+          ...(req.signal !== undefined ? { signal: req.signal } : {}),
+          ...(req.onWaiting !== undefined ? { onWaiting: req.onWaiting } : {}),
         });
         if (outcome.kind === "denied") {
           return {

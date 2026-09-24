@@ -4,6 +4,7 @@ import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import type {
+  AgentAwaitingHumanEvent,
   AgentCallEndedEvent,
   AgentCallStartedEvent,
   AgentMessageUpdateEvent,
@@ -12,6 +13,8 @@ import type {
 } from "@/runtime/agent-stream-events";
 import { AgentStreamEventBus } from "@/runtime/agent-stream-events";
 import { attachAgentStreamLogging } from "@/runtime/middleware/agent-stream-logging";
+import { attachUsageAuditSubscriber } from "@/runtime/middleware/usage-audit";
+import type { IUsageAuditor, UsageAuditEntry } from "@/runtime/usage-auditor";
 
 function makeCallStartedEvent(overrides: Partial<AgentCallStartedEvent> = {}): AgentCallStartedEvent {
   return {
@@ -87,6 +90,20 @@ function makeUsageUpdateEvent(overrides: Partial<AgentUsageUpdateEvent> = {}): A
     timestamp: 4000,
     inputTokens: 100,
     outputTokens: 50,
+    ...overrides,
+  };
+}
+
+function makeAwaitingHumanEvent(overrides: Partial<AgentAwaitingHumanEvent> = {}): AgentAwaitingHumanEvent {
+  return {
+    kind: "agent.awaiting_human",
+    callId: "call-001",
+    runId: "run-001",
+    agentName: "claude",
+    sessionName: "nax-abc-feat-s1-main",
+    storyId: "s-42",
+    stage: "run",
+    timestamp: 2500,
     ...overrides,
   };
 }
@@ -260,5 +277,31 @@ describe("attachAgentStreamLogging", () => {
 
     expect(callAEnded?.data?.messageUpdates).toBe(2);
     expect(callBEnded?.data?.messageUpdates).toBe(1);
+  });
+
+  // AC9 (US-004): an awaiting-human event is accepted by the stream-logging
+  // listener AND a sibling usage-audit listener without either throwing — the
+  // bus's "listener threw" guard must stay silent.
+  test("US-004 AC9: agent.awaiting_human is accepted — no listener-threw warning with stream-logging and usage-audit attached", async () => {
+    const bus = new AgentStreamEventBus();
+    attachAgentStreamLogging(bus, "r-001");
+    const recorded: UsageAuditEntry[] = [];
+    const auditor: IUsageAuditor = {
+      record: (entry) => recorded.push(entry),
+      async flush() {},
+    };
+    attachUsageAuditSubscriber(bus, auditor, "r-001");
+
+    // call_started is the only kind that writes a log line, so it establishes
+    // the JSONL sink; the awaiting-human beat that follows must add no
+    // listener-threw entry and no usage row.
+    bus.emitAgentStream(makeCallStartedEvent());
+    bus.emitAgentStream(makeAwaitingHumanEvent({ timestamp: 2500 }));
+    await getLogger().flush();
+
+    const entries = await parseAllEntries(logFile);
+    const listenerThrew = entries.find((e) => e.message === "listener threw");
+    expect(listenerThrew).toBeUndefined();
+    expect(recorded).toHaveLength(0);
   });
 });

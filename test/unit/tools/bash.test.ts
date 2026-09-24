@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import type { CommandLauncher } from "@/sandbox";
+import { createCommandLauncher, DISABLED_SANDBOX_STATE } from "@/sandbox";
 import { _bashToolDeps, BASH_TIMEOUT_MS, createBashTool } from "@/tools";
 
 const realRunArgv = _bashToolDeps.runArgv;
@@ -47,6 +49,14 @@ describe("createBashTool", () => {
     expect(calls[0]?.stripEnvVars).toEqual(["NPM_TOKEN"]);
   });
 
+  test("US-001 AC12: ToolRunContext.signal reaches runArgv when there is no launcher", async () => {
+    const signal = new AbortController().signal;
+    stubRunArgv();
+    const tool = createBashTool();
+    await tool.run({ command: "bun test" }, { ...ctx(), signal });
+    expect(calls[0]?.signal).toBe(signal);
+  });
+
   test("defaults the deadline to the Exec ceiling and clamps a larger request", async () => {
     stubRunArgv();
     const tool = createBashTool();
@@ -82,6 +92,49 @@ describe("createBashTool", () => {
     const result = await createBashTool().run({ command: "sleep 999", timeoutMs: 5_000 }, ctx());
     expect(result.isError).toBe(true);
     expect(result.content).toContain("timed out after 5000ms");
+  });
+
+  async function launcherResult(overrides: {
+    exitCode: number;
+    stdout: string;
+    aborted: boolean;
+    orphansKilled: boolean;
+  }): Promise<{ content: string; isError?: boolean }> {
+    const launcher: CommandLauncher = {
+      state: DISABLED_SANDBOX_STATE,
+      async run() {
+        return {
+          exitCode: overrides.exitCode,
+          stdout: overrides.stdout,
+          stderr: "",
+          timedOut: false,
+          aborted: overrides.aborted,
+          orphansKilled: overrides.orphansKilled,
+          executed: ["/bin/sh", "-c", "echo hi"],
+          sandbox: { backend: "none", wrapped: false },
+        };
+      },
+    };
+    return createBashTool({ launcher }).run({ command: "echo hi" }, ctx());
+  }
+
+  test("US-001 AC14: an aborted launcher result is an isError opening with the Cancelled line and the partial output", async () => {
+    const result = await launcherResult({
+      exitCode: -1,
+      stdout: "partial output",
+      aborted: true,
+      orphansKilled: false,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content.startsWith("Cancelled: the turn ended while this command was running.")).toBe(true);
+    expect(result.content).toContain("partial output");
+  });
+
+  test("US-001 AC15: an orphansKilled launcher result appends the background-processes line", async () => {
+    const result = await launcherResult({ exitCode: 0, stdout: "ok", aborted: false, orphansKilled: true });
+    expect(result.content).toContain("ok");
+    const lines = result.content.split("\n");
+    expect(lines[lines.length - 1]).toStartWith("[nax] background processes still holding the output were killed");
   });
 
   test("US-003: bash returns up to readCeiling; pre-truncation size reports the full stdout", async () => {
@@ -124,5 +177,40 @@ describe("createBashTool", () => {
 
   test("declares the command field so the policy uses the Bash branch", () => {
     expect(createBashTool().scope.commandField).toBe("command");
+  });
+});
+
+describe("US-001 Bash tool description variants", () => {
+  // Each of the five descriptions `bashToolDescription` can return, selected
+  // the way `createBashTool` wires them (spec US-001 AC16).
+  const cases: Array<{ label: string; description: string }> = [
+    { label: "gated", description: createBashTool({ bashApproval: "gated" }).description },
+    {
+      label: "escalate",
+      description: createBashTool({ bashApproval: "escalate", humanApproval: true }).description,
+    },
+    {
+      label: "raw with the contained sentence",
+      description: createBashTool({
+        bashApproval: "raw",
+        launcher: createCommandLauncher({ state: { kind: "available", backend: "srt", network: "open" } }),
+      }).description,
+    },
+    {
+      label: "raw with the uncontained default",
+      description: createBashTool({ bashApproval: "raw" }).description,
+    },
+    {
+      label: "raw unavailable",
+      description: createBashTool({
+        bashApproval: "raw",
+        launcher: createCommandLauncher({ state: { kind: "unavailable", backend: "srt", reason: "no bwrap" } }),
+      }).description,
+    },
+  ];
+
+  test.each(cases)("$label states that background processes are killed when the command exits", ({ description }) => {
+    expect(description).toContain("background processes");
+    expect(description).toContain("killed when the command exits");
   });
 });

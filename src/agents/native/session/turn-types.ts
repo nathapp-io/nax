@@ -101,6 +101,23 @@ export interface TurnDeps {
    */
   spinBreaker?: SpinBreaker;
   /**
+   * The one per-turn abort signal (US-002). The adapter builds it as
+   * `AbortSignal.any` over the caller's `opts.signal`, the watchdog's
+   * `turnController.signal` and a whole-turn deadline timer, and hands it to
+   * the loop; the loop's batch consults it between tool calls so a cancelled
+   * turn stops dispatching subsequent native tool calls. Absent in tests that
+   * drive the loop without cancellation.
+   */
+  signal?: AbortSignal;
+  /**
+   * The native batch forwards this onto every coding-tool `AdapterInteraction`
+   * (US-002). Tools that block on an external wait (e.g. a human approval)
+   * call it before the wait so the wiring layer can observe the activity and
+   * the idle watchdog does not time out the call. Absent when no watcher is
+   * in scope; tests that drive the loop without cancellation may omit it.
+   */
+  onWaiting?: () => void;
+  /**
    * The in-process `before_tool` / `after_tool` seam (nax#2151, US-002).
    * Absent is the normal case for a real session: the loop then builds its own
    * registry, so the built-in handlers (invalid-call repair, spin breaker) run

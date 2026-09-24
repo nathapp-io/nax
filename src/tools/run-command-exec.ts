@@ -85,6 +85,7 @@ export async function runExecBranch(
             timeoutMs: EXEC_TIMEOUT_MS,
             stripEnvVars: opts.stripEnvVars ?? [],
             ...(normalized.env !== undefined ? { env: normalized.env } : {}),
+            ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
           })
         : {
             ...(await runArgv({
@@ -94,16 +95,29 @@ export async function runExecBranch(
               stripEnvVars: [...(opts.stripEnvVars ?? [])],
               // Yarn 2+ carries its no-scripts mechanism here rather than in argv.
               ...(normalized.env !== undefined ? { env: normalized.env } : {}),
+              ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
             })),
             sandbox: undefined,
           };
-    const body = launched.timedOut
-      ? `timed out after ${EXEC_TIMEOUT_MS}ms`
-      : `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
+    // US-001: match Bash's framing so an aborted Exec is rendered as an
+    // error with the cancellation banner (AC14 mirror) and an orphansKilled
+    // Exec appends the same `[nax]` footer (AC15 mirror). Without this
+    // branch an aborted call would land in the `exit N` path with
+    // `exitCode === -1` and no indication that a turn cancel killed it.
+    let body: string;
+    if (launched.aborted === true) {
+      body = `Cancelled: the turn ended while this command was running.\nexit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
+    } else if (launched.orphansKilled === true) {
+      body = `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}\n[nax] background processes still holding the output were killed`;
+    } else if (launched.timedOut) {
+      body = `timed out after ${EXEC_TIMEOUT_MS}ms`;
+    } else {
+      body = `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
+    }
 
     return {
       content: cutToByteCap(body, ctx.readCeiling ?? READ_CEILING),
-      isError: launched.timedOut || launched.exitCode !== 0,
+      isError: launched.timedOut || launched.exitCode !== 0 || launched.aborted === true,
       // Task 7 reads this to write `executed` and `target` onto the ledger
       // row. Returning it here, rather than re-deriving it in the runtime,
       // keeps the recorded argv the one that actually ran.

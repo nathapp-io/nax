@@ -87,6 +87,15 @@ const PREFER_STRUCTURED_TOOLS_SENTENCE =
   "bounded, parseable output, and Bash exists for what they cannot express. ";
 
 /**
+ * US-001: a background process holding a pipe keeps the shell from exiting
+ * cleanly, so the runtime SIGKILLs the whole process group after a short
+ * drain grace. Every description variant states this so the model knows its
+ * `&`ed processes will not outlive the call.
+ */
+const BACKGROUND_PROCESSES_KILLED_SENTENCE =
+  "background processes still holding the command's output are killed when the command exits. ";
+
+/**
  * `gated`'s description, also used verbatim for `escalate` when no human is
  * reachable -- see the `escalate` branch of `bashToolDescription`.
  */
@@ -96,7 +105,8 @@ function gatedDescription(shell: string, patterns: readonly string[] | undefined
     `${describeGrants(patterns)}; anything else is refused. ` +
     "Each segment of a `&&`/`||`/`;`/`|` chain is checked separately, and command substitution ($(...), backticks), " +
     "process substitution, here-documents and `2>&1` are refused outright because they cannot be analysed. " +
-    "Paths and redirect targets must stay inside the repository root."
+    "Paths and redirect targets must stay inside the repository root. " +
+    BACKGROUND_PROCESSES_KILLED_SENTENCE
   );
 }
 
@@ -121,7 +131,8 @@ function escalateDescription(shell: string, patterns: readonly string[] | undefi
     "substitution, backticks, here-documents, subshells, `2>&1`, `#` comments), is not refused: it is sent to a " +
     "human for approval (unless an identical command was already approved and remembered) and, if they allow it, " +
     "runs exactly as written; it is refused if they deny it or do not answer in time, so prefer the granted forms. A command matching a deny rule is refused without asking unless it cannot " +
-    "be analysed. Each segment of a `&&`/`||`/`;`/`|` chain is checked separately."
+    "be analysed. Each segment of a `&&`/`||`/`;`/`|` chain is checked separately. " +
+    BACKGROUND_PROCESSES_KILLED_SENTENCE
   );
 }
 
@@ -149,14 +160,16 @@ function rawDescription(shell: string, containment: string = RAW_UNCONTAINED): s
     "that names or redirects into a path nax owns -- .nax/config.json, .nax/mono/*/config.json, " +
     ".nax/features/**/prd.json, or the root queue-control files -- change those through nax rather than by " + // nax-feature-dir-allow: prose naming the raw-mode protected-path screen, not a path construction
     "writing them directly; that screen is advisory, not a boundary, and a command using substitution skips it " +
-    "entirely."
+    "entirely. " +
+    BACKGROUND_PROCESSES_KILLED_SENTENCE
   );
 }
 
 function rawUnavailableDescription(shell: string, reason: string): string {
   return (
     `Run one shell command string under ${shell} -- but on this machine ${rawBashRefusalReason(reason)} ` +
-    "Under raw mode every call is refused; use the structured tools (Read, Glob, Grep, Git, RunCommand) instead."
+    "Under raw mode every call is refused; use the structured tools (Read, Glob, Grep, Git, RunCommand) instead. " +
+    BACKGROUND_PROCESSES_KILLED_SENTENCE
   );
 }
 
@@ -230,6 +243,7 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
                 cwd: ctx.root,
                 timeoutMs,
                 stripEnvVars: opts.stripEnvVars ?? [],
+                ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
               })
             : {
                 ...(await _bashToolDeps.runArgv({
@@ -237,13 +251,27 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
                   cwd: ctx.root,
                   timeoutMs,
                   stripEnvVars: [...(opts.stripEnvVars ?? [])],
+                  ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
                 })),
                 executed: argv,
                 sandbox: undefined,
               };
-        const body = launched.timedOut
-          ? `timed out after ${timeoutMs}ms`
-          : `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
+        // US-001: an aborted call's body opens with the cancellation line and
+        // surfaces whatever partial output the readers captured before the
+        // process group was SIGKILLed (AC14). An orphansKilled call appends
+        // the "[nax] background processes ..." final line so the model can
+        // tell that a `&`ed process held the pipe and was reaped (AC15). Both
+        // are independent of the regular `timed out` / `exit N` framing.
+        let body: string;
+        if (launched.aborted === true) {
+          body = `Cancelled: the turn ended while this command was running.\nexit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
+        } else if (launched.orphansKilled === true) {
+          body = `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}\n[nax] background processes still holding the output were killed`;
+        } else if (launched.timedOut) {
+          body = `timed out after ${timeoutMs}ms`;
+        } else {
+          body = `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
+        }
         // The tool's own bound is the I/O ceiling, not the model-facing cap:
         // `maxBytes` shapes what the model is told and belongs to the session's
         // truncation policy (which also spills what it cuts), while this one
@@ -251,7 +279,7 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
         // full size still rides out on `resultBytesPreTruncation`.
         return {
           content: cutToByteCap(body, ctx.readCeiling ?? READ_CEILING),
-          isError: launched.timedOut || launched.exitCode !== 0,
+          isError: launched.timedOut || launched.exitCode !== 0 || launched.aborted === true,
           // The ledger records what actually ran, not what was requested.
           audit: {
             executed: launched.executed,

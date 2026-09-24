@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentMessageUpdateEvent, AgentUsageUpdateEvent } from "@/runtime/agent-stream-events";
+import type {
+  AgentAwaitingHumanEvent,
+  AgentMessageUpdateEvent,
+  AgentUsageUpdateEvent,
+} from "@/runtime/agent-stream-events";
 import { AgentStreamEventBus } from "@/runtime/agent-stream-events";
 import { attachUsageAuditSubscriber } from "@/runtime/middleware/usage-audit";
 import type { IUsageAuditor, UsageAuditEntry } from "@/runtime/usage-auditor";
@@ -35,6 +39,19 @@ function makeMessageEvent(): AgentMessageUpdateEvent {
     sessionName: "nax-abc-feat-US-001-implementer",
     timestamp: 4_500,
     deltaBytes: 10,
+  };
+}
+
+function makeAwaitingHumanEvent(): AgentAwaitingHumanEvent {
+  return {
+    kind: "agent.awaiting_human",
+    callId: "call-001",
+    runId: "run-001",
+    agentName: "claude",
+    sessionName: "nax-abc-feat-US-001-implementer",
+    storyId: "US-001",
+    stage: "run",
+    timestamp: 5_000,
   };
 }
 
@@ -113,5 +130,17 @@ describe("attachUsageAuditSubscriber", () => {
     off();
     bus.emitAgentStream(makeUsageEvent({ callId: "call-003" }));
     expect(recorded).toHaveLength(1);
+  });
+
+  test("US-004: agent.awaiting_human is ignored without error or a recorded row", () => {
+    const recorded: UsageAuditEntry[] = [];
+    const bus = new AgentStreamEventBus();
+    attachUsageAuditSubscriber(bus, makeAuditor(recorded), "run-001");
+
+    // The awaiting-human kind carries no usage payload and must not reach the
+    // auditor — and the listener must not throw (the bus would log that).
+    bus.emitAgentStream(makeAwaitingHumanEvent());
+
+    expect(recorded).toHaveLength(0);
   });
 });

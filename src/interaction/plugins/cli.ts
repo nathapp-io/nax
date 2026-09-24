@@ -33,6 +33,7 @@ export class CLIInteractionPlugin implements InteractionPlugin {
   name = "cli";
   private pendingRequests = new Map<string, InteractionRequest>();
   private rl: CLIReadline | null = null;
+  private activeCancel?: { requestId: string; settle: () => void };
 
   async init(config: Record<string, unknown> = {}): Promise<void> {
     CLIConfigSchema.parse(config);
@@ -104,6 +105,7 @@ export class CLIInteractionPlugin implements InteractionPlugin {
 
   async cancel(requestId: string): Promise<void> {
     this.pendingRequests.delete(requestId);
+    if (this.activeCancel?.requestId === requestId) this.activeCancel.settle();
   }
 
   /**
@@ -129,20 +131,31 @@ export class CLIInteractionPlugin implements InteractionPlugin {
     });
 
     const userPromise = this.getUserInput(request);
+    let cancelled = false;
+    const cancelPromise = new Promise<InteractionResponse>((resolve) => {
+      this.activeCancel = {
+        requestId: request.id,
+        settle: () => {
+          cancelled = true;
+          resolve({ requestId: request.id, action: "abort", respondedBy: "system", respondedAt: Date.now() });
+        },
+      };
+    });
 
     try {
-      const result = await Promise.race([userPromise, timeoutPromise]);
+      const result = await Promise.race([userPromise, timeoutPromise, cancelPromise]);
       // On timeout, the readline `question()` callback registered by
       // getUserInput() is still pending — readline supports only one
       // in-flight question, so the NEXT prompt would silently register no
       // callback and the user's next answer would be consumed by this
       // stale one. Close and recreate the interface to discharge it.
-      if (timedOut) {
+      if (timedOut || cancelled) {
         this.recreateReadline();
       }
       return result;
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
+      if (this.activeCancel?.requestId === request.id) this.activeCancel = undefined;
     }
   }
 

@@ -139,6 +139,8 @@ export function buildCodingToolSupport(args: {
   commandShadow?: CommandShadow;
   /** P4: resolved by resolveCodingToolSupport (async); data only here. */
   launcher?: CommandLauncher;
+  /** US-001: forwarded into ToolRunContext so Bash/Exec can SIGKILL on cancel. */
+  abortSignal?: AbortSignal;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -220,6 +222,7 @@ export function buildCodingToolSupport(args: {
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
     }),
     declaredCommands: new Set(declaredCommands.keys()),
+    ...(args.abortSignal !== undefined ? { signal: args.abortSignal } : {}),
     ...(args.askResolver !== undefined ? { askResolver: args.askResolver } : {}),
     ...(args.commandShadow !== undefined ? { commandShadow: args.commandShadow } : {}),
     ...(args.pipelineStage !== undefined ? { pipelineStage: args.pipelineStage } : {}),
@@ -319,6 +322,7 @@ export async function resolveCodingToolSupport(
     | "scopeId"
     | "askResolver"
     | "commandShadow"
+    | "abortSignal"
   >,
 ): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
@@ -587,5 +591,6 @@ export async function resolveCodingToolSupport(
     ...(options.askResolver !== undefined ? { askResolver: options.askResolver } : {}),
     ...(options.commandShadow !== undefined ? { commandShadow: options.commandShadow } : {}),
     ...(launcher !== undefined ? { launcher } : {}),
+    ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
   });
 }

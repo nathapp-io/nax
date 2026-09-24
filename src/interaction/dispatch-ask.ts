@@ -27,6 +27,7 @@ import { join } from "node:path";
 import { buildCommandShadow, type CommandShadow } from "@/command-safety";
 import { type BashApprovalMode, loadConfigForPackage, type NaxConfig, resolveBashApproval } from "@/config";
 import {
+  type AskControl,
   type AskRequest,
   type AskResolver,
   appendApproval,
@@ -139,9 +140,14 @@ export async function buildDispatchAskWiring(
   const auditDir = join(opts.outputDir, APPROVAL_AUDIT_DIR);
   const askResolver: AskResolver = {
     humanReachable: isHumanReachable(opts, deps),
-    resolve: async (req: AskRequest) => {
-      const verdict = await baseResolver.resolve(req);
+    // US-003: forward the AskControl (turn signal + onWaiting) through the
+    // base resolver to every link. The cache link ignores it; the human
+    // link uses it to settle a per-waiter cancellation as `deny/cancelled`.
+    resolve: async (req: AskRequest, control?: AskControl) => {
+      const verdict = await baseResolver.resolve(req, control);
       await appendApprovalAudit(auditDir, opts.runId, {
+        // Audit row carries the bare request, not the control — the
+        // request is what the agent did, the control is turn plumbing.
         request: req,
         decision: verdict.decision,
         decidedBy: verdict.decidedBy,

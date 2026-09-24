@@ -33,7 +33,15 @@ export type NativeTurnActivity =
        *  compaction-summary or retry beat, which are not round-trip boundaries. */
       roundTrip?: number;
     }
-  | { kind: "tool"; toolName: string };
+  | { kind: "tool"; toolName: string }
+  | {
+      /**
+       * US-004: the turn is waiting on a human approval prompt. Carried so the
+       * runtime stream bus can turn it into `agent.awaiting_human` for the idle
+       * watchdog, which must not read legitimate human waiting as idleness.
+       */
+      kind: "awaiting_human";
+    };
 
 export interface NativeStreamEventBase {
   readonly callId: string;
@@ -80,5 +88,10 @@ export function buildNativeStreamEvent(
       };
     case "tool":
       return { ...common, kind: "agent.tool_call_update", toolName: activity.toolName };
+    case "awaiting_human":
+      // US-004: the turn is waiting on a human approval prompt. The watchdog
+      // treats this as semantic progress on both activity clocks and clears an
+      // open grace window, so a pending prompt never reads as idle.
+      return { ...common, kind: "agent.awaiting_human" };
   }
 }

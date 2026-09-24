@@ -3,6 +3,7 @@ export * from "./approvals-link";
 export * from "./approvals-store";
 export * from "./approvals-taint";
 export {
+  ASK_CANCELLED_REASON,
   ASK_DENIED_REASON,
   ASK_NO_CHANNEL_REASON,
   ASK_TIMEOUT_REASON,

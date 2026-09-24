@@ -13,9 +13,11 @@ import { randomUUID } from "node:crypto";
 import { type CommandShadow, openShadowTap } from "@/command-safety";
 import { getSafeLogger } from "@/logger";
 import {
+  ASK_CANCELLED_REASON,
   ASK_DENIED_REASON,
   ASK_NO_CHANNEL_REASON,
   ASK_TIMEOUT_REASON,
+  type AskControl,
   type AskResolver,
   type AskVerdict,
   headlessAskResolver,
@@ -78,6 +80,21 @@ export interface ToolCallContext {
   readonly toolCallId?: string;
   /** Return the full result so a downstream model-facing chokepoint can shape it. */
   readonly deferModelTruncation?: boolean;
+  /**
+   * US-002: the turn's abort signal, forwarded from the native coding-tool
+   * request. `runTool` copies it onto the `ToolRunContext` so the tool can
+   * stop in-flight work (Bash/Exec SIGKILL their process group) when the
+   * turn is cancelled, exactly as the runtime-level `signal` does when no
+   * per-call signal is present.
+   */
+  readonly signal?: AbortSignal;
+  /**
+   * US-002: notifies the runtime's caller (and through it the turn loop)
+   * that this tool is about to WAIT on something external, so an idle
+   * watchdog does not time it out. Forwarded from the native coding-tool
+   * request; tools that wait on a human call it before blocking.
+   */
+  readonly onWaiting?: () => void;
 }
 
 export interface CodingToolRuntime {
@@ -146,6 +163,7 @@ function askSummary(tool: string, scope: ToolScope, input: Record<string, unknow
 function askDenyReason(decidedBy: AskVerdict["decidedBy"]): string {
   if (decidedBy === "timeout") return ASK_TIMEOUT_REASON;
   if (decidedBy === "human") return ASK_DENIED_REASON;
+  if (decidedBy === "cancelled") return ASK_CANCELLED_REASON;
   return ASK_NO_CHANNEL_REASON;
 }
 
@@ -160,6 +178,12 @@ export function createCodingToolRuntime(opts: {
    * (whole-file Edit/Write cap).
    */
   readCeiling?: number;
+  /**
+   * Aborts in-flight tool work (US-001). Bash and RunCommand's argv branch
+   * forward it to their launcher / runArgv call, which SIGKILLs the process
+   * group. Optional so existing callers compile unchanged.
+   */
+  signal?: AbortSignal;
   storyId?: string;
   callId?: string;
   scopeId?: string;
@@ -209,6 +233,11 @@ export function createCodingToolRuntime(opts: {
   const readCeiling = opts.readCeiling ?? READ_CEILING;
   const askResolver = opts.askResolver ?? headlessAskResolver();
   const granted = new Set(opts.policy.grantedTools());
+  // Captured so the `ToolRunContext` constructed inside `runTool` carries the
+  // session-wide abort signal; tools (Bash, Exec's argv branch) forward it
+  // into their launcher / runArgv call so turn cancellation reaches the
+  // process group. US-001.
+  const signal = opts.signal;
 
   // What `advertised()` actually returned, so a denial can name only tools the
   // session really received. Recomputing from `granted` would be wrong: an op
@@ -401,6 +430,14 @@ export function createCodingToolRuntime(opts: {
         resolvedPaths: readonly string[],
         approval?: { decidedBy: string; remembered: boolean; latencyMs: number },
       ): Promise<CodingToolOutcome> {
+        // US-002 AC15: a per-call `ToolCallContext.signal` (the native batch's
+        // turn signal) takes priority over the runtime-level signal. Both
+        // describe "abort this in-flight tool"; the per-call one is the one
+        // the batch explicitly put in scope, so it wins when both are
+        // present, falling back to the runtime-level signal otherwise so the
+        // session-wide abort keeps working when no per-call signal is in
+        // scope.
+        const callSignal = context?.signal ?? signal;
         try {
           const result = await target.run(callInput, {
             root: opts.policy.root,
@@ -409,6 +446,7 @@ export function createCodingToolRuntime(opts: {
             maxFileBytes,
             readCeiling,
             ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
+            ...(callSignal !== undefined ? { signal: callSignal } : {}),
           });
           const kind = result.isError === true ? "error" : "ok";
           const content = await shapeToolResult(result.content, policyIdentity, context);
@@ -452,20 +490,31 @@ export function createCodingToolRuntime(opts: {
       }
 
       if (!verdict.allowed && verdict.outcome === "ask") {
+        // US-003: build the AskControl from the per-call context. The turn's
+        // abort signal is forwarded verbatim, and onWaiting is wired so the
+        // resolver can tell the turn loop a human prompt is pending.
+        const callSignal = context?.signal ?? signal;
+        const askControl: AskControl = {
+          ...(callSignal !== undefined ? { signal: callSignal } : {}),
+          ...(context?.onWaiting !== undefined ? { onWaiting: context.onWaiting } : {}),
+        };
         let askVerdict: AskVerdict;
         try {
-          askVerdict = await askResolver.resolve({
-            tool: policyIdentity,
-            stage: opts.pipelineStage ?? "unknown",
-            rule: verdict.rule ?? verdict.reason,
-            summary: askSummary(policyIdentity, tool.scope, input),
-            ...(typeof input[tool.scope.commandField ?? ""] === "string"
-              ? { command: input[tool.scope.commandField as string] as string }
-              : {}),
-            root: opts.policy.root,
-            reason: verdict.reason,
-            ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
-          });
+          askVerdict = await askResolver.resolve(
+            {
+              tool: policyIdentity,
+              stage: opts.pipelineStage ?? "unknown",
+              rule: verdict.rule ?? verdict.reason,
+              summary: askSummary(policyIdentity, tool.scope, input),
+              ...(typeof input[tool.scope.commandField ?? ""] === "string"
+                ? { command: input[tool.scope.commandField as string] as string }
+                : {}),
+              root: opts.policy.root,
+              reason: verdict.reason,
+              ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
+            },
+            askControl,
+          );
         } catch (err) {
           const content = errorMessage(err);
           logCall(policyIdentity, "error", content.length, input, context, false, content);
@@ -477,6 +526,18 @@ export function createCodingToolRuntime(opts: {
           latencyMs: askVerdict.latencyMs,
         };
         if (askVerdict.decision === "allow") {
+          // US-003 AC11: recheck the turn signal AFTER the resolver returned
+          // allow. A resolver that approves after the turn has been cancelled
+          // would otherwise race ahead and execute the tool; we deny instead
+          // with the same cancelled reason, so the agent never sees a tool
+          // result from a turn that has already ended.
+          if (callSignal?.aborted === true) {
+            const reason = `${verdict.reason} -- ${ASK_CANCELLED_REASON}`;
+            logCall(policyIdentity, "denied:ask", reason.length, input, context, false, reason, undefined, {
+              approval,
+            });
+            return { kind: "denied", reason, breach: false };
+          }
           return runTool(tool, input, verdict.resolvedPaths ?? [], approval);
         }
         const reason = `${verdict.reason} -- ${askDenyReason(askVerdict.decidedBy)}`;

@@ -20,7 +20,7 @@
  */
 
 import { type FakeClock, makeFakeClock } from "@test/helpers";
-import type { AgentCallEndedEvent, AgentProcessUpdateEvent, AgentStreamEvent } from "@/runtime";
+import type { AgentCallEndedEvent, AgentProcessUpdateEvent, AgentStreamEvent, AgentStreamEventBase } from "@/runtime";
 import { _idleWatchdogDeps } from "@/runtime";
 
 /** Watchdog thresholds. Virtual time is free, so these are round and readable. */
@@ -78,13 +78,14 @@ export function restoreWatchdogClock(): void {
   saved = undefined;
 }
 
-export type ActivityKind = "message_update" | "thinking_update" | "usage_update";
+export type ActivityKind = "message_update" | "thinking_update" | "usage_update" | "tool_call_update";
 
 export function makeIdleWatchdogConfig(
   overrides: {
     enabled?: boolean;
     mode?: "off" | "observe" | "cancel" | "warn-then-cancel";
     idleTimeoutSeconds?: number;
+    toolCallOnlyIdleTimeoutSeconds?: number;
     activityKinds?: ActivityKind[];
     cancelGraceSeconds?: number;
     maxRetryAttempts?: number;
@@ -102,7 +103,7 @@ export function makeIdleWatchdogConfig(
 }
 
 /** Fields every agent stream event carries. Timestamped from the virtual clock. */
-function baseEvent(callId: string) {
+function baseEvent(callId: string): AgentStreamEventBase {
   return {
     callId,
     runId: "run-001",
@@ -158,6 +159,19 @@ export function makeToolCallUpdateEvent(overrides: { callId?: string } = {}): Ag
     ...baseEvent(overrides.callId ?? "call-123"),
     toolName: "bash",
   } as AgentStreamEvent;
+}
+
+/**
+ * US-004: the native turn is waiting on a human approval prompt. Unlike the
+ * activity kinds above this is handled by the watchdog WITHOUT an activityKinds
+ * membership test — it resets both activity clocks and clears an open grace
+ * window unconditionally.
+ */
+export function makeAwaitingHumanEvent(overrides: { callId?: string } = {}): AgentStreamEvent {
+  return {
+    kind: "agent.awaiting_human",
+    ...baseEvent(overrides.callId ?? "call-123"),
+  };
 }
 
 export function makeProcessUpdateEvent(

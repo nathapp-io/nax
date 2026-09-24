@@ -302,8 +302,28 @@ export class NativeAgentAdapter implements AgentAdapter {
       timestamp: Date.now(),
     });
 
+    // US-002: one per-turn signal, fanned in from the caller's
+    // `opts.signal`, the watchdog's `turnController.signal`, and a
+    // whole-turn deadline timer armed with `deadline.remainingMs()`. The
+    // timer is cleared at turn settlement (finally, below) so the AbortSignal
+    // any(...) does not keep a timer alive past the turn's end. Complete and
+    // summarize retain their per-call timers but combine them with this same
+    // turnSignal so a turn-cancel reaches an in-flight call mid-roundtrip.
+    const deadlineController = new AbortController();
+    const deadlineMs = deadline.remainingMs();
+    const deadlineTimer =
+      deadlineMs !== undefined ? setTimeout(() => deadlineController.abort(), deadlineMs) : undefined;
+    const turnSignals: AbortSignal[] = [turnController.signal, deadlineController.signal];
+    if (opts.signal !== undefined) turnSignals.unshift(opts.signal);
+    const turnSignal = AbortSignal.any(turnSignals);
+
     let result: TurnResult;
     try {
+      // US-002: clear the deadline timer at turn settlement, no matter how
+      // the turn ends (clean exit, throw, or any other path). The
+      // `AbortSignal.any` above holds a reference to `deadlineController.signal`,
+      // so a settled turn must drop its timer to avoid keeping it armed past
+      // the turn boundary.
       result = await runNativeTurn(handle, prompt, opts, {
         deadline,
         contextWindow: resolveContextWindow(handle.modelDef?.contextWindow, resolved.contextWindow),
@@ -317,6 +337,18 @@ export class NativeAgentAdapter implements AgentAdapter {
           ? { spinBreaker: nativeSessionSpinBreaker.get(handle.id) }
           : {}),
         ...(opts.loopEvents !== undefined ? { loopEvents: opts.loopEvents } : {}),
+        // US-002: the one per-turn signal threaded into the batch and the
+        // in-flight coding-tool runtime. When `opts.signal` and the watchdog
+        // and the deadline are all absent, `turnSignal` is a non-aborted
+        // composite that behaves as the no-signal regression guard requires.
+        signal: turnSignal,
+        // US-002 AC14: forward an onWaiting callback the batch can hand to
+        // every coding-tool request. Wired in US-004 to emit the keepalive
+        // activity; today it is a no-op so the field plumbing is real in the
+        // production native path even though the keepalive is not yet
+        // active. The handler copies it onto the tool's `ToolCallContext`
+        // and a tool that blocks on a human approval calls it before the wait.
+        onWaiting: () => {},
         pricingSource,
         onActivity: (activity) => {
           hooks?.onStreamActivity?.(buildNativeStreamEvent(eventBase, activity, Date.now()));
@@ -328,10 +360,13 @@ export class NativeAgentAdapter implements AgentAdapter {
           const remainingMs = deadline.remainingMs();
           const controller = new AbortController();
           const timer = remainingMs !== undefined ? setTimeout(() => controller.abort(), remainingMs) : undefined;
+          // US-002: the per-call signal still combines with the per-turn signal
+          // (watchdog + deadline + caller), so a turn cancel ends the summary
+          // even mid-call. The per-call timer is the additional budget on top.
           const signal = AbortSignal.any(
             opts.signal !== undefined
-              ? [opts.signal, controller.signal, turnController.signal]
-              : [controller.signal, turnController.signal],
+              ? [opts.signal, controller.signal, turnController.signal, deadlineController.signal]
+              : [controller.signal, turnController.signal, deadlineController.signal],
           );
           try {
             const res = await client.complete(resolved, {
@@ -350,14 +385,16 @@ export class NativeAgentAdapter implements AgentAdapter {
           // The controller is armed with what is LEFT of the turn, so N
           // round-trips can no longer add up to N x timeoutSeconds. Still
           // combined with any caller-supplied opts.signal via AbortSignal.any so
-          // either can end the call.
+          // either can end the call. US-002: also combined with the per-turn
+          // turnController + deadlineController signals so an in-flight call
+          // observes the same cancellation the batch sees between calls.
           const remainingMs = deadline.remainingMs();
           const controller = new AbortController();
           const timer = remainingMs !== undefined ? setTimeout(() => controller.abort(), remainingMs) : undefined;
           const signal = AbortSignal.any(
             opts.signal !== undefined
-              ? [opts.signal, controller.signal, turnController.signal]
-              : [controller.signal, turnController.signal],
+              ? [opts.signal, controller.signal, turnController.signal, deadlineController.signal]
+              : [controller.signal, turnController.signal, deadlineController.signal],
           );
           // The loop-event bag speaks in booleans: `false` explicitly drops
           // the session's inherited thinking level for this request, while
@@ -450,6 +487,8 @@ export class NativeAgentAdapter implements AgentAdapter {
         );
       }
       throw err;
+    } finally {
+      if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
     }
 
     hooks?.onStreamActivity?.({

@@ -236,6 +236,18 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
     await waitForCondition(() => survivors() === "", 3_000, 50);
   }, 30_000);
 
+  test("US-001: a wrapped background process holding the pipe is killed when the shell exits", async () => {
+    const run = await bash();
+    const out = await run("sleep 4714 & echo started", 1500);
+    expect(out.content).toContain("started");
+    const survivors = () =>
+      Bun.spawnSync(["/bin/sh", "-c", "ps -e -o args | grep 'sleep 4714' | grep -v grep || true"])
+        .stdout.toString()
+        .trim();
+    // Rejects (fails the test) if any survivor outlives 3 s.
+    await waitForCondition(() => survivors() === "", 3_000, 50);
+  }, 30_000);
+
   test("the likely-denial note reaches the tool result", async () => {
     const run = await bash();
     const out = await run(`echo x > ${outside}/y.txt`);

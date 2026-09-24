@@ -72,4 +72,40 @@ describe("buildRunInteractionHandler — coding tools", () => {
     });
     expect(seen[0]?.context).toEqual({ turnId: "turn-1", roundTrips: 2, toolCallId: "toolu_x" });
   });
+
+  // US-002 AC14: the native batch sends the single per-turn signal and an
+  // onWaiting callback on every coding-tool request; buildRunInteractionHandler
+  // must forward both into the ToolCallContext it hands the runtime, so a tool
+  // can stop in-flight work (Bash/Exec SIGKILL) when the turn is cancelled.
+  test("US-002 AC14: forwards the coding-tool signal into callTool's ToolCallContext", async () => {
+    const seen: Array<{ signal?: AbortSignal }> = [];
+    const runtime: CodingToolRuntime = {
+      advertised: () => [],
+      callTool: async (_name, _input, context) => {
+        if (context?.signal !== undefined) seen.push({ signal: context.signal });
+        return { kind: "ok", content: "ok" };
+      },
+    };
+    const handler = buildRunInteractionHandler({ codingToolRuntime: runtime });
+    const signal = new AbortController().signal;
+    await handler.onInteraction({ kind: "coding-tool", name: "Read", input: { path: "a.ts" }, signal });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.signal).toBe(signal);
+  });
+
+  test("US-002 AC14: forwards onWaiting into callTool's ToolCallContext", async () => {
+    const seen: Array<{ onWaiting?: () => void }> = [];
+    const runtime: CodingToolRuntime = {
+      advertised: () => [],
+      callTool: async (_name, _input, context) => {
+        if (context?.onWaiting !== undefined) seen.push({ onWaiting: context.onWaiting });
+        return { kind: "ok", content: "ok" };
+      },
+    };
+    const handler = buildRunInteractionHandler({ codingToolRuntime: runtime });
+    const onWaiting = () => {};
+    await handler.onInteraction({ kind: "coding-tool", name: "Read", input: { path: "a.ts" }, onWaiting });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.onWaiting).toBe(onWaiting);
+  });
 });

@@ -187,6 +187,32 @@ describe("CLIInteractionPlugin.receive/cancel", () => {
     const plugin = new CLIInteractionPlugin();
     await expect(plugin.cancel("never-existed")).resolves.toBeUndefined();
   });
+
+  test("cancel() settles an active question and frees readline for the next request", async () => {
+    const plugin = new CLIInteractionPlugin();
+    const internals = cliInternals(plugin);
+    let closed = false;
+    const staleReadline = makeSilentReadline(() => {
+      closed = true;
+    });
+    internals.rl = staleReadline;
+    await plugin.send(makeRequest("cancel-active"));
+    const active = plugin.receive("cancel-active", 60_000);
+
+    await plugin.cancel("cancel-active");
+    const cancelled = await Promise.race([
+      active,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 100)),
+    ]);
+    expect(cancelled).not.toBeNull();
+    expect(closed).toBe(true);
+    expect(internals.rl).not.toBe(staleReadline);
+
+    internals.rl = makeAnsweringReadline("y");
+    await plugin.send(makeRequest("after-cancel"));
+    expect((await plugin.receive("after-cancel", 1_000)).action).toBe("approve");
+    await plugin.destroy();
+  });
 });
 
 describe("CLIInteractionPlugin — prompt type dispatch (via promptUser)", () => {

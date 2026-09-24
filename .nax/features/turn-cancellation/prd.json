@@ -1,0 +1,295 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "turn-cancellation",
+  "branchName": "feat/turn-cancellation",
+  "createdAt": "2026-09-24T00:00:00.000Z",
+  "updatedAt": "2026-09-24T11:45:50.286Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Abortable and drain-safe command execution",
+      "description": "**Goal** — Make runArgv kill an aborted command group and return after a bounded post-exit drain. **Motivation** — `runArgv` clears its kill timer as soon as the shell exits, then awaits stdout/stderr end-of-file with no deadline. **Approach** — `RunArgvOptions` gains `signal?: AbortSignal`; `ArgvExecResult` gains optional `aborted` and `orphansKilled`, while runArgv always sets both. Already-aborted signal never spawns and returns exitCode -1, empty output, timedOut false, aborted true, orphansKilled false. Read stdout and stderr incrementally/concurrently. Keep timeout armed until exit plus drain; timeout and abort SIGKILL process group and cancel both readers. After exit, give both streams DRAIN_GRACE_MS (500); if either stays open SIGKILL group, cancel readers, set orphansKilled, and return real exit/output so far. Preserve and document MEM-4, BUG-13, and concurrent-drain invariants; move incremental reader under src/utils if argv-exec exceeds about 250 lines. DRAIN_GRACE_MS is an internal injectable _deps constant. LaunchRequest and ToolRunContext gain signal; launcher paths, Bash and Exec launcher/fallback paths forward it. Aborted command result is error content starting `Cancelled: the turn ended while this command was running.` plus output. Orphans result is normal output plus the specified `[nax] background processes` final line. Every Bash description says background processes holding output are killed. **Scope** — In: process lifecycle, launcher/Bash/Exec forwarding and rendering. Out: turn/ask/watchdog work in US-002–004; SIGTERM escalation and processes leaving group. **Interface** — `signal?: AbortSignal` on RunArgvOptions, LaunchRequest, ToolRunContext; `aborted?: boolean; orphansKilled?: boolean` on ArgvExecResult.",
+      "acceptanceCriteria": [
+        "When runArgv executes sh -c `sleep 4712 & echo started` in a temp cwd with timeoutMs 1500, then stdout contains `started`.",
+        "When that call settles, then orphansKilled is true and timedOut is false.",
+        "When that call settles, then no process with arguments `sleep 4712` remains alive within 3 s, polled with waitForCondition.",
+        "When that call settles, then it resolves under 5000 ms wall time, before sleep 4712 could exit naturally.",
+        "When AbortController aborts after waitForFile finds the pid from sh -c `echo $$ > pid; sleep 4713`, then runArgv returns aborted true.",
+        "When that aborted call settles, then no process with arguments `sleep 4713` remains alive within 3 s, polled with waitForCondition.",
+        "When runArgv receives an already-aborted signal, then it returns aborted true and exitCode -1 and recording _argvExecDeps.spawn is never called.",
+        "When runArgv executes a command writing 256 KiB to stdout and exiting, then stdout has all 256 KiB and orphansKilled is false.",
+        "When runArgv executes sleep 5 with timeoutMs 250, then timedOut is true and aborted is false.",
+        "When runArgv settles with a never-aborted recording AbortSignal, then its abort listener has been removed.",
+        "When createCommandLauncher runs disabled and available wrapped requests carrying a signal, then recording _launcherDeps.runArgv receives that same signal on each path.",
+        "When Bash runs with ToolRunContext.signal and no launcher, then _bashToolDeps.runArgv receives that signal.",
+        "When Exec runs with ToolRunContext.signal and recording launcher, then its LaunchRequest contains that signal.",
+        "When Bash launcher result has aborted true and stdout partial, then Bash returns isError true with content beginning `Cancelled: the turn ended while this command was running.` and containing partial.",
+        "When Bash launcher result has exitCode 0, orphansKilled true, and stdout ok, then content contains ok and ends with a line beginning `[nax] background processes still holding the output were killed`.",
+        "When each of the five Bash tool descriptions `bashToolDescription` can return is selected (`gatedDescription`, `escalateDescription`, `rawDescription` with the contained sentence, `rawDescription` with the uncontained default, and `rawUnavailableDescription`), then each states that background processes still holding command output are killed when the command exits.",
+        "When sandbox-live runs wrapped Bash `sleep 4714 & echo started` with 1500 ms timeout, then content contains started and no sleep 4714 process remains within 3 s, skipped where sandbox backend is unavailable like neighbours."
+      ],
+      "tags": [
+        "feature",
+        "process-lifecycle",
+        "sandbox",
+        "tools"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Real process groups, drains, abort listeners, and several command forwarding paths have timing-sensitive behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/utils/argv-exec.ts",
+        "src/sandbox/launcher.ts",
+        "src/tools/bash.ts",
+        "src/tools/run-command-exec.ts",
+        "test/integration/sandbox/sandbox-live.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/utils/argv-exec-lifecycle.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/sandbox/launcher.test.ts",
+          "reason": "assertions that compare a `LaunchResult` or a captured `runArgv` options object with exact equality may gain `signal`, `aborted` or `orphansKilled`; the invariant kept is that the logical argv is `executed` and the caller's env and timeout reach `runArgv` unchanged."
+        },
+        {
+          "path": "test/integration/sandbox/sandbox-live.test.ts",
+          "reason": "gains a wrapped background-process case beside \"a timeout kills sandboxed grandchildren\"; existing cases are unchanged."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "163ad06ef11a3bb80a9a810fa147883b603a9422",
+      "outOfScope": [
+        "SIGTERM before SIGKILL; processes that leave the process group."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Thread one native turn signal into batch and tools",
+      "description": "**Goal** — Build one per-turn signal and stop dispatching subsequent native tool calls after cancellation. **Motivation** — `runToolBatch` never consults a signal between tool calls. **Approach** — Adapter builds turnSignal with AbortSignal.any over optional opts.signal, turnController.signal, and a deadline controller setTimeout using deadline.remainingMs; clear deadline timer at turn settlement. Pass it as TurnDeps.signal. Complete and summarize retain per-call timers but combine them with turnSignal. At the top of each batch iteration before activity, an aborted signal writes this and all later calls synthetic `Not run: the turn was cancelled.` error results and breaks, mirroring terminate with no after_tool. ToolBatchResult gains cancelled. If cancelled runNativeTurn throws signal.reason, or DOMException named AbortError if undefined, through existing save/rethrow catch. An in-progress call completes on its path; check begins next iteration. Batch sends signal and onWaiting in coding-tool request; handler copies them to ToolCallContext; runTool copies signal to ToolRunContext. **Scope** — In: native adapter/loop/batch and coding tool propagation. Out: US-001 process mechanics, US-003 approval cancellation, US-004 keepalive, ask_human/context pull/ACP. **Interface** — TurnDeps has `signal?: AbortSignal`; ToolBatchResult has `cancelled: boolean`; coding interaction and ToolCallContext carry signal/onWaiting.",
+      "acceptanceCriteria": [
+        "When a coding interaction aborts deps.signal while handling a of batch [a,b], then onInteraction is never called for b.",
+        "When that cancellation occurs, then saved transcript result for b has exact content `Not run: the turn was cancelled.` and isError true.",
+        "When that cancellation occurs, then every assistant tool-call id has exactly one result in saved transcript.",
+        "When that cancellation occurs, then runNativeTurn rejects with the abort reason.",
+        "When that cancellation occurs, then fake complete is called exactly once with no round trip after cancel.",
+        "When deps.signal aborts with no reason, then runNativeTurn rejects with error name AbortError.",
+        "Given a batch signal already aborted at start, when runToolBatch runs, then it invokes no interactions and synthetically answers every call with content `Not run: the turn was cancelled.`",
+        "When a synthetic cancelled answer is produced, then registered after_tool handler is not invoked.",
+        "When runNativeTurn receives no deps.signal for a two-call batch, then both interactions run and completion is normal, as before this feature.",
+        "When registered onActiveCall cancel fires during coding tool execution, then the signal received in that tool ToolRunContext aborts.",
+        "When caller opts.signal aborts during coding tool execution, then the signal received in that tool ToolRunContext aborts.",
+        "When adapter turn has timeoutSeconds 1 and a tool remains running, then its received signal aborts after deadline, awaited with waitForCondition rather than fixed sleep.",
+        "When onActiveCall cancel fires during complete request, then that complete request receives an aborted signal.",
+        "When buildRunInteractionHandler receives coding-tool signal and onWaiting, then runtime.callTool receives both in ToolCallContext.",
+        "When runtime.callTool runs allowed tool with ToolCallContext.signal, then tool run receives that same signal in ToolRunContext."
+      ],
+      "tags": [
+        "feature",
+        "native-agent",
+        "cancellation"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "One cancellation contract crosses adapter timers, transcript persistence, loop dispatch, and runtime context.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/agents/native/adapter.ts",
+        "src/agents/native/session/turn-tool-batch.ts",
+        "src/agents/native/session/turn-loop.ts",
+        "src/agents/run-interaction-handler.ts",
+        "src/tools/runtime.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/agents/native/session/turn-tool-batch-cancel.test.ts",
+        "test/unit/agents/native/adapter-turn-signal.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/agents/native/session/turn-loop-seam.test.ts",
+          "reason": "an exact-shape assertion over the object returned by `runToolBatch` or over the coding-tool interaction request may gain `cancelled: false`, `signal` or `onWaiting`; the invariant kept is that a batch with no signal behaves exactly as before."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fa5e23655a05ef5300f76800bd4d5149368c03ff",
+      "outOfScope": [
+        "`ask_human` questions; context-pull tools."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Cancel pending human-approval waiters",
+      "description": "**Goal** — Settle a turn-cancelled approval as cancelled and prevent post-cancel allow from executing. **Motivation** — A later approval otherwise executes command and later batch calls after watchdog cancellation. **Approach** — New second argument AskControl, never AskRequest, carries optional signal and onWaiting. chainAskLinks passes control to every link. Dispatch resolver passes control to base while audits req alone. callTool calls askResolver.resolve(req, control), then after allow rechecks context signal; aborted signal records denied:ask cancelled reason and returns denied/breach false. AskDecidedBy gains cancelled and askDenyReason maps it to `Not run: the turn was cancelled before anyone answered.` Human link keeps shared entry by stage plus command and serial queue; each resolve is a waiter. Already-aborted waiter settles deny/cancelled without joining. Later abort settles cancelled, removes listener, decrements live count. Zero live on-screen cancels chain prompt; zero queued is never prompted; human response settles all live waiters; link-level abortSignal behavior remains unchanged. **Scope** — In: AskControl through chain/dispatch/runtime and per-waiter lifecycle. Out: US-002 turn construction, US-004 keepalive, dedupe key/link abort relabel. **Interface** — `AskControl { readonly signal?: AbortSignal; readonly onWaiting?: () => void; }`; AskLink and AskResolver resolve(req, control?).",
+      "acceptanceCriteria": [
+        "When runtime.callTool receives ask verdict deny/cancelled, then it returns denied with reason containing `Not run: the turn was cancelled before anyone answered.`.",
+        "When chainAskLinks([link]).resolve(req, control) runs, then link.resolve receives the same control object.",
+        "When dispatch ask resolver resolves with control, then it passes control to human link and appended audit request equals req with no signal or onWaiting field.",
+        "When an on-screen human-link waiter signal aborts, then it settles deny/cancelled.",
+        "When that is the sole waiter, then chain.cancel is called with prompt id.",
+        "When two same-key waiters exist and first aborts, then first settles cancelled and second settles human allow.",
+        "When only first of two same-key waiters aborts, then chain.cancel is never called.",
+        "When both same-key waiters abort, then chain.cancel is called once.",
+        "When a queued request aborts before its turn, then chain.prompt is never called for it.",
+        "When request signal is already aborted, then it settles cancelled and is never passed to prompt.",
+        "When resolver allows after context signal aborted, then tool run is not invoked and runtime returns denied with a reason containing `Not run: the turn was cancelled before anyone answered.`",
+        "When that post-allow cancellation is denied, then tool audit row outcome is denied:ask.",
+        "When cancelled ask resolves through dispatch resolver, then approval audit row decidedBy is cancelled."
+      ],
+      "tags": [
+        "feature",
+        "permissions",
+        "approval",
+        "cancellation"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Shared prompt deduplication now has independently cancellable waiters and durable audit constraints.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/interaction/ask-link.ts",
+        "src/permissions/ask-chain.ts",
+        "src/interaction/dispatch-ask.ts",
+        "src/tools/runtime.ts",
+        "test/unit/interaction/ask-link.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/interaction/ask-link-cancel.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/interaction/ask-link.test.ts",
+          "reason": "tests that call `resolve(req)` with one argument stay valid; an assertion that a cancelled prompt settles `unavailable` through the link-level `abortSignal` stays as it is and must not be changed to `cancelled`."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "dd0477a1ddc31f2357f8db6e1693a9fcb7d765f8",
+      "outOfScope": [
+        "the link-level `abortSignal` still settles `unavailable`; the dedupe key is unchanged."
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Keep native turn alive during human approval",
+      "description": "**Goal** — Emit awaiting-human activity while a prompt is pending so watchdog does not cancel legitimate waiting. **Motivation** — Pending asks emit no activity and idle watchdog cuts long approval timeouts short. **Approach** — Human link calls every live waiter onWaiting once at prompt send then each ASK_KEEPALIVE_MS 60000 with re-armed cancellable setTimeout, never setInterval, clearing timer on every settlement. Batch supplies onWaiting emitting awaiting_human activity. Native activity maps to AgentAwaitingHumanEvent kind agent.awaiting_human. Watchdog handles this kind without activityKinds, sets both activity clocks to event timestamp and clears grace. Cache and approvals links never wait/call onWaiting. ASK_KEEPALIVE_MS is internal injectable _deps constant. **Scope** — In: prompt timer, batch callback, event union, watchdog. Out: cancellation semantics in US-003, ask_human, configuration, ACP, reopening nax#2013. **Interface** — NativeTurnActivity includes `{ kind: \"awaiting_human\" }`; AgentAwaitingHumanEvent kind is `agent.awaiting_human`.",
+      "acceptanceCriteria": [
+        "When runToolBatch builds coding-tool request, then calling its onWaiting invokes deps.onActivity with awaiting_human.",
+        "Given injected timer and pending prompt, when prompt is sent, then onWaiting runs once then once each ASK_KEEPALIVE_MS.",
+        "When prompt settles by allow, deny, timeout, or cancellation, then onWaiting never runs during later keepalive periods.",
+        "When buildNativeStreamEvent receives awaiting_human, then returned event kind is agent.awaiting_human and callId equals base callId.",
+        "Given cancel watchdog with activityKinds message_update and 1 s idle, when awaiting-human arrives every 500 ms for 5 s, then cancel handle never runs.",
+        "Given warn-then-cancel call in grace, when awaiting-human arrives before grace ends, then cancel handle does not run.",
+        "Given 1 s idle and 2 s tool-only timeout, when tool_call_update and awaiting-human each arrive every 500 ms for 5 s, then cancel handle never runs.",
+        "Given that watchdog, when only tool_call_update arrives every 500 ms, then cancel handle runs once 2 s tool-only timeout passes, confirming prior criterion depends on awaiting_human.",
+        "When awaiting_human is emitted with stream logging and usage audit listeners, then no `listener threw` warning is logged."
+      ],
+      "tags": [
+        "feature",
+        "approval",
+        "native-agent",
+        "idle-watchdog"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Prompt timer lifecycle must coordinate with event mapping and two watchdog clocks.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/interaction/ask-link.ts",
+        "src/agents/native/session/turn-events.ts",
+        "src/runtime/agent-stream-events.ts",
+        "src/runtime/middleware/idle-watchdog/index.ts",
+        "src/agents/native/session/turn-tool-batch.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/interaction/ask-link-keepalive.test.ts",
+        "test/unit/runtime/middleware/idle-watchdog-awaiting-human.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/runtime/middleware/agent-stream-logging.test.ts",
+          "reason": "may gain a case showing `agent.awaiting_human` is accepted; existing assertions are unchanged."
+        },
+        {
+          "path": "test/unit/runtime/middleware/_idle-watchdog-harness.ts",
+          "reason": "`makeIdleWatchdogConfig` may gain a `toolCallOnlyIdleTimeoutSeconds` override and the harness may gain a `makeAwaitingHumanEvent` factory; existing factories and defaults are unchanged."
+        },
+        {
+          "path": "test/unit/runtime/middleware/usage-audit.test.ts",
+          "reason": "may gain a case showing `agent.awaiting_human` is ignored without error; existing assertions are unchanged."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2fc58ffe0854a2c88d77ce897f79caaffa28989d",
+      "outOfScope": [
+        "keep-alive for `ask_human` questions; exposing `ASK_KEEPALIVE_MS` as configuration."
+      ]
+    }
+  ],
+  "analysis": "Audit findings: this enhancement fits existing code, not a greenfield architecture. `src/utils/argv-exec.ts:14-93` currently spawns detached groups, drains streams concurrently, and clears its timeout at direct-child exit; it needs abort-aware readers and post-exit grace while retaining documented MEM-4, BUG-13, and concurrent-drain invariants. Command forwarding is in `src/sandbox/launcher.ts`, `src/tools/bash.ts`, `src/tools/run-command-exec.ts`, plus probe/dependency callers. Native control flow is adapter -> TurnDeps -> tool batch -> loop, with the synthetic spin terminate branch as precedent; interaction propagation is AdapterInteraction -> buildRunInteractionHandler -> ToolCallContext -> ToolRunContext. Ask request serialization and auditing must remain request-only while `ask-link.ts` changes from one shared promise to per-waiter cancellation. Awaiting-human extends the native activity/event union and watchdog switch. Principal risks are process kill/drain races, listener/timer cleanup, exact abort reasons, strict tool result pairing, shared waiter cancellation, and exhaustive stream-event consumers. Optional fields preserve existing literals/test doubles. Existing coverage is in argv-exec, launcher, Bash/Exec, native turn seam/adapter, ask-link/dispatch, and idle-watchdog suites; new lifecycle tests are required. Implement dependency order US-001, US-002, US-003, US-004; no user configuration migration is required.",
+  "outOfScope": [
+    "`ask_human` questions answered over the `interactionBridge` do not observe the turn signal; they are not command approvals.",
+    "Processes that leave the process group (`setsid()`, double-fork) and close their stdio survive a Bash/Exec call; closing that gap needs a sandbox- or cgroup-level reaper.",
+    "The human ask link's dedupe key (`stage` + command, shared by command-less asks) is not changed; only the cancellation of one waiter among several is handled.",
+    "The link-level `abortSignal` of `createHumanAskLink` keeps settling a cancelled prompt as `unavailable`; relabelling it is not part of this feature.",
+    "`DRAIN_GRACE_MS` and `ASK_KEEPALIVE_MS` are not exposed as configuration.",
+    "Context-pull tools do not receive the turn signal.",
+    "ACP agents are not changed; only the native agent's turn loop, runtime, ask chain and process execution are.",
+    "US-001 only: SIGTERM-then-SIGKILL escalation is not introduced; every kill is the existing process-group SIGKILL.",
+    "US-004 only: the keep-alive does not reopen nax#2013; it fires only while a human prompt is pending, which `execution.approvalTimeout` and the turn deadline bound."
+  ],
+  "routingProfile": "native"
+}

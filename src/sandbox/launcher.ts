@@ -49,6 +49,7 @@ async function runUnwrapped(req: LaunchRequest, sandbox: SandboxRecord): Promise
     timeoutMs: req.timeoutMs,
     stripEnvVars: [...req.stripEnvVars],
     ...(req.env !== undefined ? { env: req.env } : {}),
+    ...(req.signal !== undefined ? { signal: req.signal } : {}),
   });
   return { ...result, executed: argv, sandbox };
 }
@@ -75,6 +76,7 @@ async function runWrapped(req: LaunchRequest, backend: SandboxBackend, policy: S
       timeoutMs: req.timeoutMs,
       stripEnvVars: [...req.stripEnvVars],
       ...(req.env !== undefined ? { env: req.env } : {}),
+      ...(req.signal !== undefined ? { signal: req.signal } : {}),
     });
     const denied = result.exitCode !== 0 && LIKELY_SANDBOX_DENIAL.test(result.stderr);
     const violations = backend.annotate(commandId, result.stderr);

@@ -244,4 +244,46 @@ describe("createCommandLauncher", () => {
     expect(backend.calls[0]?.policy.writeRoots).toEqual([root]);
     expect(r.stdout.trim().endsWith("/pkg")).toBe(true);
   });
+
+  test("US-001 AC11: disabled path forwards request.signal to runArgv", async () => {
+    const signal = new AbortController().signal;
+    const calls: Parameters<typeof _launcherDeps.runArgv>[0][] = [];
+    _launcherDeps.runArgv = async (o) => {
+      calls.push(o);
+      return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+    };
+    const launcher = createCommandLauncher({ state: DISABLED_SANDBOX_STATE });
+    await launcher.run({
+      spec: { kind: "shell", shell: "/bin/sh", command: "echo hi" },
+      root,
+      cwd: root,
+      timeoutMs: 1000,
+      stripEnvVars: [],
+      signal,
+    });
+    expect(calls[0]?.signal).toBe(signal);
+  });
+
+  test("US-001 AC11: wrapped path forwards request.signal to runArgv", async () => {
+    const signal = new AbortController().signal;
+    const calls: Parameters<typeof _launcherDeps.runArgv>[0][] = [];
+    _launcherDeps.runArgv = async (o) => {
+      calls.push(o);
+      return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+    };
+    const launcher = createCommandLauncher({
+      state: available,
+      backend: makeFakeSandboxBackend("enforce"),
+      policyFor: async (r) => policy(r),
+    });
+    await launcher.run({
+      spec: { kind: "shell", shell: "/bin/sh", command: "echo hi" },
+      root,
+      cwd: root,
+      timeoutMs: 1000,
+      stripEnvVars: [],
+      signal,
+    });
+    expect(calls[0]?.signal).toBe(signal);
+  });
 });

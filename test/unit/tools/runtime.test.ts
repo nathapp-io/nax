@@ -686,3 +686,59 @@ describe("ledger fields reach the sink, not only the console logger", () => {
     expect(recorded[0]?.target).toBe("repoRoot");
   });
 });
+
+// US-002 AC15: the per-call signal a caller puts in `ToolCallContext` must be
+// copied onto the `ToolRunContext` the tool's `run()` receives, so a native
+// turn's single signal reaches an in-flight Bash/Exec even though the runtime
+// was created without a session-wide signal.
+describe("createCodingToolRuntime — per-call signal (US-002 AC15)", () => {
+  test("AC15: a ToolCallContext.signal is the ToolRunContext signal a run tool sees", async () => {
+    const captured: Array<AbortSignal | undefined> = [];
+    const tool: CodingTool = {
+      name: "Read",
+      description: "read",
+      inputSchema: { type: "object", properties: { path: { type: "string" } } },
+      scope: { pathFields: ["path"] },
+      async run(_input, ctx) {
+        captured.push(ctx.signal);
+        return { content: "ok" };
+      },
+    };
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root),
+      extraTools: [tool],
+    });
+    const controller = new AbortController();
+    controller.abort("turn cancelled");
+    const outcome = await rt.callTool("Read", { path: "src/a.ts" }, { signal: controller.signal });
+
+    expect(outcome.kind).toBe("ok");
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toBe(controller.signal);
+    expect(captured[0]?.aborted).toBe(true);
+  });
+
+  test("AC15: a call made without a per-call signal still aborts through the runtime-level signal", async () => {
+    const captured: Array<AbortSignal | undefined> = [];
+    const tool: CodingTool = {
+      name: "Read",
+      description: "read",
+      inputSchema: { type: "object", properties: { path: { type: "string" } } },
+      scope: { pathFields: ["path"] },
+      async run(_input, ctx) {
+        captured.push(ctx.signal);
+        return { content: "ok" };
+      },
+    };
+    const controller = new AbortController();
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root),
+      extraTools: [tool],
+      signal: controller.signal,
+    });
+    const outcome = await rt.callTool("Read", { path: "src/a.ts" });
+
+    expect(outcome.kind).toBe("ok");
+    expect(captured[0]).toBe(controller.signal);
+  });
+});

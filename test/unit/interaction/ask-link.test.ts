@@ -1,6 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { assertDefined, type FakeClock, makeFakeClock, waitForCondition } from "@test/helpers";
 import type { AskChannel, AskChannelResponse, InteractionRequest } from "@/interaction";
 import { cancelPendingAsk, createHumanAskLink } from "@/interaction";
+import { _askLinkDeps } from "@/interaction/ask-link";
 import type { AskRequest } from "@/permissions";
 
 const REQ: AskRequest = {
@@ -213,4 +215,284 @@ describe("human ask link", () => {
     expect(await second).toEqual({ decision: "allow", decidedBy: "human" });
     expect(promptCalls).toBe(1);
   });
+});
+
+// US-003: cancel pending human-approval waiters. The link accepts an optional
+// per-ask AskControl; its signal cancels just that waiter ("deny/cancelled"),
+// settles the on-screen chain prompt once no live waiter remains, and never
+// prompts for a waiter whose signal is already aborted.
+describe("US-003 — cancel pending human-approval waiters", () => {
+  /**
+   * Wait until the link has dispatched its on-screen prompt. Used in place of
+   * a fixed-duration sleep: the serial queue's runSession is queued on a
+   * promise chain, and `link.pending()` is the observable condition that
+   * fires once chain.prompt has been called.
+   */
+  const waitForOnScreen = (link: ReturnType<typeof createHumanAskLink>) =>
+    waitForCondition(() => link.pending() !== undefined, 1_000);
+
+  /**
+   * Wait until the chain's prompt has been dispatched a given number of times.
+   * Used in tests that share a counter across the whole suite so the
+   * condition is observable synchronously on the call to chain.prompt.
+   */
+  const waitForPromptCount = (count: () => number, target: number) => waitForCondition(() => count() === target, 1_000);
+
+  /** A chain whose prompt never resolves until cancelled or released. */
+  function hangingChain(cancel: (id: string) => void): AskChannel {
+    return {
+      prompt: () => new Promise<AskChannelResponse>(() => {}),
+      cancel: (id) => {
+        cancel(id);
+        return Promise.resolve();
+      },
+    };
+  }
+
+  test("AC10: a request whose signal is already aborted settles cancelled and is never prompted", async () => {
+    const sent: InteractionRequest[] = [];
+    const controller = new AbortController();
+    controller.abort("turn ended");
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+
+    const outcome = await link.resolve(REQ, { signal: controller.signal });
+
+    expect(outcome).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(sent).toHaveLength(0);
+  });
+
+  test("AC4: aborting an on-screen waiter settles it deny/cancelled", async () => {
+    const link = createHumanAskLink({ chain: hangingChain(() => {}), timeoutMs: 1_000_000 });
+    const controller = new AbortController();
+    const waiter = link.resolve(REQ, { signal: controller.signal });
+    await waitForOnScreen(link);
+    expect(link.pending()).toBeDefined(); // the prompt is on screen
+
+    controller.abort();
+
+    expect(await waiter).toEqual({ decision: "deny", decidedBy: "cancelled" });
+  });
+
+  test("AC5: aborting the sole waiter cancels the chain prompt with its id", async () => {
+    const cancelled: string[] = [];
+    const link = createHumanAskLink({ chain: hangingChain((id) => cancelled.push(id)), timeoutMs: 1_000_000 });
+    const controller = new AbortController();
+    const waiter = link.resolve(REQ, { signal: controller.signal });
+    await waitForOnScreen(link);
+    const promptId = link.pending();
+    assertDefined(promptId, "on-screen prompt id");
+
+    controller.abort();
+    await waiter;
+
+    expect(cancelled).toEqual([promptId]);
+  });
+
+  test("AC6: two same-key waiters — aborting the first settles it cancelled, the second still allows", async () => {
+    let promptCalls = 0;
+    let release: ((response: AskChannelResponse) => void) | undefined;
+    const chain: AskChannel = {
+      prompt: () => {
+        promptCalls++;
+        return new Promise<AskChannelResponse>((resolve) => {
+          release = resolve;
+        });
+      },
+      cancel: () => Promise.resolve(),
+    };
+    const link = createHumanAskLink({ chain, timeoutMs: 1_000_000 });
+    const firstCtrl = new AbortController();
+    const secondCtrl = new AbortController();
+    const first = link.resolve(REQ, { signal: firstCtrl.signal });
+    const second = link.resolve(REQ, { signal: secondCtrl.signal });
+    await waitForPromptCount(() => promptCalls, 1); // same key joins the single on-screen prompt
+    expect(promptCalls).toBe(1);
+
+    firstCtrl.abort();
+    expect(await first).toEqual({ decision: "deny", decidedBy: "cancelled" });
+
+    release?.({ action: "allow", respondedAt: Date.now() });
+    expect(await second).toEqual({ decision: "allow", decidedBy: "human" });
+    expect(promptCalls).toBe(1);
+  });
+
+  test("AC7: aborting only the first of two same-key waiters never cancels the chain prompt", async () => {
+    const cancelled: string[] = [];
+    const link = createHumanAskLink({ chain: hangingChain((id) => cancelled.push(id)), timeoutMs: 1_000_000 });
+    const firstCtrl = new AbortController();
+    const secondCtrl = new AbortController();
+    const first = link.resolve(REQ, { signal: firstCtrl.signal });
+    void link.resolve(REQ, { signal: secondCtrl.signal }); // second stays live
+    await waitForOnScreen(link);
+
+    firstCtrl.abort();
+    expect(await first).toEqual({ decision: "deny", decidedBy: "cancelled" });
+
+    // The second waiter is still live, so the on-screen prompt is not cancelled.
+    expect(cancelled).toEqual([]);
+  });
+
+  test("AC8: aborting both same-key waiters cancels the chain prompt exactly once", async () => {
+    const cancelled: string[] = [];
+    const link = createHumanAskLink({ chain: hangingChain((id) => cancelled.push(id)), timeoutMs: 1_000_000 });
+    const firstCtrl = new AbortController();
+    const secondCtrl = new AbortController();
+    const first = link.resolve(REQ, { signal: firstCtrl.signal });
+    const second = link.resolve(REQ, { signal: secondCtrl.signal });
+    await waitForOnScreen(link);
+
+    firstCtrl.abort();
+    secondCtrl.abort();
+
+    expect(await first).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(await second).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(cancelled).toHaveLength(1);
+  });
+
+  test("cancelling a hanging prompt releases the serial queue for the next approval", async () => {
+    const prompted: string[] = [];
+    const chain: AskChannel = {
+      prompt: (request) => {
+        prompted.push(request.id);
+        if (prompted.length === 1) return new Promise<AskChannelResponse>(() => {});
+        return Promise.resolve({ action: "allow", respondedAt: Date.now() });
+      },
+      cancel: () => Promise.resolve(),
+    };
+    const link = createHumanAskLink({ chain, timeoutMs: 1_000_000 });
+    const controller = new AbortController();
+    const first = link.resolve(REQ, { signal: controller.signal });
+    await waitForOnScreen(link);
+    controller.abort();
+    expect(await first).toEqual({ decision: "deny", decidedBy: "cancelled" });
+
+    const second = link.resolve({ ...REQ, command: "echo next" });
+    await waitForPromptCount(() => prompted.length, 2);
+    expect(await second).toEqual({ decision: "allow", decidedBy: "human" });
+  });
+
+  test("AC9: a queued request that aborts before its turn is never prompted", async () => {
+    const QUEUED = { ...REQ, command: "echo queued" };
+    let promptCalls = 0;
+    let release: ((response: AskChannelResponse) => void) | undefined;
+    const chain: AskChannel = {
+      prompt: () => {
+        promptCalls++;
+        return new Promise<AskChannelResponse>((resolve) => {
+          release = resolve;
+        });
+      },
+      cancel: () => Promise.resolve(),
+    };
+    const link = createHumanAskLink({ chain, timeoutMs: 1_000_000 });
+    const queuedCtrl = new AbortController();
+    const first = link.resolve(REQ); // takes the serial queue and prompts
+    const queued = link.resolve(QUEUED, { signal: queuedCtrl.signal }); // queues behind it
+    await waitForPromptCount(() => promptCalls, 1);
+    expect(promptCalls).toBe(1);
+
+    queuedCtrl.abort(); // before the queued waiter's turn
+    release?.({ action: "deny", respondedAt: Date.now() });
+
+    expect(await first).toEqual({ decision: "deny", decidedBy: "human" });
+    expect(await queued).toEqual({ decision: "deny", decidedBy: "cancelled" });
+    expect(promptCalls).toBe(1);
+  });
+});
+
+// US-004: keep the native turn alive during human approval. While a pending
+// prompt is on screen the link calls every live waiter's onWaiting once at
+// prompt send, then once each ASK_KEEPALIVE_MS via a re-armed cancellable
+// setTimeout, clearing the timer on every settlement so a resolved prompt
+// never keepsalives again. `ASK_KEEPALIVE_MS` and the timer functions live in
+// `_askLinkDeps` and are swapped for a fake clock here.
+describe("US-004 — keepalive while a human approval prompt is pending", () => {
+  let clock: FakeClock;
+  let savedTimers: { setTimeout: typeof _askLinkDeps.setTimeout; clearTimeout: typeof _askLinkDeps.clearTimeout };
+
+  beforeEach(() => {
+    clock = makeFakeClock();
+    savedTimers = { setTimeout: _askLinkDeps.setTimeout, clearTimeout: _askLinkDeps.clearTimeout };
+    _askLinkDeps.setTimeout = clock.setTimeout as typeof _askLinkDeps.setTimeout;
+    _askLinkDeps.clearTimeout = clock.clearTimeout as typeof _askLinkDeps.clearTimeout;
+  });
+
+  afterEach(() => {
+    _askLinkDeps.setTimeout = savedTimers.setTimeout;
+    _askLinkDeps.clearTimeout = savedTimers.clearTimeout;
+  });
+
+  const waitForOnScreen = (link: ReturnType<typeof createHumanAskLink>) =>
+    waitForCondition(() => link.pending() !== undefined, 1_000);
+
+  test("AC2: onWaiting runs once at prompt send, then once each ASK_KEEPALIVE_MS", async () => {
+    const link = createHumanAskLink({
+      chain: { prompt: () => new Promise<AskChannelResponse>(() => {}), cancel: () => Promise.resolve() },
+      timeoutMs: 1_000_000,
+    });
+    const calls: number[] = [];
+    // The hanging chain never resolves, so the waiter is deliberately not
+    // awaited — the keepalive cadence is what this test observes.
+    void link.resolve(REQ, { onWaiting: () => calls.push(clock.now()) });
+    await waitForOnScreen(link);
+
+    // Once at prompt send.
+    expect(calls).toHaveLength(1);
+
+    // Then once each keepalive period, on the requested cadence — not sooner.
+    await clock.advance(_askLinkDeps.ASK_KEEPALIVE_MS);
+    expect(calls).toHaveLength(2);
+    expect(calls[1] - calls[0]).toBe(_askLinkDeps.ASK_KEEPALIVE_MS);
+
+    await clock.advance(_askLinkDeps.ASK_KEEPALIVE_MS);
+    expect(calls).toHaveLength(3);
+    expect(calls[2] - calls[1]).toBe(_askLinkDeps.ASK_KEEPALIVE_MS);
+  });
+
+  test.each([
+    ["allow", "human"],
+    ["deny", "human"],
+    ["timeout", "timeout"],
+    ["cancelled", "cancelled"],
+  ] as const)(
+    "AC3: after the prompt settles by %s, onWaiting never runs during later keepalive periods",
+    async (mode, decidedBy) => {
+      let release: ((response: AskChannelResponse) => void) | undefined;
+      const chain: AskChannel = {
+        prompt: () =>
+          new Promise<AskChannelResponse>((resolve) => {
+            release = resolve;
+          }),
+        // Cancelling the on-screen prompt settles its pending promise, so the
+        // session's runSession finally runs and the keepalive timer is freed —
+        // the same way a real interaction channel's cancel resolves a prompt.
+        cancel: () => {
+          release?.({ action: "deny", respondedAt: Date.now() });
+          return Promise.resolve();
+        },
+      };
+      const link = createHumanAskLink({ chain, timeoutMs: 1_000_000 });
+      const controller = new AbortController();
+      const calls: number[] = [];
+      const waiter = link.resolve(REQ, {
+        onWaiting: () => calls.push(clock.now()),
+        signal: controller.signal,
+      });
+      await waitForOnScreen(link);
+      expect(calls).toHaveLength(1);
+
+      // Settle the prompt the way the row describes.
+      if (mode === "allow") release?.({ action: "allow", respondedAt: Date.now() });
+      else if (mode === "deny") release?.({ action: "deny", respondedAt: Date.now() });
+      else if (mode === "timeout") release?.({ action: "approve", respondedBy: "timeout", respondedAt: Date.now() });
+      else controller.abort("turn ended");
+      expect(await waiter).toEqual({ decision: mode === "allow" ? "allow" : "deny", decidedBy });
+
+      // No keepalive may fire after settlement, however many periods elapse...
+      await clock.advance(_askLinkDeps.ASK_KEEPALIVE_MS * 3);
+      expect(calls).toHaveLength(1);
+      // ...and the timer slot is freed, not merely inert.
+      expect(clock.pending()).toBe(0);
+    },
+  );
 });

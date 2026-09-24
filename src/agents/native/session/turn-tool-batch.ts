@@ -38,6 +38,14 @@ export interface ToolBatchResult {
   /** The caller breaks out of the while loop on either. */
   readonly spinStopped: boolean;
   readonly budgetExceeded: boolean;
+  /**
+   * US-002: the turn signal (`deps.signal`) was aborted during this batch.
+   * True means the batch answered this-and-later calls with the synthetic
+   * "Not run: the turn was cancelled." result and stopped dispatching; the
+   * loop throws the abort reason instead of continuing to another round trip.
+   * False (never aborted) preserves the pre-feature shape exactly.
+   */
+  readonly cancelled: boolean;
 }
 
 export interface ToolBatchArgs {
@@ -83,8 +91,38 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
   // batch sees the first one spent.
   let recorded = interactionsSoFar;
   let spinStopped = false;
+  // US-002: a cancelled turn signal short-circuits this batch. The check runs
+  // at the TOP of every iteration (before activity, before dispatch) so an
+  // already-aborted signal at batch start also answers this-and-later calls
+  // from the first iteration; an in-flight call (the one that triggered the
+  // abort) finishes on its own path, the check begins there.
+  let cancelled = false;
+  const isTurnCancelled = (): boolean => deps.signal?.aborted === true;
+
+  function answerCancelledFrom(callIndex: number): void {
+    cancelled = true;
+    for (const outstanding of toolCalls.slice(callIndex)) {
+      messages.push(
+        buildToolResult({
+          toolCallId: outstanding.id,
+          content: "Not run: the turn was cancelled.",
+          isError: true,
+        }),
+      );
+    }
+  }
 
   for (const [callIndex, call] of toolCalls.entries()) {
+    // US-002: check the turn signal FIRST (before spinWarned) so a cancelled
+    // turn always synthesises results for every outstanding call. A batch
+    // dispatch that arrives with both a frozen `spinWarned` snapshot AND an
+    // aborted signal must preserve the one-result-per-id invariant — the
+    // cancelled branch is the stronger guarantee, so it wins when both hold.
+    // AC1 / AC7 / AC8.
+    if (isTurnCancelled()) {
+      answerCancelledFrom(callIndex);
+      break;
+    }
     if (spinWarned) {
       spinStopped = true;
       // The terminal round trip is answer-only. Any subsequent tool call
@@ -116,6 +154,10 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
         continue;
       }
       const outcome = await loopEvents.dispatch("before_tool", { call, tools });
+      if (isTurnCancelled()) {
+        answerCancelledFrom(callIndex);
+        break;
+      }
       // nax#2047 Task 4: a tripped invalid-call budget ends the batch with
       // NO result — "a result nobody reads only grows the transcript". None
       // of the four seam outcomes can express that (each answers the call),
@@ -175,6 +217,41 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
               roundTrips,
               toolCallId: call.id,
               deferModelTruncation: true,
+              // US-002: forward the per-turn signal into the coding-tool
+              // request. The handler copies it onto the `ToolCallContext`
+              // and `runTool` copies it onto the tool's `ToolRunContext`, so
+              // an in-flight tool observes the turn's cancellation. Absent
+              // when no signal is in scope (the no-signal regression guard).
+              ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
+              // US-002 AC14: forward the per-turn onWaiting callback too.
+              // Without this forwarding the `onWaiting` field on the request
+              // is unreachable from native tool dispatch, leaving the
+              // handler's onWaiting-forwarding plumbing inert in the real
+              // native path. Absent when no watcher is in scope.
+              //
+              // US-004 AC1: the forwarded onWaiting ALSO emits awaiting_human
+              // activity through deps.onActivity — a bare forwarding of
+              // deps.onWaiting never reaches the activity hook, so the
+              // watchdog would still cancel a turn that is legitimately
+              // waiting on a human approval prompt.
+              //
+              // Activity is emitted FIRST so a throwing onWaiting does not
+              // suppress the watchdog beat. The onWaiting call is wrapped in
+              // try/catch because it is a notification, not a gate — the
+              // request proceeds either way.
+              ...(deps.onWaiting !== undefined || deps.onActivity !== undefined
+                ? {
+                    onWaiting: () => {
+                      deps.onActivity?.({ kind: "awaiting_human" });
+                      try {
+                        deps.onWaiting?.();
+                      } catch {
+                        // notification only — onWaiting throwing must not
+                        // surface to the tool, the run, or the cancel logic
+                      }
+                    },
+                  }
+                : {}),
             }
           : { kind, name: call.name, input },
       );
@@ -238,5 +315,11 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
     codingToolsCalled,
     spinStopped,
     budgetExceeded: invalidCallBudget.exceeded,
+    // US-002: true when this batch saw an aborted `deps.signal` between tool
+    // calls; the loop throws the abort reason instead of issuing another
+    // round trip. A batch that never consulted a signal — the normal
+    // pre-feature path — never sees an aborted signal, so this stays false
+    // and the result shape is unchanged.
+    cancelled: cancelled || isTurnCancelled(),
   };
 }
