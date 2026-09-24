@@ -444,3 +444,32 @@ description above tells the truth about today's order and flips with that fix.
 - `escalate` still offers no Bash at all without a human-written `Bash(...)` allow rule
   (ADR-029 §3); nax#2192 tracks documenting and warning about that.
 
+## Amendment — 2026-09-23: the command-safety shadow (P5)
+
+**Context.** The master plan's D4 planned an in-process typed-decision model whose live
+end-state auto-approves high-confidence commands. Zero-shot measurements on shell commands
+showed no threshold that auto-approves a useful share of harmless commands without also
+letting dangerous ones through; used as a flag on top of rules, a model adds catches.
+
+**Decision.**
+1. The end-state target (called A) is a **flag-for-review guardrail**: a flagged, mechanically
+   allowed command is narrowed to `ask` at the post-allow seam. It never grants. A requires its
+   own spec and the user's sign-off on the P5 eval report.
+2. P5 ships a **shadow only**. Every agent-authored `Bash` / `Exec` command in a runtime that
+   receives the ask resolver is classified by a deterministic rule scorer and by a typed-decision
+   model over a generic SystemOne HTTP endpoint, and one row per call is written to
+   `<outputDir>/command-safety/<runId>.jsonl` beside the mechanical verdict and the ledger
+   outcome. It is off by default (`execution.commandSafety.shadow` absent).
+3. **Transport** is a configured URL, **loopback only** unless `allowRemote: true`, enforced in the
+   config schema. nax carries no model runtime.
+4. The ask-tier model link stays reserved and empty.
+
+**What stops on failure** (never the call): a hanging, failing or malformed classifier stops the
+row's model half (`unavailable`); a failing rule scorer stops the rule half; a failed append stops
+that row; `drain()` is bounded by one timeout per story and writes whatever is pending.
+
+**Consequences.** The single-gate rule holds: nothing in the policy reads the shadow. Coverage is
+the ask resolver's coverage (execution-stage operations); rows report it. Whatever serves the URL
+may forward commands elsewhere; nax cannot see that, and the loopback rule guarantees only that
+nax itself opens no remote connection.
+

@@ -12,6 +12,7 @@
 import { join } from "node:path";
 import { validateAgentForTier } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
+import { buildCommandShadow } from "@/command-safety";
 import {
   type BashApprovalMode,
   isThreeSessionStrategy,
@@ -178,6 +179,16 @@ export const executionStage: PipelineStage = {
       },
     };
 
+    // P5: the shadow command classifier, built per story beside the ask
+    // resolver and drained in the finally below. Absent config = undefined.
+    const commandShadow = _executionDeps.buildCommandShadow({
+      config: ctx.config.execution?.commandSafety,
+      outputDir: ctx.runtime.outputDir,
+      runId: ctx.runtime.runId,
+      storyId: ctx.story.id,
+      env: process.env,
+    });
+
     const callCtx: CallContext = {
       runtime: ctx.runtime,
       packageView,
@@ -222,6 +233,7 @@ export const executionStage: PipelineStage = {
       ...(ctx.featureDir ? { featureDir: ctx.featureDir } : {}),
       ...(interactionBridge ? { interactionBridge } : {}),
       ...(askResolver ? { askResolver } : {}),
+      ...(commandShadow ? { commandShadow } : {}),
       phaseTelemetry: {
         testStrategy: ctx.routing.testStrategy,
         sessionModel: isThreeSessionStrategy(ctx.routing.testStrategy) ? "three-session" : "single-session",
@@ -280,6 +292,8 @@ export const executionStage: PipelineStage = {
       // even when a channel's cancel() only clears transport bookkeeping.
       await cancelPendingAsk(humanLink);
       humanLink.dispose();
+      // Bounded by the shadow's own timeout; never throws (spec 4.6).
+      await commandShadow?.drain();
     }
 
     // US-002: map the run-time repo-scoped dispatch records onto the live
@@ -314,6 +328,7 @@ export const _executionDeps = {
   applyPostRunInspection,
   decideStageAction,
   assembleForStage,
+  buildCommandShadow,
   resolveScopeFiles,
   createHumanAskLink,
 };

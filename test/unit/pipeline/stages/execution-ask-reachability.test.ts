@@ -11,6 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeAgentAdapter, makeNaxConfig, makeStory, makeTestContext } from "@test/helpers";
+import type { CommandShadow } from "@/command-safety";
 import type { ConfigSelector } from "@/config";
 import { _storyOrchestratorDeps, ExecutionPlan } from "@/execution";
 import { InteractionChain } from "@/interaction";
@@ -108,5 +109,47 @@ describe("execution stage — ask resolver reachability", () => {
   test("no interaction chain (headless CLI, unconfigured) marks it unreachable", async () => {
     await executionStage.execute(makePipelineContext());
     expect(capturedCallCtx?.askResolver?.humanReachable).toBe(false);
+  });
+});
+
+function spyShadow() {
+  const calls = { drained: 0 };
+  const shadow: CommandShadow = { observe: () => {}, settle: () => {}, drain: async () => void calls.drained++ };
+  return { shadow, calls };
+}
+
+describe("execution stage — command shadow", () => {
+  test("no commandSafety config: nothing is built or threaded", async () => {
+    await executionStage.execute(makePipelineContext());
+    expect(capturedCallCtx?.commandShadow).toBeUndefined();
+  });
+
+  test("the built shadow reaches the CallContext and is drained after the plan", async () => {
+    const spy = spyShadow();
+    const seen: unknown[] = [];
+    _executionDeps.buildCommandShadow = (opts) => {
+      seen.push(opts);
+      return spy.shadow;
+    };
+    const config = makeNaxConfig({ execution: { commandSafety: { shadow: { url: "http://127.0.0.1:1/x" } } } });
+    await executionStage.execute(makePipelineContext({ config }));
+    expect(capturedCallCtx?.commandShadow).toBe(spy.shadow);
+    expect(spy.calls.drained).toBe(1);
+    expect(seen[0]).toMatchObject({ runId: expect.any(String), storyId: expect.any(String) });
+  });
+
+  test("drained even when the plan throws", async () => {
+    const spy = spyShadow();
+    _executionDeps.buildCommandShadow = () => spy.shadow;
+    _executionDeps.buildPlanForStrategy = async (callCtx: CallContext) => {
+      capturedCallCtx = callCtx;
+      const plan = new ExecutionPlan(callCtx, {}, false);
+      plan.run = async () => {
+        throw new Error("plan failed");
+      };
+      return plan;
+    };
+    await expect(executionStage.execute(makePipelineContext())).rejects.toThrow("plan failed");
+    expect(spy.calls.drained).toBe(1);
   });
 });

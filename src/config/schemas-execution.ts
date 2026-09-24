@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
+import { CommandSafetyConfigSchema } from "./schemas-command-safety";
 import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
 import { SandboxConfigSchema } from "./schemas-sandbox";
 
@@ -287,6 +288,8 @@ export const ExecutionConfigSchema = z.object({
   approvalTimeout: z.number().int().min(30_000).max(3_600_000).default(600_000),
   /** P4: OS sandbox for agent-authored commands (see schemas-sandbox.ts). */
   sandbox: SandboxConfigSchema.prefault({}),
+  /** P5: shadow command classifier; absent = off (see schemas-command-safety.ts). */
+  commandSafety: CommandSafetyConfigSchema.optional(),
   permissions: PermissionsBlockSchema.optional(),
   /**
    * Repo-configurable glob denylist that narrows Delete beyond the
