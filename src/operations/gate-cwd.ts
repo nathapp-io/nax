@@ -34,12 +34,17 @@ export function resolveGateCwd(input: GateCwdInput): GateCwd {
     return { cwd: workdir, provenance: "detected" };
   }
   const overlay = packageView.overlay;
-  // The overlay only speaks for this command when it declares it. `review.commands`
-  // counts because mergePackageConfig's PKG-006 bridge mirrors overlay quality
-  // commands into review.commands, and full-suite-gate reads through it.
-  const declaredByOverlay =
-    overlay?.quality?.commands?.[commandName] !== undefined || overlay?.review?.commands?.[commandName] !== undefined;
-  if (declaredByOverlay) {
+  // The overlay only speaks for a command when it declares THAT command.
+  //
+  // `review.commands` is consulted for the test gate alone: full-suite-gate is the
+  // only gate whose command comes from `review.commands.test ?? quality.commands.test`
+  // (resolveQualityTestCommands, plus mergePackageConfig's PKG-006 bridge). lint-check
+  // and typecheck-check read `quality.commands` only, so a review-only overlay — a
+  // legal mergeable field — must not drag their root commands into the package dir,
+  // which would be the mirror of the misplacement bug this module fixes.
+  const declaredByQuality = overlay?.quality?.commands?.[commandName] !== undefined;
+  const declaredByReview = commandName === "test" && overlay?.review?.commands?.test !== undefined;
+  if (declaredByQuality || declaredByReview) {
     return { cwd: workdir, provenance: "overlay" };
   }
   // Nothing in the overlay is about this command — it is the root command, so run

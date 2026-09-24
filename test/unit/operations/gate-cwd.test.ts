@@ -91,4 +91,26 @@ describe("resolveGateCwd — US-002: cwd follows the command's provenance", () =
 
     expect(result).toEqual({ cwd: "/r", provenance: "root" });
   });
+
+  test("US-002: a review-only overlay does not reroute the lint gate into the package dir", () => {
+    const result = resolveGateCwd({
+      commandName: "lint",
+      detected: false,
+      packageView: packageView("/r", overlayWithReview({ lint: "eslint ." })),
+      workdir: "/r/packages/lib",
+    });
+
+    expect(result).toEqual({ cwd: "/r", provenance: "root" });
+  });
+
+  test("US-002: a review-only overlay does not reroute the typecheck gate into the package dir", () => {
+    const result = resolveGateCwd({
+      commandName: "typecheck",
+      detected: false,
+      packageView: packageView("/r", overlayWithReview({ typecheck: "tsc --noEmit" })),
+      workdir: "/r/packages/lib",
+    });
+
+    expect(result).toEqual({ cwd: "/r", provenance: "root" });
+  });
 });
