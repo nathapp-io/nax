@@ -3,7 +3,7 @@
   "feature": "approvals-cli",
   "branchName": "feat/approvals-cli",
   "createdAt": "2026-09-24T00:00:00.000Z",
-  "updatedAt": "2026-09-24T17:51:53.724Z",
+  "updatedAt": "2026-09-24T18:20:18.602Z",
   "userStories": [
     {
       "id": "US-001",
@@ -334,8 +334,8 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
