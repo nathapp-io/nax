@@ -16,11 +16,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { ASK_HUMAN_TOOL_NAME } from "@/agents/native/session/ask-human";
 import type { TranscriptMessage as NativeTranscriptMessage } from "@/agents/native/session/compaction";
 import { createInvalidCallBudget } from "@/agents/native/session/handle-invalid-tool-call";
 import { createLoopEventRegistry } from "@/agents/native/session/loop-events";
 import { codingToolsToDefinitions } from "@/agents/native/session/tool-mapping";
+import type { NativeTurnActivity } from "@/agents/native/session/turn-events";
 import { runToolBatch, type ToolBatchArgs } from "@/agents/native/session/turn-tool-batch";
 import type { TurnDeps } from "@/agents/native/session/turn-types";
 import type { SendTurnOpts } from "@/agents/session-types";
@@ -196,5 +198,43 @@ describe("runToolBatch — turn signal cancellation (US-002)", () => {
     // The synthetic path pushes results directly, mirroring the spin-stop
     // notice: no tool ran, so no after_tool event describes it.
     expect(afterTool).toBe(0);
+  });
+});
+
+// US-004: while a human approval prompt is pending, the batch hands the
+// coding-tool request an onWaiting that emits awaiting_human activity, so the
+// idle watchdog does not cancel a native turn that is legitimately waiting.
+describe("runToolBatch — awaiting-human keepalive activity (US-004)", () => {
+  test("AC1: calling the coding-tool request's onWaiting invokes deps.onActivity with awaiting_human", async () => {
+    const activities: NativeTurnActivity[] = [];
+    let requestOnWaiting: (() => void) | undefined;
+    const opts: SendTurnOpts = {
+      interactionHandler: {
+        onInteraction: async (req) => {
+          if (req.kind === "coding-tool") requestOnWaiting = req.onWaiting;
+          return { answer: "ok" };
+        },
+      },
+    };
+    const deps: TurnDeps = {
+      complete: async () => ({ text: "", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 }),
+      // The batch must forward an onWaiting that ALSO emits the activity; a
+      // bare forwarding of `deps.onWaiting` never reaches `deps.onActivity`.
+      onWaiting: () => {},
+      onActivity: (activity) => activities.push(activity),
+    };
+
+    const result = await runToolBatch(batchArgs({ deps, opts }));
+
+    expect(result.cancelled).toBe(false);
+    // The two calls emit their own `tool` beats; awaiting_human must appear
+    // ONLY once the request's onWaiting is invoked.
+    const awaitingBeats = () => activities.filter((a) => a.kind === "awaiting_human");
+    expect(awaitingBeats()).toHaveLength(0);
+
+    assertDefined(requestOnWaiting, "coding-tool request onWaiting");
+    requestOnWaiting();
+
+    expect(awaitingBeats()).toEqual([{ kind: "awaiting_human" }]);
   });
 });

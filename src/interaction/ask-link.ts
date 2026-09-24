@@ -19,6 +19,21 @@ import type { InteractionRequest } from "./types";
 /** Headroom under MAX_MESSAGE_CHARS (4000) for the header, reason and footer. */
 const MAX_COMMAND_CHARS = 3500;
 
+/**
+ * Injectable keepalive timing for the human ask link (US-004).
+ *
+ * While a human approval prompt is pending, the link calls every live waiter's
+ * `onWaiting` once per period — re-arming a cancellable `setTimeout` each time
+ * (never `setInterval`) and clearing the timer on every settlement. The
+ * interval is deliberately internal, not configuration (out of scope for
+ * US-004); tests swap the timer functions for a fake clock.
+ */
+export const _askLinkDeps = {
+  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
+  clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
+  ASK_KEEPALIVE_MS: 60_000,
+};
+
 /** The subset of a response a permission prompt reads. */
 export interface AskChannelResponse {
   readonly action: string;

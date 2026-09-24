@@ -97,6 +97,16 @@ export interface AgentCallEndedEvent extends AgentStreamEventBase {
   readonly exitCode?: number;
 }
 
+/**
+ * US-004: the native turn is waiting on a human approval prompt. Emitted as
+ * activity from the turn loop while a prompt is pending so the idle watchdog
+ * does not read legitimate human waiting as idleness. Carries no payload — the
+ * timestamp is all the watchdog reads.
+ */
+export interface AgentAwaitingHumanEvent extends AgentStreamEventBase {
+  readonly kind: "agent.awaiting_human";
+}
+
 export type AgentStreamEvent =
   | AgentCallStartedEvent
   | AgentMessageUpdateEvent
@@ -104,7 +114,8 @@ export type AgentStreamEvent =
   | AgentUsageUpdateEvent
   | AgentToolCallUpdateEvent
   | AgentProcessUpdateEvent
-  | AgentCallEndedEvent;
+  | AgentCallEndedEvent
+  | AgentAwaitingHumanEvent;
 
 export type AgentStreamListener = (event: AgentStreamEvent) => void;
 

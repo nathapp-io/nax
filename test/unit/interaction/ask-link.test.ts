@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
-import { assertDefined, waitForCondition } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { assertDefined, type FakeClock, makeFakeClock, waitForCondition } from "@test/helpers";
 import type { AskChannel, AskChannelResponse, InteractionRequest } from "@/interaction";
 import { cancelPendingAsk, createHumanAskLink } from "@/interaction";
+import { _askLinkDeps } from "@/interaction/ask-link";
 import type { AskRequest } from "@/permissions";
 
 const REQ: AskRequest = {
@@ -375,4 +376,101 @@ describe("US-003 — cancel pending human-approval waiters", () => {
     expect(await queued).toEqual({ decision: "deny", decidedBy: "cancelled" });
     expect(promptCalls).toBe(1);
   });
+});
+
+// US-004: keep the native turn alive during human approval. While a pending
+// prompt is on screen the link calls every live waiter's onWaiting once at
+// prompt send, then once each ASK_KEEPALIVE_MS via a re-armed cancellable
+// setTimeout, clearing the timer on every settlement so a resolved prompt
+// never keepsalives again. `ASK_KEEPALIVE_MS` and the timer functions live in
+// `_askLinkDeps` and are swapped for a fake clock here.
+describe("US-004 — keepalive while a human approval prompt is pending", () => {
+  let clock: FakeClock;
+  let savedTimers: { setTimeout: typeof _askLinkDeps.setTimeout; clearTimeout: typeof _askLinkDeps.clearTimeout };
+
+  beforeEach(() => {
+    clock = makeFakeClock();
+    savedTimers = { setTimeout: _askLinkDeps.setTimeout, clearTimeout: _askLinkDeps.clearTimeout };
+    _askLinkDeps.setTimeout = clock.setTimeout as typeof _askLinkDeps.setTimeout;
+    _askLinkDeps.clearTimeout = clock.clearTimeout as typeof _askLinkDeps.clearTimeout;
+  });
+
+  afterEach(() => {
+    _askLinkDeps.setTimeout = savedTimers.setTimeout;
+    _askLinkDeps.clearTimeout = savedTimers.clearTimeout;
+  });
+
+  const waitForOnScreen = (link: ReturnType<typeof createHumanAskLink>) =>
+    waitForCondition(() => link.pending() !== undefined, 1_000);
+
+  test("AC2: onWaiting runs once at prompt send, then once each ASK_KEEPALIVE_MS", async () => {
+    const link = createHumanAskLink({
+      chain: { prompt: () => new Promise<AskChannelResponse>(() => {}), cancel: () => Promise.resolve() },
+      timeoutMs: 1_000_000,
+    });
+    const calls: number[] = [];
+    // The hanging chain never resolves, so the waiter is deliberately not
+    // awaited — the keepalive cadence is what this test observes.
+    void link.resolve(REQ, { onWaiting: () => calls.push(clock.now()) });
+    await waitForOnScreen(link);
+
+    // Once at prompt send.
+    expect(calls).toHaveLength(1);
+
+    // Then once each keepalive period, on the requested cadence — not sooner.
+    await clock.advance(_askLinkDeps.ASK_KEEPALIVE_MS);
+    expect(calls).toHaveLength(2);
+    expect(calls[1] - calls[0]).toBe(_askLinkDeps.ASK_KEEPALIVE_MS);
+
+    await clock.advance(_askLinkDeps.ASK_KEEPALIVE_MS);
+    expect(calls).toHaveLength(3);
+    expect(calls[2] - calls[1]).toBe(_askLinkDeps.ASK_KEEPALIVE_MS);
+  });
+
+  test.each([
+    ["allow", "human"],
+    ["deny", "human"],
+    ["timeout", "timeout"],
+    ["cancelled", "cancelled"],
+  ] as const)(
+    "AC3: after the prompt settles by %s, onWaiting never runs during later keepalive periods",
+    async (mode, decidedBy) => {
+      let release: ((response: AskChannelResponse) => void) | undefined;
+      const chain: AskChannel = {
+        prompt: () =>
+          new Promise<AskChannelResponse>((resolve) => {
+            release = resolve;
+          }),
+        // Cancelling the on-screen prompt settles its pending promise, so the
+        // session's runSession finally runs and the keepalive timer is freed —
+        // the same way a real interaction channel's cancel resolves a prompt.
+        cancel: () => {
+          release?.({ action: "deny", respondedAt: Date.now() });
+          return Promise.resolve();
+        },
+      };
+      const link = createHumanAskLink({ chain, timeoutMs: 1_000_000 });
+      const controller = new AbortController();
+      const calls: number[] = [];
+      const waiter = link.resolve(REQ, {
+        onWaiting: () => calls.push(clock.now()),
+        signal: controller.signal,
+      });
+      await waitForOnScreen(link);
+      expect(calls).toHaveLength(1);
+
+      // Settle the prompt the way the row describes.
+      if (mode === "allow") release?.({ action: "allow", respondedAt: Date.now() });
+      else if (mode === "deny") release?.({ action: "deny", respondedAt: Date.now() });
+      else if (mode === "timeout") release?.({ action: "approve", respondedBy: "timeout", respondedAt: Date.now() });
+      else controller.abort("turn ended");
+      expect(await waiter).toEqual({ decision: mode === "allow" ? "allow" : "deny", decidedBy });
+
+      // No keepalive may fire after settlement, however many periods elapse...
+      await clock.advance(_askLinkDeps.ASK_KEEPALIVE_MS * 3);
+      expect(calls).toHaveLength(1);
+      // ...and the timer slot is freed, not merely inert.
+      expect(clock.pending()).toBe(0);
+    },
+  );
 });
