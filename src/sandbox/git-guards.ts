@@ -16,7 +16,7 @@
  * exception: an empty one is valid config, so it is always denied.
  */
 import { lstat, readdir, rm } from "node:fs/promises";
-import { basename, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { SANDBOX_GLOB_CHARS } from "../config/schemas-sandbox";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
@@ -54,11 +54,22 @@ function isLiteral(p: string): boolean {
   return !SANDBOX_GLOB_CHARS.test(realOrRaw(p));
 }
 
-/** The `<wt>/.git` pointer a `gitdir` file names -- only a literal, absolute `.git` path. */
+/**
+ * The `<wt>/.git` pointer a `gitdir` file names -- only a literal `.git` path.
+ *
+ * git >= 2.48 with `worktree.useRelativePaths` (or `worktree add
+ * --relative-paths`) writes it relative to the admin dir `<common>/worktrees/<id>`
+ * -- computed from that dir's realpath, and read back by joining onto it -- so a
+ * relative target resolves against the admin dir's realpath. Resolving against
+ * the unresolved spelling would walk `..` lexically and miss a symlinked
+ * common dir.
+ */
 async function pointerOf(gitdirFile: string): Promise<string[]> {
   try {
-    const target = (await _gitGuardDeps.readText(gitdirFile)).trim();
-    return isAbsolute(target) && basename(target) === DOT_GIT && isLiteral(target) ? [target] : [];
+    const raw = (await _gitGuardDeps.readText(gitdirFile)).trim();
+    if (raw === "") return [];
+    const target = isAbsolute(raw) ? raw : resolve(realOrRaw(dirname(gitdirFile)), raw);
+    return basename(target) === DOT_GIT && isLiteral(target) ? [target] : [];
   } catch {
     return [];
   }

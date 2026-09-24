@@ -9,6 +9,15 @@
  * Passed through GIT_CONFIG_COUNT/KEY/VALUE (git >= 2.31; older git ignores
  * them) rather than `-c` so argv stays unchanged, and because git forwards
  * these to the child git processes it spawns (submodules) as well.
+ *
+ * Coverage: `gitWithTimeout` applies it, and every other site in `src/` that
+ * spawns git itself passes `env: gitSpawnEnv(...)`. The generic forge and
+ * auto-pr runners harden every command they spawn, since `gh` / `glab` run git
+ * underneath. `scripts/check-git-spawn-env.ts` (in `lint:checks`) fails on a
+ * `["git", ...]` argv literal that is neither inside a spawn call carrying one
+ * of these helpers nor marked `// nax-git-env-allow: <reason>` (argv handed to
+ * a runner that hardens it itself). An argv held in a variable and spawned
+ * elsewhere is beyond a textual gate; keep git argv literal at the spawn.
  */
 
 const HARDENED_GIT_CONFIG: ReadonlyArray<readonly [key: string, value: string]> = [["core.fsmonitor", "false"]];
@@ -32,4 +41,16 @@ export function hardenedGitEnv(base: Readonly<Record<string, string | undefined>
   });
   env.GIT_CONFIG_COUNT = String(start + HARDENED_GIT_CONFIG.length);
   return env;
+}
+
+/**
+ * The environment for a git nax spawns directly: `process.env`, then the
+ * caller's `overlay` (e.g. GIT_INDEX_FILE), then the hardened entries. Pass
+ * the overlay here rather than spreading the result, so a GIT_CONFIG_COUNT
+ * the overlay sets is appended to instead of overwritten.
+ */
+export function gitSpawnEnv(
+  overlay?: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> {
+  return hardenedGitEnv(overlay === undefined ? process.env : { ...process.env, ...overlay });
 }

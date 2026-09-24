@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _gitGuardDeps, type GitLayout, listGitGuardFiles, strayCommonDirTripwire } from "@/sandbox";
 import { realOrRaw } from "@/utils/realpath";
@@ -98,6 +98,49 @@ describe("listGitGuardFiles", () => {
     const admin = join(gitDir, "worktrees", "odd");
     mkdirSync(admin, { recursive: true });
     writeFileSync(join(admin, "gitdir"), "/\n");
+    const files = await listGitGuardFiles(mainLayout());
+    expect(files).toEqual([join(admin, "gitdir"), join(admin, "config.worktree")]);
+  });
+
+  // git >= 2.48 `worktree.useRelativePaths`: the admin dir's gitdir holds the
+  // worktree's .git relative to the admin dir. The local git may predate
+  // --relative-paths, so the file is rewritten into that shape by hand.
+  test("a relative gitdir resolves against the admin dir: the worktree's .git is still denied", async () => {
+    repoWithWorktrees();
+    const admin = join(gitDir, "worktrees", "US-002");
+    writeFileSync(join(admin, "gitdir"), `${relative(admin, join(base, ".nax-wt", "US-002", ".git"))}\n`);
+    const files = await listGitGuardFiles(worktreeLayout());
+    for (const p of worktreeGuards("US-002")) expect(files).toContain(p);
+  });
+
+  test("a relative gitdir resolves against the admin dir's realpath when the common dir is a symlink", async () => {
+    const realCommon = join(base, "store", "deep", "repo.git");
+    const admin = join(realCommon, "worktrees", "wt");
+    mkdirSync(admin, { recursive: true });
+    const linkedCommon = join(base, "link.git");
+    symlinkSync(realCommon, linkedCommon);
+    const dotGit = join(base, "wt", ".git");
+    mkdirSync(join(base, "wt"));
+    writeFileSync(dotGit, `gitdir: ${admin}\n`);
+    writeFileSync(join(admin, "gitdir"), `${relative(admin, dotGit)}\n`);
+    const files = await listGitGuardFiles({ kind: "main", gitDir: linkedCommon });
+    expect(files).toContain(dotGit);
+  });
+
+  test("a relative gitdir not naming a .git file yields no pointer deny", async () => {
+    git(["init", "-q", "-b", "main"], base);
+    const admin = join(gitDir, "worktrees", "odd");
+    mkdirSync(admin, { recursive: true });
+    writeFileSync(join(admin, "gitdir"), "../../../elsewhere/config\n");
+    const files = await listGitGuardFiles(mainLayout());
+    expect(files).toEqual([join(admin, "gitdir"), join(admin, "config.worktree")]);
+  });
+
+  test("a relative gitdir resolving to a glob-named path is skipped", async () => {
+    git(["init", "-q", "-b", "main"], base);
+    const admin = join(gitDir, "worktrees", "wt");
+    mkdirSync(admin, { recursive: true });
+    writeFileSync(join(admin, "gitdir"), "../../../odd*/.git\n");
     const files = await listGitGuardFiles(mainLayout());
     expect(files).toEqual([join(admin, "gitdir"), join(admin, "config.worktree")]);
   });

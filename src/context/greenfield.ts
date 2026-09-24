@@ -18,6 +18,7 @@ import {
   isTestFileByPatterns,
   type ResolvedTestPatterns,
 } from "../test-runners";
+import { gitSpawnEnv } from "../utils/git-env";
 
 /** Injectable deps for testability. */
 export const _greenfieldDeps = {
@@ -57,6 +58,7 @@ async function gitLsFiles(workdir: string): Promise<string[] | null> {
   try {
     const proc = _greenfieldDeps.spawn(["git", "ls-files"], {
       cwd: workdir,
+      env: gitSpawnEnv(),
       stdout: "pipe",
       stderr: "pipe",
     });

@@ -23,6 +23,7 @@ import { storySpendUsd } from "../runtime";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
+import { gitSpawnEnv } from "../utils/git-env";
 import { storyPackageDir } from "../utils/path-frame";
 import {
   deriveStoryWorktreeId,
@@ -78,6 +79,7 @@ async function removeWorktreeDirectory(
   try {
     const proc = _resultHandlerDeps.spawn(["git", "worktree", "remove", worktreePath, "--force"], {
       cwd: projectRoot,
+      env: gitSpawnEnv(),
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -138,6 +140,7 @@ async function recordNaxOrphanOwnership(
   try {
     const proc = _resultHandlerDeps.spawn(["git", "update-ref", orphanRef, sourceBranch], {
       cwd: projectRoot,
+      env: gitSpawnEnv(),
       stdout: "pipe",
       stderr: "pipe",
     });

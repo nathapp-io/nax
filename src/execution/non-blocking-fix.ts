@@ -21,6 +21,7 @@ import type { SnapshotRef } from "../tdd/rollback";
 import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
 import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";
 import { typedSpawn } from "../utils/bun-deps";
+import { gitSpawnEnv } from "../utils/git-env";
 import { packageDirRelative } from "../utils/paths";
 import { isInside } from "../utils/realpath";
 import type { QuarantineMemo } from "../verification";
@@ -209,6 +210,7 @@ export function createMeasureSourceDiff(args: CreateMeasureSourceDiffArgs): NonB
     const isTestFile = createTestFileClassifier(resolved);
     const proc = _nonBlockingFixDeps.spawn(["git", "diff", "--numstat", fromRef], {
       cwd: workdir,
+      env: gitSpawnEnv(),
       stdout: "pipe",
       stderr: "pipe",
     });
