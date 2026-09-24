@@ -344,21 +344,24 @@ export function createCodingToolRuntime(opts: {
       const verdict = opts.policy.check(policyIdentity, tool.scope, input);
 
       // P5: observe the command now (not awaited), settle from logCall below.
-      const tap = openShadowTap(opts.commandShadow, {
-        key: randomUUID(),
-        identity: policyIdentity,
-        command: tool.scope.commandField === undefined ? undefined : input[tool.scope.commandField],
-        argv: hasArgv && argvField !== undefined ? input[argvField] : undefined,
-        verdict,
-        stage: opts.pipelineStage ?? "unknown",
-        ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
-      });
+      const tap =
+        opts.commandShadow === undefined
+          ? undefined
+          : openShadowTap(opts.commandShadow, {
+              key: randomUUID(),
+              identity: policyIdentity,
+              command: tool.scope.commandField === undefined ? undefined : input[tool.scope.commandField],
+              argv: hasArgv && argvField !== undefined ? input[argvField] : undefined,
+              verdict,
+              stage: opts.pipelineStage ?? "unknown",
+              ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
+            });
       // Every ledger outcome of this call settles the tap exactly once, with
       // `denied:ask` and `decidedBy` intact -- which CodingToolOutcome.kind
       // alone would lose (spec 4.2).
       const logCall: typeof log = (...args) => {
         log(...args);
-        tap.settle(args[1], args[8]?.approval?.decidedBy);
+        tap?.settle(args[1], args[8]?.approval?.decidedBy);
       };
 
       /**
