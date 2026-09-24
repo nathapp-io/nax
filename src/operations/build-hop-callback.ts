@@ -9,7 +9,7 @@ import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
 import { resolveCodingToolSupport } from "../agents/coding-tool-support";
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
 import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "../agents/tool-preamble";
-import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
+import type { AgentResult, AgentRunOptions, SessionHandle, TurnResult } from "../agents/types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { DEFAULT_CONFIG, type resolveModelForAgent } from "../config";
@@ -27,6 +27,7 @@ import type { TimeoutRetryInput } from "../prompts";
 import { timeoutRetry as defaultTimeoutRetry, RectifierPromptBuilder } from "../prompts";
 import type { ISessionManager } from "../session";
 import { recordAgentHandoff } from "../session";
+import type { OpenSessionRequest } from "../session/types";
 import { captureGitRef, captureWorkingTreeChanges } from "../utils/git";
 import type { HopEndpoint } from "./hop-endpoint";
 import { hopModelId, hopTier, resolveHopEndpoint } from "./hop-endpoint";
@@ -387,50 +388,32 @@ export function buildHopCallback(
     const pinnedModelDef =
       pinnedModelAgent === undefined || pinnedModelAgent === agentName ? resolvedRunOptions.modelDef : undefined;
 
-    // STALE-RETRY: reuse the existing live handle — no openSession, no acpx reconnect.
-    // PRIMARY / SWAP: open (or resume) the session via the normal path.
-    let handle: import("../agents/types").SessionHandle;
-    if (hopKind.kind === "stale-retry") {
-      const cached = sessionManager.getLiveHandle(sessionName);
-      if (cached && cached.agentName === agentName) {
-        handle = cached;
-      } else {
-        // Defensive: cache miss should never happen in practice (the handle was just
-        // used by the prior attempt), but fall back to openSession so the retry
-        // can still proceed. Logged at warn to detect unexpected misses in production.
-        logger.warn("execution", "Stale-retry: live handle missing, re-opening session", {
-          storyId: story.id,
-          sessionName,
-          attempt: hopKind.attempt,
-        });
-        endpoint = resolveHopEndpoint({
-          hopKind,
-          pinnedModelDef,
-          models: config.models,
-          agentName,
-          effectiveTier,
-          defaultAgent,
-        });
-        handle = await sessionManager.openSession(sessionName, {
-          agentName,
-          role: resolvedRunOptions.sessionRole ?? "implementer",
-          workdir,
-          pipelineStage: stage,
-          // SEC-3: thread per-package config so monorepo permissionProfile is honored.
-          config,
-          modelDef: endpoint.modelDef,
-          ...(endpoint.modelTier ? { modelTier: endpoint.modelTier } : {}),
-          timeoutSeconds:
-            resolvedRunOptions.timeoutSeconds ??
-            config.execution?.sessionTimeoutSeconds ??
-            DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
-          featureName,
-          storyId: story.id,
-          ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
-          signal: resolvedRunOptions.abortSignal,
-        });
-      }
-    } else {
+    // Identical across every non-reuse branch (stale-retry fallback, primary,
+    // swap) — each branch resolves `endpoint` first, then opens with it.
+    const openSessionRequest = (
+      modelDef: OpenSessionRequest["modelDef"],
+      modelTier?: OpenSessionRequest["modelTier"],
+    ): OpenSessionRequest => ({
+      agentName,
+      role: resolvedRunOptions.sessionRole ?? "implementer",
+      workdir,
+      pipelineStage: stage,
+      // SEC-3: thread per-package config so monorepo permissionProfile is honored.
+      config,
+      modelDef,
+      ...(modelTier ? { modelTier } : {}),
+      timeoutSeconds:
+        resolvedRunOptions.timeoutSeconds ??
+        config.execution?.sessionTimeoutSeconds ??
+        DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
+      featureName,
+      storyId: story.id,
+      ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
+      signal: resolvedRunOptions.abortSignal,
+    });
+    // Resolve the hop endpoint and open (or resume) the session on it.
+    // openSession errors propagate naturally — no handle, no closeSession needed.
+    const openFresh = async (): Promise<SessionHandle> => {
       endpoint = resolveHopEndpoint({
         hopKind,
         pinnedModelDef,
@@ -439,25 +422,40 @@ export function buildHopCallback(
         effectiveTier,
         defaultAgent,
       });
-      // openSession errors propagate naturally — no handle, no closeSession needed
-      handle = await sessionManager.openSession(sessionName, {
-        agentName,
-        role: resolvedRunOptions.sessionRole ?? "implementer",
-        workdir,
-        pipelineStage: stage,
-        // SEC-3: thread per-package config so monorepo permissionProfile is honored.
-        config,
-        modelDef: endpoint.modelDef,
-        ...(endpoint.modelTier ? { modelTier: endpoint.modelTier } : {}),
-        timeoutSeconds:
-          resolvedRunOptions.timeoutSeconds ??
-          config.execution?.sessionTimeoutSeconds ??
-          DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
-        featureName,
-        storyId: story.id,
-        ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
-        signal: resolvedRunOptions.abortSignal,
-      });
+      return sessionManager.openSession(sessionName, openSessionRequest(endpoint.modelDef, endpoint.modelTier));
+    };
+
+    // STALE-RETRY: reuse the existing live handle — no openSession, no acpx reconnect.
+    // nax#2218: a CANCELLED warm handle is poisoned — sendPrompt's SESSION_CANCELLED
+    // guard would kill the retry before reaching a model. Close it and reopen so the
+    // "same-agent retry with fresh session" actually dispatches.
+    let handle: SessionHandle;
+    if (hopKind.kind === "stale-retry") {
+      const cached = sessionManager.getLiveHandle(sessionName);
+      if (cached && cached.agentName === agentName && !sessionManager.isCancelled(sessionName)) {
+        handle = cached;
+      } else {
+        if (cached && sessionManager.isCancelled(sessionName)) {
+          logger.warn("execution", "Stale-retry: cached session was cancelled — closing and reopening fresh", {
+            storyId: story.id,
+            sessionName,
+            attempt: hopKind.attempt,
+          });
+          await sessionManager.closeSession(cached);
+        } else {
+          // Defensive: cache miss should never happen in practice (the handle was just
+          // used by the prior attempt), but fall back to openSession so the retry
+          // can still proceed. Logged at warn to detect unexpected misses in production.
+          logger.warn("execution", "Stale-retry: live handle missing, re-opening session", {
+            storyId: story.id,
+            sessionName,
+            attempt: hopKind.attempt,
+          });
+        }
+        handle = await openFresh();
+      }
+    } else {
+      handle = await openFresh();
     }
 
     // Record the descriptor handoff for any swap, whether or not a bundle was rebuilt. nax#1722:

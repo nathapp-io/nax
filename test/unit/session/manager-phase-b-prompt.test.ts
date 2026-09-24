@@ -173,6 +173,126 @@ describe("sendPrompt()", () => {
     expect(caught.adapterFailure.reason).toBe("idle-watchdog");
   });
 
+  test("rewraps a plain abort error as fail-stale when the watchdog triggered the cancel (native transport, nax#2218)", async () => {
+    // nax#2218: the native adapter surfaces the watchdog's turnController.abort()
+    // as a plain AbortError ("The operation was aborted.") — nothing rewraps it
+    // into SessionTurnError(cancelled:true) the way the ACP path does. sendPrompt
+    // must still consult the watchdog bookkeeping and classify fail-stale,
+    // otherwise the error poisons the warm session and the same-agent retry dies
+    // on the SESSION_CANCELLED guard without reaching a model.
+    let capturedActiveCall: ((callId: string, cancel: () => Promise<void>) => void) | undefined;
+    const registry = new Map<string, () => Promise<void>>();
+    let firstTurn = true;
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedActiveCall = opts.onActiveCall;
+        return { id: name, agentName: "claude" } as SessionHandle;
+      }),
+      sendTurn: mock(async () => {
+        if (!firstTurn) return MOCK_TURN;
+        firstTurn = false;
+        // 1. The adapter publishes its in-flight call via onActiveCall.
+        capturedActiveCall?.("call-native", async () => {});
+        // 2. The watchdog fires: the wrapper records "call-native" in bookkeeping.
+        await registry.get("call-native")?.();
+        // 3. The abort rejects the in-flight client call; the native adapter
+        //    rethrows it unmodified (only protocol faults are wrapped).
+        throw new DOMException("The operation was aborted.", "AbortError");
+      }),
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ watchdogControllerRegistry: registry });
+    const handle = await sm.openSession("nax-stale-native-test", makeOpenRequest());
+
+    let caught: unknown;
+    try {
+      await sm.sendPrompt(handle, "test");
+    } catch (err) {
+      caught = err;
+    }
+    assertCaughtInstanceOf(caught, SessionFailureError, "sendPrompt rejection");
+    expect(caught.adapterFailure.outcome).toBe("fail-stale");
+    expect(caught.adapterFailure.category).toBe("availability");
+    expect(caught.adapterFailure.retriable).toBe(true);
+    expect(caught.adapterFailure.reason).toBe("idle-watchdog");
+
+    // The watchdog cancel must NOT poison the warm session: the descriptor stays
+    // RUNNING and the same-agent retry dispatches on the same handle instead of
+    // dying on the SESSION_CANCELLED guard (nax#2218 — the wasted iteration).
+    expect(sm.descriptor("nax-stale-native-test")?.state).toBe("RUNNING");
+    const retried = await sm.sendPrompt(handle, "retry");
+    expect(retried.output).toBe(MOCK_TURN.output);
+  });
+
+  test("does not rewrap a plain abort error when the caller's signal aborted (run-level abort keeps the generic branch)", async () => {
+    // A caller-signalled abort (run-level abort / queue ABORT) is never the
+    // watchdog's decision: the session must stay poisoned and the raw error
+    // must flow through so an aborting run does not retry into its own teardown.
+    let capturedActiveCall: ((callId: string, cancel: () => Promise<void>) => void) | undefined;
+    const registry = new Map<string, () => Promise<void>>();
+    const controller = new AbortController();
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts) => {
+        capturedActiveCall = opts.onActiveCall;
+        return { id: name, agentName: "claude" } as SessionHandle;
+      }),
+      sendTurn: mock(async () => {
+        capturedActiveCall?.("call-run-abort", async () => {});
+        await registry.get("call-run-abort")?.();
+        throw new DOMException("The operation was aborted.", "AbortError");
+      }),
+    });
+
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ watchdogControllerRegistry: registry });
+    const handle = await sm.openSession("nax-run-abort-test", makeOpenRequest());
+    controller.abort();
+
+    let caught: unknown;
+    try {
+      await sm.sendPrompt(handle, "test", { signal: controller.signal });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).not.toBeInstanceOf(SessionFailureError);
+    assertCaughtInstanceOf(caught, Error, "sendPrompt rejection");
+    expect(caught.name).toBe("AbortError");
+    // Generic branch behavior preserved: the session is poisoned.
+    await expect(sm.sendPrompt(handle, "after abort")).rejects.toMatchObject({
+      code: "SESSION_CANCELLED",
+    });
+  });
+
+  test("does not rewrap a plain abort error when the watchdog did not trigger the cancel", async () => {
+    // An AbortError with empty watchdog bookkeeping is an unrelated external
+    // kill — the generic abort branch must keep handling it (poison + rethrow).
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" }) as SessionHandle),
+      sendTurn: mock(async () => {
+        throw new DOMException("The operation was aborted.", "AbortError");
+      }),
+    });
+
+    const registry = new Map<string, () => Promise<void>>();
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    sm.configureRuntime({ watchdogControllerRegistry: registry });
+    const handle = await sm.openSession("nax-external-abort-test", makeOpenRequest());
+
+    let caught: unknown;
+    try {
+      await sm.sendPrompt(handle, "test");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).not.toBeInstanceOf(SessionFailureError);
+    assertCaughtInstanceOf(caught, Error, "sendPrompt rejection");
+    expect(caught.name).toBe("AbortError");
+    await expect(sm.sendPrompt(handle, "after abort")).rejects.toMatchObject({
+      code: "SESSION_CANCELLED",
+    });
+  });
+
   test("does not rewrap SessionTurnError(cancelled=true) when watchdog did not trigger the cancel", async () => {
     // If the adapter reports cancelled:true but SessionManager's bookkeeping
     // shows _it_ never invoked the cancel (e.g. an unrelated process kill),

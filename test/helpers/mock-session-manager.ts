@@ -51,6 +51,8 @@ export function makeSessionManager(overrides: Partial<ISessionManager> = {}): IS
     nameFor: mock(() => "nax-00000000"),
     descriptor: mock(() => null),
     getLiveHandle: mock((_name: string) => undefined as SessionHandle | undefined),
+    // nax#2218: cancelled-flag query used by warm-handle reuse sites (stale-retry).
+    isCancelled: mock((_name: string) => false),
     ...overrides,
   } as ISessionManager;
 }
