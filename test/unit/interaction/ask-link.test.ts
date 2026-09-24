@@ -552,3 +552,74 @@ describe("review #9: secrets in the prompt", () => {
     expect(sent).toHaveLength(0);
   });
 });
+
+describe("review #21: dedupe key", () => {
+  function holdingChain() {
+    const state = { promptCalls: 0, releases: [] as ((r: AskChannelResponse) => void)[] };
+    const chain: AskChannel = {
+      prompt: () => {
+        state.promptCalls++;
+        return new Promise<AskChannelResponse>((resolve) => {
+          state.releases.push(resolve);
+        });
+      },
+      cancel: () => Promise.resolve(),
+    };
+    const allowNext = (): void => {
+      state.releases.shift()?.({ action: "allow", respondedAt: Date.now() });
+    };
+    return { chain, state, allowNext };
+  }
+  const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
+  const { command: _command, ...NO_COMMAND } = REQ;
+
+  test("two concurrent command-less asks get two prompts", async () => {
+    const { chain, state, allowNext } = holdingChain();
+    const link = createHumanAskLink({ chain, timeoutMs: 1000 });
+    const a = link.resolve({ ...NO_COMMAND, tool: "Write", summary: "Write path=a.txt" });
+    const b = link.resolve({ ...NO_COMMAND, tool: "Write", summary: "Write path=b.txt" });
+    await tick();
+    expect(state.promptCalls).toBe(1);
+    allowNext();
+    expect((await a).decision).toBe("allow");
+    await tick();
+    expect(state.promptCalls).toBe(2);
+    allowNext();
+    expect((await b).decision).toBe("allow");
+  });
+
+  test("the same command under two tools gets two prompts", async () => {
+    const { chain, state, allowNext } = holdingChain();
+    const link = createHumanAskLink({ chain, timeoutMs: 1000 });
+    const a = link.resolve(REQ);
+    const b = link.resolve({ ...REQ, tool: "Exec" });
+    await tick();
+    allowNext();
+    await a;
+    await tick();
+    expect(state.promptCalls).toBe(2);
+    allowNext();
+    await b;
+  });
+
+  test("two identical Bash asks still share one prompt", async () => {
+    const { chain, state, allowNext } = holdingChain();
+    const link = createHumanAskLink({ chain, timeoutMs: 1000 });
+    const a = link.resolve(REQ);
+    const b = link.resolve(REQ);
+    await tick();
+    allowNext();
+    expect(await a).toEqual({ decision: "allow", decidedBy: "human" });
+    expect(await b).toEqual({ decision: "allow", decidedBy: "human" });
+    expect(state.promptCalls).toBe(1);
+  });
+
+  test("cancel() settles a pending command-less ask", async () => {
+    const { chain } = holdingChain();
+    const link = createHumanAskLink({ chain, timeoutMs: 1000 });
+    const pending = link.resolve({ ...NO_COMMAND, tool: "Write", summary: "Write path=a.txt" });
+    await tick();
+    await link.cancel();
+    expect((await pending).decision).toBe("deny");
+  });
+});

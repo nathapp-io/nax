@@ -427,8 +427,10 @@ export function createHumanAskLink(opts: {
   /**
    * A "live" key is one whose session has been scheduled but has not yet
    * settled. We track this so same-key resolves join the same session
-   * (AC6/AC7/AC8). The map is keyed by `${stage}\0${command}`; entries
-   * are cleared when the session settles.
+   * (AC6/AC7/AC8). The map is keyed by `${stage}\0${tool}\0${command}`
+   * (review #21); a command-less ask is keyed uniquely as
+   * `\u0001${sessionId}` and is never joined. Entries are cleared when the
+   * session settles.
    */
   const liveSessions = new Map<string, Session>();
 
@@ -451,22 +453,23 @@ export function createHumanAskLink(opts: {
       return Promise.resolve(deny("unavailable"));
     }
     const view: PromptView = { command: masked.masked, maskedCount: masked.count };
-    const key = `${req.stage}\u0000${command}`;
-    const existing = liveSessions.get(key);
+    // Review #21: the tool is part of the key, and a command-less ask (Write,
+    // Edit, argv-only Exec) is never joined: two different writes must not
+    // share one answer. It still enters liveSessions under a unique key so
+    // cancel() and settle-time cleanup reach it.
+    const key = command === "" ? undefined : `${req.stage}\u0000${req.tool}\u0000${command}`;
+    const existing = key === undefined ? undefined : liveSessions.get(key);
     if (existing !== undefined && !existing.settled) {
-      // Joining an on-screen prompt: notify the joiner's watchdog.
       notifyWaiting(control, req);
       return attachWaiter(existing, control).done;
     }
-    // Schedule a new session on the serial queue. The session lives in
-    // `liveSessions` until it settles.
     const session: Session = {
       id: `ask-${Math.random().toString(16).slice(2, 10)}`,
       waiters: new Set(),
       settled: false,
       cancelledOnChain: false,
     };
-    liveSessions.set(key, session);
+    liveSessions.set(key ?? `\u0001${session.id}`, session);
     // First caller for this key: notify its watchdog before scheduling.
     notifyWaiting(control, req);
     // US-004: arm the per-session keepalive timer now, before the queue.
