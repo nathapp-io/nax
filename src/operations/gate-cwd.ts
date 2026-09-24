@@ -26,6 +26,23 @@ export interface GateCwd {
   readonly provenance: GateCommandProvenance;
 }
 
-export function resolveGateCwd(_input: GateCwdInput): GateCwd {
-  return { cwd: "", provenance: "root" };
+export function resolveGateCwd(input: GateCwdInput): GateCwd {
+  const { commandName, detected, packageView, workdir } = input;
+  // A detected command was derived from the package manifest, so it belongs to
+  // the package dir regardless of what any overlay declares.
+  if (detected) {
+    return { cwd: workdir, provenance: "detected" };
+  }
+  const overlay = packageView.overlay;
+  // The overlay only speaks for this command when it declares it. `review.commands`
+  // counts because mergePackageConfig's PKG-006 bridge mirrors overlay quality
+  // commands into review.commands, and full-suite-gate reads through it.
+  const declaredByOverlay =
+    overlay?.quality?.commands?.[commandName] !== undefined || overlay?.review?.commands?.[commandName] !== undefined;
+  if (declaredByOverlay) {
+    return { cwd: workdir, provenance: "overlay" };
+  }
+  // Nothing in the overlay is about this command — it is the root command, so run
+  // it from the repo root (where the root config was resolved).
+  return { cwd: packageView.repoRoot, provenance: "root" };
 }
