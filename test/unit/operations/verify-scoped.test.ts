@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockCallContext, makeMockRuntime, makeNaxConfig } from "@test/helpers";
-import type { ConfigSelector } from "@/config";
+import { makeConfigSlice, makeMockCallContext, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import type { ConfigSelector, NaxConfig } from "@/config";
 import type { Finding } from "@/findings";
+import type { LogEntry } from "@/logger";
+import { addSink, initLogger, resetLogger } from "@/logger";
 import type { VerifyScopedDeps } from "@/operations";
 import { _verifyScopedDeps, verifyScopedOp } from "@/operations";
 import type { CallContext } from "@/operations/types";
@@ -10,7 +12,7 @@ import type { ResolvedTestPatterns, SelectScopedTestsInput } from "@/test-runner
 
 function ctxWithQuality(
   quality?: { commands?: { test?: string } },
-  opts: { hasOverride?: boolean; repoRoot?: string } = {},
+  opts: { hasOverride?: boolean; repoRoot?: string; overlay?: Partial<NaxConfig> } = {},
 ): CallContext {
   const config = makeNaxConfig(quality ? { quality: { commands: quality.commands } } : {});
   const runtime = makeMockRuntime({ config });
@@ -19,10 +21,19 @@ function ctxWithQuality(
     relativeFromRoot: "packages/agent",
     repoRoot: opts.repoRoot ?? "/repo",
     hasOverride: opts.hasOverride ?? false,
+    ...(opts.overlay !== undefined ? { overlay: opts.overlay } : {}),
     config,
     select: <C>(selector: ConfigSelector<C>) => selector.select(config),
   };
   return makeMockCallContext({ runtime, packageView, storyId: "US-003" });
+}
+
+/**
+ * A raw per-package overlay declaring exactly the given `quality.commands` —
+ * the shape `.nax/mono/<pkg>/config.json` produces before merging.
+ */
+function rawOverlay(commands: Partial<NonNullable<NaxConfig["quality"]>["commands"]>): Partial<NaxConfig> {
+  return { quality: makeConfigSlice("quality", { commands }) };
 }
 
 const mockFinding: Finding = {
@@ -287,7 +298,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
     expect(seenWorkdir).toBe("/repo");
   });
 
-  test("workdir routing — uses input.workdir (packageDir) when per-package override exists", async () => {
+  test("workdir routing — uses input.workdir (packageDir) when the overlay declares quality.commands.test", async () => {
     let seenWorkdir = "";
     const deps = fakeDeps({
       regression: async (opts) => {
@@ -297,10 +308,55 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
     });
     await verifyScopedOp.execute(
       { workdir: "/repo/packages/lib", storyId: "S-1", regressionMode: "per-story" },
-      ctxWithQuality({ commands: { test: "bun test" } }, { hasOverride: true, repoRoot: "/repo" }),
+      ctxWithQuality(
+        { commands: { test: "bun test" } },
+        { hasOverride: true, repoRoot: "/repo", overlay: rawOverlay({ test: "bun test" }) },
+      ),
       deps,
     );
     expect(seenWorkdir).toBe("/repo/packages/lib");
+  });
+
+  test("US-002 AC14: uses repoRoot as cwd when the overlay declares only quality.commands.lint (root test command)", async () => {
+    let seenWorkdir = "";
+    const deps = fakeDeps({
+      regression: async (opts) => {
+        seenWorkdir = opts.workdir;
+        return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" };
+      },
+    });
+    await verifyScopedOp.execute(
+      { workdir: "/r/packages/lib", storyId: "S-1", regressionMode: "per-story" },
+      ctxWithQuality(
+        { commands: { test: "bun run test" } },
+        { hasOverride: true, repoRoot: "/r", overlay: rawOverlay({ lint: "eslint ." }) },
+      ),
+      deps,
+    );
+    expect(seenWorkdir).toBe("/r");
+  });
+
+  test("US-002 AC15: 'Running scoped tests' log data carries provenance: 'root' for a root-configured test command", async () => {
+    resetLogger();
+    initLogger({ level: "silent", suppressConsole: true });
+    const entries: LogEntry[] = [];
+    const unsubscribe = addSink((entry) => entries.push(entry));
+    try {
+      await verifyScopedOp.execute(
+        { workdir: "/r/packages/lib", storyId: "S-1", regressionMode: "per-story" },
+        ctxWithQuality(
+          { commands: { test: "bun run test" } },
+          { hasOverride: true, repoRoot: "/r", overlay: rawOverlay({ lint: "eslint ." }) },
+        ),
+        fakeDeps(),
+      );
+    } finally {
+      unsubscribe();
+      resetLogger();
+    }
+
+    const runLog = entries.find((entry) => entry.message === "Running scoped tests");
+    expect(runLog?.data?.provenance).toBe("root");
   });
 
   test("forwards repoRoot/packagePrefix/resolvedTestPatterns to selectScopedTests (Pass 0 anchors)", async () => {

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import type { DeepPartial } from "@test/helpers";
-import { cleanupTempDir, makeNaxConfig, makeTempDir, makeTestRuntime } from "@test/helpers";
-import type { ConfigSelector, QualityConfig } from "@/config";
+import { cleanupTempDir, makeConfigSlice, makeNaxConfig, makeTempDir, makeTestRuntime } from "@test/helpers";
+import type { ConfigSelector, NaxConfig, QualityConfig } from "@/config";
 import type { Finding } from "@/findings";
 import type { CallContext, LintCheckDeps, LintCheckOutput } from "@/operations";
 import { lintCheckOp } from "@/operations";
@@ -11,7 +11,7 @@ import type { ToolDiagnosticsScratchEntry } from "@/session/scratch-writer";
 
 function ctxWithQuality(
   quality?: DeepPartial<QualityConfig>,
-  opts: { hasOverride?: boolean; repoRoot?: string } = {},
+  opts: { hasOverride?: boolean; repoRoot?: string; overlay?: Partial<NaxConfig> } = {},
 ): CallContext {
   const config = makeNaxConfig({ quality });
   return {
@@ -24,10 +24,19 @@ function ctxWithQuality(
       relativeFromRoot: "packages/agent",
       repoRoot: opts.repoRoot ?? "/repo",
       hasOverride: opts.hasOverride ?? false,
+      ...(opts.overlay !== undefined ? { overlay: opts.overlay } : {}),
       config,
       select: <C>(selector: ConfigSelector<C>): C => selector.select(config),
     },
   };
+}
+
+/**
+ * A raw per-package overlay declaring exactly the given `quality.commands` —
+ * the shape `.nax/mono/<pkg>/config.json` produces before merging.
+ */
+function rawOverlay(commands: Partial<NonNullable<NaxConfig["quality"]>["commands"]>): Partial<NaxConfig> {
+  return { quality: makeConfigSlice("quality", { commands }) };
 }
 
 const passedResult = {
@@ -198,7 +207,7 @@ describe("lintCheckOp — workdir routing: repoRoot vs packageDir", () => {
     expect(seenWorkdir).toBe("/repo");
   });
 
-  test("uses input.workdir (packageDir) as cwd when per-package override exists", async () => {
+  test("uses input.workdir (packageDir) as cwd when the overlay declares quality.commands.lint", async () => {
     let seenWorkdir = "";
     const deps = makeDeps({
       runQualityCommand: async (o) => {
@@ -208,10 +217,32 @@ describe("lintCheckOp — workdir routing: repoRoot vs packageDir", () => {
     });
     await lintCheckOp.execute(
       { workdir: "/repo/packages/lib", storyId: "US-003" },
-      ctxWithQuality({ commands: { lint: "echo ok" } }, { hasOverride: true, repoRoot: "/repo" }),
+      ctxWithQuality(
+        { commands: { lint: "echo ok" } },
+        { hasOverride: true, repoRoot: "/repo", overlay: rawOverlay({ lint: "echo ok" }) },
+      ),
       deps,
     );
     expect(seenWorkdir).toBe("/repo/packages/lib");
+  });
+
+  test("US-002 AC11: uses repoRoot as cwd when the overlay declares only quality.commands.test (root lint command)", async () => {
+    let seenWorkdir = "";
+    const deps = makeDeps({
+      runQualityCommand: async (o) => {
+        seenWorkdir = o.workdir;
+        return passedResult;
+      },
+    });
+    await lintCheckOp.execute(
+      { workdir: "/r/packages/lib", storyId: "US-003" },
+      ctxWithQuality(
+        { commands: { lint: "bun run lint" } },
+        { hasOverride: true, repoRoot: "/r", overlay: rawOverlay({ test: "bun test" }) },
+      ),
+      deps,
+    );
+    expect(seenWorkdir).toBe("/r");
   });
 });
 

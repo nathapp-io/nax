@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeMockRuntime, makeNaxConfig, makeStory } from "@test/helpers";
+import { makeConfigSlice, makeMockRuntime, makeNaxConfig, makeStory } from "@test/helpers";
 import type { ConfigSelector, NaxConfig } from "@/config";
 import {
   _fullSuiteGateDeps,
@@ -14,15 +14,27 @@ import type { PackageView } from "@/runtime";
 
 type QualityCommands = NonNullable<NonNullable<NaxConfig["quality"]>["commands"]>;
 
-function packageViewWith(config: NaxConfig): PackageView {
+function packageViewWith(
+  config: NaxConfig,
+  opts: { hasOverride?: boolean; overlay?: Partial<NaxConfig> } = {},
+): PackageView {
   return {
     packageDir: "packages/agent",
     relativeFromRoot: "packages/agent",
     repoRoot: "/r",
-    hasOverride: false,
+    hasOverride: opts.hasOverride ?? false,
+    ...(opts.overlay !== undefined ? { overlay: opts.overlay } : {}),
     config,
     select: <C>(selector: ConfigSelector<C>) => selector.select(config),
   };
+}
+
+/**
+ * A raw per-package overlay declaring exactly the given `quality.commands` —
+ * the shape `.nax/mono/<pkg>/config.json` produces before merging.
+ */
+function rawOverlay(commands: Partial<QualityCommands>): Partial<NaxConfig> {
+  return { quality: makeConfigSlice("quality", { commands }) };
 }
 
 function ctxWithQuality(commands: Partial<QualityCommands> = {}): CallContext {
@@ -131,19 +143,58 @@ describe("fullSuiteGateOp uses package config", () => {
       agentName: "test-agent",
       packageDir: "/w",
       storyId: "US-003",
-      packageView: {
-        packageDir: "packages/agent",
-        relativeFromRoot: "packages/agent",
-        repoRoot: "/r",
+      packageView: packageViewWith(packageConfig, {
         hasOverride: true,
-        config: packageConfig,
-        select: <C>(selector: ConfigSelector<C>) => selector.select(packageConfig),
-      },
+        overlay: rawOverlay({ test: "pytest packages/agent/tests" }),
+      }),
     };
     const gateCtx = await _fullSuiteGateDeps.resolveGateContext(
       { workdir: "/w", story: makeStory({ id: "US-003", workdir: "packages/agent" }) },
       ctx,
     );
     expect(gateCtx.testCmd).toBe("pytest packages/agent/tests");
+  });
+});
+
+describe("_fullSuiteGateDeps.resolveGateContext — US-002: cwd provenance", () => {
+  test("US-002 AC16: overlay declaring only quality.commands.lint runs the root test command from repoRoot", async () => {
+    const config = makeNaxConfig({ quality: { commands: { test: "bun run test" } } });
+    const ctx: CallContext = {
+      runtime: makeMockRuntime({ config }),
+      agentName: "test-agent",
+      packageDir: "/w",
+      storyId: "US-003",
+      packageView: packageViewWith(config, { hasOverride: true, overlay: rawOverlay({ lint: "eslint ." }) }),
+    };
+
+    const gateCtx = await _fullSuiteGateDeps.resolveGateContext(
+      { workdir: "/w/packages/lib", story: makeStory({ id: "US-003", workdir: "packages/lib" }) },
+      ctx,
+    );
+
+    expect(gateCtx.cmdWorkdir).toBe("/r");
+    expect(gateCtx.cmdProvenance).toBe("root");
+  });
+
+  test("US-002 AC17: overlay declaring quality.commands.test runs from the story workdir with provenance 'overlay'", async () => {
+    const config = makeNaxConfig({ quality: { commands: { test: "pytest packages/agent/tests" } } });
+    const ctx: CallContext = {
+      runtime: makeMockRuntime({ config }),
+      agentName: "test-agent",
+      packageDir: "/w",
+      storyId: "US-003",
+      packageView: packageViewWith(config, {
+        hasOverride: true,
+        overlay: rawOverlay({ test: "pytest packages/agent/tests" }),
+      }),
+    };
+
+    const gateCtx = await _fullSuiteGateDeps.resolveGateContext(
+      { workdir: "/w", story: makeStory({ id: "US-003", workdir: "packages/agent" }) },
+      ctx,
+    );
+
+    expect(gateCtx.cmdWorkdir).toBe("/w");
+    expect(gateCtx.cmdProvenance).toBe("overlay");
   });
 });

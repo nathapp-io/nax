@@ -22,6 +22,11 @@ export interface PackageView {
   readonly repoRoot: string;
   /** True when a per-package config override was hydrated for this package. */
   readonly hasOverride: boolean;
+  /**
+   * The raw per-package overlay (`.nax/mono/<pkg>/config.json`) before merging;
+   * absent when the package has none.
+   */
+  readonly overlay?: Partial<NaxConfig>;
   readonly config: NaxConfig;
   select<C>(selector: ConfigSelector<C>): C;
 }

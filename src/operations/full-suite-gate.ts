@@ -37,6 +37,7 @@ import {
   resolveStoryBaseline,
   type StoryExecutionMode,
 } from "../verification";
+import type { GateCommandProvenance } from "./gate-cwd";
 import type { CallContext, DeterministicOperation } from "./types";
 
 /**
@@ -130,6 +131,8 @@ export interface FullSuiteGateContext {
   readonly fullSuiteTimeout: number;
   /** cwd for the test subprocess — packageDir when per-package override exists, repoRoot otherwise. */
   readonly cmdWorkdir: string;
+  /** Why `cmdWorkdir` holds the value it does (src/operations/gate-cwd.ts). */
+  readonly cmdProvenance?: GateCommandProvenance;
 }
 
 export interface FullSuiteGateDeps {
