@@ -30,6 +30,7 @@ export {
   sensitiveFilteredProcessEnv,
 } from "./profile";
 export { getProjectKey } from "./project-key";
+export { pinRootOnlyKeys, pinRootOnlyKeysRaw, ROOT_ONLY_EXECUTION_KEYS } from "./root-only-keys";
 export type {
   AutoModeConfig,
   AutoRouteConfig,

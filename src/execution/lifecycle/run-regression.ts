@@ -449,6 +449,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     // #2201: fullSuiteRectifyOp declares Bash, so the cycle context carries the
     // ask resolver + command shadow. Built per story (like the execution stage)
     // and disposed once that story's cycle settles.
+    // ADR-031: a whole-feature op uses root config, including root's permissions map.
     const dispatchAsk = await _regressionDeps.buildRunDispatchAskWiring({
       config,
       rootConfig: config,

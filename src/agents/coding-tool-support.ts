@@ -535,7 +535,7 @@ export async function resolveCodingToolSupport(
   const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
   const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
   // P4: the probe is async, so it runs here and reaches the sync seam as data.
-  // Read from the ROOT config: execution.sandbox is global-only (spec 6).
+  // execution.sandbox is root-scoped (ADR-031): package configs cannot override it.
   const launcher =
     options.codingToolRoot !== undefined && options.codingToolRoot.trim() !== ""
       ? await resolveSessionSandbox({

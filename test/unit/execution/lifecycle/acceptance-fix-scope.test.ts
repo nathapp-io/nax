@@ -111,6 +111,23 @@ describe("openAcceptanceFixScope", () => {
     expect(scope.cycleCtx.askResolver?.humanReachable).toBe(false);
     await scope.dispose();
   });
+
+  test("ADR-031: the dispatch wiring gets the root config; the fix cycle keeps the package config", async () => {
+    const built: RunDispatchAskOptions[] = [];
+    _acceptanceFixScopeDeps.buildRunDispatchAskWiring = async (opts) => {
+      built.push(opts);
+      return fakeWiring().wiring;
+    };
+    const base = makeMockRuntime();
+    const pkgConfig = makeNaxConfig({ quality: { commands: { lint: "pkg-lint" } } });
+    const pkgView = { ...base.packages.resolve("packages/api"), hasOverride: true, config: pkgConfig };
+    const runtime = { ...base, packages: { ...base.packages, resolve: () => pkgView } };
+    const source = makeSource();
+    const scope = await openAcceptanceFixScope(source, runtime, "US-002", "packages/api");
+    expect(built[0]?.config).toBe(source.config);
+    expect(scope.cycleCtx.config).toBe(pkgConfig);
+    await scope.dispose();
+  });
 });
 
 function makeLoopCtx(): AcceptanceLoopContext {

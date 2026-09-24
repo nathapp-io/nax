@@ -382,4 +382,43 @@ describe("loadConfigForWorkdir", () => {
       expect(dev.quality.commands.test).toBe("dev-test");
     });
   });
+
+  test("ADR-031: a package config cannot override the root-only safety keys", async () => {
+    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({ execution: { bashApproval: "escalate" } }));
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
+      JSON.stringify({ execution: { bashApproval: "raw", permissions: { run: { bashApproval: "gated" } } } }),
+    );
+    const captured: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => captured.push(entry.message));
+    try {
+      const cfg = await loadConfigForWorkdir(join(tempDir, ".nax", "config.json"), "packages/api");
+      expect(cfg.execution.bashApproval).toBe("escalate");
+      // Review Focus 5: the per-stage mode in the package's permissions map still applies.
+      expect(cfg.execution.permissions?.run?.bashApproval).toBe("gated");
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+    expect(captured.some((m) => m.includes("execution.bashApproval is root-only"))).toBe(true);
+  });
+
+  test("ADR-031: a package profile cannot override a root-only key", async () => {
+    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({ execution: { bashApproval: "escalate" } }));
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
+      JSON.stringify({ profile: "loose" }),
+    );
+    mkdirSync(join(tempDir, "packages", "api", ".nax", "profiles"), { recursive: true });
+    writeFileSync(
+      join(tempDir, "packages", "api", ".nax", "profiles", "loose.json"),
+      JSON.stringify({ execution: { bashApproval: "raw" } }),
+    );
+    const cfg = await loadConfigForWorkdir(join(tempDir, ".nax", "config.json"), "packages/api");
+    expect(cfg.execution.bashApproval).toBe("escalate");
+  });
 });

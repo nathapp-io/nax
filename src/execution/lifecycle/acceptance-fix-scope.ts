@@ -43,7 +43,8 @@ export async function openAcceptanceFixScope(
   const packageView = runtime.packages.resolve(packageDir);
   const effectiveConfig = packageView.hasOverride ? packageView.config : ctx.config;
   const dispatchAsk = await _acceptanceFixScopeDeps.buildRunDispatchAskWiring({
-    config: effectiveConfig,
+    // ADR-031: the wiring reads only root-scoped keys.
+    config: ctx.config,
     rootConfig: ctx.config,
     projectDir: ctx.workdir,
     packageDirs: ctx.prd.userStories.map(storyPackageDir),

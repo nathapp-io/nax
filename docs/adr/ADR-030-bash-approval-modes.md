@@ -503,3 +503,8 @@ the ask resolver's coverage (execution-stage operations); rows report it. Whatev
 may forward commands elsewhere; nax cannot see that, and the loopback rule guarantees only that
 nax itself opens no remote connection.
 
+---
+
+## See also
+
+- ADR-031: the bash approval mode, approval timeout, sandbox and command-safety keys are root-scoped.
