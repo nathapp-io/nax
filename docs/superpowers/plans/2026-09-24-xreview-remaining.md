@@ -10,12 +10,21 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-24-xreview-remaining-design.md` (rev 2, commit `dbc9e29da`). Read it before any task; section numbers below (§1-§9) refer to it.
 
+## Handover (read first)
+
+- **Start state:** branch `feat/xreview-remaining` in `projects/nax/repos/nax`, off `main` @ `3b7834208`; spec and plan committed on it (5 `docs(spec|plan)` commits from `71fa58573`), nothing pushed. Before Task 1: `git status` must be clean and `git log --oneline -1` must show `docs(plan): final review fixes and handover notes`. Other sessions share this checkout: if the branch or HEAD is not what you expect, stop and ask; never assume you moved it.
+- **Execution:** superpowers:subagent-driven-development. The user asked that **every subagent (implementer and reviewer) runs on `model: sonnet`**.
+- **Task order is fixed:** 3 depends on 1-2; 5 edits the function 3 changed; 9's tests use the `ended` field added in 8. Otherwise tasks are independent.
+- **Rulings are settled; do not re-open them** (spec "Rulings" table). In particular: the raw screen stays advisory (#8, wording only); masking a span that contains shell syntax is refused, never shown (#9); per-stage `permissions.<stage>.bashApproval` and `permissionProfile` stay per-package (#10); #14 needs no code; #11 is out of scope.
+- **Stop and report** (do not work around) when a test that the plan says should already pass fails (Task 10), or when a step's anchor text is not found at the cited location.
+- **Done means:** Task 12's gates green, commits on the branch, no push, no PR, no `nax run`.
+
 ## Global Constraints
 
 - File-size gate: 600 lines for `src/**/*.ts`, 800 for `test/**/*.test.ts` (`scripts/check-file-sizes.ts`). `src/config/loader.ts` is at 600: its net growth must be <= 0. `src/tools/runtime.ts` is at 582.
 - Run ONE test file: `timeout 60 bun test <path> --timeout=5000` (prefix `AGENT=1` for errors-only output). Never run bare, uncapped `bun test`; `bun run test -- <path>` ignores the path and runs everything.
 - Gates before every commit touching `src/`: `bun run typecheck` and `bun run check:all` (typecheck is NOT part of `check:all`). The pre-commit hook runs both; do not bypass it.
-- Final gate (Task 12): `bun run test`, `bun run typecheck`, `bun run check:all` all green.
+- Final gate (Task 12): `bun run test`, `bun run typecheck`, `bun run check:all` and `bun run test:coverage` (CI's per-file coverage floor; not part of the pipeline) all green.
 - `test/` has a ratchet of 0 `as unknown as` casts; `src/` forbids silent-fail `NaxConfig` casts. Do not add either.
 - No emojis in code, comments or docs. Immutable updates (spread), except the documented in-place restore in Task 9.
 - Conventional commits (`feat:`, `fix:`, `docs:`, `test:`); no attribution trailer.
@@ -287,7 +296,7 @@ git commit -m "feat(permissions): secret span finder for prompts and audit rows 
 
 **Files:**
 - Create: `src/tools/ask-request.ts`
-- Modify: `src/tools/runtime.ts:48` (remove `MAX_ASK_SUMMARY_CHARS`), `:136-168` (remove `askSummary`, `askDenyReason`), `:505-512` (call site), imports
+- Modify: `src/tools/runtime.ts:48` (remove `MAX_ASK_SUMMARY_CHARS`), `:135-167` (remove `askSummary`, `askDenyReason`), `:493-514` (call site), imports
 - Modify: `src/permissions/types.ts:12-33` (`AskRequest.unshowable`)
 - Modify: `src/permissions/ask-chain.ts:19` (`AskDecidedBy` gains `"unshowable"`)
 - Modify: `src/permissions/ask.ts` (new `ASK_UNSHOWABLE_REASON`; export it from `src/permissions/index.ts:12` next to the others)
@@ -423,7 +432,7 @@ export function askDenyReason(decidedBy: AskVerdict["decidedBy"]): string {
 }
 ```
 
-In `runtime.ts`: delete the moved code and the now-unused `ASK_*` imports, add `import { askDenyReason, askSummary } from "./ask-request";`, and change the call site at `:505-512` to:
+In `runtime.ts`: delete the moved code, and remove `ASK_DENIED_REASON`, `ASK_NO_CHANNEL_REASON` and `ASK_TIMEOUT_REASON` from its imports (now unused). **Keep `ASK_CANCELLED_REASON`**: it is still used directly in the AC11 branch (`runtime.ts:535`, `` `${verdict.reason} -- ${ASK_CANCELLED_REASON}` ``). Then add `import { askDenyReason, askSummary } from "./ask-request";`, and change the call site (the `askResolver.resolve(` block, `:493-514`) to:
 
 ```ts
         const ask = askSummary(policyIdentity, tool.scope, input);
@@ -595,7 +604,7 @@ git commit -m "feat(interaction): mask-or-deny secrets in approval prompts (#9)"
 **Files:**
 - Modify: `src/permissions/approval-audit.ts:5-6` (header comment lists `unshowable`), `:29`
 - Modify: `src/command-safety/row.ts:12`
-- Modify: `src/tools/tool-audit.ts:172`
+- Modify: `src/tools/tool-audit.ts:177` (the `calls,` entry inside `flush`'s `JSON.stringify`)
 - Test: `test/unit/permissions/approval-audit.test.ts`, `test/unit/command-safety/row.test.ts`, `test/unit/tools/tool-audit.test.ts`
 
 **Interfaces:**
@@ -606,6 +615,7 @@ git commit -m "feat(interaction): mask-or-deny secrets in approval prompts (#9)"
 `approval-audit.test.ts` (uses `makeTempDir`/`cleanupTempDir`, `tempDir`, reads `run-1.jsonl`):
 ```ts
 test("review #9: a secret in the request command is redacted in the row", async () => {
+  tempDir = makeTempDir("approval-audit-");
   const secret = "ghp_abcdefghijklmnop1234";
   await appendApprovalAudit(tempDir, "run-1", {
     request: { tool: "Bash", stage: "run", rule: "Bash(*)", summary: "Bash", command: `gh auth ${secret}` },
@@ -650,7 +660,7 @@ Expected: the three new tests FAIL.
 
 `row.ts:12`: same, with `import { redactRowStrings } from "@/permissions";`.
 
-`tool-audit.ts:172`: in the object passed to `JSON.stringify`, replace `calls` with `calls: redactRowStrings(calls)`; import from `@/permissions`.
+`tool-audit.ts:177`: in the object passed to `JSON.stringify`, replace `calls` with `calls: redactRowStrings(calls)`; import from `@/permissions`.
 
 Do NOT touch `approvals-store.ts`: `approvals.json` must stay byte-exact (D17).
 
@@ -1012,7 +1022,7 @@ Expected: the four new tests FAIL.
 ```ts
   rawMerged = pinRootOnlyKeysRaw(rawMerged, rootConfig, packageDir, warnDedupe.warn);
 ```
-Delete the three-line historical comment beginning `// #574's single-shim patch here` (`:579-581`). Verify: `wc -l src/config/loader.ts` prints <= 600.
+Delete the three-line historical comment beginning `// #574's single-shim patch here` (`:579-581`). Verify: `wc -l src/config/loader.ts` prints 599. There is exactly one line of margin: add no blank line or extra comment.
 
 `runtime/packages.ts`: import `pinRootOnlyKeys` alongside `mergePackageConfig` (`:3`), and at `:190`:
 ```ts
@@ -1193,8 +1203,10 @@ describe("review #20: before_turn_end on the error path", () => {
       return {};
     });
     const ac = new AbortController();
+    // deps.signal (4th argument) is what the catch reads; opts.signal alone is not threaded into it.
     await runNativeTurn(handle, "hi", baseOpts({ signal: ac.signal }), {
       loopEvents: registry,
+      signal: ac.signal,
       complete: async () => {
         ac.abort();
         throw new DOMException("aborted", "AbortError");
@@ -1481,7 +1493,7 @@ git commit -m "fix(native): undo in-place loop-event payload mutation (#19)"
 
 These pin behaviour that already exists; each should PASS on first run. If one fails, stop and report it — it is a finding, not a test to adjust.
 
-- [ ] **Step 1: escalate + sandbox + shadow, one command, same bytes** — `bash-deny-suite.test.ts`. Extend `session()` options with `launcher?: CommandLauncher` and `commandShadow?: CommandShadow`, spreading them into `buildCodingToolSupport` (the explicit `commandShadow` overrides `suiteShadow`). Add imports `makeCommandShadowRecorder, makeFakeSandboxBackend` from `@test/helpers` and `createCommandLauncher, type CommandLauncher` from `@/sandbox`. Add, OUTSIDE the `describe.each`:
+- [ ] **Step 1: escalate + sandbox + shadow, one command, same bytes** — `bash-deny-suite.test.ts`. Extend `session()` options with `launcher?: CommandLauncher` and `commandShadow?: CommandShadow`, spreading them into `buildCodingToolSupport`. Put `...(options?.commandShadow !== undefined ? { commandShadow: options.commandShadow } : {})` AFTER the existing `suiteShadow` spread (`:80`) so the explicit shadow wins. Add imports `makeCommandShadowRecorder, makeFakeSandboxBackend` from `@test/helpers` and `createCommandLauncher, type CommandLauncher` from `@/sandbox`. Add, OUTSIDE the `describe.each`:
 
 ```ts
 describe("composite: escalate + sandbox + shadow (review test gap 1)", () => {
@@ -1520,7 +1532,7 @@ describe("composite: escalate + sandbox + shadow (review test gap 1)", () => {
 - [ ] **Step 2: human-approved then sandbox-denied** — `sandbox-live.test.ts`. Extend `bash()` opts with `bashApproval?: BashApprovalMode` and `askResolver?: AskResolver`, passing `bashApproval: opts.bashApproval ?? "raw"` and spreading `askResolver`. Add inside the `describe.skipIf`:
 
 ```ts
-  test("review test gap 2: a human-approved write to a protected path is still refused by the sandbox", async () => {
+  test("review test gap 2: escalate + human approval does not let a write past the sandbox's protected path", async () => {
     const run = await bash({
       bashApproval: "escalate",
       askResolver: chainAskLinks([
@@ -1590,7 +1602,7 @@ describe("composite: escalate + sandbox + shadow (review test gap 1)", () => {
     cleanupTempDir(outside);
   });
 ```
-If the cache refuses entries under `sandboxEnabled: true` by design (#2199 provenance: entries must be written under a sandbox guarantee), the approval fixture needs the provenance field that #2199 added — read `src/permissions/approvals-link.ts:37-60` and add it to the `appendApproval` call; do not flip `sandboxEnabled`.
+(With `stageModes: ["escalate"]` no stage is forge-capable, so the link is enabled and trusts the hand-written entry; the fixture needs no extra field.)
 
 - [ ] **Step 4: loop events around a permission ask** — `turn-lifecycle.test.ts`. The coding-tool call goes through `interactionHandler.onInteraction`, where the permission ask happens:
 
@@ -1692,7 +1704,7 @@ git commit -m "test: composite coverage for ask, sandbox, shadow and loop-event 
 ### Task 11: Wording and docs (§4, §8; #8, #22)
 
 **Files:**
-- Modify: `src/tools/bash.ts:159-163`; `docs/adr/ADR-030-bash-approval-modes.md:136-151` and its decidedBy list (`:242-252`) and D18 wording
+- Modify: `src/tools/bash.ts:159-163`; `docs/adr/ADR-030-bash-approval-modes.md:136-151` (gaps) and `:242-252` (AskResolver chain prose)
 - Modify: `src/cli/config-descriptions.ts`; `docs/guides/configuration.md`; `docs/guides/permissions.md` (See also, `:218`)
 - Test: `test/unit/agents/coding-tool-bash.test.ts:84-100`, `test/unit/cli/config-descriptions.test.ts`
 
@@ -1747,12 +1759,12 @@ If zod v4 exposes wrappers differently (e.g. `def` instead of `_def`), adjust `u
 Run: `timeout 60 bun test test/unit/agents/coding-tool-bash.test.ts test/unit/cli/config-descriptions.test.ts --timeout=5000`
 Expected: FAIL (missing phrases; missing descriptions).
 
-- [ ] **Step 3: Bash description** — replace `bash.ts:159-163` with (keep the `nax-feature-dir-allow` trailing comment on the line that names `.nax/features/**/prd.json`):
+- [ ] **Step 3: Bash description** — replace `bash.ts:159-163` with (the trailing `nax-feature-dir-allow` comment must stay on the line that names `.nax/features/**/prd.json`; `scripts/check-feature-dir-ssot.ts` requires it):
 
 ```ts
     "The only refusal is a command the lexer CAN parse that names or redirects into one of the exact file " +
     "paths nax owns -- .nax/config.json, .nax/mono/*/config.json, " +
-    ".nax/features/**/prd.json, or the root queue-control files -- change those through nax rather than by " + // nax-feature-dir-allow: <keep the existing justification text>
+    ".nax/features/**/prd.json, or the root queue-control files -- change those through nax rather than by " + // nax-feature-dir-allow: prose naming the raw-mode protected-path screen, not a path construction
     "writing them directly. That screen is advisory, not a boundary: it matches exact file paths only, so a " +
     "command using command substitution, a directory target (cp x .nax/), a glob, a nested shell (sh -c '...'), " +
     "tar -C or dd of=, or a symlink alias all skip it; use the sandbox for a boundary. " +
@@ -1795,7 +1807,7 @@ ADR-030 `:136`: "Three gaps" -> "Six gaps". After gap 3 add:
 6. A symlink alias (`ln -s .nax n && echo x > n/config.json`) passes: the screen does not
    resolve links.
 ```
-ADR-030 decidedBy list (`:242-252`): add `unshowable` — "the command contains a secret whose masked form could hide shell syntax; denied without prompting (review #9)". Where ADR-030 states D18 (search "verbatim"), change it to: "the approval prompt shows the command verbatim except inert secret spans, or the gate denies".
+ADR-030 `:242-252` describes the AskResolver chain in prose (not a literal list). Add one sentence there: "Before prompting, the human link masks inert secret spans in the command; when a secret span would contain shell syntax it denies without prompting, attributed `unshowable` (review #9)." (D18 itself lives only in the master plan; Task 12 amends it.)
 
 `docs/guides/configuration.md`: add a section `## Bash Approval, Sandbox and Command Safety` listing the four root-only keys with one sentence each, the per-stage `permissions.<stage>.bashApproval` exception, and the `allowRemote` warning; link `../adr/ADR-031-root-scoped-command-safety-config.md` and `permissions.md`.
 
@@ -1822,8 +1834,8 @@ git commit -m "docs: honest raw-screen wording, safety-key descriptions and guid
 
 - [ ] **Step 1: Full gates**
 
-Run: `bun run test && bun run typecheck && bun run check:all`
-Expected: all green. Paste the summary lines into the task report. If anything fails, fix it in the task that owns the file, then re-run.
+Run: `bun run test && bun run typecheck && bun run check:all && bun run test:coverage`
+Expected: all green. `test:coverage` gates per-file coverage; a new `src` module below the floor needs more tests in its owning task, never a baseline bump. Paste the summary lines into the task report. If anything fails, fix it in the task that owns the file, then re-run.
 
 - [ ] **Step 2: Spec coverage check** — for each spec section §1-§9, name the commit that implements it (`git log --oneline main..HEAD`). Any gap: stop and report.
 
