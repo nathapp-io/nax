@@ -113,6 +113,10 @@ export function warnFallbackMisconfiguration(
  * The message names the stage, the mode, and the rule that would fix it so a
  * reader who only sees the log line can act on it. The data object carries
  * `{ storyId: "_setup", stage, bashApproval }` for downstream tooling.
+ *
+ * Silence here means escalation is reachable wherever the stage dispatches:
+ * every Bash-dispatching call site attaches an ask resolver, which
+ * `scripts/check-bash-dispatch-ask.ts` enforces (#2202).
  */
 export function warnInertBashStages(config: NaxConfig, logger: ReturnType<typeof getSafeLogger>): void {
   const inertStages = findInertBashStages(config);
