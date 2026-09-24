@@ -17,7 +17,7 @@ import {
   MACOS_CACHE_WRITE_ROOT,
   SRT_MACOS_TMPDIR,
 } from "./defaults";
-import { WORKTREE_CONFIG_FILE } from "./git-guards";
+import { WORKTREE_COMMON_WRITE_DIRS, WORKTREE_CONFIG_FILE } from "./git-guards";
 import type { GitLayout } from "./policy-inputs";
 import type { SandboxPolicy } from "./types";
 
@@ -72,11 +72,22 @@ function gitDenies(root: string, git: GitLayout): string[] {
   ];
 }
 
+/**
+ * A worktree's own admin dir plus the shared subdirs its git writes -- never
+ * the whole common dir, whose top-level `commondir` would otherwise be a live
+ * redirect for concurrent unsandboxed git while the command runs (#2211).
+ * srt skips a write root that does not exist yet.
+ */
+function worktreeGitWriteRoots(git: GitLayout): string[] {
+  if (git.kind !== "worktree") return [];
+  return [git.gitDir, ...WORKTREE_COMMON_WRITE_DIRS.map((dir) => join(git.commonDir, dir))];
+}
+
 export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
   const { root, home, config } = input;
   const writeRoots = literal([
     root,
-    ...(input.git.kind === "worktree" ? [input.git.commonDir] : []),
+    ...worktreeGitWriteRoots(input.git),
     ...input.tempRoots,
     ...(input.platform === "darwin" ? [SRT_MACOS_TMPDIR, join(home, MACOS_CACHE_WRITE_ROOT)] : []),
     ...BUILTIN_CACHE_WRITE_ROOTS.map((rel) => join(home, rel)),

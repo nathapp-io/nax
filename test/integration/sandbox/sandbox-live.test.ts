@@ -12,7 +12,7 @@
  * resets it in afterAll.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, waitForCondition, withDepsRestore } from "@test/helpers";
 import { _sessionSandboxDeps, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
@@ -38,7 +38,7 @@ function git(args: string[], cwd: string): string {
 }
 
 describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
-  withDepsRestore(_sessionSandboxDeps, ["tempRoots", "homedir"]);
+  withDepsRestore(_sessionSandboxDeps, ["tempRoots", "homedir", "commonDirTripwire"]);
   let base: string;
   let root: string;
   let outside: string;
@@ -183,6 +183,45 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
     expect(existsSync(join(root, ".git", "commondir"))).toBe(false);
     expect(readFileSync(join(sibling, "commondir"), "utf8")).toBe(siblingBefore);
     expect(readFileSync(join(root, ".nax-wt", "US-002", ".git"), "utf8")).toBe(pointerBefore);
+  }, 30_000);
+
+  test("#2209: in a main checkout, .git cannot be renamed away or replaced by a pointer file", async () => {
+    git(["init", "-q", "-b", "main"], root);
+    writeFileSync(join(root, "seed.txt"), "seed");
+    git(["add", "-A"], root);
+    git(["commit", "-qm", "seed"], root);
+    const inodeBefore = statSync(join(root, ".git")).ino;
+    const agentDir = join(root, "agent-git");
+
+    const run = await bash();
+    await run(`mv .git .git-old; mkdir -p ${agentDir}; printf 'gitdir: ${agentDir}\\n' > .git; true`);
+
+    expect(existsSync(join(root, ".git-old"))).toBe(false);
+    expect(statSync(join(root, ".git")).isDirectory()).toBe(true);
+    expect(statSync(join(root, ".git")).ino).toBe(inodeBefore);
+    expect(git(["rev-parse", "--absolute-git-dir"], root).trim()).toBe(realpathSync(join(root, ".git")));
+  }, 30_000);
+
+  test("#2211: from a worktree, the common dir's commondir and sibling worktrees never become writable", async () => {
+    // No tripwire: the write must fail outright, so there is no window in which
+    // a concurrent unsandboxed git could follow a stray commondir.
+    _sessionSandboxDeps.commonDirTripwire = async () => undefined;
+    git(["init", "-q", "-b", "main"], root);
+    writeFileSync(join(root, "seed.txt"), "seed");
+    git(["add", "-A"], root);
+    git(["commit", "-qm", "seed"], root);
+    git(["worktree", "add", "-q", ".nax-wt/US-001", "-b", "wt-us-001"], root);
+    git(["worktree", "add", "-q", ".nax-wt/US-002", "-b", "wt-us-002"], root);
+    const common = join(root, ".git");
+    const siblingHead = join(common, "worktrees", "US-002", "HEAD");
+    const siblingHeadBefore = readFileSync(siblingHead, "utf8");
+
+    const run = await bash({ root: join(root, ".nax-wt", "US-001") });
+    await run(`echo ${outside} > ${join(common, "commondir")}; echo ref: refs/heads/main > ${siblingHead}; true`);
+
+    expect(existsSync(join(common, "commondir"))).toBe(false);
+    expect(readFileSync(siblingHead, "utf8")).toBe(siblingHeadBefore);
+    expect(git(["status", "--porcelain", "-uno"], root)).toBe("");
   }, 30_000);
 
   test("a timeout kills sandboxed grandchildren", async () => {

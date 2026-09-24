@@ -14,6 +14,11 @@
  * concurrent nax git. An absent `<common>/commondir` is therefore guarded by
  * a tripwire instead (strayCommonDirTripwire). `config.worktree` is the
  * exception: an empty one is valid config, so it is always denied.
+ *
+ * The tripwire is what protects a main checkout, whose git dir sits inside the
+ * root write root. In a linked worktree the common dir is not a write root at
+ * all (WORKTREE_COMMON_WRITE_DIRS, #2211), so the file cannot be created there
+ * and the tripwire is only a second line.
  */
 import { lstat, readdir, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
@@ -27,6 +32,23 @@ const WORKTREES_DIR = "worktrees";
 const COMMONDIR_FILE = "commondir";
 const GITDIR_FILE = "gitdir";
 export const WORKTREE_CONFIG_FILE = "config.worktree";
+
+/**
+ * What a linked worktree's git writes in the SHARED common dir (#2211): loose
+ * and packed objects, refs and their reflogs (`reftable/` holds both when
+ * `extensions.refStorage=reftable`, git >= 2.45), and git-lfs's object store.
+ * Only these are write roots, never the common dir itself, so the redirecting
+ * files at its top level (`commondir`, `config`, `hooks/`) and every sibling
+ * worktree's admin dir lie outside the sandbox's writes. `modules/` is left
+ * out on purpose: it holds submodule git dirs, each with its own config.
+ *
+ * Cost: a lock file at the common dir's top level cannot be created, so a
+ * sandboxed command cannot rewrite `packed-refs` (deleting a packed branch or
+ * tag) or take the `gc --auto` lock; commits, loose ref updates and fetches
+ * into loose objects are unaffected. (A reftable repo locks inside
+ * `reftable/`, so it keeps ref deletion too.)
+ */
+export const WORKTREE_COMMON_WRITE_DIRS: readonly string[] = ["objects", "refs", "logs", "reftable", "lfs"];
 const DOT_GIT = ".git";
 
 export const _gitGuardDeps = {

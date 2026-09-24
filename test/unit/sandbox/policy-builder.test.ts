@@ -69,11 +69,11 @@ describe("buildSandboxPolicy", () => {
     expect(policy.denyWrite.some((p) => p.includes(join(root, ".git")))).toBe(false);
   });
 
-  test("F2 + finding 4: a worktree gets the common dir writable and every pointer denied", () => {
+  test("F2 + finding 4: a worktree gets its git write roots and every pointer denied", () => {
     const common = join(base, "main", ".git");
     const gitDir = join(common, "worktrees", "US-001");
     const policy = buildSandboxPolicy(input({ git: { kind: "worktree", gitDir, commonDir: common } }));
-    expect(policy.writeRoots).toContain(common);
+    expect(policy.writeRoots).toContain(gitDir);
     for (const p of [
       join(common, "hooks"),
       join(common, "config"),
@@ -84,6 +84,28 @@ describe("buildSandboxPolicy", () => {
       join(gitDir, "config.worktree"),
     ]) {
       expect(policy.denyWrite).toContain(p);
+    }
+  });
+
+  test("#2211: a worktree writes only its own admin dir and the shared objects/refs/logs/reftable/lfs, never the common dir", () => {
+    const common = join(base, "main", ".git");
+    const gitDir = join(common, "worktrees", "US-001");
+    const policy = buildSandboxPolicy(input({ git: { kind: "worktree", gitDir, commonDir: common } }));
+    const gitRoots = policy.writeRoots.filter((p) => p === common || p.startsWith(`${common}/`));
+    expect(gitRoots.sort()).toEqual(
+      [
+        gitDir,
+        join(common, "objects"),
+        join(common, "refs"),
+        join(common, "logs"),
+        // A reftable repo (extensions.refStorage=reftable) keeps every shared ref here.
+        join(common, "reftable"),
+        join(common, "lfs"),
+      ].sort(),
+    );
+    // So the top-level redirect files and submodule git dirs fall outside every write root.
+    for (const outside of [join(common, "commondir"), join(common, "modules"), join(common, "worktrees", "US-002")]) {
+      expect(policy.writeRoots.some((r) => outside === r || outside.startsWith(`${r}/`))).toBe(false);
     }
   });
 
