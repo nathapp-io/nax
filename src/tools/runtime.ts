@@ -409,6 +409,14 @@ export function createCodingToolRuntime(opts: {
         resolvedPaths: readonly string[],
         approval?: { decidedBy: string; remembered: boolean; latencyMs: number },
       ): Promise<CodingToolOutcome> {
+        // US-002 AC15: a per-call `ToolCallContext.signal` (the native batch's
+        // turn signal) takes priority over the runtime-level signal. Both
+        // describe "abort this in-flight tool"; the per-call one is the one
+        // the batch explicitly put in scope, so it wins when both are
+        // present, falling back to the runtime-level signal otherwise so the
+        // session-wide abort keeps working when no per-call signal is in
+        // scope.
+        const callSignal = context?.signal ?? signal;
         try {
           const result = await target.run(callInput, {
             root: opts.policy.root,
@@ -417,7 +425,7 @@ export function createCodingToolRuntime(opts: {
             maxFileBytes,
             readCeiling,
             ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
-            ...(signal !== undefined ? { signal } : {}),
+            ...(callSignal !== undefined ? { signal: callSignal } : {}),
           });
           const kind = result.isError === true ? "error" : "ok";
           const content = await shapeToolResult(result.content, policyIdentity, context);

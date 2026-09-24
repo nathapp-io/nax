@@ -91,6 +91,12 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
   // batch sees the first one spent.
   let recorded = interactionsSoFar;
   let spinStopped = false;
+  // US-002: a cancelled turn signal short-circuits this batch. The check runs
+  // at the TOP of every iteration (before activity, before dispatch) so an
+  // already-aborted signal at batch start also answers this-and-later calls
+  // from the first iteration; an in-flight call (the one that triggered the
+  // abort) finishes on its own path, the check begins there.
+  let cancelled = false;
 
   for (const [callIndex, call] of toolCalls.entries()) {
     if (spinWarned) {
@@ -98,6 +104,25 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
       // The terminal round trip is answer-only. Any subsequent tool call
       // is neither executed nor answered; the fail-spin retry starts from
       // a fresh session and deliberately drops this unanswered request.
+      break;
+    }
+    // US-002: check the turn signal BEFORE any activity or dispatch so a
+    // cancelled turn stops dispatching subsequent calls. The synthetic
+    // answer mirrors the terminate branch — push results for this call AND
+    // every later call in the batch, then break — so a strict provider that
+    // requires one result per assistant tool-call id is satisfied even when
+    // half the batch never ran. AC1 / AC7 / AC8.
+    if (deps.signal?.aborted === true) {
+      cancelled = true;
+      for (const outstanding of toolCalls.slice(callIndex)) {
+        messages.push(
+          buildToolResult({
+            toolCallId: outstanding.id,
+            content: "Not run: the turn was cancelled.",
+            isError: true,
+          }),
+        );
+      }
       break;
     }
     deps.onActivity?.({ kind: "tool", toolName: call.name });
@@ -183,6 +208,12 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
               roundTrips,
               toolCallId: call.id,
               deferModelTruncation: true,
+              // US-002: forward the per-turn signal into the coding-tool
+              // request. The handler copies it onto the `ToolCallContext`
+              // and `runTool` copies it onto the tool's `ToolRunContext`, so
+              // an in-flight tool observes the turn's cancellation. Absent
+              // when no signal is in scope (the no-signal regression guard).
+              ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
             }
           : { kind, name: call.name, input },
       );
@@ -246,9 +277,11 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
     codingToolsCalled,
     spinStopped,
     budgetExceeded: invalidCallBudget.exceeded,
-    // US-002 placeholder: the signal check that sets this true is the
-    // implementer's logic; a batch that never consulted a signal is never
-    // cancelled.
-    cancelled: false,
+    // US-002: true when this batch saw an aborted `deps.signal` between tool
+    // calls; the loop throws the abort reason instead of issuing another
+    // round trip. A batch that never consulted a signal — the normal
+    // pre-feature path — never sees an aborted signal, so this stays false
+    // and the result shape is unchanged.
+    cancelled,
   };
 }

@@ -359,6 +359,17 @@ export async function runNativeTurn(
         if (batch.spinStopped) spinStopped = true;
         if (batch.spinStopped) break;
         if (batch.budgetExceeded) break;
+        // US-002: a cancelled turn signal during the batch answers every
+        // outstanding call synthetically and stops the loop. The throw
+        // routes through the existing catch block — its best-effort
+        // saveTranscript persists the synthetic results before the throw
+        // propagates, keeping one result per assistant id in the saved
+        // transcript (AC2 / AC3). AC4 carries the abort reason verbatim; AC6
+        // — a no-reason abort — produces a DOMException named AbortError,
+        // the contract `build-hop-callback` and the idle-watchdog key on.
+        if (batch.cancelled) {
+          throw deps.signal?.reason ?? new DOMException("signal is aborted without reason", "AbortError");
+        }
       }
 
       // P3 `before_turn_end` (spec 6.4): fires at every turn ENDING, before
