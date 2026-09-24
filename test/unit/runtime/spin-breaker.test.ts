@@ -376,14 +376,24 @@ describe("createSpinBreaker", () => {
 
     // The 12 occurrences after the stop must all be allowed: the count
     // restarts from zero and has to climb the full threshold again. The
-    // one-call result lag shifts the second stop from the 12th to the 13th.
+    // one-call result lag shifts the second threshold crossing from the 12th
+    // to the 13th.
     for (let i = 0; i < 12; i += 1) {
       const verdict = breaker.observe("RunCommand", TEST_CMD);
       expect(verdict.action).not.toBe("stop");
       breaker.noteResult("RunCommand", TEST_CMD, "identical");
     }
-    // The 13th does fire again — a genuinely wedged session still dies.
-    expect(breaker.observe("RunCommand", TEST_CMD).action).toBe("stop");
+    // The 13th crosses the threshold again — but nax#2017 replenishes the
+    // episode's nudge ladder on a real stop, so it nudges rather than killing
+    // cold, exactly as a different key's next run does.
+    expect(breaker.observe("RunCommand", TEST_CMD).action).toBe("nudge");
+    // ...and the re-spent ladder still ends a genuinely wedged session: the
+    // 3rd further occurrence is the stop.
+    let secondStopAt: number | undefined;
+    for (let i = 0; i < 10 && secondStopAt === undefined; i += 1) {
+      if (breaker.observe("RunCommand", TEST_CMD).action === "stop") secondStopAt = i + 1;
+    }
+    expect(secondStopAt).toBe(3);
   });
 
   test("a stop does not turn the key into a new-key event", () => {

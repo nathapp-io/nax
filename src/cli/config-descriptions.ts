@@ -291,6 +291,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "agent.spinBreaker.recentKeyWindow": "How many recent distinct calls count as already seen (default: 64)",
   "agent.spinBreaker.stopAfterSameKeyRepeats":
     "Consecutive repeats of the same call whose result is unchanged before the turn ends (default: 12, 0 disables) — closes the laundering hole where one interleaving call lets a loop reset (nax#2047, nax#2120)",
+  "agent.spinBreaker.stopAfterNoProgressSeconds":
+    "Seconds with no new call key after which a repeat run ends the turn so a slow spin stops as fail-spin before the tool-call-only idle watchdog cancels it as fail-stale (default: half agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds, 900 when that watchdog is off; 0 disables) (nax#2017)",
   // quality.testing (ENH-010) — per-package overridable
   "quality.testing": "Hermetic test enforcement — per-package overridable (ENH-010)",
   "quality.testing.hermetic":

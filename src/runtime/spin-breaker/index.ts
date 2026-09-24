@@ -48,6 +48,11 @@ export interface ResolvedSpinBreakerSettings {
    * disables this axis.
    */
   readonly stopAfterSameKeyRepeats: number;
+  /**
+   * nax#2017: seconds with no new call key after which a repeat run ends the turn, so a slow spin
+   * stops as fail-spin before the tool-call-only idle watchdog cancels it as fail-stale. 0 disables.
+   */
+  readonly stopAfterNoProgressSeconds: number;
 }
 
 export const DEFAULT_SPIN_BREAKER_SETTINGS: ResolvedSpinBreakerSettings = Object.freeze({
@@ -57,10 +62,11 @@ export const DEFAULT_SPIN_BREAKER_SETTINGS: ResolvedSpinBreakerSettings = Object
   stopAfterRepeats: 50,
   recentKeyWindow: 64,
   stopAfterSameKeyRepeats: 12,
+  stopAfterNoProgressSeconds: 900,
 });
 
 /** Why the breaker ended the turn. Kept exhaustive so telemetry is accurate. */
-export type SpinStopReason = "repeat-run" | "same-key-cumulative" | "same-key-backstop";
+export type SpinStopReason = "repeat-run" | "same-key-cumulative" | "same-key-backstop" | "no-progress-time";
 
 export type SpinVerdict =
   | { readonly action: "allow" }
@@ -110,6 +116,13 @@ export interface SpinBreaker {
 
 /** Beyond this, the key is hashed — one large input must not grow the key set without bound. */
 const MAX_KEY_BYTES = 512;
+
+/**
+ * nax#2017: repeats of one call that must accumulate before the time axis may
+ * end the turn. A deliberate module constant, not a setting — a run of two or
+ * three calls is not a spin, however long each one took.
+ */
+const NO_PROGRESS_TIME_MIN_REPEATS = 5;
 
 /** Deterministic regardless of property order, so a reordered input is the same call. */
 function stableStringify(value: unknown): string {
@@ -208,8 +221,16 @@ interface KeyRecord {
   digest?: string;
 }
 
-export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBreaker {
+export function createSpinBreaker(
+  settings: ResolvedSpinBreakerSettings,
+  deps?: { readonly now?: () => number },
+): SpinBreaker {
   const points = nudgePoints(settings);
+  /**
+   * nax#2017: injectable clock (milliseconds). The time axis needs a clock a
+   * test can drive; production takes the default (`Date.now`).
+   */
+  const now = deps?.now ?? Date.now;
   // Insertion-ordered and capped: a Map's iteration order gives the eviction
   // order for free, so the window needs no second structure. The value carries
   // the cumulative count and the same-result run, so a re-issued key reads as
@@ -223,7 +244,19 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
   let newKeyEvents = 0;
   let maxRepeatRun = 0;
   let maxSameKeyRepeats = 0;
+  /** Session-cumulative; what `summary()` reports. Telemetry meaning unchanged. */
   let nudges = 0;
+  /**
+   * nax#2017: the budget the ladder actually spends, restored by sustained new
+   * work rather than by any single new key. Sessions are long-lived (nax#2047),
+   * so a session-lifetime budget left a turn that had already spent its three
+   * nudges with no warning left at all.
+   */
+  let episodeNudges = 0;
+  /** `newKeyEvents` when the last nudge was built — the replenishment anchor. */
+  let newKeyEventsAtLastNudge = 0;
+  /** nax#2017: when a new call key was last seen; the time axis' origin. */
+  let lastProgressAt = now();
 
   function remember(key: string): KeyRecord {
     const record: KeyRecord = { count: 1, sameResultRun: 0 };
@@ -238,13 +271,15 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
 
   function buildNudge(toolName: string, repeats: number): SpinVerdict {
     nudges += 1;
+    episodeNudges += 1;
+    newKeyEventsAtLastNudge = newKeyEvents;
     getSafeLogger()?.warn("spin-breaker", "Repeated calls with no progress — nudging", {
       tool: toolName,
       repeats,
-      nudgeNumber: nudges,
+      nudgeNumber: episodeNudges,
       newKeyEvents,
     });
-    return { action: "nudge", nudgeNumber: nudges, repeats, text: nudgeText(nudges, repeats) };
+    return { action: "nudge", nudgeNumber: episodeNudges, repeats, text: nudgeText(episodeNudges, repeats) };
   }
 
   /**
@@ -257,6 +292,7 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
     "same-key-cumulative": "Ending the turn — the same call returned the same result too many times",
     "same-key-backstop":
       "Ending the turn — the same call repeated too many times (raw backstop; results were changing)",
+    "no-progress-time": "Ending the turn — repeated calls with no new call for too long",
   };
 
   /**
@@ -301,9 +337,13 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
    * cold on its first or second repeated call. It must re-accumulate in full.
    */
   function stopOrNudge(toolName: string, repeats: number, reason: SpinStopReason, onStop?: () => void): SpinVerdict {
-    if (nudges < settings.maxNudges) return buildNudge(toolName, repeats);
+    if (episodeNudges < settings.maxNudges) return buildNudge(toolName, repeats);
     onStop?.();
     repeatsSinceProgress = 0;
+    // nax#2017: a real stop hands the next run a full ladder. The breaker is
+    // session-scoped (nax#2047), so a budget spent in one turn would otherwise
+    // deny every later turn its warnings — the shape this story exists to fix.
+    episodeNudges = 0;
     getSafeLogger()?.error("spin-breaker", stopMessage[reason], {
       tool: toolName,
       repeats,
@@ -325,6 +365,13 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
       if (existing === undefined) {
         const created = remember(key);
         repeatsSinceProgress = 0;
+        // nax#2017: a new call key is progress on the time axis...
+        lastProgressAt = now();
+        // ...and sustained new work replenishes the episode's nudge budget.
+        // Deliberately NOT every new key: a laundering loop that interleaves
+        // one fresh key between repeats of a single call (nax#2047) would then
+        // restore its own budget forever and never stop.
+        if (newKeyEvents - newKeyEventsAtLastNudge >= settings.nudgeAfterRepeats) episodeNudges = 0;
         // Judged on its own first occurrence — see `backstopVerdict`.
         const firstBackstop = backstopVerdict(created, toolName);
         return firstBackstop ?? { action: "allow" };
@@ -352,12 +399,26 @@ export function createSpinBreaker(settings: ResolvedSpinBreakerSettings): SpinBr
       repeatsSinceProgress += 1;
       if (repeatsSinceProgress > maxRepeatRun) maxRepeatRun = repeatsSinceProgress;
 
+      // nax#2017: the time axis. A repeated call that takes ~40 s each reaches
+      // the tool-call-only idle watchdog before the repeat thresholds, and the
+      // watchdog's cancel is classified `fail-stale` — a retry on the timeout
+      // lane, discarding the turn. Ending it here instead makes it `fail-spin`.
+      // Checked before the repeat-run threshold so a slow spin ends on time
+      // rather than on a count it may never reach.
+      if (
+        settings.stopAfterNoProgressSeconds > 0 &&
+        repeatsSinceProgress >= NO_PROGRESS_TIME_MIN_REPEATS &&
+        now() - lastProgressAt >= settings.stopAfterNoProgressSeconds * 1000
+      ) {
+        return stopOrNudge(toolName, repeatsSinceProgress, "no-progress-time");
+      }
+
       if (repeatsSinceProgress >= settings.stopAfterRepeats) {
         return stopOrNudge(toolName, repeatsSinceProgress, "repeat-run");
       }
 
       const isNudgePoint = points.includes(repeatsSinceProgress);
-      if (isNudgePoint && nudges < settings.maxNudges) return buildNudge(toolName, repeatsSinceProgress);
+      if (isNudgePoint && episodeNudges < settings.maxNudges) return buildNudge(toolName, repeatsSinceProgress);
 
       return { action: "allow" };
     },
