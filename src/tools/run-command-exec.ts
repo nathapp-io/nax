@@ -85,6 +85,7 @@ export async function runExecBranch(
             timeoutMs: EXEC_TIMEOUT_MS,
             stripEnvVars: opts.stripEnvVars ?? [],
             ...(normalized.env !== undefined ? { env: normalized.env } : {}),
+            ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
           })
         : {
             ...(await runArgv({
@@ -94,6 +95,7 @@ export async function runExecBranch(
               stripEnvVars: [...(opts.stripEnvVars ?? [])],
               // Yarn 2+ carries its no-scripts mechanism here rather than in argv.
               ...(normalized.env !== undefined ? { env: normalized.env } : {}),
+              ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
             })),
             sandbox: undefined,
           };

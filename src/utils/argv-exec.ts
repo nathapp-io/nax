@@ -7,6 +7,13 @@
  * running against a deleted worktree), BUG-13 (a hung install had no deadline),
  * and the concurrent drain (a child that fills a pipe buffer never reaches
  * `exited`, defeating the timeout).
+ *
+ * US-001 adds three more invariants on the same shape:
+ * - `signal?: AbortSignal` aborts the process group and reports `aborted`.
+ * - An already-aborted signal never spawns and resolves with exitCode -1.
+ * - After `exited`, both readers get `DRAIN_GRACE_MS` to close; if either
+ *   stays open, the group is SIGKILLed and `orphansKilled: true` is set with
+ *   whatever the readers captured so far.
  */
 import { spawn } from "./bun-deps";
 import { killProcessGroup } from "./process-kill";
@@ -43,8 +50,24 @@ export interface ArgvExecResult {
   readonly orphansKilled?: boolean;
 }
 
+/**
+ * Time, in milliseconds, the readers are allowed to drain after `exited`
+ * before runArgv SIGKILLs the whole group and reports `orphansKilled`. US-001.
+ * Injectable for tests; not exposed as user configuration.
+ */
+export const DRAIN_GRACE_MS = 500;
+
 /** Injectable seam, mirroring _worktreeDependencyDeps. */
-export const _argvExecDeps = { spawn, killProcessGroup };
+export const _argvExecDeps = {
+  spawn,
+  killProcessGroup,
+  /**
+   * The post-exit drain grace (US-001). A real test can shrink it to keep the
+   * "background process holding the pipe" case under a second; production
+   * stays at the DRAIN_GRACE_MS constant.
+   */
+  drainGraceMs: DRAIN_GRACE_MS,
+};
 
 /**
  * Build the child's env only when the caller actually asked for stripping or
@@ -63,7 +86,52 @@ function buildEnv(options: RunArgvOptions): Record<string, string | undefined> |
   return env;
 }
 
+interface StreamDrain {
+  text: string;
+  closed: boolean;
+}
+
+/**
+ * Read a ReadableStream<Uint8Array> to EOF, accumulating text. Resolves when
+ * the stream closes (done). The caller races this against a wall-clock
+ * deadline to detect an open-after-exit pipe (the `&`ed background case).
+ *
+ * `Response.text()` doesn't honour a deadline, so the reader is its own
+ * function (US-001 "Read stdout and stderr incrementally/concurrently").
+ */
+async function drainToEof(stream: ReadableStream<Uint8Array>): Promise<StreamDrain> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done === true) break;
+      if (value !== undefined) text += decoder.decode(value, { stream: true });
+    }
+  } catch {
+    // Stream cancelled by SIGKILL on the process group; the partial text
+    // is still in `text`, so resolve with closed=false and let the caller
+    // decide.
+  }
+  text += decoder.decode();
+  try {
+    reader.releaseLock();
+  } catch {
+    // Already released; nothing to do.
+  }
+  return { text, closed: true };
+}
+
 export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> {
+  const signal = options.signal;
+  // Already-aborted signal: never spawn. The caller gets `aborted: true` with
+  // a sentinel exitCode so a misread of the field can't masquerade as a real
+  // process completing (US-001 AC7).
+  if (signal?.aborted === true) {
+    return { exitCode: -1, stdout: "", stderr: "", timedOut: false, aborted: true, orphansKilled: false };
+  }
+
   const env = buildEnv(options);
 
   const proc = _argvExecDeps.spawn([...options.argv], {
@@ -77,26 +145,79 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
     detached: true,
   });
 
+  let timedOut = false;
+  let aborted = false;
+  let orphansKilled = false;
+
+  const killGroup = (): void => {
+    _argvExecDeps.killProcessGroup(proc.pid, "SIGKILL");
+  };
+
   // BUG-13: unlike every git call (routed through gitWithTimeout), a spawn
   // with no deadline can block its caller forever on a hung install
   // (registry/NFS stall).
-  let timedOut = false;
   const timerId = setTimeout(() => {
     timedOut = true;
     // MEM-4: proc.kill() reaches only the direct child, orphaning postinstall
     // grandchildren. killProcessGroup(pid, "SIGKILL") kills the whole group
     // (negative pid), falling back to the single process on ESRCH.
-    _argvExecDeps.killProcessGroup(proc.pid, "SIGKILL");
+    killGroup();
   }, options.timeoutMs);
 
-  // Drain concurrently with the exit wait — a process that fills a pipe's OS
-  // buffer before being read would otherwise block on the write and never
-  // reach `exited`, defeating the timeout's own SIGKILL.
-  const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
-  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+  // US-001: an abort races the timeout. One listener, removed on every settle
+  // path so a never-aborted signal never leaks a registration (AC10).
+  const onAbort = (): void => {
+    aborted = true;
+    killGroup();
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+
+  // Read stdout/stderr concurrently with the exit wait — a process that
+  // fills a pipe's OS buffer before being read would otherwise block on the
+  // write and never reach `exited`, defeating the timeout's own SIGKILL.
+  const stdoutPromise = drainToEof(proc.stdout);
+  const stderrPromise = drainToEof(proc.stderr);
   const exitCode = await proc.exited;
   clearTimeout(timerId);
-  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
 
-  return { exitCode, stdout, stderr, timedOut };
+  // Post-exit drain grace. After exit, the streams MUST close — they were
+  // owned by the shell, which is now dead. Background processes that
+  // inherited the pipe (the `&` case) keep it open: that's the orphan.
+  const graceMs = _argvExecDeps.drainGraceMs;
+  const gracePromise = new Promise<"expired">((resolve) => {
+    setTimeout(() => resolve("expired"), graceMs);
+  });
+  const stdoutSettled = await Promise.race([
+    stdoutPromise,
+    gracePromise.then((): StreamDrain | "expired" => "expired"),
+  ]);
+  const stderrSettled = await Promise.race([
+    stderrPromise,
+    gracePromise.then((): StreamDrain | "expired" => "expired"),
+  ]);
+
+  const stdoutClosed = stdoutSettled !== "expired";
+  const stderrClosed = stderrSettled !== "expired";
+
+  if (!stdoutClosed || !stderrClosed) {
+    orphansKilled = true;
+    killGroup();
+    // The readers will see EOF as the dead process group closes its pipes.
+    // Awaiting them now would block; leave them in flight, they're harmless.
+  }
+
+  // Always await the readers to harvest whatever they captured.
+  const stdoutFinal = stdoutClosed ? (stdoutSettled as StreamDrain) : await stdoutPromise;
+  const stderrFinal = stderrClosed ? (stderrSettled as StreamDrain) : await stderrPromise;
+
+  signal?.removeEventListener("abort", onAbort);
+
+  return {
+    exitCode,
+    stdout: stdoutFinal.text,
+    stderr: stderrFinal.text,
+    timedOut,
+    aborted,
+    orphansKilled,
+  };
 }
