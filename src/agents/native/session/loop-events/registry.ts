@@ -35,6 +35,7 @@
 
 import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
+import { restoreMutated, snapshotArrays } from "./payload-guard";
 import type { BeforeToolOutcome, BeforeToolPayload, HandlerOf, LoopEvent, PatchOf, PayloadOf } from "./types";
 
 export interface LoopEventRegistry {
@@ -127,8 +128,9 @@ async function dispatchBeforeTool(
   const { call, tools } = payload;
   let input: Record<string, unknown> | undefined;
   let nudgeText: string | undefined;
-  for (const handler of handlers) {
+  for (const [index, handler] of handlers.entries()) {
     let outcome: BeforeToolOutcome;
+    const snapshot = snapshotArrays({ tools });
     try {
       // Each handler sees the previous handler's output, so an `allow`
       // rewrite is what the next one judges — and what the loop runs.
@@ -142,6 +144,8 @@ async function dispatchBeforeTool(
         error: errorMessage(err),
       });
       continue;
+    } finally {
+      restoreMutated(snapshot, "before_tool", index);
     }
     if (outcome.kind === "block" || outcome.kind === "terminate") return outcome;
     if (outcome.kind === "nudge") nudgeText = outcome.text;
@@ -177,7 +181,8 @@ async function dispatchChain<E extends LoopEvent>(
   const fields: readonly string[] = PATCHABLE_FIELDS[event];
   let current = payload;
   let accumulated: Record<string, unknown> = {};
-  for (const handler of handlers) {
+  for (const [index, handler] of handlers.entries()) {
+    const snapshot = snapshotArrays(current);
     let returned: unknown;
     try {
       // The await sits inside the try, so a rejected promise is caught
@@ -195,6 +200,8 @@ async function dispatchChain<E extends LoopEvent>(
         error: errorMessage(err),
       });
       continue;
+    } finally {
+      restoreMutated(snapshot, event, index);
     }
     const picked = pickPatchFields(returned, fields);
     if (Object.keys(picked).length > 0) {
