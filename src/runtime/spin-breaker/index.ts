@@ -204,8 +204,31 @@ const SPIN_RAW_BACKSTOP_TERMINAL_NOTICE =
   "This call was not executed. Produce your final answer now, in the exact format your " +
   "instructions require. Any further repeated call ends the turn with no answer recorded.";
 
+/**
+ * nax#2017: the time axis fires on repetition alone — the ladder is spent on
+ * the repeat path, and AC1's own sequence never calls `noteResult` — so the
+ * generic notice would assert an unchanged result the breaker never observed.
+ * The same reasoning as the raw backstop's copy above: a stop message that
+ * claims the wrong diagnostic is worse than a blunter one.
+ */
+const SPIN_NO_PROGRESS_TIME_TERMINAL_NOTICE =
+  "[nax] This turn is ending: you have repeated calls for too long with no new, distinct call. " +
+  "This call was not executed. Produce your final answer now, in the exact format your " +
+  "instructions require. Any further repeated call ends the turn with no answer recorded.";
+
+/**
+ * Exhaustive, so a future stop reason cannot silently inherit copy written for
+ * a different diagnostic.
+ */
+const SPIN_TERMINAL_NOTICES: Readonly<Record<SpinStopReason, string>> = {
+  "repeat-run": SPIN_TERMINAL_NOTICE,
+  "same-key-cumulative": SPIN_TERMINAL_NOTICE,
+  "same-key-backstop": SPIN_RAW_BACKSTOP_TERMINAL_NOTICE,
+  "no-progress-time": SPIN_NO_PROGRESS_TIME_TERMINAL_NOTICE,
+};
+
 export function spinTerminalNotice(reason: SpinStopReason): string {
-  return reason === "same-key-backstop" ? SPIN_RAW_BACKSTOP_TERMINAL_NOTICE : SPIN_TERMINAL_NOTICE;
+  return SPIN_TERMINAL_NOTICES[reason];
 }
 
 function nudgeText(nudgeNumber: number, repeats: number): string {

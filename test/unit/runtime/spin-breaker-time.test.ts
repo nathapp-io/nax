@@ -6,6 +6,7 @@ import {
   DEFAULT_SPIN_BREAKER_SETTINGS,
   type ResolvedSpinBreakerSettings,
   type SpinVerdict,
+  spinTerminalNotice,
 } from "@/runtime";
 import { selectSpinBreakerSettings } from "@/session/spin-breaker-selection";
 
@@ -44,6 +45,20 @@ function freshKey(index: number): { path: string } {
 describe("spin breaker — no-progress time axis", () => {
   test("DEFAULT_SPIN_BREAKER_SETTINGS enables the axis at 900 seconds", () => {
     expect(DEFAULT_SPIN_BREAKER_SETTINGS.stopAfterNoProgressSeconds).toBe(900);
+  });
+
+  // The time axis fires on repetition alone — its own nudge ladder and AC1's
+  // sequence never call `noteResult` — so the model-facing terminal notice must
+  // not claim an unchanged result. `observeSpin` (loop-handlers.ts) surfaces it
+  // verbatim as the terminate content for the outstanding call.
+  test("the 'no-progress-time' terminal notice does not claim an unchanged result", () => {
+    const notice = spinTerminalNotice("no-progress-time");
+
+    expect(notice).toContain("This turn is ending");
+    expect(notice).not.toContain("no change in its result");
+    // ...while the reasons that rest on result evidence keep the original copy.
+    expect(spinTerminalNotice("same-key-cumulative")).toContain("no change in its result");
+    expect(spinTerminalNotice("same-key-backstop")).toContain("safety call limit");
   });
 
   test("AC1: repeats 5-7 nudge and repeat 8 stops with 'no-progress-time' after 1,000,000 ms of no new call", () => {
