@@ -12,12 +12,24 @@ describe("askSummary", () => {
     });
   });
 
-  test("a secret straddling the 200-char cut is masked BEFORE the cut", () => {
-    const command = `${"x".repeat(185)} ${GHP}`;
+  test("a secret whose cut-first prefix matches no pattern is masked BEFORE the cut", () => {
+    // The discriminating straddle: the 200-char window ends 20 chars into the
+    // JWT's first segment, so cut-first leaves `eyJhbGciOiJIUzI1NiIs` — a
+    // fragment no SECRET_VALUE_PATTERNS regex matches alone — and the partial
+    // secret goes out. (Replaces the earlier ghp_ straddle, whose cut-first
+    // leak was a bare `g` that matched no assertion and could never fail.)
+    const b64url = (s: string): string => Buffer.from(s, "utf8").toString("base64url");
+    const jwt = [
+      b64url('{"alg":"HS256","typ":"JWT"}'),
+      b64url('{"sub":"user-12345"}'),
+      b64url("deterministic-signature"),
+    ].join(".");
+    const command = `${"x".repeat(166)} ${jwt}`;
     const s = askSummary("Bash", { pathFields: [], commandField: "command" }, { command });
     expect(s.unshowable).toBe(false);
     expect(s.summary.length).toBeLessThanOrEqual(MAX_ASK_SUMMARY_CHARS);
-    expect(s.summary).not.toContain("ghp_abc");
+    expect(s.summary).toContain("[REDACTED:jwt]");
+    expect(s.summary).not.toContain("eyJ");
   });
 
   test("Review Focus 2: a secret in an Exec argv is masked", () => {
