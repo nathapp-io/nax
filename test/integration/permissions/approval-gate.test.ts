@@ -136,7 +136,13 @@ describe("approval gate, end to end", () => {
     const outcome = await session(
       root,
       [
-        createApprovalsLink({ approvalsFile, repoRoot: root, stageModes: ["escalate"], sandboxEnabled: false }),
+        createApprovalsLink({
+          approvalsFile,
+          repoRoot: root,
+          projectRoot: root,
+          stageModes: ["escalate"],
+          sandboxEnabled: false,
+        }),
         humanSpy,
       ],
       "run",

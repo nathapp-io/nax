@@ -293,7 +293,8 @@ Two fail-closed preconditions bound that, both implemented in `createApprovalsLi
 Both fail by **abstaining**, which escalates to the human, so a failure costs prompts rather than
 safety. Integrity signing was deliberately not attempted: any key the nax process can read, a
 `raw` shell as that process can read. P4's sandbox closes the underlying hole; disclosed, not
-fixed.
+fixed. Both preconditions see only the current run; entries left by an EARLIER run are
+covered by the taint marker described under the P4 amendment's "Cross-run provenance".
 
 ---
 
@@ -364,6 +365,33 @@ the guarantee). The cache's raw precondition relaxes accordingly: disabled only 
 resolves to `raw` AND the sandbox is disabled — config-only, no dependency on the probe, since
 an enabled sandbox leaves `raw` either wrapped or refused outright. Unsandboxed, both holes
 remain disclosed, not fixed.
+
+**Cross-run provenance (#2199).** Both preconditions above read only the CURRENT run's
+config, but `approvals.json` is project-scoped and outlives the run: an earlier `raw`,
+unsandboxed run could append an entry that a later `escalate` + sandbox run then honours as
+`decidedBy: "cache"`. Signing entries does not fix this for the reason already given — an
+unsandboxed same-user shell can read any key nax can. Instead nax, from its own process and
+at points where no agent of that story runs, keeps a taint marker in the store
+(`src/permissions/approvals-taint.ts`):
+
+- a forge-capable run (any stage `raw` with the sandbox off) drops every entry and writes
+  `taint` before each story's agents start, and again after they finish;
+- the cache link abstains on a tainted store, re-reading it on every ask;
+- a run that trusts the cache clears the taint before its link is built, discarding the
+  entries beside it rather than promoting them, unless the tainting run may still be
+  writing (the same run, via a sibling story in a forge-capable package, or another nax
+  process that is still alive).
+
+Entry `root` must also be the project root or lie inside it (worktrees and package dirs
+do). That is hygiene against a shared `outputDir`, not authentication: a forger sets `root`.
+
+Residual, disclosed: this defeats an agent that forges entries during its story, not a
+hostile one that knows the scheme — a process it leaves running past the story's end
+re-taint, a run killed between an agent stripping the marker and that re-taint, and
+agents that run outside the execution stage (acceptance, post-run) in a forge-capable run
+can all still leave trusted-looking entries. An unsandboxed `raw` shell can equally edit
+shell rc files or git hooks; the sandbox, which always write-denies the file, remains the
+boundary.
 
 ### Environment
 
