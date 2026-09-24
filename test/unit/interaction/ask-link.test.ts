@@ -496,3 +496,59 @@ describe("US-004 — keepalive while a human approval prompt is pending", () => 
     },
   );
 });
+
+describe("review #9: secrets in the prompt", () => {
+  const GHP = "ghp_abcdefghijklmnop1234";
+
+  test("Review Focus 1: a command with no secret produces the same detail as before", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+    await link.resolve(REQ);
+    expect(sent[0]?.detail).toContain(["```", REQ.command, "```"].join("\n"));
+    expect(sent[0]?.detail).not.toContain("secret value");
+  });
+
+  test("an inert secret is masked in the detail, with a footer; onRemember gets the raw command", async () => {
+    const sent: InteractionRequest[] = [];
+    const remembered: string[] = [];
+    const link = createHumanAskLink({
+      chain: fakeChain({ reply: "allow-remember", sent }),
+      timeoutMs: 1000,
+      onRemember: async (req) => void remembered.push(req.command ?? ""),
+    });
+    const command = `gh api -H x-token ${GHP}`;
+    const outcome = await link.resolve({ ...REQ, command });
+    expect(outcome.decision).toBe("allow");
+    expect(sent[0]?.detail).not.toContain(GHP);
+    expect(sent[0]?.detail).toContain("[REDACTED:github]");
+    expect(sent[0]?.detail).toContain("1 secret value(s) masked; the approved command contains them");
+    expect(remembered).toEqual([command]);
+  });
+
+  test("a secret spanning shell syntax denies unshowable without prompting", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+    const outcome = await link.resolve({ ...REQ, command: "curl -H 'Cookie: a=b'; rm -rf ~" });
+    expect(outcome).toEqual({ decision: "deny", decidedBy: "unshowable" });
+    expect(sent).toHaveLength(0);
+  });
+
+  test("a request flagged unshowable upstream (Exec) denies without prompting", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+    const { command: _command, ...execReq } = REQ;
+    const outcome = await link.resolve({ ...execReq, tool: "Exec", unshowable: true });
+    expect(outcome.decidedBy).toBe("unshowable");
+    expect(sent).toHaveLength(0);
+  });
+
+  test("Review Focus 4: masked command plus footer over the limit denies unavailable", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+    // Raw length 3475 passes the old check; masked (3468) + footer line pushes it over 3500.
+    const command = `${"x".repeat(3450)} ${GHP}`;
+    const outcome = await link.resolve({ ...REQ, command });
+    expect(outcome.decidedBy).toBe("unavailable");
+    expect(sent).toHaveLength(0);
+  });
+});
