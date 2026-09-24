@@ -1,0 +1,196 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "audit-row-fidelity",
+  "branchName": "feat/audit-row-fidelity",
+  "createdAt": "2025-02-14T00:00:00.000Z",
+  "updatedAt": "2026-09-24T07:41:49.651Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Propagate call identifiers to command-safety shadow rows",
+      "description": "**Goal** — Add tool-call correlation identifiers to shadow observations and durable command-safety rows.\n\n**Motivation** — Shadow rows cannot be joined to tool-audit (review #12, MEDIUM).\n\n**Approach** — `ShadowCall` (`src/command-safety/tap.ts`), `Observation` and `CommandSafetyRow` (`src/command-safety/types.ts`) each gain the same five optional fields:\n\n```ts\nreadonly callId?: string;\nreadonly scopeId?: string;\nreadonly turnId?: string;\nreadonly roundTrips?: number;\nreadonly toolCallId?: string;\n```\n\n`runtime.callTool` passes `opts.callId`, `opts.scopeId`, `context?.turnId`, `context?.roundTrips` and `context?.toolCallId` into `openShadowTap`, each only when defined (the same conditional-spread idiom the tool-audit record uses). `toObservation` copies each defined field onto the `Observation`, and `toRow` (`src/command-safety/shadow.ts`) copies each defined field onto the row. An absent source value produces a row without the key, never `undefined`. The throwaway tap `key` is unchanged. ACP calls carry no `toolCallId`; their rows join on `callId` + `turnId`.\n\n**Scope** — In: additive optional identifier fields and conditional propagation from runtime call options/context through tap, observation, and row. Out: US-002 sandbox wrapper argv; US-003 executed argv settlement; changing the tap `key`. Do not add tests to `test/unit/tools/runtime.test.ts` (688 lines, already past the 650-line split target in `.nax/rules/test-architecture.md`; 800 is the hard limit); put new tests in this story's created test files.",
+      "acceptanceCriteria": [
+        "When `openShadowTap` receives a Bash call with `callId: \"c1\"`, `scopeId: \"s1\"`, `turnId: \"t1\"`, `roundTrips: 2`, and `toolCallId: \"tc1\"`, then the Observation passed to `observe` carries those five values.",
+        "When `openShadowTap` receives an Exec call with `callId: \"c1\"`, `scopeId: \"s1\"`, `turnId: \"t1\"`, `roundTrips: 2`, and `toolCallId: \"tc1\"`, then the Observation passed to `observe` carries those five values.",
+        "When `openShadowTap` receives a Bash call with no identifiers, then the Observation passed to `observe` has none of the keys `callId`, `scopeId`, `turnId`, `roundTrips`, or `toolCallId` when checked with `in`.",
+        "Given a `createCommandShadow` with resolving `classify` and recording `write`, when it observes an Observation carrying all five identifiers and settles with `settle(key, { ledger: \"ok\" })`, then the single written row carries the same five values.",
+        "Given a `createCommandShadow`, when it observes an Observation with no identifiers and settles it, then the written row has none of the five identifier keys when checked with `in`.",
+        "When `runtime.callTool(\"Bash\", …)` is created with `callId: \"c1\"` and `scopeId: \"s1\"` runtime options and called with context `turnId: \"t1\"`, `roundTrips: 3`, and `toolCallId: \"tc1\"`, then its recording command shadow observes those five values.",
+        "When that identified Bash runtime call is written to the runtime sink, then its tool-audit record carries the same `callId`, `turnId`, and `toolCallId` as its Observation.",
+        "When `runtime.callTool(\"Bash\", …)` has no `callId`/`scopeId` options and no context, then its Observation has none of the five identifier keys when checked with `in`.",
+        "When an individual identifier source is undefined at the tap, then the resulting written row omits that identifier key rather than storing `undefined`."
+      ],
+      "tags": [
+        "feature",
+        "audit",
+        "command-safety",
+        "runtime"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Four existing modules receive only optional field plumbing using established conditional-spread and recording test seams; no new abstraction or behavior-changing policy path is introduced."
+      },
+      "contextFiles": [
+        "src/command-safety/tap.ts",
+        "src/command-safety/types.ts",
+        "src/command-safety/shadow.ts",
+        "src/tools/runtime.ts",
+        "src/tools/tool-audit.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/command-safety/shadow-call-ids.test.ts",
+        "test/unit/tools/runtime-shadow-call-ids.test.ts"
+      ],
+      "outOfScope": [
+        "changing the tap `key`"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/command-safety/tap.test.ts",
+          "reason": "fixtures without identifiers must still produce observations without the identifier keys; existing assertions are unchanged."
+        },
+        {
+          "path": "test/unit/command-safety/shadow.test.ts",
+          "reason": "fixtures without identifiers must still produce rows without the identifier keys; existing assertions are unchanged."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Record wrapped sandbox argv in tool audit payloads",
+      "description": "**Goal** — Preserve the sandbox backend argv that actually ran alongside the unchanged logical executed argv.\n\n**Motivation** — tool-audit never records the sandbox argv (review #13, MEDIUM).\n\n**Approach** — `SandboxRecord` (`src/sandbox/types.ts`) gains:\n\n```ts\n/** Wrapped calls only: the argv the sandbox backend returned and runArgv executed. */\nreadonly argv?: readonly string[];\n```\n\n`runWrapped` sets `sandbox.argv` to the `argv` returned by `backend.wrap(...)`, the same array it passes to `runArgv`. `runUnwrapped` (disabled and unavailable states) never sets it: there `executed` is already what ran. `executed` keeps the logical argv on both paths. The Bash and Exec tools already pass `launched.sandbox` into `ToolResult.audit.sandbox`, and `runtime.callTool` spreads it into the tool-audit record, so no tool or runtime change is needed.\n\n**Scope** — In: the optional SandboxRecord argv field, wrapped launcher result population, and compatible sandbox/audit assertions. Out: US-001 shadow identifiers; US-003 Exec shadow executed argv; `executed` on tool-audit rows keeps its meaning (the logical argv); no field is renamed or re-typed.; Redacting or truncating the sandbox argv (review #9 is a separate ruling).; US-002 only: the Linux bwrap path is covered by the same `runWrapped` code; no Linux-specific test is added. Do not add tests to `test/unit/tools/runtime.test.ts` (688 lines, already past the 650-line split target in `.nax/rules/test-architecture.md`; 800 is the hard limit); put new tests in this story's created test files.",
+      "acceptanceCriteria": [
+        "When an available `createCommandLauncher` uses a fake backend whose `wrap` resolves `[\"sandbox-exec\", \"-p\", \"PROFILE\", \"/bin/sh\", \"-c\", \"echo hi\"]` for shell request `echo hi`, then `sandbox.argv` equals that wrapped array.",
+        "When that wrapped shell call runs, then the recording `_launcherDeps.runArgv` receives `[\"sandbox-exec\", \"-p\", \"PROFILE\", \"/bin/sh\", \"-c\", \"echo hi\"]` as `argv`.",
+        "When that wrapped shell call resolves, then `executed` equals `[\"/bin/sh\", \"-c\", \"echo hi\"]`, unchanged by this feature.",
+        "When an available-state launcher handles argv request `[\"bun\", \"test\"]`, then it resolves with `executed` `[\"bun\", \"test\"]` and `sandbox.argv` equal to the fake backend's wrapped array.",
+        "When a disabled-state launcher resolves, then `sandbox` equals `{ backend: \"none\", wrapped: false }` exactly with no `argv` key.",
+        "When an unavailable-state launcher resolves, then its `sandbox` has no `argv` key when checked with `in`.",
+        "When a wrapped launcher call exits non-zero with stderr matching the sandbox-denial pattern, then it resolves with both `denialHint: true` and `sandbox.argv` set.",
+        "When `runtime.callTool` runs a tool returning `audit: { executed: [\"x\"], sandbox: { backend: \"srt\", wrapped: true, argv: [\"w\", \"x\"] } }`, then the resulting tool-audit row contains `sandbox.argv` `[\"w\", \"x\"]` and `executed` `[\"x\"]`.",
+        "When `backend.wrap` throws, then `createCommandLauncher.run()` rejects with code `SANDBOX_WRAP_FAILED` and the recording `_launcherDeps.runArgv` receives no call."
+      ],
+      "tags": [
+        "feature",
+        "audit",
+        "sandbox"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change spans the shared sandbox type and wrapped launch result, with existing injected launcher and runtime audit seams validating the propagated payload."
+      },
+      "contextFiles": [
+        "src/sandbox/launcher.ts",
+        "src/sandbox/types.ts",
+        "test/unit/sandbox/launcher.test.ts",
+        "src/tools/runtime.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/sandbox/launcher-sandbox-argv.test.ts"
+      ],
+      "outOfScope": [
+        "redacting or truncating the sandbox argv",
+        "changing `executed`",
+        "Linux-specific coverage"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/sandbox/launcher.test.ts",
+          "reason": "an exact-equality assertion over a wrapped `LaunchResult.sandbox` may gain `argv`; the invariant kept is that `executed` equals the logical argv on every path."
+        },
+        {
+          "path": "test/unit/tools/bash-sandbox.test.ts",
+          "reason": "an exact-equality assertion over `audit.sandbox` for a wrapped call may gain `argv`; `executed` assertions are unchanged."
+        },
+        {
+          "path": "test/unit/tools/run-command-exec-sandbox.test.ts",
+          "reason": "an exact-equality assertion over `audit.sandbox` for a wrapped call may gain `argv`; `executed` assertions are unchanged."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Record normalized Exec argv on shadow rows",
+      "description": "**Goal** — Add the normalized argv actually executed by Exec to shadow rows without changing the model argv used for classification.\n\n**Motivation** — The Exec shadow row omits the executed argv (review #15, LOW).\n\n**Approach** — `FinalOutcome` (`src/command-safety/types.ts`) is not changed. `CommandShadow.settle` gains an optional third argument and `CommandSafetyRow` gains one optional field:\n\n```ts\n// CommandShadow\nsettle(key: string, outcome: FinalOutcome, executed?: readonly string[]): void;\n// CommandSafetyRow\n/** Exec only: the argv the Exec tool executed (after normalization); absent when the call did not run. */\nreadonly executed?: readonly string[];\n```\n\n`ShadowTap.settle` gains a third optional `executed` argument. The tap forwards it to `shadow.settle` only when the observation's identity is `Exec`; for a `Bash` observation it passes nothing, so Bash rows never carry `executed` (their `executed` is `[shell, \"-c\", command]`, which adds nothing). The shadow stores it on the entry and `toRow` writes it when defined. In `runtime.callTool`, `logCall` passes `args[8]?.executed` as the third argument to `tap?.settle`. `observe`, the classifier input, the cache key (`shadowCacheKey`), `command` and `argv` do not change.\n\n**Scope** — In: optional executed settlement data through runtime, tap, shadow entry, and Exec-only durable rows. Out: US-002 sandbox argv; Classifying the normalized Exec argv instead of the model's argv is not done: it would split the policy/human/shadow byte-identity.; placing executed on Bash shadow rows. Do not add tests to `test/unit/tools/runtime.test.ts` (688 lines, already past the 650-line split target in `.nax/rules/test-architecture.md`; 800 is the hard limit); put new tests in this story's created test files.",
+      "acceptanceCriteria": [
+        "When an Exec `openShadowTap` is settled with `(\"ok\", undefined, [\"bun\", \"run\", \"--filter\", \"pkg\", \"test\"])`, then it calls the recording shadow's `settle` with that array as its third argument.",
+        "When a Bash `openShadowTap` is settled with `(\"ok\", undefined, [\"/bin/sh\", \"-c\", \"echo hi\"])`, then it calls the recording shadow's `settle` with exactly two arguments.",
+        "Given a `createCommandShadow`, when it observes an Exec Observation with `argv: [\"bun\", \"test\"]` and settles with `settle(key, { ledger: \"ok\" }, [\"bun\", \"test\", \"--no-scripts\"])`, then the written row has `executed` `[\"bun\", \"test\", \"--no-scripts\"]`, `argv` `[\"bun\", \"test\"]`, and `command` `bun test`.",
+        "When that Exec Observation is classified, then `classify` is called with `bun test`, not the executed argv.",
+        "When a shadow entry is settled with no third argument, then its written row has no `executed` key when checked with `in`.",
+        "When a shadow entry is settled by `drain()` as `unsettled`, then its written row has no `executed` key when checked with `in`.",
+        "When `runtime.callTool` invokes the Exec identity through a coding tool with `scope.argvField` `argv` whose `run` returns `audit: { executed: [\"bun\", \"test\", \"--no-scripts\"] }`, then the recording command shadow settles with `{ ledger: \"ok\" }` and third argument `[\"bun\", \"test\", \"--no-scripts\"]`.",
+        "When `runtime.callTool` denies an Exec call by policy, then the recording command shadow settles with `{ ledger: \"denied\" }` and no third argument or `undefined`.",
+        "When `runtime.callTool(\"Bash\", { command: \"echo hi\" })` runs in raw mode with a recording command shadow, then it settles with exactly `[key, { ledger: \"ok\" }]` and no third argument.",
+        "When an Exec call is denied with outcome `denied:ask`, then its written shadow row has no `executed` key because the tool never ran.",
+        "When the Exec tool encounters a post-normalization launch error and returns through the runtime error path without audit data, then its written shadow row has no `executed` key.",
+        "When a recording shadow throws from `settle`, then `runtime.callTool` returns its normal tool outcome and the thrown shadow failure does not escape."
+      ],
+      "tags": [
+        "feature",
+        "audit",
+        "command-safety",
+        "exec",
+        "runtime"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is bounded optional-argument and row-state plumbing across four established modules, with explicit identity and error-path regressions but no new abstraction."
+      },
+      "contextFiles": [
+        "src/command-safety/tap.ts",
+        "src/command-safety/shadow.ts",
+        "src/command-safety/types.ts",
+        "src/tools/runtime.ts",
+        "src/tools/run-command-exec.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/command-safety/shadow-executed.test.ts",
+        "test/unit/tools/runtime-shadow-executed.test.ts"
+      ],
+      "outOfScope": [
+        "classifying the normalized Exec argv",
+        "placing executed on Bash shadow rows"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/tools/runtime-command-shadow.test.ts",
+          "reason": "Bash settle assertions (`toEqual([[key, { ledger: \"ok\" }]])`) stay exactly as they are; the recorder's `settle` may accept a third argument."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "This is an additive enhancement to existing command-safety, runtime audit, and sandbox-launcher flows. `runtime.callTool` opens a shadow tap after `policy.check` with a throwaway `randomUUID()` key and currently sends command, argv, verdict, stage, and storyId only (src/tools/runtime.ts:335-358). Its `log()` already conditionally records `callId`, `scopeId`, `turnId`, `roundTrips`, and `toolCallId` in ToolCallRecord (src/tools/runtime.ts:274-333), while `logCall` currently settles the tap with only ledger and `approval.decidedBy` (src/tools/runtime.ts:359-365). This is the required integration seam: pass the existing IDs to the tap and `args[8]?.executed` at settlement without changing the random tap key. ToolCallRecord defines the same five fields and join semantics (src/tools/tool-audit.ts:75-119), so shadow records must reuse them exactly.\n\nThe shadow is deliberately observational. `toObservation` converts `ShadowCall` to Bash or Exec observations, and `openShadowTap` catches both observe and settle failures (src/command-safety/tap.ts:31-78). `createCommandShadow` scores and classifies `obs.command`, joins model/outcome state, and serializes `toRow` (src/command-safety/shadow.ts:69-177). `Observation`, `CommandSafetyRow`, and `CommandShadow.settle` lack the requested fields today (src/command-safety/types.ts:57-104). Every new optional field must use conditional object spreads so absent sources create no key rather than an `undefined` key. For US-003, retain executed argv in the shadow Entry from settlement to `toRow`; keep `obs.command`, raw `obs.argv`, `scoreRules`, classifier input, and `shadowCacheKey` based on the model input. Tap forwarding must be identity-gated: even if runtime has audit.executed, Bash calls `shadow.settle` with two arguments only.\n\n`logicalArgv` provides the logical shell/argv command, `runUnwrapped` executes and returns it, and `runWrapped` executes the `backend.wrap()` array but currently drops that array while returning logical `executed` (src/sandbox/launcher.ts:35-88). `SandboxRecord` has backend/wrapped/reason/denialHint but no argv (src/sandbox/types.ts:47-53); `LaunchResult.executed` explicitly means logical argv (src/sandbox/types.ts:72-76). US-002 adds wrapper argv only to successful wrapped results, including sandbox-denial results. Disabled and unavailable flows share `runUnwrapped` and must retain no `argv`; wrap failure must remain `SANDBOX_WRAP_FAILED` without a spawn/result. Bash and Exec already propagate `launched.sandbox` into audit and runtime already spreads `audit.sandbox` (src/tools/runtime.ts:304-307), so no production tool/runtime work is required for US-002. Exec's normalized argv is already returned in `audit.executed` only after a launch result; its catch path returns no audit (src/tools/run-command-exec.ts:64-116), providing the intended no-executed shadow outcome.\n\nRelevant test seams are established: `tap.test.ts` records observe/settle tuples (test/unit/command-safety/tap.test.ts:12-164), `shadow.test.ts` has manual classification, captured rows, and drain coverage (test/unit/command-safety/shadow.test.ts:31-235), `runtime-command-shadow.test.ts` asserts raw Bash behavior and shadow isolation (test/unit/tools/runtime-command-shadow.test.ts:20-112), and `launcher.test.ts` injects runArgv and covers all sandbox states, wrap errors, and denial hints (test/unit/sandbox/launcher.test.ts:17-238). Exact sandbox assertions in launcher/Bash/Exec sandbox tests must be updated additively. `test/unit/tools/runtime.test.ts` is already 688 lines, above the 650-line split target, so new runtime tests belong in the specified new files.\n\nRisks are semantic regression rather than migration: never replace or rename existing `executed`, never leak undefined keys, never classify normalized Exec argv, never attach executed to Bash rows, and never let a shadow error impact a call. JSONL schemas remain backward-compatible because all additions are optional; existing rows/readers need no migration and old data cannot be backfilled. US-003 depends on US-001 because both alter the tap/type/runtime shape and its specified seam consumes the identifier-bearing tap call.",
+  "outOfScope": [
+    "`executed` on tool-audit rows keeps its meaning (the logical argv); no field is renamed or re-typed.",
+    "Classifying the normalized Exec argv instead of the model's argv is not done: it would split the policy/human/shadow byte-identity.",
+    "Redacting or truncating the sandbox argv (review #9 is a separate ruling).",
+    "Locking or bounding the command-safety / approval-audit JSONL (review #14).",
+    "`nax` CLI readers or reports of the new fields.",
+    "US-002 only: the Linux bwrap path is covered by the same `runWrapped` code; no Linux-specific test is added."
+  ],
+  "routingProfile": "native"
+}
