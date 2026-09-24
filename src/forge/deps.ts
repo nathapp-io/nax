@@ -11,6 +11,7 @@
  * cannot hang a run's completion phase.
  */
 
+import { gitSpawnEnv } from "../utils/git-env";
 import { killProcessGroup } from "../utils/process-kill";
 import type { ForgeDeps } from "./types";
 
@@ -42,6 +43,9 @@ export async function defaultRun(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(cmd, {
     cwd: opts.cwd,
+    // Hardened for every command, not only argv[0] === "git": gh / glab run
+    // git underneath, and the GIT_CONFIG_* entries are inert to anything else.
+    env: gitSpawnEnv(),
     stdout: "pipe",
     stderr: "pipe",
     // ORPHAN-1: setsid() makes this pid the process-group leader, so the

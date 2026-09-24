@@ -42,6 +42,7 @@ import { SessionManager, sweepFeatureTranscripts } from "@/session";
 import { discoverWorkspacePackages } from "@/test-runners";
 import { _gitToolDeps } from "@/tools";
 import { errorMessage } from "@/utils/errors";
+import { gitSpawnEnv } from "@/utils/git-env";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireFeatureLock, type FeatureLockResult } from "../feature-lock";
 import { acquireLock, releaseLock } from "../helpers";
@@ -333,7 +334,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       const { claimProjectIdentity } = await import("@/runtime");
       let remoteUrl: string | null = null;
       try {
-        const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
+        const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir, env: gitSpawnEnv() });
         if (gitResult.exitCode === 0) {
           remoteUrl = new TextDecoder().decode(gitResult.stdout).trim() || null;
         }

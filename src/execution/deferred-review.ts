@@ -9,6 +9,7 @@ import { spawn } from "bun";
 import type { PluginRegistry } from "../plugins";
 import type { ReviewConfig } from "../review/types";
 import { GIT_TIMEOUT_MS } from "../utils/git";
+import { gitSpawnEnv } from "../utils/git-env";
 import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /** Injectable deps for testing */
@@ -36,8 +37,14 @@ export interface DeferredReviewResult {
  * delegating to utils/git's gitWithTimeout, which uses a separate `_gitDeps`)
  * so existing tests mocking `_deferredReviewDeps.spawn` are unaffected.
  */
-async function spawnGitWithDeadline(cmd: string[], workdir: string): Promise<string> {
-  const proc = _deferredReviewDeps.spawn({ cmd, cwd: workdir, stdout: "pipe", stderr: "pipe" });
+async function spawnGitWithDeadline(args: string[], workdir: string): Promise<string> {
+  const proc = _deferredReviewDeps.spawn({
+    cmd: ["git", ...args],
+    cwd: workdir,
+    env: gitSpawnEnv(),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
   let timedOut = false;
   const timerId = setTimeout(() => {
@@ -60,7 +67,7 @@ async function spawnGitWithDeadline(cmd: string[], workdir: string): Promise<str
 /** Capture the current HEAD git ref. Returns "" on failure. */
 export async function captureRunStartRef(workdir: string): Promise<string> {
   try {
-    const stdout = await spawnGitWithDeadline(["git", "rev-parse", "HEAD"], workdir);
+    const stdout = await spawnGitWithDeadline(["rev-parse", "HEAD"], workdir);
     return stdout.trim();
   } catch {
     return "";
@@ -69,7 +76,7 @@ export async function captureRunStartRef(workdir: string): Promise<string> {
 
 async function getChangedFilesForDeferred(workdir: string, baseRef: string): Promise<string[]> {
   try {
-    const stdout = await spawnGitWithDeadline(["git", "diff", "--name-only", `${baseRef}...HEAD`], workdir);
+    const stdout = await spawnGitWithDeadline(["diff", "--name-only", `${baseRef}...HEAD`], workdir);
     return stdout.trim().split("\n").filter(Boolean);
   } catch {
     return [];

@@ -1,4 +1,5 @@
 export { quoteArgvForShell } from "./argv-quote";
+export { _gitGuardDeps, listGitGuardFiles, strayCommonDirTripwire } from "./git-guards";
 export { _launcherDeps, type CommandLauncherOptions, createCommandLauncher, DISABLED_SANDBOX_STATE } from "./launcher";
 export {
   denialHintLine,

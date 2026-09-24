@@ -108,6 +108,7 @@ const HEAD_INTENTS: ReadonlyMap<string, Intent> = new Map<string, Intent>([
   // the question gets asked about. Naming Read beats a bare refusal the model
   // retries verbatim, but only if the ceiling is stated rather than implied.
   ["wc", { tool: "Read", how: "Read returns file contents, truncated past a size ceiling -- no tool counts lines" }],
+  // nax-git-env-allow: a [command, redirect] table entry, not an argv
   ["git", GIT],
   ...[...GIT_READ_VERBS].map((verb) => [verb, GIT] as const),
   // `git.ts` declares `allowedVerbs: GIT_READ_VERBS`, so every Git verb-slot

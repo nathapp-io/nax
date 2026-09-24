@@ -52,6 +52,7 @@ async function forgeFromCli(deps: ForgeDeps, repoRoot: string): Promise<ForgeKin
  * whether an undetermined forge is fatal, so the decision is theirs.
  */
 export async function detectForge(deps: ForgeDeps, repoRoot: string): Promise<ForgeKind | null> {
+  // nax-git-env-allow: ForgeDeps.run is defaultForgeDeps.run in production, which hardens every command
   const remote = await deps.run(["git", "remote", "get-url", "origin"], { cwd: repoRoot });
   if (remote.exitCode !== 0) return null;
   return forgeFromRemoteUrl(remote.stdout.trim()) ?? (await forgeFromCli(deps, repoRoot));

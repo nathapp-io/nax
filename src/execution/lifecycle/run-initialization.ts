@@ -24,6 +24,7 @@ import { runReview } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
 import { spawn } from "@/utils/bun-deps";
 import { hasCommitsForStory } from "@/utils/git";
+import { gitSpawnEnv } from "@/utils/git-env";
 import { storyAbsWorkdir } from "@/utils/path-frame";
 import { deriveStoryWorktreeId, storyBranchName } from "@/worktree";
 
@@ -243,6 +244,7 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
         try {
           const proc = _reconcileDeps.spawn(["git", "branch", "-D", branch], {
             cwd: ctx.workdir,
+            env: gitSpawnEnv(),
             stdout: "pipe",
             stderr: "pipe",
           });

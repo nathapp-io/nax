@@ -9,6 +9,7 @@ import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
 import { isTestFile } from "../test-runners";
 import { GIT_TIMEOUT_MS, getMergeBase, isGitRefValid } from "../utils/git";
+import { gitSpawnEnv } from "../utils/git-env";
 import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "../utils/nax-owned-paths";
 import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
@@ -53,13 +54,14 @@ export const _diffUtilsDeps = {
 // it; this wrapper applies the same deadline + drain-on-exit semantics
 // to the existing tests' mocked `_diffUtilsDeps.spawn`.
 async function runGitWithTimeout(
-  cmd: string[],
+  args: string[],
   workdir: string,
   timeoutMs: number = _diffUtilsDeps.timeoutMs,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = _diffUtilsDeps.spawn({
-    cmd,
+    cmd: ["git", ...args],
     cwd: workdir,
+    env: gitSpawnEnv(),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -107,7 +109,8 @@ export interface TestInventory {
 }
 
 /**
- * Build the shared `git diff` argv for the story-range collectors below.
+ * Build the shared `git diff` args (argv after `git`, which
+ * `runGitWithTimeout` prepends) for the story-range collectors below.
  *
  * All four converge on the same shape and deliberately omit `--relative`: the
  * agent's file tools are repo-rooted after the single-frame redesign, so
@@ -117,7 +120,7 @@ export interface TestInventory {
  * `excludePathspecs` ride as trailing `:!` pathspec exclusions.
  */
 function buildDiffArgv(flags: readonly string[], ref: string, excludePathspecs: readonly string[] = []): string[] {
-  return ["git", "diff", ...flags, `${ref}..HEAD`, "--", ".", ...excludePathspecs];
+  return ["diff", ...flags, `${ref}..HEAD`, "--", ".", ...excludePathspecs];
 }
 
 /**

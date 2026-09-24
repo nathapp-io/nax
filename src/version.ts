@@ -25,6 +25,7 @@
 
 import { CATALOG_VERSION } from "@/agents/catalog";
 import pkg from "../package.json";
+import { gitSpawnEnv } from "./utils/git-env";
 
 declare const GIT_COMMIT: string;
 
@@ -51,6 +52,7 @@ export const NAX_COMMIT: string = (() => {
   try {
     const result = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], {
       cwd: import.meta.dir,
+      env: gitSpawnEnv(),
       stderr: "ignore",
     });
     if (result.exitCode === 0) {
