@@ -3,7 +3,7 @@
   "feature": "audit-row-fidelity",
   "branchName": "feat/audit-row-fidelity",
   "createdAt": "2025-02-14T00:00:00.000Z",
-  "updatedAt": "2026-09-24T08:13:52.556Z",
+  "updatedAt": "2026-09-24T08:21:49.710Z",
   "userStories": [
     {
       "id": "US-001",
@@ -90,8 +90,8 @@
         "sandbox"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -171,7 +171,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "This is bounded optional-argument and row-state plumbing across four established modules, with explicit identity and error-path regressions but no new abstraction."
+        "reasoning": "This is bounded optional-argument and row-state plumbing across four established modules, with explicit identity and error-path regressions but no new abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/command-safety/tap.ts",
@@ -194,6 +197,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "e22fff3c579e1edc951fdd3a5930346672423579",
       "outOfScope": [
         "classifying the normalized Exec argv",
         "placing executed on Bash shadow rows"
