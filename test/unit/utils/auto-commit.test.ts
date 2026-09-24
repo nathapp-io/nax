@@ -77,7 +77,7 @@ describe("autoCommitIfDirty", () => {
     await autoCommitIfDirty(workdir, "tdd", "implementer", "US-004");
 
     const addCall = calls.find((c) => c.cmd.includes("add"));
-    expect(addCall?.cmd).toEqual(["git", "add", "-A"]);
+    expect(addCall?.cmd).toEqual(["git", "add", "-A", "--", ":/"]);
     expect(addCall?.cwd).toBe(gitRoot);
     expect(calls.some((c) => c.cmd.includes("commit"))).toBe(true);
   });
@@ -94,7 +94,7 @@ describe("autoCommitIfDirty", () => {
     await autoCommitIfDirty(gitRoot, "tdd", "test-writer", "US-001");
 
     const addCall = calls.find((c) => c.cmd.includes("add"));
-    expect(addCall?.cmd).toEqual(["git", "add", "-A"]);
+    expect(addCall?.cmd).toEqual(["git", "add", "-A", "--", ":/"]);
     expect(addCall?.cwd).toBe(gitRoot);
   });
 

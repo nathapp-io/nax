@@ -6,6 +6,17 @@
  * commondir, a nested repo git recurses into), nax would run it unsandboxed.
  * nax never needs an fsmonitor, so it is always off.
  *
+ * Submodules (#2210): for every gitlink, `git status` / `diff` / `commit`
+ * run `git status` inside the nested repo to learn whether it is dirty, and
+ * that child git reads the nested repo's own config and `.gitattributes` --
+ * files an agent can write when it creates the repo inside its write root.
+ * A filter driver (`filter.<x>.clean`) named there would run unsandboxed, and
+ * unlike fsmonitor it cannot be switched off by name. `diff.ignoreSubmodules
+ * =dirty` skips that dirty check (a moved gitlink HEAD is still reported,
+ * without spawning git in it), and `submodule.recurse=false` keeps checkout /
+ * merge from recursing. `git add` ignores diff.ignoreSubmodules, so nax stages
+ * through `gitlinkSafeAdd` (`./git-add`) instead of a bare `git add`.
+ *
  * Passed through GIT_CONFIG_COUNT/KEY/VALUE (git >= 2.31; older git ignores
  * them) rather than `-c` so argv stays unchanged, and because git forwards
  * these to the child git processes it spawns (submodules) as well.
@@ -20,7 +31,11 @@
  * elsewhere is beyond a textual gate; keep git argv literal at the spawn.
  */
 
-const HARDENED_GIT_CONFIG: ReadonlyArray<readonly [key: string, value: string]> = [["core.fsmonitor", "false"]];
+const HARDENED_GIT_CONFIG: ReadonlyArray<readonly [key: string, value: string]> = [
+  ["core.fsmonitor", "false"],
+  ["diff.ignoreSubmodules", "dirty"],
+  ["submodule.recurse", "false"],
+];
 
 const NON_NEGATIVE_INT = /^\d+$/;
 

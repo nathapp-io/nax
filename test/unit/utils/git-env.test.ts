@@ -5,22 +5,27 @@ import { gitWithTimeout } from "@/utils/git";
 import { gitSpawnEnv, hardenedGitEnv } from "@/utils/git-env";
 
 describe("hardenedGitEnv", () => {
-  test("adds core.fsmonitor=false as config entry 0 when none are set", () => {
+  test("adds the hardened entries from index 0 when none are set", () => {
     const env = hardenedGitEnv({ PATH: "/bin" });
     expect(env).toEqual({
       PATH: "/bin",
-      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_COUNT: "3",
       GIT_CONFIG_KEY_0: "core.fsmonitor",
       GIT_CONFIG_VALUE_0: "false",
+      GIT_CONFIG_KEY_1: "diff.ignoreSubmodules",
+      GIT_CONFIG_VALUE_1: "dirty",
+      GIT_CONFIG_KEY_2: "submodule.recurse",
+      GIT_CONFIG_VALUE_2: "false",
     });
   });
 
   test("appends after the caller's own GIT_CONFIG_COUNT entries, keeping them", () => {
     const env = hardenedGitEnv({ GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "user.name", GIT_CONFIG_VALUE_0: "x" });
-    expect(env.GIT_CONFIG_COUNT).toBe("2");
+    expect(env.GIT_CONFIG_COUNT).toBe("4");
     expect(env.GIT_CONFIG_KEY_0).toBe("user.name");
     expect(env.GIT_CONFIG_KEY_1).toBe("core.fsmonitor");
     expect(env.GIT_CONFIG_VALUE_1).toBe("false");
+    expect(env.GIT_CONFIG_KEY_3).toBe("submodule.recurse");
   });
 
   test("a malformed existing count is left untouched", () => {
@@ -39,8 +44,10 @@ describe("gitSpawnEnv", () => {
     const env = gitSpawnEnv();
     expect(env.PATH).toBe(process.env.PATH);
     const count = Number(env.GIT_CONFIG_COUNT);
-    expect(env[`GIT_CONFIG_KEY_${count - 1}`]).toBe("core.fsmonitor");
-    expect(env[`GIT_CONFIG_VALUE_${count - 1}`]).toBe("false");
+    expect(env[`GIT_CONFIG_KEY_${count - 3}`]).toBe("core.fsmonitor");
+    expect(env[`GIT_CONFIG_VALUE_${count - 3}`]).toBe("false");
+    expect(env[`GIT_CONFIG_KEY_${count - 2}`]).toBe("diff.ignoreSubmodules");
+    expect(env[`GIT_CONFIG_VALUE_${count - 2}`]).toBe("dirty");
   });
 
   test("keeps the caller's overlay and appends after a GIT_CONFIG_COUNT it sets", () => {
@@ -52,7 +59,7 @@ describe("gitSpawnEnv", () => {
     });
     expect(env.GIT_INDEX_FILE).toBe("/tmp/idx");
     expect(env.GIT_CONFIG_KEY_0).toBe("user.name");
-    expect(env.GIT_CONFIG_COUNT).toBe("2");
+    expect(env.GIT_CONFIG_COUNT).toBe("4");
     expect(env.GIT_CONFIG_KEY_1).toBe("core.fsmonitor");
   });
 });

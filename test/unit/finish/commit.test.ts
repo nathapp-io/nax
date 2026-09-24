@@ -75,7 +75,7 @@ describe("commitFixes", () => {
 
     expect(result.committed).toBe(true);
     const addCall = calls.find((c) => c.args[0] === "add");
-    expect(addCall?.args).toEqual(["add", "-A"]);
+    expect(addCall?.args).toEqual(["add", "-A", "--", ":/"]);
     const commitCall = calls.find((c) => c.args[0] === "commit");
     expect(commitCall?.args).toEqual(["commit", "-m", "fix: dirty tree"]);
   });

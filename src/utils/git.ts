@@ -4,6 +4,7 @@
 
 import { getSafeLogger } from "../logger";
 import { spawn } from "./bun-deps";
+import { gitlinkSafeAdd } from "./git-add";
 import { hardenedGitEnv } from "./git-env";
 import { realOrRaw } from "./realpath";
 
@@ -454,11 +455,12 @@ export async function autoCommitIfDirty(
     // timeout would otherwise silently skip the auto-commit, leaving the tree
     // dirty and triggering the very escalation this function exists to avoid.
     // Use a longer budget and log (not throw — still best-effort) on failure.
-    const { exitCode: addExit, stderr: addStderr } = await gitWithTimeout(
-      ["add", "-A"],
-      realGitRoot,
-      AUTO_COMMIT_GIT_TIMEOUT_MS,
-    );
+    // gitlinkSafeAdd, not a bare `git add -A`: git would otherwise run status
+    // inside an agent-made nested repo, under that repo's own config (#2210).
+    const { exitCode: addExit, stderr: addStderr } = await gitlinkSafeAdd(gitWithTimeout, realGitRoot, {
+      flags: ["-A"],
+      timeoutMs: AUTO_COMMIT_GIT_TIMEOUT_MS,
+    });
     if (addExit !== 0) {
       logger?.error(stage, "auto-commit: git add -A failed or timed out", {
         storyId,

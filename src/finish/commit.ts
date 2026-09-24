@@ -27,6 +27,7 @@
  */
 import { NaxError } from "../errors";
 import { gitWithTimeout } from "../utils/git";
+import { gitlinkSafeAdd } from "../utils/git-add";
 import type { Finding, FindingDisposition, FinishPhase, FinishRound, FinishRoundOutcome } from "./types";
 
 export const _finishGitDeps = { git: gitWithTimeout };
@@ -115,7 +116,7 @@ export async function commitFixes(
   const shaBefore = await headSha(repoRoot);
   if (!(await isDirty(repoRoot))) return { committed: false, shaBefore, shaAfter: shaBefore };
 
-  const add = await _finishGitDeps.git(["add", "-A"], repoRoot);
+  const add = await gitlinkSafeAdd(_finishGitDeps.git, repoRoot, { flags: ["-A"] }); // #2210
   if (add.exitCode !== 0) {
     throw new NaxError(
       `git add failed in "${repoRoot}": ${add.stderr.trim() || `exit ${add.exitCode}`}`,

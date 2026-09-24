@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitWithTimeout } from "@/utils/git";
+import { gitlinkSafeAdd } from "@/utils/git-add";
 import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
@@ -184,7 +185,10 @@ export const gitCommitTool: CodingTool = {
     const built = buildCommitArgvs(effectiveInput);
     if ("error" in built) return { content: built.error, isError: true };
 
-    const staged = await gitWithTimeout(built.add, ctx.root, 30_000);
+    // Through gitlinkSafeAdd: a bare `git add` would run git inside any gitlink
+    // the paths cover, under that nested repo's own config (#2210).
+    const pathspecs = built.add.slice(built.add.indexOf("--") + 1);
+    const staged = await gitlinkSafeAdd(gitWithTimeout, ctx.root, { pathspecs, timeoutMs: 30_000 });
     if (staged.exitCode !== 0) {
       return { content: `git add failed: ${staged.stderr.trim() || `exit ${staged.exitCode}`}`, isError: true };
     }
