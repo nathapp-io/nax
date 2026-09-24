@@ -12,6 +12,7 @@ describe("selectSpinBreakerSettings", () => {
       stopAfterRepeats: 50,
       recentKeyWindow: 64,
       stopAfterSameKeyRepeats: 12,
+      stopAfterNoProgressSeconds: 900,
     });
   });
 
@@ -25,5 +26,39 @@ describe("selectSpinBreakerSettings", () => {
     expect(resolved.nudgeAfterRepeats).toBe(10);
     expect(resolved.stopAfterRepeats).toBe(20);
     expect(resolved.maxNudges).toBe(2);
+  });
+
+  // nax#2017: the no-progress time axis is derived from the tool-call-only idle
+  // watchdog when the operator has not set it, so a slow spin ends as
+  // `fail-spin` before the watchdog cancels it as `fail-stale`.
+  test("AC5: halves the idle watchdog's tool-call-only timeout when it is 1200", () => {
+    const config = agentManagerConfigSelector.select(
+      makeNaxConfig({ agent: { idleWatchdog: { toolCallOnlyIdleTimeoutSeconds: 1200 } } }),
+    );
+
+    expect(selectSpinBreakerSettings(config).stopAfterNoProgressSeconds).toBe(600);
+  });
+
+  test("AC6: honours an explicit stopAfterNoProgressSeconds over the watchdog-derived value", () => {
+    const config = agentManagerConfigSelector.select(
+      makeNaxConfig({
+        agent: {
+          spinBreaker: { stopAfterNoProgressSeconds: 300 },
+          idleWatchdog: { toolCallOnlyIdleTimeoutSeconds: 1200 },
+        },
+      }),
+    );
+
+    expect(selectSpinBreakerSettings(config).stopAfterNoProgressSeconds).toBe(300);
+  });
+
+  test("AC7: falls back to 900 when the idle watchdog mode is 'off'", () => {
+    const config = agentManagerConfigSelector.select(makeNaxConfig({ agent: { idleWatchdog: { mode: "off" } } }));
+
+    expect(selectSpinBreakerSettings(config).stopAfterNoProgressSeconds).toBe(900);
+  });
+
+  test("AC8: falls back to 900 when the config is undefined", () => {
+    expect(selectSpinBreakerSettings(undefined).stopAfterNoProgressSeconds).toBe(900);
   });
 });

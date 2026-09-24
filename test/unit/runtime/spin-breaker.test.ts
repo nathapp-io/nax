@@ -9,6 +9,10 @@ function settings(overrides: Partial<ResolvedSpinBreakerSettings> = {}): Resolve
     stopAfterRepeats: 50,
     recentKeyWindow: 64,
     stopAfterSameKeyRepeats: 12,
+    // nax#2017 time axis. These tests never advance a clock far enough for it
+    // to fire (the breaker reads the real `Date.now` here), so they keep
+    // measuring the repeat/result axes only.
+    stopAfterNoProgressSeconds: 900,
     ...overrides,
   };
 }
@@ -124,6 +128,8 @@ describe("createSpinBreaker", () => {
   // cumulative per-key repeats — interleaving one odd call between repeats
   // must not reset the count, because that is the exact shape that
   // maxRepeatRun=22 vs threshold=25 in 1789376162585-US-001 could not catch.
+  // nax#2017 pins the same loop's counts (28 / 3) as a regression guard for the
+  // new per-episode nudge budget.
 
   test("stops on the 120-call RunCommand loop from the 1789376162585-US-001-implementer session", () => {
     const breaker = createSpinBreaker(settings());
@@ -229,7 +235,7 @@ describe("createSpinBreaker", () => {
     expect(stoppedAtA).toBe(16);
   });
 
-  test("interleaving does not reset the cumulative counter (the laundering hole)", () => {
+  test("AC12: interleaving does not reset the cumulative counter (the laundering hole)", () => {
     const breaker = createSpinBreaker(settings());
     const KEY_A = { command: "testScoped", values: { files: "a.test.ts" } };
     const KEY_B = { command: "testScoped", values: { files: "b.test.ts" } };
