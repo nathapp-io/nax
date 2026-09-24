@@ -160,6 +160,12 @@ export function createCodingToolRuntime(opts: {
    * (whole-file Edit/Write cap).
    */
   readCeiling?: number;
+  /**
+   * Aborts in-flight tool work (US-001). Bash and RunCommand's argv branch
+   * forward it to their launcher / runArgv call, which SIGKILLs the process
+   * group. Optional so existing callers compile unchanged.
+   */
+  signal?: AbortSignal;
   storyId?: string;
   callId?: string;
   scopeId?: string;
@@ -209,6 +215,11 @@ export function createCodingToolRuntime(opts: {
   const readCeiling = opts.readCeiling ?? READ_CEILING;
   const askResolver = opts.askResolver ?? headlessAskResolver();
   const granted = new Set(opts.policy.grantedTools());
+  // Captured so the `ToolRunContext` constructed inside `runTool` carries the
+  // session-wide abort signal; tools (Bash, Exec's argv branch) forward it
+  // into their launcher / runArgv call so turn cancellation reaches the
+  // process group. US-001.
+  const signal = opts.signal;
 
   // What `advertised()` actually returned, so a denial can name only tools the
   // session really received. Recomputing from `granted` would be wrong: an op
@@ -391,6 +402,7 @@ export function createCodingToolRuntime(opts: {
             maxFileBytes,
             readCeiling,
             ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
+            ...(signal !== undefined ? { signal } : {}),
           });
           const kind = result.isError === true ? "error" : "ok";
           const content = await shapeToolResult(result.content, policyIdentity, context);
