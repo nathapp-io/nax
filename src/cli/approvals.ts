@@ -218,6 +218,6 @@ export function registerApprovalsCommand(program: Command, deps: typeof _approva
     .command("list")
     .description("List remembered approvals")
     .option("-d, --dir <path>", "Project directory", process.cwd())
-    .option("--json", "JSON output (US-004)")
+    .option("--json", "Emit the list as a machine-readable JSON object")
     .action(listAction);
 }
