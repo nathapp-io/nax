@@ -32,8 +32,9 @@
 import { describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { withTempDir } from "@test/helpers";
-import { _approvalsCliDeps, approvalsRmCommand, resolveApprovalsFile } from "@/cli/approvals";
+import { firstCall, withTempDir } from "@test/helpers";
+import { Command } from "commander";
+import { _approvalsCliDeps, approvalsRmCommand, registerApprovalsCommand, resolveApprovalsFile } from "@/cli/approvals";
 import { NaxError } from "@/errors";
 import {
   type ApprovalEntry,
@@ -96,6 +97,15 @@ function makeRemovedStub(entry: ApprovalEntry, droppedMalformed: number): CliDep
       outcome: "removed",
       removed: [entry],
       droppedMalformed,
+    }),
+  );
+}
+
+/** A `removeApprovals` stub that removes nothing — for call-count and call-path assertions. */
+function makeRemoveStub() {
+  return mock(
+    async (_path: string, _decide: (read: ApprovalsFileRead) => RemovalDecision): Promise<RemovalResult> => ({
+      outcome: "unchanged",
     }),
   );
 }
@@ -241,6 +251,129 @@ async function runRmToleratingRejection(
     return Number.NaN;
   }
 }
+
+interface RegisteredProgram {
+  readonly program: Command;
+  readonly approvals: Command | undefined;
+  readonly rm: Command | undefined;
+}
+
+/** Register the CLI on a fresh Commander program so each wiring test gets its own. */
+function registeredProgram(harness: Harness): RegisteredProgram {
+  const program = new Command();
+  program.exitOverride();
+  registerApprovalsCommand(program, harness.deps);
+  const approvals = program.commands.find((c) => c.name() === "approvals");
+  const rm = approvals?.commands.find((c) => c.name() === "rm");
+  return { program, approvals, rm };
+}
+
+// ---------------------------------------------------------------------------
+// Commander wiring: `--all` and `--yes` are reachable from the registered
+// `approvals rm` subcommand. Without these, a typo in `.option("--all")`
+// or `.option("--yes")` or a wrong `options.all === true` / `options.yes ===
+// true` coercion would still leave the rest of the suite green — every test
+// below drives `approvalsRmCommand` directly, not through Commander.
+// ---------------------------------------------------------------------------
+
+describe("registerApprovalsCommand — approvals rm --all / --yes wiring", () => {
+  test("US-006: registers an 'approvals rm' subcommand exposing --all, --yes and -d/--dir", () => {
+    const { rm } = registeredProgram(makeHarness());
+    expect(rm).toBeDefined();
+    if (!rm) return; // failed above: the subcommand is not registered
+
+    const help = rm.helpInformation();
+    expect(help).toContain("--all");
+    expect(help).toContain("--yes");
+    expect(help).toContain("--dir");
+  });
+
+  test("'approvals rm --help' does not leak the internal story tag into the user-facing --all or --yes description", () => {
+    // Adversarial review: a sibling test in `approvals-rm.test.ts` pins the
+    // same rule for the same command. US-006 adds --all and --yes; without a
+    // second pin, a `(US-006)` tag slipped into either new description would
+    // still pass the existing wiring test.
+    const { rm } = registeredProgram(makeHarness());
+    expect(rm).toBeDefined();
+    if (!rm) return; // failed above: the subcommand is not registered
+
+    const help = rm.helpInformation();
+    expect(help).not.toContain("(US-");
+  });
+
+  test("US-006: 'approvals rm --all -d <workdir> --yes' invokes removeApprovals once at the resolved store path", async () => {
+    await withStore([makeEntry()], async (fixture) => {
+      const removeStub = makeRemoveStub();
+      const harness = makeHarness({ removeApprovals: removeStub });
+      const { program, rm } = registeredProgram(harness);
+      const expectedPath = await resolveApprovalsFile(fixture.workdir);
+
+      expect(rm).toBeDefined();
+      if (!rm) return; // failed above: the subcommand is not registered
+
+      await program.parseAsync(["approvals", "rm", "--all", "-d", fixture.workdir, "--yes"], { from: "user" });
+
+      // The flag-to-option plumbing is the part under test: a `--all` that
+      // never reached `approvalsRmCommand`'s `all: true` branch would skip
+      // the `removeApprovals` call (the precheck short-circuits when no
+      // selector fires). One call pins both the parse AND the boolean
+      // coercion in `registerApprovalsCommand`.
+      expect(removeStub.mock.calls).toHaveLength(1);
+      const [path] = firstCall(removeStub, "removeApprovals stub");
+      expect(path).toBe(expectedPath);
+    });
+  });
+
+  test("US-006: 'approvals rm --all --yes' calls deps.exit with 0 on a store with entries", async () => {
+    const entry = makeEntry();
+    await withStore([entry], async (fixture) => {
+      const harness = makeHarness();
+      const { program, rm } = registeredProgram(harness);
+
+      expect(rm).toBeDefined();
+      if (!rm) return; // failed above: the subcommand is not registered
+
+      await program.parseAsync(["approvals", "rm", "--all", "--yes", "-d", fixture.workdir], { from: "user" });
+
+      expect(harness.exitCodes).toEqual([0]);
+    });
+  });
+
+  test("US-006: 'approvals rm --all --yes' leaves the store empty end-to-end", async () => {
+    const first = makeEntry({ approvedAt: "2026-09-22T10:00:00.000Z" });
+    const second = makeEntry({ command: "bun run lint", approvedAt: "2026-09-22T10:05:00.000Z" });
+
+    await withStore([first, second], async (fixture) => {
+      const harness = makeHarness();
+      const { program, rm } = registeredProgram(harness);
+
+      expect(rm).toBeDefined();
+      if (!rm) return; // failed above: the subcommand is not registered
+
+      await program.parseAsync(["approvals", "rm", "--all", "--yes", "-d", fixture.workdir], { from: "user" });
+
+      expect(await readApprovals(fixture.storePath)).toEqual([]);
+    });
+  });
+
+  test("US-006: 'approvals rm --all --yes' does not invoke deps.confirm through the registered program", async () => {
+    const entry = makeEntry();
+    await withStore([entry], async (fixture) => {
+      // The injected prompt would DECLINE. Skipping it must still revoke, so a
+      // `--yes` that quietly deferred to the prompt cannot pass this test.
+      const harness = makeHarness({ confirmResolves: false });
+      const { program, rm } = registeredProgram(harness);
+
+      expect(rm).toBeDefined();
+      if (!rm) return; // failed above: the subcommand is not registered
+
+      await program.parseAsync(["approvals", "rm", "--all", "--yes", "-d", fixture.workdir], { from: "user" });
+
+      expect(harness.confirm.mock.calls).toHaveLength(0);
+      expect(await readApprovals(fixture.storePath)).toEqual([]);
+    });
+  });
+});
 
 // ---------------------------------------------------------------------------
 // AC1-AC9: the confirmation gate
