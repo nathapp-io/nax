@@ -13,6 +13,10 @@
  * `bun run test` would also grant `bun run test --reporter=./x`.
  *
  * The file may also carry a `taint` marker (#2199) -- see approvals-taint.ts.
+ *
+ * Revocation goes through `src/cli/approvals.ts`, the surface D20 relies on:
+ * `removeApprovals` here is the locked, taint-preserving read-decide-write
+ * primitive that surface calls into.
  */
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -196,6 +200,77 @@ export async function appendApproval(path: string, entry: ApprovalEntry): Promis
   await withPathFileLock(path, async () => {
     const existing = await readApprovalsFile(path);
     await writeApprovalsFile(path, { taint: existing.taint, entries: [...existing.entries, entry] });
+  });
+}
+
+/**
+ * The decision `removeApprovals` asks the caller for, once the read has
+ * classified the file. The caller picks which entries to drop with `remove` --
+ * a predicate over the kept entries from the read -- or refuses the operation
+ * with `refuse`. The two arms are mutually exclusive: a single decision is
+ * either "remove these" or "I will not act, because: ...".
+ */
+export type RemovalDecision = { readonly remove: (entry: ApprovalEntry) => boolean } | { readonly refuse: string };
+
+/**
+ * What `removeApprovals` reports back. `refused` covers both the file being
+ * unparseable (so the read refuses the call to `decide`) and the caller's own
+ * `refuse` decision: the caller cannot distinguish the two from the result
+ * alone, only from the message. `removed` reports exactly the entries the
+ * caller chose to drop plus the count of malformed array elements the read
+ * dropped for being non-entries. `unchanged` is returned for both a missing
+ * file and a present file whose predicate selected nothing.
+ */
+export type RemovalResult =
+  | { readonly outcome: "removed"; readonly removed: readonly ApprovalEntry[]; readonly droppedMalformed: number }
+  | { readonly outcome: "unchanged" }
+  | { readonly outcome: "refused"; readonly reason: string };
+
+/**
+ * Locked, taint-preserving removal. Holds the same path-scoped lock
+ * `appendApproval` holds, so a removal racing an append cannot drop one of the
+ * two writes; whichever runs first inside the lock, the other sees the
+ * post-write state on its next read.
+ *
+ * The order of the guards matters and is documented in the story:
+ *   1. `state === "unparseable"` -> `refused`, no `decide` call, no write.
+ *      Rewriting would erase whatever the file holds, including a taint
+ *      marker we did not write.
+ *   2. `decide(read)` returns `{ refuse }` -> `refused`, no write.
+ *   3. The predicate selected no entry (or the file was missing) ->
+ *      `unchanged`, no write, no file or directory created.
+ *   4. Otherwise write `{ taint: read.file.taint, entries: kept }` with the
+ *      SAME taint that was read. Nothing in this function clears a taint;
+ *      only `clearApprovalsTaint` (approvals-taint.ts) does, and only from a
+ *      trusted run.
+ */
+export async function removeApprovals(
+  path: string,
+  decide: (read: ApprovalsFileRead) => RemovalDecision,
+): Promise<RemovalResult> {
+  return withPathFileLock(path, async () => {
+    const read = await readApprovalsFileDetailed(path);
+    if (read.state === "unparseable") {
+      return { outcome: "refused", reason: "approvals.json could not be parsed; not rewriting it" };
+    }
+    const decision = decide(read);
+    if ("refuse" in decision) {
+      return { outcome: "refused", reason: decision.refuse };
+    }
+    const removed: ApprovalEntry[] = [];
+    const kept: ApprovalEntry[] = [];
+    for (const entry of read.file.entries) {
+      if (decision.remove(entry)) {
+        removed.push(entry);
+      } else {
+        kept.push(entry);
+      }
+    }
+    if (removed.length === 0) {
+      return { outcome: "unchanged" };
+    }
+    await writeApprovalsFile(path, { taint: read.file.taint, entries: kept });
+    return { outcome: "removed", removed, droppedMalformed: read.droppedMalformed };
   });
 }
 
