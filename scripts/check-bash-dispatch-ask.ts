@@ -24,9 +24,14 @@
  *
  *   wired    names both `askResolver` and `commandShadow` (as a member, or
  *            inside a spread such as `...(commandShadow ? { commandShadow } : {})`)
- *   derived  starts by spreading an existing context (`{ ...callCtx, ... }`):
- *            it inherits the fields of the context it was derived from
  *   bare     anything else -- a violation unless allowlisted below
+ *
+ * A plain spread (`{ ...callCtx, runtime, ... }`, `{ ...baseOpts, ... }`) does
+ * not satisfy the requirement: the scanner cannot see what the spread source
+ * carries, and trusting it would let a resolver-less base object reopen #2201.
+ * A literal derived from an existing context names both fields explicitly
+ * (`askResolver: callCtx.askResolver, commandShadow: callCtx.commandShadow`)
+ * or is allowlisted like any other bare site.
  *
  * Deny by default: a new construction site fails until it is wired or someone
  * adds an ALLOWED_BARE_SITES entry saying why it can never dispatch Bash. An
@@ -61,7 +66,7 @@ export const CONTEXT_CORE_FIELDS = ["runtime", "packageView", "agentName"] as co
 /** Fields a Bash-capable dispatch context must carry. */
 export const REQUIRED_FIELDS = ["askResolver", "commandShadow"] as const;
 
-export type SiteKind = "wired" | "derived" | "bare";
+export type SiteKind = "wired" | "bare";
 
 export interface ContextSite {
   readonly file: string;
@@ -183,8 +188,6 @@ export function memberKey(member: string): string | undefined {
 }
 
 function classify(members: readonly string[]): { kind: SiteKind; missing: string[] } {
-  const first = members[0] ?? "";
-  if (/^\.\.\.\s*[A-Za-z_$][\w$.]*$/.test(first)) return { kind: "derived", missing: [] };
   const missing = REQUIRED_FIELDS.filter(
     (field) =>
       !members.some((m) => memberKey(m) === field || (m.startsWith("...") && new RegExp(`\\b${field}\\b`).test(m))),
@@ -337,11 +340,9 @@ async function main(): Promise<void> {
     console.error("A site that can never dispatch Bash goes in ALLOWED_BARE_SITES with its reason.");
     process.exit(1);
   }
-  const counts = { wired: 0, derived: 0, bare: 0 };
+  const counts = { wired: 0, bare: 0 };
   for (const s of sites) counts[s.kind]++;
-  console.log(
-    `OK: ${sites.length} CallContext construction(s): ${counts.wired} wired, ${counts.derived} derived, ${counts.bare} allowlisted.`,
-  );
+  console.log(`OK: ${sites.length} CallContext construction(s): ${counts.wired} wired, ${counts.bare} allowlisted.`);
 }
 
 if (import.meta.main) await main();

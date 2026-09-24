@@ -69,9 +69,19 @@ describe("findContextSites — classification", () => {
     expect(sites[0]?.fn).toBe("run");
   });
 
-  test("a literal derived by spreading an existing context inherits its fields", () => {
-    const sites = sitesOf(["const next = { ...callCtx, runtime, packageView, agentName: other };"]);
-    expect(sites.map((s) => s.kind)).toEqual(["derived"]);
+  test("a leading spread of an unverified source does not supply the fields", () => {
+    const sites = sitesOf(["const next = { ...baseOpts, runtime, packageView, agentName, config };"]);
+    expect(sites[0]).toMatchObject({ kind: "bare", missing: ["askResolver", "commandShadow"] });
+  });
+
+  test("a leading spread with both fields named explicitly is wired", () => {
+    const sites = sitesOf([
+      "const next = {",
+      "  ...callCtx, runtime, packageView, agentName: other,",
+      "  askResolver: callCtx.askResolver, commandShadow: callCtx.commandShadow,",
+      "};",
+    ]);
+    expect(sites.map((s) => s.kind)).toEqual(["wired"]);
   });
 
   test("the field names in comments or strings do not count as wiring", () => {
@@ -154,10 +164,9 @@ describe("evaluate", () => {
   const bare = (fn: string): ContextSite => ({ file: FILE, line: 1, fn, kind: "bare", missing: ["askResolver"] });
   const allow = (fn: string) => ({ file: FILE, fn, reason: "r" });
 
-  test("an unallowlisted bare site is a violation; wired and derived ones are not", () => {
+  test("an unallowlisted bare site is a violation; a wired one is not", () => {
     const wired: ContextSite = { ...bare("a"), kind: "wired", missing: [] };
-    const derived: ContextSite = { ...bare("b"), kind: "derived", missing: [] };
-    const findings = evaluate([bare("c"), wired, derived], [], new Map(), new Set());
+    const findings = evaluate([bare("c"), wired], [], new Map(), new Set());
     expect(findings.violations.map((v) => v.fn)).toEqual(["c"]);
   });
 
