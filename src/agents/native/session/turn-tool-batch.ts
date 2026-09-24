@@ -38,6 +38,14 @@ export interface ToolBatchResult {
   /** The caller breaks out of the while loop on either. */
   readonly spinStopped: boolean;
   readonly budgetExceeded: boolean;
+  /**
+   * US-002: the turn signal (`deps.signal`) was aborted during this batch.
+   * True means the batch answered this-and-later calls with the synthetic
+   * "Not run: the turn was cancelled." result and stopped dispatching; the
+   * loop throws the abort reason instead of continuing to another round trip.
+   * False (never aborted) preserves the pre-feature shape exactly.
+   */
+  readonly cancelled: boolean;
 }
 
 export interface ToolBatchArgs {
@@ -238,5 +246,9 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
     codingToolsCalled,
     spinStopped,
     budgetExceeded: invalidCallBudget.exceeded,
+    // US-002 placeholder: the signal check that sets this true is the
+    // implementer's logic; a batch that never consulted a signal is never
+    // cancelled.
+    cancelled: false,
   };
 }

@@ -16,6 +16,20 @@ export type AdapterInteraction =
       toolCallId?: string;
       /** Native shapes the final post-handler result at its loop chokepoint. */
       deferModelTruncation?: boolean;
+      /**
+       * The turn's single abort signal (US-002). Native only, sent on every
+       * coding-tool request; the handler forwards it into the tool's
+       * `ToolCallContext` so an in-flight Bash/Exec can SIGKILL its process
+       * group when the turn is cancelled. Absent on the other kinds, which
+       * never run a tool.
+       */
+      signal?: AbortSignal;
+      /**
+       * Notifies the wiring layer that the tool is about to WAIT on something
+       * external (e.g. a human approval) (US-002). Native only; forwarded by
+       * the handler into the tool's `ToolCallContext`.
+       */
+      onWaiting?: () => void;
     };
 
 export interface AdapterInteractionResponse {
