@@ -25,6 +25,7 @@ import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import { stripRemovedNoOpKeys } from "@/config/config-guards";
+import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
 import { NaxConfigSchema } from "@/config/schemas";
 
@@ -184,6 +185,51 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// US-001 — retire review.gateLLMChecksOnMechanicalPass (#2174)
+//
+// The key was declared in the schema, carried in DEFAULT_CONFIG and documented
+// in the CLI, but read at no code site — setting it to `false` never gated
+// anything. It is retired through the same warn-and-strip path as the keys
+// above, so an existing config that still sets it keeps loading.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedNoOpKeys — review.gateLLMChecksOnMechanicalPass (US-001)", () => {
+  test("AC-1: strips the key from the returned review", () => {
+    const result = stripRemovedNoOpKeys({ review: { gateLLMChecksOnMechanicalPass: false, enabled: true } }, () => {});
+    expect(result.review).toBeDefined();
+    expect(result.review).not.toHaveProperty("gateLLMChecksOnMechanicalPass");
+  });
+
+  test("AC-2: retains the sibling review.enabled key", () => {
+    const result = stripRemovedNoOpKeys({ review: { gateLLMChecksOnMechanicalPass: false, enabled: true } }, () => {});
+    expect(result.review).toMatchObject({ enabled: true });
+  });
+
+  test("AC-3: warns exactly once naming the key and its removal", () => {
+    const captured: string[] = [];
+    stripRemovedNoOpKeys({ review: { gateLLMChecksOnMechanicalPass: false } }, (msg) => captured.push(msg));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toContain("review.gateLLMChecksOnMechanicalPass");
+    expect(captured[0]).toContain("has been removed");
+  });
+
+  test("AC-4: does not mutate the input review", () => {
+    const input = { review: { gateLLMChecksOnMechanicalPass: false } };
+    stripRemovedNoOpKeys(input, () => {});
+    expect(input.review.gateLLMChecksOnMechanicalPass).toBe(false);
+  });
+
+  test("AC-5: NaxConfigSchema.parse yields a review without the retired key", () => {
+    // `ReviewConfigSchema` requires `enabled` + `checks`, so the review block is
+    // seeded from the schema's own default (which must also drop the key).
+    const parsed = NaxConfigSchema.parse({ review: { ...DEFAULT_CONFIG.review } });
+    expect(parsed.review).toBeDefined();
+    expect("gateLLMChecksOnMechanicalPass" in parsed.review).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // loadConfig integration — the guard runs at both root-chain and per-package sites
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -285,6 +331,13 @@ describe("stripRemovedNoOpKeys via loadConfig — end-to-end", () => {
 
     const config = await loadConfigForWorkdir(join(naxDir, "config.json"), "packages/api");
     expect("generateTests" in config.acceptance).toBe(false);
+  });
+
+  test("AC-6: loadConfig warn-and-strips review.gateLLMChecksOnMechanicalPass from a project config", async () => {
+    const root = await writeProjectConfig({ review: { gateLLMChecksOnMechanicalPass: true } });
+    const config = await loadConfig(root);
+    expect(config.review).toBeDefined();
+    expect("gateLLMChecksOnMechanicalPass" in config.review).toBe(false);
   });
 
   test("AC-13c: loadConfigForWorkdir strips execution.rectification.escalateOnExhaustion from a per-package overlay on a mergeable field", async () => {
