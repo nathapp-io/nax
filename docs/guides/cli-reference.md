@@ -308,6 +308,53 @@ nax runs --status failed
 
 ---
 
+### `nax approvals list`
+
+List the human-remembered approvals on the project's cache and report
+whether the store is currently trusted.
+
+```bash
+nax approvals list
+
+# Resolve the store for a specific workdir
+nax approvals list -d /path/to/project
+
+# Emit machine-readable JSON (US-004)
+nax approvals list --json
+```
+
+**Flags:**
+
+| Flag | Description |
+|:-----|:------------|
+| `-d, --dir <path>` | Project directory (defaults to the current directory) |
+| `--json` | Emit the list as JSON (US-004) |
+
+**Output:**
+
+The first two lines name the resolved store file and report cache trust:
+
+```
+Approvals store: <path>/approvals.json
+Cache: trusted
+```
+
+A store that a forge-capable run has touched since shows `Cache: TAINTED`
+together with the `since`, `runId`, pid liveness and a one-line note that a
+trusted run will discard those entries. The third line is the count of
+remembered approvals, followed by one block per entry:
+
+```
+<approvalId>  <stage>  <origin>  <approvedAt>  <approvedBy>  naxCommit <naxCommit>
+          root <root>
+          $ <first command line>
+            <second command line>
+```
+
+Commands print raw. There is no expiry: entries are removed via `nax approvals rm`.
+
+---
+
 ### `nax agents`
 
 List installed coding agents and which models they support.

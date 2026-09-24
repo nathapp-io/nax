@@ -59,6 +59,7 @@ import {
   promptForConfirmation,
   promptsCommand,
   promptsInitCommand,
+  registerApprovalsCommand,
   resolveRunProfileOverride,
   rulesExportCommand,
   rulesLintCommand,
@@ -1228,6 +1229,9 @@ authCmd
   .action(async (provider: string) => {
     process.exit(await authRmCommand(provider));
   });
+
+// ── approvals ─────────────────────────────────────────
+registerApprovalsCommand(program);
 
 const mcpCmd = program.command("mcp").description("Manage MCP servers the native agent may call tools on");
 
