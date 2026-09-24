@@ -3,7 +3,7 @@
   "feature": "turn-cancellation",
   "branchName": "feat/turn-cancellation",
   "createdAt": "2026-09-24T00:00:00.000Z",
-  "updatedAt": "2026-09-24T09:18:12.998Z",
+  "updatedAt": "2026-09-24T09:55:27.893Z",
   "userStories": [
     {
       "id": "US-001",
@@ -105,8 +105,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -178,7 +178,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Shared prompt deduplication now has independently cancellable waiters and durable audit constraints."
+        "reasoning": "Shared prompt deduplication now has independently cancellable waiters and durable audit constraints.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/interaction/ask-link.ts",
@@ -200,6 +203,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "dd0477a1ddc31f2357f8db6e1693a9fcb7d765f8",
       "outOfScope": [
         "the link-level `abortSignal` still settles `unavailable`; the dedupe key is unchanged."
       ]
