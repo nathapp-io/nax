@@ -69,15 +69,19 @@ export interface AskResolver {
  * exception out of the resolver into a TOOL ERROR surfaced to the model, not a
  * denial, which would lose the `denied:ask` ledger row and hand the agent
  * something it may retry around.
+ *
+ * US-003: forwards the same `control` object to every link so a turn-cancel
+ * signal reaches whichever link would have answered, not just the first one
+ * that asks.
  */
 export function chainAskLinks(links: readonly AskLink[]): AskResolver {
   return {
-    async resolve(req: AskRequest): Promise<AskVerdict> {
+    async resolve(req: AskRequest, control?: AskControl): Promise<AskVerdict> {
       const started = Date.now();
       for (const link of links) {
         let outcome: AskLinkOutcome;
         try {
-          outcome = await link.resolve(req);
+          outcome = await link.resolve(req, control);
         } catch {
           continue;
         }

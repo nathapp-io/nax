@@ -10,6 +10,12 @@ export const ASK_NO_CHANNEL_REASON =
 export const ASK_TIMEOUT_REASON =
   "matched an ask rule requiring human approval; no answer arrived before the approval timeout, so the call is refused";
 export const ASK_DENIED_REASON = "matched an ask rule requiring human approval; the operator denied it";
+/**
+ * US-003: the orchestrating turn was cancelled before anyone answered (or
+ * between the resolver returning allow and the tool actually running). The
+ * tool never executed; the message stays short so it reads in a tool error.
+ */
+export const ASK_CANCELLED_REASON = "Not run: the turn was cancelled before anyone answered.";
 
 /** Kept for compatibility with existing callers and tests. */
 export const ASK_UNAVAILABLE_REASON = ASK_NO_CHANNEL_REASON;

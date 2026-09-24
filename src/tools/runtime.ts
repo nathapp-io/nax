@@ -13,9 +13,11 @@ import { randomUUID } from "node:crypto";
 import { type CommandShadow, openShadowTap } from "@/command-safety";
 import { getSafeLogger } from "@/logger";
 import {
+  ASK_CANCELLED_REASON,
   ASK_DENIED_REASON,
   ASK_NO_CHANNEL_REASON,
   ASK_TIMEOUT_REASON,
+  type AskControl,
   type AskResolver,
   type AskVerdict,
   headlessAskResolver,
@@ -161,6 +163,7 @@ function askSummary(tool: string, scope: ToolScope, input: Record<string, unknow
 function askDenyReason(decidedBy: AskVerdict["decidedBy"]): string {
   if (decidedBy === "timeout") return ASK_TIMEOUT_REASON;
   if (decidedBy === "human") return ASK_DENIED_REASON;
+  if (decidedBy === "cancelled") return ASK_CANCELLED_REASON;
   return ASK_NO_CHANNEL_REASON;
 }
 
@@ -469,20 +472,31 @@ export function createCodingToolRuntime(opts: {
       }
 
       if (!verdict.allowed && verdict.outcome === "ask") {
+        // US-003: build the AskControl from the per-call context. The turn's
+        // abort signal is forwarded verbatim, and onWaiting is wired so the
+        // resolver can tell the turn loop a human prompt is pending.
+        const callSignal = context?.signal ?? signal;
+        const askControl: AskControl = {
+          ...(callSignal !== undefined ? { signal: callSignal } : {}),
+          ...(context?.onWaiting !== undefined ? { onWaiting: context.onWaiting } : {}),
+        };
         let askVerdict: AskVerdict;
         try {
-          askVerdict = await askResolver.resolve({
-            tool: policyIdentity,
-            stage: opts.pipelineStage ?? "unknown",
-            rule: verdict.rule ?? verdict.reason,
-            summary: askSummary(policyIdentity, tool.scope, input),
-            ...(typeof input[tool.scope.commandField ?? ""] === "string"
-              ? { command: input[tool.scope.commandField as string] as string }
-              : {}),
-            root: opts.policy.root,
-            reason: verdict.reason,
-            ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
-          });
+          askVerdict = await askResolver.resolve(
+            {
+              tool: policyIdentity,
+              stage: opts.pipelineStage ?? "unknown",
+              rule: verdict.rule ?? verdict.reason,
+              summary: askSummary(policyIdentity, tool.scope, input),
+              ...(typeof input[tool.scope.commandField ?? ""] === "string"
+                ? { command: input[tool.scope.commandField as string] as string }
+                : {}),
+              root: opts.policy.root,
+              reason: verdict.reason,
+              ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
+            },
+            askControl,
+          );
         } catch (err) {
           const content = errorMessage(err);
           logCall(policyIdentity, "error", content.length, input, context, false, content);
@@ -494,6 +508,18 @@ export function createCodingToolRuntime(opts: {
           latencyMs: askVerdict.latencyMs,
         };
         if (askVerdict.decision === "allow") {
+          // US-003 AC11: recheck the turn signal AFTER the resolver returned
+          // allow. A resolver that approves after the turn has been cancelled
+          // would otherwise race ahead and execute the tool; we deny instead
+          // with the same cancelled reason, so the agent never sees a tool
+          // result from a turn that has already ended.
+          if (callSignal?.aborted === true) {
+            const reason = `${verdict.reason} -- ${ASK_CANCELLED_REASON}`;
+            logCall(policyIdentity, "denied:ask", reason.length, input, context, false, reason, undefined, {
+              approval,
+            });
+            return { kind: "denied", reason, breach: false };
+          }
           return runTool(tool, input, verdict.resolvedPaths ?? [], approval);
         }
         const reason = `${verdict.reason} -- ${askDenyReason(askVerdict.decidedBy)}`;
