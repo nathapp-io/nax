@@ -409,10 +409,10 @@ An id outside the eight-character hex shape prints `Invalid id: <id>` on stderr
 and exits 1.
 
 **`--all` flow.** `--all` revokes every remembered approval. The store is read
-first:
+first; `<store>` below is the resolved `approvals.json` path.
 
 - A missing store or a present store with no entries prints
-  `No remembered approvals at <path>/approvals.json` on stdout and exits 0;
+  `No remembered approvals at <store>` on stdout and exits 0;
   no prompt is shown and no write happens.
 - An unparseable store prints
   `approvals.json could not be parsed; not rewriting it` on stderr and exits 1;
@@ -432,9 +432,9 @@ The `taint` marker is preserved by every form here. Only a trusted run clears
 it through `clearApprovalsTaint`; `nax approvals rm` never touches it.
 
 **Store failures.** A `FILE_LOCK_TIMEOUT` (another nax run is mid-write)
-prints `a nax run is writing <path>/approvals.json; retry` on stderr and exits
-1. Any other store error prints
-`Failed to update <path>/approvals.json: <message>` on stderr and exits 1.
+prints `a nax run is writing <store>; retry` on stderr and exits 1.
+Any other store error prints `Failed to update <store>: <message>` on stderr
+and exits 1.
 
 ---
 

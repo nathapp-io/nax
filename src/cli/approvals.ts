@@ -235,6 +235,59 @@ export interface ApprovalsRmOptions {
 }
 
 /**
+ * Resolve the store path and, when `opts.all`, run the `--all` precheck.
+ * Four outcomes:
+ *   - `kind: "ok"`           → store is readable; carry on to the
+ *                              confirmation gate and the eventual
+ *                              `removeApprovals` call.
+ *   - `kind: "empty"`        → the precheck wrote the spec'd
+ *                              `No remembered approvals at <path>` line on
+ *                              stdout; the caller exits with `0`.
+ *   - `kind: "unparseable"`  → the precheck wrote the spec'd
+ *                              `approvals.json could not be parsed; not
+ *                              rewriting it` line on stderr; the caller
+ *                              exits with `1`.
+ *   - `kind: "io-error"`     → a disk read during resolution or the
+ *                              precheck rejected; the caller emits the
+ *                              spec'd `Failed to update <path>: <message>`
+ *                              line and exits with `1`.
+ *
+ * Both `resolveApprovalsFile` and `readApprovalsFileDetailed` touch disk —
+ * the read calls `Bun.file().text()`, which can reject with EACCES — so a
+ * single try/catch wraps them. Without this, a precheck rejection escapes
+ * `approvalsRmCommand` and surfaces through `rmAction`'s outer catch as
+ * `error: <message>`, a different shape than the spec'd CLI failure line.
+ */
+type PrecheckResult =
+  | { readonly kind: "ok"; readonly path: string }
+  | { readonly kind: "empty"; readonly path: string }
+  | { readonly kind: "unparseable"; readonly path: string }
+  | { readonly kind: "io-error"; readonly path: string | undefined; readonly message: string };
+
+async function runPrecheck(opts: ApprovalsRmOptions, deps: typeof _approvalsCliDeps): Promise<PrecheckResult> {
+  try {
+    const path = await resolveApprovalsFile(opts.workdir);
+    if (opts.all) {
+      const read = await deps.readApprovalsFileDetailed(path);
+      if (read.state === "missing" || (read.state === "ok" && read.file.entries.length === 0)) {
+        deps.log(missingNotice(path));
+        return { kind: "empty", path };
+      }
+      if (read.state === "unparseable") {
+        deps.logErr("approvals.json could not be parsed; not rewriting it");
+        return { kind: "unparseable", path };
+      }
+    }
+    return { kind: "ok", path };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // `resolveApprovalsFile` may have failed before `path` was assigned;
+    // report `undefined` and let the caller fall back to `opts.workdir`.
+    return { kind: "io-error", path: undefined, message };
+  }
+}
+
+/**
  * `nax approvals rm` — atomic revocation by full entry id, by stage, or
  * guarded full revocation under `--all` (US-005 + US-006).
  *
@@ -253,10 +306,14 @@ export interface ApprovalsRmOptions {
  *     produces a `refuse: "Unknown id(s): <absent ids>"`. The CLI writes that
  *     reason to stderr, exit 1; the all-or-nothing guarantee is the store
  *     layer's refusal, which writes nothing.
- *   - `--all` → a precheck reads the store; a missing file or a present file
- *     with no entries prints `No remembered approvals at <path>` on stdout,
- *     exit 0, no `removeApprovals` call and no write. The confirmation gate
- *     then runs unless `--yes` was given: a missing TTY refuses without
+ *   - `--all` → a precheck reads the store before the confirmation gate;
+ *     a missing file or a present file with no entries prints
+ *     `No remembered approvals at <path>` on stdout, exit 0, no
+ *     `removeApprovals` call and no write. An unparseable file prints
+ *     `approvals.json could not be parsed; not rewriting it` on stderr and
+ *     exits 1, file untouched — the prompt would otherwise ask the
+ *     operator to confirm a doomed operation. The confirmation gate then
+ *     runs unless `--yes` was given: a missing TTY refuses without
  *     prompting (`Aborted` on stderr, exit 1); a TTY consults `deps.confirm`
  *     once — a `false` answer is `Aborted` / exit 1, a `true` answer revokes
  *     every entry via `removeApprovals`.
@@ -295,22 +352,18 @@ export async function approvalsRmCommand(
     }
   }
 
-  const path = await resolveApprovalsFile(opts.workdir);
-
-  // `--all` precheck: a missing or empty store short-circuits before the
-  // confirmation prompt runs. Operators need to know there is nothing to
-  // revoke without being asked to confirm a no-op — the prompt is for the
-  // destructive case. The precheck goes through the same read helper the
-  // store layer reads through, so the "empty" case is `state: "ok"` with
-  // `entries.length === 0` rather than `state: "missing"` (a present file
-  // holding `{ "entries": [] }` is observed here).
-  if (opts.all) {
-    const read = await deps.readApprovalsFileDetailed(path);
-    if (read.state === "missing" || (read.state === "ok" && read.file.entries.length === 0)) {
-      deps.log(missingNotice(path));
-      return 0;
-    }
+  // Resolve the store path and, for `--all`, run the precheck. The helper
+  // handles its own output and I/O errors so the caller only has to map
+  // the result kind to an exit code.
+  const precheck = await runPrecheck(opts, deps);
+  if (precheck.kind === "empty") return 0;
+  if (precheck.kind === "unparseable") return 1;
+  if (precheck.kind === "io-error") {
+    const reportedPath = precheck.path ?? opts.workdir;
+    deps.logErr(`Failed to update ${reportedPath}: ${precheck.message}`);
+    return 1;
   }
+  const path = precheck.path;
 
   // `--all` confirmation gate. `--yes` opts out unconditionally. A missing
   // TTY without `--yes` refuses without prompting: the prompt would either
