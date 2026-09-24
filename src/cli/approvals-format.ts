@@ -52,13 +52,25 @@ export function formatTrustLine(taint: ApprovalsTaint | undefined, isAlive: (pid
  *             <...>                   ← 12-space indent
  *
  * Commands print RAW: secrets in the command line are not redacted (D20). A
- * missing or non-string `approvedAt` reads as the empty string so the line
- * shape is preserved.
+ * missing or non-string field reads as the empty string so the line shape is
+ * preserved AND so the printed value agrees with the preimage `approvalId`
+ * uses (it coerces non-strings to ""; otherwise a header field and its
+ * derived id disagree on what the entry's effective field is).
+ *
+ * `isApprovalEntry` only requires `stage`/`command` be strings (US-001),
+ * which means a file written with other fields missing or non-string still
+ * reads as `state: "ok"` — this hardening keeps the printed shape stable.
  */
 export function formatEntryBlock(entry: ApprovalEntry): readonly string[] {
-  const header = `${approvalId(entry)}  ${entry.stage}  ${entry.origin}  ${entry.approvedAt ?? ""}  ${entry.approvedBy}  naxCommit ${entry.naxCommit}`;
-  const rootLine = `${ENTRY_INDENT}root ${entry.root}`;
-  const lines = entry.command.split("\n");
+  const str = (value: unknown): string => (typeof value === "string" ? value : "");
+  const header = `${approvalId(entry)}  ${str(entry.stage)}  ${str(entry.origin)}  ${str(entry.approvedAt)}  ${str(entry.approvedBy)}  naxCommit ${str(entry.naxCommit)}`;
+  const rootLine = `${ENTRY_INDENT}root ${str(entry.root)}`;
+  // A CRLF command (`"a\r\nb"`) would otherwise leave a literal `\r` on the
+  // first line that a real terminal interprets as "overwrite line start" and
+  // corrupts the displayed command. Splitting on `\r?\n` strips the carriage
+  // return without changing a clean-LF command. The command itself is still
+  // printed raw — only the line separators are normalised.
+  const lines = entry.command.split(/\r?\n/);
   const commandLines = lines.map((line, index) =>
     index === 0 ? `${ENTRY_INDENT}$ ${line}` : `${COMMAND_CONTINUATION_INDENT}${line}`,
   );

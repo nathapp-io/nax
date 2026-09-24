@@ -85,29 +85,40 @@ export interface ApprovalsListOptions {
  * The list action. Writes the trust line, count and one block per entry —
  * separated by a blank line for readability — through `deps.log` so a test
  * can capture stdout without touching the real console.
+ *
+ * Any I/O failure during resolution or read surfaces as a stderr line and an
+ * exit code of 1 — a bare Commander async action that rejects escapes the
+ * parseAsync promise and never reaches `deps.exit`, so both seams need a
+ * try/catch.
  */
 export async function approvalsListCommand(
   opts: ApprovalsListOptions,
   deps: typeof _approvalsCliDeps = _approvalsCliDeps,
 ): Promise<number> {
-  const path = await resolveApprovalsFile(opts.workdir);
-  const read = await deps.readApprovalsFileDetailed(path);
-  const entries = read.file.entries;
-  const taint = read.file.taint;
+  try {
+    const path = await resolveApprovalsFile(opts.workdir);
+    const read = await deps.readApprovalsFileDetailed(path);
+    const entries = read.file.entries;
+    const taint = read.file.taint;
 
-  deps.log(`Approvals store: ${path}`);
-  deps.log(formatTrustLine(taint, deps.isProcessAlive));
-  deps.log(`${entries.length} remembered approvals`);
-  deps.log("");
-
-  for (const entry of entries) {
-    for (const line of formatEntryBlock(entry)) {
-      deps.log(line);
-    }
+    deps.log(`Approvals store: ${path}`);
+    deps.log(formatTrustLine(taint, deps.isProcessAlive));
+    deps.log(`${entries.length} remembered approvals`);
     deps.log("");
-  }
 
-  return 0;
+    for (const entry of entries) {
+      for (const line of formatEntryBlock(entry)) {
+        deps.log(line);
+      }
+      deps.log("");
+    }
+
+    return 0;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    deps.logErr(`error: failed to read approvals store: ${message}`);
+    return 1;
+  }
 }
 
 /**
@@ -117,8 +128,19 @@ export async function approvalsListCommand(
 export function registerApprovalsCommand(program: Command, deps: typeof _approvalsCliDeps = _approvalsCliDeps): void {
   const group = program.command("approvals").description("Manage remembered approvals");
   const listAction = async (options: { dir: string }): Promise<void> => {
-    const exitCode = await approvalsListCommand({ workdir: options.dir, json: false }, deps);
-    deps.exit(exitCode);
+    try {
+      const exitCode = await approvalsListCommand({ workdir: options.dir, json: false }, deps);
+      deps.exit(exitCode);
+    } catch (err) {
+      // Defence-in-depth: `approvealsListCommand` already catches and returns
+      // 1 for I/O errors, but a throw from `deps.log`/`deps.exit` itself would
+      // otherwise reject the action promise and surface as an unhandled
+      // rejection from `program.parseAsync`, the same BUG-15 shape we just
+      // closed.
+      const message = err instanceof Error ? err.message : String(err);
+      deps.logErr(`error: ${message}`);
+      deps.exit(1);
+    }
   };
   group
     .command("list")
