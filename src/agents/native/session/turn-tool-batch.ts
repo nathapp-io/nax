@@ -219,7 +219,20 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
               // is unreachable from native tool dispatch, leaving the
               // handler's onWaiting-forwarding plumbing inert in the real
               // native path. Absent when no watcher is in scope.
-              ...(deps.onWaiting !== undefined ? { onWaiting: deps.onWaiting } : {}),
+              //
+              // US-004 AC1: the forwarded onWaiting ALSO emits awaiting_human
+              // activity through deps.onActivity — a bare forwarding of
+              // deps.onWaiting never reaches the activity hook, so the
+              // watchdog would still cancel a turn that is legitimately
+              // waiting on a human approval prompt.
+              ...(deps.onWaiting !== undefined || deps.onActivity !== undefined
+                ? {
+                    onWaiting: () => {
+                      deps.onWaiting?.();
+                      deps.onActivity?.({ kind: "awaiting_human" });
+                    },
+                  }
+                : {}),
             }
           : { kind, name: call.name, input },
       );

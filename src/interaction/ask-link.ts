@@ -112,6 +112,13 @@ export function createHumanAskLink(opts: {
     aborted: boolean;
     signal?: AbortSignal;
     onAbort?: () => void;
+    /**
+     * US-004: this waiter's per-call keepalive notifier. The session's
+     * keepalive timer fires it for every live waiter once each
+     * ASK_KEEPALIVE_MS so the turn-loop watchdog is told the native turn
+     * is still legitimately waiting on a human approval prompt.
+     */
+    onWaiting?: () => void;
   }
 
   function makeWaiter(): Waiter {
@@ -138,9 +145,17 @@ export function createHumanAskLink(opts: {
     settled: boolean;
     /** Whether `chain.cancel(id)` has been called for this session. */
     cancelledOnChain: boolean;
+    /**
+     * US-004: the cancellable keepalive handle (`setTimeout`, never
+     * `setInterval`). Re-armed by `runKeepalive` each time it fires, and
+     * cleared in runSession's `finally` so a settled prompt never keepsalives
+     * again. `undefined` means no keepalive has been armed yet.
+     */
+    keepaliveTimer?: unknown;
   }
 
-  function attachWaiter(session: Session, signal: AbortSignal | undefined): Waiter {
+  function attachWaiter(session: Session, control: AskControl | undefined): Waiter {
+    const signal = control?.signal;
     const waiter = makeWaiter();
     // AC10 (deferred): recheck after the session is live. A signal that
     // aborted between resolve() being called and the queue microtask firing
@@ -182,6 +197,7 @@ export function createHumanAskLink(opts: {
     }
     waiter.signal = signal;
     waiter.onAbort = onAbort;
+    waiter.onWaiting = control?.onWaiting;
     session.waiters.add(waiter);
     return waiter;
   }
@@ -207,6 +223,40 @@ export function createHumanAskLink(opts: {
         stage: req.stage,
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  /**
+   * US-004: fire `onWaiting` for every live waiter on this session, then
+   * re-arm the timer for another ASK_KEEPALIVE_MS. The timer is a
+   * cancellable `setTimeout` (never `setInterval`), and a settled session
+   * has its timer cleared in runSession's `finally` so a resolved prompt
+   * never keepsalives again. Each waiter's own errors are swallowed
+   * independently — a broken `onWaiting` on one waiter must not skip the
+   * others, and must not stop the re-arm.
+   */
+  function runKeepalive(session: Session): void {
+    if (session.settled) return;
+    for (const w of [...session.waiters]) {
+      if (w.aborted) continue;
+      if (w.onWaiting === undefined) continue;
+      try {
+        w.onWaiting();
+      } catch (err) {
+        getSafeLogger()?.warn("permissions", "[ask] keepalive onWaiting threw; ignoring", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    // Re-arm — unless the session settled while the loop above was running.
+    if (session.settled) return;
+    session.keepaliveTimer = _askLinkDeps.setTimeout(() => runKeepalive(session), _askLinkDeps.ASK_KEEPALIVE_MS);
+  }
+
+  function clearKeepalive(session: Session): void {
+    if (session.keepaliveTimer !== undefined) {
+      _askLinkDeps.clearTimeout(session.keepaliveTimer);
+      session.keepaliveTimer = undefined;
     }
   }
 
@@ -326,6 +376,10 @@ export function createHumanAskLink(opts: {
       }
     } finally {
       session.settled = true;
+      // US-004: a settled prompt must never keepalive again. Clear BEFORE
+      // the rest of the teardown so an in-flight timer that fires between
+      // the catch and the rest of finally cannot enqueue a further beat.
+      clearKeepalive(session);
       // Clear `activeId` so `pending()` no longer reports a stale prompt
       // id (adversarial finding: activeId is never cleared after a
       // prompt settles). `activeId` may point at THIS session OR an
@@ -365,7 +419,7 @@ export function createHumanAskLink(opts: {
     if (existing !== undefined && !existing.settled) {
       // Joining an on-screen prompt: notify the joiner's watchdog.
       notifyWaiting(control, req);
-      return attachWaiter(existing, control?.signal).done;
+      return attachWaiter(existing, control).done;
     }
     // Schedule a new session on the serial queue. The session lives in
     // `liveSessions` until it settles.
@@ -378,6 +432,13 @@ export function createHumanAskLink(opts: {
     liveSessions.set(key, session);
     // First caller for this key: notify its watchdog before scheduling.
     notifyWaiting(control, req);
+    // US-004: arm the per-session keepalive timer now, before the queue.
+    // The first onWaiting fired synchronously above; the timer fires for
+    // every live waiter once each ASK_KEEPALIVE_MS thereafter, re-arming
+    // itself each time. `clearKeepalive` in runSession's `finally` stops
+    // it the moment the prompt settles (allow / deny / timeout / throw /
+    // chain.cancel).
+    session.keepaliveTimer = _askLinkDeps.setTimeout(() => runKeepalive(session), _askLinkDeps.ASK_KEEPALIVE_MS);
     // Chain onto the queue and ALWAYS clear it, so a throw cannot leave
     // the mutex held and deadlock every later ask in the run.
     queue = queue
@@ -386,7 +447,7 @@ export function createHumanAskLink(opts: {
         () => undefined,
         () => undefined,
       );
-    return attachWaiter(session, control?.signal).done;
+    return attachWaiter(session, control).done;
   }
 
   /**

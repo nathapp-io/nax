@@ -361,6 +361,33 @@ export function attachAgentIdleWatchdog(
         }
         break;
       }
+      case "agent.awaiting_human": {
+        // US-004: a human approval prompt is pending. The native turn
+        // emits this beat for the whole time the prompt is on screen, so
+        // the watchdog must treat it as semantic progress on BOTH clocks
+        // and unconditionally clear an open grace window — without
+        // consulting `activityKinds`, which is a per-deployment filter and
+        // does not (and should not) list `awaiting_human`. The kind is
+        // added unconditionally to the secondary timer because a human
+        // approval is exactly the "waiting, not spinning" the
+        // tool-call-only cap exists to accommodate.
+        //
+        // The activity clocks are pushed forward by the LONGER of the two
+        // timeouts so a beat at the threshold edge is treated as
+        // still-active for the full duration of the next timeout window —
+        // a human prompt is legitimately waiting, and the next tick within
+        // that window must not declare the call idle. Without the offset,
+        // the next tick that lands exactly `idleTimeoutMs` past the beat
+        // would cancel even though the prompt is still pending.
+        const state = activeStates.get(event.callId);
+        if (state) {
+          const offset = Math.max(idleTimeoutMs, toolCallOnlyTimeoutMs);
+          const observedAt = event.timestamp + offset;
+          state.lastNonToolCallActivityAt = observedAt;
+          resetActivity(state, observedAt, { clearGrace: true });
+        }
+        break;
+      }
       case "agent.process_update":
         // Do NOT reset lastActivityAt for process_update (AC4)
         break;
