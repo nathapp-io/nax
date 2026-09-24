@@ -87,13 +87,21 @@ describe("buildSandboxPolicy", () => {
     }
   });
 
-  test("#2211: a worktree writes only its own admin dir and the shared objects/refs/logs/lfs, never the common dir", () => {
+  test("#2211: a worktree writes only its own admin dir and the shared objects/refs/logs/reftable/lfs, never the common dir", () => {
     const common = join(base, "main", ".git");
     const gitDir = join(common, "worktrees", "US-001");
     const policy = buildSandboxPolicy(input({ git: { kind: "worktree", gitDir, commonDir: common } }));
     const gitRoots = policy.writeRoots.filter((p) => p === common || p.startsWith(`${common}/`));
     expect(gitRoots.sort()).toEqual(
-      [gitDir, join(common, "objects"), join(common, "refs"), join(common, "logs"), join(common, "lfs")].sort(),
+      [
+        gitDir,
+        join(common, "objects"),
+        join(common, "refs"),
+        join(common, "logs"),
+        // A reftable repo (extensions.refStorage=reftable) keeps every shared ref here.
+        join(common, "reftable"),
+        join(common, "lfs"),
+      ].sort(),
     );
     // So the top-level redirect files and submodule git dirs fall outside every write root.
     for (const outside of [join(common, "commondir"), join(common, "modules"), join(common, "worktrees", "US-002")]) {

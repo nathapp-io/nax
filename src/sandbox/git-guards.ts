@@ -35,7 +35,8 @@ export const WORKTREE_CONFIG_FILE = "config.worktree";
 
 /**
  * What a linked worktree's git writes in the SHARED common dir (#2211): loose
- * and packed objects, refs and their reflogs, and git-lfs's object store.
+ * and packed objects, refs and their reflogs (`reftable/` holds both when
+ * `extensions.refStorage=reftable`, git >= 2.45), and git-lfs's object store.
  * Only these are write roots, never the common dir itself, so the redirecting
  * files at its top level (`commondir`, `config`, `hooks/`) and every sibling
  * worktree's admin dir lie outside the sandbox's writes. `modules/` is left
@@ -44,9 +45,10 @@ export const WORKTREE_CONFIG_FILE = "config.worktree";
  * Cost: a lock file at the common dir's top level cannot be created, so a
  * sandboxed command cannot rewrite `packed-refs` (deleting a packed branch or
  * tag) or take the `gc --auto` lock; commits, loose ref updates and fetches
- * into loose objects are unaffected.
+ * into loose objects are unaffected. (A reftable repo locks inside
+ * `reftable/`, so it keeps ref deletion too.)
  */
-export const WORKTREE_COMMON_WRITE_DIRS: readonly string[] = ["objects", "refs", "logs", "lfs"];
+export const WORKTREE_COMMON_WRITE_DIRS: readonly string[] = ["objects", "refs", "logs", "reftable", "lfs"];
 const DOT_GIT = ".git";
 
 export const _gitGuardDeps = {
