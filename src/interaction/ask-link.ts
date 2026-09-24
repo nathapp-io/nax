@@ -85,11 +85,18 @@ export function createHumanAskLink(opts: {
    * settles independently when that signal aborts -- that is what makes
    * AC4/AC6/AC7/AC8 possible: same-key resolve calls share the on-screen
    * prompt, but a signal abort cancels only that one waiter.
+   *
+   * `signal` and `onAbort` are kept on the waiter so a normal settlement
+   * (adversarial finding) can detach the listener -- leaving it
+   * attached would retain waiter/session state until the signal
+   * eventually aborts.
    */
   interface Waiter {
     settle(outcome: AskLinkOutcome): void;
     done: Promise<AskLinkOutcome>;
     aborted: boolean;
+    signal?: AbortSignal;
+    onAbort?: () => void;
   }
 
   function makeWaiter(): Waiter {
@@ -158,8 +165,34 @@ export function createHumanAskLink(opts: {
       waiter.settle(deny("unavailable"));
       return waiter;
     }
+    waiter.signal = signal;
+    waiter.onAbort = onAbort;
     session.waiters.add(waiter);
     return waiter;
+  }
+
+  /**
+   * Notify the caller that its ask is waiting on a human prompt.
+   *
+   * Called once per `resolve` -- right after the waiter is attached to
+   * the session, so the FIRST caller's onWaiting fires before the
+   * prompt is on screen (advisory only -- the prompt becomes pending
+   * inside runSession's chain.prompt). For a same-key joiner, the
+   * prompt may already be on screen; onWaiting still fires so the
+   * joiner's turn-loop watchdog is also notified. Errors are swallowed:
+   * onWaiting is a notification, not a gate.
+   */
+  function notifyWaiting(control: AskControl | undefined, req: AskRequest): void {
+    if (control?.onWaiting === undefined) return;
+    try {
+      control.onWaiting();
+    } catch (err) {
+      getSafeLogger()?.warn("permissions", "[ask] onWaiting threw; ignoring", {
+        tool: req.tool,
+        stage: req.stage,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -173,6 +206,9 @@ export function createHumanAskLink(opts: {
       // are ever prompted.
       for (const w of [...session.waiters]) {
         w.settle(deny("unavailable"));
+        if (w.signal !== undefined && w.onAbort !== undefined) {
+          w.signal.removeEventListener("abort", w.onAbort);
+        }
         session.waiters.delete(w);
       }
       session.settled = true;
@@ -187,6 +223,8 @@ export function createHumanAskLink(opts: {
       return;
     }
     activeId = session.id;
+    // onWaiting is fired in resolve() before the session is queued, so
+    // each caller's watchdog is notified exactly once.
     try {
       const response = await chain.prompt({
         id: session.id,
@@ -230,18 +268,18 @@ export function createHumanAskLink(opts: {
           if (action === "allow-remember" && opts.onRemember) {
             // Remembering is AUXILIARY: the human already approved this
             // exact call, so a failed persistence (lock timeout, disk)
-            // must not revoke that approval. Isolated from the prompt's
-            // outcome, so any throw here is ignored.
+            // must not revoke that approval. AWAITED so the approval is
+            // recorded before the tool runs (adversarial finding:
+            // fire-and-forget let the resolver return allow before the
+            // approval was persisted, racing the next same-key call).
             try {
-              opts.onRemember(req).catch((err) => {
-                getSafeLogger()?.warn("permissions", "[ask] approved call not remembered; allowing anyway", {
-                  tool: req.tool,
-                  stage: req.stage,
-                  error: err instanceof Error ? err.message : String(err),
-                });
+              await opts.onRemember(req);
+            } catch (err) {
+              getSafeLogger()?.warn("permissions", "[ask] approved call not remembered; allowing anyway", {
+                tool: req.tool,
+                stage: req.stage,
+                error: err instanceof Error ? err.message : String(err),
               });
-            } catch {
-              // Same: a sync throw must not revoke the approval.
             }
           }
           outcome = { decision: "allow", decidedBy: "human" };
@@ -254,16 +292,31 @@ export function createHumanAskLink(opts: {
       // before or after settle -- both are idempotent on `aborted`).
       for (const w of [...session.waiters]) {
         w.settle(outcome);
+        // Detach the per-waiter abort listener so the caller's signal
+        // does not retain a reference to this waiter/session forever
+        // (adversarial finding).
+        if (w.signal !== undefined && w.onAbort !== undefined) {
+          w.signal.removeEventListener("abort", w.onAbort);
+        }
         session.waiters.delete(w);
       }
     } catch {
       // Chain threw: every waiter settles unavailable.
       for (const w of [...session.waiters]) {
         w.settle(deny("unavailable"));
+        if (w.signal !== undefined && w.onAbort !== undefined) {
+          w.signal.removeEventListener("abort", w.onAbort);
+        }
         session.waiters.delete(w);
       }
     } finally {
       session.settled = true;
+      // Clear `activeId` so `pending()` no longer reports a stale prompt
+      // id (adversarial finding: activeId is never cleared after a
+      // prompt settles). `activeId` may point at THIS session OR an
+      // earlier one that ran through before the queue caught up; clear
+      // in both cases by re-reading the queue's tail.
+      if (activeId === session.id) activeId = undefined;
       // Release the liveSessions slot so the next same-key resolve can
       // build a fresh prompt. The entry stays out of the map (no
       // re-attachment to a settled session is possible), and we drop the
@@ -295,6 +348,8 @@ export function createHumanAskLink(opts: {
     const key = `${req.stage}\u0000${command}`;
     const existing = liveSessions.get(key);
     if (existing !== undefined && !existing.settled) {
+      // Joining an on-screen prompt: notify the joiner's watchdog.
+      notifyWaiting(control, req);
       return attachWaiter(existing, control?.signal).done;
     }
     // Schedule a new session on the serial queue. The session lives in
@@ -306,6 +361,8 @@ export function createHumanAskLink(opts: {
       cancelledOnChain: false,
     };
     liveSessions.set(key, session);
+    // First caller for this key: notify its watchdog before scheduling.
+    notifyWaiting(control, req);
     // Chain onto the queue and ALWAYS clear it, so a throw cannot leave
     // the mutex held and deadlock every later ask in the run.
     queue = queue
@@ -331,6 +388,9 @@ export function createHumanAskLink(opts: {
       if (session.settled) continue;
       for (const w of [...session.waiters]) {
         w.settle(deny("unavailable"));
+        if (w.signal !== undefined && w.onAbort !== undefined) {
+          w.signal.removeEventListener("abort", w.onAbort);
+        }
         session.waiters.delete(w);
       }
       session.settled = true;
