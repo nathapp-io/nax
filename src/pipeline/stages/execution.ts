@@ -33,6 +33,7 @@ import {
 } from "@/interaction";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
+import { prepareApprovalsStore } from "@/permissions";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
 import { storyPackageDir } from "@/utils/path-frame";
 import { resolveScopeFiles } from "../scope-files";
@@ -112,7 +113,7 @@ export const executionStage: PipelineStage = {
     // P2 ask resolver + P5 command shadow, built per story by the shared helper
     // every Bash-dispatching call site uses (#2201) and disposed in the finally
     // below. Fail-closed: the chain appends its own terminal deny.
-    const dispatchAsk = buildDispatchAskWiring(
+    const dispatchAsk = await buildDispatchAskWiring(
       {
         config: ctx.config,
         // `ctx.interaction` is optional on PipelineContext; the helper accepts
@@ -121,6 +122,7 @@ export const executionStage: PipelineStage = {
         outputDir: ctx.runtime.outputDir,
         runId: ctx.runtime.runId,
         repoRoot: ctx.workdir,
+        projectRoot: ctx.projectDir,
         featureName: ctx.prd.feature,
         storyId: ctx.story.id,
         abortSignal: ctx.abortSignal,
@@ -277,4 +279,5 @@ export const _executionDeps = {
   resolveScopeFiles,
   createHumanAskLink,
   loadConfigForPackage,
+  prepareApprovalsStore,
 };

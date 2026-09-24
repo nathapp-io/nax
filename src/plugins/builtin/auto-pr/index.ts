@@ -21,12 +21,14 @@ import {
   openPr as _openDraft,
 } from "@/forge";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
+import { gitSpawnEnv } from "@/utils/git-env";
 import { buildBody, buildTitle, type PrBodyContext } from "./pr-body";
 import type { AutoPrConfig, AutoPrDeps } from "./types";
 
 const PLUGIN_NAME = "nax-auto-pr";
 const PLUGIN_VERSION = "0.1.0";
 
+// nax-git-env-allow: spawned by defaultRun (below), which hardens every command
 const GIT_REMOTE_CMD: readonly string[] = ["git", "remote", "get-url", "origin"] as const;
 
 /** Default wall-clock cap for any one subprocess (BUG-8). */
@@ -43,7 +45,9 @@ export async function defaultRun(
   cmd: string[],
   opts: { cwd: string; timeoutMs?: number },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(cmd, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe" });
+  // Hardened for every command: `git push` directly, and gh / glab run git
+  // underneath; the GIT_CONFIG_* entries are inert to anything else.
+  const proc = Bun.spawn(cmd, { cwd: opts.cwd, env: gitSpawnEnv(), stdout: "pipe", stderr: "pipe" });
   const timeoutMs = opts.timeoutMs ?? DEFAULT_SUBPROCESS_TIMEOUT_MS;
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -212,6 +216,7 @@ const autoPrAction: IPostRunAction = {
         return { success: false, message: "Remote host is not GitHub or GitLab" };
       }
 
+      // nax-git-env-allow: _autoPrDeps.run is defaultRun, which hardens every command
       const pushResult = await _autoPrDeps.run(["git", "push", "-u", "origin", context.branch], {
         cwd: context.workdir,
       });

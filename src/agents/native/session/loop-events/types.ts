@@ -38,17 +38,21 @@ export interface BeforeToolPayload {
  * - `allow` optionally rewrites the tool's input; later handlers see the
  *   rewrite, and the loop records it in the transcript and invokes the tool
  *   with it.
- * - `nudge` prefixes the eventual result with the handler's text.
+ * - `nudge` still invokes the tool, and prefixes its result with the handler's
+ *   text. `input` carries any `allow` rewrite accumulated earlier in the chain,
+ *   so a nudge never drops a correction — the null-optional strip ahead of the
+ *   spin breaker is the built-in pair (nax#2200).
  * - `block` answers without invoking the tool. `input` optionally carries the
- *   corrected input the transcript should record, which is how the
- *   invalid-call repair persists the exemplar it refuses to execute.
+ *   input the transcript should record instead, which is how the invalid-call
+ *   repair keeps the rejected value out of history (nax#2047) — recording the
+ *   model's call minus that property, never a fabricated one (nax#2200).
  * - `terminate` answers every outstanding call in the current batch — the spin
  *   breaker's stop is a batch-level outcome, not a per-call one, and a batch
  *   left with an unanswered `tool_call` is rejected by strict providers.
  */
 export type BeforeToolOutcome =
   | { kind: "allow"; input?: Record<string, unknown> }
-  | { kind: "nudge"; text: string }
+  | { kind: "nudge"; text: string; input?: Record<string, unknown> }
   | { kind: "block"; content: string; isError?: boolean; input?: Record<string, unknown> }
   | { kind: "terminate"; content: string; isError?: boolean };
 

@@ -25,6 +25,7 @@ import { countStories, markStoryPassed, savePRD } from "@/prd";
 import { storySpendUsd } from "@/runtime";
 import { errorMessage } from "@/utils/errors";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
+import { gitSpawnEnv } from "@/utils/git-env";
 import { NAX_OWNED_TOP_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
@@ -304,6 +305,7 @@ async function getDiffText(workdir: string, baseRef: string | undefined): Promis
   try {
     const proc = _completionDeps.spawn(["git", "diff", `${baseRef}..HEAD`], {
       cwd: workdir,
+      env: gitSpawnEnv(),
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -365,6 +367,7 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
       ["git", "diff", "--name-only", `${baseRef}..HEAD`, "--", ...NAX_OWNED_TOP_EXCLUDE_PATHSPECS],
       {
         cwd: workdir,
+        env: gitSpawnEnv(),
         stdout: "pipe",
         stderr: "pipe",
       },

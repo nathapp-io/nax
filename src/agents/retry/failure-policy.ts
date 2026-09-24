@@ -127,6 +127,20 @@ const POLICIES: Readonly<Record<AdapterFailure["outcome"], FailurePolicy>> = Obj
     cooldownScope: "model",
     terminalBackoff: false,
   },
+  /**
+   * The invalid-call budget ended the turn (nax#2200). Same lane as
+   * `fail-spin`: a FRESH session drops the transcript that holds the repeated
+   * call, and the timeout-retry hop carries this failure so the retry prompt
+   * names the rejected tool and property rather than reporting a timeout.
+   * Shares the `timeoutRetryAttempts` counter, as `fail-incomplete` does.
+   */
+  "fail-invalid-tool-call": {
+    sameAgentRetry: "timeout",
+    swap: "after-retry-lane",
+    cooldown: "none",
+    cooldownScope: "model",
+    terminalBackoff: false,
+  },
   "fail-adapter-error": {
     sameAgentRetry: "adapter-error",
     swap: "quality-gated",

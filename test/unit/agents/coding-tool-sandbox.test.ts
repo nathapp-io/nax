@@ -60,6 +60,31 @@ describe("resolveSessionSandbox", () => {
     expect(policy?.writeRoots).toContain(realOrRaw(root));
   });
 
+  test("#2198: every policy carries the git guard files, and the commondir tripwire runs after each command", async () => {
+    const backend = makeFakeSandboxBackend();
+    _sessionSandboxDeps.backendFor = () => backend;
+    _sessionSandboxDeps.probe = async () => ({ available: true });
+    _sessionSandboxDeps.gitLayout = async () => ({ kind: "main", gitDir: `${root}/.git` });
+    const sibling = `${root}/.git/worktrees/US-002/commondir`;
+    _sessionSandboxDeps.gitGuardFiles = async () => [sibling];
+    let tripped = 0;
+    _sessionSandboxDeps.commonDirTripwire = async () => async () => {
+      tripped += 1;
+    };
+    const l = await resolveSessionSandbox({ config: enabled, root, needsLauncher: true });
+    const req = {
+      spec: { kind: "shell", shell: "/bin/sh", command: "true" },
+      root,
+      cwd: root,
+      timeoutMs: 5000,
+      stripEnvVars: [],
+    } as const;
+    await l.run(req);
+    await l.run(req);
+    expect(backend.calls[0]?.policy.denyWrite).toContain(realOrRaw(sibling));
+    expect(tripped).toBe(2);
+  });
+
   test("enabled + unavailable: unavailable launcher and a raw refusal", async () => {
     _sessionSandboxDeps.backendFor = () => makeFakeSandboxBackend();
     _sessionSandboxDeps.probe = async () => ({ available: false, reason: "no bwrap" });

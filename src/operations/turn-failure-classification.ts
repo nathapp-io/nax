@@ -8,8 +8,9 @@
  *   - When the turn result already carries an adapterFailure, return it
  *     unchanged. Existing failures take precedence (AC9).
  *   - When the turn reports a transport fact (`timedOut`, then
- *     `turnIncomplete`), classify from that fact regardless of output. A
- *     truncated turn usually HAS prose, so checking output first hid it.
+ *     `invalidCallBudgetExceeded`, then `turnIncomplete`), classify from that
+ *     fact regardless of output. A truncated turn usually HAS prose, so
+ *     checking output first hid it.
  *   - Otherwise, when the trimmed output has length > 0, return null.
  *   - When output is empty (or whitespace-only) and timedOut is false or
  *     absent, synthesise a retriable `availability / fail-stale` failure with
@@ -20,6 +21,7 @@
  * legacy `!output?.trim()` check in `sendWithFileOutput` (callOp:316).
  */
 
+import type { InvalidToolCallDetail } from "../agents/session-types";
 import type { TurnResult } from "../agents/types";
 import type { AdapterFailure } from "../context/engine";
 import { tryParseLLMJson } from "../utils/llm-json";
@@ -40,6 +42,13 @@ export function classifyEmptyOutputFailure(turn: TurnResult): AdapterFailure | n
       reason: "wall-clock-timeout",
     };
   }
+
+  // nax#2200: the invalid-call budget also leaves the turn incomplete, but it
+  // is not a truncation and never a timeout. Classified ahead of
+  // `turnIncomplete` so the retry prompt names the rejected call instead of
+  // telling the model it ran out of time — the model was never told which
+  // property was wrong, and repeated the call.
+  if (turn.invalidCallBudgetExceeded) return invalidToolCallFailure(turn.invalidToolCall);
 
   if (turn.turnIncomplete) {
     // fail-incomplete, not fail-quality (nax#2054): fail-quality's policy row
@@ -64,6 +73,24 @@ export function classifyEmptyOutputFailure(turn: TurnResult): AdapterFailure | n
     retriable: true,
     message: "[callOp] agent returned no output",
     reason: "empty-output",
+  };
+}
+
+/** `AdapterFailure.message` is documented as at most 500 characters. */
+const MAX_FAILURE_MESSAGE_CHARS = 500;
+
+function invalidToolCallFailure(detail: InvalidToolCallDetail | undefined): AdapterFailure {
+  const what =
+    detail === undefined
+      ? "the same invalid tool call"
+      : `an invalid ${detail.tool} call (property "${detail.property}" expected ${detail.expected}, got ${detail.actual})`;
+  return {
+    category: "quality",
+    outcome: "fail-invalid-tool-call",
+    retriable: true,
+    message: `[callOp] agent turn ended after repeating ${what}`.slice(0, MAX_FAILURE_MESSAGE_CHARS),
+    reason: "invalid-call-budget",
+    ...(detail !== undefined ? { invalidToolCall: detail } : {}),
   };
 }
 

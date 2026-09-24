@@ -51,7 +51,7 @@ export type SameAgentRetryResult =
   | {
       outcome: "timeout-retry";
       timeoutRetryAttempts: number;
-      kind: { kind: "timeout-retry"; attempt: number; tier?: string; model?: string };
+      kind: { kind: "timeout-retry"; attempt: number; tier?: string; model?: string; failure?: AdapterFailure };
       currentRunOptions: AgentRunOptions;
       fallbackRecord: {
         outcome: AdapterFailure["outcome"];
@@ -128,6 +128,8 @@ export function trySameAgentRetry(
           attempt: newAttempts,
           ...(tier !== undefined ? { tier } : {}),
           ...(model !== undefined ? { model } : {}),
+          // The failure that opened this lane, for the retry prompt (nax#2200).
+          ...(result.adapterFailure !== undefined ? { failure: result.adapterFailure } : {}),
         },
         currentRunOptions: resolveTimeoutRetryOptions(
           currentRunOptions,

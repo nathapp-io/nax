@@ -8,6 +8,7 @@
 import { getLogger } from "../logger";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 import { errorMessage } from "../utils/errors";
+import { gitSpawnEnv } from "../utils/git-env";
 
 export interface AutoDetectOptions {
   /** Working directory for git grep */
@@ -137,8 +138,7 @@ export async function autoDetectContextFiles(options: AutoDetectOptions): Promis
   // silently returned []. Repo-wide search + post-filtering below excludes
   // node_modules/.git/.nax instead.
   const grepPattern = keywords.join("|"); // OR pattern
-  const grepCommand = [
-    "git",
+  const grepArgs = [
     "grep",
     "-i", // case-insensitive
     "-l", // files-with-matches
@@ -149,8 +149,9 @@ export async function autoDetectContextFiles(options: AutoDetectOptions): Promis
   ];
 
   try {
-    const proc = Bun.spawn(grepCommand, {
+    const proc = Bun.spawn(["git", ...grepArgs], {
       cwd: workdir,
+      env: gitSpawnEnv(),
       stdout: "pipe",
       stderr: "pipe",
     });

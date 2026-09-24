@@ -17,6 +17,7 @@ import { errorMessage } from "../utils/errors";
 
 export { assertIsValidPrd } from "../plan/strategies";
 
+import { gitSpawnEnv } from "../utils/git-env";
 import { _planDeps } from "./plan-runtime";
 
 // Re-exported for backward compatibility — callers that import from "./plan" still work.
@@ -74,7 +75,7 @@ export interface PlanCommandOptions {
 async function claimPlanIdentity(workdir: string, config: NaxConfig): Promise<void> {
   let remoteUrl: string | null = null;
   try {
-    const gitResult = _planDeps.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
+    const gitResult = _planDeps.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir, env: gitSpawnEnv() });
     if (gitResult.exitCode === 0) {
       remoteUrl = gitResult.stdout.toString().trim() || null;
     }

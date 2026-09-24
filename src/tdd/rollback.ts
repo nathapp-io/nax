@@ -4,6 +4,7 @@ import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { autoCommitIfDirty, getGitRoot, getUntrackedPaths } from "../utils/git";
+import { gitSpawnEnv } from "../utils/git-env";
 import { killProcessGroup } from "../utils/process-kill";
 
 /**
@@ -70,6 +71,7 @@ async function runGitBounded(
   }
   const proc = _rollbackDeps.spawn(["git", ...args], {
     cwd: workdir,
+    env: gitSpawnEnv(),
     stdout: "pipe",
     stderr: "pipe",
     // Bun.spawn does not setpgid children into their own group by default, so

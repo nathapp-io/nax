@@ -201,3 +201,31 @@ describe("trySameAgentRetry admits fail-service-down (nax#1884)", () => {
     expect(trySameAgentRetry(stale, makeState({ adapterErrorRetries: 0 }), deps())?.outcome).toBe("stale-retry");
   });
 });
+
+describe("trySameAgentRetry carries the lane's failure onto the timeout-retry hop (nax#2200)", () => {
+  const invalidCall: AdapterFailure = {
+    category: "quality",
+    outcome: "fail-invalid-tool-call",
+    retriable: true,
+    message: "[callOp] agent turn ended after repeating an invalid call",
+    invalidToolCall: { tool: "Git", property: "refs", expected: "array", actual: "a string" },
+  };
+  const result: AgentResult = {
+    success: false,
+    exitCode: 1,
+    output: "",
+    rateLimited: false,
+    durationMs: 0,
+    estimatedCostUsd: 0,
+    adapterFailure: invalidCall,
+  };
+
+  test("fail-invalid-tool-call takes the timeout lane and the hop names the failure", () => {
+    const decision = trySameAgentRetry(result, makeState(), {
+      config: agentManagerConfigSelector.select(makeNaxConfig({})),
+      requestRunOptions: makeRunOptions(),
+    });
+    expect(decision?.outcome).toBe("timeout-retry");
+    expect(decision?.kind).toEqual({ kind: "timeout-retry", attempt: 1, failure: invalidCall });
+  });
+});

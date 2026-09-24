@@ -28,6 +28,7 @@ import { _persistPrdDeps } from "@/plan/strategies";
 import type { PRD, UserStory } from "@/prd";
 import { getContextFiles } from "@/prd";
 import { readProjectIdentity } from "@/runtime";
+import { gitSpawnEnv } from "@/utils/git-env";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: CompleteOptions) => Promise<{ stories: DecomposedStory[] }>,
@@ -662,7 +663,10 @@ describe("planCommand — US-004 project identity claim", () => {
       feature: "url-shortener",
     });
 
-    expect(_planDeps.spawnSync).toHaveBeenCalledWith(["git", "remote", "get-url", "origin"], { cwd: tmpDir });
+    expect(_planDeps.spawnSync).toHaveBeenCalledWith(["git", "remote", "get-url", "origin"], {
+      cwd: tmpDir,
+      env: gitSpawnEnv(),
+    });
     expect(calls[0]?.projectKey).toBe(projectKey);
     expect(calls[0]?.workdir).toBe(tmpDir);
     expect(calls[0]?.remoteUrl).toBe("https://github.com/org/repo-name.git"); // trimmed

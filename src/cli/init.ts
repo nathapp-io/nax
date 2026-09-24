@@ -11,6 +11,7 @@ import { featuresDir, globalConfigDir, PROJECT_FEATURES_DIR, projectConfigDir } 
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { isSameProject, readProjectIdentity } from "../runtime";
+import { gitSpawnEnv } from "../utils/git-env";
 import {
   NAX_GITIGNORE_ENTRIES,
   NAX_NAXIGNORE_ENTRIES,
@@ -305,7 +306,7 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
   // Detect current git remote (best-effort; non-git projects are fine)
   let currentRemote: string | null = null;
   try {
-    const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: projectRoot });
+    const gitResult = Bun.spawnSync(["git", "remote", "get-url", "origin"], { cwd: projectRoot, env: gitSpawnEnv() });
     if (gitResult.exitCode === 0) {
       currentRemote = new TextDecoder().decode(gitResult.stdout).trim() || null;
     }
