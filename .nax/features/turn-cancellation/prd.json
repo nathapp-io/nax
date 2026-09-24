@@ -3,7 +3,7 @@
   "feature": "turn-cancellation",
   "branchName": "feat/turn-cancellation",
   "createdAt": "2026-09-24T00:00:00.000Z",
-  "updatedAt": "2026-09-24T09:55:27.893Z",
+  "updatedAt": "2026-09-24T11:04:47.001Z",
   "userStories": [
     {
       "id": "US-001",
@@ -171,8 +171,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -239,7 +239,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Prompt timer lifecycle must coordinate with event mapping and two watchdog clocks."
+        "reasoning": "Prompt timer lifecycle must coordinate with event mapping and two watchdog clocks.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/interaction/ask-link.ts",
@@ -270,6 +273,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "2fc58ffe0854a2c88d77ce897f79caaffa28989d",
       "outOfScope": [
         "keep-alive for `ask_human` questions; exposing `ASK_KEEPALIVE_MS` as configuration."
       ]
