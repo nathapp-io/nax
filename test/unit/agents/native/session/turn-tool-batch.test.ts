@@ -18,7 +18,7 @@
 import { describe, expect, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
 import { ASK_HUMAN_TOOL_NAME } from "@/agents/native/session/ask-human";
-import type { TranscriptMessage as NativeTranscriptMessage } from "@/agents/native/session/compaction";
+import type { TranscriptMessage } from "@/agents/native/session/compaction";
 import { createInvalidCallBudget } from "@/agents/native/session/handle-invalid-tool-call";
 import { createLoopEventRegistry } from "@/agents/native/session/loop-events";
 import { codingToolsToDefinitions } from "@/agents/native/session/tool-mapping";
@@ -43,7 +43,7 @@ const fakeRead: CodingTool = {
 const call = (id: string, path: string) => ({ id, name: fakeRead.name, input: { path } });
 
 /** A minimal transcript: a user prompt followed by one assistant tool-call message. */
-function messagesWith(toolCalls: readonly { id: string; name: string; input: object }[]): NativeTranscriptMessage[] {
+function messagesWith(toolCalls: readonly { id: string; name: string; input: object }[]): TranscriptMessage[] {
   return [
     { role: "user", content: "hi" },
     { role: "assistant", content: "", toolCalls: [...toolCalls] },
@@ -67,7 +67,7 @@ function batchArgs(over: Partial<ToolBatchArgs> & { deps: TurnDeps; opts: SendTu
   };
 }
 
-function cancelledOnlyResult(results: readonly NativeTranscriptMessage[]): Array<{
+function cancelledOnlyResult(results: readonly TranscriptMessage[]): Array<{
   toolCallId: string;
   content: unknown;
   isError?: boolean;

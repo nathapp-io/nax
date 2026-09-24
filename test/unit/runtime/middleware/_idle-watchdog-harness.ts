@@ -20,7 +20,7 @@
  */
 
 import { type FakeClock, makeFakeClock } from "@test/helpers";
-import type { AgentCallEndedEvent, AgentProcessUpdateEvent, AgentStreamEvent } from "@/runtime";
+import type { AgentCallEndedEvent, AgentProcessUpdateEvent, AgentStreamEvent, AgentStreamEventBase } from "@/runtime";
 import { _idleWatchdogDeps } from "@/runtime";
 
 /** Watchdog thresholds. Virtual time is free, so these are round and readable. */
@@ -103,7 +103,7 @@ export function makeIdleWatchdogConfig(
 }
 
 /** Fields every agent stream event carries. Timestamped from the virtual clock. */
-function baseEvent(callId: string) {
+function baseEvent(callId: string): AgentStreamEventBase {
   return {
     callId,
     runId: "run-001",
@@ -171,7 +171,7 @@ export function makeAwaitingHumanEvent(overrides: { callId?: string } = {}): Age
   return {
     kind: "agent.awaiting_human",
     ...baseEvent(overrides.callId ?? "call-123"),
-  } as AgentStreamEvent;
+  };
 }
 
 export function makeProcessUpdateEvent(
