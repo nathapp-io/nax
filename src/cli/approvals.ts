@@ -214,7 +214,10 @@ const APPROVAL_ID_PATTERN = /^[0-9a-f]{8}$/;
 /** The single line a removal prints for one entry, per the US-005 interface. */
 export function formatRemovedLine(entry: ApprovalEntry): string {
   const id = approvalId(entry);
-  const preview = entry.command.split("\n", 1)[0] ?? "";
+  // Strip a trailing CR so a CRLF first line still produces a single-line
+  // `removed ...` record (the store layer parses commands with the same
+  // tolerance, see readApprovalsFileDetailed).
+  const preview = (entry.command.split("\n", 1)[0] ?? "").replace(/\r$/, "");
   return `removed ${id}  ${entry.stage}  ${preview.slice(0, REMOVAL_PREVIEW_LIMIT)}`;
 }
 
@@ -256,7 +259,14 @@ export async function approvalsRmCommand(
   opts: ApprovalsRmOptions,
   deps: typeof _approvalsCliDeps = _approvalsCliDeps,
 ): Promise<number> {
-  const selectorCount = (opts.ids.length > 0 ? 1 : 0) + (opts.stage !== undefined ? 1 : 0) + (opts.all ? 1 : 0);
+  // Trim the stage up front so a whitespace-only `--stage ""` cannot slip
+  // through as a valid selector and print `No entries for stage ` (trailing
+  // space). The trimmed form is also what the predicate and the success
+  // message use.
+  const stage = opts.stage?.trim();
+  const stageSelected = stage !== undefined && stage !== "";
+
+  const selectorCount = (opts.ids.length > 0 ? 1 : 0) + (stageSelected ? 1 : 0) + (opts.all ? 1 : 0);
   if (selectorCount !== 1) {
     deps.logErr(SELECTOR_ERROR);
     return 1;
@@ -275,14 +285,17 @@ export async function approvalsRmCommand(
   const path = await resolveApprovalsFile(opts.workdir);
 
   let decide: (read: ApprovalsFileRead) => RemovalDecision;
-  if (opts.stage !== undefined) {
-    const stage = opts.stage;
-    decide = () => ({ remove: (entry) => entry.stage === stage });
+  if (stageSelected) {
+    const stageForPredicate = stage as string;
+    decide = () => ({ remove: (entry) => entry.stage === stageForPredicate });
   } else {
-    const wanted = givenIds;
+    // Snapshot the ids array so a caller that mutates `opts.ids` between this
+    // call and the locked decide cannot change the absent-check or the remove
+    // set after validation already passed.
+    const wanted = [...givenIds];
     decide = ({ file }) => {
       const present = new Set(file.entries.map((entry) => approvalId(entry)));
-      const absent = wanted.filter((id) => !present.has(id));
+      const absent = [...new Set(wanted.filter((id) => !present.has(id)))];
       if (absent.length > 0) {
         return { refuse: `Unknown id(s): ${absent.join(" ")}` };
       }
@@ -294,6 +307,9 @@ export async function approvalsRmCommand(
   const result = await deps.removeApprovals(path, decide);
 
   if (result.outcome === "removed") {
+    if (result.droppedMalformed > 0) {
+      deps.logErr(`${result.droppedMalformed} malformed entries ignored`);
+    }
     for (const entry of result.removed) {
       deps.log(formatRemovedLine(entry));
     }
@@ -304,8 +320,8 @@ export async function approvalsRmCommand(
     // Stage is the only selector that can produce this: ids either refuse or
     // remove at least one entry (the present-id set is non-empty by the check
     // above, and `removeApprovals` reports `removed` for any matched entry).
-    if (opts.stage !== undefined) {
-      deps.log(`No entries for stage ${opts.stage}`);
+    if (stageSelected) {
+      deps.log(`No entries for stage ${stage as string}`);
     }
     return 0;
   }
