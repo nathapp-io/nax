@@ -204,8 +204,13 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   // owned by the shell, which is now dead. Background processes that
   // inherited the pipe (the `&` case) keep it open: that's the orphan.
   const graceMs = _argvExecDeps.drainGraceMs;
+  // Cleared on every settle path: a successful command whose readers close
+  // before the grace elapses would otherwise leave a pending timer whose
+  // callback fires 500ms later and resolves an orphaned promise. Under load
+  // the leaked registrations accumulate in the timer wheel for nothing.
+  let graceTimerId: ReturnType<typeof setTimeout> | undefined;
   const gracePromise = new Promise<"expired">((resolve) => {
-    setTimeout(() => resolve("expired"), graceMs);
+    graceTimerId = setTimeout(() => resolve("expired"), graceMs);
   });
   const stdoutSettled = await Promise.race([
     stdoutPromise,
@@ -215,6 +220,7 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
     stderrPromise,
     gracePromise.then((): StreamDrain | "expired" => "expired"),
   ]);
+  if (graceTimerId !== undefined) clearTimeout(graceTimerId);
 
   const stdoutClosed = stdoutSettled !== "expired";
   const stderrClosed = stderrSettled !== "expired";
