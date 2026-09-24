@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _sessionSandboxDeps, rawRefusalFor, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
 import { DEFAULT_SANDBOX_CONFIG } from "@/config/schemas-sandbox";
@@ -91,6 +93,29 @@ describe("resolveSessionSandbox", () => {
     const l = await resolveSessionSandbox({ config: enabled, root, needsLauncher: true });
     expect(l.state).toEqual({ kind: "unavailable", backend: "srt", reason: "no bwrap" });
     expect(rawRefusalFor(l)).toContain("sandbox unavailable (no bwrap)");
+  });
+
+  test("#17: a glob character in the root makes the sandbox unavailable at session start", async () => {
+    const globRoot = join(root, "re[x]po");
+    mkdirSync(globRoot);
+    _sessionSandboxDeps.backendFor = () => makeFakeSandboxBackend();
+    _sessionSandboxDeps.probe = async () => ({ available: true });
+    _sessionSandboxDeps.gitLayout = async () => ({ kind: "main", gitDir: `${globRoot}/.git` });
+    _sessionSandboxDeps.gitGuardFiles = async () => [];
+    const l = await resolveSessionSandbox({ config: enabled, root: globRoot, needsLauncher: true });
+    expect(l.state.kind).toBe("unavailable");
+    expect(l.state.kind === "unavailable" ? l.state.reason : "").toContain("re[x]po");
+    expect(rawRefusalFor(l)).toBeDefined();
+  });
+
+  test("#17: a policy error that is not a glob still propagates", async () => {
+    _sessionSandboxDeps.backendFor = () => makeFakeSandboxBackend();
+    _sessionSandboxDeps.probe = async () => ({ available: true });
+    _sessionSandboxDeps.gitLayout = async () => ({ kind: "main", gitDir: `${root}/.git` });
+    _sessionSandboxDeps.featurePrds = async () => {
+      throw new Error("boom");
+    };
+    await expect(resolveSessionSandbox({ config: enabled, root, needsLauncher: true })).rejects.toThrow("boom");
   });
 
   test("rawRefusalFor is undefined unless unavailable", () => {

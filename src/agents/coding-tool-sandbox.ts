@@ -7,6 +7,7 @@
  */
 import { homedir } from "node:os";
 import type { SandboxConfig } from "@/config/schemas-sandbox";
+import { NaxError } from "@/errors";
 import { approvalsPath } from "@/permissions";
 import {
   buildSandboxPolicy,
@@ -72,6 +73,16 @@ export async function resolveSessionSandbox(args: {
       platform: _sessionSandboxDeps.platform(),
       config,
     });
+  // Review #17: literal() refuses a glob character in any policy path, and the
+  // probe builds its own policy, so a repo path like `re[x]po` passed the probe
+  // and then failed every command. Build the policy once here instead.
+  // Residual: a feature directory created mid-run with a glob character still
+  // fails per command.
+  const policyError = await literalPolicyError(policyFor, args.root);
+  if (policyError !== undefined) {
+    warnSandboxUnavailableOnce(policyError, args.storyId);
+    return createCommandLauncher({ state: { kind: "unavailable", backend: backend.name, reason: policyError } });
+  }
   const afterWrapped = await _sessionSandboxDeps.commonDirTripwire(git, args.storyId);
   const network = config.network.allowedDomains ?? "open"; // absent = open (spec S2)
   return createCommandLauncher({
@@ -85,4 +96,19 @@ export async function resolveSessionSandbox(args: {
 /** The compile-time policy refusal for `raw` (Task 8), or undefined. */
 export function rawRefusalFor(launcher: CommandLauncher | undefined): string | undefined {
   return launcher?.state.kind === "unavailable" ? rawBashRefusalReason(launcher.state.reason) : undefined;
+}
+
+async function literalPolicyError(
+  policyFor: (root: string) => Promise<unknown>,
+  root: string,
+): Promise<string | undefined> {
+  try {
+    await policyFor(root);
+    return undefined;
+  } catch (err) {
+    if (err instanceof NaxError && err.code === "SANDBOX_POLICY_NOT_LITERAL") {
+      return `[sandbox] a path in the sandbox policy contains a glob character: ${String(err.context?.path ?? "")}`;
+    }
+    throw err;
+  }
 }
