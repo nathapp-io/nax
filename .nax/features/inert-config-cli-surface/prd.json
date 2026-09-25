@@ -3,7 +3,7 @@
   "feature": "inert-config-cli-surface",
   "branchName": "feat/inert-config-cli-surface",
   "createdAt": "2026-07-01T00:00:00Z",
-  "updatedAt": "2026-09-25T16:46:54.005Z",
+  "updatedAt": "2026-09-25T16:54:41.542Z",
   "userStories": [
     {
       "id": "US-001",
@@ -28,8 +28,8 @@
         "feature"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -89,7 +89,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Early flag extraction mirrors run-mode and the one-line regression-gate expression has an existing forwarding test table; no novel concurrency implementation is needed."
+        "reasoning": "Early flag extraction mirrors run-mode and the one-line regression-gate expression has an existing forwarding test table; no novel concurrency implementation is needed.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "bin/nax.ts",
@@ -116,7 +119,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f6ddd7865a14937411449732af13473409fa0923"
     },
     {
       "id": "US-003",
