@@ -3,7 +3,7 @@
   "feature": "inert-config-cli-surface",
   "branchName": "feat/inert-config-cli-surface",
   "createdAt": "2026-07-01T00:00:00Z",
-  "updatedAt": "2026-09-25T17:08:04.025Z",
+  "updatedAt": "2026-09-25T17:35:24.634Z",
   "userStories": [
     {
       "id": "US-001",
@@ -192,8 +192,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -301,7 +301,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-cutting removal from acceptance IO, orchestration, operations and prompt builder with stale-file regression risk; existing diagnosis contracts survive."
+        "reasoning": "Cross-cutting removal from acceptance IO, orchestration, operations and prompt builder with stale-file regression risk; existing diagnosis contracts survive.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/lifecycle/acceptance-fix.ts",
@@ -354,7 +357,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "292f14763d73f333941623ff5026cb4cce6b6e60"
     }
   ],
   "analysis": "Existing TypeScript/Bun CLI, Zod config and execution pipeline, not greenfield. US-001: bin/nax.ts:205 gives -m a Commander default of 20 and bin/nax.ts:531-536 unconditionally assigns it after loadConfig at :375; validation belongs just after validateDirectory at :251-260, before the uninitialized check at :382 and any TUI. src/cli/run-mode.ts:1-27 supplies the pure-helper precedent; src/config/schemas.ts:122 instead defaults execution.maxIterations to 10, src/config/runtime-types.ts:106 and src/cli/config-descriptions.ts:58 claim nonexistent auto-calculation. src/execution/unified-executor.ts:176-177 counts each loop pass. Correct the schema, description and guides; retain the leading phrase asserted by test/integration/cli/cli-config-diff.test.ts and cli-config-command.test.ts. Add pure-helper unit and spawn CLI tests. US-002: bin/nax.ts:210 advertises 0=auto, while :591-598 parses only after TUI mounting and has BUG-22 unmount workaround; move validation alongside -m and pass the parsed value through the existing parallel variable to run(). src/execution/unified-executor.ts:219-225 executes batches only at positive parallel count; src/execution/runner-completion.ts:367-371 incorrectly calls 0 and 1 parallel for regression gate snapshots. Update docs/guides/cli-reference.md and parallel-execution.md, and existing test/integration/cli/cli-core-parallel.test.ts and test/unit/execution/runner-completion-postrun.test.ts. US-003: src/config/schemas-execution.ts:398-405, schemas.ts:185 and runtime-types.ts:231 declare inert isolation key. src/config/config-guards.ts:258-349 already strips removed keys immutably and warns; src/config/loader.ts:260,520,575 applies this before schema validation and dedupes warnings, so legacy configs migrate fail-open. Mirror test/unit/config/strip-removed-noop-keys.test.ts. US-004: src/config/schemas-infra.ts:427-429 allows obsolete role; src/prompts/core/types.ts:9-16 and prompt sections/role-task.ts, isolation.ts, behavioral-guardrails.ts, hermetic.ts and test-quality.ts use it; src/context/feature-context-filter.ts:31 holds its audience map. src/cli/prompts-init.ts:32,133,170, prompts-export.ts:10, config-display.ts:180,241, config-descriptions.ts:281 and src/config/runtime-types.ts:473 expose it. src/pipeline/stages/prompt.ts:113 actually builds only no-test or tdd-simple, while src/context/engine/phase-stage-map.ts:111-117 still deliberately returns the unrelated stage key single-session for test-after. Preserve sessionModel labels, stage keys, rule stage lists, commit labels and existing user template files. Important: src/cli/prompts-init.ts:112-141 auto-wires only when .nax/config.json already exists and prompts.overrides is absent; absent config merely prints instructions; the autoWireConfig AC needs that existing-config precondition. Update prompt migration, builder/loader/sections, CLI init/export, config schema and context-filter tests specified by the feature, along with new strip/load tests. PromptRole is a prompt-template label, not an authorization check. US-005: src/acceptance/semantic-verdict.ts:50,87 contains orphaned persistence/loader exported at src/acceptance/index.ts:23; src/pipeline/stages/completion.ts:416 has a dead writer dependency; src/execution/lifecycle/acceptance-loop.ts:474,529 reads verdicts and forwards to src/execution/lifecycle/acceptance-fix.ts:104,144, which has an all-passing fast path. src/operations/acceptance-diagnose.ts:15,45 and src/prompts/builders/acceptance-builder.ts:78-79,342-343 forward/render the dead hints. Remove the interface at src/acceptance/types.ts:140, the third isTestLevelFailure parameter at src/execution/lifecycle/acceptance-helpers.ts:120-137, and cleanup at src/pipeline/stages/acceptance-setup.ts:124-135,311-312; retain AC-HOOK and src/utils/gitignore.ts:41 to ignore historical directories. Update comments at src/test-runners/ac-parser.ts:131 and src/execution/ensure-package-dirs.ts:25 and acceptance guides/architecture. Delete test/unit/acceptance/semantic-verdict.test.ts and removed-path cases/stubs in acceptance-setup-fingerprint, acceptance-setup-dispatch-failure, acceptance-diagnose, fix-diagnosis, acceptance-loop-routing, acceptance-loop-cycle, acceptance-loop-regen-stub and acceptance-fix tests, preserving unrelated assertions. Migration/risks: inert config keys warn once and strip before safeParse; direct raw NaxConfigSchema.safeParse rejects retired prompt override, but loadConfig accepts it and keeps remaining overrides. PromptRole type removal breaks only callers using the retired prompt role. Semantic files remain on disk but are no longer read. US-003 and US-004 both edit REMOVED_NO_OP_KEYS; follow the explicit US-004-after-US-003 dependency to avoid overlapping map edits. The other stories can proceed independently.",
