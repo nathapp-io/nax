@@ -120,6 +120,18 @@ export function attachInFlightUsageTracker(
     entry.model = event.model === "" ? "unknown" : event.model;
   };
 
+  /**
+   * Drop an entry and forget it as its session's most-recent end. Without the
+   * forget, a reconciled callId lingers in `latestEndedBySession` and every
+   * later session-turn for that session does a lookup guaranteed to miss.
+   */
+  const forget = (callId: string): void => {
+    entries.delete(callId);
+    for (const [sessionName, remembered] of latestEndedBySession) {
+      if (remembered === callId) latestEndedBySession.delete(sessionName);
+    }
+  };
+
   const onCallEnded = (event: AgentCallEndedEvent): void => {
     // Rule 5: remember the stream that most recently ended in this session,
     // whatever its status — a session-turn event consults this to find the
@@ -127,10 +139,19 @@ export function attachInFlightUsageTracker(
     latestEndedBySession.set(event.sessionName, event.callId);
     if (event.status === "success" || event.status === "timeout") {
       // The turn resolved, so its dispatch event records the spend.
-      entries.delete(event.callId);
+      forget(event.callId);
       return;
     }
-    const entry = entries.get(event.callId) ?? entryFor(event);
+    // Rule 4 marks "the entry" ended-unrecorded — it does not create one. A
+    // turn that ended with no prior beat/start carries no spend to track, so
+    // materialising an entry would leak an invisible map row for the life of
+    // the tracker (nothing else deletes a scope-less zero-spend entry).
+    const existing = entries.get(event.callId);
+    if (existing === undefined) return;
+    // Refresh attribution even though the entry already exists: a `scopeId`
+    // (or storyId/stage) carried only on `call_ended` must land here, or
+    // rule-6 reconciliation can never match this stream.
+    const entry = entryFor(event);
     entry.endedStatus = event.status;
     endedSeq += 1;
     entry.endedSeq = endedSeq;
@@ -143,7 +164,7 @@ export function attachInFlightUsageTracker(
     const entry = entries.get(callId);
     // Only a watchdog-cancelled turn is cleared: its spend is on the session
     // row. A successful turn is already gone, and an errored entry stays.
-    if (entry !== undefined && entry.endedStatus === "cancelled") entries.delete(callId);
+    if (entry !== undefined && entry.endedStatus === "cancelled") forget(callId);
   };
 
   const matchesScope = (entry: StreamEntry, event: DispatchErrorEvent): boolean => {
@@ -154,15 +175,18 @@ export function attachInFlightUsageTracker(
   const onDispatchError = (event: DispatchErrorEvent): void => {
     const hasUsage = event.tokenUsage !== undefined;
     const costUsd = event.exactCostUsd ?? event.estimatedCostUsd ?? 0;
-    // Rule 6: only an error row that actually recorded spend may clear an entry.
-    if (!hasUsage && costUsd <= 0) return;
+    // Rule 6: only an error row that actually recorded spend may clear an
+    // entry. `NaN`/`Infinity` are malformed reports, not recorded spend — the
+    // finite-positive test rejects them (a bare `<= 0` negation let `NaN`
+    // through, since `NaN <= 0` is false).
+    if (!hasUsage && !(Number.isFinite(costUsd) && costUsd > 0)) return;
 
     let target: StreamEntry | undefined;
     for (const entry of entries.values()) {
       if (entry.endedStatus === undefined || !matchesScope(entry, event)) continue;
       if (target === undefined || (entry.endedSeq ?? 0) > (target.endedSeq ?? 0)) target = entry;
     }
-    if (target !== undefined) entries.delete(target.streamCallId);
+    if (target !== undefined) forget(target.streamCallId);
   };
 
   const onStream = (event: AgentStreamEvent): void => {
@@ -223,7 +247,9 @@ export function toPartialCostEvent(residual: InFlightResidual, runId: string, pr
     ...(residual.storyId !== undefined ? { storyId: residual.storyId } : {}),
     ...(residual.scopeId !== undefined ? { scopeId: residual.scopeId } : {}),
     callId: residual.streamCallId,
-    tokens: residual.tokens,
+    // Copy, not share: a returned row must not alias the residual's (or the
+    // tracker's) mutable token accumulator.
+    tokens: { ...residual.tokens },
     roundTrips: residual.roundTrips,
     roundTripUnit: "model-call",
     // Match how the cost subscriber normalises an estimated row (cost.ts):

@@ -566,3 +566,45 @@ describe("cost-row schema v7 (US-003 AC19)", () => {
     expect("partial" in recorded[0]).toBe(false);
   });
 });
+
+describe("attachInFlightUsageTracker — adversarial edge cases (US-003)", () => {
+  test("US-003: a scopeId carried only on call_ended still reconciles a dispatch-error row", () => {
+    const { stream, dispatch, tracker } = setup();
+
+    // The beat carries no scopeId; only the end event does.
+    stream.emitAgentStream(makeBeat({ callId: "c1", costUsd: 0.1, roundTrip: 1 }));
+    stream.emitAgentStream(makeCallEnded({ callId: "c1", scopeId: "s1", status: "error" }));
+    dispatch.emitDispatchError(makeDispatchError({ scopeId: "s1", tokenUsage: { inputTokens: 10, outputTokens: 1 } }));
+
+    expect(tracker.residuals()).toHaveLength(0);
+  });
+
+  test("US-003: a non-finite error cost with no tokenUsage does not clear a spent stream", () => {
+    const { stream, dispatch, tracker } = setup();
+
+    stream.emitAgentStream(makeBeat({ callId: "c1", scopeId: "s1", costUsd: 0.1, roundTrip: 1 }));
+    stream.emitAgentStream(makeCallEnded({ callId: "c1", scopeId: "s1", status: "error" }));
+    dispatch.emitDispatchError(makeDispatchError({ scopeId: "s1", exactCostUsd: Number.NaN }));
+
+    expect(tracker.residuals().map((r) => r.streamCallId)).toEqual(["c1"]);
+  });
+
+  test("US-003: an error end for a stream that never reported use leaves no residual", () => {
+    const { stream, tracker } = setup();
+
+    stream.emitAgentStream(makeCallEnded({ callId: "c1", status: "error" }));
+
+    expect(tracker.residuals()).toHaveLength(0);
+  });
+});
+
+describe("toPartialCostEvent — adversarial edge cases (US-003)", () => {
+  test("US-003: the mapped row copies the residual's tokens instead of aliasing them", () => {
+    const residual = makeResidual();
+    const row = toPartialCostEvent(residual, "run-9");
+
+    residual.tokens.input = 999;
+
+    expect(row.tokens?.input).toBe(100);
+  });
+});
