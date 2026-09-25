@@ -48,6 +48,8 @@ export type {
   SessionTurnDispatchEvent,
 } from "./dispatch-events";
 export { DispatchEventBus } from "./dispatch-events";
+export type { InFlightResidual, InFlightUsageTracker } from "./in-flight-usage";
+export { attachInFlightUsageTracker, toPartialCostEvent } from "./in-flight-usage";
 export type { ResolvedIdleWatchdogSettings, WatchdogState } from "./middleware";
 export {
   _idleWatchdogDeps,
