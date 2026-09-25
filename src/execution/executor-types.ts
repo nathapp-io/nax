@@ -47,7 +47,11 @@ export interface SequentialExecutionContext extends DispatchContext {
   interactionChain?: InteractionChain | null;
   /** Protocol-aware agent resolver (ACP wiring). Falls back to standalone getAgent when absent. */
   agentGetFn?: AgentGetFn;
-  /** Max parallel sessions: undefined=sequential, 0=auto-detect, N>0=cap at N */
+  /**
+   * Max parallel sessions: `undefined`, `0` and `1` all run one story at a
+   * time (the CLI rejects `0`; there is no CPU-count auto-detection), `N > 1`
+   * caps concurrency at N.
+   */
   parallelCount?: number;
   /** Run-scoped pre-resolved .naxignore index (refreshed when package set changes). */
   naxIgnoreIndex?: NaxIgnoreIndex;

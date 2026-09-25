@@ -370,8 +370,11 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     // gate state does not reflect the merged repo — so the regression gate must
     // withhold its snapshots rather than attribute blame from them. `0` can
     // still arrive from a programmatic RunnerOptions caller even though the CLI
-    // now rejects it.
-    isSequential: options.parallel === undefined || options.parallel <= 1,
+    // now rejects it. The `!(> 1)` form also classifies NaN as sequential,
+    // matching the executor's `(parallelCount ?? 0) > 0` dispatch check — a
+    // comparison-based test (e.g. `<= 1`) would call NaN parallel and withhold
+    // snapshots from a run that actually executed sequentially.
+    isSequential: options.parallel === undefined || !(options.parallel > 1),
     interactionChain: options.interactionChain,
   });
 
