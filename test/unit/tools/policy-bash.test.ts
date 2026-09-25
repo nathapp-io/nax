@@ -170,6 +170,12 @@ describe("containment is not defeated by a hiding prefix or a symlink", () => {
   test("a `cd` to an option-shaped target is refused rather than tracked as a path", () => {
     const verdict = check(policyFor(["cd *", "cat *"]), "cd -");
     expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      // Category A: the gate cannot model where `cd -` lands, so its refusal
+      // must escalate rather than preempt the grant miss with a hard denial.
+      expect(verdict.breach).toBe(false);
+      expect(verdict.escalatable).toBe(true);
+    }
   });
 
   test("a bare symlink token pointing outside the root is denied as a breach", () => {
