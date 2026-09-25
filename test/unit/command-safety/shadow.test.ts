@@ -344,6 +344,14 @@ describe("createCommandShadow: cwd on the row", () => {
     rows = [];
   });
 
+  test("the rule baseline scores against the observed cwd: cd into the run's own root is not outside", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("cd /Users/dev/repo/.nax-wt/s1 && bun run test", { cwd: "/Users/dev/repo/.nax-wt/s1" }));
+    s.settle("k", { ledger: "ok" });
+    await s.drain();
+    expect(rows[0]?.rules.hits.outside_project).toBe(false);
+  });
+
   test("a Bash row carries the observed cwd", async () => {
     const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
     s.observe("k", obs("ls ../x", { cwd: "/repo" }));
@@ -359,6 +367,16 @@ describe("createCommandShadow: cwd on the row", () => {
     await s.drain();
     expect(rows[0]?.cwd).toBe("/repo/packages/app");
     expect(rows[0]?.executed).toEqual(["bun", "test"]);
+  });
+
+  test("an Exec row's rules are scored against the cwd it ran in, so rules and cwd agree", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    const command = "cat /Users/dev/repo/packages/app/package.json";
+    s.observe("k", obs(command, { identity: "Exec", argv: ["cat", "/Users/dev/repo/packages/app/package.json"] }));
+    s.settle("k", { ledger: "ok" }, { executed: ["cat"], cwd: "/Users/dev/repo/packages/app" });
+    await s.drain();
+    expect(rows[0]?.cwd).toBe("/Users/dev/repo/packages/app");
+    expect(rows[0]?.rules.hits.outside_project).toBe(false);
   });
 
   test("a row with no cwd from either side has no cwd key", async () => {
