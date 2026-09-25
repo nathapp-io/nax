@@ -73,13 +73,19 @@ implement; a baseline is never the interface.
   1. `"command" must be a string` / `must not be empty` guards, unchanged.
   2. Deny rules over every segment of `S` → non-escalatable deny, reason naming the rule (unchanged text).
   3. `checkPayload` over every segment of `S`, threading the working directory with
-     `nextWorkingDirectories` exactly as today → its refusal, unchanged (`breach` as today,
-     `escalatable: false`).
+     `nextWorkingDirectories` exactly as today → its refusal, with `breach` as today. The
+     affirmatively out-of-bounds refusals (containment, `.git/`, a denied flag, expansion, a bare
+     `cd`) stay `escalatable: false`; the option-shaped-`cd` refusal is `escalatable: true`
+     (Category A — the gate cannot model where the target lands), so the reorder never lets it
+     preempt the grant miss for an ungranted command.
   4. If the lexer refused → the existing escalatable refusal (`command contains <construct>, which cannot be analysed ...`).
   5. Grant check over every segment → the existing escalatable `is not granted` denial.
   6. Ask rules → `ask`; otherwise `allow`.
-  The header comment's precedence list is rewritten to this order. `escalatable: true` is still
-  produced at exactly two sites, both after every non-escalatable check.
+  The header comment's precedence list is rewritten to this order. `escalatable: true` is produced
+  at three sites: the two escalatable denials (steps 4 and 5) and `checkPayload`'s option-shaped-
+  `cd` refusal in step 3. Each is a Category A "the gate could not adjudicate" denial; the deny
+  rules and the affirmatively out-of-bounds payload checks still run before the two escalatable
+  denials.
 
 **`escalateDescription(shell, patterns)`** — `src/tools/bash.ts:123` (US-001)
 - Baseline: "A command whose every segment matches a granted form is checked further: ..." and
@@ -201,7 +207,8 @@ is the boundary. US-003 replaces the "Known blind spot" sentence in the script h
 |:---|:---|
 | The lexer refuses before any word completes (`(cat /etc/passwd)`) | `prefix` is `[]`; no deny or payload check fires; the escalatable lexer refusal is returned as today. |
 | A segment matches a deny rule and also fails `checkPayload` | The deny-rule denial wins (step 2 runs before step 3); `breach` is `false`. |
-| An ungranted command also fails `checkPayload` | The payload refusal is returned, not the grant miss; `escalatable` is `false`. |
+| An ungranted command also fails `checkPayload` (other than an option-shaped `cd`) | The payload refusal is returned, not the grant miss; `escalatable` is `false`. |
+| An ungranted command's `cd` target is option-shaped (`cd -`) | `checkPayload`'s option-shaped-`cd` refusal is returned with `escalatable: true`: the gate cannot model where it lands, so it escalates as Category A. |
 | The seal's taint write fails (unwritable file, lock failure) | `prepareApprovalsStore` logs `[approvals] could not update the store's taint marker` at warn; the seal resolves; cleanup or teardown continues. |
 | The run is trusted (sandbox on, or no `raw` stage) | The seal does nothing; `approvals.json` is untouched. |
 | `sealApprovals` rejects inside `performTeardown` | Swallowed; `performTeardown` resolves. |
