@@ -136,13 +136,17 @@ describe("readTool", () => {
       },
     );
 
-    test("a ranged read is not truncated by the tool (the after_tool policy owns the marker)", async () => {
-      // US-005: the ranged branch reads at ctx.maxFileBytes (a separate
-      // whole-file Edit/Write cap), and the OLD `[truncated at N bytes]`
-      // marker is gone. The model-facing cap and the runtime's marker
-      // (naming the spill path) belong to after_tool, NOT the tool itself.
+    test("a ranged read cuts at whole-line model caps with the cap footer (after_tool is the backstop)", async () => {
+      // US-002: a result over the model caps is now cut by `Read` at a
+      // whole-line boundary with the cap footer. The old `[truncated at N
+      // bytes]` marker is gone; the cap footer names the delivered range
+      // and the offset to continue from. The after_tool policy
+      // (`applyModelTruncationPolicy`) remains the unconditional backstop:
+      // a within-cap Read result passes through it untouched (its within-cap
+      // contract), so no spill file is written for it. The assertion below
+      // pins that the old marker text is still absent.
       const res = await readTool.run({ path: "many.txt", offset: 1, limit: 50 }, ctx([manyPath], 30));
-      // The tool's old marker is gone.
+      // The tool's old `[truncated at N bytes]` marker is gone.
       expect(res.content).not.toContain("truncated at");
     });
   });

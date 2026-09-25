@@ -76,3 +76,140 @@ export function limitStopFooter(input: LimitStopFooterInput): string {
 export function shouldAppendLimitStopFooter(hasLimit: boolean, endLine: number, totalLines: number): boolean {
   return hasLimit && endLine < totalLines;
 }
+
+// -----------------------------------------------------------------------------
+// US-002 — Read self-cap at whole-line model caps.
+//
+// The cap footer replaces the limit-stop footer when a Read result overflows
+// either of the model-facing budgets (line count or byte count). It names
+// the LAST line the cut delivered and the offset to continue from — the
+// same shape the limit-stop footer uses, but with the absolute line range
+// instead of an "N more" count, because the cut may have stopped well
+// short of what the limit asked for.
+//
+// The cut itself is deterministic: try the largest k such that
+// header + k lines + cap footer fits both budgets; on no-k-fits, return
+// the unshaped body (today's result, plus the limit-stop footer from rule 1
+// if it applied). The cap footer REPLACES the limit-stop footer on a cut
+// — a result never carries both.
+// -----------------------------------------------------------------------------
+
+/** Inputs to compose a single cap footer line. */
+export interface CapFooterInput {
+  /** First selected line number: 1 on the whole-file path, `offset` on the ranged path. */
+  readonly firstLine: number;
+  /** Last selected line number in the cut. The cap footer names `firstLine..lastLine`. */
+  readonly lastLine: number;
+  /**
+   * Pre-formatted total label: `1500` when the read saw the whole file,
+   * `6+` when the read stopped at its I/O bound (the `readCeiling` floor on
+   * the whole-file path, `maxFileBytes` floor on the ranged path). The
+   * trailing `+` is the caller's responsibility; the helper does not
+   * re-derive the floor because it does not know which I/O bound was used.
+   */
+  readonly totalLabel: string;
+}
+
+/**
+ * The cap footer: `[Showing lines a-b of T. Use offset=X to continue.]`,
+ * where `X = b + 1`. Same text the limit-stop footer uses for `X`; the
+ * difference is the rest of the message — the cap footer names the
+ * delivered range, the limit-stop footer names the unseen count.
+ *
+ * The footer is the result's last line. `read.ts` joins it to the body
+ * with `\n` and writes nothing after it.
+ */
+export function capFooter(input: CapFooterInput): string {
+  const { firstLine, lastLine, totalLabel } = input;
+  return `[Showing lines ${firstLine}-${lastLine} of ${totalLabel}. Use offset=${lastLine + 1} to continue.]`;
+}
+
+/** Inputs to `applyCapCut` — the tool's two paths pass them in their own shape. */
+export interface ApplyCapCutInput {
+  /** Header line, already composed: `[1500 lines]`, `[6+ lines]`, `[lines 100-1299 of 1500]`. */
+  readonly header: string;
+  /** Selected lines, already split by `\n`. Whole-file: every line of the prefix; ranged: `offset..endLine`. */
+  readonly lines: readonly string[];
+  /** First selected line number (1 on whole-file, `offset` on ranged). */
+  readonly firstLine: number;
+  /** Pre-formatted total label with the floor `+` if applicable. */
+  readonly totalLabel: string;
+  /** Limit-stop footer text if rule 1 applied, otherwise `""`. Replaced by the cap footer on a cut. */
+  readonly limitStopFooter: string;
+  /** Today's unshaped body — returned verbatim when no `k >= 1` fits. */
+  readonly unshapedBody: string;
+  /** Model-facing byte ceiling (`ctx.maxBytes`). */
+  readonly maxBytes: number;
+  /** Model-facing line ceiling (`MODEL_MAX_LINES`). */
+  readonly maxLines: number;
+}
+
+/** Output of `applyCapCut`. */
+export interface ApplyCapCutResult {
+  /** The composed result content. */
+  readonly content: string;
+  /** True iff the cap cut fired — a cap footer was appended. */
+  readonly cut: boolean;
+}
+
+/**
+ * Compose the final result: fit the candidate if it fits, else cut at the
+ * largest `k >= 1` such that `header + first k lines + cap footer` fits
+ * both budgets, else return the unshaped body.
+ *
+ * The byte budget is measured over the WHOLE result (header and footer
+ * included); the line budget counts the whole result's lines (the same
+ * `MODEL_MAX_LINES` the after_tool policy uses). The cap footer is the
+ * last line and replaces the limit-stop footer when it fires.
+ *
+ * On no-`k`-fits, the limit-stop footer (if rule 1 produced one) is
+ * appended to today's unshaped body — the spec's "today's result, plus
+ * the limit-stop footer from rule 1 if it applied" — so an over-the-cap
+ * read that the tool cannot even trim by one line still tells the model
+ * how to continue. The after_tool policy then shapes the bytes.
+ */
+export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
+  const { header, lines, firstLine, totalLabel, limitStopFooter, unshapedBody, maxBytes, maxLines } = input;
+
+  // Rule 1's candidate: today's body, plus the limit-stop footer if it
+  // applied. The fit check decides whether this form is what the model
+  // sees (returning it unchanged when it fits) or whether the cap cut
+  // has to fire.
+  const candidate = limitStopFooter === "" ? unshapedBody : `${unshapedBody}\n${limitStopFooter}`;
+
+  // Step 1 — fit check. If today's candidate fits both the line cap and
+  // the byte cap, return it unchanged. The after_tool policy then sees a
+  // within-cap result and is a no-op on it.
+  const candidateLines = candidate.split("\n");
+  if (candidateLines.length <= maxLines && Buffer.byteLength(candidate, "utf8") <= maxBytes) {
+    return { content: candidate, cut: false };
+  }
+
+  // Step 2 — cap cut. Try k from largest to smallest; the first one that
+  // fits both budgets is the cut. Walking largest-first is what guarantees
+  // the result holds the most whole lines that can fit — picking a smaller
+  // k would leave whole lines on the floor that could have been delivered.
+  for (let k = lines.length; k >= 1; k -= 1) {
+    // Line budget: header + k body lines + cap footer line.
+    if (1 + k + 1 > maxLines) continue;
+
+    const lastLine = firstLine + k - 1;
+    const footer = capFooter({ firstLine, lastLine, totalLabel });
+
+    // Compose: header\n + (k lines joined by \n) + \n + footer.
+    // No trailing newline — the cap footer is the last line, with
+    // nothing after it. A cut result never ends with a newline.
+    const bodyJoined = lines.slice(0, k).join("\n");
+    const cut = `${header}\n${bodyJoined}\n${footer}`;
+
+    if (Buffer.byteLength(cut, "utf8") <= maxBytes) {
+      return { content: cut, cut: true };
+    }
+  }
+
+  // Step 3 — no k fits: today's candidate passes through unchanged. The
+  // cap footer is absent here — the rule is "no line fits with the header
+  // and cap footer", so neither can be appended. The after_tool policy
+  // is the backstop for these cases.
+  return { content: candidate, cut: false };
+}

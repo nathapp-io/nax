@@ -11,12 +11,21 @@
  * only shape honoured -- every other spelling is rejected by name rather than
  * silently dropped, the same principle policy.ts uses for a denied argv: name
  * the supported forms instead of a bare refusal.
+ *
+ * Self-cap at whole-line model caps (US-002): when today's body overflows the
+ * line or byte ceiling, the tool cuts at the largest whole-line boundary that
+ * still fits and appends a single trailer naming the delivered range. The
+ * after_tool policy (`applyModelTruncationPolicy`) is the unconditional
+ * backstop — a result that already fits every cap passes through it untouched
+ * (its within-cap contract), so no spill file is written for it. The cap
+ * footer replaces the limit-stop footer when it fires; a result never carries
+ * both.
  */
 
 import { readPrefix } from "@/utils/bounded-io";
-import { limitStopFooter, shouldAppendLimitStopFooter } from "./read-continuation";
+import { applyCapCut, limitStopFooter, shouldAppendLimitStopFooter } from "./read-continuation";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
-import { READ_CEILING } from "./truncate";
+import { MODEL_MAX_BYTES, MODEL_MAX_LINES, READ_CEILING, splitModelLines } from "./truncate";
 
 /** Range arguments models invent instead of offset/limit -- rejected by name, never silently dropped. */
 const UNSUPPORTED_RANGE_ALIASES = ["start_line", "end_line", "start", "end", "line", "lineEnd", "size"] as const;
@@ -43,7 +52,8 @@ export const readTool: CodingTool = {
     "lines to return) to read a slice instead of the whole file. " +
     "Use Read to examine files instead of cat, sed, head, tail or awk in Bash. " +
     "A read that stops before the end of the file ends with a line naming the offset to continue from. " +
-    "For a large file, read the part you need with offset/limit; when you need the whole file, continue with offset until complete.",
+    "For a large file, read the part you need with offset/limit; when you need the whole file, continue with offset until complete. " +
+    `Output is capped at ${MODEL_MAX_LINES} lines or ${MODEL_MAX_BYTES} bytes.`,
   inputSchema: {
     type: "object",
     properties: {
@@ -82,11 +92,26 @@ export const readTool: CodingTool = {
         const prefix = await readPrefix(target, readCeiling);
         const bounded = Buffer.byteLength(prefix, "utf8") > readCeiling;
         const lineCount = countLines(prefix);
-        const header = `[${bounded ? `${lineCount}+` : `${lineCount}`} lines]`;
-        // The model-facing cap and the marker that names the spill path are
-        // the after_tool policy's, NOT this tool's. The tool returns the
-        // header + the prefix, bounded by the tool-layer read ceiling.
-        return { content: prefix === "" ? header : `${header}\n${prefix}` };
+        const totalLabel = bounded ? `${lineCount}+` : `${lineCount}`;
+        const header = `[${totalLabel} lines]`;
+        // US-002: the whole-file prefix is shaped at the model-facing caps
+        // before being handed to the runtime. Today's unshaped body is
+        // `header + (prefix when non-empty)`. The cap cut tries the largest
+        // k such that `header + first k lines + cap footer` fits both budgets;
+        // when no k fits, today's body passes through unchanged and the
+        // after_tool policy shapes it.
+        const unshaped = prefix === "" ? header : `${header}\n${prefix}`;
+        const result = applyCapCut({
+          header,
+          lines: splitModelLines(prefix),
+          firstLine: 1,
+          totalLabel,
+          limitStopFooter: "",
+          unshapedBody: unshaped,
+          maxBytes: ctx.maxBytes,
+          maxLines: MODEL_MAX_LINES,
+        });
+        return { content: result.content };
       }
 
       let offset = 1;
@@ -110,9 +135,7 @@ export const readTool: CodingTool = {
       // floor, not a total, and must not be reported as one -- claiming a false
       // total to the model is the same class of defect #1923 is fixing.
       const bounded = Buffer.byteLength(body, "utf8") > ctx.maxFileBytes;
-      const trailingNewline = body.endsWith("\n");
-      const lines = trailingNewline ? body.slice(0, -1).split("\n") : body.split("\n");
-      const totalLines = lines.length;
+      const totalLines = countLines(body);
       const totalLabel = bounded ? `${totalLines}+` : `${totalLines}`;
 
       if (offset > totalLines) {
@@ -123,16 +146,17 @@ export const readTool: CodingTool = {
         };
       }
 
+      const lines = splitModelLines(body);
       const startIndex = offset - 1;
       const endLine = limit === undefined ? totalLines : Math.min(startIndex + limit, totalLines);
       const selected = lines.slice(startIndex, endLine).join("\n");
-      const header = `[lines ${offset}-${endLine} of ${totalLabel}]\n`;
+      const headerLine = `[lines ${offset}-${endLine} of ${totalLabel}]`;
       // US-001: when a `limit` cut the slice short of the file's known line
       // count, append a single trailer that names the continuation offset.
       // The helper hides the predicate (limit given AND endLine < totalLines)
       // and the `+`-on-floor rule, both of which are easy to drift apart from
       // the header if inlined.
-      const footer = shouldAppendLimitStopFooter(limit !== undefined, endLine, totalLines)
+      const limitStop = shouldAppendLimitStopFooter(limit !== undefined, endLine, totalLines)
         ? limitStopFooter({
             nextOffset: endLine + 1,
             totalIsFloor: bounded,
@@ -140,12 +164,23 @@ export const readTool: CodingTool = {
             totalLines,
           })
         : "";
-      // The model-facing cap and the marker that names the spill path are
-      // the after_tool policy's, NOT this tool's. The header and the
-      // requested range go back to the runtime whole; the chokepoint shapes
-      // them for the model.
-      const content = footer === "" ? `${header}${selected}` : `${header}${selected}\n${footer}`;
-      return { content };
+      // US-002: shape today's body at the model-facing caps. The cap cut
+      // replaces the limit-stop footer when it fires; when no whole line
+      // fits with the header and cap footer, today's body is returned
+      // unchanged (plus the limit-stop footer from rule 1 if it applied),
+      // and the after_tool policy then shapes it.
+      const unshapedBody = `${headerLine}\n${selected}`;
+      const result = applyCapCut({
+        header: headerLine,
+        lines: lines.slice(startIndex, endLine),
+        firstLine: offset,
+        totalLabel,
+        limitStopFooter: limitStop,
+        unshapedBody,
+        maxBytes: ctx.maxBytes,
+        maxLines: MODEL_MAX_LINES,
+      });
+      return { content: result.content };
     } catch (err) {
       // An unreadable file is a tool ERROR the model can react to, never a
       // denial: the policy already said yes.
