@@ -1860,7 +1860,7 @@ Single home for all LLM prompt construction. No prompt template literals are per
 **Builder classes:**
 | Builder | Handles |
 |:---|:---|
-| `TddPromptBuilder` | Implementer, test-writer, verifier, no-test, single-session, tdd-simple, batch roles |
+| `TddPromptBuilder` | Implementer, test-writer, verifier, no-test, tdd-simple, batch roles |
 | `RectifierPromptBuilder` | TDD-test-failure, TDD-suite-failure, verify-failure, review-findings rectification |
 | `ReviewPromptBuilder` | Semantic review dialogue |
 | `AdversarialReviewPromptBuilder` | Adversarial review dialogue |
