@@ -97,6 +97,65 @@ describe("findGitSpawnViolations", () => {
   });
 });
 
+/**
+ * US-003: a spawn whose argv is not a literal array headed by a string literal
+ * is invisible to the `["git", ...]` rule above. The gate must flag those call
+ * sites too — unless the call hardens its own env, or carries a reasoned marker.
+ */
+const NON_LITERAL_WHY =
+  "spawn argv is not a literal: pass env: gitSpawnEnv(...) or mark // nax-git-env-allow: <reason>";
+
+describe("findGitSpawnViolations — non-literal spawn argv (US-003)", () => {
+  test("AC1: flags an argv variable at the spawn line", () => {
+    const violations = findGitSpawnViolations("Bun.spawn(argv, { cwd });");
+    expect(violations.map((v) => [v.line, v.why])).toEqual([[1, NON_LITERAL_WHY]]);
+  });
+
+  test("AC2: flags a non-literal argv handed to spawnSync", () => {
+    const violations = findGitSpawnViolations("Bun.spawnSync(cmd, opts);");
+    expect(violations.map((v) => [v.line, v.why])).toEqual([[1, NON_LITERAL_WHY]]);
+  });
+
+  test("AC3: flags an array literal headed by an identifier, not a string literal", () => {
+    const violations = findGitSpawnViolations('Bun.spawn([gitBin, "status"], { cwd });');
+    expect(violations.map((v) => [v.line, v.why])).toEqual([[1, NON_LITERAL_WHY]]);
+  });
+
+  test("AC4: accepts a non-literal argv when the call passes gitSpawnEnv(...)", () => {
+    expect(findGitSpawnViolations("deps.spawn(cmd, { cwd, env: gitSpawnEnv() });")).toEqual([]);
+  });
+
+  test("AC5: accepts a non-literal argv when the call passes hardenedGitEnv(...)", () => {
+    expect(findGitSpawnViolations("Bun.spawn(argv, { env: hardenedGitEnv(process.env) });")).toEqual([]);
+  });
+
+  test("AC6: accepts a non-literal argv marked on the line above", () => {
+    expect(findGitSpawnViolations("// nax-git-env-allow: not git: hook argv\nBun.spawn(argv, { cwd });")).toEqual([]);
+  });
+
+  test("AC7: accepts a non-literal argv marked on its own line", () => {
+    expect(findGitSpawnViolations("Bun.spawn(argv, { cwd }); // nax-git-env-allow: not git: acpx client")).toEqual([]);
+  });
+
+  test("AC8: an empty allow marker does not exempt a non-literal argv", () => {
+    const violations = findGitSpawnViolations("// nax-git-env-allow:\nBun.spawn(argv, { cwd });");
+    expect(violations.map((v) => [v.line, v.why])).toEqual([[2, NON_LITERAL_WHY]]);
+  });
+
+  test('AC9: accepts an argv literal headed by a non-"git" string literal', () => {
+    expect(findGitSpawnViolations('Bun.spawn(["bun", "test"], { cwd });')).toEqual([]);
+  });
+
+  test("AC10: reports the spawn callee line for a multi-line call", () => {
+    const violations = findGitSpawnViolations("const p = Bun.spawn(\n  argv,\n  { cwd },\n);");
+    expect(violations.map((v) => [v.line, v.why])).toEqual([[1, NON_LITERAL_WHY]]);
+  });
+
+  test("AC11: does not flag a spawn mention inside a comment or a string", () => {
+    expect(findGitSpawnViolations('// Bun.spawn(argv)\nconst s = "Bun.spawn(argv)";')).toEqual([]);
+  });
+});
+
 describe("check-git-spawn-env CLI", () => {
   let root: string | undefined;
 
@@ -126,5 +185,13 @@ describe("check-git-spawn-env CLI", () => {
     const { code, out } = runGate({ "src/tdd/x.ts": '\nBun.spawn(["git", "status"], { cwd });\n' });
     expect(code).toBe(1);
     expect(out).toContain(join("src", "tdd", "x.ts:2"));
+  });
+
+  test("AC12: exits 0 and reports clean on this repository", () => {
+    const repoRoot = join(import.meta.dir, "../../..");
+    const proc = Bun.spawnSync(["bun", "run", SCRIPT, repoRoot]);
+    const out = proc.stdout.toString() + proc.stderr.toString();
+    expect(out).toContain("check-git-spawn-env: clean");
+    expect(proc.exitCode).toBe(0);
   });
 });
