@@ -28,7 +28,7 @@ describe("classifyOutcome", () => {
     [[lintA, lintB], [lintA], "partial"],
     [[], [lintA], "regressed"],
     [[lintA], [lintA, lintB], "regressed"],
-    [[lintA], [lintB], "regressed"],
+    [[lintA], [lintB], "rotated"],
     [[lintA], [typecheckC], "regressed-different-source"],
     [[lintA], [lintA, typecheckC], "regressed-different-source"],
   ] satisfies ClassifyCase[])("classifyOutcome($before, $after) → $expected", (before, after, expected) => {
@@ -577,7 +577,7 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
 
   test("iteration findingsAfter and cycle.findings both reflect lite result (AC4/AC5/AC6)", async () => {
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
-    // lintA before, lintB after (same source lint) → regressed
+    // lintA before, lintB after (same source lint, no key survives) → rotated
     const cycle = makeCycle([lintA], [strategy], async () => [lintB]);
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", {
@@ -586,7 +586,7 @@ describe("runFixCycle — lite validate on terminal exhausted", () => {
 
     expect(result.iterations).toHaveLength(1);
     expect(result.iterations[0].findingsAfter).toEqual([lintB]);
-    expect(result.iterations[0].outcome).toBe("regressed");
+    expect(result.iterations[0].outcome).toBe("rotated");
     expect(cycle.findings).toEqual([lintB]);
   });
 

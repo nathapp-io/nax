@@ -281,7 +281,7 @@ export const DEFAULT_AGENT_SPIN_BREAKER_CONFIG: {
   stopAfterSameKeyRepeats: 12,
 };
 
-const AgentSpinBreakerConfigSchema = z
+export const AgentSpinBreakerConfigSchema = z
   .object({
     enabled: z.boolean().default(true),
     nudgeAfterRepeats: z.number().int().min(2).max(500).default(25),
@@ -298,6 +298,18 @@ const AgentSpinBreakerConfigSchema = z
      * backstop for a result that changes every time. 0 disables this axis.
      */
     stopAfterSameKeyRepeats: z.number().int().min(0).max(1000).default(12),
+    /**
+     * nax#2017: seconds with no new call key after which a repeat run ends the
+     * turn, so a slow spin stops as `fail-spin` before the tool-call-only idle
+     * watchdog cancels it as `fail-stale`. 0 disables the axis.
+     *
+     * Deliberately OPTIONAL with no schema default: the effective default is
+     * derived at selection time from `agent.idleWatchdog` (half its
+     * `toolCallOnlyIdleTimeoutSeconds`), so a baked-in value here would be
+     * indistinguishable from an explicit operator choice and would silently
+     * win over the derivation (see `selectSpinBreakerSettings`).
+     */
+    stopAfterNoProgressSeconds: z.number().int().min(0).max(86_400).optional(),
   })
   // A stop at or below the first nudge point would end turns with no warning
   // ever reaching the model, which is the opposite of the breaker's contract.

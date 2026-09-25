@@ -462,6 +462,9 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       featureName: prd.feature,
       storyId: story.id,
       abortSignal: runtime.signal,
+      // US-005: the deferred regression gate runs after review — label its
+      // approval prompts "review", not the execution default.
+      stage: "review",
     });
     const cycleCtx: FixCycleContext = {
       runtime,

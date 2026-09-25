@@ -144,6 +144,14 @@ export interface AgentSpinBreakerConfig {
    * @default 12
    */
   stopAfterSameKeyRepeats?: number;
+  /**
+   * Seconds with no new call key after which a repeat run ends the turn, so a
+   * slow spin stops as `fail-spin` before the tool-call-only idle watchdog
+   * cancels it as `fail-stale` (nax#2017). When unset it is derived as half of
+   * `agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds` (900 when that watchdog
+   * is off). 0 disables the axis.
+   */
+  stopAfterNoProgressSeconds?: number;
 }
 
 /** Agent protocol configuration (ACP-003) */

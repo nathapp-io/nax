@@ -37,6 +37,7 @@ import {
   resolveStoryBaseline,
   type StoryExecutionMode,
 } from "../verification";
+import { type GateCommandProvenance, resolveGateCwd } from "./gate-cwd";
 import type { CallContext, DeterministicOperation } from "./types";
 
 /**
@@ -128,8 +129,11 @@ export interface FullSuiteGateContext {
   readonly config: NaxConfig;
   readonly testCmd: QualityCommandSpec;
   readonly fullSuiteTimeout: number;
-  /** cwd for the test subprocess — packageDir when per-package override exists, repoRoot otherwise. */
+  /** cwd for the test subprocess — the story workdir when the command's provenance is the
+   * package (detected or overlay), the repo root otherwise (see gate-cwd.ts). */
   readonly cmdWorkdir: string;
+  /** Why `cmdWorkdir` holds the value it does (src/operations/gate-cwd.ts). */
+  readonly cmdProvenance?: GateCommandProvenance;
 }
 
 export interface FullSuiteGateDeps {
@@ -176,9 +180,15 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
         },
       );
     }
-    // Root-config fallback: command was not defined per-package, so run from repo root.
-    const cmdWorkdir = ctx.packageView.hasOverride ? input.workdir : ctx.packageView.repoRoot;
-    return { config, testCmd: resolvedTestCmd, fullSuiteTimeout, cmdWorkdir };
+    // Root-config fallback: the command was not declared per-package, so the
+    // provenance rule runs it from the repo root (see gate-cwd.ts).
+    const { cwd: cmdWorkdir, provenance } = resolveGateCwd({
+      commandName: "test",
+      detected: false,
+      packageView: ctx.packageView,
+      workdir: input.workdir,
+    });
+    return { config, testCmd: resolvedTestCmd, fullSuiteTimeout, cmdWorkdir, cmdProvenance: provenance };
   },
   runTests: async (_input, gateCtx) => {
     const { regression } = await import("../verification/runners");
@@ -315,6 +325,7 @@ export const fullSuiteGateOp: DeterministicOperation<
       storyId: input.story.id,
       packageDir: storyPackageDir(input.story),
       cwd: gateCtx.cmdWorkdir,
+      provenance: gateCtx.cmdProvenance,
       command: gateCtx.testCmd,
       timeoutSeconds: gateCtx.fullSuiteTimeout,
     });

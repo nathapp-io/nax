@@ -133,6 +133,90 @@ describe("timeoutRetry — generic preamble fallback (AC8)", () => {
   });
 });
 
+describe("timeoutRetry — non-timeout failure variants (US-005)", () => {
+  const P = "Original prompt text for the story";
+  const spin: AdapterFailure = { category: "quality", outcome: "fail-spin", retriable: true, message: "spin" };
+  const incomplete: AdapterFailure = {
+    category: "quality",
+    outcome: "fail-incomplete",
+    retriable: true,
+    message: "incomplete",
+  };
+
+  test("US-005 AC9: fail-spin names the spin, the attempt, the changed file and the prompt", () => {
+    const result = timeoutRetry({
+      prompt: P,
+      changedFiles: ["src/a.ts"],
+      elapsedMs: 42_000,
+      attempt: 1,
+      failure: spin,
+    });
+    expect(result).toContain("kept repeating the same tool calls");
+    expect(result).toContain("This was not a timeout. This is attempt 2 of the same story.");
+    expect(result).toContain("- src/a.ts");
+    expect(result).toContain(P);
+  });
+
+  test("US-005 AC10: fail-spin never claims a timeout", () => {
+    const result = timeoutRetry({
+      prompt: P,
+      changedFiles: ["src/a.ts"],
+      elapsedMs: 42_000,
+      attempt: 1,
+      failure: spin,
+    });
+    expect(result).not.toContain("hit a timeout");
+  });
+
+  test("US-005 AC11: fail-incomplete with no changed files names the early turn end and the empty tree", () => {
+    const result = timeoutRetry({
+      prompt: P,
+      changedFiles: [],
+      elapsedMs: 42_000,
+      attempt: 1,
+      failure: incomplete,
+    });
+    expect(result).toContain("ended its turn before finishing the story");
+    expect(result).toContain("This was not a timeout.");
+    expect(result).toContain("The previous attempt left no file changes on disk.");
+  });
+
+  test("US-005 AC12: fail-incomplete never claims a timeout", () => {
+    const result = timeoutRetry({
+      prompt: P,
+      changedFiles: [],
+      elapsedMs: 42_000,
+      attempt: 1,
+      failure: incomplete,
+    });
+    expect(result).not.toContain("hit a timeout");
+  });
+
+  test("US-005 AC13: fail-timeout keeps the timeout preamble byte-for-byte", () => {
+    const timedOut: AdapterFailure = {
+      category: "quality",
+      outcome: "fail-timeout",
+      retriable: true,
+      message: "timeout",
+    };
+    const result = timeoutRetry({
+      prompt: P,
+      changedFiles: [],
+      elapsedMs: 42_000,
+      attempt: 1,
+      failure: timedOut,
+    });
+    expect(result.startsWith("The previous attempt hit a timeout after")).toBe(true);
+    expect(result).not.toContain("This was not a timeout.");
+  });
+
+  test("US-005 AC14: an absent failure keeps the timeout preamble byte-for-byte", () => {
+    const result = timeoutRetry({ prompt: P, changedFiles: [], elapsedMs: 42_000, attempt: 1 });
+    expect(result.startsWith("The previous attempt hit a timeout after")).toBe(true);
+    expect(result).not.toContain("This was not a timeout.");
+  });
+});
+
 describe("timeoutRetry — the lane was opened by an invalid tool call (nax#2200)", () => {
   const invalidCall: AdapterFailure = {
     category: "quality",

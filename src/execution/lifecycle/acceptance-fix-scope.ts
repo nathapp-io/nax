@@ -55,6 +55,9 @@ export async function openAcceptanceFixScope(
     featureName: ctx.feature,
     storyId,
     abortSignal: ctx.abortSignal,
+    // US-005: the acceptance fix cycle runs after review, so its approval
+    // prompts are labelled "review" rather than the execution default.
+    stage: "review",
   });
   const cycleCtx: FixCycleContext = {
     runtime,

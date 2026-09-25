@@ -1,0 +1,356 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "honest-gates-and-labels",
+  "branchName": "feat/honest-gates-and-labels",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-09-24T16:10:49.593Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Retire the inert review gate knob with a warning",
+      "description": "**Goal** — Remove the inert review gate knob while warning users who still configure it.\n\n**Motivation** — Setting it to `false` changes nothing and warns nothing.\n\n**Approach** — Retire `review.gateLLMChecksOnMechanicalPass` (#2174)\n\n- Delete the key from `ReviewConfigSchema` (`src/config/schemas-review.ts`), from the default config (`src/config/schemas.ts`) and from `ReviewConfig` (`src/review/types.ts`).\n- Delete `skipped?: boolean` from `ReviewCheckResult` (`src/review/types.ts`).\n- Add `\"review.gateLLMChecksOnMechanicalPass\"` to `REMOVED_NO_OP_KEYS` (`src/config/config-guards.ts`) with the hint `LLM review checks are sequenced by the story orchestrator; this key never had an effect after #1859`. `stripRemovedNoOpKeys` then warns once and strips the key, as it does for the existing entries.\n- Fix the LLM row of the table in `docs/guides/semantic-review.md` to drop the gating clause.\n- Removal of the three declarations and of `skipped` is verified by the build (`bun run typecheck`) and the existing lint gate, not by an AC.\n\n**Scope** — In: guarded removal, loader compatibility, obsolete-test update and guide row. Out: implementing the gate in the story orchestrator (issue Option B); editing the historical story-orchestrator spec.",
+      "acceptanceCriteria": [
+        "When stripRemovedNoOpKeys({ review: { gateLLMChecksOnMechanicalPass: false, enabled: true } }, warn) runs, then the returned review has no gateLLMChecksOnMechanicalPass key (checked with `in`).",
+        "When stripRemovedNoOpKeys({ review: { gateLLMChecksOnMechanicalPass: false, enabled: true } }, warn) runs, then the returned review has enabled: true.",
+        "When stripRemovedNoOpKeys receives a review with gateLLMChecksOnMechanicalPass: false, then warn is invoked exactly once with a message containing review.gateLLMChecksOnMechanicalPass and `has been removed`.",
+        "When stripRemovedNoOpKeys processes an input with review.gateLLMChecksOnMechanicalPass: false, then that input still has review.gateLLMChecksOnMechanicalPass === false afterwards.",
+        "When NaxConfigSchema.parse parses a config with review: {}, then the parsed review has no gateLLMChecksOnMechanicalPass key (checked with `in`).",
+        "When the config loader loads a project whose .nax/config.json sets review.gateLLMChecksOnMechanicalPass: true, then loading succeeds and the loaded review has no gateLLMChecksOnMechanicalPass key."
+      ],
+      "tags": [
+        "config",
+        "review",
+        "compatibility"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Removing three declarations and using the established warn-and-strip config guard is standard cross-file maintenance with one loader-compatibility check.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/config-guards.ts",
+        "src/config/schemas-review.ts",
+        "src/config/schemas.ts",
+        "src/review/types.ts",
+        "docs/guides/semantic-review.md"
+      ],
+      "expectedFiles": [
+        "test/unit/config/removed-gate-llm-knob.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/config/semantic-review.test.ts",
+          "reason": "the assertions that `gateLLMChecksOnMechanicalPass` parses and round-trips are deleted with the key."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "67a86966e25060186af385dee0f5d998f5da0926",
+      "outOfScope": [
+        "implementing the gate in the story orchestrator (issue Option B)."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Route quality gates by raw command provenance",
+      "description": "**Goal** — Choose each quality gate's cwd from the actual source of its command instead of unrelated package overrides.\n\n**Motivation** — A root `lint` runs in `packages/lib` because that overlay defines only `test`, and at the repo root for `packages/app`, which has no overlay — where a root `echo 'no lint' && exit 0` passes vacuously.\n\n**Approach** — Gate cwd from command provenance (#2182)\n\n`PackageView` (`src/runtime/packages.ts`) gains one optional field, so the existing inline `PackageView` literals in tests keep compiling:\n\n```ts\n/** The raw per-package overlay (`.nax/mono/<pkg>/config.json`) before merging; absent when the package has none. */\nreadonly overlay?: Partial<NaxConfig>;\n```\n\n`hydrate()` stores the raw override it loaded in a second map beside `mergedConfigs`; `resolve()` passes it to `createPackageView`. `hasOverride` keeps its meaning and its other callers.\n\nNew module `src/operations/gate-cwd.ts`:\n\n```ts\nexport type GateCommandProvenance = \"root\" | \"overlay\" | \"detected\";\n\nexport interface GateCwdInput {\n  /** The quality command the gate runs. */\n  readonly commandName: \"lint\" | \"typecheck\" | \"test\";\n  /** True when the command was auto-detected from the package manifest, not configured. */\n  readonly detected: boolean;\n  readonly packageView: Pick<PackageView, \"overlay\" | \"repoRoot\">;\n  /** The story's package workdir (`input.workdir` in each gate). */\n  readonly workdir: string;\n}\n\nexport interface GateCwd {\n  readonly cwd: string;\n  readonly provenance: GateCommandProvenance;\n}\n\nexport function resolveGateCwd(input: GateCwdInput): GateCwd;\n```\n\nRule:\n- `detected` → `{ cwd: workdir, provenance: \"detected\" }`.\n- else, the overlay defines `quality.commands[commandName]` or `review.commands[commandName]` (either `!== undefined`) → `{ cwd: workdir, provenance: \"overlay\" }`.\n- else → `{ cwd: packageView.repoRoot, provenance: \"root\" }`.\n\nThe `review.commands` arm exists because `full-suite-gate.ts` reads\n`review.commands.test ?? quality.commands.test` through `resolveQualityTestCommands`, and\n`mergePackageConfig`'s PKG-006 bridge mirrors overlay quality commands into `review.commands`.\n\nEach of the four gates replaces its `hasOverride` ternary with a `resolveGateCwd(...)` call and\nuses `.cwd`:\n- `lint-check.ts` with `commandName: \"lint\"`, `detected: detectedFromPackage`.\n- `typecheck-check.ts` with `commandName: \"typecheck\"`, `detected: detectedFromPackage`.\n- `verify-scoped.ts` with `commandName: \"test\"`, `detected: detectedFromPackage`.\n- `full-suite-gate.ts`, inside `_fullSuiteGateDeps.resolveGateContext`, with `commandName: \"test\"`\n  and `detected: false` on the configured path (the detected path already returns early with\n  `input.workdir`, unchanged).\n\n`verify-scoped.ts` adds `provenance` to its existing `\"Running scoped tests\"` log data;\n`full-suite-gate.ts` stores it on `FullSuiteGateContext` as `cmdProvenance` and adds it to its\nexisting `\"Running full-suite gate\"` log data. The doc comment on `FullSuiteGateContext.cmdWorkdir`\nis updated to the new rule.\n\n**Scope** — In: raw overlay hydration, gate cwd resolver, four gate integrations, provenance logs and routing fixtures. Out: removing `hasOverride`; the log-only alternative; changing unrelated package config selection.\n\n**Interface** — The TypeScript declarations above define `PackageView.overlay`, `GateCommandProvenance`, `GateCwdInput`, `GateCwd` and `resolveGateCwd`.",
+      "acceptanceCriteria": [
+        "resolveGateCwd returns { cwd: '/r', provenance: 'root' } when commandName is lint, detected is false, overlay defines only quality.commands.test: 'bun test', repoRoot is '/r', and workdir is '/r/packages/lib'.",
+        "resolveGateCwd returns { cwd: '/r/packages/lib', provenance: 'overlay' } when commandName is lint and overlay quality.commands.lint is 'eslint .' for workdir '/r/packages/lib'.",
+        "resolveGateCwd returns provenance: 'overlay' and the package workdir when commandName is test and only overlay review.commands.test is defined.",
+        "resolveGateCwd returns { cwd: '/r/packages/app', provenance: 'detected' } when overlay is absent, detected is true and workdir is '/r/packages/app'.",
+        "resolveGateCwd returns { cwd: '/r', provenance: 'root' } when overlay is absent, detected is false and repoRoot is '/r'.",
+        "resolveGateCwd returns provenance: 'root' when overlay is {} and detected is false.",
+        "When createPackageRegistry hydrates ['packages/lib'] with a loader returning { quality: { commands: { test: 'bun test' } } }, then resolve('packages/lib').overlay deep-equals that raw object.",
+        "When createPackageRegistry hydrates ['packages/lib'] with a loader returning { quality: { commands: { test: 'bun test' } } }, then resolve('packages/lib').hasOverride is true.",
+        "When createPackageRegistry hydrates packages/app with a loader returning null, then 'overlay' in resolve('packages/app') is false.",
+        "When createPackageRegistry hydrates packages/app with a loader returning null, then resolve('packages/app').hasOverride is false.",
+        "When lintCheckOp receives an overlay defining only quality.commands.test and a root-configured quality.commands.lint with repoRoot '/r' and input.workdir '/r/packages/lib', then its lint command spawns with cwd '/r'.",
+        "When lintCheckOp receives an overlay defining quality.commands.lint, then its lint command spawns with cwd equal to input.workdir.",
+        "When typecheckCheckOp receives an overlay defining only quality.commands.test and root-configured quality.commands.typecheck, then typecheck spawns with cwd equal to repoRoot.",
+        "When verifyScopedOp receives an overlay defining only quality.commands.lint and root-configured quality.commands.test, then scoped tests spawn with cwd equal to repoRoot.",
+        "When verifyScopedOp receives an overlay defining only quality.commands.lint and root-configured quality.commands.test, then its 'Running scoped tests' log data includes provenance: 'root'.",
+        "When the real _fullSuiteGateDeps.resolveGateContext receives an overlay defining only quality.commands.lint and root-configured quality.commands.test, then its context has cmdWorkdir equal to repoRoot and cmdProvenance 'root'.",
+        "When the real _fullSuiteGateDeps.resolveGateContext receives an overlay defining quality.commands.test, then its context has cmdWorkdir equal to input.workdir and cmdProvenance 'overlay'."
+      ],
+      "tags": [
+        "quality",
+        "monorepo",
+        "runtime"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "A raw-overlay provenance abstraction spans registry hydration and four gate execution paths, with existing cwd fixtures needing updates.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/runtime/packages.ts",
+        "src/operations/lint-check.ts",
+        "src/operations/typecheck-check.ts",
+        "src/operations/verify-scoped.ts",
+        "src/operations/full-suite-gate.ts"
+      ],
+      "expectedFiles": [
+        "src/operations/gate-cwd.ts",
+        "test/unit/operations/gate-cwd.test.ts",
+        "test/unit/operations/gate-cwd-wiring.test.ts",
+        "test/unit/runtime/packages-overlay.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/operations/lint-check.test.ts",
+          "reason": "the \"per-package override exists\" routing test must give its `packageView` an `overlay` defining `quality.commands.lint`; the no-override test is unchanged."
+        },
+        {
+          "path": "test/unit/operations/typecheck-check.test.ts",
+          "reason": "the \"per-package override exists\" routing test must give its `packageView` an `overlay` defining `quality.commands.typecheck`."
+        },
+        {
+          "path": "test/unit/operations/verify-scoped.test.ts",
+          "reason": "the \"per-package override exists\" routing test must give its `packageView` an `overlay` defining `quality.commands.test`."
+        },
+        {
+          "path": "test/unit/operations/quality-gate-packageview.test.ts",
+          "reason": "its `hasOverride: true` fixture against the real `resolveGateContext` may gain an `overlay`; its `testCmd` assertion is unchanged."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c826fab1902632ddf1b2a4eb5b83bb38174c4d34",
+      "outOfScope": [
+        "removing `hasOverride`."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Expose rotated findings and name oscillation counts accurately",
+      "description": "**Goal** — Record full finding replacement as `rotated` and describe oscillation counts as reappearing sources.\n\n**Motivation** — The breaker reason says `N regressed-different-source iterations`, but the count is the number of finding sources that reappeared after being resolved; `classifyOutcome` returns `regressed` for both partial novelty and full replacement.\n\n**Approach** — `rotated` outcome and an honest breaker reason (#2154 secondary defects)\n\n`src/findings/cycle.ts` is at 592 of 600 lines, so `classifySingleSource` and `classifyOutcome` move verbatim into a new module `src/findings/classify-outcome.ts`; `cycle.ts` imports `classifyOutcome` from it for its own call sites and re-exports it (`export { classifyOutcome } from \"./classify-outcome\";`) so every existing import keeps working.\n\n`IterationOutcome` (`src/findings/cycle-types.ts`) gains `\"rotated\"`, and the inline copy of the union at `src/plugins/builtin/curator/types.ts` gains it too.\n\nIn `classifyOutcome`, after the `regressed-different-source` check and before the per-source aggregation:\n\n```ts\n// nax#2154: every finding replaced by a different one — the defect moved, nothing converged.\nconst beforeKeys = new Set(before.map(findingRecurrenceKey));\nif (after.length > 0 && after.every((f) => !beforeKeys.has(findingRecurrenceKey(f)))) return \"rotated\";\n```\n\nPrecedence is therefore: `resolved` (both empty) → `regressed` (before empty) → `regressed-different-source` → `rotated` → per-source aggregation (unchanged). No consumer treats `rotated` specially: `countOscillationOutcomes` works on sources, not outcomes, and the curator, `prior-iterations-builder.ts` and `no-progress-bail.ts` only special-case `resolved` or `unchanged`.\n\nThe breaker reason in `src/execution/oscillation-breaker.ts` becomes:\n\n```ts\nreason: `Rectification oscillation threshold reached: ${count} resolved finding sources reappeared across attempts (max ${maxOscillations})`,\n```\n\nThe `countOscillationOutcomes` comment in `src/execution/post-run.ts` that calls the count\n\"regressed-different-source iterations\" is corrected to the same wording.\n\n**Scope** — In: classifier extraction, outcome unions, breaker reason and misleading post-run comment. Out: feeding `rotated` into the oscillation count; counting consecutive rotated iterations toward the breaker; growing baseline-sized `test/unit/findings/cycle.test.ts`.\n\n**Interface** — `classifyOutcome<F extends Finding>(before: F[], after: F[]): IterationOutcome` remains exported from cycle and the findings barrel and is also exported from the new module.",
+      "acceptanceCriteria": [
+        "When classifyOutcome from src/findings/classify-outcome.ts receives four before findings (semantic at lines 114, 114 with a different rule, 121, and adversarial at 108) and two after semantic findings at lines 96 and 76, then it returns 'rotated'.",
+        "When classifyOutcome receives semantic at a.ts:10 before and semantic at a.ts:20 after, then it returns 'rotated'.",
+        "When classifyOutcome receives semantic at a.ts:10 and a.ts:20 before and semantic at a.ts:20 and a.ts:30 after, then it returns 'regressed' (one key persisted).",
+        "When classifyOutcome receives semantic at a.ts:10 before and adversarial at a.ts:10 after, then it returns 'regressed-different-source' (the new-source check takes precedence over rotated).",
+        "When classifyOutcome receives the same semantic file, line and rule before and after but a different message, then it returns 'unchanged' (nax#1581 preserved).",
+        "When classifyOutcome receives an empty before and one after finding, then it returns 'regressed'.",
+        "When classifyOutcome receives empty before and after findings, then it returns 'resolved'.",
+        "When classifyOutcome is imported from src/findings/cycle.ts and from src/findings for the four-to-two rotation case, then each returns the same result as the src/findings/classify-outcome.ts export.",
+        "When the oscillation breaker trips with recorded count 2 and maxOscillations 2, then its reason contains '2 resolved finding sources reappeared'.",
+        "When the oscillation breaker trips with recorded count 2 and maxOscillations 2, then its reason does not contain 'regressed-different-source'."
+      ],
+      "tags": [
+        "findings",
+        "classification",
+        "observability"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "The near-limit classifier extraction changes outcome precedence and a duplicated serialized union while retaining barrel and breaker compatibility across modules.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/findings/cycle.ts",
+        "src/findings/cycle-types.ts",
+        "src/findings/types.ts",
+        "src/plugins/builtin/curator/types.ts",
+        "src/execution/oscillation-breaker.ts"
+      ],
+      "expectedFiles": [
+        "src/findings/classify-outcome.ts",
+        "test/unit/findings/classify-outcome-rotated.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/execution/oscillation-breaker.test.ts",
+          "reason": "a reason-text assertion naming `regressed-different-source` (if any) is updated to the new wording; the count and case-insensitive \"oscillat\" substring assertions are unchanged."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "39944b9cfb96e03ec5bfd9dca0762958c5c127a8",
+      "outOfScope": [
+        "feeding `rotated` into the oscillation count."
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Stop slow spins on time and replenish episode nudges",
+      "description": "**Goal** — End repeated slow tool-call spins as fail-spin before idle watchdog cancellation and restore nudge warnings after sustained new work.\n\n**Motivation** — A repeated call that takes ~40 s reaches the watchdog first, and the cancel is classified `fail-stale` instead of `fail-spin`; the breaker's nudge budget is spent once per session and never restored.\n\n**Approach** — Spin breaker time axis and per-episode nudge budget (#2017)\n\n`ResolvedSpinBreakerSettings` (`src/runtime/spin-breaker/index.ts`) gains:\n\n```ts\n/**\n * nax#2017: seconds with no new call key after which a repeat run ends the turn, so a slow spin\n * stops as fail-spin before the tool-call-only idle watchdog cancels it as fail-stale. 0 disables.\n */\nreadonly stopAfterNoProgressSeconds: number;\n```\n\n`DEFAULT_SPIN_BREAKER_SETTINGS.stopAfterNoProgressSeconds` is `900`.\n`AgentSpinBreakerConfigSchema` (`src/config/schemas-infra.ts`) gains\n`stopAfterNoProgressSeconds: z.number().int().min(0).max(86_400).optional()` — optional, no zod\ndefault, because the effective default depends on another section. The schema is module-private\ntoday; it becomes `export const AgentSpinBreakerConfigSchema` so its validation can be tested\ndirectly (it is not added to the `src/config/index.ts` barrel). `AgentSpinBreakerConfig` gains\nthe matching optional field.\n\n`selectSpinBreakerSettings` (`src/session/spin-breaker-selection.ts`) resolves it as: the configured\nvalue when set; otherwise `Math.floor(t / 2)` where `t` is\n`config.agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds`, when the watchdog `mode` is not `\"off\"`\nand `t > 0`; otherwise `900`.\n\n`createSpinBreaker(settings, deps?)` gains an optional second parameter\n`{ readonly now?: () => number }` (milliseconds, default `Date.now`). The breaker keeps\n`lastProgressAt`, set to `now()` at creation and on every new-key event.\n\n`SpinStopReason` gains `\"no-progress-time\"`, with stop message\n`\"Ending the turn — repeated calls with no new call for too long\"`. In `observe`, on the repeat path,\nafter `repeatsSinceProgress` is incremented and before the `repeat-run` threshold check:\n\n```ts\nconst NO_PROGRESS_TIME_MIN_REPEATS = 5;\nif (\n  settings.stopAfterNoProgressSeconds > 0 &&\n  repeatsSinceProgress >= NO_PROGRESS_TIME_MIN_REPEATS &&\n  now() - lastProgressAt >= settings.stopAfterNoProgressSeconds * 1000\n) {\n  return stopOrNudge(toolName, repeatsSinceProgress, \"no-progress-time\");\n}\n```\n\n`NO_PROGRESS_TIME_MIN_REPEATS` is a module constant, not a setting. The stop reaches the\norchestrator through the existing `spinStopped` → `fail-spin` path; no session, adapter or\n`src/session/manager.ts` change.\n\nNudge budget: the breaker keeps two counters. `nudges` stays the session-cumulative count that\n`summary()` reports (telemetry meaning unchanged). A new internal `episodeNudges` is what\n`stopOrNudge`, the nudge-point check and `nudgeText` use against `maxNudges`. `episodeNudges` resets\nto `0` when a real stop fires, and when `newKeyEvents - newKeyEventsAtLastNudge >=\nsettings.nudgeAfterRepeats` on a new-key event (`newKeyEventsAtLastNudge` is recorded in\n`buildNudge`). Resetting on every new key is deliberately NOT done: a laundering loop that\ninterleaves a fresh key between repeats of one call (nax#2047) would restore its budget forever and\nnever stop.\n\n**Scope** — In: optional config, watchdog-derived resolution, injectable clock, time stop, per-episode budget and regression tests. Out: relabelling watchdog cancels in `src/session/watchdog-turn-classification.ts`; editing `src/session/manager.ts`; resetting budget on each fresh call.\n\n**Interface** — `createSpinBreaker(settings: ResolvedSpinBreakerSettings, deps?: { readonly now?: () => number }): SpinBreaker`; `SpinStopReason` includes `\"no-progress-time\"`.",
+      "acceptanceCriteria": [
+        "When createSpinBreaker({ ...DEFAULT_SPIN_BREAKER_SETTINGS, stopAfterNoProgressSeconds: 900 }, { now }) observes A at now = 0 and eight further A calls at now = 1,000,000 ms without noteResult, then repeats 1-4 return allow, repeats 5-7 return nudge, and repeat 8 returns stop with reason 'no-progress-time'.",
+        "When a fresh breaker with those settings observes A then eight repeats of A at now = 899,000 ms, then none of those repeats returns stop or nudge (below the time limit, below nudgeAfterRepeats).",
+        "When a breaker observes A at 0, then repeats A at 1,000,000 ms with a new key B after the third repeat, then no 'no-progress-time' verdict occurs within four further A repeats (the new key reset the clock and repeat count).",
+        "When stopAfterNoProgressSeconds is 0 and a breaker observes A then 20 repeats at 10,000,000 ms, then none returns nudge or stop (time axis disabled; below the repeat thresholds).",
+        "selectSpinBreakerSettings returns stopAfterNoProgressSeconds: 600 when the agent idle watchdog toolCallOnlyIdleTimeoutSeconds is 1200.",
+        "selectSpinBreakerSettings returns stopAfterNoProgressSeconds: 300 when agent.spinBreaker.stopAfterNoProgressSeconds is 300 and watchdog timeout is 1200.",
+        "selectSpinBreakerSettings returns stopAfterNoProgressSeconds: 900 when idle watchdog mode is 'off' and no configured stopAfterNoProgressSeconds is set.",
+        "selectSpinBreakerSettings returns stopAfterNoProgressSeconds: 900 when config is undefined.",
+        "When settings returned by selectSpinBreakerSettings with watchdog toolCallOnlyIdleTimeoutSeconds: 1200 are passed to createSpinBreaker with an injected clock, then call A's repeat run stops with reason 'no-progress-time' when repeats are observed at 601,000 ms.",
+        "AgentSpinBreakerConfigSchema rejects stopAfterNoProgressSeconds: -1.",
+        "AgentSpinBreakerConfigSchema accepts stopAfterNoProgressSeconds: 0.",
+        "When the laundering loop [A, B, A, B, ...] calls noteResult(..., 'identical') after each call, then it still stops at call 28 with summary().nudges equal to 3 (unchanged).",
+        "When a breaker repeats A with noteResult(..., 'identical') and a never-before-seen key between every two A calls, then it stops with reason 'same-key-cumulative'.",
+        "When a breaker repeats A with noteResult(..., 'identical') and a never-before-seen key between every two A calls, then summary().nudges is 3 at that stop (a fresh interleaved key does not restore the budget).",
+        "When createSpinBreaker(DEFAULT_SPIN_BREAKER_SETTINGS, { now: () => 0 }) observes A once, 42 repeats of A without noteResult (nudges at default repeat points 25, 33 and 42), 25 distinct new keys, and 25 repeats of the last new key, then its 25th repeat returns a nudge with nudgeNumber 1.",
+        "When createSpinBreaker(DEFAULT_SPIN_BREAKER_SETTINGS, { now: () => 0 }) observes A once, 42 repeats of A without noteResult (nudges at default repeat points 25, 33 and 42), 25 distinct new keys, and 25 repeats of the last new key, then summary().nudges is 4.",
+        "When a breaker reaches a real stop and then a different key's repeat run reaches nudgeAfterRepeats, then that next run returns a nudge (not a stop)."
+      ],
+      "tags": [
+        "runtime",
+        "spin-breaker",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Multi-axis session-scoped stop accounting and nudge telemetry affect failure classification and require isolated verification of laundering-loop regressions.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/runtime/spin-breaker/index.ts",
+        "src/session/spin-breaker-selection.ts",
+        "src/config/schemas-infra.ts",
+        "src/config/runtime-types-agent.ts",
+        "src/agents/native/session/turn-result.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/runtime/spin-breaker-time-axis.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/session/spin-breaker-selection.test.ts",
+          "reason": "an exact-equality assertion over the resolved settings gains `stopAfterNoProgressSeconds`."
+        },
+        {
+          "path": "test/unit/runtime/spin-breaker.test.ts",
+          "reason": "an exact-equality assertion over `DEFAULT_SPIN_BREAKER_SETTINGS` or a settings fixture gains `stopAfterNoProgressSeconds`; the laundering test's `stoppedAt` (28) and `nudges` (3) expectations are unchanged."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bcabd3e479a8430ebddea086bb1d7f16d3fd2972",
+      "outOfScope": [
+        "relabelling watchdog cancels in `src/session/watchdog-turn-classification.ts`."
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Label post-run approval and retry prompts honestly",
+      "description": "**Goal** — Label post-run approval prompts by their actual stage and non-timeout retries by their actual failure, while pinning runner chain forwarding.\n\n**Motivation** — `createHumanAskLink` hard-codes `stage: \"execution\"` on every approval prompt; `timeoutRetry` tells a `fail-spin` or `fail-incomplete` retry that it \"hit a timeout\"; runner interaction-chain threading has no test.\n\n**Approach** — #2213 leftovers: approval stage, retry wording, runner test\n\n**Approval stage.** `createHumanAskLink` (`src/interaction/ask-link.ts`) options gain\n`readonly stage?: InteractionStage`; the prompt uses `stage: opts.stage ?? \"execution\"`.\n`DispatchAskOptions` (`src/interaction/dispatch-ask.ts`) gains `readonly stage?: InteractionStage`,\nand `buildDispatchAskWiring` passes it to `deps.createHumanAskLink` when defined.\n`buildRunDispatchAskWiring` forwards it through its existing spread. Post-run callers pass the\nexisting `InteractionStage` values (no new union members):\n- `src/execution/lifecycle/acceptance-fix-scope.ts` → `\"review\"`\n- `src/execution/lifecycle/run-regression.ts` (deferred regression gate) → `\"review\"`\n- `src/finish/phase.ts` → `\"merge\"`\n- `src/pipeline/stages/execution.ts` passes nothing (keeps `\"execution\"`).\n\n**Retry wording.** `timeoutRetry` dispatches `fail-spin` and `fail-incomplete` to their own\nbuilders, as it already does for `fail-invalid-tool-call`. `fail-spin`, `fail-incomplete`, `fail-invalid-tool-call` and `fail-timeout` all share the `timeout` retry lane in `src/agents/retry/failure-policy.ts` (read-only context; not edited), which is why all four reach `timeoutRetry`. Both keep the structure of\n`invalidToolCallRetry`: a first line naming what happened, the line\n`This was not a timeout. This is attempt N of the same story.`, a change-of-approach line, the\nchanged-files state paragraph, then `---` and the original prompt.\n- `fail-spin` first line: `The previous attempt was stopped because it kept repeating the same tool calls without making progress.`\n  Approach line: `Do not repeat a call whose result you already have; if a check keeps returning the same result, change the code or the approach before running it again.`\n- `fail-incomplete` first line: `The previous attempt ended its turn before finishing the story.`\n  Approach line: `Keep working until every acceptance criterion is met, then finish with your final answer.`\n`fail-timeout` and an absent `failure` keep today's wording byte-for-byte.\n\n**Runner test.** A test pins that `run` passes its interaction chain into\n`_runnerDeps.runCompletionPhase` unchanged.\n\n**Scope** — In: stage forwarding in ask link/dispatch and three post-run callers, two non-timeout retry variants, runner chain identity regression test. Out: extending `InteractionStage`; editing dead-in-production AcpInteractionBridge; addressing git-spawn-env blind spot.\n\n**Interface** — `createHumanAskLink` options gain `readonly stage?: InteractionStage`; `DispatchAskOptions` gains `readonly stage?: InteractionStage`.",
+      "acceptanceCriteria": [
+        "When createHumanAskLink({ chain, timeoutMs: 1000, stage: 'review' }) prompts a recording chain, then the sent request's stage is 'review'.",
+        "When createHumanAskLink({ chain, timeoutMs: 1000 }) prompts a recording chain, then the sent request's stage is 'execution'.",
+        "When buildDispatchAskWiring is called with stage: 'merge' and a recording deps.createHumanAskLink, then that dependency receives stage: 'merge'.",
+        "When buildDispatchAskWiring is called without stage and a recording deps.createHumanAskLink, then the passed options contain no stage key.",
+        "When buildRunDispatchAskWiring is called with stage: 'review', then deps.createHumanAskLink receives stage: 'review'.",
+        "When acceptance-fix scope runs with a recording _acceptanceFixScopeDeps.buildRunDispatchAskWiring, then it calls that dependency with stage: 'review'.",
+        "When the deferred regression gate runs with a recording _regressionDeps.buildRunDispatchAskWiring, then it calls that dependency with stage: 'review'.",
+        "When finish phase runs with a recording _finishPhaseDeps.buildRunDispatchAskWiring, then it calls that dependency with stage: 'merge'.",
+        "When timeoutRetry receives failure.outcome 'fail-spin', changedFiles ['src/a.ts'], attempt 1 and prompt P, then its text contains 'kept repeating the same tool calls', 'This was not a timeout. This is attempt 2 of the same story.', '- src/a.ts' and P.",
+        "When timeoutRetry receives failure.outcome 'fail-spin', changedFiles ['src/a.ts'], attempt 1 and prompt P, then its text does not contain 'hit a timeout'.",
+        "When timeoutRetry receives failure.outcome 'fail-incomplete' and empty changedFiles, then its text contains 'ended its turn before finishing the story', 'This was not a timeout.' and 'The previous attempt left no file changes on disk.'.",
+        "When timeoutRetry receives failure.outcome 'fail-incomplete' and empty changedFiles, then its text does not contain 'hit a timeout'.",
+        "When timeoutRetry receives failure.outcome 'fail-timeout', then its text still starts with 'The previous attempt hit a timeout after'.",
+        "When timeoutRetry receives no failure, then its text still starts with 'The previous attempt hit a timeout after'.",
+        "When run from src/execution/runner.ts receives an interaction chain object C and a recording _runnerDeps.runCompletionPhase, then it calls runCompletionPhase with options.interactionChain identical to C (same reference, toBe)."
+      ],
+      "tags": [
+        "interaction",
+        "prompts",
+        "execution"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The approval ask link is a human authorization surface; strict test isolation protects stage/default behavior while several call sites and retry builders change.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/interaction/ask-link.ts",
+        "src/interaction/dispatch-ask.ts",
+        "src/prompts/builders/timeout-retry-builder.ts",
+        "src/execution/lifecycle/acceptance-fix-scope.ts",
+        "src/execution/runner.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/interaction/ask-link-stage.test.ts",
+        "test/unit/prompts/builders/timeout-retry-spin-incomplete.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/interaction/dispatch-ask.test.ts",
+          "reason": "an exact-equality assertion over the options passed to `createHumanAskLink` may gain `stage` only where the test passes one."
+        },
+        {
+          "path": "test/unit/execution/runner-total.test.ts",
+          "reason": "gains the interaction-chain threading test (278 lines before the change; stays well under 800)."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b869c6738f34cbb4fb5aa74a59b250c1e00f8259",
+      "outOfScope": [
+        "extending `InteractionStage`."
+      ]
+    }
+  ],
+  "analysis": "Five independent TypeScript/Bun changes; no story dependencies. US-001: src/config/schemas-review.ts:237, src/config/schemas.ts:249, and src/review/types.ts:297 declare/default/type a key that no live check reads; src/review/types.ts:148 has the orphaned ReviewCheckResult.skipped. src/config/config-guards.ts:269-302 defines REMOVED_NO_OP_KEYS and :320-369 immutably strips and warns once per present key; src/config/loader.ts:244-267 strips after merging and before Zod safeParse, :519,:573 handles package configs. Preserve warn-and-load, not reject or silent Zod stripping. docs/guides/semantic-review.md:230 makes a false claim; test/unit/config/semantic-review.test.ts:137-162 still asserts the old default/override and must be revised. US-002: src/runtime/packages.ts:11-29 defines PackageView, :61-87 constructs it, :132-210 hydrates mergedConfigs, caches views, normalizes worktree override lookup and invalidates cached identities; preserve the same keying for a second raw-overlay map and leave overlay key absent on no-file views. src/config/merge.ts:126-145 bridges per-package quality commands into merged review commands; src/quality/command-resolver.ts:65-97 prefers review.commands.test and can promote scoped orchestrator commands. Consequently merged config/hasOverride cannot identify the raw source of an individual gate command. src/operations/lint-check.ts:97-134 and typecheck-check.ts:106-134 detect missing commands, while verify-scoped.ts:141-147,:234-249 and full-suite-gate.ts:155-189 choose cwd; replace hasOverride cwd tests without changing missing-command skip/error semantics. full-suite-gate.ts:128-132 defines FullSuiteGateContext, :314-317 logs the command cwd; detected full-suite return should also report detected provenance. The src/runtime/packages.ts:15-22 repoRoot comment warns about main-checkout writes under isolation; use precisely the spec's root-vs-workdir rule only at the specified gate sites, not for unrelated Exec/git. Existing operation routing fixtures need raw overlays defining the actual command. US-003: src/findings/cycle.ts:59-113 implements both classifiers at 592/600 lines; :447,:557 calls classifyOutcome. Extract them and re-export via cycle to preserve src/findings/index.ts:29 and src/review/review-iteration-store.ts:2,50 imports. src/findings/cycle-types.ts:17-22 and src/plugins/builtin/curator/types.ts:193 duplicate the outcome union; both need rotated. src/findings/types.ts:260-288 defines message-excluding findingRecurrenceKey. src/execution/oscillation-store.ts:46-63 counts previously resolved finding SOURCE reappearances, not iterations; src/execution/oscillation-breaker.ts:52 and src/execution/post-run.ts:355 mislabel them. Keep the separate counter unchanged. test/unit/findings/cycle.test.ts is baseline 933 lines: new classifier tests belong in a new file. US-004: src/runtime/spin-breaker/index.ts:25-69 contains resolved settings, default and reason union; :217-378 owns bounded per-key state, cumulative nudges, nudge points, stopOrNudge and observe. Add clock and repeat-time check after increment, before repeat-run stop; reset ONLY episode nudge budget on real stop or enough distinct new-key events since last nudge, never on each new key. src/config/schemas-infra.ts:226-258 defines watchdog schema/defaults, :262-306 defines spin schema; optional time knob has no Zod default. src/config/runtime-types-agent.ts:130-148 defines optional settings; src/session/spin-breaker-selection.ts:17-27 resolves concrete transport-neutral settings. src/agents/native/session/turn-result.ts:43 already routes spinStopped into fail-spin; no adapter/session manager change. test/unit/runtime/spin-breaker.test.ts:242-256 pins the laundering stop at call 28 and cumulative 3 nudges; test/unit/session/spin-breaker-selection.test.ts:14 pins exact settings. US-005: src/interaction/types.ts:11 already offers review and merge stages; src/interaction/ask-link.ts:58-72 accepts narrow AskChannel options but :103-110 hard-codes execution on the human-facing prompt. src/interaction/dispatch-ask.ts:64-85 declares options, :112-138 constructs the link, :248-262 already spreads run opts; pass stage only if defined. src/execution/lifecycle/acceptance-fix-scope.ts:45, run-regression.ts:452, and src/finish/phase.ts:290 own post-run wiring; the execution-stage caller should stay untouched. src/prompts/builders/timeout-retry-builder.ts:38-65 handles timeout and :71-99 handles invalid calls; new spin/incomplete variants reuse changed-file state semantics while timeout/no-failure text stays byte-identical. src/execution/runner.ts:330-363 already forwards interactionChain into runCompletionPhase; test/unit/execution/runner-total.test.ts should assert object identity without changing production runner. Migration: retire inert review key with one warning and successful config load; optional spin time defaults to watchdog half-time or 900; serialized finding outcome vocabulary gains rotated, with source-based breaker semantics preserved. Risks are warning placement before Zod strip, distinguishing raw overlays from inherited/bridged commands, classification precedence and message-insensitive identity, laundering loops restoring warnings endlessly, telemetry staying cumulative, and changing prompt presentation without changing permission verdicts.",
+  "outOfScope": [
+    "#2154's primary change (counting consecutive rotated iterations toward the oscillation breaker) is not done; it needs a base-rate measurement first.",
+    "#2017's alternative of relabelling a watchdog cancel as `fail-spin` in `src/session/watchdog-turn-classification.ts` is not done.",
+    "#2182's log-only alternative is not done; the provenance rule replaces the `hasOverride` ternary.",
+    "#2213 item 3 (`scripts/check-git-spawn-env.ts` blind spot) is not done: no git spawn in `src/` builds its argv from a git-binary identifier, and the four variable-argv sites are already hardened.",
+    "New `InteractionStage` union members (`acceptance`, `rectification`) are not added.",
+    "`hasOverride` is not removed or renamed; its config-selection callers are unchanged.",
+    "The dead-in-production `AcpInteractionBridge` (`src/agents/acp/interaction-bridge.ts`) keeps its hard-coded stage.",
+    "The historical `docs/specs/SPEC-story-orchestrator.md` mention of the retired knob is not edited."
+  ],
+  "routingProfile": "native-ds"
+}

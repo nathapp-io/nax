@@ -47,6 +47,22 @@ describe("human ask link", () => {
     expect(JSON.stringify(sent[0])).toContain("bun run test 2>&1 | tail -n 40");
   });
 
+  test("US-005 AC1: a supplied stage labels the dispatched request 'review'", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000, stage: "review" });
+    await link.resolve(REQ);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.stage).toBe("review");
+  });
+
+  test("US-005 AC2: without a stage the dispatched request is labelled 'execution'", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+    await link.resolve(REQ);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.stage).toBe("execution");
+  });
+
   test("'allow' permits, attributed to human", async () => {
     const link = createHumanAskLink({ chain: fakeChain({ reply: "allow" }), timeoutMs: 1000 });
     expect(await link.resolve(REQ)).toEqual({ decision: "allow", decidedBy: "human" });

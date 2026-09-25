@@ -234,7 +234,6 @@ export const NonBlockingFixConfigSchema = z.object({
 
 export const ReviewConfigSchema = z.object({
   enabled: z.boolean(),
-  gateLLMChecksOnMechanicalPass: z.boolean().default(true),
   checks: z.array(z.enum(["typecheck", "lint", "test", "build", "semantic", "adversarial"])),
   commands: z.object({
     typecheck: QualityCommandSpecSchema.optional(),

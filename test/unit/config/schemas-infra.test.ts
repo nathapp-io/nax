@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { AgentRoutingConfigSchema, AgentRoutingProfileSchema, NaxConfigSchema } from "@/config";
+import * as schemasInfra from "@/config/schemas-infra";
 import { InteractionConfigSchema } from "@/config/schemas-infra";
 
 describe("AgentRoutingProfileSchema", () => {
@@ -141,5 +142,41 @@ describe("InteractionConfigSchema — per-trigger fallback/timeout (SEC-3, BUG-4
   test("a fully empty NaxConfig parse does not bake interaction.defaults.fallback either", () => {
     const parsed = NaxConfigSchema.parse({});
     expect(parsed.interaction.defaults.fallback).toBeUndefined();
+  });
+});
+
+/**
+ * nax#2017: `AgentSpinBreakerConfigSchema` gains `stopAfterNoProgressSeconds` and
+ * is exported so its validation can be exercised directly. It is deliberately
+ * NOT added to the `src/config/index.ts` barrel, so the lookup goes through the
+ * module namespace — a static named import of a not-yet-exported symbol would
+ * fail while the module loads, before any assertion could run.
+ */
+interface SchemaLike {
+  safeParse(value: unknown): { readonly success: boolean; readonly data?: unknown };
+}
+
+function spinBreakerConfigSchema(): SchemaLike | undefined {
+  const candidate = Reflect.get(schemasInfra, "AgentSpinBreakerConfigSchema");
+  if (candidate === undefined || typeof candidate.safeParse !== "function") return undefined;
+  return candidate as SchemaLike;
+}
+
+describe("AgentSpinBreakerConfigSchema", () => {
+  test("AC10: rejects stopAfterNoProgressSeconds: -1", () => {
+    const schema = spinBreakerConfigSchema();
+
+    expect(schema).toBeDefined();
+    expect(schema?.safeParse({ stopAfterNoProgressSeconds: -1 }).success).toBe(false);
+  });
+
+  test("AC11: accepts stopAfterNoProgressSeconds: 0 and keeps it in the parsed output", () => {
+    const schema = spinBreakerConfigSchema();
+
+    expect(schema).toBeDefined();
+    expect(schema?.safeParse({ stopAfterNoProgressSeconds: 0 })).toMatchObject({
+      success: true,
+      data: { stopAfterNoProgressSeconds: 0 },
+    });
   });
 });

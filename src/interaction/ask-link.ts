@@ -15,7 +15,7 @@
  */
 import { type AskControl, type AskLink, type AskLinkOutcome, type AskRequest, maskForPrompt } from "@/permissions";
 import { getSafeLogger } from "../logger";
-import type { InteractionRequest } from "./types";
+import type { InteractionRequest, InteractionStage } from "./types";
 
 /** Headroom under MAX_MESSAGE_CHARS (4000) for the header, reason and footer. */
 const MAX_COMMAND_CHARS = 3500;
@@ -85,6 +85,12 @@ export function createHumanAskLink(opts: {
    */
   readonly chain: AskChannel | null | undefined;
   readonly timeoutMs: number;
+  /**
+   * The pipeline stage this approval prompt belongs to (US-005). Post-run
+   * callers pass their real stage (`"review"` / `"merge"`); the execution
+   * stage omits it and falls back to `"execution"`.
+   */
+  readonly stage?: InteractionStage;
   readonly featureName?: string;
   readonly storyId?: string;
   readonly onRemember?: (req: AskRequest) => Promise<void>;
@@ -314,7 +320,7 @@ export function createHumanAskLink(opts: {
             type: "choose",
             featureName: opts.featureName ?? "unknown",
             ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
-            stage: "execution",
+            stage: opts.stage ?? "execution",
             summary: `${req.tool} - approval required`,
             detail: [
               // A Write/Edit ask carries no command: showing `req.summary` keeps

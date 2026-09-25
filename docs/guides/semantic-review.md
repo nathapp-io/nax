@@ -227,7 +227,7 @@ The review runner classifies checks into two categories:
 | Category | Checks | Runs when |
 |:---------|:-------|:----------|
 | **Mechanical** | `typecheck`, `lint`, `build`, `format` | Always (command-based, deterministic) |
-| **LLM** | `semantic`, `adversarial` | After mechanical checks complete (gated by `review.gateLLMChecksOnMechanicalPass`, default `true`) |
+| **LLM** | `semantic`, `adversarial` | After mechanical checks complete (sequenced by the story orchestrator) |
 
 When mechanical checks fail but all LLM checks pass, `mechanicalFailedOnly: true` is set on the review result (`src/pipeline/types.ts`). This signals to the **fix cycle** that the code is functionally correct — the agent satisfied the acceptance criteria — but has fixable style or build issues. The cycle uses this to:
 

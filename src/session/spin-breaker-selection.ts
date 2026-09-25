@@ -14,6 +14,26 @@
 import type { AgentManagerConfig } from "../config/selectors";
 import { DEFAULT_SPIN_BREAKER_SETTINGS, type ResolvedSpinBreakerSettings } from "../runtime/spin-breaker";
 
+/**
+ * nax#2017: the time axis is normally derived from the tool-call-only idle
+ * watchdog — half its timeout, so the breaker ends a slow spin and classifies
+ * the turn `fail-spin` before the watchdog cancels it as `fail-stale`. An
+ * explicit `agent.spinBreaker.stopAfterNoProgressSeconds` always wins, and the
+ * 900 s fallback covers a watchdog that is off (or absent).
+ */
+function resolveStopAfterNoProgressSeconds(
+  configured: number | undefined,
+  config: AgentManagerConfig | undefined,
+): number {
+  if (configured !== undefined) return configured;
+  const watchdog = config?.agent?.idleWatchdog;
+  const timeoutSeconds = watchdog?.toolCallOnlyIdleTimeoutSeconds;
+  if (watchdog?.enabled !== false && watchdog?.mode !== "off" && timeoutSeconds !== undefined && timeoutSeconds > 0) {
+    return Math.floor(timeoutSeconds / 2);
+  }
+  return DEFAULT_SPIN_BREAKER_SETTINGS.stopAfterNoProgressSeconds;
+}
+
 export function selectSpinBreakerSettings(config: AgentManagerConfig | undefined): ResolvedSpinBreakerSettings {
   const cfg = config?.agent?.spinBreaker;
   return {
@@ -23,5 +43,6 @@ export function selectSpinBreakerSettings(config: AgentManagerConfig | undefined
     stopAfterRepeats: cfg?.stopAfterRepeats ?? DEFAULT_SPIN_BREAKER_SETTINGS.stopAfterRepeats,
     recentKeyWindow: cfg?.recentKeyWindow ?? DEFAULT_SPIN_BREAKER_SETTINGS.recentKeyWindow,
     stopAfterSameKeyRepeats: cfg?.stopAfterSameKeyRepeats ?? DEFAULT_SPIN_BREAKER_SETTINGS.stopAfterSameKeyRepeats,
+    stopAfterNoProgressSeconds: resolveStopAfterNoProgressSeconds(cfg?.stopAfterNoProgressSeconds, config),
   };
 }
