@@ -156,8 +156,6 @@ export interface ApplyCapCutInput {
 export interface ApplyCapCutResult {
   /** The composed result content. */
   readonly content: string;
-  /** True iff the cap cut fired — a cap footer was appended. */
-  readonly cut: boolean;
 }
 
 /**
@@ -196,7 +194,7 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
   // cap (e.g. header + 999 body lines + "\n" reports as 1001 lines via
   // raw split but 1000 via `splitModelLines`).
   if (splitModelLines(candidate).length <= maxLines && Buffer.byteLength(candidate, "utf8") <= maxBytes) {
-    return { content: candidate, cut: false };
+    return { content: candidate };
   }
 
   // Step 2 — cap cut. Try k from largest to smallest; the first one that
@@ -223,7 +221,7 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
     const cut = `${header}\n${bodyJoined}\n${footer}`;
 
     if (Buffer.byteLength(cut, "utf8") <= maxBytes) {
-      return { content: cut, cut: true };
+      return { content: cut };
     }
   }
 
@@ -231,5 +229,5 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
   // cap footer is absent here — the rule is "no line fits with the header
   // and cap footer", so neither can be appended. The after_tool policy
   // is the backstop for these cases.
-  return { content: candidate, cut: false };
+  return { content: candidate };
 }
