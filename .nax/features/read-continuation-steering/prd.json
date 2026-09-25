@@ -3,7 +3,7 @@
   "feature": "read-continuation-steering",
   "branchName": "feat/read-continuation-steering",
   "createdAt": "2026-09-24T00:00:00Z",
-  "updatedAt": "2026-09-25T07:31:05.294Z",
+  "updatedAt": "2026-09-25T07:48:37.615Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,8 +31,8 @@
         "read"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -94,7 +94,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "US-001 already supplies the helper; extending deterministic composition in two source files and using existing runtime/spill seams requires no new policy or abstraction."
+        "reasoning": "US-001 already supplies the helper; extending deterministic composition in two source files and using existing runtime/spill seams requires no new policy or abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/tools/read-continuation.ts",
@@ -116,7 +119,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "eaabaf7cb4fda90c370dd2076563d1fa2a53244e"
     }
   ],
   "analysis": "Existing Bun/TypeScript coding tools, not greenfield. src/tools/read.ts:18-19 imports CodingTool/ToolRunContext and READ_CEILING; :39-48 holds the existing description and offset/limit schema; :52-137 implements argument validation and readPrefix on ctx.resolvedPaths (paths are resolved by policy, not by Read). The whole-file path (:67-84) reads to ctx.readCeiling and returns the [N lines] or [N+ lines] header with the exact prefix, including a terminal newline. The ranged path (:103-131) reads to ctx.maxFileBytes, computes a floor total from overshoot, selects lines offset..endLine, and returns [lines a-b of T] followed by the selection; past-readable-end offsets return a non-error message, while unreadable files return isError. Preserve those bounds, errors, header values and uncut bytes apart from the new limit-stop footer. src/tools/truncate.ts:26-29 defines READ_CEILING, MODEL_MAX_BYTES=40000, MODEL_MAX_LINES=1000 and MODEL_MAX_LINE_CHARS=2000; :62-67 splitModelLines treats a terminal newline as a line terminator rather than another line. src/tools/registry.ts:61-81 defines the maxBytes, maxFileBytes and optional readCeiling context fields; no API changes. src/tools/spill.ts:258-277 applies model truncation asynchronously, returns within-cap content unchanged without a spill, and otherwise may spill the original body and add its generic marker. src/tools/runtime.ts:104-125 registers built-in Read; :130-195 sets model-facing and I/O caps; :293-302 applies the shared after_tool policy to results using policy.root; :318 onward performs grant checks before execution. src/tools/policy.ts:78-98 enforces containment; integration can use compileToolPolicy([{tool:'Read',patterns:['*']}],root). Existing tests: test/unit/tools/read-glob.test.ts:33-171 covers ranges, errors and floor totals, and :143-152 contains the obsolete assertion comment that Read never cuts its own result; rename and correct its comment while retaining not.toContain('truncated at'). test/unit/tools/read-line-total.test.ts:23-157 provides a four-argument ctx helper and old header/error regression checks, although some comments predate this feature. test/unit/tools/tool-run-context-read-ceiling.test.ts:20-139 demonstrates granted runtime callTool and distinct context bounds (its stub Read cannot establish real-Read integration). test/unit/tools/us-003-acs.test.ts:460-479 shows the absent-or-empty spill-directory assertion. Migration is additive: no schema, policy, filesystem or storage migration. US-001 creates a file-local read-continuation.ts and modifies the ranged path and description; US-002 extends that helper and applies it to both paths, also revising the obsolete read-glob test. Risks: header plus footer must count inside both caps, UTF-8 bytes rather than string length determine byte fit, a floor total retains '+', the cap footer must replace the limit-stop footer, a huge first line must preserve the after_tool fallback, and the after_tool policy can still truncate overlong individual lines or results with later nudges. Tests must demonstrate no redundant Read spill for a self-capped result.",
