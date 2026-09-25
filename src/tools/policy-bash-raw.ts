@@ -48,7 +48,8 @@ import { relative, resolve, sep } from "node:path";
 import { lexBashCommand } from "@/permissions";
 import { realOrRaw } from "@/utils/realpath";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd";
-import { isNaxConfigFile, isNaxOwnedWritePath } from "./nax-owned-writes";
+import type { NaxOwnedKind } from "./nax-owned-writes";
+import { isNaxConfigFile, naxOwnedBashRefusal, naxOwnedKind } from "./nax-owned-writes";
 import type { BashCheck } from "./policy-bash";
 
 export interface RawScreenArgs {
@@ -70,6 +71,9 @@ function deny(reason: string): BashCheck {
 
 /**
  * A protected path, named for the refusal message, or undefined.
+ *
+ * Returns the KIND it matched alongside the token the agent used, so the caller
+ * can print kind-specific refusal text (`naxOwnedBashRefusal`).
  *
  * Checked against EVERY frame in `cwd`, mirroring the conservatism of gated
  * mode's own `resolveAll`: a `;`-joined `cd` can leave more than one frame
@@ -98,7 +102,11 @@ function deny(reason: string): BashCheck {
  * lexically here because the resolver cannot return it, and lexically in
  * `resolveWithin` for the same reason; `isNaxOwnedWritePath` is unchanged.
  */
-function protectedHit(args: RawScreenArgs, candidate: string, cwd: readonly string[]): string | undefined {
+function protectedHit(
+  args: RawScreenArgs,
+  candidate: string,
+  cwd: readonly string[],
+): { kind: NaxOwnedKind; hit: string } | undefined {
   for (const directory of cwd) {
     // Pass 1: lexical nax-config check. Independent of the resolver on
     // purpose -- see the comment above. `realOrRaw` walks to the nearest
@@ -106,14 +114,15 @@ function protectedHit(args: RawScreenArgs, candidate: string, cwd: readonly stri
     // yet exist on disk (which is the common case: the screen catches the
     // write BEFORE the file lands).
     const lexical = realOrRaw(resolve(directory, candidate));
-    if (isNaxConfigFile(args.root, lexical)) return candidate;
+    if (isNaxConfigFile(args.root, lexical)) return { kind: "config", hit: candidate };
 
     // Pass 2: typed-seam resolver (unchanged).
     const resolved = args.resolvePath(candidate, directory);
     if (resolved === null) continue;
     const rel = relative(args.root, resolved).split(sep).join("/");
     if (rel.startsWith("..")) continue;
-    if (isNaxOwnedWritePath(rel)) return candidate;
+    const kind = naxOwnedKind(rel);
+    if (kind !== undefined) return { kind, hit: candidate };
   }
   return undefined;
 }
@@ -133,20 +142,14 @@ export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
       if (token.opaque) continue;
       const hit = protectedHit(args, token.text, cwd);
       if (hit !== undefined) {
-        return deny(
-          `${tool} command names "${hit}", which nax owns and no tool may modify -- ` +
-            "change it through nax rather than by writing its file",
-        );
+        return deny(naxOwnedBashRefusal(tool, hit.kind, hit.hit, "names"));
       }
     }
     for (const redirect of segment.redirects) {
       if (redirect.opaque) continue;
       const hit = protectedHit(args, redirect.target, cwd);
       if (hit !== undefined) {
-        return deny(
-          `${tool} command redirects into "${hit}", which nax owns and no tool may modify -- ` +
-            "change it through nax rather than by writing its file",
-        );
+        return deny(naxOwnedBashRefusal(tool, hit.kind, hit.hit, "redirects into"));
       }
     }
 

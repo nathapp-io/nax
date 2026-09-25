@@ -39,5 +39,9 @@ freely. Every other path under \`.nax/\` stays off limits.
 - A test under \`.nax/\` is NOT a reason to skip writing source-tree tests. \`.nax/\` is generated
   scaffolding, not real coverage of the package's code.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
-  purposes and must coexist.`;
+  purposes and must coexist.
+
+nax updates \`.nax/features/<feature>/prd.json\` itself during a run, so it shows as modified in
+\`git status\`. Do not diff or revert it: this story's criteria are already in this prompt, and if you
+need its contents, read it with the \`Read\` tool. Shell commands that name it may be refused.`;
 }

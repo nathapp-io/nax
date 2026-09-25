@@ -67,6 +67,13 @@ export const NAX_OWNED_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edi
 export const QUEUE_CONTROL_FILES: ReadonlySet<string> = new Set([".queue.txt", ".queue.txt.processing"]);
 
 /**
+ * The kinds of nax-owned path the raw Bash screen refuses by name.
+ * `"config"` is produced by the lexical `isNaxConfigFile` pass, never by
+ * `naxOwnedKind` -- see that function.
+ */
+export type NaxOwnedKind = "prd" | "queue" | "config";
+
+/**
  * Is this path one nax owns the writes to, independent of WHICH tool is asking?
  *
  * `naxOwnedWriteRefusal` answers the same question for the four file-writing
@@ -77,9 +84,68 @@ export const QUEUE_CONTROL_FILES: ReadonlySet<string> = new Set([".queue.txt", "
  * @param rel - Path relative to the permitted root, `/`-joined.
  */
 export function isNaxOwnedWritePath(rel: string): boolean {
+  return naxOwnedKind(rel) !== undefined;
+}
+
+/**
+ * Which kind of nax-owned write path `rel` is, or undefined when it is not one.
+ *
+ * `/`-joined and root-relative, like `isNaxOwnedWritePath`. Never returns
+ * `"config"` -- nax config files are recognised by the lexical
+ * `isNaxConfigFile` pass, which callers (`protectedHit` in policy-bash-raw.ts)
+ * run FIRST. Keeping the two apart is what lets the raw screen name the kind it
+ * matched without duplicating the config rule here.
+ */
+export function naxOwnedKind(rel: string): "prd" | "queue" | undefined {
   const segments = rel.split("/");
-  if (segments.length === 1 && QUEUE_CONTROL_FILES.has(segments[0] ?? "")) return true;
-  return segments[0] === ".nax" && segments[1] === "features" && segments[segments.length - 1] === "prd.json";
+  // SEC-5: the run-control file lives at the root, so match it exactly there
+  // and not at any other depth -- a nested `sub/.queue.txt` is an ordinary
+  // file, not the queue nax reads.
+  if (segments.length === 1 && QUEUE_CONTROL_FILES.has(segments[0] ?? "")) return "queue";
+  if (segments[0] === ".nax" && segments[1] === "features" && segments[segments.length - 1] === "prd.json") {
+    return "prd";
+  }
+  return undefined;
+}
+
+/**
+ * Refusal text for a Bash command that names (verb "names") or redirects into
+ * (verb "redirects into") a nax-owned file.
+ *
+ * Kind-specific on purpose. The previous screen returned one modification-only
+ * sentence for every kind, which read as "you cannot WRITE this" -- so an agent
+ * that only wanted to READ a PRD retried a command it will never be allowed to
+ * run. Each branch now says what the file IS and what the agent can do instead.
+ *
+ * The text never spells `.nax/features/` literally: `src/tools/` is covered by
+ * the `check:feature-dir-ssot` gate, so the PRD branch names the token the agent
+ * used (`hit`) rather than the tree layout.
+ */
+export function naxOwnedBashRefusal(
+  tool: string,
+  kind: NaxOwnedKind,
+  hit: string,
+  verb: "names" | "redirects into",
+): string {
+  switch (kind) {
+    case "prd":
+      return (
+        `${tool} command ${verb} "${hit}", which holds this story's acceptance criteria. ` +
+        "nax updates it itself during the run, so it shows as modified. " +
+        "Any Bash command naming it is refused, reads included -- leave it as is. " +
+        "To view it, use the `Read` tool."
+      );
+    case "queue":
+      return (
+        `${tool} command ${verb} "${hit}", which is nax's run-control queue. ` +
+        "Any Bash command naming it is refused, reads included -- change the run through the queue command."
+      );
+    case "config":
+      return (
+        `${tool} command ${verb} "${hit}", which is nax configuration. ` +
+        "Any Bash command naming it is refused, reads included -- nax configuration is not changed from inside a run."
+      );
+  }
 }
 
 /**

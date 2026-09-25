@@ -51,4 +51,26 @@ describe("buildScratchpadSection", () => {
     expect(first.length).toBeGreaterThan(0);
     expect(buildScratchpadSection()).toBe(first);
   });
+
+  // ─── US-001 — runnable probes, not /tmp scripts ───
+
+  describe("US-001 — project-importing probes belong in the scratchpad", () => {
+    // AC9: a snippet that imports project code must be written under
+    // `.nax/scratchpad/` and run from there, not from /tmp.
+    test("AC9: says to write a project-importing snippet under .nax/scratchpad/ with ScratchpadWrite", () => {
+      const text = buildScratchpadSection().replace(/\s+/g, " ");
+      expect(text).toContain(".nax/scratchpad/");
+      expect(text).toContain("ScratchpadWrite");
+      expect(text).toContain("run it from there");
+    });
+
+    // AC10: the /tmp failure mode -- relative imports do not resolve there, and
+    // the file tools cannot write outside the repository anyway.
+    test("AC10: explains that a script written outside the repository cannot resolve project modules", () => {
+      const text = buildScratchpadSection().replace(/\s+/g, " ");
+      expect(text).toContain("/tmp");
+      expect(text.toLowerCase()).toContain("cannot resolve the project");
+      expect(text.toLowerCase()).toContain("file tools cannot write");
+    });
+  });
 });

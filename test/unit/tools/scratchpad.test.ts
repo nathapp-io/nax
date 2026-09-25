@@ -605,3 +605,14 @@ describe("US-004 — ScratchpadWrite.description lifetime contract", () => {
     expect(scratchpadWriteTool.description.toLowerCase()).toContain("never committed");
   });
 });
+
+// US-001 AC11 — the description also has to invite the probe use, otherwise an
+// agent that wants to run a snippet importing project code never learns the
+// scratchpad is the place to put it and writes to /tmp instead.
+describe("US-001 — ScratchpadWrite.description advertises probe scripts", () => {
+  test("AC11: names a probe script to run against the project's code", () => {
+    const lower = scratchpadWriteTool.description.toLowerCase();
+    expect(lower).toContain("probe");
+    expect(lower).toContain("run against the project's code");
+  });
+});

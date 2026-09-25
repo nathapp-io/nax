@@ -38,6 +38,11 @@ or is read by another step. A failed run's scratchpad is retained for inspection
 before failing outlive that run, and are cleared at the next run's start. Treat every file as disposable,
 and overwrite freely.
 
+To try a snippet that imports project code or dependencies, write it under \`${dir}\` with
+\`ScratchpadWrite\` and run it from there: relative imports resolve from \`${dir}\`, so prefer the
+project's package names or path aliases where it has them. A script written outside the repository,
+such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
+
 \`${dir}\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.`;
 }

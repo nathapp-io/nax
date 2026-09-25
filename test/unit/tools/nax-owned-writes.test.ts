@@ -4,6 +4,7 @@ import {
   isNaxConfigFile,
   isNaxOwnedWritePath,
   NAX_OWNED_WRITE_TOOLS,
+  naxOwnedKind,
   naxOwnedWriteRefusal,
 } from "@/tools/nax-owned-writes";
 
@@ -146,6 +147,51 @@ describe("naxOwnedWriteRefusal — plan-op exemption (nax#2115)", () => {
       expect(naxOwnedWriteRefusal(tool, PRD, PRD)).toBeUndefined();
       expect(naxOwnedWriteRefusal(tool, PRD)).toBeUndefined();
     }
+  });
+});
+
+// US-001: `naxOwnedKind` is the kind-aware half of the same predicate. The raw
+// Bash screen needs to know WHICH kind of nax-owned file a token hit so it can
+// print the matching refusal text; `isNaxOwnedWritePath` only answers yes/no.
+describe("naxOwnedKind", () => {
+  test("AC1: a feature PRD is the 'prd' kind", () => {
+    expect(naxOwnedKind(".nax/features/f/prd.json")).toBe("prd");
+  });
+
+  test("AC1: the root queue file is the 'queue' kind", () => {
+    expect(naxOwnedKind(".queue.txt")).toBe("queue");
+  });
+
+  test("AC1: the atomic-rename queue target is also the 'queue' kind", () => {
+    expect(naxOwnedKind(".queue.txt.processing")).toBe("queue");
+  });
+
+  test("AC1: an ordinary prd.json outside .nax is not nax-owned", () => {
+    expect(naxOwnedKind("src/prd.json")).toBeUndefined();
+  });
+
+  test("AC2: nax config files are never returned by naxOwnedKind", () => {
+    // Config detection is the lexical `isNaxConfigFile` pass in the raw screen,
+    // checked first, exactly as before -- naxOwnedKind must not report it.
+    expect(naxOwnedKind(".nax/config.json")).toBeUndefined();
+    expect(naxOwnedKind(".nax/mono/api/config.json")).toBeUndefined();
+  });
+
+  test("does not report a nested file merely named like the queue file", () => {
+    expect(naxOwnedKind("sub/.queue.txt")).toBeUndefined();
+  });
+
+  test("does not report a non-prd file under a feature dir", () => {
+    expect(naxOwnedKind(".nax/features/f/notes.md")).toBeUndefined();
+  });
+});
+
+// US-001 AC2: the mutation-guard's verdict is unchanged by this story --
+// `.nax/config.json` was never writable through `naxOwnedWriteRefusal`, and it
+// still returns undefined.
+describe("naxOwnedWriteRefusal — config files stay out of the write guard (US-001 AC2)", () => {
+  test("AC2: naxOwnedWriteRefusal('Write', '.nax/config.json') is undefined", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/config.json")).toBeUndefined();
   });
 });
 

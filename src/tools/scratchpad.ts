@@ -36,7 +36,7 @@ const MAX_MATCHES = 500;
 export const scratchpadWriteTool: CodingTool = {
   name: "ScratchpadWrite",
   description:
-    "Write a throwaway file to your scratchpad at .nax/scratchpad/. Use it for notes to yourself, command output you want to re-read, or intermediate lists. It is never committed and is wiped when a run finishes (a failed run's scratchpad is retained for inspection until the next run starts and clears it). Paths are relative to the scratchpad and cannot reach the repository.",
+    "Write a throwaway file to your scratchpad at .nax/scratchpad/. Use it for notes to yourself, command output you want to re-read, intermediate lists, or a probe script to run against the project's code. It is never committed and is wiped when a run finishes (a failed run's scratchpad is retained for inspection until the next run starts and clears it). Paths are relative to the scratchpad and cannot reach the repository.",
   inputSchema: {
     type: "object",
     properties: {
