@@ -28,6 +28,7 @@ import { stripRemovedNoOpKeys } from "@/config/config-guards";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
 import { NaxConfigSchema } from "@/config/schemas";
+import { addSink, initLogger, resetLogger } from "@/logger";
 
 const tempDirs: string[] = [];
 
@@ -408,5 +409,78 @@ describe("NaxConfigSchema and FIELD_DESCRIPTIONS — removed keys", () => {
     const entry = FIELD_DESCRIPTIONS["acceptance.enabled"];
     expect(typeof entry).toBe("string");
     expect(entry.length).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003 — retire quality.autofix.enforceTestWriterIsolation (#2248)
+//
+// The key gated a guard on the old autofix-cycle stage; #1084 deleted that
+// stage, the guard and its tests, leaving the key declared in the schema, the
+// defaults and the runtime type while it gated nothing. It is retired through
+// the same warn-and-strip path as the keys above, so an existing config that
+// still sets it keeps loading.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedNoOpKeys — quality.autofix.enforceTestWriterIsolation (US-003)", () => {
+  test("AC-1: warns exactly once naming the key and #1084 when the key is false", () => {
+    const captured: string[] = [];
+
+    stripRemovedNoOpKeys({ quality: { autofix: { enforceTestWriterIsolation: false } } }, (msg) => captured.push(msg));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toContain("quality.autofix.enforceTestWriterIsolation");
+    expect(captured[0]).toContain("#1084");
+  });
+
+  test("AC-2: warns exactly once naming the key when the key is true", () => {
+    const captured: string[] = [];
+
+    stripRemovedNoOpKeys({ quality: { autofix: { enforceTestWriterIsolation: true } } }, (msg) => captured.push(msg));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toContain("quality.autofix.enforceTestWriterIsolation");
+  });
+
+  test("AC-3: returns quality.autofix equal to { enabled: false, maxAttempts: 2 }, dropping only the retired key", () => {
+    const stripped = stripRemovedNoOpKeys(
+      { quality: { autofix: { enabled: false, maxAttempts: 2, enforceTestWriterIsolation: false } } },
+      () => {},
+    );
+
+    expect(stripped.quality).toEqual({ autofix: { enabled: false, maxAttempts: 2 } });
+  });
+
+  test("AC-4: NaxConfigSchema.parse({}) yields a quality.autofix without the retired key", () => {
+    const autofix = NaxConfigSchema.parse({}).quality.autofix;
+
+    expect(autofix).toBeDefined();
+    expect(Object.hasOwn(autofix, "enforceTestWriterIsolation")).toBe(false);
+    expect(autofix.enabled).toBe(true);
+  });
+
+  test("AC-5: loadConfig on a project setting the retired key resolves and warns once naming it", async () => {
+    _clearRootConfigCache();
+    const root = await writeProjectConfig({ quality: { autofix: { enforceTestWriterIsolation: false } } });
+
+    const captured: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => captured.push(entry.message));
+    let config: Awaited<ReturnType<typeof loadConfig>> | undefined;
+    try {
+      config = await loadConfig(root);
+    } finally {
+      removeSink();
+      resetLogger();
+      cleanupTempDir(root);
+    }
+
+    assertDefined(config, "loadConfig result");
+    const autofix = config.quality.autofix;
+    assertDefined(autofix, "config.quality.autofix");
+    expect(Object.hasOwn(autofix, "enforceTestWriterIsolation")).toBe(false);
+    const relevant = captured.filter((msg) => msg.includes("quality.autofix.enforceTestWriterIsolation"));
+    expect(relevant).toHaveLength(1);
   });
 });

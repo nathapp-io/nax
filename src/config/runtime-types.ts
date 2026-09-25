@@ -227,8 +227,6 @@ export interface QualityConfig {
     /** Prompt-text display only: "X attempts available before escalation".
      * Real cap is execution.rectification.maxAttemptsPerStrategy. (default: 3) */
     maxAttempts?: number;
-    /** Revert and escalate on testWriter source-file edits in mock-restructure mode. (default: true) */
-    enforceTestWriterIsolation?: boolean;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */
   forceExit: boolean;

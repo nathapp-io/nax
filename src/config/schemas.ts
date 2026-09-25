@@ -182,7 +182,6 @@ export const NaxConfigSchema = z
       autofix: {
         enabled: true,
         maxAttempts: 3,
-        enforceTestWriterIsolation: true,
       },
       forceExit: false,
       detectOpenHandles: true,
