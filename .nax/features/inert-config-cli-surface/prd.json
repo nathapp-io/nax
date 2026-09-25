@@ -3,7 +3,7 @@
   "feature": "inert-config-cli-surface",
   "branchName": "feat/inert-config-cli-surface",
   "createdAt": "2026-07-01T00:00:00Z",
-  "updatedAt": "2026-09-25T16:54:41.542Z",
+  "updatedAt": "2026-09-25T17:02:59.743Z",
   "userStories": [
     {
       "id": "US-001",
@@ -82,8 +82,8 @@
         "feature"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -146,7 +146,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Standard deletion plus one existing compatibility-map entry across four config files."
+        "reasoning": "Standard deletion plus one existing compatibility-map entry across four config files.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/config/config-guards.ts",
@@ -161,7 +164,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "365ac67e64cf6f4e0451b3e3b5c3d62e28c3b462"
     },
     {
       "id": "US-004",
