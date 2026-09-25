@@ -71,7 +71,7 @@ describe("loadOverride — config.prompts absent", () => {
 
   test("returns null for every role when config.prompts is absent", async () => {
     const config = makeConfig();
-    const roles: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session"];
+    const roles: PromptRole[] = ["test-writer", "implementer", "verifier", "tdd-simple"];
     for (const role of roles) {
       const result = await loadOverride(role, tmpDir, config);
       expect(result).toBeNull();
@@ -155,12 +155,12 @@ describe("loadOverride — file exists", () => {
     expect(result).toBe(content);
   });
 
-  test("returns file content for single-session", async () => {
-    const content = "# Single Session Override\nDo everything in one session.";
-    const relPath = writeOverrideFile(".nax/prompts/single-session.md", content);
-    const config = makeConfig({ prompts: { overrides: { "single-session": relPath } } });
+  test("returns file content for tdd-simple", async () => {
+    const content = "# Tdd Simple Override\nWrite tests and implement in one session.";
+    const relPath = writeOverrideFile(".nax/prompts/tdd-simple.md", content);
+    const config = makeConfig({ prompts: { overrides: { "tdd-simple": relPath } } });
 
-    const result = await loadOverride("single-session", tmpDir, config);
+    const result = await loadOverride("tdd-simple", tmpDir, config);
     expect(result).toBe(content);
   });
 

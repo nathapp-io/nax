@@ -79,19 +79,6 @@ describe("buildIsolationSection — verifier role", () => {
   });
 });
 
-describe("buildIsolationSection — single-session role", () => {
-  test("allows creating files in both test/ and src/", () => {
-    const result = buildIsolationSection("single-session");
-    expect(result).toContain("test/");
-    expect(result).toContain("src/");
-  });
-
-  test("includes test filtering rule when command configured", () => {
-    const result = buildIsolationSection("single-session", undefined, "bun test");
-    expect(result).toContain("bun test");
-  });
-});
-
 describe("buildIsolationSection — no-test role", () => {
   test("returns empty string for no-test prompts", () => {
     const result = buildIsolationSection("no-test");

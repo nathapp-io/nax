@@ -325,7 +325,7 @@ describe("US-004 cross-cutting seam", () => {
     const withCmd = buildIsolationSection("test-writer", "strict", "bun test");
     const withCmdLite = buildIsolationSection("implementer", "lite", "bun test");
     const withCmdVerifier = buildIsolationSection("verifier", undefined, "bun test");
-    const withCmdSingle = buildIsolationSection("single-session", undefined, "bun test");
+    const withCmdSingle = buildIsolationSection("tdd-simple", undefined, "bun test");
 
     for (const result of [withCmd, withCmdLite, withCmdVerifier, withCmdSingle]) {
       expect(result).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);

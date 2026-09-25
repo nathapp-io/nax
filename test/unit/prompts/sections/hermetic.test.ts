@@ -9,7 +9,6 @@ describe("buildHermeticSection", () => {
       ["implementer returns content", "implementer", true],
       ["tdd-simple returns content", "tdd-simple", true],
       ["batch returns content", "batch", true],
-      ["single-session returns content", "single-session", true],
       ["verifier returns empty string", "verifier", false],
     ])("%s", (_label, role, hasContent) => {
       const result = buildHermeticSection(role, undefined, undefined);

@@ -11,7 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildTestQualitySection } from "@/prompts/sections/test-quality";
 
-const TEST_AUTHORING_ROLES = ["test-writer", "single-session", "tdd-simple", "batch"] as const;
+const TEST_AUTHORING_ROLES = ["test-writer", "tdd-simple", "batch"] as const;
 
 describe("buildTestQualitySection — test-authoring roles", () => {
   test.each([...TEST_AUTHORING_ROLES])("returns the pre-brief for %s", (role) => {

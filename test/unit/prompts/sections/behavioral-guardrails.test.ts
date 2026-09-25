@@ -7,15 +7,7 @@ import { buildBehavioralGuardrailsSection } from "@/prompts/sections/behavioral-
 describe("buildBehavioralGuardrailsSection", () => {
   // AC-12: returns null when level === "off" regardless of role
   describe("level === off", () => {
-    const roles: GuardrailRole[] = [
-      "implementer",
-      "test-writer",
-      "single-session",
-      "tdd-simple",
-      "batch",
-      "verifier",
-      "no-test",
-    ];
+    const roles: GuardrailRole[] = ["implementer", "test-writer", "tdd-simple", "batch", "verifier", "no-test"];
     test.each(roles)('returns null for role="%s" when level=off', (role) => {
       expect(buildBehavioralGuardrailsSection(role, "off")).toBeNull();
     });
@@ -36,7 +28,7 @@ describe("buildBehavioralGuardrailsSection", () => {
 
   // AC-14: lite content for implementer roles — at most 8 lines including header
   describe("lite level for implementer roles", () => {
-    const implRoles: GuardrailRole[] = ["implementer", "single-session", "tdd-simple", "batch"];
+    const implRoles: GuardrailRole[] = ["implementer", "tdd-simple", "batch"];
 
     test.each(implRoles)('role="%s" lite: returns string with header', (role) => {
       const result = buildBehavioralGuardrailsSection(role, "lite");
@@ -62,7 +54,7 @@ describe("buildBehavioralGuardrailsSection", () => {
 
   // AC-15: strict content includes "## State Assumptions" subsection for implementer roles
   describe("strict level for implementer roles", () => {
-    const implRoles: GuardrailRole[] = ["implementer", "single-session", "tdd-simple", "batch"];
+    const implRoles: GuardrailRole[] = ["implementer", "tdd-simple", "batch"];
 
     test.each(implRoles)('role="%s" strict: includes ## State Assumptions', (role) => {
       const result = buildBehavioralGuardrailsSection(role, "strict");
@@ -104,10 +96,10 @@ describe("buildBehavioralGuardrailsSection", () => {
     });
   });
 
-  // Combined roles (single-session, tdd-simple, batch) write both tests and source —
+  // Combined roles (tdd-simple, batch) write both tests and source —
   // their guardrails must include both test-scope AND source-scope Simplicity rules.
   describe("combined roles include both test-scope and source-scope Simplicity", () => {
-    const combinedRoles: GuardrailRole[] = ["single-session", "tdd-simple", "batch"];
+    const combinedRoles: GuardrailRole[] = ["tdd-simple", "batch"];
 
     test.each(combinedRoles)('role="%s" lite: includes test-scope Simplicity', (role) => {
       const result = buildBehavioralGuardrailsSection(role, "lite") as string;

@@ -484,3 +484,91 @@ describe("stripRemovedNoOpKeys — quality.autofix.enforceTestWriterIsolation (U
     expect(relevant).toHaveLength(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004 — retire the inert `single-session` prompt role (#2248)
+//
+// `single-session` stopped being a prompt role at fb3cfad3e: test-after stories
+// are routed through the `tdd-simple` role, so the `single-session` role body
+// was never rendered. A user who overrode `single-session.md` saw no change in
+// the prompt and no warning that their override was dead. It is retired through
+// the same warn-and-strip path as the keys above, so an existing config that
+// still names it keeps loading — with a warning naming the replacement role.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedNoOpKeys — prompts.overrides.single-session (US-004)", () => {
+  test("US-004 AC1: warns exactly once naming prompts.overrides.single-session and tdd-simple", () => {
+    const captured: string[] = [];
+
+    stripRemovedNoOpKeys({ prompts: { overrides: { "single-session": "a.md", "tdd-simple": "b.md" } } }, (msg) =>
+      captured.push(msg),
+    );
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toContain("prompts.overrides.single-session");
+    expect(captured[0]).toContain("tdd-simple");
+  });
+
+  test("US-004 AC1 boundary: silent when prompts.overrides names no single-session key", () => {
+    const captured: string[] = [];
+
+    stripRemovedNoOpKeys({ prompts: { overrides: { "tdd-simple": "b.md" } } }, (msg) => captured.push(msg));
+
+    expect(captured).toHaveLength(0);
+  });
+
+  test("US-004 AC1 boundary: a config with no prompts block is silent and unchanged", () => {
+    const captured: string[] = [];
+    const input = { execution: {} };
+
+    const stripped = stripRemovedNoOpKeys(input, (msg) => captured.push(msg));
+
+    expect(captured).toHaveLength(0);
+    expect(stripped).toEqual(input);
+  });
+
+  test("US-004 AC2: returns prompts.overrides equal to { tdd-simple: b.md }", () => {
+    const stripped = stripRemovedNoOpKeys(
+      { prompts: { overrides: { "single-session": "a.md", "tdd-simple": "b.md" } } },
+      () => {},
+    );
+
+    expect(stripped.prompts).toEqual({ overrides: { "tdd-simple": "b.md" } });
+  });
+
+  test("US-004 AC2 boundary: does not mutate the input overrides map", () => {
+    const input = { prompts: { overrides: { "single-session": "a.md", "tdd-simple": "b.md" } } };
+
+    stripRemovedNoOpKeys(input, () => {});
+
+    expect(input.prompts.overrides["single-session"]).toBe("a.md");
+    expect(input.prompts.overrides["tdd-simple"]).toBe("b.md");
+  });
+
+  test("US-004 AC3: loadConfig resolves with the key stripped and warns once naming it", async () => {
+    _clearRootConfigCache();
+    const root = await writeProjectConfig({
+      prompts: { overrides: { "single-session": ".nax/templates/single-session.md" } },
+    });
+
+    const captured: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => captured.push(entry.message));
+    let config: Awaited<ReturnType<typeof loadConfig>> | undefined;
+    try {
+      config = await loadConfig(root);
+    } finally {
+      removeSink();
+      resetLogger();
+      cleanupTempDir(root);
+    }
+
+    assertDefined(config, "loadConfig result");
+    const overrides = config.prompts?.overrides;
+    expect(overrides === undefined || !("single-session" in overrides)).toBe(true);
+
+    const relevant = captured.filter((msg) => msg.includes("prompts.overrides.single-session"));
+    expect(relevant).toHaveLength(1);
+  });
+});
