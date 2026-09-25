@@ -1840,7 +1840,7 @@ Unified finding wire format (ADR-021) and fix-cycle orchestration (ADR-022). All
 **Key exports:**
 - `Finding`, `FindingSeverity`, `FindingSource`, `FixTarget` — wire types (ADR-021 SSOT)
 - `SEVERITY_ORDER`, `compareSeverity(a, b)`, `findingKey(f)`, `findingRecurrenceKey(f)` — severity ordering and stable identity keys
-- Per-producer adapters: `lintDiagnosticToFinding()`, `reviewFindingToFinding()`, `testFailureToFinding()`, `testSummaryToFindings()`, `acFailureToFinding()`, `acSentinelToFinding()`, `acceptanceDiagnoseRawToFinding()`, `pluginToFinding()`, `executionFailureToFinding()`, `genericTypecheckDiagnosticToFinding()` — convert subsystem-specific outputs to `Finding`
+- Per-producer adapters: `lintDiagnosticToFinding()`, `testFailureToFinding()`, `testSummaryToFindings()`, `acFailureToFinding()`, `acSentinelToFinding()`, `acceptanceDiagnoseRawToFinding()`, `pluginToFinding()`, `executionFailureToFinding()`, `genericTypecheckDiagnosticToFinding()` — convert subsystem-specific outputs to `Finding`
 - `FixStrategy`, `FixCycle`, `FixCycleConfig`, `FixCycleContext`, `FixCycleResult`, `FixCycleExitReason`, `Iteration`, `IterationOutcome`, `ValidateResult` — cycle-orchestration types
 - `runFixCycle(cycle, ctx, cycleName, deps?)` — the fix loop (the per-story orchestrator and the acceptance loop are the consumers)
 - `classifyOutcome(before, after)` — per-iteration progress classification (`resolved` / `partial` / `unchanged` / `regressed` / `regressed-different-source` / `rotated`)

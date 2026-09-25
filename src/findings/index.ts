@@ -21,7 +21,6 @@ export {
   genericTypecheckDiagnosticToFinding,
   lintDiagnosticToFinding,
   pluginToFinding,
-  reviewFindingToFinding,
   testFailureToFinding,
   testSummaryToFindings,
 } from "./adapters";
