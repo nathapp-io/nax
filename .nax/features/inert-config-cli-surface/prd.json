@@ -1,0 +1,344 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "inert-config-cli-surface",
+  "branchName": "feat/inert-config-cli-surface",
+  "createdAt": "2026-07-01T00:00:00Z",
+  "updatedAt": "2026-09-25T16:25:03.638Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Only override maxIterations when -m is passed; default 20",
+      "description": "**Goal** — Make -m override configured execution.maxIterations only when passed and keep the unconfigured budget at 20.\n\n**Motivation** — A `.nax/config.json` value never takes effect under `nax run`.\n\n**Approach** — New module `src/cli/run-max-iterations.ts`, following the `src/cli/run-mode.ts` precedent (a pure function extracted from the untested `bin/nax.ts` entry point):\n\n```ts\nexport type MaxIterationsFlag = { ok: true; value: number | undefined } | { ok: false; message: string };\n\n/** Parse the raw `-m/--max-iterations` option. `undefined` means the flag was not passed. */\nexport function parseMaxIterationsFlag(raw: string | undefined): MaxIterationsFlag;\n\n/** Return a new config with `execution.maxIterations` replaced only when `flag` is defined. Never mutates `config`. */\nexport function applyMaxIterationsFlag(config: NaxConfig, flag: number | undefined): NaxConfig;\n```\n\nParsing keeps today's rule: `Number.parseInt(raw, 10)`, rejected when not finite or `< 1`, with the message `--max-iterations must be a positive integer`.\n- `bin/nax.ts`: drop the `\"20\"` Commander default from the `-m` option. Call `parseMaxIterationsFlag` immediately after the existing `validateDirectory` block at the top of the `run` action, before any config load, bake-off check or TUI mount; on `ok: false` print the message in red to stderr and `process.exit(1)`. Where the action currently assigns `config.execution.maxIterations` (`bin/nax.ts:531-536`), reassign the action's `let config` binding (loaded at `bin/nax.ts:375`) to `applyMaxIterationsFlag(config, <parsed value>)`, so every later reader of `config` sees the override. The new check sits before the `nax not initialized. Run: nax init` check at `bin/nax.ts:382`, and `-m` is validated before `--parallel` (US-002).\n- Schema default: `execution.maxIterations` in the top-level default literal in `src/config/schemas.ts:122` changes from `10` to `20`.\n- Description text (`src/cli/config-descriptions.ts:58` and the doc comment at `src/config/runtime-types.ts:106`): replace \"(auto-calculated if not set)\" with \"— each story attempt, parallel batch and the final completion pass counts one\". Keep the leading phrase \"Max iterations per feature run\": `test/integration/cli/cli-config-diff.test.ts:231` and `test/integration/cli/cli-config-command.test.ts:192` assert on it.\n- Docs: `docs/guides/configuration.md:23,55` show the default as `20`; `docs/guides/cli-reference.md:171` says `-m` overrides `execution.maxIterations` only when passed.\n\n**Scope** — In: CLI parser, config override, schema default, descriptions and referenced guides/tests. Out: US-002's parallel validation; deriving the limit from stories or escalation tiers; strict numeric parsing.\n\n**Interface** — `parseMaxIterationsFlag(raw: string | undefined): MaxIterationsFlag; applyMaxIterationsFlag(config: NaxConfig, flag: number | undefined): NaxConfig;`\n\n**Verification note:** the `\"20\"` Commander default and the direct assignment in `bin/nax.ts` are replaced, verified by `bun run typecheck && bun run lint`. The reassignment of `config` from `applyMaxIterationsFlag` in `bin/nax.ts` is not reachable by a cheap test (a positive-path run needs an initialised project, a PRD and an agent); it is checked at review against the wiring stated in this description.",
+      "acceptanceCriteria": [
+        "parseMaxIterationsFlag(undefined) returns { ok: true, value: undefined }.",
+        "parseMaxIterationsFlag(\"5\") returns { ok: true, value: 5 }.",
+        "parseMaxIterationsFlag(\"0\") returns { ok: false, message: \"--max-iterations must be a positive integer\" }.",
+        "parseMaxIterationsFlag(\"-3\") returns { ok: false, message: \"--max-iterations must be a positive integer\" }.",
+        "parseMaxIterationsFlag(\"abc\") returns { ok: false, message: \"--max-iterations must be a positive integer\" }.",
+        "applyMaxIterationsFlag(config, undefined) returns a config with execution.maxIterations equal to 3 when the input config's execution.maxIterations is 3.",
+        "applyMaxIterationsFlag(config, 5) returns a config with execution.maxIterations equal to 5 when the input config's execution.maxIterations is 3.",
+        "After applyMaxIterationsFlag(config, 5), the input config.execution.maxIterations remains 3.",
+        "NaxConfigSchema.parse({}) returns execution.maxIterations equal to 20.",
+        "When running bun bin/nax.ts run -f demo -d <empty temp dir> --headless -m 0, then the process exits with code 1 and stderr includes --max-iterations must be a positive integer.",
+        "When running bun bin/nax.ts run -f demo -d <empty temp dir> --headless -m 5, then the process passes flag validation and exits with code 1 at the project check, with stderr including nax not initialized. Run: nax init."
+      ],
+      "tags": [
+        "cli",
+        "config",
+        "feature"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The pure CLI parser and immutable config override follow existing patterns across a few source files; the schema and documentation edits add no new execution abstraction."
+      },
+      "contextFiles": [
+        "bin/nax.ts",
+        "src/cli/run-mode.ts",
+        "src/config/schemas.ts",
+        "src/cli/config-descriptions.ts",
+        "src/execution/unified-executor.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/run-max-iterations.ts",
+        "test/unit/cli/run-max-iterations.test.ts",
+        "test/integration/cli/cli-run-flag-validation.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Reject --parallel 0 and derive regression mode from effective concurrency",
+      "description": "**Goal** — Reject nonpositive parallel counts before mounting the TUI and classify 0 and 1 as sequential for regression snapshots.\n\n**Motivation** — `--parallel 0` runs one story at a time but is documented as auto, and 0 and 1 are misclassified as parallel by the regression gate.\n\n**Approach** — New module `src/cli/run-parallel.ts`:\n\n```ts\nexport type ParallelFlag = { ok: true; value: number | undefined } | { ok: false; message: string };\n\n/** Parse the raw `--parallel` option. `undefined` means the flag was not passed (sequential). */\nexport function parseParallelFlag(raw: string | undefined): ParallelFlag;\n```\n\n`Number.parseInt(raw, 10)`; rejected when `NaN` or `< 1`, with the message `--parallel must be a positive integer (omit it to run sequentially)`.\n- `bin/nax.ts`: help text becomes `Max parallel sessions (omit = sequential)`. Parsing moves from its current place after the TUI mount (`bin/nax.ts:591-598`, including the BUG-22 `tuiInstance?.unmount()` workaround) to the top of the `run` action beside the US-001 check, so the error prints before any TUI exists; the unmount workaround is removed with it. The parsed value is stored in the same `parallel` variable the action already passes to `run()` (`bin/nax.ts:668`). When both `-m` and `--parallel` are passed, `-m` is validated first.\n- `src/execution/runner-completion.ts:371`: `isSequential: options.parallel === undefined || options.parallel <= 1`. The comment above it states that `undefined`, `0` and `1` all execute one story at a time. `0` can still arrive from a programmatic `RunnerOptions` caller, so the expression treats it as sequential.\n- Docs: `docs/guides/cli-reference.md:161` drops \"`0` = auto based on CPU cores\"; the example at `docs/guides/cli-reference.md:184-185` passes an explicit count; the `--parallel 0` caveat at `docs/guides/parallel-execution.md:25` is replaced by one sentence saying `0` is rejected.\n\n**Scope** — In: early CLI parsing, completion regression gate, help/docs and affected tests. Out: US-001's max-iterations default/override; automatic concurrency; stricter parseInt syntax.\n\n**Interface** — `parseParallelFlag(raw: string | undefined): ParallelFlag;` and `isSequential: options.parallel === undefined || options.parallel <= 1`.\n\n**Verification note:** the relocated parse and the removed BUG-22 unmount workaround in `bin/nax.ts` are verified by `bun run typecheck && bun run lint`. The hand-off of the parsed value into the `parallel` variable passed to `run()` is not reachable by a cheap test (a positive-path run needs an initialised project, a PRD and an agent); it is checked at review against the wiring stated in this description.",
+      "acceptanceCriteria": [
+        "parseParallelFlag(undefined) returns { ok: true, value: undefined }.",
+        "parseParallelFlag(\"4\") returns { ok: true, value: 4 }.",
+        "parseParallelFlag(\"1\") returns { ok: true, value: 1 }.",
+        "parseParallelFlag(\"0\") returns { ok: false, message: \"--parallel must be a positive integer (omit it to run sequentially)\" }.",
+        "parseParallelFlag(\"-2\") returns { ok: false, message: \"--parallel must be a positive integer (omit it to run sequentially)\" }.",
+        "parseParallelFlag(\"abc\") returns { ok: false, message: \"--parallel must be a positive integer (omit it to run sequentially)\" }.",
+        "When runCompletionPhase receives parallel undefined, then it calls _runnerCompletionDeps.handleRunCompletion with isSequential: true.",
+        "When runCompletionPhase receives parallel: 1, then it calls _runnerCompletionDeps.handleRunCompletion with isSequential: true.",
+        "When runCompletionPhase receives parallel: 0, then it calls _runnerCompletionDeps.handleRunCompletion with isSequential: true.",
+        "When runCompletionPhase receives parallel: 4, then it calls _runnerCompletionDeps.handleRunCompletion with isSequential: false.",
+        "When running bun bin/nax.ts run -f demo -d <empty temp dir> --headless --parallel 0, then the process exits with code 1 and stderr includes --parallel must be a positive integer (omit it to run sequentially).",
+        "When running bun bin/nax.ts run -f demo -d <empty temp dir> --headless --parallel 4, then the process passes flag validation and exits with code 1 at the project check, with stderr including nax not initialized. Run: nax init."
+      ],
+      "tags": [
+        "cli",
+        "execution",
+        "feature"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Early flag extraction mirrors run-mode and the one-line regression-gate expression has an existing forwarding test table; no novel concurrency implementation is needed."
+      },
+      "contextFiles": [
+        "bin/nax.ts",
+        "src/cli/run-mode.ts",
+        "src/execution/runner-completion.ts",
+        "src/execution/unified-executor.ts",
+        "test/unit/execution/runner-completion-postrun.test.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/run-parallel.ts",
+        "test/unit/cli/run-parallel.test.ts",
+        "test/integration/cli/cli-run-parallel-validation.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/integration/cli/cli-core-parallel.test.ts",
+          "reason": "the tests \"parses --parallel 0 (auto-detect mode) correctly\" and \"RunOptions accepts parallel=0 (auto-detect)\" describe `0` as auto-detect. Replace them with a test that `parseParallelFlag(\"0\")` returns `ok: false`; the remaining tests are unchanged."
+        },
+        {
+          "path": "test/unit/execution/runner-completion-postrun.test.ts",
+          "reason": "the `test.each` row `[0, false]` in \"runCompletionPhase - forwards parallel mode as isSequential\" asserts a `parallel: 0` run is non-sequential. Replacing invariant: `parallel` of `undefined`, `0` and `1` forward `isSequential: true`; `4` forwards `false`."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Retire inert autofix isolation config key",
+      "description": "**Goal** — Remove the unused autofix isolation setting while loading legacy configs with a warning.\n\n**Motivation** — The key gated a guard on the old autofix-cycle stage; #1084 deleted that stage, the guard and its tests.\n\n**Approach** — Delete the key from `QualityConfigSchema.autofix` and its `.default({...})` literal (`src/config/schemas-execution.ts:398,403`), from the top-level default literal (`src/config/schemas.ts:185`), and from the `autofix` type (`src/config/runtime-types.ts:231`).\n- Add an entry to `REMOVED_NO_OP_KEYS` in `src/config/config-guards.ts`:\n  `\"quality.autofix.enforceTestWriterIsolation\": \"the mock-structure handoff path this key guarded was removed in #1084; the key has had no effect since\"`.\n  `stripRemovedNoOpKeys` then warns once and strips it before `safeParse`, exactly as it does for `review.gateLLMChecksOnMechanicalPass`.\n\n**Scope** — In: config schema/default/type, removed-key hint and strip/load tests. Out: US-004's prompt-role key in the shared guard map; rebuilding a test-writer isolation guard.\n\n**Interface** — Existing `stripRemovedNoOpKeys(conf, warn?)` and `REMOVED_NO_OP_KEYS` remain the entry point and map; add the specified mapping only.\n\n**Verification note:** the schema, default and type declarations are removed, verified by `bun run typecheck && bun run lint`.",
+      "acceptanceCriteria": [
+        "When stripRemovedNoOpKeys receives { quality: { autofix: { enforceTestWriterIsolation: false } } }, then its warn sink is called exactly once with a message naming quality.autofix.enforceTestWriterIsolation and #1084.",
+        "When stripRemovedNoOpKeys receives { quality: { autofix: { enforceTestWriterIsolation: true } } }, then its warn sink is called exactly once with a message naming quality.autofix.enforceTestWriterIsolation.",
+        "stripRemovedNoOpKeys returns quality.autofix equal to { enabled: false, maxAttempts: 2 } when given { quality: { autofix: { enabled: false, maxAttempts: 2, enforceTestWriterIsolation: false } } }.",
+        "NaxConfigSchema.parse({}) returns a quality.autofix object without an enforceTestWriterIsolation property.",
+        "When loadConfig loads a project whose .nax/config.json sets quality.autofix.enforceTestWriterIsolation: false, then it resolves without throwing and emits exactly one warning naming quality.autofix.enforceTestWriterIsolation."
+      ],
+      "tags": [
+        "config",
+        "compatibility",
+        "feature"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Standard deletion plus one existing compatibility-map entry across four config files."
+      },
+      "contextFiles": [
+        "src/config/config-guards.ts",
+        "src/config/schemas-execution.ts",
+        "src/config/schemas.ts",
+        "src/config/runtime-types.ts",
+        "test/unit/config/strip-removed-noop-keys.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/config/removed-enforce-test-writer-isolation.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "Retire single-session prompt role without changing context stage",
+      "description": "**Goal** — Stop accepting or scaffolding a prompt role unused by the pipeline while warning and stripping existing override configs.\n\n**Motivation** — A user who customises `single-session.md` sees no change and no warning.\n\n**Approach** — Add an entry to `REMOVED_NO_OP_KEYS` in `src/config/config-guards.ts`:\n  `\"prompts.overrides.single-session\": \"the single-session prompt role is not used by any run since fb3cfad3e; test-after stories use the tdd-simple role, so override tdd-simple instead\"`.\n  The strip runs before `safeParse`, so a config naming the key loads with a warning instead of failing the allowlist check below.\n- Remove `\"single-session\"` from:\n  - the `prompts.overrides` key allowlist and its error message (`src/config/schemas-infra.ts:427-429`); the message becomes `Role must be one of: no-test, test-writer, implementer, verifier, tdd-simple`;\n  - the overrides record type (`src/config/runtime-types.ts:473`);\n  - `FIELD_DESCRIPTIONS[\"prompts.overrides.single-session\"]` (`src/cli/config-descriptions.ts:281`);\n  - both role lists in `src/cli/config-display.ts:180,241`;\n  - `VALID_EXPORT_ROLES` (`src/cli/prompts-export.ts:10`);\n  - `TEMPLATE_ROLES`, the doc comment at `:55`, and both generated `overrides` objects in `src/cli/prompts-init.ts:32,133,170`;\n  - the `PromptRole` union (`src/prompts/core/types.ts:14`);\n  - the `single-session` branches and union members in `src/prompts/sections/role-task.ts`, `src/prompts/sections/isolation.ts`, `src/prompts/sections/behavioral-guardrails.ts`, and the role sets in `src/prompts/sections/hermetic.ts:13` and `src/prompts/sections/test-quality.ts:18`;\n  - the `\"single-session\"` key of `ROLE_AUDIENCE_MAP` in `src/context/feature-context-filter.ts:31` (the map is `Record<PromptRole, AudienceTag[]>`; its only production callers pass a `PromptRole` from `TddPromptBuilder` or a reviewer role from `plan-inputs.ts`, never the string `\"single-session\"`).\n- **Unchanged — a different use of the same name.** The context-engine stage key `\"single-session\"` (`src/context/engine/phase-stage-map.ts:116`, `src/context/engine/stage-config.ts`, `src/context/rules/rules-frontmatter.ts`, and the `stages:` lists in `.nax/rules/*.md`), the `sessionModel: \"single-session\" | \"three-session\"` label (`src/pipeline/stages/execution.ts:190`, `src/pipeline/event-bus/index.ts:188`, `src/plugins/extensions.ts:418`, `src/operations/types.ts:121`), the untyped commit-label string `\"single-session\"` passed to `autoCommitIfDirty` at `src/execution/post-run.ts:511` (pinned by `test/unit/execution/post-run-decide-action.test.ts:324`), and the prompt routing in `src/pipeline/stages/prompt.ts:113` are not prompt roles and stay as they are.\n- Docs: `docs/guides/prompt-customization.md` drops the `single-session` row, tree entry, override examples and role lists (lines 24, 30, 58, 86, 128, 214, 223), and says `test-after` stories are customised through `tdd-simple`.\n\n**Scope** — In: prompt-role schema, CLI surface, builder sections, context audience map, legacy override migration, docs and affected tests. Out: US-003's other removed-key mapping; context-engine stage, sessionModel and existing template files.\n\n**Interface** — `PromptRole` target: `\"no-test\" | \"test-writer\" | \"implementer\" | \"verifier\" | \"tdd-simple\" | \"batch\"`.\n\n**Verification note:** the `PromptRole` member, the section-builder branches and the CLI role lists are removed, verified by `bun run typecheck && bun run lint`. The existing `test-after` cases in `test/unit/pipeline/stages/prompt-tdd-simple.test.ts` keep passing unchanged.",
+      "acceptanceCriteria": [
+        "When stripRemovedNoOpKeys receives { prompts: { overrides: { \"single-session\": \"a.md\", \"tdd-simple\": \"b.md\" } } }, then its warn sink is called exactly once with a message naming prompts.overrides.single-session and tdd-simple.",
+        "stripRemovedNoOpKeys returns prompts.overrides equal to { \"tdd-simple\": \"b.md\" } when given { prompts: { overrides: { \"single-session\": \"a.md\", \"tdd-simple\": \"b.md\" } } }.",
+        "When loadConfig loads a project whose .nax/config.json sets prompts.overrides[\"single-session\"], then it resolves without throwing and emits exactly one warning naming prompts.overrides.single-session.",
+        "When NaxConfigSchema.safeParse receives a config whose prompts.overrides has a single-session key, then it returns success: false with issue message Role must be one of: no-test, test-writer, implementer, verifier, tdd-simple.",
+        "When promptsInitCommand runs on an empty workdir, then it returns written paths for exactly test-writer.md, implementer.md, verifier.md and tdd-simple.md under .nax/templates/.",
+        "Given a workdir with an existing .nax/config.json lacking prompts.overrides, when promptsInitCommand runs with autoWireConfig: true, then it writes .nax/config.json whose prompts.overrides has exactly the keys test-writer, implementer, verifier and tdd-simple.",
+        "When exportPromptCommand receives role single-session, then it prints [ERROR] Invalid role: \"single-session\" to stderr and exits with code 1.",
+        "executionContextStage({ isBatch: false, testStrategy: \"test-after\" }) returns \"single-session\".",
+        "When filterContextByRole receives role tdd-simple, then it keeps entries tagged [implementer] and entries tagged [test-writer]."
+      ],
+      "tags": [
+        "config",
+        "prompts",
+        "cli",
+        "compatibility",
+        "feature"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Broad existing prompt composition, CLI and schema deletion plus compatibility migration; prompt roles are template labels rather than authorization roles."
+      },
+      "contextFiles": [
+        "src/config/config-guards.ts",
+        "src/config/schemas-infra.ts",
+        "src/cli/prompts-init.ts",
+        "src/prompts/core/types.ts",
+        "src/context/feature-context-filter.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/config/removed-single-session-override.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/integration/prompts/pb-004-migration.test.ts",
+          "reason": "the test \"single-session: contains story/criteria and both test+implementation instructions\" builds `PromptBuilder.for(\"single-session\")`, and \"override for implementer, verifier, and single-session roles replaces role body\" includes a `single-session` case. Both lose their `single-session` part; the other roles' cases are unchanged."
+        },
+        {
+          "path": "test/unit/cli/prompts-export.test.ts",
+          "reason": "`VALID_ROLES` lists `single-session`. Replacing invariant: the four roles `test-writer`, `implementer`, `verifier`, `tdd-simple`."
+        },
+        {
+          "path": "test/unit/cli/prompts-init.test.ts",
+          "reason": "the file list, the role map, the single-session template output assertion and \"adds all 5 override keys\" expect five templates. Replacing invariant: four templates and four override keys, none named `single-session`."
+        },
+        {
+          "path": "test/unit/config/prompts-schema.test.ts",
+          "reason": "\"schema accepts 'single-session' override\" and the two fixtures using a `single-session` key expect the allowlist to accept it. Replacing invariant: the schema rejects a `single-session` key with the four-role-plus-`no-test` message."
+        },
+        {
+          "path": "test/unit/prompts/builder.test.ts",
+          "reason": "the `ROLES` arrays at `:36` and `:189`, the `.constitution()` case at `:51` and the `test.each` at `:319` use the `single-session` role. Drop the role from each; the remaining roles' assertions are unchanged."
+        },
+        {
+          "path": "test/unit/prompts/loader.test.ts",
+          "reason": "the `roles` array at `:74` and \"returns file content for single-session\" use the retired role. Drop the role and that test; use `tdd-simple` where an override fixture is needed."
+        },
+        {
+          "path": "test/unit/prompts/sections/behavioral-guardrails.test.ts",
+          "reason": "the role lists at `:13`, `:39`, `:65` and `:110` include `single-session`. Drop it; the other roles' assertions are unchanged."
+        },
+        {
+          "path": "test/unit/prompts/sections/hermetic.test.ts",
+          "reason": "the row \"single-session returns content\" expects a role that no longer exists. Drop the row."
+        },
+        {
+          "path": "test/unit/prompts/sections/isolation.test.ts",
+          "reason": "the describe block \"buildIsolationSection — single-session role\" tests the removed branch. Delete the block."
+        },
+        {
+          "path": "test/unit/prompts/sections/role-task.test.ts",
+          "reason": "the describe block \"buildRoleTaskSection — single-session\", the two \"is distinct from single-session\" comparisons and the `single-session` rows at `:279`, `:319`, `:336`, `:404-405` exercise the removed branch. Delete them; the tdd-simple and batch distinctness checks compare against the remaining roles."
+        },
+        {
+          "path": "test/unit/prompts/sections/test-quality.test.ts",
+          "reason": "`TEST_AUTHORING_ROLES` lists `single-session`. Replacing invariant: `test-writer`, `tdd-simple`, `batch`."
+        },
+        {
+          "path": "test/unit/prompts/us-004-affordances.test.ts",
+          "reason": "the assertion at `:328` calls `buildIsolationSection(\"single-session\", ...)`. Switch it to `tdd-simple`, which receives the same test-command affordance."
+        },
+        {
+          "path": "test/unit/context/feature-context-filter.test.ts",
+          "reason": "the role tables at `:52`, `:64`, `:75` and `:145` include `single-session`. Drop it from each; the `tdd-simple` rows carry the same audience expectations."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-005",
+      "title": "Delete dormant semantic-verdict persistence and diagnosis paths",
+      "description": "**Goal** — Remove the orphaned semantic-verdict writer, loader, cleanup and diagnosis fast path so stale files cannot change diagnosis.\n\n**Motivation** — `persistSemanticVerdict` has no caller; the readers are live and the semantic verdict fast path has been unreachable since #1084 deleted its writer.\n\n**Approach** — Deletion only; no new code. Remove:\n- `src/acceptance/semantic-verdict.ts` (the file) and its barrel export in `src/acceptance/index.ts:23`;\n- the `SemanticVerdict` interface in `src/acceptance/types.ts:134-150`;\n- the `persistSemanticVerdict` import and `_completionDeps` entry in `src/pipeline/stages/completion.ts:16,416`;\n- the `loadSemanticVerdicts` import, `_acceptanceLoopDeps` entry, the load at `:474`, the `NOTE` comment at `:502` and the `semanticVerdicts` argument at `:529` in `src/execution/lifecycle/acceptance-loop.ts`;\n- in `src/execution/lifecycle/acceptance-fix.ts`: the `semanticVerdicts` field of `ResolveAcceptanceDiagnosisOptions`, its destructuring, \"Fast path 2\" together with its local `SENTINELS` and `hasOnlySentinels`, and the `semanticVerdicts` key in the `callOp` input. The remaining fast paths keep their order: implement-only, then `isTestLevelFailure`, then the LLM diagnosis;\n- the `semanticVerdicts` input field and pass-through in `src/operations/acceptance-diagnose.ts:15,45`;\n- the `semanticVerdicts` field of `DiagnosisPromptParams` and the `SEMANTIC VERDICTS` block in `src/prompts/builders/acceptance-builder.ts:78-79,342-343`;\n- the third parameter of `isTestLevelFailure`, its branch and the \"All semantic verdicts passed\" doc line in `src/execution/lifecycle/acceptance-helpers.ts:112-128`;\n- `deleteSemanticVerdicts` in `_acceptanceSetupDeps`, its call and comment in `src/pipeline/stages/acceptance-setup.ts:124-135,311-312`.\n\nAlso reword the comments that describe the removed path: `src/test-runners/ac-parser.ts:131` (\"skip the semantic-verdict fast-path in diagnosis\" → the sentinel distinguishes a hook timeout from a parse failure) and `src/execution/ensure-package-dirs.ts:25` (drop the `semantic-verdict.ts` reference).\n\n**Kept:** the `AC-HOOK` sentinel (used by `src/pipeline/stages/acceptance.ts`, `src/findings/adapters/test-runner.ts`, `src/execution/lifecycle/acceptance-loop.ts:156`), the `\"semantic-verdicts/\"` entry in `src/utils/gitignore.ts:41` (stale directories from older runs stay ignored), and historical ADRs and specs under `docs/adr/` and `docs/specs/`.\n\nDocs: remove §3 \"Semantic Verdict Persistence\" and the \"all semantic verdicts passed\" rows from `docs/guides/acceptance-review-flow.md` (lines 90, 112-132, 170, 196, 208, 246, 258), and the \"Semantic verdicts\" bullet at `docs/architecture/subsystems.md:258`.\n\n**Scope** — In: dead persistence, diagnosis and cleanup plumbing; stale-file diagnosis routing and docs/tests. Out: US-004's similarly named session role; new semantic-verdict writer; deleting stale directories, AC-HOOK or its gitignore entry.\n\n**Interface** — `isTestLevelFailure(failedACs: string[] | number, totalACs: number): boolean` returns true for an `AC-ERROR` entry or a failed ratio above 0.8, false when `totalACs` is 0; `ResolveAcceptanceDiagnosisOptions` is unchanged except for removal of `semanticVerdicts`.\n\n**Verification note:** removal of `src/acceptance/semantic-verdict.ts`, `SemanticVerdict`, the `semanticVerdicts` fields and parameters, the `SEMANTIC VERDICTS` prompt block and `deleteSemanticVerdicts` is verified by `bun run typecheck && bun run lint` — the compiler rejects any remaining reference.",
+      "acceptanceCriteria": [
+        "When resolveAcceptanceDiagnosis receives strategy implement-only, then it returns verdict source_bug with confidence 1.0 and never calls _diagnosisDeps.callOp.",
+        "When resolveAcceptanceDiagnosis receives failedACs [\"AC-ERROR\"] and strategy diagnose-first, then it returns verdict test_bug with confidence 0.9 and never calls _diagnosisDeps.callOp.",
+        "When resolveAcceptanceDiagnosis receives 1 of 10 ACs failed and strategy diagnose-first, then it calls _diagnosisDeps.callOp exactly once with acceptanceDiagnoseOp.",
+        "When runAcceptanceLoop processes a feature directory containing stale semantic-verdicts/US-001.json with passed: true and 1 of 10 ACs fails, then it dispatches LLM diagnosis through _diagnosisDeps.callOp rather than returning test_bug without a diagnosis call.",
+        "isTestLevelFailure([\"AC-1\"], 10) returns false.",
+        "isTestLevelFailure([\"AC-1\", \"AC-2\", \"AC-3\", \"AC-4\", \"AC-5\", \"AC-6\", \"AC-7\", \"AC-8\", \"AC-9\"], 10) returns true.",
+        "isTestLevelFailure([\"AC-ERROR\"], 10) returns true."
+      ],
+      "tags": [
+        "acceptance",
+        "execution",
+        "cleanup",
+        "feature"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-cutting removal from acceptance IO, orchestration, operations and prompt builder with stale-file regression risk; existing diagnosis contracts survive."
+      },
+      "contextFiles": [
+        "src/execution/lifecycle/acceptance-fix.ts",
+        "src/execution/lifecycle/acceptance-loop.ts",
+        "src/execution/lifecycle/acceptance-helpers.ts",
+        "src/pipeline/stages/acceptance-setup.ts",
+        "test/unit/execution/lifecycle/acceptance-fix.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/execution/lifecycle/acceptance-diagnosis-no-verdicts.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/acceptance/semantic-verdict.test.ts",
+          "reason": "tests the deleted module. Delete the file."
+        },
+        {
+          "path": "test/unit/pipeline/stages/acceptance-setup-fingerprint.test.ts",
+          "reason": "the three tests \"calls deleteSemanticVerdicts when fingerprint mismatches\", \"passes featureDir to deleteSemanticVerdicts\" and \"does not call deleteSemanticVerdicts when fingerprint matches\", and the `deleteSemanticVerdicts` stubs, target the removed dependency. Delete them; the backup-and-delete assertions for per-package test files are unchanged."
+        },
+        {
+          "path": "test/unit/pipeline/stages/acceptance-setup-dispatch-failure.test.ts",
+          "reason": "its `_acceptanceSetupDeps` fixture stubs `deleteSemanticVerdicts`. Remove the stub."
+        },
+        {
+          "path": "test/unit/operations/acceptance-diagnose.test.ts",
+          "reason": "\"task section includes semantic verdict hints when provided\" tests the removed input. Delete the test."
+        },
+        {
+          "path": "test/unit/acceptance/fix-diagnosis.test.ts",
+          "reason": "the semantic-verdict prompt tests (from \"includes the passed story ID in the prompt when some verdicts passed\" through \"buildDiagnosisPrompt is callable with all-passing verdicts\") test the removed `SEMANTIC VERDICTS` block. Delete them; the verdict-schema tests at `:68-86` are unchanged."
+        },
+        {
+          "path": "test/unit/execution/lifecycle/acceptance-loop-routing.test.ts",
+          "reason": "its `_acceptanceLoopDeps` fixture stubs `loadSemanticVerdicts`. Remove the stub."
+        },
+        {
+          "path": "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts",
+          "reason": "its fixtures pass `semanticVerdicts`. Remove the field."
+        },
+        {
+          "path": "test/unit/execution/lifecycle/acceptance-loop-regen-stub.test.ts",
+          "reason": "the `isTestLevelFailure` tests \"returns true when all verdicts passed…\", \"does NOT short-circuit via semantic…\" and the `semanticVerdicts` argument in the ratio tests use the removed parameter. Delete the verdict tests and drop the argument; the ratio, `AC-ERROR` and `totalACs === 0` expectations are unchanged."
+        },
+        {
+          "path": "test/unit/execution/lifecycle/acceptance-fix.test.ts",
+          "reason": "\"all semantic verdicts passed → test_bug, no callOp invoked\" and \"normal path passes semanticVerdicts to callOp input\" test the removed fast path and field. Delete them; the implement-only and test-level-failure fast-path tests are unchanged."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing TypeScript/Bun CLI, Zod config and execution pipeline, not greenfield. US-001: bin/nax.ts:205 gives -m a Commander default of 20 and bin/nax.ts:531-536 unconditionally assigns it after loadConfig at :375; validation belongs just after validateDirectory at :251-260, before the uninitialized check at :382 and any TUI. src/cli/run-mode.ts:1-27 supplies the pure-helper precedent; src/config/schemas.ts:122 instead defaults execution.maxIterations to 10, src/config/runtime-types.ts:106 and src/cli/config-descriptions.ts:58 claim nonexistent auto-calculation. src/execution/unified-executor.ts:176-177 counts each loop pass. Correct the schema, description and guides; retain the leading phrase asserted by test/integration/cli/cli-config-diff.test.ts and cli-config-command.test.ts. Add pure-helper unit and spawn CLI tests. US-002: bin/nax.ts:210 advertises 0=auto, while :591-598 parses only after TUI mounting and has BUG-22 unmount workaround; move validation alongside -m and pass the parsed value through the existing parallel variable to run(). src/execution/unified-executor.ts:219-225 executes batches only at positive parallel count; src/execution/runner-completion.ts:367-371 incorrectly calls 0 and 1 parallel for regression gate snapshots. Update docs/guides/cli-reference.md and parallel-execution.md, and existing test/integration/cli/cli-core-parallel.test.ts and test/unit/execution/runner-completion-postrun.test.ts. US-003: src/config/schemas-execution.ts:398-405, schemas.ts:185 and runtime-types.ts:231 declare inert isolation key. src/config/config-guards.ts:258-349 already strips removed keys immutably and warns; src/config/loader.ts:260,520,575 applies this before schema validation and dedupes warnings, so legacy configs migrate fail-open. Mirror test/unit/config/strip-removed-noop-keys.test.ts. US-004: src/config/schemas-infra.ts:427-429 allows obsolete role; src/prompts/core/types.ts:9-16 and prompt sections/role-task.ts, isolation.ts, behavioral-guardrails.ts, hermetic.ts and test-quality.ts use it; src/context/feature-context-filter.ts:31 holds its audience map. src/cli/prompts-init.ts:32,133,170, prompts-export.ts:10, config-display.ts:180,241, config-descriptions.ts:281 and src/config/runtime-types.ts:473 expose it. src/pipeline/stages/prompt.ts:113 actually builds only no-test or tdd-simple, while src/context/engine/phase-stage-map.ts:111-117 still deliberately returns the unrelated stage key single-session for test-after. Preserve sessionModel labels, stage keys, rule stage lists, commit labels and existing user template files. Important: src/cli/prompts-init.ts:112-141 auto-wires only when .nax/config.json already exists and prompts.overrides is absent; absent config merely prints instructions; the autoWireConfig AC needs that existing-config precondition. Update prompt migration, builder/loader/sections, CLI init/export, config schema and context-filter tests specified by the feature, along with new strip/load tests. PromptRole is a prompt-template label, not an authorization check. US-005: src/acceptance/semantic-verdict.ts:50,87 contains orphaned persistence/loader exported at src/acceptance/index.ts:23; src/pipeline/stages/completion.ts:416 has a dead writer dependency; src/execution/lifecycle/acceptance-loop.ts:474,529 reads verdicts and forwards to src/execution/lifecycle/acceptance-fix.ts:104,144, which has an all-passing fast path. src/operations/acceptance-diagnose.ts:15,45 and src/prompts/builders/acceptance-builder.ts:78-79,342-343 forward/render the dead hints. Remove the interface at src/acceptance/types.ts:140, the third isTestLevelFailure parameter at src/execution/lifecycle/acceptance-helpers.ts:120-137, and cleanup at src/pipeline/stages/acceptance-setup.ts:124-135,311-312; retain AC-HOOK and src/utils/gitignore.ts:41 to ignore historical directories. Update comments at src/test-runners/ac-parser.ts:131 and src/execution/ensure-package-dirs.ts:25 and acceptance guides/architecture. Delete test/unit/acceptance/semantic-verdict.test.ts and removed-path cases/stubs in acceptance-setup-fingerprint, acceptance-setup-dispatch-failure, acceptance-diagnose, fix-diagnosis, acceptance-loop-routing, acceptance-loop-cycle, acceptance-loop-regen-stub and acceptance-fix tests, preserving unrelated assertions. Migration/risks: inert config keys warn once and strip before safeParse; direct raw NaxConfigSchema.safeParse rejects retired prompt override, but loadConfig accepts it and keeps remaining overrides. PromptRole type removal breaks only callers using the retired prompt role. Semantic files remain on disk but are no longer read. US-003 and US-004 both edit REMOVED_NO_OP_KEYS; follow the explicit US-004-after-US-003 dependency to avoid overlapping map edits. The other stories can proceed independently.",
+  "outOfScope": [
+    "#2249 (remembered-approval provenance) and #2229 (non-blocking-fix spec re-check) are separate features and are not touched here.",
+    "Implementing an automatic `--parallel` concurrency (CPU count or otherwise) is not part of this feature; `0` is rejected instead.",
+    "Deriving `execution.maxIterations` from story count or `autoMode.escalation.tierOrder` is not part of this feature; the default is a fixed 20.",
+    "Rebuilding a test-writer isolation guard on the autofix test-writer path is not part of this feature; `enforceTestWriterIsolation` is only retired.",
+    "Rewiring `persistSemanticVerdict` or any other semantic-verdict writer is not part of this feature; the path is only deleted.",
+    "The context-engine stage key `single-session`, the `sessionModel: \"single-session\"` label and the `stages:` lists in `.nax/rules/*.md` are not renamed or removed.",
+    "Which error `nax run` reports when `-m` and `--parallel` are both invalid is not pinned by an acceptance criterion; the Design states `-m` is validated first.",
+    "The `\"implementer-handoff\"` member of `FindingSource` in `src/findings/types.ts` is not removed.",
+    "Existing `.nax/templates/single-session.md` files and stale `semantic-verdicts/` directories in user projects are not deleted.",
+    "US-001 only: `parseMaxIterationsFlag` keeps `Number.parseInt` semantics, so `\"2.5\"` parses to 2 and `\"5abc\"` to 5; stricter integer parsing is not part of this feature.",
+    "US-002 only: `parseParallelFlag` keeps `Number.parseInt` semantics, so `\"2.5\"` parses to 2; stricter integer parsing is not part of this feature."
+  ],
+  "routingProfile": "native-ds"
+}

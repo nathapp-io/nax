@@ -450,7 +450,7 @@ initialised project, a PRD and an agent); it is checked at review against the De
 3. [integration] `loadConfig` on a project whose `.nax/config.json` sets `prompts.overrides["single-session"]` resolves without throwing and emits exactly one warning naming `prompts.overrides.single-session`.
 4. [unit] `NaxConfigSchema.safeParse` on a config whose `prompts.overrides` has a `single-session` key returns `success: false` with the issue message `Role must be one of: no-test, test-writer, implementer, verifier, tdd-simple`.
 5. [unit] `promptsInitCommand` on an empty workdir returns written paths for exactly `test-writer.md`, `implementer.md`, `verifier.md` and `tdd-simple.md` under `.nax/templates/`.
-6. [unit] `promptsInitCommand` with `autoWireConfig: true` writes a `.nax/config.json` whose `prompts.overrides` has exactly the keys `test-writer`, `implementer`, `verifier` and `tdd-simple`.
+6. [unit] Given a workdir with an existing `.nax/config.json` lacking `prompts.overrides`, `promptsInitCommand` with `autoWireConfig: true` writes a `.nax/config.json` whose `prompts.overrides` has exactly the keys `test-writer`, `implementer`, `verifier` and `tdd-simple`.
 7. [unit] `exportPromptCommand` with role `single-session` prints `[ERROR] Invalid role: "single-session"` to stderr and exits with code 1.
 8. [unit] `executionContextStage({ isBatch: false, testStrategy: "test-after" })` returns `"single-session"`.
 9. [unit] `filterContextByRole` with role `tdd-simple` keeps entries tagged `[implementer]` and entries tagged `[test-writer]`.
