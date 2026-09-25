@@ -3,7 +3,7 @@
 **This is the single source of truth for test writing rules in nax.**
 
 All agents (Claude Code, Codex, Gemini CLI, etc.) and human contributors must follow these rules.
-Pointers to this file live in `AGENTS.md`, `CONTRIBUTING.md`, and `.claude/rules/test-writing.md`.
+Pointers to this file live in `CONTRIBUTING.md` and the test rules in `.nax/rules/` (`test-writing.md`, `test-architecture.md`, `forbidden-patterns-tests.md`; generated copies in `.claude/rules/`).
 
 ---
 
@@ -139,18 +139,23 @@ const meta = JSON.parse(await readFile(metaFile, "utf8"));
 sanctioned place for it. `waitForFile` below is exactly that. Test files
 themselves should call the helper, never re-implement the wait inline.
 
-`waitForFile` lives in `test/helpers/fs.ts`:
+`waitForFile` lives in `test/helpers/fs.ts` (simplified):
 
 ```typescript
-export async function waitForFile(path: string, timeoutMs = 500): Promise<void> {
+export async function waitForFile(path: string, timeoutMs = 500, pollIntervalMs = 10): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await Bun.file(path).exists()) return;
-    await new Promise(r => setTimeout(r, 10));
+    try {
+      await access(path, constants.F_OK);
+      return;
+    } catch {}
+    await waitForNextPoll(pollIntervalMs);
   }
   throw new Error(`waitForFile: ${path} not created within ${timeoutMs}ms`);
 }
 ```
+
+`waitForCondition` is in `test/helpers/timeout.ts`, `makeFakeClock` in `test/helpers/fake-clock.ts`, and `withTimerSpy` in `test/helpers/timer-spy.ts`.
 
 ### Timer-driven code: inject the clock, never sleep past the threshold
 
@@ -345,10 +350,10 @@ tempDir = makeTempDir("nax-config-test-");
 
 **When adding a new top-level field to `NaxConfig` (in `src/config/runtime-types.ts`):**
 
-1. **Add a Zod schema** in `src/config/schemas.ts` and wire it into `NaxConfigSchema`
-2. **Add the field to `MAXIMAL_CONFIG`** in `test/unit/config/schema-coverage.test.ts` with a valid fixture value
-3. **Assert it survives `safeParse`** in the coverage test (add an `expect(data.newField).toBeDefined()` line)
-4. **Add the key** to `EXPECTED_KEYS` in the shape-coverage test
+1. **Add a Zod schema** in `src/config/schemas*.ts` and wire it into `NaxConfigSchema` (`src/config/schemas.ts`)
+2. **Give it a default** (or mark it `.optional()`) — `DEFAULT_CONFIG` is derived from `NaxConfigSchema.parse({})` in `src/config/defaults.ts`, so there is no second copy to update
+3. **Add the key** to `NAX_CONFIG_KEYS` in `test/unit/config/defaults.test.ts`, which asserts the parsed defaults and the `NaxConfig` key list stay in sync
+4. **Add a schema test** that asserts a representative value survives `NaxConfigSchema.safeParse` (see the `test/unit/config/*-schema.test.ts` files)
 
 ### Why
 
@@ -357,8 +362,9 @@ Zod's `safeParse` strips unknown keys by default. A TypeScript interface field t
 ### Quick checklist
 
 ```
-[ ] runtime-types.ts — added interface field
-[ ] schemas.ts       — added Zod schema + wired into NaxConfigSchema
-[ ] schema-coverage.test.ts — MAXIMAL_CONFIG updated, assertion added, EXPECTED_KEYS updated
-[ ] test passes: bun test test/unit/config/schema-coverage.test.ts
+[ ] runtime-types.ts           — added interface field
+[ ] schemas*.ts                — added Zod schema + wired into NaxConfigSchema
+[ ] defaults.test.ts           — NAX_CONFIG_KEYS updated
+[ ] <field>-schema.test.ts     — survives safeParse
+[ ] test passes: bun test test/unit/config/ --timeout=30000
 ```

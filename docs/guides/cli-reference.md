@@ -7,7 +7,7 @@ description: Complete CLI command reference for nax
 
 ### `nax init`
 
-Initialize nax in your project. Creates the `.nax/` folder structure.
+Initialize nax in your project. Creates the `.nax/` folder structure (and a minimal `~/.nax/` global layer on first use). Idempotent: existing config/context files are kept unless `--force`; `.gitignore` and `.naxignore` are reconciled on every run.
 
 ```bash
 nax init
@@ -16,9 +16,21 @@ nax init
 Creates:
 ```
 .nax/
-├── config.json       # Project-level config
+├── config.json       # Project-level config (stack-detected)
+├── context.md        # Project context for `nax generate`
+├── constitution.md   # Stack-aware coding constitution
+├── hooks/
 └── features/         # One folder per feature
 ```
+
+**Flags:**
+
+| Flag | Description |
+|:-----|:------------|
+| `-d, --dir <path>` | Project directory |
+| `-n, --name <name>` | Project name for the output registry (default: directory name). An explicit name that another checkout already claims fails with a collision — resolve with `nax migrate --reclaim/--merge` |
+| `-f, --force` | Overwrite existing files |
+| `--package <dir>` | Scaffold a monorepo package context (see below) |
 
 **Monorepo — scaffold a package:**
 
@@ -27,6 +39,44 @@ nax init --package packages/api
 ```
 
 Creates `.nax/mono/packages/api/context.md` for per-package agent context.
+
+---
+
+### `nax setup`
+
+Analyze the repo and generate `.nax/config.json` via an LLM call.
+
+```bash
+nax setup
+nax setup --dry-run
+```
+
+| Flag | Description |
+|:-----|:------------|
+| `-d, --dir <path>` | Project directory |
+| `-a, --agent <name>` | Force a specific agent |
+| `--fill-scripts` | Add missing quality-gate scripts to `package.json` |
+| `--dry-run` | Preview the planned config without writing files |
+| `--force` | Overwrite an existing `.nax/config.json` |
+
+---
+
+### `nax migrate`
+
+Move generated content (runs, metrics, prompt audits, …) out of a legacy `.nax/` into the output directory (`~/.nax/<project>/`, or `outputDir`), and resolve project-name collisions.
+
+```bash
+nax migrate --dry-run
+nax migrate --reclaim my-project   # Archive ~/.nax/my-project/ to free the name
+nax migrate --merge my-project     # Point the identity for my-project at this workdir
+```
+
+| Flag | Description |
+|:-----|:------------|
+| `-d, --dir <path>` | Project directory |
+| `--dry-run` | Preview moves without touching the filesystem |
+| `--reclaim <name>` | Archive `~/.nax/<name>/` to free the project name |
+| `--merge <name>` | Rewrite the identity for `<name>` to point to this workdir |
 
 ---
 
@@ -48,11 +98,21 @@ List all features and their story completion status.
 nax features list
 ```
 
+### `nax features resolve [name]`
+
+Resolve the feature name and spec source deterministically (useful for scripts and skills).
+
+```bash
+nax features resolve user-auth --json
+```
+
+Flags: `--json` (machine-readable output), `-d, --dir <path>`. Exit codes: `0` resolved, `2` needs a human decision (ambiguous, missing, or unknown feature), `1` hard error / not a nax repo.
+
 ---
 
 ### `nax plan -f <name> --from <spec>`
 
-Generate a `prd.json` from a spec file using an LLM. Replaces the deprecated `nax analyze`.
+Generate a `prd.json` from a spec file using an LLM. Replaces the removed `nax analyze`. The planning strategy comes from `plan.mode` in config (`single`, the default, or `refine`); the retired `debate`/`pipeline` modes are rejected at config load.
 
 ```bash
 nax plan -f my-feature --from spec.md
@@ -64,15 +124,12 @@ nax plan -f my-feature --from spec.md
 |:-----|:------------|
 | `-f, --feature <name>` | Feature name (required) |
 | `--from <spec-path>` | Path to spec file (required unless `--decompose` is used) |
-| `--auto` / `--one-shot` | Skip interactive Q&A — single LLM call, no back-and-forth |
+| `--auto` / `--one-shot` | Accepted for compatibility; no longer changes behaviour (use `plan.mode`) |
 | `-b, --branch <branch>` | Override default branch name |
 | `--decompose <storyId>` | Decompose an existing story into sub-stories |
+| `--no-spec-lint` | Plan even when the spec declares sections that extract to nothing (see `nax spec lint`) |
 | `--profile <name>` | Profile(s) to overlay on config (overrides `config.json` profile). Repeatable and comma-separated for a chain — `--profile a,b` or `--profile a --profile b` — where a later profile overrides an earlier one (`b` over `a` over project + global). Accepts the comma form in `NAX_PROFILE` and `config.json` too. |
 | `-d, --dir <path>` | Project directory |
-
-**Interactive vs one-shot:**
-- Default (no flag): interactive planning session — nax asks clarifying questions, refines the plan iteratively
-- `--auto` / `--one-shot`: single LLM call, faster but less precise
 
 > **Note:** `nax analyze` was removed — use `nax plan` instead.
 
@@ -91,11 +148,16 @@ nax run -f my-feature
 | Flag | Description |
 |:-----|:------------|
 | `-f, --feature <name>` | Feature name |
-| `-a, --agent <name>` | Override the default agent for this run (`claude`, `opencode`, `codex`, `gemini`, `aider`, etc.). |
+| `-a, --agent <name>` | Override the default agent for this run (`native`, `claude`, `codex`, `opencode`, `gemini`, `aider`, `pi`). Mutually exclusive with `--compare` |
+| `--compare <agents>` | Bake-off mode: comma-separated contestant agents (e.g. `claude,codex`) |
+| `--max-cost <usd>` | Override `execution.costLimit` for this run (per contestant with `--compare`) |
 | `--plan` | Run plan phase first (requires `--from`) |
 | `--from <spec-path>` | Spec file for `--plan` |
-| `--one-shot` | Skip interactive Q&A during planning (ACP only) |
+| `--no-spec-lint` | With `--plan`: plan even when the spec fails the extraction-integrity lint |
+| `--one-shot` | Accepted for compatibility with `--plan`; no longer changes behaviour |
 | `--force` | Overwrite existing `prd.json` when using `--plan` |
+| `--schedule <when>` | Defer the run start until `<when>` (`30m`, `1h30m`, `17:00`, `2026-07-02T02:00`) |
+| `--fresh` / `--no-resume` | Ignore any existing `checkpoint.jsonl` and re-run every incomplete story from scratch (default: auto-resume) |
 | `--parallel <n>` | Max parallel sessions (`0` = auto based on CPU cores; omit = sequential) |
 | `--dry-run` | Preview story routing without running agents |
 | `--headless` | Non-interactive output (structured logs, no TUI) |
@@ -106,7 +168,7 @@ nax run -f my-feature
 | `--skip-precheck` | Skip precheck validations (advanced users only) |
 | `--no-context` | Disable context builder (skip file context in prompts) |
 | `--no-batch` | Execute all stories individually (disable batching) |
-| `-m, --max-iterations <n>` | Max iterations (default: `20`) |
+| `-m, --max-iterations <n>` | Max iterations (default: `20`). Always overrides `execution.maxIterations`, even when the flag is omitted |
 | `--profile <name>` | Profile(s) to overlay on config (overrides `config.json` profile). Repeatable and comma-separated for a chain — `--profile a,b` or `--profile a --profile b` — where a later profile overrides an earlier one (`b` over `a` over project + global). Accepts the comma form in `NAX_PROFILE` and `config.json` too. |
 | `-d, --dir <path>` | Working directory |
 
@@ -128,12 +190,42 @@ nax run -f user-auth --parallel 3
 # Force a specific agent
 nax run -f user-auth --agent opencode
 
+# Bake-off: run the same feature with two agents and compare
+nax run -f user-auth --compare claude,codex
+
+# Start at 2am
+nax run -f user-auth --schedule 02:00
+
 # Run in CI/CD (structured output)
 nax run -f user-auth --headless
 
 # Raw JSONL for scripting
 nax run -f user-auth --json
 ```
+
+---
+
+### `nax resume -f <name>`
+
+Resume an interrupted run for a feature from its checkpoint (same as `nax run`, which auto-resumes by default).
+
+```bash
+nax resume -f my-feature
+```
+
+Flags: `-f, --feature <name>` (required), `-d, --dir <path>`.
+
+---
+
+### `nax accept`
+
+Override a failed acceptance criterion; the override and reason are stored in `prd.json`.
+
+```bash
+nax accept -f my-feature --override AC-2 -r "intentional: lazy expiry"
+```
+
+All three flags are required: `-f, --feature <name>`, `--override <ac-id>`, `-r, --reason <reason>`.
 
 ---
 
@@ -145,7 +237,7 @@ Validate your project is ready to run — checks git, PRD, CLI tools, deps, test
 nax precheck -f my-feature
 ```
 
-Run this before `nax run` to catch configuration issues early.
+Run this before `nax run` to catch configuration issues early. Add `--json` for machine-readable output; `-d, --dir <path>` selects the project.
 
 ### `nax precheck --light`
 
@@ -155,7 +247,7 @@ Environment-only check — validates git, CLI tools, and deps without requiring 
 nax precheck --light
 ```
 
-Use this **before `nax plan`** to catch blockers (missing tools, git not initialized, etc.) before spending tokens on planning. Equivalent to running precheck with an empty PRD.
+Use this **before `nax plan`** to catch blockers (missing tools, git not initialized, etc.) before spending tokens on planning. It runs only the environment tier of checks (the project tier needs a PRD).
 
 ---
 
@@ -174,7 +266,12 @@ nax status --cost --last
 
 # Per-model efficiency (requires --cost)
 nax status --cost --model
+
+# Cost report as JSON (requires --cost)
+nax status --cost --json
 ```
+
+`-d, --dir <path>` selects the project directory.
 
 ---
 
@@ -202,6 +299,21 @@ nax logs --run <runId>
 nax logs --json
 ```
 
+Short forms: `-f` (`--follow`), `-s` (`--story`), `-l` (`--list`), `-r` (`--run`), `-j` (`--json`); `-d, --dir <path>` selects the project.
+
+---
+
+### `nax replay [run-id]`
+
+Reconstruct a post-mortem timeline for a previous run from its artifacts (latest run when `run-id` is omitted). Failure-focused by default.
+
+```bash
+nax replay
+nax replay <runId> --all          # Include passed stories
+nax replay <runId> -s US-003      # One story only
+nax replay <runId> --json
+```
+
 ---
 
 ### `nax generate`
@@ -218,11 +330,12 @@ nax generate
 |:-----|:------------|
 | `-c, --context <path>` | Context file path (default: `.nax/context.md`) |
 | `-o, --output <dir>` | Output directory (default: project root) |
+| `-d, --dir <path>` | Project directory |
 | `-a, --agent <name>` | Generate for a specific agent only (`claude`, `opencode`, `cursor`, `windsurf`, `aider`, `codex`, `gemini`) |
 | `--dry-run` | Preview without writing files |
 | `--no-auto-inject` | Disable auto-injection of project metadata |
 | `--package <dir>` | Generate for a specific monorepo package (e.g. `packages/api`) |
-| `--all-packages` | Generate for all discovered packages |
+| `--all-packages` | Generate for every package that has a `.nax/mono/<package>/context.md` |
 
 **What it generates:**
 
@@ -230,10 +343,10 @@ nax generate
 |:------|:-----|
 | Claude Code | `CLAUDE.md` |
 | OpenCode | `AGENTS.md` |
-| Codex | `AGENTS.md` |
+| Codex | `codex.md` |
 | Cursor | `.cursorrules` |
 | Windsurf | `.windsurfrules` |
-| Aider | `.aider.md` |
+| Aider | `.aider.conf.yml` |
 | Gemini | `GEMINI.md` |
 
 **Workflow:**
@@ -245,10 +358,10 @@ nax generate
 **Monorepo (per-package):**
 
 ```bash
-# Generate CLAUDE.md for a single package
+# Generate CLAUDE.md for a single package (other agents via config generate.agents)
 nax generate --package packages/api
 
-# Generate for all packages (auto-discovers workspace packages)
+# Generate for every package with a .nax/mono/<package>/context.md
 nax generate --all-packages
 ```
 
@@ -274,6 +387,7 @@ nax prompts -f my-feature
 | `--story <id>` | Filter to a single story ID (e.g., `US-003`) |
 | `--out <path>` | Output file for `--export`, or directory for regular prompts (default: stdout) |
 | `--force` | Overwrite existing template files |
+| `-d, --dir <path>` | Project directory |
 
 After running `--init`, edit the templates and nax will use them automatically via `prompts.overrides` config.
 
@@ -281,10 +395,12 @@ After running `--init`, edit the templates and nax will use them automatically v
 
 ### `nax unlock`
 
-Release a stale `nax.lock` from a crashed process.
+Release a stale `nax.lock` from a crashed process. The holder's liveness is checked first.
 
 ```bash
-nax unlock -f my-feature
+nax unlock                 # Checkout lock + every stale per-feature lock
+nax unlock -f my-feature   # Only <outputDir>/features/my-feature/nax.lock
+nax unlock --force         # Skip the liveness check
 ```
 
 ---
@@ -302,8 +418,12 @@ nax runs --project my-project
 # Limit to N most recent (default: 20)
 nax runs --last 50
 
-# Filter by status (running|completed|failed|crashed)
+# Filter by status (running|completed|failed|crashed|cost-limit)
 nax runs --status failed
+
+# Runs for one feature in this project
+nax runs list -f my-feature
+nax runs show <run-id> -f my-feature
 ```
 
 ---
@@ -448,6 +568,55 @@ nax agents
 
 ---
 
+### `nax auth`
+
+Manage provider credentials for the `native` agent. A stored credential takes precedence over an environment variable.
+
+```bash
+nax auth login <provider>              # Interactive; --method api-key|oauth skips the prompt
+nax auth import                        # Import from pi's ~/.pi/agent/auth.json (--from <path>, --force)
+nax auth list
+nax auth rm <provider>                 # Local removal only; does not revoke at the provider
+```
+
+---
+
+### `nax mcp lock`
+
+Refresh `.nax/mcp-lock.json` from what each configured MCP server (`mcp.servers`) advertises. Connects every enabled server once, at the project root.
+
+```bash
+nax mcp lock
+```
+
+---
+
+### `nax routing calibrate`
+
+Propose complexity→tier mapping adjustments from run history.
+
+```bash
+nax routing calibrate
+nax routing calibrate --apply          # Write the mapping into .nax/config.json
+```
+
+Flags: `-d, --dir <path>`, `--apply`, `--json`, `--min-samples <n>` (override the per-band sample floor).
+
+---
+
+### `nax detect`
+
+Detect test-file patterns for the project and optionally persist them.
+
+```bash
+nax detect
+nax detect --apply
+```
+
+Flags: `-d, --dir <path>`, `--apply` (write to `.nax/` configs), `--json`, `--package <dir>` (one package only), `--force` (with `--apply`, overwrite an explicit `testFilePatterns`).
+
+---
+
 ### `nax config`
 
 Display the effective merged configuration (global + project layers).
@@ -463,6 +632,67 @@ nax config --explain
 nax config --diff
 ```
 
+**Profiles:**
+
+```bash
+nax config profile list            # Available profiles grouped by scope
+nax config profile show <name>     # Resolved profile JSON (--unmask shows secrets)
+nax config profile use <name>      # Set the active profile ('default' clears it)
+nax config profile current         # Active profile name
+nax config profile create <name>   # Create an empty profile
+```
+
+All `config` subcommands accept `-d, --dir <path>`.
+
+---
+
+### `nax context`
+
+Inspect context-engine artifacts.
+
+```bash
+nax context inspect US-003 [-f <feature>] [--json]   # Persisted context manifests for a story
+nax context fragments inspect -f <feature>           # Fragments + dependent story IDs
+nax context fragments prune -f <feature> [storyId]   # Remove fragments (one story, or all)
+nax context effectiveness eval -l labels.json [--json]
+```
+
+---
+
+### `nax spec lint [paths...]`
+
+Check a spec's machine-extracted sections before `nax plan` spends on it.
+
+```bash
+nax spec lint -f my-feature
+nax spec lint path/to/spec.md --strict
+```
+
+Flags: `-f, --feature <name>` (lint that feature's `spec.md`), `-d, --dir <path>`, `--strict` (fail on every error, not only those that block `nax plan`).
+
+---
+
+### `nax rules`
+
+Manage the canonical rules store (`.nax/rules/`).
+
+```bash
+nax rules lint                           # Validate neutrality/frontmatter (root + package overlays)
+nax rules export -a claude               # claude → .claude/rules/; codex|gemini|cursor → shim file
+nax rules export -a claude --check       # Exit non-zero on drift
+nax rules migrate [--force] [--dry-run]  # Legacy CLAUDE.md + .claude/rules/*.md → .nax/rules/
+```
+
+---
+
+### `nax plugins list`
+
+List installed plugins.
+
+```bash
+nax plugins list
+```
+
 ---
 
 ### `nax curator status`
@@ -472,7 +702,7 @@ Show curator observations and proposals from the latest (or specified) run.
 ```bash
 nax curator status                    # Latest run
 nax curator status --run <runId>      # Specific run
-nax curator status --project <name>   # Specific project
+nax curator status --project <path>   # Specific project directory
 ```
 
 Displays:
@@ -488,7 +718,7 @@ Apply checked proposals to your canonical context and rules files.
 
 ```bash
 nax curator commit run-001
-nax curator commit run-001 --project my-project
+nax curator commit run-001 --project ./path/to/project
 ```
 
 Process:
@@ -510,7 +740,7 @@ Re-run curator heuristics against existing observations without re-collecting th
 
 ```bash
 nax curator dryrun --run <runId>
-nax curator dryrun --project my-project
+nax curator dryrun --project ./path/to/project
 ```
 
 Useful for threshold calibration: adjust `config.curator.thresholds` values, re-run dryrun on the same observations, and see how proposal counts change.
@@ -524,7 +754,8 @@ Prune old rows from the cross-run curator rollup.
 ```bash
 nax curator gc --keep 50   # Keep 50 most recent runs (default)
 nax curator gc --keep 100  # Keep 100 runs
-nax curator gc --project my-project
+nax curator gc --project ./path/to/project
+nax curator gc --sweep-unattributed   # Also drop rows with no projectKey (machine-wide)
 ```
 
 Rewrites only the configured rollup JSONL file, keeping rows for the most recent run IDs. It does not delete per-run proposal files, observations, run logs, metrics, or canonical context/rules files.

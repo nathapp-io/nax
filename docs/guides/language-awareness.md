@@ -17,10 +17,10 @@ On every run, `detectProjectProfile()` inspects your project directory and infer
 
 | Field | Detected from | Values |
 |:------|:--------------|:-------|
-| `language` | `go.mod`, `Cargo.toml`, `pyproject.toml`, `requirements.txt`, `package.json` | `typescript`, `javascript`, `go`, `rust`, `python` |
-| `type` | `package.json` `workspaces`, deps, `bin` field | `monorepo`, `web`, `api`, `cli`, `tui` |
-| `testFramework` | Language + dev deps | `go-test`, `cargo-test`, `pytest`, `vitest`, `jest` |
-| `lintTool` | Language + config files | `golangci-lint`, `clippy`, `ruff`, `biome`, `eslint` |
+| `language` | `go.mod`, `Cargo.toml`, `pyproject.toml`, `requirements.txt`, `package.json` (`typescript` dep), `tsconfig.json` | `typescript`, `javascript`, `go`, `rust`, `python` |
+| `type` | `package.json` `workspaces`, deps (react/next/vue/nuxt → web, ink → tui, express/fastify/hono → api), `bin` field | `monorepo`, `web`, `api`, `cli`, `tui` |
+| `testFramework` | Language + `devDependencies` | `go-test`, `cargo-test`, `pytest`, `vitest`, `jest` |
+| `lintTool` | Language + config files (`biome.json`, `.eslintrc*`) | `golangci-lint`, `clippy`, `ruff`, `biome`, `eslint` |
 
 Detection order: **Go > Rust > Python > TypeScript > JavaScript**.
 
@@ -43,16 +43,31 @@ In this example, `testFramework` and `lintTool` are still auto-detected, but `la
 
 ---
 
-## Per-Language Test Commands
+## Per-Language Quality Commands
 
-nax uses language-appropriate commands when `quality.commands` is empty (the default):
+Explicitly configured commands always win (`quality.commands`, `review.commands`, per-package overrides). When nothing is configured, nax falls back to language-aware defaults in two places:
 
-| Language | Test command | Lint command |
-|:---------|:-------------|:-------------|
-| TypeScript / JavaScript | `bun test` | `bun run lint` |
-| Go | `go test ./...` | `golangci-lint run` |
-| Rust | `cargo test` | `cargo clippy` |
-| Python | `pytest` | `ruff check .` |
+**Review checks** (`src/review/language-commands.ts`) — used only when the tool's binary is on `PATH`:
+
+| Language | Test | Lint | Typecheck |
+|:---------|:-----|:-----|:----------|
+| Go | `go test ./...` | `golangci-lint run` | `go vet ./...` |
+| Rust | `cargo test` | `cargo clippy -- -D warnings` | — |
+| Python | `pytest` | `ruff check .` | `mypy .` |
+| TypeScript / JavaScript | `bun run test` | `bun run lint` | `bun run typecheck` |
+
+For TypeScript / JavaScript the `bun run <check>` fallback applies only when `package.json` defines that script.
+
+**Verify gates** (full-suite gate, lint/typecheck checks — `src/quality/command-defaults.ts`) derive conservative defaults from the package manifest, so a package scaffolded mid-run still gets a runnable command:
+
+| Language | Test | Lint | Typecheck |
+|:---------|:-----|:-----|:----------|
+| Go | `go test ./...` | `go vet ./...` | `go build ./...` |
+| Rust | `cargo test` | `cargo clippy` | `cargo check` |
+| Python | `pytest` (prefixed `uv run` / `poetry run` when detected) | `ruff check .` only if ruff is configured | `mypy .` only if mypy is configured |
+| TypeScript / JavaScript | `<pm> run test` if a `test` script exists, else `bun test` for Bun projects | `biome check .` / `eslint .` only if their config file exists | `<pm> run typecheck`, else `tsc --noEmit` if `tsconfig.json` exists |
+
+`<pm>` is detected from the lockfile (`bun`, `pnpm`, `yarn`, else `npm`).
 
 **Tip:** If your project uses a different command, set it explicitly in `.nax/config.json`:
 
@@ -71,44 +86,44 @@ nax uses language-appropriate commands when `quality.commands` is empty (the def
 
 ## Acceptance Test Filename
 
-Acceptance test filenames follow language conventions:
+The acceptance test filename comes from `acceptance.testPath` (default `.nax-acceptance.test.ts`); a per-package `.nax/mono/<package>/config.json` value takes precedence over the root one. `acceptanceTestFilename()` (`src/acceptance/test-path.ts`) holds language-appropriate names, but they are used only when no `testPath` reaches the resolver — and because the config schema always fills in the `.nax-acceptance.test.ts` default, a normal run uses that default even for Go/Python/Rust packages:
 
 | Language | Filename |
 |:---------|:---------|
-| TypeScript / JavaScript | `acceptance.test.ts` |
-| Go | `acceptance_test.go` |
-| Python | `test_acceptance.py` |
-| Rust | `tests/acceptance.rs` |
+| TypeScript / JavaScript | `.nax-acceptance.test.ts` |
+| Go | `.nax-acceptance_test.go` |
+| Python | `_nax_acceptance_test.py` |
+| Rust | `.nax-acceptance.rs` |
 
-The file is placed at `.nax/features/<feature>/acceptance.test.<ext>`.
+Stories are grouped by `workdir`, and one file is generated per package at `<package>/.nax/features/<feature>/<filename>`. The per-package language detection only affects the fallback name above. For non-TypeScript projects (or non-TS packages in a polyglot monorepo), set `acceptance.testPath` explicitly — in the root config or the package's `.nax/mono/<package>/config.json` — so the file name suits your test runner.
 
 ---
 
 ## TDD Conventions
 
-The test-writer prompt adapts file naming and placement per language:
+The test-writer prompt adds a language-specific file-convention section (`src/prompts/sections/tdd-conventions.ts`):
 
-| Language | Test file placement | Convention |
-|:---------|:-------------------|:----------|
-| TypeScript / JavaScript | Adjacent to source | `foo.test.ts` alongside `foo.ts` |
-| Go | Same package directory | `foo_test.go` alongside `foo.go` |
-| Rust | Inline or `tests/` dir | `#[cfg(test)]` module or `tests/acceptance.rs` |
-| Python | `tests/` directory | `tests/test_foo.py` |
+| Language | Convention |
+|:---------|:-----------|
+| Go | `<filename>_test.go` in the same package directory as the source |
+| Rust | Inline `#[cfg(test)]` module, or `tests/<filename>.rs` for integration tests |
+| Python | `tests/test_<source_filename>.py` |
+
+TypeScript / JavaScript get no extra section — the agent follows the project's existing test layout.
 
 ---
 
 ## Hermetic Test Guidance
 
-When `quality.testing.hermetic: true` (default), nax generates language-specific mocking guidance for the test-writer prompt:
+When `quality.testing.hermetic: true` (default), nax injects a hermetic-test requirement into code-writing prompts, plus language-specific mocking guidance (`src/prompts/sections/hermetic.ts`):
 
-| Language | Mocking patterns suggested |
-|:---------|:---------------------------|
-| TypeScript | `vi.mock()`, `vi.spyOn()` (Vitest); `jest.mock()`, `jest.spyOn()` (Jest) |
-| Go | `gomock`, `testify/mock`, `fakehttp` |
-| Rust | `mockall` crate; `#[cfg(test)]` modules; trait objects / generics for external deps |
-| Python | `unittest.mock.patch`, `pytest-mock` |
+| Language | Mocking guidance |
+|:---------|:-----------------|
+| Go | Interfaces for external deps, constructor injection, interface mocks |
+| Rust | Trait objects / generics, the `mockall` crate, `#[cfg(test)]` modules |
+| Python | Dependency injection or `unittest.mock.patch`, `pytest-mock` fixtures |
 
-If you set `quality.testing.mockGuidance` explicitly, it overrides auto-detection.
+TypeScript / JavaScript get the generic requirement only. If you set `quality.testing.mockGuidance` explicitly, it replaces the language-derived guidance. See [Hermetic Test Enforcement](hermetic-tests.md).
 
 ---
 
@@ -117,11 +132,11 @@ If you set `quality.testing.mockGuidance` explicitly, it overrides auto-detectio
 The run setup logs detected values at the start of each run:
 
 ```
-[run-setup] Detected: typescript/api (vitest, biome)
-[run-setup] Using explicit config: language=go  ← explicit overrides suppress detection
+[project] Detected: typescript/api (vitest, biome)
+[project] Using explicit config: language=go; detected: type=cli, testFramework=go-test, lintTool=golangci-lint
 ```
 
-Look for these lines in `nax runs` output or the run log.
+Look for these `project` stage lines in the run log (`nax logs`).
 
 ---
 
@@ -136,7 +151,7 @@ Look for these lines in `nax runs` output or the run log.
     "lintTool": "biome"              // optional — auto-detected if omitted
   },
   "quality": {
-    "commands": {},                  // optional — language defaults used if empty
+    "commands": {},                  // optional — language/manifest defaults used if empty
     "testing": {
       "hermetic": true,              // inject language-aware mocking guidance
       "mockGuidance": "..."          // optional — overrides auto-detection
@@ -145,4 +160,4 @@ Look for these lines in `nax runs` output or the run log.
 }
 ```
 
-All fields under `project` are optional. Omitting a field triggers auto-detection for that field.
+All fields under `project` are optional. Omitting a field triggers auto-detection for that field. Explicit `language` also accepts `ruby`, `java`, `kotlin`, and `php`, which are never auto-detected.

@@ -36,8 +36,9 @@ A project left on `"protocol": "acp"` can carry a complete, valid `mcp` and
 `commandInterceptor` config and get **zero** effect from both, with no error. Config
 validity is not activation — verify with the evidence checks below rather than assuming.
 
-> The built-in defaults are `"protocol": "hybrid"` / `"default": "native"`, so both blocks
-> are live out of the box; they go dormant only when a config switches to an acpx agent.
+> The built-in defaults are `"protocol": "hybrid"` / `"default": "native"`, so neither block is
+> gated off by the protocol out of the box; they go dormant only when a config switches to an acpx
+> agent. The interceptor itself still ships disabled (`commandInterceptor.enabled: false`).
 
 Second gate, for MCP only: `unrestricted` resolves every attached provider; `scoped`
 resolves exactly the provider tools its stage's `Mcp(...)` rules name; `safe` resolves
@@ -206,8 +207,8 @@ status  None      <- not in git.verbs, passed through
 
 rtk appends a trailing hint to its output, e.g.
 `[full diff: rtk git diff --no-compact]`, `[full output: rtk …]`, `[+12 hidden: rtk …]`.
-A nax agent has no shell and cannot act on those, so they are stripped before the output
-reaches the model. Stripping is hint-shaped, not a trim: output with no trailing hint is
+Those hints are instructions for a human at a shell, not something the `Git` tool can run,
+so they are stripped before the output reaches the model. Stripping is hint-shaped, not a trim: output with no trailing hint is
 returned byte-for-byte.
 
 ### Expected savings
@@ -269,7 +270,7 @@ Both features write to the **run output directory**, not the repo:
 ```
 
 The repo-local `.nax/` path is only the fallback for a run with no output directory
-(`src/config/paths.ts`). Two runs of the same project append to the same tree — separate
+(`src/config/paths/`). Two runs of the same project append to the same tree — separate
 them by `runId` or timestamp before comparing.
 
 ---
@@ -286,7 +287,7 @@ them by `runId` or timestamp before comparing.
 | `rtk interceptor state` shows `version: null` | Binary not found or probe failed | `which rtk`; confirm `rtk gain` works (name collision) |
 | No state line at all | Config block missing | Add `execution.commandInterceptor` |
 | `executed` is always `null` | Verb not in `git.verbs` | Add the verb, or accept that only `log`/`diff` are eligible |
-| `Project name collision` on run | Stale registration from a deleted directory | Rename `name` in config, or `nax migrate --reclaim <name>` |
+| `Project name collision` on run | The name is registered to another workdir whose git remote differs (a checkout or worktree of the same remote is accepted) | Rename `name` in config, `nax migrate --reclaim <name>`, or `nax migrate --merge <name>` |
 
 ---
 

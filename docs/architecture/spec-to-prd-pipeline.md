@@ -1,16 +1,17 @@
 # Spec → PRD Pipeline: how spec-writing, nax plan, and spec-review work together
 
 > **Audience:** anyone touching the spec-kit skills (`spec-writing`, `spec-review`)
-> or the nax planner (`src/operations/plan-refine.ts`, `src/prompts/builders/plan-builder.ts`).
+> or the nax planner (`src/operations/plan.ts`, `src/operations/plan-refine.ts`,
+> `src/operations/plan-fidelity.ts`, `src/prompts/builders/plan-builder.ts`).
 > **Status:** SSOT for the three-component contracts around per-story **file roles**
-> (`contextFiles` vs `expectedFiles`), the **cross-story produced-file** rule, and
-> the **feature-level scope** contract (`## Out of Scope` → `prd.outOfScope`).
+> (`contextFiles` vs `expectedFiles` vs `modifiedFiles`), the **cross-story produced-file**
+> rule, and the **feature-level scope** contract (`## Out of Scope` → `prd.outOfScope`).
 
 ## The four-stage workflow
 
 ```
 brainstorming      → spec-writing          → spec-review         → nax plan
-(intent)             (intent → SPEC.md)       (codebase audit)      (decompose → prd.json)
+(intent)             (intent → SPEC.md)       (codebase audit)      (spec-lint gate → decompose → prd.json)
                                                                          │
                                                                          ▼
                                                   spec-review --prd (Phase 9: fidelity gate)
@@ -24,7 +25,7 @@ Each stage hands a structured artifact to the next:
 | Stage | Owns | Produces | Lives in |
 |---|---|---|---|
 | **spec-writing** | authoring rules, sizing, seams | `SPEC-*.md` (`Context Files` + `Creates` per story) | `nax-spec-kit/skills/spec-writing/` |
-| **nax plan** | decomposition into executable slices | `prd.json` (`contextFiles` + `expectedFiles` per story) | `nax/src/operations/plan-refine.ts`, `src/prompts/builders/plan-builder.ts` |
+| **nax plan** | decomposition into executable slices | `prd.json` (`contextFiles` + `expectedFiles` + `modifiedFiles` per story) | `nax/src/operations/plan.ts`, `plan-refine.ts`, `plan-fidelity.ts`, `src/prompts/builders/plan-builder.ts` |
 | **spec-review** | grounding + fidelity audit | review report / `prd-fidelity-report.md` | `nax-spec-kit/skills/spec-review/` |
 | **runner** | execution | merged code | `nax/src/execution/`, `src/context/builder.ts` |
 
@@ -39,12 +40,35 @@ Every file a story touches has exactly one role per story:
 |---|---|---|---|---|
 | `Context Files` | `contextFiles` | files the agent **reads** before coding | normally already on disk | on disk |
 | `Creates` | `expectedFiles` | files **this story authors** | absent | created by this story |
+| `### Modifies` | `modifiedFiles` | **existing** files this story is *authorised* to change, with the spec's reason | on disk | on disk |
 
 `contextFiles` entries are surfaced to the agent as **path-only read hints**
 (`src/context/builder.ts` — `readContextMessage`), not inlined content. A
 `contextFiles` entry that is missing at the consuming story's runtime produces a
 **`logger.warn("context", "Relevant file not found")`** and the run continues —
-it is **not** a hard error (`src/context/builder.ts`).
+it is **not** a hard error (`src/context/builder.ts`). A missing entry that the
+same story also lists in `expectedFiles` is instead rendered as a create-intent
+hint (debug log, no warning).
+
+### `### Modifies` → `modifiedFiles` (authorisation, not a task)
+
+`modifiedFiles` (`{ path, reason }[]`) exists to break one deadlock: a story whose
+own correct change makes an existing assertion fail has no move but to leave the
+suite red or revert, unless the spec authorised the edit (#1450). It is
+**extracted deterministically** from the spec's `### Modifies` block
+(`src/prd/modifies-extract.ts`; ownership from the nearest `**US-00N**` lead-in) and
+carried verbatim by `backfillModifiedFiles` (`src/operations/plan-fidelity.ts`) —
+the planner is never asked for it, because a paraphrase loses exactly the
+specificity (which test, which assertion) that matters. Orphan entries are warned
+and dropped, never broadcast. The implementer sees it as a labelled permission
+block (`src/prompts/sections/modified-files.ts`), not as work to do.
+
+Because a silently empty `### Modifies` is invisible downstream, `nax plan` runs a
+**spec-lint gate** first (`src/plan/spec-lint-gate.ts`): findings in
+`BLOCKING_SPEC_LINT_CODES` (`src/prd/spec-lint.ts` — the `modifies-*` codes) fail the
+plan; `--no-spec-lint` overrides. Other lint findings are logged and the plan
+proceeds. `nax spec lint [paths...]` (`-f <feature>`, `--strict`) runs the same
+linter standalone.
 
 ## The third role: cross-story produced files
 
@@ -74,12 +98,14 @@ order**, not plan-time existence. A file produced by an upstream dependency
 
 - **Sequential mode** — stories share one workdir; the producer ran first, so
   the file is on disk.
-- **Parallel mode** — `groupStoriesByDependencies` puts the consumer in a
-  **later batch**; successful stories **merge back to the project root before the
-  next batch starts** (`src/execution/parallel-coordinator.ts`); the consumer's
-  worktree is then created with `git worktree add … -b …` **with no commit-ish**,
-  which branches from the current `HEAD` — now containing the producer's file
-  (`src/worktree/manager.ts`).
+- **Parallel mode** — `selectIndependentBatch` (`src/execution/story-selector.ts`,
+  called from `src/execution/unified-executor.ts`) only admits a story whose
+  dependencies have all passed, so the consumer lands in a **later batch**;
+  successful stories **merge back to the project root** in topological order
+  (`MergeEngine.mergeAll`, `src/execution/parallel-batch.ts`) before the batch
+  returns; the consumer's worktree is then created with `git worktree add <path> -b <branch>`
+  **with no commit-ish**, which branches from the current `HEAD` — now containing
+  the producer's file (`src/worktree/manager.ts`).
 
 So a cross-story produced file listed in the consumer's `contextFiles` is found
 on disk at the consumer's runtime (`src/context/builder.ts`): **no warning, a
@@ -110,7 +136,13 @@ story's own runtime and belongs in `Creates`/`expectedFiles`.
   before classifying an absent `contextFiles` entry as "this story creates it",
   computes the union of files produced by the story's **transitive upstream
   dependencies**. If the entry is in that set, it is **kept** in `contextFiles`.
-  The plan prompt (`src/prompts/builders/plan-builder.ts`) tells the LLM the same.
+  This normalization runs in the **refine** strategy's `verify` only
+  (`plan.mode: "refine"`; the default when unset is `"single"`, see
+  `resolvePlanMode` in `src/cli/plan-command.ts`). The plan prompt
+  (`src/prompts/builders/plan-builder.ts`) tells the LLM the same in both modes.
+  Separately, `warnOnDroppedContextFiles` (`src/operations/plan-fidelity.ts`, both
+  modes) warns when a spec-declared `Context Files` entry is missing from its
+  story in the PRD (#1466) — observability only, no backfill.
 - **spec-review** (`skills/spec-review/SKILL.md` Phase 9 §4): the file-role delta
   check distinguishes the two sub-cases:
   - file in **this** story's `Creates` → absence from `contextFiles` is correct,
@@ -184,11 +216,13 @@ nothing stopped a story from building a deferred arc.
 
 ### Extraction is deterministic, not model-trusted
 
-`src/prd/out-of-scope.ts` is the SSOT. The plan prompt *asks* the planner to emit
-`outOfScope` (its wording is usually better, and only it can echo an item into the
-relevant story's `Scope — Out:` bullet), but `applyOutOfScopeFallback` guarantees
-the field regardless — `plan.verify` and `plan-refine.verify` restore any dropped
-item verbatim from the spec. Refine additionally gets one same-session repair turn
+`src/prd/out-of-scope.ts` is the SSOT (extraction in `src/prd/out-of-scope-extract.ts`).
+The plan prompt *asks* the planner to emit `outOfScope` (its wording is usually
+better, and only it can echo an item into the relevant story's `Scope — Out:`
+bullet), but `applyOutOfScopeFallback` guarantees the field regardless — both
+`plan.verify` and `plan-refine.verify` call `applyPlanFidelity`
+(`src/operations/plan-fidelity.ts`), the single entry point for every deterministic
+spec→PRD repair, which restores any dropped item verbatim from the spec. Refine additionally gets one same-session repair turn
 before that backstop, mirroring the `[verbatim]` self-heal.
 
 This differs from the `[verbatim]` AC gate, which can only *warn*: restoring an AC
@@ -252,6 +286,7 @@ Phase-0 telemetry (`review.adversarial.scope_finding_accepted` /
 | File this story creates | ❌ | ✅ | in `contextFiles` = blocker |
 | File an upstream dep creates, read/modified here | ✅ (annotated) | ❌ | kept = correct; dropped or mis-moved to `expectedFiles` = major |
 | Absent, produced by no story | ❌ | ✅ (best-effort) | move is correct |
+| Existing file this story's correct change breaks (e.g. a test assertion) | optional | ❌ | missing from spec `### Modifies` = blocker; lands in `modifiedFiles` |
 
 | Scope situation | Where it belongs | spec-review verdict |
 |---|---|---|

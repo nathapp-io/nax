@@ -7,7 +7,7 @@ description: Writing tests that don't depend on external systems
 
 By default, nax instructs agents to write **hermetic tests** — tests that never invoke real external processes or connect to real services. This prevents flaky tests, unintended side effects, and accidental API calls during automated runs.
 
-The hermetic requirement is injected into all code-writing prompts (test-writer, implementer, tdd-simple, batch, single-session). It covers all I/O boundaries: HTTP/gRPC calls, CLI tool spawning (`Bun.spawn`/`exec`), database and cache clients, message queues, and file operations outside the test working directory.
+The hermetic requirement is injected into all code-writing prompts (test-writer, implementer, tdd-simple, batch, single-session) by `buildHermeticSection` (`src/prompts/sections/hermetic.ts`). The verifier, which writes no code, does not receive it. It covers all I/O boundaries: HTTP/gRPC calls, CLI tool spawning (`Bun.spawn`/`exec`), database and cache clients, message queues, and file operations outside the test working directory.
 
 ### Configuration
 
@@ -29,7 +29,7 @@ Configured under `quality.testing` — supports **per-package override** in mono
 |:------|:-----|:--------|:------------|
 | `hermetic` | `boolean` | `true` | Inject hermetic test requirement into prompts. Set `false` to allow real external calls. |
 | `externalBoundaries` | `string[]` | — | Project-specific CLI tools, clients, or services to mock (e.g. `["claude", "redis"]`). The AI uses this list to identify what to mock in your project. |
-| `mockGuidance` | `string` | — | Project-specific mocking instructions injected verbatim into the prompt (e.g. which mock libraries to use). |
+| `mockGuidance` | `string` | — | Project-specific mocking instructions injected verbatim into the prompt (e.g. which mock libraries to use). When unset, nax adds built-in guidance for Go, Rust, and Python projects (see [Language Awareness](language-awareness.md#hermetic-test-guidance)). |
 
 > **Tip:** `externalBoundaries` and `mockGuidance` complement `context.md`. nax provides the rule ("mock all I/O"), while `context.md` provides project-specific knowledge ("use `ioredis-mock` for Redis"). Use both for best results.
 

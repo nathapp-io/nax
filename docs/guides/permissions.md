@@ -11,15 +11,19 @@ Two consumers read that one resolution:
   ACP. It is a blanket posture, not a per-call gate.
 - **The declarative grants** (`allow` / `deny` / `ask` rules) are what nax's own native
   coding tools enforce per call. `Bash`, `Exec`, `Read`, `Git` and the rest are checked here.
+- **The bash approval mode** (`raw` / `gated` / `escalate`, [ADR-030](../adr/ADR-030-bash-approval-modes.md))
+  decides how a `Bash` command string is adjudicated. It rides on the same resolution as
+  `bashApproval`; see [Bash approval modes](#bash-approval-modes).
 
-Both come from the same profile, so setting a profile changes both at once.
+The first two come from the same profile, so setting a profile changes both at once.
 
 ## Profiles
 
 `execution.permissionProfile` is one of `unrestricted` (the default), `safe`, or `scoped`.
 Unset resolves to `unrestricted` — nax's own pipeline runs unattended and must be able to
 edit files, run tests and commit. An *invalid* value is a different case: it fails closed to
-`approve-reads` and logs, because reaching that arm means config validation was bypassed.
+`approve-reads` and logs, because reaching that arm means config validation was bypassed; that
+arm also resolves `bashApproval` to `gated`, never `raw`.
 
 | Profile | ACP mode | Provider (MCP) tools | Native grants | An UNMATCHED call |
 |:--|:--|:--|:--|:--|
@@ -35,6 +39,13 @@ Every rule list binds under **every** profile (spec R10): a `deny` or `ask` you 
 whether the profile is `unrestricted`, `safe` or `scoped`, and an `allow` rule is *added* to
 whatever grant set the profile already carries. That is how an `allow` rule grants `Bash`
 even under `unrestricted`, which grants no `Bash` on its own.
+
+The one exception is the default `raw` bash mode: an operation that declares `Bash` receives a
+synthetic `Bash(*)` grant when no human rule names `Bash` — under **every** profile, `safe` and
+`scoped` included, so the table's "Native grants" column does not bound `Bash` under `raw` (set
+`bashApproval: "gated"` for that) — and pattern `deny` / `ask` rules for
+`Bash` are not consulted (only a bare, unconditional `Bash` deny still applies). See
+[Bash approval modes](#bash-approval-modes).
 
 ## Per-stage blocks
 
@@ -55,6 +66,7 @@ defining a block shadows `default`; `inherit` is how you opt into another block'
         "allow": ["Read", "Glob", "Grep", "Write", "Edit", "RunCommand", "GitCommit"],
         "deny": ["Bash(git push *)"],
         "ask": ["Bash(rm *)"],
+        "bashApproval": "gated",
         "inherit": "default"
       },
       "verify": { "inherit": "run", "allow": ["Read", "Glob", "Grep"] },
@@ -69,7 +81,15 @@ Notes from the loader and guards:
 - `inherit` must name a real block, and the chain must be acyclic. A dangling target or a
   cycle is a `NaxError` at load (`CONFIG_PERMISSIONS_BAD_INHERIT` /
   `CONFIG_PERMISSIONS_INHERIT_CYCLE`), not a surprise mid-run.
-- The block is `.strict()`: a typo'd key is a load error rather than a silent drop.
+- The block is `.strict()`: a typo'd key is a load error rather than a silent drop. Its keys
+  are `allow`, `deny`, `ask`, `allowedTools`, `inherit`, `bashApproval` and a declarative
+  `mode` that the resolver does not read.
+- `bashApproval` in a block overrides the root `execution.bashApproval` for that stage. Unlike
+  the root key (root-only, [ADR-031](../adr/ADR-031-root-scoped-command-safety-config.md)), the
+  permissions map stays per-package: a package's `permissions` map replaces the root's.
+- Path globs in `allow` / `deny` / `ask` (and in `execution.denyPaths`) match **repo-rooted**
+  paths, including in a `.nax/mono/<pkg>/config.json`: `Write(src/**)` means the repo's `src/`,
+  not the package's ([ADR-032](../adr/ADR-032-single-frame-repo-rooted-paths.md)).
 
 ## The expression grammar
 
@@ -116,12 +136,16 @@ Evaluation order is fixed and order-independent within a stage:
 1. **`deny`** — any matching deny rule refuses the whole call.
 2. **`allow`** — the call must match an allow rule (for per-segment tools such as `Bash`,
    *every* segment must).
-3. **`ask`** — a match defers to the `AskResolver`; headless, it refuses (see below).
+3. **`ask`** — a match defers to the ask resolver chain; with no human reachable, it refuses
+   (see below).
 
 Deny beats ask beats allow. A call that matches nothing walks to the profile's grants: under
 `unrestricted` a blanket-granted built-in is allowed, under `safe` and `scoped` it is denied.
 `ask` is evaluated last so it can never grant — an ungranted command that also matches an
-`ask` rule is a plain denial, not an approval prompt.
+`ask` rule is a plain denial, not an approval prompt. (Under `escalate`, an ungranted `Bash`
+command reaches the ask tier for a different reason — see
+[Bash approval modes](#bash-approval-modes).) Under `raw`, `Bash` skips this evaluation
+entirely.
 
 ## `allowedTools` and the both-keys error
 
@@ -134,7 +158,24 @@ other, never both**: a merge would silently decide which list wins, so carrying 
 { "execution": { "permissions": { "run": { "allowedTools": ["Read", "Glob", "Grep"] } } } }
 ```
 
-## Bash segment semantics
+## Bash approval modes
+
+`execution.bashApproval` (default **`raw`**) is overridable per stage with
+`permissions.<stage>.bashApproval`, and resolves as *stage block → root key → `raw`*.
+
+| Mode | How a `Bash` command is adjudicated |
+|:--|:--|
+| `raw` | Pass-through: no lexer refusal, no per-segment matching, no containment. One advisory screen refuses a *parseable* command that names or redirects into a path nax owns (`.nax/config.json`, `.nax/mono/*/config.json`, `.nax/features/**/prd.json`, the root queue files). An op that declares `Bash` gets a synthetic `Bash(*)` grant. With the OS sandbox enabled (the default), every raw call runs inside it; if the sandbox is enabled but unavailable, every raw call is refused with a reason naming `gated` / `escalate`. |
+| `gated` | The segment semantics below. `Bash` is offered only where a `Bash(...)` allow rule resolves for the stage. |
+| `escalate` | `gated`, except a denial the gate could not *adjudicate* (lexer refusal, no allow rule covering a segment) goes to the ask tier instead of `deny`. Affirmative refusals — outside the root, `.git/`, a denied flag, an explicit deny rule — stay refusals for granted commands. |
+
+A stage under `gated` / `escalate` whose Bash-declaring op has no `Bash(...)` allow rule is
+**inert**: the tool is never offered and nothing can escalate. `nax run` logs one warning per
+inert stage at setup, naming the rule that would fix it. See [The Bash Tool](bash-tool.md) for
+the task-oriented view and [Sandbox and Command Safety](sandbox-and-command-safety.md) for the
+sandbox.
+
+## Bash segment semantics (`gated` / `escalate`)
 
 `Bash` takes a **model-authored command string** and runs it through
 `[quality.shell, "-c", command]`. The string is lexed and split on `&&`, `||`, `;`, `|`,
@@ -174,30 +215,34 @@ that calls `rm` itself. Deny rules narrow a broad allow rule for the cases you c
 they are not a containment boundary. Containment (the root, `.git/`) is, and it is not
 expressible in config.
 
-**Deny-all by default.** `Bash` is absent from the `unrestricted` blanket grant, has no
-built-in pattern list of its own, and derives nothing from `quality.commands`. A shell
-command runs only where a human wrote a `Bash(...)` allow rule for that stage.
+**No profile grants `Bash`.** `Bash` is absent from the `unrestricted` blanket grant, has no
+built-in pattern list of its own, and derives nothing from `quality.commands`. Under `gated` /
+`escalate` a shell command runs only where a human wrote a `Bash(...)` allow rule for that
+stage; under the default `raw`, the op's own `Bash` declaration is what admits it.
 
-## `ask`, and why it denies headless
+## `ask`, and the approval gate
 
 An `ask` rule names a call that is not forbidden, only unapprovable without a human. It is
-checked last; a match hands off to an `AskResolver`. v1 ships exactly one resolver, and it
-denies: nax's pipeline is headless, so there is no one to ask. The refusal names the matched
-rule and records the ledger outcome **`denied:ask`** (distinct from a plain `denied`).
+checked last; a match hands off to the ask resolver chain (`src/permissions/ask-chain.ts`):
+the **approvals cache** (a remembered human decision, byte-exact on stage and command), then
+the **human** link (a prompt through the run's interaction channel), then a terminal deny.
+With no human reachable — for example the default `cli` plugin in a headless run or without a
+TTY — the call is refused. A refused ask records the ledger outcome **`denied:ask`** (distinct from a
+plain `denied`); an approved one runs and its ledger row carries `approval.decidedBy`.
 
 ```json
 {
   "execution": {
+    "bashApproval": "gated",
     "permissions": {
-      "run": { "allow": ["Read", "Bash(rm *)"], "ask": ["Bash(rm *)"] }
+      "run": { "allow": ["Read", "Bash(rm *, bun test *)"], "ask": ["Bash(rm *)"] }
     }
   }
 }
 ```
 
-Metering first, mechanism later: a material rate of `denied:ask` rows is the evidence that
-would justify building an interactive approval channel; zero rows means the seam stays
-dormant.
+A `Bash` ask rule only applies under `gated` / `escalate`; `raw` never consults it. The chain,
+the prompt, remembered approvals and `nax approvals` are covered in [Approvals](approvals.md).
 
 ## What is NOT in this subsystem, and why
 
@@ -213,10 +258,18 @@ dormant.
   rule can reach them. Config can *narrow* a ceiling (deny more, allow less), never *widen*
   it.
 - **Containment.** The permitted root is a hard boundary enforced in `src/tools/policy.ts`.
-  It is deliberately not config-expressible: no profile, and no rule, widens it.
+  It is deliberately not config-expressible: no profile, and no rule, widens it. (`raw` Bash
+  is the one tool it does not bind; there the OS sandbox limits writes instead.)
+- **The OS sandbox and the command-safety shadow.** The sandbox changes *how* an
+  agent-authored command runs, never *whether*; the shadow classifier records every command
+  and decides nothing. See [Sandbox and Command Safety](sandbox-and-command-safety.md).
 
 ## See also
 
+- [Approvals](approvals.md) — the ask resolver chain, remembered approvals and
+  `nax approvals list` / `rm`.
+- [Sandbox and Command Safety](sandbox-and-command-safety.md) — the OS sandbox around
+  agent-authored commands and the shadow classifier.
 - [The Bash Tool](bash-tool.md) — the task-oriented half: turning `Bash` on, writing rules,
   what is refused and why.
 - [Exec Allowlist](exec-allowlist.md) — the `Exec` argv branch, its built-in install list and

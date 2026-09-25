@@ -35,6 +35,8 @@ Semantic review verifies **acceptance criteria implementation**:
 3. **Dead code** — new code with stubs, noops, or unreachable branches
 4. **Wiring** — new functions/classes are exported and called by their callers
 
+Each finding carries one category from a closed taxonomy: `unimplemented`, `partial`, `contradiction`, `dead-path`, `unwired`, `other` (an unknown category normalizes to `other`).
+
 Semantic review does **NOT** check:
 
 - Style, naming, or formatting (handled by lint)
@@ -46,7 +48,7 @@ Semantic review does **NOT** check:
 
 ## Test File Exclusion
 
-Test files and nax metadata are **excluded from the diff** sent to the LLM via configurable git pathspec patterns. The default patterns cover common test directory conventions across languages, plus `.nax/` metadata that would otherwise consume the diff budget:
+Test files and nax metadata are **excluded from the diff** sent to the LLM via configurable git pathspec patterns. With no `review` block in your config, the built-in default is the list below — common test directory conventions across languages, plus `.nax/` metadata that would otherwise consume the diff budget. If you configure `review.semantic` but leave `excludePatterns` unset, the patterns are instead derived from the project's resolved test-file patterns plus well-known noise directories (ADR-009):
 
 ```json
 {
@@ -98,15 +100,24 @@ Add `"semantic"` to `review.checks` in `.nax/config.json`:
 ```json
 {
   "review": {
+    "blockingThreshold": "error",
+    "parseRetryMaxAttempts": 3,
     "semantic": {
-      "model": "fast",
+      "model": "balanced",
       "diffMode": "ref",
       "resetRefOnRerun": false,
-      "rules": []
+      "rules": [],
+      "timeoutMs": 600000,
+      "demandInspectionTrail": true,
+      "acRegroundOnDrop": true,
+      "substantiation": { "requote": true, "maxRequotes": 5 },
+      "recurrenceDemotion": { "enabled": false, "maxBlockingRounds": 2, "maxAdvisoryRounds": 2 }
     }
   }
 }
 ```
+
+The values above are the defaults.
 
 ### `model`
 
@@ -128,6 +139,25 @@ In `"ref"` mode, the reviewer receives the story's `storyGitRef` and uses git co
 ### `resetRefOnRerun`
 
 When `true`, clears `storyGitRef` on re-run so it is re-captured in the fresh execution. Default: `false`.
+
+### Other semantic keys
+
+| Key | Default | Effect |
+|:----|:--------|:-------|
+| `timeoutMs` | `600000` | Reviewer call timeout |
+| `demandInspectionTrail` | `true` | In ref mode, a `passed: true` with no findings and no declared `inspectedFiles` gets one same-session re-prompt demanding the reviewer actually open the code |
+| `acRegroundOnDrop` | `true` | If every blocking finding was dropped by AC-grounding, re-prompt once asking the reviewer to re-ground findings against the AC text |
+| `substantiation.requote` / `maxRequotes` | `true` / `5` | When a finding's quoted evidence doesn't match disk, ask the same session for a verbatim requote before downgrading it |
+| `recurrenceDemotion.enabled` | `false` | Opt-in: an error finding whose fingerprint keeps recurring blocks for at most `maxBlockingRounds` rounds, then demotes to advisory |
+
+### Review-level keys
+
+| Key | Default | Effect |
+|:----|:--------|:-------|
+| `review.blockingThreshold` | `"error"` | Minimum severity that blocks for semantic/adversarial findings (`error`, `warning`, `info`); lower severities are advisory |
+| `review.parseRetryMaxAttempts` | `3` | Total attempts (initial call + corrective re-prompts) before the fail-open / fail-closed fallback below |
+| `review.audit.enabled` | `false` | Write reviewer audit files (see below) |
+| `review.nonBlockingFix` | unset | Best-effort fix pass for advisory findings (ADR-024); `sources` defaults to `["adversarial"]`, add `"semantic"` to seed it from semantic findings too |
 
 ### Custom Rules
 
@@ -174,23 +204,15 @@ Built-in semantic and adversarial review run **per story** as ops in the story o
 
 ## Fail-Open / Fail-Closed Behavior
 
-Semantic review **fails open** by default — if the LLM call fails or returns truly unparseable output, the review passes with a warning. This prevents flaky LLM responses from blocking valid implementations.
+Unparseable reviewer output is re-prompted up to `review.parseRetryMaxAttempts` total attempts (default 3). If the budget is exhausted, semantic review **fails open** — the review passes, flagged `failOpen: true`. This prevents flaky LLM responses from blocking valid implementations.
 
-```
-semantic review: could not parse LLM response (fail-open)
-```
-
-**Exception:** If the LLM returns truncated JSON that contains `"passed": false`, the review **fails closed** — the LLM clearly intended to fail the review but output was cut off mid-response. Treating this as a pass would be incorrect.
-
-```
-semantic review: LLM response truncated but indicated failure (passed:false found in partial response)
-```
+**Exception:** If the last raw output contains `"passed": false`, the review **fails closed** (`looksLikeFail: true`) — the LLM clearly intended to fail the review but its output was malformed or cut off. Either way, a preview of the unparsed output is kept in the review audit (`unparsedPreview`).
 
 ---
 
 ## Diff Truncation
 
-Production diffs are truncated to **~50 KB** to stay within LLM context and reduce output truncation risk. When truncated, a `git diff --stat` summary (all files including tests) is prepended so the reviewer always knows which files changed.
+In `"embedded"` mode, production diffs are truncated to **~50 KB** (51,200 bytes) to stay within LLM context and reduce output truncation risk. When truncated, a `git diff --stat` summary (all files including tests) is prepended so the reviewer always knows which files changed.
 
 ```
 ## File Summary (all changed files)
@@ -226,7 +248,7 @@ The review runner classifies checks into two categories:
 
 | Category | Checks | Runs when |
 |:---------|:-------|:----------|
-| **Mechanical** | `typecheck`, `lint`, `build`, `format` | Always (command-based, deterministic) |
+| **Mechanical** | `typecheck`, `lint`, `test`, `build` | Always (command-based, deterministic) |
 | **LLM** | `semantic`, `adversarial` | After mechanical checks complete (sequenced by the story orchestrator) |
 
 When mechanical checks fail but all LLM checks pass, `mechanicalFailedOnly: true` is set on the review result (`src/pipeline/types.ts`). This signals to the **fix cycle** that the code is functionally correct — the agent satisfied the acceptance criteria — but has fixable style or build issues. The cycle uses this to:
@@ -240,12 +262,12 @@ When `mechanicalFailedOnly` is `false` or `undefined`, normal escalation behavio
 
 ## Review Audit Trail
 
-When `review.audit.enabled` is true, every semantic and adversarial review writes a JSON audit file to `.nax/review-audit/` so operators can inspect exactly what each reviewer decided, regardless of pass/fail.
+When `review.audit.enabled` is true, every semantic and adversarial review writes a JSON audit file to `<outputDir>/review-audit/<featureName>/` (falling back to `<projectRoot>/.nax/review-audit/` when no output directory is known) so operators can inspect exactly what each reviewer decided, regardless of pass/fail.
 
 ### Directory Layout
 
 ```
-.nax/review-audit/
+<outputDir>/review-audit/
 └── <featureName>/
     ├── 1718900000000-nax-abc12345-my-feature-US-001-reviewer-semantic.json
     └── 1718900001000-nax-abc12345-my-feature-US-001-reviewer-adversarial.json
@@ -256,18 +278,25 @@ When `review.audit.enabled` is true, every semantic and adversarial review write
 | Field | Description |
 |:------|:-----------|
 | `timestamp` | ISO 8601 timestamp of the audit write |
+| `runId` | Run identifier |
 | `storyId` | Story identifier for correlation |
 | `featureName` | Feature name (determines subfolder) |
 | `reviewer` | `"semantic"` or `"adversarial"` |
 | `sessionName` | ACP session name — correlates with prompt-audit entries |
 | `sessionId` | ACP volatile session ID, when the reviewer session opened |
 | `recordId` | ACP stable record ID, when the reviewer session opened |
+| `agentName` | Agent that ran the review |
 | `parsed` | `true` if the LLM response parsed into valid review JSON |
 | `looksLikeFail` | (only when `parsed: false`) Whether the raw response contained `"passed":false` |
 | `failOpen` | Whether nax treated the reviewer failure as fail-open |
 | `passed` | Final review decision after threshold handling |
 | `blockingThreshold` | Severity threshold used for blocking vs advisory findings |
 | `result` | Structured `{ passed, findings }` or `null` when parse failed |
+| `modelPassed` | The reviewer's own verdict before nax's threshold handling (`null` when not declared) |
+| `advisoryFindings`, `acks`, `acDropped` | Non-blocking findings, acknowledgements, and findings dropped by AC-grounding (`null` when absent) |
+| `unparsedPreview` | (only when `parsed: false`) Preview of the output that defeated the parser |
+| `noDispatch` | Whether the review ran without dispatching an agent (`null` when not declared) |
+| `naxVersion`, `naxCommit` | nax build that wrote the entry |
 
 ### Behavior
 
@@ -302,7 +331,7 @@ Add `"adversarial"` to `review.checks`:
       "model": "balanced",
       "diffMode": "ref",
       "rules": [],
-      "timeoutMs": 120000,
+      "timeoutMs": 600000,
       "excludePatterns": [],
       "parallel": false,
       "maxConcurrentSessions": 2
@@ -310,6 +339,8 @@ Add `"adversarial"` to `review.checks`:
   }
 }
 ```
+
+Beyond the keys shown, adversarial accepts `acRegroundOnDrop` (default `true`), `demandInspectionTrail` (default `true`), `substantiation` (requote/maxRequotes), and `recurrenceDemotion` — **enabled by default** for adversarial (`maxBlockingRounds: 2`), unlike semantic. `parallel: true` runs the semantic and adversarial reviewers concurrently, capped by `maxConcurrentSessions` (1–4).
 
 ### Finding Categories
 
@@ -336,7 +367,7 @@ adversarial Finding[]
 
 **How it works:**
 
-1. Each `Finding` carries `fixTarget` (`"source"` or `"test"`) reflecting where the fix lands, not what produced the finding (`src/findings/types.ts`). A finding on a `*.test.ts` file has `fixTarget: "test"`.
+1. Each `Finding` carries `fixTarget` (`"source"` or `"test"`) reflecting where the fix lands, not what produced the finding (`src/findings/types.ts`). For adversarial findings the base lane comes from the category (`input`, `error-path`, `abandonment`, `assumption` → source; `test-gap`, `convention` → test), and a finding located in a test file is always moved to `"test"` (`src/review/category-fix-target.ts`).
 2. `runFixCycle` dispatches findings to the matching `FixStrategy`; each strategy's predicate selects its findings (by source, category, `fixTarget`, or file pattern).
 3. Test-targeted fixes use a test-writer session role; source-targeted fixes use the implementer session role — so each fix runs under the role permitted to modify the affected files.
 4. Strategies run under dual budgets and the cycle exits when all active strategies are exhausted.
@@ -347,7 +378,7 @@ This ensures adversarial findings are routed to the session role that has permis
 
 ## Requirements
 
-Semantic review requires a git history — it compares `${storyGitRef}..HEAD`. If no git ref exists for the story (e.g., first run on a new branch), the check is skipped.
+Semantic review requires a git history — it compares `${storyGitRef}..HEAD`. If the story's `storyGitRef` is missing or invalid, nax falls back to a merge-base ref (`getMergeBase`); if neither resolves, or the diff is empty, the check is skipped.
 
 The LLM model must be configured in `models` for the chosen `model` tier.
 

@@ -39,14 +39,14 @@ The engine is **off by default**. Opt in per-project:
 }
 ```
 
-That's the minimum. With just `enabled: true`, you get the six built-in providers (`static-rules`, `feature-context`, `session-scratch`, `git-history`, `code-neighbor`, `test-coverage`) active on every pipeline stage that has a default provider set (execution, tdd-*, rectify, review, review-semantic, etc.).
+That's the minimum. With just `enabled: true`, you get the built-in providers — `static-rules`, `feature-context`, `session-scratch`, `git-history`, `code-neighbor`, `test-coverage`, `tool-diagnostics`, `prior-run-failure`, `lint-config` — each active on the stages whose default provider set lists it (see `STAGE_CONTEXT_MAP` in `src/context/engine/stage-config.ts`; e.g. `prior-run-failure` and `lint-config` run only on `rectify`).
 
 Verify it's on:
 
 ```bash
-nax run -f my-feature --dry-run
-# Look for "[context] assemble ok" lines in the log
-# Or inspect the manifest (§6 below)
+nax run -f my-feature
+# Look for "v2 context bundle assembled" lines in the log
+# Or inspect the manifest (§7 below)
 ```
 
 ---
@@ -114,7 +114,7 @@ Any `.md` file in that directory is picked up by `StaticRulesProvider` on every 
 }
 ```
 
-With `allowLegacyClaudeMd: true`, `StaticRulesProvider` falls back to `CLAUDE.md` + `.claude/rules/` when `.nax/rules/` is empty. Default is `false` — once you've migrated, drop the flag to avoid drift.
+With `allowLegacyClaudeMd: true`, `StaticRulesProvider` falls back to the legacy files (`CLAUDE.md`, `.cursorrules`, `AGENTS.md`, `.claude/rules/`) when no canonical rules exist. Default is `false` — once you've migrated, drop the flag to avoid drift.
 
 For authoring conventions — `paths:`, `appliesTo:`, `priority:`, the neutrality linter, and how to split monolithic rule files — see the [Static Rules Guide](./static-rules.md).
 
@@ -129,7 +129,7 @@ Every pipeline stage has a default token budget and a default provider list (see
   "context": {
     "v2": {
       "stages": {
-        "execution":        { "budgetTokens": 15000 },
+        "tdd-simple":       { "budgetTokens": 15000 },
         "tdd-test-writer":  { "budgetTokens": 10000 },
         "review":           { "budgetTokens": 6000 }
       }
@@ -140,11 +140,14 @@ Every pipeline stage has a default token budget and a default provider list (see
 
 Bigger budget = more context, higher token cost. Smaller = tighter prompts, cheaper but more prone to pull-tool fetches (§5).
 
+Single-session execution assembles under the stage named after the story's strategy (`single-session`, `tdd-simple`, `no-test`, `batch`); there is no `execution` stage key. Each stage entry also accepts `providerTimeoutMs` (min 1000) to override the engine-wide `providerTimeoutMs` (default 5000), and `extraProviderIds` (§6).
+
 Common starting points:
 
 | Stage | Default | Raise when |
 |:------|:--------|:-----------|
-| `execution` | 12,000 | Stories touch ≥3 files or cross-package boundaries |
+| `single-session` / `tdd-simple` / `batch` | 12,000 | Stories touch ≥3 files or cross-package boundaries |
+| `no-test` | 10,000 | Same as above, for no-test stories |
 | `tdd-test-writer` | 8,000 | Tests need broad domain context (acceptance specs, invariants) |
 | `review` | 6,000 | Diffs are typically large; reviewers miss cross-cutting concerns |
 | `rectify` | 8,000 | Rectification fails with "didn't know about X" verdicts |
@@ -153,10 +156,11 @@ Common starting points:
 
 ### 5. Enable pull tools (on-demand context)
 
-Pull tools let the agent fetch context *mid-session* instead of everything being pre-injected. Two built-ins:
+Pull tools let the agent fetch context *mid-session* instead of everything being pre-injected. Three built-ins:
 
-- **`query_neighbor(filePath)`** — fetch import-graph neighbours for a file. Useful for implementers and rectifiers.
-- **`query_feature_context(keyword?)`** — fetch feature context with optional keyword filter. Useful for reviewers.
+- **`query_neighbor(filePath)`** — fetch import-graph neighbours for a file. Offered on `tdd-test-writer`, `tdd-implementer`, `rectify`, `single-session`, `tdd-simple`, `batch`.
+- **`query_scratch(kind?, limit?)`** — fetch session-scratch records of what broke (verify results, tool diagnostics), most recent first. Offered on `rectify`, `single-session`, `tdd-simple`, `batch`.
+- **`query_feature_context(keyword?)`** — fetch feature context with optional keyword filter. Offered on `review-semantic`, `review-adversarial`.
 
 Pull tools are off by default. Enable them:
 
@@ -231,13 +235,15 @@ This is the extension point for operator-specific context: an embeddings index, 
 
 ```typescript
 // plugins/my-symbol-graph.ts
-import type { IContextProvider, ContextRequest, ContextProviderResult } from "nax/context";
+// Types mirror src/context/engine/types.ts — nax does not publish a types entry
+// point, so copy the shapes you need or leave the object untyped.
+import type { IContextProvider, ContextRequest, ContextProviderResult } from "./nax-context-types";
 
 export const provider: IContextProvider = {
   id: "my-symbol-graph",
   kind: "graph",
   fetch: async (request: ContextRequest): Promise<ContextProviderResult> => {
-    const files = request.changedFiles ?? [];
+    const files = request.touchedFiles ?? [];
     const related = await querySymbolGraph(files);
 
     return {
@@ -268,21 +274,21 @@ export const provider = {
 };
 ```
 
-The loader validates the shape structurally (duck-typed — no import from nax internals required). Providers that fail to load log a warning and are skipped — the pipeline never blocks on a broken plugin.
+The loader validates the shape structurally (duck-typed — `id`, `kind`, `fetch`; no import from nax internals required) and accepts `export const provider`, a default export, or the module object itself. `init(config)` is called only when the entry has a `config`. Providers that fail to load or init log a warning and are skipped — the pipeline never blocks on a broken plugin.
 
 **Determinism.** If your provider is non-deterministic (network call, LLM summary), set `deterministic: false` on it. Users who set `context.v2.deterministic: true` in their config will have it excluded — this is how you opt out of reproducibility-sensitive runs.
 
 #### Scoping a provider to specific stages
 
-A common question is "how do I run my provider only on `tdd-test-writer`?" or "only on `review-semantic`?" There's no config-level toggle for this today — the stage-to-provider mapping is hardcoded in `STAGE_CONTEXT_MAP` ([src/context/engine/stage-config.ts](../../src/context/engine/stage-config.ts)) and `context.v2.stages.*` only overrides `budgetTokens`. Tracked in [#662](https://github.com/nathapp-io/nax/issues/662).
+A common question is "how do I run my provider only on `tdd-test-writer`?" or "only on `review-semantic`?" A plugin provider runs only on stages that list its ID in `stages.<name>.extraProviderIds` ([below](#wire-the-plugin-to-specific-stages)); the built-in stage-to-provider mapping stays hardcoded in `STAGE_CONTEXT_MAP` ([src/context/engine/stage-config.ts](../../src/context/engine/stage-config.ts)).
 
-Three patterns work today:
+Within the stages a provider runs on, three patterns narrow what it emits:
 
 **Pattern A — chunk `role` tags (audience filter).** Every pipeline stage has a fixed *role* and the orchestrator drops chunks whose `role` doesn't match. This is the right tool when you want a provider to serve one audience (e.g. reviewers).
 
 | Role | Stages that consume it |
 |:-----|:-----------------------|
-| `implementer` | `execution`, `context`, `tdd-implementer`, `verify`, `rectify`, `autofix`, `acceptance`, `plan`, `single-session`, `tdd-simple`, `no-test`, `batch`, `route` |
+| `implementer` | `context`, `tdd-implementer`, `verify`, `rectify`, `autofix`, `acceptance`, `plan`, `single-session`, `tdd-simple`, `no-test`, `batch`, `route` |
 | `tdd` | `tdd-test-writer`, `tdd-verifier` |
 | `reviewer` | `review`, `review-semantic`, `review-adversarial` |
 | `all` | matches every stage |
@@ -374,31 +380,29 @@ Every bundle the engine assembles writes a manifest to disk. This is how you ans
 **What's in it:**
 
 - `includedChunks` — what made it into the prompt, with score and byte-offset
-- `excludedChunks` — with reason: `below-min-score` / `budget` / `dedupe` / `role-filter` / `stale`
-- `providerResults` — per-provider status (`ok` / `empty` / `failed` / `timeout`) + duration
+- `excludedChunks` — with reason: `below-min-score` / `budget` / `dedupe` / `role-filter`, plus an orthogonal `stale` flag
+- `providerResults` — per `providerId`: status (`ok` / `empty` / `failed` / `timeout`) and `source` (`stage-config` / `extra`)
 - `chunkSummaries` — first 300 chars of each chunk (so you can read the manifest without cross-referencing the bundle)
 - `rebuildInfo` — when a swap happened, records prior/new agent IDs and which chunks were re-rendered
 
 Typical debugging workflow:
 
 ```bash
-# Inspect what went into the execution stage for story US-003
-cat .nax/features/my-feature/stories/US-003/context-manifest-execution.json | jq '.'
+# Inspect what went into the tdd-simple stage for story US-003
+cat .nax/features/my-feature/stories/US-003/context-manifest-tdd-simple.json | jq '.'
 
 # "Why isn't my .nax/rules/testing.md showing up?"
 jq '.excludedChunks[] | select(.id | contains("testing"))' \
-  .nax/features/my-feature/stories/US-003/context-manifest-execution.json
+  .nax/features/my-feature/stories/US-003/context-manifest-tdd-simple.json
 
 # "Did my plugin provider run?"
-jq '.providerResults[] | select(.id == "my-symbol-graph")' \
-  .nax/features/my-feature/stories/US-003/context-manifest-execution.json
+jq '.providerResults[] | select(.providerId == "my-symbol-graph")' \
+  .nax/features/my-feature/stories/US-003/context-manifest-tdd-simple.json
 ```
 
-Verbose logging:
+For verbose logging, filter the run's JSONL log for the `context` and `context-v2` stages (assembly details are logged at `debug`).
 
-```bash
-NAX_DEBUG_CONTEXT=1 nax run -f my-feature
-```
+Manifests accumulate per story. Set `context.v2.manifest.retentionDays` to delete `context-manifest-*.json` and `rebuild-manifest.json` files older than N days at run completion (unset = never purged).
 
 ---
 
@@ -425,6 +429,8 @@ In a monorepo, context scope matters. By default, per-package providers only sca
 | `providers.neighborScope` | `"package"` | Import graph scans only within `packageDir`. Set `"repo"` when packages tightly share imports. |
 
 > Cross-package reverse-dependency scanning is unsupported. `CodeNeighborProvider` parses only relative import specifiers, so a dependent in another package that imports by package name is invisible to it. The `providers.crossPackageDepth` key was removed in nax#2074; a config that still sets it loads with a deprecation warning and the key is ignored. To widen the scan root, set `providers.neighborScope: "repo"`.
+
+`providers.sourceGlob` and `providers.maxGlobFiles` (default 500) tune `CodeNeighborProvider`'s reverse-dependency scan — see [Built-in Providers](./context-providers.md).
 
 Per-package overrides live in `.nax/mono/<packageDir>/config.json` — use them when one package needs a different budget or scope than the repo default.
 
@@ -456,15 +462,24 @@ Every `context.v2.*` key:
 |:----|:-----|:--------|:-------|
 | `enabled` | bool | `false` | Master switch |
 | `minScore` | 0–1 | `0.1` | Drop chunks below this relevance score |
+| `providerTimeoutMs` | int ≥1000 | `5000` | Per-provider fetch timeout; a provider that exceeds it is dropped with a warning |
 | `deterministic` | bool | `false` | When `true`, exclude providers that declare `deterministic: false` |
 | `pull.enabled` | bool | `false` | Allow mid-session pull tool calls |
 | `pull.allowedTools` | `string[]` | `[]` | Allowlist (empty = all stage-configured tools) |
 | `pull.maxCallsPerSession` | int | `5` | Per agent session |
 | `pull.maxCallsPerRun` | int | `50` | Per entire nax run |
 | `rules.allowLegacyClaudeMd` | bool | `false` | Fall back to `CLAUDE.md` / `.claude/rules/` when `.nax/rules/` is empty |
-| `rules.budgetTokens` | int | `8192` | Token ceiling for canonical rules |
+| `rules.budgetTokens` | int ≥512 | `8192` | Absolute token ceiling for canonical rules |
+| `rules.rulesShare` | 0–1 | `0.4` | Share of the stage budget reserved for rules; effective budget is `min(rulesShare × stage budget, budgetTokens)` |
+| `rules.enforceBudget` | bool | `true` | Truncate rule sections over budget; `false` keeps all and only reports pressure |
+| `fragments.enabled` | bool | `false` | Feature-scoped fragment capture and read-back |
+| `fragments.decay` | 0–1 | `0.6` | Score multiplier applied to fragments |
+| `fragments.maxTokens` | int | `400` | Per-fragment token cap |
+| `fragments.extractor` | `"deterministic"` | `"deterministic"` | Fragment extractor (only value today) |
 | `pluginProviders` | `PluginConfig[]` | `[]` | External providers (RAG / graph / KB) |
 | `stages.<name>.budgetTokens` | int | per-stage | Override token budget for a specific stage |
+| `stages.<name>.extraProviderIds` | `string[]` | `[]` | Extra provider IDs (e.g. plugin providers) to run on this stage |
+| `stages.<name>.providerTimeoutMs` | int ≥1000 | — | Per-stage override of `providerTimeoutMs` |
 | `session.retentionDays` | int | `7` | Days to keep completed session scratch before purging |
 | `session.archiveOnFeatureArchive` | bool | `true` | Archive instead of delete on feature completion |
 | `staleness.enabled` | bool | `true` | Detect and downweight old context.md entries |
@@ -472,6 +487,9 @@ Every `context.v2.*` key:
 | `staleness.scoreMultiplier` | 0–1 | `0.4` | Score multiplier applied to stale chunks |
 | `providers.historyScope` | `"package" \| "repo"` | `"package"` | Git log scope |
 | `providers.neighborScope` | `"package" \| "repo"` | `"package"` | Neighbor scan scope |
+| `providers.sourceGlob` | string | derived from language | Reverse-dep scan glob |
+| `providers.maxGlobFiles` | int | `500` | Reverse-dep scan cap per directory |
+| `manifest.retentionDays` | int | unset | Purge manifests older than N days at run end |
 
 ---
 
@@ -479,7 +497,7 @@ Every `context.v2.*` key:
 
 - [ADR-010 — Context Engine](../adr/ADR-010-context-engine.md) — decisions D1–D8
 - [Architecture §24 — Context Engine & Constitution](../architecture/subsystems.md) — internals
-- `src/config/schemas.ts` — canonical config schema (`ContextV2ConfigSchema`)
+- `src/config/schemas-context.ts` — canonical config schema (`ContextV2ConfigSchema`)
 - `src/context/engine/stage-config.ts` — default providers + budgets per stage
 - `src/context/engine/providers/plugin-loader.ts` — plugin validation rules
 - [Agents guide](agents.md) — how agent fallback interacts with context rebuild

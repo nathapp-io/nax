@@ -13,58 +13,77 @@
 src/
 ├── acceptance/       # Acceptance test generation, refinement, fix stories, templates
 │   └── templates/    # Test templates (unit, component, e2e, CLI, snapshot)
-├── agents/           # Agent adapters — all agents run via ACP protocol
-│   ├── acp/          # ACP adapter (adapter, adapter-lifecycle/-output, spawn-client, parser, interaction-bridge, parse-agent-error, token-mapper)
-│   ├── cost/         # Centralized cost calculation (calculate, pricing, token-mapper, types)
-│   ├── retry/        # Retry strategy SSOT (default-strategy, presets, parse-retry, compose)
-│   ├── shared/       # Cross-adapter utilities (decompose, decompose-prompt, env, model-resolution, validation, version-detection, types-extended)
-│   ├── manager.ts    # AgentManager (completeAs, runWithFallback)
+├── agents/           # Agent adapters — two transports: ACP (named CLI agents) and native (ADR-027)
+│   ├── acp/          # ACP adapter over acpx (adapter, adapter-lifecycle/-output/-complete-flow, spawn-client*, parser, interaction-bridge, parse-agent-error, token-mapper)
+│   ├── catalog/      # nax-ai model-catalog boundary — maps `Pricing` onto `TokenPricing`
+│   ├── cost/         # Centralized cost calculation (calculate, estimate, rate-card, token-mapper, types)
+│   ├── native/       # In-process native agent over @nathapp/nax-ai (adapter, client, auth, models)
+│   │   └── session/  # Native session + turn loop (turn-loop, loop-events, tool-result, transcript-store, compaction)
+│   ├── retry/        # Retry strategy SSOT (default-strategy, presets, parse-retry, compose, hop-retry-policy)
+│   ├── shared/       # Cross-adapter utilities (decompose, env, model-resolution, agent-profile-resolver, validation, version-detection)
+│   ├── manager.ts    # AgentManager (getDefault, completeAs, runWithFallback, reset)
 │   ├── registry.ts   # Agent registry (KNOWN_AGENT_NAMES, createAgentRegistry, _registryTestAdapters)
-│   └── types.ts      # AgentAdapter interface (4 primitives), AgentResult, AgentRunOptions
-├── analyze/          # Codebase scanning and LLM-enhanced story classification
-├── cli/              # CLI command handlers (init, run, plan, analyze, accept, status, config, etc.)
-├── commands/         # Subcommand implementations (diagnose, logs, precheck, runs, unlock)
-├── config/           # Configuration loading, schemas, types, permissions, profiles, path security
+│   └── types.ts      # AgentAdapter interface (complete, openSession, sendTurn, closeSession), AgentResult, AgentRunOptions
+├── analyze/          # `nax analyze` — codebase scanning and story classification
+├── bakeoff/          # Multi-contestant bakeoff runs (coordinator, ranking, report)
+├── cli/              # CLI command handlers (init, run, plan, accept, status, config, approvals, mcp, rules, setup, etc.)
+├── command-safety/   # Command-safety shadow classifier — scores every agent command, decides nothing (ADR-031)
+├── commands/         # Subcommand implementations (curator, detect, logs, migrate, precheck, replay, resume, runs, unlock)
+├── config/           # Configuration loading, schemas (schemas-*.ts), defaults, permissions, profiles, path security
 ├── constitution/     # Project governance document generation
 │   └── generators/   # Per-agent constitution generators (claude, aider, cursor, opencode, windsurf)
 ├── context/          # Context generation for agent prompts
+│   ├── engine/       # Context engine (orchestrator, providers, packing, manifests)
 │   └── generators/   # Per-agent context generators (claude, codex, cursor, gemini, opencode, aider, windsurf)
-├── execution/        # Run orchestration (parallel, crash recovery, pipeline result handling)
+├── execution/        # Run orchestration (runner, unified executor, parallel, crash recovery, pipeline result handling)
 │   ├── escalation/   # Tier escalation on repeated failures (fast → balanced → powerful)
-│   └── lifecycle/    # Run lifecycle phases (setup, initialization, completion, cleanup, regression, acceptance-loop, paused-story-prompts)
-├── hooks/            # Lifecycle hook system (script-based, 11 event types)
-├── interaction/      # Human-in-the-loop plugins (telegram, auto, webhook)
-│   └── plugins/      # Interaction plugin implementations
-├── logger/           # Logger module (formatters, types)
-├── logging/          # Structured JSONL logger
+│   ├── lifecycle/    # Run lifecycle phases (setup, initialization, completion, cleanup, regression, acceptance-loop, paused-story-prompts)
+│   └── story-orchestrator/ # Per-story phase orchestration + rectification (see story-orchestrator-flow.md)
+├── findings/         # Finding model + fix cycle (runFixCycle), retirement, iteration log, per-story fix history
+├── finish/           # `nax finish` — audit, gates, commit, PR/notify state machine
+├── forge/            # Git-forge integration (provider detect, PR creation, templates)
+├── hooks/            # Lifecycle hook system (script-based, 12 event types)
+├── interaction/      # Human-in-the-loop (chain, triggers, ask dispatch)
+│   └── plugins/      # Interaction plugins (cli, telegram, webhook)
+├── log-format/       # Human-facing formatting of log records and mutation summaries
+├── logger/           # Structured JSONL logger (logger, sinks, formatters, redaction)
+├── mcp/              # External MCP servers whose tools the native agent may call
 ├── metrics/          # Story metrics collection, run-level aggregation
+├── operations/       # Per-story operations invoked via callOp (implementer, verifier, gates, reviews, autofix, plan, acceptance)
 ├── optimizer/        # Prompt optimization seam (no-op built-in, plugin-provided)
-├── pipeline/         # Pipeline engine (stages, subscribers, runner)
-│   ├── stages/       # 15 pipeline stages (see subsystems.md §17)
-│   └── subscribers/  # Event subscribers (reporters, interaction)
+├── permissions/      # Permission rule grammar, Bash lexer, interactive ask tier + approvals store (ADR-030)
+├── pipeline/         # Pipeline engine (stages, subscribers, event bus, runner)
+│   ├── stages/       # 10 pipeline stages — 8 default + pre-run acceptance-setup + post-run acceptance (see subsystems.md §17)
+│   └── subscribers/  # Event subscribers (reporters, hooks, interaction, events-writer)
+├── plan/             # `nax plan` — single/refine strategies, spec lint gate, PRD persist/write
 ├── plugins/          # Plugin system (loader, validator, registry, types)
-├── precheck/         # Pre-run validation (agents, CLI, config, git, system, story-size gate)
-├── prd/              # PRD parsing, story state machine, story management
+├── precheck/         # Pre-run validation (agents, CLI, config, git, system, native credentials, story-size gate)
+├── prd/              # PRD schema/parsing, story state machine, out-of-scope, spec lint/drift
 ├── project/          # Auto-detect project type, language, frameworks
 ├── prompts/          # Prompt building (domain-specific builders, loader, core engine)
-│   ├── builders/     # 8 domain-specific prompt builders (tdd, review, acceptance, rectifier, one-shot, adversarial-review, plan, setup)
+│   ├── builders/     # Domain-specific prompt builders (tdd, review, adversarial-review, acceptance, rectifier, one-shot, plan, decompose, setup, …)
 │   ├── core/         # Shared prompt engine (SectionAccumulator, universal sections, wrappers, types)
 │   │   └── sections/ # Pure section functions (findings, instructions, json-schema, prior-failures, routing-candidates)
-│   └── sections/     # Legacy prompt sections (conventions, hermetic, isolation, role-task, story, tdd-conventions, verdict)
+│   └── sections/     # Reusable prompt sections (conventions, hermetic, isolation, role-task, story, out-of-scope, verdict, …)
 ├── quality/          # Quality command runner (lint, typecheck, build) + test command resolver (SSOT)
 ├── queue/            # Mid-run queue control (PAUSE, ABORT, SKIP)
-├── review/           # Code review orchestration (built-in + plugin checks, semantic review, adversarial review, diff utilities)
+├── replay/           # `nax replay` — reconstruct a past run from its artifacts
+├── review/           # Code review orchestration (runner, semantic + adversarial helpers, lint/typecheck parsing, diff utilities)
 ├── routing/          # Complexity classification and model-tier routing
-│   └── strategies/   # LLM-based routing strategy (llm.ts, llm-parsing.ts)
-├── tdd/              # TDD orchestration (three-session workflow, isolation, verdict, rectification-gate)
+│   └── strategies/   # LLM-based routing strategy (llm.ts, llm-cache.ts, llm-parsing.ts)
+├── runtime/          # Run-scoped NaxRuntime (createRuntime), dispatch context/events, agent middleware, cost aggregation
+├── sandbox/          # OS sandbox for agent-authored commands (srt backend, policy builder, launcher) — on by default
+├── schedule/         # Schedule parsing and waiting for deferred runs
+├── session/          # Agent session lifecycle (SessionManager, naming, model selection, keeper, scratch dirs, sweep)
+├── tdd/              # TDD helpers (isolation, verdict, cleanup, rollback)
+├── test-runners/     # Test framework detection and output parsing (SSOT for test parsing)
+├── tools/            # Coding tools for native sessions (Read/Write/Edit/Glob/Grep/Git/Bash/RunCommand, policy, tool-audit)
 ├── tui/              # React/Ink terminal UI
 │   ├── components/   # TUI React components
-│   └── hooks/        # TUI React hooks (useKeyboard, useLayout, usePipelineEvents)
-├── utils/            # Shared utilities (git, paths, errors, processes)
-├── test-runners/     # Test framework detection and output parsing (SSOT for test parsing)
-├── verification/     # Test execution orchestration, rectification loop
-│   └── strategies/   # Verification strategies (scoped, regression, acceptance)
-├── worktree/         # Git worktree management for parallel execution (manager, dispatcher, merge)
+│   └── hooks/        # TUI React hooks (useKeyboard, useLayout, usePipelineEvents, usePipelineBusEvents, useAgentStreamEvents)
+├── utils/            # Shared utilities (git, paths, path-frame, errors, file locks, JSON/JSONL, processes)
+├── verification/     # Test execution, smart/scoped runner, flake triage, mutation testing, rectification
+├── worktree/         # Git worktree management for parallel execution (manager, WorktreeId, dependencies)
 ├── errors.ts         # NaxError base class + derived error classes
 └── version.ts        # Version management
 ```
@@ -76,13 +95,14 @@ src/
   | File type | Soft limit | Hard limit | When to split |
   |:----------|:-----------|:-----------|:--------------|
   | Source files (`src/`) | 400 lines | **600 lines** | Logic/control flow too complex for one file |
-  | Test files (`test/`) | 500 lines | **800 lines** | >3 unrelated concerns in one file |
+  | Test files (`test/**/*.test.ts`) | 650 lines | **800 lines** | >3 unrelated concerns in one file |
   | Type-only files (interfaces, no logic) | 500 lines | **600 lines** | Only if mixing types with logic |
   | Docs / generated reports | — | **No limit** | N/A |
 
-  The 600-line hard limit for source and test files is the canonical rule (`.claude/rules/project-conventions.md`). The goal is **cognitive fit** — can you understand the file in one reading? Type declarations and test assertions are low-complexity per line; business logic is high-complexity.
+  The hard limits (600 source / 800 test) are the canonical rule (`.nax/rules/project-conventions.md`) and are **enforced** by `bun run check:file-sizes` (part of `bun run lint`): it ratchets against a baseline, so grandfathered oversized files may not grow and new files must be under the limit. After splitting a grandfathered file, lower the baseline with `bun run check:file-sizes:update`. The goal is **cognitive fit** — can you understand the file in one reading? Type declarations and test assertions are low-complexity per line; business logic is high-complexity.
 
-- **Barrel exports:** every directory with 2+ files gets an `index.ts`
+- **Barrel exports:** every directory with 2+ files gets an `index.ts`. In `src/`, `bin/` and `scripts/`, value imports go through the barrel (`@/routing`, never `@/routing/router`) — enforced by `bun run check:alias-internals`; tests may reach internals. Never place `x.ts` beside `x/index.ts`.
+- **Path aliases:** `@/*` → `src/*`, `@test/*` → `test/*` (optional; use when it beats deep `../` chains)
 - **File naming:** `kebab-case.ts` for files, `PascalCase` for classes/interfaces
 - **One primary export per file** — avoid files with 5+ unrelated exports
 
@@ -170,7 +190,7 @@ This was the root cause of 38 test failures (March 2026) — fixed in commit `a1
 
 ### Injectable `_deps` Across the Codebase
 
-The `_deps` pattern is used extensively (70+ modules). Key examples by subsystem:
+The `_deps` pattern is used extensively (200+ modules). Key examples by subsystem:
 
 | Subsystem | Module | Export | Covers |
 |:---|:---|:---|:---|
@@ -178,8 +198,9 @@ The `_deps` pattern is used extensively (70+ modules). Key examples by subsystem
 | | `src/tdd/cleanup.ts` | `_cleanupDeps` | `ps`, `Bun.sleep`, `process.kill` |
 | **Verification** | `src/verification/executor.ts` | `_executorDeps` | Shell test command execution |
 | | `src/verification/smart-runner.ts` | `_smartRunnerDeps` | Smart test file selection |
-| **Agents** | `src/agents/acp/adapter.ts` | `_acpAdapterDeps`, `_fallbackDeps` | ACP session management |
-| | `src/agents/acp/spawn-client.ts` | `_spawnClientDeps` | acpx process spawning |
+| **Agents** | `src/agents/acp/adapter-lifecycle.ts` | `_acpAdapterDeps`, `_fallbackDeps` | ACP session management |
+| | `src/agents/acp/spawn-client-deps.ts` | `_spawnClientDeps` | acpx process spawning |
+| | `src/agents/native/client.ts` | `_clientDeps` | Native (nax-ai) client |
 | **Pipeline** | `src/pipeline/stages/routing.ts` | `_routingDeps` | Routing stage |
 | | `src/pipeline/stages/execution.ts` | `_executionDeps` | Execution stage |
 | | `src/pipeline/stages/completion.ts` | `_completionDeps` | Completion stage |
@@ -189,13 +210,16 @@ The `_deps` pattern is used extensively (70+ modules). Key examples by subsystem
 | | `src/execution/parallel-batch.ts` | `_parallelBatchDeps` | Parallel batch execution |
 | | `src/execution/escalation/tier-escalation.ts` | `_tierEscalationDeps` | Tier escalation logic |
 | | `src/execution/lifecycle/run-setup.ts` | `_runSetupDeps` | Run setup phase |
-| **Review** | `src/context/engine/orchestrator.ts` | `_orchestratorDeps` | Context-engine orchestrator |
-| | `src/review/semantic.ts` | `_semanticDeps` | Semantic review |
-| | `src/review/runner.ts` | `_reviewRunnerDeps`, `_reviewGitDeps` | Review runner |
+| **Context** | `src/context/engine/orchestrator.ts` | `_orchestratorDeps` | Context-engine orchestrator |
+| **Review** | `src/review/runner/index.ts` | `_reviewRunnerDeps`, `_reviewGitDeps`, `_reviewLintDeps` | Review runner |
+| | `src/review/semantic-evidence.ts` | `_evidenceDeps` | Semantic-review evidence |
+| **Sandbox / tools** | `src/sandbox/srt-backend.ts` | `_srtBackendDeps` | OS-sandbox backend |
+| | `src/tools/bash.ts` | `_bashToolDeps` | Native `Bash` tool execution |
+| | `src/command-safety/shadow.ts` | `_commandShadowDeps` | Command-safety shadow classifier |
 | **Other** | `src/utils/git.ts` | `_gitDeps` | All git commands |
 | | `src/routing/router.ts` | `_tryLlmBatchRouteDeps` | LLM batch routing |
-| | `src/worktree/manager.ts` | `_managerDeps` | Worktree management |
-| | `src/worktree/merge.ts` | `_mergeDeps` | Worktree merge |
+| | `src/worktree/manager.ts` | `_worktreeManagerDeps` | Worktree management |
+| | `src/execution/merge-conflict-rectify.ts` | `_mergeRectifyDeps` | Parallel merge-conflict rectification |
 | | `src/project/detector.ts` | `_detectorDeps` | Project detection |
 | | `src/quality/runner.ts` | `_qualityRunnerDeps` | Quality command execution |
 
@@ -209,7 +233,7 @@ The `_deps` pattern is used extensively (70+ modules). Key examples by subsystem
 
 ### NaxError (v0.38.0+) — Standard Pattern
 
-Use `NaxError` for all errors. It provides a machine-readable `code`, structured `context`, and preserves the error chain via `cause`.
+Use `NaxError` (`src/errors.ts`) for all errors. Derived classes: `AgentNotFoundError`, `AgentNotInstalledError`, `StoryLimitExceededError`, `LockAcquisitionError`. It provides a machine-readable `code`, structured `context`, and preserves the error chain via `cause`.
 
 ```typescript
 import { NaxError } from "../../src/errors";
@@ -251,7 +275,7 @@ try {
 
 ### Legacy Pattern (pre-v0.38.0)
 
-The old `throw new Error("[stage] message")` pattern is deprecated. Do not use it for new code.
+The old `throw new Error("[stage] message")` pattern is deprecated. Do not use it for new code — `bun run check:nax-error` ratchets the remaining `throw new Error(...)` count in `src/` and fails if it grows (single-line escape: `// nax-lint-allow: plain-error`).
 
 ---
 
@@ -261,7 +285,7 @@ The old `throw new Error("[stage] message")` pattern is deprecated. Do not use i
 
 - **No magic numbers** in function bodies
 - **File-level `const`** for single-file constants
-- **`src/constants.ts`** for values shared across 2+ files
+- **Values shared across 2+ files** are exported from the owning module (through its barrel) — there is no global `src/constants.ts`
 - **Naming:** `UPPER_SNAKE_CASE`
 
 ```typescript
@@ -313,10 +337,14 @@ const defaultAgent = resolveDefaultAgent(config);
 const defaultAgent = config.autoMode.defaultAgent;  // TS error + CONFIG_LEGACY_AGENT_KEYS at load
 ```
 
+Both `AgentManager.getDefault()` and `resolveDefaultAgent()` return `config.agent.default` and fall
+back to `DEFAULT_AGENT_NAME` (`"native"`, `src/config/agent-defaults.ts`). The `?? "claude"` in the
+pipeline-stage form applies only when no `agentManager` is on the context.
+
 ### Per-story reset
 
 `AgentManager.reset()` (`src/agents/manager.ts`) clears per-story availability state. It is the SSOT for that reset — there is no separate adapter-level or registry-level reset hook.
 
 ### Config shape
 
-The canonical `config.agent` shape — `default`, `protocol`, `fallback.map`, etc. — is documented in `.claude/rules/config-patterns.md` § Agent Config Shape (ADR-012).
+The canonical `config.agent` shape — `default`, `protocol`, `fallback.map`, etc. — is documented in `.nax/rules/config-patterns.md` § Agent Config Shape (ADR-012). Defaults: `agent.protocol: "hybrid"` (`DEFAULT_AGENT_PROTOCOL`) and `agent.default: "native"`. `agent.protocol` (`acp` | `native` | `hybrid`) is a capability gate, not a router — it decides which transports are permitted (ADR-027).

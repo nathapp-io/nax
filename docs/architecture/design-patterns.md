@@ -16,11 +16,11 @@ nax is primarily functional (~90% exported functions, ~10% classes). Use pattern
 | Stateless transformation or computation | **Plain function** | `estimateTokens()`, `coerceVerdict()`, `buildStorySection()` |
 | Single-use utility with no variants | **Plain function** | `loadConstitution()`, `runReview()`, `autoCommitIfDirty()` |
 | Domain-specific prompt construction (composable) | **Prompt Builder** | `TddPromptBuilder`, `ReviewPromptBuilder`, `AcceptancePromptBuilder`, etc. |
-| Multi-step construction with optional config | **Builder** | `DecomposeBuilder` |
-| Multiple backends sharing a contract | **Adapter** | `AgentAdapter` → Claude, Codex, Gemini |
+| Multi-step construction with optional config | **Builder** | `TddPromptBuilder.for(role)`, `OneShotPromptBuilder.for(role)` |
+| Multiple backends sharing a contract | **Adapter** | `AgentAdapter` → `AcpAgentAdapter` (claude, codex, …), `NativeAgentAdapter`; `SandboxBackend` → srt |
 | Collection with typed lookup/lifecycle | **Registry** | `PluginRegistry`, agent registry |
 | Interchangeable algorithms for same task | **Strategy** | Verification strategies, routing strategies |
-| Ordered handler dispatch with fallback | **Chain** | `InteractionChain`, `StrategyChain` |
+| Ordered handler dispatch with fallback | **Chain** | `InteractionChain`, ask-resolver chain (`chainAskLinks`) |
 | Global service with init-once semantics | **Singleton** | Logger |
 | Stateful object managing resources (PIDs, connections) | **Class** | `PidRegistry`, `StatusWriter` |
 
@@ -32,31 +32,33 @@ Domain-specific prompt construction using composable section functions. Replaces
 
 ```typescript
 // ✅ Each domain has its own builder — composed from reusable sections
-const builder = new TddPromptBuilder(role, story, config);
-builder.addConstitution(constitution);
-builder.addContext(contextMd);
-builder.addIsolationRules(changedFiles);
-const prompt = builder.build();
+const prompt = await TddPromptBuilder.for("implementer", options)
+  .story(story)
+  .constitution(constitution)
+  .context(contextMd)
+  .build();
 
 // ✅ One-shot prompts for routing, decomposition
-const builder = new OneShotPromptBuilder();
-builder.addInstruction(routingInstruction);
-builder.addJsonSchema(routingSchema);
-const prompt = builder.build();
+const oneShot = OneShotPromptBuilder.for("router")
+  .instructions(routingInstruction)
+  .jsonSchema(routingSchema)
+  .build();
 ```
 
-**8 domain-specific builders** (`src/prompts/builders/`):
+**8 domain-specific builder classes** (`src/prompts/builders/`):
 
 | Builder | Roles | Purpose |
 |:--------|:------|:--------|
-| `TddPromptBuilder` | implementer, test-writer, verifier, single-session, tdd-simple, batch | TDD execution pipeline |
-| `ReviewPromptBuilder` | dialogue, semantic | Semantic review, AC verification |
+| `TddPromptBuilder` | implementer, test-writer, verifier, single-session, tdd-simple, batch, no-test | TDD execution pipeline |
+| `ReviewPromptBuilder` | semantic | Semantic review, AC verification, JSON-retry / re-grounding prompts |
 | `AcceptancePromptBuilder` | generator, diagnoser, fix-executor | Acceptance test generation/diagnosis |
-| `RectifierPromptBuilder` | tdd-test-failure, tdd-suite-failure, verify-failure, review-findings, test-writer-rectification | Fix prompts with escalation preambles; includes `testWriterRectification()` for adversarial test-file findings |
-| `OneShotPromptBuilder` | router, decomposer, auto-approver | Trivial instruction + schema combos |
+| `RectifierPromptBuilder` | static factories (`firstAttemptDelta`, `continuation`, `escalated`, `reviewRectification`, `testWriterRectification`, `regressionFailure`, …) | Fix prompts with escalation preambles; the old `for(trigger)` builder form was removed (ADR-018) |
+| `OneShotPromptBuilder` | router, decomposer | Trivial instruction + schema combos |
 | `PlanPromptBuilder` | planner | Planning prompt construction (story decomposition, complexity classification, AC generation) |
 | `AdversarialReviewPromptBuilder` | adversarial | Adversarial heuristics + findings schema |
 | `SetupPromptBuilder` | setup | `nax setup` config generation |
+
+Plain-function builders sit alongside them: `buildDecomposePromptSync` (`decompose-builder.ts`), `buildPriorIterationsBlock`, `buildSourceRootsSection`, `timeoutRetry`.
 
 **Core engine** (`src/prompts/core/`):
 
@@ -78,10 +80,10 @@ const prompt = builder.build();
 For multi-step object construction with optional configuration:
 
 ```typescript
-const prompt = TddPromptBuilder.for(role, options)
-  .addConstitution(constitution)
-  .addContext(contextMd)
-  .build();
+const prompt = await TddPromptBuilder.for(role, options)
+  .constitution(constitution)
+  .context(contextMd)
+  .build(); // async for TddPromptBuilder; sync for OneShotPromptBuilder
 ```
 
 **Rules:**
@@ -97,34 +99,38 @@ const prompt = TddPromptBuilder.for(role, options)
 For extensible subsystems where multiple backends share a common contract:
 
 ```typescript
-// ✅ Interface defines the contract — 4 primitives only (ADR-019)
+// ✅ Interface defines the contract — 4 primitives (ADR-019) plus descriptive members
 export interface AgentAdapter {
-  name: string;
-  capabilities: AgentCapabilities;
+  readonly name: string;
+  readonly capabilities: AgentCapabilities;
+  // ...displayName, binary, isInstalled(), buildCommand(), hasCredentials?(), closePhysicalSession?()
   openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle>;
   sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult>;
   closeSession(handle: SessionHandle): Promise<void>;
   complete(prompt: string, opts: ResolvedCompleteOptions): Promise<CompleteResult>;
 }
 
-// ✅ One production implementation: ACP adapter (all agents)
+// ✅ Two production implementations, selected by agent name (ADR-027)
 export class AcpAgentAdapter implements AgentAdapter { ... }    // JSON-RPC over stdio via acpx
+export class NativeAgentAdapter implements AgentAdapter { ... } // in-process over @nathapp/nax-ai
 ```
 
-`adapter.run` / `plan` / `decompose` were deleted in ADR-019 — `run` is now `SessionManager.runInSession` (composes the three session primitives), and `plan`/`decompose` are `kind:"complete"` Operations dispatched via `callOp` (§37, `.claude/rules/adapter-wiring.md`).
+`adapter.run` / `plan` / `decompose` were deleted in ADR-019 — `run` is now `SessionManager.runInSession` (composes the three session primitives), and `plan`/`decompose` are Operations dispatched via `callOp` (`planInteractiveOp` / `planRefineOp` are `kind:"run"`, `decomposeOp` is `kind:"complete"`) (§37, `.claude/rules/adapter-wiring.md`).
 
 **Rules:**
-- Interface in `types.ts`, implementation in `src/agents/acp/adapter.ts`
+- Interface in `types.ts`, implementations in `src/agents/acp/adapter.ts` and `src/agents/native/adapter.ts`
 - Implementations are classes (stateful — may hold config, PID registries, etc.)
 - Capabilities declared as data, not methods — enables routing decisions without instantiation
 
-**Reference:** `src/agents/types.ts`, `src/agents/acp/adapter.ts`
+**Reference:** `src/agents/types.ts`, `src/agents/acp/adapter.ts`, `src/agents/native/adapter.ts`, [agent-adapters.md §16](agent-adapters.md#16-agent-adapter-conventions)
 
 #### Agent Protocol
 
-nax communicates with all agents via **ACP** (Agent Client Protocol) — JSON-RPC over stdio via [acpx](https://github.com/openclaw/acpx). `AcpAgentAdapter` is the only adapter; there is no CLI protocol mode.
+nax has two transports, selected by **agent name** (ADR-027): every named CLI agent (`claude`, `codex`, `opencode`, `gemini`, `aider`, `pi`) is driven over **ACP** (Agent Client Protocol) — JSON-RPC over stdio via [acpx](https://github.com/openclaw/acpx) — and the `native` agent runs in-process over `@nathapp/nax-ai`, with nax owning the conversation and tool loop (ADR-028/029). There is no CLI protocol mode.
 
-All pipeline stages, routing, TDD, and acceptance generators dispatch through the manager/session/operation layers (never the adapter directly — see `.claude/rules/adapter-wiring.md`). The agent binary is set by `agent.default` in config, read via `resolveDefaultAgent(config)`.
+`agent.protocol` (`acp` | `native` | `hybrid`, default `hybrid`) is a capability gate deciding which transports are permitted, not a router. `agent.default` defaults to `native` (`src/config/agent-defaults.ts`).
+
+All pipeline stages, routing, TDD, and acceptance generators dispatch through the manager/session/operation layers (never the adapter directly — see `.claude/rules/adapter-wiring.md`). The default agent is read via `resolveDefaultAgent(config)`.
 
 #### LLM Fallback Rule
 
@@ -134,7 +140,9 @@ All pipeline stages, routing, TDD, and acceptance generators dispatch through th
 // ✅ Correct: dispatch a one-shot through the manager (resolves the default agent)
 const agentName = ctx.agentManager?.getDefault() ?? "claude"; // or resolveDefaultAgent(config) in standalone modules
 const result = await ctx.runtime.agentManager.completeAs(agentName, prompt, {
-  pipelineStage: "decompose",
+  modelDef,
+  workdir,
+  pipelineStage: "complete", // a PipelineStage — there is no "decompose" stage
   config,
 });
 
@@ -151,7 +159,7 @@ const adapter = {
 
 **Where this applies:**
 - Pipeline stages needing LLM calls (routing decompose, classification)
-- CLI commands (`nax analyze --decompose`)
+- CLI commands (`nax plan --decompose <storyId>`)
 - Acceptance test generation and refinement
 - Any future feature that needs one-shot LLM completions
 
@@ -220,8 +228,9 @@ const response = await chain.prompt(request);
 - Higher priority number = higher precedence (chain sorts descending)
 - Chain handles timeout and fallback — consumers don't
 - Used for interaction (human-in-the-loop). Routing uses the analogous "first non-null wins" walk inside `Router` (plugin routers → LLM → keyword), not a separate chain class.
+- The permission ask tier is a chain too: `chainAskLinks([approvalsCacheLink, humanLink])` (`src/permissions/ask-chain.ts`) — each link may `allow`, `deny` or `abstain`, and the chain appends a terminal deny so an exhausted chain fails closed.
 
-**Reference:** `src/interaction/chain.ts`, `src/routing/router.ts`
+**Reference:** `src/interaction/chain.ts`, `src/routing/router.ts`, `src/permissions/ask-chain.ts`
 
 ### Singleton (Module-Level Instance)
 
@@ -232,24 +241,28 @@ For global services with one-time initialization:
 let _instance: Logger | null = null;
 
 export function initLogger(options: LoggerOptions): Logger {
+  if (_instance) throw new NaxError("Logger already initialized", "LOGGER_ALREADY_INITIALIZED", { stage: "logger" });
   _instance = new Logger(options);
   return _instance;
 }
 
 export function getLogger(): Logger {
-  if (!_instance) throw new Error("Logger not initialized");
-  return _instance;
+  return _instance ?? noopLogger; // silent no-op logger before init
 }
 
-// ✅ Safe variant that returns null instead of throwing
+// ✅ Safe variant — null only if getLogger() itself throws
 export function getSafeLogger(): Logger | null {
-  return _instance;
+  try {
+    return getLogger();
+  } catch {
+    return null;
+  }
 }
 ```
 
 **Rules:**
 - Use `getX()` / `getSafeX()` pattern — never export the instance directly
-- `getSafeLogger()` preferred in library code (no crash if logger not yet initialized)
+- `getSafeLogger()` preferred in library code (call as `getSafeLogger()?.info(...)`)
 - Init once during startup (`run-setup.ts`), use everywhere via getter
 
 **Reference:** `src/logger/logger.ts`
@@ -265,7 +278,7 @@ export function getSafeLogger(): Logger | null {
 | Rule | Rationale |
 |:-----|:----------|
 | **Always `realpathSync()` before path containment checks** | Lexical `normalize()` does not follow symlinks — a symlink inside an allowed root can point anywhere (SEC-1 fix, 2026-03-15) |
-| **Use `safeRealpath()` helper for non-existent paths** | Fall back to resolving the parent directory when the target doesn't exist yet |
+| **Use `realOrRaw()` (`src/utils/realpath.ts`) for paths that may not exist** | Walks up to the nearest existing ancestor, resolves it, and re-attaches the missing segments — a half-resolved path compares unequal to a resolved root and silently fails containment |
 | **`O_CREAT \| O_EXCL` for atomic lock creation** | Prevents TOCTOU race between check-and-create (BUG-2 fix) |
 | **Use `fs.unlink()` for file deletion, never `Bun.spawn(["rm", ...])`** | Subprocess for a single syscall is ~1000x slower and adds unnecessary complexity (BUG-3 fix) |
 
@@ -276,6 +289,7 @@ export function getSafeLogger(): Logger | null {
 | **Always use argv arrays for subprocess spawning** | String interpolation enables argument injection |
 | **Validate user-editable config values before interpolating into command strings** | Model names, paths, hook commands from config.json are user-controlled (SEC-2) |
 | **Use `buildAllowedEnv()` for all spawned processes** | Never pass full `process.env` — prevents credential leakage to agent subprocesses |
+| **Agent-authored commands go through the tool policy, once** | Model-authored Bash/`Exec` is adjudicated only in `src/tools/policy*.ts` under the stage's resolved `bashApproval` (ADR-030); the OS sandbox launcher (`src/sandbox/`) changes *how* a command runs, never *whether*. Never add a second gate or wrap nax's own declared commands |
 
 ### 12.3 Process & Handler Lifecycle
 
@@ -286,7 +300,16 @@ export function getSafeLogger(): Logger | null {
 | **Never hardcode permission modes anywhere** | All permission decisions go through `resolvePermissions(config, stage)` — see [agent-adapters.md §14](agent-adapters.md#14-permission-resolution). No `?? true`, `?? false`, or literal `"approve-all"` (SEC-3 fix, PERM-001) |
 | **Kill active subprocess before graceful close** | `close()` and `cancelActivePrompt()` must kill `activeProc` first, then close the session |
 
-### 12.4 Type Safety for Security
+### 12.4 Agent-Facing Paths & Writes
+
+| Rule | Rationale |
+|:-----|:----------|
+| **Keep agents off nax-owned files** | `src/tools/nax-owned-writes.ts` refuses coding tools on `.nax/config.json` (and package configs), feature `prd.json` and the queue-control files — a writable config hands the agent an ungated `quality.commands` shell |
+| **Sandbox policy paths are literal** | srt on Linux silently drops glob entries, so `execution.sandbox` paths reject `* ? [ ] { }` at config load and the policy builder resolves every path with `realOrRaw()` |
+| **Security knobs are root-scoped** | `bashApproval`, `approvalTimeout`, `sandbox`, `commandSafety` are pinned to the root config (ADR-031, `src/config/root-only-keys.ts`); a package cannot loosen them |
+| **Audit every tool call** | `src/tools/tool-audit.ts` persists one row per coding-tool call (outcome incl. `denied` / `denied:ask`, reason, approval verdict, sandbox record, Bash `exitCode`, and `callId` / `scopeId` / `turnId` for correlation); logger calls are for operators and never replace the durable row |
+
+### 12.5 Type Safety for Security
 
 | Rule | Rationale |
 |:-----|:----------|

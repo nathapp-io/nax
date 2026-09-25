@@ -186,10 +186,18 @@ const DEFAULT_CONFIG = {
 
 ```
 test/
-├── unit/        # Pure logic, mocked deps, fast (<1s per file)
+├── unit/        # Mirrors src/ — pure logic, mocked deps, fast (<1s per file)
 ├── integration/ # Multiple modules wired together, may use fs
-└── e2e/         # Full pipeline, slower
+├── ui/          # TUI (React/Ink) component tests
+├── e2e/         # *.e2e.test.ts — excluded from `bun run test`; run via `bun run test:e2e`
+├── helpers/     # Shared mocks/builders (import via `@test/helpers` barrel)
+├── contracts/   # *.contract.ts — type-level shape checks, compiled by typecheck
+└── fixtures/    # Static fixture data
 ```
+
+Placement, naming and the shared-helper catalogue are in `.nax/rules/test-architecture.md`
+and `.nax/rules/test-helpers.md`. Test files have an **800-line hard limit** (650 target),
+enforced by `bun run check:file-sizes`.
 
 ### Conventions
 
@@ -259,9 +267,9 @@ All runtime logging goes through the structured logger:
 ```typescript
 import { getLogger } from "../logger";
 
-const logger = getLogger();
-logger?.info("routing", "Task classified", {
-  storyId: story.id,
+const logger = getLogger(); // never null — a silent no-op logger before initLogger()
+logger.info("routing", "Task classified", {
+  storyId: story.id, // first key
   complexity: result.complexity,
   modelTier: result.modelTier,
 });
@@ -270,6 +278,10 @@ logger?.info("routing", "Task classified", {
 ### Rules
 
 - **Stage prefix** is the first param — matches pipeline stage names
+- **`storyId` first** — in `src/pipeline/stages/` and `src/review/`, every call's data object must
+  start with `storyId` (parallel runs share one JSONL file). Ratcheted by `bun run check:logger-storyid`;
+  a deliberate exception takes `// nax-lint-allow: no-storyid`
+- **Never `console.log` / `console.error`** in `src/` — and no emojis in log text (`[OK]`, `[WARN]`, `[FAIL]`)
 - **Message** is human-readable, present tense
 - **Data** is a flat object — no nested structures deeper than 1 level
 - **Never log secrets** — no API keys, tokens, or full prompts
@@ -292,12 +304,14 @@ feat: add Gemini CLI adapter with auth detection
 fix: routing stage crash when config.execution is undefined
 refactor: extract autoCommitIfDirty to shared utility
 test: add table-driven tests for verdict coercion
-chore: bump version to 0.36.0 [run-release]
+docs: document the test-presence gate
+feat!: default agent.protocol to "hybrid"   # `!` marks a breaking change
 ```
 
 ### Rules
 
 - **One concern per commit** — don't mix features with bug fixes
 - **Reference story ID** when applicable: `feat(MA-003): Gemini adapter`
-- **Never force push** to `master`
-- **Feature branches:** `feat/<name>`, merged via MR
+- **Never add `[run-release]`** to a commit message unless explicitly told to
+- **Never force push** to `main`
+- **Feature branches:** `feat/<name>`, merged via GitHub pull request

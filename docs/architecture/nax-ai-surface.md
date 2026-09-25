@@ -2,7 +2,7 @@
 
 Reference for `@nathapp/nax-ai` (pinned at **0.1.16**, exact — see `package.json`). It exists so a change to the native path does not start by reading `node_modules/@nathapp/nax-ai/dist/**`. Everything below was probed against the real bundled catalog, not inferred from the type declarations.
 
-`src/agents/native/client.ts` and its siblings are the ONLY files in `src/` permitted to import nax-ai (`scripts/check-nax-ai-imports.ts` enforces it).
+`src/agents/native/` (the client and its siblings) and `src/agents/catalog/` (the catalog-backed pricing lookup for the non-native side) are the ONLY places in `src/` permitted to import nax-ai (`scripts/check-nax-ai-imports.ts` enforces it).
 
 ## Pricing: rates, cache rates, and tiers
 
@@ -33,11 +33,11 @@ openai/gpt-5.6-terra       window=272000    {input:2, output:12, cacheRead:0.2, 
 anthropic/claude-sonnet-5  window=1000000   {input:2, output:10, cacheRead:0.2, cacheWrite:2.5}
 ```
 
-**Do not claim nax-ai has no cache rates.** It does, per model, and `cacheRead` is typically 10% of `input` — a real number, not the heuristic `input * 0.1` that `src/agents/cost/pricing.ts` falls back to on the acpx path.
+**Do not claim nax-ai has no cache rates.** It does, per model, and `cacheRead` is typically 10% of `input` — a real number. Both transports now read it: the native adapter directly, and the acpx path through `src/agents/catalog/` (`lookupPricing`, reached from `resolveRateCard` in `src/agents/cost/rate-card.ts`).
 
-### Tiers are real and nax currently ignores them
+### Tiers are real, and nax honours them
 
-Exactly **24 of 1354** catalogued models price in tiers. `git grep "inputTokensAbove" -- src` finds nothing, so long-context native runs under-report today. nax-ai's own doc comment is explicit: *"A consumer that ignores this bills the base rates and will under-report a long-context request; one that honours it is correct."*
+Exactly **24 of 1354** catalogued models price in tiers (count from the last probe; re-derive per release). nax-ai's own doc comment is explicit: *"A consumer that ignores this bills the base rates and will under-report a long-context request; one that honours it is correct."* nax honours them since nax#1847: `TokenPricing.tiers` (`src/config/schema-types.ts`) mirrors `PricingTier`, and `priceCall` in `src/agents/cost/estimate.ts` applies the tier with the greatest `inputTokensAbove` strictly below the request's input-class usage to the **whole** request, matching nax-ai's `> inputTokensAbove`.
 
 Every tiered model, with its threshold:
 
@@ -50,20 +50,21 @@ Above the threshold the whole request reprices — `gpt-5.6-terra` doubles input
 
 ### How the rates reach cost today
 
-`src/agents/native/adapter.ts` builds the rate object as:
+`src/agents/native/adapter.ts` prices every call through `buildRateCard` (`src/agents/native/models.ts`):
 
 ```ts
 const catalog = client.pricing(resolved);
-const rates = handle.modelDef?.pricing ?? { inputPer1M: catalog.input, outputPer1M: catalog.output };
+const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?.pricing);
+const { costUsd, resolvedRates } = priceCall(usage, rates);
 ```
 
-`catalog.cacheRead`, `catalog.cacheWrite` and `catalog.tiers` are **discarded here**. `TokenPricing` (`src/config/schema-types.ts`) carries optional `cacheReadPer1M` / `cacheCreationPer1M`, which `estimateCostUsd` honours and otherwise falls back to `inputPer1M` for that token class. So cache pricing only takes effect when a config override supplies it, even though the catalog has the real numbers. Tracked in #1843.
+With no config override, `buildRateCard` maps the catalog's `input` / `output` / `cacheRead` / `cacheWrite` and every tier onto `TokenPricing` (`inputPer1M`, `outputPer1M`, `cacheReadPer1M`, `cacheCreationPer1M`) and stamps `pricingSource: "catalog-rates"`. A `ModelDef.pricing` override replaces the card wholesale (`"config-override"`); an override that omits a cache rate falls back to `inputPer1M` for that token class. `src/agents/catalog/` performs the same field mapping for the acpx side. The resolved per-1M rates travel on the result as `rates`, so a recorded cost can be reproduced from its row.
 
 ## Context window
 
-`ResolvedModel.contextWindow` is the only source, reached via `client.model(provider, model)` — which takes **no override argument**. `contextWindow` appears in exactly two nax files, both native (`adapter.ts` feeding the turn deps, and `session/turn-loop.ts` consuming it); it is not in `src/config` at all.
+`ResolvedModel.contextWindow`, reached via `client.model(provider, model)`, is the real window. A per-model `ModelDef.contextWindow` override (nax#1848) may **lower** it: `resolveContextWindow` (`src/agents/native/models.ts`) returns the override, and throws `CONTEXT_WINDOW_OVERRIDE_EXCEEDS_REAL_WINDOW` if it is larger than the real window. The resolved value feeds the turn loop's compaction math (`session/turn-loop.ts`, `turn-compaction-step.ts`) and nothing else.
 
-Windows are large: `claude-sonnet-5` is **1,000,000**, `gpt-5.6-terra` **272,000**. `execution.compaction.compactAtPercent` floors at 50, so on a million-token window compaction cannot fire below 500k tokens — a normal story will never trigger it.
+Windows are large: `claude-sonnet-5` is **1,000,000**, `gpt-5.6-terra` **272,000**. `execution.compaction.compactAtPercent` (default 90) floors at 50, so on a million-token window compaction cannot fire below 500k tokens — a normal story will never trigger it unless `ModelDef.contextWindow` lowers the window.
 
 **The override seam is wired, via `agent.native.catalogOverrides`** (nax#1982).
 `buildNativeClient` maps the configured list through `toProviderOverrides`
@@ -107,6 +108,13 @@ synthesises the wire model from a bundled sibling and inherits the sibling's
 `maxTokens` when the override states none, so a newer model with a larger
 ceiling should declare it explicitly.
 
+A model entry may also declare `openRouterRouting` (nax#2191, nax-ai 0.1.15+),
+forwarded verbatim to `ResolvedModel.openRouterRouting`. Keys are OpenRouter's
+snake_case wire names (`allow_fallbacks`, `require_parameters`,
+`data_collection`, `zdr`, `order`, `only`, `ignore`, `quantizations`, `sort`);
+the schema is strict and rejects `{}`, and nax-ai rejects routing on any
+protocol other than `openai-completions`.
+
 ```json
 "agent": {
   "native": {
@@ -130,7 +138,7 @@ The client is built once per process, so every override in effect must be
 collected into this one list; a second, different set throws
 `NATIVE_CLIENT_OVERRIDES_MISMATCH` rather than silently reusing the first build.
 
-Overriding the window is safe: it never reaches the provider. It feeds only nax's own `shouldCompact` / `keepBudget` math, so lowering it makes compaction fire earlier against an otherwise real request.
+Do not confuse the two window fields: a catalog override's `contextWindow` declares the real window of a model nax-ai does not bundle; `ModelDef.contextWindow` only lowers the window nax compacts against. Lowering it is safe: it never reaches the provider. It feeds only nax's own `shouldCompact` / `keepBudget` math, so compaction fires earlier against an otherwise real request.
 
 ## Providers
 

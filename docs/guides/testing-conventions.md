@@ -8,8 +8,10 @@ Test files must respect the following size constraints:
 
 | Limit | Lines | Action |
 |-------|-------|--------|
-| **Soft Limit** | 500 | ⚠ Warning printed during checks |
-| **Hard Limit** | 800 | ✗ Build fails (unless `NAX_SKIP_PRECHECK=1`) |
+| **Soft Limit** | 500 | Review guideline — not gated |
+| **Hard Limit** | 800 | `bun run lint` fails for new files over the limit and for grandfathered files that grow |
+
+Source files (`src/**/*.ts`) have a 600-line hard limit enforced by the same check.
 
 ### Rationale
 
@@ -26,33 +28,23 @@ Run the size checker with:
 bun run check:file-sizes
 ```
 
-This script:
-- Scans `src/**/*.ts`, `flows/**/*.ts` (600-line limit) and `test/**/*.test.ts` (800-line limit)
-- Fails if a new file exceeds its limit, or if a grandfathered file grows past its recorded size
-- Runs inside `bun run lint`, so CI and the pre-commit hook both enforce it
+This script (`scripts/check-file-sizes.ts`):
+- Scans `src/**/*.ts` (600-line limit) and `test/**/*.test.ts` (800-line limit)
+- Ratchets against `scripts/baselines/file-sizes-baseline.json`: files already over the limit are grandfathered but may not grow, and new files must be under the limit
+- Runs inside `bun run lint` (via `lint:checks`), so CI and the pre-commit hook (`.githooks/pre-commit`, which runs `check:all`) both enforce it
 
-The 500-line soft limit below is a review guideline, not a gate.
-- Respects `NAX_SKIP_PRECHECK=1` to suppress the hard-limit failure
+There is no bypass flag — split the file instead.
 
 ### Example Output
 
 ```
-# Test File Size Report
+ERROR: file-size hard limit breached (see .claude/rules/project-conventions.md).
 
-Generated: 2026-03-10T10:05:46.365Z
+New files over the limit (600 src / 800 test) — split before merging:
+  test/unit/large.test.ts: 820 lines (limit 800)
 
-Soft limit: 500 lines (warning)
-Hard limit: 800 lines (fail)
-
-Found **2** test file(s) exceeding the soft limit:
-
-⚠ **test/unit/example.test.ts**: 550 lines (warning)
-✗ **test/unit/large.test.ts**: 820 lines (HARD LIMIT EXCEEDED)
-
-## Summary
-
-- 2 test file(s) exceed the soft limit
-- 1 test file(s) exceed the hard limit
+Grandfathered files that GREW past their recorded size — do not add more code:
+  test/unit/legacy.test.ts: 910 lines (was 900, limit 800)
 ```
 
 ## Reducing Test File Size
@@ -160,9 +152,6 @@ bun run check:file-sizes
 
 # List every oversized file, grandfathered or not
 bun run scripts/check-file-sizes.ts --list
-
-# Run with precheck skipped (useful during development)
-NAX_SKIP_PRECHECK=1 bun run test
 ```
 
 After splitting a grandfathered file, lower the baseline with
@@ -170,7 +159,8 @@ After splitting a grandfathered file, lower the baseline with
 
 ## See Also
 
-- `.claude/rules/test-architecture.md` — Test directory structure and file placement
-- `.claude/rules/test-writing.md` — Quick lookup for injectable test dependencies
+- `.nax/rules/test-architecture.md` — Test directory structure and file placement (generated copy in `.claude/rules/`)
+- `.nax/rules/test-writing.md` — What a test must assert to count
+- `.nax/rules/test-ratchets.md` — Escape-hatch and coverage baselines
 - `docs/guides/testing-rules.md` — Test writing source of truth
 - `docs/architecture/ARCHITECTURE.md` — General code size and design conventions

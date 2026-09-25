@@ -6,7 +6,7 @@
 
 Static rules are short, project-specific guidance that the Context Engine prepends to every agent prompt — coding standards, forbidden patterns, error-handling conventions, testing rules. They are agent-agnostic by design (no `CLAUDE.md`, no `<system-reminder>`, no "the X tool" phrasing) so a fallback agent reads the same guidance as the primary.
 
-The provider that loads them is `StaticRulesProvider` ([src/context/engine/providers/static-rules.ts](../../src/context/engine/providers/static-rules.ts)). Every chunk it emits is a budget-floor chunk — included regardless of stage budget pressure (subject only to the rules-specific budget).
+The provider that loads them is `StaticRulesProvider` ([src/context/engine/providers/static-rules.ts](../../src/context/engine/providers/static-rules.ts)). Every chunk it emits is a budget-floor chunk — included regardless of stage budget pressure (subject only to the rules-specific budget). Each rule is split into its `## ` (H2) sections, and each section becomes its own chunk.
 
 ## Where rules live
 
@@ -45,50 +45,49 @@ Frontmatter keys (all optional):
 |:---|:---|:---|:---|
 | `priority` | int | `100` | Lower = more important. Drives sort order and budget-truncation tail bias. Use `50-80` for must-have rules, `100` for normal, `150+` for nice-to-have. |
 | `paths` | string \| string[] | none | Globs against the story's package-relative workdir (`request.storyWorkdir`). Rule loads only when the **package** matches. Always-true in single-package repos. |
-| `appliesTo` | string \| string[] | none | Globs against `request.touchedFiles` (PRD `contextFiles`). Rule loads only when the story declares it touches a matching file. |
+| `appliesTo` | string[] | none | Globs against `request.scopeFiles` (see below). Rule loads only when the story touches a matching file. Must be a list. |
+| `stages` | string[] | none | Pipeline stages the rule applies to (e.g. `single-session`, `tdd-test-writer`, `review-semantic`). Rule loads only when `request.stage` is listed. Unknown stage names warn but do not reject the rule. |
+| `description` | string | none | Free-text label; not used for filtering. |
+
+Any other key rejects the file (`RULES_FRONTMATTER_INVALID`, logged as `Invalid rule frontmatter — skipping file`). Frontmatter preceded by a BOM, a blank line, or an HTML comment is warned about as *displaced*; an HTML-comment-displaced block is not honored. `nax rules lint` checks a store without running a story.
 
 Body must pass the neutrality linter — see below.
 
 ## How filtering actually works
 
-Two filter axes apply in order, both inside `StaticRulesProvider.fetch`:
+Three filter axes apply in order, all inside `StaticRulesProvider.fetch`:
 
-1. **`paths:` (package-scope)** — drops the rule if the story's `packageDir` doesn't match. ([static-rules.ts:188-190](../../src/context/engine/providers/static-rules.ts#L188-L190))
-2. **`appliesTo:` (touched-files)** — drops the rule if the story's `contextFiles` (passed via `request.touchedFiles`) don't match. ([static-rules.ts:234](../../src/context/engine/providers/static-rules.ts#L234))
+1. **`paths:` (package-scope)** — drops the rule if the story's package-relative workdir doesn't match (`ruleMatchesPackage` in [scope-path-match.ts](../../src/context/engine/scope-path-match.ts)).
+2. **`stages:`** — drops the rule if the current stage isn't listed.
+3. **`appliesTo:` (scope files)** — drops the rule if no entry of `request.scopeFiles` matches (`ruleMatchesScopeFiles`).
 
-Then a token-budget pass (`rules.budgetTokens`, default 8192) tail-truncates by priority.
+Then a section-level token budget pass (see [Priority and budget truncation](#priority-and-budget-truncation)).
 
 ### The empty-list short-circuit
 
-[static-rules.ts:139-141](../../src/context/engine/providers/static-rules.ts#L139-L141):
-
 ```typescript
-function ruleMatchesTouchedFiles(appliesTo, touchedFiles): boolean {
+export function ruleMatchesScopeFiles(appliesTo, scopeFiles): boolean {
   if (!appliesTo || appliesTo.length === 0) return true;
-  if (!touchedFiles || touchedFiles.length === 0) return true;  // ← key
-  // ... glob match
+  if (!scopeFiles || scopeFiles.length === 0) return true;  // ← key
+  // ... literal = exact match, glob = regex match
 }
 ```
 
-If a story has no `contextFiles` (greenfield project, exploration story), `appliesTo:` filtering is bypassed — every `appliesTo:`-tagged rule loads anyway. This is conservative-by-default: don't drop a potentially-needed rule when the planner hasn't declared intent.
-
-Practical consequence: **`appliesTo:` is only a filter for stories whose PRD has populated `contextFiles`**. For mature projects where the planner reliably emits `contextFiles`, this is the typical case and the filter does real work. For new projects, expect rules to over-include; that's the right behaviour at that stage.
+If a story's scope-file set is empty, `appliesTo:` filtering is bypassed — every `appliesTo:`-tagged rule loads anyway. This is conservative-by-default: don't drop a potentially-needed rule when there is no evidence of what the story touches. It is not silent: the provider logs `appliesTo rules admitted unconditionally — scope-file set is empty` and records `appliesToInertCount` in the manifest's scoping report.
 
 `paths:` has no equivalent short-circuit — package always resolves.
 
-## Where `request.touchedFiles` comes from
+## Where `request.scopeFiles` comes from
 
-The variable name is misleading. It is **not** a git diff. Source: [src/prd/types.ts:170](../../src/prd/types.ts#L170)
+`scopeFiles` is resolved by `resolveScopeFiles(ctx)` ([src/pipeline/scope-files.ts](../../src/pipeline/scope-files.ts)) as the deduped union of:
 
-```typescript
-export function getContextFiles(story: UserStory): string[] {
-  return story.contextFiles ?? story.relevantFiles ?? [];
-}
-```
+- the PRD's `contextFiles` (legacy `relevantFiles`) — `getContextFiles(story)`
+- the PRD's `expectedFiles` — `getExpectedFiles(story)`
+- the story's git diff against its base ref (`collectDiffFileList`), when the ref resolves
 
-Set in [stage-assembler.ts:193](../../src/context/engine/stage-assembler.ts#L193) as `options.touchedFiles ?? getContextFiles(ctx.story)`. So the signal flowing into `appliesTo:` matching is **planner intent** — the file list the PRD declares the story will touch. Same intent signal that drives `code-neighbor`, `git-history`, and `test-coverage` providers.
+Declared files are re-spelled repo-rooted (ADR-032); diff files already are. If the ref cannot be resolved or the diff fails, the declared sources alone are used. So `appliesTo:` matches **planner intent plus what the story has already changed** — for a brand-new story with no declared files and no diff yet, the set is empty and the short-circuit above applies.
 
-The pull-tool path also sets `touchedFiles: [filePath]` when the agent uses a Read tool mid-session ([pull-tools.ts:217](../../src/context/engine/pull-tools.ts#L217)) — so `appliesTo:` re-engages on pull, narrowing rules to what the agent just read.
+`scopeFiles` is used only for scoping decisions. Content-fetching providers (`code-neighbor`, `git-history`, `test-coverage`) read the separate `request.touchedFiles`, which is the PRD's `contextFiles`.
 
 ## Authoring patterns
 
@@ -160,9 +159,11 @@ This pattern uses only the file-level filter axis already shipped — no new cod
 
 ### Pitfall — rules about producing artifacts
 
-`appliesTo:` filters against `request.touchedFiles`, which is the PRD's `contextFiles` — files the story declares as **input context**, not artifacts the agent will **produce**. A rule about how to write tests cannot use `appliesTo: ["**/*.spec.ts"]`: at the test-writer stage, the spec doesn't exist yet, and the contextFiles list source files (the system under test) instead.
+`appliesTo:` filters against files the story already touches, not artifacts the agent will **produce**. At the test-writer stage the spec doesn't exist yet, so a concrete scope file can't match `**/*.spec.ts`.
 
-Symptoms: testing rules never load on `tdd-test-writer` / `tdd-implementer`; rectification rules never load when the agent is about to fix a file that hasn't been edited yet.
+Stages that author tests (`tdd-test-writer`, `single-session`, `tdd-simple`, `batch`) have a narrow exception (nax#2060): a rule is also admitted when its `appliesTo:` pattern itself denotes a test location — a test-file-shaped glob such as `**/*.test.ts`, or one rooted at a well-known test directory such as `test/**`. When the `appliesTo:` filter drops every rule that named the current stage in `stages:`, the provider warns `appliesTo filter dropped every rule that named this stage explicitly`.
+
+Outside those stages the pitfall stands — e.g. rectification rules never load when the agent is about to fix a file that hasn't been edited yet.
 
 Fix: **for rules about producing X, don't filter on X**. Either drop `appliesTo:` (always load when `paths:` matches) or filter on the *inputs* the agent reads to produce X — e.g. for a "how to write tests" rule, scope by the source files being tested, not the test files themselves. Drop-`appliesTo:` is usually the right call because the rule is small and the always-on behaviour is what the test-writer/implementer/rectifier all need.
 
@@ -174,7 +175,15 @@ If a single rule file has many in-file concerns AND every concern fires on the s
 
 ## Priority and budget truncation
 
-`rules.budgetTokens` (default 8192) caps how many rule tokens reach the prompt. When the total exceeds the budget, rules drop from the **tail** — sorted by `priority` ascending, then `id` alphabetical. Lower priority survives. ([canonical-loader.ts:305-332](../../src/context/rules/canonical-loader.ts#L305-L332))
+The rules budget is per stage: `min(rulesShare × stage budgetTokens, rules.budgetTokens)`, from `context.v2.rules`:
+
+| Key | Default | Effect |
+|:---|:---|:---|
+| `budgetTokens` | `8192` (min 512) | Absolute ceiling on rule tokens |
+| `rulesShare` | `0.4` | Share of the stage's `budgetTokens` reserved for rules |
+| `enforceBudget` | `true` | When `false`, every rule is kept and the overage is only reported (`budgetPressure`) |
+
+Budgeting works on H2 sections, sorted by `priority` ascending, then by rule, then by section order within the rule. Each rule contributes its longest leading run of sections that fits; the first section that doesn't fit closes that rule, and the walk continues with the next rule. Lower priority number survives. When sections are dropped, a standalone notice chunk lists what was cut. ([rule-budget/index.ts](../../src/context/rules/rule-budget/index.ts))
 
 Use priority to defend critical rules:
 
@@ -190,11 +199,11 @@ These patterns are banned and must not be reintroduced.
 
 A `priority: 30` rule survives until the budget is so tight that nothing fits.
 
-The loader emits a warning at 75% of budget (`Canonical rules approaching/exceeding budget`) and another when truncation actually drops content. Both surface in the JSONL log under provider `static-rules`.
+The provider emits a warning at 75% of budget (`Canonical rules are approaching/exceeding static rules budget`) and another when truncation drops sections (`Rule sections truncated by static rules budget`). Both surface in the JSONL log under stage `static-rules`.
 
 ## Neutrality linter
 
-The loader rejects files containing agent-specific markers ([canonical-loader.ts:83-96](../../src/context/rules/canonical-loader.ts#L83-L96)):
+The loader rejects files containing agent-specific markers ([canonical-loader/index.ts](../../src/context/rules/canonical-loader/index.ts)):
 
 | Pattern | Why banned |
 |:---|:---|
@@ -213,11 +222,11 @@ Per-line allow markers exist for legitimate references (e.g. a rule that has to 
 - Migrate from `.claude/rules/` to `.nax/rules/`.  <!-- nax-rules-allow: agent-directory -->
 ```
 
-The marker tokens match the `id` column in the banned-pattern list (`agent-directory`, `claude-reference`, `tool-phrasing`, `important-shouting`, `emoji`, `xml-tag`).
+The marker tokens match the `id` column in the banned-pattern list (`agent-directory`, `claude-reference`, `codex-reference`, `gemini-reference`, `tool-phrasing`, `important-shouting`, `emoji`, `xml-tag`).
 
 ## Migration from legacy rules
 
-If your project still uses `CLAUDE.md` or `.claude/rules/`, the engine reads them only when:
+If your project still uses `CLAUDE.md`, `.cursorrules`, `AGENTS.md`, or `.claude/rules/`, the engine reads them only when no canonical rules exist and:
 
 ```json
 { "context": { "v2": { "rules": { "allowLegacyClaudeMd": true } } } }
@@ -225,13 +234,15 @@ If your project still uses `CLAUDE.md` or `.claude/rules/`, the engine reads the
 
 Legacy mode has **no filtering** — every byte loads for every story, no `paths:`, no `appliesTo:`, no `priority:`. The migration unlocks all three filter axes.
 
+Without the flag and without canonical rules, zero rules load (logged as a warning).
+
 Steps:
 
-1. Run a neutrality scan on existing files:
+1. Run `nax rules migrate` (`--dry-run` to preview, `--force` to overwrite) to draft `.nax/rules/` from `.claude/rules/*.md` with basic neutralization applied — root `CLAUDE.md` is not a migration source, then `nax rules lint` to check what remains. Manually:
    ```bash
    grep -nE 'CLAUDE\.md|\.claude/|AGENTS\.md|the [A-Z][A-Za-z]* tool|IMPORTANT:' .claude/rules/*.md
    ```
-2. Move each `.md` to `.nax/rules/`, scrubbing or allow-marking any matches.
+2. Scrub or allow-mark any remaining matches.
 3. Add frontmatter (`paths:` if monorepo, `appliesTo:` for file-pattern scoping, `priority:` for must-have rules).
 4. Verify with one story manifest (see Debugging).
 5. Set `allowLegacyClaudeMd: false` and delete `.claude/rules/`.
@@ -244,7 +255,7 @@ Inspect what actually shipped to a story:
 <projectDir>/.nax/features/<featureId>/stories/<storyId>/context-manifest-<stage>.json
 ```
 
-The `manifest` lists every chunk; rule chunks have `kind: "static"` and `id: "static-rules:<ruleId>:<hash>"`.
+The `manifest` lists every chunk; rule chunks have `kind: "static"` and `id: "static-rules:<ruleId>:<sectionSlug>:<hash>"`.
 
 Check the JSONL log for the loader warnings:
 
@@ -256,15 +267,18 @@ Useful events:
 
 | Event message | Meaning |
 |:---|:---|
-| `Loaded canonical rules` | Lists `files: [...]` actually included |
-| `Package-scope filter applied to repo-level rules` | `paths:` filter dropped some — `total: N matched: M` |
-| `Canonical rules found but none apply to this package context` | Filter eliminated everything — empty rules in this story |
-| `Canonical rules approaching/exceeding budget` | At 75% of `rules.budgetTokens` |
-| `Canonical rules truncated by static rules budget` | Tail truncation occurred — `droppedCount: N` |
+| `Loaded canonical rules` (debug) | Lists `files: [...]` actually included |
+| `Package-scope filter applied to repo-level rules` (debug) | `paths:` filter dropped some — `total: N matched: M` |
+| `Canonical rules found but none apply to this package context` | `paths:` eliminated everything — empty rules in this story |
+| `Every canonical rule was filtered out by stage/appliesTo scoping` | `stages:` / `appliesTo:` eliminated everything |
+| `appliesTo rules admitted unconditionally — scope-file set is empty` | Empty-list short-circuit fired |
+| `Canonical rules are approaching/exceeding static rules budget` | At 75% of the effective rules budget |
+| `Rule sections truncated by static rules budget` | Sections dropped — `droppedCount: N` |
 
 ## Reference
 
 - Provider: [src/context/engine/providers/static-rules.ts](../../src/context/engine/providers/static-rules.ts)
-- Loader: [src/context/rules/canonical-loader.ts](../../src/context/rules/canonical-loader.ts)
+- Loader: [src/context/rules/canonical-loader/index.ts](../../src/context/rules/canonical-loader/index.ts)
+- Frontmatter parser: [src/context/rules/rules-frontmatter.ts](../../src/context/rules/rules-frontmatter.ts)
 - Spec: [docs/specs/SPEC-context-engine-canonical-rules.md](../specs/SPEC-context-engine-canonical-rules.md)
 - Engine guide: [docs/guides/context-engine.md](./context-engine.md)

@@ -1,11 +1,16 @@
 ---
 title: Agents
-description: Configuring and using coding agents via ACP
+description: Configuring and using coding agents — the native agent and ACP agents via acpx
 ---
 
 ## Agents
 
-nax communicates with all coding agents via [ACP](https://github.com/openclaw/acpx) (Agent Client Protocol) — a JSON-RPC protocol layered over stdio that provides persistent sessions, exact USD cost reporting, and multi-turn session continuity. ACP is the only supported protocol.
+nax drives coding agents over two transports, selected by agent name ([ADR-027](../adr/ADR-027-adapter-protocol-split.md)):
+
+- **Native** (`native`, the default) — an in-process agent built on `@nathapp/nax-ai`. nax owns the conversation, the tool loop and every coding tool the model calls ([ADR-028](../adr/ADR-028-native-sessions-and-tool-loop.md)).
+- **ACP** — every other named agent, spawned through [acpx](https://github.com/openclaw/acpx) (Agent Client Protocol): a JSON-RPC protocol over stdio with persistent sessions, exact USD cost reporting and multi-turn continuity. The external agent brings its own tools.
+
+`agent.protocol` (`acp` | `native` | `hybrid`, default `hybrid`) is a capability gate, not a router: it decides which of the two transports are permitted.
 
 ```bash
 # List installed agents and their versions
@@ -21,16 +26,17 @@ nax agents
 | OpenCode | `opencode` | Stable |
 | Codex | `codex` | Stable |
 | Gemini CLI | `gemini` | Stable |
-| Aider | `aider` | Stable |
+| Pi Coding Agent | `pi` | Via the third-party `pi-acp` bridge |
+| Aider | `aider` | Known name; no dedicated ACP adapter entry (generic defaults) |
 | Any ACP-compatible agent | — | See [acpx docs](https://github.com/openclaw/acpx#agents) |
 
-nax connects to agents via [acpx](https://github.com/openclaw/acpx). All agents run as persistent ACP sessions — nax sends prompts and receives structured JSON-RPC responses including token counts and exact USD cost per session.
+Every agent except `native` runs as a persistent ACP session through acpx — nax sends prompts and receives structured JSON-RPC responses including token counts and exact USD cost per session.
 
 > **Known issue — `acpx` ≤ 0.3.1:** The `--model` flag is not supported. Model selection via `execution.model` or per-package `model` overrides has no effect. As a temporary workaround, use the [nathapp-io/acpx](https://github.com/nathapp-io/acpx) fork which adds `--model` support. Upstream fix is tracked in [openclaw/acpx#49](https://github.com/openclaw/acpx/issues/49).
 
 **Configuring the default agent and fallback chain (ADR-012):**
 
-The built-in default is `"protocol": "hybrid"` with `"default": "native"`. The example below opts into an acpx agent instead; under `"acp"`, `agent.default` must name an acpx agent.
+The built-in default is `"protocol": "hybrid"` with `"default": "native"`. The example below opts into an acpx agent instead; under `"acp"`, `agent.default` must name an acpx agent, and under `"native"` it must be `"native"` (the config load rejects anything else). `"hybrid"` permits both, including a fallback map that crosses transports.
 
 ```json
 {
@@ -59,6 +65,28 @@ The built-in default is `"protocol": "hybrid"` with `"default": "native"`. The e
 # Run with a specific agent (overrides agent.default for the invocation)
 nax run -f my-feature --agent opencode
 ```
+
+---
+
+### The native agent
+
+The native agent needs provider credentials rather than an installed binary — either the provider's environment variable (the usual choice for CI) or a stored credential:
+
+```bash
+nax auth login anthropic          # interactive; --method api-key|oauth skips the prompt
+nax auth import                   # import from pi's credential file
+nax auth list                     # a stored credential takes precedence over an env var
+nax auth rm anthropic             # removes it locally; does not revoke at the provider
+```
+
+Its tier map is `models.native` (built-in: `anthropic/claude-haiku-4-5`, `anthropic/claude-sonnet-5`, `anthropic/claude-opus-5-5`). Native ids are provider-qualified and must exist in the bundled model catalog; `agent.native.catalogOverrides` declares ids the catalog does not know.
+
+What differs from an ACP agent:
+
+- **nax runs the tool loop.** A turn is: call the model, execute the tools it asks for through nax's coding tools (`Read`, `Grep`, `Write`, `Edit`, `Git`, `RunCommand`, `Bash`, MCP provider tools…), and call again. Every call passes the permission policy — see [Permissions](permissions.md) — and is written to the tool-audit ledger with `callId` / `turnId` correlation ids.
+- **nax keeps the transcript.** The model client is stateless, so nax persists `<sessionName>.transcript.json`. A transcript written by another op invocation or another model is read as a new conversation, never replayed (thinking signatures bind to the model).
+- **Cancellation reaches tools.** When a turn is cancelled (idle watchdog, run abort), calls not yet started return "Not run: the turn was cancelled" and the loop stops rather than taking another round trip.
+- **Bash, the sandbox, approvals and MCP apply only here.** An ACP agent brings its own tools, so `execution.bashApproval`, `execution.sandbox`, `mcp` and `execution.commandInterceptor` have no effect on it — see [The Bash Tool](bash-tool.md), [Sandbox and Command Safety](sandbox-and-command-safety.md) and [MCP & Command Interception](mcp-and-interception.md).
 
 ---
 
@@ -103,7 +131,7 @@ Every story's internal sessions (plan → test-writer → implementer → verifi
 
 Why this matters for agent configuration:
 
-- **Scratch survives swaps.** `SessionScratchProvider` (Context Engine v2) writes to `SessionManager.scratchDir(sessionId)`. When the manager hands off to a new agent on availability swap, the scratch dir is preserved and cross-agent neutralized (AC-42) so observations from the old agent are still available to the new one.
+- **Scratch survives swaps.** `SessionScratchProvider` (Context Engine v2) reads the session descriptor's `scratchDir` (`<scratchDir>/scratch.jsonl`). When the manager hands off to a new agent on availability swap, the scratch dir is preserved and cross-agent neutralized (AC-42) so observations from the old agent are still available to the new one.
 - **Force-terminate is explicit.** A terminally failed session transitions to `FAILED` and is closed atomically via `failAndClose()`. This guarantees AC-83 fires on availability-category exhaustion — previously the adapter's `finally` block could silently swallow the intent.
 - **Resume is deterministic.** Orphan detection walks `index.json` for non-terminal sessions older than TTL, replacing the old mtime heuristic. Crash-resume picks up with the same `sess-<uuid>` the original run would have used.
 

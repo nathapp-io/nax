@@ -55,6 +55,10 @@ on-start
 
 Each hook receives context via `NAX_*` environment variables and full JSON on stdin.
 
+**Hook definition fields:** `command` (required), `enabled` (default `true`), and `timeout` in ms (default `5000`; on expiry the process group gets SIGTERM, then SIGKILL after a 5 s grace).
+
+**Commands run in argv mode, not through a shell.** The command string is split into argv and spawned directly, so `|`, `;`, `&&`, `>` and `$VAR` are passed as literal arguments (nax logs a warning when it sees them). Wrap anything that needs shell features in a script, as in the `bash hooks/notify.sh` example above. Commands containing `$(...)`, backticks, or a pipe into `bash` are refused outright. The hook's environment is the filtered agent allow-list plus the `NAX_*` variables below, not your full shell environment.
+
 **Environment variables passed to hooks:**
 
 | Variable | Description |
