@@ -3,7 +3,7 @@
   "feature": "turn-waste-and-ledger-gaps",
   "branchName": "feat/turn-waste-and-ledger-gaps",
   "createdAt": "2026-07-20T00:00:00.000Z",
-  "updatedAt": "2026-09-25T08:47:17.343Z",
+  "updatedAt": "2026-09-25T09:12:18.531Z",
   "userStories": [
     {
       "id": "US-001",
@@ -214,8 +214,8 @@
         "runtime"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -270,7 +270,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The tracker and sink registry are already implemented by prerequisites; this story only wires a subscriber and orders cost recording before the existing close drain in one runtime file."
+        "reasoning": "The tracker and sink registry are already implemented by prerequisites; this story only wires a subscriber and orders cost recording before the existing close drain in one runtime file.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/runtime/in-flight-usage.ts",
@@ -285,7 +288,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "866c70efdf13f328dd1403718203cdf7045d78af"
     }
   ],
   "analysis": "Existing TypeScript repo, not greenfield. The advisory raw Bash screen checks lexical config paths before resolver-based PRD/queue matches (src/tools/policy-bash-raw.ts:78-122) and denies both named tokens and redirect targets with identical misleading write-only wording (:130-151); preserving the same two-pass match and all allow/deny outcomes is critical. src/tools/nax-owned-writes.ts:34-48 lexically identifies config, :67-85 identifies PRDs/root queue files, and :101-125 supplies the existing Write/Edit refusal with a path-exact planner exemption; expose a shared kind predicate without changing those semantics. src/prompts/sections/nax-artifacts.ts:21-43 and src/prompts/sections/scratchpad.ts:27-43 are emitted in modes beyond raw Bash; the latter derives its dir from src/tools/scratchpad.ts:25, whose Write description is at :39. Regenerate only added text in the three specified snapshots; existing test/unit/tools/policy-bash-raw.test.ts protects decisions. One-shot dispatch metadata and usage are in src/runtime/dispatch-events.ts:15-114; src/runtime/middleware/usage-audit.ts:1-43 currently consumes stream usage only, with persisted row shape in src/runtime/usage-auditor.ts:20-48 and a single production caller at src/runtime/index.ts:425. All calls in test/unit/runtime/middleware/usage-audit.test.ts:69-138 and test/unit/runtime/middleware/agent-stream-logging.test.ts:293 require the new bus argument; existing stream-beat assertions must stay unchanged. The cost subscriber's complete/no-usage-and-zero-cost skip is at src/runtime/middleware/cost.ts:120-135. Native stream callId is per turn whereas scopeId joins to the ledger (src/runtime/agent-stream-events.ts:9-35); cadence, optional roundTrip and end status are at :49-108. A DispatchErrorEvent has no sessionName and may identify scope by scopeId or callId (src/runtime/dispatch-events.ts:139-183). Track additive native round-trip deltas in memory without reading the usage sidecar, clear resolved success/timeout and watchdog-cancelled turns that dispatch, and only reconcile the newest ended-unrecorded scope match when dispatch-error reports spend. ACP agent-cadence values cannot be safely accumulated. CostEvent is defined in src/runtime/cost-aggregator.ts:3-145, which is 597 lines under a 600-line source gate; add the optional field compactly and document/bump v6 to v7 in src/runtime/middleware/cost.ts:20-95. Derive role with src/runtime/usage-auditor.ts:81-88. CostAggregator.record and drain persist partials and snapshot feeds totals, so src/execution/runner.ts:257-262 needs no change. Tool sinks buffer calls until flush (src/tools/tool-audit.ts:163-197); register those with header.runId when constructed, mark registry flush terminal, and preserve normal flush bodies. Expose the registry flush through src/tools/index.ts:1-74, not a deep import. Do not edit near-size-gate src/agents/coding-tool-support.ts, src/operations/build-hop-callback.ts or src/runtime/session-run-hop.ts. Runtime subscriptions and idempotent close are at src/runtime/index.ts:418-430 and :487-522; integrate tracker and tool flush without changing its existing allSettled set. New unit tests: test/unit/runtime/in-flight-usage.test.ts, test/unit/tools/tool-audit-registry.test.ts. Put runtime-close integration in new test/unit/runtime/runtime-close-partial.test.ts rather than test/unit/runtime/runtime.test.ts (611 lines) or test/unit/execution/lifecycle/run-setup.test.ts (772 lines) near the 800-line test gate. Existing tests test/unit/runtime/middleware/cost.test.ts and cost-rate-provenance.test.ts pin version 6 and need 7; normal tool-audit behavior is already in test/unit/tools/tool-audit.test.ts. Older persisted cost rows require no migration: partial is optional and absent on ordinary rows. US-001, US-002, US-003 and US-004 are independent; US-005 depends on US-002/003/004 because they supply adjacent production wiring, the tracker API and the tool registry.",
