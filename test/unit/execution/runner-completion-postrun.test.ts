@@ -705,9 +705,15 @@ describe("runCompletionPhase - forwards parallel mode as isSequential", () => {
   // run — including parallel ones — attributed blame from those snapshots.
   // #1527 had already deleted the git-recency fallback, leaving non-causal
   // snapshots as the only attribution signal in parallel mode.
+  //
+  // US-002: `undefined`, `0` and `1` all execute one story at a time, so all
+  // three are sequential. Only a concurrency above 1 fans stories across
+  // worktrees. `0` can still arrive from a programmatic RunnerOptions caller
+  // after the CLI began rejecting it.
   test.each([
     [undefined, true],
-    [0, false],
+    [0, true],
+    [1, true],
     [4, false],
   ] as const)("parallel=%s -> isSequential=%s", async (parallel, expectedIsSequential) => {
     let captured: { isSequential?: boolean } | undefined;

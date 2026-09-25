@@ -22,7 +22,7 @@ nax run -f my-feature --parallel 3
 
 **Concurrency** is controlled by the `--parallel <n>` flag (omit = sequential). There is no `execution.maxParallelSessions` config key — concurrency is a per-run CLI choice.
 
-> **`--parallel 0`:** the CLI help and `RunOptions` describe `0` as "auto", but no auto-detection is implemented — the executor only dispatches batches when `n > 0`, so `--parallel 0` currently runs sequentially (while the deferred regression gate still treats the run as parallel and falls back to git-recency blame). Pass an explicit count.
+> **`--parallel 0` is rejected:** `--parallel` must be a positive integer; omit it to run sequentially. Concurrency is never inferred from the CPU count.
 
 > A retry of a previously failed story always runs alone, pre-empting batch selection.
 

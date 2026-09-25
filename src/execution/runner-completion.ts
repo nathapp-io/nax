@@ -62,8 +62,8 @@ export interface RunnerCompletionOptions extends DispatchContext {
   /** Path to prd.json — required for acceptance fix story writes */
   prdPath: string;
   /**
-   * Max parallel sessions, straight from RunnerOptions: undefined = sequential,
-   * 0 = auto-detect, N > 0 = cap at N.
+   * Max parallel sessions, straight from RunnerOptions: undefined, 0 and 1 all
+   * run one story at a time (the CLI rejects 0 outright), N > 1 caps at N.
    *
    * The deferred-regression gate needs this to know whether its per-story gate
    * snapshots are causally ordered. It was never forwarded, so `isSequential`
@@ -364,11 +364,14 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     exitReason: options.exitReason,
     runtime: options.runtime,
     abortSignal: options.abortSignal,
-    // RunnerOptions.parallel: undefined = sequential. Anything else fans stories
-    // out across worktrees, where `completedAt` order is not causal and per-story
+    // RunnerOptions.parallel: undefined, 0 and 1 all execute one story at a
+    // time, so all three are sequential. Anything above 1 fans stories out
+    // across worktrees, where `completedAt` order is not causal and per-story
     // gate state does not reflect the merged repo — so the regression gate must
-    // withhold its snapshots rather than attribute blame from them.
-    isSequential: options.parallel === undefined,
+    // withhold its snapshots rather than attribute blame from them. `0` can
+    // still arrive from a programmatic RunnerOptions caller even though the CLI
+    // now rejects it.
+    isSequential: options.parallel === undefined || options.parallel <= 1,
     interactionChain: options.interactionChain,
   });
 

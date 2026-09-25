@@ -82,6 +82,7 @@ import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import { generateCommand } from "../src/cli/generate";
 import { applyMaxIterationsFlag, parseMaxIterationsFlag } from "../src/cli/run-max-iterations";
 import { resolveUseHeadless } from "../src/cli/run-mode";
+import { parseParallelFlag } from "../src/cli/run-parallel";
 import { registerStatusCommand } from "../src/cli/status-dispatch";
 import { detectCommand } from "../src/commands/detect";
 import { logsCommand } from "../src/commands/logs";
@@ -210,7 +211,7 @@ program
   .option("--dry-run", "Show plan without executing", false)
   .option("--no-context", "Disable context builder (skip file context in prompts)")
   .option("--no-batch", "Disable story batching (execute all stories individually)")
-  .option("--parallel <n>", "Max parallel sessions (0=auto, omit=sequential)")
+  .option("--parallel <n>", "Max parallel sessions (omit = sequential)")
   .option("--plan", "Run plan phase first before execution", false)
   .option("--from <spec-path>", "Path to spec file (required when --plan is used)")
   .option("--no-spec-lint", "Plan even when the spec declares sections that extract to nothing")
@@ -268,6 +269,15 @@ program
       console.error(chalk.red(maxIterationsFlag.message));
       process.exit(1);
     }
+
+    // US-002: validate --parallel alongside -m and before any config load,
+    // bake-off check or TUI mount — the error must print before any TUI exists.
+    const parallelFlag = parseParallelFlag(options.parallel);
+    if (!parallelFlag.ok) {
+      console.error(chalk.red(parallelFlag.message));
+      process.exit(1);
+    }
+    const parallel = parallelFlag.value;
 
     // Bake-off: --compare and --agent are mutually exclusive
     try {
@@ -593,20 +603,6 @@ program
 
     // Compute status file path under the output dir
     const statusFilePath = join(outputDir, "status.json");
-
-    // Parse --parallel option
-    let parallel: number | undefined;
-    if (options.parallel !== undefined) {
-      parallel = Number.parseInt(options.parallel, 10);
-      if (Number.isNaN(parallel) || parallel < 0) {
-        // BUG-22: this validation runs after the TUI is already mounted
-        // (renderTui above) — without unmounting first, the error message
-        // printed over the still-live TUI frame instead of a clean error.
-        tuiInstance?.unmount();
-        console.error(chalk.red("--parallel must be a non-negative integer"));
-        process.exit(1);
-      }
-    }
 
     if (scheduleGate.target) {
       const scheduleController = new AbortController();
