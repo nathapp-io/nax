@@ -3,7 +3,7 @@
   "feature": "approval-residuals",
   "branchName": "feat/approval-residuals",
   "createdAt": "2026-09-24T00:00:00.000Z",
-  "updatedAt": "2026-09-25T10:46:17.781Z",
+  "updatedAt": "2026-09-25T11:15:16.237Z",
   "userStories": [
     {
       "id": "US-001",
@@ -44,7 +44,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Lexer output feeds security-sensitive grant/deny precedence and runtime human escalation across modules; access-control override requires strict TDD isolation."
+        "reasoning": "Lexer output feeds security-sensitive grant/deny precedence and runtime human escalation across modules; access-control override requires strict TDD isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/tools/policy-bash.ts",
@@ -62,7 +65,11 @@
           "reason": "the test \"a command outside the granted forms reaches the human, even a root escape (nax#2194)\" asserts `asks === 1` for the command \"ls ../outside\", and the test \"a deny rule refuses without asking, unless the command cannot be analysed (nax#2194)\" asserts `asks === 1` for the command \"rm x 2>&1\"; the header comment says the first flips when nax#2194 is fixed. Both assertions fail against a correct US-001. Replacing invariant: under `escalate` with grants `git *`, `cat *`, rm *, the command \"ls ../outside\" is denied with `asks === 0`, and with deny rule rm *, the command \"rm x 2>&1\" is denied with `asks === 0`; the test names and header comment say so. The other three tests in the file are unchanged."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d4f9e0ec1b0ad515b42c42b530023ff5fcff8be3"
     },
     {
       "id": "US-002",
@@ -122,7 +129,10 @@
           "reason": "`makeSetupResult` (line 67) builds a `RunnerSetupResult` literal, which no longer typechecks once `sealApprovals` is a required field. Replacing invariant: the literal also sets `sealApprovals: async () => {}`; every existing assertion is unchanged."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -168,7 +178,10 @@
       "suggestedCriteria": [
         "Given a direct spawn with literal git argv lacking gitSpawnEnv, when findGitSpawnViolations scans it, then it returns the existing `git spawn without env: gitSpawnEnv(...)` violation."
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Three independent TypeScript/Bun security fixes; no inter-story dependency or data migration. US-001: src/permissions/bash-lex.ts:46-51 defines BashLexResult and :68-228 flushes words, redirects and segments; refused() currently discards all completed segments. Capture completed segments and completed tokens/redirects on every refusal without flushing the in-progress word or dangling redirect; retain zero imports in permissions. src/permissions/index.ts:15-16 already reexports BashLexResult and lexBashCommand; src/tools/policy-bash-raw.ts:135 also consumes the lexer and must remain behaviorally unchanged. src/tools/policy-bash.ts:228-272 currently refuses lexical errors, checks deny, grants, payload, then asks: move deny/payload before both escalatable refusals, with nextWorkingDirectories still applied per segment; checkPayload at :144-226 retains its reasons/breach bits. src/tools/policy-command-branch.ts:81 converts only escalatable denials to asks; integration assertions should drive buildCodingToolSupport/runtime.callTool. src/tools/bash.ts:117-145 advertises incorrect escalated checks and contains the nax#2194 caveat; update only escalate description. docs/adr/ADR-030-bash-approval-modes.md:97-110 defines the Category A/B distinction; delete its disclosed divergence at :465-476. Existing tests include test/unit/permissions/bash-lex.test.ts and test/unit/agents/coding-tool-bash-escalate-truth.test.ts; reverse only the two obsolete escalation expectations. Change in denial reason for ungranted unsafe commands is intentional, but grant-only misses and lexer refusals before a completed word still escalate. US-002: src/interaction/dispatch-ask.ts:54-65 has injectable dependencies, :103-192 already taints before and after a dispatch scope, and :236-255 resolves modes across root and package configs. src/permissions/approvals-taint.ts:69-153 exposes isForgeCapable, taint/clear and never-throw prepareApprovalsStore with warning on failed writes. src/interaction/index.ts:14-27 exports interaction helpers. src/execution/lifecycle/run-setup.ts:69-82 deps, :110-136 result, :273-314 crash context and :447-474 post-lock init/return are insertion points; the handler is installed before PRD/effective modes load and needs a forwarder. src/execution/crash-recovery.ts:34-58 hands its context to installSignalHandlers; src/execution/crash-signals.ts:27-45 context and :108-130 teardown require sealing after killAll, inside FATAL_TEARDOWN_DEADLINE_MS. src/execution/runner-setup.ts:46-94 derives result fields from setupRun and returns it unchanged. src/execution/runner.ts:413-439 calls cleanupRun; src/execution/lifecycle/run-cleanup.ts:68-109 options and :273-300 action/plugin/interaction order allow sealing just before interaction.destroy. Existing dispatch-ask, run-setup, run-cleanup tests and runner-total.test.ts/runner-run-id.test.ts setup literals need updates; create dedicated tests because run-setup.test.ts and run-cleanup.test.ts are near the 800-line limit. Never clear a trusted approvals file at seal time or load config on the signal path. US-003: scripts/check-git-spawn-env.ts:31-38 regexes; :49-90 mask retains offsets and newlines, blanking comments in code and strings in shape; :111-118 matchingClose and :120-154 literal-git checks should retain their why strings. Extend textual spawn call scanning, inspect src/ CLI violations and mark existing generic/nongit argv call sites with reasoned comments, not runtime changes. CLI walks src/ only at :156-188. test/unit/scripts/check-git-spawn-env.test.ts provides existing fixture conventions. Examples of potentially affected calls include src/hooks/runner.ts:224, src/execution/new-package-setup.ts:90, src/utils/argv-exec.ts:160, src/cli/plan-runtime/index.ts:93 and src/agents/acp/spawn-client-session.ts:143; actual set is the gate's output, not a preapproved list. Risks include misreading nested parentheses or quoted/commented pseudo-calls. No approvals.json schema or cache-link changes, no new git spawn helper.",
