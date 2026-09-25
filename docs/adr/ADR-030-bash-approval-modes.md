@@ -98,7 +98,13 @@ question a human can usefully answer.
 
 - **Category A — the gate could not adjudicate.** The lexer refused the command, or no allow
   rule covered a segment. The command may be perfectly fine; the gate simply cannot tell.
-  **These escalate.**
+  **These escalate.** The deny matcher and the payload checks run *first*, and on a refused
+  command they run over the lexer's `prefix` — the completed segments and completed tokens
+  before the unreadable construct, with the in-progress word dropped. So a refused command
+  whose lexable prefix matches a deny rule or breaches containment is a Category B denial, not
+  a Category A one; only a refusal whose prefix is clean (or empty, when the refusal precedes
+  any completed word) escalates. Everything past the construct is not lexed and is shown to
+  the human as part of the full command.
 - **Category B — the command is affirmatively out of bounds.** A path resolves outside the
   permitted root, a `.git/` refusal, a `DENIED_FLAGS`-class flag, an explicit deny rule, a
   redirect or `cd` target outside the root. **These never escalate.**
@@ -450,29 +456,18 @@ producing the Category A denials that are `escalate`'s entire output and P5's tr
   with a non-numeric `chatId` gets a chain but can never match a reply, so every ask times out.
 - `buildCodingToolSupport` forwards it to the Bash tool as `humanApproval`. Only `escalate`
   reads it.
-- **Reachable:** the description states `checkBashCommand`'s actual evaluation order. A command
-  whose every segment is granted is payload-checked: a path outside the root, `.git/` access, a
-  denied flag, an unexpanded `$VAR`, glob or brace characters, `~`, or a bare or option-shaped
-  `cd` is refused without asking. A command outside the granted forms, or one the lexer cannot
-  analyse, is sent to a human and, if allowed, runs exactly as written; a deny rule is refused
-  without asking unless the command cannot be analysed. The model is told to prefer the granted
-  forms. A test pins these claims against the policy (`coding-tool-bash-escalate-truth.test.ts`).
+- **Reachable:** the description states `checkBashCommand`'s actual evaluation order. Every
+  command, granted or not, is checked first: a path outside the root, `.git/` access, a denied
+  flag, an unexpanded `$VAR`, glob or brace characters, `~`, a bare or option-shaped `cd`, or a
+  command matching a deny rule is refused without asking, and for a command using a construct
+  that cannot be analysed these checks cover the part before that construct. A command outside
+  the granted forms, or one using a construct that cannot be analysed, is sent to a human and,
+  if allowed, runs exactly as written. The model is told to prefer the granted forms. A test
+  pins these claims against the policy (`coding-tool-bash-escalate-truth.test.ts`).
 - **Not reachable:** byte-identical to `gated`, as before.
 - The verdict path is unchanged. The flag shapes only the description; a channel that fails
   mid-run still resolves `unavailable` and denies, so an over-promising description fails
   closed.
-
-### A disclosed divergence: Category B does not always stay out of the ask tier
-
-"Why `escalate` splits denials in two" states that Category B denials never escalate. That holds
-only for granted commands. `checkBashCommand` returns the escalatable grant-miss denial before
-`checkPayload`, and the escalatable lexer refusal before deny rules. So an ungranted command that
-escapes the root, touches `.git/`, carries a denied flag (e.g. `--registry`) or an unexpanded
-`$VAR`/glob/`~` token, or matches a deny rule while also failing to lex reaches the human, and
-runs as written if allowed. The deny suite did not catch it because its Category B
-cases all run under `allow: ["*"]`. Under D1 the human still sees the full command. Reordering
-the checks changes the gate's behaviour and is tracked as nax#2194, not done here. The
-description above tells the truth about today's order and flips with that fix.
 
 ### Consequences
 

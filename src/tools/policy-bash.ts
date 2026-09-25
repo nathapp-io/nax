@@ -2,11 +2,17 @@
  * Per-segment evaluation of a model-authored Bash command (spec §4 US-005).
  *
  * Precedence, fixed and order-independent within a stage (spec R6 + US-005.3):
- *   1. the lexer's own refusal    -> deny (a payload the gate cannot read)
- *   2. ANY segment matches deny   -> deny the whole call
- *   3. EVERY segment must match an allow rule, else deny
- *   4. payload checks per segment -> DENIED_FLAGS, containment, redirects, cd
- *   5. ANY segment matches ask    -> ask
+ *   1. the non-string / empty-command guards
+ *   2. ANY segment matches deny   -> deny the whole call (breach false)
+ *   3. payload checks per segment -> DENIED_FLAGS, containment, redirects, cd (breach as today)
+ *   4. the lexer refused the command -> the escalatable lexical refusal
+ *   5. EVERY segment must match an allow rule, else the escalatable grant miss
+ *   6. ANY segment matches ask    -> ask
+ * The deny matcher and the payload checks run BEFORE the two escalatable sites,
+ * so an out-of-bounds command never reaches the human on a later grant miss or
+ * refusal. On a refused command those checks run over the lexer's `prefix` --
+ * the part before the unreadable construct -- because that is the part a deny
+ * rule or a containment breach can still name.
  * Ask is evaluated LAST so it can never grant: an ungranted command that
  * matches an ask rule is a plain denial, not an approval prompt (the same
  * rule the path and argv branches follow in policy.ts).
@@ -231,6 +237,27 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
   if (command.trim() === "") return deny(`"command" must not be empty`);
 
   const lexed = lexBashCommand(command);
+  // On a refusal the gate still runs its deny and payload checks -- over the
+  // lexable prefix, the part before the unreadable construct. The prefix is
+  // empty when the refusal preceded any completed word, leaving the checks a
+  // no-op and the escalatable lexical refusal intact (Category A).
+  const segments = lexed.kind === "ok" ? lexed.segments : lexed.prefix;
+
+  for (const segment of segments) {
+    if (args.denyEntry !== undefined && matchesSegment(args.denyEntry, segment)) {
+      return deny(
+        `${tool} segment "${render(segment)}" is denied for this stage by rule ${ruleExpr(tool, args.denyEntry, segment)}`,
+      );
+    }
+  }
+
+  let cwd: readonly string[] = [args.initialPath];
+  for (const segment of segments) {
+    const result = checkPayload(args, segment, cwd);
+    if (result.refusal !== undefined) return result.refusal;
+    cwd = nextWorkingDirectories(segment, cwd, result.cdTargets);
+  }
+
   if (lexed.kind === "refused") {
     return deny(
       `command contains ${lexed.construct}, which cannot be analysed and is therefore refused -- ` +
@@ -240,29 +267,14 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
     );
   }
 
-  for (const segment of lexed.segments) {
-    if (args.denyEntry !== undefined && matchesSegment(args.denyEntry, segment)) {
-      return deny(
-        `${tool} segment "${render(segment)}" is denied for this stage by rule ${ruleExpr(tool, args.denyEntry, segment)}`,
-      );
-    }
-  }
-
-  for (const segment of lexed.segments) {
+  for (const segment of segments) {
     if (args.grant.unconditional || matchesSegment(args.grant, segment)) continue;
     const granted = args.grant.raw.filter((pattern) => pattern !== "*").join(", ");
     const alternatives = granted === "" ? "no command forms are granted for this stage" : `granted forms: ${granted}`;
     return deny(`${tool} is not granted "${render(segment)}" -- ${alternatives}`, false, true);
   }
 
-  let cwd: readonly string[] = [args.initialPath];
-  for (const segment of lexed.segments) {
-    const result = checkPayload(args, segment, cwd);
-    if (result.refusal !== undefined) return result.refusal;
-    cwd = nextWorkingDirectories(segment, cwd, result.cdTargets);
-  }
-
-  for (const segment of lexed.segments) {
+  for (const segment of segments) {
     if (args.askEntry !== undefined && matchesSegment(args.askEntry, segment)) {
       return { kind: "ask", rule: ruleExpr(tool, args.askEntry, segment) };
     }
