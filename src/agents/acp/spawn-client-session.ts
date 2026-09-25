@@ -140,6 +140,7 @@ export class SpawnAcpSession implements AcpSession {
 
     let proc: ReturnType<typeof _spawnClientDeps.spawn>;
     try {
+      // nax-git-env-allow: not git: acpx client
       proc = _spawnClientDeps.spawn(cmd, {
         cwd: this.cwd,
         stdin: "pipe",

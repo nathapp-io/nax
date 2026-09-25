@@ -54,6 +54,7 @@ async function discoverEffortOptionId(params: {
   const cmd = ["acpx", "--cwd", cwd, "--format", "json", agentName, "sessions", "show", sessionName];
 
   try {
+    // nax-git-env-allow: not git: acpx client
     const { exitCode, stdout, stderr } = await spawn(cmd);
     if (exitCode !== 0) {
       getSafeLogger()?.debug("acp-adapter", "Could not list session config options; falling back to static map", {
@@ -105,6 +106,7 @@ export async function applyReasoningEffort(params: {
   }
 
   const cmd = ["acpx", "--cwd", cwd, agentName, "set", optionName, effort, "-s", sessionName];
+  // nax-git-env-allow: not git: acpx client
   const { exitCode, stdout, stderr } = await spawn(cmd);
 
   // Best-effort: a failure leaves the session at the adapter default rather than

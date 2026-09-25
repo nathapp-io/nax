@@ -143,6 +143,7 @@ export async function runTrackedSpawn(
   onPidExited: ((pid: number) => void) | undefined,
   signal?: AbortSignal,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  // nax-git-env-allow: not git: acpx client
   const proc = deps.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...opts });
   const pid = proc.pid;
   onPidSpawned?.(pid);

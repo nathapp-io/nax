@@ -172,6 +172,7 @@ async function processPackageGroup(
   // process (Bun does not setpgid children into their own group by default —
   // without this the process becomes its own session/group leader via setsid()
   // and killProcessGroup would only be able to signal the immediate child).
+  // nax-git-env-allow: not git: acceptance test command
   const proc = _hardeningDeps.spawn(testCmd, { cwd: packageDir, stdout: "pipe", stderr: "pipe", detached: true });
 
   // LLM-generated acceptance tests can hang (open server, watch mode) — enforce

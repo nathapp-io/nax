@@ -90,6 +90,7 @@ export const _planDeps = {
     cmd: string[],
     opts?: { cwd?: string; env?: Record<string, string | undefined> },
   ): { stdout: Buffer; exitCode: number | null } => {
+    // nax-git-env-allow: generic _deps wrapper; git callers are checked at their own literal
     const result = Bun.spawnSync(cmd, opts ? { cwd: opts.cwd, ...(opts.env ? { env: opts.env } : {}) } : {});
     return { stdout: result.stdout as Buffer, exitCode: result.exitCode };
   },

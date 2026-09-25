@@ -111,6 +111,7 @@ export const grepTool: CodingTool = {
     // value is what lets a result in (maxBytes, readCeiling) reach that policy
     // whole, and it is why the ceiling is a tool-layer constant.
     const ioCeiling = ctx.readCeiling ?? READ_CEILING;
+    // nax-git-env-allow: not git: rg/grep search argv
     const proc = _grepDeps.spawn(buildGrepArgv(binary, pattern, target, mode), {
       cwd: ctx.root,
       stdout: "pipe",

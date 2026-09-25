@@ -41,6 +41,7 @@ export async function checkClaudeMdExists(workdir: string): Promise<Check> {
  *  `parseDiskSpaceOutput` without spawning real `df` processes. */
 export const _checkDiskSpaceDeps = {
   spawn: (cmd: string[], opts: { stdout: "pipe"; stderr: "pipe" }) =>
+    // nax-git-env-allow: not git: df disk-space probe
     Bun.spawn(cmd, opts) as unknown as {
       stdout: ReadableStream<Uint8Array>;
       exited: Promise<number>;

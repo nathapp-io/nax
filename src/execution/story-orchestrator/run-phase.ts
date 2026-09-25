@@ -68,6 +68,7 @@ export const _storyOrchestratorDeps = {
     realBuildResumePlan(checkpoint, current),
   captureTreeState: async (workdir: string): Promise<TreeState> => {
     const spawnWrapper = (cmd: string[], opts: unknown): unknown =>
+      // nax-git-env-allow: generic _deps wrapper; git callers are checked at their own literal
       _gitDeps.spawn(cmd, opts as Parameters<typeof _gitDeps.spawn>[1]);
     return realCaptureTreeState(workdir, { _deps: { spawn: spawnWrapper } });
   },

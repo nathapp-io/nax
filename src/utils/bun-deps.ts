@@ -36,6 +36,7 @@ export interface SpawnOptions {
 
 /** Injectable typed spawn — wraps Bun.spawn with proper return type */
 export function typedSpawn(cmd: string[], opts: SpawnOptions): SpawnResult {
+  // nax-git-env-allow: generic _deps wrapper; git callers are checked at their own literal
   return Bun.spawn(cmd, opts) as unknown as SpawnResult;
 }
 

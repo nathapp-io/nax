@@ -52,6 +52,7 @@ export const _versionDetectionDeps = {
 export async function getAgentVersion(binaryName: string): Promise<string | null> {
   let proc: ReturnType<typeof typedSpawn>;
   try {
+    // nax-git-env-allow: not git: agent binary --version probe
     proc = _versionDetectionDeps.spawn([binaryName, "--version"], {
       stdout: "pipe",
       stderr: "pipe",

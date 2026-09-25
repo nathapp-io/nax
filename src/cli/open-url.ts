@@ -16,6 +16,7 @@ export const _openUrlDeps: {
   platform: () => string;
 } = {
   spawn: (command: readonly string[]) => {
+    // nax-git-env-allow: not git: browser opener argv
     Bun.spawn([...command], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
   },
   platform: () => process.platform,
@@ -30,6 +31,7 @@ function openerFor(platform: string, url: string): readonly string[] {
 
 export function openUrl(url: string): void {
   try {
+    // nax-git-env-allow: not git: browser opener argv
     _openUrlDeps.spawn(openerFor(_openUrlDeps.platform(), url));
   } catch {
     // Deliberately silent: the URL is already on screen and the login is

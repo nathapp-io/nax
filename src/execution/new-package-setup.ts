@@ -87,6 +87,7 @@ export async function maybeRunNewPackageSetup(opts: {
     if (argv.length === 0) continue;
     logger?.info("setup", "Running setup for newly-created package", { storyId, packageDir, command });
     try {
+      // nax-git-env-allow: not git: new-package setup command
       const proc = _newPackageSetupDeps.spawn(argv, { cwd: packageDir, stdout: "pipe", stderr: "pipe" });
       const [exitCode, stdout, stderr] = await Promise.all([
         proc.exited,

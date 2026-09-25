@@ -20,9 +20,14 @@
  * `hardenedGitArgv(...)` (inside the spawn call), which adds the
  * `--ignore-submodules=dirty` that a `.gitmodules` entry cannot override.
  *
- * Comments are masked before matching. Known blind spot: an argv built in a
- * variable without a literal `"git"` head is invisible to a textual gate, so
- * keep the git argv literal at the spawn.
+ * US-003 closes the textual gate's blind spot: a `spawn(...)` /
+ * `spawnSync(...)` call whose first argument is not an array literal headed by
+ * a string literal (`Bun.spawn(argv, ...)`, `[gitBin, ...]`) is flagged too,
+ * unless the call hardens its own env (`gitSpawnEnv(` / `hardenedGitEnv(`) or
+ * its line -- or the line above -- carries a reasoned
+ * `// nax-git-env-allow: <reason>`.
+ *
+ * Comments are masked before matching.
  *
  * Takes an optional root so the gate can be tested against a fixture tree.
  */
@@ -38,6 +43,10 @@ const HARDENED_ENV = /\b(?:gitSpawnEnv|hardenedGitEnv)\s*\(/;
 const HARDENED_ARGV_CALLEE = /\bhardenedGitArgv\s*$/;
 /** What follows `["git",`: a status / diff verb, or a spread whose verb is unknown. */
 const NEEDS_ARGV_HARDENING = /^\s*(?:(["'])(?:status|diff)\1|\.\.\.)/;
+/** A first argument that is an array literal headed by a string literal. */
+const ARRAY_LITERAL_HEAD = /^\s*\[\s*["']/;
+const NON_LITERAL_WHY =
+  "spawn argv is not a literal: pass env: gitSpawnEnv(...) or mark // nax-git-env-allow: <reason>";
 
 export interface GitSpawnViolation {
   line: number;
@@ -117,6 +126,18 @@ function matchingClose(shape: string, open: number): number {
   return shape.length;
 }
 
+/** The call's first argument as a `shape` slice (string contents blanked). */
+function firstArgSlice(shape: string, open: number, close: number): string {
+  let depth = 0;
+  for (let k = open + 1; k < close; k++) {
+    const c = shape[k] as string;
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    else if (c === "," && depth === 0) return shape.slice(open + 1, k);
+  }
+  return shape.slice(open + 1, close);
+}
+
 export function findGitSpawnViolations(source: string): GitSpawnViolation[] {
   const { code, shape } = mask(source);
   const lines = source.split("\n");
@@ -150,6 +171,18 @@ export function findGitSpawnViolations(source: string): GitSpawnViolation[] {
     if (!argvHardened && NEEDS_ARGV_HARDENING.test(code.slice(at + m[0].length))) {
       violations.push({ line, text, why: "git status/diff argv not wrapped in hardenedGitArgv(...)" });
     }
+  }
+  // US-003: a spawn whose argv is not a literal array headed by a string literal
+  // is invisible to the `["git", ...]` rule, so flag the call site itself.
+  for (let open = 0; open < shape.length; open++) {
+    if (shape[open] !== "(") continue;
+    if (!SPAWN_CALLEE.test(shape.slice(Math.max(0, open - 40), open))) continue;
+    const close = matchingClose(shape, open);
+    const line = shape.slice(0, open).split("\n").length;
+    if (ALLOW_MARKER.test(lines[line - 1] ?? "") || ALLOW_MARKER.test(lines[line - 2] ?? "")) continue;
+    if (HARDENED_ENV.test(code.slice(open + 1, close))) continue;
+    if (ARRAY_LITERAL_HEAD.test(firstArgSlice(shape, open, close))) continue;
+    violations.push({ line, text: (lines[line - 1] ?? "").trim(), why: NON_LITERAL_WHY });
   }
   return violations;
 }
