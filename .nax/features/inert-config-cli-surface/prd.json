@@ -3,7 +3,7 @@
   "feature": "inert-config-cli-surface",
   "branchName": "feat/inert-config-cli-surface",
   "createdAt": "2026-07-01T00:00:00Z",
-  "updatedAt": "2026-09-25T17:35:24.634Z",
+  "updatedAt": "2026-09-25T18:03:34.251Z",
   "userStories": [
     {
       "id": "US-001",
@@ -294,8 +294,8 @@
         "feature"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
