@@ -6,16 +6,16 @@
  * a RunCommand verb call runs a user-declared command and never is (D14).
  */
 import { type CallIdentifiers, callIdentifiers } from "./identifiers";
-import type { CommandShadow, LedgerOutcome, MechanicalVerdict, Observation } from "./types";
+import type { CommandShadow, ExecRun, LedgerOutcome, MechanicalVerdict, Observation } from "./types";
 
 export interface ShadowTap {
   /**
-   * `executed` is the argv the Exec tool actually ran (after normalization).
-   * It is forwarded to the shadow only for an `Exec` observation; a `Bash` row
-   * drops it, since its executed argv is `[shell, "-c", command]` and adds
-   * nothing to the row.
+   * `run` is what the Exec tool actually ran (argv after normalization, and
+   * its cwd). It is forwarded to the shadow only for an `Exec` observation; a
+   * `Bash` row drops it, since its executed argv is `[shell, "-c", command]`
+   * and its cwd (when the caller supplied `root`) is already on the observation.
    */
-  settle(ledger: LedgerOutcome, decidedBy?: string, executed?: readonly string[]): void;
+  settle(ledger: LedgerOutcome, decidedBy?: string, run?: ExecRun): void;
 }
 
 export interface ShadowCall extends CallIdentifiers {
@@ -23,6 +23,8 @@ export interface ShadowCall extends CallIdentifiers {
   readonly identity: string;
   readonly command: unknown;
   readonly argv: unknown;
+  /** The policy root. A Bash command starts there, so it becomes the observation's cwd. */
+  readonly root?: string;
   readonly verdict: {
     readonly allowed: boolean;
     readonly outcome?: string;
@@ -52,7 +54,12 @@ function toObservation(call: ShadowCall): Observation | undefined {
     ...callIdentifiers(call),
   };
   if (call.identity === "Bash" && typeof call.command === "string") {
-    return { command: call.command, identity: "Bash", ...base };
+    return {
+      command: call.command,
+      identity: "Bash",
+      ...base,
+      ...(call.root !== undefined ? { cwd: call.root } : {}),
+    };
   }
   if (call.identity === "Exec" && Array.isArray(call.argv) && call.argv.every((a) => typeof a === "string")) {
     const argv = call.argv.map(String);
@@ -70,16 +77,16 @@ export function openShadowTap(shadow: CommandShadow | undefined, call: ShadowCal
     shadow.observe(call.key, obs);
     let settled = false;
     return {
-      settle(ledger, decidedBy, executed) {
+      settle(ledger, decidedBy, run) {
         if (settled) return;
         settled = true;
         try {
           const outcome = { ledger, ...(decidedBy !== undefined ? { decidedBy } : {}) };
-          // Forward `executed` for an Exec observation only: a Bash row's
-          // executed argv is `[shell, "-c", command]`, which the row's own
-          // `command` already states, so passing it would add a redundant key.
-          if (obs.identity === "Exec" && executed !== undefined) {
-            shadow.settle(call.key, outcome, executed);
+          // Forward `run` for an Exec observation only: a Bash row's executed
+          // argv is `[shell, "-c", command]`, which the row's own `command`
+          // already states, so passing it would add a redundant key.
+          if (obs.identity === "Exec" && run !== undefined) {
+            shadow.settle(call.key, outcome, run);
           } else {
             shadow.settle(call.key, outcome);
           }

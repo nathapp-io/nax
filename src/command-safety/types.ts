@@ -66,17 +66,33 @@ export interface Observation extends CallIdentifiers {
   readonly stage: string;
   readonly storyId?: string;
   readonly mechanical: MechanicalVerdict;
+  /**
+   * Bash only: the directory the command starts in (the policy root). An
+   * Exec call's cwd is chosen by the tool, so it arrives with `ExecRun`.
+   */
+  readonly cwd?: string;
+}
+
+/** Exec only: what the tool actually ran, known once it has run. */
+export interface ExecRun {
+  /** The argv after normalization. */
+  readonly executed: readonly string[];
+  /**
+   * The directory it ran in (the package dir or the repo root). The Exec
+   * branch always sets it; optional because `audit` is shared with tools
+   * (Bash, Git) that report `executed` without a cwd.
+   */
+  readonly cwd?: string;
 }
 
 /** Per-story shadow. Every method is total: it never throws. */
 export interface CommandShadow {
   observe(key: string, obs: Observation): void;
   /**
-   * Attach the ledger outcome and, for an Exec call, the argv that actually
-   * ran (after normalization). `executed` is omitted for every other identity
-   * and whenever the call never ran.
+   * Attach the ledger outcome and, for an Exec call, what actually ran. `run`
+   * is omitted for every other identity and whenever the call never ran.
    */
-  settle(key: string, outcome: FinalOutcome, executed?: readonly string[]): void;
+  settle(key: string, outcome: FinalOutcome, run?: ExecRun): void;
   /** Resolves within one timeout; afterwards every pending row has been written. */
   drain(): Promise<void>;
 }
@@ -102,6 +118,12 @@ export interface CommandSafetyRow extends CallIdentifiers {
    * requested argv — and the text `command` is classified on.
    */
   readonly executed?: readonly string[];
+  /**
+   * The directory the command starts in: the policy root for Bash, the
+   * directory the tool ran it in for Exec (absent when it did not run).
+   * Recorded for labelling only; it is not part of the model's state.
+   */
+  readonly cwd?: string;
   readonly mechanical: MechanicalVerdict;
   readonly outcome: { readonly ledger: LedgerOutcome | "unsettled"; readonly decidedBy?: string };
   readonly rules: RuleResult;

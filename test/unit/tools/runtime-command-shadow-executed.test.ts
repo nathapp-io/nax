@@ -12,10 +12,12 @@ import {
   type CommandSafetyRow,
   type CommandShadow,
   createCommandShadow,
+  type ExecRun,
   type FinalOutcome,
   type Observation,
 } from "@/command-safety";
 import { _codingToolDeps, type CodingTool, compileToolPolicy, createCodingToolRuntime } from "@/tools";
+import type { ToolCallRecord } from "@/tools/tool-audit";
 
 let root: string;
 let rows: CommandSafetyRow[];
@@ -54,7 +56,7 @@ function recorder() {
   const settled: unknown[][] = [];
   const shadow: CommandShadow = {
     observe: (k, o) => void observed.push([k, o]),
-    settle: (...args: [string, FinalOutcome, (readonly string[] | undefined)?]) => void settled.push(args),
+    settle: (...args: [string, FinalOutcome, ExecRun?]) => void settled.push(args),
     drain: async () => {},
   };
   return { shadow, observed, settled };
@@ -93,14 +95,14 @@ function bashTool(): CodingTool {
 const UNAVAILABLE = { status: "unavailable" as const, error: "test" };
 
 describe("runtime.callTool — executed argv reaches the command shadow (US-003)", () => {
-  test("AC7: an Exec tool's audit.executed is settle's third argument", async () => {
+  test("AC7: an Exec tool's audit.executed and audit.cwd are settle's third argument", async () => {
     const r = recorder();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], root),
       extraTools: [
         execTool(async () => ({
           content: "exit 0",
-          audit: { executed: ["bun", "test", "--no-scripts"] },
+          audit: { executed: ["bun", "test", "--no-scripts"], cwd: "/repo/packages/app" },
         })),
       ],
       commandShadow: r.shadow,
@@ -110,7 +112,40 @@ describe("runtime.callTool — executed argv reaches the command shadow (US-003)
     const args = settledOnly(r);
     expect(args[0]).toBe(r.observed[0]?.[0]);
     expect(args[1]).toEqual({ ledger: "ok" });
-    expect(args[2]).toEqual(["bun", "test", "--no-scripts"]);
+    expect(args[2]).toEqual({ executed: ["bun", "test", "--no-scripts"], cwd: "/repo/packages/app" });
+  });
+
+  test("audit.cwd reaches the shadow only: the tool-audit ledger row has no cwd key", async () => {
+    const recorded: ToolCallRecord[] = [];
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], root),
+      sink: { record: (entry: ToolCallRecord) => void recorded.push(entry), flush: async () => {} },
+      extraTools: [execTool(async () => ({ content: "exit 0", audit: { executed: ["bun", "test"], cwd: "/repo" } }))],
+      commandShadow: recorder().shadow,
+    });
+    await rt.callTool("RunCommand", { argv: ["bun", "test"] });
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.executed).toEqual(["bun", "test"]);
+    expect("cwd" in (recorded[0] ?? {})).toBe(false);
+  });
+
+  test("an Exec audit with no cwd settles with the executed argv alone", async () => {
+    const r = recorder();
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], root),
+      extraTools: [execTool(async () => ({ content: "exit 0", audit: { executed: ["bun", "test"] } }))],
+      commandShadow: r.shadow,
+    });
+    await rt.callTool("RunCommand", { argv: ["bun", "test"] });
+    expect(settledOnly(r)[2]).toStrictEqual({ executed: ["bun", "test"] });
+  });
+
+  test("a Bash call is observed with the policy root, the directory Bash runs in, as its cwd", async () => {
+    const r = recorder();
+    const policy = compileToolPolicy([{ tool: "Bash", patterns: ["*"] }], root, { bashApproval: "raw" });
+    const rt = createCodingToolRuntime({ policy, extraTools: [bashTool()], commandShadow: r.shadow });
+    await rt.callTool("Bash", { command: "echo hi" });
+    expect(r.observed[0]?.[1].cwd).toBe(policy.root);
   });
 
   test("AC8: an Exec call denied by policy settles with no third argument", async () => {

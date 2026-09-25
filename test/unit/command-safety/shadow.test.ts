@@ -292,7 +292,7 @@ describe("createCommandShadow", () => {
   test("US-003 AC3: an executed argv is written alongside the unchanged argv and command", async () => {
     const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
     s.observe("k", obs("bun test", { identity: "Exec", argv: ["bun", "test"] }));
-    s.settle("k", { ledger: "ok" }, ["bun", "test", "--no-scripts"]);
+    s.settle("k", { ledger: "ok" }, { executed: ["bun", "test", "--no-scripts"] });
     await s.drain();
     const row = writtenRow();
     expect(row.executed).toEqual(["bun", "test", "--no-scripts"]);
@@ -312,7 +312,7 @@ describe("createCommandShadow", () => {
       timeoutMs: 3000,
     });
     s.observe("k", obs("bun test", { identity: "Exec", argv: ["bun", "test"] }));
-    s.settle("k", { ledger: "ok" }, ["bun", "test", "--no-scripts"]);
+    s.settle("k", { ledger: "ok" }, { executed: ["bun", "test", "--no-scripts"] });
     await s.drain();
     expect(calls).toEqual(["bun test"]);
   });
@@ -332,5 +332,58 @@ describe("createCommandShadow", () => {
     const row = writtenRow();
     expect(row.outcome.ledger).toBe("unsettled");
     expect("executed" in row).toBe(false);
+  });
+});
+
+describe("createCommandShadow: cwd on the row", () => {
+  let rows: CommandSafetyRow[];
+  const write = async (row: CommandSafetyRow) => {
+    rows.push(row);
+  };
+  beforeEach(() => {
+    rows = [];
+  });
+
+  test("a Bash row carries the observed cwd", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("ls ../x", { cwd: "/repo" }));
+    s.settle("k", { ledger: "ok" });
+    await s.drain();
+    expect(rows[0]?.cwd).toBe("/repo");
+  });
+
+  test("an Exec row carries the cwd it ran in, from settle", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("bun test", { identity: "Exec", argv: ["bun", "test"] }));
+    s.settle("k", { ledger: "ok" }, { executed: ["bun", "test"], cwd: "/repo/packages/app" });
+    await s.drain();
+    expect(rows[0]?.cwd).toBe("/repo/packages/app");
+    expect(rows[0]?.executed).toEqual(["bun", "test"]);
+  });
+
+  test("a row with no cwd from either side has no cwd key", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("ls"));
+    await s.drain();
+    expect("cwd" in (rows[0] ?? {})).toBe(false);
+  });
+
+  test("cwd never reaches the model: classify gets the command alone and the cache key ignores cwd", async () => {
+    const calls: string[] = [];
+    const s = createCommandShadow({
+      classify: (command) => {
+        calls.push(command);
+        return Promise.resolve(ANSWERED);
+      },
+      write,
+      runId: "r",
+      timeoutMs: 3000,
+    });
+    s.observe("a", obs("ls", { cwd: "/one" }));
+    s.observe("b", obs("ls", { cwd: "/two" }));
+    s.settle("a", { ledger: "ok" });
+    s.settle("b", { ledger: "ok" });
+    await s.drain();
+    expect(calls).toEqual(["ls"]);
   });
 });

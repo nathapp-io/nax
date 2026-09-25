@@ -34,6 +34,8 @@ export interface ToolResult {
   readonly audit?: {
     readonly executed: readonly string[];
     readonly target?: "repoRoot" | "package";
+    /** Exec only: the directory the argv ran in. Read by the command-safety shadow, not the ledger. */
+    readonly cwd?: string;
     /** P4: how an agent-authored Bash/Exec command ran; absent for every other tool. */
     readonly sandbox?: SandboxRecord;
   };
