@@ -157,7 +157,7 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
 
   const env = buildEnv(options);
 
-  // nax-git-env-allow: not git: generic argv executor (caller-supplied command)
+  // nax-git-env-allow: generic argv executor; caller-supplied argv, not routed through gitSpawnEnv
   const proc = _argvExecDeps.spawn([...options.argv], {
     cwd: options.cwd,
     stdout: "pipe",

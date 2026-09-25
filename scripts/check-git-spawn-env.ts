@@ -20,14 +20,17 @@
  * `hardenedGitArgv(...)` (inside the spawn call), which adds the
  * `--ignore-submodules=dirty` that a `.gitmodules` entry cannot override.
  *
- * US-003 closes the textual gate's blind spot: a `spawn(...)` /
+ * US-003 narrows the textual gate's blind spot: a `spawn(...)` /
  * `spawnSync(...)` call whose first argument is not an array literal headed by
  * a string literal (`Bun.spawn(argv, ...)`, `[gitBin, ...]`) is flagged too,
  * unless the call hardens its own env (`gitSpawnEnv(` / `hardenedGitEnv(`) or
  * its line -- or the line above -- carries a reasoned
  * `// nax-git-env-allow: <reason>`.
  *
- * Comments are masked before matching.
+ * Comments are masked before matching, and string/template contents before a
+ * call is located, so a spawn written inside `${...}` is still invisible here.
+ * The marker must be a real `//` comment -- text that merely spells one inside
+ * a string does not exempt a site.
  *
  * Takes an optional root so the gate can be tested against a fixture tree.
  */
@@ -36,7 +39,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
-const ALLOW_MARKER = /nax-git-env-allow:\s*\S/;
+const ALLOW_MARKER = /nax-git-env-allow:\s*\S/g;
 const GIT_ARGV = /\[\s*(["'])git\1\s*[,\]]/g;
 const SPAWN_CALLEE = /\bspawn(?:Sync)?\s*$/;
 const HARDENED_ENV = /\b(?:gitSpawnEnv|hardenedGitEnv)\s*\(/;
@@ -52,6 +55,24 @@ export interface GitSpawnViolation {
   line: number;
   text: string;
   why: string;
+}
+
+/**
+ * True when line `n` carries a non-empty `// nax-git-env-allow: <reason>`
+ * marker. The marker must sit inside a real comment: `code` blanks comment
+ * bodies but keeps string contents, so a `/` still standing at the marker's
+ * `//` means the text is string contents, not a declaration.
+ */
+function allowMarked(lines: readonly string[], starts: readonly number[], code: string, n: number): boolean {
+  const raw = lines[n - 1];
+  if (raw === undefined) return false;
+  const start = starts[n - 1] ?? 0;
+  const row = code.slice(start, start + raw.length);
+  for (const m of raw.matchAll(ALLOW_MARKER)) {
+    const slash = raw.lastIndexOf("//", m.index ?? 0);
+    if (slash !== -1 && row[slash] === " ") return true;
+  }
+  return false;
 }
 
 /**
@@ -141,11 +162,13 @@ function firstArgSlice(shape: string, open: number, close: number): string {
 export function findGitSpawnViolations(source: string): GitSpawnViolation[] {
   const { code, shape } = mask(source);
   const lines = source.split("\n");
+  const lineStarts: number[] = [0];
+  for (let i = 0; i < source.length; i++) if (source[i] === "\n") lineStarts.push(i + 1);
   const violations: GitSpawnViolation[] = [];
   for (const m of code.matchAll(GIT_ARGV)) {
     const at = m.index ?? 0;
     const line = code.slice(0, at).split("\n").length;
-    if (ALLOW_MARKER.test(lines[line - 1] ?? "") || ALLOW_MARKER.test(lines[line - 2] ?? "")) continue;
+    if (allowMarked(lines, lineStarts, code, line) || allowMarked(lines, lineStarts, code, line - 1)) continue;
     const text = (lines[line - 1] ?? "").trim();
     let open = enclosingCallOpen(shape, at);
     let argvHardened = false;
@@ -179,7 +202,7 @@ export function findGitSpawnViolations(source: string): GitSpawnViolation[] {
     if (!SPAWN_CALLEE.test(shape.slice(Math.max(0, open - 40), open))) continue;
     const close = matchingClose(shape, open);
     const line = shape.slice(0, open).split("\n").length;
-    if (ALLOW_MARKER.test(lines[line - 1] ?? "") || ALLOW_MARKER.test(lines[line - 2] ?? "")) continue;
+    if (allowMarked(lines, lineStarts, code, line) || allowMarked(lines, lineStarts, code, line - 1)) continue;
     if (HARDENED_ENV.test(code.slice(open + 1, close))) continue;
     if (ARRAY_LITERAL_HEAD.test(firstArgSlice(shape, open, close))) continue;
     violations.push({ line, text: (lines[line - 1] ?? "").trim(), why: NON_LITERAL_WHY });
