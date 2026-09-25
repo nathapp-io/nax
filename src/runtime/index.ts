@@ -97,6 +97,7 @@ export type { IUsageAuditor, UsageAuditEntry } from "./usage-auditor";
 export { _usageAuditorDeps, createNoOpUsageAuditor, UsageAuditor } from "./usage-auditor";
 
 import { basename, isAbsolute, join, resolve } from "node:path";
+import { flushOpenToolAuditSinks } from "@/tools";
 import type { IAgentManager } from "../agents";
 import type { CreateAgentManagerOpts } from "../agents/factory";
 import { createAgentManager } from "../agents/factory";
@@ -510,6 +511,11 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       await writeMcpRollup(outputDir, buildMcpRollup({ runId, events: mcpPool.events(), withheld: mcpWithheld })).catch(
         (error: unknown) => logger.warn("runtime", "mcp rollup write failed", { error: String(error) }),
       );
+      // Tool calls still buffered by a hop whose `finally` will not run before
+      // `process.exit` are written here, as partial, before the drain below.
+      // Never rejects (one sink's failure is logged and the rest proceed), so
+      // it needs no `.catch` of its own.
+      await flushOpenToolAuditSinks(runId);
       const results = await Promise.allSettled([
         promptAuditor.flush(),
         usageAuditor.flush(),

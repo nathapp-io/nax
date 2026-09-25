@@ -16,7 +16,9 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { getSafeLogger } from "@/logger";
 import { redactRowStrings } from "@/permissions";
+import { errorMessage } from "@/utils/errors";
 import type { SandboxRecord } from "../sandbox";
 
 export interface ToolCallRecord {
@@ -134,17 +136,53 @@ export interface RegisteredSink extends ToolAuditSink {
   flushPartial(): Promise<void>;
 }
 
+/**
+ * Still-open sinks, keyed by the `runId` they were created under.
+ *
+ * A sink is addressable here precisely because its hop `finally` has not run
+ * yet: `createToolAuditSink` registers it on creation and unregisters it on its
+ * first write, so the registry only ever holds buffers that would otherwise be
+ * lost to `process.exit`.
+ */
+const openToolAuditSinks = new Map<string, Set<RegisteredSink>>();
+
 /** Register a sink so the run's shutdown can flush whatever it still holds. */
-export function registerToolAuditSink(_runId: string, _sink: RegisteredSink): void {}
+export function registerToolAuditSink(runId: string, sink: RegisteredSink): void {
+  const sinks = openToolAuditSinks.get(runId);
+  if (sinks === undefined) {
+    openToolAuditSinks.set(runId, new Set([sink]));
+    return;
+  }
+  sinks.add(sink);
+}
 
 /** Drop a sink from the run's registry (see registerToolAuditSink). */
-export function unregisterToolAuditSink(_runId: string, _sink: RegisteredSink): void {}
+export function unregisterToolAuditSink(runId: string, sink: RegisteredSink): void {
+  const sinks = openToolAuditSinks.get(runId);
+  if (sinks === undefined) return;
+  sinks.delete(sink);
+  if (sinks.size === 0) openToolAuditSinks.delete(runId);
+}
 
 /**
  * Flush every still-registered sink for `runId` with `partial: true`, then
  * clear them. Never rejects: one sink's failure must not stop the drain.
  */
-export async function flushOpenToolAuditSinks(_runId: string): Promise<void> {}
+export async function flushOpenToolAuditSinks(runId: string): Promise<void> {
+  const sinks = openToolAuditSinks.get(runId);
+  if (sinks === undefined) return;
+  // Clear before flushing: the sink's own write path calls
+  // unregisterToolAuditSink, and re-entering the registry mid-iteration would
+  // mutate the map we are reading.
+  openToolAuditSinks.delete(runId);
+  for (const sink of sinks) {
+    try {
+      await sink.flushPartial();
+    } catch (error) {
+      getSafeLogger()?.warn("tools", "tool-audit partial flush failed", { runId, error: errorMessage(error) });
+    }
+  }
+}
 
 export function createNoOpToolAuditSink(): ToolAuditSink {
   return { record() {}, async flush() {} };
@@ -197,26 +235,49 @@ export function createToolAuditSink(opts: {
   header?: ToolAuditHeader;
 }): RegisteredSink {
   const calls: ToolCallRecord[] = [];
-  return {
+  const runId = opts.header?.runId;
+  // Set once the shutdown path has written this sink. The hop `finally` that
+  // may still run afterwards must not write a second, non-partial file.
+  let partialFlushed = false;
+
+  const write = async (partial: boolean): Promise<void> => {
+    if (calls.length === 0) return;
+    await mkdir(opts.dir, { recursive: true });
+    const body = JSON.stringify(
+      {
+        schemaVersion: TOOL_AUDIT_SCHEMA_VERSION,
+        ...(opts.header ?? {}),
+        sessionName: opts.sessionName,
+        // Additive and optional: absent on a normal flush, `true` only when the
+        // shutdown path persisted a buffer its hop never closed.
+        ...(partial ? { partial: true } : {}),
+        calls: redactRowStrings(calls),
+      },
+      null,
+      2,
+    );
+    const prefix = runId !== undefined ? `${runId}-` : "";
+    await writeFile(join(opts.dir, `${prefix}${Date.now()}-${opts.sessionName}.json`), body);
+  };
+
+  const sink: RegisteredSink = {
     record(entry) {
       calls.push(entry);
     },
-    async flushPartial() {},
+    async flushPartial() {
+      if (partialFlushed) return;
+      partialFlushed = true;
+      if (runId !== undefined) unregisterToolAuditSink(runId, sink);
+      await write(true);
+    },
     async flush() {
-      if (calls.length === 0) return;
-      await mkdir(opts.dir, { recursive: true });
-      const body = JSON.stringify(
-        {
-          schemaVersion: TOOL_AUDIT_SCHEMA_VERSION,
-          ...(opts.header ?? {}),
-          sessionName: opts.sessionName,
-          calls: redactRowStrings(calls),
-        },
-        null,
-        2,
-      );
-      const prefix = opts.header?.runId !== undefined ? `${opts.header.runId}-` : "";
-      await writeFile(join(opts.dir, `${prefix}${Date.now()}-${opts.sessionName}.json`), body);
+      // A later hop `finally` after the partial flush: nothing left to write.
+      if (partialFlushed) return;
+      if (runId !== undefined) unregisterToolAuditSink(runId, sink);
+      await write(false);
     },
   };
+
+  if (runId !== undefined) registerToolAuditSink(runId, sink);
+  return sink;
 }
