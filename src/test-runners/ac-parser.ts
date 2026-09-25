@@ -127,8 +127,8 @@ export function parseTestFailuresDetailed(output: string): { failedACs: string[]
 
   // Hook-timeout detection: bun reports lifecycle hook failures as "(unnamed)" with no
   // AC label. Detect via the "hook timed out" / "hook failed" marker emitted on the
-  // following line. Emit "AC-HOOK" so callers can distinguish this from "AC-ERROR"
-  // (parse failure) and skip the semantic-verdict fast-path in diagnosis.
+  // following line. Emit "AC-HOOK" so callers can distinguish a hook timeout from a
+  // parse failure ("AC-ERROR").
   const hasUnnamedFail = lines.some((l) => l.includes("(fail)") && l.includes("(unnamed)"));
   const hasHookTimeout = lines.some((l) => /hook timed out|hook failed/i.test(l));
   if (hasUnnamedFail && hasHookTimeout && !failedACs.includes("AC-HOOK")) {

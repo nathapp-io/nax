@@ -119,7 +119,7 @@ export const NaxConfigSchema = z
       agents: { enabled: true, strategy: "off", profiles: [] },
     }),
     execution: ExecutionConfigSchema.default({
-      maxIterations: 10,
+      maxIterations: 20,
       iterationDelayMs: 2000,
       costLimit: 30.0,
       sessionTimeoutSeconds: 3600,
@@ -182,7 +182,6 @@ export const NaxConfigSchema = z
       autofix: {
         enabled: true,
         maxAttempts: 3,
-        enforceTestWriterIsolation: true,
       },
       forceExit: false,
       detectOpenHandles: true,

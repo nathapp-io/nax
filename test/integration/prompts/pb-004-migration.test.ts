@@ -261,17 +261,6 @@ describe("Integration: 6 roles with no override — story title and AC present",
     const lower = prompt.toLowerCase();
     expect(lower.includes("verify") || lower.includes("check") || lower.includes("ensure")).toBe(true);
   });
-
-  test("single-session: contains story/criteria and both test+implementation instructions", async () => {
-    const config = makeConfig();
-    const prompt = await PromptBuilder.for("single-session").withLoader(tmpDir, config).story(story).build();
-
-    expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
-    expect(prompt).toContain("CRITERIA_ONE");
-    expect(prompt).toContain("CRITERIA_TWO");
-    const lower = prompt.toLowerCase();
-    expect(lower.includes("test") && (lower.includes("implement") || lower.includes("feature"))).toBe(true);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -339,7 +328,7 @@ describe("Internal prompts: not migrated, still accessible", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder.withLoader override content integration", () => {
-  test("override for implementer, verifier, and single-session roles replaces role body", async () => {
+  test("override for implementer and verifier roles replaces role body", async () => {
     const scenarios = [
       {
         role: "implementer",
@@ -354,13 +343,6 @@ describe("PromptBuilder.withLoader override content integration", () => {
         key: "verifier",
         marker: "VERIFIER_CUSTOM_ROLE_BODY_MARKER",
         title: "VERIFIER_OVERRIDE_TITLE",
-      },
-      {
-        role: "single-session",
-        opts: {},
-        key: "single-session",
-        marker: "SINGLE_SESSION_CUSTOM_ROLE_BODY_MARKER",
-        title: "SINGLE_SESSION_OVERRIDE_TITLE",
       },
     ] as const;
 

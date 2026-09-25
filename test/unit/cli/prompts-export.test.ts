@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { makeTempDir } from "@test/helpers";
 import { exportPromptCommand } from "@/cli/prompts";
 
-const VALID_ROLES = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple"] as const;
+const VALID_ROLES = ["test-writer", "implementer", "verifier", "tdd-simple"] as const;
 
 describe("exportPromptCommand — stdout mode", () => {
   let consoleOutput: string[];
@@ -160,6 +160,22 @@ describe("exportPromptCommand — invalid role", () => {
       await expect(exportPromptCommand({ role })).rejects.toThrow(/^process\.exit\(/);
       expect(exitCode, `role: "${role}"`).toBe(1);
     }
+  });
+
+  test('US-004 AC7: role single-session prints [ERROR] Invalid role: "single-session" to stderr and exits 1', async () => {
+    let exitCode: number | undefined;
+    process.exit = mock((code?: number) => {
+      exitCode = code;
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit;
+
+    await expect(exportPromptCommand({ role: "single-session" })).rejects.toThrow(/^process\.exit\(/);
+
+    expect(exitCode).toBe(1);
+    expect(consoleErrors.join("\n")).toContain('[ERROR] Invalid role: "single-session"');
+    // The retired role is not offered back to the user as a valid one.
+    expect(consoleErrors.join("\n")).not.toMatch(/Valid roles:.*single-session/);
+    expect(consoleOutput.join("\n")).not.toContain('[ERROR] Invalid role: "single-session"');
   });
 
   test("error output for unknown-role mentions invalid/unknown and lists all valid roles", async () => {

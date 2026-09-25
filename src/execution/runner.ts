@@ -93,7 +93,11 @@ export interface RunOptions {
   dryRun: boolean;
   /** Enable story batching (default: true) */
   useBatch?: boolean;
-  /** Max parallel sessions: undefined=sequential, 0=auto-detect, N>0=cap at N */
+  /**
+   * Max parallel sessions: `undefined`, `0` and `1` all run one story at a
+   * time (the CLI rejects `0`; there is no CPU-count auto-detection), `N > 1`
+   * caps concurrency at N.
+   */
   parallel?: number;
   /** Optional event emitter for TUI integration */
   eventEmitter?: PipelineEventEmitter;

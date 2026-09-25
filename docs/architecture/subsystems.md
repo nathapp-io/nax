@@ -255,7 +255,6 @@ Skips strict file isolation for performance. Test-writer may add src/ stubs; imp
 - **Fix diagnosis** (`fix-diagnosis.ts`): `loadSourceFilesForDiagnosis()` feeds `acceptanceDiagnoseOp`
 - **Fix execution** (`acceptanceFixSourceOp` / `acceptanceFixTestOp`): driven by `runFixCycle` from the acceptance retry loop (`src/execution/lifecycle/acceptance-loop.ts`), which also regenerates the test file when failures look test-level
 - **Hardening** (`hardening.ts`): non-blocking pass that tests plan-suggested criteria after acceptance passes and promotes the passing ones
-- **Semantic verdicts** (`semantic-verdict.ts`): persisted per-story semantic-review verdicts consulted by the acceptance loop
 
 ### Templates
 
@@ -1841,7 +1840,7 @@ Unified finding wire format (ADR-021) and fix-cycle orchestration (ADR-022). All
 **Key exports:**
 - `Finding`, `FindingSeverity`, `FindingSource`, `FixTarget` — wire types (ADR-021 SSOT)
 - `SEVERITY_ORDER`, `compareSeverity(a, b)`, `findingKey(f)`, `findingRecurrenceKey(f)` — severity ordering and stable identity keys
-- Per-producer adapters: `lintDiagnosticToFinding()`, `reviewFindingToFinding()`, `testFailureToFinding()`, `testSummaryToFindings()`, `acFailureToFinding()`, `acSentinelToFinding()`, `acceptanceDiagnoseRawToFinding()`, `pluginToFinding()`, `executionFailureToFinding()`, `genericTypecheckDiagnosticToFinding()` — convert subsystem-specific outputs to `Finding`
+- Per-producer adapters: `lintDiagnosticToFinding()`, `testFailureToFinding()`, `testSummaryToFindings()`, `acFailureToFinding()`, `acSentinelToFinding()`, `acceptanceDiagnoseRawToFinding()`, `pluginToFinding()`, `executionFailureToFinding()`, `genericTypecheckDiagnosticToFinding()` — convert subsystem-specific outputs to `Finding`
 - `FixStrategy`, `FixCycle`, `FixCycleConfig`, `FixCycleContext`, `FixCycleResult`, `FixCycleExitReason`, `Iteration`, `IterationOutcome`, `ValidateResult` — cycle-orchestration types
 - `runFixCycle(cycle, ctx, cycleName, deps?)` — the fix loop (the per-story orchestrator and the acceptance loop are the consumers)
 - `classifyOutcome(before, after)` — per-iteration progress classification (`resolved` / `partial` / `unchanged` / `regressed` / `regressed-different-source` / `rotated`)
@@ -1860,7 +1859,7 @@ Single home for all LLM prompt construction. No prompt template literals are per
 **Builder classes:**
 | Builder | Handles |
 |:---|:---|
-| `TddPromptBuilder` | Implementer, test-writer, verifier, no-test, single-session, tdd-simple, batch roles |
+| `TddPromptBuilder` | Implementer, test-writer, verifier, no-test, tdd-simple, batch roles |
 | `RectifierPromptBuilder` | TDD-test-failure, TDD-suite-failure, verify-failure, review-findings rectification |
 | `ReviewPromptBuilder` | Semantic review dialogue |
 | `AdversarialReviewPromptBuilder` | Adversarial review dialogue |

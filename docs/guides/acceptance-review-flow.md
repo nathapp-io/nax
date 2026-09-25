@@ -87,8 +87,6 @@ PRD loaded (stories with acceptance criteria)
 5. Generate one test file per workdir group under that package's feature dir: `<packageDir>/.nax/features/<feature>/<acceptance.testPath>` (default `.nax-acceptance.test.ts`; the language-specific fallback names in `acceptanceTestFilename()` apply only when no `testPath` is configured, which the schema default normally prevents)
 6. RED gate (`acceptance.redGate`, default `true`): run tests expecting FAIL — if all pass, tests aren't testing new behavior
 
-Regeneration clears any stale `<featureDir>/semantic-verdicts/` files.
-
 **Output stored:** `ctx.acceptanceTestPaths: Array<{ testPath, packageDir }>`
 
 ---
@@ -109,31 +107,7 @@ Semantic review runs as a single stateless LLM pass (`semanticReviewOp`). The di
 
 ---
 
-### 3. Semantic Verdict Persistence
-
-**Files:**
-- `src/acceptance/semantic-verdict.ts` — read/write helpers (`persistSemanticVerdict`)
-- `src/pipeline/stages/completion.ts` — `persistSemanticVerdict` is exposed on `_completionDeps`
-
-**Write (per-story):** `persistSemanticVerdict()` writes
-```
-SemanticVerdict { storyId, passed, timestamp, acCount, findings[] }
-  → <featureDir>/semantic-verdicts/<storyId>.json
-```
-
-> **Current state (v0.82.1):** no pipeline call site invokes `persistSemanticVerdict` — it is only exposed on `_completionDeps` (`reviewResult` was removed in US-005c and the write was not re-homed). In practice no verdict files are written during a run, so the "all semantic verdicts passed" diagnosis fast path below does not fire and the loop falls through to the other paths.
-
-**Read (in acceptance loop):**
-```
-loadSemanticVerdicts(featureDir) → all verdict files
-  → used by resolveAcceptanceDiagnosis() fast-path (skips LLM diagnosis)
-```
-
-**Lifecycle:** Semantic verdicts persist on disk and survive across the acceptance loop, which runs post-completion.
-
----
-
-### 4. Acceptance Loop (Diagnose & Fix)
+### 3. Acceptance Loop (Diagnose & Fix)
 
 Restructured per [ADR-006](../adr/ADR-006-acceptance-retry-restructure.md), then moved onto the shared fix cycle (`runFixCycle`, [ADR-022](../adr/ADR-022-fix-strategy-and-cycle.md)). The outer loop owns the stub guard and the per-package fan-out; `runFixCycle` owns the per-package fix retries.
 
@@ -167,7 +141,6 @@ do:
   4. For each failed package:
      a. resolveAcceptanceDiagnosis()
         ├─ Fast path: implement-only strategy → source_bug (skip LLM)
-        ├─ Fast path: all semantic verdicts passed → test_bug (skip LLM)
         ├─ Fast path: >80% ACs fail OR AC-ERROR sentinel → test_bug (skip LLM)
         └─ Slow path: acceptanceDiagnoseOp via callOp
      b. runAcceptanceFixCycle(diagnosis) → runFixCycle
@@ -193,7 +166,6 @@ do:
 | Condition | Verdict | Confidence | Cost |
 |:----------|:--------|:-----------|:-----|
 | `strategy: "implement-only"` | `source_bug` | 1.0 | 0 (no LLM) |
-| All semantic verdicts passed | `test_bug` | 1.0 | 0 (no LLM) |
 | `"AC-ERROR"` sentinel OR >80% ACs failed | `test_bug` | 0.9 | 0 (no LLM) |
 | Otherwise | `acceptanceDiagnoseOp` | parsed | LLM cost |
 
@@ -205,7 +177,7 @@ do:
 | `test_bug` | `acceptanceFixTestOp` — `sessionRole: "test-fix"`, **surgical patch** of failing assertions, preserves passing tests |
 | `both` | Both strategies, run co-run-sequential |
 
-A failed-AC list made up only of the `AC-ERROR` / `AC-HOOK` sentinels bypasses the semantic-verdict fast path — stale verdicts can't vouch for a crashed runner or timed-out hook. `acceptance.fix.strategy` defaults to `"diagnose-first"`; `acceptance.fix.diagnoseModel` / `fixModel` default to `fast` / `balanced`.
+`acceptance.fix.strategy` defaults to `"diagnose-first"`; `acceptance.fix.diagnoseModel` / `fixModel` default to `fast` / `balanced`.
 
 **Stub guard:** When the test file matches `isStubTestFile()` (skeleton with `expect(true).toBe(...)`), the loop calls `regenerateAcceptanceTest()` (full regen). The `stubRegenCount` counter caps this at 2 attempts to prevent infinite loops if the generator can't produce real tests.
 
@@ -218,8 +190,6 @@ A failed-AC list made up only of the `AC-ERROR` / `AC-HOOK` sentinels bypasses t
 | From | To | Mechanism | Data |
 |:-----|:---|:----------|:-----|
 | Acceptance setup | Acceptance stage | `ctx.acceptanceTestPaths[]` | Per-package test file paths |
-| `persistSemanticVerdict()` (currently uncalled) | Acceptance loop | disk | SemanticVerdict JSON |
-| Acceptance loop | Diagnosis fast path | `loadSemanticVerdicts()` ← disk | All-passed → skip LLM diagnosis |
 | Review phases | Fix cycle | Canonical `Finding[]` (with `fixTarget`) | Findings, check output |
 | Fix cycle | Re-review | `runFixCycle` re-validates (full re-run) | Canonical `Finding[]` |
 | `runAcceptanceLoop` | `resolveAcceptanceDiagnosis` | per-package failures | Sliced test output, failed ACs |
@@ -243,9 +213,7 @@ A failed-AC list made up only of the `AC-ERROR` / `AC-HOOK` sentinels bypasses t
 
 ## Design Decisions
 
-1. **Semantic review is stateless per story.** Each review phase (and each fix-cycle re-review) runs from scratch — there is no persistent reviewer session carried across the acceptance loop, which runs post-completion. Semantic verdicts on disk are meant to bridge this gap.
-
-2. **Verdicts on disk are the cross-phase contract.** Because review leaves no live session behind, the only review state the acceptance loop reads is the persisted `SemanticVerdict` files (see the current-state note in §3).
+1. **Semantic review is stateless per story.** Each review phase (and each fix-cycle re-review) runs from scratch — there is no persistent reviewer session carried across the acceptance loop, which runs post-completion.
 
 ---
 
@@ -255,7 +223,7 @@ Intentional gaps accepted during initial implementation. Revisit if acceptance f
 
 ### GAP-2: Acceptance loop does not re-run semantic review after fix
 
-After `acceptanceFixSourceOp` succeeds, the acceptance loop re-runs acceptance tests only — it does NOT re-run semantic review. Semantic verdict files on disk remain stale (from pre-fix).
+After `acceptanceFixSourceOp` succeeds, the acceptance loop re-runs acceptance tests only — it does NOT re-run semantic review.
 
 **Why accepted:** Source fixes are scoped to failing ACs. Re-running semantic review would add LLM cost with marginal benefit since the acceptance tests themselves validate the fix.
 

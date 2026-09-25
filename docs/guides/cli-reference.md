@@ -158,7 +158,7 @@ nax run -f my-feature
 | `--force` | Overwrite existing `prd.json` when using `--plan` |
 | `--schedule <when>` | Defer the run start until `<when>` (`30m`, `1h30m`, `17:00`, `2026-07-02T02:00`) |
 | `--fresh` / `--no-resume` | Ignore any existing `checkpoint.jsonl` and re-run every incomplete story from scratch (default: auto-resume) |
-| `--parallel <n>` | Max parallel sessions (`0` = auto based on CPU cores; omit = sequential) |
+| `--parallel <n>` | Max parallel sessions (omit = sequential) |
 | `--dry-run` | Preview story routing without running agents |
 | `--headless` | Non-interactive output (structured logs, no TUI) |
 | `--verbose` | Debug-level logging |
@@ -168,7 +168,7 @@ nax run -f my-feature
 | `--skip-precheck` | Skip precheck validations (advanced users only) |
 | `--no-context` | Disable context builder (skip file context in prompts) |
 | `--no-batch` | Execute all stories individually (disable batching) |
-| `-m, --max-iterations <n>` | Max iterations (default: `20`). Always overrides `execution.maxIterations`, even when the flag is omitted |
+| `-m, --max-iterations <n>` | Max iterations (default: `20`). Overrides `execution.maxIterations` only when the flag is passed |
 | `--profile <name>` | Profile(s) to overlay on config (overrides `config.json` profile). Repeatable and comma-separated for a chain — `--profile a,b` or `--profile a --profile b` — where a later profile overrides an earlier one (`b` over `a` over project + global). Accepts the comma form in `NAX_PROFILE` and `config.json` too. |
 | `-d, --dir <path>` | Working directory |
 
@@ -180,9 +180,6 @@ nax run -f user-auth --dry-run
 
 # Plan from spec then run — one command
 nax run -f user-auth --plan --from spec.md
-
-# Run with parallel execution (auto concurrency)
-nax run -f user-auth --parallel 0
 
 # Run with up to 3 parallel worktree sessions
 nax run -f user-auth --parallel 3

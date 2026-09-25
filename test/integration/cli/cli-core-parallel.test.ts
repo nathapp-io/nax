@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { parseParallelFlag } from "@/cli/run-parallel";
 import type { RunOptions } from "@/execution/runner";
 
 describe("CLI --parallel flag parsing", () => {
@@ -18,12 +19,11 @@ describe("CLI --parallel flag parsing", () => {
     expect(parallel).toBeGreaterThanOrEqual(0);
   });
 
-  test("parses --parallel 0 (auto-detect mode) correctly", () => {
-    const parallelArg = "0";
-    const parallel = Number.parseInt(parallelArg, 10);
-
-    expect(parallel).toBe(0);
-    expect(Number.isNaN(parallel)).toBe(false);
+  test("parseParallelFlag rejects --parallel 0 (US-002)", () => {
+    expect(parseParallelFlag("0")).toEqual({
+      ok: false,
+      message: "--parallel must be a positive integer (omit it to run sequentially)",
+    });
   });
 
   test("omitted --parallel defaults to undefined (sequential)", () => {
@@ -55,14 +55,6 @@ describe("CLI --parallel flag parsing", () => {
     };
 
     expect(options.parallel).toBe(4);
-  });
-
-  test("RunOptions accepts parallel=0 (auto-detect)", () => {
-    const options: Partial<RunOptions> = {
-      parallel: 0,
-    };
-
-    expect(options.parallel).toBe(0);
   });
 
   test("RunOptions accepts parallel=undefined (sequential)", () => {

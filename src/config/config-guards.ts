@@ -266,6 +266,10 @@ const REMOVED_NO_OP_KEYS: Readonly<Record<string, string>> = {
     "the multi-agent debate subsystem was removed; a config that enabled debate.stages.plan without setting plan.mode was resolving to the debate plan strategy and now plans with `single` — set plan.mode explicitly to `single` or `refine`",
   "plan.citationThreshold": "this key only fed the removed pipeline plan mode",
   "plan.criticModel": "this key only fed the removed pipeline plan mode",
+  "quality.autofix.enforceTestWriterIsolation":
+    "the mock-structure handoff path this key guarded was removed in #1084; the key has had no effect since",
+  "prompts.overrides.single-session":
+    "the single-session prompt role is not used by any run since fb3cfad3e; test-after stories use the tdd-simple role, so override tdd-simple instead",
 };
 
 /**

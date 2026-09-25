@@ -130,23 +130,12 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
     truncatedOutput: "FAIL: AC-1 assertion error",
     acceptanceTestPath: "/project/.nax/features/feat/.nax-acceptance.test.ts",
     sourceFilesSection: "(No source files could be resolved from imports)",
-    verdictSection: "",
     maxFileLines: 500,
   };
 
   describe("snapshot stability", () => {
     test("no verdicts", () => {
       expect(builder.buildDiagnosisPromptTemplate(base)).toMatchSnapshot();
-    });
-
-    test("with verdict section", () => {
-      expect(
-        builder.buildDiagnosisPromptTemplate({
-          ...base,
-          verdictSection:
-            "\nSEMANTIC VERDICTS:\n- US-001: likely test bug (semantic review confirmed AC implementation)\n",
-        }),
-      ).toMatchSnapshot();
     });
   });
 
@@ -167,19 +156,6 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
       expect(result).toContain('"verdict"');
       expect(result).toContain('"reasoning"');
       expect(result).toContain('"confidence"');
-    });
-
-    test("includes verdict section when provided", () => {
-      const result = builder.buildDiagnosisPromptTemplate({
-        ...base,
-        verdictSection: "\nSEMANTIC VERDICTS:\n- US-001: likely test bug\n",
-      });
-      expect(result).toContain("SEMANTIC VERDICTS");
-    });
-
-    test("does not include SEMANTIC VERDICTS when verdictSection is empty", () => {
-      const result = builder.buildDiagnosisPromptTemplate(base);
-      expect(result).not.toContain("SEMANTIC VERDICTS");
     });
   });
 });

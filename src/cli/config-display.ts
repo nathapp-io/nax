@@ -177,7 +177,7 @@ function displayConfigWithDescriptions(
     }
 
     // Show role examples
-    const roles = ["test-writer", "implementer", "verifier", "single-session"];
+    const roles = ["test-writer", "implementer", "verifier"];
     console.log(`${indentStr}overrides:`);
     for (const role of roles) {
       const roleDesc = FIELD_DESCRIPTIONS[`prompts.overrides.${role}`];
@@ -238,7 +238,7 @@ function displayConfigWithDescriptions(
     if (description) {
       console.log(`# prompts.overrides: ${description}`);
     }
-    const roles = ["test-writer", "implementer", "verifier", "single-session"];
+    const roles = ["test-writer", "implementer", "verifier"];
     console.log("overrides:");
     for (const role of roles) {
       const roleDesc = FIELD_DESCRIPTIONS[`prompts.overrides.${role}`];

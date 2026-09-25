@@ -13,19 +13,12 @@ import { _promptsInitDeps, promptsInitCommand } from "@/cli/prompts";
 import { applyProtocolRegions, PROTOCOL_REGION_MARKER_PREFIX, unwrapProtocolRegions } from "@/prompts/sections";
 import { buildRoleTaskSection } from "@/prompts/sections/role-task";
 
-const TEMPLATE_FILES = [
-  "test-writer.md",
-  "implementer.md",
-  "verifier.md",
-  "single-session.md",
-  "tdd-simple.md",
-] as const;
+const TEMPLATE_FILES = ["test-writer.md", "implementer.md", "verifier.md", "tdd-simple.md"] as const;
 
 const ROLE_SECTION_ARGS: Record<(typeof TEMPLATE_FILES)[number], Parameters<typeof buildRoleTaskSection>> = {
   "test-writer.md": ["test-writer"],
   "implementer.md": ["implementer", "standard"],
   "verifier.md": ["verifier"],
-  "single-session.md": ["single-session"],
   "tdd-simple.md": ["tdd-simple"],
 };
 
@@ -79,12 +72,20 @@ describe("promptsInitCommand — per-file checks (exists, content, header)", () 
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("writes exactly 5 template files", async () => {
+  test("writes exactly 4 template files", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
     const templatesDir = join(tempDir, ".nax", "templates");
     const files = (await import("node:fs")).readdirSync(templatesDir);
-    expect(files.length).toBe(5);
+    expect(files.length).toBe(4);
+  });
+
+  test("US-004 AC5: writes no single-session.md template", async () => {
+    await promptsInitCommand({ workdir: tempDir });
+
+    const templatesDir = join(tempDir, ".nax", "templates");
+    const files = (await import("node:fs")).readdirSync(templatesDir);
+    expect(files).not.toContain("single-session.md");
   });
 
   for (const file of TEMPLATE_FILES) {
@@ -202,7 +203,7 @@ describe("promptsInitCommand — --force flag", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("overwrites existing files when force=true; writes all 5 files even if all exist", async () => {
+  test("overwrites existing files when force=true; writes all 4 files even if all exist", async () => {
     const oldContent = "old content to be replaced";
     writeFileSync(join(tempDir, ".nax", "templates", "test-writer.md"), oldContent);
 
@@ -256,8 +257,8 @@ describe("promptsInitCommand — summary output", () => {
     expect(allOutput).toContain("test-writer.md");
     expect(allOutput).toContain("implementer.md");
     expect(allOutput).toContain("verifier.md");
-    expect(allOutput).toContain("single-session.md");
     expect(allOutput).toContain("tdd-simple.md");
+    expect(allOutput).not.toContain("single-session.md");
 
     const lower = allOutput.toLowerCase();
     const mentionsActivation =
@@ -281,13 +282,19 @@ describe("promptsInitCommand — return value", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("returns list of 5 file paths within nax/templates/ on success; empty array when files exist and no --force", async () => {
+  test("US-004 AC5: returns written paths for exactly test-writer, implementer, verifier and tdd-simple under .nax/templates/", async () => {
     const result = await promptsInitCommand({ workdir: tempDir });
-    expect(Array.isArray(result)).toBe(true);
-    expect(result.length).toBe(5);
+
+    const expected = TEMPLATE_FILES.map((file) => join(tempDir, ".nax", "templates", file));
+    expect([...result].sort()).toEqual([...expected].sort());
     for (const filePath of result) {
-      expect(filePath).toContain("templates");
+      expect(filePath).toContain(join(".nax", "templates"));
+      expect(filePath).not.toContain("single-session.md");
     }
+  });
+
+  test("US-004 AC5 boundary: rerunning with templates present and no --force writes nothing and returns []", async () => {
+    await promptsInitCommand({ workdir: tempDir });
 
     mkdirSync(join(tempDir, ".nax", "templates"), { recursive: true });
     writeFileSync(join(tempDir, ".nax", "templates", "test-writer.md"), "existing");
@@ -310,7 +317,6 @@ const EXPECTED_OVERRIDES = {
   "test-writer": ".nax/templates/test-writer.md",
   implementer: ".nax/templates/implementer.md",
   verifier: ".nax/templates/verifier.md",
-  "single-session": ".nax/templates/single-session.md",
   "tdd-simple": ".nax/templates/tdd-simple.md",
 };
 
@@ -364,17 +370,17 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
     expect(prompts.overrides).toEqual(EXPECTED_OVERRIDES);
   });
 
-  test("adds all 5 override keys: test-writer, implementer, verifier, single-session, tdd-simple", async () => {
+  test("US-004 AC6: adds exactly the four surviving override keys — test-writer, implementer, verifier, tdd-simple", async () => {
     writeConfigJson(tempDir, { version: 1 });
 
-    await promptsInitCommand({ workdir: tempDir });
+    await promptsInitCommand({ workdir: tempDir, autoWireConfig: true });
 
     const config = readConfigJson(tempDir);
     const overrides = (config.prompts as { overrides?: Record<string, string> })?.overrides;
     assertDefined(overrides, "prompts.overrides");
-    expect(Object.keys(overrides).sort()).toEqual(
-      ["implementer", "single-session", "tdd-simple", "test-writer", "verifier"].sort(),
-    );
+    expect(Object.keys(overrides).sort()).toEqual(["implementer", "tdd-simple", "test-writer", "verifier"].sort());
+    expect(overrides).not.toHaveProperty("single-session");
+    expect(overrides).toEqual(EXPECTED_OVERRIDES);
   });
 
   test("each override path points to nax/templates/<role>.md", async () => {
@@ -387,8 +393,8 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
     expect(overrides["test-writer"]).toBe(".nax/templates/test-writer.md");
     expect(overrides.implementer).toBe(".nax/templates/implementer.md");
     expect(overrides.verifier).toBe(".nax/templates/verifier.md");
-    expect(overrides["single-session"]).toBe(".nax/templates/single-session.md");
     expect(overrides["tdd-simple"]).toBe(".nax/templates/tdd-simple.md");
+    expect(overrides["single-session"]).toBeUndefined();
   });
 
   test("preserves existing config fields when adding prompts.overrides", async () => {

@@ -7,7 +7,7 @@ description: Writing tests that don't depend on external systems
 
 By default, nax instructs agents to write **hermetic tests** — tests that never invoke real external processes or connect to real services. This prevents flaky tests, unintended side effects, and accidental API calls during automated runs.
 
-The hermetic requirement is injected into all code-writing prompts (test-writer, implementer, tdd-simple, batch, single-session) by `buildHermeticSection` (`src/prompts/sections/hermetic.ts`). The verifier, which writes no code, does not receive it. It covers all I/O boundaries: HTTP/gRPC calls, CLI tool spawning (`Bun.spawn`/`exec`), database and cache clients, message queues, and file operations outside the test working directory.
+The hermetic requirement is injected into all code-writing prompts (test-writer, implementer, tdd-simple, batch) by `buildHermeticSection` (`src/prompts/sections/hermetic.ts`). The verifier, which writes no code, does not receive it. It covers all I/O boundaries: HTTP/gRPC calls, CLI tool spawning (`Bun.spawn`/`exec`), database and cache clients, message queues, and file operations outside the test working directory.
 
 ### Configuration
 

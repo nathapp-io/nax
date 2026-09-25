@@ -683,7 +683,7 @@ describe("runAcceptanceLoop per-package fan-out", () => {
     try {
       const ctx = makeCtx();
       ctx.workdir = "/repo";
-      ctx.featureDir = undefined; // skip stub guard / loadSemanticVerdicts
+      ctx.featureDir = undefined; // no featureDir — the stub guard is skipped
       ctx.acceptanceTestPaths = [
         { testPath: "/repo/apps/api/t.test.ts", packageDir: "/repo/apps/api" },
         { testPath: "/repo/apps/web/t.test.ts", packageDir: "/repo/apps/web" },
@@ -741,7 +741,7 @@ describe("runAcceptanceLoop retry-index threading (#1424)", () => {
     try {
       const ctx = makeCtx();
       ctx.workdir = "/repo";
-      ctx.featureDir = undefined; // skip stub guard / loadSemanticVerdicts
+      ctx.featureDir = undefined; // no featureDir — the stub guard is skipped
       ctx.acceptanceTestPaths = [{ testPath: "/repo/t.test.ts", packageDir: "/repo" }];
 
       await runAcceptanceLoop(ctx);

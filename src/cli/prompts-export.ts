@@ -7,7 +7,7 @@
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
 
-const VALID_EXPORT_ROLES = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple"] as const;
+const VALID_EXPORT_ROLES = ["test-writer", "implementer", "verifier", "tdd-simple"] as const;
 
 export interface ExportPromptCommandOptions {
   /** Role to export prompt for */

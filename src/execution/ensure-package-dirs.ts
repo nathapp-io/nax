@@ -22,7 +22,7 @@ import { storyPackageDir } from "../utils/path-frame";
 /**
  * Injectable filesystem dependencies. Tests override these to avoid touching
  * real disk; production uses Bun.file().exists() + node:fs/promises mkdir
- * (no Bun-native mkdir equivalent — same pattern as semantic-verdict.ts).
+ * (no Bun-native mkdir equivalent).
  */
 export const _ensurePackageDirsDeps = {
   // Bun.file(dir).exists() returns false for directories — use stat().isDirectory().

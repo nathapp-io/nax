@@ -20,7 +20,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { contextStageForOp } from "@/context/engine/phase-stage-map";
+import { contextStageForOp, executionContextStage } from "@/context/engine/phase-stage-map";
 
 describe("contextStageForOp (nax#1737 Phase B)", () => {
   test.each([
@@ -92,5 +92,27 @@ describe("contextStageForOp — inRectification branch (nax#1737 Phase B2)", () 
 
   test("inRectification=false does not apply the rectification map to autofix-implementer", () => {
     expect(contextStageForOp("autofix-implementer", { inRectification: false })).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004 — the context-engine stage key is a different use of the same name.
+//
+// `single-session` was retired as a *prompt role*, but it stays a valid
+// context-engine stage key: the execution seam still resolves a test-after,
+// non-batch story to the `single-session` stage bundle.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("executionContextStage — single-session stage key kept (US-004)", () => {
+  test("US-004 AC8: test-after, non-batch resolves to the single-session stage", () => {
+    expect(executionContextStage({ isBatch: false, testStrategy: "test-after" })).toBe("single-session");
+  });
+
+  test("US-004 AC8 boundary: batch still wins over the strategy", () => {
+    expect(executionContextStage({ isBatch: true, testStrategy: "test-after" })).toBe("batch");
+  });
+
+  test("US-004 AC8 boundary: an unknown strategy falls back to the single-session stage", () => {
+    expect(executionContextStage({ isBatch: false })).toBe("single-session");
   });
 });

@@ -33,7 +33,7 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
   };
 }
 
-const ROLES: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session"];
+const ROLES: PromptRole[] = ["test-writer", "implementer", "verifier"];
 
 // ---------------------------------------------------------------------------
 // 1. Fluent API — builder returns itself for chaining
@@ -48,7 +48,7 @@ describe("PromptBuilder fluent API", () => {
   test.each([
     [".story()", () => PromptBuilder.for("implementer").story(makeStory())],
     [".context()", () => PromptBuilder.for("verifier").story(makeStory()).context("# Context")],
-    [".constitution()", () => PromptBuilder.for("single-session").story(makeStory()).constitution("Be helpful.")],
+    [".constitution()", () => PromptBuilder.for("tdd-simple").story(makeStory()).constitution("Be helpful.")],
     [".override()", () => PromptBuilder.for("test-writer").story(makeStory()).override("/tmp/override.md")],
   ])("%s is chainable", (_name, build) => {
     expect(build()).toBeInstanceOf(PromptBuilder);
@@ -185,15 +185,15 @@ describe("PromptBuilder override fallthrough", () => {
 // ---------------------------------------------------------------------------
 
 describe("src/prompts/types exports", () => {
-  test("PromptRole includes all roles: 4 base + tdd-simple + batch = 6 total", () => {
-    const baseRoles: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session"];
-    expect(baseRoles).toHaveLength(4);
+  test("PromptRole includes all roles: 3 base + tdd-simple + batch = 5 total", () => {
+    const baseRoles: PromptRole[] = ["test-writer", "implementer", "verifier"];
+    expect(baseRoles).toHaveLength(3);
     const withTddSimple: PromptRole[] = [...baseRoles, "tdd-simple"];
     expect(withTddSimple).toContain("tdd-simple");
-    expect(withTddSimple).toHaveLength(5);
+    expect(withTddSimple).toHaveLength(4);
     const withBatch: PromptRole[] = [...withTddSimple, "batch"];
     expect(withBatch).toContain("batch");
-    expect(withBatch).toHaveLength(6);
+    expect(withBatch).toHaveLength(5);
   });
 });
 
@@ -316,7 +316,7 @@ describe("PromptBuilder — batch role: build()", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder — test-quality pre-brief section", () => {
-  test.each(["test-writer", "single-session", "tdd-simple"] as PromptRole[])(
+  test.each(["test-writer", "tdd-simple"] as PromptRole[])(
     "%s prompt contains the Review-Proof Tests pre-brief with the story ID pinned",
     async (role) => {
       const prompt = await PromptBuilder.for(role)

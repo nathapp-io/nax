@@ -145,28 +145,6 @@ describe("buildRoleTaskSection — test-writer lite", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-5: single-session
-// ---------------------------------------------------------------------------
-
-describe("buildRoleTaskSection — single-session", () => {
-  test("contains test-writing workflow steps AND implementation steps AND verify-RED", () => {
-    const result = buildRoleTaskSection("single-session");
-    // Test-writing steps
-    expect(result.toLowerCase()).toMatch(/test/);
-    // Implementation steps
-    expect(result.toLowerCase()).toMatch(/implement/);
-    // Verify RED — assertion failures not import errors
-    expect(result).toMatch(/ASSERTION failure/i);
-    expect(result).toMatch(/NOT.*import error/i);
-  });
-
-  test("contains git commit instruction", () => {
-    const result = buildRoleTaskSection("single-session");
-    expect(result).toContain("git commit");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // AC-6: tdd-simple
 // ---------------------------------------------------------------------------
 
@@ -189,9 +167,8 @@ describe("buildRoleTaskSection — tdd-simple", () => {
     expect(result).toContain("git commit -m");
   });
 
-  test("is distinct from single-session and test-writer roles", () => {
+  test("is distinct from test-writer role", () => {
     const tddSimple = buildRoleTaskSection("tdd-simple");
-    expect(tddSimple).not.toEqual(buildRoleTaskSection("single-session"));
     expect(tddSimple).not.toEqual(buildRoleTaskSection("test-writer"));
   });
 });
@@ -230,9 +207,8 @@ describe("buildRoleTaskSection — batch", () => {
     expect(result).toContain(expected);
   });
 
-  test("is distinct from single-session and tdd-simple roles", () => {
+  test("is distinct from tdd-simple role", () => {
     const batch = buildRoleTaskSection("batch");
-    expect(batch).not.toEqual(buildRoleTaskSection("single-session"));
     expect(batch).not.toEqual(buildRoleTaskSection("tdd-simple"));
   });
 });
@@ -276,7 +252,6 @@ describe("AC-9: No hardcoded src/, test/, test/unit/, test/integration/ path ref
     "implementer",
     "test-writer",
     "verifier",
-    "single-session",
     "tdd-simple",
     "batch",
     "no-test",
@@ -316,7 +291,6 @@ describe("AC-10: storyId plumbing for commit format", () => {
   test.each([
     ["implementer standard with storyId", "implementer", "standard", "story-123", "feat(story-123):"],
     ["implementer lite with storyId", "implementer", "lite", "story-abc", "feat(story-abc):"],
-    ["single-session with storyId", "single-session", undefined, "ss-99", "feat(ss-99):"],
     ["tdd-simple with storyId", "tdd-simple", undefined, "ts-7", "feat(ts-7):"],
   ] as const)("%s", (_label, role, variant, storyId, expected) => {
     const result = buildRoleTaskSection(
@@ -333,7 +307,7 @@ describe("AC-10: storyId plumbing for commit format", () => {
   test.each([
     ["implementer standard no storyId", "implementer", "standard"],
     ["implementer lite no storyId", "implementer", "lite"],
-    ["single-session no storyId", "single-session", undefined],
+    ["tdd-simple no storyId", "tdd-simple", undefined],
   ] as const)("%s falls back to feat: <description>", (_label, role, variant) => {
     const result = buildRoleTaskSection(
       role as Parameters<typeof buildRoleTaskSection>[0],
@@ -398,11 +372,6 @@ const COMMIT_VARIANTS = [
   [
     "implementer lite",
     () => buildRoleTaskSection("implementer", "lite", undefined, undefined, undefined, "story-1"),
-    "feat(story-1): <description>",
-  ],
-  [
-    "single-session",
-    () => buildRoleTaskSection("single-session", undefined, undefined, undefined, undefined, "story-1"),
     "feat(story-1): <description>",
   ],
   ["batch", () => buildRoleTaskSection("batch"), "feat(<story-id>): <description>"],

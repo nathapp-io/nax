@@ -49,7 +49,6 @@ describe("shouldIncludeEntry", () => {
       "implementer",
       "test-writer",
       "verifier",
-      "single-session",
       "tdd-simple",
       "no-test",
       "batch",
@@ -61,18 +60,15 @@ describe("shouldIncludeEntry", () => {
     }
   });
 
-  test.each(["implementer", "single-session", "tdd-simple", "no-test", "batch"])(
-    "[implementer] included for %s",
-    (role) => {
-      expect(shouldIncludeEntry(["implementer"], role)).toBe(true);
-    },
-  );
+  test.each(["implementer", "tdd-simple", "no-test", "batch"])("[implementer] included for %s", (role) => {
+    expect(shouldIncludeEntry(["implementer"], role)).toBe(true);
+  });
 
   test.each(["test-writer", "verifier", "reviewer-semantic"])("[implementer] excluded for %s", (role) => {
     expect(shouldIncludeEntry(["implementer"], role)).toBe(false);
   });
 
-  test.each(["test-writer", "single-session", "tdd-simple", "batch"])("[test-writer] included for %s", (role) => {
+  test.each(["test-writer", "tdd-simple", "batch"])("[test-writer] included for %s", (role) => {
     expect(shouldIncludeEntry(["test-writer"], role)).toBe(true);
   });
 
@@ -142,16 +138,20 @@ _Last updated: 2024-01-01_
     expect(result).not.toContain("Security concern");
   });
 
-  test.each(["single-session", "tdd-simple"] as const)(
-    "%s sees [all], [implementer], and [test-writer] entries",
-    (role) => {
-      const result = filterContextByRole(contextMd, role);
-      expect(result).toContain("Database schema defined");
-      expect(result).toContain("Test fixtures available");
-      expect(result).toContain("Shared constraint");
-      expect(result).not.toContain("Security concern");
-    },
-  );
+  test("US-004 AC9: tdd-simple sees [all], [implementer], and [test-writer] entries", () => {
+    const result = filterContextByRole(contextMd, "tdd-simple");
+    expect(result).toContain("Database schema defined");
+    expect(result).toContain("Test fixtures available");
+    expect(result).toContain("Shared constraint");
+    expect(result).not.toContain("Security concern");
+  });
+
+  test("US-004 AC9 boundary: [implementer] and [test-writer] entries are excluded for verifier", () => {
+    const result = filterContextByRole(contextMd, "verifier");
+    expect(result).not.toContain("Database schema defined");
+    expect(result).not.toContain("Test fixtures available");
+    expect(result).toContain("Shared constraint");
+  });
 
   test("reviewer-semantic sees [all], [reviewer], and [reviewer-semantic] entries", () => {
     const result = filterContextByRole(contextMd, "reviewer-semantic");

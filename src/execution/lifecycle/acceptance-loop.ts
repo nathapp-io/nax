@@ -13,7 +13,6 @@ import {
   type DiagnosisResult,
   findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions,
   loadAcceptanceTestContent as loadAcceptanceTestContentModule,
-  loadSemanticVerdicts,
 } from "@/acceptance";
 import type { NaxConfig } from "@/config";
 import type { Finding, FixCycle, FixCycleResult } from "@/findings";
@@ -107,7 +106,6 @@ export interface AcceptanceLoopResult {
 // buildResult — extracted to acceptance-helpers.ts (re-exported above)
 
 export const _acceptanceLoopDeps = {
-  loadSemanticVerdicts,
   loadAcceptanceTestContent: loadAcceptanceTestContentModule,
 };
 
@@ -471,7 +469,6 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     }
 
     // ── 4. Diagnose (fresh each iteration) ───────────────────────────────
-    const semanticVerdicts = ctx.featureDir ? await _acceptanceLoopDeps.loadSemanticVerdicts(ctx.featureDir) : [];
     // `isLegacyFixStory`, not `isInAcceptanceScope` — see that module on why
     // this one total keeps counting decomposed parents.
     const totalACs = prd.userStories.filter((s) => !isLegacyFixStory(s)).flatMap((s) => s.acceptanceCriteria).length;
@@ -499,8 +496,6 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         ? failures.failedPackages
         : [{ testPath: "", packageDir: ctx.workdir, output: failures.testOutput, failedACs: failures.failedACs }];
 
-    // NOTE: `semanticVerdicts` and `totalACs` are ALREADY declared above
-    // (runtime-null guard scope) — DO NOT re-declare them here.
     const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
 
     const testEntries = ctx.acceptanceTestPaths
@@ -526,7 +521,6 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         failures: pkgFailures,
         totalACs,
         strategy,
-        semanticVerdicts,
         diagnosisOpts: {
           testOutput: pkg.output,
           testFileContent,

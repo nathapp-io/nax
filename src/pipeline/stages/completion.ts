@@ -13,7 +13,6 @@
  */
 
 import { join } from "node:path";
-import { persistSemanticVerdict } from "@/acceptance";
 import { featureDir } from "@/config";
 import { annotateManifestEffectiveness } from "@/context/engine";
 import { renderFragmentBody, writeFragment } from "@/context/fragments";
@@ -200,9 +199,6 @@ export const completionStage: PipelineStage = {
           logger.warn("completion", "Story marked for re-review", { storyId: completedStory.id });
         }
       }
-
-      // Semantic verdict persistence (AC-4 through AC-7): reviewResult removed in US-005c.
-      // Verdict is now written by the execution stage directly when available.
     }
 
     // Save PRD (skipped in parallel worktree mode — unified executor is the single writer)
@@ -413,7 +409,6 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
  */
 export const _completionDeps = {
   checkReviewGate,
-  persistSemanticVerdict,
   savePRD,
   getDiffText,
   getDiffFilePaths,

@@ -395,12 +395,10 @@ export const QualityConfigSchema = z.object({
       /** Prompt-text display only: "X attempts available before escalation".
        * Not enforced — the real cap is execution.rectification.maxAttemptsPerStrategy. */
       maxAttempts: z.number().int().min(1).default(3),
-      enforceTestWriterIsolation: z.boolean().default(true),
     })
     .default({
       enabled: true,
       maxAttempts: 3,
-      enforceTestWriterIsolation: true,
     }),
   forceExit: z.boolean().default(false),
   detectOpenHandles: z.boolean().default(true),

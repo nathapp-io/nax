@@ -55,7 +55,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Execution
   execution: "Execution limits and timeouts",
-  "execution.maxIterations": "Max iterations per feature run (auto-calculated if not set)",
+  "execution.maxIterations":
+    "Max iterations per feature run — each story attempt, parallel batch and the final completion pass counts one",
   "execution.iterationDelayMs": "Delay between iterations in milliseconds",
   "execution.costLimit": "Max cost in USD before pausing execution (override per run with `nax run --max-cost`)",
   "execution.sessionTimeoutSeconds": "Timeout per agent coding session in seconds",
@@ -278,7 +279,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "prompts.overrides.test-writer": 'Path to custom test-writer prompt (e.g., ".nax/prompts/test-writer.md")',
   "prompts.overrides.implementer": 'Path to custom implementer prompt (e.g., ".nax/prompts/implementer.md")',
   "prompts.overrides.verifier": 'Path to custom verifier prompt (e.g., ".nax/prompts/verifier.md")',
-  "prompts.overrides.single-session": 'Path to custom single-session prompt (e.g., ".nax/prompts/single-session.md")',
 
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",

@@ -1,13 +1,6 @@
 export type GuardrailLevel = "off" | "lite" | "strict";
 
-export type GuardrailRole =
-  | "no-test"
-  | "implementer"
-  | "test-writer"
-  | "verifier"
-  | "single-session"
-  | "tdd-simple"
-  | "batch";
+export type GuardrailRole = "no-test" | "implementer" | "test-writer" | "verifier" | "tdd-simple" | "batch";
 
 export function buildBehavioralGuardrailsSection(
   role: GuardrailRole,
@@ -25,7 +18,7 @@ export function buildBehavioralGuardrailsSection(
     return buildTestWriterGuardrails(level);
   }
 
-  if (role === "single-session" || role === "tdd-simple" || role === "batch") {
+  if (role === "tdd-simple" || role === "batch") {
     return buildCombinedGuardrails(level);
   }
 

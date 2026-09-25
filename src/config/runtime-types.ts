@@ -103,7 +103,7 @@ export type { SmartTestRunnerConfig, WorktreeDependenciesConfig } from "./runtim
 
 /** Execution limits */
 export interface ExecutionConfig {
-  /** Max iterations per feature run (auto-calculated from tierOrder sum if not set) */
+  /** Max iterations per feature run — each story attempt, parallel batch and the final completion pass counts one */
   maxIterations: number;
   /** Delay between iterations (ms) */
   iterationDelayMs: number;
@@ -227,8 +227,6 @@ export interface QualityConfig {
     /** Prompt-text display only: "X attempts available before escalation".
      * Real cap is execution.rectification.maxAttemptsPerStrategy. (default: 3) */
     maxAttempts?: number;
-    /** Revert and escalate on testWriter source-file edits in mock-restructure mode. (default: true) */
-    enforceTestWriterIsolation?: boolean;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */
   forceExit: boolean;
@@ -469,9 +467,7 @@ export interface RoutingConfig {
 
 /** Prompt overrides config (PB-003) */
 export interface PromptsConfig {
-  overrides?: Partial<
-    Record<"no-test" | "test-writer" | "implementer" | "verifier" | "single-session" | "tdd-simple" | "batch", string>
-  >;
+  overrides?: Partial<Record<"no-test" | "test-writer" | "implementer" | "verifier" | "tdd-simple" | "batch", string>>;
   behavioralGuardrails: "off" | "lite" | "strict";
 }
 

@@ -28,6 +28,7 @@ import { stripRemovedNoOpKeys } from "@/config/config-guards";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
 import { NaxConfigSchema } from "@/config/schemas";
+import { addSink, initLogger, resetLogger } from "@/logger";
 
 const tempDirs: string[] = [];
 
@@ -408,5 +409,166 @@ describe("NaxConfigSchema and FIELD_DESCRIPTIONS — removed keys", () => {
     const entry = FIELD_DESCRIPTIONS["acceptance.enabled"];
     expect(typeof entry).toBe("string");
     expect(entry.length).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003 — retire quality.autofix.enforceTestWriterIsolation (#2248)
+//
+// The key gated a guard on the old autofix-cycle stage; #1084 deleted that
+// stage, the guard and its tests, leaving the key declared in the schema, the
+// defaults and the runtime type while it gated nothing. It is retired through
+// the same warn-and-strip path as the keys above, so an existing config that
+// still sets it keeps loading.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedNoOpKeys — quality.autofix.enforceTestWriterIsolation (US-003)", () => {
+  test("AC-1: warns exactly once naming the key and #1084 when the key is false", () => {
+    const captured: string[] = [];
+
+    stripRemovedNoOpKeys({ quality: { autofix: { enforceTestWriterIsolation: false } } }, (msg) => captured.push(msg));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toContain("quality.autofix.enforceTestWriterIsolation");
+    expect(captured[0]).toContain("#1084");
+  });
+
+  test("AC-2: warns exactly once naming the key when the key is true", () => {
+    const captured: string[] = [];
+
+    stripRemovedNoOpKeys({ quality: { autofix: { enforceTestWriterIsolation: true } } }, (msg) => captured.push(msg));
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toContain("quality.autofix.enforceTestWriterIsolation");
+  });
+
+  test("AC-3: returns quality.autofix equal to { enabled: false, maxAttempts: 2 }, dropping only the retired key", () => {
+    const stripped = stripRemovedNoOpKeys(
+      { quality: { autofix: { enabled: false, maxAttempts: 2, enforceTestWriterIsolation: false } } },
+      () => {},
+    );
+
+    expect(stripped.quality).toEqual({ autofix: { enabled: false, maxAttempts: 2 } });
+  });
+
+  test("AC-4: NaxConfigSchema.parse({}) yields a quality.autofix without the retired key", () => {
+    const autofix = NaxConfigSchema.parse({}).quality.autofix;
+
+    expect(autofix).toBeDefined();
+    expect(Object.hasOwn(autofix, "enforceTestWriterIsolation")).toBe(false);
+    expect(autofix.enabled).toBe(true);
+  });
+
+  test("AC-5: loadConfig on a project setting the retired key resolves and warns once naming it", async () => {
+    _clearRootConfigCache();
+    const root = await writeProjectConfig({ quality: { autofix: { enforceTestWriterIsolation: false } } });
+
+    const captured: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => captured.push(entry.message));
+    let config: Awaited<ReturnType<typeof loadConfig>> | undefined;
+    try {
+      config = await loadConfig(root);
+    } finally {
+      removeSink();
+      resetLogger();
+      cleanupTempDir(root);
+    }
+
+    assertDefined(config, "loadConfig result");
+    const autofix = config.quality.autofix;
+    assertDefined(autofix, "config.quality.autofix");
+    expect(Object.hasOwn(autofix, "enforceTestWriterIsolation")).toBe(false);
+    const relevant = captured.filter((msg) => msg.includes("quality.autofix.enforceTestWriterIsolation"));
+    expect(relevant).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004 — retire the inert `single-session` prompt role (#2248)
+//
+// `single-session` stopped being a prompt role at fb3cfad3e: test-after stories
+// are routed through the `tdd-simple` role, so the `single-session` role body
+// was never rendered. A user who overrode `single-session.md` saw no change in
+// the prompt and no warning that their override was dead. It is retired through
+// the same warn-and-strip path as the keys above, so an existing config that
+// still names it keeps loading — with a warning naming the replacement role.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedNoOpKeys — prompts.overrides.single-session (US-004)", () => {
+  test("US-004 AC1: warns exactly once naming prompts.overrides.single-session and tdd-simple", () => {
+    const captured: string[] = [];
+
+    stripRemovedNoOpKeys({ prompts: { overrides: { "single-session": "a.md", "tdd-simple": "b.md" } } }, (msg) =>
+      captured.push(msg),
+    );
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toContain("prompts.overrides.single-session");
+    expect(captured[0]).toContain("tdd-simple");
+  });
+
+  test("US-004 AC1 boundary: silent when prompts.overrides names no single-session key", () => {
+    const captured: string[] = [];
+
+    stripRemovedNoOpKeys({ prompts: { overrides: { "tdd-simple": "b.md" } } }, (msg) => captured.push(msg));
+
+    expect(captured).toHaveLength(0);
+  });
+
+  test("US-004 AC1 boundary: a config with no prompts block is silent and unchanged", () => {
+    const captured: string[] = [];
+    const input = { execution: {} };
+
+    const stripped = stripRemovedNoOpKeys(input, (msg) => captured.push(msg));
+
+    expect(captured).toHaveLength(0);
+    expect(stripped).toEqual(input);
+  });
+
+  test("US-004 AC2: returns prompts.overrides equal to { tdd-simple: b.md }", () => {
+    const stripped = stripRemovedNoOpKeys(
+      { prompts: { overrides: { "single-session": "a.md", "tdd-simple": "b.md" } } },
+      () => {},
+    );
+
+    expect(stripped.prompts).toEqual({ overrides: { "tdd-simple": "b.md" } });
+  });
+
+  test("US-004 AC2 boundary: does not mutate the input overrides map", () => {
+    const input = { prompts: { overrides: { "single-session": "a.md", "tdd-simple": "b.md" } } };
+
+    stripRemovedNoOpKeys(input, () => {});
+
+    expect(input.prompts.overrides["single-session"]).toBe("a.md");
+    expect(input.prompts.overrides["tdd-simple"]).toBe("b.md");
+  });
+
+  test("US-004 AC3: loadConfig resolves with the key stripped and warns once naming it", async () => {
+    _clearRootConfigCache();
+    const root = await writeProjectConfig({
+      prompts: { overrides: { "single-session": ".nax/templates/single-session.md" } },
+    });
+
+    const captured: string[] = [];
+    resetLogger();
+    initLogger({ level: "warn" });
+    const removeSink = addSink((entry) => captured.push(entry.message));
+    let config: Awaited<ReturnType<typeof loadConfig>> | undefined;
+    try {
+      config = await loadConfig(root);
+    } finally {
+      removeSink();
+      resetLogger();
+      cleanupTempDir(root);
+    }
+
+    assertDefined(config, "loadConfig result");
+    const overrides = config.prompts?.overrides;
+    expect(overrides === undefined || !("single-session" in overrides)).toBe(true);
+
+    const relevant = captured.filter((msg) => msg.includes("prompts.overrides.single-session"));
+    expect(relevant).toHaveLength(1);
   });
 });

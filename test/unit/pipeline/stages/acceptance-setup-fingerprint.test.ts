@@ -386,102 +386,6 @@ describe("US-001: per-package test file generation by workdir", () => {
 });
 
 // ---------------------------------------------------------------------------
-// US-003 AC-10: semantic-verdicts/ cleared on fingerprint mismatch
-// ---------------------------------------------------------------------------
-
-describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
-  test("calls deleteSemanticVerdicts when fingerprint mismatches", async () => {
-    let deleteSemanticVerdictsCalled = false;
-
-    _acceptanceSetupDeps.fileExists = async () => true;
-    _acceptanceSetupDeps.readMeta = async () => ({
-      generatedAt: "2026-01-01T00:00:00Z",
-      acFingerprint: "sha256:outdated",
-      storyCount: 2,
-      acCount: 3,
-      generator: "nax",
-    });
-    _acceptanceSetupDeps.copyFile = async () => {};
-    _acceptanceSetupDeps.deleteFile = async () => {};
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {
-      deleteSemanticVerdictsCalled = true;
-    };
-    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
-    _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
-
-    await acceptanceSetupStage.execute(makeCtx());
-
-    expect(deleteSemanticVerdictsCalled).toBe(true);
-  });
-
-  test("passes featureDir to deleteSemanticVerdicts", async () => {
-    let capturedFeatureDir = "";
-
-    _acceptanceSetupDeps.fileExists = async () => true;
-    _acceptanceSetupDeps.readMeta = async () => ({
-      generatedAt: "2026-01-01T00:00:00Z",
-      acFingerprint: "sha256:outdated",
-      storyCount: 2,
-      acCount: 3,
-      generator: "nax",
-    });
-    _acceptanceSetupDeps.copyFile = async () => {};
-    _acceptanceSetupDeps.deleteFile = async () => {};
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async (featureDir) => {
-      capturedFeatureDir = featureDir;
-    };
-    _acceptanceSetupDeps.callOp = makeDefaultCallOp();
-    _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
-
-    const ctx = makeCtx();
-    await acceptanceSetupStage.execute(ctx);
-
-    const featureDir = ctx.featureDir;
-    assertDefined(featureDir, "ctx.featureDir");
-    expect(capturedFeatureDir).toBe(featureDir);
-  });
-
-  test("does not call deleteSemanticVerdicts when fingerprint matches", async () => {
-    let deleteSemanticVerdictsCalled = false;
-
-    const criteria = ["AC-1: first criterion", "AC-2: second criterion", "AC-1: third criterion"];
-    const matchingFingerprint = computeACFingerprint(criteria);
-    const matchingLayoutFingerprint = computeAcceptanceLayoutFingerprint("/tmp/test-workdir", [
-      {
-        testPath: "/tmp/test-workdir/.nax/features/test-feature/.nax-acceptance.test.ts",
-        stories: [{ id: "US-001" }, { id: "US-002" }],
-      },
-    ]);
-
-    _acceptanceSetupDeps.fileExists = async () => true;
-    _acceptanceSetupDeps.readMeta = async () => ({
-      generatedAt: "2026-01-01T00:00:00Z",
-      acFingerprint: matchingFingerprint,
-      layoutFingerprint: matchingLayoutFingerprint,
-      storyCount: 2,
-      acCount: 3,
-      generator: "nax",
-    });
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {
-      deleteSemanticVerdictsCalled = true;
-    };
-    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op) => {
-      throw new Error(`callOp should not be called on fingerprint match: ${op.name}`);
-    };
-    _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
-
-    await acceptanceSetupStage.execute(makeCtx());
-
-    expect(deleteSemanticVerdictsCalled).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Absorbed: acceptance-setup-commit.test.ts
 // ---------------------------------------------------------------------------
 
@@ -534,7 +438,6 @@ function setupGenerationDeps(commitCalls: Array<{ workdir: string; stage: string
   _acceptanceSetupDeps.readMeta = async () => null;
   _acceptanceSetupDeps.copyFile = async () => {};
   _acceptanceSetupDeps.deleteFile = async () => {};
-  _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {};
   _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
     if (op.name === "acceptance-generate") return { testCode: "// generated" };
     if (op.name === "acceptance-refine") {

@@ -49,7 +49,7 @@ const oneShot = OneShotPromptBuilder.for("router")
 
 | Builder | Roles | Purpose |
 |:--------|:------|:--------|
-| `TddPromptBuilder` | implementer, test-writer, verifier, single-session, tdd-simple, batch, no-test | TDD execution pipeline |
+| `TddPromptBuilder` | implementer, test-writer, verifier, tdd-simple, batch, no-test | TDD execution pipeline |
 | `ReviewPromptBuilder` | semantic | Semantic review, AC verification, JSON-retry / re-grounding prompts |
 | `AcceptancePromptBuilder` | generator, diagnoser, fix-executor | Acceptance test generation/diagnosis |
 | `RectifierPromptBuilder` | static factories (`firstAttemptDelta`, `continuation`, `escalated`, `reviewRectification`, `testWriterRectification`, `regressionFailure`, …) | Fix prompts with escalation preambles; the old `for(trigger)` builder form was removed (ADR-018) |
