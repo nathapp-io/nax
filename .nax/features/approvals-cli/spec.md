@@ -158,12 +158,15 @@ ids; two entries with an identical triple share an id and are removed together.
 
 ### Removal rules
 
-`removeApprovals(path, decide)` runs entirely inside `withPathFileLock(path)`, in this order:
+`removeApprovals(path, decide)` runs inside `withPathFileLock(path)` whenever the store's parent
+directory exists (the lock file must live next to the target). A path whose parent directory is
+missing is by definition a missing store: the read-decide path runs without the lock and creates
+nothing, since taking the lock there would require creating the directory rule 4 forbids. In order:
 
 1. Read with `readApprovalsFileDetailed(path)`.
 2. `state === "unparseable"` -> `{ outcome: "refused", reason: "approvals.json could not be parsed; not rewriting it" }`, no write. Rewriting would erase whatever the file holds.
 3. `decide(read)` returns `{ refuse }` -> `{ outcome: "refused", reason: refuse }`, no write.
-4. No entry selected (this includes a `missing` file) -> `{ outcome: "unchanged" }`, no write, no file or directory created.
+4. No entry selected (this includes a `missing` file) -> `{ outcome: "unchanged" }`, no write, and neither the data file nor its parent directory is created.
 5. Otherwise write `{ taint: read.file.taint, entries: <not selected> }` with `writeApprovalsFile`
    and return `{ outcome: "removed", removed, droppedMalformed }`.
 

@@ -19,7 +19,7 @@
  * primitive that surface calls into.
  */
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { withPathFileLock } from "../utils/path-file-lock";
 
@@ -227,6 +227,47 @@ export type RemovalResult =
   | { readonly outcome: "refused"; readonly reason: string };
 
 /**
+ * The locked read-decide-write body shared by the two `removeApprovals` arms.
+ * Pure read -> guard -> decide -> filter -> write: no mkdir, no lock handling.
+ */
+async function applyRemoval(
+  path: string,
+  decide: (read: ApprovalsFileRead) => RemovalDecision,
+): Promise<RemovalResult> {
+  const read = await readApprovalsFileDetailed(path);
+  if (read.state === "unparseable") {
+    return { outcome: "refused", reason: "approvals.json could not be parsed; not rewriting it" };
+  }
+  const decision = decide(read);
+  if ("refuse" in decision) {
+    return { outcome: "refused", reason: decision.refuse };
+  }
+  const removed: ApprovalEntry[] = [];
+  const kept: ApprovalEntry[] = [];
+  for (const entry of read.file.entries) {
+    if (decision.remove(entry)) {
+      removed.push(entry);
+    } else {
+      kept.push(entry);
+    }
+  }
+  if (removed.length === 0) {
+    return { outcome: "unchanged" };
+  }
+  await writeApprovalsFile(path, { taint: read.file.taint, entries: kept });
+  return { outcome: "removed", removed, droppedMalformed: read.droppedMalformed };
+}
+
+/** `true` iff `dir` exists and is a directory (symlinks followed). */
+async function directoryExists(dir: string): Promise<boolean> {
+  try {
+    return (await stat(dir)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Locked, taint-preserving removal. Holds the same path-scoped lock
  * `appendApproval` holds, so a removal racing an append cannot drop one of the
  * two writes; whichever runs first inside the lock, the other sees the
@@ -238,47 +279,28 @@ export type RemovalResult =
  *      marker we did not write.
  *   2. `decide(read)` returns `{ refuse }` -> `refused`, no write.
  *   3. The predicate selected no entry (or the file was missing) ->
- *      `unchanged`, no write, no file or directory created.
+ *      `unchanged`, no write, and neither the data file nor its parent
+ *      directory is created.
  *   4. Otherwise write `{ taint: read.file.taint, entries: kept }` with the
  *      SAME taint that was read. Nothing in this function clears a taint;
  *      only `clearApprovalsTaint` (approvals-taint.ts) does, and only from a
  *      trusted run.
  *
- * The parent dir is created before the lock acquisition (matching
- * `appendApproval`) so a path whose parent does not exist resolves to
- * `{ outcome: "unchanged" }` via the missing read rather than throwing ENOENT
- * out of the lock write -- the lock file must live somewhere, and the data
- * file is what the "no file created" guarantee actually pins.
+ * The lock file must live next to the target, so the lock is only taken when
+ * that parent directory already exists. A path whose parent is missing is by
+ * definition a missing store: the read-decide path runs without the lock and
+ * creates nothing -- taking the lock there would require `mkdir`, which rule 3
+ * forbids. `decide` is still invoked exactly once in that arm, so the missing
+ * read reaches the caller as it does under the lock.
  */
 export async function removeApprovals(
   path: string,
   decide: (read: ApprovalsFileRead) => RemovalDecision,
 ): Promise<RemovalResult> {
-  await mkdir(dirname(path), { recursive: true });
-  return withPathFileLock(path, async () => {
-    const read = await readApprovalsFileDetailed(path);
-    if (read.state === "unparseable") {
-      return { outcome: "refused", reason: "approvals.json could not be parsed; not rewriting it" };
-    }
-    const decision = decide(read);
-    if ("refuse" in decision) {
-      return { outcome: "refused", reason: decision.refuse };
-    }
-    const removed: ApprovalEntry[] = [];
-    const kept: ApprovalEntry[] = [];
-    for (const entry of read.file.entries) {
-      if (decision.remove(entry)) {
-        removed.push(entry);
-      } else {
-        kept.push(entry);
-      }
-    }
-    if (removed.length === 0) {
-      return { outcome: "unchanged" };
-    }
-    await writeApprovalsFile(path, { taint: read.file.taint, entries: kept });
-    return { outcome: "removed", removed, droppedMalformed: read.droppedMalformed };
-  });
+  if (!(await directoryExists(dirname(path)))) {
+    return applyRemoval(path, decide);
+  }
+  return withPathFileLock(path, () => applyRemoval(path, decide));
 }
 
 /**

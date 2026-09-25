@@ -28,7 +28,6 @@ import { loadConfig } from "@/config";
 import { NaxError } from "@/errors";
 import {
   _approvalsTaintDeps,
-  type ApprovalEntry,
   type ApprovalsFileRead,
   approvalId,
   approvalsPath,
@@ -37,7 +36,7 @@ import {
   removeApprovals,
 } from "@/permissions";
 import { projectOutputDir } from "@/runtime";
-import { formatEntryBlock, formatTrustLine } from "./approvals-format";
+import { formatEntryBlock, formatRemovedLine, formatTrustLine, toListJson } from "./approvals-format";
 import { promptForConfirmation } from "./confirm";
 
 /** The stderr line for a store whose bytes the cache cannot parse (US-004). */
@@ -97,33 +96,6 @@ export async function resolveApprovalsFile(workdir: string): Promise<string> {
 export interface ApprovalsListOptions {
   readonly workdir: string;
   readonly json: boolean;
-}
-
-/**
- * The `--json` body: one plain object with exactly the keys
- * `path`, `state`, `taint`, `droppedMalformed` and `entries`. Pure — no I/O
- * — so `test/unit/cli/approvals-list-states.test.ts` pins the shape by feeding
- * the function a synthesised `read` (US-004).
- *
- * `state` is the read's classification: `"missing"`, `"unparseable"` or `"ok"`.
- * `taint` is `null` when the store has none and the read's taint otherwise.
- * `entries` lists `{ id: approvalId(entry), ...entry }` — the id is computed
- * from (stage, command, approvedAt), so re-deriving it here lets a JSON
- * consumer delete by id without depending on the file format.
- */
-export function toListJson(path: string, read: ApprovalsFileRead): object {
-  const taint = read.file.taint === undefined ? null : read.file.taint;
-  const entries: readonly object[] = read.file.entries.map((entry: ApprovalEntry) => ({
-    id: approvalId(entry),
-    ...entry,
-  }));
-  return {
-    path,
-    state: read.state,
-    taint,
-    droppedMalformed: read.droppedMalformed,
-    entries,
-  };
 }
 
 /**
@@ -202,28 +174,11 @@ export async function approvalsListCommand(
   }
 }
 
-/**
- * The maximum length of the `<preview>` in the `removed <id>  <stage>  <preview>`
- * line (US-005). The preview is the command's first line, so multi-line scripts
- * are truncated to keep the line single-line and copy-paste-able.
- */
-const REMOVAL_PREVIEW_LIMIT = 80;
-
 /** The selector-message stderr line for AC15-AC19 (US-005). */
 const SELECTOR_ERROR = "Specify exactly one of <id...>, --stage <stage>, --all";
 
 /** `^[0-9a-f]{8}$` — every well-formed approval id (US-001 + US-005). */
 const APPROVAL_ID_PATTERN = /^[0-9a-f]{8}$/;
-
-/** The single line a removal prints for one entry, per the US-005 interface. */
-export function formatRemovedLine(entry: ApprovalEntry): string {
-  const id = approvalId(entry);
-  // Strip a trailing CR so a CRLF first line still produces a single-line
-  // `removed ...` record (the store layer parses commands with the same
-  // tolerance, see readApprovalsFileDetailed).
-  const preview = (entry.command.split("\n", 1)[0] ?? "").replace(/\r$/, "");
-  return `removed ${id}  ${entry.stage}  ${preview.slice(0, REMOVAL_PREVIEW_LIMIT)}`;
-}
 
 /** Options accepted by `approvalsRmCommand` (US-005 + US-006). */
 export interface ApprovalsRmOptions {

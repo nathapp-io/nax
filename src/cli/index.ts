@@ -10,12 +10,10 @@ export {
   type ApprovalsRmOptions,
   approvalsListCommand,
   approvalsRmCommand,
-  formatRemovedLine,
   registerApprovalsCommand,
   resolveApprovalsFile,
-  toListJson,
 } from "./approvals";
-export { formatEntryBlock, formatTrustLine } from "./approvals-format";
+export { formatEntryBlock, formatRemovedLine, formatTrustLine, toListJson } from "./approvals-format";
 export {
   _cliAuthDeps,
   authImportCommand,
