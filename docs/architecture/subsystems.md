@@ -1950,7 +1950,8 @@ ADR-028 (native sessions and the tool loop), ADR-029 (Phase C coding-agent scope
   keepRecentPercent: 30 }`), `turn-tool-batch.ts`, and `turn-ask-human.ts` (the
   `ask_human` channel, bounded by `agent.maxInteractionTurns`, default 20).
 - **Loop events** (`session/loop-events/`) — a typed in-process handler seam,
-  distinct from shell hooks (§27): `before_turn`, `before_request`,
+  distinct from shell hooks (§27): `before_turn`, `transform_context`
+  (shapes the wire copy of history only), `before_request`,
   `after_response`, `before_tool`, `after_tool`, `before_compaction`,
   `before_turn_end`. Built-in handlers (`session/loop-handlers.ts`): invalid-tool-call
   repair and the spin breaker on `before_tool`; model-facing truncation on
@@ -1982,8 +1983,8 @@ The tools an operation hands a native session (ADR-029). An op declares its tool
 (`RunOperation.tools`, §37); `resolveCodingToolSupport()`
 (`src/agents/coding-tool-support.ts`) intersects that declaration with the grants
 `resolvePermissions(config, stage)` resolved and builds the session's
-`CodingToolRuntime` (`runtime.ts`). Tool files carry
-`nax-permission-mode-allow` markers: they consume resolved grants and decide no
+`CodingToolRuntime` (`runtime.ts`). `policy.ts`, `runtime.ts` and
+`coding-tool-support.ts` carry `nax-permission-mode-allow` markers: they consume resolved grants and decide no
 permission of their own.
 
 - **Built-in tools** (`CodingToolName`, `types.ts`): `Read`, `Glob`, `Grep`,
@@ -2007,7 +2008,8 @@ permission of their own.
 - **Bash policy** — under `gated` / `escalate` (§54) `policy-bash.ts` evaluates a
   command per segment: lexer refusal → deny; any segment matching a deny rule →
   deny; every segment must match an allow rule; then payload checks (denied flags,
-  containment, redirects, `cd`). Under `raw`, `policy-bash-raw.ts` is pass-through
+  containment, redirects, `cd`); finally any segment matching an ask rule → ask
+  (evaluated last, so ask never grants). Under `raw`, `policy-bash-raw.ts` is pass-through
   except a best-effort screen that denies a *parseable* command naming or
   redirecting into nax config files, feature `prd.json` or the queue-control files —
   advisory by construction (substitution is not screened).
@@ -2038,8 +2040,9 @@ holds the rule grammar, the Bash lexer, and the interactive ask tier.
   `Git(diff,log)`, `Bash(ls *, git status*)`). Rules sit in `allow` / `deny` / `ask`
   lists per stage.
 - `bash-lex.ts` — `lexBashCommand()`: a deliberately small shell language;
-  anything it does not model (substitution, backticks, here-docs, fd duplication,
-  brace/glob expansion, unbalanced quotes) is refused by name under `gated`.
+  anything it does not model (command/process substitution, backticks, subshells,
+  here-docs, fd duplication, `&>`, unbalanced quotes) is refused by name under
+  `gated`; brace/glob characters in a token are refused later by `policy-bash.ts`.
 
 **Bash approval modes (ADR-030).** `execution.bashApproval` (default `raw`), with a
 per-stage override `execution.permissions.<stage>.bashApproval`, resolved by
@@ -2121,7 +2124,7 @@ Paths must be literal (no glob characters — srt silently drops globbed entries
 
 **When unavailable** (e.g. no working bwrap): `raw` Bash is refused
 (`rawBashRefusalReason`) and `gated` / `escalate` commands run unwrapped, with a
-once-per-process warning. Each tool-audit row records a `sandbox` entry
+once-per-process warning. Each Bash / Exec tool-audit row records a `sandbox` entry
 (`backend`, `wrapped`, `reason`).
 
 ---
