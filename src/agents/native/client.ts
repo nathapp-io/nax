@@ -36,13 +36,32 @@ import { toProviderOverrides } from "./models";
 const NAX_CLIENT_APP = { name: "nax", url: "https://github.com/nathapp-io/nax" } as const;
 
 /**
+ * Options for `buildNativeClient`. Production callers leave this empty —
+ * every field has a sensible nax-ai default. The seam exists so tests can
+ * opt out of paths the production retry policy was never meant to exercise.
+ */
+export interface BuildNativeClientOptions {
+  /**
+   * Transport-fault retry budget (nax-ai's `ClientOptions.transportRetries`,
+   * default 2). Tests that want a single attempt pass `0`; the production
+   * 2-retry schedule sleeps through 250ms + 500ms of backoff on the first
+   * thrown "Provider is not configured" / 5xx, which is most of the wall-clock
+   * in tests that intentionally fail at the protocol boundary.
+   */
+  readonly transportRetries?: number;
+}
+
+/**
  * The real builder. Exported on its own — not just as `_clientDeps.build` —
  * because test/preload.ts overwrites `_clientDeps.build` with a sentinel
  * before any test file loads (to stop a real client leaking into the
  * module-level cache across files), which would otherwise make this
  * synchronous, no-network construction path uncoverable by any test.
  */
-export async function buildNativeClient(catalogOverrides: readonly ProviderCatalogOverride[] = []): Promise<Client> {
+export async function buildNativeClient(
+  catalogOverrides: readonly ProviderCatalogOverride[] = [],
+  options: BuildNativeClientOptions = {},
+): Promise<Client> {
   return createClient({
     providers: await defaultProviders(),
     // The factory form, not the entries form: nax-ai has TWO catalogs — the
@@ -74,6 +93,10 @@ export async function buildNativeClient(catalogOverrides: readonly ProviderCatal
     // snapshot resolvable (#1982). Omitted entirely when empty so the
     // no-override path stays byte-identical to before.
     ...(catalogOverrides.length > 0 ? { providerOverrides: toProviderOverrides(catalogOverrides) } : {}),
+    // nax-ai defaults `transportRetries` to 2 (250ms + 500ms backoff).
+    // Passed through verbatim when the caller asks, omitted when it doesn't,
+    // so the production path stays byte-identical to before this seam.
+    ...(options.transportRetries !== undefined ? { transportRetries: options.transportRetries } : {}),
   });
 }
 

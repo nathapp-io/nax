@@ -50,6 +50,15 @@ export const _authDeps = {
   login,
   ambientAuthAvailable,
   providerIds: async (): Promise<string[]> => (await defaultProviders()).map((provider) => provider.id),
+  /**
+   * Injectable timer pair — lets tests drive `anyAmbientCredential`'s
+   * expiry branch off a virtual clock instead of waiting the full 2s
+   * production timeout. Mirrors `_heartbeatDeps` / `_idleWatchdogDeps`.
+   *
+   * @internal
+   */
+  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
+  clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
 };
 
 /**
@@ -282,7 +291,7 @@ const AMBIENT_PROBE_TIMEOUT_MS = 2_000;
  * cannot answer, it must not guess "no".
  */
 export async function anyAmbientCredential(): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: unknown;
 
   const sweep = (async (): Promise<boolean> => {
     const ids = await _authDeps.providerIds();
@@ -308,12 +317,12 @@ export async function anyAmbientCredential(): Promise<boolean> {
   })();
 
   const expiry = new Promise<boolean>((resolve) => {
-    timer = setTimeout(() => resolve(true), AMBIENT_PROBE_TIMEOUT_MS);
+    timer = _authDeps.setTimeout(() => resolve(true), AMBIENT_PROBE_TIMEOUT_MS);
   });
 
   try {
     return await Promise.race([sweep, expiry]);
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    if (timer !== undefined) _authDeps.clearTimeout(timer);
   }
 }

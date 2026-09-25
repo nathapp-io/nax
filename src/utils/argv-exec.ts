@@ -67,6 +67,15 @@ export const _argvExecDeps = {
    * stays at the DRAIN_GRACE_MS constant.
    */
   drainGraceMs: DRAIN_GRACE_MS,
+  /**
+   * Injectable timer pair — lets the BUG-13 "hung install" test drive the
+   * timeout off a virtual clock instead of waiting the full 1s schema minimum.
+   * Mirrors `_heartbeatDeps` / `_idleWatchdogDeps` / `_authDeps`.
+   *
+   * @internal
+   */
+  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
+  clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
 };
 
 /**
@@ -177,7 +186,7 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   // BUG-13: unlike every git call (routed through gitWithTimeout), a spawn
   // with no deadline can block its caller forever on a hung install
   // (registry/NFS stall).
-  const timerId = setTimeout(() => {
+  const timerId = _argvExecDeps.setTimeout(() => {
     timedOut = true;
     // MEM-4: proc.kill() reaches only the direct child, orphaning postinstall
     // grandchildren. killProcessGroup(pid, "SIGKILL") kills the whole group
@@ -214,9 +223,9 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   // before the grace elapses would otherwise leave a pending timer whose
   // callback fires 500ms later and resolves an orphaned promise. Under load
   // the leaked registrations accumulate in the timer wheel for nothing.
-  let graceTimerId: ReturnType<typeof setTimeout> | undefined;
+  let graceTimerId: unknown;
   const gracePromise = new Promise<"expired">((resolve) => {
-    graceTimerId = setTimeout(() => resolve("expired"), graceMs);
+    graceTimerId = _argvExecDeps.setTimeout(() => resolve("expired"), graceMs);
   });
   const stdoutSettled = await Promise.race([
     stdoutPromise,
@@ -226,7 +235,7 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
     stderrPromise,
     gracePromise.then((): StreamDrain | "expired" => "expired"),
   ]);
-  if (graceTimerId !== undefined) clearTimeout(graceTimerId);
+  if (graceTimerId !== undefined) _argvExecDeps.clearTimeout(graceTimerId);
 
   const stdoutClosed = stdoutSettled !== "expired";
   const stderrClosed = stderrSettled !== "expired";
@@ -247,7 +256,7 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   const stdoutFinal = stdoutClosed ? (stdoutSettled as StreamDrain) : await stdoutPromise;
   const stderrFinal = stderrClosed ? (stderrSettled as StreamDrain) : await stderrPromise;
 
-  clearTimeout(timerId);
+  _argvExecDeps.clearTimeout(timerId);
   signal?.removeEventListener("abort", onAbort);
 
   return {
