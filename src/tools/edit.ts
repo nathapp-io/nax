@@ -9,6 +9,7 @@
  */
 
 import { readFile, stat, writeFile } from "node:fs/promises";
+import { replaceUniqueLiteral } from "./edit-region";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -85,7 +86,15 @@ export const editTool: CodingTool = {
     }
 
     try {
-      await writeFile(target, source.replace(oldString, newString), "utf8");
+      // Literal composition, NOT `source.replace(oldString, newString)`: a
+      // string replacement is read as a template, so the dollar-substitution
+      // patterns it recognises (a dollar sign followed by a dollar sign, an
+      // ampersand, a backtick, or an apostrophe) inside new_string would be
+      // expanded instead of written -- see src/tools/edit-region.ts. The
+      // uniqueness checks above proved there is exactly one match, so
+      // `indexOf` is that match.
+      const matchIndex = source.indexOf(oldString);
+      await writeFile(target, replaceUniqueLiteral(source, oldString, newString, matchIndex), "utf8");
       return { content: `edited ${target}` };
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };
