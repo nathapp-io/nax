@@ -245,6 +245,25 @@ describe("AC10: a 50-line file fitting both caps is returned verbatim", () => {
     // No cap footer on a within-cap result.
     expect(res.content).not.toContain("Showing lines");
   });
+
+  test("AC10 boundary — a 999-line file (one below MODEL_MAX_LINES) with a trailing newline is returned verbatim", async () => {
+    // Adversarial finding #1: the fit check previously used a raw split("\n")
+    // which counts the trailing newline as a phantom line. A 999-line file
+    // produces 1001 raw lines (header + 999 body + empty trailing), which
+    // exceeded MODEL_MAX_LINES = 1000 and wrongly triggered the cap cut. The
+    // fix is to count with `splitModelLines`, which agrees with the after_tool
+    // policy's line count. Header + 999 body lines = 1000 lines total, well
+    // within MODEL_MAX_LINES.
+    const path = join(root, "nine-ninety-nine.txt");
+    const lines = Array.from({ length: 999 }, (_, i) => `line ${i + 1}`);
+    writeFileSync(path, `${lines.join("\n")}\n`);
+    const res = await readTool.run({ path: "nine-ninety-nine.txt" }, ctx([path], 100_000));
+    expect(res.isError).toBeFalsy();
+    expect(res.content).toBe(`[999 lines]\n${lines.join("\n")}\n`);
+    expect(res.content.endsWith("\n")).toBe(true);
+    // No cap footer — the result fits within every cap.
+    expect(res.content).not.toContain("Showing lines");
+  });
 });
 
 // -----------------------------------------------------------------------------

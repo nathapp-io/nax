@@ -1,5 +1,5 @@
 /**
- * Ranged-read limit-stop footer (US-001).
+ * Ranged-read limit-stop footer (US-001) and cap footer / cap cut (US-002).
  *
  * A ranged `Read` whose `limit` ended before the file's known line count
  * appends a single trailer line that names both the count of unseen lines
@@ -20,10 +20,18 @@
  * case where the floor header already proves nothing more is reachable
  * within the byte budget.
  *
- * File-local on purpose. The footer is a property of the ranged `Read`
- * composition, nothing else composes it, and `src/tools` does not export
- * it from its barrel — `read.ts` imports it by relative path.
+ * US-002 — the cap footer replaces the limit-stop footer when a Read
+ * result overflows either model-facing budget. `applyCapCut` is the
+ * fit-check → cap-cut → no-k-fits state machine; the cut keeps the
+ * largest `k` such that the header, the first `k` body lines, and the
+ * cap footer fit both budgets.
+ *
+ * File-local on purpose. These helpers are properties of the `Read`
+ * composition, nothing else composes them, and `src/tools` does not
+ * export them from its barrel — `read.ts` imports them by relative path.
  */
+
+import { splitModelLines } from "./truncate";
 
 /** Inputs the ranged branch already has on hand. */
 export interface LimitStopFooterInput {
@@ -180,8 +188,14 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
   // Step 1 — fit check. If today's candidate fits both the line cap and
   // the byte cap, return it unchanged. The after_tool policy then sees a
   // within-cap result and is a no-op on it.
-  const candidateLines = candidate.split("\n");
-  if (candidateLines.length <= maxLines && Buffer.byteLength(candidate, "utf8") <= maxBytes) {
+  //
+  // The line count uses `splitModelLines`, the same helper the cut path
+  // and the after_tool policy use, so the cap matches across all three
+  // seams. A raw `split("\n")` would count the trailing newline as a
+  // phantom empty line and reject a candidate that is exactly at the
+  // cap (e.g. header + 999 body lines + "\n" reports as 1001 lines via
+  // raw split but 1000 via `splitModelLines`).
+  if (splitModelLines(candidate).length <= maxLines && Buffer.byteLength(candidate, "utf8") <= maxBytes) {
     return { content: candidate, cut: false };
   }
 
@@ -189,7 +203,13 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
   // fits both budgets is the cut. Walking largest-first is what guarantees
   // the result holds the most whole lines that can fit — picking a smaller
   // k would leave whole lines on the floor that could have been delivered.
-  for (let k = lines.length; k >= 1; k -= 1) {
+  //
+  // The upper bound is min(lines.length, maxLines - 2): the line cap
+  // already bars any `k` greater than `maxLines - 2`, so iterating higher
+  // would only hit the `continue` guard. For a 2 MB ceiling of 1-byte lines
+  // (`lines.length` ≈ 1 000 000) the unconstrained start wastes ~998 000
+  // pointless iterations before reaching the meaningful range.
+  for (let k = Math.min(lines.length, maxLines - 2); k >= 1; k -= 1) {
     // Line budget: header + k body lines + cap footer line.
     if (1 + k + 1 > maxLines) continue;
 
