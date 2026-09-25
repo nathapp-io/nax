@@ -3,7 +3,7 @@
   "feature": "approval-residuals",
   "branchName": "feat/approval-residuals",
   "createdAt": "2026-09-24T00:00:00.000Z",
-  "updatedAt": "2026-09-25T12:26:34.979Z",
+  "updatedAt": "2026-09-25T12:49:25.970Z",
   "userStories": [
     {
       "id": "US-001",
@@ -154,7 +154,8 @@
         "findGitSpawnViolations('Bun.spawn([\"bun\", \"test\"], { cwd });') returns [].",
         "findGitSpawnViolations(\"const p = Bun.spawn(\\n  argv,\\n  { cwd },\\n);\") returns one violation with line: 1.",
         "findGitSpawnViolations('// Bun.spawn(argv)\\nconst s = \"Bun.spawn(argv)\";') returns [].",
-        "When `bun run scripts/check-git-spawn-env.ts <repo root>` is run on this repository, then it exits 0 and prints `check-git-spawn-env: clean`."
+        "When `bun run scripts/check-git-spawn-env.ts <repo root>` is run on this repository, then it exits 0 and prints `check-git-spawn-env: clean`.",
+        "Given a direct spawn with literal git argv lacking gitSpawnEnv, when findGitSpawnViolations scans it, then it returns the existing `git spawn without env: gitSpawnEnv(...)` violation."
       ],
       "tags": [
         "feature",
@@ -163,8 +164,8 @@
         "git"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -181,9 +182,6 @@
         "src/utils/git-env.ts",
         "src/hooks/runner.ts",
         "src/utils/argv-exec.ts"
-      ],
-      "suggestedCriteria": [
-        "Given a direct spawn with literal git argv lacking gitSpawnEnv, when findGitSpawnViolations scans it, then it returns the existing `git spawn without env: gitSpawnEnv(...)` violation."
       ],
       "workdirSource": "defaulted",
       "priorErrors": [],
