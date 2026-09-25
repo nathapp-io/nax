@@ -32,7 +32,7 @@ describe("Bash through the launcher", () => {
     expect(tool.description).not.toContain("paths are NOT contained");
     expect(tool.description).toContain("inside an OS sandbox");
     expect(tool.description).toContain("network access is unrestricted");
-    expect(tool.description).toContain("that screen is advisory");
+    expect(tool.description).toContain("That screen is advisory");
   });
 
   test("unavailable + raw: the description says Bash is refused and why", () => {

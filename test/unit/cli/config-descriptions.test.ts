@@ -6,8 +6,24 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { z } from "zod";
 import { FIELD_DESCRIPTIONS } from "@/cli";
-import { RoutingConfigSchema } from "@/config";
+import { ExecutionConfigSchema, RoutingConfigSchema } from "@/config";
+
+/** Unwraps optional/default/prefault/effects wrappers down to the inner schema. */
+function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
+  const inner = (schema as { _def?: { innerType?: z.ZodTypeAny; schema?: z.ZodTypeAny } })._def;
+  if (inner?.innerType !== undefined) return unwrap(inner.innerType);
+  if (inner?.schema !== undefined) return unwrap(inner.schema);
+  return schema;
+}
+
+function keyPaths(prefix: string, schema: z.ZodTypeAny): string[] {
+  const s = unwrap(schema);
+  const shape = (s as { shape?: Record<string, z.ZodTypeAny> }).shape;
+  if (shape === undefined) return [prefix];
+  return [prefix, ...Object.entries(shape).flatMap(([k, v]) => keyPaths(`${prefix}.${k}`, v))];
+}
 
 describe("FIELD_DESCRIPTIONS routing coherence with RoutingConfigSchema", () => {
   test("documents no routing key the schema does not define", () => {
@@ -113,5 +129,19 @@ describe("FIELD_DESCRIPTIONS structure for per-agent models", () => {
     expect(FIELD_DESCRIPTIONS["models.claude.fast"]).toBeDefined();
     expect(FIELD_DESCRIPTIONS["models.claude.balanced"]).toBeDefined();
     expect(FIELD_DESCRIPTIONS["models.claude.powerful"]).toBeDefined();
+  });
+});
+
+describe("review #22: execution safety keys are described", () => {
+  const shape = ExecutionConfigSchema.shape;
+  const required = [
+    "execution.bashApproval",
+    "execution.approvalTimeout",
+    "execution.permissions.<stage>.bashApproval",
+    ...keyPaths("execution.sandbox", shape.sandbox),
+    ...keyPaths("execution.commandSafety", shape.commandSafety),
+  ];
+  test.each(required)("%s has a description", (key) => {
+    expect(FIELD_DESCRIPTIONS[key]?.length ?? 0).toBeGreaterThan(0);
   });
 });

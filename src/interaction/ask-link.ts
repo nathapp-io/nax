@@ -4,20 +4,29 @@
  * An ADAPTER, not a channel: it renders an AskRequest into the interaction
  * subsystem's existing vocabulary and dispatches through the chain every other
  * consumer uses. It adds no plugin and no second prompt path. The import of
- * @/permissions is TYPE-ONLY, so `interaction -> permissions` stays a
- * compile-time edge and permissions remains extractable (master plan D8).
+ * @/permissions is now a RUNTIME import: `maskForPrompt` (review #9) masks
+ * inert secret spans in the prompt and denies unshowable ones, so
+ * `interaction -> permissions` is a real dependency edge (master plan D8).
  *
  * The dependency is the narrow structural `AskChannel` rather than
  * `InteractionChain` itself: the link only needs `prompt` and `cancel`, and a
  * narrow boundary keeps test doubles cast-free. `InteractionChain` satisfies it
  * structurally.
  */
-import type { AskControl, AskLink, AskLinkOutcome, AskRequest } from "@/permissions";
+import { type AskControl, type AskLink, type AskLinkOutcome, type AskRequest, maskForPrompt } from "@/permissions";
 import { getSafeLogger } from "../logger";
 import type { InteractionRequest, InteractionStage } from "./types";
 
 /** Headroom under MAX_MESSAGE_CHARS (4000) for the header, reason and footer. */
 const MAX_COMMAND_CHARS = 3500;
+
+/** What the prompt shows: the command with inert secret spans masked (review #9, D18). */
+interface PromptView {
+  readonly command: string;
+  readonly maskedCount: number;
+}
+
+const maskedFooter = (count: number): string => `${count} secret value(s) masked; the approved command contains them`;
 
 /**
  * Injectable keepalive timing for the human ask link (US-004).
@@ -96,7 +105,7 @@ export function createHumanAskLink(opts: {
   // `queue` and only one is ever on-screen at a time.
   let activeId: string | undefined;
 
-  const deny = (decidedBy: "human" | "timeout" | "unavailable" | "cancelled"): AskLinkOutcome => ({
+  const deny = (decidedBy: "human" | "timeout" | "unavailable" | "cancelled" | "unshowable"): AskLinkOutcome => ({
     decision: "deny",
     decidedBy,
   });
@@ -274,7 +283,7 @@ export function createHumanAskLink(opts: {
    * Drive one session's prompt. Called inside the serial queue, so only
    * one prompt is ever on-screen per run.
    */
-  async function runSession(req: AskRequest, session: Session): Promise<void> {
+  async function runSession(req: AskRequest, session: Session, view: PromptView): Promise<void> {
     const chain = opts.chain;
     try {
       if (chain === null || chain === undefined) {
@@ -316,9 +325,11 @@ export function createHumanAskLink(opts: {
             detail: [
               // A Write/Edit ask carries no command: showing `req.summary` keeps
               // the operator informed about what is being approved instead of an
-              // empty code block. The command is still shown verbatim when
-              // present.
-              ...((req.command ?? "").length > 0 ? ["```", req.command, "```"] : []),
+              // empty code block. The command is shown with inert secret spans
+              // masked (review #9); a command that cannot be shown safely never
+              // reaches this prompt (denied `unshowable` in resolve).
+              ...(view.command.length > 0 ? ["```", view.command, "```"] : []),
+              ...(view.maskedCount > 0 ? [maskedFooter(view.maskedCount)] : []),
               `request: ${req.summary}`,
               `runs in: ${req.root ?? "unknown"}`,
               `reason:  ${req.reason ?? req.rule}`,
@@ -422,8 +433,10 @@ export function createHumanAskLink(opts: {
   /**
    * A "live" key is one whose session has been scheduled but has not yet
    * settled. We track this so same-key resolves join the same session
-   * (AC6/AC7/AC8). The map is keyed by `${stage}\0${command}`; entries
-   * are cleared when the session settles.
+   * (AC6/AC7/AC8). The map is keyed by `${stage}\0${tool}\0${command}`
+   * (review #21); a command-less ask is keyed uniquely as
+   * `\u0001${sessionId}` and is never joined. Entries are cleared when the
+   * session settles.
    */
   const liveSessions = new Map<string, Session>();
 
@@ -433,26 +446,36 @@ export function createHumanAskLink(opts: {
     if (control?.signal?.aborted === true) {
       return Promise.resolve(deny("cancelled"));
     }
+    if (req.unshowable === true) {
+      return Promise.resolve(deny("unshowable"));
+    }
     const command = req.command ?? "";
-    if (command.length > MAX_COMMAND_CHARS) {
+    const masked = maskForPrompt(command);
+    if (!masked.ok) {
+      return Promise.resolve(deny("unshowable"));
+    }
+    const footerChars = masked.count > 0 ? maskedFooter(masked.count).length + 1 : 0;
+    if (masked.masked.length + footerChars > MAX_COMMAND_CHARS) {
       return Promise.resolve(deny("unavailable"));
     }
-    const key = `${req.stage}\u0000${command}`;
-    const existing = liveSessions.get(key);
+    const view: PromptView = { command: masked.masked, maskedCount: masked.count };
+    // Review #21: the tool is part of the key, and a command-less ask (Write,
+    // Edit, argv-only Exec) is never joined: two different writes must not
+    // share one answer. It still enters liveSessions under a unique key so
+    // cancel() and settle-time cleanup reach it.
+    const key = command === "" ? undefined : `${req.stage}\u0000${req.tool}\u0000${command}`;
+    const existing = key === undefined ? undefined : liveSessions.get(key);
     if (existing !== undefined && !existing.settled) {
-      // Joining an on-screen prompt: notify the joiner's watchdog.
       notifyWaiting(control, req);
       return attachWaiter(existing, control).done;
     }
-    // Schedule a new session on the serial queue. The session lives in
-    // `liveSessions` until it settles.
     const session: Session = {
       id: `ask-${Math.random().toString(16).slice(2, 10)}`,
       waiters: new Set(),
       settled: false,
       cancelledOnChain: false,
     };
-    liveSessions.set(key, session);
+    liveSessions.set(key ?? `\u0001${session.id}`, session);
     // First caller for this key: notify its watchdog before scheduling.
     notifyWaiting(control, req);
     // US-004: arm the per-session keepalive timer now, before the queue.
@@ -465,7 +488,7 @@ export function createHumanAskLink(opts: {
     // Chain onto the queue and ALWAYS clear it, so a throw cannot leave
     // the mutex held and deadlock every later ask in the run.
     queue = queue
-      .then(() => runSession(req, session))
+      .then(() => runSession(req, session, view))
       .then(
         () => undefined,
         () => undefined,

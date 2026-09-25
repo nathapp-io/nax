@@ -283,3 +283,57 @@ describe("runNativeTurn — before_turn_end and the bounded followUp channel", (
     expect(saved.filter((m) => m.role === "user" && m.content === "one more")).toHaveLength(0);
   });
 });
+
+describe("review #20: before_turn_end on the error path", () => {
+  test("a normal ending reports ended=completed", async () => {
+    const registry = createLoopEventRegistry();
+    const ended: string[] = [];
+    registry.register("before_turn_end", (p) => {
+      ended.push(p.ended);
+      return {};
+    });
+    await runNativeTurn(handle, "hi", baseOpts(), {
+      loopEvents: registry,
+      complete: async () => reply({ text: "done" }),
+    });
+    expect(ended).toEqual(["completed"]);
+  });
+
+  test("a throwing turn fires once with ended=errored and rethrows the same error", async () => {
+    const registry = createLoopEventRegistry();
+    const ended: string[] = [];
+    registry.register("before_turn_end", (p) => {
+      ended.push(p.ended);
+      return { followUp: "ignored" };
+    });
+    const boom = new Error("provider down");
+    const err = await runNativeTurn(handle, "hi", baseOpts(), {
+      loopEvents: registry,
+      complete: async () => {
+        throw boom;
+      },
+    }).catch((e: unknown) => e);
+    expect(err).toBe(boom);
+    expect(ended).toEqual(["errored"]);
+  });
+
+  test("an aborted turn reports ended=aborted", async () => {
+    const registry = createLoopEventRegistry();
+    const ended: string[] = [];
+    registry.register("before_turn_end", (p) => {
+      ended.push(p.ended);
+      return {};
+    });
+    const ac = new AbortController();
+    // deps.signal (4th argument) is what the catch reads; opts.signal alone is not threaded into it.
+    await runNativeTurn(handle, "hi", baseOpts({ signal: ac.signal }), {
+      loopEvents: registry,
+      signal: ac.signal,
+      complete: async () => {
+        ac.abort();
+        throw new DOMException("aborted", "AbortError");
+      },
+    }).catch(() => undefined);
+    expect(ended).toEqual(["aborted"]);
+  });
+});

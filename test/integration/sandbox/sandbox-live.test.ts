@@ -17,7 +17,9 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, waitForCondition, withDepsRestore } from "@test/helpers";
 import { _sessionSandboxDeps, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
+import type { BashApprovalMode } from "@/config/bash-approval";
 import { DEFAULT_SANDBOX_CONFIG } from "@/config/schemas-sandbox";
+import { type AskResolver, chainAskLinks } from "@/permissions";
 import { _resetSandboxRegistryForTests, probeSandboxOnce, resetSandboxBackend, sandboxBackendFor } from "@/sandbox";
 
 const CONFIG = { ...DEFAULT_SANDBOX_CONFIG, enabled: true };
@@ -67,7 +69,16 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
     _resetSandboxRegistryForTests();
   });
 
-  async function bash(opts: { root?: string; outputDir?: string; stripEnvVars?: string[] } = {}) {
+  async function bash(
+    opts: {
+      root?: string;
+      outputDir?: string;
+      stripEnvVars?: string[];
+      bashApproval?: BashApprovalMode;
+      askResolver?: AskResolver;
+      grants?: readonly { tool: string; patterns: readonly string[] }[];
+    } = {},
+  ) {
     const r = opts.root ?? root;
     const launcher = await resolveSessionSandbox({
       config: CONFIG,
@@ -78,9 +89,10 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
     const support = buildCodingToolSupport({
       root: r,
       declared: ["Read", "Bash"],
-      grants: [{ tool: "Read", patterns: ["*"] }],
-      bashApproval: "raw",
+      grants: opts.grants ?? [{ tool: "Read", patterns: ["*"] }],
+      bashApproval: opts.bashApproval ?? "raw",
       launcher,
+      ...(opts.askResolver !== undefined ? { askResolver: opts.askResolver } : {}),
       ...(opts.stripEnvVars !== undefined ? { stripEnvVars: opts.stripEnvVars } : {}),
     });
     if (support === undefined) throw new Error("no coding-tool support");
@@ -103,6 +115,31 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
   test("D13a gap 3 composite: an unmodellable cd into .nax cannot overwrite config.json", async () => {
     const run = await bash();
     await run("cd -P .nax && echo PWNED > config.json");
+    expect(readFileSync(join(root, ".nax", "config.json"), "utf8")).toBe("{}\n");
+  }, 30_000);
+
+  test("review test gap 2: escalate + human approval does not let a write past the sandbox's protected path", async () => {
+    let consulted = 0;
+    const run = await bash({
+      bashApproval: "escalate",
+      // The command must NOT match the grant: a granted command never asks, and
+      // a run with no ask cannot prove the human approval happened before the
+      // sandbox refused (the grant gate would be the only barrier).
+      grants: [{ tool: "Bash", patterns: ["bun test *"] }],
+      askResolver: chainAskLinks([
+        {
+          name: "yes",
+          resolve: async () => {
+            consulted += 1;
+            return { decision: "allow" as const, decidedBy: "human" as const };
+          },
+        },
+      ]),
+    });
+    await run("cd -P .nax && echo PWNED > config.json");
+    // The ask FIRED and the human allowed it: the write was stopped by the
+    // wrapped sandbox's denyWrite on .nax/config.json, never by the grant gate.
+    expect(consulted).toBe(1);
     expect(readFileSync(join(root, ".nax", "config.json"), "utf8")).toBe("{}\n");
   }, 30_000);
 

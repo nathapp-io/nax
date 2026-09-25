@@ -34,6 +34,7 @@ import { loadTranscript, saveTranscript, type TranscriptIdentity, transcriptMode
 import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
 import { runProactiveCompaction } from "./turn-compaction-step";
 import { completeWithRecovery } from "./turn-complete-step";
+import { dispatchTurnEndOnError } from "./turn-end-event";
 import { buildTurnResult, logTurnTailWarnings } from "./turn-result";
 import { runToolBatch } from "./turn-tool-batch";
 import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
@@ -386,6 +387,7 @@ export async function runNativeTurn(
       const turnEnd = await loopEvents.dispatch("before_turn_end", {
         messages,
         roundTrips,
+        ended: "completed",
         stopped,
         followUpsSoFar,
       });
@@ -412,6 +414,23 @@ export async function runNativeTurn(
       spinWarned = false;
     }
   } catch (err) {
+    // Review #20: the event fires on EVERY ending, so a throwing turn
+    // dispatches it before the transcript save — a handler sees the failure
+    // ending with `ended: "aborted"` (signal fired) or `"errored"`, and its
+    // result is ignored: there is no turn left to continue. A rejecting
+    // dispatch must not replace the original error or skip the save below —
+    // it is logged and skipped, the same skip-not-fail contract the registry
+    // applies to a single throwing handler.
+    await dispatchTurnEndOnError(
+      loopEvents,
+      { messages, roundTrips, stopped: spinStopped || invalidCallBudget.exceeded || timedOut, followUpsSoFar },
+      deps.signal,
+    ).catch((dispatchErr: unknown) => {
+      getSafeLogger()?.warn("native-loop-events", "before_turn_end dispatch failed on the error path; skipping it", {
+        sessionName: handle.id,
+        error: dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr),
+      });
+    });
     // Best-effort, and deliberately unlike the clean-exit save: there a write
     // failure fails the turn, because continuing on unstored history is silent
     // degradation. Here a failure is already in flight, and masking it with a

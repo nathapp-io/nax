@@ -287,6 +287,7 @@ export async function runFinishPhase(ctx: FinishPhaseContext): Promise<FinishRes
     const runConfig = ctx.runtime.configLoader.current();
     // #2201: finishFixOp declares Bash — the context carries the ask resolver
     // and command shadow, disposed in the finally below.
+    // ADR-031: a whole-feature op uses root config, including root's permissions map.
     dispatchAsk = await _finishPhaseDeps.buildRunDispatchAskWiring({
       config: runConfig,
       rootConfig: runConfig,

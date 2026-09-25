@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import { appendApproval, approvalsPath, chainAskLinks, createApprovalsLink } from "@/permissions";
+import { createCommandLauncher } from "@/sandbox";
 
 function repo() {
   const root = makeTempDir("approval-gate-");
@@ -151,6 +152,67 @@ describe("approval gate, end to end", () => {
     expect(outcome?.kind).toBe("ok");
     expect(existsSync(marker)).toBe(true);
     expect(consulted).toBe(0);
+    cleanupTempDir(root);
+    cleanupTempDir(outside);
+  });
+
+  test("review test gap 3: a cache hit under the sandbox still runs wrapped", async () => {
+    const root = repo();
+    const outside = makeTempDir("approvals-out-");
+    const approvalsFile = approvalsPath(outside);
+    const command = "echo cached";
+    await appendApproval(approvalsFile, {
+      stage: "run",
+      command,
+      root,
+      origin: "escalate",
+      matchedRule: null,
+      approvedAt: "2026-09-22T10:00:00.000Z",
+      approvedBy: "telegram:123",
+      naxCommit: "7b37dbf74",
+    });
+    let consulted = 0;
+    const humanSpy = {
+      name: "human-spy",
+      resolve: async () => {
+        consulted++;
+        return { decision: "allow" as const, decidedBy: "human" as const };
+      },
+    };
+    const backend = makeFakeSandboxBackend("enforce");
+    const launcher = createCommandLauncher({
+      state: { kind: "available", backend: "srt", network: "open" },
+      backend,
+      policyFor: async (r: string) => ({ writeRoots: [r], denyWrite: [], denyRead: [], network: {} }),
+    });
+    const support = buildCodingToolSupport({
+      root,
+      declared: ["Bash"],
+      // `echo cached` must NOT match the grant: a granted command never asks,
+      // so no cache could answer it (the same trap the empty-chain test's
+      // comment names). The ungranted command is what routes the call to the
+      // ask tier, where the approvals cache -- not the human -- decides.
+      grants: [{ tool: "Bash", patterns: ["bun test *"] }],
+      bashApproval: "escalate",
+      pipelineStage: "run",
+      launcher,
+      askResolver: chainAskLinks([
+        createApprovalsLink({
+          approvalsFile,
+          repoRoot: root,
+          projectRoot: root,
+          stageModes: ["escalate"],
+          sandboxEnabled: true,
+        }),
+        humanSpy,
+      ]),
+    });
+    const outcome = await support?.runtime.callTool("Bash", { command });
+    expect(outcome?.kind).toBe("ok");
+    expect(consulted).toBe(0);
+    // The cache's allow still EXECUTED the command through the launcher: the
+    // wrapped sandbox ran it, an allow that never reaches the shell would not.
+    expect(backend.calls).toHaveLength(1);
     cleanupTempDir(root);
     cleanupTempDir(outside);
   });

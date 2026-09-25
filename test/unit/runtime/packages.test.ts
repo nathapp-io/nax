@@ -88,6 +88,15 @@ describe("PackageRegistry.hydrate — per-package merge", () => {
     // Same instance — the cache key is normalized.
     expect(viewAbsolute).toBe(registry.resolve("packages/agent"));
   });
+
+  test("ADR-031: a hydrated package view carries root's root-only keys", async () => {
+    const loader = createConfigLoader(makeNaxConfig({ execution: { bashApproval: "escalate" } }));
+    const registry = createPackageRegistry(loader, "/repo");
+    await registry.hydrate(["packages/agent"], async (_root, dir) =>
+      dir === "packages/agent" ? makeNaxConfig({ execution: { bashApproval: "raw" } }) : null,
+    );
+    expect(registry.resolve("packages/agent").config.execution.bashApproval).toBe("escalate");
+  });
 });
 
 describe("PackageView.hasOverride and repoRoot", () => {

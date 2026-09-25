@@ -782,3 +782,24 @@ to the default model selection) rather than rejected.
 
 The interactive, approval-gated `nax-finish` skill still exists for manual
 finishes — this is the autonomous path, not a replacement.
+
+## Bash Approval, Sandbox and Command Safety
+
+Four `execution.*` keys decide how agent-run shell commands are approved, sandboxed and
+classified. They are **root-only** — a package config or package profile that sets one is
+warned about and ignored, and the root config's value always applies
+([ADR-031](../adr/ADR-031-root-scoped-command-safety-config.md)).
+
+| Key | Default | Description |
+|:----|:--------|:------------|
+| `execution.bashApproval` | `"raw"` | How agent Bash commands are approved: `raw` (screened only), `gated` (policy decides), or `escalate` (a human decides on ask). |
+| `execution.approvalTimeout` | `600000` | Milliseconds an interactive permission prompt waits before denying (30000-3600000). |
+| `execution.sandbox` | off | OS sandbox for agent-authored commands; opt in with `execution.sandbox.enabled`. |
+| `execution.commandSafety` | absent (off) | Shadow command classifier; observes every command, decides nothing. |
+
+The exception is the permissions map: `permissions.<stage>.bashApproval` stays per-package and
+overrides the root posture for one stage — the documented way to make a package stricter than
+root. See [Permissions](permissions.md) for how the mode feeds rule resolution.
+
+**Warning:** `execution.commandSafety.shadow.allowRemote` allows a non-loopback classifier URL,
+which sends every agent command verbatim off-host. Leave it `false` unless you accept that.

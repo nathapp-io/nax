@@ -37,6 +37,7 @@ import {
   resolveProfileNames,
   sensitiveFilteredProcessEnv,
 } from "./profile";
+import { pinRootOnlyKeysRaw } from "./root-only-keys";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
 
 /**
@@ -553,6 +554,7 @@ export async function loadConfigForWorkdir(
     rawMerged.profile = packageChain.join("+");
     rawMerged.profileChain = packageChain;
   }
+  rawMerged = pinRootOnlyKeysRaw(rawMerged, rootConfig, packageDir, warnDedupe.warn);
 
   // BUG-05: guards + safeParse must cover EVERY per-package overlay, not just
   // ones that also apply a package-level profile — an overlay with no profile
@@ -576,9 +578,6 @@ export async function loadConfigForWorkdir(
   // merged result, which would re-warn every root-inherited chained command
   // on every package/story resolution in a run. See the comments at those
   // call sites.
-  // #574's single-shim patch here (`_applyRemovedWorktreeInheritShim` on the merged
-  // result) is gone: #1620 replaced it with the full chain run on each overlay layer
-  // above, which covers that case and every other shim.
   const result = NaxConfigSchema.safeParse(rawMerged);
   if (!result.success) {
     // Fail-fast — consistent with root-chain resolution (a missing profile file

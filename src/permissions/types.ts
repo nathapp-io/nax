@@ -24,6 +24,11 @@ export interface AskRequest {
    * of it, or they are approving a string they never read.
    */
   readonly command?: string;
+  /**
+   * Set when the call's arguments contain a secret whose masked form could
+   * hide shell syntax (review #9). The human link denies without prompting.
+   */
+  readonly unshowable?: true;
   /** The permitted root -- where the shell actually starts (src/tools/bash.ts:165). */
   readonly root?: string;
   /** The verdict's original reason, NOT rewritten as `matched ask rule "..."`. */

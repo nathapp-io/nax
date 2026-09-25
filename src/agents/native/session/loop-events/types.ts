@@ -177,6 +177,13 @@ export interface BeforeCompactionPatch {
 export interface BeforeTurnEndPayload {
   readonly messages: readonly NativeTranscriptMessage[];
   readonly roundTrips: number;
+  /**
+   * How the turn ended. "completed" includes a stop (spin, invalid-call budget,
+   * deadline) -- see `stopped`. "aborted" means the turn signal fired (caller,
+   * idle watchdog or whole-turn deadline); "errored" is any other throw.
+   * On "aborted"/"errored" the result is ignored (review #20).
+   */
+  readonly ended: "completed" | "aborted" | "errored";
   /** True when the turn ended by a STOP; followUp is not offered then. */
   readonly stopped: boolean;
   readonly followUpsSoFar: number;

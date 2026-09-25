@@ -5,6 +5,7 @@
  * Prevents concurrent runs in the same directory.
  */
 
+import { randomUUID } from "node:crypto";
 import { rename, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
@@ -64,17 +65,40 @@ function parseHolder(raw: string | null): { pid: number; host?: string } | null 
 }
 
 /**
- * Write `content` to `targetPath` only if it doesn't already exist
- * (O_CREAT | O_EXCL). Returns false (instead of throwing) on EEXIST — used by
- * the BUG-34 fix to restore a wrongly-stolen lock without ever overwriting a
- * lock a third process has since legitimately created.
+ * Publish `content` at `targetPath` so that a concurrent reader never
+ * observes a partially-written file: the payload is written to a unique
+ * sibling temp file first, then linked into place with `fs.linkSync`, which
+ * fails with EEXIST when the target already exists (create-if-absent
+ * semantics, same guarantee `O_CREAT | O_EXCL` gives).
+ *
+ * A plain `openSync(O_EXCL)` + `writeSync` pair leaves a window in which the
+ * target exists but is empty. That window is invisible to same-process JS
+ * (the calls are synchronous) but not to concurrent thread-pool reads — a
+ * racer reading an empty lock file once parsed it as a *corrupt* lock,
+ * reclaimed it, and won the lock alongside its rightful holder (CI
+ * two-winner race). Publishing complete content in one atomic step removes
+ * the window at its source.
+ */
+async function publishFileAtomically(targetPath: string, content: string): Promise<void> {
+  const tempPath = `${targetPath}.${randomUUID()}.tmp`;
+  try {
+    await Bun.write(tempPath, content);
+    const fs = await import("node:fs");
+    fs.linkSync(tempPath, targetPath);
+  } finally {
+    await unlink(tempPath).catch(() => {});
+  }
+}
+
+/**
+ * Write `content` to `targetPath` only if it doesn't already exist.
+ * Returns false (instead of throwing) on EEXIST — used by the BUG-34 fix to
+ * restore a wrongly-stolen lock without ever overwriting a lock a third
+ * process has since legitimately created.
  */
 export async function tryExclusiveCreate(targetPath: string, content: string): Promise<boolean> {
-  const fs = await import("node:fs");
   try {
-    const fd = fs.openSync(targetPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o644);
-    fs.writeSync(fd, content);
-    fs.closeSync(fd);
+    await publishFileAtomically(targetPath, content);
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
@@ -87,6 +111,100 @@ export async function tryExclusiveCreate(targetPath: string, content: string): P
  * (and host when the on-disk record carries one).
  */
 export type LockAcquisitionResult = { acquired: true } | { acquired: false; holder: { pid: number; host?: string } };
+
+/**
+ * Refusal for a lock whose holder cannot be named — corrupt records carry no
+ * parseable pid, so the refusal falls back to the established `pid: 0`
+ * unknown-holder convention (same as the EEXIST path below).
+ */
+function holderRefusal(lockData: { pid: number; host?: string } | null): {
+  acquired: false;
+  holder: { pid: number; host?: string };
+} {
+  return {
+    acquired: false,
+    holder: lockData ? { pid: lockData.pid, host: lockData.host } : { pid: 0 },
+  };
+}
+
+/**
+ * Outcome of claiming a reclaimable (dead-holder or corrupt) lock:
+ * - `discard`: we own the claim and the tombstone has been cleaned up — the
+ *   caller may proceed to its own exclusive create.
+ * - `back-off`: another racer interfered (already claimed the lock, or
+ *   replaced it with a live one mid-claim) — the caller must refuse.
+ */
+type ReclaimClaimOutcome = { action: "discard" } | { action: "back-off"; holder: { pid: number; host?: string } };
+
+/**
+ * Claim exclusive rights to a reclaimable lock at `lockPath` and discard it.
+ *
+ * The claim must be atomic: a plain unlink here once let several racers that
+ * all observed the same reclaimable record each remove the previous winner's
+ * lock and win their own create (CI two-winner race). `rename` is atomic at
+ * the filesystem level — only one racer's rename can succeed against a given
+ * source path at a time; everyone else gets ENOENT and backs off instead of
+ * racing ahead on a stale read.
+ *
+ * Renaming alone isn't sufficient though: by the time our rename lands,
+ * another racer may have already completed its own reclaim+create and be
+ * holding a brand-new, LIVE lock at lockPath — our rename would then
+ * unknowingly steal that live lock. So the content is re-verified after
+ * claiming it: only a tombstone whose content still matches the record we
+ * originally observed is ours to discard; anything else is restored untouched
+ * and we back off.
+ *
+ * BUG-34: the restore is an exclusive create, not a blind
+ * `rename(tombstonePath, lockPath)` — rename() has no create-if-absent
+ * semantics, and in the window between our steal and the restore a third
+ * racer can win its own create at lockPath; a blind restore would silently
+ * clobber that fresh live lock, leaving two processes both believing they
+ * hold the lock.
+ */
+async function claimReclaimableLock(
+  lockPath: string,
+  observedContent: string,
+  lockData: { pid: number; host?: string } | null,
+): Promise<ReclaimClaimOutcome> {
+  const tombstonePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
+  try {
+    await _lockDeps.rename(lockPath, tombstonePath);
+  } catch (renameError) {
+    if ((renameError as NodeJS.ErrnoException).code === "ENOENT") {
+      // Another process already claimed cleanup of this lock — let it
+      // proceed; we back off rather than racing ahead.
+      return { action: "back-off", holder: holderRefusal(lockData).holder };
+    }
+    throw renameError;
+  }
+
+  const claimedContent = await Bun.file(tombstonePath)
+    .text()
+    .catch(() => null);
+
+  if (claimedContent !== observedContent) {
+    // We renamed away a lock that was replaced out from under us (racer B
+    // claimed racer A's fresh live lock) — put it back so the rightful
+    // holder is found on the next check.
+    const restored = claimedContent !== null && (await tryExclusiveCreate(lockPath, claimedContent));
+    await unlink(tombstonePath).catch(() => {});
+    if (!restored) {
+      const logger = getSafeLogger();
+      logger?.warn("execution", "Stolen lock could not be restored — a newer lock already exists", {
+        lockPath,
+      });
+    }
+    return { action: "back-off", holder: holderRefusal(lockData).holder };
+  }
+
+  const logger = getSafeLogger();
+  logger?.warn("execution", "Removing stale lock", {
+    pid: lockData?.pid,
+    lockPath,
+  });
+  await unlink(tombstonePath).catch(() => {});
+  return { action: "discard" };
+}
 
 /**
  * Acquire execution lock to prevent concurrent runs in same directory.
@@ -125,110 +243,38 @@ export async function acquireLock(workdir: string): Promise<LockAcquisitionResul
       try {
         lockData = JSON.parse(lockContent);
       } catch {
-        // Corrupt/unparseable lock file — treat as stale and delete
+        // Corrupt/unparseable lock file — reclaimable, but only through the
+        // exclusive rename-claim in claimReclaimableLock. A plain unlink here
+        // once let a racer that mis-read a winner's mid-create record as
+        // empty delete the winner's LIVE lock and win alongside it.
         const logger = getSafeLogger();
         logger?.warn("execution", "Corrupt lock file detected, removing", {
           lockPath,
         });
-        const fs = await import("node:fs/promises");
-        await fs.unlink(lockPath).catch(() => {});
-        // Fall through to create a new lock
         lockData = null;
       }
 
-      if (lockData) {
-        const lockPid = lockData.pid;
+      if (lockData && isProcessAlive(lockData.pid)) {
+        // Process is alive, lock is valid
+        return { acquired: false, holder: { pid: lockData.pid, host: lockData.host } };
+      }
 
-        // Check if the process is still alive
-        if (isProcessAlive(lockPid)) {
-          // Process is alive, lock is valid
-          return { acquired: false, holder: { pid: lockPid, host: lockData.host } };
-        }
-
-        // BUG-07: two processes racing this same staleness check must not
-        // both unlink-then-create — that lets both believe they hold the
-        // lock. `rename` is atomic at the filesystem level: only one racer's
-        // rename call can succeed against a given source path at a time, so
-        // this claims exclusive rights to whatever currently sits at
-        // lockPath. Everyone else gets ENOENT and backs off (returns false)
-        // instead of racing ahead on a stale read.
-        //
-        // Renaming alone isn't sufficient though: by the time our rename
-        // lands, another racer may have already completed its own
-        // rename+create and be holding a brand-new, LIVE lock at lockPath —
-        // our rename would then unknowingly steal that live lock. So the
-        // content is re-verified after claiming it: only a tombstone whose
-        // pid still matches the stale pid we originally observed is treated
-        // as ours to discard; anything else is restored untouched and we
-        // back off.
-        const tombstonePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
-        try {
-          await _lockDeps.rename(lockPath, tombstonePath);
-        } catch (renameError) {
-          if ((renameError as NodeJS.ErrnoException).code === "ENOENT") {
-            // Another process already claimed cleanup of this stale lock —
-            // let it proceed; we back off rather than racing ahead.
-            return { acquired: false, holder: { pid: lockData.pid, host: lockData.host } };
-          }
-          throw renameError;
-        }
-
-        const claimedContent = await Bun.file(tombstonePath)
-          .text()
-          .catch(() => null);
-        let claimedPid: number | undefined;
-        try {
-          claimedPid = claimedContent === null ? undefined : (JSON.parse(claimedContent) as { pid: number }).pid;
-        } catch {
-          claimedPid = undefined;
-        }
-
-        if (claimedPid !== lockPid) {
-          // We renamed away a lock that was replaced out from under us
-          // (racer B claimed racer A's fresh live lock) — put it back so the
-          // rightful holder is found on the next check.
-          //
-          // BUG-34: a blind rename(tombstonePath, lockPath) here would
-          // unconditionally overwrite whatever currently sits at lockPath —
-          // rename() has no create-if-absent semantics. In the window
-          // between our steal and this restore, a third racer (D) can see
-          // lockPath vacant, win its own O_CREAT|O_EXCL create, and start
-          // believing it holds the lock; a blind restore would then silently
-          // clobber D's fresh live lock with B's stale content, leaving two
-          // processes (B and D) both believing they hold the lock. An
-          // exclusive create fails safely instead: if lockPath is occupied
-          // by the time we restore, we drop our tombstone rather than
-          // destroy whoever is there now.
-          const restored = claimedContent !== null && (await tryExclusiveCreate(lockPath, claimedContent));
-          await unlink(tombstonePath).catch(() => {});
-          if (!restored) {
-            const logger = getSafeLogger();
-            logger?.warn("execution", "Stolen lock could not be restored — a newer lock already exists", {
-              lockPath,
-            });
-          }
-          return { acquired: false, holder: { pid: lockPid, host: lockData.host } };
-        }
-
-        const logger = getSafeLogger();
-        logger?.warn("execution", "Removing stale lock", {
-          pid: lockPid,
-        });
-        await unlink(tombstonePath).catch(() => {});
+      // Dead holder (or corrupt record): claim the lock exclusively before
+      // discarding it (BUG-07 and the corrupt-path two-winner race).
+      const claim = await claimReclaimableLock(lockPath, lockContent, lockData);
+      if (claim.action === "back-off") {
+        return { acquired: false, holder: claim.holder };
       }
     }
 
-    // Create lock file atomically using exclusive create (O_CREAT | O_EXCL)
+    // Create lock file atomically: complete content is published in one
+    // step, so no racer can ever observe an empty or half-written record.
     const lockData = {
       pid: process.pid,
       host: _lockDeps.host(),
       timestamp: Date.now(),
     };
-    // NOTE: Node.js fs used intentionally — Bun.file()/Bun.write() lacks O_CREAT|O_EXCL atomic exclusive create
-    const fs = await import("node:fs");
-    const fd = fs.openSync(lockPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o644);
-    fs.writeSync(fd, JSON.stringify(lockData));
-    fs.closeSync(fd);
+    await publishFileAtomically(lockPath, JSON.stringify(lockData));
     return { acquired: true };
   } catch (error) {
     // EEXIST means another process won the race — re-read the lock file so

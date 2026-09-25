@@ -156,11 +156,12 @@ function rawDescription(shell: string, containment: string = RAW_UNCONTAINED): s
     "process substitution, here-documents and subshells all work here -- nothing is refused for being unparseable, " +
     "and Bash allow/deny/ask rules configured for this stage are NOT consulted. " +
     containment +
-    "The only refusal is a command the lexer CAN parse " +
-    "that names or redirects into a path nax owns -- .nax/config.json, .nax/mono/*/config.json, " +
+    "The only refusal is a command the lexer CAN parse that names or redirects into one of the exact file " +
+    "paths nax owns -- .nax/config.json, .nax/mono/*/config.json, " +
     ".nax/features/**/prd.json, or the root queue-control files -- change those through nax rather than by " + // nax-feature-dir-allow: prose naming the raw-mode protected-path screen, not a path construction
-    "writing them directly; that screen is advisory, not a boundary, and a command using substitution skips it " +
-    "entirely. " +
+    "writing them directly. That screen is advisory, not a boundary: it matches exact file paths only, so a " +
+    "command using command substitution, a directory target (cp x .nax/), a glob, a nested shell (sh -c '...'), " +
+    "tar -C or dd of=, or a symlink alias all skip it; use the sandbox for a boundary. " +
     BACKGROUND_PROCESSES_KILLED_SENTENCE
   );
 }

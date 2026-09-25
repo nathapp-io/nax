@@ -1,6 +1,6 @@
 import { isAbsolute, join, relative } from "node:path";
 import type { ConfigLoader, ConfigSelector, NaxConfig } from "../config";
-import { mergePackageConfig } from "../config";
+import { mergePackageConfig, pinRootOnlyKeys } from "../config";
 import { getSafeLogger } from "../logger";
 
 export const _packagesDeps = { getSafeLogger };
@@ -205,7 +205,7 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       const override = await load(repoRoot, dir);
       if (override !== null) {
         overlays.set(dir, override);
-        mergedConfigs.set(dir, mergePackageConfig(loader.current(), override));
+        mergedConfigs.set(dir, pinRootOnlyKeys(mergePackageConfig(loader.current(), override), loader.current()));
         // A pre-hydration resolve can have cached the same package through a
         // worktree path (`.nax-wt/<story>/<dir>`). Invalidate every identity
         // key that maps to this override, while preserving unrelated views.

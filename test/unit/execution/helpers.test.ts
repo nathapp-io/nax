@@ -480,6 +480,71 @@ describe("acquireLock and releaseLock", () => {
     });
   });
 
+  describe("corrupt-lock reclamation must be exclusive (CI two-winner race)", () => {
+    // The stale-lock path claims lockPath atomically via rename before
+    // discarding, but the corrupt-parse path used to unlink directly. A
+    // racer that reads the winner's lock file in the create-vs-write window
+    // (observed as empty) parsed it as corrupt, unlinked the winner's LIVE
+    // lock, and won its own create — two racers both holding the lock.
+    // These tests force that observation deterministically via
+    // `_lockDeps.readLockText` instead of relying on real scheduling.
+    let originalReadLockText: typeof _lockDeps.readLockText;
+
+    beforeEach(() => {
+      originalReadLockText = _lockDeps.readLockText;
+    });
+
+    afterEach(() => {
+      _lockDeps.readLockText = originalReadLockText;
+    });
+
+    test("an empty-content observation never unlinks or steals a live lock", async () => {
+      // A live holder (this process) owns the lock; a racer that observes
+      // "" read the winner's record mid-create and must NOT treat that as a
+      // reclaimable corrupt lock.
+      const liveLock = { pid: process.pid, timestamp: Date.now() };
+      await Bun.write(lockPath, JSON.stringify(liveLock));
+
+      _lockDeps.readLockText = async () => "";
+
+      const acquired = await acquireLock(testDir);
+      expect(acquired.acquired).toBe(false);
+
+      // The live lock survives untouched.
+      const lockData = JSON.parse(await Bun.file(lockPath).text());
+      expect(lockData.pid).toBe(process.pid);
+
+      // No tombstone left behind by the aborted claim.
+      const { readdirSync } = await import("node:fs");
+      const entries = readdirSync(testDir);
+      expect(entries.some((e) => e.includes(".stale."))).toBe(false);
+    });
+
+    test("ten racers all observing corrupt content — exactly one wins", async () => {
+      // Every racer sees the same corrupt content, so every racer tries to
+      // reclaim it. Without an exclusive claim, each racer's unlink removes
+      // the previous winner's lock and all ten create their own.
+      await Bun.write(lockPath, "not valid json");
+      _lockDeps.readLockText = async () => "not valid json";
+
+      const results = await Promise.all(Array.from({ length: 10 }, () => acquireLock(testDir)));
+
+      const winners = results.filter((r) => r.acquired);
+      expect(winners.length).toBe(1);
+
+      // The winner's record is a well-formed live lock.
+      const lockData = JSON.parse(await Bun.file(lockPath).text());
+      expect(lockData.pid).toBe(process.pid);
+
+      // No `.stale.<pid>.<ts>` tombstone left behind.
+      const { readdirSync } = await import("node:fs");
+      const entries = readdirSync(testDir);
+      expect(entries.some((e) => e.includes(".stale."))).toBe(false);
+
+      await releaseLock(testDir);
+    });
+  });
+
   test("US-002 AC11: the lock record written by acquireLock carries host alongside pid and timestamp", async () => {
     const acquired = await acquireLock(testDir);
     expect(acquired.acquired).toBe(true);

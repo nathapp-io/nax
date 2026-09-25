@@ -40,4 +40,13 @@ describe("appendCommandSafetyRow", () => {
       expect(JSON.parse(lines[1] ?? "").command).toBe("ls");
     });
   });
+
+  test("review #9: the command is redacted, shell syntax after it kept", async () => {
+    await withTempDir(async (dir) => {
+      await appendCommandSafetyRow(join(dir, "command-safety"), "run-1", row("curl -H 'Cookie: a=b'; rm -rf ~"));
+      const text = readFileSync(join(dir, "command-safety", "run-1.jsonl"), "utf8");
+      expect(text).not.toContain("a=b");
+      expect(text).toContain("rm -rf ~");
+    });
+  });
 });
