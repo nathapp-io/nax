@@ -124,7 +124,7 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
     "default": "native"                    // In-process nax-ai agent; or an ACP agent such as "claude"
   },
   "execution": {
-    "maxIterations": 10,                   // Note: `nax run` always overrides this with -m (default 20)
+    "maxIterations": 20,                   // Note: `nax run -m <n>` overrides this only when the flag is passed
     "permissionProfile": "unrestricted",   // "unrestricted" | "safe" | "scoped"
     "storyIsolation": "shared",            // "shared" | "worktree"
     "bashApproval": "raw",                 // "raw" | "gated" | "escalate" — how agent Bash commands are adjudicated
