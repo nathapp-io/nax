@@ -90,6 +90,55 @@ describe("lexBashCommand redirections", () => {
   });
 });
 
+/**
+ * The refused variant read structurally, so this file compiles before `prefix`
+ * is added to `BashLexResult` and the assertions fail on the missing behaviour
+ * rather than at type-check time.
+ */
+interface RefusedWithPrefix {
+  readonly kind: string;
+  readonly prefix?: readonly {
+    readonly tokens: readonly { readonly text: string }[];
+    readonly redirects: readonly unknown[];
+  }[];
+}
+
+function refusedPrefix(command: string): readonly {
+  readonly tokens: readonly string[];
+  readonly redirects: readonly unknown[];
+}[] {
+  const result: RefusedWithPrefix = lexBashCommand(command);
+  expect(result.kind).toBe("refused");
+  return (result.prefix ?? []).map((segment) => ({
+    tokens: segment.tokens.map((token) => token.text),
+    redirects: segment.redirects,
+  }));
+}
+
+describe("lexBashCommand refused prefix (US-001)", () => {
+  test("US-001 AC1: a refused `2>&1` keeps the completed words and drops the in-progress one", () => {
+    const prefix = refusedPrefix("rm -rf x 2>&1");
+    expect(prefix).toHaveLength(1);
+    expect(prefix[0]?.tokens).toEqual(["rm", "-rf", "x"]);
+    expect(prefix[0]?.redirects).toEqual([]);
+  });
+
+  test("US-001 AC2: completed segments precede the segment the refusal interrupted", () => {
+    const prefix = refusedPrefix("ls && echo x 2>&1");
+    expect(prefix.map((segment) => segment.tokens)).toEqual([["ls"], ["echo", "x"]]);
+  });
+
+  test("US-001 AC3: the word being built when a here-document is refused is dropped", () => {
+    const prefix = refusedPrefix("cat ..<<EOF");
+    expect(prefix).toHaveLength(1);
+    expect(prefix[0]?.tokens).toEqual(["cat"]);
+  });
+
+  test("US-001 AC4: a refusal before any word completes yields an empty prefix", () => {
+    expect(refusedPrefix("(cat /etc/passwd)")).toEqual([]);
+  });
+});
+
 describe("lexBashCommand refusals (spec R11)", () => {
   test.each([
     ["command substitution", "echo $(whoami)"],
