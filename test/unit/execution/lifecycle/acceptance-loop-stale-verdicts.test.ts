@@ -2,8 +2,8 @@
  * US-005 AC4 — a stale `semantic-verdicts/<story>.json` file on disk must not
  * change diagnosis.
  *
- * The writer that produced these files is gone (#1084) and `loadSemanticVerdicts`
- * is being deleted with it (US-005), so the acceptance loop must reach the LLM
+ * The writer that produced these files is gone (#1084) and the loader that read
+ * them was deleted with it (US-005), so the acceptance loop must reach the LLM
  * diagnosis through `_diagnosisDeps.callOp` even when a stale file claims every
  * AC passed. These tests drive the real `runAcceptanceLoop` over a temp feature
  * directory containing such a file, asserting on the dispatch that leaves the loop

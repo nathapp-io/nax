@@ -563,7 +563,7 @@ describe("runAcceptanceLoop — BUG-11 off-by-one at maxRetries:1", () => {
       const ctx = makeCtx();
       ctx.config = makeNaxConfig({ acceptance: { maxRetries: 1, fix: { strategy: "diagnose-first" } } });
       ctx.workdir = "/repo";
-      ctx.featureDir = undefined; // skip stub guard / loadSemanticVerdicts
+      ctx.featureDir = undefined; // no featureDir — the stub guard is skipped
       ctx.acceptanceTestPaths = [{ testPath: "/repo/t.test.ts", packageDir: "/repo" }];
 
       const result = await runAcceptanceLoop(ctx);
