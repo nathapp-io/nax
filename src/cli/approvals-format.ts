@@ -11,13 +11,17 @@
  *   - `formatRemovedLine` — the `removed <id>  <stage>  <preview>` line
  *     printed per revoked entry (US-005).
  *
- * Everything byte-for-byte exactly as it is written to stdout. The helpers
- * live here rather than in `approvals.ts` so neither file nears the line gate
- * and the rendering can be pinned independently of the dep-injected command
- * bodies.
+ * Formatting is byte-for-byte for printable text. Secret values in a command
+ * are not redacted (D20), but every displayed field is passed through
+ * `stripControlChars` so a forged store entry cannot inject ANSI/escape
+ * sequences into the operator's terminal (SEC-09) — that is terminal safety,
+ * not secret masking. The helpers live here rather than in `approvals.ts` so
+ * neither file nears the line gate and the rendering can be pinned
+ * independently of the dep-injected command bodies.
  */
 
 import { type ApprovalEntry, type ApprovalsFileRead, type ApprovalsTaint, approvalId } from "@/permissions";
+import { stripControlChars } from "@/utils/strip-control-chars";
 
 /** Indent of the entry / root / `$ <cmd>` lines. */
 const ENTRY_INDENT = " ".repeat(10);
@@ -43,7 +47,7 @@ export function formatTrustLine(taint: ApprovalsTaint | undefined, isAlive: (pid
   const { since, runId, pid } = taint;
   const pidFragment = pid === undefined ? "(pid unknown)" : `(pid ${pid}, ${isAlive(pid) ? "alive" : "exited"})`;
   const suffix = "-- the cache is OFF; a trusted run will discard these entries.";
-  return `Cache: TAINTED since ${since} by run ${runId} ${pidFragment} ${suffix}`;
+  return `Cache: TAINTED since ${stripControlChars(since)} by run ${stripControlChars(runId)} ${pidFragment} ${suffix}`;
 }
 
 /**
@@ -61,20 +65,25 @@ export function formatTrustLine(taint: ApprovalsTaint | undefined, isAlive: (pid
  * uses (it coerces non-strings to ""; otherwise a header field and its
  * derived id disagree on what the entry's effective field is).
  *
+ * Every displayed value is passed through `stripControlChars` (SEC-09): the
+ * store is forgeable, so a crafted entry must not be able to emit ANSI/OSC
+ * sequences into the operator's terminal. Newlines remain untouched, so a
+ * multi-line command still renders as the documented block.
+ *
  * `isApprovalEntry` only requires `stage`/`command` be strings (US-001),
  * which means a file written with other fields missing or non-string still
  * reads as `state: "ok"` — this hardening keeps the printed shape stable.
  */
 export function formatEntryBlock(entry: ApprovalEntry): readonly string[] {
-  const str = (value: unknown): string => (typeof value === "string" ? value : "");
+  const str = (value: unknown): string => stripControlChars(typeof value === "string" ? value : "");
   const header = `${approvalId(entry)}  ${str(entry.stage)}  ${str(entry.origin)}  ${str(entry.approvedAt)}  ${str(entry.approvedBy)}  naxCommit ${str(entry.naxCommit)}`;
   const rootLine = `${ENTRY_INDENT}root ${str(entry.root)}`;
   // A CRLF command (`"a\r\nb"`) would otherwise leave a literal `\r` on the
   // first line that a real terminal interprets as "overwrite line start" and
   // corrupts the displayed command. Splitting on `\r?\n` strips the carriage
-  // return without changing a clean-LF command. The command itself is still
-  // printed raw — only the line separators are normalised.
-  const lines = entry.command.split(/\r?\n/);
+  // return without changing a clean-LF command. Each line is then stripped of
+  // the remaining control/escape sequences (SEC-09) before it is printed.
+  const lines = entry.command.split(/\r?\n/).map((line) => stripControlChars(line));
   const commandLines = lines.map((line, index) =>
     index === 0 ? `${ENTRY_INDENT}$ ${line}` : `${COMMAND_CONTINUATION_INDENT}${line}`,
   );
@@ -87,15 +96,17 @@ export function formatEntryBlock(entry: ApprovalEntry): readonly string[] {
  *
  * `state` is the read's classification: `"missing"`, `"unparseable"` or `"ok"`.
  * `taint` is `null` when the store has none and the read's taint otherwise.
- * `entries` lists `{ id: approvalId(entry), ...entry }` — the id is computed
+ * `entries` lists `{ ...entry, id: approvalId(entry) }` — the id is computed
  * from (stage, command, approvedAt), so re-deriving it here lets a JSON
- * consumer delete by id without depending on the file format.
+ * consumer delete by id without depending on the file format. The computed id
+ * is placed last so an on-disk element carrying a stray `id` property cannot
+ * shadow it.
  */
 export function toListJson(path: string, read: ApprovalsFileRead): object {
   const taint = read.file.taint === undefined ? null : read.file.taint;
   const entries: readonly object[] = read.file.entries.map((entry: ApprovalEntry) => ({
-    id: approvalId(entry),
     ...entry,
+    id: approvalId(entry),
   }));
   return {
     path,
@@ -116,9 +127,9 @@ const REMOVAL_PREVIEW_LIMIT = 80;
 /** The single line a removal prints for one entry, per the US-005 interface. */
 export function formatRemovedLine(entry: ApprovalEntry): string {
   const id = approvalId(entry);
-  // Strip a trailing CR so a CRLF first line still produces a single-line
-  // `removed ...` record (the store layer parses commands with the same
-  // tolerance, see readApprovalsFileDetailed).
-  const preview = (entry.command.split("\n", 1)[0] ?? "").replace(/\r$/, "");
-  return `removed ${id}  ${entry.stage}  ${preview.slice(0, REMOVAL_PREVIEW_LIMIT)}`;
+  // The preview is the command's first line rendered as a single line, so a
+  // trailing CR is dropped and any remaining control/escape sequences are
+  // stripped before printing (SEC-09).
+  const preview = stripControlChars((entry.command.split("\n", 1)[0] ?? "").replace(/\r$/, ""));
+  return `removed ${id}  ${stripControlChars(entry.stage)}  ${preview.slice(0, REMOVAL_PREVIEW_LIMIT)}`;
 }

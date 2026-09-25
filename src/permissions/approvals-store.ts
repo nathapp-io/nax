@@ -137,15 +137,21 @@ export function approvalId(entry: ApprovalEntry): string {
  *
  * A present `taint` is still parsed when the rest of the file is unparseable:
  * a forged `entries` array must not strip the marker.
+ *
+ * A read failure (EACCES/EIO) is not a parse failure and is not classified
+ * here — it propagates so a caller that must surface it (the `nax approvals`
+ * CLI) can report it instead of mislabelling it `unparseable`. Callers that
+ * must stay fail-closed use `readApprovalsFile`, which catches it.
  */
 export async function readApprovalsFileDetailed(path: string): Promise<ApprovalsFileRead> {
   const file = Bun.file(path);
   if (!(await file.exists())) {
     return { state: "missing", file: EMPTY_FILE, droppedMalformed: 0 };
   }
+  const contents = await file.text();
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await file.text());
+    parsed = JSON.parse(contents);
   } catch {
     return { state: "unparseable", file: EMPTY_FILE, droppedMalformed: 0 };
   }
@@ -169,9 +175,18 @@ export async function readApprovalsFileDetailed(path: string): Promise<Approvals
   return { state: "ok", file: { entries: kept, taint: parseTaint(taint) }, droppedMalformed: dropped };
 }
 
-/** Missing or malformed reads as empty: the CACHE fails, the chain does not. */
+/**
+ * Missing, malformed OR unreadable reads as empty: the CACHE fails, the chain
+ * does not. A permissions/IO error is caught here (rather than propagating
+ * from `readApprovalsFileDetailed`) so it cannot abort an approval lookup; a
+ * caller that must distinguish it calls the detailed read directly.
+ */
 export async function readApprovalsFile(path: string): Promise<ApprovalsFile> {
-  return (await readApprovalsFileDetailed(path)).file;
+  try {
+    return (await readApprovalsFileDetailed(path)).file;
+  } catch {
+    return EMPTY_FILE;
+  }
 }
 
 export async function readApprovals(path: string): Promise<readonly ApprovalEntry[]> {

@@ -34,7 +34,10 @@ through the `src/permissions` barrel. Two rulings from brainstorming (2026-09-24
 
 1. **Commands print raw.** `list` shows each command byte-for-byte as stored. Masking secrets
    is an egress concern (the Telegram/webhook prompt, review #9) and `approvals.json` itself
-   stays raw by that ruling.
+   stays raw by that ruling. "Raw" means no secret masking, not "unsanitised for a terminal":
+   every displayed field (and the JSON body's free-text values are left for the consumer) is
+   passed through `stripControlChars` (SEC-09) so a forged entry cannot inject ANSI/OSC escape
+   sequences into the operator's terminal.
 2. **`rm` addresses entries by a derived 8-hex id**, not by list position (unsafe while a run
    appends) and not by retyping the byte-exact command (impractical for heredocs).
 
@@ -46,7 +49,8 @@ to implement.
 **`readApprovalsFile`** — `src/permissions/approvals-store.ts:88` (US-001)
 - Baseline: `readApprovalsFile(path: string): Promise<ApprovalsFile>`, parses inline.
 - Target: same signature and same results for every input; implemented as
-  `(await readApprovalsFileDetailed(path)).file`.
+  `(await readApprovalsFileDetailed(path)).file`, with a read failure (EACCES/EIO) caught and
+  read as empty so the cache stays fail-closed (`readApprovalsFileDetailed` itself propagates it).
 
 Symbols this feature **adds**:
 
@@ -155,6 +159,10 @@ ids; two entries with an identical triple share an id and are removed together.
 | otherwise | `ok` | entries filtered by `isApprovalEntry`, taint parsed by `parseTaint` (both unchanged) |
 
 `droppedMalformed` counts the array elements `isApprovalEntry` rejected (0 unless `ok`).
+
+A read failure (EACCES/EIO) is not a parse failure, so `readApprovalsFileDetailed` does not
+classify it as `unparseable`; the rejection propagates. `readApprovalsFile` catches it and reads
+as empty so the cache stays fail-closed; the CLI's read path surfaces it as an error.
 
 ### Removal rules
 
@@ -473,7 +481,7 @@ green under `bun run test`.
 6. [unit] `approvalsListCommand` on a store with 1 malformed element writes `1 malformed entries ignored` to stderr.
 7. [unit] `approvalsListCommand` on a store with 1 malformed element and 1 valid entry writes the valid entry's first line to stdout.
 8. [unit] `approvalsListCommand` with `json: true` writes to stdout exactly one JSON object whose keys are `path`, `state`, `taint`, `droppedMalformed` and `entries`.
-9. [unit] `approvalsListCommand` with `json: true` writes each element of `entries` deep-equal to `{ id: approvalId(entry), ...entry }`.
+9. [unit] `approvalsListCommand` with `json: true` writes each element of `entries` deep-equal to `{ ...entry, id: approvalId(entry) }` (the computed id is placed last so a stray on-disk `id` cannot shadow it).
 10. [unit] `approvalsListCommand` with `json: true` on an untainted store writes `taint` as `null`.
 11. [unit] `approvalsListCommand` with `json: true` on a tainted store writes `taint` deep-equal to the store's taint.
 12. [unit] `approvalsListCommand` with `json: true` on a missing store writes `state` as `"missing"`.

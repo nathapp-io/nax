@@ -319,7 +319,7 @@ nax approvals list
 # Resolve the store for a specific workdir
 nax approvals list -d /path/to/project
 
-# Emit machine-readable JSON (US-004)
+# Emit machine-readable JSON
 nax approvals list --json
 ```
 
@@ -328,7 +328,7 @@ nax approvals list --json
 | Flag | Description |
 |:-----|:------------|
 | `-d, --dir <path>` | Project directory (defaults to the current directory) |
-| `--json` | Emit the list as JSON (US-004) |
+| `--json` | Emit the list as a machine-readable JSON object |
 
 **Output:**
 
