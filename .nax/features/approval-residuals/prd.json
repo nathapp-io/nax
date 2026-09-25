@@ -3,7 +3,7 @@
   "feature": "approval-residuals",
   "branchName": "feat/approval-residuals",
   "createdAt": "2026-09-24T00:00:00.000Z",
-  "updatedAt": "2026-09-25T11:49:15.345Z",
+  "updatedAt": "2026-09-25T12:26:34.979Z",
   "userStories": [
     {
       "id": "US-001",
@@ -98,8 +98,8 @@
         "lifecycle"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -170,7 +170,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Textual gate change follows established mask/bracket matching, but secures subprocess env handling across multiple src/ call sites; security override requires isolated TDD."
+        "reasoning": "Textual gate change follows established mask/bracket matching, but secures subprocess env handling across multiple src/ call sites; security override requires isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "scripts/check-git-spawn-env.ts",
@@ -185,7 +188,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6c618ce0a34fad6b9866f8601c3cece64eef6733"
     }
   ],
   "analysis": "Three independent TypeScript/Bun security fixes; no inter-story dependency or data migration. US-001: src/permissions/bash-lex.ts:46-51 defines BashLexResult and :68-228 flushes words, redirects and segments; refused() currently discards all completed segments. Capture completed segments and completed tokens/redirects on every refusal without flushing the in-progress word or dangling redirect; retain zero imports in permissions. src/permissions/index.ts:15-16 already reexports BashLexResult and lexBashCommand; src/tools/policy-bash-raw.ts:135 also consumes the lexer and must remain behaviorally unchanged. src/tools/policy-bash.ts:228-272 currently refuses lexical errors, checks deny, grants, payload, then asks: move deny/payload before both escalatable refusals, with nextWorkingDirectories still applied per segment; checkPayload at :144-226 retains its reasons/breach bits. src/tools/policy-command-branch.ts:81 converts only escalatable denials to asks; integration assertions should drive buildCodingToolSupport/runtime.callTool. src/tools/bash.ts:117-145 advertises incorrect escalated checks and contains the nax#2194 caveat; update only escalate description. docs/adr/ADR-030-bash-approval-modes.md:97-110 defines the Category A/B distinction; delete its disclosed divergence at :465-476. Existing tests include test/unit/permissions/bash-lex.test.ts and test/unit/agents/coding-tool-bash-escalate-truth.test.ts; reverse only the two obsolete escalation expectations. Change in denial reason for ungranted unsafe commands is intentional, but grant-only misses and lexer refusals before a completed word still escalate. US-002: src/interaction/dispatch-ask.ts:54-65 has injectable dependencies, :103-192 already taints before and after a dispatch scope, and :236-255 resolves modes across root and package configs. src/permissions/approvals-taint.ts:69-153 exposes isForgeCapable, taint/clear and never-throw prepareApprovalsStore with warning on failed writes. src/interaction/index.ts:14-27 exports interaction helpers. src/execution/lifecycle/run-setup.ts:69-82 deps, :110-136 result, :273-314 crash context and :447-474 post-lock init/return are insertion points; the handler is installed before PRD/effective modes load and needs a forwarder. src/execution/crash-recovery.ts:34-58 hands its context to installSignalHandlers; src/execution/crash-signals.ts:27-45 context and :108-130 teardown require sealing after killAll, inside FATAL_TEARDOWN_DEADLINE_MS. src/execution/runner-setup.ts:46-94 derives result fields from setupRun and returns it unchanged. src/execution/runner.ts:413-439 calls cleanupRun; src/execution/lifecycle/run-cleanup.ts:68-109 options and :273-300 action/plugin/interaction order allow sealing just before interaction.destroy. Existing dispatch-ask, run-setup, run-cleanup tests and runner-total.test.ts/runner-run-id.test.ts setup literals need updates; create dedicated tests because run-setup.test.ts and run-cleanup.test.ts are near the 800-line limit. Never clear a trusted approvals file at seal time or load config on the signal path. US-003: scripts/check-git-spawn-env.ts:31-38 regexes; :49-90 mask retains offsets and newlines, blanking comments in code and strings in shape; :111-118 matchingClose and :120-154 literal-git checks should retain their why strings. Extend textual spawn call scanning, inspect src/ CLI violations and mark existing generic/nongit argv call sites with reasoned comments, not runtime changes. CLI walks src/ only at :156-188. test/unit/scripts/check-git-spawn-env.test.ts provides existing fixture conventions. Examples of potentially affected calls include src/hooks/runner.ts:224, src/execution/new-package-setup.ts:90, src/utils/argv-exec.ts:160, src/cli/plan-runtime/index.ts:93 and src/agents/acp/spawn-client-session.ts:143; actual set is the gate's output, not a preapproved list. Risks include misreading nested parentheses or quoted/commented pseudo-calls. No approvals.json schema or cache-link changes, no new git spawn helper.",
