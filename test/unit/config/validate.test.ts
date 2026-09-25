@@ -43,6 +43,7 @@ describe("validateConfig — agent.fallback.map agent key validation", () => {
     const config = cfg({
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       agent: {
+        default: "claude",
         fallback: {
           map: { claude: ["codex"] },
         },
@@ -60,6 +61,7 @@ describe("validateConfig — agent.fallback.map agent key validation", () => {
     const config = cfg({
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       agent: {
+        default: "claude",
         fallback: {
           map: { claude: ["codex", "gemini"] },
         },
@@ -145,6 +147,7 @@ describe("validateConfig — agent.fallback.map agent key validation", () => {
 describe("validateConfig — tierOrder agent key validation", () => {
   test("returns error when tierOrder entry has agent not in models", () => {
     const config = cfg({
+      agent: { default: "claude" },
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       autoMode: {
         escalation: {
@@ -163,6 +166,7 @@ describe("validateConfig — tierOrder agent key validation", () => {
 
   test("returns error message referencing tierOrder or tier context", () => {
     const config = cfg({
+      agent: { default: "claude" },
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       autoMode: {
         escalation: {
@@ -205,6 +209,7 @@ describe("validateConfig — tierOrder agent key validation", () => {
 
   test("passes when tierOrder entries have no agent field (backward compat)", () => {
     const config = cfg({
+      agent: { default: "claude" },
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       autoMode: {
         escalation: {
@@ -229,6 +234,7 @@ describe("validateConfig — tierOrder agent key validation", () => {
 
   test("returns errors for each invalid agent across multiple tierOrder entries", () => {
     const config = cfg({
+      agent: { default: "claude" },
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       autoMode: {
         escalation: {
@@ -289,6 +295,7 @@ describe("validateConfig — combined agent.fallback.map and tierOrder validatio
 describe("validateConfig — complexityRouting rung-qualified entries (spec §6)", () => {
   test("string form error message stays byte-identical to the pre-plan-C one", () => {
     const config = cfg({
+      agent: { default: "claude" },
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       autoMode: {
         complexityRouting: {
@@ -307,6 +314,7 @@ describe("validateConfig — complexityRouting rung-qualified entries (spec §6)
 
   test("object rung with an unknown agent errors", () => {
     const config = cfg({
+      agent: { default: "claude" },
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       autoMode: {
         complexityRouting: {
@@ -326,6 +334,7 @@ describe("validateConfig — complexityRouting rung-qualified entries (spec §6)
 
   test("object rung whose tier is missing under its agent errors", () => {
     const config = cfg({
+      agent: { default: "claude" },
       models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
       autoMode: {
         complexityRouting: {
@@ -345,6 +354,7 @@ describe("validateConfig — complexityRouting rung-qualified entries (spec §6)
 
   test("valid object rung produces no complexityRouting errors", () => {
     const config = cfg({
+      agent: { default: "claude" },
       models: {
         claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
         native: { cheap: "opencode-go/deepseek-v4-flash" },
@@ -372,6 +382,7 @@ describe("agentless tierOrder rungs resolve against the default agent's map (spe
 
   test("agentless rung whose tier is missing from the default agent's map is an error", () => {
     const config = cfg({
+      agent: { default: "claude" },
       models: MODELS,
       autoMode: { escalation: { tierOrder: [{ tier: "cheap", attempts: 2 }] } }, // claude has no "cheap"
     });
@@ -382,6 +393,7 @@ describe("agentless tierOrder rungs resolve against the default agent's map (spe
 
   test("agentless rung naming a default-agent tier passes", () => {
     const config = cfg({
+      agent: { default: "claude" },
       models: MODELS,
       autoMode: { escalation: { tierOrder: [{ tier: "fast", attempts: 2 }] } },
     });
@@ -391,6 +403,7 @@ describe("agentless tierOrder rungs resolve against the default agent's map (spe
   test("agent-qualified rung is left to the schema gate (no duplicate error here)", () => {
     // schemas.ts:512-517 owns this case; validateConfig must not re-report it.
     const config = cfg({
+      agent: { default: "claude" },
       models: MODELS,
       autoMode: { escalation: { tierOrder: [{ tier: "cheap", attempts: 3, agent: "native" }] } },
     });

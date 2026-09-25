@@ -266,6 +266,54 @@ export async function ambientShadows(providerIds: readonly string[]): Promise<st
 }
 
 /**
+ * Of these providers, which have NO credential at all — neither stored nor
+ * ambient?
+ *
+ * Asked for the providers the default native tier map names, so an install
+ * whose only credential belongs to another provider fails before a billed call
+ * rather than at the first request.
+ *
+ * What counts as "has a credential": a stored entry, or nax-ai's ambient probe
+ * answering true. That probe swallows its own check/resolve errors and answers
+ * false, so a provider whose resolution fails IS reported missing — the caller
+ * must exclude providers it knows authenticate some other way (catalog
+ * overrides). The two cases here that do not guess "no" are the ones this
+ * function can see: an unreadable store, and a sweep that outlives
+ * AMBIENT_PROBE_TIMEOUT_MS (pi's resolve() "may execute commands") — both
+ * report nothing missing.
+ */
+export async function providersWithoutCredentials(providerIds: readonly string[]): Promise<string[]> {
+  const unique = [...new Set(providerIds)];
+  let stored: ReadonlySet<string>;
+  try {
+    stored = new Set((await listStoredProviders()).map((entry) => entry.providerId));
+  } catch {
+    return [];
+  }
+  const sweep = Promise.all(
+    unique
+      .filter((providerId) => !stored.has(providerId))
+      .map(async (providerId) => {
+        try {
+          return (await _authDeps.ambientAuthAvailable(providerId)) ? undefined : providerId;
+        } catch {
+          return undefined;
+        }
+      }),
+  ).then((missing) => missing.filter((id): id is string => id !== undefined));
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<string[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), AMBIENT_PROBE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([sweep, expiry]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
  * How long the whole ambient sweep may take before it gives up and reports
  * "credentialed".
  *

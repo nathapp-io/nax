@@ -7,6 +7,7 @@
  * Validates NaxConfig structure and constraints.
  */
 
+import { DEFAULT_AGENT_NAME } from "./agent-defaults";
 import type { NaxConfig } from "./schema";
 
 /** Validation result */
@@ -39,7 +40,7 @@ export function validateConfig(config: NaxConfig): ValidationResult {
   if (!config.models) {
     errors.push("models mapping is required");
   } else {
-    const defaultAgent = config.agent?.default ?? "claude";
+    const defaultAgent = config.agent?.default ?? DEFAULT_AGENT_NAME;
     const agentModels = config.models[defaultAgent];
     if (!agentModels) {
       errors.push(`models.${defaultAgent} is required (default agent has no model map)`);
@@ -128,7 +129,7 @@ export function validateConfig(config: NaxConfig): ValidationResult {
       // An agentless rung resolves against the default agent's map, and a typo there
       // otherwise only surfaces mid-run as "budget unbounded" + a failed resolution.
       if (tc.agent === undefined) {
-        const owner = config.agent?.default ?? "claude";
+        const owner = config.agent?.default ?? DEFAULT_AGENT_NAME;
         const ownerMap = config.models[owner];
         if (ownerMap && ownerMap[tc.tier] === undefined) {
           errors.push(
@@ -140,7 +141,7 @@ export function validateConfig(config: NaxConfig): ValidationResult {
   }
 
   // Validate complexityRouting values reference tiers that exist in models config
-  const defaultAgentKey = config.agent?.default ?? "claude";
+  const defaultAgentKey = config.agent?.default ?? DEFAULT_AGENT_NAME;
   const complexities = ["simple", "medium", "complex", "expert"] as const;
   for (const complexity of complexities) {
     const entry = config.autoMode.complexityRouting[complexity];

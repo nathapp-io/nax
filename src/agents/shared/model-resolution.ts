@@ -7,7 +7,7 @@
  * Implementation placeholder — logic to be filled in by the implementer.
  */
 
-import { resolveModel } from "@/config";
+import { DEFAULT_AGENT_NAME, resolveModel } from "@/config";
 import type { ModelDef, NaxConfig } from "@/config/schema";
 import { NaxError } from "@/errors";
 
@@ -30,7 +30,7 @@ export function resolveBalancedModelDef(
 ): ModelDef {
   const configWithModels = config as Partial<NaxConfig>;
   const models = configWithModels.models as Record<string, Record<string, unknown>> | undefined;
-  const defaultAgent = configWithModels.agent?.default ?? "claude";
+  const defaultAgent = configWithModels.agent?.default ?? DEFAULT_AGENT_NAME;
 
   // Try to get balanced tier from defaultAgent
   const balancedEntry = models?.[defaultAgent]?.balanced;

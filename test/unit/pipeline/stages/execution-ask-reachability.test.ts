@@ -132,7 +132,7 @@ describe("execution stage — approvals store provenance (#2199)", () => {
 
   test("a forge-capable run taints before the story's agents and again after them", async () => {
     const calls = spyPrepare();
-    const config = makeNaxConfig({ execution: { bashApproval: "raw" } });
+    const config = makeNaxConfig({ execution: { bashApproval: "raw", sandbox: { enabled: false } } });
     await executionStage.execute(makePipelineContext({ config, rootConfig: config }));
     expect(calls).toEqual([
       { forgeCapable: true, planRan: false },

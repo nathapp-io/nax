@@ -40,6 +40,7 @@ import { cleanupTempDir, makeNaxConfig, makeSpawn, makeTempDir } from "@test/hel
 import { buildCodingToolSupport, buildLedgerSessionName, resolveCodingToolSupport } from "@/agents/coding-tool-support";
 import { resolvePackageName } from "@/agents/exec-package-name";
 import { DEFAULT_CODING_TOOLS } from "@/config/permissions";
+import { _resetSandboxRegistryForTests } from "@/sandbox";
 import type { ToolProvider } from "@/tools";
 import { _argvExecDeps } from "@/utils/argv-exec";
 
@@ -68,6 +69,11 @@ afterEach(() => {
   cleanupTempDir(bashRoot);
   cleanupTempDir(rootA);
   cleanupTempDir(rootB);
+  // The sandbox (on by default) is a process-wide singleton — several tests
+  // here build coding-tool support without disabling it, and an uncleared
+  // cached backend would leak into unrelated files sharing the bun test
+  // process (e.g. test/unit/sandbox/registry.test.ts).
+  _resetSandboxRegistryForTests();
 });
 
 function staticProvider(): ToolProvider {
@@ -390,6 +396,9 @@ describe("resolveCodingToolSupport — Exec package name from the story package 
       const execution: Record<string, unknown> = {
         permissionProfile: "unrestricted",
         permissions: { run: { allow: ["Exec(cargo add*)"] } },
+        // Not what C1 is testing — the sandbox wraps the spawned argv, which
+        // would obscure the package-name resolution this test asserts on.
+        sandbox: { enabled: false },
       };
       const support = await resolveCodingToolSupport({
         declaredTools: ["RunCommand", "Exec"],

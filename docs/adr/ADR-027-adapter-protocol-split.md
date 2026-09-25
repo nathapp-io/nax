@@ -534,3 +534,52 @@ are both stated as fact today and stop being true at step 2.
 `.nax/rules/adapter-wiring.md` is path-scoped to `src/agents/**` and needs the
 native path described in it; `bun run check:rules-drift` fails if the generated
 copies are not regenerated.
+
+---
+
+## Amendment — 2026-09-25: `hybrid` and the native agent are the defaults
+
+**Supersedes:** §2's "Defaulting to `acp` means no existing config changes behaviour" and the
+Consequences bullet that `protocol` defaults to `acp`.
+
+`agent.protocol` now defaults to `hybrid` and `agent.default` to `native`. The built-in
+`models` block gains a provider-qualified `native` tier map beside `claude`
+(`anthropic/claude-haiku-4-5`, `anthropic/claude-sonnet-5`, `anthropic/claude-opus-5-5`), so a
+config that names no model still validates. The defaults live in one leaf module,
+`src/config/agent-defaults.ts`.
+
+This IS a behaviour change for any config that relied on the old defaults: an unconfigured
+install now dispatches to the native agent and needs Anthropic credentials for it (`nax auth`
+or the provider's environment variable). Keeping acpx behaviour needs `agent.default: "claude"`.
+
+Two gate corrections ship with it:
+
+- **A built-in model map is not a declaration.** The loader deep-merges every config over
+  `DEFAULT_CONFIG`, so each built-in map is present whether or not the user wrote it. The gate
+  used to judge them anyway, which made `protocol: "native"` unloadable (the injected
+  `models.claude` was rejected as an acpx entry) and would have made `protocol: "acp"`
+  unloadable once `models.native` became built in. The gate now skips a map that is exactly the
+  built-in one; an edited map is still judged.
+- **`acp` cannot reach a `native` default.** `protocol: "acp"` with `agent.default: "native"`
+  (including the new built-in default) is rejected at load with the fix named, instead of
+  failing at dispatch. A config that sets only `protocol: "acp"` must now also set
+  `agent.default`.
+
+Two run-start guards cover what the flip would otherwise leave silent. Precheck is opt-in
+(`NAX_PRECHECK=1`), so both live on the always-on `setupRun` path:
+
+- **Native credentials (refuses the run).** The adapter's run-start credential check accepts any
+  provider's credential by design, so an install holding only another provider's key used to
+  pass setup and fail its first request. When the default agent is native, `setupRun` names
+  every provider in `models.native` that has neither a stored nor an ambient credential and
+  throws `NATIVE_CREDENTIALS_MISSING` before any billed run call (dry runs are exempt; `nax run --plan`
+  runs its plan step before setup, so that one call is not covered). Providers
+  declared under `agent.native.catalogOverrides` are skipped, since an override can carry its
+  own auth or need none; an unreadable credential store or a probe sweep that outlives 2 s
+  reports nothing missing. The same check is the `native-credentials` blocker under
+  `nax precheck`.
+- **Unreferenced agent models (warning).** `hybrid` lets both transports run, but only
+  `agent.default` takes unassigned work. A user-declared `models.<acpx agent>` map that no
+  default, enabled fallback rung, `{agent, ...}` pin (found by shape, anywhere in the config),
+  escalation rung, complexity route, routing profile or PRD story reaches is reported at setup
+  with the fix. The built-in map is never reported.

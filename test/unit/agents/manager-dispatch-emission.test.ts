@@ -21,7 +21,7 @@ import type { RunAsSessionOpts } from "@/agents/manager-types";
 import { _registryTestAdapters, createAgentRegistry } from "@/agents/registry";
 import type { AgentAdapter, SessionHandle, TurnResult } from "@/agents/types";
 import { resolveDefaultAgent } from "@/agents/utils";
-import { agentManagerConfigSelector, DEFAULT_CONFIG } from "@/config";
+import { agentManagerConfigSelector, DEFAULT_AGENT_NAME, DEFAULT_CONFIG } from "@/config";
 import { resolvePermissions } from "@/config/permissions";
 import { NaxConfigSchema } from "@/config/schemas";
 import type { AgentManagerConfig } from "@/config/selectors";
@@ -605,12 +605,12 @@ describe("AgentManager — narrowed config (Pick<NaxConfig, 'agent' | 'execution
 
     test("returns fallback when default is empty", () => {
       const config = makeSlicedConfig({ default: "" });
-      expect(resolveDefaultAgent(config)).toBe("claude");
+      expect(resolveDefaultAgent(config)).toBe(DEFAULT_AGENT_NAME);
     });
 
     test("returns fallback when no agent config", () => {
       const config = makeSlicedConfig({});
-      expect(resolveDefaultAgent(config)).toBe("claude");
+      expect(resolveDefaultAgent(config)).toBe(DEFAULT_AGENT_NAME);
     });
   });
 
@@ -626,13 +626,13 @@ describe("AgentManager — narrowed config (Pick<NaxConfig, 'agent' | 'execution
     });
 
     test("creates registry with sliced config", () => {
-      const config = makeSlicedConfig({ default: "mock" });
+      const config = makeSlicedConfig({ default: "mock", protocol: "acp" });
       const registry = createAgentRegistry(config);
       expect(registry.protocol).toBe("acp");
     });
 
     test("creates registry with sliced config — safe with no agent.default", () => {
-      const config = makeSlicedConfig({}); // no default, no agent
+      const config = makeSlicedConfig({ protocol: "acp" }); // no default, no agent
       const registry = createAgentRegistry(config);
       expect(registry.protocol).toBe("acp");
     });

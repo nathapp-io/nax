@@ -11,9 +11,12 @@ import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { verifierOp } from "@/operations";
 import type { AskResolver } from "@/permissions";
+import { _resetSandboxRegistryForTests } from "@/sandbox";
 import { VERDICT_FILE } from "@/tdd";
 import { _codingToolDeps } from "@/tools";
 import { gitWithTimeout } from "@/utils/git";
+
+afterEach(() => _resetSandboxRegistryForTests()); // sandbox on by default: drop the cached backend
 
 let root: string;
 

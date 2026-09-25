@@ -16,7 +16,8 @@ nax agents
 
 | Agent | Binary | Status |
 |:------|:-------|:-------|
-| Claude Code | `claude` | Stable (default) |
+| Native (nax-ai) | — (in-process) | Stable (default) |
+| Claude Code | `claude` | Stable |
 | OpenCode | `opencode` | Stable |
 | Codex | `codex` | Stable |
 | Gemini CLI | `gemini` | Stable |
@@ -28,6 +29,8 @@ nax connects to agents via [acpx](https://github.com/openclaw/acpx). All agents 
 > **Known issue — `acpx` ≤ 0.3.1:** The `--model` flag is not supported. Model selection via `execution.model` or per-package `model` overrides has no effect. As a temporary workaround, use the [nathapp-io/acpx](https://github.com/nathapp-io/acpx) fork which adds `--model` support. Upstream fix is tracked in [openclaw/acpx#49](https://github.com/openclaw/acpx/issues/49).
 
 **Configuring the default agent and fallback chain (ADR-012):**
+
+The built-in default is `"protocol": "hybrid"` with `"default": "native"`. The example below opts into an acpx agent instead; under `"acp"`, `agent.default` must name an acpx agent.
 
 ```json
 {

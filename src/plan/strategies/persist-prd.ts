@@ -23,7 +23,7 @@
  */
 import { existsSync as defaultExistsSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentRoutingConfig, ModelsConfig } from "@/config";
+import { type AgentRoutingConfig, DEFAULT_AGENT_NAME, type ModelsConfig } from "@/config";
 import { discoverWorkspacePackages as defaultDiscoverWorkspacePackages } from "@/context/generator";
 import { getLogger } from "@/logger";
 import { applyPlanFidelity } from "@/operations";
@@ -172,7 +172,7 @@ export async function persistPrd(ctx: PlanModeContext, prd: PRD): Promise<string
     agentRouting: ctx.config.routing?.agents,
     profileName: ctx.profileName,
     models: ctx.config.models,
-    defaultAgent: ctx.config.agent?.default ?? "claude",
+    defaultAgent: ctx.config.agent?.default ?? DEFAULT_AGENT_NAME,
     outputPath: ctx.outputPath,
     repoRoot: ctx.workdir,
     writeFile: ctx.deps.writeFile,

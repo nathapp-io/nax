@@ -3,10 +3,18 @@
  * runtime's tap, mirroring the askResolver forwarding test. Its own file
  * because coding-tool-support.test.ts is at the 800-line test limit.
  */
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support";
 import type { CommandShadow } from "@/command-safety";
+import { _resetSandboxRegistryForTests } from "@/sandbox";
+
+// The sandbox is on by default, so these tests build a real backend; the registry
+// caches it per process, and it would leak into later files (e.g.
+// test/unit/sandbox/registry.test.ts) without a reset.
+afterEach(() => {
+  _resetSandboxRegistryForTests();
+});
 
 describe("resolveCodingToolSupport — commandShadow (P5 threading)", () => {
   test("forwards a commandShadow from options into the runtime's tap", async () => {

@@ -7,9 +7,10 @@ import {
   ambientShadows,
   importPiCredentials,
   listStoredProviders,
+  providersWithoutCredentials,
   removeStoredProvider,
 } from "@/agents/native/auth";
-import { _resetCredentialStore, naxCredentialStore } from "@/agents/native/credentials";
+import { _resetCredentialStore, credentialFilePath, naxCredentialStore } from "@/agents/native/credentials";
 
 let dir: string;
 let piPath: string;
@@ -109,5 +110,40 @@ describe("ambientShadows", () => {
       throw new Error("probe exploded");
     });
     expect(await ambientShadows(["openrouter"])).toEqual([]);
+  });
+});
+
+describe("providersWithoutCredentials", () => {
+  test("names a provider with neither a stored nor an ambient credential", async () => {
+    await importPiCredentials({ from: piPath });
+    _authDeps.ambientAuthAvailable = mock(async (id: string) => id === "openrouter");
+    expect(await providersWithoutCredentials(["anthropic", "opencode-go", "openrouter"])).toEqual(["anthropic"]);
+  });
+
+  test("a stored credential covers its provider without probing ambient auth", async () => {
+    await importPiCredentials({ from: piPath });
+    const probe = mock(async () => false);
+    _authDeps.ambientAuthAvailable = probe;
+    expect(await providersWithoutCredentials(["opencode-go"])).toEqual([]);
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  test("a probe that throws counts as credentialed: the check must not guess no", async () => {
+    _authDeps.ambientAuthAvailable = mock(async () => {
+      throw new Error("probe exploded");
+    });
+    expect(await providersWithoutCredentials(["anthropic"])).toEqual([]);
+  });
+
+  test("an unreadable credential store reports nothing missing rather than guessing no", async () => {
+    writeFileSync(credentialFilePath(), "{ not json");
+    _resetCredentialStore();
+    _authDeps.ambientAuthAvailable = mock(async () => false);
+    expect(await providersWithoutCredentials(["anthropic"])).toEqual([]);
+  });
+
+  test("de-duplicates the providers it reports", async () => {
+    _authDeps.ambientAuthAvailable = mock(async () => false);
+    expect(await providersWithoutCredentials(["anthropic", "anthropic"])).toEqual(["anthropic"]);
   });
 });

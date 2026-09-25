@@ -5,6 +5,7 @@
  */
 
 import { z } from "zod";
+import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL } from "./agent-defaults";
 import { ConfiguredModelSchema, ModelTierSchema, ProviderCatalogOverrideSchema } from "./schemas-model";
 
 export const PlanConfigSchema = z.object({
@@ -385,10 +386,10 @@ export const DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG: {
 
 export const AgentConfigSchema = z.object({
   // A capability gate, not a router: the agent name routes (ADR-027 §2).
-  // Native calls bill on a different path, so reaching them is an explicit
-  // opt-in rather than the consequence of a typo in `models`.
-  protocol: z.enum(["acp", "native", "hybrid"]).default("acp"),
-  default: z.string().trim().min(1, "agent.default must be non-empty").default("claude"),
+  // Defaults to "hybrid" with the native agent as the default: both transports
+  // are reachable, and "acp" / "native" narrow the permitted set.
+  protocol: z.enum(["acp", "native", "hybrid"]).default(DEFAULT_AGENT_PROTOCOL),
+  default: z.string().trim().min(1, "agent.default must be non-empty").default(DEFAULT_AGENT_NAME),
   maxInteractionTurns: z.number().int().min(1).max(100).default(20),
   promptAudit: PromptAuditConfigSchema.default({ enabled: false }),
   usageAudit: UsageAuditConfigSchema.default({ enabled: false }),

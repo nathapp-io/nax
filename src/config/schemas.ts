@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod";
+import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, DEFAULT_MODEL_MAPS } from "./agent-defaults";
 import { DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
 import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "./schema-types";
 import { ContextConfigSchema } from "./schemas-context";
@@ -80,13 +81,7 @@ export const NaxConfigSchema = z
         message: "outputDir must be absolute or start with ~/",
       }),
     version: z.number().default(1),
-    models: ModelMapSchema.default({
-      claude: {
-        fast: "haiku",
-        balanced: "sonnet",
-        powerful: "opus",
-      },
-    }),
+    models: ModelMapSchema.default(structuredClone(DEFAULT_MODEL_MAPS)),
     autoMode: AutoModeConfigSchema.default({
       enabled: true,
       complexityRouting: {
@@ -334,8 +329,8 @@ export const NaxConfigSchema = z
       },
     }),
     agent: AgentConfigSchema.optional().default({
-      protocol: "acp",
-      default: "claude",
+      protocol: DEFAULT_AGENT_PROTOCOL,
+      default: DEFAULT_AGENT_NAME,
       maxInteractionTurns: 20,
       promptAudit: { enabled: false },
       usageAudit: { enabled: false },
@@ -505,7 +500,7 @@ export const NaxConfigSchema = z
         data.models ?? {},
         pAgent,
         targetTier,
-        data.agent?.default ?? "claude",
+        data.agent?.default ?? DEFAULT_AGENT_NAME,
       ).isTier;
       const hasMatchingRung = tierOrder.some((r) => r.tier === targetTier && r.agent === pAgent);
       if (namesTier && !hasMatchingRung) {

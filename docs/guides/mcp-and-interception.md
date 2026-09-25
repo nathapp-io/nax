@@ -36,8 +36,8 @@ A project left on `"protocol": "acp"` can carry a complete, valid `mcp` and
 `commandInterceptor` config and get **zero** effect from both, with no error. Config
 validity is not activation — verify with the evidence checks below rather than assuming.
 
-> nax's own `.nax/config.json` is currently `"protocol": "acp"` / `"default": "claude"`.
-> Both blocks are configured there and are **dormant** until a run dispatches to native.
+> The built-in defaults are `"protocol": "hybrid"` / `"default": "native"`, so both blocks
+> are live out of the box; they go dormant only when a config switches to an acpx agent.
 
 Second gate, for MCP only: `unrestricted` resolves every attached provider; `scoped`
 resolves exactly the provider tools its stage's `Mcp(...)` rules name; `safe` resolves

@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { _acpAdapterDeps } from "../src/agents/acp/adapter";
 import { _clientDeps } from "../src/agents/native/client";
 import { _notifyDeps } from "../src/finish/notify";
+import { _nativeCredentialDeps } from "../src/precheck/checks-native-credentials";
 
 const isolatedGlobalDir = mkdtempSync(join(tmpdir(), "nax-test-global-"));
 
@@ -50,6 +51,14 @@ delete process.env.TELEGRAM_BOT_TOKEN;
 for (const key of Object.keys(process.env)) {
   if (/_API_KEY$/.test(key)) delete process.env[key];
 }
+
+// ─── Native-credential precheck ──────────────────────────────────────────────
+// Native is the built-in default agent, and the scrub above leaves no provider
+// credential, so the `native-credentials` blocker would fail every runPrecheck
+// test on every machine and mask the blocker each one is actually about. Report
+// every provider as credentialed by default; the check's own tests
+// (test/unit/precheck/checks-native-credentials.test.ts) install their own stub.
+_nativeCredentialDeps.providersWithoutCredentials = async () => [];
 
 // ─── Console suppression ──────────────────────────────────────────────────────
 // Suppress all console output in tests. Tests that need to capture output

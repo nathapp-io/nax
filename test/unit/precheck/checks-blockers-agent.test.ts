@@ -31,9 +31,27 @@ withDepsRestore(_deps, ["spawn"]);
 
 // --- tests ---
 
-describe("checkAgentCLI — default behavior (claude)", () => {
-  test("uses claude by default and on explicit config; passes with correct fields and success message", async () => {
-    for (const agent of [undefined, "claude"] as const) {
+describe("checkAgentCLI — native agent (the default)", () => {
+  test("passes without spawning a binary, by default and on explicit config", async () => {
+    for (const agent of [undefined, "native"] as const) {
+      const calls: string[][] = [];
+      _deps.spawn = makeSpawn(({ cmd }) => {
+        calls.push(cmd);
+        return { exitCode: 127 };
+      }).spawn;
+      const result = await checkAgentCLI(makeConfig(agent));
+      expect(calls, `agent=${agent}`).toHaveLength(0);
+      expect(result.passed, `agent=${agent}`).toBe(true);
+      expect(result.tier).toBe("blocker");
+      expect(result.name).toBe("agent-cli-available");
+      expect(result.message).toContain("in-process");
+    }
+  });
+});
+
+describe("checkAgentCLI — claude", () => {
+  test("spawns claude on explicit config; passes with correct fields and success message", async () => {
+    for (const agent of ["claude"] as const) {
       const calls: string[][] = [];
       _deps.spawn = makeSpawn(({ cmd }) => {
         calls.push(cmd);

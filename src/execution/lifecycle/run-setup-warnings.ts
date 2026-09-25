@@ -2,7 +2,7 @@
  * Run Setup — Warnings
  *
  * Pre-flight warnings emitted by setupRun before the run begins. Pulled out of
- * run-setup.ts to keep that file focused on wiring. Two warnings:
+ * run-setup.ts to keep that file focused on wiring. Four warnings and one guard:
  *  - `warnProfileMismatch` — story-level agentProfileId / agent references that
  *    no longer resolve in config.routing.agents.profiles / config.models, plus
  *    the PRD-level check that the resolved profile matches what plan used.
@@ -11,12 +11,24 @@
  *  - `warnInertBashStages` — ADR-030 pre-flight: stages that declare the Bash
  *    tool while their resolved grants hold no `Bash` entry, so the tool is
  *    never offered and nothing can escalate.
+ *  - `warnUnreferencedAgentModels` — a declared acpx model map that no
+ *    default, rung, pin or PRD story reaches (the native default takes it).
+ *  - `assertDefaultNativeCredentials` — not a warning: refuses the run when a
+ *    provider the default native tier map uses has no credential. Lives here
+ *    because precheck is opt-in and this must hold on every default run.
  *
- * No behaviour change from the original inline versions — pure code move.
+ * The first three moved here from run-setup.ts unchanged; the last two were
+ * added with the native defaults (ADR-027 2026-09-25 amendment).
  */
 
 import type { NaxConfig } from "@/config";
-import { findInertBashStages, resolvePermissions } from "@/config";
+import {
+  describeUnreferencedAgentModels,
+  findInertBashStages,
+  findUnreferencedAgentModels,
+  resolvePermissions,
+} from "@/config";
+import { NaxError } from "@/errors";
 import type { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd";
 
@@ -128,4 +140,37 @@ export function warnInertBashStages(config: NaxConfig, logger: ReturnType<typeof
       { storyId: "_setup", stage, bashApproval: resolved },
     );
   }
+}
+
+/**
+ * Warn once when a user-declared acpx model map is reached by nothing — no
+ * default, enabled fallback rung, pin, or story `routing.agent` — so it would
+ * silently never run under the native default (ADR-027 2026-09-25 amendment).
+ */
+export function warnUnreferencedAgentModels(
+  prd: PRD,
+  config: NaxConfig,
+  logger: ReturnType<typeof getSafeLogger>,
+): void {
+  const storyAgents = prd.userStories.flatMap((story) => (story.routing?.agent ? [story.routing.agent] : []));
+  const agents = findUnreferencedAgentModels(config, storyAgents);
+  if (agents.length === 0) return;
+  logger?.warn("config", describeUnreferencedAgentModels(agents, config), { storyId: "_setup", agents });
+}
+
+/**
+ * Refuse the run when a provider the default native tier map uses has no
+ * credential at all. The adapter's own run-start check accepts ANY provider's
+ * credential, so without this an install holding only another provider's key
+ * passes setup and fails its first billed request. Dynamic import: the precheck
+ * barrel reaches into agents and config, and this module sits under both.
+ */
+export async function assertDefaultNativeCredentials(config: NaxConfig): Promise<void> {
+  const { describeMissingNativeCredentials, findMissingNativeCredentials } = await import("@/precheck");
+  const missing = await findMissingNativeCredentials(config);
+  if (missing.length === 0) return;
+  throw new NaxError(describeMissingNativeCredentials(missing), "NATIVE_CREDENTIALS_MISSING", {
+    stage: "setup",
+    providers: missing.map(({ provider }) => provider),
+  });
 }

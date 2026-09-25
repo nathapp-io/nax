@@ -231,7 +231,7 @@ describe("mergePackageConfig — combined override", () => {
     });
     const result = mergePackageConfig(root, override);
 
-    expect(result.agent?.protocol).toBe("acp");
+    expect(result.agent?.protocol).toBe("hybrid");
     expect(result.agent?.maxInteractionTurns).toBe(20);
     expect(result.models.claude?.fast).toBe("sonnet");
     expect(result.routing?.strategy).toBe("llm");

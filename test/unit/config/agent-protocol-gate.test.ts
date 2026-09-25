@@ -6,6 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+import { deepMergeConfig } from "@/config/merger";
 import { NaxConfigSchema } from "@/config/schemas";
 
 function config(overrides: Record<string, unknown>) {
@@ -13,9 +15,16 @@ function config(overrides: Record<string, unknown>) {
 }
 
 describe("agent.protocol gate", () => {
-  test("defaults to acp so existing config is unchanged", () => {
+  test("defaults to hybrid with native as the default agent", () => {
     const parsed = NaxConfigSchema.parse(config({}));
-    expect(parsed.agent.protocol).toBe("acp");
+    expect(parsed.agent.protocol).toBe("hybrid");
+    expect(parsed.agent.default).toBe("native");
+  });
+
+  test("rejects protocol acp when agent.default is native", () => {
+    const result = NaxConfigSchema.safeParse(config({ agent: { protocol: "acp", default: "native" } }));
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain("agent.default");
   });
 
   test("rejects a native model entry under protocol acp", () => {
@@ -188,5 +197,52 @@ describe("agent.protocol gate — fallback ladder rungs", () => {
       }),
     );
     expect(result.success).toBe(false);
+  });
+});
+
+/**
+ * The loader deep-merges every user config over DEFAULT_CONFIG, so the built-in
+ * `models.claude` and `models.native` maps are present in every config the gate
+ * sees. An untouched built-in map is not a declaration: judging it made
+ * protocol "native" unloadable (the injected models.claude) and would make
+ * protocol "acp" unloadable (the injected models.native).
+ */
+describe("agent.protocol gate — built-in model maps are not declarations", () => {
+  function loaded(user: Record<string, unknown>) {
+    const base: Record<string, unknown> = { ...structuredClone(DEFAULT_CONFIG) };
+    return NaxConfigSchema.safeParse(deepMergeConfig<Record<string, unknown>>(base, user));
+  }
+
+  test("protocol native loads with the built-in models.claude present", () => {
+    const result = loaded({
+      agent: { protocol: "native", default: "native" },
+      models: { native: { fast: "openai/gpt-5.4-mini", balanced: "openai/gpt-5.4", powerful: "openai/gpt-5.4" } },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("protocol acp loads with the built-in models.native present", () => {
+    const result = loaded({ agent: { protocol: "acp", default: "claude" } });
+    expect(result.success).toBe(true);
+  });
+
+  test("protocol acp still rejects a user-edited models.native", () => {
+    const result = loaded({
+      agent: { protocol: "acp", default: "claude" },
+      models: { native: { fast: "openai/gpt-5.4-mini" } },
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain("models.native requires");
+  });
+
+  test("protocol native still rejects a user-edited models.claude", () => {
+    const result = loaded({ agent: { protocol: "native", default: "native" }, models: { claude: { fast: "sonnet" } } });
+    expect(result.success).toBe(false);
+  });
+
+  test("protocol acp with the built-in agent.default names the fix", () => {
+    const result = loaded({ agent: { protocol: "acp" } });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain("agent.default");
   });
 });

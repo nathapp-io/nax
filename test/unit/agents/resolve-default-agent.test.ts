@@ -2,6 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { resolveDefaultAgent } from "@/agents/utils";
 import type { NaxConfig } from "@/config";
+import { DEFAULT_AGENT_NAME } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 
 function cfg(overrides: Record<string, unknown> = {}): NaxConfig {
@@ -16,6 +17,6 @@ describe("resolveDefaultAgent", () => {
 
   test("returns DEFAULT_CONFIG.agent.default when agent block absent", () => {
     const c = cfg({ agent: undefined });
-    expect(resolveDefaultAgent(c)).toBe("claude");
+    expect(resolveDefaultAgent(c)).toBe(DEFAULT_AGENT_NAME);
   });
 });

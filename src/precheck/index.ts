@@ -16,6 +16,7 @@ import type { PRD } from "../prd/types";
 export {
   _checkDiskSpaceDeps,
   _modelResolutionDeps,
+  _nativeCredentialDeps,
   checkAgentCLI,
   checkBuildCommandInReviewChecks,
   checkCanonicalRulesLint,
@@ -31,6 +32,7 @@ export {
   checkLintCommand,
   checkModelResolution,
   checkMultiAgentHealth,
+  checkNativeCredentials,
   checkOptionalCommands,
   checkPendingStories,
   checkPRDValid,
@@ -39,6 +41,8 @@ export {
   checkTestCommand,
   checkTypecheckCommand,
   checkWorkingTreeClean,
+  describeMissingNativeCredentials,
+  findMissingNativeCredentials,
   parseDiskSpaceOutput,
 } from "./checks";
 
@@ -57,6 +61,7 @@ import {
   checkLintCommand,
   checkModelResolution,
   checkMultiAgentHealth,
+  checkNativeCredentials,
   checkOptionalCommands,
   checkPendingStories,
   checkPRDValid,
@@ -162,6 +167,7 @@ function getLateEnvironmentBlockers(config: PrecheckConfig, workdir: string): Ch
   return [
     () => checkAgentCLI(config),
     () => checkModelResolution(config),
+    () => checkNativeCredentials(config),
     () => checkDependenciesInstalled(workdir),
     () => checkTestCommand(config),
     () => checkLintCommand(config),

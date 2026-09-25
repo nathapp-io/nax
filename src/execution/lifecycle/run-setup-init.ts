@@ -42,7 +42,7 @@ import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "@/version";
 import { releaseFeatureLock } from "../feature-lock";
 import { releaseLock } from "../helpers";
 import type { StatusWriter } from "../status-writer";
-import { warnProfileMismatch } from "./run-setup-warnings";
+import { warnProfileMismatch, warnUnreferencedAgentModels } from "./run-setup-warnings";
 import { wipeScratchpad } from "./scratchpad-wipe";
 
 /**
@@ -210,6 +210,8 @@ export async function initializeAfterLock(options: InitializeAfterLockOptions): 
 
     // Warn when any story was planned with an agent profile that has since been removed.
     warnProfileMismatch(prd, config, logger);
+    // Declared acpx model maps nothing reaches (the native default takes that work).
+    warnUnreferencedAgentModels(prd, config, logger);
 
     let counts = initResult.storyCounts;
 

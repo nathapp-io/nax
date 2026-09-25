@@ -19,8 +19,8 @@ const literalPath = z
   .refine((p) => !SANDBOX_GLOB_CHARS.test(p), "sandbox paths must be literal: no * ? [ ] { } (spec F1)");
 
 export const SandboxConfigSchema = z.object({
-  /** Opt-in until the P4 exit runs (spec S1). */
-  enabled: z.boolean().default(false),
+  /** On by default since the P4 exit runs (spec S1); `raw` bash refuses when enabled but unavailable. */
+  enabled: z.boolean().default(true),
   /** One backend today; the interface admits a container backend later. */
   backend: z.enum(["srt"]).default("srt"),
   filesystem: z

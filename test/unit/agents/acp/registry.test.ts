@@ -57,8 +57,8 @@ describe("createAgentRegistry — protocol selection", () => {
   });
 
   test("exposes protocol field from config", () => {
-    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp" } }));
-    const defaultRegistry = createAgentRegistry(makeNaxConfig());
+    const registry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", default: "claude" } }));
+    const defaultRegistry = createAgentRegistry(makeNaxConfig({ agent: { protocol: "acp", default: "claude" } }));
     expect(registry.protocol).toBe("acp");
     expect(defaultRegistry.protocol).toBe("acp");
   });
@@ -116,8 +116,8 @@ describe("Config schema — AgentConfig", () => {
     expect(config.agent).toBeUndefined();
   });
 
-  test("DEFAULT_CONFIG has agent.protocol set to 'acp'", () => {
-    expect(DEFAULT_CONFIG.agent?.protocol).toBe("acp");
+  test("DEFAULT_CONFIG has agent.protocol set to 'hybrid'", () => {
+    expect(DEFAULT_CONFIG.agent?.protocol).toBe("hybrid");
   });
 });
 

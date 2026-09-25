@@ -5,8 +5,8 @@ describe("AgentConfigSchema", () => {
   test("default values", () => {
     const result = NaxConfigSchema.parse({});
     expect(result.agent).toBeDefined();
-    expect(result.agent?.protocol).toBe("acp");
-    expect(result.agent?.default).toBe("claude");
+    expect(result.agent?.protocol).toBe("hybrid");
+    expect(result.agent?.default).toBe("native");
     expect(result.agent?.maxInteractionTurns).toBe(20);
     expect(result.agent?.fallback.enabled).toBe(false);
     expect(result.agent?.fallback.map).toEqual({});

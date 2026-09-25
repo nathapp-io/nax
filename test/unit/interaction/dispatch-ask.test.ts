@@ -171,7 +171,8 @@ describe("buildDispatchAskWiring — approvals provenance (#2199)", () => {
 
   test("a forge-capable scope taints before building and re-taints on dispose", async () => {
     const spy = recordPrepares();
-    const wiring = await buildDispatchAskWiring(opts({ stageModes: ["raw"], storyId: "US-1" }), spy.deps);
+    const config = makeNaxConfig({ execution: { sandbox: { enabled: false } } });
+    const wiring = await buildDispatchAskWiring(opts({ config, stageModes: ["raw"], storyId: "US-1" }), spy.deps);
     expect(spy.calls).toHaveLength(1);
     expect(spy.calls[0]).toMatchObject({ runId: "run-1", storyId: "US-1", forgeCapable: true });
     await wiring.dispose();
@@ -291,12 +292,18 @@ describe("buildRunDispatchAskWiring", () => {
 
     const wiring = await buildRunDispatchAskWiring(
       {
-        ...opts({ outputDir: dir }),
+        // The sandbox is now on by default, which would make a raw stage
+        // trusted (see "the sandbox makes a raw stage trusted" above) — pin
+        // it off so this stays a test of the raw-package stage-mode path.
+        ...opts({ outputDir: dir, config: makeNaxConfig({ execution: { sandbox: { enabled: false } } }) }),
         projectDir: "/repo",
         rootConfig: makeNaxConfig(),
         packageDirs: ["packages/raw"],
       },
-      deps({ loadConfigForPackage: async () => makeNaxConfig({ execution: { bashApproval: "raw" } }) }),
+      deps({
+        loadConfigForPackage: async () =>
+          makeNaxConfig({ execution: { bashApproval: "raw", sandbox: { enabled: false } } }),
+      }),
     );
     expect(await wiring.askResolver.resolve(REQ)).toMatchObject({ decision: "deny", decidedBy: "unavailable" });
     await wiring.dispose();

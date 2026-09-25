@@ -23,9 +23,10 @@ export interface NativeUsage {
   readonly cacheWriteTokens?: number;
 }
 
-/** The one agent name that routes to this transport. Lives here, not in the
- *  barrel, so adapter.ts can import it without an index -> adapter -> index cycle. */
-export const NATIVE_AGENT = "native";
+/** The one agent name that routes to this transport. Defined once in the config
+ *  leaf (config validates against it); re-exported here, not in the barrel, so
+ *  adapter.ts can import it without an index -> adapter -> index cycle. */
+export { NATIVE_AGENT_NAME as NATIVE_AGENT } from "@/config";
 
 export interface NativeModelRef {
   readonly provider: string;

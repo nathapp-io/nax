@@ -57,7 +57,13 @@ describe("checkModelResolution (US-1984 AC1/AC2) — native unresolved id", () =
   });
 
   test("AC2: the blocker message names the configuration key, provider, and model id", async () => {
-    _modelResolutionDeps.resolveNative = async () => ({ status: "unresolved" });
+    // Only the pinned id under test is unresolved — DEFAULT_CONFIG now ships
+    // a real `models.native.{fast,balanced,powerful}` map (native is the default
+    // agent), and those tiers get walked too; blindly failing every
+    // resolution would surface a DIFFERENT blocker first and this
+    // assertion would be checking the wrong message.
+    _modelResolutionDeps.resolveNative = async (_provider, model) =>
+      model === "never-shipped-model" ? { status: "unresolved" } : { status: "resolved" };
 
     const checks = await checkModelResolution({
       models: { native: { powerful: "anthropic/never-shipped-model" } },
@@ -104,9 +110,9 @@ describe("checkModelResolution (US-1984 AC4) — catalogOverrides resolve absent
   // not the entry that references it, so the override was never exercised.
   // Resolved by passing both the native entry and the override list.
   test("AC4: an id absent from the bundled catalog but declared under catalogOverrides has no failing check", async () => {
-    let resolverCalls = 0;
-    _modelResolutionDeps.resolveNative = async () => {
-      resolverCalls += 1;
+    const resolverCalls: Array<[string, string]> = [];
+    _modelResolutionDeps.resolveNative = async (provider, model) => {
+      resolverCalls.push([provider, model]);
       return { status: "resolved" };
     };
 
@@ -117,7 +123,13 @@ describe("checkModelResolution (US-1984 AC4) — catalogOverrides resolve absent
 
     const failing = checks.filter((c) => !c.passed);
     expect(failing).toHaveLength(0);
-    expect(resolverCalls).toBe(1);
+    // native is now the default agent, so DEFAULT_CONFIG walks several
+    // more native-routed sites than just this one override — assert the
+    // resolver was actually exercised for the overridden id specifically,
+    // rather than pin the total call count to every default native site.
+    // Not "exactly once": the tier map and the agentless escalation rung both
+    // reach models.native.powerful, so the id is legitimately resolved per site.
+    expect(resolverCalls).toContainEqual(["opencode-go", "new-model"]);
   });
 });
 
@@ -150,13 +162,22 @@ describe("checkModelResolution (US-1984 AC5) — one failing check per pin site"
     ["routing.llm.model", { routing: { llm: { model: { agent: "claude", model: "never-shipped-acp" } } } }],
     [
       "autoMode.escalation.tierOrder[0].tier",
-      { autoMode: { escalation: { tierOrder: [{ tier: "never-shipped-acp" }] } } },
+      // A rung with no explicit `agent` now falls back to the DEFAULT
+      // default agent ("native"), which would route through the native
+      // resolver instead of leaving the id unverified — pin "claude" so
+      // this stays a test of the ACP path.
+      { autoMode: { escalation: { tierOrder: [{ agent: "claude", tier: "never-shipped-acp" }] } } },
     ],
     [
       "autoMode.escalation.tierOrder[1].tier",
       {
         autoMode: {
-          escalation: { tierOrder: [{ tier: "fast" }, { tier: "never-shipped-acp" }] },
+          escalation: {
+            tierOrder: [
+              { agent: "claude", tier: "fast" },
+              { agent: "claude", tier: "never-shipped-acp" },
+            ],
+          },
         },
       },
     ],

@@ -71,8 +71,49 @@ describe("agentsListCommand", () => {
     try {
       await agentsListCommand(DEFAULT_CONFIG, testDir);
 
-      // Should indicate default agent
-      expect(output).toMatch(/claude.*\(default\)|default.*claude/i);
+      // The native agent is the built-in default: it is listed, in-process, and marked.
+      expect(output).toMatch(/Native \(nax-ai\) \(default\)\s+installed/);
+      expect(output).toContain("in-process");
+      expect(output).not.toMatch(/Claude Code \(ACP\) \(default\)/);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  test("lists only the native agent under protocol native", async () => {
+    const originalLog = console.log;
+    let output = "";
+    console.log = (message: string) => {
+      output += `${message}\n`;
+    };
+
+    try {
+      const nativeConfig = { ...DEFAULT_CONFIG, agent: { ...DEFAULT_CONFIG.agent, protocol: "native" as const } };
+      await agentsListCommand(nativeConfig, testDir);
+
+      expect(output).toContain("Native (nax-ai) (default)");
+      expect(output).not.toContain("Claude Code (ACP)");
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  test("marks an acpx default agent, and omits native under protocol acp", async () => {
+    const originalLog = console.log;
+    let output = "";
+    console.log = (message: string) => {
+      output += `${message}\n`;
+    };
+
+    try {
+      const acpConfig = {
+        ...DEFAULT_CONFIG,
+        agent: { ...DEFAULT_CONFIG.agent, protocol: "acp" as const, default: "claude" },
+      };
+      await agentsListCommand(acpConfig, testDir);
+
+      expect(output).toMatch(/Claude Code \(ACP\) \(default\)/);
+      expect(output).not.toContain("Native (nax-ai)");
     } finally {
       console.log = originalLog;
     }

@@ -21,6 +21,7 @@ export {
   type ImportOutcome,
   importPiCredentials,
   listStoredProviders,
+  providersWithoutCredentials,
   removeStoredProvider,
   runLogin,
 } from "./auth";

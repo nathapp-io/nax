@@ -20,7 +20,7 @@
  * drive specific outcomes without loading the bundled catalog.
  */
 
-import { resolveNativeId } from "@/agents/native";
+import { NATIVE_AGENT, resolveNativeId } from "@/agents/native";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 import {
   collectConfiguredModelPins,
@@ -61,7 +61,7 @@ export const _modelResolutionDeps: ModelResolutionDeps = {
 
 /** True when the resolver table for `agent` routes through the native path. */
 function isNativeAgent(agent: string): boolean {
-  return agent === "native";
+  return agent === NATIVE_AGENT;
 }
 
 export { collectConfiguredModelPins };

@@ -8,8 +8,9 @@
  * they live in a superRefine rather than on the field schemas.
  *
  * protocol does not route; the agent name does (ADR-027 §2). It is a
- * capability gate, because native calls bill on a different path and must be
- * opted into rather than reached by a typo in `models`.
+ * capability gate: the built-in "hybrid" permits both transports, and "acp" /
+ * "native" narrow that set, so an unreachable declaration fails at load
+ * rather than as AGENT_NOT_FOUND mid-story.
  */
 
 import type { z } from "zod";
@@ -17,10 +18,12 @@ import type { z } from "zod";
 // config (which agents itself imports). model-spec.ts is a dependency-free
 // leaf, so this edge closes no cycle. See project-conventions.md § Path Aliases.
 import { parseModelSpec } from "../agents/model-spec";
-
-const NATIVE = "native";
-const DEFAULT_PROTOCOL = "acp";
-const DEFAULT_AGENT = "claude";
+import {
+  DEFAULT_AGENT_NAME as DEFAULT_AGENT,
+  DEFAULT_AGENT_PROTOCOL as DEFAULT_PROTOCOL,
+  isBuiltInModelMap,
+  NATIVE_AGENT_NAME as NATIVE,
+} from "./agent-defaults";
 
 /**
  * Structural, not the parsed `NaxConfig`: this runs *during* that type's own
@@ -40,11 +43,32 @@ function asModelDef(entry: unknown): { model?: unknown; provider?: unknown } | n
   return typeof entry === "object" && entry !== null ? (entry as { model?: unknown; provider?: unknown }) : null;
 }
 
+/**
+ * The `models` agents the user declared. The loader deep-merges every config
+ * over DEFAULT_CONFIG, so each built-in tier map is present whether or not the
+ * user wrote it; an untouched one is not a declaration and must not trip a
+ * protocol that cannot reach it.
+ */
+function declaredModelAgents(models: ProtocolGateInput["models"]): string[] {
+  return Object.entries(models ?? {})
+    .filter(([agent, entry]) => !isBuiltInModelMap(agent, entry))
+    .map(([agent]) => agent);
+}
+
 export function validateProtocolGate(data: ProtocolGateInput, ctx: z.RefinementCtx): void {
   const protocol = data.agent?.protocol ?? DEFAULT_PROTOCOL;
-  const modelAgents = Object.keys(data.models ?? {});
+  const modelAgents = declaredModelAgents(data.models);
 
-  if (protocol === DEFAULT_PROTOCOL && modelAgents.includes(NATIVE)) {
+  if (protocol === "acp" && (data.agent?.default ?? DEFAULT_AGENT) === NATIVE) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["agent", "default"],
+      message:
+        'agent.protocol "acp" cannot reach agent.default "native", which is also the built-in default when agent.default is unset. Set agent.default to an acpx agent such as "claude", or use agent.protocol "hybrid".',
+    });
+  }
+
+  if (protocol === "acp" && modelAgents.includes(NATIVE)) {
     ctx.addIssue({
       code: "custom",
       path: ["models", NATIVE],

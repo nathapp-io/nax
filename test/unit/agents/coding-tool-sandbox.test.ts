@@ -17,6 +17,7 @@ afterEach(() => {
 });
 
 const enabled = { ...DEFAULT_SANDBOX_CONFIG, enabled: true };
+const disabled = { ...DEFAULT_SANDBOX_CONFIG, enabled: false };
 
 describe("resolveSessionSandbox", () => {
   withDepsRestore(_sessionSandboxDeps);
@@ -27,7 +28,7 @@ describe("resolveSessionSandbox", () => {
       probes += 1;
       return { available: true };
     };
-    const l = await resolveSessionSandbox({ config: DEFAULT_SANDBOX_CONFIG, root, needsLauncher: true });
+    const l = await resolveSessionSandbox({ config: disabled, root, needsLauncher: true });
     expect(l.state).toEqual({ kind: "disabled" });
     expect(probes).toBe(0);
   });

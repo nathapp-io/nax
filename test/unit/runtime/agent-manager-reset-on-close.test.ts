@@ -52,6 +52,7 @@ describe("NaxRuntime.close() resets the shared AgentManager (MEM-12)", () => {
     await withTempDir(async (dir) => {
       const config = makeNaxConfig({
         agent: {
+          default: "claude",
           fallback: {
             enabled: true,
             map: { claude: ["codex"] },

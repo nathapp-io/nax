@@ -20,7 +20,9 @@ function baseConfig(models: unknown) {
 }
 
 describe("ModelsSchema — legacy flat config migration", () => {
-  test("auto-migrates legacy flat ModelDef object: tier keys move under defaultAgent, original values preserved", () => {
+  // Legacy flat maps predate per-agent maps and always meant claude, whatever the
+  // current default agent is.
+  test("auto-migrates legacy flat ModelDef object: tier keys move under claude, original values preserved", () => {
     const legacy = {
       fast: { provider: "anthropic", model: "haiku" },
       balanced: { provider: "anthropic", model: "sonnet" },
@@ -32,7 +34,7 @@ describe("ModelsSchema — legacy flat config migration", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    const defaultAgent = DEFAULT_CONFIG.agent?.default ?? "claude";
+    const defaultAgent = "claude";
     const models = result.data.models as Record<string, Record<string, unknown>>;
 
     expect(models[defaultAgent]).toBeDefined();
@@ -44,7 +46,7 @@ describe("ModelsSchema — legacy flat config migration", () => {
     expect(models[defaultAgent].powerful).toEqual({ provider: "anthropic", model: "opus" });
   });
 
-  test("auto-migrates legacy flat string entries: tier keys move under defaultAgent, string values preserved", () => {
+  test("auto-migrates legacy flat string entries: tier keys move under claude, string values preserved", () => {
     const legacy = {
       fast: "claude-haiku-4-5",
       balanced: "claude-sonnet-4-5",
@@ -55,7 +57,7 @@ describe("ModelsSchema — legacy flat config migration", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    const defaultAgent = DEFAULT_CONFIG.agent?.default ?? "claude";
+    const defaultAgent = "claude";
     const models = result.data.models as Record<string, Record<string, unknown>>;
 
     expect(models[defaultAgent]).toBeDefined();
