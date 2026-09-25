@@ -172,6 +172,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
     const manager = new AgentManager(
       makeNaxConfig({
         agent: {
+          default: "claude",
           fallback: {
             enabled: true,
             map: { claude: ["codex"] },
@@ -221,6 +222,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
     const manager = new AgentManager(
       makeNaxConfig({
         agent: {
+          default: "claude",
           idleWatchdog: {
             enabled: true,
             mode: "warn-then-cancel",
@@ -317,6 +319,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
     const manager = new AgentManager(
       makeNaxConfig({
         agent: {
+          default: "claude",
           acp: { promptRetries: 0 },
           idleWatchdog: {
             enabled: true,
@@ -368,6 +371,7 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
     const manager = new AgentManager(
       makeNaxConfig({
         agent: {
+          default: "claude",
           acp: { promptRetries: 0 },
           idleWatchdog: {
             enabled: true,

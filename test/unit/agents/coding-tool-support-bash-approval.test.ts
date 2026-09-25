@@ -2,6 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support";
 import { chainAskLinks } from "@/permissions";
+import { _resetSandboxRegistryForTests } from "@/sandbox";
+
+// The sandbox is on by default, so these tests build a real backend; the registry
+// caches it per process, and it would leak into later files (e.g.
+// test/unit/sandbox/registry.test.ts) without a reset.
+afterEach(() => {
+  _resetSandboxRegistryForTests();
+});
 
 /**
  * The bashApproval seam: resolvePermissions resolves the mode and
@@ -25,9 +33,12 @@ describe("resolveCodingToolSupport — bashApproval threading", () => {
   const supportWithMode = (bashApproval: "gated" | "raw") => {
     // `permissions.run.allow` is in the zod schema but not in the narrow
     // runtime-types alias, so the execution block is widened at the boundary.
+    // Sandbox pinned off: this file tests the mode thread, and the built-in
+    // default (on) would make the raw-admits cases depend on the host's sandbox.
     const execution: Record<string, unknown> = {
       bashApproval,
       permissions: { run: { allow: ["Bash(echo *)"] } },
+      sandbox: { enabled: false },
     };
     return resolveCodingToolSupport({
       declaredTools: ["Bash"],
@@ -59,6 +70,7 @@ describe("resolveCodingToolSupport — bashApproval threading", () => {
       bashApproval: "raw",
       permissionProfile: "scoped",
       permissions: { run: {} },
+      sandbox: { enabled: false },
     };
     const support = await resolveCodingToolSupport({
       declaredTools: ["Bash"],

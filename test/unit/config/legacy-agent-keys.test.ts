@@ -119,7 +119,7 @@ describe("ADR-012 Phase 6 — legacy config key guard", () => {
   test("accepts config with no agent section (uses defaults)", async () => {
     const root = await writeProjectConfig({});
     const config = await loadConfig(root);
-    expect(config.agent?.default).toBe("claude");
+    expect(config.agent?.default).toBe("native");
     expect(config.agent?.fallback?.enabled).toBe(false);
   });
 });

@@ -6,6 +6,7 @@
  * `native` is the in-process nax-ai path (ADR-027 section 3).
  */
 
+import { DEFAULT_AGENT_PROTOCOL } from "@/config";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { getLogger } from "../logger";
 import { AcpAgentAdapter } from "./acp/adapter";
@@ -105,7 +106,7 @@ export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry {
   // Widened from Map<string, AcpAgentAdapter>: the registry is a routing
   // decision now, so the cache holds whichever adapter the name selects.
   const adapterCache = new Map<string, AgentAdapter>();
-  const protocol = config.agent?.protocol ?? "acp";
+  const protocol = config.agent?.protocol ?? DEFAULT_AGENT_PROTOCOL;
 
   logger?.info("agents", `Agent protocol: ${protocol}`, { protocol, hasConfig: !!config.agent });
 

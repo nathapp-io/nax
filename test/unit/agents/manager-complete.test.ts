@@ -23,6 +23,7 @@ const availFailure = {
 function makeConfig() {
   return makeNaxConfig({
     agent: {
+      default: "claude",
       fallback: {
         enabled: true,
         map: { claude: ["codex"] },
@@ -181,6 +182,7 @@ describe("AgentManager.completeWithFallback (#567)", () => {
   test("returns failure when no swap configured", async () => {
     const config = makeNaxConfig({
       agent: {
+        default: "claude",
         fallback: {
           enabled: false,
           map: {},
@@ -332,6 +334,7 @@ describe("AgentManager.completeWithFallback — depth vs event count (nax#1965 f
   test("passes ladder DEPTH, not the swap-event tally, into nextCandidate when a middle rung is cooling", async () => {
     const config = makeNaxConfig({
       agent: {
+        default: "claude",
         fallback: {
           enabled: true,
           map: { claude: ["codex", "gemini", "grok"] },

@@ -13,7 +13,7 @@ import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { buildCompleteEvent, buildSessionTurnEvent } from "@/agents/manager-dispatch";
 import type { AgentRegistry } from "@/agents/registry";
 import type { CompleteOptions, SessionHandle, TurnResult } from "@/agents/types";
-import type { NaxConfig } from "@/config";
+import { DEFAULT_AGENT_NAME, type NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { ResolvedPermissions } from "@/config/permissions";
 import { resolvePermissions } from "@/config/permissions";
@@ -68,12 +68,12 @@ const qualityFailure = {
 };
 
 describe("AgentManager — Phase 1 pass-through", () => {
-  test("getDefault() returns 'claude' when unset and prefers agent.default when explicitly set", () => {
+  test("getDefault() returns the built-in default agent when unset and prefers agent.default when explicitly set", () => {
     const mgrUnset = new AgentManager({
       ...DEFAULT_CONFIG,
       agent: { ...DEFAULT_CONFIG.agent, default: undefined },
     } as NaxConfig);
-    expect(mgrUnset.getDefault()).toBe("claude");
+    expect(mgrUnset.getDefault()).toBe(DEFAULT_AGENT_NAME);
 
     const config = NaxConfigSchema.parse({ agent: { default: "codex" } }) as NaxConfig;
     expect(new AgentManager(config).getDefault()).toBe("codex");
@@ -124,7 +124,7 @@ describe("AgentManager — Phase 1 pass-through", () => {
 
   test("runWithFallback() delegates plain run hops through injected runHop", async () => {
     let capturedAgent = "";
-    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+    const manager = new AgentManager(makeNaxConfig({ agent: { default: "claude" } }), undefined, {
       runHop: async (agentName) => {
         capturedAgent = agentName;
         return {

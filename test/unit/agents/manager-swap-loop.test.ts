@@ -33,6 +33,7 @@ function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptio
 function makeConfig(map: Record<string, string[]> = { claude: ["codex"] }) {
   return makeNaxConfig({
     agent: {
+      default: "claude",
       fallback: { enabled: true, map, maxHopsPerStory: 2, onQualityFailure: false, rebuildContext: false },
       idleWatchdog: {
         enabled: true,

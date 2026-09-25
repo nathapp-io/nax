@@ -514,6 +514,28 @@ nax itself opens no remote connection.
 
 ---
 
+## Amendment — 2026-09-25: the sandbox is on by default
+
+**Supersedes:** the P4 amendment's "Opt-in (`enabled: false`) until the P4 exit runs; the flip
+to default-on is a separate change." This is that change.
+
+The P4 exit runs passed on 2026-09-23 with `sandbox.enabled` + `raw` (every agent Bash call
+wrapped, no protected or out-of-root write), so `execution.sandbox.enabled` now defaults to
+`true`. The default posture is therefore **raw bash inside the sandbox**, which is the end state
+the P4 amendment named. Nothing else about the posture changes: when the probe finds the
+sandbox unavailable, `raw` refuses with a reason naming `gated`/`escalate`, and those modes
+run unwrapped with a warning. A host without a working sandbox (for example Linux without a
+usable bubblewrap) now sees that refusal by default rather than unsandboxed raw bash; setting
+`execution.sandbox.enabled: false` restores the previous behaviour explicitly.
+
+The approvals-cache precondition is unchanged in rule — the cache abstains while any stage is
+`raw` AND the sandbox is disabled — but with the new default a `raw` run keeps the cache
+enabled unless a config turns the sandbox off.
+
+The same change makes the native agent the default (ADR-027 amendment of the same date).
+
+---
+
 ## See also
 
 - ADR-031: the bash approval mode, approval timeout, sandbox and command-safety keys are root-scoped.

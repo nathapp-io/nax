@@ -3,6 +3,7 @@
  */
 
 import { resolveDefaultAgent } from "../agents";
+import { NATIVE_AGENT } from "../agents/native";
 import type { PrecheckConfig } from "../config/selectors";
 import { spawn } from "../utils/bun-deps";
 import type { Check } from "./types";
@@ -39,14 +40,27 @@ export async function checkClaudeCLI(): Promise<Check> {
   }
 }
 
-/** Check if configured agent binary is available. Reads agent from config, defaults to 'claude'.
- * Supports: claude, codex, opencode, gemini, aider */
+/** Check if configured agent binary is available. Reads agent from config (default: native).
+ * Supports: claude, codex, opencode, gemini, aider; native needs no binary. */
 export async function checkAgentCLI(config: PrecheckConfig): Promise<Check> {
   // MED-03: config.execution.agent doesn't exist in ExecutionConfigSchema —
   // this always read undefined and silently fell back to "claude", greenlighting
   // runs whose real default agent (config.agent.default) was missing, and
   // falsely blocking when claude wasn't installed but the configured agent was.
   const agent = resolveDefaultAgent(config);
+
+  // The native agent runs in-process over nax-ai (ADR-027): there is no binary
+  // to probe, and spawning `native --version` would block every default run.
+  // Its model ids are checked by checkModelResolution and its providers'
+  // credentials by native-credentials (also enforced at run start by setupRun).
+  if (agent === NATIVE_AGENT) {
+    return {
+      name: "agent-cli-available",
+      tier: "blocker",
+      passed: true,
+      message: "native agent runs in-process; no CLI binary required",
+    };
+  }
 
   try {
     const proc = _checkCliDeps.spawn([agent, "--version"], {

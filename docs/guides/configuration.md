@@ -48,8 +48,8 @@ The `agent` block is the canonical source of truth for agent selection and avail
 ```json
 {
   "agent": {
-    "protocol": "acp",
-    "default": "claude",
+    "protocol": "hybrid",
+    "default": "native",
     "maxInteractionTurns": 20,
     "fallback": {
       "enabled": true,
@@ -67,8 +67,8 @@ The `agent` block is the canonical source of truth for agent selection and avail
 
 | Key | Default | Description |
 |:----|:--------|:------------|
-| `agent.protocol` | `"acp"` | Transport protocol — `"acp"` (spawns an agent CLI via acpx), `"native"` (nax drives the model directly), or `"hybrid"`. A capability gate, not a router. |
-| `agent.default` | `"claude"` | Primary agent. Read via `resolveDefaultAgent(config)` / `ctx.agentManager.getDefault()`. |
+| `agent.protocol` | `"hybrid"` | Transport protocol — `"acp"` (spawns an agent CLI via acpx), `"native"` (nax drives the model directly), or `"hybrid"` (both). A capability gate, not a router. `"acp"` requires `agent.default` to name an acpx agent such as `"claude"`. |
+| `agent.default` | `"native"` | Primary agent. The built-in `models.native` map (`anthropic/claude-haiku-4-5` / `claude-sonnet-5` / `claude-opus-5-5`) backs it, so the native agent needs Anthropic credentials unless you override the map. Read via `resolveDefaultAgent(config)` / `ctx.agentManager.getDefault()`. |
 | `agent.maxInteractionTurns` | `20` | Max turns per agent session. |
 | `agent.fallback.enabled` | `false` | Master switch for availability fallback (auth / rate-limit / service-down). |
 | `agent.fallback.map` | `{}` | Keyed map — `{ primary: [next, ...] }`. Walked by `AgentManager.nextCandidate()`. |
@@ -794,7 +794,7 @@ warned about and ignored, and the root config's value always applies
 |:----|:--------|:------------|
 | `execution.bashApproval` | `"raw"` | How agent Bash commands are approved: `raw` (screened only), `gated` (policy decides), or `escalate` (a human decides on ask). |
 | `execution.approvalTimeout` | `600000` | Milliseconds an interactive permission prompt waits before denying (30000-3600000). |
-| `execution.sandbox` | off | OS sandbox for agent-authored commands; opt in with `execution.sandbox.enabled`. |
+| `execution.sandbox` | on | OS sandbox for agent-authored commands. When it is unavailable, `raw` Bash refuses with a reason; opt out with `execution.sandbox.enabled: false`. |
 | `execution.commandSafety` | absent (off) | Shadow command classifier; observes every command, decides nothing. |
 
 The exception is the permissions map: `permissions.<stage>.bashApproval` stays per-package and

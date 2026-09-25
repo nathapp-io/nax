@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertDefined } from "@test/helpers";
@@ -105,6 +105,45 @@ describe("DEFAULT_CONFIG.models per-agent shape (US-001-4)", () => {
     ["powerful" as const, "opus"],
   ])("models.claude.%s is '%s'", (tier, expected) => {
     expect(DEFAULT_CONFIG.models.claude[tier]).toBe(expected);
+  });
+
+  test("models.native maps every tier to a provider-qualified anthropic id", () => {
+    expect(DEFAULT_CONFIG.models.native).toEqual({
+      fast: "anthropic/claude-haiku-4-5",
+      balanced: "anthropic/claude-sonnet-5",
+      powerful: "anthropic/claude-opus-5-5",
+    });
+  });
+
+  test("the default agent is native under the hybrid protocol", () => {
+    expect(DEFAULT_CONFIG.agent?.default).toBe("native");
+    expect(DEFAULT_CONFIG.agent?.protocol).toBe("hybrid");
+  });
+
+  test("a loaded project config that overrides nothing validates under the new defaults", async () => {
+    const suffix = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const projectDir = join(tmpdir(), `nax-defaults-native-project-${suffix}`);
+    const globalDir = join(tmpdir(), `nax-defaults-native-global-${suffix}`);
+    mkdirSync(join(projectDir, ".nax"), { recursive: true });
+    mkdirSync(globalDir, { recursive: true });
+    // A config file must exist: the loader skips validation when nothing was merged.
+    writeFileSync(join(projectDir, ".nax", "config.json"), JSON.stringify({ version: 1 }));
+    const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
+    try {
+      const config = await loadConfig(projectDir);
+      expect(config.agent?.default).toBe("native");
+      expect(config.agent?.protocol).toBe("hybrid");
+      expect(config.execution.sandbox?.enabled).toBe(true);
+    } finally {
+      if (originalGlobalDir === undefined) {
+        process.env.NAX_GLOBAL_CONFIG_DIR = undefined;
+      } else {
+        process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+      }
+      rmSync(projectDir, { recursive: true, force: true });
+      rmSync(globalDir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -1,6 +1,7 @@
 /** AgentManager owns agent lifecycle and fallback policy (ADR-012). */
 
 import { EventEmitter } from "node:events";
+import { DEFAULT_AGENT_NAME } from "@/config";
 import type { ModelsConfig } from "@/config/schema-types";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { resolvePermissions } from "../config/permissions";
@@ -137,7 +138,7 @@ export class AgentManager implements IAgentManager {
   getDefault(): string {
     const fromAgent = this._config.agent?.default;
     if (typeof fromAgent === "string" && fromAgent.length > 0) return fromAgent;
-    return "claude";
+    return DEFAULT_AGENT_NAME;
   }
 
   isUnavailable(agent: string, tier?: string, model?: string): boolean {

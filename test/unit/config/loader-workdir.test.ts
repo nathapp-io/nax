@@ -204,7 +204,10 @@ describe("loadConfigForWorkdir", () => {
   });
 
   test("per-package agent.protocol override is applied", async () => {
-    writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({ agent: { protocol: "acp" } }));
+    writeFileSync(
+      join(tempDir, ".nax", "config.json"),
+      JSON.stringify({ agent: { protocol: "acp", default: "claude" } }),
+    );
     mkdirSync(join(tempDir, ".nax", "mono", "packages", "pkg-a"), { recursive: true });
     writeFileSync(
       join(tempDir, ".nax", "mono", "packages", "pkg-a", "config.json"),

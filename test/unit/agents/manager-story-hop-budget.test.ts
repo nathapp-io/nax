@@ -45,6 +45,7 @@ function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptio
 function configWithFallback(overrides: { maxHopsPerStory?: number; enabled?: boolean } = {}) {
   return makeNaxConfig({
     agent: {
+      default: "claude",
       fallback: {
         enabled: overrides.enabled ?? true,
         map: { claude: ["codex", "gemini"] },

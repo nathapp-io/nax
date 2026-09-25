@@ -6,7 +6,9 @@
 
 import { resolveDefaultAgent } from "../agents";
 import { ACP_ADAPTER_NAMES, AcpAgentAdapter } from "../agents/acp";
+import { NATIVE_AGENT, NativeAgentAdapter } from "../agents/native";
 import { getAgentVersion } from "../agents/shared/version-detection";
+import { DEFAULT_AGENT_PROTOCOL } from "../config";
 import type { NaxConfig } from "../config/schema";
 
 /**
@@ -25,15 +27,19 @@ export const _cliAgentsDeps = { getAgentVersion };
  * intentionally also serves context generation and config/precheck loops —
  * adapterless names like `aider` must not appear here, and names without an
  * ACP entry would otherwise fall back to `DEFAULT_ENTRY`'s "ACP Agent"
- * display name (US-005 AC8).
+ * display name (US-005 AC8). The native agent is listed first, separately,
+ * when `agent.protocol` permits it (see `nativeListing`).
  *
  * @param config - nax configuration
  * @param _workdir - Working directory (for consistency with other commands)
  */
 export async function agentsListCommand(config: NaxConfig, _workdir: string): Promise<void> {
-  // Create ACP adapters only for names that have a real ACP entry.
-  const adapters = Array.from(ACP_ADAPTER_NAMES).map((name) => new AcpAgentAdapter(name));
-  const agentVersions = await Promise.all(
+  // Create ACP adapters only for names that have a real ACP entry, and only
+  // when the protocol can reach them: under "native" they cannot run.
+  const acpReachable = (config.agent?.protocol ?? DEFAULT_AGENT_PROTOCOL) !== "native";
+  const adapters = acpReachable ? Array.from(ACP_ADAPTER_NAMES).map((name) => new AcpAgentAdapter(name)) : [];
+  const defaultAgent = resolveDefaultAgent(config);
+  const acpVersions = await Promise.all(
     adapters.map(async (agent) => ({
       name: agent.name,
       displayName: agent.displayName,
@@ -41,9 +47,10 @@ export async function agentsListCommand(config: NaxConfig, _workdir: string): Pr
       version: await _cliAgentsDeps.getAgentVersion(agent.binary),
       installed: await agent.isInstalled(),
       capabilities: agent.capabilities,
-      isDefault: resolveDefaultAgent(config) === agent.name,
+      isDefault: defaultAgent === agent.name,
     })),
   );
+  const agentVersions = [...nativeListing(config, defaultAgent), ...acpVersions];
 
   // Build table rows
   const rows = agentVersions.map((info) => {
@@ -90,6 +97,27 @@ export async function agentsListCommand(config: NaxConfig, _workdir: string): Pr
   }
 
   console.log();
+}
+
+/**
+ * The native agent's row, when `agent.protocol` permits it. It runs in-process
+ * over nax-ai, so there is no binary or version to probe; its tiers are the
+ * configured `models.native` map, as the registry would build it.
+ */
+function nativeListing(config: NaxConfig, defaultAgent: string) {
+  if ((config.agent?.protocol ?? DEFAULT_AGENT_PROTOCOL) === "acp") return [];
+  const adapter = new NativeAgentAdapter(Object.keys(config.models[NATIVE_AGENT] ?? {}));
+  return [
+    {
+      name: adapter.name,
+      displayName: adapter.displayName,
+      binary: "in-process",
+      version: "",
+      installed: true,
+      capabilities: adapter.capabilities,
+      isDefault: defaultAgent === adapter.name,
+    },
+  ];
 }
 
 /**

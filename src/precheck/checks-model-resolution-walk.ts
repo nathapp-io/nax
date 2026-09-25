@@ -21,7 +21,7 @@
  * { catalogOverrides: [...] } } }`) without restating every other key.
  */
 
-import { DEFAULT_CONFIG, type NaxConfig } from "@/config";
+import { DEFAULT_AGENT_NAME, DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import type { ConfiguredModel, ProviderCatalogOverride } from "@/config/schema-types";
 
 /** A literal `{agent, model}` pin found at a config site. */
@@ -245,7 +245,7 @@ export function collectConfiguredModelPins(config: unknown): {
   }
 
   const pins: LiteralPin[] = [];
-  const defaultAgent = cfg.agent?.default ?? "claude";
+  const defaultAgent = cfg.agent?.default ?? DEFAULT_AGENT_NAME;
 
   // review.{semantic,adversarial}.model and plan.model and acceptance.model and tdd.sessionTiers.*
   if (cfg.review?.semantic !== undefined) {

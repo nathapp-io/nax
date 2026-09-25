@@ -145,7 +145,7 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
 
 `execution.commandInterceptor` rewrites the `Git` tool's argv through `rtk` so `log` and `diff` output reaches the model compressed. It is confined to the Git site: user-authored `quality.commands` and `acceptance.command` are never wrapped. It fails open — if the `rtk` binary is missing the call runs as plain git.
 
-**Both features are native-agent only.** An ACP agent (`claude`, `codex`, `opencode`, `gemini`) brings its own tools, so nax's `Git` tool is never invoked and no MCP tool is advertised. A project on `"protocol": "acp"` can hold a complete, valid config for both and get zero effect, with no error. Set `agent.protocol: "hybrid"` and `agent.default: "native"` first.
+**Both features are native-agent only.** An ACP agent (`claude`, `codex`, `opencode`, `gemini`) brings its own tools, so nax's `Git` tool is never invoked and no MCP tool is advertised. A project on `"protocol": "acp"` can hold a complete, valid config for both and get zero effect, with no error. The built-in defaults (`agent.protocol: "hybrid"`, `agent.default: "native"`) enable both; a config that switches to an acpx agent does not.
 
 See [MCP & Command Interception](docs/guides/mcp-and-interception.md) for setup, verification and troubleshooting, and the [Configuration Guide](docs/guides/configuration.md) for the full schema.
 
@@ -209,11 +209,12 @@ See [Plugins Guide](docs/guides/agents.md#plugins).
 
 ## Agents
 
-nax communicates with all coding agents via [ACP](https://github.com/openclaw/acpx) (Agent Client Protocol) — a JSON-RPC protocol that provides persistent sessions, exact token/cost reporting, and multi-turn session continuity.
+The default agent is `native`: nax drives the model in-process over `@nathapp/nax-ai` (no CLI binary), using the built-in `models.native` Anthropic tier map, so it needs Anthropic credentials (`nax auth` or the provider's environment variable) unless you override the map. Every other agent is reached via [ACP](https://github.com/openclaw/acpx) (Agent Client Protocol) — a JSON-RPC protocol that provides persistent sessions, exact token/cost reporting, and multi-turn session continuity.
 
 | Agent | Binary | Notes |
 |:------|:-------|:------|
-| Claude Code | `claude` | Default. Set `agent.default: "claude"` |
+| Native (nax-ai) | — (in-process) | Default. `agent.default: "native"` |
+| Claude Code | `claude` | Set `agent.default: "claude"` |
 | OpenCode | `opencode` | Set `agent.default: "opencode"` |
 | Codex | `codex` | Set `agent.default: "codex"` |
 | Gemini CLI | `gemini` | Set `agent.default: "gemini"` |

@@ -134,8 +134,8 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 
 - **Two transports, selected by agent name:** ACP via `acpx` for every named CLI
   agent, and the in-process native path (`@nathapp/nax-ai`) for the `native`
-  agent. `agent.protocol` (`acp` | `native` | `hybrid`, default `acp`) is a
-  capability gate, not a router — it decides which are permitted. See ADR-027.
+  agent. `agent.protocol` (`acp` | `native` | `hybrid`, default `hybrid`; `agent.default`
+  defaults to `native`) is a capability gate, not a router — it decides which are permitted. See ADR-027.
 - **nax-ai is importable only from `src/agents/native/` and `src/agents/catalog/`**, enforced by
   `bun run check:nax-ai-imports`.
 - **LLM fallback rule:** Any code needing LLM calls MUST resolve the agent via the canonical accessors — `ctx.agentManager?.getDefault() ?? "claude"` in pipeline stages, or `resolveDefaultAgent(config)` in standalone modules. Never inline stubs, never read `config.autoMode.defaultAgent` (removed in ADR-012 Phase 6). Use `agent.complete(prompt)` for one-shot calls.

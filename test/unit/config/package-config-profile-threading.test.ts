@@ -94,15 +94,15 @@ describe("loadConfigForPackage — profile chain survives per-package resolution
     expect(effective.models.native?.fast).toBe("minimax/MiniMax-M2.7");
   });
 
-  // Negative control: without this the assertions above could pass vacuously, e.g.
-  // if `models.native` leaked in from a default. It is exactly what the two broken
-  // call sites did, and exactly what produced MODEL_NOT_FOUND at dispatch.
-  test("control — omitting the overrides drops the profile, leaving no native model map", async () => {
+  // Negative control: without this the assertions above could pass vacuously. The
+  // built-in `models.native` is always present, so the control asserts the profile's
+  // id is gone — dropping the profile is exactly what the two broken call sites did.
+  test("control — omitting the overrides drops the profile, leaving the built-in native map", async () => {
     const rootConfigPath = join(tempDir, ".nax", "config.json");
 
     const profileLess = await loadConfigForWorkdir(rootConfigPath, PKG);
 
-    expect(profileLess.models.native).toBeUndefined();
+    expect(profileLess.models.native?.fast).toBe("anthropic/claude-haiku-4-5");
     expect(profileLess.models.claude?.fast).toBe("haiku");
   });
 });

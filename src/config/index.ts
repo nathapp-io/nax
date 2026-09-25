@@ -1,3 +1,4 @@
+export { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, isBuiltInModelMap, NATIVE_AGENT_NAME } from "./agent-defaults";
 export type { BashApprovalMode } from "./bash-approval";
 export { resolveBashApproval } from "./bash-approval";
 export { BASH_DECLARING_STAGES, findInertBashStages } from "./inert-bash-stages";

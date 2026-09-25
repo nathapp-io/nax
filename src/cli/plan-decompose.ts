@@ -6,7 +6,7 @@
  */
 
 import { join } from "node:path";
-import { featureDir } from "@/config";
+import { DEFAULT_AGENT_NAME, featureDir } from "@/config";
 import { storyPackageDir } from "@/utils/path-frame";
 import { resolveDefaultAgent } from "../agents";
 import type { DecomposedStory } from "../agents/shared/types-extended";
@@ -206,7 +206,7 @@ export async function planDecomposeCommand(
     agentRouting: config.routing?.agents,
     profileName: config.profile,
     models: config.models,
-    defaultAgent: config.agent?.default ?? "claude",
+    defaultAgent: config.agent?.default ?? DEFAULT_AGENT_NAME,
     outputPath: prdPath,
     repoRoot: workdir,
     scope: new Set(subStoriesWithParent.map((s) => s.id)),

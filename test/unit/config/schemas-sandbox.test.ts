@@ -3,9 +3,9 @@ import { NaxConfigSchema } from "@/config/schemas";
 import { DEFAULT_SANDBOX_CONFIG, SandboxConfigSchema } from "@/config/schemas-sandbox";
 
 describe("execution.sandbox", () => {
-  test("defaults: off, srt, no extra roots, open network", () => {
+  test("defaults: on, srt, no extra roots, open network", () => {
     expect(SandboxConfigSchema.parse({})).toEqual({
-      enabled: false,
+      enabled: true,
       backend: "srt",
       filesystem: { allowWrite: [], denyRead: [] },
       network: {},

@@ -207,7 +207,7 @@ export interface RunAsSessionOpts {
 }
 
 export interface IAgentManager {
-  /** Resolve the default agent name. Reads config.agent.default (falls back to built-in "claude"). */
+  /** Resolve the default agent name. Reads config.agent.default (falls back to the built-in DEFAULT_AGENT_NAME, "native"). */
   getDefault(): string;
 
   /**
