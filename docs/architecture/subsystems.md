@@ -1896,7 +1896,7 @@ Codebase scanner used by `nax analyze` and the planning pipeline. Discovers work
 
 **Entry point:** `src/analyze/index.ts`
 
-**Called by:** `src/cli/plan-runtime.ts` (wires `scanSourceRoots` into `_planDeps`), `src/cli/plan-command.ts`, `src/cli/plan-decompose.ts`, `src/plan/strategies/context-builder.ts` — all consume `scanSourceRoots` via the `_planDeps` injection point.
+**Called by:** `src/cli/plan-runtime/index.ts` (wires `scanSourceRoots` into `_planDeps`), `src/cli/plan-command.ts`, `src/cli/plan-decompose.ts`, `src/plan/strategies/context-builder.ts` — all consume `scanSourceRoots` via the `_planDeps` injection point.
 
 ---
 
@@ -1952,7 +1952,7 @@ ADR-028 (native sessions and the tool loop), ADR-029 (Phase C coding-agent scope
 - **Loop events** (`session/loop-events/`) — a typed in-process handler seam,
   distinct from shell hooks (§27): `before_turn`, `before_request`,
   `after_response`, `before_tool`, `after_tool`, `before_compaction`,
-  `before_turn_end`. Built-in handlers (`loop-handlers.ts`): invalid-tool-call
+  `before_turn_end`. Built-in handlers (`session/loop-handlers.ts`): invalid-tool-call
   repair and the spin breaker on `before_tool`; model-facing truncation on
   `after_tool`, registered last. Dispatch snapshots array fields so a handler cannot
   rewrite history in place.

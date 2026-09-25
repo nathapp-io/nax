@@ -269,7 +269,7 @@ Both features write to the **run output directory**, not the repo:
 ```
 
 The repo-local `.nax/` path is only the fallback for a run with no output directory
-(`src/config/paths.ts`). Two runs of the same project append to the same tree — separate
+(`src/config/paths/`). Two runs of the same project append to the same tree — separate
 them by `runId` or timestamp before comparing.
 
 ---
