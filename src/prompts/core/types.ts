@@ -6,14 +6,7 @@
  */
 
 /** Role determining which default template body to use in TddPromptBuilder. */
-export type PromptRole =
-  | "no-test"
-  | "test-writer"
-  | "implementer"
-  | "verifier"
-  | "single-session"
-  | "tdd-simple"
-  | "batch";
+export type PromptRole = "no-test" | "test-writer" | "implementer" | "verifier" | "tdd-simple" | "batch";
 
 /** Wave 1 minimal slot set — grows per wave as builders migrate. */
 export type SectionSlot = "constitution" | "instructions" | "input" | "candidates" | "json-schema";

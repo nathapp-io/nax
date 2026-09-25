@@ -4,13 +4,13 @@
  * Enforces hermetic (no real external I/O) tests for all code-writing roles.
  * Injected by PromptBuilder when testing.hermetic = true (default).
  *
- * Roles that receive this section: test-writer, implementer, tdd-simple, batch, single-session.
+ * Roles that receive this section: test-writer, implementer, tdd-simple, batch.
  * Roles that do NOT: verifier (read-only, writes no test code).
  */
 
 import type { ProjectProfile } from "@/config/runtime-types";
 
-const HERMETIC_ROLES = new Set(["test-writer", "implementer", "tdd-simple", "batch", "single-session"]);
+const HERMETIC_ROLES = new Set(["test-writer", "implementer", "tdd-simple", "batch"]);
 
 // Language-specific mocking guidance
 const LANGUAGE_GUIDANCE: Record<string, string> = {

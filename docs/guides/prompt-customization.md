@@ -21,13 +21,12 @@ nax orchestrates your work across 5 specialized roles. Each role has a distinct 
 | **test-writer** | 1 of 3 | Write comprehensive failing tests for the feature (RED phase) | During three-session TDD for complex/security stories |
 | **implementer** | 1 of 3 | Make failing tests pass by implementing source code | After test-writer completes; skipped if single-session strategy is used |
 | **verifier** | 1 of 3 | Review implementation quality and verify acceptance criteria | After implementer completes; skipped if single-session strategy is used |
-| **single-session** | 1 of 1 | Write tests AND implement the feature in one focused session | Not selected by the current pipeline — see note below |
 | **tdd-simple** | 1 of 1 | Write failing tests FIRST, then implement in one session (RED→GREEN→REFACTOR) | Every single-session story whose strategy is not `no-test` (`tdd-simple` and `test-after`) |
 | **no-test** | 1 of 1 | Implement without writing tests (the story carries a no-test justification) | For stories routed to the `no-test` strategy |
 
 `no-test` accepts a `prompts.overrides` entry but has no `nax prompts --init` template or `--export` support — author its file by hand.
 
-> **Note:** the prompt stage builds single-session stories with the `no-test` role (strategy `no-test`) or the `tdd-simple` role (everything else), and batched stories with the internal `batch` role. The `single-session` template is still generated and accepted in `prompts.overrides`, but no run currently reads it — to customize `test-after` stories, override `tdd-simple`.
+> **Note:** the prompt stage builds single-session stories with the `no-test` role (strategy `no-test`) or the `tdd-simple` role (everything else), and batched stories with the internal `batch` role. `test-after` stories are customised through `tdd-simple`. The `single-session` role was retired: no run reads it, so `prompts.overrides.single-session` is stripped with a warning and any existing `single-session.md` template is inert.
 
 **Test Strategies** (valid `testStrategy` values):
 - **no-test** (1 session): No tests written; uses the `no-test` role.
@@ -48,14 +47,13 @@ Initialize templates in your project:
 nax prompts --init
 ```
 
-This creates `.nax/templates/` with 5 default template files:
+This creates `.nax/templates/` with 4 default template files:
 
 ```
 .nax/templates/
 ├── test-writer.md
 ├── implementer.md
 ├── verifier.md
-├── single-session.md
 └── tdd-simple.md
 ```
 
@@ -83,7 +81,6 @@ Add the override paths to your `.nax/config.json`:
       "test-writer": ".nax/templates/test-writer.md",
       "implementer": ".nax/templates/implementer.md",
       "verifier": ".nax/templates/verifier.md",
-      "single-session": ".nax/templates/single-session.md",
       "tdd-simple": ".nax/templates/tdd-simple.md"
     }
   }
@@ -125,7 +122,7 @@ Use `nax prompts --export <role>` to see the default prompt template for any rol
 nax prompts --export <role> [--out <file>]
 ```
 
-**Roles:** `test-writer`, `implementer`, `verifier`, `single-session`, `tdd-simple`
+**Roles:** `test-writer`, `implementer`, `verifier`, `tdd-simple`
 
 **Examples:**
 
@@ -211,7 +208,7 @@ Define custom prompt paths in your project config:
 
 **Location:** `.nax/config.json` (project-level) or `~/.nax/config.json` (global)
 
-**Schema:** valid role keys are `no-test`, `test-writer`, `implementer`, `verifier`, `single-session`, `tdd-simple`; any other key fails config validation.
+**Schema:** valid role keys are `no-test`, `test-writer`, `implementer`, `verifier`, `tdd-simple`; any other key fails config validation.
 
 ```json
 {
@@ -220,7 +217,6 @@ Define custom prompt paths in your project config:
       "test-writer": ".nax/templates/test-writer.md",
       "implementer": ".nax/templates/implementer.md",
       "verifier": ".nax/templates/verifier.md",
-      "single-session": ".nax/templates/single-session.md",
       "tdd-simple": ".nax/templates/tdd-simple.md"
     }
   }
@@ -339,7 +335,7 @@ Domain-specific builders handle all prompt construction. The primary builders:
 
 | Builder | Roles |
 |:--------|:------|
-| `TddPromptBuilder` | no-test, test-writer, implementer, verifier, single-session, tdd-simple, batch |
+| `TddPromptBuilder` | no-test, test-writer, implementer, verifier, tdd-simple, batch |
 | `ReviewPromptBuilder` | semantic |
 | `AdversarialReviewPromptBuilder` | adversarial |
 | `AcceptancePromptBuilder` | generator, diagnoser, fix-executor |
@@ -348,7 +344,7 @@ Domain-specific builders handle all prompt construction. The primary builders:
 | `PlanPromptBuilder` | planner (story decomposition, complexity classification, AC generation) |
 | `SetupPromptBuilder` | `nax setup` repo analysis |
 
-Only the TDD builder roles except `batch` (no-test, test-writer, implementer, verifier, single-session, tdd-simple) support user-facing template overrides via `prompts.overrides`. Other builders are internal.
+Only the TDD builder roles except `batch` (no-test, test-writer, implementer, verifier, tdd-simple) support user-facing template overrides via `prompts.overrides`. Other builders are internal.
 
 See [design-patterns.md §11](../architecture/design-patterns.md) for the full prompt builder pattern.
 

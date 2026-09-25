@@ -279,7 +279,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "prompts.overrides.test-writer": 'Path to custom test-writer prompt (e.g., ".nax/prompts/test-writer.md")',
   "prompts.overrides.implementer": 'Path to custom implementer prompt (e.g., ".nax/prompts/implementer.md")',
   "prompts.overrides.verifier": 'Path to custom verifier prompt (e.g., ".nax/prompts/verifier.md")',
-  "prompts.overrides.single-session": 'Path to custom single-session prompt (e.g., ".nax/prompts/single-session.md")',
 
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",

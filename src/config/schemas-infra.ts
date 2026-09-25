@@ -418,19 +418,30 @@ export const PrecheckConfigSchema = z.object({
   storySizeGate: StorySizeGateConfigSchema,
 });
 
+/** Prompt override roles that nax currently renders. `single-session` is
+ *  deliberately absent: it stopped being a prompt role at fb3cfad3e, so naming
+ *  it is rejected here (and stripped with a warning pre-parse by
+ *  `stripRemovedNoOpKeys`, which keeps an existing config loading). */
+const PROMPT_OVERRIDE_ROLES = ["no-test", "test-writer", "implementer", "verifier", "tdd-simple"] as const;
+
 export const PromptsConfigSchema = z.object({
   overrides: z
-    .record(
-      z
-        .string()
-        .refine(
-          (key) => ["no-test", "test-writer", "implementer", "verifier", "single-session", "tdd-simple"].includes(key),
-          {
-            message: "Role must be one of: no-test, test-writer, implementer, verifier, single-session, tdd-simple",
-          },
-        ),
-      z.string().min(1, "Override path must be non-empty"),
-    )
+    .record(z.string(), z.string().min(1, "Override path must be non-empty"))
+    // Validated on the parsed record rather than as a `z.record` key schema:
+    // Zod v4 collapses a failing key into "Invalid key in record" and drops the
+    // inner message, which names the surviving roles and is the whole point of
+    // the error. `superRefine` surfaces it verbatim.
+    .superRefine((overrides, ctx) => {
+      for (const key of Object.keys(overrides)) {
+        if (!(PROMPT_OVERRIDE_ROLES as readonly string[]).includes(key)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Role must be one of: ${PROMPT_OVERRIDE_ROLES.join(", ")}`,
+            path: [key],
+          });
+        }
+      }
+    })
     .optional(),
   behavioralGuardrails: z.enum(["off", "lite", "strict"]).default("lite"),
 });

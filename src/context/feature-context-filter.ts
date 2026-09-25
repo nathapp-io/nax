@@ -29,7 +29,6 @@ const ROLE_AUDIENCE_MAP: Record<PromptRole, AudienceTag[]> = {
   implementer: ["all", "implementer"],
   "test-writer": ["all", "test-writer"],
   verifier: ["all", "verifier"],
-  "single-session": ["all", "implementer", "test-writer"],
   "tdd-simple": ["all", "implementer", "test-writer"],
   "no-test": ["all", "implementer"],
   batch: ["all", "implementer", "test-writer"],

@@ -1,11 +1,10 @@
 /**
  * Isolation Rules Section
  *
- * Generates isolation rules for all 5 roles:
+ * Generates isolation rules for all roles:
  * - test-writer: Strict/Lite modes for test-first TDD
  * - implementer: Implement source while respecting test integrity
  * - verifier: Read-only inspection
- * - single-session: Both test/ and src/ modification allowed
  * - tdd-simple: Both test/ and src/ modification allowed (no isolation)
  *
  * Backwards compatible: also accepts old API (mode only)
@@ -47,16 +46,7 @@ function buildTestFilterRule(testCommand: string, scopedCommandName?: string): s
 }
 
 export function buildIsolationSection(
-  roleOrMode:
-    | "no-test"
-    | "implementer"
-    | "test-writer"
-    | "verifier"
-    | "single-session"
-    | "tdd-simple"
-    | "batch"
-    | "strict"
-    | "lite",
+  roleOrMode: "no-test" | "implementer" | "test-writer" | "verifier" | "tdd-simple" | "batch" | "strict" | "lite",
   mode?: "strict" | "lite",
   testCommand?: string,
   scopedCommandName?: string,
@@ -66,14 +56,7 @@ export function buildIsolationSection(
     return buildIsolationSection("test-writer", roleOrMode, testCommand, scopedCommandName);
   }
 
-  const role = roleOrMode as
-    | "no-test"
-    | "implementer"
-    | "test-writer"
-    | "verifier"
-    | "single-session"
-    | "tdd-simple"
-    | "batch";
+  const role = roleOrMode as "no-test" | "implementer" | "test-writer" | "verifier" | "tdd-simple" | "batch";
   const testCmd = testCommand ?? "";
 
   const header = "# Isolation Rules";
@@ -105,10 +88,6 @@ export function buildIsolationSection(
 
   if (role === "verifier") {
     return `${header}\n\nisolation scope: Read-only TDD integrity inspection. Review story-scoped test results and test-file modifications. Do NOT apply source or test fixes. You MAY write only the verdict file (.nax-verifier-verdict.json).${footer}`;
-  }
-
-  if (role === "single-session") {
-    return `${header}\n\nisolation scope: Create test files in test/ directory, then implement source code in src/ to make tests pass. Both directories are in scope for this session.${footer}`;
   }
 
   // tdd-simple role — no isolation restrictions but still needs the test filter rule

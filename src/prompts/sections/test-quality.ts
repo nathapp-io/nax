@@ -15,7 +15,7 @@
 import type { PromptRole } from "../core";
 
 /** Roles that author tests unconditionally. */
-const AUTHORING_ROLES: ReadonlySet<PromptRole> = new Set(["test-writer", "single-session", "tdd-simple", "batch"]);
+const AUTHORING_ROLES: ReadonlySet<PromptRole> = new Set(["test-writer", "tdd-simple", "batch"]);
 
 /**
  * Build the review-proof-tests pre-brief for test-authoring roles.

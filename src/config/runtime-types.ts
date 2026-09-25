@@ -467,9 +467,7 @@ export interface RoutingConfig {
 
 /** Prompt overrides config (PB-003) */
 export interface PromptsConfig {
-  overrides?: Partial<
-    Record<"no-test" | "test-writer" | "implementer" | "verifier" | "single-session" | "tdd-simple" | "batch", string>
-  >;
+  overrides?: Partial<Record<"no-test" | "test-writer" | "implementer" | "verifier" | "tdd-simple" | "batch", string>>;
   behavioralGuardrails: "off" | "lite" | "strict";
 }
 

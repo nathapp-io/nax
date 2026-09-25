@@ -5,7 +5,6 @@
  * - implementer: Make failing tests pass (standard/lite variants)
  * - test-writer: Write tests first (RED phase) (strict/lite isolation)
  * - verifier: Review and verify TDD handoff integrity
- * - single-session: Write tests AND implement in one session
  * - tdd-simple: RED → GREEN → REFACTOR in one session
  * - batch: Per-story TDD loop (RED → GREEN, one commit per story)
  * - no-test: Implement without tests (config/docs changes)
@@ -28,16 +27,7 @@ function gitCommitInstruction(message: string): string {
 }
 
 export function buildRoleTaskSection(
-  roleOrVariant:
-    | "no-test"
-    | "implementer"
-    | "test-writer"
-    | "verifier"
-    | "single-session"
-    | "tdd-simple"
-    | "batch"
-    | "standard"
-    | "lite",
+  roleOrVariant: "no-test" | "implementer" | "test-writer" | "verifier" | "tdd-simple" | "batch" | "standard" | "lite",
   variant?: "standard" | "lite",
   testCommand?: string,
   isolation?: "strict" | "lite",
@@ -49,14 +39,7 @@ export function buildRoleTaskSection(
     return buildRoleTaskSection("implementer", roleOrVariant, testCommand, isolation, noTestJustification, storyId);
   }
 
-  const role = roleOrVariant as
-    | "no-test"
-    | "implementer"
-    | "test-writer"
-    | "verifier"
-    | "single-session"
-    | "tdd-simple"
-    | "batch";
+  const role = roleOrVariant as "no-test" | "implementer" | "test-writer" | "verifier" | "tdd-simple" | "batch";
   const testCmd = testCommand ?? "";
   const frameworkHint = buildTestFrameworkHint(testCmd);
   const commitMsg = storyId ? `feat(${storyId}): <description>` : "feat: <description>";
@@ -177,26 +160,6 @@ Instructions:
 - Do NOT perform semantic acceptance review; semantic/adversarial review stages own acceptance criteria and broad code-quality findings
 - Write a detailed verdict with reasoning
 - Goal: verify story-scoped tests pass and test integrity was preserved`;
-  }
-
-  if (role === "single-session") {
-    return `# Role: Single-Session
-
-Your task: write tests AND implement the feature in one session.
-
-Workflow:
-1. Read the acceptance criteria. For each AC, plan one success-path test and one boundary/failure test.
-2. Create test files in the location the project uses for tests. Cover every AC.
-3. Run the tests to confirm they fail with ASSERTION failures — NOT import errors or compile errors. A test that errors before reaching its assertion does not prove the behavior is missing.
-4. Implement source code in the package's source location to make the tests pass.
-5. After each meaningful change, re-run only the scoped test files — never the full suite.
-6. When all scoped tests pass, stage and commit ALL changed files: \`${gitCommitInstruction(commitMsg)}\`.
-
-Rules:
-- Each test name describes ONE behavior; use AC IDs when available.
-- Assert on observable outputs.
-- ${frameworkHint}
-- Goal: every AC has at least one passing test; all changes committed.`;
   }
 
   if (role === "batch") {
