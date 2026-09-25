@@ -9,7 +9,7 @@
  */
 
 import { readFile, stat, writeFile } from "node:fs/promises";
-import { replaceUniqueLiteral } from "./edit-region";
+import { composeEditRegion, replaceUniqueLiteral } from "./edit-region";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -26,7 +26,7 @@ function countOccurrences(haystack: string, needle: string): number {
 export const editTool: CodingTool = {
   name: "Edit",
   description:
-    "Replace one exact occurrence of old_string with new_string in a repository file. Fails if the match is absent or ambiguous.",
+    "Replace one exact occurrence of old_string with new_string in a repository file. Fails if the match is absent or ambiguous. On success the result shows the edited lines with up to 3 lines of context and their line range, so you do not need to Read the file again to check the edit.",
   inputSchema: {
     type: "object",
     properties: {
@@ -94,8 +94,14 @@ export const editTool: CodingTool = {
       // uniqueness checks above proved there is exactly one match, so
       // `indexOf` is that match.
       const matchIndex = source.indexOf(oldString);
-      await writeFile(target, replaceUniqueLiteral(source, oldString, newString, matchIndex), "utf8");
-      return { content: `edited ${target}` };
+      const updated = replaceUniqueLiteral(source, oldString, newString, matchIndex);
+      await writeFile(target, updated, "utf8");
+      // The view is composed only after the write resolves: a write error
+      // returns the error, never a view. It is a bounded Read-compatible
+      // slice of the region that changed, so the model does not have to
+      // Read the file back to see where its edit landed.
+      const region = composeEditRegion({ updated, matchIndex, newStringLength: newString.length });
+      return { content: `edited ${target}\n${region}` };
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };
     }
