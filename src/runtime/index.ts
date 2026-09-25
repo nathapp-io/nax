@@ -125,6 +125,7 @@ import type { ICostAggregator } from "./cost-aggregator";
 import { CostAggregator, createNoOpCostAggregator } from "./cost-aggregator";
 import type { IDispatchEventBus } from "./dispatch-events";
 import { DispatchEventBus } from "./dispatch-events";
+import { attachInFlightUsageTracker, toPartialCostEvent } from "./in-flight-usage";
 import {
   attachAgentIdleWatchdog,
   attachAgentStreamLogging,
@@ -428,6 +429,12 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const offUsageAudit = attachUsageAuditSubscriber(agentStreamEvents, dispatchEvents, usageAuditor, runId);
   const offAgentStreamLogging = attachAgentStreamLogging(agentStreamEvents, runId);
   const offWatchdog = attachAgentIdleWatchdog(agentStreamEvents, watchdogControllerRegistry, config);
+  // In-flight native spend, tracked independently of `agent.usageAudit.enabled`:
+  // the ledger's partial row is written by `close()` below, not by the sidecar.
+  const { tracker: inFlightTracker, off: offInFlightUsage } = attachInFlightUsageTracker(
+    agentStreamEvents,
+    dispatchEvents,
+  );
 
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
@@ -498,6 +505,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       offUsageAudit();
       offAgentStreamLogging();
       offWatchdog();
+      offInFlightUsage();
       if (opts?.parentSignal && parentAbortHandler) {
         opts.parentSignal.removeEventListener("abort", parentAbortHandler);
       }
@@ -511,6 +519,13 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       await writeMcpRollup(outputDir, buildMcpRollup({ runId, events: mcpPool.events(), withheld: mcpWithheld })).catch(
         (error: unknown) => logger.warn("runtime", "mcp rollup write failed", { error: String(error) }),
       );
+      // Native turns still unrecorded at close carry spend the usage sidecar
+      // sees but the ledger does not. Record each as a partial `CostEvent`
+      // before the drain below, so `run.complete` / status.json (both read
+      // `totalSpendUsd(costAggregator.snapshot())`) reflect it.
+      for (const residual of inFlightTracker.residuals()) {
+        costAggregator.record(toPartialCostEvent(residual, runId, projectKey));
+      }
       // Tool calls still buffered by a hop whose `finally` will not run before
       // `process.exit` are written here, as partial, before the drain below.
       // Never rejects (one sink's failure is logged and the rest proceed), so
