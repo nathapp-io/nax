@@ -149,6 +149,7 @@ async function runSingleCommand(
 
     // Execute via shell to preserve quoting semantics of configured commands.
     // Splitting on whitespace loses quoted args and escaped spaces.
+    // nax-git-env-allow: not git: configured quality command via /bin/sh
     const proc = _qualityRunnerDeps.spawn({
       cmd: ["/bin/sh", "-c", command],
       cwd: workdir,

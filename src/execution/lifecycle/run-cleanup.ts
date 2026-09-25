@@ -105,6 +105,12 @@ export interface RunCleanupOptions {
   logFilePath?: string;
   /** Full nax config (for curator and other plugins) */
   config?: unknown;
+  /**
+   * US-002 — the run's end-of-run approvals seal (`RunSetupResult.sealApprovals`).
+   * Awaited after the post-run actions and plugin teardown: post-run actions may
+   * dispatch agents, so the re-taint must land once they are done.
+   */
+  sealApprovals?: () => Promise<void>;
 }
 
 async function settlePostRunAction(action: IPostRunAction, ctx: PostRunContext): Promise<PostRunActionOutcome> {
@@ -284,6 +290,21 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
     await pluginRegistry.teardownAll();
   } catch (error) {
     logger?.warn("plugins", "Plugin teardown failed", { error });
+  }
+
+  // US-002 — seal the approvals store once every agent this run dispatched has
+  // stopped, so a forge-capable run cannot leave entries a later trusted run
+  // would honour. Post-run actions (above) can dispatch agents, so this lands
+  // after them; the interaction chain is destroyed last, once no dispatch can
+  // follow. Guarded like `performTeardown`'s call for the same callback type: a
+  // rejection must not skip the interaction-chain destroy, the sandbox reset,
+  // the memo clears, the scratchpad wipe or the two lock releases below it.
+  if (options.sealApprovals) {
+    try {
+      await options.sealApprovals();
+    } catch (error) {
+      logger?.warn("permissions", "End-of-run approvals seal failed — continuing teardown", { error });
+    }
   }
 
   // Destroy interaction chain (US-008)

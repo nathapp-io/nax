@@ -63,6 +63,7 @@ export async function checkAgentCLI(config: PrecheckConfig): Promise<Check> {
   }
 
   try {
+    // nax-git-env-allow: not git: agent CLI --version probe
     const proc = _checkCliDeps.spawn([agent, "--version"], {
       stdout: "pipe",
       stderr: "pipe",

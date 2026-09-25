@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { lexBashCommand } from "@/permissions";
+import { type BashSegment, lexBashCommand } from "@/permissions";
 
 function segmentsOf(command: string): readonly string[][] {
   const result = lexBashCommand(command);
@@ -87,6 +87,39 @@ describe("lexBashCommand redirections", () => {
     const result = lexBashCommand("bun test > $OUT");
     if (result.kind !== "ok") throw new Error("expected ok");
     expect(result.segments[0]?.redirects[0]?.opaque).toBe(true);
+  });
+});
+
+/** The refused variant's lexable prefix, narrowed through the discriminated
+ * union so a regression that drops or weakens `prefix` fails to typecheck, not
+ * merely to assert. */
+function refusedPrefix(command: string): readonly BashSegment[] {
+  const result = lexBashCommand(command);
+  if (result.kind !== "refused") throw new Error(`expected refused, got ${result.kind}`);
+  return result.prefix;
+}
+
+describe("lexBashCommand refused prefix (US-001)", () => {
+  test("US-001 AC1: a refused `2>&1` keeps the completed words and drops the in-progress one", () => {
+    const prefix = refusedPrefix("rm -rf x 2>&1");
+    expect(prefix).toHaveLength(1);
+    expect(prefix[0]?.tokens.map((token) => token.text)).toEqual(["rm", "-rf", "x"]);
+    expect(prefix[0]?.redirects).toEqual([]);
+  });
+
+  test("US-001 AC2: completed segments precede the segment the refusal interrupted", () => {
+    const prefix = refusedPrefix("ls && echo x 2>&1");
+    expect(prefix.map((segment) => segment.tokens.map((token) => token.text))).toEqual([["ls"], ["echo", "x"]]);
+  });
+
+  test("US-001 AC3: the word being built when a here-document is refused is dropped", () => {
+    const prefix = refusedPrefix("cat ..<<EOF");
+    expect(prefix).toHaveLength(1);
+    expect(prefix[0]?.tokens.map((token) => token.text)).toEqual(["cat"]);
+  });
+
+  test("US-001 AC4: a refusal before any word completes yields an empty prefix", () => {
+    expect(refusedPrefix("(cat /etc/passwd)")).toEqual([]);
   });
 });
 

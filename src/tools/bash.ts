@@ -116,22 +116,28 @@ function capitalize(text: string): string {
 
 /**
  * `escalate`'s description when a human is reachable (ADR-030, amended
- * 2026-09-23). It states checkBashCommand's ACTUAL order: a grant miss or a
- * lexer refusal returns (escalatably) BEFORE the payload checks, so those only
- * bind granted commands, and an approved command runs as written (nax#2194).
- * Pinned against the policy in coding-tool-bash-escalate-truth.test.ts.
+ * 2026-09-23 and again for US-001). It states checkBashCommand's ACTUAL order:
+ * the out-of-bounds payload checks and the deny matcher run BEFORE the
+ * escalatable sites -- a lexer refusal, a grant miss, and the one payload
+ * refusal the gate cannot adjudicate, an option-shaped `cd` -- so an
+ * out-of-bounds command never reaches the human; on a refused command those
+ * checks cover the lexable prefix -- the part before the unreadable construct
+ * -- and an approved command runs as written. Pinned against the policy in
+ * coding-tool-bash-escalate-truth.test.ts.
  */
 function escalateDescription(shell: string, patterns: readonly string[] | undefined): string {
   return (
     `Run one shell command string under ${shell}. ${PREFER_STRUCTURED_TOOLS_SENTENCE}` +
-    `${capitalize(describeGrants(patterns))}. A command whose every segment matches a granted form is checked further: paths ` +
+    `${capitalize(describeGrants(patterns))}. Every command, granted or not, is checked first: paths ` +
     "and redirect targets must stay inside the repository root, and `.git/` access, denied flags, unexpanded " +
-    "`$VAR`, glob or brace characters, `~`, and a bare or option-shaped `cd` are refused without asking. A command " +
-    "outside the granted forms, or one using a construct that cannot be analysed (e.g. command or process " +
-    "substitution, backticks, here-documents, subshells, `2>&1`, `#` comments), is not refused: it is sent to a " +
-    "human for approval (unless an identical command was already approved and remembered) and, if they allow it, " +
-    "runs exactly as written; it is refused if they deny it or do not answer in time, so prefer the granted forms. A command matching a deny rule is refused without asking unless it cannot " +
-    "be analysed. Each segment of a `&&`/`||`/`;`/`|` chain is checked separately. " +
+    "`$VAR`, glob or brace characters, `~`, a bare `cd`, and a command matching a deny rule are " +
+    "refused without asking. For a command using a construct that cannot be analysed (e.g. command or process " +
+    "substitution, backticks, here-documents, subshells, `2>&1`, `#` comments, an option-shaped `cd`), these " +
+    "checks cover the part before that construct. A command outside the granted forms, or one using a construct " +
+    "that cannot be analysed, is not refused: it is sent to a human for approval (unless an identical command " +
+    "was already approved and remembered) and, if they allow it, runs exactly as written; it is refused if they " +
+    "deny it or do not answer in time, so prefer the granted forms. Each segment of a `&&`/`||`/`;`/`|` chain is " +
+    "checked separately. " +
     BACKGROUND_PROCESSES_KILLED_SENTENCE
   );
 }

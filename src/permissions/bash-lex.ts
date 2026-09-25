@@ -45,11 +45,21 @@ export interface BashSegment {
 
 export type BashLexResult =
   | { readonly kind: "ok"; readonly segments: readonly BashSegment[] }
-  | { readonly kind: "refused"; readonly construct: string };
-
-function refused(construct: string): BashLexResult {
-  return { kind: "refused", construct };
-}
+  | {
+      readonly kind: "refused";
+      readonly construct: string;
+      /**
+       * The lexable prefix at the point of refusal: the completed segments,
+       * followed by the interrupted segment's completed tokens and redirects
+       * only. The word being built when the refusal struck is dropped, as is a
+       * redirect operator still waiting for its target; a trailing segment with
+       * neither tokens nor redirects is omitted. `[]` when the refusal precedes
+       * any completed word. The gate runs its deny and payload checks over this
+       * prefix, so an out-of-bounds command never reaches the human just because
+       * a later construct was unreadable.
+       */
+      readonly prefix: readonly BashSegment[];
+    };
 
 /** End index of a double-quoted run starting at `from`, honouring backslash
  * escapes, or -1 when the quote is never closed. */
@@ -69,7 +79,7 @@ export function lexBashCommand(command: string): BashLexResult {
   // Checked up front so the reason names the real problem. Leaving it to the
   // final flushSegment() would report "an empty command segment", which is
   // true and useless.
-  if (command.trim() === "") return refused("an empty command");
+  if (command.trim() === "") return { kind: "refused", construct: "an empty command", prefix: [] };
 
   const segments: BashSegment[] = [];
   let tokens: BashToken[] = [];
@@ -78,6 +88,15 @@ export function lexBashCommand(command: string): BashLexResult {
   let opaque = false;
   let started = false;
   let pendingRedirect: string | undefined;
+
+  /** Snapshots the lexable prefix at a refusal site (see `BashLexResult`). The
+   * in-progress `word` is deliberately excluded, and `pendingRedirect` -- an
+   * operator awaiting its target -- lives outside `redirects`, so it is dropped
+   * with it. */
+  function refusedHere(construct: string): BashLexResult {
+    const prefix = tokens.length === 0 && redirects.length === 0 ? [...segments] : [...segments, { tokens, redirects }];
+    return { kind: "refused", construct, prefix };
+  }
 
   function flushWord(): void {
     if (!started) return;
@@ -113,7 +132,7 @@ export function lexBashCommand(command: string): BashLexResult {
 
     if (char === "'") {
       const end = command.indexOf("'", i + 1);
-      if (end === -1) return refused("an unbalanced single quote");
+      if (end === -1) return refusedHere("an unbalanced single quote");
       // Single quotes suppress every expansion, so the content stays literal
       // and the token stays analysable.
       word += command.slice(i + 1, end);
@@ -124,10 +143,10 @@ export function lexBashCommand(command: string): BashLexResult {
 
     if (char === '"') {
       const end = doubleQuoteEnd(command, i + 1);
-      if (end === -1) return refused("an unbalanced double quote");
+      if (end === -1) return refusedHere("an unbalanced double quote");
       const inner = command.slice(i + 1, end);
-      if (inner.includes("$(")) return refused("a command substitution `$(...)`");
-      if (inner.includes("`")) return refused("a backtick command substitution");
+      if (inner.includes("$(")) return refusedHere("a command substitution `$(...)`");
+      if (inner.includes("`")) return refusedHere("a backtick command substitution");
       if (inner.includes("$")) opaque = true;
       word += inner;
       started = true;
@@ -136,7 +155,7 @@ export function lexBashCommand(command: string): BashLexResult {
     }
 
     if (char === "\\") {
-      if (next === undefined) return refused("a trailing backslash");
+      if (next === undefined) return refusedHere("a trailing backslash");
       word += next;
       started = true;
       i += 2;
@@ -148,22 +167,22 @@ export function lexBashCommand(command: string): BashLexResult {
     // `! rm -rf x` present a first token of `(rm` / `!` that no `Bash(rm*)`
     // deny rule can match, while /bin/sh runs the `rm` regardless. Refused by
     // name, like every other construct this lexer cannot read.
-    if (char === "(" || char === ")") return refused("a subshell `( ... )`");
+    if (char === "(" || char === ")") return refusedHere("a subshell `( ... )`");
     // `!` and `#` are only special at the START of a word -- `a!b` and `a#b`
     // are ordinary literals in sh, and refusing those would deny commands a
     // grant plainly covers.
-    if (char === "!" && !started) return refused("a `!` negation");
-    if (char === "#" && !started) return refused("a `#` comment");
-    if (char === "$" && next === "(") return refused("a command substitution `$(...)`");
-    if (char === "`") return refused("a backtick command substitution");
+    if (char === "!" && !started) return refusedHere("a `!` negation");
+    if (char === "#" && !started) return refusedHere("a `#` comment");
+    if (char === "$" && next === "(") return refusedHere("a command substitution `$(...)`");
+    if (char === "`") return refusedHere("a backtick command substitution");
     if ((char === "<" || char === ">") && next === "(") {
-      return refused("a process substitution `<(...)` / `>(...)`");
+      return refusedHere("a process substitution `<(...)` / `>(...)`");
     }
-    if (char === "<" && next === "<") return refused("a here-document `<<`");
+    if (char === "<" && next === "<") return refusedHere("a here-document `<<`");
     if ((char === "<" || char === ">") && next === "&") {
-      return refused("file-descriptor duplication (`2>&1`)");
+      return refusedHere("file-descriptor duplication (`2>&1`)");
     }
-    if (char === "&" && next === ">") return refused("the `&>` redirection form");
+    if (char === "&" && next === ">") return refusedHere("the `&>` redirection form");
 
     if (char === "$") {
       opaque = true;
@@ -181,19 +200,19 @@ export function lexBashCommand(command: string): BashLexResult {
 
     if (char === "\n" || char === ";") {
       const error = flushSegment(";");
-      if (error !== undefined) return refused(error);
+      if (error !== undefined) return refusedHere(error);
       i += 1;
       continue;
     }
     if ((char === "&" && next === "&") || (char === "|" && next === "|")) {
       const error = flushSegment(char === "&" ? "&&" : "||");
-      if (error !== undefined) return refused(error);
+      if (error !== undefined) return refusedHere(error);
       i += 2;
       continue;
     }
     if (char === "|" || char === "&") {
       const error = flushSegment(char);
-      if (error !== undefined) return refused(error);
+      if (error !== undefined) return refusedHere(error);
       i += 1;
       continue;
     }
@@ -223,6 +242,6 @@ export function lexBashCommand(command: string): BashLexResult {
   }
 
   const error = flushSegment();
-  if (error !== undefined) return refused(error);
+  if (error !== undefined) return refusedHere(error);
   return { kind: "ok", segments };
 }

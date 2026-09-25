@@ -90,6 +90,7 @@ function openInEditor(filePath: string): void {
   if (!editor) return;
 
   try {
+    // nax-git-env-allow: not git: $EDITOR invocation
     const proc = _curatorCmdDeps.spawnSync([editor, ...args, filePath], { stdio: ["inherit", "inherit", "inherit"] });
     if (proc.exitCode !== 0) console.log(`[WARN] Editor exited with code ${proc.exitCode}`);
   } catch {

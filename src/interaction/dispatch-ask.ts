@@ -26,6 +26,7 @@
 import { join } from "node:path";
 import { buildCommandShadow, type CommandShadow } from "@/command-safety";
 import { type BashApprovalMode, loadConfigForPackage, type NaxConfig, resolveBashApproval } from "@/config";
+import { getSafeLogger } from "@/logger";
 import {
   type AskControl,
   type AskRequest,
@@ -244,6 +245,59 @@ export async function collectEffectiveRunStageModes(
     ),
   );
   return collectRunStageModes([opts.rootConfig, ...(opts.extraConfigs ?? []), ...packageConfigs]);
+}
+
+export interface ApprovalsSealOptions {
+  readonly projectDir: string;
+  /** The run's root config. `execution.sandbox` is a root-only key (ROOT_ONLY_EXECUTION_KEYS). */
+  readonly rootConfig: NaxConfig;
+  /** Every story's package dir (`prd.userStories.map(storyPackageDir)`). */
+  readonly packageDirs: readonly (string | undefined)[];
+  /** Run output dir; the approvals file is `approvalsPath(outputDir)`. */
+  readonly outputDir: string;
+  readonly runId: string;
+}
+
+/**
+ * Decide once whether this run is forge-capable; return the end-of-run seal.
+ *
+ * The per-scope taint in `buildDispatchAskWiring` only covers agents dispatched
+ * inside a dispatch-ask scope. A final seal at run end closes the window in
+ * which an agent that ran outside any scope could strip the marker and forge
+ * entries a later trusted run would honour.
+ *
+ * Forge-capability is decided HERE, at setup: the signal-time teardown that
+ * awaits the seal runs under `FATAL_TEARDOWN_DEADLINE_MS`, so it must not load
+ * configs. A trusted run's seal does nothing at all. Never rejects —
+ * `prepareApprovalsStore` logs a failed taint and resolves.
+ */
+export async function buildApprovalsSeal(
+  opts: ApprovalsSealOptions,
+  deps: DispatchAskDeps = _dispatchAskDeps,
+): Promise<() => Promise<void>> {
+  const stageModes = await collectEffectiveRunStageModes(
+    { projectDir: opts.projectDir, rootConfig: opts.rootConfig, packageDirs: opts.packageDirs },
+    deps,
+  );
+  const forgeCapable = isForgeCapable(stageModes, opts.rootConfig.execution?.sandbox?.enabled === true);
+  if (!forgeCapable) return async () => {};
+  const approvalsFile = approvalsPath(opts.outputDir);
+  const runId = opts.runId;
+  return async () => {
+    try {
+      await deps.prepareApprovalsStore({ approvalsFile, runId, forgeCapable: true });
+    } catch (error) {
+      // The real `prepareApprovalsStore` never throws — it logs a failed taint —
+      // but `deps` is injectable, so an injected one can. Swallow here so the
+      // "never rejects" contract above holds for the signal path too, where a
+      // rejection would otherwise be discarded silently.
+      getSafeLogger()?.warn("permissions", "[approvals] could not update the store's taint marker", {
+        approvalsFile,
+        forgeCapable: true,
+        error,
+      });
+    }
+  };
 }
 
 export interface RunDispatchAskOptions extends Omit<DispatchAskOptions, "stageModes" | "projectRoot"> {

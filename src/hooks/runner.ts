@@ -221,6 +221,7 @@ async function executeHook(
     return { success: false, output: "Empty command" };
   }
 
+  // nax-git-env-allow: not git: hook argv (hooks.*.command)
   const proc = Bun.spawn(argv, {
     cwd: workdir,
     stdin: new Response(contextJson),

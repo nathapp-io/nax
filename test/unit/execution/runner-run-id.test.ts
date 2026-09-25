@@ -64,7 +64,7 @@ function makeMinimalOptions(overrides: Partial<RunOptions> = {}): RunOptions {
   };
 }
 
-function makeSetupResult(prd: PRD): RunnerSetupResult {
+function makeSetupResult(prd: PRD): RunnerSetupResult & { sealApprovals: () => Promise<void> } {
   return {
     statusWriter: makeStatusWriter(),
     sessionManager: new SessionManager(),
@@ -75,6 +75,9 @@ function makeSetupResult(prd: PRD): RunnerSetupResult {
     prd,
     shutdownController: new AbortController(),
     runtime: makeMockRuntime(),
+    // US-002: `sealApprovals` is required on RunnerSetupResult. Nothing in this
+    // file seals, so a no-op stands in for the run-end approvals seal.
+    sealApprovals: async () => {},
   };
 }
 

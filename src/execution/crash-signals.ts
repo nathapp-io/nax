@@ -41,6 +41,13 @@ export interface SignalHandlerContext extends RunCompleteContext {
    * through so long-running awaits can short-circuit.
    */
   onShutdown?: (abortSignal?: AbortSignal) => Promise<void>;
+  /**
+   * Final re-taint of the shared approvals store (US-002). Runs after
+   * `pidRegistry.killAll()`, so no tracked agent process survives to strip the
+   * marker again. Absent before `setupRun` built the seal — a fatal signal that
+   * early has no dispatch scope to seal.
+   */
+  sealApprovals?: () => Promise<void>;
 }
 
 /**
@@ -122,6 +129,15 @@ export async function performTeardown(ctx: SignalHandlerContext): Promise<void> 
   // Kill any remaining processes (including hung session-close spawns).
   if (ctx.pidRegistry) {
     await ctx.pidRegistry.killAll();
+  }
+
+  // US-002: re-taint the shared approvals store, now that every tracked agent
+  // process is dead and none can strip the marker again. Last so nothing the
+  // sweep spawns (or leaves behind) can undo it. A rejection is swallowed: the
+  // crash path is already committed to exiting under a hard deadline, and a
+  // wedged seal must not leave teardown hanging.
+  if (ctx.sealApprovals) {
+    await ctx.sealApprovals().catch(() => undefined);
   }
 }
 

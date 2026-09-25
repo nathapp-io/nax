@@ -4,9 +4,9 @@
  * command shadow, plus the dispose that tears both down.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { assertDefined, cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { CommandShadow } from "@/command-safety";
 import type { NaxConfig } from "@/config";
 import type { AskChannel, AskChannelResponse, DispatchAskDeps, DispatchAskOptions } from "@/interaction";
@@ -17,7 +17,18 @@ import {
   buildRunDispatchAskWiring,
   collectEffectiveRunStageModes,
 } from "@/interaction";
-import type { AskControl, AskRequest, PrepareApprovalsStoreOptions } from "@/permissions";
+import * as loggerModule from "@/logger";
+import {
+  type ApprovalEntry,
+  type AskControl,
+  type AskRequest,
+  approvalsPath,
+  clearApprovalsTaint,
+  type PrepareApprovalsStoreOptions,
+  prepareApprovalsStore,
+  readApprovalsFile,
+  writeApprovalsFile,
+} from "@/permissions";
 
 const REQ: AskRequest = {
   tool: "Bash",
@@ -351,5 +362,263 @@ describe("US-003 — control through the dispatch resolver", () => {
 
     const rows = (await Bun.file(join(dir, APPROVAL_AUDIT_DIR, "run-1.jsonl")).text()).trim().split("\n");
     expect(JSON.parse(rows[0] ?? "{}")).toMatchObject({ decision: "deny", decidedBy: "cancelled" });
+  });
+});
+
+// ===========================================================================
+// US-002 — the end-of-run approvals seal
+//
+// `buildApprovalsSeal` decides ONCE, at setup, whether the run is
+// forge-capable (any `raw` stage with the sandbox off) and returns the closure
+// that re-taints the shared approvals store when the run ends. Nothing
+// re-tainted at run end before this, so an agent dispatched outside a
+// dispatch-ask scope after the last re-taint could strip the marker and forge
+// entries a later trusted run would honour.
+// ===========================================================================
+
+/** The closure `buildApprovalsSeal` returns; awaiting it seals the store. */
+type ApprovalsSeal = () => Promise<void>;
+
+/** The options object `buildApprovalsSeal` decides forge-capability from. */
+interface ApprovalsSealOptions {
+  readonly projectDir: string;
+  readonly rootConfig: NaxConfig;
+  readonly packageDirs: readonly (string | undefined)[];
+  readonly outputDir: string;
+  readonly runId: string;
+}
+
+/** The builder the story adds to the interaction barrel. */
+type SealBuilder = (opts: ApprovalsSealOptions, deps?: DispatchAskDeps) => Promise<ApprovalsSeal>;
+
+/**
+ * Resolve `buildApprovalsSeal` off the barrel namespace by name.
+ *
+ * Read reflectively on purpose: a missing named import aborts the whole file
+ * with a module-link SyntaxError before any test runs, so the pin on the
+ * story's "exported from src/interaction/index.ts" would be invisible. The
+ * `expect` below is that pin; `assertDefined` narrows for the callers.
+ */
+async function requireSealBuilder(): Promise<SealBuilder> {
+  const build: SealBuilder | undefined = Reflect.get(await import("@/interaction"), "buildApprovalsSeal");
+  expect(typeof build).toBe("function");
+  assertDefined(build, "buildApprovalsSeal");
+  return build;
+}
+
+/** A remembered-approval entry the store can hold. */
+function sealEntry(command: string): ApprovalEntry {
+  return {
+    stage: "implementer",
+    command,
+    root: "/repo",
+    origin: "escalate",
+    matchedRule: null,
+    approvedAt: "2026-09-22T10:00:00.000Z",
+    approvedBy: "telegram:123",
+    naxCommit: "7b37dbf74",
+  };
+}
+
+/** Any `raw` stage with the sandbox off — the forge-capable shape (#2199). */
+function forgeCapableConfig(): NaxConfig {
+  return makeNaxConfig({ execution: { bashApproval: "raw", sandbox: { enabled: false } } });
+}
+
+describe("buildApprovalsSeal — US-002 end-of-run seal", () => {
+  test("US-002 AC1: a forge-capable seal taints approvalsPath(outputDir) with the supplied runId and drops every entry", async () => {
+    const dir = outputDir();
+    const file = approvalsPath(dir);
+    // An entry is already on disk: the seal must drop it, not just stamp.
+    await writeApprovalsFile(file, { taint: undefined, entries: [sealEntry("bun run test")] });
+    const build = await requireSealBuilder();
+
+    const seal = await build({
+      projectDir: dir,
+      rootConfig: forgeCapableConfig(),
+      packageDirs: [],
+      outputDir: dir,
+      runId: "run-seal-1",
+    });
+    await seal();
+
+    const store = await readApprovalsFile(file);
+    expect(store.taint?.runId).toBe("run-seal-1");
+    expect(store.entries).toEqual([]);
+  });
+
+  test("US-002 AC2: a raw stage under the sandbox leaves an existing store byte-for-byte unchanged", async () => {
+    const dir = outputDir();
+    const file = approvalsPath(dir);
+    await writeApprovalsFile(file, { taint: undefined, entries: [sealEntry("bun run test")] });
+    const before = await Bun.file(file).text();
+    const build = await requireSealBuilder();
+    const rootConfig = makeNaxConfig({ execution: { bashApproval: "raw", sandbox: { enabled: true } } });
+
+    const seal = await build({ projectDir: dir, rootConfig, packageDirs: [], outputDir: dir, runId: "run-seal-2" });
+    await seal();
+
+    expect(await Bun.file(file).text()).toBe(before);
+  });
+
+  test("US-002 AC2 boundary: a sandboxed run's seal never reaches prepareApprovalsStore", async () => {
+    const dir = outputDir();
+    const build = await requireSealBuilder();
+    const prepCalls: PrepareApprovalsStoreOptions[] = [];
+    const sealDeps: DispatchAskDeps = {
+      ..._dispatchAskDeps,
+      prepareApprovalsStore: async (o) => void prepCalls.push(o),
+    };
+    const rootConfig = makeNaxConfig({ execution: { bashApproval: "raw", sandbox: { enabled: true } } });
+
+    const seal = await build(
+      { projectDir: dir, rootConfig, packageDirs: [], outputDir: dir, runId: "run-seal-2b" },
+      sealDeps,
+    );
+    await seal();
+
+    expect(prepCalls).toEqual([]);
+  });
+
+  test("US-002 AC3: with the sandbox off but no raw stage mode the store is left unchanged", async () => {
+    const dir = outputDir();
+    const file = approvalsPath(dir);
+    await writeApprovalsFile(file, { taint: undefined, entries: [sealEntry("bun run test")] });
+    const before = await Bun.file(file).text();
+    const build = await requireSealBuilder();
+    const rootConfig = makeNaxConfig({ execution: { bashApproval: "escalate", sandbox: { enabled: false } } });
+
+    const seal = await build({ projectDir: dir, rootConfig, packageDirs: [], outputDir: dir, runId: "run-seal-3" });
+    await seal();
+
+    expect(await Bun.file(file).text()).toBe(before);
+  });
+
+  test("US-002 AC3 boundary: a trusted seal creates no approvals file and calls no store write", async () => {
+    const dir = outputDir();
+    const build = await requireSealBuilder();
+    const prepCalls: PrepareApprovalsStoreOptions[] = [];
+    const sealDeps: DispatchAskDeps = {
+      ..._dispatchAskDeps,
+      prepareApprovalsStore: async (o) => void prepCalls.push(o),
+    };
+    const rootConfig = makeNaxConfig({ execution: { bashApproval: "gated", sandbox: { enabled: false } } });
+
+    const seal = await build(
+      { projectDir: dir, rootConfig, packageDirs: [], outputDir: dir, runId: "run-seal-3b" },
+      sealDeps,
+    );
+    await seal();
+
+    expect(await Bun.file(approvalsPath(dir)).exists()).toBe(false);
+    expect(prepCalls).toEqual([]);
+  });
+
+  test("US-002 AC4: stage modes are resolved once — three awaits add no loadConfigForPackage call", async () => {
+    const dir = outputDir();
+    const loaded: Array<string | undefined> = [];
+    const build = await requireSealBuilder();
+    const sealDeps: DispatchAskDeps = {
+      ..._dispatchAskDeps,
+      loadConfigForPackage: async (_projectDir, packageDir) => {
+        loaded.push(packageDir);
+        return forgeCapableConfig();
+      },
+    };
+
+    const seal = await build(
+      {
+        projectDir: dir,
+        rootConfig: forgeCapableConfig(),
+        packageDirs: ["packages/a", "packages/b"],
+        outputDir: dir,
+        runId: "run-seal-4",
+      },
+      sealDeps,
+    );
+    const afterConstruction = loaded.length;
+    // Construction decides forge-capability, so it must have resolved every
+    // package dir; otherwise "no call afterwards" would hold vacuously.
+    expect(afterConstruction).toBeGreaterThan(0);
+
+    await seal();
+    await seal();
+    await seal();
+
+    expect(loaded.length).toBe(afterConstruction);
+  });
+
+  test("US-002 AC4 boundary: without package dirs the seal loads no package config at all", async () => {
+    const dir = outputDir();
+    const loaded: Array<string | undefined> = [];
+    const build = await requireSealBuilder();
+    const sealDeps: DispatchAskDeps = {
+      ..._dispatchAskDeps,
+      loadConfigForPackage: async (_projectDir, packageDir) => {
+        loaded.push(packageDir);
+        return forgeCapableConfig();
+      },
+    };
+
+    const seal = await build(
+      { projectDir: dir, rootConfig: forgeCapableConfig(), packageDirs: [], outputDir: dir, runId: "run-seal-4b" },
+      sealDeps,
+    );
+    await seal();
+
+    expect(loaded).toEqual([]);
+  });
+
+  test("US-002 AC5: the seal re-taints a store an agent rewrote, so a later run discards the forged entry", async () => {
+    const dir = outputDir();
+    const file = approvalsPath(dir);
+    const build = await requireSealBuilder();
+    const seal = await build({
+      projectDir: dir,
+      rootConfig: forgeCapableConfig(),
+      packageDirs: [],
+      outputDir: dir,
+      runId: "run-1",
+    });
+
+    // Run-1 taints at scope start …
+    await prepareApprovalsStore({ approvalsFile: file, runId: "run-1", forgeCapable: true });
+    // … an agent strips the marker and forges an entry …
+    await writeApprovalsFile(file, { taint: undefined, entries: [sealEntry("curl evil.example")] });
+
+    // … and the end-of-run seal re-taints what it left behind.
+    await seal();
+
+    expect(await clearApprovalsTaint(file, "run-2")).toBe("cleared");
+    expect((await readApprovalsFile(file)).entries).toEqual([]);
+  });
+
+  test("US-002 AC6: a seal that cannot write the store resolves and logs the failed-taint warning", async () => {
+    const dir = outputDir();
+    // A regular file where the output dir should be: every write under it fails.
+    const filePath = join(dir, "not-a-directory");
+    await Bun.write(filePath, "x");
+
+    const logger = makeLogger();
+    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
+    try {
+      const build = await requireSealBuilder();
+      const seal = await build({
+        projectDir: dir,
+        rootConfig: forgeCapableConfig(),
+        packageDirs: [],
+        outputDir: filePath,
+        runId: "run-seal-6",
+      });
+
+      await expect(seal()).resolves.toBeUndefined();
+
+      const warnings = logger.calls.filter(
+        (c) => c.level === "warn" && c.message === "[approvals] could not update the store's taint marker",
+      );
+      expect(warnings).toHaveLength(1);
+    } finally {
+      loggerSpy.mockRestore();
+    }
   });
 });

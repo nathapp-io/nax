@@ -29,7 +29,7 @@ import { LockAcquisitionError, NaxError } from "@/errors";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
-import { initInteractionChain } from "@/interaction";
+import { buildApprovalsSeal, initInteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { AgentGetFn } from "@/pipeline/types";
@@ -43,8 +43,9 @@ import { discoverWorkspacePackages } from "@/test-runners";
 import { _gitToolDeps } from "@/tools";
 import { errorMessage } from "@/utils/errors";
 import { gitSpawnEnv } from "@/utils/git-env";
+import { storyPackageDir } from "@/utils/path-frame";
 import { installCrashHandlers } from "../crash-recovery";
-import { acquireFeatureLock, type FeatureLockResult } from "../feature-lock";
+import { acquireFeatureLock, type FeatureLockResult, releaseFeatureLock } from "../feature-lock";
 import { acquireLock, releaseLock } from "../helpers";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
@@ -71,6 +72,10 @@ export const _runSetupDeps = {
   createRuntime,
   installCrashHandlers,
   sweepFeatureTranscripts,
+  // US-002: the end-of-run approvals seal is built here, once the PRD names
+  // every story's package. Injected so tests can stub the build and observe
+  // the arguments `setupRun` derives.
+  buildApprovalsSeal,
   // US-002 seams: `setupRun` acquires the checkout lock then the feature lock
   // through these injectable entries. Added so tests can force refusals /
   // record ordering; the acquisition sequence itself is the implementer's work.
@@ -129,6 +134,11 @@ export interface RunSetupResult {
   shutdownController: AbortController;
   /** NaxRuntime created during setup — exposes agentManager, sessionManager, etc. */
   runtime: NaxRuntime;
+  /**
+   * US-002 — the run's end-of-run approvals seal, built from the loaded PRD.
+   * `run()` hands it to `cleanupRun`; a trusted run's seal does nothing.
+   */
+  sealApprovals: () => Promise<void>;
 }
 
 /**
@@ -262,6 +272,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // catch below genuinely may run before this is assigned. The optional type is what
   // makes the `cleanupCrashHandlers?.()` call there honest rather than defensive.
   let cleanupCrashHandlers: (() => void) | undefined;
+  // US-002: the end-of-run approvals seal lands here once the PRD is loaded.
+  // The crash handlers below close over it; undefined = nothing to seal yet.
+  let sealApprovals: (() => Promise<void>) | undefined;
   try {
     // Install crash handlers for signal recovery (US-007, BUG-1+MEM-1 fix: pass getters, cleanup in finally)
     cleanupCrashHandlers = _runSetupDeps.installCrashHandlers({
@@ -280,6 +293,11 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       getStoriesCompleted: options.getStoriesCompleted,
       emitError: (reason: string) => {
         pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
+      },
+      // US-002: forwarder over the seal built below — a no-op until it lands
+      // (a fatal signal that early has no dispatch scope to seal).
+      sealApprovals: async () => {
+        await sealApprovals?.();
       },
       onShutdown: async (abortSignal?: AbortSignal) => {
         // force=true: signal-driven shutdown must hard-terminate daemons (acpx stop)
@@ -469,6 +487,29 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       },
     });
 
+    // US-002: build the end-of-run approvals seal now the PRD names every
+    // story's package — deciding forge-capability here keeps config loads out
+    // of signal-time teardown, which runs under FATAL_TEARDOWN_DEADLINE_MS.
+    // This is post-lock work OUTSIDE `initializeAfterLock`'s FIX-H16 catch and
+    // outside the runner's finally (which cleanupRun owns), so a failure must
+    // release both locks itself — otherwise the workdir and the feature stay
+    // locked for the next run. Feature first, then checkout (reverse of
+    // acquisition); `releaseFeatureLock` is a no-op when the on-disk runId
+    // isn't ours.
+    try {
+      sealApprovals = await _runSetupDeps.buildApprovalsSeal({
+        projectDir: options.workdir,
+        rootConfig: options.config,
+        packageDirs: initResult.prd.userStories.map(storyPackageDir),
+        outputDir: runtime.outputDir,
+        runId: options.runId,
+      });
+    } catch (error) {
+      await releaseFeatureLock({ outputDir: runtime.outputDir, feature, runId });
+      await releaseLock(workdir);
+      throw error;
+    }
+
     return {
       statusWriter,
       sessionManager,
@@ -479,6 +520,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       interactionChain: initResult.interactionChain,
       shutdownController,
       runtime,
+      sealApprovals,
     };
   } catch (error) {
     // MEM-1 (nax review 20260829): uninstall crash handlers and close the runtime before

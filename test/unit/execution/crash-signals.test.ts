@@ -416,3 +416,54 @@ describe("crash-signals idempotency", () => {
     expect(freeze).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-002 — the end-of-run approvals seal on the fatal-teardown path
+//
+// `performTeardown` seals AFTER `pidRegistry.killAll()`, so no tracked agent
+// process survives to strip the marker again, and it swallows a seal rejection
+// as its last step: a wedged seal must not leave the crash path unsettled.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("performTeardown — US-002 approvals seal", () => {
+  test("US-002 AC9: seals exactly once, after onShutdown and killAll", async () => {
+    const order: string[] = [];
+    const sealApprovals = mock(async () => {
+      order.push("sealApprovals");
+    });
+    const ctx: SignalHandlerContext & { sealApprovals?: () => Promise<void> } = {
+      ...minimalCtx,
+      onShutdown: async () => {
+        order.push("onShutdown");
+      },
+      pidRegistry: makePidRegistryStub({
+        killAll: async () => {
+          order.push("killAll");
+        },
+      }),
+      sealApprovals,
+    };
+
+    await performTeardown(ctx);
+
+    expect(sealApprovals).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["onShutdown", "killAll", "sealApprovals"]);
+  });
+
+  test("US-002 AC10: a rejecting seal is swallowed and teardown still kills tracked processes", async () => {
+    const killAll = mock(async () => {});
+    const sealApprovals = mock(async () => {
+      throw new Error("seal exploded");
+    });
+    const ctx: SignalHandlerContext & { sealApprovals?: () => Promise<void> } = {
+      ...minimalCtx,
+      pidRegistry: makePidRegistryStub({ killAll }),
+      sealApprovals,
+    };
+
+    await expect(performTeardown(ctx)).resolves.toBeUndefined();
+
+    expect(sealApprovals).toHaveBeenCalledTimes(1);
+    expect(killAll).toHaveBeenCalledTimes(1);
+  });
+});

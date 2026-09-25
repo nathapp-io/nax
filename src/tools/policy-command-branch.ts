@@ -77,7 +77,8 @@ export function commandBranch(args: BashCommandBranchArgs): PolicyVerdict | unde
     // `escalate` converts only a denial the gate could not ADJUDICATE. A
     // breach, a denied flag or an explicit deny rule stays a hard refusal:
     // escalating those would dissolve the `breach` signal into an approval
-    // prompt. See ADR-030 and the two escalatable sites in policy-bash.ts.
+    // prompt. See ADR-030 and `BashCheck.escalatable` in policy-bash.ts for
+    // the sites that set it.
     if (bashApproval === "escalate" && result.escalatable) {
       // NOT `askVerdict(...)`: that helper REWRITES reason as
       // `matched ask rule "<rule>"`, which is false here — no ask rule
