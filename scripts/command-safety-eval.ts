@@ -5,8 +5,11 @@
  *   bun scripts/command-safety-eval.ts --corpus test/fixtures/command-safety/corpus.jsonl \
  *     --rows ~/.nax/<project>/command-safety/<runId>.jsonl [--rows ...] \
  *     [--url http://127.0.0.1:8020/t/nax-command-safety/v1/systemone --auth-env NAX_COMMAND_SAFETY_AUTH] \
- *     [--weights harm=0.5,noulMax=0.5] \
+ *     [--weights harm=0.5,noulMax=0.5] [--segments] \
  *     --out /some/dir/OUTSIDE/the/repo/report.md
+ *
+ * --segments (needs --url) adds a whole-vs-segments comparison for chained
+ * commands; see command-safety-eval-segments.ts.
  *
  * Refuses an --out inside this repository: model-specific numbers must never
  * be committed to this public repo. Refuses live rows that mix question-set
@@ -339,7 +342,35 @@ export function parseArgs(argv: readonly string[]) {
     authEnv: get("--auth-env"),
     weights: get("--weights"),
     out: get("--out"),
+    segments: argv.includes("--segments"),
   };
+}
+
+const SEGMENT_FP_BUDGET = 0.05;
+
+/** The --segments section, at each model scorer's whole-arm 5% FP threshold. */
+async function segmentationReport(
+  classify: Classify,
+  corpusScored: Parameters<typeof import("./command-safety-eval-segments").segmentCorpus>[0],
+  live: readonly NarrowableRow[],
+  scorers: readonly { name: ScorerName; atFp: readonly { maxFp: number; threshold: number }[] }[],
+  weights: Weights | undefined,
+): Promise<string> {
+  const seg = await import("./command-safety-eval-segments");
+  const cache = new Map<string, Promise<ModelScores | undefined>>();
+  const score = (command: string) => {
+    const hit = cache.get(command) ?? classifyOne(classify, command).then(scoreModel);
+    cache.set(command, hit);
+    return hit;
+  };
+  const thresholds = scorers.flatMap((s) => {
+    const at = s.atFp.find((x) => x.maxFp === SEGMENT_FP_BUDGET);
+    return s.name === "rule" || at === undefined ? [] : [{ scorer: s.name, threshold: at.threshold }];
+  });
+  const rows = await seg.segmentCorpus(corpusScored, score, weights);
+  const corpus = thresholds.flatMap((t) => seg.compareSegmentation(rows, [t.scorer], t.threshold));
+  const liveCmp = await seg.segmentLive(live, thresholds, score, weights);
+  return seg.renderSegmentation(corpus, liveCmp, SEGMENT_FP_BUDGET);
 }
 
 /**
@@ -387,7 +418,7 @@ async function main(): Promise<void> {
   const repoRoot = resolve(import.meta.dir, "..");
   if (a.corpus === undefined || a.out === undefined) {
     throw new Error(
-      "usage: --corpus <jsonl> --out <path outside the repo> [--rows <jsonl>]... [--url <systemone>] [--auth-env NAME] [--weights harm=<n>,noulMax=<n>]",
+      "usage: --corpus <jsonl> --out <path outside the repo> [--rows <jsonl>]... [--url <systemone>] [--auth-env NAME] [--weights harm=<n>,noulMax=<n>] [--segments]",
     );
   }
   if (isInsideRepo(repoRoot, a.out)) {
@@ -402,12 +433,16 @@ async function main(): Promise<void> {
     a.url === undefined
       ? undefined
       : createSystemOneClient({ url: a.url, timeoutMs: 10_000, ...(auth ? { token: auth } : {}) });
+  if (a.segments && classify === undefined) throw new Error("--segments needs --url: segments must be classified");
   const scored: Scored[] = [];
+  const corpusScored: { command: string; label: CorpusRow["label"]; rule: boolean; model: ModelScores | undefined }[] =
+    [];
   for (const row of corpus) {
     const result = classify === undefined ? undefined : await classifyOne(classify, row.command);
     const model = result === undefined ? undefined : scoreModel(result);
     const rule = Object.values(scoreRules(row.command).hits).some(Boolean);
     scored.push({ label: row.label, category: row.category, scores: allScores(rule, model, weights) });
+    corpusScored.push({ command: row.command, label: row.label, rule, model });
   }
   const statusCounts: Record<string, number> = {
     answered: 0,
@@ -454,7 +489,12 @@ async function main(): Promise<void> {
     liveRows: live.length,
     ...(questionSetVersion === undefined ? {} : { questionSetVersion }),
   };
-  writeFileSync(a.out, renderReport({ scorers, statusCounts, narrowing, perCategory, counts }));
+  const report = renderReport({ scorers, statusCounts, narrowing, perCategory, counts });
+  const segmentation =
+    a.segments && classify !== undefined
+      ? await segmentationReport(classify, corpusScored, live, scorers, weights)
+      : "";
+  writeFileSync(a.out, report + segmentation);
   process.stdout.write(`wrote ${a.out}\n`);
 }
 
