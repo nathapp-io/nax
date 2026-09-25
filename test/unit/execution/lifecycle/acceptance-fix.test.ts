@@ -1,18 +1,19 @@
 /**
  * Tests for src/execution/lifecycle/acceptance-fix.ts
  *
- * Covers:
- * - resolveAcceptanceDiagnosis fast paths (no LLM call)
- * - resolveAcceptanceDiagnosis slow path (callOp invoked)
+ * Covers (US-005):
+ * - fast paths that must survive the semantic-verdict deletion (no LLM call)
+ * - the slow path: exactly one `acceptanceDiagnoseOp` dispatch via callOp
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeDiagnoseOutput, makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
-import type { SemanticVerdict } from "@/acceptance/types";
 import type { NaxConfig } from "@/config/schema";
 import { _diagnosisDeps, resolveAcceptanceDiagnosis } from "@/execution/lifecycle/acceptance-fix";
 import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
+import { acceptanceDiagnoseOp } from "@/operations";
 import type { AcceptanceDiagnoseInput } from "@/operations/acceptance-diagnose";
+import type { CallContext } from "@/operations/types";
 
 function makeConfig(): NaxConfig {
   return makeNaxConfig({
@@ -60,6 +61,14 @@ function makeDiagnosisOpts() {
   };
 }
 
+/** A callOp stub that records every dispatch and never reaches an agent. */
+function recordCallOp(calls: Array<{ ctx: CallContext; op: unknown; input: AcceptanceDiagnoseInput }>) {
+  return async (ctx: CallContext, op: typeof acceptanceDiagnoseOp, input: AcceptanceDiagnoseInput) => {
+    calls.push({ ctx, op, input });
+    return makeDiagnoseOutput({ verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 });
+  };
+}
+
 let savedCallOp: typeof _diagnosisDeps.callOp;
 
 beforeEach(() => {
@@ -74,69 +83,43 @@ afterEach(() => {
 // ─── resolveAcceptanceDiagnosis fast paths ───────────────────────────────────
 
 describe("resolveAcceptanceDiagnosis() — fast paths", () => {
-  test("implement-only strategy → source_bug, no callOp invoked", async () => {
-    let callOpCalled = false;
-    _diagnosisDeps.callOp = async () => {
-      callOpCalled = true;
-      return makeDiagnoseOutput({
-        verdict: "source_bug",
-        reasoning: "unreachable — fast path should not invoke callOp",
-        confidence: 1,
-      });
-    };
+  test("US-005 AC1: implement-only strategy returns source_bug with confidence 1.0 and never calls callOp", async () => {
+    const calls: Array<{ ctx: CallContext; op: unknown; input: AcceptanceDiagnoseInput }> = [];
+    _diagnosisDeps.callOp = recordCallOp(calls);
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
       failures: { failedACs: ["AC-1"], testOutput: "fail" },
       totalACs: 10,
       strategy: "implement-only",
-      semanticVerdicts: [],
       diagnosisOpts: makeDiagnosisOpts(),
     });
+
     expect(result.verdict).toBe("source_bug");
     expect(result.confidence).toBe(1.0);
-    expect(callOpCalled).toBe(false);
+    expect(calls).toHaveLength(0);
   });
 
-  test("all semantic verdicts passed → test_bug, no callOp invoked", async () => {
-    let callOpCalled = false;
-    _diagnosisDeps.callOp = async () => {
-      callOpCalled = true;
-      return makeDiagnoseOutput({
-        verdict: "source_bug",
-        reasoning: "unreachable — fast path should not invoke callOp",
-        confidence: 1,
-      });
-    };
+  test("US-005 AC2: diagnose-first + AC-ERROR sentinel returns test_bug with confidence 0.9 and never calls callOp", async () => {
+    const calls: Array<{ ctx: CallContext; op: unknown; input: AcceptanceDiagnoseInput }> = [];
+    _diagnosisDeps.callOp = recordCallOp(calls);
 
-    const verdicts: SemanticVerdict[] = [
-      { storyId: "US-001", passed: true, timestamp: "2026-01-01T00:00:00Z", acCount: 5, findings: [] },
-      { storyId: "US-002", passed: true, timestamp: "2026-01-01T00:00:00Z", acCount: 3, findings: [] },
-    ];
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
-      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      failures: { failedACs: ["AC-ERROR"], testOutput: "test crashed" },
       totalACs: 10,
       strategy: "diagnose-first",
-      semanticVerdicts: verdicts,
       diagnosisOpts: makeDiagnosisOpts(),
     });
+
     expect(result.verdict).toBe("test_bug");
-    expect(result.confidence).toBe(1.0);
-    expect(result.reasoning).toContain("Semantic review confirmed");
-    expect(callOpCalled).toBe(false);
+    expect(result.confidence).toBe(0.9);
+    expect(calls).toHaveLength(0);
   });
 
-  test(">80% ACs failed → test_bug, no callOp invoked", async () => {
-    let callOpCalled = false;
-    _diagnosisDeps.callOp = async () => {
-      callOpCalled = true;
-      return makeDiagnoseOutput({
-        verdict: "source_bug",
-        reasoning: "unreachable — fast path should not invoke callOp",
-        confidence: 1,
-      });
-    };
+  test("diagnose-first + >80% ACs failed returns test_bug without calling callOp", async () => {
+    const calls: Array<{ ctx: CallContext; op: unknown; input: AcceptanceDiagnoseInput }> = [];
+    _diagnosisDeps.callOp = recordCallOp(calls);
 
     const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(),
@@ -146,65 +129,39 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
       },
       totalACs: 10,
       strategy: "diagnose-first",
-      semanticVerdicts: [],
       diagnosisOpts: makeDiagnosisOpts(),
     });
+
     expect(result.verdict).toBe("test_bug");
     expect(result.confidence).toBe(0.9);
     expect(result.reasoning).toContain("Test-level failure");
-    expect(callOpCalled).toBe(false);
+    expect(calls).toHaveLength(0);
   });
+});
 
-  test("AC-ERROR sentinel → test_bug, no callOp invoked", async () => {
-    let callOpCalled = false;
-    _diagnosisDeps.callOp = async () => {
-      callOpCalled = true;
-      return makeDiagnoseOutput({
-        verdict: "source_bug",
-        reasoning: "unreachable — fast path should not invoke callOp",
-        confidence: 1,
-      });
-    };
+// ─── resolveAcceptanceDiagnosis slow path ────────────────────────────────────
+
+describe("resolveAcceptanceDiagnosis() — LLM diagnosis dispatch", () => {
+  test("US-005 AC3: 1 of 10 ACs failed with diagnose-first calls callOp exactly once with acceptanceDiagnoseOp", async () => {
+    const calls: Array<{ ctx: CallContext; op: unknown; input: AcceptanceDiagnoseInput }> = [];
+    _diagnosisDeps.callOp = recordCallOp(calls);
 
     const result = await resolveAcceptanceDiagnosis({
-      ctx: makeAcceptanceCtx(),
-      failures: { failedACs: ["AC-ERROR"], testOutput: "test crashed" },
+      ctx: makeAcceptanceCtx(true), // runtime required for the slow path
+      failures: { failedACs: ["AC-1"], testOutput: "(fail) AC-1" },
       totalACs: 10,
       strategy: "diagnose-first",
-      semanticVerdicts: [],
       diagnosisOpts: makeDiagnosisOpts(),
     });
-    expect(result.verdict).toBe("test_bug");
-    expect(callOpCalled).toBe(false);
-  });
 
-  test("normal failure (no fast path) → callOp invoked", async () => {
-    let callOpCalled = false;
-    _diagnosisDeps.callOp = async () => {
-      callOpCalled = true;
-      return makeDiagnoseOutput({ verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 });
-    };
-
-    const result = await resolveAcceptanceDiagnosis({
-      ctx: makeAcceptanceCtx(true), // runtime required for slow path
-      failures: { failedACs: ["AC-1", "AC-2"], testOutput: "(fail) AC-1\n(fail) AC-2" },
-      totalACs: 10,
-      strategy: "diagnose-first",
-      semanticVerdicts: [
-        { storyId: "US-001", passed: false, timestamp: "2026-01-01T00:00:00Z", acCount: 5, findings: [] },
-      ],
-      diagnosisOpts: makeDiagnosisOpts(),
-    });
-    expect(callOpCalled).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].op).toBe(acceptanceDiagnoseOp);
     expect(result.verdict).toBe("source_bug");
   });
 
-  test("normal path dispatches diagnosis with the failed package context", async () => {
-    let capturedCtx: Parameters<typeof _diagnosisDeps.callOp>[0] | undefined;
-    _diagnosisDeps.callOp = async (callCtx) => {
-      capturedCtx = callCtx;
-      return makeDiagnoseOutput({ verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 });
-    };
+  test("slow path dispatches diagnosis with the failed package context", async () => {
+    const calls: Array<{ ctx: CallContext; op: unknown; input: AcceptanceDiagnoseInput }> = [];
+    _diagnosisDeps.callOp = recordCallOp(calls);
     const packageConfig = makeNaxConfig({ execution: { permissionProfile: "safe" } });
 
     await resolveAcceptanceDiagnosis({
@@ -212,7 +169,6 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
       failures: { failedACs: ["AC-1", "AC-2"], testOutput: "failure" },
       totalACs: 3,
       strategy: "diagnose-first",
-      semanticVerdicts: [{ storyId: "US-001", passed: false, timestamp: "2026-01-01", acCount: 1, findings: [] }],
       diagnosisOpts: {
         ...makeDiagnosisOpts(),
         workdir: "/tmp/workdir/packages/web",
@@ -220,30 +176,24 @@ describe("resolveAcceptanceDiagnosis() — fast paths", () => {
       },
     });
 
-    expect(capturedCtx?.packageDir).toBe("/tmp/workdir/packages/web");
-    expect(capturedCtx?.config?.execution?.permissionProfile).toBe("safe");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].ctx.packageDir).toBe("/tmp/workdir/packages/web");
+    expect(calls[0].ctx.config?.execution?.permissionProfile).toBe("safe");
   });
 
-  test("normal path passes semanticVerdicts to callOp input", async () => {
-    let capturedInput: AcceptanceDiagnoseInput | undefined;
-    _diagnosisDeps.callOp = async (_callCtx, _op, input) => {
-      capturedInput = input;
-      return makeDiagnoseOutput({ verdict: "source_bug", reasoning: "LLM diagnosis", confidence: 0.8 });
-    };
+  test("a low failure ratio always reaches the op and returns the LLM verdict verbatim", async () => {
+    _diagnosisDeps.callOp = async () =>
+      makeDiagnoseOutput({ verdict: "both", reasoning: "LLM diagnosis", confidence: 0.7 });
 
-    const semanticVerdicts: SemanticVerdict[] = [
-      { storyId: "US-001", passed: false, timestamp: "2026-01-01T00:00:00Z", acCount: 2, findings: [] },
-    ];
-
-    await resolveAcceptanceDiagnosis({
+    const result = await resolveAcceptanceDiagnosis({
       ctx: makeAcceptanceCtx(true),
-      failures: { failedACs: ["AC-1"], testOutput: "fail" },
+      failures: { failedACs: ["AC-1", "AC-2"], testOutput: "two failures" },
       totalACs: 10,
       strategy: "diagnose-first",
-      semanticVerdicts,
       diagnosisOpts: makeDiagnosisOpts(),
     });
 
-    expect(capturedInput?.semanticVerdicts).toEqual(semanticVerdicts);
+    expect(result.verdict).toBe("both");
+    expect(result.confidence).toBe(0.7);
   });
 });

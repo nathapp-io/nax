@@ -44,7 +44,12 @@ export interface ResolveAcceptanceDiagnosisOptions {
   failures: { failedACs: string[]; testOutput: string };
   totalACs: number;
   strategy: "diagnose-first" | "implement-only";
-  semanticVerdicts: SemanticVerdict[];
+  /**
+   * STUB (US-005): the semantic-verdict persistence path is being deleted and
+   * this field goes with it. Optional-with-default until then so callers written
+   * against the post-deletion interface compile and reach their assertions.
+   */
+  semanticVerdicts?: SemanticVerdict[];
   diagnosisOpts: {
     testOutput: string;
     testFileContent: string;
@@ -83,7 +88,9 @@ export const _diagnosisDeps: {
  */
 export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosisOptions): Promise<DiagnosisResult> {
   const logger = getSafeLogger();
-  const { ctx, failures, totalACs, strategy, semanticVerdicts, diagnosisOpts } = opts;
+  // STUB (US-005): `= []` keeps the removed-field callers working; delete with
+  // the fast path below.
+  const { ctx, failures, totalACs, strategy, semanticVerdicts = [], diagnosisOpts } = opts;
   const storyId = diagnosisOpts.storyId;
 
   // Fast path 1: implement-only strategy bypasses diagnosis

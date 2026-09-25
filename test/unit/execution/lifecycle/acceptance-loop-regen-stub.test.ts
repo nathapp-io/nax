@@ -7,7 +7,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeDispatchContext, makeNaxConfig, makeTempDir } from "@test/helpers";
-import type { SemanticVerdict } from "@/acceptance/types";
 import { isTestLevelFailure } from "@/execution/lifecycle/acceptance-helpers";
 import { _regenerateDeps, regenerateAcceptanceTest } from "@/execution/lifecycle/acceptance-loop";
 import type { PipelineContext } from "@/pipeline/types";
@@ -453,65 +452,44 @@ test("AC-1: real test", async () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// isTestLevelFailure — heuristic helpers (absorbed acceptance-loop-semantic)
+// isTestLevelFailure — test-level failure heuristic (US-005)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makePassingVerdict(storyId: string): SemanticVerdict {
-  return { storyId, passed: true, timestamp: new Date().toISOString(), acCount: 2, findings: [] };
-}
-
-function makeFailingVerdict(storyId: string): SemanticVerdict {
-  return { storyId, passed: false, timestamp: new Date().toISOString(), acCount: 2, findings: [] };
-}
-
-describe("isTestLevelFailure — all semanticVerdicts passed", () => {
-  test("returns true when all verdicts passed, regardless of low failedACs ratio", () => {
-    const verdicts = [makePassingVerdict("US-001"), makePassingVerdict("US-002")];
-    // 1/10 = 10% < 80% would normally be false, but semantic override applies
-    expect(isTestLevelFailure(["AC-1"], 10, verdicts)).toBe(true);
+describe("isTestLevelFailure — failed-ratio heuristic", () => {
+  test("US-005 AC5: returns false for 1 of 10 ACs failed", () => {
+    expect(isTestLevelFailure(["AC-1"], 10)).toBe(false);
   });
 
-  test("returns true when all verdicts passed even with zero failedACs; returns true when all verdicts passed with numeric zero failedCount", () => {
-    const verdicts = [makePassingVerdict("US-001")];
-    expect(isTestLevelFailure([], 10, verdicts)).toBe(true);
-    expect(isTestLevelFailure(0, 10, verdicts)).toBe(true);
+  test("US-005 AC6: returns true for 9 of 10 ACs failed", () => {
+    expect(isTestLevelFailure(["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8", "AC-9"], 10)).toBe(true);
   });
 
-  test("does NOT short-circuit via semantic when some verdicts failed", () => {
-    const verdicts = [makePassingVerdict("US-001"), makeFailingVerdict("US-002")];
-    expect(isTestLevelFailure(["AC-1", "AC-2"], 10, verdicts)).toBe(false);
+  test("boundary: exactly 80% failed is not above the threshold and returns false", () => {
+    const eightFailed = Array.from({ length: 8 }, (_, i) => `AC-${i + 1}`);
+    expect(isTestLevelFailure(eightFailed, 10)).toBe(false);
   });
 
-  test("does NOT short-circuit via semantic when all verdicts failed", () => {
-    const verdicts = [makeFailingVerdict("US-001"), makeFailingVerdict("US-002")];
-    expect(isTestLevelFailure(["AC-1"], 10, verdicts)).toBe(false);
+  test("accepts a numeric failed count as well as a list", () => {
+    expect(isTestLevelFailure(9, 10)).toBe(true);
+    expect(isTestLevelFailure(1, 10)).toBe(false);
+  });
+
+  test("returns false when totalACs is 0 regardless of failedACs", () => {
+    expect(isTestLevelFailure(["AC-1"], 0)).toBe(false);
+    expect(isTestLevelFailure(5, 0)).toBe(false);
   });
 });
 
-describe("isTestLevelFailure — heuristic fallback when semanticVerdicts undefined or empty", () => {
-  test("returns true when >80% ACs fail and semanticVerdicts is undefined; returns true when >80% ACs fail and semanticVerdicts is empty array", () => {
-    const failedACs = Array.from({ length: 9 }, (_, i) => `AC-${i + 1}`);
-    expect(isTestLevelFailure(failedACs, 10, undefined)).toBe(true);
-    expect(isTestLevelFailure(failedACs, 10, [])).toBe(true);
+describe("isTestLevelFailure — AC-ERROR sentinel", () => {
+  test("US-005 AC7: returns true for a lone AC-ERROR sentinel", () => {
+    expect(isTestLevelFailure(["AC-ERROR"], 10)).toBe(true);
   });
 
-  test("returns false when <=80% ACs fail and semanticVerdicts is undefined", () => {
-    expect(isTestLevelFailure(["AC-1", "AC-2", "AC-3"], 10, undefined)).toBe(false);
+  test("returns true when AC-ERROR is mixed with real AC failures", () => {
+    expect(isTestLevelFailure(["AC-1", "AC-ERROR", "AC-2"], 10)).toBe(true);
   });
 
-  test("returns false when <=80% ACs fail and semanticVerdicts is empty array", () => {
-    expect(isTestLevelFailure(["AC-1", "AC-2", "AC-3"], 10, [])).toBe(false);
-  });
-
-  test("returns false when totalACs is 0 regardless of failedACs (no verdicts)", () => {
-    expect(isTestLevelFailure(["AC-1"], 0, undefined)).toBe(false);
-  });
-
-  test("returns true when AC-ERROR sentinel present", () => {
-    expect(isTestLevelFailure(["AC-ERROR"], 10, undefined)).toBe(true);
-  });
-
-  test("returns true when AC-ERROR sentinel mixed with other failures", () => {
-    expect(isTestLevelFailure(["AC-1", "AC-ERROR", "AC-2"], 10, undefined)).toBe(true);
+  test("an empty failure list is not an AC-ERROR sentinel", () => {
+    expect(isTestLevelFailure([], 10)).toBe(false);
   });
 });
