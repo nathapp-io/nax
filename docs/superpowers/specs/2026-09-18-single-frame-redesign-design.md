@@ -1,7 +1,7 @@
 # Single-Frame Redesign — Repo-Rooted Agent and PRD
 
 **Date:** 2026-09-18
-**Status:** Approved design, implementation not started
+**Status:** Implemented and merged (PR #2135, main `89338db37`, 2026-09-18). The decision is recorded as ADR-032 (`docs/adr/ADR-032-single-frame-repo-rooted-paths.md`); this document remains the design and delivery record.
 **Supersedes (in direction):** the package-contained agent model that
 `docs/superpowers/specs/2026-09-16-path-frame-convention-design.md` works around
 **Closes when complete:** #2125 (by construction)
@@ -357,7 +357,7 @@ codes.
 | zero failed Reads from frame misses | **PASS** on every repo-framed arm (0 failed Reads). The 2 failures on the native legacy arm were an acceptance-scaffold probe and a guessed `bun.lock` — neither a frame miss. |
 | review diffs scoped to the story package | **PASS** — US-001 touched only `packages/lib/*`, US-002 only `packages/app/*`; zero cross-package leakage. |
 | declared commands run the package's own toolchain | **PASS** |
-| worktree-isolated story writes only inside its worktree | **PASS** — agent root `.nax-wt/<storyId>/packages/<pkg>`; merge back clean. |
+| worktree-isolated story writes only inside its worktree | **PASS** — story package workdir `.nax-wt/<storyId>/packages/<pkg>` (agent containment root `.nax-wt/<storyId>`); merge back clean. |
 
 Two caveats on the metric itself, both surfaced by this run:
 
