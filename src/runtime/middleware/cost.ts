@@ -86,10 +86,14 @@ export const _costSubscriberDeps = {
  *     is per-callOp-invocation and is 1:N over rows. Absent on v5 and earlier,
  *     and not backfillable.
  *
+ * 7 — adds `partial`. Set on a partial row — an in-flight native turn whose
+ *     spend beats were observed but whose dispatch event never recorded a row
+ *     (`toPartialCostEvent`). Absent on every finished row.
+ *
  * Bump this when adding or changing a field consumers key on, and extend the
  * list above — the constant is how a reader learns what a row guarantees.
  */
-export const COST_ROW_SCHEMA_VERSION = 6;
+export const COST_ROW_SCHEMA_VERSION = 7;
 
 export function attachCostSubscriber(
   bus: IDispatchEventBus,
