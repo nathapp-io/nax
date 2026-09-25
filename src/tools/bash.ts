@@ -129,13 +129,14 @@ function escalateDescription(shell: string, patterns: readonly string[] | undefi
     `Run one shell command string under ${shell}. ${PREFER_STRUCTURED_TOOLS_SENTENCE}` +
     `${capitalize(describeGrants(patterns))}. Every command, granted or not, is checked first: paths ` +
     "and redirect targets must stay inside the repository root, and `.git/` access, denied flags, unexpanded " +
-    "`$VAR`, glob or brace characters, `~`, a bare or option-shaped `cd`, and a command matching a deny rule are " +
+    "`$VAR`, glob or brace characters, `~`, a bare `cd`, and a command matching a deny rule are " +
     "refused without asking. For a command using a construct that cannot be analysed (e.g. command or process " +
-    "substitution, backticks, here-documents, subshells, `2>&1`, `#` comments), these checks cover the part before " +
-    "that construct. A command outside the granted forms, or one using a construct that cannot be analysed, is " +
-    "not refused: it is sent to a human for approval (unless an identical command was already approved and " +
-    "remembered) and, if they allow it, runs exactly as written; it is refused if they deny it or do not answer in " +
-    "time, so prefer the granted forms. Each segment of a `&&`/`||`/`;`/`|` chain is checked separately. " +
+    "substitution, backticks, here-documents, subshells, `2>&1`, `#` comments, an option-shaped `cd`), these " +
+    "checks cover the part before that construct. A command outside the granted forms, or one using a construct " +
+    "that cannot be analysed, is not refused: it is sent to a human for approval (unless an identical command " +
+    "was already approved and remembered) and, if they allow it, runs exactly as written; it is refused if they " +
+    "deny it or do not answer in time, so prefer the granted forms. Each segment of a `&&`/`||`/`;`/`|` chain is " +
+    "checked separately. " +
     BACKGROUND_PROCESSES_KILLED_SENTENCE
   );
 }

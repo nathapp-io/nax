@@ -458,12 +458,13 @@ producing the Category A denials that are `escalate`'s entire output and P5's tr
   reads it.
 - **Reachable:** the description states `checkBashCommand`'s actual evaluation order. Every
   command, granted or not, is checked first: a path outside the root, `.git/` access, a denied
-  flag, an unexpanded `$VAR`, glob or brace characters, `~`, a bare or option-shaped `cd`, or a
-  command matching a deny rule is refused without asking, and for a command using a construct
-  that cannot be analysed these checks cover the part before that construct. A command outside
-  the granted forms, or one using a construct that cannot be analysed, is sent to a human and,
-  if allowed, runs exactly as written. The model is told to prefer the granted forms. A test
-  pins these claims against the policy (`coding-tool-bash-escalate-truth.test.ts`).
+  flag, an unexpanded `$VAR`, glob or brace characters, `~`, a bare `cd`, or a command matching a
+  deny rule is refused without asking, and for a command using a construct that cannot be analysed
+  these checks cover the part before that construct. A command outside the granted forms, or one
+  using a construct that cannot be analysed (an option-shaped `cd` among them — the gate cannot
+  model where it lands, so it too is Category A), is sent to a human and, if allowed, runs exactly
+  as written. The model is told to prefer the granted forms. A test pins these claims against the
+  policy (`coding-tool-bash-escalate-truth.test.ts`).
 - **Not reachable:** byte-identical to `gated`, as before.
 - The verdict path is unchanged. The flag shapes only the description; a channel that fails
   mid-run still resolves `unavailable` and denies, so an over-promising description fails

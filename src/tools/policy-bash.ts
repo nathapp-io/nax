@@ -192,7 +192,16 @@ function checkPayload(
     case "no-target":
       return { refusal: deny("`cd` with no target is refused") };
     case "option-shaped":
-      return { refusal: deny(`cd target "${cdResult.text}" is option-shaped, and this gate does not model it`) };
+      // `cd -`, `cd -P dir`: the path sits in a slot this reader does not
+      // parse, so the gate CANNOT ADJUDICATE where the shell lands. That is
+      // Category A, like the lexer's own refusal -- not the affirmative
+      // out-of-bounds of a `cd` target that resolves outside the root, which
+      // stays a non-escalatable breach below. Marking it escalatable keeps a
+      // refusal the gate cannot model from preempting the (equally
+      // unadjudicable) grant miss when the reorder runs payload checks first.
+      return {
+        refusal: deny(`cd target "${cdResult.text}" is option-shaped, and this gate does not model it`, false, true),
+      };
     case "opaque":
     case "unresolved":
       return { refusal: deny(`cd target "${cdResult.text}" is not inside the permitted root`, true) };
