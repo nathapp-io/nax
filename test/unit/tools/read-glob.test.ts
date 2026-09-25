@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import { DEFAULT_TOOL_MAX_FILE_BYTES, globTool, readTool } from "@/tools";
 
 let root: string;
@@ -266,17 +267,18 @@ describe("readTool", () => {
       // `11+`. offset=2 limit=3 selects file lines 2..4 (endLine=4). R =
       // header's floor total minus b = 11 - 4 = 7. Footer is the limit-stop
       // trailer with the floor marker.
-      const bigRoot = mkdtempSync(join(tmpdir(), "nax-us001-"));
-      const bigPath = join(bigRoot, "big.ts");
-      const line = `${"x".repeat(99)}\n`;
-      writeFileSync(bigPath, line.repeat(400));
-      const small = { root: bigRoot, resolvedPaths: [bigPath], maxBytes: 10_000, maxFileBytes: 1_000 };
+      await withTempDir(async (bigRoot) => {
+        const bigPath = join(bigRoot, "big.ts");
+        const line = `${"x".repeat(99)}\n`;
+        writeFileSync(bigPath, line.repeat(400));
+        const small = { root: bigRoot, resolvedPaths: [bigPath], maxBytes: 10_000, maxFileBytes: 1_000 };
 
-      const res = await readTool.run({ path: "big.ts", offset: 2, limit: 3 }, small);
-      expect(res.isError).toBeFalsy();
-      const lines = res.content.split("\n");
-      expect(lines[0]).toBe("[lines 2-4 of 11+]");
-      expect(lines.at(-1)).toBe("[7+ more lines in file. Use offset=5 to continue.]");
+        const res = await readTool.run({ path: "big.ts", offset: 2, limit: 3 }, small);
+        expect(res.isError).toBeFalsy();
+        const lines = res.content.split("\n");
+        expect(lines[0]).toBe("[lines 2-4 of 11+]");
+        expect(lines.at(-1)).toBe("[7+ more lines in file. Use offset=5 to continue.]");
+      });
     });
 
     test("AC11 — unranged read of a 50-line file returns the [N lines] header, every file line, and no footer", async () => {
@@ -310,18 +312,19 @@ describe("readTool", () => {
       // lines 2..11 (endLine clamped to 11 because totalLines = 11).
       // endLine == totalLines so the footer rule is false; the floor header
       // is the only `[` line.
-      const bigRoot = mkdtempSync(join(tmpdir(), "nax-us001-"));
-      const bigPath = join(bigRoot, "big.ts");
-      const line = `${"x".repeat(99)}\n`;
-      writeFileSync(bigPath, line.repeat(400));
-      const small = { root: bigRoot, resolvedPaths: [bigPath], maxBytes: 10_000, maxFileBytes: 1_000 };
+      await withTempDir(async (bigRoot) => {
+        const bigPath = join(bigRoot, "big.ts");
+        const line = `${"x".repeat(99)}\n`;
+        writeFileSync(bigPath, line.repeat(400));
+        const small = { root: bigRoot, resolvedPaths: [bigPath], maxBytes: 10_000, maxFileBytes: 1_000 };
 
-      const res = await readTool.run({ path: "big.ts", offset: 2, limit: 20 }, small);
-      expect(res.isError).toBeFalsy();
-      const bracketLines = res.content.split("\n").filter((l) => l.startsWith("["));
-      expect(bracketLines).toEqual(["[lines 2-11 of 11+]"]);
-      expect(res.content).not.toContain("more lines in file");
-      expect(res.content).not.toContain("Use offset=");
+        const res = await readTool.run({ path: "big.ts", offset: 2, limit: 20 }, small);
+        expect(res.isError).toBeFalsy();
+        const bracketLines = res.content.split("\n").filter((l) => l.startsWith("["));
+        expect(bracketLines).toEqual(["[lines 2-11 of 11+]"]);
+        expect(res.content).not.toContain("more lines in file");
+        expect(res.content).not.toContain("Use offset=");
+      });
     });
 
     test("AC14 — an unreadable file returns isError, names the cause, and adds no footer", async () => {
