@@ -3,7 +3,7 @@
   "feature": "turn-waste-and-ledger-gaps",
   "branchName": "feat/turn-waste-and-ledger-gaps",
   "createdAt": "2026-07-20T00:00:00.000Z",
-  "updatedAt": "2026-09-25T08:11:28.984Z",
+  "updatedAt": "2026-09-25T08:20:02.920Z",
   "userStories": [
     {
       "id": "US-001",
@@ -87,8 +87,8 @@
         "feature"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -160,7 +160,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New two-bus per-stream lifecycle and newest-ended matching rules need isolated behavioral tests before implementation; the cost schema edit is small but the state machine is not."
+        "reasoning": "New two-bus per-stream lifecycle and newest-ended matching rules need isolated behavioral tests before implementation; the cost schema edit is small but the state machine is not.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/runtime/agent-stream-events.ts",
@@ -186,7 +189,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b7179260579340b0adf37f7682b2901b069ca67b"
     },
     {
       "id": "US-004",
