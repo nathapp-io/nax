@@ -282,9 +282,15 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
           content: cutToByteCap(body, ctx.readCeiling ?? READ_CEILING),
           isError: launched.timedOut || launched.exitCode !== 0 || launched.aborted === true,
           // The ledger records what actually ran, not what was requested.
+          // `exitCode` is recorded only when nax did not kill the process
+          // group: under `timedOut` or `aborted` the code is nax's own kill
+          // (128+signal) or the -1 never-spawned sentinel, not the command's.
+          // `orphansKilled` still records it -- the shell exited by itself and
+          // only background processes holding the pipe were reaped afterward.
           audit: {
             executed: launched.executed,
             ...(launched.sandbox !== undefined ? { sandbox: launched.sandbox } : {}),
+            ...(!launched.timedOut && launched.aborted !== true ? { exitCode: launched.exitCode } : {}),
           },
           resultBytesPreTruncation: Buffer.byteLength(body, "utf8"),
         };

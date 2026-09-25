@@ -214,3 +214,53 @@ describe("US-001 Bash tool description variants", () => {
     expect(description).toContain("killed when the command exits");
   });
 });
+
+describe("Bash audit exitCode (nax#2227)", () => {
+  test.each([0, 1, 2])("records the shell's own exit code %i on the audit; isError still follows it", async (code) => {
+    stubRunArgv({ exitCode: code, stdout: "" });
+    const r = await createBashTool().run({ command: "rg nomatch src" }, ctx());
+    expect(r.audit).toEqual({ executed: ["/bin/sh", "-c", "rg nomatch src"], exitCode: code });
+    expect(r.isError).toBe(code !== 0);
+    expect(r.content.startsWith(`exit ${code}`)).toBe(true);
+  });
+
+  test("a timed-out call records no exitCode: the code is nax's kill, not the command's", async () => {
+    stubRunArgv({ exitCode: 137, timedOut: true });
+    const r = await createBashTool().run({ command: "sleep 999" }, ctx());
+    expect(r.audit).toEqual({ executed: ["/bin/sh", "-c", "sleep 999"] });
+    expect(r.isError).toBe(true);
+  });
+
+  test("a turn-aborted call records no exitCode", async () => {
+    stubRunArgv({ exitCode: -1, aborted: true });
+    const r = await createBashTool().run({ command: "sleep 999" }, ctx());
+    expect(r.audit).toEqual({ executed: ["/bin/sh", "-c", "sleep 999"] });
+    expect(r.isError).toBe(true);
+  });
+
+  test("an orphansKilled call keeps the exit code: the shell exited by itself", async () => {
+    stubRunArgv({ exitCode: 0, orphansKilled: true });
+    const r = await createBashTool().run({ command: "sleep 9 &" }, ctx());
+    expect(r.audit?.exitCode).toBe(0);
+  });
+
+  test("the launcher path records the exit code beside the sandbox record", async () => {
+    const launcher: CommandLauncher = {
+      state: DISABLED_SANDBOX_STATE,
+      run: async () => ({
+        exitCode: 1,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        executed: ["/bin/sh", "-c", "false"],
+        sandbox: { backend: "none", wrapped: false },
+      }),
+    };
+    const r = await createBashTool({ launcher }).run({ command: "false" }, ctx());
+    expect(r.audit).toEqual({
+      executed: ["/bin/sh", "-c", "false"],
+      sandbox: { backend: "none", wrapped: false },
+      exitCode: 1,
+    });
+  });
+});

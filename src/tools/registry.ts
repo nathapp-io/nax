@@ -38,6 +38,15 @@ export interface ToolResult {
     readonly cwd?: string;
     /** P4: how an agent-authored Bash/Exec command ran; absent for every other tool. */
     readonly sandbox?: SandboxRecord;
+    /**
+     * Bash only: the shell's exit code, present when nax did NOT kill the
+     * process group -- absent under `timedOut` (deadline kill) and `aborted`
+     * (turn cancellation), present under `orphansKilled` (the shell exited by
+     * itself; only background processes were reaped). What N means depends on
+     * the command in `executed` (exit 1 is "no match" for grep, "failures" for
+     * a test runner), and N >= 128 may still be a signal nax did not send.
+     */
+    readonly exitCode?: number;
   };
   /**
    * Result size in bytes BEFORE the tool truncated to `ctx.maxBytes`. Set by

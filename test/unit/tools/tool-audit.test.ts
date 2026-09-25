@@ -160,6 +160,24 @@ describe("createToolAuditSink", () => {
     expect(parsed.calls[0].toolCallId).toBe("toolu_abc");
   });
 
+  test("a Bash row's exitCode round-trips through the ledger file (nax#2227)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
+    const sink = createToolAuditSink({ dir, sessionName: "US-001-implementer" });
+    sink.record({
+      tool: "Bash",
+      outcome: "error",
+      input: { command: "rg nomatch src" },
+      resultBytes: 7,
+      at: new Date().toISOString(),
+      exitCode: 1,
+    });
+    await sink.flush();
+    const files = await readdir(dir);
+    const parsed = JSON.parse(await readFile(join(dir, files[0] as string), "utf8"));
+    expect(parsed.calls[0].exitCode).toBe(1);
+    expect(parsed.calls[0].outcome).toBe("error");
+  });
+
   test('the runtime writes tool "Exec" for an argv call all the way into the ledger file', async () => {
     const dir = await mkdtemp(join(tmpdir(), "tool-audit-"));
     const sink = createToolAuditSink({ dir, sessionName: "US-001-implementer" });

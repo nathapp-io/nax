@@ -1,0 +1,92 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "bash-exit-code-audit",
+  "branchName": "feat/bash-exit-code-audit",
+  "createdAt": "2026-09-24T00:00:00Z",
+  "updatedAt": "2026-09-25T03:44:35.216Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Record Bash process exit codes on durable tool-audit rows",
+      "description": "**Goal** — Add optional Bash process exit codes to tool results and durable audit rows only when the shell exited on its own.\n\n**Motivation** — A `grep` that finds nothing exits 1, as do `diff` when inputs differ and `test` when the condition is false. Each one is recorded as `outcome: \"error\"`, exactly like a crashed command.\n\n**Approach** — Symbols this feature **reads** (unchanged):\n\n- `runArgv` result (`src/utils/argv-exec.ts`): `exitCode: number`, `timedOut: boolean`, `aborted?: boolean`. An already-aborted signal resolves with `exitCode: -1` and `aborted: true`.\n- `CommandLauncher.run` → `LaunchResult` (`src/sandbox/types.ts`): carries the same `exitCode` / `timedOut` / `aborted` plus `executed` and `sandbox`.\n- `_bashToolDeps.runArgv` (`src/tools/bash.ts`): the test seam used when no launcher is passed.\n- `createCodingToolRuntime` and `compileToolPolicy` (`src/tools`): `runtimeFor` in `test/unit/tools/runtime-sandbox-audit.test.ts` is the fixture to mirror.\n\nSymbols this feature **changes**. The baseline exists only to locate the code; it is never the interface to implement.\n\n- `ToolResult.audit` (`src/tools/registry.ts`)\n  - Baseline: `{ executed; target?; sandbox? }`\n  - Target: `{ executed; target?; sandbox?; exitCode? }`. The new field is `readonly exitCode?: number` and is set only by the Bash tool.\n- `ToolCallRecord` (`src/tools/tool-audit.ts`)\n  - Target: gains `readonly exitCode?: number`. Additive and optional, so `TOOL_AUDIT_SCHEMA_VERSION` stays `1`, as it did for `sandbox`.\n- The runtime's internal `log(...)` audit parameter (`src/tools/runtime.ts`)\n  - Target: accepts `exitCode?: number` and spreads it onto the `sink.record(...)` row only when defined. This is the same conditional-spread idiom used for `executed`, `target`, `approval` and `sandbox`.\n- `createBashTool(...).run` (`src/tools/bash.ts`)\n  - Target: the success return's `audit` object literal gains `exitCode: launched.exitCode` by conditional spread, the same idiom as `sandbox` in that literal. It is spread when neither `launched.timedOut` nor `launched.aborted === true`, and that includes the `orphansKilled` case. Otherwise the audit has no `exitCode` key.\n\n`isError`, the result `content`, and the ledger `outcome` (`\"ok\" | \"error\" | \"denied\" | \"denied:ask\"`) are unchanged.\n\n### Failure Handling\n\n| Condition | Behavior |\n|:--|:--|\n| Command timed out (`timedOut: true`) | Audit has no `exitCode` key; `isError` stays `true` |\n| Command aborted by the turn signal (`aborted: true`) | Audit has no `exitCode` key; `isError` stays `true` |\n| Bash tool throws before a process result exists (catch path, e.g. sandbox wrap failure) | Unchanged: no `audit`, so the row has no `exitCode` |\n| Call denied by policy (`denied`) | Row has no `exitCode` (the tool never ran) |\n| Background processes killed after exit (`orphansKilled: true`) | Audit carries `exitCode` (the shell itself exited) |\n| Any non-Bash tool | Row has no `exitCode` key |\n\n**Scope** — In: change src/tools/bash.ts, src/tools/runtime.ts, src/tools/tool-audit.ts and src/tools/registry.ts; add test/unit/tools/bash-exit-code-audit.test.ts (runArgv seam, fake launcher, restore runArgv in afterEach as in test/unit/tools/after-tool-truncation.test.ts) and test/unit/tools/runtime-exit-code-audit.test.ts (recording sink mirroring runtimeFor, wildcard Bash policy seam, createToolAuditSink flush into makeTempDir(), restore runArgv in afterEach); update test/unit/tools/bash-sandbox.test.ts exact audit equality for echo hi with exitCode: 0 and executed/sandbox unchanged. Do not grow test/unit/tools/runtime.test.ts beyond its 650-line split target. Out: Changing `isError`, the model-facing result text, or the ledger `outcome` values. A negative answer stays `outcome: \"error\"`, and consumers read `exitCode` to tell the two apart. Recording exit codes for `RunCommand` or its `Exec` argv branch. Recording `exitCode` on command-safety shadow rows. Bumping `TOOL_AUDIT_SCHEMA_VERSION`. Any report, CLI or analytics reader of the new field.\n\n**Interface** — `ToolResult.audit`: `{ executed; target?; sandbox?; exitCode? }`; `readonly exitCode?: number`. `ToolCallRecord`: `readonly exitCode?: number`. Runtime `log(...)` audit parameter: `exitCode?: number`.",
+      "acceptanceCriteria": [
+        "When createBashTool().run({ command: \"rg nomatch src\" }, ctx) receives _bashToolDeps.runArgv resolving exitCode: 1, stdout: \"\", stderr: \"\", timedOut: false, then result.audit.exitCode is 1.",
+        "When that rg nomatch src call exits 1, then createBashTool().run returns isError: true, unchanged by this feature.",
+        "When that rg nomatch src call exits 1, then createBashTool().run returns content beginning with \"exit 1\", unchanged by this feature.",
+        "When createBashTool().run({ command: \"echo hi\" }, ctx) receives _bashToolDeps.runArgv resolving exitCode: 0, then result.audit.exitCode is 0.",
+        "When createBashTool().run({ command: \"echo hi\" }, ctx) receives _bashToolDeps.runArgv resolving exitCode: 0, then result.isError is false.",
+        "When createBashTool().run(...) receives _bashToolDeps.runArgv resolving exitCode: 2, then result.audit.exitCode is 2.",
+        "When createBashTool().run(...) receives _bashToolDeps.runArgv resolving timedOut: true and exitCode: 143, then result.audit has no exitCode key (checked with `in`).",
+        "When createBashTool().run(...) receives _bashToolDeps.runArgv resolving timedOut: true and exitCode: 143, then result.isError is true.",
+        "When createBashTool().run(...) receives _bashToolDeps.runArgv resolving aborted: true and exitCode: -1, then result.audit has no exitCode key (checked with `in`).",
+        "When createBashTool().run(...) receives _bashToolDeps.runArgv resolving aborted: true and exitCode: -1, then result.isError is true.",
+        "When createBashTool().run(...) receives _bashToolDeps.runArgv resolving exitCode: 0 and orphansKilled: true, then result.audit.exitCode is 0.",
+        "When createBashTool({ launcher }) has launcher.state: { kind: \"disabled\" } and launcher.run rejects with an Error, then its run result has isError: true.",
+        "When createBashTool({ launcher }) has launcher.state: { kind: \"disabled\" } and launcher.run rejects with an Error, then its run result has no audit key (checked with `in`).",
+        "When createBashTool({ launcher }) has launcher.state: { kind: \"disabled\" } and launcher.run resolves exitCode: 1, stdout: \"\", stderr: \"\", timedOut: false, executed: [\"/bin/sh\", \"-c\", \"false\"], and sandbox: { backend: \"none\", wrapped: false }, then its result.audit equals { executed: [\"/bin/sh\", \"-c\", \"false\"], sandbox: { backend: \"none\", wrapped: false }, exitCode: 1 }.",
+        "When createCodingToolRuntime with a recording sink calls a tool returning { content: \"exit 1\", isError: true, audit: { executed: [\"x\"], exitCode: 1 } }, then its recorded row has exitCode: 1.",
+        "When createCodingToolRuntime with a recording sink calls a tool returning { content: \"exit 1\", isError: true, audit: { executed: [\"x\"], exitCode: 1 } }, then its recorded row has outcome: \"error\".",
+        "When createCodingToolRuntime with a recording sink calls a tool returning { content: \"exit 1\", isError: true, audit: { executed: [\"x\"], exitCode: 1 } }, then its recorded row has executed: [\"x\"].",
+        "When createCodingToolRuntime with a recording sink calls a tool returning { content: \"ok\", audit: { executed: [\"x\"], exitCode: 0 } }, then its recorded row has exitCode: 0.",
+        "When createCodingToolRuntime with a recording sink calls a tool returning { content: \"ok\", audit: { executed: [\"x\"], exitCode: 0 } }, then its recorded row has outcome: \"ok\".",
+        "When createCodingToolRuntime calls a non-Bash tool returning { content: \"ok\" } with no audit, then its recorded row has no exitCode key (checked with `in`).",
+        "When a runtime built with compileToolPolicy([], root) and extraTools: [createBashTool()] calls callTool(\"Bash\", { command: \"echo hi\" }), then its denied row has no exitCode key (checked with `in`).",
+        "When a runtime with a policy granting Bash pattern * and extraTools: [createBashTool()] calls callTool(\"Bash\", { command: \"rg nomatch src\" }) with _bashToolDeps.runArgv resolving exitCode: 1 and empty stdout and stderr, then its recorded row has exitCode: 1.",
+        "When a runtime with a policy granting Bash pattern * and extraTools: [createBashTool()] calls callTool(\"Bash\", { command: \"rg nomatch src\" }) with _bashToolDeps.runArgv resolving exitCode: 1 and empty stdout and stderr, then its recorded row has outcome: \"error\".",
+        "When createToolAuditSink records a row with exitCode: 1 and flushes to a JSON file, then the file's calls[0].exitCode is 1."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "audit",
+        "bash"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four additive source edits thread one optional field through existing Bash and runtime audit spreads; new seam tests and one equality update fit a single TDD session without new architecture or security-policy changes. [A/B nax#2227: testStrategy overridden to three-session-tdd so test-writer/implementer/verifier are measured per role.]",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/tools/bash.ts",
+        "src/tools/runtime.ts",
+        "src/tools/tool-audit.ts",
+        "src/tools/registry.ts",
+        "test/unit/tools/runtime-sandbox-audit.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/tools/bash-exit-code-audit.test.ts",
+        "test/unit/tools/runtime-exit-code-audit.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/tools/bash-sandbox.test.ts",
+          "reason": "the exact-equality assertion on `r.audit` in \"run: goes through the launcher and carries the sandbox record on audit\" gains `exitCode: 0` for the `echo hi` call; `executed` and `sandbox` stay exactly as asserted."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "17851ded11df341384ee4bd0015bba34022c4224"
+    }
+  ],
+  "analysis": "This is an additive TypeScript/Bun change across the existing Bash-to-ledger pipeline. src/tools/bash.ts:219-290 defines createBashTool().run: without a launcher it uses injectable _bashToolDeps.runArgv; with a launcher it uses CommandLauncher.run; it formats content, determines isError from timeout/nonzero exit/abort, and returns audit with executed and optional sandbox; the catch returns isError without audit. src/utils/argv-exec.ts:37-49 defines ArgvExecResult (exitCode, timedOut, optional aborted/orphansKilled), and :146-150 gives an already-aborted signal sentinel exitCode -1; src/sandbox/types.ts:77-90 defines LaunchResult extending this result with executed and sandbox. src/tools/registry.ts:20-44 defines ToolResult.audit as executed plus optional target/sandbox; append optional readonly exitCode without requiring changes to other tool producers. src/tools/runtime.ts:215-290 declares log's audit parameter and conditionally spreads fields to sink.record; :346-434 passes result.audit via logCall, with outcome selected solely by result.isError. Its policy-denied path at :510-517 never executes the tool; its command-safety shadow tap at :353-365 uses approval/executed only and must not get exitCode. src/tools/tool-audit.ts:20-75 defines ToolCallRecord and :150-187 writes sink records to JSON using redactRowStrings; its schema version stays 1. Existing test seams: test/unit/tools/runtime-sandbox-audit.test.ts:10-46 builds a wildcard-granted runtime and recording sink, asserting field propagation and absence; test/unit/tools/after-tool-truncation.test.ts:27-45 saves/restores _bashToolDeps.runArgv and manages temporary directories; test/unit/tools/bash-sandbox.test.ts:62-75 has an exact audit equality assertion for echo hi that needs exitCode: 0 while retaining executed and sandbox, and :77-82 covers wrap failure; test/unit/tools/tool-audit.test.ts exercises JSON flush. New focused tests belong in the two specified new files, not test/unit/tools/runtime.test.ts (past its 650-line split target). Risks: nonzero exit must continue to set isError and outcome error, including ordinary negative answers; content must retain exit N; timeout/abort must omit the key rather than emit undefined or sentinel 143/-1; 0 must survive the conditional spread. Older files and non-Bash tools need no migration: their rows simply lack the optional field. Do not change RunCommand/Exec producers, shadow rows, output readers, policy, or schema version.",
+  "outOfScope": [
+    "Changing `isError`, the model-facing result text, or the ledger `outcome` values. A negative answer stays `outcome: \"error\"`, and consumers read `exitCode` to tell the two apart.",
+    "Adding a new `outcome` value such as `\"no-match\"` or `\"nonzero\"`.",
+    "Recording exit codes for `RunCommand` or its `Exec` argv branch.",
+    "Recording `exitCode` on command-safety shadow rows.",
+    "Bumping `TOOL_AUDIT_SCHEMA_VERSION`.",
+    "Any report, CLI or analytics reader of the new field.",
+    "`denied:ask` rows are not separately tested: an ask-denied call never runs the tool, so it never carries a tool `audit`."
+  ],
+  "routingProfile": "native-ds+ds-acceptance+muse-review+use-sandbox+ab2227-base"
+}

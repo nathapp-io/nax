@@ -67,6 +67,7 @@ describe("Bash through the launcher", () => {
     expect(r.audit).toEqual({
       executed: ["/bin/sh", "-c", "echo hi"],
       sandbox: { backend: "srt", wrapped: true, argv: ["/bin/sh", "-c", "echo hi"] },
+      exitCode: 0,
     });
     expect(backend.calls[0]?.cwd).toBe(root);
   });
@@ -79,5 +80,7 @@ describe("Bash through the launcher", () => {
     expect(r.isError).toBe(true);
     expect(r.content).toContain("[sandbox] could not wrap the command");
     expect(await Bun.file(`${root}/x`).exists()).toBe(false);
+    // The catch path carries no audit, so the row can never claim an exit code.
+    expect("audit" in r).toBe(false);
   });
 });
