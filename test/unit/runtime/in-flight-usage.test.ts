@@ -481,17 +481,43 @@ describe("attachInFlightUsageTracker — dispatch-error reconciliation (US-003 A
 });
 
 describe("attachInFlightUsageTracker — detaching (US-003 interface)", () => {
-  test("off() detaches both buses so later events are not accumulated", () => {
-    const { stream, dispatch, tracker, off } = setup();
+  test("off() detaches the stream bus so later beats are not accumulated", () => {
+    const { stream, tracker, off } = setup();
 
     stream.emitAgentStream(makeBeat({ callId: "c1", costUsd: 0.1, roundTrip: 1 }));
     off();
     stream.emitAgentStream(makeBeat({ callId: "c2", costUsd: 5, roundTrip: 1 }));
-    dispatch.emitDispatch(makeSessionTurn({ sessionName: "n1" }));
 
     const residuals = tracker.residuals();
     expect(residuals.map((r) => r.streamCallId)).toEqual(["c1"]);
     expect(residuals[0].costUsd).toBeCloseTo(0.1, 10);
+  });
+
+  test("off() detaches the session-turn dispatch listener", () => {
+    const { stream, dispatch, tracker, off } = setup();
+
+    // A cancelled stream is exactly the entry a still-attached session-turn
+    // listener would delete, so its survival after `off()` is the assertion.
+    stream.emitAgentStream(makeBeat({ callId: "c1", sessionName: "n1", costUsd: 0.1, roundTrip: 1 }));
+    stream.emitAgentStream(makeCallEnded({ callId: "c1", sessionName: "n1", status: "cancelled" }));
+    off();
+    dispatch.emitDispatch(makeSessionTurn({ sessionName: "n1" }));
+
+    expect(tracker.residuals().map((r) => r.streamCallId)).toEqual(["c1"]);
+  });
+
+  test("off() detaches the dispatch-error listener", () => {
+    const { stream, dispatch, tracker, off } = setup();
+
+    // An errored stream in scope s1 is exactly the entry a still-attached
+    // dispatch-error listener would delete, so its survival after `off()` is
+    // the assertion.
+    stream.emitAgentStream(makeBeat({ callId: "c1", scopeId: "s1", costUsd: 0.1, roundTrip: 1 }));
+    stream.emitAgentStream(makeCallEnded({ callId: "c1", scopeId: "s1", status: "error" }));
+    off();
+    dispatch.emitDispatchError(makeDispatchError({ scopeId: "s1", tokenUsage: { inputTokens: 10, outputTokens: 1 } }));
+
+    expect(tracker.residuals().map((r) => r.streamCallId)).toEqual(["c1"]);
   });
 });
 
