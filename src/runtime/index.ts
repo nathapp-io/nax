@@ -422,7 +422,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const offCost = attachCostSubscriber(dispatchEvents, costAggregator, runId, getProjectKey(config, workdir));
   const offAudit = attachAuditSubscriber(dispatchEvents, promptAuditor, runId);
   const offReviewAudit = attachReviewAuditSubscriber(dispatchEvents, reviewAuditor, runId);
-  const offUsageAudit = attachUsageAuditSubscriber(agentStreamEvents, usageAuditor, runId);
+  const offUsageAudit = attachUsageAuditSubscriber(agentStreamEvents, dispatchEvents, usageAuditor, runId);
   const offAgentStreamLogging = attachAgentStreamLogging(agentStreamEvents, runId);
   const offWatchdog = attachAgentIdleWatchdog(agentStreamEvents, watchdogControllerRegistry, config);
 

@@ -6,6 +6,7 @@ import { makeNaxConfig, makeTestRuntime, withTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG, globalConfigDir, NaxConfigSchema } from "@/config";
 import {
   type AgentUsageUpdateEvent,
+  type CompleteDispatchEvent,
   createRuntime,
   type IUsageAuditor,
   type NaxRuntime,
@@ -41,6 +42,24 @@ function usageEvent(runtime: NaxRuntime, overrides: Partial<AgentUsageUpdateEven
     inputTokens: 120,
     outputTokens: 45,
     costUsd: 0.0042,
+    ...overrides,
+  };
+}
+
+function completeDispatchEvent(overrides: Partial<CompleteDispatchEvent> = {}): CompleteDispatchEvent {
+  return {
+    kind: "complete",
+    sessionName: "nax-abc-feat-US-002-auto",
+    sessionRole: "auto",
+    prompt: "summarise",
+    response: "done",
+    agentName: "claude",
+    stage: "run",
+    resolvedPermissions: { mode: "approve-reads", bashApproval: "raw" },
+    durationMs: 100,
+    timestamp: 1_700_000_000_000,
+    tokenUsage: { inputTokens: 100, outputTokens: 20 },
+    exactCostUsd: 0.01,
     ...overrides,
   };
 }
@@ -606,6 +625,24 @@ describe("createRuntime usage audit wiring (#2045)", () => {
 
       expect(usageFlushed).toBe(true);
       expect(promptFlushed).toBe(true);
+    });
+  });
+
+  test("US-002 AC8: a complete dispatch event lands one one-shot row in usage/<runId>.jsonl", async () => {
+    await withTempDir(async (dir) => {
+      const config = makeNaxConfig({ name: "probe", outputDir: dir, agent: { usageAudit: { enabled: true } } });
+      const rt = makeRuntime(config, dir);
+      rt.dispatchEvents.emitDispatch(completeDispatchEvent({ tokenUsage: { inputTokens: 100, outputTokens: 20 } }));
+      await rt.close();
+
+      const file = join(rt.outputDir, "usage", `${rt.runId}.jsonl`);
+      const rows = (await Bun.file(file).text())
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ runId: rt.runId, cadence: "one-shot", input: 100, output: 20, costUsd: 0.01 });
     });
   });
 });

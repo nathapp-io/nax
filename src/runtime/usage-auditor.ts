@@ -36,7 +36,7 @@ export interface UsageAuditEntry {
   readonly stage?: string;
   readonly agentName: string;
   readonly roundTrip?: number;
-  readonly cadence?: "round-trip" | "agent";
+  readonly cadence?: "round-trip" | "agent" | "one-shot";
   readonly input?: number;
   readonly output?: number;
   readonly cacheRead?: number;
