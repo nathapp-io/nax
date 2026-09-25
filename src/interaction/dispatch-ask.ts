@@ -26,6 +26,7 @@
 import { join } from "node:path";
 import { buildCommandShadow, type CommandShadow } from "@/command-safety";
 import { type BashApprovalMode, loadConfigForPackage, type NaxConfig, resolveBashApproval } from "@/config";
+import { getSafeLogger } from "@/logger";
 import {
   type AskControl,
   type AskRequest,
@@ -283,7 +284,19 @@ export async function buildApprovalsSeal(
   const approvalsFile = approvalsPath(opts.outputDir);
   const runId = opts.runId;
   return async () => {
-    await deps.prepareApprovalsStore({ approvalsFile, runId, forgeCapable: true });
+    try {
+      await deps.prepareApprovalsStore({ approvalsFile, runId, forgeCapable: true });
+    } catch (error) {
+      // The real `prepareApprovalsStore` never throws — it logs a failed taint —
+      // but `deps` is injectable, so an injected one can. Swallow here so the
+      // "never rejects" contract above holds for the signal path too, where a
+      // rejection would otherwise be discarded silently.
+      getSafeLogger()?.warn("permissions", "[approvals] could not update the store's taint marker", {
+        approvalsFile,
+        forgeCapable: true,
+        error,
+      });
+    }
   };
 }
 

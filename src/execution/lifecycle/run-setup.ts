@@ -45,7 +45,7 @@ import { errorMessage } from "@/utils/errors";
 import { gitSpawnEnv } from "@/utils/git-env";
 import { storyPackageDir } from "@/utils/path-frame";
 import { installCrashHandlers } from "../crash-recovery";
-import { acquireFeatureLock, type FeatureLockResult } from "../feature-lock";
+import { acquireFeatureLock, type FeatureLockResult, releaseFeatureLock } from "../feature-lock";
 import { acquireLock, releaseLock } from "../helpers";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
@@ -490,13 +490,25 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // US-002: build the end-of-run approvals seal now the PRD names every
     // story's package — deciding forge-capability here keeps config loads out
     // of signal-time teardown, which runs under FATAL_TEARDOWN_DEADLINE_MS.
-    sealApprovals = await _runSetupDeps.buildApprovalsSeal({
-      projectDir: options.workdir,
-      rootConfig: options.config,
-      packageDirs: initResult.prd.userStories.map(storyPackageDir),
-      outputDir: runtime.outputDir,
-      runId: options.runId,
-    });
+    // This is post-lock work OUTSIDE `initializeAfterLock`'s FIX-H16 catch and
+    // outside the runner's finally (which cleanupRun owns), so a failure must
+    // release both locks itself — otherwise the workdir and the feature stay
+    // locked for the next run. Feature first, then checkout (reverse of
+    // acquisition); `releaseFeatureLock` is a no-op when the on-disk runId
+    // isn't ours.
+    try {
+      sealApprovals = await _runSetupDeps.buildApprovalsSeal({
+        projectDir: options.workdir,
+        rootConfig: options.config,
+        packageDirs: initResult.prd.userStories.map(storyPackageDir),
+        outputDir: runtime.outputDir,
+        runId: options.runId,
+      });
+    } catch (error) {
+      await releaseFeatureLock({ outputDir: runtime.outputDir, feature, runId });
+      await releaseLock(workdir);
+      throw error;
+    }
 
     return {
       statusWriter,

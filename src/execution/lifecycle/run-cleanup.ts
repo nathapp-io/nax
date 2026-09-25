@@ -296,10 +296,15 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
   // stopped, so a forge-capable run cannot leave entries a later trusted run
   // would honour. Post-run actions (above) can dispatch agents, so this lands
   // after them; the interaction chain is destroyed last, once no dispatch can
-  // follow. No try/catch: the seal never rejects (`prepareApprovalsStore` logs a
-  // failed taint and resolves).
+  // follow. Guarded like `performTeardown`'s call for the same callback type: a
+  // rejection must not skip the interaction-chain destroy, the sandbox reset,
+  // the memo clears, the scratchpad wipe or the two lock releases below it.
   if (options.sealApprovals) {
-    await options.sealApprovals();
+    try {
+      await options.sealApprovals();
+    } catch (error) {
+      logger?.warn("permissions", "End-of-run approvals seal failed — continuing teardown", { error });
+    }
   }
 
   // Destroy interaction chain (US-008)
