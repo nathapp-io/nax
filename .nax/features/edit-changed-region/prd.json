@@ -1,0 +1,124 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "edit-changed-region",
+  "branchName": "feat/edit-changed-region",
+  "createdAt": "2026-09-26T00:00:00.000Z",
+  "updatedAt": "2026-09-25T10:04:28.175Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Edit writes new_string literally",
+      "description": "**Goal** — Write the exact characters of new_string at Edit's unique old_string match.\n\n**Motivation** — `edit.ts:88` calls `source.replace(oldString, newString)` with a string `newString`, which is a replacement template: `\"a\".replace(\"a\", \"x$$y$&z\")` returns `x$yaz`.\n\n**Approach** — Deterministic string composition inside the `Edit` tool. No LLM, no config, no new tool arguments. Two helpers live in a new file-local module `src/tools/edit-region.ts` that `edit.ts` imports by relative path. It is not exported from the `src/tools` barrel, the same convention as `src/tools/read-continuation.ts`.\n\n- `replaceUniqueLiteral(source, oldString, newString, matchIndex): string` returns `source.slice(0, matchIndex) + newString + source.slice(matchIndex + oldString.length)`.\n\n`edit.ts` already establishes that `oldString` occurs exactly once (`countOccurrences`). It takes `matchIndex = source.indexOf(oldString)`, writes `replaceUniqueLiteral(...)`. Every error path and error message is unchanged. The file on disk is byte-identical to today's output for any `new_string` without `$` patterns. US-002 later adds the success-view expression; this story leaves the current `edited ${target}` content alone.\n\n**Scope** — In: create the private literal helper and its tests, use it in Edit's successful write after uniqueness checks, and preserve failed Edit behavior. Out: compose the post-edit view and update success text (US-002); Hints on a failed `Edit` (`old_string not found`: 97 calls in the ledgers).\n\n**Interface** — `replaceUniqueLiteral(source, oldString, newString, matchIndex): string`.",
+      "acceptanceCriteria": [
+        "When editTool.run replaces `const a = 1;` in `const a = 1;\\nconst b = 2;\\n` with `const a = \"x$$y\";`, then the file is exactly `const a = \"x$$y\";\\nconst b = 2;\\n`.",
+        "When editTool.run uses new_string `s.replace(re, \"\\\\$&\");` on the same file, then the file retains the characters `\\$&` unchanged.",
+        "When editTool.run uses a new_string ending in `` `^[0-9a-f]{8}$` `` on the same file, then the file equals the original with only the matched text replaced by new_string.",
+        "When editTool.run uses a new_string ending in `` `^[0-9a-f]{8}$` `` on the same file, then the updated file's length is `original.length - old_string.length + new_string.length`.",
+        "When editTool.run uses a new_string containing `$'` on the same file, then the file equals the original with only the matched text replaced by new_string.",
+        "replaceUniqueLiteral(\"abcdef\", \"cd\", \"X$&Y\", 2) returns `abX$&Yef`.",
+        "When editTool.run uses new_string containing no `$`, then the file is identical to `source.replace(oldString, newString)` on the same input.",
+        "When editTool.run receives an absent old_string, then it returns `{ content: `old_string not found in ${target}; the file may have changed`, isError: true }`, preserving the existing absent-match error behavior.",
+        "When editTool.run receives an ambiguous old_string occurring twice, then it returns `{ content: `old_string is ambiguous: found 2 times. Include more surrounding context.`, isError: true }`, preserving the existing ambiguous-match error behavior.",
+        "When editTool.run rejects an edit with an absent old_string, then the file remains untouched, preserving the existing file-untouched-on-failure behavior."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "bugfix"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One private string helper and one existing tool change, with a new test file plus pre-existing failure-path tests; deterministic behavior warrants single-session TDD."
+      },
+      "contextFiles": [
+        "src/tools/edit.ts",
+        "test/unit/tools/write-edit.test.ts"
+      ],
+      "expectedFiles": [
+        "src/tools/edit-region.ts",
+        "test/unit/tools/edit-region.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Edit returns the changed region",
+      "description": "**Goal** — Show a bounded Read-compatible view of the changed region only after Edit writes successfully.\n\n**Motivation** — `Edit` returns only `edited <path>` (`edit.ts:89`). The model does not see the result of its edit or where it landed.\n\n**Approach** — Deterministic string composition inside the `Edit` tool. No LLM, no config, no new tool arguments. Two helpers live in a new file-local module `src/tools/edit-region.ts` that `edit.ts` imports by relative path. It is not exported from the `src/tools` barrel, the same convention as `src/tools/read-continuation.ts`.\n\n- `composeEditRegion({ updated, matchIndex, newStringLength }): string` returns the view: the `[lines a-b of N]` header and the selected lines (composition rules below), or the empty-file line.\n\n`edit.ts` already establishes that `oldString` occurs exactly once (`countOccurrences`). It takes `matchIndex = source.indexOf(oldString)`, writes `replaceUniqueLiteral(...)`, and on success returns `edited ${target}\\n${composeEditRegion(...)}`. Every error path and error message is unchanged. The file on disk is byte-identical to today's output for any `new_string` without `$` patterns.\n\nSymbols read, unchanged:\n\n- `splitModelLines(body): string[]` (`src/tools/truncate.ts:65`) — the line-splitting convention `Read` uses, so `Edit`'s line numbers agree with `Read`'s `offset`.\n- `CodingTool`, `ToolResult`, `ToolRunContext` (`src/tools/registry.ts`).\n- `applyModelTruncationPolicy` (after_tool backstop): unchanged. A view is at most 15 file lines, and each line is still clamped by `MODEL_MAX_LINE_CHARS` downstream.\n\nView format:\n```\nedited <target>\n[lines a-b of N]\n<file line a>\n...\n<file line b>\n```\nWith elision (the replacement spans more than 8 lines):\n```\nedited <target>\n[lines a-b of N]\n<context and the first 3 replaced lines>\n[... lines x-y not shown ...]\n<the last 3 replaced lines and context>\n```\nWhen the edited file is empty (`updated === \"\"`), the view is the single line `[file is now empty]` in place of the header and lines.\n\nComposition rules (ordered):\n\n1. **Start line.** `s` = 1 + the number of `\\n` characters in `updated.slice(0, matchIndex)`.\n2. **End line.** If `newStringLength > 0`, `e` = 1 + the number of `\\n` characters in `updated.slice(0, matchIndex + newStringLength - 1)`: the line holding the replacement's last character. If `newStringLength === 0` (a deletion), `e = s`. Both are then clamped to `N`, which covers a deletion at the very end of a file.\n3. **Window.** `a = max(1, s - 3)`, `b = min(N, e + 3)`: `CONTEXT_LINES = 3` on each side.\n4. **Elision.** If `e - s + 1 > 8` (`MAX_REGION_LINES_SHOWN = 8`), show lines `a..s+2`, then the marker `[... lines ${s+3}-${e-3} not shown ...]`, then lines `e-2..b`. Otherwise show `a..b` in full.\n5. **Header.** `[lines a-b of N]`, with `a` and `b` from rule 3 whether or not rule 4 elides.\n6. **Empty file.** If `N === 0`, the view is `[file is now empty]`; rules 1-5 do not run.\n7. The content has no trailing newline.\n\n**Description** — `editTool.description` keeps its current text and appends: \"On success the result shows the edited lines with up to 3 lines of context and their line range, so you do not need to Read the file again to check the edit.\"\n\n**Failure Handling** — Unchanged. Absent or ambiguous `old_string`, the file-size refusal, and read/write errors return today's `isError` results byte-for-byte. The view is composed only after `writeFile` resolves; a write error returns the error, never a view. `composeEditRegion` is pure and cannot throw on any string input.\n\n**Scope** — In: extend the US-001 helper and test file with view composition, update Edit success content and description, and test authorized callTool/Read parity plus unchanged error outputs. Out: literal replacement implementation (US-001); Line-numbered `Read` output (tuning doc RD-3).; `Write` returning content.; Hints on a failed `Edit` (`old_string not found`: 97 calls in the ledgers).; A role-prompt \"don't re-read after editing\" line (IM-1). The tool description carries it.; The A/B that measures this change together with R17. It is billed and run separately.\n\n**Interface** — `composeEditRegion({ updated, matchIndex, newStringLength }): string`.",
+      "acceptanceCriteria": [
+        "When reading editTool.description, then it begins with `Replace one exact occurrence of old_string with new_string in a repository file.`",
+        "When reading editTool.description, then it ends with `On success the result shows the edited lines with up to 3 lines of context and their line range, so you do not need to Read the file again to check the edit.`",
+        "When editTool.run replaces `line 10` with `line TEN` in a 20-line file whose kth line is `line k`, then its first result line is `edited <target>`.",
+        "When editTool.run replaces `line 10` with `line TEN` in that 20-line file, then its second result line is `[lines 7-13 of 20]`.",
+        "When editTool.run replaces `line 10` with `line TEN` in that 20-line file, then its remaining result lines are exactly the edited file's lines 7 to 13, with line 10 equal to `line TEN`.",
+        "When editTool.run replaces `line 2\\n` with `line TWO\\n` in that 20-line file, then its header is `[lines 1-5 of 20]`, with the trailing newline keeping old_string unique because `line 2` also occurs inside `line 20`.",
+        "When editTool.run replaces `line 19\\nline 20` with `line END` in that 20-line file, then its header is `[lines 16-19 of 19]`.",
+        "When editTool.run replaces `line 19\\nline 20` with `line END` in that 20-line file, then the view body equals the edited file's lines 16 to 19.",
+        "When editTool.run replaces `line 10` with `A\\nB\\nC` in that 20-line file, then its header is `[lines 7-15 of 22]`.",
+        "When editTool.run replaces `line 10` with `A\\nB\\nC` in that 20-line file, then its view body is exactly `line 7`, `line 8`, `line 9`, `A`, `B`, `C`, `line 11`, `line 12`, `line 13`.",
+        "When editTool.run replaces `line 10\\n` with the empty string in that 20-line file, then its header is `[lines 7-13 of 19]`.",
+        "When editTool.run replaces `line 10\\n` with the empty string in that 20-line file, then its view body equals the edited file's lines 7 to 13.",
+        "When editTool.run replaces `line 10` with 20 lines `n1` through `n20` in that 20-line file, then its header is `[lines 7-32 of 39]`.",
+        "When editTool.run replaces `line 10` with 20 lines `n1` through `n20` in that 20-line file, then the 13 view-body lines are exactly `line 7`, `line 8`, `line 9`, `n1`, `n2`, `n3`, `[... lines 13-26 not shown ...]`, `n18`, `n19`, `n20`, `line 11`, `line 12`, `line 13`.",
+        "When editTool.run replaces a match with new_string spanning exactly 8 lines, then the replacement is shown in full without an `[... lines` marker.",
+        "When editTool.run replaces the entire content of a one-line file with the empty string, then the result is exactly `edited <target>\\n[file is now empty]`.",
+        "When editTool.run succeeds, then its result content does not end with a newline character.",
+        "When editTool.run cannot find old_string, then its result content is exactly `old_string not found in ${target}; the file may have changed`, byte-identical to its content before this change.",
+        "When editTool.run finds old_string twice, then its result content is exactly `old_string is ambiguous: found 2 times. Include more surrounding context.`, byte-identical to its content before this change.",
+        "When editTool.run refuses a file of size `size > ctx.maxFileBytes`, then its result content is exactly `the file is ${size} bytes, which exceeds the ${ctx.maxFileBytes}-byte file ceiling -- refusing to edit ${target}`, byte-identical to its content before this change.",
+        "When editTool.run cannot read a file after stat succeeds, then it returns `{ content: err.message, isError: true }` as before, without a view.",
+        "When editTool.run encounters a writeFile error, then it returns `{ content: err.message, isError: true }` as before, never a view.",
+        "When an advertised Edit is called via `createCodingToolRuntime({ policy: compileToolPolicy([{ tool: \"Edit\", patterns: [\"*\"] }], root), maxBytes: MODEL_MAX_BYTES }).callTool(\"Edit\", ...)` on the line-10 fixture, then the outcome kind is `ok`.",
+        "When that authorized runtime Edit replaces `line 10` with `line TEN`, then outcome.content equals the full AC-2 content: `edited <target>`, `[lines 7-13 of 20]`, and edited file lines 7 through 13.",
+        "When that authorized runtime Edit replaces `line 10` with `line TEN`, then outcome.content contains no `[truncated:` marker.",
+        "When that authorized runtime Edit replaces `line 10` with `line TEN`, then the file on disk contains `line TEN` on line 10.",
+        "When readTool.run reads the edited AC-2 file with offset: 7 and limit: 7, then its seven selected body lines, excluding the Read continuation footer, are identical to the Edit view's file lines."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "read-integration"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds deterministic preview composition to one upstream private helper and one tool; authorized runtime/Read parity uses existing APIs, so single-session TDD is sufficient."
+      },
+      "contextFiles": [
+        "src/tools/edit-region.ts",
+        "src/tools/edit.ts",
+        "src/tools/truncate.ts",
+        "src/tools/read-continuation.ts",
+        "test/unit/tools/read-cap.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/tools/write-edit.test.ts",
+          "reason": "no assertion there checks the success content, so no test changes are expected; listed so a failure there is investigated, not rewritten."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing TypeScript native-tool change, not a migration. src/tools/edit.ts:11-23 counts exact, nonoverlapping occurrences and treats empty old_string as absent; :25-38 declares Edit's description/schema/path field; :40-76 validates the already-resolved target, input types, stat size ceiling, and UTF-8 read; :77-94 rejects absent/ambiguous matches before `source.replace(oldString, newString)` and returns `edited ${target}` only after writeFile. String.prototype.replace interprets $$, $&, $`, and $' in a replacement string, so literal slice composition must happen after the unique-match check; preserve every existing error string/isError shape, file-size refusal, and write-only-on-success behavior. Add private src/tools/edit-region.ts and import it relatively, not via src/tools/index.ts:1-5 (which exports editTool); src/tools/read-continuation.ts:1-41 shows this file-local convention. src/tools/truncate.ts:54-70 supplies splitModelLines: empty content has zero lines and a trailing newline does not create a line. src/tools/read.ts:149-174 supplies the 1-based ranged `[lines a-b of N]` header and body; Read may add a separate continuation footer, which the Edit view should not reproduce. src/tools/registry.ts:22-28, :67-120 defines the unchanged ToolResult, ToolRunContext, CodingTool interfaces. src/tools/runtime.ts:100-124 registers Edit as a built-in and :130-194 creates the runtime, where authorization, advertising, and after_tool model-facing truncation apply; the view should need no runtime changes. src/tools/truncate.ts:27-29 caps model output at 40,000 bytes and 2,000 characters per line downstream: the view bounds file-line count but can still have a very long single line. test/unit/tools/write-edit.test.ts:1-16 contains existing temp fixture/ctx, :44-78 asserts successful disk replacement and absent/ambiguous/untouched-on-failure behavior, but not success content. test/unit/tools/read-cap.test.ts:15-35 and :294-320 illustrates authorized built-in runtime callTool tests. Create test/unit/tools/edit-region.test.ts in US-001 and extend it in US-002 for pure composition, direct Edit, authorized runtime, and Read range agreement; leave write-edit tests unchanged unless their existing assertions actually fail. US-002 must depend on US-001 because it extends that story's created helper/test file and uses its literal replacement in the end-to-end Edit seam. Risks: template expansion corrupts code; off-by-one around trailing newline, deletions, EOF, and long elided replacements; an ambiguous `line 2` fixture requires `line 2\\n` to be unique against `line 20`; preview must use the updated bytes and old matchIndex, not emit before writeFile succeeds. No data migration; only successful Edit result content changes, and no-$ disk output matches the old behavior.",
+  "outOfScope": [
+    "Line-numbered `Read` output (tuning doc RD-3).",
+    "`Write` returning content.",
+    "Hints on a failed `Edit` (`old_string not found`: 97 calls in the ledgers).",
+    "A role-prompt \"don't re-read after editing\" line (IM-1). The tool description carries it.",
+    "The A/B that measures this change together with R17. It is billed and run separately."
+  ],
+  "routingProfile": "native-ds"
+}
