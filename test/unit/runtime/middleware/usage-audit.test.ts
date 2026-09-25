@@ -273,6 +273,31 @@ describe("attachUsageAuditSubscriber", () => {
     expect(recorded[0].streamCallId).toBe("one-shot");
   });
 
+  test("treats non-finite exactCostUsd as absent, mirroring the cost subscriber", () => {
+    const recorded: UsageAuditEntry[] = [];
+    const dispatchEvents = new DispatchEventBus();
+    attachUsageAuditSubscriber(new AgentStreamEventBus(), dispatchEvents, makeAuditor(recorded), "run-1");
+
+    dispatchEvents.emitDispatch(
+      makeCompleteEvent({
+        tokenUsage: { inputTokens: 10, outputTokens: 2 },
+        exactCostUsd: Number.NaN,
+        estimatedCostUsd: 0.02,
+      }),
+    );
+    dispatchEvents.emitDispatch(
+      makeCompleteEvent({
+        tokenUsage: { inputTokens: 10, outputTokens: 2 },
+        exactCostUsd: Number.POSITIVE_INFINITY,
+        estimatedCostUsd: 0.03,
+      }),
+    );
+
+    expect(recorded).toHaveLength(2);
+    expect(recorded[0].costUsd).toBe(0.02);
+    expect(recorded[1].costUsd).toBe(0.03);
+  });
+
   test("US-002 AC5: a session-turn dispatch event records no usage row", () => {
     const recorded: UsageAuditEntry[] = [];
     const dispatchEvents = new DispatchEventBus();

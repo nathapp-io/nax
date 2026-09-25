@@ -31,9 +31,11 @@ function toUsageEntry(event: AgentUsageUpdateEvent, runId: string): UsageAuditEn
 function toOneShotEntry(event: DispatchEvent, runId: string): UsageAuditEntry | null {
   if (event.kind !== "complete") return null;
   const tu = event.tokenUsage;
-  const costUsd = event.exactCostUsd ?? event.estimatedCostUsd;
+  const wireExact = event.exactCostUsd;
+  const costUsd = typeof wireExact === "number" && Number.isFinite(wireExact) ? wireExact : event.estimatedCostUsd;
   // Mirrors the cost subscriber: a complete dispatch with no token usage and
-  // zero cost carries nothing worth a row.
+  // zero cost carries nothing worth a row. A non-finite exact cost is treated
+  // as absent, the same way attachCostSubscriber does.
   if (!tu && (costUsd ?? 0) === 0) return null;
   return {
     ts: event.timestamp,
