@@ -175,13 +175,19 @@ export async function flushOpenToolAuditSinks(runId: string): Promise<void> {
   // unregisterToolAuditSink, and re-entering the registry mid-iteration would
   // mutate the map we are reading.
   openToolAuditSinks.delete(runId);
-  for (const sink of sinks) {
-    try {
-      await sink.flushPartial();
-    } catch (error) {
-      getSafeLogger()?.warn("tools", "tool-audit partial flush failed", { runId, error: errorMessage(error) });
-    }
-  }
+  // Started concurrently, so a slow or never-settling sink cannot starve the
+  // writes of the sinks after it. Each sink owns a distinct file, so the
+  // completion order is irrelevant. Every task swallows its own rejection --
+  // one sink's failure is logged and the rest still flush.
+  await Promise.all(
+    [...sinks].map(async (sink) => {
+      try {
+        await sink.flushPartial();
+      } catch (error) {
+        getSafeLogger()?.warn("tools", "tool-audit partial flush failed", { runId, error: errorMessage(error) });
+      }
+    }),
+  );
 }
 
 export function createNoOpToolAuditSink(): ToolAuditSink {
@@ -229,6 +235,24 @@ export interface ToolAuditHeader {
   readonly sessionRole?: string;
 }
 
+/**
+ * Monotonic millisecond stamp for audit filenames.
+ *
+ * `Date.now()` alone is not enough: `flushOpenToolAuditSinks` writes every
+ * still-open sink for a run in one tight loop, so two sinks sharing a
+ * `sessionName` routinely land on the same millisecond -- the second
+ * `writeFile` then silently clobbers the first and one hop's calls are gone.
+ * Nudging the stamp forward on a repeat keeps the filename shape
+ * (`<runId>-<stamp>-<sessionName>.json`) and guarantees one file per sink.
+ */
+let lastFileStamp = 0;
+
+function nextFileStamp(): number {
+  const now = Date.now();
+  lastFileStamp = now > lastFileStamp ? now : lastFileStamp + 1;
+  return lastFileStamp;
+}
+
 export function createToolAuditSink(opts: {
   dir: string;
   sessionName: string;
@@ -257,18 +281,30 @@ export function createToolAuditSink(opts: {
       2,
     );
     const prefix = runId !== undefined ? `${runId}-` : "";
-    await writeFile(join(opts.dir, `${prefix}${Date.now()}-${opts.sessionName}.json`), body);
+    await writeFile(join(opts.dir, `${prefix}${nextFileStamp()}-${opts.sessionName}.json`), body);
   };
 
   const sink: RegisteredSink = {
     record(entry) {
+      // The partial file is this sink's last write (a second would duplicate
+      // it), so a row arriving after a SUCCESSFUL partial flush cannot be
+      // persisted. Drop it loudly rather than losing it without a trace.
+      if (partialFlushed) {
+        getSafeLogger()?.warn("tools", "tool-audit row recorded after the partial flush was dropped", {
+          runId,
+          tool: entry.tool,
+        });
+        return;
+      }
       calls.push(entry);
     },
     async flushPartial() {
       if (partialFlushed) return;
+      await write(true);
+      // Only now is the buffer spent. A rejected write leaves the sink open so
+      // the hop `finally` can still write the full file instead of nothing.
       partialFlushed = true;
       if (runId !== undefined) unregisterToolAuditSink(runId, sink);
-      await write(true);
     },
     async flush() {
       // A later hop `finally` after the partial flush: nothing left to write.
