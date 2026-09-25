@@ -282,7 +282,8 @@ does not change the posture chosen above, and it does not change the default.
 A remembered approval is a CACHED HUMAN DECISION, not a rule: a synthesized `Bash(...)` rule would
 be broader than what was approved, because rule matching is a token-wise prefix match with no
 length ceiling (`src/tools/policy-bash.ts:72-83`). The cache is therefore a resolver-side
-byte-exact link, never a grant.
+byte-exact link, never a grant. Grants are listed and revoked with `nax approvals`, which never
+clears a taint.
 
 Living outside `repoRoot` protects the approvals file from the typed path-bearing tools but **not
 from Bash**: `src/tools/nax-owned-writes.ts:52-58` excludes Bash by design, and under `raw` mode

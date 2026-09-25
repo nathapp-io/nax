@@ -5,6 +5,16 @@
 export { type AcceptOptions, acceptCommand } from "./accept";
 export { agentsListCommand } from "./agents";
 export {
+  _approvalsCliDeps,
+  type ApprovalsListOptions,
+  type ApprovalsRmOptions,
+  approvalsListCommand,
+  approvalsRmCommand,
+  registerApprovalsCommand,
+  resolveApprovalsFile,
+} from "./approvals";
+export { formatEntryBlock, formatRemovedLine, formatTrustLine, toListJson } from "./approvals-format";
+export {
   _cliAuthDeps,
   authImportCommand,
   authListCommand,

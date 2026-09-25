@@ -308,6 +308,136 @@ nax runs --status failed
 
 ---
 
+### `nax approvals list`
+
+List the human-remembered approvals on the project's cache and report
+whether the store is currently trusted.
+
+```bash
+nax approvals list
+
+# Resolve the store for a specific workdir
+nax approvals list -d /path/to/project
+
+# Emit machine-readable JSON
+nax approvals list --json
+```
+
+**Flags:**
+
+| Flag | Description |
+|:-----|:------------|
+| `-d, --dir <path>` | Project directory (defaults to the current directory) |
+| `--json` | Emit the list as a machine-readable JSON object |
+
+**Output:**
+
+The first two lines name the resolved store file and report cache trust:
+
+```
+Approvals store: <path>/approvals.json
+Cache: trusted
+```
+
+A store that a forge-capable run has touched since shows `Cache: TAINTED`
+together with the `since`, `runId`, pid liveness and a one-line note that a
+trusted run will discard those entries. The third line is the count of
+remembered approvals, followed by one block per entry:
+
+```
+<approvalId>  <stage>  <origin>  <approvedAt>  <approvedBy>  naxCommit <naxCommit>
+          root <root>
+          $ <first command line>
+            <second command line>
+```
+
+Commands print raw. There is no expiry: entries are removed via `nax approvals rm`.
+
+A missing store prints a single notice on stdout:
+
+```
+No remembered approvals at <path>/approvals.json
+```
+
+A store whose bytes cannot be parsed warns on stderr (`approvals.json could not
+be parsed; the cache reads it as empty`) and prints the same notice on stdout.
+A store whose JSON parses but holds array elements that are not approval
+entries lists `<n> malformed entries ignored` on stderr and lists the valid
+entries on stdout.
+
+`--json` prints one JSON object on stdout with the keys `path`, `state`,
+`taint` (null when absent), `droppedMalformed` and `entries`; each entry is
+`{ id: approvalId(entry), ...entry }`. `state` is `"missing"`, `"unparseable"`
+or `"ok"`. The unparseable body keeps the parse warning on stderr but writes
+the JSON body alone.
+
+---
+
+### `nax approvals rm`
+
+Revoke one or more remembered approvals from the project's cache. Every form
+goes through the same locked, taint-preserving `removeApprovals` primitive, so
+a partial or interrupted revocation cannot leave the cache half-written.
+
+```bash
+# Revoke one or more approvals by their 8-character hex id
+nax approvals rm <id> [<id>...]
+
+# Revoke every approval for a stage
+nax approvals rm --stage execution
+
+# Revoke every remembered approval (with confirmation)
+nax approvals rm --all
+
+# Same, skipping the confirmation prompt
+nax approvals rm --all --yes
+```
+
+**Flags:**
+
+| Flag | Description |
+|:-----|:------------|
+| `-d, --dir <path>` | Project directory (defaults to the current directory) |
+| `--stage <stage>` | Remove every approval for the given stage |
+| `--all` | Remove every remembered approval |
+| `--yes` | Skip the `--all` confirmation prompt |
+
+**Selectors.** Exactly one of `<id...>`, `--stage <stage>`, or `--all` must be
+supplied. Mixing selectors, or supplying none, prints
+`Specify exactly one of <id...>, --stage <stage>, --all` on stderr and exits 1.
+An id outside the eight-character hex shape prints `Invalid id: <id>` on stderr
+and exits 1.
+
+**`--all` flow.** `--all` revokes every remembered approval. The store is read
+first; `<store>` below is the resolved `approvals.json` path.
+
+- A missing store or a present store with no entries prints
+  `No remembered approvals at <store>` on stdout and exits 0;
+  no prompt is shown and no write happens.
+- An unparseable store prints
+  `approvals.json could not be parsed; not rewriting it` on stderr and exits 1;
+  the file is left untouched.
+- Otherwise the confirmation gate runs (unless `--yes` was given):
+  - Without a TTY and without `--yes`, prints `Aborted` on stderr and exits 1.
+  - On a TTY, asks `Remove all remembered approvals?` through
+    `promptForConfirmation`; a `false` answer prints `Aborted` on stderr and
+    exits 1, a `true` answer revokes every entry.
+
+After a successful `--all` revocation, the store is empty (or absent if it was
+created by the run) and one `removed <id>  <stage>  <preview>` line per entry
+is written to stdout. If the read dropped malformed array elements while
+writing, `<n> malformed entries dropped` is written to stderr.
+
+The `taint` marker is preserved by every form here. Only a trusted run clears
+it through `clearApprovalsTaint`; `nax approvals rm` never touches it.
+
+**Store failures.** A `FILE_LOCK_TIMEOUT` (another nax run is mid-write)
+prints `a nax run is writing <store>; retry` on stderr and exits 1.
+Any other store error prints `Failed to update <store>: <message>` on stderr
+and exits 1.
+
+---
+
 ### `nax agents`
 
 List installed coding agents and which models they support.
