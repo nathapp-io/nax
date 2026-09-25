@@ -149,9 +149,14 @@ describe("approvalId", () => {
     expect(approvalId(e)).toBe(digest8(e.stage, e.command, e.approvedAt));
   });
 
-  test("AC5: a missing approvedAt is hashed as an empty string", () => {
-    const { approvedAt: _omitted, ...withoutApprovedAt } = makeEntry();
-    expect(approvalId(withoutApprovedAt as ApprovalEntry)).toBe(digest8("implementer", "bun run test", ""));
+  test("AC5: a missing approvedAt is hashed as an empty string", async () => {
+    await withTempDir(async (dir) => {
+      const { approvedAt: _omitted, ...withoutApprovedAt } = makeEntry();
+      const path = writeStore(dir, JSON.stringify({ entries: [withoutApprovedAt] }));
+      const stored: ApprovalEntry | undefined = (await readApprovalsFileDetailed(path)).file.entries[0];
+      assertDefined(stored, "stored entry");
+      expect(approvalId(stored)).toBe(digest8("implementer", "bun run test", ""));
+    });
   });
 
   test("US-001: an approvedAt that is not a string is hashed as an empty string", async () => {
