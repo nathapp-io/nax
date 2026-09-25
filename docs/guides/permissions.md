@@ -41,7 +41,9 @@ whatever grant set the profile already carries. That is how an `allow` rule gran
 even under `unrestricted`, which grants no `Bash` on its own.
 
 The one exception is the default `raw` bash mode: an operation that declares `Bash` receives a
-synthetic `Bash(*)` grant when no human rule names `Bash`, and pattern `deny` / `ask` rules for
+synthetic `Bash(*)` grant when no human rule names `Bash` — under **every** profile, `safe` and
+`scoped` included, so the table's "Native grants" column does not bound `Bash` under `raw` (set
+`bashApproval: "gated"` for that) — and pattern `deny` / `ask` rules for
 `Bash` are not consulted (only a bare, unconditional `Bash` deny still applies). See
 [Bash approval modes](#bash-approval-modes).
 

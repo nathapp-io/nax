@@ -200,7 +200,7 @@ install shows `outcome: "ok"`, an `executed` argv carrying the hardening mechani
 | Symptom | Cause |
 |:--|:--|
 | `Exec is not granted for argv "..."` | The form is not in the grant. The message lists what is. Under the default profile only install forms are granted. |
-| `tool "Exec" is not permitted for this stage` | The operation does not declare `Exec` — a review or planning op cannot install. |
+| `argv is not available on this path` | The operation does not declare `Exec` (or the stage holds no `Exec` grant), so `RunCommand` has no argv branch — a review or planning op cannot install. |
 | `the command must resolve through PATH, not a path` | `argv[0]` contains `/` or `\`. |
 | `argv element contains a shell metacharacter` | The argv branch never uses a shell; split the command into real argv elements. |
 | Agent edits config to remove a dependency instead of installing it | The behaviour this feature exists to prevent. Check the ledger for a denied `Exec` and widen the grant, or confirm the op declares `Exec`. |

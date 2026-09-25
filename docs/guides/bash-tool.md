@@ -193,7 +193,8 @@ resolved ask also lands in `<outputDir>/approval-audit/<runId>.jsonl` with `deci
 |:--|:--|
 | `sandbox unavailable (...): raw bash requires the sandbox` | `raw` with the sandbox enabled but the probe failing. Fix the host, or switch the stage to `gated` / `escalate`, or disable the sandbox. |
 | `Bash command names "..."` / `redirects into "..."`, which nax owns | The `raw` screen caught a write to `.nax/config.json`, a PRD or a queue file. |
-| `tool "Bash" is not permitted for this stage` | The op does not declare `Bash`, or a bare `Bash` deny removed it. |
+| `tool "Bash" is not permitted for this stage` | The op declares `Bash` but the stage holds no `Bash` grant (under `gated` / `escalate`: no `Bash(...)` allow rule). An op that does not declare `Bash` gets `unknown tool "Bash"`. |
+| `tool "Bash" is denied for this stage by rule Bash` | A bare, unconditional `Bash` deny rule. |
 
 ## What this is not
 

@@ -824,7 +824,7 @@ Sandbox paths must be literal — glob characters (`* ? [ ] { }`) are rejected a
 | `authEnv` | `"NAX_COMMAND_SAFETY_AUTH"` | *Name* of the environment variable holding the auth token — no secret is stored in config |
 | `allowRemote` | `false` | Accept a non-loopback URL |
 
-Remembered approvals from `escalate` mode are managed with `nax approvals list` / `nax approvals rm`. See [Bash tool](bash-tool.md) and [ADR-030](../adr/ADR-030-bash-approval-modes.md).
+Remembered approvals (from `escalate` prompts and `ask` rules) are managed with `nax approvals list` / `nax approvals rm`. See [Approvals](approvals.md), [Bash tool](bash-tool.md) and [ADR-030](../adr/ADR-030-bash-approval-modes.md).
 
 The exception is the permissions map: `permissions.<stage>.bashApproval` stays per-package and
 overrides the root posture for one stage — the documented way to make a package stricter than

@@ -97,10 +97,13 @@ it was sent to the gate, and the stage.
 `~/.nax/<project>/approvals.json`, outside the repository — before the call runs. A remembered
 approval is a cached human decision, not a rule: it matches **byte-exact** on
 `(stage, command)`, with no trimming or normalization, so `bun run test` never also admits
-`bun run test --reporter=./x`.
+`bun run test --reporter=./x`. Only calls that carry a command string (`Bash`) can match: for
+any other tool the cache link abstains, so remembering such an approval has no effect.
 
 Each entry records `stage`, `command`, `root`, `origin`, `matchedRule`, `approvedAt`,
-`approvedBy` and `naxCommit`. Its id is the first 8 hex characters of a SHA-256 of
+`approvedBy` and `naxCommit`. Today the human link writes `origin: "escalate"`,
+`matchedRule: null` and `approvedBy: "telegram"` for every entry, whatever the channel or the
+reason for the ask — treat those three fields as fixed labels, not provenance. Its id is the first 8 hex characters of a SHA-256 of
 `(stage, command, approvedAt)`, computed on read and never stored.
 
 The cache link **abstains** — so the ask goes to the human — whenever it cannot trust the file:
