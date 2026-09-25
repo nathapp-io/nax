@@ -3,7 +3,7 @@
   "feature": "turn-waste-and-ledger-gaps",
   "branchName": "feat/turn-waste-and-ledger-gaps",
   "createdAt": "2026-07-20T00:00:00.000Z",
-  "updatedAt": "2026-09-25T09:12:18.531Z",
+  "updatedAt": "2026-09-25T09:18:12.086Z",
   "userStories": [
     {
       "id": "US-001",
@@ -263,8 +263,8 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

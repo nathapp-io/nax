@@ -132,18 +132,18 @@ export function naxOwnedBashRefusal(
       return (
         `${tool} command ${verb} "${hit}", which holds this story's acceptance criteria. ` +
         "nax updates it itself during the run, so it shows as modified. " +
-        "Any Bash command naming it is refused, reads included -- leave it as is. " +
+        "Bash commands naming it are refused, reads included -- leave it as is. " +
         "To view it, use the `Read` tool."
       );
     case "queue":
       return (
         `${tool} command ${verb} "${hit}", which is nax's run-control queue. ` +
-        "Any Bash command naming it is refused, reads included -- change the run through the queue command."
+        "Bash commands naming it are refused, reads included -- change the run through the queue command."
       );
     case "config":
       return (
         `${tool} command ${verb} "${hit}", which is nax configuration. ` +
-        "Any Bash command naming it is refused, reads included -- nax configuration is not changed from inside a run."
+        "Bash commands naming it are refused, reads included -- nax configuration is not changed from inside a run."
       );
   }
 }
