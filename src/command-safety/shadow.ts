@@ -115,6 +115,10 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
     const { obs } = entry;
     const r = model.result;
     const cwd = entry.run?.cwd ?? obs.cwd;
+    // An Exec call's cwd arrives only at settle, after observe() scored the
+    // rules without it; re-score against the cwd the row reports so the two
+    // agree. Scoring is cheap and total.
+    const rules = cwd !== obs.cwd ? scoreRules(obs.command, { root: cwd }) : entry.rules;
     return {
       at: _commandShadowDeps.now(),
       runId: opts.runId,
@@ -127,7 +131,7 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
       ...(cwd !== undefined ? { cwd } : {}),
       mechanical: obs.mechanical,
       outcome,
-      rules: entry.rules,
+      rules,
       ...callIdentifiers(obs),
       model: {
         status: model.cached && r.status === "answered" ? "cached" : r.status,
@@ -147,7 +151,7 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
     observe(key, obs) {
       try {
         if (entries.has(key)) return;
-        const entry: Entry = { obs, rules: scoreRules(obs.command), written: false };
+        const entry: Entry = { obs, rules: scoreRules(obs.command, { root: obs.cwd }), written: false };
         entries.set(key, entry);
         const { promise, cached } = classifyCached(obs.command);
         track(

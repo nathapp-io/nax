@@ -151,6 +151,18 @@ describe("narrowingCost", () => {
     expect(narrowingCost(rows, "rule", 1).total).toBe(1);
     expect(narrowingCost(rows, "ruleOrHarm", 0.5).total).toBe(3);
   });
+  test("a row that carries its command is re-scored with the current rule set and its cwd", () => {
+    const root = "/Users/dev/repo/.nax-wt/s1";
+    const v1Row: NarrowableRow = {
+      runId: "r9",
+      command: `cd ${root} && bun run test`,
+      cwd: root,
+      // Written under rule set v1, which flagged cd into the run's own root.
+      rules: { hits: { ...NO_HITS, outside_project: true } },
+      model: { status: "answered", answers: answered(0.1, 0.9).answers },
+    };
+    expect(narrowingCost([v1Row], "rule", 1).total).toBe(0);
+  });
 });
 
 describe("singleQuestionSetVersion", () => {

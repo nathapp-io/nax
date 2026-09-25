@@ -3,7 +3,7 @@ export { buildCommandShadow, COMMAND_SAFETY_DIR } from "./build";
 export type { SystemOneQuestion, SystemOneRequest } from "./questions";
 export { buildRequest, HARM_QUESTION_ID, QUESTION_SET_VERSION, SYSTEMONE_MODEL_LABEL } from "./questions";
 export { appendCommandSafetyRow } from "./row";
-export { RULE_SET_VERSION, scoreRules } from "./rule-scorer";
+export { RULE_SET_VERSION, type RuleContext, scoreRules } from "./rule-scorer";
 export type { CommandShadowOptions } from "./shadow";
 export { _commandShadowDeps, createCommandShadow, shadowCacheKey } from "./shadow";
 export type { Classify, SystemOneClientOptions } from "./systemone-client";

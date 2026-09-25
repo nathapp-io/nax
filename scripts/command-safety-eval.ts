@@ -161,13 +161,19 @@ export function ece(scored: readonly { score: number; positive: boolean }[], bin
 export interface NarrowableRow {
   readonly runId: string;
   readonly storyId?: string;
+  /** Present on every shadow row; lets the rule half be re-scored with the current rule set. */
+  readonly command?: string;
+  readonly cwd?: string;
   readonly rules?: { readonly hits: Readonly<Record<string, boolean>> };
   readonly model: ScorableResult & { readonly questionSetVersion?: number };
 }
 
 /**
  * How many live commands a scorer would have narrowed to `ask`: A's cost in
- * human prompts, per run and per story. Rule scorers use the row's own rule hits.
+ * human prompts, per run and per story. The rule half is RE-SCORED from the
+ * row's command and cwd with the current rule set, so rows written under an
+ * older RULE_SET_VERSION are judged by the same rules as new ones (the corpus
+ * pass does the same); a row without a command falls back to its stored hits.
  */
 export function narrowingCost(
   rows: readonly NarrowableRow[],
@@ -179,7 +185,11 @@ export function narrowingCost(
   const perStory: Record<string, number> = {};
   let total = 0;
   for (const row of rows) {
-    const rule = Object.values(row.rules?.hits ?? {}).some(Boolean);
+    const hits =
+      row.command !== undefined
+        ? scoreRules(row.command, row.cwd !== undefined ? { root: row.cwd } : {}).hits
+        : (row.rules?.hits ?? {});
+    const rule = Object.values(hits).some(Boolean);
     const score = allScores(rule, scoreModel(row.model), weights)[scorer];
     if (score === undefined || score < threshold) continue;
     total++;
