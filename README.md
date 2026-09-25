@@ -151,11 +151,6 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
       "typecheck": "bun typecheck"         // Optional type checker
     }
   },
-  "hooks": {
-    "hooks": {
-      "on-all-stories-complete": { "command": "npm run build" }  // Fire after all stories pass
-    }
-  },
   "mcp": {
     "servers": {
       "codebase-memory": {
@@ -173,7 +168,7 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
 
 `execution.commandInterceptor` rewrites the `Git` tool's argv through `rtk` so `log` and `diff` output reaches the model compressed. It is confined to the Git site: user-authored `quality.commands` and `acceptance.command` are never wrapped. It fails open — if the `rtk` binary is missing the call runs as plain git.
 
-**Both features are native-agent only.** An ACP agent (`claude`, `codex`, `opencode`, `gemini`) brings its own tools, so nax's `Git` tool is never invoked and no MCP tool is advertised. A project on `"protocol": "acp"` can hold a complete, valid config for both and get zero effect, with no error. The built-in defaults (`agent.protocol: "hybrid"`, `agent.default: "native"`) enable both; a config that switches to an acpx agent does not.
+**Both features are native-agent only.** An ACP agent (`claude`, `codex`, `opencode`, `gemini`) brings its own tools, so nax's `Git` tool is never invoked and no MCP tool is advertised. A project on `"protocol": "acp"` can hold a complete, valid config for both and get zero effect, with no error. The built-in defaults (`agent.protocol: "hybrid"`, `agent.default: "native"`) let both take effect once configured (the interceptor itself is off by default); a config that switches to an acpx agent does not.
 
 See [MCP & Command Interception](docs/guides/mcp-and-interception.md) for setup, verification and troubleshooting, and the [Configuration Guide](docs/guides/configuration.md) for the full schema.
 
@@ -211,13 +206,13 @@ See [Story Decomposition Guide](docs/guides/decomposition.md).
 
 ### Regression Gate
 
-After all stories pass, nax runs the full test suite once. If it fails, it retries failed suites with a shorter timeout. If still failing after retries, the feature is marked as needing attention — nax does not block on a full-suite failure.
+After all stories pass, nax runs the full test suite once. If it fails, nax maps each failing test file back to the story that introduced it and runs a targeted rectification cycle for that story. A suite timeout is accepted as a pass by default (`execution.regressionGate.acceptOnTimeout`). If failures remain, the affected stories are marked `regression-failed`, the run status becomes `failed`, and the `on-final-regression-fail` hook fires.
 
 See [Regression Gate Guide](docs/guides/regression-gate.md).
 
 ### Parallel & Isolated Execution
 
-Stories are batched by compatibility (same model tier, similar complexity) and run in parallel within each batch. Use `--parallel <n>` to control concurrency. Sequential mode uses a deferred regression gate; parallel mode always runs regression at the end.
+With `--parallel <n>`, nax runs up to `n` stories whose dependencies are already satisfied at the same time, each in its own git worktree (`0` = auto, based on CPU cores). Both modes run the regression gate once at the end; only sequential runs attribute a regression to a story and rectify it — in parallel mode it is reported for a human.
 
 Even in sequential mode, stories can be isolated in per-story git worktrees (`execution.storyIsolation: "worktree"`) to prevent cross-story state leakage.
 
@@ -231,7 +226,7 @@ See [Monorepo Guide](docs/guides/monorepo.md).
 
 ### Hooks
 
-Lifecycle hooks fire at key points (`on-start`, `on-story-complete`, `on-all-stories-complete`, `on-complete`, `on-final-regression-fail`, and more). Use them to trigger deployments, send notifications, or integrate with external systems.
+Lifecycle hooks, defined in `.nax/hooks.json` (project) and `~/.nax/hooks.json` (global) — not in `config.json` — fire at key points (`on-start`, `on-story-complete`, `on-all-stories-complete`, `on-complete`, `on-final-regression-fail`, and more). Use them to trigger deployments, send notifications, or integrate with external systems.
 
 See [Hooks Guide](docs/guides/hooks.md).
 
@@ -255,7 +250,7 @@ The default agent is `native`: nax drives the model in-process over `@nathapp/na
 | Codex | `codex` | Set `agent.default: "codex"` |
 | Gemini CLI | `gemini` | Set `agent.default: "gemini"` |
 | Pi Coding Agent | `pi` | Set `agent.default: "pi"` (via the pi-acp bridge) |
-| Aider | `aider` | Set `agent.default: "aider"` |
+| Aider | `aider` | Known name with no dedicated ACP adapter entry (generic defaults) |
 | Any ACP-compatible | — | See [acpx agent docs](https://github.com/openclaw/acpx#agents) |
 
 See [Agents Guide](docs/guides/agents.md) and the [Context Engine Guide](docs/guides/context-engine.md) for agent-portable context configuration.

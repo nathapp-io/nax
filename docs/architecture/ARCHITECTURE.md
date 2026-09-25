@@ -54,7 +54,7 @@ Pricing rates and tiers, context windows and the provider-override seam, the pro
 error kinds, cache retention. Every figure probed against the real catalog, with the probe script
 included so it can be re-derived after a version bump.
 
-### [subsystems.md](subsystems.md) — System Architecture & Subsystem Reference (§17–§51)
+### [subsystems.md](subsystems.md) — System Architecture & Subsystem Reference (§17–§57)
 
 Deep reference for each subsystem — consult when working on a specific module.
 
@@ -90,19 +90,19 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§47 Project** — Heuristic language/framework/type detection from manifest files; `detectLanguage`, `detectProjectProfile`. Authoritative detector — do not re-derive manifest lookups elsewhere.
 - **§48 Findings** — ADR-021/022 SSOT: `Finding` wire type, per-producer adapter converters, `runFixCycle` fix-loop orchestration, `classifyOutcome`.
 - **§49 Prompts** — All LLM prompt construction: eight builder classes (`TddPromptBuilder`, `RectifierPromptBuilder`, `ReviewPromptBuilder`, `AdversarialReviewPromptBuilder`, `AcceptancePromptBuilder`, `OneShotPromptBuilder`, `PlanPromptBuilder`, `SetupPromptBuilder`); `composeSections`; `SectionAccumulator`. No prompt literals outside this module.
-- **§50 Analyze** — `nax analyze` codebase scanner; `scanCodebase` → `CodebaseScan` / `SourceRoot[]`; delegates to workspace discovery (§21) and language detection (§47).
+- **§50 Analyze** — Codebase scanner used by `nax plan` (there is no `nax analyze` command); `scanCodebase` → `CodebaseScan` / `SourceRoot[]`; delegates to workspace discovery (§21) and language detection (§47).
 - **§51 Utils** — Single-purpose leaf utilities (no barrel): `parseLLMJson` (LLM JSON SSOT), `git.ts`, `path-filters.ts`, `path-security.ts`, `json-file.ts`, `errorMessage`, `killProcessTree`, `bun-deps.ts`, `writeQueueCommand`.
 
-### Agent Tools, Permissions & Safety (source + guides)
+### Agent Tools, Permissions & Safety (subsystems.md §52–§57)
 
-The native agent's tool loop and the controls around the commands it runs are not yet written up as `§N` sections. Start from the ADRs, the user guides, and the module headers:
+The native agent's tool loop and the controls around the commands it runs are §52–§57 of [subsystems.md](subsystems.md):
 
-- **Native agent** — `src/agents/native/` (session, turn loop, loop events, tool-result policy, transcript store, compaction). ADR-027 (protocol split), ADR-028 (native sessions and the pull-tool loop), ADR-029 (native coding-agent scope). See [nax-ai-surface.md](nax-ai-surface.md).
-- **Coding tools** — `src/tools/` (`Read`, `Write`, `Edit`, `Delete`, `Glob`, `Grep`, `Git`, `GitCommit`, `Bash`, `RunCommand`, scratchpad and `RequestCapability`; policy compilation, raw-Bash screen `policy-bash-raw.ts`, nax-owned write protection `nax-owned-writes.ts`, per-call audit rows `tool-audit.ts`). Guides: [The Bash Tool](../guides/bash-tool.md), [Exec Allowlist](../guides/exec-allowlist.md).
-- **Permissions** — grants are resolved by `resolvePermissions(config, stage)` (§14); `src/permissions/` holds the rule grammar, Bash lexing, the ask/ask-chain resolvers and the remembered-approvals store behind `nax approvals`. ADR-030 (bash approval modes). Guides: [Permissions](../guides/permissions.md), [Approvals](../guides/approvals.md).
-- **OS sandbox** — `src/sandbox/` (`srt` backend, policy builder, probe) wraps agent-authored Bash and `RunCommand` exec commands; `execution.sandbox`, on by default. Guide: [Sandbox & Command Safety](../guides/sandbox-and-command-safety.md).
-- **Command safety** — `src/command-safety/`: a shadow classifier that scores every agent command and records a row, deciding nothing (`execution.commandSafety`). ADR-031 (root-scoped config).
-- **MCP** — `src/mcp/` (client, pool, lockfile). Guide: [MCP & Command Interception](../guides/mcp-and-interception.md).
+- **§52 Native agent** — `src/agents/native/` (session, turn loop, loop events, tool-result policy, transcript store, compaction). ADR-027 (protocol split), ADR-028 (native sessions and the pull-tool loop), ADR-029 (native coding-agent scope). See [nax-ai-surface.md](nax-ai-surface.md).
+- **§53 Coding tools** — `src/tools/` (`Read`, `Write`, `Edit`, `Delete`, `Glob`, `Grep`, `Git`, `GitCommit`, `Bash`, `RunCommand`, scratchpad and `RequestCapability`; policy compilation, raw-Bash screen `policy-bash-raw.ts`, nax-owned write protection `nax-owned-writes.ts`, per-call audit rows `tool-audit.ts`). Guides: [The Bash Tool](../guides/bash-tool.md), [Exec Allowlist](../guides/exec-allowlist.md).
+- **§54 Permissions** — grants are resolved by `resolvePermissions(config, stage)` (§14); `src/permissions/` holds the rule grammar, Bash lexing, the ask/ask-chain resolvers and the remembered-approvals store behind `nax approvals`. ADR-030 (bash approval modes). Guides: [Permissions](../guides/permissions.md), [Approvals](../guides/approvals.md).
+- **§55 OS sandbox** — `src/sandbox/` (`srt` backend, policy builder, probe) wraps agent-authored Bash and `RunCommand` exec commands; `execution.sandbox`, on by default. Guide: [Sandbox & Command Safety](../guides/sandbox-and-command-safety.md).
+- **§56 Command safety** — `src/command-safety/`: a shadow classifier that scores every agent command and records a row, deciding nothing (`execution.commandSafety`). ADR-031 (root-scoped config).
+- **§57 MCP** — `src/mcp/` (client, pool, lockfile). Guide: [MCP & Command Interception](../guides/mcp-and-interception.md).
 - **Paths** — ADR-032: a single repo-rooted frame for agent and PRD paths.
 
 ### [story-orchestrator-flow.md](story-orchestrator-flow.md) — Per-Story Control Flow
@@ -120,7 +120,7 @@ The four-stage workflow contract: brainstorming → spec-writing → spec-review
 | Rule | Limit |
 |:-----|:------|
 | Source file size | ≤600 lines hard (400 soft) |
-| Test file size | ≤800 lines hard (500 soft; split if >3 unrelated concerns) |
+| Test file size | ≤800 lines hard (650 target; split if >3 unrelated concerns) |
 | Type-only file size | ≤600 lines hard (500 soft) |
 | Function size | ≤30 lines (50 hard max) |
 | Positional params | ≤3 (use options object beyond) |
@@ -160,7 +160,7 @@ The four-stage workflow contract: brainstorming → spec-writing → spec-review
 
 The ADR sequence starts at **ADR-005**. ADR-001–004 were never filed — the project began formal ADR tracking mid-development, at the point of the pipeline re-architecture. There are no tombstone files for 001–004; the gap is intentional.
 
-The ADR index lives in `docs/adr/`. Key ADRs: 005 (pipeline re-arch), 009 (test-pattern SSOT), 010 (context engine), 011–013 (session/agent ownership), 018 (runtime layering), 019–020 (dispatch boundary), 023 (execution unification), 027 (adapter-protocol split), 028–029 (native sessions, tool loop and coding-agent scope), 030 (bash approval modes), 031 (root-scoped command-safety config), 032 (single-frame repo-rooted paths).
+The ADR index lives in `docs/adr/`. Key ADRs: 005 (pipeline re-arch), 009 (test-pattern SSOT), 010 (context engine), 011–013 (session/agent ownership), 018 (runtime layering), 019 (adapter primitives), 020 (dispatch boundary), 023 (execution unification), 027 (adapter-protocol split), 028–029 (native sessions, tool loop and coding-agent scope), 030 (bash approval modes), 031 (root-scoped command-safety config), 032 (single-frame repo-rooted paths).
 
 ---
 

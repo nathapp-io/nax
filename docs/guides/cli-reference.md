@@ -247,7 +247,7 @@ Environment-only check — validates git, CLI tools, and deps without requiring 
 nax precheck --light
 ```
 
-Use this **before `nax plan`** to catch blockers (missing tools, git not initialized, etc.) before spending tokens on planning. Equivalent to running precheck with an empty PRD.
+Use this **before `nax plan`** to catch blockers (missing tools, git not initialized, etc.) before spending tokens on planning. It runs only the environment tier of checks (the project tier needs a PRD).
 
 ---
 
@@ -335,7 +335,7 @@ nax generate
 | `--dry-run` | Preview without writing files |
 | `--no-auto-inject` | Disable auto-injection of project metadata |
 | `--package <dir>` | Generate for a specific monorepo package (e.g. `packages/api`) |
-| `--all-packages` | Generate for all discovered packages |
+| `--all-packages` | Generate for every package that has a `.nax/mono/<package>/context.md` |
 
 **What it generates:**
 
@@ -358,10 +358,10 @@ nax generate
 **Monorepo (per-package):**
 
 ```bash
-# Generate CLAUDE.md for a single package
+# Generate CLAUDE.md for a single package (other agents via config generate.agents)
 nax generate --package packages/api
 
-# Generate for all packages (auto-discovers workspace packages)
+# Generate for every package with a .nax/mono/<package>/context.md
 nax generate --all-packages
 ```
 

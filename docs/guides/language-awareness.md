@@ -86,7 +86,7 @@ For TypeScript / JavaScript the `bun run <check>` fallback applies only when `pa
 
 ## Acceptance Test Filename
 
-The acceptance test filename comes from `acceptance.testPath` (default `.nax-acceptance.test.ts`); a per-package `.nax/mono/<package>/config.json` value takes precedence over the root one. When no `testPath` is supplied, `acceptanceTestFilename()` (`src/acceptance/test-path.ts`) picks a language-appropriate name:
+The acceptance test filename comes from `acceptance.testPath` (default `.nax-acceptance.test.ts`); a per-package `.nax/mono/<package>/config.json` value takes precedence over the root one. `acceptanceTestFilename()` (`src/acceptance/test-path.ts`) holds language-appropriate names, but they are used only when no `testPath` reaches the resolver — and because the config schema always fills in the `.nax-acceptance.test.ts` default, a normal run uses that default even for Go/Python/Rust packages:
 
 | Language | Filename |
 |:---------|:---------|
@@ -95,7 +95,7 @@ The acceptance test filename comes from `acceptance.testPath` (default `.nax-acc
 | Python | `_nax_acceptance_test.py` |
 | Rust | `.nax-acceptance.rs` |
 
-Stories are grouped by `workdir`, and one file is generated per package at `<package>/.nax/features/<feature>/<filename>`. Language is detected per package, so polyglot monorepos get the right extension for each package. For non-TypeScript projects, set `acceptance.testPath` explicitly if the default name does not suit your test runner.
+Stories are grouped by `workdir`, and one file is generated per package at `<package>/.nax/features/<feature>/<filename>`. The per-package language detection only affects the fallback name above. For non-TypeScript projects (or non-TS packages in a polyglot monorepo), set `acceptance.testPath` explicitly — in the root config or the package's `.nax/mono/<package>/config.json` — so the file name suits your test runner.
 
 ---
 

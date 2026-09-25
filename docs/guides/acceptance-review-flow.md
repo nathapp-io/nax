@@ -84,7 +84,7 @@ PRD loaded (stories with acceptance criteria)
 2. Compare against `acceptance-meta.json` — skip if unchanged
 3. Group stories by `story.workdir` (monorepo-aware)
 4. Optional: LLM refines raw ACs into concrete, machine-verifiable assertions
-5. Generate one test file per workdir group under that package's feature dir: `<packageDir>/.nax/features/<feature>/<acceptance.testPath>` (default filename by language: `.nax-acceptance.test.ts`, `.nax-acceptance_test.go`, `_nax_acceptance_test.py`, `.nax-acceptance.rs`)
+5. Generate one test file per workdir group under that package's feature dir: `<packageDir>/.nax/features/<feature>/<acceptance.testPath>` (default `.nax-acceptance.test.ts`; the language-specific fallback names in `acceptanceTestFilename()` apply only when no `testPath` is configured, which the schema default normally prevents)
 6. RED gate (`acceptance.redGate`, default `true`): run tests expecting FAIL — if all pass, tests aren't testing new behavior
 
 Regeneration clears any stale `<featureDir>/semantic-verdicts/` files.
@@ -174,7 +174,7 @@ do:
         ├─ strategies selected by verdict (source_bug / test_bug / both), co-run-sequential,
         │  each capped at 3 attempts, cycle capped at acceptance.maxRetries
         ├─ validate: re-run this package's acceptance tests → remaining Finding[]
-        └─ prior attempts reach the test-fix prompt via buildPriorIterationsBlock()
+        └─ prior attempts reach both fix prompts via buildPriorIterationsBlock()
 
   5. Final full validation pass across all packages
      └─ return success only if it passes and no package left findings
@@ -185,7 +185,7 @@ do:
 - **Per-package budgets** — each failed package gets its own fix cycle, scoped to its `packageDir`, test path, and command
 - **Re-testing lives in the cycle** — `runFixCycle`'s `validate` re-runs acceptance tests after each fix attempt
 - **Final full pass** catches cross-package regressions one isolated cycle could miss
-- **Prior-attempt context** comes from the fix cycle's iteration log (`buildPriorIterationsBlock`); the old `previousFailure` string accumulator was deleted (ADR-022 phase 8). Only the test-fix op receives it
+- **Prior-attempt context** comes from the fix cycle's iteration log (`buildPriorIterationsBlock`); the old `previousFailure` string accumulator was deleted (ADR-022 phase 8). Both the source-fix and test-fix prompts receive it
 - **Retry budget**: `acceptance.maxRetries` (default 3) bounds both the outer loop and each package's fix cycle. `acceptance.fix.maxRetries` (default 2) is still in the schema but not read by the loop
 
 **Diagnosis fast paths** (in `resolveAcceptanceDiagnosis`):

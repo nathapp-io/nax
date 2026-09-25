@@ -26,7 +26,7 @@ Controlled by `config.tdd.strategy`:
 | `"lite"` | Always `three-session-tdd-lite` |
 | `"off"` | Always `test-after` |
 
-> The `config.tdd.strategy` schema enum accepts `"auto"`, `"strict"`, `"lite"`, and `"off"` (default `"auto"`). `determineTestStrategy()` (`src/routing/classify.ts`) additionally recognises `"simple"` → `tdd-simple`, but that value is not in the config schema enum — set `routing.testStrategy: "tdd-simple"` on a story to pin single-session TDD.
+> The `config.tdd.strategy` schema enum accepts `"auto"`, `"strict"`, `"lite"`, and `"off"` (default `"auto"`). `determineTestStrategy()` (`src/routing/classify.ts`) additionally recognises `"simple"` → `tdd-simple`, but that value is not in the config schema enum — set `routing.testStrategy: "tdd-simple"` (together with `routing.complexity`) on a story to pin single-session TDD.
 
 ### Auto-Routing Rules
 
@@ -43,7 +43,7 @@ Greenfield override: with `tdd.greenfieldDetection` on (default), a three-sessio
 
 **Routing priority** (ROUTE-001):
 
-1. **PRD wins** — `story.routing.testStrategy` in `prd.json` is always honoured, never overwritten by classification
+1. **PRD wins** — when a story in `prd.json` carries both `routing.complexity` and `routing.testStrategy`, they are always honoured, never overwritten by classification
 2. **Plugin routers** — plugins registered via `nax.plugins[]` can override routing
 3. **LLM classifier** — if `routing.strategy: "llm"` and an agent is available
 4. **Keyword classifier** — fallback; fast and free (no API calls)
@@ -83,7 +83,7 @@ One Claude Code session writes tests and implements the feature together. No str
 
 ## Per-Story Override
 
-Set `routing.testStrategy` on a story in `prd.json` to override routing (a top-level `testStrategy` is still accepted as a legacy alias):
+Set `routing.testStrategy` on a story in `prd.json` to override routing. `routing.complexity` must be set too — the PRD value wins only when both are present. (A top-level `testStrategy` is accepted as a legacy alias only in `nax plan` output, where it is normalized into `routing`; `nax run` does not read it from a hand-edited `prd.json`.)
 
 ```json
 {

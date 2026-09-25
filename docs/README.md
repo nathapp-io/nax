@@ -78,7 +78,7 @@ description: User guides, architecture references, and specs for nax
 | [Design Patterns](architecture/design-patterns.md) | Patterns, security standards, test performance |
 | [Agent Adapters](architecture/agent-adapters.md) | Permission resolution, test-strategy resolution, adapter conventions, trust boundary |
 | [nax-ai Surface](architecture/nax-ai-surface.md) | The `@nathapp/nax-ai` surface the native adapter consumes |
-| [Subsystems](architecture/subsystems.md) | Deep reference for each subsystem (§17–§51) |
+| [Subsystems](architecture/subsystems.md) | Deep reference for each subsystem (§17–§57) |
 | [Story Orchestrator Flow](architecture/story-orchestrator-flow.md) | Per-story control flow inside `executionStage` |
 | [Spec → PRD Pipeline](architecture/spec-to-prd-pipeline.md) | Brainstorming → spec → spec-review → `nax plan` workflow contract |
 
@@ -124,17 +124,17 @@ Detailed technical specifications for specific features and subsystems. A select
 | Spec | Description |
 |:-----|:------------|
 | [Monorepo Workdir](specs/SPEC-monorepo-workdir.md) | Per-package workdir isolation in monorepos |
-| [Per-Package Config](specs/SPEC-per-package-config.md) | Per-package `nax.json` configuration override |
+| [Per-Package Config](specs/SPEC-per-package-config.md) | Per-package config override for monorepos |
 | [ACP Agent Adapter](specs/acp-agent-adapter.md) | ACP protocol adapter for external agent integration |
 | [ACP Session Lifecycle](specs/acp-session-lifecycle.md) | Session initialization, heartbeat, and teardown |
-| [ACP Session Mode](specs/acp-session-mode.md) | Interactive vs deferred execution modes |
-| [Central Run Registry](specs/central-run-registry.md) | Shared run state across pipeline stages |
+| [ACP Session Mode](specs/acp-session-mode.md) | ACP session mode v2 — programmatic client, session naming, role suffixes |
+| [Central Run Registry](specs/central-run-registry.md) | Global cross-project index of runs (`~/.nax/runs/`) |
 | [Cost SSOT](specs/cost-ssot.md) | Cost tracking as a single source of truth |
 | [Plan V2](specs/plan-v2.md) | Enhanced plan generation with acceptance criteria |
-| [Scoped Permissions](specs/scoped-permissions.md) | Tool allowlists scoped to story/routing context |
-| [Status File Consolidation](specs/status-file-consolidation.md) | Unified `nax/status.json` replacing scattered files |
-| [Test Strategy SSOT](specs/test-strategy-ssot.md) | Single source of truth for routing decisions |
-| [Trigger Completion](specs/trigger-completion.md) | Event-driven story completion signals |
+| [Scoped Permissions](specs/scoped-permissions.md) | Stage-aware permission profiles and `resolvePermissions` |
+| [Status File Consolidation](specs/status-file-consolidation.md) | Unified `status.json` replacing scattered status files |
+| [Test Strategy SSOT](specs/test-strategy-ssot.md) | Single source of truth for test-strategy definitions and the security override |
+| [Trigger Completion](specs/trigger-completion.md) | Wiring the interaction triggers into the pipeline |
 
 ---
 

@@ -388,16 +388,16 @@ Every bundle the engine assembles writes a manifest to disk. This is how you ans
 Typical debugging workflow:
 
 ```bash
-# Inspect what went into the execution stage for story US-003
-cat .nax/features/my-feature/stories/US-003/context-manifest-execution.json | jq '.'
+# Inspect what went into the tdd-simple stage for story US-003
+cat .nax/features/my-feature/stories/US-003/context-manifest-tdd-simple.json | jq '.'
 
 # "Why isn't my .nax/rules/testing.md showing up?"
 jq '.excludedChunks[] | select(.id | contains("testing"))' \
-  .nax/features/my-feature/stories/US-003/context-manifest-execution.json
+  .nax/features/my-feature/stories/US-003/context-manifest-tdd-simple.json
 
 # "Did my plugin provider run?"
 jq '.providerResults[] | select(.providerId == "my-symbol-graph")' \
-  .nax/features/my-feature/stories/US-003/context-manifest-execution.json
+  .nax/features/my-feature/stories/US-003/context-manifest-tdd-simple.json
 ```
 
 For verbose logging, filter the run's JSONL log for the `context` and `context-v2` stages (assembly details are logged at `debug`).
