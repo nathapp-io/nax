@@ -1,4 +1,3 @@
-import type { SemanticVerdict } from "../acceptance/types";
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
 import type { Finding } from "../findings";
@@ -12,7 +11,6 @@ export interface AcceptanceDiagnoseInput {
   testFileContent: string;
   acceptanceTestPath?: string;
   sourceFiles: Array<{ path: string; content: string }>;
-  semanticVerdicts?: SemanticVerdict[];
 }
 
 export interface AcceptanceDiagnoseOutput {
@@ -42,7 +40,6 @@ export const acceptanceDiagnoseOp: RunOperation<AcceptanceDiagnoseInput, Accepta
       testFileContent: input.testFileContent,
       acceptanceTestPath: input.acceptanceTestPath,
       sourceFiles: input.sourceFiles,
-      semanticVerdicts: input.semanticVerdicts,
     });
     return {
       role: { id: "role", content: "", overridable: false },

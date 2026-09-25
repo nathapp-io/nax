@@ -114,19 +114,10 @@ export function isStubTestFile(content: string): boolean {
  * Detect test-level failure (P1-D, D2).
  *
  * Returns true when the failure is likely a test bug rather than implementation gaps:
- * - All semantic verdicts passed (overrides ratio check)
  * - Test crashed with no ACs parsed ("AC-ERROR" sentinel)
  * - More than 80% of total ACs failed
  */
-export function isTestLevelFailure(
-  failedACs: string[] | number,
-  totalACs: number,
-  semanticVerdicts?: Array<{ passed: boolean }>,
-): boolean {
-  if (semanticVerdicts && semanticVerdicts.length > 0 && semanticVerdicts.every((v) => v.passed)) {
-    return true;
-  }
-
+export function isTestLevelFailure(failedACs: string[] | number, totalACs: number): boolean {
   const failedCount = typeof failedACs === "number" ? failedACs : failedACs.length;
   const hasACError = Array.isArray(failedACs) && failedACs.includes("AC-ERROR");
 

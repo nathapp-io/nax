@@ -9,7 +9,7 @@
  */
 
 import { loadSourceFilesForDiagnosis } from "@/acceptance";
-import type { DiagnosisResult, SemanticVerdict } from "@/acceptance/types";
+import type { DiagnosisResult } from "@/acceptance/types";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
@@ -44,12 +44,6 @@ export interface ResolveAcceptanceDiagnosisOptions {
   failures: { failedACs: string[]; testOutput: string };
   totalACs: number;
   strategy: "diagnose-first" | "implement-only";
-  /**
-   * STUB (US-005): the semantic-verdict persistence path is being deleted and
-   * this field goes with it. Optional-with-default until then so callers written
-   * against the post-deletion interface compile and reach their assertions.
-   */
-  semanticVerdicts?: SemanticVerdict[];
   diagnosisOpts: {
     testOutput: string;
     testFileContent: string;
@@ -81,16 +75,13 @@ export const _diagnosisDeps: {
  *
  * Fast paths skip the LLM diagnosis call:
  * - implement-only strategy → source_bug
- * - All semantic verdicts passed → test_bug
  * - >80% ACs failed OR AC-ERROR sentinel → test_bug
  *
  * Otherwise calls acceptanceDiagnoseOp via callOp.
  */
 export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosisOptions): Promise<DiagnosisResult> {
   const logger = getSafeLogger();
-  // STUB (US-005): `= []` keeps the removed-field callers working; delete with
-  // the fast path below.
-  const { ctx, failures, totalACs, strategy, semanticVerdicts = [], diagnosisOpts } = opts;
+  const { ctx, failures, totalACs, strategy, diagnosisOpts } = opts;
   const storyId = diagnosisOpts.storyId;
 
   // Fast path 1: implement-only strategy bypasses diagnosis
@@ -103,24 +94,7 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
     };
   }
 
-  // Fast path 2: all semantic verdicts passed → test bug
-  // Skip when failedACs contains only hook/parse sentinels: stale verdicts cannot confirm
-  // whether a beforeAll hook timed out or the runner crashed (no test body ever ran).
-  const SENTINELS = ["AC-ERROR", "AC-HOOK"];
-  const hasOnlySentinels = failures.failedACs.length > 0 && failures.failedACs.every((ac) => SENTINELS.includes(ac));
-  if (!hasOnlySentinels && semanticVerdicts.length > 0 && semanticVerdicts.every((v) => v.passed)) {
-    logger?.info("acceptance.diagnosis", "Fast path: all semantic verdicts passed → test_bug", {
-      storyId,
-      verdictCount: semanticVerdicts.length,
-    });
-    return {
-      verdict: "test_bug",
-      reasoning: `Semantic review confirmed all ${semanticVerdicts.length} ACs are implemented — failure is a test generation issue`,
-      confidence: 1.0,
-    };
-  }
-
-  // Fast path 3: >80% failure or AC-ERROR sentinel
+  // Fast path 2: >80% failure or AC-ERROR sentinel
   if (isTestLevelFailure(failures.failedACs, totalACs)) {
     logger?.info("acceptance.diagnosis", "Fast path: test-level failure heuristic → test_bug", {
       storyId,
@@ -148,7 +122,6 @@ export async function resolveAcceptanceDiagnosis(opts: ResolveAcceptanceDiagnosi
       testFileContent: diagnosisOpts.testFileContent,
       acceptanceTestPath: diagnosisOpts.acceptanceTestPath,
       sourceFiles,
-      semanticVerdicts,
     },
   );
 }

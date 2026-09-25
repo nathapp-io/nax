@@ -255,7 +255,6 @@ Skips strict file isolation for performance. Test-writer may add src/ stubs; imp
 - **Fix diagnosis** (`fix-diagnosis.ts`): `loadSourceFilesForDiagnosis()` feeds `acceptanceDiagnoseOp`
 - **Fix execution** (`acceptanceFixSourceOp` / `acceptanceFixTestOp`): driven by `runFixCycle` from the acceptance retry loop (`src/execution/lifecycle/acceptance-loop.ts`), which also regenerates the test file when failures look test-level
 - **Hardening** (`hardening.ts`): non-blocking pass that tests plan-suggested criteria after acceptance passes and promotes the passing ones
-- **Semantic verdicts** (`semantic-verdict.ts`): persisted per-story semantic-review verdicts consulted by the acceptance loop
 
 ### Templates
 

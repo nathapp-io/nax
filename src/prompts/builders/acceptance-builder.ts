@@ -75,8 +75,6 @@ export interface DiagnosisPromptParams {
   testFileContent?: string;
   acceptanceTestPath?: string;
   sourceFiles: Array<{ path: string; content: string }>;
-  /** Minimal shape — avoids importing SemanticVerdict across layers */
-  semanticVerdicts?: Array<{ storyId: string; passed: boolean }>;
 }
 
 export interface RefinementPromptOptions {
@@ -107,7 +105,6 @@ export interface DiagnosisTemplateParams {
   truncatedOutput: string;
   acceptanceTestPath: string;
   sourceFilesSection: string;
-  verdictSection: string;
   maxFileLines: number;
 }
 
@@ -264,7 +261,7 @@ ACCEPTANCE TEST FILE: ${p.acceptanceTestPath}
 
 SOURCE FILES (auto-detected from imports, up to ${p.maxFileLines} lines each):
 ${p.sourceFilesSection}
-${p.verdictSection}
+
 Respond with ONLY a JSON object in this exact format (no markdown, no extra text):
 ${responseSchema}`;
   }
@@ -338,16 +335,10 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
         ? p.sourceFiles.map((f) => `FILE: ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n")
         : "(No source files could be resolved from imports)";
 
-    const verdictSection =
-      p.semanticVerdicts && p.semanticVerdicts.length > 0
-        ? `\nSEMANTIC VERDICTS:\n${p.semanticVerdicts.map((v) => `- ${v.storyId}: ${v.passed ? "likely test bug (semantic review confirmed AC implementation)" : "unconfirmed"}`).join("\n")}\n`
-        : "";
-
     return this.buildDiagnosisPromptTemplate({
       truncatedOutput,
       acceptanceTestPath: p.acceptanceTestPath ?? "(path unavailable — inspect test output for file references)",
       sourceFilesSection,
-      verdictSection,
       maxFileLines: MAX_FILE_LINES,
     });
   }

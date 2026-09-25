@@ -435,7 +435,6 @@ function eventsMakeCtx(overrides: Partial<PipelineContext> = {}): PipelineContex
 function eventsWireDeps(runTestExitCode: number) {
   _acceptanceSetupDeps.fileExists = async () => false;
   _acceptanceSetupDeps.readMeta = async () => null;
-  _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {};
   _acceptanceSetupDeps.copyFile = async () => {};
   _acceptanceSetupDeps.deleteFile = async () => {};
   _acceptanceSetupDeps.writeMeta = async () => {};
@@ -481,7 +480,6 @@ describe("acceptance-setup events — AC1: postrun:phase:started before generati
     });
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.autoCommitIfDirty = async () => {};
     _acceptanceSetupDeps.loadGroupConfig = async () => DEFAULT_CONFIG as PipelineContext["config"];
@@ -563,7 +561,6 @@ describe("acceptance-setup events — AC3: details match recorded stage values",
     // Use refinement=true so testableCount is driven by refinement output
     _acceptanceSetupDeps.fileExists = async () => false;
     _acceptanceSetupDeps.readMeta = async () => null;
-    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.autoCommitIfDirty = async () => {};
     _acceptanceSetupDeps.loadGroupConfig = async () => DEFAULT_CONFIG as PipelineContext["config"];

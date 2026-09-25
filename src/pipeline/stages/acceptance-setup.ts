@@ -121,20 +121,6 @@ export const _acceptanceSetupDeps = {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     }
   },
-  deleteSemanticVerdicts: async (featureDir: string): Promise<void> => {
-    const dir = `${featureDir}/semantic-verdicts`;
-    const { readdir, unlink } = await import("node:fs/promises");
-    let files: string[];
-    try {
-      files = await readdir(dir);
-    } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw err;
-    }
-    for (const file of files) {
-      await unlink(`${dir}/${file}`);
-    }
-  },
   readMeta: async (metaPath: string): Promise<AcceptanceMeta | null> => {
     const f = Bun.file(metaPath);
     if (!(await f.exists())) return null;
@@ -308,8 +294,6 @@ async function runAcceptanceSetup(
         await _acceptanceSetupDeps.deleteFile(testPath);
       }
     }
-    // Clear semantic verdicts so stale results don't influence the acceptance loop
-    await _acceptanceSetupDeps.deleteSemanticVerdicts(featureDir);
     shouldGenerate = true;
     regenerated = true;
   } else {

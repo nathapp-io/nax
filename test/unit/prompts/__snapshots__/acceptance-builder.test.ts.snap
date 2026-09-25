@@ -192,39 +192,3 @@ Respond with ONLY a JSON object in this exact format (no markdown, no extra text
   ]
 }"
 `;
-
-exports[`builder.buildDiagnosisPromptTemplate() snapshot stability with verdict section 1`] = `
-"You are a debugging expert. An acceptance test has failed.
-
-TASK: Diagnose whether the failure is due to a bug in the SOURCE CODE or a bug in the TEST CODE.
-
-FAILING TEST OUTPUT:
-FAIL: AC-1 assertion error
-
-ACCEPTANCE TEST FILE: /project/.nax/features/feat/.nax-acceptance.test.ts
-
-(Use Read on the path above to inspect the test code if needed for diagnosis.)
-
-SOURCE FILES (auto-detected from imports, up to 500 lines each):
-(No source files could be resolved from imports)
-
-SEMANTIC VERDICTS:
-- US-001: likely test bug (semantic review confirmed AC implementation)
-
-Respond with ONLY a JSON object in this exact format (no markdown, no extra text):
-{
-  "verdict": "source_bug" | "test_bug" | "both",
-  "reasoning": "Your analysis explaining why this is a source_bug, test_bug, or both",
-  "confidence": 0.0-1.0,
-  "findings": [
-    {
-      "fixTarget": "source" | "test",
-      "category": "stdout-capture" | "ac-mismatch" | "framework-misuse" | "missing-impl" | "import-path" | "hook-failure" | "test-runner-error" | "stub-test" | "other",
-      "file": "optional/path/relative/to/workdir.ts",
-      "line": 0,
-      "message": "Concrete description of the issue",
-      "suggestion": "Optional concrete fix suggestion"
-    }
-  ]
-}"
-`;

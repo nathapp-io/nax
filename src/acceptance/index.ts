@@ -20,7 +20,6 @@ export type { HardeningContext, HardeningResult } from "./hardening";
 export { runHardeningPass } from "./hardening";
 export { isStubTestContent } from "./heuristics";
 export { parseRefinementResponse, refinementWouldFallback } from "./refinement";
-export { loadSemanticVerdicts, persistSemanticVerdict } from "./semantic-verdict";
 export {
   _groupDeps,
   findExistingAcceptanceTestPath,

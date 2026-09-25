@@ -13,7 +13,6 @@
  */
 
 import { join } from "node:path";
-import { persistSemanticVerdict } from "@/acceptance";
 import { featureDir } from "@/config";
 import { annotateManifestEffectiveness } from "@/context/engine";
 import { renderFragmentBody, writeFragment } from "@/context/fragments";
@@ -413,7 +412,6 @@ async function getDiffFilePaths(workdir: string, baseRef: string | undefined): P
  */
 export const _completionDeps = {
   checkReviewGate,
-  persistSemanticVerdict,
   savePRD,
   getDiffText,
   getDiffFilePaths,
