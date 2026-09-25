@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { lexBashCommand } from "@/permissions";
+import { type BashSegment, lexBashCommand } from "@/permissions";
 
 function segmentsOf(command: string): readonly string[][] {
   const result = lexBashCommand(command);
@@ -90,48 +90,32 @@ describe("lexBashCommand redirections", () => {
   });
 });
 
-/**
- * The refused variant read structurally, so this file compiles before `prefix`
- * is added to `BashLexResult` and the assertions fail on the missing behaviour
- * rather than at type-check time.
- */
-interface RefusedWithPrefix {
-  readonly kind: string;
-  readonly prefix?: readonly {
-    readonly tokens: readonly { readonly text: string }[];
-    readonly redirects: readonly unknown[];
-  }[];
-}
-
-function refusedPrefix(command: string): readonly {
-  readonly tokens: readonly string[];
-  readonly redirects: readonly unknown[];
-}[] {
-  const result: RefusedWithPrefix = lexBashCommand(command);
-  expect(result.kind).toBe("refused");
-  return (result.prefix ?? []).map((segment) => ({
-    tokens: segment.tokens.map((token) => token.text),
-    redirects: segment.redirects,
-  }));
+/** The refused variant's lexable prefix, narrowed through the discriminated
+ * union so a regression that drops or weakens `prefix` fails to typecheck, not
+ * merely to assert. */
+function refusedPrefix(command: string): readonly BashSegment[] {
+  const result = lexBashCommand(command);
+  if (result.kind !== "refused") throw new Error(`expected refused, got ${result.kind}`);
+  return result.prefix;
 }
 
 describe("lexBashCommand refused prefix (US-001)", () => {
   test("US-001 AC1: a refused `2>&1` keeps the completed words and drops the in-progress one", () => {
     const prefix = refusedPrefix("rm -rf x 2>&1");
     expect(prefix).toHaveLength(1);
-    expect(prefix[0]?.tokens).toEqual(["rm", "-rf", "x"]);
+    expect(prefix[0]?.tokens.map((token) => token.text)).toEqual(["rm", "-rf", "x"]);
     expect(prefix[0]?.redirects).toEqual([]);
   });
 
   test("US-001 AC2: completed segments precede the segment the refusal interrupted", () => {
     const prefix = refusedPrefix("ls && echo x 2>&1");
-    expect(prefix.map((segment) => segment.tokens)).toEqual([["ls"], ["echo", "x"]]);
+    expect(prefix.map((segment) => segment.tokens.map((token) => token.text))).toEqual([["ls"], ["echo", "x"]]);
   });
 
   test("US-001 AC3: the word being built when a here-document is refused is dropped", () => {
     const prefix = refusedPrefix("cat ..<<EOF");
     expect(prefix).toHaveLength(1);
-    expect(prefix[0]?.tokens).toEqual(["cat"]);
+    expect(prefix[0]?.tokens.map((token) => token.text)).toEqual(["cat"]);
   });
 
   test("US-001 AC4: a refusal before any word completes yields an empty prefix", () => {

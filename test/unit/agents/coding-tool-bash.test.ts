@@ -119,8 +119,10 @@ describe("createBashTool -- bashApproval-aware description", () => {
     expect(description).not.toContain("anything else is refused");
     expect(description).toContain("sent to a human for approval");
     expect(description).toContain("prefer the granted forms");
-    // Accurate to today's evaluation order (nax#2194): payload checks apply to
-    // granted commands only, and an approved command runs as written.
+    // Accurate to today's evaluation order (US-001): the deny matcher and the
+    // payload checks run first for granted and ungranted commands alike -- over
+    // the lexable prefix of a refused command -- and an approved command runs
+    // exactly as written.
     expect(description).toContain("exactly as written");
     expect(description).toContain("refused without asking");
     expect(description).toContain("inside the repository root");
