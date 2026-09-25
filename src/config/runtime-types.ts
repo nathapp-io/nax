@@ -103,7 +103,7 @@ export type { SmartTestRunnerConfig, WorktreeDependenciesConfig } from "./runtim
 
 /** Execution limits */
 export interface ExecutionConfig {
-  /** Max iterations per feature run (auto-calculated from tierOrder sum if not set) */
+  /** Max iterations per feature run — each story attempt, parallel batch and the final completion pass counts one */
   maxIterations: number;
   /** Delay between iterations (ms) */
   iterationDelayMs: number;

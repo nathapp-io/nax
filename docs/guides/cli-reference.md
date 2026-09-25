@@ -168,7 +168,7 @@ nax run -f my-feature
 | `--skip-precheck` | Skip precheck validations (advanced users only) |
 | `--no-context` | Disable context builder (skip file context in prompts) |
 | `--no-batch` | Execute all stories individually (disable batching) |
-| `-m, --max-iterations <n>` | Max iterations (default: `20`). Always overrides `execution.maxIterations`, even when the flag is omitted |
+| `-m, --max-iterations <n>` | Max iterations (default: `20`). Overrides `execution.maxIterations` only when the flag is passed |
 | `--profile <name>` | Profile(s) to overlay on config (overrides `config.json` profile). Repeatable and comma-separated for a chain — `--profile a,b` or `--profile a --profile b` — where a later profile overrides an earlier one (`b` over `a` over project + global). Accepts the comma form in `NAX_PROFILE` and `config.json` too. |
 | `-d, --dir <path>` | Working directory |
 

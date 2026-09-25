@@ -227,7 +227,7 @@ describe("Config Command --diff", () => {
       const output = consoleOutput.join("\n");
 
       // Should show description for execution.maxIterations
-      // Description: "Max iterations per feature run (auto-calculated if not set)"
+      // Description: "Max iterations per feature run — each story attempt, parallel batch and the final completion pass counts one"
       expect(output).toContain("Max iterations per feature run");
     });
 

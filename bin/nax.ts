@@ -80,6 +80,7 @@ import {
 } from "../src/cli/config-profile";
 import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import { generateCommand } from "../src/cli/generate";
+import { applyMaxIterationsFlag, parseMaxIterationsFlag } from "../src/cli/run-max-iterations";
 import { resolveUseHeadless } from "../src/cli/run-mode";
 import { registerStatusCommand } from "../src/cli/status-dispatch";
 import { detectCommand } from "../src/commands/detect";
@@ -202,7 +203,9 @@ program
   .description("Run the orchestration loop for a feature")
   .requiredOption("-f, --feature <name>", "Feature name")
   .option("-a, --agent <name>", "Force a specific agent")
-  .option("-m, --max-iterations <n>", "Max iterations", "20")
+  // US-001: no Commander default — `undefined` means the flag was not passed,
+  // so a configured execution.maxIterations is not silently replaced.
+  .option("-m, --max-iterations <n>", "Max iterations")
   .option("--max-cost <usd>", "Override cost limit (USD) for this run — aborts execution when exceeded")
   .option("--dry-run", "Show plan without executing", false)
   .option("--no-context", "Disable context builder (skip file context in prompts)")
@@ -255,6 +258,14 @@ program
       workdir = validateDirectory(options.dir);
     } catch (err) {
       console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    // US-001: validate -m before any config load, bake-off check or TUI mount.
+    // The parsed value is applied to `config` below, once it is loaded.
+    const maxIterationsFlag = parseMaxIterationsFlag(options.maxIterations);
+    if (!maxIterationsFlag.ok) {
+      console.error(chalk.red(maxIterationsFlag.message));
       process.exit(1);
     }
 
@@ -528,12 +539,9 @@ program
       config.agent ??= {};
       config.agent.default = options.agent;
     }
-    const maxIterations = Number.parseInt(options.maxIterations, 10);
-    if (!Number.isFinite(maxIterations) || maxIterations < 1) {
-      console.error(chalk.red("--max-iterations must be a positive integer"));
-      process.exit(1);
-    }
-    config.execution.maxIterations = maxIterations;
+    // US-001: override execution.maxIterations only when -m was passed, so a
+    // configured value (or the schema default of 20) still takes effect.
+    config = applyMaxIterationsFlag(config, maxIterationsFlag.value);
     if (options.maxCost !== undefined) {
       const maxCost = Number(options.maxCost);
       if (!Number.isFinite(maxCost) || maxCost <= 0) {

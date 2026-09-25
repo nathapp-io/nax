@@ -20,7 +20,7 @@ Every key has a default — the authoritative source is the Zod schema (`src/con
 ```json
 {
   "execution": {
-    "maxIterations": 10,
+    "maxIterations": 20,
     "costLimit": 30
   },
   "tdd": {
@@ -52,7 +52,7 @@ Every key has a default — the authoritative source is the Zod schema (`src/con
 | `autoMode` | `complexityRouting`: simple→fast, medium→balanced, complex/expert→powerful; `escalation.enabled: true`, 2 attempts per tier | Tier routing and escalation (fast → balanced → powerful) |
 | `autoRoute` | `enabled: false`, `minSamples: 8` | Adjust complexity→tier mapping from run history (see `nax routing calibrate`) |
 | `routing` | `strategy: "keyword"` | Story classification — [below](#routing) |
-| `execution` | `maxIterations: 10`, `costLimit: 30`, `sessionTimeoutSeconds: 3600`, `storyIsolation: "shared"`, `permissionProfile: "unrestricted"` | Run loop, rectification, regression gate, permissions, sandbox |
+| `execution` | `maxIterations: 20`, `costLimit: 30`, `sessionTimeoutSeconds: 3600`, `storyIsolation: "shared"`, `permissionProfile: "unrestricted"` | Run loop, rectification, regression gate, permissions, sandbox |
 | `quality` | `commands: {}`, `autofix.enabled: true`, `shell: "/bin/sh"`, `testing.hermetic: true` | Project lint/typecheck/test commands and gates |
 | `tdd` | `strategy: "auto"`, `sessionTiers` fast/fast | TDD strategy — [options](#tdd-strategy-options) |
 | `review` | `enabled: true`, `checks: ["typecheck", "lint"]`, `pluginMode: "observational"` | Review checks (`typecheck`, `lint`, `test`, `build`, `semantic`, `adversarial`) |

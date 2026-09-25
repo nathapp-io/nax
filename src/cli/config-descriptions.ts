@@ -55,7 +55,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Execution
   execution: "Execution limits and timeouts",
-  "execution.maxIterations": "Max iterations per feature run (auto-calculated if not set)",
+  "execution.maxIterations":
+    "Max iterations per feature run — each story attempt, parallel batch and the final completion pass counts one",
   "execution.iterationDelayMs": "Delay between iterations in milliseconds",
   "execution.costLimit": "Max cost in USD before pausing execution (override per run with `nax run --max-cost`)",
   "execution.sessionTimeoutSeconds": "Timeout per agent coding session in seconds",

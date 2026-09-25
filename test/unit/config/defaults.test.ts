@@ -203,6 +203,11 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
       expect(parsed.execution.rectification.maxAttemptsTotal).toBe(12);
     });
 
+    test("US-001 AC-9: schema parse defaults execution.maxIterations to 20", () => {
+      const parsed = NaxConfigSchema.parse({});
+      expect(parsed.execution.maxIterations).toBe(20);
+    });
+
     test("schema parse produces NaxConfig type", () => {
       const parsed = NaxConfigSchema.parse({});
       const typed = parsed as NaxConfig;
