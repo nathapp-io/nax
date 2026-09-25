@@ -55,8 +55,14 @@ export {
   spillRelativePath,
   writeSpill,
 } from "./spill";
-export type { ToolAuditSink, ToolCallRecord } from "./tool-audit";
-export { createNoOpToolAuditSink, createToolAuditSink } from "./tool-audit";
+export type { RegisteredSink, ToolAuditSink, ToolCallRecord } from "./tool-audit";
+export {
+  createNoOpToolAuditSink,
+  createToolAuditSink,
+  flushOpenToolAuditSinks,
+  registerToolAuditSink,
+  unregisterToolAuditSink,
+} from "./tool-audit";
 export {
   cutBufferToByteCap,
   MODEL_MAX_BYTES,

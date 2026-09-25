@@ -11,6 +11,8 @@ export interface CostEvent {
    * attribution and cannot be backfilled.
    */
   readonly schemaVersion?: number;
+  /** v7: set on a partial row (a still-unrecorded in-flight turn); absent on every finished row. */
+  readonly partial?: boolean;
   readonly agentName: string;
   /**
    * Concrete model the call ran on. `"unknown"` only when the dispatch carried

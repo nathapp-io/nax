@@ -102,6 +102,10 @@ freely. Every other path under \`.nax/\` stays off limits.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
   purposes and must coexist.
 
+nax updates \`.nax/features/<feature>/prd.json\` itself during a run, so it shows as modified in
+\`git status\` — do not diff or revert it: this story's criteria are already in this prompt, and if you
+need its contents, read it with the \`Read\` tool; shell commands that name it may be refused.
+
 # Scratchpad
 
 You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
@@ -113,6 +117,11 @@ Its contents are wiped when a run finishes and are never committed. Nothing ther
 or is read by another step. A failed run's scratchpad is retained for inspection — files an agent wrote
 before failing outlive that run, and are cleared at the next run's start. Treat every file as disposable,
 and overwrite freely.
+
+To try a snippet that imports project code or dependencies, write it under \`.nax/scratchpad/\` with
+\`ScratchpadWrite\` and run it from there: relative imports resolve from \`.nax/scratchpad/\`, so prefer the
+project's package names or path aliases where it has them. A script written outside the repository,
+such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -303,6 +312,10 @@ freely. Every other path under \`.nax/\` stays off limits.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
   purposes and must coexist.
 
+nax updates \`.nax/features/<feature>/prd.json\` itself during a run, so it shows as modified in
+\`git status\` — do not diff or revert it: this story's criteria are already in this prompt, and if you
+need its contents, read it with the \`Read\` tool; shell commands that name it may be refused.
+
 # Scratchpad
 
 You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
@@ -314,6 +327,11 @@ Its contents are wiped when a run finishes and are never committed. Nothing ther
 or is read by another step. A failed run's scratchpad is retained for inspection — files an agent wrote
 before failing outlive that run, and are cleared at the next run's start. Treat every file as disposable,
 and overwrite freely.
+
+To try a snippet that imports project code or dependencies, write it under \`.nax/scratchpad/\` with
+\`ScratchpadWrite\` and run it from there: relative imports resolve from \`.nax/scratchpad/\`, so prefer the
+project's package names or path aliases where it has them. A script written outside the repository,
+such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -417,6 +435,10 @@ freely. Every other path under \`.nax/\` stays off limits.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
   purposes and must coexist.
 
+nax updates \`.nax/features/<feature>/prd.json\` itself during a run, so it shows as modified in
+\`git status\` — do not diff or revert it: this story's criteria are already in this prompt, and if you
+need its contents, read it with the \`Read\` tool; shell commands that name it may be refused.
+
 # Scratchpad
 
 You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
@@ -428,6 +450,11 @@ Its contents are wiped when a run finishes and are never committed. Nothing ther
 or is read by another step. A failed run's scratchpad is retained for inspection — files an agent wrote
 before failing outlive that run, and are cleared at the next run's start. Treat every file as disposable,
 and overwrite freely.
+
+To try a snippet that imports project code or dependencies, write it under \`.nax/scratchpad/\` with
+\`ScratchpadWrite\` and run it from there: relative imports resolve from \`.nax/scratchpad/\`, so prefer the
+project's package names or path aliases where it has them. A script written outside the repository,
+such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -550,6 +577,10 @@ freely. Every other path under \`.nax/\` stays off limits.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
   purposes and must coexist.
 
+nax updates \`.nax/features/<feature>/prd.json\` itself during a run, so it shows as modified in
+\`git status\` — do not diff or revert it: this story's criteria are already in this prompt, and if you
+need its contents, read it with the \`Read\` tool; shell commands that name it may be refused.
+
 # Scratchpad
 
 You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
@@ -561,6 +592,11 @@ Its contents are wiped when a run finishes and are never committed. Nothing ther
 or is read by another step. A failed run's scratchpad is retained for inspection — files an agent wrote
 before failing outlive that run, and are cleared at the next run's start. Treat every file as disposable,
 and overwrite freely.
+
+To try a snippet that imports project code or dependencies, write it under \`.nax/scratchpad/\` with
+\`ScratchpadWrite\` and run it from there: relative imports resolve from \`.nax/scratchpad/\`, so prefer the
+project's package names or path aliases where it has them. A script written outside the repository,
+such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -723,6 +759,10 @@ freely. Every other path under \`.nax/\` stays off limits.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
   purposes and must coexist.
 
+nax updates \`.nax/features/<feature>/prd.json\` itself during a run, so it shows as modified in
+\`git status\` — do not diff or revert it: this story's criteria are already in this prompt, and if you
+need its contents, read it with the \`Read\` tool; shell commands that name it may be refused.
+
 # Scratchpad
 
 You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
@@ -734,6 +774,11 @@ Its contents are wiped when a run finishes and are never committed. Nothing ther
 or is read by another step. A failed run's scratchpad is retained for inspection — files an agent wrote
 before failing outlive that run, and are cleared at the next run's start. Treat every file as disposable,
 and overwrite freely.
+
+To try a snippet that imports project code or dependencies, write it under \`.nax/scratchpad/\` with
+\`ScratchpadWrite\` and run it from there: relative imports resolve from \`.nax/scratchpad/\`, so prefer the
+project's package names or path aliases where it has them. A script written outside the repository,
+such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -844,6 +889,10 @@ freely. Every other path under \`.nax/\` stays off limits.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
   purposes and must coexist.
 
+nax updates \`.nax/features/<feature>/prd.json\` itself during a run, so it shows as modified in
+\`git status\` — do not diff or revert it: this story's criteria are already in this prompt, and if you
+need its contents, read it with the \`Read\` tool; shell commands that name it may be refused.
+
 # Scratchpad
 
 You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
@@ -855,6 +904,11 @@ Its contents are wiped when a run finishes and are never committed. Nothing ther
 or is read by another step. A failed run's scratchpad is retained for inspection — files an agent wrote
 before failing outlive that run, and are cleared at the next run's start. Treat every file as disposable,
 and overwrite freely.
+
+To try a snippet that imports project code or dependencies, write it under \`.nax/scratchpad/\` with
+\`ScratchpadWrite\` and run it from there: relative imports resolve from \`.nax/scratchpad/\`, so prefer the
+project's package names or path aliases where it has them. A script written outside the repository,
+such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -975,6 +1029,10 @@ freely. Every other path under \`.nax/\` stays off limits.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
   purposes and must coexist.
 
+nax updates \`.nax/features/<feature>/prd.json\` itself during a run, so it shows as modified in
+\`git status\` — do not diff or revert it: this story's criteria are already in this prompt, and if you
+need its contents, read it with the \`Read\` tool; shell commands that name it may be refused.
+
 # Scratchpad
 
 You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
@@ -986,6 +1044,11 @@ Its contents are wiped when a run finishes and are never committed. Nothing ther
 or is read by another step. A failed run's scratchpad is retained for inspection — files an agent wrote
 before failing outlive that run, and are cleared at the next run's start. Treat every file as disposable,
 and overwrite freely.
+
+To try a snippet that imports project code or dependencies, write it under \`.nax/scratchpad/\` with
+\`ScratchpadWrite\` and run it from there: relative imports resolve from \`.nax/scratchpad/\`, so prefer the
+project's package names or path aliases where it has them. A script written outside the repository,
+such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.
@@ -1152,6 +1215,10 @@ freely. Every other path under \`.nax/\` stays off limits.
 - A source-tree test is NOT a reason to remove a test under \`.nax/\`. The two serve different
   purposes and must coexist.
 
+nax updates \`.nax/features/<feature>/prd.json\` itself during a run, so it shows as modified in
+\`git status\` — do not diff or revert it: this story's criteria are already in this prompt, and if you
+need its contents, read it with the \`Read\` tool; shell commands that name it may be refused.
+
 # Scratchpad
 
 You have a scratchpad at \`.nax/scratchpad/\` — a throwaway directory for working notes: notes to yourself,
@@ -1163,6 +1230,11 @@ Its contents are wiped when a run finishes and are never committed. Nothing ther
 or is read by another step. A failed run's scratchpad is retained for inspection — files an agent wrote
 before failing outlive that run, and are cleared at the next run's start. Treat every file as disposable,
 and overwrite freely.
+
+To try a snippet that imports project code or dependencies, write it under \`.nax/scratchpad/\` with
+\`ScratchpadWrite\` and run it from there: relative imports resolve from \`.nax/scratchpad/\`, so prefer the
+project's package names or path aliases where it has them. A script written outside the repository,
+such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
 
 \`.nax/scratchpad/\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.

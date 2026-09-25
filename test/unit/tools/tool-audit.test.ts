@@ -1,11 +1,20 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { assertDefined, cleanupTempDir, makeTempDir, withWarnSpy } from "@test/helpers";
 import { compileToolPolicy } from "@/tools/policy";
 import type { CodingTool } from "@/tools/registry";
 import { createCodingToolRuntime } from "@/tools/runtime";
-import { createToolAuditSink, TOOL_AUDIT_SCHEMA_VERSION } from "@/tools/tool-audit";
+import {
+  createToolAuditSink,
+  flushOpenToolAuditSinks,
+  type RegisteredSink,
+  registerToolAuditSink,
+  TOOL_AUDIT_SCHEMA_VERSION,
+  type ToolCallRecord,
+  unregisterToolAuditSink,
+} from "@/tools/tool-audit";
 
 describe("createToolAuditSink", () => {
   test("writes one file holding every recorded call", async () => {
@@ -281,4 +290,256 @@ test("omits header keys that were not supplied", async () => {
   expect(parsed.schemaVersion).toBe(TOOL_AUDIT_SCHEMA_VERSION);
   expect("runId" in parsed).toBe(false);
   expect("featureName" in parsed).toBe(false);
+});
+
+// ─── US-004: flushing still-open sinks as partial at close ───────────────────
+
+/** The parts of a written tool-audit file the partial-flush tests read back. */
+type ParsedAuditBody = {
+  partial?: boolean;
+  runId?: string;
+  sessionName?: string;
+  calls: ReadonlyArray<{ tool: string }>;
+};
+
+function aCall(overrides: Partial<ToolCallRecord> = {}): ToolCallRecord {
+  return {
+    tool: "Read",
+    outcome: "ok",
+    input: { path: "a.ts" },
+    resultBytes: 10,
+    at: "2026-09-20T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+async function readBody(dir: string, file: string): Promise<ParsedAuditBody> {
+  const body: ParsedAuditBody = JSON.parse(await readFile(join(dir, file), "utf8"));
+  return body;
+}
+
+/** The one file expected to be present, failing loudly when there is not exactly one. */
+function onlyFile(files: readonly string[]): string {
+  expect(files).toHaveLength(1);
+  const name = files[0];
+  assertDefined(name, "the single written audit file");
+  return name;
+}
+
+function fileEndingWith(files: readonly string[], suffix: string): string {
+  const found = files.find((f) => f.endsWith(suffix));
+  assertDefined(found, `an audit file ending with ${suffix}`);
+  return found;
+}
+
+/** A sink registered by hand, so a test can drive the registry without writing files. */
+function fakeSink(onFlushPartial: () => Promise<void>): RegisteredSink & { partialFlushes: number } {
+  const sink = {
+    partialFlushes: 0,
+    record() {},
+    async flush() {},
+    async flushPartial() {
+      sink.partialFlushes += 1;
+      await onFlushPartial();
+    },
+  };
+  return sink;
+}
+
+describe("flushOpenToolAuditSinks (US-004)", () => {
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs) cleanupTempDir(dir);
+    dirs.length = 0;
+  });
+
+  function makeAuditDir(): string {
+    const dir = makeTempDir("tool-audit-partial-");
+    dirs.push(dir);
+    return dir;
+  }
+
+  // Unique per test: the registry is module-level state, so a shared literal
+  // would let one test flush a sink another test left behind.
+  function newRunId(): string {
+    return `run-${crypto.randomUUID()}`;
+  }
+
+  test("US-004 AC1: an unflushed sink is written as partial and holds its recorded call", async () => {
+    const dir = makeAuditDir();
+    const runId = newRunId();
+    const sink = createToolAuditSink({ dir, sessionName: "US-004-implementer", header: { runId } });
+    sink.record(aCall({ tool: "Exec" }));
+
+    await flushOpenToolAuditSinks(runId);
+
+    const name = onlyFile(await readdir(dir));
+    const body = await readBody(dir, name);
+    expect(body.partial).toBe(true);
+    expect(body.runId).toBe(runId);
+    expect(body.calls).toHaveLength(1);
+    expect(body.calls[0].tool).toBe("Exec");
+  });
+
+  test("US-004 AC2: after the partial flush, the sink's own flush writes no second file", async () => {
+    const dir = makeAuditDir();
+    const runId = newRunId();
+    const sink = createToolAuditSink({ dir, sessionName: "US-004-implementer", header: { runId } });
+    sink.record(aCall({ tool: "Read" }));
+
+    await flushOpenToolAuditSinks(runId);
+    await sink.flush();
+
+    const files = await readdir(dir);
+    const name = onlyFile(files);
+    // The surviving file must be the PARTIAL one: were it the sink's own
+    // non-partial write, the partial flush would not have happened at all and
+    // "no second file" would be vacuously true.
+    const body = await readBody(dir, name);
+    expect(body.partial).toBe(true);
+    expect(body.calls).toHaveLength(1);
+  });
+
+  test("US-004 AC3: a sink whose own flush already ran is not written again", async () => {
+    const dir = makeAuditDir();
+    const runId = newRunId();
+    const flushed = createToolAuditSink({ dir, sessionName: "already-flushed", header: { runId } });
+    flushed.record(aCall({ tool: "Read" }));
+    await flushed.flush();
+
+    const alreadyFlushedName = onlyFile(await readdir(dir));
+    const before = await readFile(join(dir, alreadyFlushedName), "utf8");
+
+    const stillOpen = createToolAuditSink({ dir, sessionName: "still-open", header: { runId } });
+    stillOpen.record(aCall({ tool: "Write" }));
+    await flushOpenToolAuditSinks(runId);
+
+    const files = await readdir(dir);
+    // Two, not three: the open sink gained a file, the flushed one did not.
+    expect(files).toHaveLength(2);
+    expect(await readFile(join(dir, alreadyFlushedName), "utf8")).toBe(before);
+    const openBody = await readBody(dir, fileEndingWith(files, "still-open.json"));
+    expect(openBody.partial).toBe(true);
+    expect(openBody.calls).toHaveLength(1);
+  });
+
+  test("US-004 AC4: a sink with no recorded calls is not written", async () => {
+    const dir = makeAuditDir();
+    const runId = newRunId();
+    createToolAuditSink({ dir, sessionName: "empty", header: { runId } });
+    const withCall = createToolAuditSink({ dir, sessionName: "has-call", header: { runId } });
+    withCall.record(aCall({ tool: "Glob" }));
+
+    await flushOpenToolAuditSinks(runId);
+
+    const files = await readdir(dir);
+    // Exactly one: the empty sink contributed nothing, the other contributed its
+    // call. Asserting the count alone would pass even if nothing was written.
+    expect(files).toHaveLength(1);
+    const body = await readBody(dir, fileEndingWith(files, "has-call.json"));
+    expect(body.partial).toBe(true);
+    expect(body.calls[0].tool).toBe("Glob");
+  });
+
+  test("US-004 AC5: a sink registered under another runId is left alone", async () => {
+    const dirA = makeAuditDir();
+    const dirB = makeAuditDir();
+    const runIdA = newRunId();
+    const runIdB = newRunId();
+    const sinkA = createToolAuditSink({ dir: dirA, sessionName: "a", header: { runId: runIdA } });
+    sinkA.record(aCall({ tool: "Read" }));
+    const sinkB = createToolAuditSink({ dir: dirB, sessionName: "b", header: { runId: runIdB } });
+    sinkB.record(aCall({ tool: "Write" }));
+
+    await flushOpenToolAuditSinks(runIdA);
+
+    const bodyA = await readBody(dirA, onlyFile(await readdir(dirA)));
+    expect(bodyA.partial).toBe(true);
+    expect(await readdir(dirB)).toHaveLength(0);
+
+    await flushOpenToolAuditSinks(runIdB);
+  });
+
+  test("US-004 AC6: a sink's own flush writes a body with no partial field", async () => {
+    const dir = makeAuditDir();
+    const runId = newRunId();
+    const sink = createToolAuditSink({ dir, sessionName: "own-flush", header: { runId } });
+    sink.record(aCall({ tool: "Read" }));
+    await sink.flush();
+
+    const files = await readdir(dir);
+    const ownBody = await readBody(dir, onlyFile(files));
+    expect(ownBody.calls).toHaveLength(1);
+    expect("partial" in ownBody).toBe(false);
+
+    // Control: the module DOES write `partial` for a sink it flushes at close,
+    // so its absence above is a distinction the writer makes rather than a
+    // field nothing ever emits.
+    const open = createToolAuditSink({ dir, sessionName: "open", header: { runId } });
+    open.record(aCall({ tool: "Read" }));
+    await flushOpenToolAuditSinks(runId);
+
+    const after = await readdir(dir);
+    expect(after).toHaveLength(2);
+    const partialBody = await readBody(dir, fileEndingWith(after, "open.json"));
+    expect(partialBody.partial).toBe(true);
+    expect("partial" in (await readBody(dir, fileEndingWith(after, "own-flush.json")))).toBe(false);
+  });
+
+  test("US-004 AC7: one failing sink does not stop the others, and the failure is logged", async () => {
+    const dir = makeAuditDir();
+    const runId = newRunId();
+    // Registered first: a sequential flusher only reaches the healthy sink if it
+    // carries on past this rejection.
+    registerToolAuditSink(
+      runId,
+      fakeSink(async () => {
+        throw new Error("disk full");
+      }),
+    );
+    const healthy = createToolAuditSink({ dir, sessionName: "healthy", header: { runId } });
+    healthy.record(aCall({ tool: "Read" }));
+
+    await withWarnSpy(async (warnSpy) => {
+      await expect(flushOpenToolAuditSinks(runId)).resolves.toBeUndefined();
+      const warned = warnSpy.mock.calls.find((c) => c[1] === "tool-audit partial flush failed");
+      expect(warned).toBeDefined();
+      expect(warned?.[0]).toBe("tools");
+    });
+
+    const body = await readBody(dir, onlyFile(await readdir(dir)));
+    expect(body.partial).toBe(true);
+    expect(body.calls[0].tool).toBe("Read");
+  });
+
+  test("US-004 AC9: a sink with no header runId is never written by the partial flush", async () => {
+    const dirNoRunId = makeAuditDir();
+    const dirWithRunId = makeAuditDir();
+    const runId = newRunId();
+    const anonymous = createToolAuditSink({ dir: dirNoRunId, sessionName: "no-run-id" });
+    anonymous.record(aCall({ tool: "Read" }));
+    const known = createToolAuditSink({ dir: dirWithRunId, sessionName: "known", header: { runId } });
+    known.record(aCall({ tool: "Read" }));
+
+    await flushOpenToolAuditSinks(runId);
+
+    const body = await readBody(dirWithRunId, onlyFile(await readdir(dirWithRunId)));
+    expect(body.partial).toBe(true);
+    expect(await readdir(dirNoRunId)).toHaveLength(0);
+  });
+
+  test("unregisterToolAuditSink keeps a sink out of the partial flush", async () => {
+    const runId = newRunId();
+    const skipped = fakeSink(async () => {});
+    const kept = fakeSink(async () => {});
+    registerToolAuditSink(runId, skipped);
+    registerToolAuditSink(runId, kept);
+    unregisterToolAuditSink(runId, skipped);
+
+    await flushOpenToolAuditSinks(runId);
+
+    expect(kept.partialFlushes).toBe(1);
+    expect(skipped.partialFlushes).toBe(0);
+  });
 });

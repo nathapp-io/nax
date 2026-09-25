@@ -12,6 +12,7 @@ import type {
   AgentUsageUpdateEvent,
 } from "@/runtime/agent-stream-events";
 import { AgentStreamEventBus } from "@/runtime/agent-stream-events";
+import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachAgentStreamLogging } from "@/runtime/middleware/agent-stream-logging";
 import { attachUsageAuditSubscriber } from "@/runtime/middleware/usage-audit";
 import type { IUsageAuditor, UsageAuditEntry } from "@/runtime/usage-auditor";
@@ -290,7 +291,7 @@ describe("attachAgentStreamLogging", () => {
       record: (entry) => recorded.push(entry),
       async flush() {},
     };
-    attachUsageAuditSubscriber(bus, auditor, "r-001");
+    attachUsageAuditSubscriber(bus, new DispatchEventBus(), auditor, "r-001");
 
     // call_started is the only kind that writes a log line, so it establishes
     // the JSONL sink; the awaiting-human beat that follows must add no

@@ -121,6 +121,36 @@ describe("buildNaxArtifactsSection", () => {
     });
   });
 
+  // ─── US-001 — PRD ownership told to the agent ───
+
+  describe("US-001 — PRD ownership paragraph", () => {
+    // AC8: the paragraph must tell the agent nax owns the PRD update, so a
+    // `git status` "modified" reading is expected and must not be reverted.
+    const flattened = () => buildNaxArtifactsSection("implementer").replace(/\s+/g, " ").toLowerCase();
+
+    test("AC8: names the PRD path and says nax updates it itself during a run", () => {
+      const text = flattened();
+      expect(text).toContain(".nax/features/<feature>/prd.json");
+      expect(text).toContain("nax updates");
+      expect(text).toContain("during a run");
+    });
+
+    test("AC8: says it shows as modified so the agent must not diff or revert it", () => {
+      const text = flattened();
+      expect(text).toContain("shows as modified");
+      expect(text).toContain("do not diff or revert");
+    });
+
+    test("AC8: points the agent at the `Read` tool for its contents", () => {
+      const text = flattened();
+      expect(text).toContain("`read` tool");
+    });
+
+    test("AC8: warns that shell commands naming it may be refused", () => {
+      expect(flattened()).toContain("refused");
+    });
+  });
+
   describe("purity", () => {
     test("returns same output for same inputs (test-writer)", () => {
       const a = buildNaxArtifactsSection("test-writer");

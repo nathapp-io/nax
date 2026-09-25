@@ -235,3 +235,90 @@ describe("screenRawBashCommand — US-001: lexical nax config file detection", (
     if (result.kind === "deny") expect(result.reason).toContain(".nax/config.json");
   });
 });
+
+// US-001: kind-specific refusal text. Before this story both the token branch
+// and the redirect branch returned the SAME modification-only sentence for
+// every kind of nax-owned file -- which is why an agent reading a PRD refusal
+// retries a read it will never be allowed to run. The screen now reports which
+// kind it matched, and the refusal text comes from `naxOwnedBashRefusal`.
+// Every allow/deny DECISION is unchanged (AC7); only the reason changes.
+describe("screenRawBashCommand — US-001: kind-specific refusal text", () => {
+  test("AC3: `git diff` naming a feature PRD is denied with the PRD truth", () => {
+    const result = screen("git diff .nax/features/f/prd.json");
+    expect(result.kind).toBe("deny");
+    if (result.kind === "deny") {
+      const reason = result.reason;
+      // Names the token the agent used.
+      expect(reason).toContain(".nax/features/f/prd.json");
+      // The file is the story's acceptance criteria ...
+      expect(reason).toContain("acceptance criteria");
+      // ... nax updates it itself during the run, so it shows as modified ...
+      expect(reason).toContain("updates it itself during the run");
+      expect(reason).toContain("shows as modified");
+      // ... and every Bash command naming it is refused, reads included ...
+      expect(reason).toContain("reads included");
+      // ... but the `Read` tool can view it.
+      expect(reason).toContain("`Read` tool");
+      expect(result.escalatable).toBe(false);
+    }
+  });
+
+  test("AC4: a redirect into a feature PRD says the command redirects into the file", () => {
+    const result = screen("echo x > .nax/features/f/prd.json");
+    expect(result.kind).toBe("deny");
+    if (result.kind === "deny") {
+      expect(result.reason).toContain("redirects into");
+      expect(result.reason).toContain(".nax/features/f/prd.json");
+      expect(result.reason).toContain("updates it itself during the run");
+    }
+  });
+
+  test("AC5: `cat .queue.txt` is denied as the run-control queue, with no `Read` offer", () => {
+    const result = screen("cat .queue.txt");
+    expect(result.kind).toBe("deny");
+    if (result.kind === "deny") {
+      expect(result.reason).toContain("run-control queue");
+      expect(result.reason).toContain("reads included");
+      expect(result.reason).toContain("queue command");
+      // The queue file is NOT readable through any tool -- no `Read` escape hatch.
+      expect(result.reason).not.toContain("Read tool");
+      expect(result.reason).not.toContain("`Read`");
+    }
+  });
+
+  test("AC6: `cat .nax/config.json` is denied as nax configuration, with no `Read` offer", () => {
+    const result = screen("cat .nax/config.json");
+    expect(result.kind).toBe("deny");
+    if (result.kind === "deny") {
+      expect(result.reason).toContain("nax configuration");
+      expect(result.reason).toContain("reads included");
+      expect(result.reason).toContain("not changed from inside a run");
+      expect(result.reason).not.toContain("Read tool");
+      expect(result.reason).not.toContain("`Read`");
+    }
+  });
+});
+
+// AC7: the kind-specific reason must not have moved any allow/deny decision.
+// Every command the existing suite screens is re-checked here so a change to
+// the refusal text that accidentally also changed the verdict fails loudly.
+describe("screenRawBashCommand — US-001 AC7: allow/deny decisions are unchanged", () => {
+  const cases: Array<[string, "allow" | "deny"]> = [
+    ["bun test src/foo.test.ts", "allow"],
+    ["bun test 2>/dev/null | head -20", "allow"],
+    ["echo $(whoami)", "allow"],
+    ["echo hi > ../../outside.txt", "allow"],
+    ["echo {} > .nax/features/f/prd.json", "deny"],
+    ["rm .nax/features/f/prd.json", "deny"],
+    ["echo ABORT > .queue.txt", "deny"],
+    ["echo x > .nax/config.json", "deny"],
+    ["cat .queue.txt", "deny"],
+    ["cat .nax/config.json", "deny"],
+    ["cd child && echo ABORT > ../.queue.txt", "deny"],
+    ["cd child && echo hi > .queue.txt", "allow"],
+  ];
+
+  test.each(cases)("`%s` still screens as %s", (command, kind) => {
+    expect(screen(command).kind).toBe(kind);
+  });
+});

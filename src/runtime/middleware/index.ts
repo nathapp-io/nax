@@ -1,7 +1,7 @@
 export { attachAgentStreamLogging } from "./agent-stream-logging";
 export { attachAuditSubscriber } from "./audit";
 export { cancellationMiddleware } from "./cancellation";
-export { attachCostSubscriber } from "./cost";
+export { attachCostSubscriber, COST_ROW_SCHEMA_VERSION } from "./cost";
 export {
   _idleWatchdogDeps,
   attachAgentIdleWatchdog,
