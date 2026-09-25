@@ -1,6 +1,6 @@
 export { _bashToolDeps, BASH_TIMEOUT_MS, createBashTool, DEFAULT_BASH_SHELL } from "./bash";
 export { deleteTool } from "./delete";
-export { editTool } from "./edit";
+export { _editDeps, editTool } from "./edit";
 export {
   _gitToolDeps,
   buildGitArgv,

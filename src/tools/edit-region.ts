@@ -78,14 +78,23 @@ export function composeEditRegion({ updated, matchIndex, newStringLength }: Edit
   // Rule 4 — a replacement longer than MAX_REGION_LINES_SHOWN is elided in
   // the middle: the context and the first 3 replaced lines, a marker naming
   // the omitted range, then the last 3 replaced lines and the context.
-  if (end - start + 1 > MAX_REGION_LINES_SHOWN) {
-    const head = lines.slice(a - 1, start + 2);
-    const tail = lines.slice(end - 3, b);
-    return [header, ...head, `[... lines ${start + 3}-${end - 3} not shown ...]`, ...tail].join("\n");
-  }
-
   // Rule 5 — otherwise the whole window is shown.
-  return [header, ...lines.slice(a - 1, b)].join("\n");
+  const selected =
+    end - start + 1 > MAX_REGION_LINES_SHOWN
+      ? [
+          ...lines.slice(a - 1, start + 2),
+          `[... lines ${start + 3}-${end - 3} not shown ...]`,
+          ...lines.slice(end - 3, b),
+        ]
+      : lines.slice(a - 1, b);
+
+  // Rule 7 — the content has no trailing newline. A window whose last line
+  // is blank (`b` sits on an empty line, or the file is a lone newline) would
+  // otherwise leave the joining delimiter at the very end, so trailing empty
+  // lines are dropped rather than emitted as a bare "\n".
+  let view = [header, ...selected].join("\n");
+  while (view.endsWith("\n")) view = view.slice(0, -1);
+  return view;
 }
 
 /**

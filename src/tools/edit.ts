@@ -12,6 +12,24 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { composeEditRegion, replaceUniqueLiteral } from "./edit-region";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
+/** The file I/O `editTool` performs, behind one seam so a test can make a read or a write fail. */
+export interface EditDeps {
+  stat(path: string): Promise<{ readonly size: number }>;
+  readFile(path: string, encoding: "utf8"): Promise<string>;
+  writeFile(path: string, data: string, encoding: "utf8"): Promise<void>;
+}
+
+/**
+ * Injectable fs seam, mirroring `_grepDeps` / `_promptLoaderDeps`: the
+ * read/write error arms of `Edit` must be reachable deterministically —
+ * permission bits cannot deny a write to root, and never to a Windows ACL.
+ */
+export const _editDeps: EditDeps = {
+  stat: (path) => stat(path),
+  readFile: (path, encoding) => readFile(path, encoding),
+  writeFile: (path, data, encoding) => writeFile(path, data, encoding),
+};
+
 function countOccurrences(haystack: string, needle: string): number {
   if (needle === "") return 0;
   let count = 0;
@@ -50,7 +68,7 @@ export const editTool: CodingTool = {
     // Checked before reading, not after: Edit must hold the whole file to
     // replace within it, so the only way to bound the memory is to refuse.
     try {
-      const { size } = await stat(target);
+      const { size } = await _editDeps.stat(target);
       if (size > ctx.maxFileBytes) {
         return {
           // The reason leads and the path trails, matching Write's and
@@ -69,7 +87,7 @@ export const editTool: CodingTool = {
 
     let source: string;
     try {
-      source = await readFile(target, "utf8");
+      source = await _editDeps.readFile(target, "utf8");
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };
     }
@@ -95,7 +113,7 @@ export const editTool: CodingTool = {
       // `indexOf` is that match.
       const matchIndex = source.indexOf(oldString);
       const updated = replaceUniqueLiteral(source, oldString, newString, matchIndex);
-      await writeFile(target, updated, "utf8");
+      await _editDeps.writeFile(target, updated, "utf8");
       // The view is composed only after the write resolves: a write error
       // returns the error, never a view. It is a bounded Read-compatible
       // slice of the region that changed, so the model does not have to

@@ -9,11 +9,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
+  _editDeps,
   type CodingToolOutcome,
   compileToolPolicy,
   createCodingToolRuntime,
@@ -168,6 +168,12 @@ describe("composeEditRegion", () => {
     const view = composeEditRegion({ updated, matchIndex: 0, newStringLength: updated.length });
     expect(view).toBe("[lines 1-9 of 9]\nn1\nn2\nn3\n[... lines 4-6 not shown ...]\nn7\nn8\nn9");
   });
+
+  test("US-002: a lone-newline file yields a header with no trailing newline", () => {
+    const view = composeEditRegion({ updated: "\n", matchIndex: 0, newStringLength: 1 });
+    expect(view).toBe("[lines 1-1 of 1]");
+    expect(view.endsWith("\n")).toBe(false);
+  });
 });
 
 describe("US-002: editTool description", () => {
@@ -276,10 +282,23 @@ describe("US-002: Edit returns the changed region", () => {
 
   test("US-002 AC15: an eight-line replacement is shown in full without an elision marker", async () => {
     const { content } = await runEdit(FILE_20, "line 10", numberedLines(8));
-    const body = resultLines(content).slice(2);
     expect(content).not.toContain("[... lines");
-    expect(body).toContain("n1");
-    expect(body).toContain("n8");
+    expect(resultLines(content).slice(2)).toEqual([
+      "line 7",
+      "line 8",
+      "line 9",
+      "n1",
+      "n2",
+      "n3",
+      "n4",
+      "n5",
+      "n6",
+      "n7",
+      "n8",
+      "line 11",
+      "line 12",
+      "line 13",
+    ]);
   });
 
   test("US-002 AC16: emptying a one-line file reports the empty file", async () => {
@@ -290,6 +309,12 @@ describe("US-002: Edit returns the changed region", () => {
   test("US-002 AC17: a successful result does not end with a newline", async () => {
     const { content } = await runEdit(FILE_20, "line 10", "line TEN");
     expect(content.endsWith("\n")).toBe(false);
+  });
+
+  test("US-002 AC17: a window whose last line is blank does not end with a newline", async () => {
+    const { content } = await runEdit("a\nb\n\n", "b", "B");
+    expect(content.endsWith("\n")).toBe(false);
+    expect(content).toBe(`edited ${join(root, "region.ts")}\n[lines 1-3 of 3]\na\nB`);
   });
 
   test("US-002 AC18: an absent old_string returns the exact not-found message", async () => {
@@ -323,32 +348,36 @@ describe("US-002: Edit returns the changed region", () => {
   });
 
   test("US-002 AC21: a read failure after stat returns the error message and no view", async () => {
-    const dir = join(root, "adir");
-    mkdirSync(dir, { recursive: true });
-    const res = await editTool.run({ path: "adir", old_string: "x", new_string: "y" }, ctx(dir));
-    const expected = await readFile(dir, "utf8").then(
-      () => "",
-      (err: Error) => err.message,
-    );
-    expect(res).toEqual({ content: expected, isError: true });
-    expect(res.content).not.toContain("[lines");
-  });
-
-  const asRoot = typeof process.getuid === "function" && process.getuid() === 0;
-  test.skipIf(asRoot)("US-002 AC22: a write failure returns the error message and no view", async () => {
-    const path = join(root, "readonly.ts");
-    writeFileSync(path, "hello\n");
-    chmodSync(path, 0o444);
+    const path = join(root, "region.ts");
+    writeFileSync(path, FILE_20);
+    const original = _editDeps.readFile;
+    _editDeps.readFile = async () => {
+      throw new Error("EACCES: permission denied, open 'region.ts'");
+    };
     try {
-      const res = await editTool.run({ path: "readonly.ts", old_string: "hello", new_string: "bye" }, ctx(path));
-      const expected = await writeFile(path, "x", "utf8").then(
-        () => "",
-        (err: Error) => err.message,
-      );
-      expect(res).toEqual({ content: expected, isError: true });
+      const res = await editTool.run({ path: "region.ts", old_string: "line 10", new_string: "line TEN" }, ctx(path));
+      expect(res).toEqual({ content: "EACCES: permission denied, open 'region.ts'", isError: true });
       expect(res.content).not.toContain("[lines");
     } finally {
-      chmodSync(path, 0o644);
+      _editDeps.readFile = original;
+    }
+  });
+
+  test("US-002 AC22: a write failure returns the error message and no view", async () => {
+    const path = join(root, "region.ts");
+    writeFileSync(path, FILE_20);
+    const original = _editDeps.writeFile;
+    _editDeps.writeFile = async () => {
+      throw new Error("ENOSPC: no space left on device, write");
+    };
+    try {
+      const res = await editTool.run({ path: "region.ts", old_string: "line 10", new_string: "line TEN" }, ctx(path));
+      expect(res).toEqual({ content: "ENOSPC: no space left on device, write", isError: true });
+      expect(res.content).not.toContain("[lines");
+      // The edit never landed, and no view was composed for a failed write.
+      expect(readFileSync(path, "utf8")).toBe(FILE_20);
+    } finally {
+      _editDeps.writeFile = original;
     }
   });
 });
