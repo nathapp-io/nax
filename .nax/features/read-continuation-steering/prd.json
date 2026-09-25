@@ -1,0 +1,124 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "read-continuation-steering",
+  "branchName": "feat/read-continuation-steering",
+  "createdAt": "2026-09-24T00:00:00Z",
+  "updatedAt": "2026-09-25T07:18:37.751Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Read guideline and ranged limit-stop footer",
+      "description": "**Goal** — Add a Read usage guideline and a next-offset footer when a limited ranged read stops before the readable end of a file.\n\n**Motivation** — A ranged read returns `[lines a-b of N]` and stops.\n\n**Approach** — Deterministic string composition inside the `Read` tool. No LLM, no config, no new tool arguments. The footer helpers live in a new file-local module `src/tools/read-continuation.ts` that `read.ts` imports by relative path; it is not exported from the `src/tools` barrel.\n\n1. **Limit-stop footer (US-001).** Ranged path only: when `limit` was given and `endLine < totalLines`, the candidate result is `H`, `L`, then the limit-stop footer. Otherwise the candidate is today's result.\n\nFor both, `X = b + 1`. For the limit-stop footer, `R = T - b` (the count of lines after `b` among those read; `R+` when `T` is a floor). Footer text: `[R more lines in file. Use offset=X to continue.]`. The footer is the result's last line, joined to the body by a single `\"\\n\"`, with nothing after it. `T` and `R` carry a trailing `+` exactly when the line total is a floor (the read stopped at its I/O bound: `readCeiling` on the whole-file path, `maxFileBytes` on the ranged path), matching the existing header rule. `H` is the existing header; `L` is the selected file lines; `b` is the last selected line. Append these three sentences to the baseline readTool.description in order: `Use Read to examine files instead of cat, sed, head, tail or awk in Bash.` `A read that stops before the end of the file ends with a line naming the offset to continue from.` `For a large file, read the part you need with offset/limit; when you need the whole file, continue with offset until complete.` The guideline describes the finished feature: whole-file continuation on a model-cap cut arrives in US-002.\n\n**Scope** — In: read.ts ranged-path composition, file-local helper and description; retain unchanged header, bound, EOF and error behavior. Out: US-002 cap cuts on both paths, cap sentence and runtime integration; the Bash tool descriptions are unchanged, including `PREFER_STRUCTURED_TOOLS_SENTENCE`; pipelines such as `bun test ... | tail` must not be discouraged.\n\n**Interface** — Existing `readTool.run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>` and existing offset/limit input schema stay unchanged; the new helper is a relative import, not a tools-barrel export.",
+      "acceptanceCriteria": [
+        "When reading readTool.description, then it includes the sentence `Use Read to examine files instead of cat, sed, head, tail or awk in Bash.`",
+        "When reading readTool.description, then it includes the sentence `A read that stops before the end of the file ends with a line naming the offset to continue from.`",
+        "When reading readTool.description, then it includes the sentence `For a large file, read the part you need with offset/limit; when you need the whole file, continue with offset until complete.`",
+        "When reading readTool.description, then it still begins with `Read a UTF-8 text file from the repository.`",
+        "When readTool.run receives offset: 10, limit: 5 on a 50-line file, then the last content line is exactly `[36 more lines in file. Use offset=15 to continue.]`.",
+        "When readTool.run receives limit: 3 without offset on a 50-line file, then the last content line is exactly `[47 more lines in file. Use offset=4 to continue.]`.",
+        "When readTool.run receives offset: 10, limit: 5 on a 50-line file, then its first content line is `[lines 10-14 of 50]` and its lines between header and footer are exactly file lines 10 to 14.",
+        "When readTool.run receives offset: 48, limit: 3 on a 50-line file reaching its last line, then its content has no line beginning `[` other than the `[lines 48-50 of 50]` header.",
+        "When readTool.run receives offset: 48 without limit on a 50-line file, then its content has no line beginning `[` other than the `[lines 48-50 of 50]` header.",
+        "When readTool.run receives offset: 2, limit: 3 on a 400-line file of 100-byte lines with ctx.maxFileBytes 1000, then its last content line matches `[R+ more lines in file. Use offset=5 to continue.]`, where R is the header's floor total minus 4.",
+        "When readTool.run receives no offset and no limit on a 50-line file, then every line after the `[50 lines]` header is a line of the file, with no footer line.",
+        "When readTool.run receives offset: 999 on a 50-line file, then it returns today's non-error past-the-end message, with no footer line.",
+        "When readTool.run receives offset: 2, limit: 20 on a 400-line file of 100-byte lines with ctx.maxFileBytes 1000 (only 11 lines, the last one partial, are read), then its only line beginning `[` is the header `[lines 2-11 of 11+]` and no footer is added, since an offset past the last line read within maxFileBytes cannot be read.",
+        "When readTool.run receives an unreadable file, then it returns isError with the error message and no footer, unchanged."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "read"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A deterministic new file-local helper and one existing tool path change can be tested directly using established Read fixture patterns."
+      },
+      "contextFiles": [
+        "src/tools/read.ts",
+        "src/tools/truncate.ts",
+        "test/unit/tools/read-glob.test.ts",
+        "test/unit/tools/read-line-total.test.ts"
+      ],
+      "expectedFiles": [
+        "src/tools/read-continuation.ts",
+        "test/unit/tools/read-continuation.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Read cuts large results at whole-line model caps",
+      "description": "**Goal** — Make Read self-cap both output paths with a next-offset footer and avoid redundant spill files for self-capped results.\n\n**Motivation** — For `Read` that spill is a second copy of a file the model can already page with `offset`, and the marker points it at the copy.\n\n**Approach** — Deterministic string composition inside the `Read` tool. No LLM, no config, no new tool arguments. The footer helpers live in a new file-local module `src/tools/read-continuation.ts` that `read.ts` imports by relative path; it is not exported from the `src/tools` barrel. The after_tool policy (`applyModelTruncationPolicy`) is unchanged and stays the unconditional backstop: a `Read` result that already fits every cap passes through it untouched (its within-cap contract), so no spill file is written for it.\n\n`H` is the header line the tool already produces, unchanged by a cut: on the ranged path it names the requested range even when the cap footer reports a shorter delivered range. `L` is the list of selected lines (whole-file: every line of the prefix; ranged: lines `offset..endLine`). `a` is the first selected line number (1 on the whole-file path). The budgets are `MODEL_MAX_LINES` lines and `ctx.maxBytes` bytes, both counted over the whole result, header and footer included.\n\n1. **Limit-stop footer (US-001).** Ranged path only: when `limit` was given and `endLine < totalLines`, the candidate result is `H`, `L`, then the limit-stop footer. Otherwise the candidate is today's result.\n2. **Fit check (US-002).** When the candidate is within both budgets, return it.\n3. **Cap cut (US-002).** Otherwise keep the largest `k >= 1` such that `H`, the first `k` lines of `L`, and the cap footer for `b = a + k - 1` fit both budgets (line count `1 + k + 1 <= MODEL_MAX_LINES`, UTF-8 bytes `<= ctx.maxBytes`). Return `H`, those `k` lines and the cap footer. The cap footer replaces the limit-stop footer; a result never carries both.\n4. **No line fits (US-002).** When no `k >= 1` fits, return the result unshaped (today's result, plus the limit-stop footer from rule 1 if it applied). The after_tool backstop then cuts it as it does today.\n\nCap footer text: `[Showing lines a-b of T. Use offset=X to continue.]`; for both footers `X = b + 1`. `T` and `R` carry a trailing `+` exactly when the line total is a floor (the read stopped at its I/O bound: `readCeiling` on the whole-file path, `maxFileBytes` on the ranged path), matching the existing header rule. Both footers are the result's last line, joined to the body by a single `\"\\n\"`, with nothing after them. A cut result never ends with a trailing newline. A candidate returned without any footer keeps today's body bytes exactly; an uncut limit-stop result preserves the original header and selected lines and appends the limit-stop footer. Append `Output is capped at ${MODEL_MAX_LINES} lines or ${MODEL_MAX_BYTES} bytes.` to readTool.description (interpolated constants). In read-glob.test.ts rename and rewrite the comment for the obsolete ranged-read non-truncation test: Read now cuts at whole-line model caps, after_tool stays the backstop, and the old `not.toContain(\"truncated at\")` assertion remains.\n\n**Scope** — In: extend src/tools/read-continuation.ts, integrate both read.ts paths, extend description, correct the obsolete read-glob test and exercise the real built-in runtime/spill seam. Out: editing the spill or runtime policy itself; `ScratchpadRead` is unchanged: it keeps today's output and relies on the after_tool policy for the model caps. Lines longer than `MODEL_MAX_LINE_CHARS` are not shortened by `Read`; the after_tool policy still shortens them and appends its generic marker, as today. When a spin-breaker nudge rides a `Read` result that is close to the byte cap, the after_tool policy may still cut it further with its generic marker; `Read` reserves no bytes for a nudge.\n\n**Interface** — Existing `readTool.run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>`, `applyModelTruncationPolicy(body, { toolName, callId, root?, maxBytes? })`, `createCodingToolRuntime({ policy, maxBytes, ... })` and `CodingToolRuntime.callTool(name, input)` are unchanged; reuse `MODEL_MAX_LINES`, `MODEL_MAX_BYTES`, and `splitModelLines(body): string[]` from src/tools/truncate.ts.",
+      "acceptanceCriteria": [
+        "When reading readTool.description, then it ends with `Output is capped at 1000 lines or 40000 bytes.`, built from MODEL_MAX_LINES and MODEL_MAX_BYTES.",
+        "When readTool.run receives no offset/limit on a 1500-line file of short lines well under ctx.maxBytes, then its content has exactly MODEL_MAX_LINES lines: the `[1500 lines]` header, file lines 1 to 998, and the last line `[Showing lines 1-998 of 1500. Use offset=999 to continue.]`.",
+        "When readTool.run receives no offset/limit and ctx.maxBytes 40000 on a 200-line file with every line 399 `x` characters, then its last content line is exactly `[Showing lines 1-99 of 200. Use offset=100 to continue.]`.",
+        "Given the result of the 200-line, 399-character-per-line read at ctx.maxBytes 40000, when inspecting lines between `[200 lines]` and the footer, then they are exactly file lines 1 to 99, each complete.",
+        "Given the result of the 200-line, 399-character-per-line read at ctx.maxBytes 40000, when measuring its UTF-8 byte length, then it is at most 40000 bytes and the same composition with 100 file lines would exceed 40000 bytes (the cut keeps the largest number of whole lines that fits).",
+        "When readTool.run receives offset: 100, limit: 1200 on a 1500-line file of short lines, then its first line is the unchanged requested-range header `[lines 100-1299 of 1500]` and its last line is `[Showing lines 100-1097 of 1500. Use offset=1098 to continue.]`, with no limit-stop footer line.",
+        "When inspecting the cut result of the 1500-line whole-file read, then it does not end with a newline character.",
+        "When readTool.run receives no offset/limit, ctx.readCeiling 500 and ctx.maxBytes 300 on a 30-line file with every line 99 `x` characters, then its first line is `[6+ lines]` and its last line is exactly `[Showing lines 1-2 of 6+. Use offset=3 to continue.]`.",
+        "When readTool.run receives no offset/limit and ctx.maxBytes 32 on a one-line file of 256 `r` characters, then it returns exactly `[1 lines]` followed by a newline and the 256 characters, with no cap footer because no line fits with the header and cap footer.",
+        "When readTool.run receives no offset/limit on a 50-line file fitting both caps, then it returns the `[50 lines]` header followed by the file's exact bytes, trailing newline included.",
+        "Given registerBuiltinCodingTools() and createCodingToolRuntime with a policy granting Read under a temp root and maxBytes 40000, when callTool(\"Read\", { path }) reads a 1500-line file, then its returned content's last line is `[Showing lines 1-998 of 1500. Use offset=999 to continue.]` and it has no `... [truncated:` line.",
+        "Given the built-in runtime Read call on the 1500-line file, when inspecting `.nax/scratchpad/` under the temp root after the call, then no `spill/Read-*.txt` file exists.",
+        "When content returned by the built-in runtime Read call on the 1500-line file is passed to applyModelTruncationPolicy with toolName: `Read`, callId: `c1`, no root and maxBytes: MODEL_MAX_BYTES, then it returns that content byte-identically."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "read",
+        "runtime"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "US-001 already supplies the helper; extending deterministic composition in two source files and using existing runtime/spill seams requires no new policy or abstraction."
+      },
+      "contextFiles": [
+        "src/tools/read-continuation.ts",
+        "src/tools/read.ts",
+        "src/tools/spill.ts",
+        "src/tools/runtime.ts",
+        "test/unit/tools/tool-run-context-read-ceiling.test.ts",
+        "test/unit/tools/us-003-acs.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/tools/read-cap-cut.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/tools/read-glob.test.ts",
+          "reason": "the test \"a ranged read is not truncated by the tool (the after_tool policy owns the marker)\" and its comment state that `Read` never cuts its own result. Replacing invariant: `Read` still never emits the old `[truncated at N bytes]` marker (the `not.toContain(\"truncated at\")` assertion stays); a result over the model caps is now cut by `Read` at a whole-line boundary with the cap footer, and the after_tool policy remains the backstop. Rename the test and rewrite its comment to say so."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing Bun/TypeScript coding tools, not greenfield. src/tools/read.ts:18-19 imports CodingTool/ToolRunContext and READ_CEILING; :39-48 holds the existing description and offset/limit schema; :52-137 implements argument validation and readPrefix on ctx.resolvedPaths (paths are resolved by policy, not by Read). The whole-file path (:67-84) reads to ctx.readCeiling and returns the [N lines] or [N+ lines] header with the exact prefix, including a terminal newline. The ranged path (:103-131) reads to ctx.maxFileBytes, computes a floor total from overshoot, selects lines offset..endLine, and returns [lines a-b of T] followed by the selection; past-readable-end offsets return a non-error message, while unreadable files return isError. Preserve those bounds, errors, header values and uncut bytes apart from the new limit-stop footer. src/tools/truncate.ts:26-29 defines READ_CEILING, MODEL_MAX_BYTES=40000, MODEL_MAX_LINES=1000 and MODEL_MAX_LINE_CHARS=2000; :62-67 splitModelLines treats a terminal newline as a line terminator rather than another line. src/tools/registry.ts:61-81 defines the maxBytes, maxFileBytes and optional readCeiling context fields; no API changes. src/tools/spill.ts:258-277 applies model truncation asynchronously, returns within-cap content unchanged without a spill, and otherwise may spill the original body and add its generic marker. src/tools/runtime.ts:104-125 registers built-in Read; :130-195 sets model-facing and I/O caps; :293-302 applies the shared after_tool policy to results using policy.root; :318 onward performs grant checks before execution. src/tools/policy.ts:78-98 enforces containment; integration can use compileToolPolicy([{tool:'Read',patterns:['*']}],root). Existing tests: test/unit/tools/read-glob.test.ts:33-171 covers ranges, errors and floor totals, and :143-152 contains the obsolete assertion comment that Read never cuts its own result; rename and correct its comment while retaining not.toContain('truncated at'). test/unit/tools/read-line-total.test.ts:23-157 provides a four-argument ctx helper and old header/error regression checks, although some comments predate this feature. test/unit/tools/tool-run-context-read-ceiling.test.ts:20-139 demonstrates granted runtime callTool and distinct context bounds (its stub Read cannot establish real-Read integration). test/unit/tools/us-003-acs.test.ts:460-479 shows the absent-or-empty spill-directory assertion. Migration is additive: no schema, policy, filesystem or storage migration. US-001 creates a file-local read-continuation.ts and modifies the ranged path and description; US-002 extends that helper and applies it to both paths, also revising the obsolete read-glob test. Risks: header plus footer must count inside both caps, UTF-8 bytes rather than string length determine byte fit, a floor total retains '+', the cap footer must replace the limit-stop footer, a huge first line must preserve the after_tool fallback, and the after_tool policy can still truncate overlong individual lines or results with later nudges. Tests must demonstrate no redundant Read spill for a self-capped result.",
+  "outOfScope": [
+    "The Bash tool descriptions are unchanged, including `PREFER_STRUCTURED_TOOLS_SENTENCE`; pipelines such as `bun test ... | tail` must not be discouraged.",
+    "Shell searches (`grep`, `rg`, `find`, `ls`) are not steered toward the `Grep` or `Glob` tools, and the `Grep` tool gains no new parameters (context lines, glob filter, result limit).",
+    "`ScratchpadRead` is unchanged: it keeps today's output and relies on the after_tool policy for the model caps.",
+    "Lines longer than `MODEL_MAX_LINE_CHARS` are not shortened by `Read`; the after_tool policy still shortens them and appends its generic marker, as today.",
+    "When a spin-breaker nudge rides a `Read` result that is close to the byte cap, the after_tool policy may still cut it further with its generic marker; `Read` reserves no bytes for a nudge.",
+    "No line numbers in `Read` output, no smaller default for whole-file reads, no changed-region output from `Edit`, and no `before_tool` nudge on large reads.",
+    "The ranged path's I/O bound (`maxFileBytes`) and the whole-file path's I/O bound (`readCeiling`) are unchanged, as are the `[N lines]` and `[lines a-b of T]` headers.",
+    "Measuring the effect (the A/B on the `ab-2227` seed) is not part of this feature."
+  ],
+  "routingProfile": "native"
+}

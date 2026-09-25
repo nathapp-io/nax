@@ -132,7 +132,7 @@ exactly.
 |---|---|
 | No selected line fits the budgets with header and cap footer | Rule 4: returned unshaped; the after_tool backstop cuts it (today's behaviour) |
 | `offset` past the last line | Unchanged: today's non-error message, no footer |
-| Ranged read stops at the last line that could be read within `maxFileBytes` | No footer: an `offset` beyond it cannot be read (unchanged message on the next call) |
+| Ranged read's `limit` reaches or passes the last line that could be read within `maxFileBytes` | No footer: `endLine == totalLines`, so rule 1 does not apply, and an `offset` beyond it cannot be read (unchanged message on the next call) |
 | Unreadable file | Unchanged: `isError` with the error message, no footer |
 
 ## Out of Scope
@@ -167,6 +167,7 @@ exactly.
 
 **US-002**
 - `src/tools/read-continuation.ts` — created by US-001, extended here
+- `src/tools/read.ts` — both paths of `readTool.run` are routed through the composition here
 - `src/tools/spill.ts` — `applyModelTruncationPolicy`, the backstop whose within-cap path must pass Read's result untouched
 - `src/tools/runtime.ts` — `createCodingToolRuntime`, `callTool`, `registerBuiltinCodingTools`
 - `test/unit/tools/tool-run-context-read-ceiling.test.ts` — driving `callTool("Read", ...)` through a runtime
@@ -211,6 +212,8 @@ exactly.
 10. [unit] `readTool.run` with `offset: 2, limit: 3` on a file larger than `ctx.maxFileBytes` (a 400-line file of 100-byte lines with `maxFileBytes` 1,000) returns content whose last line matches `[R+ more lines in file. Use offset=5 to continue.]`, where `R` is the header's floor total minus 4.
 11. [unit] `readTool.run` with no `offset` and no `limit` on a 50-line file returns content with no footer line: every line after the `[50 lines]` header is a line of the file.
 12. [unit] `readTool.run` with `offset: 999` on a 50-line file returns today's non-error past-the-end message, with no footer line.
+13. [unit] `readTool.run` with `offset: 2, limit: 20` on the AC 10 fixture (a 400-line file of 100-byte lines with `maxFileBytes` 1,000, so only 11 lines, the last one partial, are read) returns content whose only line beginning `[` is the header `[lines 2-11 of 11+]`: the range reaches the last line read within `maxFileBytes`, and an `offset` past it cannot be read, so no footer is added.
+14. [unit] `readTool.run` on a path that cannot be read returns `isError` with the read error's message and no footer line, unchanged from today.
 
 ### US-002: Read cuts its own result at the model caps
 
