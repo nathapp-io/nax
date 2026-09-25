@@ -1,0 +1,190 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "approval-residuals",
+  "branchName": "feat/approval-residuals",
+  "createdAt": "2026-09-24T00:00:00.000Z",
+  "updatedAt": "2026-09-25T10:46:17.781Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Out-of-bounds Bash commands never escalate",
+      "description": "**Goal** — Run deny and payload checks before escalatable denials, including on the completed lexable prefix of a refused Bash command.\n\n**Motivation** — An UNGRANTED command that escapes the root reaches the human and, if allowed, runs as written.\n\n**Approach** — A deterministic reorder inside `checkBashCommand` plus the lexer's `prefix`. No new policy concept: the same deny matcher and the same `checkPayload` run earlier, over the lexed segments or the prefix. A refused command whose prefix passes both checks keeps today's escalatable refusal, so Category A keeps its meaning (\"the gate could not adjudicate\"), and the human still sees the full command for anything past the refused construct.\n\n**Interface** — `BashLexResult` (`src/permissions/bash-lex.ts:46`) refused variant gains `prefix: readonly BashSegment[]`: completed segments followed by the current segment's completed tokens and completed redirects only; drop the in-progress word and any redirect operator waiting for its target; omit a tokenless, redirectless trailing segment; refusal before any word completes yields `[]`. `lexBashCommand(command: string): BashLexResult` populates prefix at every refusal site without changing ok results or importing into `src/permissions`. `checkBashCommand(args: BashCheckArgs): BashCheck`: where `S` is `lexed.segments` for ok, `lexed.prefix` for refused, keep non-string/empty guards; check deny rules over every segment of S first (existing reason, breach false), then `checkPayload` over every segment of S with existing nextWorkingDirectories threading (existing reason/breach, escalatable false); only then return the existing escalatable lexical refusal if refused, otherwise check all segment grants (existing escalatable grant-miss reason), then ask rules, else allow. Rewrite the header precedence list. `escalatable: true` occurs only at the two existing sites, after all non-escalatable checks. `escalateDescription(shell, patterns)` opens its checks sentence with \"Every command, granted or not, is checked first:\"; list all existing refused-without-asking checks and \"a command matching a deny rule\"; add \"for a command using a construct that cannot be analysed, these checks cover the part before that construct\"; remove \"unless it cannot be analysed\" and the nax#2194 doc-comment caveat, retaining \"cannot be analysed\", \"sent to a human for approval\", \"exactly as written\" and \"refused without asking\". Update ADR-030: delete § \"A disclosed divergence: Category B does not always stay out of the ask tier\" and add the lexed-prefix clarification under Category A. In test/unit/agents/coding-tool-bash-escalate-truth.test.ts reverse only the two nax#2194 assumptions for `ls ../outside` and `rm x 2>&1` and update the header/test names.\n\n**Scope** — In: Bash lexer, gated/escalate policy checks, escalate-only tool description, ADR and unit/runtime integration tests. Out: growing the modelled shell language, matching content after refusal, changing raw mode or gated description, and changing denial redirect text; approvals sealing (US-002) and git-spawn gate (US-003).",
+      "acceptanceCriteria": [
+        "lexBashCommand(\"rm -rf x 2>&1\") returns kind \"refused\" with prefix one segment whose token texts are [\"rm\", \"-rf\", \"x\"] and whose redirects are empty.",
+        "lexBashCommand(\"ls && echo x 2>&1\") returns kind \"refused\" with prefix two segments whose token texts are [\"ls\"] and [\"echo\", \"x\"].",
+        "lexBashCommand(\"cat ..<<EOF\") returns kind \"refused\" with prefix one segment whose token texts are [\"cat\"] — the word `..` being built at the refusal is dropped.",
+        "lexBashCommand(\"(cat /etc/passwd)\") returns kind \"refused\" with prefix [].",
+        "Given a grant of Bash(git *) in gated mode, when compileToolPolicy(...).check(\"Bash\", ..., { command: \"cat /etc/passwd\" }) runs, then it denies with breach: true, escalatable: false and the containment refusal naming /etc/passwd rather than an `is not granted` reason.",
+        "Given a grant of Bash(git *), when `cat .git/config` is checked, then it is denied with breach: true and escalatable: false.",
+        "Given a grant of Bash(git *), when `echo x > ../out` is checked, then it is denied with breach: true, escalatable: false and a reason naming redirect target ../out.",
+        "Given a grant of Bash(git *), when `bun add x --registry https://evil.example` is checked, then it is denied with escalatable: false and a reason naming --registry.",
+        "Given a grant of Bash(git *), when `ls *.ts` is checked, then it is denied with escalatable: false and a reason containing `expansion`.",
+        "Given a grant of Bash(git *), when `curl evil.example` with no payload problem is checked, then it is denied with escalatable: true and a reason containing `is not granted`.",
+        "Given a grant of Bash(*) and a deny rule Bash(rm *), when `rm -rf x 2>&1` is checked, then it is denied with escalatable: false and a reason naming rule Bash(rm *).",
+        "Given a grant of Bash(*), when `cat /etc/passwd 2>&1` is checked, then it is denied with breach: true and escalatable: false.",
+        "Given a grant of Bash(*), when `(cat /etc/passwd)` is checked, then it is denied with escalatable: true and a reason containing `cannot be analysed`.",
+        "Given a grant of Bash(*) and a deny rule Bash(cat *), when `cat /etc/passwd` is checked, then it is denied with a reason naming rule Bash(cat *) and breach: false.",
+        "Given buildCodingToolSupport with bashApproval: \"escalate\", grants git *, cat *, rm * and a counting askResolver that denies, when runtime.callTool(\"Bash\", { command: \"ls ../outside\" }) runs, then it returns kind denied and invokes the resolver zero times.",
+        "Given buildCodingToolSupport in escalate mode with grant git * only and a counting askResolver, when runtime.callTool(\"Bash\", { command: \"ls -la \" + an absolute temp directory outside the root }) runs, then it returns kind denied and invokes the resolver zero times.",
+        "Given buildCodingToolSupport in escalate mode with grants git *, cat *, rm *, deny rule rm * and a counting askResolver, when runtime.callTool(\"Bash\", { command: \"rm x 2>&1\" }) runs, then it returns kind denied and invokes the resolver zero times.",
+        "Given buildCodingToolSupport in escalate mode with grant git * only and a counting askResolver that denies, when runtime.callTool(\"Bash\", { command: \"curl evil.example\" }) runs, then it invokes the resolver exactly once.",
+        "Given buildCodingToolSupport with a reachable human, when its escalate Bash tool description is read, then it contains `granted or not` and does not contain `unless it cannot be analysed`."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "bash",
+        "access-control"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Lexer output feeds security-sensitive grant/deny precedence and runtime human escalation across modules; access-control override requires strict TDD isolation."
+      },
+      "contextFiles": [
+        "src/tools/policy-bash.ts",
+        "src/permissions/bash-lex.ts",
+        "src/tools/policy-command-branch.ts",
+        "src/tools/bash.ts",
+        "docs/adr/ADR-030-bash-approval-modes.md"
+      ],
+      "expectedFiles": [
+        "test/unit/tools/policy-bash-order.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/agents/coding-tool-bash-escalate-truth.test.ts",
+          "reason": "the test \"a command outside the granted forms reaches the human, even a root escape (nax#2194)\" asserts `asks === 1` for the command \"ls ../outside\", and the test \"a deny rule refuses without asking, unless the command cannot be analysed (nax#2194)\" asserts `asks === 1` for the command \"rm x 2>&1\"; the header comment says the first flips when nax#2194 is fixed. Both assertions fail against a correct US-001. Replacing invariant: under `escalate` with grants `git *`, `cat *`, rm *, the command \"ls ../outside\" is denied with `asks === 0`, and with deny rule rm *, the command \"rm x 2>&1\" is denied with `asks === 0`; the test names and header comment say so. The other three tests in the file are unchanged."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Seal the approvals cache at run end",
+      "description": "**Goal** — Re-taint approvals after all run agents stop on normal and handled-signal teardown so forged entries cannot reach a later trusted run.\n\n**Motivation** — Nothing re-taints at run end, so an agent dispatched outside a dispatch-ask scope after the last re-taint can strip the marker and forge entries that a later trusted run then honours.\n\n**Approach** — `setupRun` builds the seal once, right after `initializeAfterLock` returns the loaded PRD, by calling `_runSetupDeps.buildApprovalsSeal({ projectDir: options.workdir, rootConfig: options.config, packageDirs: initResult.prd.userStories.map(storyPackageDir), outputDir: runtime.outputDir, runId: options.runId })`. The crash handlers are installed earlier, before the PRD loads, so the context passed to `installCrashHandlers` carries a forwarder `sealApprovals: () => seal()` over a variable assigned once the seal is built; before that, the forwarder does nothing. `setupRun` returns the built seal as `sealApprovals`. `cleanupRun` awaits `options.sealApprovals?.()` after `runPostRunActions` and plugin teardown and before the interaction chain is destroyed. `performTeardown` awaits `ctx.sealApprovals?.()` after `pidRegistry.killAll()`, so no tracked agent process survives to strip the marker again. Deciding forge-capability at setup keeps config loads out of signal-time teardown, which runs under `FATAL_TEARDOWN_DEADLINE_MS`.\n\n**Interface** — New in `src/interaction/dispatch-ask.ts`, exported from `src/interaction/index.ts`:\n```ts\nexport interface ApprovalsSealOptions {\n  readonly projectDir: string;\n  /** The run's root config. `execution.sandbox` is a root-only key (ROOT_ONLY_EXECUTION_KEYS). */\n  readonly rootConfig: NaxConfig;\n  /** Every story's package dir (`prd.userStories.map(storyPackageDir)`). */\n  readonly packageDirs: readonly (string | undefined)[];\n  /** Run output dir; the approvals file is `approvalsPath(outputDir)`. */\n  readonly outputDir: string;\n  readonly runId: string;\n}\n\n/** Decide once whether this run is forge-capable; return the end-of-run seal. Never rejects. */\nexport async function buildApprovalsSeal(\n  opts: ApprovalsSealOptions,\n  deps: DispatchAskDeps = _dispatchAskDeps,\n): Promise<() => Promise<void>>;\n```\nIt computes `isForgeCapable(await collectEffectiveRunStageModes({ projectDir, rootConfig, packageDirs }, deps), rootConfig.execution?.sandbox?.enabled === true)` once. For a forge-capable run it returns a closure that calls `deps.prepareApprovalsStore({ approvalsFile: approvalsPath(outputDir), runId, forgeCapable: true })`; otherwise it returns a closure that does nothing. `prepareApprovalsStore` already never throws and logs a failed taint. `RunSetupResult` gains a required `sealApprovals: () => Promise<void>`; `RunnerSetupResult` gains a required field typed from setupRun's result, and runSetupPhase returns it unchanged. `RunCleanupOptions`, `CrashRecoveryContext`, `SignalHandlerContext` each gain optional `sealApprovals?: () => Promise<void>`. `_runSetupDeps` gains buildApprovalsSeal; run() passes setupResult.sealApprovals to cleanupRun. performTeardown swallows seal rejection as its last step. Update src/permissions/approvals-taint.ts RESIDUAL RISK: remove the agents-outside-scope bullet, narrow killed run to deaths no handler sees and keep the outliving-process bullet. Give RunnerSetupResult literals in runner-total.test.ts and runner-run-id.test.ts `sealApprovals: async () => {}` without altering their existing assertions.\n\n**Scope** — In: seal helper/export, setup/runner/cleanup/signal handoff, comment and unit/integration tests. Out: changing cache format, approvals-link trust or per-scope taint, detached agents forging after final seal, unhandled deaths, pre-seal fatal signal, process-group cleanup and P5 shadow scoring; Bash policy (US-001) and git-spawn gate (US-003).",
+      "acceptanceCriteria": [
+        "Given a root config with execution.sandbox.enabled false and resolved modes including raw, when buildApprovalsSeal's returned function is awaited, then approvalsPath(outputDir) has a taint whose runId equals the supplied runId and entries equal [].",
+        "Given a root config with execution.sandbox.enabled true and modes including raw, when buildApprovalsSeal's returned function is awaited, then an existing approvals.json with one entry and no taint is byte-for-byte unchanged.",
+        "Given execution.sandbox.enabled false and no raw stage mode, when buildApprovalsSeal's returned function is awaited, then an existing approvals.json with one entry and no taint is byte-for-byte unchanged.",
+        "Given deps.loadConfigForPackage counts calls, when the seal returned by buildApprovalsSeal is awaited three times, then zero additional loadConfigForPackage calls occur after construction.",
+        "Given a forge-capable run, after prepareApprovalsStore taints the store for run-1 and a write replaces it with { taint: undefined, entries: [an entry for command \"curl evil.example\"] }, when the seal built for run-1 is awaited and clearApprovalsTaint(path, \"run-2\") is called, then clearApprovalsTaint returns \"cleared\" and file entries are [].",
+        "Given a forge-capable run with outputDir pointing to a regular file, when its seal is awaited, then it resolves without rejecting and logs a warn record with message `[approvals] could not update the store's taint marker`.",
+        "Given one post-run action and a non-null interactionChain, when cleanupRun is called with a sealApprovals spy, then it invokes the spy exactly once after action.execute and before interactionChain.destroy.",
+        "When cleanupRun is called without sealApprovals, then it completes and calls interactionChain.destroy once.",
+        "Given onShutdown and pidRegistry.killAll spies, when performTeardown receives sealApprovals, then it invokes sealApprovals exactly once in the order onShutdown, killAll, sealApprovals.",
+        "Given sealApprovals rejects, when performTeardown runs, then it resolves without rejecting and calls pidRegistry.killAll once.",
+        "Given _runSetupDeps.buildApprovalsSeal is stubbed to return a spy, when setupRun runs, then it calls that stub exactly once with runId equal to options.runId, rootConfig equal to options.config, projectDir equal to options.workdir, outputDir equal to runtime.outputDir and packageDirs equal to prd.userStories.map(storyPackageDir).",
+        "Given _runSetupDeps.buildApprovalsSeal is stubbed to return a spy, when setupRun resolves and its RunSetupResult.sealApprovals is awaited, then the spy is invoked once.",
+        "Given _runSetupDeps.installCrashHandlers captures its context and _runSetupDeps.buildApprovalsSeal returns a spy, when setupRun resolves and the captured context's sealApprovals is awaited, then the spy is invoked once.",
+        "Given _runnerDeps.runSetupPhase returns a setup result with a sealApprovals spy and _runnerDeps.cleanupRun captures options, when run() runs, then it passes that same spy as sealApprovals to cleanupRun."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "approvals",
+        "lifecycle"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Approvals cache integrity crosses setup, normal cleanup and fatal signal paths under a deadline; the security override requires isolated TDD."
+      },
+      "contextFiles": [
+        "src/permissions/approvals-taint.ts",
+        "src/interaction/dispatch-ask.ts",
+        "src/execution/lifecycle/run-setup.ts",
+        "src/execution/lifecycle/run-cleanup.ts",
+        "src/execution/crash-signals.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/interaction/dispatch-ask-seal.test.ts",
+        "test/unit/execution/lifecycle/run-cleanup-approvals-seal.test.ts",
+        "test/unit/execution/lifecycle/run-setup-approvals-seal.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/execution/runner-total.test.ts",
+          "reason": "`makeSetupResult` (line 87) builds a `RunnerSetupResult` literal, which no longer typechecks once `sealApprovals` is a required field. Replacing invariant: the literal also sets `sealApprovals: async () => {}`; every existing assertion is unchanged."
+        },
+        {
+          "path": "test/unit/execution/runner-run-id.test.ts",
+          "reason": "`makeSetupResult` (line 67) builds a `RunnerSetupResult` literal, which no longer typechecks once `sealApprovals` is a required field. Replacing invariant: the literal also sets `sealApprovals: async () => {}`; every existing assertion is unchanged."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Non-literal spawns declare whether they are git",
+      "description": "**Goal** — Flag unannotated non-literal git-spawn argv candidates without changing subprocess behavior.\n\n**Motivation** — A spawn whose argv is a variable (`Bun.spawn(argv, ...)`) or an identifier-headed literal (`[gitBin, ...]`) is invisible to the existing gate, and the script documents this as a known blind spot.\n\n**Approach** — A textual extension of the existing gate, reusing its masking (`mask`) and bracket matching (`matchingClose`). Every existing `src/` site that the new rule flags gets a one-line `// nax-git-env-allow: <reason>` stating what the argv is (for example \"not git: hook argv (`hooks.*.command`)\", \"not git: acpx client\", \"generic `_deps` wrapper; git callers are checked at their own literal\"). The exact set is whatever the gate reports on its first run; no call site's behaviour changes.\n\n**Interface** — `findGitSpawnViolations(source: string): GitSpawnViolation[]` also flags any `spawn(` / `spawnSync(` call (same `SPAWN_CALLEE` match, on the comment-masked source) whose first argument is not an array literal headed by a string literal, unless the call's arguments contain `gitSpawnEnv(` or `hardenedGitEnv(`, or the call's line or the line above carries a non-empty `// nax-git-env-allow: <reason>`. Such a violation has `why: \"spawn argv is not a literal: pass env: gitSpawnEnv(...) or mark // nax-git-env-allow: <reason>\"` and `line` = the line holding the `spawn` callee. Existing rules and their `why` strings are unchanged. Replace the script header's \"Known blind spot\" sentence with the new rule. Inspect every reported src/ site and add only truthful marker reasons.\n\n**Scope** — In: textual gate, reasoned comments on existing src/ spawns, unit tests and repository-root gate CLI result. Out: routing every git spawn through one helper, banning direct spawns or scanning scripts/, bin/ or test/; Bash policy (US-001) and approvals sealing (US-002).",
+      "acceptanceCriteria": [
+        "findGitSpawnViolations(\"Bun.spawn(argv, { cwd });\") returns one violation with line: 1 and why: \"spawn argv is not a literal: pass env: gitSpawnEnv(...) or mark // nax-git-env-allow: <reason>\".",
+        "findGitSpawnViolations(\"Bun.spawnSync(cmd, opts);\") returns one violation with why: \"spawn argv is not a literal: pass env: gitSpawnEnv(...) or mark // nax-git-env-allow: <reason>\".",
+        "findGitSpawnViolations('Bun.spawn([gitBin, \"status\"], { cwd });') returns one violation with why: \"spawn argv is not a literal: pass env: gitSpawnEnv(...) or mark // nax-git-env-allow: <reason>\".",
+        "findGitSpawnViolations(\"deps.spawn(cmd, { cwd, env: gitSpawnEnv() });\") returns [].",
+        "findGitSpawnViolations(\"Bun.spawn(argv, { env: hardenedGitEnv(process.env) });\") returns [].",
+        "findGitSpawnViolations(\"// nax-git-env-allow: not git: hook argv\\nBun.spawn(argv, { cwd });\") returns [].",
+        "findGitSpawnViolations(\"Bun.spawn(argv, { cwd }); // nax-git-env-allow: not git: acpx client\") returns [].",
+        "findGitSpawnViolations(\"// nax-git-env-allow:\\nBun.spawn(argv, { cwd });\") returns one violation, matching the existing marker rule (an empty marker does not exempt the site).",
+        "findGitSpawnViolations('Bun.spawn([\"bun\", \"test\"], { cwd });') returns [].",
+        "findGitSpawnViolations(\"const p = Bun.spawn(\\n  argv,\\n  { cwd },\\n);\") returns one violation with line: 1.",
+        "findGitSpawnViolations('// Bun.spawn(argv)\\nconst s = \"Bun.spawn(argv)\";') returns [].",
+        "When `bun run scripts/check-git-spawn-env.ts <repo root>` is run on this repository, then it exits 0 and prints `check-git-spawn-env: clean`."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "static-analysis",
+        "git"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Textual gate change follows established mask/bracket matching, but secures subprocess env handling across multiple src/ call sites; security override requires isolated TDD."
+      },
+      "contextFiles": [
+        "scripts/check-git-spawn-env.ts",
+        "test/unit/scripts/check-git-spawn-env.test.ts",
+        "src/utils/git-env.ts",
+        "src/hooks/runner.ts",
+        "src/utils/argv-exec.ts"
+      ],
+      "suggestedCriteria": [
+        "Given a direct spawn with literal git argv lacking gitSpawnEnv, when findGitSpawnViolations scans it, then it returns the existing `git spawn without env: gitSpawnEnv(...)` violation."
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Three independent TypeScript/Bun security fixes; no inter-story dependency or data migration. US-001: src/permissions/bash-lex.ts:46-51 defines BashLexResult and :68-228 flushes words, redirects and segments; refused() currently discards all completed segments. Capture completed segments and completed tokens/redirects on every refusal without flushing the in-progress word or dangling redirect; retain zero imports in permissions. src/permissions/index.ts:15-16 already reexports BashLexResult and lexBashCommand; src/tools/policy-bash-raw.ts:135 also consumes the lexer and must remain behaviorally unchanged. src/tools/policy-bash.ts:228-272 currently refuses lexical errors, checks deny, grants, payload, then asks: move deny/payload before both escalatable refusals, with nextWorkingDirectories still applied per segment; checkPayload at :144-226 retains its reasons/breach bits. src/tools/policy-command-branch.ts:81 converts only escalatable denials to asks; integration assertions should drive buildCodingToolSupport/runtime.callTool. src/tools/bash.ts:117-145 advertises incorrect escalated checks and contains the nax#2194 caveat; update only escalate description. docs/adr/ADR-030-bash-approval-modes.md:97-110 defines the Category A/B distinction; delete its disclosed divergence at :465-476. Existing tests include test/unit/permissions/bash-lex.test.ts and test/unit/agents/coding-tool-bash-escalate-truth.test.ts; reverse only the two obsolete escalation expectations. Change in denial reason for ungranted unsafe commands is intentional, but grant-only misses and lexer refusals before a completed word still escalate. US-002: src/interaction/dispatch-ask.ts:54-65 has injectable dependencies, :103-192 already taints before and after a dispatch scope, and :236-255 resolves modes across root and package configs. src/permissions/approvals-taint.ts:69-153 exposes isForgeCapable, taint/clear and never-throw prepareApprovalsStore with warning on failed writes. src/interaction/index.ts:14-27 exports interaction helpers. src/execution/lifecycle/run-setup.ts:69-82 deps, :110-136 result, :273-314 crash context and :447-474 post-lock init/return are insertion points; the handler is installed before PRD/effective modes load and needs a forwarder. src/execution/crash-recovery.ts:34-58 hands its context to installSignalHandlers; src/execution/crash-signals.ts:27-45 context and :108-130 teardown require sealing after killAll, inside FATAL_TEARDOWN_DEADLINE_MS. src/execution/runner-setup.ts:46-94 derives result fields from setupRun and returns it unchanged. src/execution/runner.ts:413-439 calls cleanupRun; src/execution/lifecycle/run-cleanup.ts:68-109 options and :273-300 action/plugin/interaction order allow sealing just before interaction.destroy. Existing dispatch-ask, run-setup, run-cleanup tests and runner-total.test.ts/runner-run-id.test.ts setup literals need updates; create dedicated tests because run-setup.test.ts and run-cleanup.test.ts are near the 800-line limit. Never clear a trusted approvals file at seal time or load config on the signal path. US-003: scripts/check-git-spawn-env.ts:31-38 regexes; :49-90 mask retains offsets and newlines, blanking comments in code and strings in shape; :111-118 matchingClose and :120-154 literal-git checks should retain their why strings. Extend textual spawn call scanning, inspect src/ CLI violations and mark existing generic/nongit argv call sites with reasoned comments, not runtime changes. CLI walks src/ only at :156-188. test/unit/scripts/check-git-spawn-env.test.ts provides existing fixture conventions. Examples of potentially affected calls include src/hooks/runner.ts:224, src/execution/new-package-setup.ts:90, src/utils/argv-exec.ts:160, src/cli/plan-runtime/index.ts:93 and src/agents/acp/spawn-client-session.ts:143; actual set is the gate's output, not a preapproved list. Risks include misreading nested parentheses or quoted/commented pseudo-calls. No approvals.json schema or cache-link changes, no new git spawn helper.",
+  "outOfScope": [
+    "Growing the Bash lexer's modelled language (for example accepting `2>&1` or `$(...)`). Only the refused result gains a `prefix`; every construct refused today stays refused.",
+    "Matching deny rules against commands that appear only after a refused construct (for example `$(x); rm -rf y`). Deny rules are prefix-anchored, and the part after a refused construct is not lexed; the human sees the full command.",
+    "Changing `raw` mode, the raw protected-path screen (`src/tools/policy-bash-raw.ts`), or the `gated` Bash description.",
+    "Changing the denial redirect text in `src/tools/denial-redirect.ts`.",
+    "Changing the `approvals.json` format, the cache link's trust rules (`src/permissions/approvals-link.ts`), or the per-scope taint in `buildDispatchAskWiring`.",
+    "P5 command-safety shadow scoring and A-mode promotion.",
+    "US-002 only: a process an agent leaves running past its scope (a detached `sleep; rewrite`) that forges after the final seal. Accepted: the sandbox, on by default, write-denies the approvals file and is the boundary.",
+    "US-002 only: a run killed by a signal no handler sees (SIGKILL, power loss) after an agent stripped the marker. No on-disk record can be made safe from an unsandboxed raw shell running as the same user.",
+    "US-002 only: a fatal signal that arrives during `setupRun` before the seal is built. No dispatch scope has run yet, so there is nothing to seal.",
+    "US-002 only: killing every process group the native Bash tool started when a scope ends.",
+    "US-003 only: routing every git spawn through one helper and banning direct spawns (37 call sites).",
+    "US-003 only: scanning `scripts/`, `bin/` or `test/`; the gate still walks `src/` only."
+  ],
+  "routingProfile": "native-ds"
+}
