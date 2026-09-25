@@ -3,7 +3,7 @@
   "feature": "edit-changed-region",
   "branchName": "feat/edit-changed-region",
   "createdAt": "2026-09-26T00:00:00.000Z",
-  "updatedAt": "2026-09-25T10:24:57.579Z",
+  "updatedAt": "2026-09-25T10:42:54.797Z",
   "userStories": [
     {
       "id": "US-001",
@@ -94,8 +94,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
