@@ -1886,7 +1886,7 @@ Function-style builders sit alongside: `buildDecomposePromptSync()` (decompose),
 
 ## §50 Analyze (`src/analyze/`)
 
-Codebase scanner used by `nax analyze` and the planning pipeline. Discovers workspace packages, detects their language, reads `package.json` dep lists, and emits a `CodebaseScan` with `SourceRoot[]` entries (path, language, framework, testRunner, dependencies). Internally delegates to `discoverWorkspacePackages` (`src/test-runners/detect/workspace.ts`, §21) and `detectLanguage` (§47) — does not re-implement package boundary detection.
+Codebase scanner used by the planning pipeline (`nax plan`); there is no `nax analyze` command. Discovers workspace packages, detects their language, reads `package.json` dep lists, and emits a `CodebaseScan` with `SourceRoot[]` entries (path, language, framework, testRunner, dependencies). Internally delegates to `discoverWorkspacePackages` (`src/test-runners/detect/workspace.ts`, §21) and `detectLanguage` (§47) — does not re-implement package boundary detection.
 
 **Key exports:**
 - `scanCodebase(workdir)` — main entry point; returns `CodebaseScan`

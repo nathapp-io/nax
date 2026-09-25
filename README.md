@@ -48,7 +48,7 @@ nax features create my-feature    # Scaffold a feature
 nax plan -f my-feature --from spec.md
 nax run -f my-feature
 
-# Or in one shot (no interactive Q&A)
+# Or plan and run in one command
 nax run -f my-feature --plan --from spec.md
 ```
 
@@ -124,7 +124,7 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
     "default": "native"                    // In-process nax-ai agent; or an ACP agent such as "claude"
   },
   "execution": {
-    "maxIterations": 10,
+    "maxIterations": 10,                   // Note: `nax run` always overrides this with -m (default 20)
     "permissionProfile": "unrestricted",   // "unrestricted" | "safe" | "scoped"
     "storyIsolation": "shared",            // "shared" | "worktree"
     "bashApproval": "raw",                 // "raw" | "gated" | "escalate" — how agent Bash commands are adjudicated
@@ -200,7 +200,7 @@ See [Test Strategies Guide](docs/guides/test-strategies.md) for the full routing
 
 ### Story Decomposition
 
-Stories over a complexity threshold are auto-decomposed into smaller sub-stories. Triggered by story size or `prd.json` analysis. Sub-stories run sequentially within the feature.
+An oversized story is split into smaller sub-stories with `nax plan -f <feature> --decompose <storyId>` — a plan-time operation, not a mid-run stage. The precheck story-size gate (`precheck.storySizeGate`) flags stories over its thresholds. The parent is marked `decomposed` and the sub-stories, with dependency ordering, are added to the PRD.
 
 See [Story Decomposition Guide](docs/guides/decomposition.md).
 

@@ -70,7 +70,7 @@ Every key has a default — the authoritative source is the Zod schema (`src/con
 | `install` | `allowScripts: false` | Dependency-install script policy |
 | `project` | unset (auto-detected) | Language/type overrides — [below](#project-language--type) |
 | `curator` | unset (`enabled: true` when present) | Curator thresholds, rollup path, retention — see [Curator](curator.md) |
-| `plugins` / `disabledPlugins` / `hooks` / `optimizer` / `generate` | unset | Plugin entries, lifecycle hooks, prompt optimizer, `nax generate` agent list |
+| `plugins` / `disabledPlugins` / `optimizer` / `generate` | unset | Plugin entries, prompt optimizer, `nax generate` agent list. Lifecycle hooks are **not** read from `config.json` — they load from `.nax/hooks.json` / `~/.nax/hooks.json` (see [Hooks](hooks.md)) |
 | `profile` | `"default"` | Active config profile |
 
 ---
