@@ -8,11 +8,15 @@
  *   4. the lexer refused the command -> the escalatable lexical refusal
  *   5. EVERY segment must match an allow rule, else the escalatable grant miss
  *   6. ANY segment matches ask    -> ask
- * The deny matcher and the payload checks run BEFORE the two escalatable sites,
- * so an out-of-bounds command never reaches the human on a later grant miss or
- * refusal. On a refused command those checks run over the lexer's `prefix` --
- * the part before the unreadable construct -- because that is the part a deny
- * rule or a containment breach can still name.
+ * `escalatable: true` is produced at the two Category A sites above (4 and 5)
+ * plus the one payload refusal the gate also cannot adjudicate: an
+ * option-shaped `cd` (`cd -`, `cd -P dir`), whose target sits in a slot this
+ * reader does not parse (step 3 -- see `checkPayload`). Every OTHER payload
+ * denial is affirmatively out of bounds and non-escalatable, so an
+ * out-of-bounds command never reaches the human on a later grant miss or
+ * refusal. On a refused command the deny and payload checks run over the
+ * lexer's `prefix` -- the part before the unreadable construct -- because that
+ * is the part a deny rule or a containment breach can still name.
  * Ask is evaluated LAST so it can never grant: an ungranted command that
  * matches an ask rule is a plain denial, not an approval prompt (the same
  * rule the path and argv branches follow in policy.ts).
@@ -37,11 +41,13 @@ export type BashCheck =
       readonly breach: boolean;
       /**
        * True when the gate could not ADJUDICATE the command — the lexer refused
-       * it, or no allow rule covered a segment. False when the command is
-       * affirmatively out of bounds (root escape, `.git/`, a denied flag, an
-       * explicit deny rule). Only the former may be escalated to the ask tier
-       * by `escalate` mode; escalating the latter would dissolve the `breach`
-       * signal into an approval prompt. See ADR-030.
+       * it, no allow rule covered a segment, or a `cd` target is option-shaped
+       * and sits in a slot this reader does not parse. False when the command
+       * is affirmatively out of bounds (root escape, `.git/`, a denied flag, an
+       * explicit deny rule, a `cd` target outside the root). Only the former
+       * may be escalated to the ask tier by `escalate` mode; escalating the
+       * latter would dissolve the `breach` signal into an approval prompt. See
+       * ADR-030.
        */
       readonly escalatable: boolean;
     };

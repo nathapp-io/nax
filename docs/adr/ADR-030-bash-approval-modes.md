@@ -96,15 +96,16 @@ that cannot declare Bash in the first place.
 `checkBashCommand` denies for two materially different reasons, and only one of them is a
 question a human can usefully answer.
 
-- **Category A — the gate could not adjudicate.** The lexer refused the command, or no allow
-  rule covered a segment. The command may be perfectly fine; the gate simply cannot tell.
-  **These escalate.** The deny matcher and the payload checks run *first*, and on a refused
-  command they run over the lexer's `prefix` — the completed segments and completed tokens
-  before the unreadable construct, with the in-progress word dropped. So a refused command
-  whose lexable prefix matches a deny rule or breaches containment is a Category B denial, not
-  a Category A one; only a refusal whose prefix is clean (or empty, when the refusal precedes
-  any completed word) escalates. Everything past the construct is not lexed and is shown to
-  the human as part of the full command.
+- **Category A — the gate could not adjudicate.** The lexer refused the command, no allow
+  rule covered a segment, or a `cd` target is option-shaped (`cd -`, `cd -P dir`), which sits
+  in a slot the reader does not parse. The command may be perfectly fine; the gate simply
+  cannot tell. **These escalate.** The deny matcher and the payload checks run *first*, and on
+  a refused command they run over the lexer's `prefix` — the completed segments and completed
+  tokens before the unreadable construct, with the in-progress word dropped. So a refused
+  command whose lexable prefix matches a deny rule or breaches containment is a Category B
+  denial, not a Category A one; only a refusal whose prefix is clean (or empty, when the
+  refusal precedes any completed word) escalates. Everything past the construct is not lexed
+  and is shown to the human as part of the full command.
 - **Category B — the command is affirmatively out of bounds.** A path resolves outside the
   permitted root, a `.git/` refusal, a `DENIED_FLAGS`-class flag, an explicit deny rule, a
   redirect or `cd` target outside the root. **These never escalate.**
@@ -112,7 +113,7 @@ question a human can usefully answer.
 A Category B denial carries `breach`, which `src/tools/runtime.ts` logs as a possible prompt
 injection. Escalating it would dissolve that signal into an approval prompt and invite a
 reflexive yes to a root escape. The distinction is carried in the data — an `escalatable` flag
-set at exactly the two Category A sites — never inferred from message text, because reason
+set at each Category A site and nowhere else — never inferred from message text, because reason
 strings are prose and prose drifts.
 
 ### Why `raw` is compiled in, not applied afterwards

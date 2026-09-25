@@ -117,11 +117,12 @@ function capitalize(text: string): string {
 /**
  * `escalate`'s description when a human is reachable (ADR-030, amended
  * 2026-09-23 and again for US-001). It states checkBashCommand's ACTUAL order:
- * the deny matcher and the payload checks run BEFORE the two escalatable sites
- * (a lexer refusal and a grant miss), so an out-of-bounds command never
- * reaches the human; on a refused command those checks cover the lexable prefix
- * -- the part before the unreadable construct -- and an approved command runs
- * as written. Pinned against the policy in
+ * the out-of-bounds payload checks and the deny matcher run BEFORE the
+ * escalatable sites -- a lexer refusal, a grant miss, and the one payload
+ * refusal the gate cannot adjudicate, an option-shaped `cd` -- so an
+ * out-of-bounds command never reaches the human; on a refused command those
+ * checks cover the lexable prefix -- the part before the unreadable construct
+ * -- and an approved command runs as written. Pinned against the policy in
  * coding-tool-bash-escalate-truth.test.ts.
  */
 function escalateDescription(shell: string, patterns: readonly string[] | undefined): string {
