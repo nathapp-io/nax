@@ -8,14 +8,19 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeFakeClock } from "@test/helpers";
 import { _authDeps, anyAmbientCredential } from "@/agents/native/auth";
 
 const REAL_PROVIDER_IDS = _authDeps.providerIds;
 const REAL_AMBIENT = _authDeps.ambientAuthAvailable;
+const REAL_SET_TIMEOUT = _authDeps.setTimeout;
+const REAL_CLEAR_TIMEOUT = _authDeps.clearTimeout;
 
 afterEach(() => {
   _authDeps.providerIds = REAL_PROVIDER_IDS;
   _authDeps.ambientAuthAvailable = REAL_AMBIENT;
+  _authDeps.setTimeout = REAL_SET_TIMEOUT;
+  _authDeps.clearTimeout = REAL_CLEAR_TIMEOUT;
 });
 
 describe("anyAmbientCredential", () => {
@@ -75,11 +80,25 @@ describe("anyAmbientCredential", () => {
   });
 
   test("a hung probe times out to TRUE, never pruning on a slow answer", async () => {
+    // Drive the AMBIENT_PROBE_TIMEOUT_MS (2_000ms) off a virtual clock so the
+    // "hung probe" assertion costs no wall-clock. The expiry branch is the
+    // contract under test, not the real-time wait — the same race resolves
+    // either way, just deterministically and in <1ms instead of 2s.
+    const clock = makeFakeClock();
+    _authDeps.setTimeout = clock.setTimeout as typeof _authDeps.setTimeout;
+    _authDeps.clearTimeout = clock.clearTimeout as typeof _authDeps.clearTimeout;
     _authDeps.providerIds = async () => ["hangs"];
     _authDeps.ambientAuthAvailable = () => new Promise<boolean>(() => {});
 
-    // Fails without the timeout: this call would never settle and the test
-    // would hit its own timeout instead of asserting.
-    expect(await anyAmbientCredential()).toBe(true);
-  }, 10_000);
+    const result = anyAmbientCredential();
+    // Exhaust microtasks so the sweep's `providerIds` resolves and arms the
+    // expiry timer before we advance; otherwise the timer is never scheduled
+    // and `advance` finds nothing to fire.
+    await Promise.resolve();
+    await clock.advance(2_000);
+
+    expect(await result).toBe(true);
+    // Expiry fired exactly once; no leftover timer from the finally clearTimeout.
+    expect(clock.pending()).toBe(0);
+  });
 });

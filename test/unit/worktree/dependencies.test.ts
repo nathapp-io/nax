@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeSpawn, makeSpawnResult } from "@test/helpers";
+import { makeFakeClock, makeNaxConfig, makeSpawn, makeSpawnResult } from "@test/helpers";
 import {
   _worktreeDependencyDeps,
   prepareWorktreeDependencies,
@@ -8,11 +8,15 @@ import {
 
 const originalSpawn = _worktreeDependencyDeps.spawn;
 const originalKillProcessGroup = _worktreeDependencyDeps.killProcessGroup;
+const originalSetTimeout = _worktreeDependencyDeps.setTimeout;
+const originalClearTimeout = _worktreeDependencyDeps.clearTimeout;
 
 describe("prepareWorktreeDependencies", () => {
   afterEach(() => {
     _worktreeDependencyDeps.spawn = originalSpawn;
     _worktreeDependencyDeps.killProcessGroup = originalKillProcessGroup;
+    _worktreeDependencyDeps.setTimeout = originalSetTimeout;
+    _worktreeDependencyDeps.clearTimeout = originalClearTimeout;
   });
 
   // #574: `off` is the only no-install mode now that `inherit` is gone, and it is
@@ -81,6 +85,15 @@ describe("prepareWorktreeDependencies", () => {
   // killProcessGroup(pid, "SIGKILL") instead (matching verification/executor.ts's
   // established pattern), so the whole process group dies.
   test("provision times out and kills the whole process group via killProcessGroup", async () => {
+    // Drive the timeout off a virtual clock so the BUG-13 path costs no
+    // wall-clock. The schema minimum (1s) is the contract under test, but the
+    // assertion is "arms a timer, group-kills on expiry, throws" — a fake
+    // timer that fires after exactly that much virtual time proves the same
+    // race resolves correctly without sleeping for a real second.
+    const clock = makeFakeClock();
+    _worktreeDependencyDeps.setTimeout = clock.setTimeout as typeof _worktreeDependencyDeps.setTimeout;
+    _worktreeDependencyDeps.clearTimeout = clock.clearTimeout as typeof _worktreeDependencyDeps.clearTimeout;
+
     const proc = makeSpawnResult({ hang: true, pid: 456, killResolvesExited: true });
     _worktreeDependencyDeps.spawn = makeSpawn(() => proc).spawn;
 
@@ -96,21 +109,28 @@ describe("prepareWorktreeDependencies", () => {
       return true;
     }) as typeof _worktreeDependencyDeps.killProcessGroup;
 
-    await expect(
-      prepareWorktreeDependencies({
-        projectRoot: "/repo",
-        worktreeRoot: "/repo/.nax-wt/US-004",
-        storyId: "US-004",
-        storyWorkdir: "packages/hung",
-        // Schema minimum (1s) — the contract under test is "arms a timer,
-        // group-kills on expiry, throws" not the production 300s default.
-        config: makeNaxConfig({
-          execution: { worktreeDependencies: { mode: "provision", setupCommand: "bun install", timeoutSeconds: 1 } },
-        }),
+    const pending = prepareWorktreeDependencies({
+      projectRoot: "/repo",
+      worktreeRoot: "/repo/.nax-wt/US-004",
+      storyId: "US-004",
+      storyWorkdir: "packages/hung",
+      // Schema minimum (1s) — the contract under test is "arms a timer,
+      // group-kills on expiry, throws" not the production 300s default.
+      config: makeNaxConfig({
+        execution: { worktreeDependencies: { mode: "provision", setupCommand: "bun install", timeoutSeconds: 1 } },
       }),
-    ).rejects.toThrow(/timed out after 1s/);
+    });
+
+    // Exhaust microtasks so the spawn promise settles and the timeout timer
+    // is armed before we advance; otherwise `advance` finds nothing to fire.
+    await Promise.resolve();
+    await clock.advance(1_000);
+
+    await expect(pending).rejects.toThrow(/timed out after 1s/);
 
     expect(killedPid).toBe(456);
     expect(killedSignal).toBe("SIGKILL");
+    // The finally block cleared the timer; nothing left armed.
+    expect(clock.pending()).toBe(0);
   });
 });

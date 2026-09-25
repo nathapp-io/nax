@@ -79,7 +79,19 @@ function summaryPrompt(previousSummary?: string): string {
 const DEFAULT_TIERS: readonly string[] = ["fast", "balanced", "powerful"];
 
 /** Test seam, following the _clientDeps precedent. */
-export const _adapterDeps = { listStoredProviders, anyAmbientCredential };
+export const _adapterDeps = {
+  listStoredProviders,
+  anyAmbientCredential,
+  /**
+   * Injectable timer pair — lets the whole-turn deadline test (US-002 AC12)
+   * drive the abort off a virtual clock instead of waiting the schema
+   * minimum. Mirrors `_heartbeatDeps` / `_idleWatchdogDeps` / `_authDeps`.
+   *
+   * @internal
+   */
+  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
+  clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
+};
 
 export class NativeAgentAdapter implements AgentAdapter {
   readonly name = NATIVE_AGENT;
@@ -179,7 +191,10 @@ export class NativeAgentAdapter implements AgentAdapter {
     const resolved = await client.model(provider, model);
 
     const controller = new AbortController();
-    const timer = options.timeoutMs !== undefined ? setTimeout(() => controller.abort(), options.timeoutMs) : undefined;
+    const timer =
+      options.timeoutMs !== undefined
+        ? _adapterDeps.setTimeout(() => controller.abort(), options.timeoutMs)
+        : undefined;
 
     try {
       const sessionId = nativeSessionId(this.oneShotKey);
@@ -239,7 +254,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       }
       throw err;
     } finally {
-      if (timer !== undefined) clearTimeout(timer);
+      if (timer !== undefined) _adapterDeps.clearTimeout(timer);
     }
   }
 
@@ -312,7 +327,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     const deadlineController = new AbortController();
     const deadlineMs = deadline.remainingMs();
     const deadlineTimer =
-      deadlineMs !== undefined ? setTimeout(() => deadlineController.abort(), deadlineMs) : undefined;
+      deadlineMs !== undefined ? _adapterDeps.setTimeout(() => deadlineController.abort(), deadlineMs) : undefined;
     const turnSignals: AbortSignal[] = [turnController.signal, deadlineController.signal];
     if (opts.signal !== undefined) turnSignals.unshift(opts.signal);
     const turnSignal = AbortSignal.any(turnSignals);
@@ -359,7 +374,8 @@ export class NativeAgentAdapter implements AgentAdapter {
           // files touched -- without them the agent re-reads what it already read.
           const remainingMs = deadline.remainingMs();
           const controller = new AbortController();
-          const timer = remainingMs !== undefined ? setTimeout(() => controller.abort(), remainingMs) : undefined;
+          const timer =
+            remainingMs !== undefined ? _adapterDeps.setTimeout(() => controller.abort(), remainingMs) : undefined;
           // US-002: the per-call signal still combines with the per-turn signal
           // (watchdog + deadline + caller), so a turn cancel ends the summary
           // even mid-call. The per-call timer is the additional budget on top.
@@ -378,7 +394,7 @@ export class NativeAgentAdapter implements AgentAdapter {
             const { costUsd, resolvedRates } = priceCall(summaryUsage, rates);
             return { text: res.text, usage: summaryUsage, costUsd, rates: resolvedRates };
           } finally {
-            if (timer !== undefined) clearTimeout(timer);
+            if (timer !== undefined) _adapterDeps.clearTimeout(timer);
           }
         },
         complete: async (messages, tools, requestOptions) => {
@@ -390,7 +406,8 @@ export class NativeAgentAdapter implements AgentAdapter {
           // observes the same cancellation the batch sees between calls.
           const remainingMs = deadline.remainingMs();
           const controller = new AbortController();
-          const timer = remainingMs !== undefined ? setTimeout(() => controller.abort(), remainingMs) : undefined;
+          const timer =
+            remainingMs !== undefined ? _adapterDeps.setTimeout(() => controller.abort(), remainingMs) : undefined;
           const signal = AbortSignal.any(
             opts.signal !== undefined
               ? [opts.signal, controller.signal, turnController.signal, deadlineController.signal]
@@ -443,7 +460,7 @@ export class NativeAgentAdapter implements AgentAdapter {
               rates: resolvedRates,
             };
           } finally {
-            if (timer !== undefined) clearTimeout(timer);
+            if (timer !== undefined) _adapterDeps.clearTimeout(timer);
           }
         },
       });
@@ -488,7 +505,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       }
       throw err;
     } finally {
-      if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+      if (deadlineTimer !== undefined) _adapterDeps.clearTimeout(deadlineTimer);
     }
 
     hooks?.onStreamActivity?.({

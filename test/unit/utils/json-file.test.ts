@@ -33,9 +33,15 @@ describe("saveJsonFile (BUG-08: atomic write)", () => {
 
       const proc = Bun.spawn(["bun", WRITER_FIXTURE, path], { stdout: "ignore", stderr: "inherit" });
 
+      // The bound exists only to give the writer time to cycle. The writer
+      // completes a rename in ~3ms; 500 reads is enough to see every
+      // intermediate state on a fast loop, and the per-read cost caps the
+      // wall-clock well below the previous 5000-iteration budget
+      // (docs/superpowers/research/2026-09-17-slow-tests.md §3.5).
+      const READ_BUDGET = 500;
       let nullReads = 0;
       let reads = 0;
-      while (proc.exitCode === null && reads < 5000) {
+      while (proc.exitCode === null && reads < READ_BUDGET) {
         const loaded = await loadJsonFile<{ items: unknown[] }>(path, "test");
         reads++;
         if (loaded === null) nullReads++;

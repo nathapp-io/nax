@@ -17,10 +17,19 @@
  * AC10: Periodic agent_thought_chunk events → watchdog does NOT cancel
  * AC11: Periodic usage_update events → watchdog does NOT cancel
  * AC7:  Idle-watchdog cancellation is distinguishable from wall-clock timeout
+ *
+ * Time model: every timer — watchdog tick, grace period, mock-client activity
+ * loop, and the `setTimeout` the adapter itself arms — runs on a shared
+ * virtual clock (`makeFakeClock`). Tests step time with `clock.advance(ms)`
+ * instead of `await sleep(ms)`, so a 250ms prompt costs the test ~1ms of
+ * wall-clock. The watchdog's `_idleWatchdogDeps.{setTimeout,clearTimeout,now}`
+ * seam and the existing harness drive this; the mock client below takes the
+ * same clock so its activity loop and timestamps stay consistent with the
+ * watchdog's "time since last activity" check.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { makeFakeClock, makeNaxConfig } from "@test/helpers";
 import {
   _acpAdapterDeps,
   AcpAgentAdapter,
@@ -29,10 +38,7 @@ import {
   type AcpSession,
   type AcpSessionResponse,
 } from "@/agents";
-import { type AgentStreamEvent, AgentStreamEventBus, attachAgentIdleWatchdog } from "@/runtime";
-
-// setTimeout is permitted here for controlled test delays (not Bun.sleep — see testing-rules.md)
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+import { _idleWatchdogDeps, type AgentStreamEvent, AgentStreamEventBus, attachAgentIdleWatchdog } from "@/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test helpers
@@ -99,9 +105,13 @@ const BASE_STREAM_EVENT = {
  * `stopReason: "error"` and `cancelled: true`. The adapter forwards
  * `cancelled` on its CompleteResult; the wiring layer (not exercised here)
  * is responsible for mapping that to fail-stale.
+ *
+ * `clock` is the same FakeClock the watchdog runs on. The prompt just parks
+ * the resolver; the watchdog's tick (driven by `clock.advance`) decides when
+ * the test resolves.
  */
-function makeHangingMockClient(opts: AcpClientOptions | undefined): AcpClient {
-  const callId = `hang-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function makeHangingMockClient(opts: AcpClientOptions | undefined, clock: ReturnType<typeof makeFakeClock>): AcpClient {
+  const callId = `hang-${Math.random().toString(36).slice(2)}`;
   let resolve: ((r: AcpSessionResponse) => void) | null = null;
 
   const session: AcpSession = {
@@ -124,7 +134,7 @@ function makeHangingMockClient(opts: AcpClientOptions | undefined): AcpClient {
         kind: "agent.call_started",
         model: "claude-haiku-4-5",
         timeoutSeconds: 5,
-        timestamp: Date.now(),
+        timestamp: clock.now(),
       });
 
       // Hang until the watchdog fires and calls our cancel function
@@ -156,15 +166,21 @@ function makeHangingMockClient(opts: AcpClientOptions | undefined): AcpClient {
  * Mock client whose session emits periodic stream activity events then completes normally.
  *
  * The activity events reset the watchdog idle timer, preventing cancellation.
- * After durationMs the prompt resolves with end_turn.
+ * After `durationMs` (virtual time) the prompt resolves with end_turn.
+ *
+ * `clock.advance(intervalMs)` is used in place of `await sleep(intervalMs)`:
+ * advancing the fake clock by the activity interval also fires any watchdog
+ * ticks that fall in that window, so the watchdog sees the activity at the
+ * correct virtual timestamp and decides not to cancel.
  */
 function makeActiveSessionMockClient(
   opts: AcpClientOptions | undefined,
   activityKind: "agent.message_update" | "agent.thinking_update" | "agent.usage_update" | "agent.tool_call_update",
   intervalMs: number,
   durationMs: number,
+  clock: ReturnType<typeof makeFakeClock>,
 ): AcpClient {
-  const callId = `active-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const callId = `active-${Math.random().toString(36).slice(2)}`;
 
   const session: AcpSession = {
     async prompt(): Promise<AcpSessionResponse> {
@@ -178,13 +194,15 @@ function makeActiveSessionMockClient(
         kind: "agent.call_started",
         model: "claude-haiku-4-5",
         timeoutSeconds: 5,
-        timestamp: Date.now(),
+        timestamp: clock.now(),
       });
 
-      const start = Date.now();
-      while (Date.now() - start < durationMs) {
-        await sleep(intervalMs);
-        const activityBase = { ...BASE_STREAM_EVENT, callId, timestamp: Date.now() };
+      const start = clock.now();
+      while (clock.now() - start < durationMs) {
+        // Advance fires any watchdog tick in the same window, then we emit the
+        // activity on the post-advance clock so the watchdog sees the reset.
+        await clock.advance(intervalMs);
+        const activityBase = { ...BASE_STREAM_EVENT, callId, timestamp: clock.now() };
         if (activityKind === "agent.usage_update") {
           opts?.onStreamActivity?.({ ...activityBase, kind: activityKind, inputTokens: 10, outputTokens: 5 });
         } else if (activityKind === "agent.tool_call_update") {
@@ -199,7 +217,7 @@ function makeActiveSessionMockClient(
         callId,
         kind: "agent.call_ended",
         status: "success",
-        timestamp: Date.now(),
+        timestamp: clock.now(),
       });
 
       return {
@@ -226,13 +244,41 @@ function makeActiveSessionMockClient(
 
 describe("Idle watchdog stale cancellation (ACP)", () => {
   let origCreateClient: typeof _acpAdapterDeps.createClient;
+  let origResolveRateCard: typeof _acpAdapterDeps.resolveRateCard;
+  let origSetTimeout: typeof _idleWatchdogDeps.setTimeout;
+  let origClearTimeout: typeof _idleWatchdogDeps.clearTimeout;
+  let origNow: typeof _idleWatchdogDeps.now;
+  let clock: ReturnType<typeof makeFakeClock>;
 
   beforeEach(() => {
     origCreateClient = _acpAdapterDeps.createClient;
+    origResolveRateCard = _acpAdapterDeps.resolveRateCard;
+    origSetTimeout = _idleWatchdogDeps.setTimeout;
+    origClearTimeout = _idleWatchdogDeps.clearTimeout;
+    origNow = _idleWatchdogDeps.now;
+    clock = makeFakeClock();
+    _idleWatchdogDeps.setTimeout = clock.setTimeout as typeof _idleWatchdogDeps.setTimeout;
+    _idleWatchdogDeps.clearTimeout = clock.clearTimeout as typeof _idleWatchdogDeps.clearTimeout;
+    _idleWatchdogDeps.now = clock.now;
+    // resolveRateCard does real I/O (catalog lookup) on first call, which blocks
+    // the call_started event from reaching the watchdog in wall-clock time.
+    // The hanging-prompt tests below rely on `clock.advance` to fire the
+    // watchdog tick, so this needs to settle instantly on a microtask.
+    _acpAdapterDeps.resolveRateCard = (() => {
+      const fallback = {
+        rates: { inputPer1M: 1, outputPer1M: 2 },
+        source: "catalog-rates" as const,
+      };
+      return Promise.resolve(fallback);
+    }) as typeof _acpAdapterDeps.resolveRateCard;
   });
 
   afterEach(() => {
     _acpAdapterDeps.createClient = origCreateClient;
+    _acpAdapterDeps.resolveRateCard = origResolveRateCard;
+    _idleWatchdogDeps.setTimeout = origSetTimeout;
+    _idleWatchdogDeps.clearTimeout = origClearTimeout;
+    _idleWatchdogDeps.now = origNow;
   });
 
   // AC9: Hanging prompt with no stream activity → adapter surfaces cancelled:true
@@ -247,14 +293,22 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
     const detach = attachAgentIdleWatchdog(eventBus, registry, config);
 
     _acpAdapterDeps.createClient = (_cmd, _cwd, _timeout, _onPid, _retries, _onExit, opts) =>
-      makeHangingMockClient(opts);
+      makeHangingMockClient(opts, clock);
+
+    // adapter.complete() awaits resolveRateCard() before invoking session.prompt(),
+    // so the call_started event (which arms the watchdog tick) only fires after
+    // a microtask. First advance drains microtasks so prompt() runs and the tick
+    // timer is armed; the second advance fires the tick at the idle threshold.
+    const completePromise = new AcpAgentAdapter("claude").complete("test prompt", {
+      ...makeCompleteOptions(registry, eventBus.emitAgentStream.bind(eventBus), WALL_CLOCK_TIMEOUT_MS),
+    });
+
+    await clock.advance(0);
+    await clock.advance(IDLE_TIMEOUT_MS * 2);
+
+    const result = await completePromise;
 
     try {
-      const adapter = new AcpAgentAdapter("claude");
-      const result = await adapter.complete("test prompt", {
-        ...makeCompleteOptions(registry, eventBus.emitAgentStream.bind(eventBus), WALL_CLOCK_TIMEOUT_MS),
-      });
-
       // Transport contract: external cancel surfaces as `cancelled: true` with
       // no policy-named adapterFailure. The wiring layer maps cancelled → fail-stale.
       expect(result.cancelled).toBe(true);
@@ -279,7 +333,7 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
     const detach = attachAgentIdleWatchdog(eventBus, registry, config);
 
     _acpAdapterDeps.createClient = (_cmd, _cwd, _timeout, _onPid, _retries, _onExit, opts) =>
-      makeActiveSessionMockClient(opts, "agent.thinking_update", ACTIVITY_INTERVAL_MS, PROMPT_DURATION_MS);
+      makeActiveSessionMockClient(opts, "agent.thinking_update", ACTIVITY_INTERVAL_MS, PROMPT_DURATION_MS, clock);
 
     try {
       const adapter = new AcpAgentAdapter("claude");
@@ -311,7 +365,7 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
     const detach = attachAgentIdleWatchdog(eventBus, registry, config);
 
     _acpAdapterDeps.createClient = (_cmd, _cwd, _timeout, _onPid, _retries, _onExit, opts) =>
-      makeActiveSessionMockClient(opts, "agent.usage_update", ACTIVITY_INTERVAL_MS, PROMPT_DURATION_MS);
+      makeActiveSessionMockClient(opts, "agent.usage_update", ACTIVITY_INTERVAL_MS, PROMPT_DURATION_MS, clock);
 
     try {
       const adapter = new AcpAgentAdapter("claude");
@@ -343,7 +397,7 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
     const detach = attachAgentIdleWatchdog(eventBus, registry, config);
 
     _acpAdapterDeps.createClient = (_cmd, _cwd, _timeout, _onPid, _retries, _onExit, opts) =>
-      makeActiveSessionMockClient(opts, "agent.tool_call_update", ACTIVITY_INTERVAL_MS, PROMPT_DURATION_MS);
+      makeActiveSessionMockClient(opts, "agent.tool_call_update", ACTIVITY_INTERVAL_MS, PROMPT_DURATION_MS, clock);
 
     try {
       const adapter = new AcpAgentAdapter("claude");
@@ -370,14 +424,17 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
     const detach = attachAgentIdleWatchdog(eventBus, registry, config);
 
     _acpAdapterDeps.createClient = (_cmd, _cwd, _timeout, _onPid, _retries, _onExit, opts) =>
-      makeHangingMockClient(opts);
+      makeHangingMockClient(opts, clock);
+
+    const completePromise = new AcpAgentAdapter("claude").complete("test prompt", {
+      ...makeCompleteOptions(registry, eventBus.emitAgentStream.bind(eventBus), 5000),
+    });
+
+    await clock.advance(0);
+    await clock.advance(IDLE_TIMEOUT_MS * 2);
+    const result = await completePromise;
 
     try {
-      const adapter = new AcpAgentAdapter("claude");
-      const result = await adapter.complete("test prompt", {
-        ...makeCompleteOptions(registry, eventBus.emitAgentStream.bind(eventBus), 5000),
-      });
-
       // Idle watchdog → structured cancelled signal (no adapterFailure here)
       expect(result.cancelled).toBe(true);
       expect(result.adapterFailure).toBeUndefined();
@@ -399,20 +456,29 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
     const detach = attachAgentIdleWatchdog(eventBus, registry, config);
 
     _acpAdapterDeps.createClient = (_cmd, _cwd, _timeout, _onPid, _retries, _onExit, opts) =>
-      makeHangingMockClient(opts);
+      makeHangingMockClient(opts, clock);
+
+    const startMs = clock.now();
+    const completePromise = new AcpAgentAdapter("claude").complete("test prompt", {
+      ...makeCompleteOptions(registry, eventBus.emitAgentStream.bind(eventBus), WALL_CLOCK_TIMEOUT_MS),
+    });
+
+    // Drain microtasks so session.prompt() runs (and arms the watchdog tick),
+    // then drive past the idle threshold. The relative ordering (idle < wall)
+    // is what the assertion actually checks — both are virtual here, the test
+    // just requires the watchdog cancels before the adapter's internal deadline.
+    await clock.advance(0);
+    await clock.advance(SHORT_IDLE_TIMEOUT_MS * 2);
+
+    const result = await completePromise;
+    const elapsedVirtualMs = clock.now() - startMs;
 
     try {
-      const adapter = new AcpAgentAdapter("claude");
-      const startMs = Date.now();
-      const result = await adapter.complete("test prompt", {
-        ...makeCompleteOptions(registry, eventBus.emitAgentStream.bind(eventBus), WALL_CLOCK_TIMEOUT_MS),
-      });
-      const elapsedMs = Date.now() - startMs;
-
       // Idle watchdog must have fired — not the wall-clock timeout
       expect(result.cancelled).toBe(true);
-      // Must resolve well before the wall-clock timeout
-      expect(elapsedMs).toBeLessThan(WALL_CLOCK_TIMEOUT_MS / 2);
+      // The watchdog's cancel must resolve before the wall-clock budget is
+      // consumed — expressed in virtual ms since both timers are virtual.
+      expect(elapsedVirtualMs).toBeLessThan(WALL_CLOCK_TIMEOUT_MS / 2);
     } finally {
       detach();
     }

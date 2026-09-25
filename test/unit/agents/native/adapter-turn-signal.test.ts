@@ -25,7 +25,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
-import { waitForCondition } from "@test/helpers";
+import { makeFakeClock, waitForCondition } from "@test/helpers";
 import type { InteractionHandler } from "@/agents/interaction-handler";
 import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
@@ -36,12 +36,16 @@ import { compileToolPolicy, createCodingToolRuntime } from "@/tools";
 const REAL_BUILD = _clientDeps.build;
 const REAL_LIST = _adapterDeps.listStoredProviders;
 const REAL_SWEEP = _adapterDeps.anyAmbientCredential;
+const REAL_SET_TIMEOUT = _adapterDeps.setTimeout;
+const REAL_CLEAR_TIMEOUT = _adapterDeps.clearTimeout;
 
 afterEach(() => {
   _clientDeps.build = REAL_BUILD;
   _resetNativeClient();
   _adapterDeps.listStoredProviders = REAL_LIST;
   _adapterDeps.anyAmbientCredential = REAL_SWEEP;
+  _adapterDeps.setTimeout = REAL_SET_TIMEOUT;
+  _adapterDeps.clearTimeout = REAL_CLEAR_TIMEOUT;
 });
 
 const MODEL = {
@@ -218,6 +222,14 @@ describe("NativeAgentAdapter — turn signal following an in-flight call (US-002
   });
 
   test("AC12: a tool still running when the turn's deadline passes receives an aborted signal", async () => {
+    // Drive the 1s whole-turn deadline off a virtual clock so this test costs
+    // no wall-clock. The schema minimum (1s) is the contract under test, not
+    // the real-time wait; advancing a fake clock by exactly that amount
+    // proves the deadline branch resolves correctly and deterministically.
+    const clock = makeFakeClock();
+    _adapterDeps.setTimeout = clock.setTimeout as typeof _adapterDeps.setTimeout;
+    _adapterDeps.clearTimeout = clock.clearTimeout as typeof _adapterDeps.clearTimeout;
+
     const root = await mkdtemp(join(tmpdir(), "nax-turn-signal-root-"));
     const captured: { signal?: AbortSignal } = {};
     // The tool never finishes; only the turn's whole-turn deadline can
@@ -248,9 +260,16 @@ describe("NativeAgentAdapter — turn signal following an in-flight call (US-002
       .catch(() => {});
 
     try {
+      // Two advances: the first lets the turn start and arm the deadline
+      // timer (the sendTurn's `await Promise.resolve()` chain settles the
+      // session-open microtasks, then `deadlineMs` schedules the abort).
+      // The second fires the deadline, aborting `deadlineController.signal`,
+      // which `AbortSignal.any` forwards to the tool's `captured.signal`.
+      await clock.advance(0);
       await waitForCondition(() => captured.signal !== undefined, 1000).catch(() => {});
       expect(captured.signal).toBeDefined();
-      await waitForCondition(() => captured.signal?.aborted === true, 3000).catch(() => {});
+      await clock.advance(1_000);
+      await waitForCondition(() => captured.signal?.aborted === true, 1000).catch(() => {});
       expect(captured.signal?.aborted).toBe(true);
     } finally {
       clearNativeSessionState(handle.id);

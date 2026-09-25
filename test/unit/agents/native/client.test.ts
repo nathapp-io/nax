@@ -202,22 +202,29 @@ describe("catalog overrides", () => {
         });
       });
 
-      const client = await buildNativeClient([
-        {
-          provider: "anthropic",
-          baseUrl: "https://proxy.test/v1",
-          models: [
-            {
-              id: "nax-2019-wire-probe",
-              protocol: "anthropic-messages",
-              contextWindow: 1000,
-              supportsTools: false,
-              thinkingLevels: ["off"],
-              pricing: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 0.2 },
-            },
-          ],
-        },
-      ]);
+      // transportRetries: 0 skips nax-ai's 2-retry schedule (250ms + 500ms
+      // backoff on transport faults) — a 500 here would otherwise retry
+      // twice, adding ~750ms of pure sleep to this test for no assertion
+      // benefit. The URL is recorded on the first attempt regardless.
+      const client = await buildNativeClient(
+        [
+          {
+            provider: "anthropic",
+            baseUrl: "https://proxy.test/v1",
+            models: [
+              {
+                id: "nax-2019-wire-probe",
+                protocol: "anthropic-messages",
+                contextWindow: 1000,
+                supportsTools: false,
+                thinkingLevels: ["off"],
+                pricing: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 0.2 },
+              },
+            ],
+          },
+        ],
+        { transportRetries: 0 },
+      );
       const model = await client.model("anthropic", "nax-2019-wire-probe");
       await client.complete(model, { messages: [{ role: "user", content: "hi" }] }).catch(() => undefined);
     } finally {
@@ -233,21 +240,29 @@ describe("catalog overrides", () => {
   });
 
   test("an override survives to dispatch: complete() resolves it instead of throwing Unknown model (#1982)", async () => {
-    const client = await buildNativeClient([
-      {
-        provider: "opencode-go",
-        models: [
-          {
-            id: "nax-1982-dispatch-probe",
-            protocol: "openai-completions",
-            contextWindow: 1_000_000,
-            supportsTools: true,
-            thinkingLevels: ["off", "high"],
-            pricing: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 },
-          },
-        ],
-      },
-    ]);
+    // transportRetries: 0 skips the 2-retry backoff — "Provider is not
+    // configured" throws without an HTTP status, so nax-ai classifies it as
+    // transport and sleeps through 250ms + 500ms before re-throwing. The
+    // contract under test is "the override reached the protocol layer", not
+    // the retry schedule, so the retries are pure overhead.
+    const client = await buildNativeClient(
+      [
+        {
+          provider: "opencode-go",
+          models: [
+            {
+              id: "nax-1982-dispatch-probe",
+              protocol: "openai-completions",
+              contextWindow: 1_000_000,
+              supportsTools: true,
+              thinkingLevels: ["off", "high"],
+              pricing: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 },
+            },
+          ],
+        },
+      ],
+      { transportRetries: 0 },
+    );
 
     const resolved = await client.model("opencode-go", "nax-1982-dispatch-probe");
 
