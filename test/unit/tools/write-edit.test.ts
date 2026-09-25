@@ -61,6 +61,27 @@ describe("editTool", () => {
     expect(res.content).toMatch(/not found/i);
   });
 
+  // US-001 keeps these failures byte-for-byte; the literal-replacement fix
+  // changes only the successful write.
+  test("US-001: an absent old_string returns the exact not-found message", async () => {
+    const target = join(root, "src", "a.ts");
+    const res = await editTool.run({ path: "src/a.ts", old_string: "const zzz = 0;", new_string: "x" }, ctx([target]));
+    expect(res).toEqual({
+      content: `old_string not found in ${target}; the file may have changed`,
+      isError: true,
+    });
+  });
+
+  test("US-001: an ambiguous old_string returns the exact ambiguity message", async () => {
+    const target = join(root, "src", "dup.ts");
+    writeFileSync(target, "same\nsame\n");
+    const res = await editTool.run({ path: "src/dup.ts", old_string: "same", new_string: "other" }, ctx([target]));
+    expect(res).toEqual({
+      content: "old_string is ambiguous: found 2 times. Include more surrounding context.",
+      isError: true,
+    });
+  });
+
   test("an ambiguous match is an error rather than a guess", async () => {
     const target = join(root, "src", "dup.ts");
     writeFileSync(target, "same\nsame\n");

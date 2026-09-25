@@ -9,7 +9,26 @@
  */
 
 import { readFile, stat, writeFile } from "node:fs/promises";
+import { composeEditRegion, replaceUniqueLiteral } from "./edit-region";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+
+/** The file I/O `editTool` performs, behind one seam so a test can make a read or a write fail. */
+export interface EditDeps {
+  stat(path: string): Promise<{ readonly size: number }>;
+  readFile(path: string, encoding: "utf8"): Promise<string>;
+  writeFile(path: string, data: string, encoding: "utf8"): Promise<void>;
+}
+
+/**
+ * Injectable fs seam, mirroring `_grepDeps` / `_promptLoaderDeps`: the
+ * read/write error arms of `Edit` must be reachable deterministically —
+ * permission bits cannot deny a write to root, and never to a Windows ACL.
+ */
+export const _editDeps: EditDeps = {
+  stat: (path) => stat(path),
+  readFile: (path, encoding) => readFile(path, encoding),
+  writeFile: (path, data, encoding) => writeFile(path, data, encoding),
+};
 
 function countOccurrences(haystack: string, needle: string): number {
   if (needle === "") return 0;
@@ -25,7 +44,7 @@ function countOccurrences(haystack: string, needle: string): number {
 export const editTool: CodingTool = {
   name: "Edit",
   description:
-    "Replace one exact occurrence of old_string with new_string in a repository file. Fails if the match is absent or ambiguous.",
+    "Replace one exact occurrence of old_string with new_string in a repository file. Fails if the match is absent or ambiguous. On success the result shows the edited lines with up to 3 lines of context and their line range, so you do not need to Read the file again to check the edit.",
   inputSchema: {
     type: "object",
     properties: {
@@ -49,7 +68,7 @@ export const editTool: CodingTool = {
     // Checked before reading, not after: Edit must hold the whole file to
     // replace within it, so the only way to bound the memory is to refuse.
     try {
-      const { size } = await stat(target);
+      const { size } = await _editDeps.stat(target);
       if (size > ctx.maxFileBytes) {
         return {
           // The reason leads and the path trails, matching Write's and
@@ -68,7 +87,7 @@ export const editTool: CodingTool = {
 
     let source: string;
     try {
-      source = await readFile(target, "utf8");
+      source = await _editDeps.readFile(target, "utf8");
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };
     }
@@ -85,8 +104,22 @@ export const editTool: CodingTool = {
     }
 
     try {
-      await writeFile(target, source.replace(oldString, newString), "utf8");
-      return { content: `edited ${target}` };
+      // Literal composition, NOT `source.replace(oldString, newString)`: a
+      // string replacement is read as a template, so the dollar-substitution
+      // patterns it recognises (a dollar sign followed by a dollar sign, an
+      // ampersand, a backtick, or an apostrophe) inside new_string would be
+      // expanded instead of written -- see src/tools/edit-region.ts. The
+      // uniqueness checks above proved there is exactly one match, so
+      // `indexOf` is that match.
+      const matchIndex = source.indexOf(oldString);
+      const updated = replaceUniqueLiteral(source, oldString, newString, matchIndex);
+      await _editDeps.writeFile(target, updated, "utf8");
+      // The view is composed only after the write resolves: a write error
+      // returns the error, never a view. It is a bounded Read-compatible
+      // slice of the region that changed, so the model does not have to
+      // Read the file back to see where its edit landed.
+      const region = composeEditRegion({ updated, matchIndex, newStringLength: newString.length });
+      return { content: `edited ${target}\n${region}` };
     } catch (err) {
       return { content: err instanceof Error ? err.message : String(err), isError: true };
     }
