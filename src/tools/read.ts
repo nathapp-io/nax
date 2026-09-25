@@ -14,6 +14,7 @@
  */
 
 import { readPrefix } from "@/utils/bounded-io";
+import { limitStopFooter, shouldAppendLimitStopFooter } from "./read-continuation";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 import { READ_CEILING } from "./truncate";
 
@@ -39,7 +40,10 @@ export const readTool: CodingTool = {
   description:
     "Read a UTF-8 text file from the repository. Paths are relative to the repository root. " +
     "Optionally pass offset (1-based line number to start from) and/or limit (maximum number of " +
-    "lines to return) to read a slice instead of the whole file.",
+    "lines to return) to read a slice instead of the whole file. " +
+    "Use Read to examine files instead of cat, sed, head, tail or awk in Bash. " +
+    "A read that stops before the end of the file ends with a line naming the offset to continue from. " +
+    "For a large file, read the part you need with offset/limit; when you need the whole file, continue with offset until complete.",
   inputSchema: {
     type: "object",
     properties: {
@@ -123,11 +127,25 @@ export const readTool: CodingTool = {
       const endLine = limit === undefined ? totalLines : Math.min(startIndex + limit, totalLines);
       const selected = lines.slice(startIndex, endLine).join("\n");
       const header = `[lines ${offset}-${endLine} of ${totalLabel}]\n`;
+      // US-001: when a `limit` cut the slice short of the file's known line
+      // count, append a single trailer that names the continuation offset.
+      // The helper hides the predicate (limit given AND endLine < totalLines)
+      // and the `+`-on-floor rule, both of which are easy to drift apart from
+      // the header if inlined.
+      const footer = shouldAppendLimitStopFooter(limit !== undefined, endLine, totalLines)
+        ? limitStopFooter({
+            nextOffset: endLine + 1,
+            totalIsFloor: bounded,
+            endLine,
+            totalLines,
+          })
+        : "";
       // The model-facing cap and the marker that names the spill path are
       // the after_tool policy's, NOT this tool's. The header and the
       // requested range go back to the runtime whole; the chokepoint shapes
       // them for the model.
-      return { content: `${header}${selected}` };
+      const content = footer === "" ? `${header}${selected}` : `${header}${selected}\n${footer}`;
+      return { content };
     } catch (err) {
       // An unreadable file is a tool ERROR the model can react to, never a
       // denial: the policy already said yes.
