@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { CommandShadow } from "@/command-safety";
 import type { NaxConfig } from "@/config";
 import type { AskChannel, AskChannelResponse, DispatchAskDeps, DispatchAskOptions } from "@/interaction";
@@ -190,6 +190,65 @@ describe("buildDispatchAskWiring — approvals provenance (#2199)", () => {
     const config = makeNaxConfig({ execution: { sandbox: { enabled: true } } });
     await (await buildDispatchAskWiring(opts({ config, stageModes: ["raw"] }), spy.deps)).dispose();
     expect(spy.calls.map((c) => c.forgeCapable)).toEqual([false]);
+  });
+});
+
+describe("approval-prompt stage forwarding (US-005)", () => {
+  /** The exact options object handed to `createHumanAskLink` by the wiring. */
+  type HumanLinkOptions = Parameters<DispatchAskDeps["createHumanAskLink"]>[0];
+
+  /** Records every call to `createHumanAskLink` while still building a real link. */
+  function recordingHumanLink(): { seen: HumanLinkOptions[]; deps: DispatchAskDeps } {
+    const seen: HumanLinkOptions[] = [];
+    return {
+      seen,
+      deps: deps({
+        createHumanAskLink: (o) => {
+          seen.push(o);
+          return _dispatchAskDeps.createHumanAskLink(o);
+        },
+      }),
+    };
+  }
+
+  test("US-005 AC3: a supplied stage reaches createHumanAskLink", async () => {
+    const recorder = recordingHumanLink();
+    const wiring = await buildDispatchAskWiring(opts({ stage: "merge" }), recorder.deps);
+
+    expect(recorder.seen).toHaveLength(1);
+    assertDefined(recorder.seen[0], "createHumanAskLink options");
+    expect(recorder.seen[0].stage).toBe("merge");
+    await wiring.dispose();
+  });
+
+  test("US-005 AC4: without a stage, the options carry no stage key at all", async () => {
+    const recorder = recordingHumanLink();
+    const wiring = await buildDispatchAskWiring(opts(), recorder.deps);
+
+    expect(recorder.seen).toHaveLength(1);
+    const captured = recorder.seen[0];
+    assertDefined(captured, "createHumanAskLink options");
+    expect("stage" in captured).toBe(false);
+    await wiring.dispose();
+  });
+
+  test("US-005 AC5: buildRunDispatchAskWiring forwards a stage to createHumanAskLink", async () => {
+    const recorder = recordingHumanLink();
+    const wiring = await buildRunDispatchAskWiring(
+      {
+        ...opts(),
+        projectDir: "/repo",
+        rootConfig: makeNaxConfig(),
+        packageDirs: [],
+        stage: "review",
+      },
+      recorder.deps,
+    );
+
+    expect(recorder.seen).toHaveLength(1);
+    assertDefined(recorder.seen[0], "createHumanAskLink options");
+    expect(recorder.seen[0].stage).toBe("review");
+    await wiring.dispose();
   });
 });
 

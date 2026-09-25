@@ -11,6 +11,7 @@
 import type { Logger } from "@/logger";
 import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
+import { classifyOutcome } from "./classify-outcome";
 import { dispatchGroup } from "./cycle-dispatch";
 import { recordIteration } from "./cycle-iteration-log";
 import { createDeclineLedger } from "./cycle-retirement";
@@ -28,11 +29,14 @@ import type {
   FixCycleContext,
   FixCycleResult,
   Iteration,
-  IterationOutcome,
   ValidateResult,
 } from "./cycle-types";
 import type { Finding } from "./types";
-import { findingRecurrenceKey } from "./types";
+
+// Re-exported so every existing import — including the `@/findings` barrel and
+// `@/findings/cycle` — keeps working after classifyOutcome moved to
+// ./classify-outcome.ts (nax#2154).
+export { classifyOutcome } from "./classify-outcome";
 
 // ─── Injectable deps (for testing) ───────────────────────────────────────────
 
@@ -54,59 +58,6 @@ export const _cycleDeps: { callOp?: CallOpFn; now: () => string } = {
 
 function normalizeValidateResult<F extends Finding>(r: F[] | ValidateResult<F>): ValidateResult<F> {
   return Array.isArray(r) ? { findings: r, shortCircuited: false } : r;
-}
-
-// ─── classifyOutcome ─────────────────────────────────────────────────────────
-
-/** Classify the outcome of a single iteration for one finding source. Uses findingRecurrenceKey (excludes message) so a reworded finding doesn't read as a spurious regression (nax#1581). */
-function classifySingleSource<F extends Finding>(before: F[], after: F[]): IterationOutcome {
-  const beforeKeys = new Set(before.map(findingRecurrenceKey));
-  const afterKeys = new Set(after.map(findingRecurrenceKey));
-
-  if (afterKeys.size === 0 && beforeKeys.size === 0) return "resolved";
-  if (afterKeys.size === 0) return "resolved";
-
-  // Check for new findings (regression)
-  const hasNew = [...afterKeys].some((k) => !beforeKeys.has(k));
-  const hasResolved = [...beforeKeys].some((k) => !afterKeys.has(k));
-
-  if (hasNew && !hasResolved) return "regressed";
-  if (!hasNew && !hasResolved) return "unchanged";
-  if (hasNew && hasResolved) return "regressed"; // new ones appeared even if some resolved
-  return "partial"; // hasResolved && !hasNew
-}
-
-/**
- * Classify an iteration outcome by computing per-source outcomes then
- * aggregating. Mixed cross-source comparisons are avoided: e.g. if before has
- * [lintA] and after has [typecheckC], that surfaces as "regressed-different-source"
- * because the lint source resolved but a new source appeared.
- */
-export function classifyOutcome<F extends Finding>(before: F[], after: F[]): IterationOutcome {
-  if (before.length === 0 && after.length === 0) return "resolved";
-  // No prior findings — any new finding is a plain regression, not a source-switch.
-  if (before.length === 0) return "regressed";
-
-  const beforeSources = new Set(before.map((f) => f.source));
-  const afterSources = new Set(after.map((f) => f.source));
-
-  // Detect new sources appearing that weren't in before
-  const newSources = [...afterSources].filter((s) => !beforeSources.has(s));
-  if (newSources.length > 0) return "regressed-different-source";
-
-  // Compute per-source outcomes for sources that existed before
-  const sources = [...beforeSources];
-  const perSource = sources.map((source) =>
-    classifySingleSource(
-      before.filter((f) => f.source === source),
-      after.filter((f) => f.source === source),
-    ),
-  );
-
-  if (perSource.every((o) => o === "resolved")) return "resolved";
-  if (perSource.some((o) => o === "regressed")) return "regressed";
-  if (perSource.every((o) => o === "unchanged")) return "unchanged";
-  return "partial";
 }
 
 // ─── runFixCycle ─────────────────────────────────────────────────────────────

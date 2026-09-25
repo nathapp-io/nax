@@ -19,6 +19,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
+  assertDefined,
   makeMockRuntime,
   makeNaxConfig,
   makePluginRegistry,
@@ -32,10 +33,12 @@ import {
   _runnerReentrancyGuard,
   _storyOrchestratorDeps,
   type RunCleanupOptions,
+  type RunnerCompletionOptions,
   type RunOptions,
   run,
 } from "@/execution";
 import type { RunnerSetupResult } from "@/execution/runner-setup";
+import { InteractionChain } from "@/interaction";
 import type { PRD } from "@/prd";
 import { SessionManager } from "@/session";
 import { _gitDeps } from "@/utils/git";
@@ -274,5 +277,46 @@ describe("runner.run() — US-001 reconciled-total handoff", () => {
     expect(result.totalCost).toBeCloseTo(RECONCILED_TOTAL, 4);
     expect(cleanupTotalCost).toBeCloseTo(RECONCILED_TOTAL, 4);
     expect(cleanupTotalCost).not.toBeCloseTo(EXECUTION_ACCUMULATOR, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-005 — run() forwards the interaction chain into the completion phase
+// ---------------------------------------------------------------------------
+
+describe("runner.run() — US-005 interaction-chain threading", () => {
+  test("US-005 AC15: runCompletionPhase receives the setup phase's interaction chain by reference", async () => {
+    const prd = makeCompletePrd();
+    const chain = new InteractionChain({ defaultTimeout: 1000, defaultFallback: "abort" });
+
+    _runnerDeps.runSetupPhase = mock(async () => ({
+      ...makeSetupResult(prd),
+      interactionChain: chain,
+    })) as typeof _runnerDeps.runSetupPhase;
+    _runnerDeps.runExecutionPhase = mock(async () => ({
+      prd,
+      iterations: 1,
+      storiesCompleted: 1,
+      totalCost: EXECUTION_ACCUMULATOR,
+      allStoryMetrics: [],
+      exitReason: "completed",
+    })) as typeof _runnerDeps.runExecutionPhase;
+
+    let seen: RunnerCompletionOptions | undefined;
+    _runnerDeps.runCompletionPhase = mock(async (options: RunnerCompletionOptions) => {
+      seen = options;
+      return {
+        durationMs: 42,
+        runCompletedAt: new Date().toISOString(),
+        acceptancePassed: true,
+        pluginGateFailed: false,
+        reportedTotal: RECONCILED_TOTAL,
+      };
+    }) as typeof _runnerDeps.runCompletionPhase;
+
+    await run(makeMinimalOptions());
+
+    assertDefined(seen, "runCompletionPhase options");
+    expect(seen.interactionChain).toBe(chain);
   });
 });

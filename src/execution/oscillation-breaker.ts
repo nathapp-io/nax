@@ -49,7 +49,7 @@ export function inspectOscillationBreaker(ctx: PipelineContext): BreakerDecision
       trip: true,
       count,
       maxOscillations,
-      reason: `Rectification oscillation threshold reached: ${count} regressed-different-source iterations across attempts (max ${maxOscillations})`,
+      reason: `Rectification oscillation threshold reached: ${count} resolved finding sources reappeared across attempts (max ${maxOscillations})`,
     };
   }
   return { trip: false, count, maxOscillations, reason: "" };

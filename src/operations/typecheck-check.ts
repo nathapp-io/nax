@@ -9,6 +9,7 @@ import { parseTypecheckOutput } from "../review/typecheck-parsing";
 import type { TypecheckOutputFormat, TypecheckParseResult } from "../review/typecheck-parsing/types";
 import { appendScratchEntry } from "../session/scratch-writer";
 import { errorMessage } from "../utils/errors";
+import { resolveGateCwd } from "./gate-cwd";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface TypecheckCheckInput {
@@ -120,13 +121,14 @@ export const typecheckCheckOp: DeterministicOperation<
       return { success: true, status: "skipped", findings: [], durationMs: 0 };
     }
 
-    // Detected default → run from the package dir (absolute input.workdir, not the
-    // relative packageView key); configured-but-no-override → repo root.
-    const cmdWorkdir = detectedFromPackage
-      ? input.workdir
-      : ctx.packageView.hasOverride
-        ? input.workdir
-        : ctx.packageView.repoRoot;
+    // Route the spawn by the command's provenance, not by whether the package
+    // has ANY override (see gate-cwd.ts).
+    const { cwd: cmdWorkdir } = resolveGateCwd({
+      commandName: "typecheck",
+      detected: detectedFromPackage,
+      packageView: ctx.packageView,
+      workdir: input.workdir,
+    });
     const start = Date.now();
     const result = await deps.runQualityCommand({
       commandName: "typecheck",

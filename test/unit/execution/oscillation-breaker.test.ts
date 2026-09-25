@@ -172,6 +172,30 @@ describe("inspectOscillationBreaker — reason text", () => {
     expect(decision.reason).toContain("2");
     expect(decision.reason).toMatch(/oscillat/i);
   });
+
+  test("AC9: reason describes the count as resolved finding sources that reappeared", () => {
+    const store = new Map<string, number>([["US-osc-1", 2]]);
+    const ctx = makeCtx({ store, conflictDetection: { enabled: true, maxOscillations: 2 } });
+    const decision = inspectOscillationBreaker(ctx);
+    expect(decision.trip).toBe(true);
+    expect(decision.reason).toContain("2 resolved finding sources reappeared");
+  });
+
+  test("AC9 boundary: the reappearing-source count is the recorded count, not the threshold", () => {
+    const store = new Map<string, number>([["US-osc-1", 3]]);
+    const ctx = makeCtx({ store, conflictDetection: { enabled: true, maxOscillations: 2 } });
+    const decision = inspectOscillationBreaker(ctx);
+    expect(decision.trip).toBe(true);
+    expect(decision.reason).toContain("3 resolved finding sources reappeared");
+  });
+
+  test("AC10: reason no longer claims 'regressed-different-source' iterations", () => {
+    const store = new Map<string, number>([["US-osc-1", 2]]);
+    const ctx = makeCtx({ store, conflictDetection: { enabled: true, maxOscillations: 2 } });
+    const decision = inspectOscillationBreaker(ctx);
+    expect(decision.trip).toBe(true);
+    expect(decision.reason).not.toContain("regressed-different-source");
+  });
 });
 
 describe("DEFAULT_CONFIG — sanity", () => {

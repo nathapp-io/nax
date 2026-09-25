@@ -22,6 +22,11 @@ export interface PackageView {
   readonly repoRoot: string;
   /** True when a per-package config override was hydrated for this package. */
   readonly hasOverride: boolean;
+  /**
+   * The raw per-package overlay (`.nax/mono/<pkg>/config.json`) before merging;
+   * absent when the package has none.
+   */
+  readonly overlay?: Partial<NaxConfig>;
   readonly config: NaxConfig;
   select<C>(selector: ConfigSelector<C>): C;
 }
@@ -55,7 +60,13 @@ export function packageWorkdir(view: Pick<PackageView, "packageDir" | "repoRoot"
   return join(repoRoot, packageDir);
 }
 
-function createPackageView(config: NaxConfig, packageDir: string, repoRoot: string, hasOverride: boolean): PackageView {
+function createPackageView(
+  config: NaxConfig,
+  packageDir: string,
+  repoRoot: string,
+  hasOverride: boolean,
+  overlay?: Partial<NaxConfig>,
+): PackageView {
   const memo = new Map<string, unknown>();
   // TYPE-29 (D-23): use path.relative rather than startsWith(repoRoot) so
   // a sibling directory whose name is a prefix of the repo root (e.g.
@@ -71,6 +82,9 @@ function createPackageView(config: NaxConfig, packageDir: string, repoRoot: stri
     relativeFromRoot,
     repoRoot,
     hasOverride,
+    // Present only when the package actually had an overlay — `'overlay' in view`
+    // is the caller's "has raw overlay" test (mirrors hasOverride).
+    ...(overlay !== undefined ? { overlay } : {}),
     config,
     select<C>(selector: ConfigSelector<C>): C {
       if (memo.has(selector.name)) {
@@ -113,6 +127,9 @@ export function packageOverrideKey(packageDir: string): string {
 export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): PackageRegistry {
   const cache = new Map<string, PackageView>();
   const mergedConfigs = new Map<string, NaxConfig>();
+  // The RAW per-package overlay, before merging — kept beside mergedConfigs so a
+  // gate can tell which commands the package itself declared (gate-cwd.ts).
+  const overlays = new Map<string, Partial<NaxConfig>>();
   const knownPackages = new Set<string>();
   let hydrated = false;
 
@@ -169,7 +186,7 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       }
     }
     const config = overrideConfig ?? loader.current();
-    const view = createPackageView(config, key, repoRoot, hasOverride);
+    const view = createPackageView(config, key, repoRoot, hasOverride, overlays.get(overrideKey));
     cache.set(key, view);
     return view;
   }
@@ -187,6 +204,7 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       }
       const override = await load(repoRoot, dir);
       if (override !== null) {
+        overlays.set(dir, override);
         mergedConfigs.set(dir, mergePackageConfig(loader.current(), override));
         // A pre-hydration resolve can have cached the same package through a
         // worktree path (`.nax-wt/<story>/<dir>`). Invalidate every identity

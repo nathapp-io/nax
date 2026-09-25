@@ -190,7 +190,7 @@ export interface FixCycleIterationObservation extends BaseObservation {
     iteration: number;
     iterationNum?: number;
     status: "started" | "passed" | "failed";
-    outcome?: "resolved" | "partial" | "regressed" | "unchanged" | "regressed-different-source";
+    outcome?: "resolved" | "partial" | "regressed" | "unchanged" | "rotated" | "regressed-different-source";
     findingsBefore?: number;
     findingsAfter?: number;
     costUsd?: number;

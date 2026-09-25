@@ -351,8 +351,8 @@ export async function decideStageAction(
       });
       await cleanupSessionOnFailure(ctx);
       // US-002 rectification oscillation circuit-breaker. When the same story
-      // re-runs the orchestration and the fix cycle keeps hopping between
-      // different finding sources (regressed-different-source), the operator
+      // re-runs the orchestration and a resolved finding source keeps
+      // reappearing across attempts, the operator
       // would otherwise see only a silent money-drain as the breaker-less
       // escalator re-runs the same story tier-after-tier. The runtime Map is
       // accumulated by the increment site in runRectification; reading it

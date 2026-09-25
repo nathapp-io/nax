@@ -13,6 +13,7 @@ import { errorMessage } from "../utils/errors";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { regression } from "../verification/runners";
 import type { VerificationGateOptions, VerificationResult } from "../verification/types";
+import { resolveGateCwd } from "./gate-cwd";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface VerifyScopedInput {
@@ -229,17 +230,19 @@ export const verifyScopedOp: DeterministicOperation<
     // for agent-cleanup. The legacy ScopedStrategy also used regression(), so this preserves parity
     // — it is NOT a new perf regression introduced by this port.
     const scopedTimeout = quality.execution?.regressionGate?.timeoutSeconds ?? 600;
-    // Detected default → run from the package dir (absolute input.workdir, not the
-    // relative packageView key); configured-but-no-override → repo root.
-    const cmdWorkdir = detectedFromPackage
-      ? input.workdir
-      : ctx.packageView.hasOverride
-        ? input.workdir
-        : ctx.packageView.repoRoot;
+    // Route the spawn by the command's provenance, not by whether the package
+    // has ANY override (see gate-cwd.ts).
+    const { cwd: cmdWorkdir, provenance } = resolveGateCwd({
+      commandName: "test",
+      detected: detectedFromPackage,
+      packageView: ctx.packageView,
+      workdir: input.workdir,
+    });
     logger.info("verify[scoped]", "Running scoped tests", {
       storyId: input.storyId,
       packageDir: input.packageDir,
       cwd: cmdWorkdir,
+      provenance,
       command: selection.effectiveCommand,
       timeoutSeconds: scopedTimeout,
       isFullSuite: selection.isFullSuite,

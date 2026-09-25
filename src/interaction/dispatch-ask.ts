@@ -40,6 +40,7 @@ import {
 } from "@/permissions";
 import { NAX_COMMIT } from "@/version";
 import { type AskChannel, cancelPendingAsk, createHumanAskLink } from "./ask-link";
+import type { InteractionStage } from "./types";
 
 /** Mirrors the `execution.approvalTimeout` schema default (schemas-execution.ts). */
 export const DEFAULT_APPROVAL_TIMEOUT_MS = 600_000;
@@ -73,6 +74,12 @@ export interface DispatchAskOptions {
   readonly featureName: string;
   readonly storyId?: string;
   readonly abortSignal?: AbortSignal;
+  /**
+   * The pipeline stage this scope's approval prompts belong to (US-005).
+   * Post-run call sites pass `"review"` / `"merge"`; the execution stage
+   * omits it so the human link keeps its `"execution"` default.
+   */
+  readonly stage?: InteractionStage;
   /** Every stage's resolved `bashApproval` in this run — see `collectEffectiveRunStageModes`. */
   readonly stageModes: readonly BashApprovalMode[];
 }
@@ -113,6 +120,7 @@ export async function buildDispatchAskWiring(
     timeoutMs: opts.config.execution?.approvalTimeout ?? DEFAULT_APPROVAL_TIMEOUT_MS,
     featureName: opts.featureName,
     ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
+    ...(opts.stage !== undefined ? { stage: opts.stage } : {}),
     ...(opts.abortSignal ? { abortSignal: opts.abortSignal } : {}),
     onRemember: async (req) =>
       appendApproval(approvalsFile, {
