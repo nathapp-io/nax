@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeNaxConfig, makePRD, makeSpawn, makeTempDir } from "@test/helpers";
-import { _modelResolutionDeps, runPrecheck } from "@/precheck";
+import { _modelResolutionDeps, _nativeCredentialDeps, runPrecheck } from "@/precheck";
 import { _checkCliDeps } from "@/precheck/checks-cli";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,10 +62,12 @@ function makeConfigWithNativeModel(): ReturnType<typeof makeNaxConfig> {
 
 let origSpawn: typeof _checkCliDeps.spawn;
 let origResolveNative: typeof _modelResolutionDeps.resolveNative;
+let origProviders: typeof _nativeCredentialDeps.providersWithoutCredentials;
 
 beforeEach(() => {
   origSpawn = _checkCliDeps.spawn;
   origResolveNative = _modelResolutionDeps.resolveNative;
+  origProviders = _nativeCredentialDeps.providersWithoutCredentials;
 
   _checkCliDeps.spawn = makeSpawn(() => ({ exitCode: 0 })).spawn;
 });
@@ -73,6 +75,7 @@ beforeEach(() => {
 afterEach(() => {
   _checkCliDeps.spawn = origSpawn;
   _modelResolutionDeps.resolveNative = origResolveNative;
+  _nativeCredentialDeps.providersWithoutCredentials = origProviders;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -121,5 +124,28 @@ describe("runPrecheck model-resolution integration (US-1984 AC11)", () => {
 
     const modelResolution = result.blockers.find((c) => c.name === "model-resolution");
     expect(modelResolution).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// native-credentials is wired into runPrecheck's late blockers. The preload
+// stubs the probe to "all credentialed", so without this nothing would notice
+// the check being unwired.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runPrecheck native-credentials integration", () => {
+  test("a provider with no credential surfaces as the native-credentials blocker", async () => {
+    _modelResolutionDeps.resolveNative = async () => ({ status: "resolved" });
+    _nativeCredentialDeps.providersWithoutCredentials = async () => ["anthropic"];
+
+    const { result } = await runPrecheck(makeNaxConfig(), makePRD(), {
+      workdir: tempDir,
+      format: "json",
+      silent: true,
+    });
+
+    const blocker = result.blockers.find((c) => c.name === "native-credentials");
+    expect(blocker?.passed).toBe(false);
+    expect(blocker?.message).toContain("nax auth login anthropic");
   });
 });

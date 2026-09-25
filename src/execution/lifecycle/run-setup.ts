@@ -49,7 +49,11 @@ import { acquireLock, releaseLock } from "../helpers";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import { StatusWriter } from "../status-writer";
 import { initializeAfterLock } from "./run-setup-init";
-import { warnFallbackMisconfiguration, warnInertBashStages } from "./run-setup-warnings";
+import {
+  assertDefaultNativeCredentials,
+  warnFallbackMisconfiguration,
+  warnInertBashStages,
+} from "./run-setup-warnings";
 
 // Re-export warnings for back-compat with tests and other callers that import
 // from `@/execution/lifecycle/run-setup` directly.
@@ -148,6 +152,12 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
   if (options.agentManager) {
     await options.agentManager.validateCredentials();
+  }
+
+  // Precheck is opt-in, so the default native agent's per-provider credential
+  // check runs here. A dry run makes no billed call and is not refused.
+  if (!options.dryRun) {
+    await assertDefaultNativeCredentials(options.config);
   }
 
   const {

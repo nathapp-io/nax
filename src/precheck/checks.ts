@@ -32,6 +32,13 @@ export {
   collectConfiguredModelPins,
   type ModelResolutionDeps,
 } from "./checks-model-resolution";
+// Native-credential precheck: the default native tier map's providers must have a credential.
+export {
+  _nativeCredentialDeps,
+  checkNativeCredentials,
+  describeMissingNativeCredentials,
+  findMissingNativeCredentials,
+} from "./checks-native-credentials";
 // Tier 2 Warnings
 export {
   _checkDiskSpaceDeps,
