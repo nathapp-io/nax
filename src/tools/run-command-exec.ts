@@ -124,6 +124,7 @@ export async function runExecBranch(
       audit: {
         executed: normalized.argv,
         target,
+        cwd: normalized.cwd,
         ...(launched.sandbox !== undefined ? { sandbox: launched.sandbox } : {}),
       },
     };

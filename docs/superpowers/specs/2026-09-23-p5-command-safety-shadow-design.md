@@ -72,7 +72,7 @@ runtime.callTool
              ├─ rule-scorer (sync)
              └─ systemone-client ──► loopback URL
   ... ask chain / execution as today ...
-  log(outcome, approval) ──► shadow.settle(callKey, outcome)
+  log(outcome, approval) ──► shadow.settle(callKey, outcome, run?)
                                   │
             both halves present ──► append row to command-safety/<runId>.jsonl
 ```
@@ -105,9 +105,10 @@ Each file stays well under 200 lines. No existing file above 560 lines grows by 
 interface CommandShadow {
   /** Start classifying. Never throws, never awaited by the caller. */
   observe(key: string, obs: { command: string; identity: "Bash" | "Exec"; stage: string;
-                               storyId?: string; mechanical: MechanicalVerdict }): void;
-  /** Attach the final outcome. Never throws. */
-  settle(key: string, outcome: FinalOutcome): void;
+                               storyId?: string; mechanical: MechanicalVerdict;
+                               cwd?: string /* Bash: the policy root */ }): void;
+  /** Attach the final outcome and, for Exec, what ran ({ executed, cwd? }). Never throws. */
+  settle(key: string, outcome: FinalOutcome, run?: ExecRun): void;
   /** Wait for pending rows, bounded by timeoutMs; afterwards write the rest as unavailable. */
   drain(): Promise<void>;
 }
@@ -362,6 +363,8 @@ interface CommandSafetyRow {
   readonly identity: "Bash" | "Exec";
   readonly command: string;          // verbatim; for Exec, the space-joined argv
   readonly argv?: readonly string[]; // Exec only, verbatim
+  readonly executed?: readonly string[]; // Exec only: the argv that ran; absent when it did not run
+  readonly cwd?: string;             // Bash: the policy root; Exec: where it ran. Not model state
   readonly mechanical: { verdict: "allow" | "ask" | "deny"; breach: boolean; rule?: string };
   readonly outcome: { ledger: "ok" | "error" | "denied" | "denied:ask" | "unsettled"; decidedBy?: string };
   readonly rules: { version: number; hits: Record<QuestionId, boolean>; error?: string };
@@ -382,6 +385,15 @@ questions are fixed per `questionSetVersion` in `questions.ts` (a text change bu
 so the eval can rebuild any request, or build one under a new question set, from `command` alone.
 `outcome.ledger: "unsettled"` covers an observation drained before `log()` ran (4.2). The eval
 counts those separately.
+
+`cwd` (added 2026-09-25) is the directory the command starts in: the policy root for Bash (the
+directory Bash runs in), and the directory the tool chose for Exec, which arrives at settle with
+`executed`. It is recorded so `outside_project` can be labelled against the real project
+directory. It is **not** part of the state sent to the model (6.1): adding it there is a
+question-set change that waits for the eval to measure it. Known gap: an Exec row whose call never
+ran (denied, refused by the tool, failed to spawn, or unsettled) has no `cwd`; the tool decides it
+from the requested `target` (`repoRoot` or the package dir), which the row does not record. A
+labeller that assumes the package dir mislabels a refused `target: "repoRoot"` call.
 
 ## 8. Error handling summary
 
@@ -430,7 +442,8 @@ repository.
 - The rule scorer's regex text is written in the plan and frozen (committed) before the red-team
   corpus task starts.
 - Key-to-`log()`: `callTool` builds a per-call `logCall` wrapper that calls `log()` and then
-  `tap.settle(outcome, audit?.approval?.decidedBy)`; every `log(` inside `callTool` after the
+  `tap.settle(outcome, audit?.approval?.decidedBy, run)` (`run` = `{ executed, cwd? }` from an
+  Exec tool's `audit`); every `log(` inside `callTool` after the
   verdict becomes `logCall(`.
 - Construction goes through `buildCommandShadow` in `src/command-safety/build.ts`, so
   `execution.ts` gains about six lines.

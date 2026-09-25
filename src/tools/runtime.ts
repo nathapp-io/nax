@@ -226,6 +226,8 @@ export function createCodingToolRuntime(opts: {
     audit?: {
       executed?: readonly string[];
       target?: "package" | "repoRoot";
+      /** Exec only: forwarded to the command shadow; never written to the ledger. */
+      cwd?: string;
       approval?: { decidedBy: string; remembered: boolean; latencyMs: number };
       sandbox?: SandboxRecord;
     },
@@ -341,6 +343,7 @@ export function createCodingToolRuntime(opts: {
               identity: policyIdentity,
               command: tool.scope.commandField === undefined ? undefined : input[tool.scope.commandField],
               argv: hasArgv && argvField !== undefined ? input[argvField] : undefined,
+              root: opts.policy.root,
               verdict,
               stage: opts.pipelineStage ?? "unknown",
               ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
@@ -368,7 +371,13 @@ export function createCodingToolRuntime(opts: {
         resultBytesPreTruncation?: number,
       ): void => {
         log(tool, outcome, resultBytes, input, context, breach, reason, routineErrors, audit, resultBytesPreTruncation);
-        tap?.settle(outcome, audit?.approval?.decidedBy, audit?.executed);
+        tap?.settle(
+          outcome,
+          audit?.approval?.decidedBy,
+          audit?.executed === undefined
+            ? undefined
+            : { executed: audit.executed, ...(audit.cwd !== undefined ? { cwd: audit.cwd } : {}) },
+        );
       };
 
       /**

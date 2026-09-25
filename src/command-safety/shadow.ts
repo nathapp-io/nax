@@ -13,6 +13,7 @@ import type { Classify } from "./systemone-client";
 import type {
   CommandSafetyRow,
   CommandShadow,
+  ExecRun,
   FinalOutcome,
   LedgerOutcome,
   ModelResult,
@@ -55,8 +56,8 @@ interface Entry {
   readonly rules: RuleResult;
   model?: { readonly result: ModelResult; readonly cached: boolean };
   outcome?: { readonly ledger: LedgerOutcome | "unsettled"; readonly decidedBy?: string };
-  /** Exec only: the argv that actually ran, set at settle. */
-  executed?: readonly string[];
+  /** Exec only: what actually ran, set at settle. */
+  run?: ExecRun;
   written: boolean;
 }
 
@@ -113,6 +114,7 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
   ): CommandSafetyRow {
     const { obs } = entry;
     const r = model.result;
+    const cwd = entry.run?.cwd ?? obs.cwd;
     return {
       at: _commandShadowDeps.now(),
       runId: opts.runId,
@@ -121,7 +123,8 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
       identity: obs.identity,
       command: obs.command,
       ...(obs.argv !== undefined ? { argv: obs.argv } : {}),
-      ...(entry.executed !== undefined ? { executed: entry.executed } : {}),
+      ...(entry.run !== undefined ? { executed: entry.run.executed } : {}),
+      ...(cwd !== undefined ? { cwd } : {}),
       mechanical: obs.mechanical,
       outcome,
       rules: entry.rules,
@@ -160,12 +163,12 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
       }
     },
 
-    settle(key, outcome: FinalOutcome, executed?: readonly string[]) {
+    settle(key, outcome: FinalOutcome, run?: ExecRun) {
       try {
         const entry = entries.get(key);
         if (entry === undefined || entry.outcome !== undefined) return;
         entry.outcome = outcome;
-        if (executed !== undefined) entry.executed = executed;
+        if (run !== undefined) entry.run = run;
         flush(key, entry);
       } catch {
         // Total by contract (spec 4.3).

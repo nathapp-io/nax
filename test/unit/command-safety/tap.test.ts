@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { IDENTIFIER_KEYS, makeCommandShadowRecorder, observedOnly } from "@test/helpers";
 import {
   type CommandShadow,
+  type ExecRun,
   type FinalOutcome,
   type MechanicalVerdict,
   type Observation,
@@ -20,7 +21,7 @@ function arityRecorder() {
   const settled: unknown[][] = [];
   const shadow: CommandShadow = {
     observe: (k, o) => void observed.push([k, o]),
-    settle: (...args: [string, FinalOutcome, (readonly string[] | undefined)?]) => void settled.push(args),
+    settle: (...args: [string, FinalOutcome, ExecRun?]) => void settled.push(args),
     drain: async () => {},
   };
   return { shadow, observed, settled };
@@ -209,7 +210,7 @@ describe("openShadowTap", () => {
     expect(() => tap.settle("ok")).not.toThrow();
   });
 
-  test("US-003 AC1: an Exec tap forwards executed as settle's third argument", () => {
+  test("US-003 AC1: an Exec tap forwards what ran (argv and cwd) as settle's third argument", () => {
     const r = arityRecorder();
     openShadowTap(r.shadow, {
       key: "k",
@@ -218,8 +219,10 @@ describe("openShadowTap", () => {
       argv: ["bun", "test"],
       verdict: allow,
       stage: "run",
-    }).settle("ok", undefined, ["bun", "run", "--filter", "pkg", "test"]);
-    expect(r.settled).toEqual([["k", { ledger: "ok" }, ["bun", "run", "--filter", "pkg", "test"]]]);
+    }).settle("ok", undefined, { executed: ["bun", "run", "--filter", "pkg", "test"], cwd: "/repo" });
+    expect(r.settled).toEqual([
+      ["k", { ledger: "ok" }, { executed: ["bun", "run", "--filter", "pkg", "test"], cwd: "/repo" }],
+    ]);
   });
 
   test("US-003 AC2: a Bash tap settles with exactly two arguments, dropping executed", () => {
@@ -231,7 +234,7 @@ describe("openShadowTap", () => {
       argv: undefined,
       verdict: allow,
       stage: "run",
-    }).settle("ok", undefined, ["/bin/sh", "-c", "echo hi"]);
+    }).settle("ok", undefined, { executed: ["/bin/sh", "-c", "echo hi"], cwd: "/repo" });
     expect(r.settled).toEqual([["k", { ledger: "ok" }]]);
     expect(r.settled[0]?.length).toBe(2);
   });
@@ -275,5 +278,48 @@ describe("toMechanical", () => {
   ];
   test.each(cases)("%j -> %j", (input, expected) => {
     expect(toMechanical(input)).toEqual(expected);
+  });
+});
+
+describe("openShadowTap: cwd", () => {
+  test("a Bash observation carries the policy root as its cwd, where Bash starts", () => {
+    const r = makeCommandShadowRecorder();
+    openShadowTap(r.shadow, {
+      key: "k",
+      identity: "Bash",
+      command: "ls ../x",
+      argv: undefined,
+      root: "/repo",
+      verdict: allow,
+      stage: "run",
+    });
+    expect(observedOnly(r).cwd).toBe("/repo");
+  });
+
+  test("an Exec observation has no cwd: it is known only once the tool has run", () => {
+    const r = makeCommandShadowRecorder();
+    openShadowTap(r.shadow, {
+      key: "k",
+      identity: "Exec",
+      command: undefined,
+      argv: ["bun", "test"],
+      root: "/repo",
+      verdict: allow,
+      stage: "run",
+    });
+    expect("cwd" in observedOnly(r)).toBe(false);
+  });
+
+  test("a Bash call with no root yields an observation with no cwd key", () => {
+    const r = makeCommandShadowRecorder();
+    openShadowTap(r.shadow, {
+      key: "k",
+      identity: "Bash",
+      command: "ls",
+      argv: undefined,
+      verdict: allow,
+      stage: "run",
+    });
+    expect("cwd" in observedOnly(r)).toBe(false);
   });
 });

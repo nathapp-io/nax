@@ -13,6 +13,7 @@ export { openShadowTap, toMechanical } from "./tap";
 export type {
   CommandSafetyRow,
   CommandShadow,
+  ExecRun,
   FinalOutcome,
   HarmOption,
   LedgerOutcome,
