@@ -62,6 +62,16 @@ export interface ToolCallRecord {
    * `approval` did).
    */
   readonly sandbox?: SandboxRecord;
+  /**
+   * Bash rows only: the shell's exit code, present when nax did not kill the
+   * process group (absent on timeout and turn abort; see `ToolResult.audit`).
+   * `outcome` is unchanged -- every non-zero exit is still `"error"` -- so a
+   * reader separates a negative answer (a no-match grep, exit 1) from a real
+   * failure by reading `exitCode` together with `executed`. N >= 128 may be a
+   * signal nax did not send. Additive and optional, so
+   * `TOOL_AUDIT_SCHEMA_VERSION` stays 1 (as `sandbox` did).
+   */
+  readonly exitCode?: number;
   /** Provider id for a provider-supplied tool; absent for built-ins. */
   readonly provider?: string;
   /**

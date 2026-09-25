@@ -230,6 +230,7 @@ export function createCodingToolRuntime(opts: {
       cwd?: string;
       approval?: { decidedBy: string; remembered: boolean; latencyMs: number };
       sandbox?: SandboxRecord;
+      exitCode?: number;
     },
     resultBytesPreTruncation?: number,
   ): void {
@@ -277,6 +278,7 @@ export function createCodingToolRuntime(opts: {
       ...(audit?.target !== undefined ? { target: audit.target } : {}),
       ...(audit?.approval !== undefined ? { approval: audit.approval } : {}),
       ...(audit?.sandbox !== undefined ? { sandbox: audit.sandbox } : {}),
+      ...(audit?.exitCode !== undefined ? { exitCode: audit.exitCode } : {}),
       ...(provider !== undefined ? { provider } : {}),
       ...(resultBytesPreTruncation !== undefined ? { resultBytesPreTruncation } : {}),
       ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
