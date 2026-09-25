@@ -84,7 +84,13 @@ function makeMinimalOptions(overrides: Partial<RunOptions> = {}): RunOptions {
   };
 }
 
-function makeSetupResult(prd: PRD): RunnerSetupResult {
+/**
+ * A setup result carrying the US-002 seal. The intersection keeps this file
+ * compiling both before and after `RunnerSetupResult` requires the field.
+ */
+type SetupResultWithSeal = RunnerSetupResult & { sealApprovals: () => Promise<void> };
+
+function makeSetupResult(prd: PRD): SetupResultWithSeal {
   const runtime = makeMockRuntime();
   return {
     statusWriter: makeStatusWriter(),
@@ -96,6 +102,9 @@ function makeSetupResult(prd: PRD): RunnerSetupResult {
     prd,
     shutdownController: new AbortController(),
     runtime,
+    // US-002: `sealApprovals` is required on RunnerSetupResult. Nothing in this
+    // file seals, so a no-op stands in for the run-end approvals seal.
+    sealApprovals: async () => {},
   };
 }
 
@@ -318,5 +327,47 @@ describe("runner.run() — US-005 interaction-chain threading", () => {
 
     assertDefined(seen, "runCompletionPhase options");
     expect(seen.interactionChain).toBe(chain);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-002 — run() hands the setup phase's end-of-run approvals seal to cleanup
+//
+// The seal is built once by setupRun; run() must pass that same closure through
+// to cleanupRun, which awaits it after the post-run actions and plugin teardown.
+// ---------------------------------------------------------------------------
+
+describe("runner.run() — US-002 approvals-seal handoff", () => {
+  test("US-002 AC14: cleanupRun receives the setup phase's sealApprovals by reference", async () => {
+    const prd = makeCompletePrd();
+    const sealApprovals = mock(async () => {});
+    const setup = { ...makeSetupResult(prd), sealApprovals };
+
+    _runnerDeps.runSetupPhase = mock(async () => setup) as typeof _runnerDeps.runSetupPhase;
+    _runnerDeps.runExecutionPhase = mock(async () => ({
+      prd,
+      iterations: 1,
+      storiesCompleted: 1,
+      totalCost: EXECUTION_ACCUMULATOR,
+      allStoryMetrics: [],
+      exitReason: "completed",
+    })) as typeof _runnerDeps.runExecutionPhase;
+    _runnerDeps.runCompletionPhase = mock(async () => ({
+      durationMs: 42,
+      runCompletedAt: new Date().toISOString(),
+      acceptancePassed: true,
+      pluginGateFailed: false,
+      reportedTotal: RECONCILED_TOTAL,
+    })) as typeof _runnerDeps.runCompletionPhase;
+
+    let cleanupOptions: (RunCleanupOptions & { sealApprovals?: () => Promise<void> }) | undefined;
+    _runnerDeps.cleanupRun = mock(async (opts: RunCleanupOptions) => {
+      cleanupOptions = opts;
+    }) as typeof _runnerDeps.cleanupRun;
+
+    await run(makeMinimalOptions());
+
+    assertDefined(cleanupOptions, "cleanupRun options");
+    expect(cleanupOptions.sealApprovals).toBe(sealApprovals);
   });
 });
