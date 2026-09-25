@@ -280,6 +280,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     interactionChain,
     shutdownController,
     runtime,
+    sealApprovals,
   } = setupResult;
   prd = setupResult.prd;
   const agentManager = runtime.agentManager;
@@ -436,6 +437,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
         curatorRollupPath: runtime.curatorRollupPath,
         logFilePath,
         config,
+        // US-002: the seal built at setup. cleanupRun awaits it after the
+        // post-run actions (which may dispatch agents) and plugin teardown.
+        sealApprovals,
       });
       logger?.debug("execution", "Runner finally — cleanupRun done, run() returning");
     } finally {

@@ -16,7 +16,10 @@
  *  1. A forge-capable run TAINTS the store before a dispatch scope's agents
  *     start (a story, or a post-run fix loop) and again after they finish: every entry is dropped and a `taint` record is
  *     written. The end-of-story re-taint wipes whatever the story's agents
- *     wrote, even an agent that knew to strip the first marker.
+ *     wrote, even an agent that knew to strip the first marker. One final seal
+ *     runs at the end of the run (`buildApprovalsSeal`, awaited by `cleanupRun`
+ *     and by the signal teardown), covering agents dispatched outside any
+ *     dispatch-ask scope after the last per-scope re-taint.
  *  2. The cache link ABSTAINS on a tainted store, whatever it contains.
  *  3. A run that trusts the cache clears a taint before building its link by
  *     dropping every entry with it, so a trusted epoch starts empty. It leaves
@@ -30,13 +33,10 @@
  *  - a process the agent leaves running past its story (e.g. a detached
  *    `sleep; rewrite`) that strips the marker and forges after the last
  *    re-taint;
- *  - a forge-capable run killed between an agent stripping the marker and the
- *    end-of-story re-taint;
- *  - agents in a forge-capable run that are not dispatched inside a
- *    dispatch-ask scope (e.g. acceptance generation), which can run after
- *    the last re-taint. The execution stage, the acceptance-fix loop, the
- *    deferred regression gate and `nax finish` all taint through
- *    `buildDispatchAskWiring` (src/interaction/dispatch-ask.ts, #2201).
+ *  - a forge-capable run killed by a death no handler sees (SIGKILL, power
+ *    loss) between an agent stripping the marker and the run-end seal. Normal
+ *    exits and handled signals both seal: `cleanupRun` awaits the seal in the
+ *    runner's finally, and `performTeardown` awaits it after the PID sweep.
  * An unsandboxed raw shell can equally edit shell rc files or git hooks, so
  * this sits inside the posture ADR-030 already discloses; the sandbox, which
  * always write-denies this file, is the real boundary.

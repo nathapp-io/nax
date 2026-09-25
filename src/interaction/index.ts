@@ -10,6 +10,7 @@ export type { ChainConfig } from "./chain";
 // Chain
 export { InteractionChain } from "./chain";
 export type {
+  ApprovalsSealOptions,
   DispatchAskDeps,
   DispatchAskOptions,
   DispatchAskWiring,
@@ -19,6 +20,7 @@ export type {
 export {
   _dispatchAskDeps,
   APPROVAL_AUDIT_DIR,
+  buildApprovalsSeal,
   buildDispatchAskWiring,
   buildRunDispatchAskWiring,
   collectEffectiveRunStageModes,

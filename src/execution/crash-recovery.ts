@@ -55,6 +55,12 @@ export interface CrashRecoveryContext {
    * circuit.
    */
   onShutdown?: (abortSignal?: AbortSignal) => Promise<void>;
+  /**
+   * Final re-taint of the shared approvals store (US-002), run by
+   * `performTeardown` after the PID sweep. `setupRun` wires a forwarder whose
+   * target is assigned once `buildApprovalsSeal` resolves.
+   */
+  sealApprovals?: () => Promise<void>;
 }
 
 // Stores the active cleanup function so a second installCrashHandlers() call
