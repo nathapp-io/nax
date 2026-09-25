@@ -17,6 +17,7 @@ The "read this first" fundamentals every contributor must know.
 - **§2 Dependency Injection (`_deps`)** — Injectable deps pattern, test usage, 70+ module reference table
 - **§3 Error Handling** — `NaxError` base class, error codes, cause chaining
 - **§4 Constants** — No magic numbers, `UPPER_SNAKE_CASE`, `_` separators
+- **Agent Resolution** (ADR-012) — `AgentManager` owns agent selection; the canonical default-agent accessors
 
 ### [coding-standards.md](coding-standards.md) — Day-to-Day Coding Reference (§5–§10)
 
@@ -37,13 +38,14 @@ Architectural patterns and security rules — referenced when designing new modu
 - **§12 Security Standards** — Path security, command construction, process lifecycle, type safety for security
 - **§13 Test Performance** — Injectable sleep, zero-delay config, shared `beforeAll`, event-driven waits
 
-### [agent-adapters.md](agent-adapters.md) — Permissions, Strategies & Adapter Wiring (§14–§16)
+### [agent-adapters.md](agent-adapters.md) — Permissions, Strategies, Adapter Wiring & Trust Boundary (§14–§17)
 
 How agents are configured, permissioned, and organized.
 
 - **§14 Permission Resolution** — `resolvePermissions(config, stage)`, profiles, pipeline stages, mandatory rules
 - **§15 Test Strategy Resolution** — `resolveTestStrategy()`, available strategies, shared prompt fragments
 - **§16 Agent Adapter Conventions** — Folder structure, `shared/` contents, ACP cost alignment
+- **§17 Trust Boundary** — nax trusts the repository it is pointed at; what is inside the boundary (not to be confused with subsystems §17)
 
 ### [nax-ai-surface.md](nax-ai-surface.md) — The nax-ai Surface the Native Adapter Consumes
 
@@ -65,16 +67,16 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§23 Plugin System** — Plugin interface, 7 extension points, lifecycle
 - **§24 Context Engine & Constitution** — Context Engine v2 (ADR-010): `ContextOrchestrator`, providers, scoring/dedup/packing, push/pull model, `rebuildForAgent`; legacy v1 builder; per-agent generators; constitution
 - **§25 Review & Quality** — Review orchestrator, semantic review, adversarial review, diff utilities, quality runner, test command resolver
-- **§26 Interaction & Human-in-the-Loop** — Interaction chain, 8 triggers, bridge, plugins
-- **§27 Hooks & Lifecycle** — 11 hook events, `HookDef`, `HookContext`
+- **§26 Interaction & Human-in-the-Loop** — Interaction chain, 9 triggers, bridge, plugins
+- **§27 Hooks & Lifecycle** — 12 hook events, `HookDef`, `HookContext`
 - **§28 Metrics & Cost Tracking** — `StoryMetrics`, aggregator, cost system
 - **§30 Worktree & Parallel** — Worktree manager, merge, dispatcher
 - **§31 Queue Management** — PAUSE/ABORT/SKIP mid-run control
 - **§32 TUI (Terminal UI)** — React/Ink terminal UI, components, hooks
-- **§33 Error Classes** — `NaxError` + 5 derived error classes
+- **§33 Error Classes** — `NaxError` + 4 derived error classes in `src/errors.ts`
 - **§34 Session Manager** (ADR-011 + ADR-019) — `SessionManager` owns full session lifecycle: `openSession` / `sendPrompt` / `closeSession` / `runInSession` / `nameFor` / `handoff`, 7-state machine, scratch dir, runtime helpers (`failAndClose`)
 - **§35 Agent Manager** (ADR-012 + ADR-019) — `AgentManager` is a peer of `SessionManager`. Three entry points: `completeAs` (sessionless), `runAsSession` (caller-managed handle), `runWithFallback` (chain iteration via `executeHop` callback)
-- **§36 NaxRuntime** (ADR-018) — Single lifecycle container per run: `agentManager`, `sessionManager`, `configLoader`, `costAggregator`, `promptAuditor`, `reviewAuditor`, `packages`, `logger`, `signal`. Frozen middleware chain (audit → cost → cancellation → logging) wraps every `runAs` / `completeAs` call.
+- **§36 NaxRuntime** (ADR-018) — Single lifecycle container per run: `agentManager`, `sessionManager`, `configLoader`, `costAggregator`, `promptAuditor`, `usageAuditor`, `reviewAuditor`, `dispatchEvents`, `packages`, `pidRegistry`, `logger`, `signal`. The middleware chain holds only cancellation; audit, cost, usage and logging attach as subscribers to the typed dispatch-event bus (ADR-020).
 - **§37 Operations & `callOp`** (ADR-018) — `Operation<I, O, C>` typed spec under `src/operations/`. `callOp(ctx, op, input)` slices config via `packageView.select`, composes prompts via `composeSections`, dispatches `kind:"complete"` to `completeAs` and `kind:"run"` to `runWithFallback` with `buildHopCallback`.
 - **§38 Post-Run Curator** — Post-run heuristic observer: collects observations from run artifacts, generates proposals (H1–H6 heuristics), writes `curator-proposals.md`. `nax curator commit` stages accepted proposals. See [curator.md guide](../guides/curator.md).
 - **§39 Config** — Layered config system (global → project → per-package); Zod schema + selectors; `resolvePermissions` SSOT; legacy-key guards.
@@ -90,6 +92,18 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§49 Prompts** — All LLM prompt construction: eight builder classes (`TddPromptBuilder`, `RectifierPromptBuilder`, `ReviewPromptBuilder`, `AdversarialReviewPromptBuilder`, `AcceptancePromptBuilder`, `OneShotPromptBuilder`, `PlanPromptBuilder`, `SetupPromptBuilder`); `composeSections`; `SectionAccumulator`. No prompt literals outside this module.
 - **§50 Analyze** — `nax analyze` codebase scanner; `scanCodebase` → `CodebaseScan` / `SourceRoot[]`; delegates to workspace discovery (§21) and language detection (§47).
 - **§51 Utils** — Single-purpose leaf utilities (no barrel): `parseLLMJson` (LLM JSON SSOT), `git.ts`, `path-filters.ts`, `path-security.ts`, `json-file.ts`, `errorMessage`, `killProcessTree`, `bun-deps.ts`, `writeQueueCommand`.
+
+### Agent Tools, Permissions & Safety (source + guides)
+
+The native agent's tool loop and the controls around the commands it runs are not yet written up as `§N` sections. Start from the ADRs, the user guides, and the module headers:
+
+- **Native agent** — `src/agents/native/` (session, turn loop, loop events, tool-result policy, transcript store, compaction). ADR-027 (protocol split), ADR-028 (native sessions and the pull-tool loop), ADR-029 (native coding-agent scope). See [nax-ai-surface.md](nax-ai-surface.md).
+- **Coding tools** — `src/tools/` (`Read`, `Write`, `Edit`, `Delete`, `Glob`, `Grep`, `Git`, `GitCommit`, `Bash`, `RunCommand`, scratchpad and `RequestCapability`; policy compilation, raw-Bash screen `policy-bash-raw.ts`, nax-owned write protection `nax-owned-writes.ts`, per-call audit rows `tool-audit.ts`). Guides: [The Bash Tool](../guides/bash-tool.md), [Exec Allowlist](../guides/exec-allowlist.md).
+- **Permissions** — grants are resolved by `resolvePermissions(config, stage)` (§14); `src/permissions/` holds the rule grammar, Bash lexing, the ask/ask-chain resolvers and the remembered-approvals store behind `nax approvals`. ADR-030 (bash approval modes). Guides: [Permissions](../guides/permissions.md), [Approvals](../guides/approvals.md).
+- **OS sandbox** — `src/sandbox/` (`srt` backend, policy builder, probe) wraps agent-authored Bash and `RunCommand` exec commands; `execution.sandbox`, on by default. Guide: [Sandbox & Command Safety](../guides/sandbox-and-command-safety.md).
+- **Command safety** — `src/command-safety/`: a shadow classifier that scores every agent command and records a row, deciding nothing (`execution.commandSafety`). ADR-031 (root-scoped config).
+- **MCP** — `src/mcp/` (client, pool, lockfile). Guide: [MCP & Command Interception](../guides/mcp-and-interception.md).
+- **Paths** — ADR-032: a single repo-rooted frame for agent and PRD paths.
 
 ### [story-orchestrator-flow.md](story-orchestrator-flow.md) — Per-Story Control Flow
 
@@ -117,7 +131,7 @@ The four-stage workflow contract: brainstorming → spec-writing → spec-review
 | `realpathSync` before containment | Required (no lexical-only checks) |
 | `process.on` handlers | Must store named ref for removal |
 | Permission resolution | `resolvePermissions(config, stage)` only — no local fallbacks |
-| Permission booleans | Never read `dangerouslySkipPermissions` directly |
+| Permission mode literals | Never hardcode `"approve-all"` / `"approve-reads"` (`check-permission-mode-ssot`); `dangerouslySkipPermissions` is removed — never reintroduce |
 | `pipelineStage` on adapter calls | Required on all `run()`, `complete()`, `plan()`, `decompose()` |
 | Test sleep | Injectable `_deps.sleep`, never real `Bun.sleep` |
 | Integration test config | `iterationDelayMs: 0` (never DEFAULT_CONFIG) |
@@ -133,7 +147,7 @@ The four-stage workflow contract: brainstorming → spec-writing → spec-review
 | Singleton | Global services | `initX()` once, `getX()` / `getSafeX()` everywhere |
 | Injectable sleep | Test performance | `_moduleDeps.sleep = Bun.sleep` → spy in tests |
 | PidRegistry | Subprocess lifecycle | Register on spawn, unregister on exit, `killAll()` on crash |
-| Permission resolver | Agent permissions | `resolvePermissions(config, stage)` → `{ mode, skipPermissions }` |
+| Permission resolver | Agent permissions | `resolvePermissions(config, stage)` → `{ mode, toolGrants, denyRules, askRules, providerScope }` |
 | Context Engine v2 | Stage-aware context assembly | `ContextOrchestrator.assemble(request)` → `ContextBundle` |
 | Session Manager | Session lifecycle + state machine | `sessionManager.openSession() / sendPrompt() / closeSession() / runInSession() / handoff()` |
 | Agent Manager | Agent default + availability fallback | `agentManager.getDefault() / completeAs() / runAsSession() / runWithFallback()` |
@@ -146,8 +160,8 @@ The four-stage workflow contract: brainstorming → spec-writing → spec-review
 
 The ADR sequence starts at **ADR-005**. ADR-001–004 were never filed — the project began formal ADR tracking mid-development, at the point of the pipeline re-architecture. There are no tombstone files for 001–004; the gap is intentional.
 
-The ADR index lives in `docs/adr/`. Key ADRs: 005 (pipeline re-arch), 009 (test-pattern SSOT), 010 (context engine), 011–013 (session/agent ownership), 018 (runtime layering), 019–020 (dispatch boundary), 023 (execution unification).
+The ADR index lives in `docs/adr/`. Key ADRs: 005 (pipeline re-arch), 009 (test-pattern SSOT), 010 (context engine), 011–013 (session/agent ownership), 018 (runtime layering), 019–020 (dispatch boundary), 023 (execution unification), 027 (adapter-protocol split), 028–029 (native sessions, tool loop and coding-agent scope), 030 (bash approval modes), 031 (root-scoped command-safety config), 032 (single-frame repo-rooted paths).
 
 ---
 
-*Created: 2026-03-10. Last updated: 2026-06-19 (ADR gap note, spec-to-prd link, subsystems §39–§51). Maintained by nax-dev.*
+*Created: 2026-03-10. Last updated: 2026-09-25 (agent tools/permissions/safety pointers, ADR-027–032, runtime middleware, quick-reference corrections). Maintained by nax-dev.*

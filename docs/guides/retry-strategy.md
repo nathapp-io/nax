@@ -50,7 +50,11 @@ retry: {
 
 ## `defaultRetryStrategy` (manager tier)
 
-Lives in `src/agents/retry/default-strategy.ts`. Fires on every outcome `failurePolicyFor(outcome).terminalBackoff` marks — currently `fail-rate-limit`, `fail-stale`, and `fail-service-down` (see the policy table in `src/agents/retry/failure-policy.ts`); all other failures pass through immediately. Backoff: `2^(attempt+1) * 1000` ms — 2s, 4s, 8s across 3 retries. Injected into `AgentManager` via the constructor; tests override via `_agentManagerDeps.sleep` + a custom strategy.
+Lives in `src/agents/retry/default-strategy.ts`. Fires on every outcome `failurePolicyFor(outcome).terminalBackoff` marks — currently `fail-rate-limit`, `fail-stale`, and `fail-service-down` (see the policy table in `src/agents/retry/failure-policy.ts`); all other failures pass through immediately. Backoff: `2^(attempt+1) * 1000` ms — 2s, 4s, 8s across 3 retries. When the provider reports its own recovery time (`AdapterFailure.retryAfterSeconds`, populated by both the ACP and native transports), that delay replaces the computed backoff; the attempt cap is unchanged. A failure with `retriable === false` never backs off. Injected into `AgentManager` via the constructor; tests override via `_agentManagerDeps.sleep` + a custom strategy. The backoff and the swap-exhaustion event share one terminal exit, `src/agents/retry/resolve-exhaustion.ts`.
+
+## Same-agent hop retries (`hop-retry-policy.ts`)
+
+Separate from `op.retry`: `trySameAgentRetry` in `src/agents/retry/hop-retry-policy.ts` decides same-agent retries for `fail-stale`, `fail-timeout`, and `fail-adapter-error` hops. Timeout retries are bounded by `agent.timeoutRetry` — `maxAttempts` (default `1`) and `budgetMultiplier` (default `0.5`, applied to the previous hop's `timeoutSeconds`, falling back to `execution.sessionTimeoutSeconds`).
 
 ## `composeRetry` vs. single-strategy escalation
 
@@ -179,7 +183,8 @@ shouldRetry(failure, attempt, ctx) {
 `callOp`'s retry sleep is cancellable:
 
 ```typescript
-await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
+const abortSignal = ctx.signal ?? ctx.runtime.signal;
+await _callOpDeps.sleep(decision.delayMs, abortSignal);
 ```
 
-`_callOpDeps.sleep` uses `cancellableDelay` from `src/utils/bun-deps`. Always thread `ctx.runtime.signal` through; never call `Bun.sleep` directly inside a retry loop.
+`_callOpDeps.sleep` uses `cancellableDelay` from `src/utils/bun-deps`. An abort during the sleep throws `CALL_OP_ABORTED`. Always thread the signal through; never call `Bun.sleep` directly inside a retry loop.

@@ -6,8 +6,8 @@ These keys live under `context.v2.providers` in `.nax/config.json` (or per-packa
 
 | Key | Type | Default | Description |
 |:----|:-----|:--------|:------------|
-| `historyScope` | `"repo" \| "package"` | `"package"` | Working directory scope for `GitHistoryProvider`. `git log` always runs in `repoRoot` against repo-rooted paths; `"package"` filters history to files under the story's package (monorepo-safe default), `"repo"` keeps all story files. |
-| `neighborScope` | `"repo" \| "package"` | `"package"` | Working directory scope for `CodeNeighborProvider`. `"package"` scans from `packageDir`. |
+| `historyScope` | `"repo" \| "package"` | `"package"` | Scope post-filter for `GitHistoryProvider` (not a workdir switch). `git log` always runs in `repoRoot` against repo-rooted paths; `"package"` filters history to files under the story's package (monorepo-safe default), `"repo"` keeps all story files. |
+| `neighborScope` | `"repo" \| "package"` | `"package"` | Working directory scope for `CodeNeighborProvider`. `"package"` scans from `packageDir`, `"repo"` from `repoRoot`. |
 | `sourceGlob` | `string?` | _(derived)_ | Override the source-file glob used for reverse-dep scanning. When omitted, derived from `detectLanguage(packageDir)` (TypeScript, Go, Python, Rust each get a narrow glob; unknown packages get the wide fallback). |
 | `maxGlobFiles` | `number` | `500` | Maximum files scanned per directory during reverse-dep glob. Truncation logs at `warn` level and appends a note to the context chunk. |
 
@@ -61,7 +61,7 @@ If `sourceGlob` is omitted from the per-package config, the glob is still auto-d
 
 Moved out of `.nax/rules/monorepo-awareness.md` §7, which retains the rule itself.
 
-`CodeNeighborProvider`'s sibling scan was removed in nax#2074: it parsed only relative
+`CodeNeighborProvider`'s sibling scan (and its `crossPackageDepth` key, which now logs a removal warning and is ignored) was removed in nax#2074: it parsed only relative
 import specifiers, so it could not find a true cross-package dependent, and it compared
 paths across two roots. A provider that must see another package sets its scan root to
 `repoRoot` and re-spells every emitted path for the consumer (`src/utils/path-frame.ts`).

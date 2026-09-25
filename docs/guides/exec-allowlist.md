@@ -32,7 +32,8 @@ An `Exec` call runs only when **both** hold:
 
 1. **The operation declares it.** `Exec` is a capability marker in an op's `tools` list.
    The ops that declare it are the ones that write code: `implement`, `write-test`,
-   `rectify`, `autofix-implementer`, `full-suite-rectify`, `finish-fix`. A review or
+   `rectify`, `autofix-implementer`, `autofix-test-writer`, `full-suite-rectify`,
+   `finish-fix`, and the two acceptance-fix ops (source and test). A review, verification or
    planning op cannot install anything, whatever config says.
 2. **The policy grants it.** Either the built-in list below, or an `Exec(...)` expression
    you write.
@@ -167,16 +168,25 @@ Defaults to `false`. This is config a human writes; the model cannot reach it.
 
 ## Working directory
 
-`target` selects the cwd: `"package"` (default) or `"repoRoot"`.
+`target` selects the cwd: `"package"` (default, the story's package dir) or `"repoRoot"`.
 
-`Exec` may run **outside** the otherwise-hard containment root, because workspace managers
-write the root manifest and lockfile by design — for this tool the root is a cwd choice,
-not a sandbox. The paired carve-out is that `GitCommit` may stage the exact paths a
-same-hop install touched. That set is built fresh per dispatch hop, matched exactly (never
-as a prefix), and never persisted across stories or sessions.
+Both are inside the containment root. Since
+[ADR-032](../adr/ADR-032-single-frame-repo-rooted-paths.md) the agent is rooted at the story's
+execution root (the repo, or the story's worktree), so a workspace install's root manifest and
+lockfile are in-root by construction. The earlier carve-out that let `Exec` write outside the
+root, and let `GitCommit` stage the paths a same-hop install touched, is retired — `target` is
+only a cwd choice.
 
 Positional path arguments **are** containment-checked. Without that, `pip install
 /somewhere/outside` would execute a `setup.py` from outside the root.
+
+## The OS sandbox
+
+With `execution.sandbox` enabled (the default) and available, every `Exec` call runs inside the
+same OS sandbox as `Bash`: writes are limited to the root, the temp dirs and the
+package-manager caches, and credential files are unreadable. If the sandbox is unavailable,
+`Exec` runs unwrapped — only `raw` `Bash` refuses. The ledger row's `sandbox` field records
+which happened. See [Sandbox and Command Safety](sandbox-and-command-safety.md).
 
 ## Verifying it works
 
@@ -199,4 +209,5 @@ install shows `outcome: "ok"`, an `executed` argv carrying the hardening mechani
 
 - [ADR-029](../adr/ADR-029-phase-c-native-coding-agent-scope.md) section 3 — the recorded
   override permitting model-authored execution, its carve-outs, and its evidence limits.
+- [Permissions](permissions.md) — profiles, per-stage blocks and the rule grammar.
 - [Configuration](configuration.md) — the rest of the config surface.

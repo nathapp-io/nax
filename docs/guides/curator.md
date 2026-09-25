@@ -4,7 +4,7 @@ The **context curator** is a deterministic post-run plugin that analyzes nax run
 
 ## Overview
 
-After every nax run, curator automatically:
+After every nax run with at least one completed story, curator automatically:
 
 1. **Collects observations** from run artifacts (context manifests, review findings, rectification cycles, escalations)
 2. **Applies heuristics** to detect patterns (repeated failures, empty tool results, stale chunks)
@@ -31,7 +31,7 @@ Curator analyzes run artifacts produced during feature execution:
 
 ### Enable the Curator
 
-The curator is **enabled by default** in nax 0.38.0+. To disable the post-run action but keep the plugin available:
+The curator is **enabled by default** (`curator.enabled: true`). To disable the post-run action but keep the plugin available:
 
 ```json
 {
@@ -63,7 +63,7 @@ The curator's quality improves dramatically when review audit is enabled. This c
 }
 ```
 
-Without this flag, curator still works but produces fewer (lower-fidelity) proposals — primarily from context manifest observations and rectification cycles.
+`review.audit.enabled` defaults to `false`. Without this flag, curator still works but produces fewer (lower-fidelity) proposals — primarily from context manifest observations and rectification cycles.
 
 ### Configure Thresholds
 
@@ -84,7 +84,7 @@ Curator applies six heuristics to detect patterns. Each has a configurable thres
 }
 ```
 
-**Default starting values** (v0.38.0) are conservative guesses. Calibrate these based on your observed signal-to-noise ratio after several runs (see Threshold Tuning below).
+**Defaults** are `2` for every threshold — conservative guesses. Calibrate these based on your observed signal-to-noise ratio after several runs (see Threshold Tuning below).
 
 ## CLI Commands
 
@@ -97,10 +97,7 @@ nax curator status                    # Latest run
 nax curator status --run <runId>      # Specific run
 ```
 
-Prints:
-- Observation counts by kind
-- Proposal summary by category
-- Path to the proposal file for review
+Prints observation counts by kind and the run's proposal markdown. All `nax curator` subcommands accept `-p, --project <path>` (default: CWD).
 
 ### nax curator commit
 
@@ -111,24 +108,24 @@ nax curator commit <runId>
 ```
 
 Process:
-1. Reads `<runId>/curator-proposals.md`
+1. Reads `<outputDir>/runs/<runId>/curator-proposals.md`
 2. Parses checked `[x]` lines
-3. For each checked proposal:
-   - Appends to `.nax/features/<id>/context.md` (for "Add to context" proposals)
-   - Appends to `.nax/rules/<file>.md` (for "Add to rules" proposals)
-   - Removes lines from rules files (for "Drop from rules" proposals)
-4. Opens the modified files in `$EDITOR` for human review
-5. Prints summary (e.g., "applied 3 proposals, modified 2 files")
+3. Validates every drop (and the neutrality of appended rule text) before writing anything
+4. Applies drops first (removes lines from rules files), then appends adds to `.nax/features/<id>/context.md` or `.nax/rules/<file>.md`
+5. Opens each modified file in `$EDITOR` (falling back to `$VISUAL`, then `vi`) for review
+6. Prints `Applied N proposal(s). Review the opened files before committing.`
 
 **Does not commit to git** — changes remain in your working directory for review before `git add` / `git commit`.
 
 ### nax curator dryrun
 
-Re-run heuristics against existing observations without re-collecting:
+Re-run heuristics against an existing run's `observations.jsonl` (default: latest run) without re-collecting, printing proposals to stdout:
 
 ```bash
 nax curator dryrun --run <runId>
 ```
+
+Dryrun reads only that run's observations, whereas the post-run pass uses the cross-run window — expect fewer proposals from dryrun.
 
 Useful for threshold calibration: adjust thresholds in config, re-run heuristics on the same observations, and see how proposal counts change.
 
@@ -141,7 +138,9 @@ nax curator gc --keep 50   # Keep the 50 most recent runs (default)
 nax curator gc --keep 100  # Keep 100 runs
 ```
 
-Cleans up per-run proposal and observation files from older runs. Does not delete run log / metrics themselves — only curator artifacts.
+Cleans up per-run proposal and observation files from older runs. Does not delete run log / metrics themselves — only curator artifacts. `--sweep-unattributed` also drops rollup rows with no `projectKey` (pre-#1429 history); it is machine-wide and affects every project sharing the rollup.
+
+The rollup is also pruned automatically after each run once it exceeds `curator.retention.pruneThresholdBytes` (default 67108864, i.e. 64 MiB), keeping the `curator.retention.keepRuns` (default 50) most recent runs.
 
 ## Proposal Review Flow
 
@@ -156,19 +155,31 @@ evidence to trip a recurrence threshold. The header reflects both facts:
 
 > generated at 2026-05-04T10:00:00Z · run abc123 · 20 run(s) · 4000 window observation(s) · 1294 run observation(s)
 
-## Add to .nax/features/auth/context.md
-- [ ] [HIGH] (H3) Postgres connection pool sizing — story story-001 ran 3 rectify cycles
+## add — Add suggestions
 
-## Add to .nax/rules/curator-suggestions.md
-- [ ] [MED] (H2) "review batch" pull-tool returned empty 2× across stories story-002, story-003
-- [ ] [HIGH] (H1) "never N+1 on /v2/reviews" — review finding fired in 4 stories
+### .nax/features/auth/context.md
 
-## Drop from .nax/rules/web.md
-- [ ] [LOW] (H5) line 23–28 — never matched in last 30 days
+- [ ] [HIGH] H3: Postgres connection pool sizing — story ran 3 rectify cycles — stories: story-001
 
-## Advisory (no auto-target)
-- [ ] [LOW] (H6) story-007 fix-cycle "acceptance" stuck on `unchanged` outcome 2× — diagnose prompt may need review
+### .nax/rules/curator-suggestions.md
+
+- [ ] [MED] H2: "review batch" pull-tool returned empty 2× — stories: story-002, story-003
+  _Evidence: ..._
+
+## drop — Drop suggestions
+
+### .nax/rules/curator-suggestions.md
+
+- [ ] [LOW] H5: stale chunk no longer needed — stories: story-004
+
+## advisory — Advisory
+
+### .nax/rules/curator-suggestions.md
+
+- [ ] [LOW] H6: fix-cycle "acceptance" stuck on `unchanged` outcome 2× — stories: story-007
 ```
+
+Keep the `## add|drop|advisory —` headings intact: `nax curator commit` uses them to decide what each checked line does.
 
 ### How to Accept Proposals
 
@@ -183,9 +194,9 @@ evidence to trip a recurrence threshold. The header reflects both facts:
 | Category | Meaning | Action |
 |:---|:---|:---|
 | **Add to .nax/features/<id>/context.md** | A single story needed repeated rectification — context likely incomplete for that story's own feature | Append to that feature's context file |
-| **Add to .nax/rules/<file>.md** | Repeated review findings, or a pattern (empty pull-tool keyword, escalation chain) that recurred across multiple features — project-level, not one feature's | Create a new rule or append to an existing rules file |
-| **Drop from .nax/rules/<file>.md** | Stale rules that haven't matched recent runs | Remove specified lines |
-| **Advisory** | Interesting signals but no canonical-source target (e.g., prompt diagnosis) | Read but usually don't act on |
+| **Add to .nax/rules/curator-suggestions.md** | Repeated review findings, or a pattern (empty pull-tool keyword, escalation chain) that recurred across multiple features — project-level, not one feature's | Append to the suggestions rules file |
+| **Drop from .nax/rules/curator-suggestions.md** | Stale content that recent runs no longer needed | Remove the matching lines |
+| **Advisory** | Interesting signals with no clear fix (e.g., prompt diagnosis) | Read; a checked advisory is still appended to `.nax/rules/curator-suggestions.md` on commit, so usually leave it unchecked |
 
 ## Heuristics Reference
 
@@ -264,7 +275,8 @@ When you `nax curator commit`, changes are applied in a strict order:
 1. All **drops** execute first (removes from rules files)
 2. All **adds** execute second (appends to context and rules files)
 3. Modified files are opened in `$EDITOR` for human review
-4. Only after you save and close the editor are changes persisted
+
+Changes are written to disk **before** the editor opens — the editor step is for review, not a confirmation gate. Undo with git. All drops are validated before any write, so a conflicting drop (missing key token, overlapping ranges) aborts the commit with nothing written.
 
 This ordering prevents conflicts where a single proposal file requests both "drop line X" and "add line X" in the same file.
 
@@ -276,7 +288,7 @@ By default, curator writes per-run observations under `<outputDir>/runs/<runId>/
 ~/.nax/global/curator/rollup.jsonl
 ```
 
-This is append-only and can be queried to detect long-term trends. Configurable via:
+It is appended to on every run (and size-pruned, see `nax curator gc`), and can be queried to detect long-term trends. Configurable via:
 
 ```json
 {
@@ -285,6 +297,8 @@ This is append-only and can be queried to detect long-term trends. Configurable 
   }
 }
 ```
+
+`rollupPath` must be absolute or start with `~/`.
 
 The rollup is primarily for advanced diagnostics and multi-run trend analysis; most users can ignore it. Rollup rows may contain project paths, story IDs, and short context/review snippets, so share the file intentionally.
 
@@ -296,6 +310,7 @@ The rollup is primarily for advanced diagnostics and multi-run trend analysis; m
 
 **Causes & Fixes:**
 - **Run completed with 0 stories** — curator only runs if at least one story completed successfully
+- **`curator.enabled` is false**
 - **review.audit.enabled is false** — most heuristics depend on review audit findings
   - **Fix:** Set `"review": { "audit": { "enabled": true } }` in `.nax/config.json`
 - **Thresholds are too high** — all heuristics require minimum occurrence counts
@@ -303,10 +318,10 @@ The rollup is primarily for advanced diagnostics and multi-run trend analysis; m
 
 ### "review.audit.enabled is off" Warning
 
-The curator prints a warning if review audit is disabled:
+The curator logs a warning if review audit is disabled:
 
 ```
-[WARN] curator: review.audit.enabled is off — proposal quality will be reduced
+review.audit.enabled is false — review-audit observations will be empty
 ```
 
 **Recommendation:** Enable it in `.nax/config.json`:
@@ -363,5 +378,5 @@ You can then accept it, and the next run's agent will see this rule in the codeb
 ## See Also
 
 - [Configuration Guide](configuration.md) — full curator config schema
-- [Review Audit Guide](review-audit.md) — how to configure semantic and adversarial review
+- [Semantic Review Guide](semantic-review.md) — how semantic review works
 - [Context Engine Guide](context-engine.md) — how context.md and rules are used in story execution

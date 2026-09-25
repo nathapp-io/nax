@@ -3,7 +3,6 @@
 [![npm](https://img.shields.io/npm/v/@nathapp/nax?style=flat-square)](https://npmjs.com/@nathapp/nax)
 [![CI](https://img.shields.io/github/actions/workflow/status/nathapp-io/nax/ci.yml?style=flat-square)](https://github.com/nathapp-io/nax/actions)
 [![Bun](https://img.shields.io/badge/Bun-1.3.7%2B-eeffff?style=flat-square)](https://bun.sh)
-[![Node](https://img.shields.io/badge/Node-22%2B-green?style=flat-square)](https://nodejs.org)
 [![License](https://img.shields.io/npm/l/@nathapp/nax?style=flat-square)](LICENSE)
 
 **AI Coding Agent Orchestrator** — loops until done.
@@ -14,7 +13,7 @@ Give it a spec. It writes tests, implements code, verifies quality, and retries 
 
 nax is an **orchestrator, not an agent** — it doesn't write code itself. It drives whatever coding agent you choose through a disciplined loop until your tests pass.
 
-- **Agent-agnostic** — use Claude Code, Codex, Gemini CLI, or any ACP-compatible agent
+- **Agent-agnostic** — runs its own in-process native agent by default, or drives Claude Code, Codex, Gemini CLI, OpenCode, or any ACP-compatible agent
 - **TDD-enforced** — acceptance tests must fail before implementation starts
 - **Loop until done** — verify, retry, escalate, and regression-check automatically
 - **Monorepo-ready** — per-package config and per-story working directories
@@ -23,6 +22,7 @@ nax is an **orchestrator, not an agent** — it doesn't write code itself. It dr
 - **Semantic review** — LLM-based behavioral review against story acceptance criteria; catches stubs, placeholders, and out-of-scope changes
 - **Adversarial review** — LLM-based adversarial code review that probes for input handling, error paths, and abandoned implementations
 - **Context curator** — deterministic post-run analysis that proposes additions/deletions to context.md and rules files, preventing context drift
+- **Guarded agent commands** — agent-authored shell commands run inside an OS sandbox by default, are adjudicated by a per-stage bash approval mode, and can pause for interactive approval that you can remember and later revoke (`nax approvals`)
 
 ## Install
 
@@ -32,13 +32,16 @@ npm install -g @nathapp/nax
 bun install -g @nathapp/nax
 ```
 
-Requires: Bun 1.3.7+ or Node 22+. Git must be initialized.
+Requires: Bun 1.3.7+ (nax runs on the Bun runtime even when installed through npm; CI pins Bun 1.4.0). Git must be initialized.
+
+The default `native` agent needs provider credentials — run `nax auth login <provider>` or, for CI, set the provider's environment variable (a stored credential takes precedence).
 
 ## Quick Start
 
 ```bash
 cd your-project
 nax init                          # Create .nax/ structure
+nax setup                         # Optional: LLM-analyze the repo and write .nax/config.json
 nax features create my-feature    # Scaffold a feature
 
 # Write your spec, then plan + run
@@ -61,7 +64,7 @@ See [docs/](docs/) for full guides on configuration, test strategies, monorepo s
 2. **Acceptance setup** — Generate acceptance tests; assert RED before implementation
 3. **Route** — Classify story complexity and select model tier (fast → balanced → powerful)
 4. **Context** — Gather relevant code, tests, and project standards per story
-5. **Execute** — Run agent session (Claude Code, Codex, Gemini CLI, or ACP)
+5. **Execute** — Run agent session (native in-process agent by default, or an ACP agent such as Claude Code, Codex, Gemini CLI)
 6. **Verify** — Run scoped tests; rectify on failure before escalating
 7. **Review** — Run lint + typecheck + semantic review + adversarial review; autofix before escalating
 8. **Escalate** — On repeated failure, retry with a higher model tier
@@ -76,17 +79,35 @@ See [docs/](docs/) for full guides on configuration, test strategies, monorepo s
 | Command | Description |
 |:--------|:-----------|
 | [`nax init`](docs/guides/cli-reference.md#nax-init) | Initialize nax in your project |
+| `nax setup` | Analyze the repo and generate `.nax/config.json` via LLM |
 | [`nax features create`](docs/guides/cli-reference.md#nax-features-create-name) | Scaffold a new feature directory |
 | [`nax features list`](docs/guides/cli-reference.md#nax-features-list) | List all features and story status |
-| [`nax plan`](docs/guides/cli-reference.md#nax-plan---from-spec) | Generate `prd.json` from a spec file |
-| [`nax run`](docs/guides/cli-reference.md#nax-run) | Execute the orchestration loop |
-| [`nax precheck`](docs/guides/cli-reference.md#nax-precheck) | Validate project readiness |
-| [`nax status`](docs/guides/cli-reference.md#nax-status) | Show live run progress |
+| `nax features resolve` | Resolve a feature name and its spec source |
+| [`nax plan`](docs/guides/cli-reference.md#nax-plan--f-name---from-spec) | Generate `prd.json` from a spec file (`--decompose <storyId>` splits an existing story) |
+| `nax spec lint` | Check a spec's machine-extracted sections before planning |
+| [`nax run`](docs/guides/cli-reference.md#nax-run--f-name) | Execute the orchestration loop (`--compare` for a multi-agent bake-off, `--schedule` to defer) |
+| `nax resume` | Resume an interrupted run from its checkpoint |
+| [`nax precheck`](docs/guides/cli-reference.md#nax-precheck--f-name) | Validate project readiness |
+| [`nax status`](docs/guides/cli-reference.md#nax-status--f-name) | Show live run progress |
 | [`nax logs`](docs/guides/cli-reference.md#nax-logs) | Stream or query run logs |
-| [`nax generate`](docs/guides/cli-reference.md#nax-generate) | Generate `.nax/` files for all packages in a monorepo |
-| [`nax prompts`](docs/guides/cli-reference.md#nax-prompts) | Print prompt snapshots for debugging |
-| [`nax runs`](docs/guides/cli-reference.md#nax-runs) | List recorded run metadata |
-| [`nax config`](docs/guides/cli-reference.md#nax-config) | Show/validate configuration |
+| [`nax runs`](docs/guides/cli-reference.md#nax-runs) | List recorded run metadata (`nax runs show <run-id>`) |
+| `nax replay` | Reconstruct a post-mortem timeline for a previous run |
+| `nax accept` | Override failed acceptance criteria |
+| [`nax unlock`](docs/guides/cli-reference.md#nax-unlock) | Release a stale lock from a crashed nax process |
+| [`nax generate`](docs/guides/cli-reference.md#nax-generate) | Generate agent context files (`CLAUDE.md`, `AGENTS.md`, …) from `.nax/context.md` |
+| [`nax prompts`](docs/guides/cli-reference.md#nax-prompts--f-name) | Assemble or initialize prompts |
+| `nax context` | Inspect context-engine artifacts and feature fragments |
+| `nax rules` | Lint, export, or migrate the canonical rules store (`.nax/rules/`) |
+| `nax detect` | Detect test-file patterns and optionally persist them |
+| [`nax agents`](docs/guides/cli-reference.md#nax-agents) | List available coding agents |
+| `nax auth` | Manage provider credentials for the native agent (`login`, `import`, `list`, `rm`) |
+| [`nax approvals`](docs/guides/cli-reference.md#nax-approvals-list) | List or revoke remembered command approvals (`list`, `rm`) |
+| `nax mcp lock` | Pin configured MCP servers' tool surface to `.nax/mcp-lock.json` |
+| [`nax config`](docs/guides/cli-reference.md#nax-config) | Display the effective merged config (`--explain`, `--diff`); `nax config profile` manages config profiles |
+| [`nax curator`](docs/guides/cli-reference.md#nax-curator-status) | Inspect, commit, or garbage-collect curator proposals |
+| `nax routing calibrate` | Propose complexity→tier mapping adjustments from run history |
+| `nax plugins list` | List installed plugins |
+| `nax migrate` | Move generated content from `.nax/` to the output directory (`~/.nax/<project>/`) |
 
 For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
 
@@ -98,10 +119,24 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
 
 ```json
 {
+  "agent": {
+    "protocol": "hybrid",                  // "acp" | "native" | "hybrid" — which transports are permitted
+    "default": "native"                    // In-process nax-ai agent; or an ACP agent such as "claude"
+  },
   "execution": {
-    "maxIterations": 5,
+    "maxIterations": 10,
     "permissionProfile": "unrestricted",   // "unrestricted" | "safe" | "scoped"
-    "storyIsolation": "shared"             // "shared" | "worktree"
+    "storyIsolation": "shared",            // "shared" | "worktree"
+    "bashApproval": "raw",                 // "raw" | "gated" | "escalate" — how agent Bash commands are adjudicated
+    "sandbox": {
+      "enabled": true,                     // OS sandbox around agent-authored Bash / Exec commands (on by default)
+      "network": { "allowedDomains": ["registry.npmjs.org"] }  // Omit for unrestricted, [] for no network
+    },
+    "commandInterceptor": {
+      "provider": "rtk",                   // Token-reducing proxy for the Git tool
+      "enabled": true,                     // Off by default — opt in per project
+      "git": { "verbs": ["log", "diff"] }  // Only these subcommands are rewritten
+    }
   },
   "tdd": {
     "strategy": "auto"                     // How to write tests (see Test Strategies)
@@ -111,9 +146,9 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
   },
   "quality": {
     "commands": {
-      "test": "bun test",                   // Root test command
+      "test": "bun test",                  // Root test command
       "lint": "bun lint",                  // Optional linter
-      "typecheck": "bun typecheck"          // Optional type checker
+      "typecheck": "bun typecheck"         // Optional type checker
     }
   },
   "hooks": {
@@ -124,30 +159,31 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
   "mcp": {
     "servers": {
       "codebase-memory": {
-        "command": "codebase-memory-mcp",     // stdio MCP server binary (client only)
-        "args": [],                            // Optional server args
-        "stages": ["run"],                     // Attach in these pipeline stages ("*" = all)
-        "allowedTools": ["search_graph"]       // Optional: subset of locked tools that is grantable
+        "command": "codebase-memory-mcp",  // stdio MCP server binary (client only)
+        "args": [],                        // Optional server args
+        "stages": ["run"],                 // Attach in these pipeline stages ("*" = all)
+        "allowedTools": ["search_graph"]   // Optional: subset of locked tools that is grantable
       }
-    }
-  },
-  "execution": {
-    "commandInterceptor": {
-      "provider": "rtk",                       // Token-reducing proxy for the Git tool
-      "enabled": true,                         // Off by default — opt in per project
-      "git": { "verbs": ["log", "diff"] }      // Only these subcommands are rewritten
     }
   }
 }
 ```
 
-`mcp` attaches external Model Context Protocol (MCP) servers as tool providers — nax is a client only, never an MCP server. The server id is the tool-name namespace: the `codebase-memory` server advertises its tools as `codebase-memory__search_graph`, `codebase-memory__trace_path`, and so on. Before any of those tools are grantable, run `nax mcp lock` at the project root: it connects every enabled server once, pins the advertised tool surface (name + input-schema hash) to `.nax/mcp-lock.json`, and that lockfile is committed like `bun.lock`. `stages` is the attachment control — a server's tools attach only to the listed pipeline stages, and an empty list attaches nowhere. MCP tools are advertised under the `unrestricted` permission profile only; `safe` and `scoped` resolve no provider tools at all. `allowedTools` narrows which locked tools are grantable; omitted means every locked tool is.
+`mcp` attaches external Model Context Protocol (MCP) servers as tool providers — nax is a client only, never an MCP server. The server id is the tool-name namespace: the `codebase-memory` server advertises its tools as `codebase-memory__search_graph`, `codebase-memory__trace_path`, and so on. Before any of those tools are grantable, run `nax mcp lock` at the project root: it connects every enabled server once, pins the advertised tool surface (name + input-schema hash) to `.nax/mcp-lock.json`, and that lockfile is committed like `bun.lock`. `stages` is the attachment control — a server's tools attach only to the listed pipeline stages, and an empty list attaches nowhere. MCP tool reach follows the permission profile: `unrestricted` advertises every attached server's tools, `scoped` only what the stage's `Mcp(...)` rules admit, and `safe` none at all. `allowedTools` narrows which locked tools are grantable; omitted means every locked tool is.
 
 `execution.commandInterceptor` rewrites the `Git` tool's argv through `rtk` so `log` and `diff` output reaches the model compressed. It is confined to the Git site: user-authored `quality.commands` and `acceptance.command` are never wrapped. It fails open — if the `rtk` binary is missing the call runs as plain git.
 
 **Both features are native-agent only.** An ACP agent (`claude`, `codex`, `opencode`, `gemini`) brings its own tools, so nax's `Git` tool is never invoked and no MCP tool is advertised. A project on `"protocol": "acp"` can hold a complete, valid config for both and get zero effect, with no error. The built-in defaults (`agent.protocol: "hybrid"`, `agent.default: "native"`) enable both; a config that switches to an acpx agent does not.
 
 See [MCP & Command Interception](docs/guides/mcp-and-interception.md) for setup, verification and troubleshooting, and the [Configuration Guide](docs/guides/configuration.md) for the full schema.
+
+`execution.bashApproval` decides how an agent's Bash command is adjudicated (ADR-030). The default `raw` is a pass-through — no per-segment grant matching or root containment, only a best-effort screen that refuses a parseable command naming a nax-owned file (`.nax/config.json`, a feature `prd.json`, the queue-control files). `gated` matches each segment against the stage's single `Bash(...)` allow rule, and `escalate` turns a denial the gate could not adjudicate into an interactive approval prompt; under either, a stage without a `Bash(...)` rule never gets the tool, and nax warns about such inert stages at run start. Approvals you choose to remember are kept per project and managed with `nax approvals list` / `nax approvals rm`; `execution.approvalTimeout` (default 600000 ms) bounds how long a prompt waits before denying.
+
+`execution.sandbox` wraps agent-authored Bash and `RunCommand` exec commands in an OS sandbox (backend `srt`, **on by default**): writes are confined to the repository root, system temp directories and package-manager caches, credential files are unreadable, and `network.allowedDomains` optionally limits network access. When the sandbox is enabled but unavailable on the machine, `raw` Bash is refused rather than run unsandboxed — switch the stage to `gated`/`escalate` or set `sandbox.enabled: false`. `execution.commandSafety.shadow` optionally attaches a loopback shadow classifier that scores every agent command and records the result without ever deciding anything.
+
+These settings govern nax's own `Bash` and `RunCommand` tools, so, like MCP and the interceptor, they take effect for the native agent; an ACP agent runs commands under its own tooling.
+
+See [Sandbox & Command Safety](docs/guides/sandbox-and-command-safety.md), [Approvals](docs/guides/approvals.md), [The Bash Tool](docs/guides/bash-tool.md) and [Permissions](docs/guides/permissions.md).
 
 ---
 
@@ -203,7 +239,7 @@ See [Hooks Guide](docs/guides/hooks.md).
 
 Extensible plugin architecture for prompt optimization, custom routing, code review, and reporting. Plugins live in `.nax/plugins/` (project) or `~/.nax/plugins/` (global). Post-run action plugins (e.g. auto-PR creation) can implement `IPostRunAction` for results-aware post-completion workflows.
 
-See [Plugins Guide](docs/guides/agents.md#plugins).
+See [Plugin System](docs/architecture/subsystems.md#23-plugin-system).
 
 ---
 
@@ -218,6 +254,7 @@ The default agent is `native`: nax drives the model in-process over `@nathapp/na
 | OpenCode | `opencode` | Set `agent.default: "opencode"` |
 | Codex | `codex` | Set `agent.default: "codex"` |
 | Gemini CLI | `gemini` | Set `agent.default: "gemini"` |
+| Pi Coding Agent | `pi` | Set `agent.default: "pi"` (via the pi-acp bridge) |
 | Aider | `aider` | Set `agent.default: "aider"` |
 | Any ACP-compatible | — | See [acpx agent docs](https://github.com/openclaw/acpx#agents) |
 
@@ -229,10 +266,11 @@ See [Agents Guide](docs/guides/agents.md) and the [Context Engine Guide](docs/gu
 
 | Problem | Solution |
 |:--------|:---------|
-| "Working tree is dirty" | Commit or stash changes; nax will restore your working tree after the run |
+| Precheck blocks with "Uncommitted changes detected" | Commit or stash your changes — nax's own runtime files are ignored by the check |
 | HOME env warning | Set HOME to an absolute path — nax warns if it contains `~` |
 | ACP sessions leaking | Upgrade to nax v0.48+ and ensure `.nax/acp-sessions.json` is gitignored |
 | Monorepo packages misclassified | Ensure `.nax/mono/packages/<pkg>/config.json` is set up per package |
+| Agent Bash refused with "sandbox unavailable" | The OS sandbox is on by default and `raw` Bash requires it; the message names why the sandbox probe failed (e.g. unsupported platform, or a container where the sandbox cannot enforce). Fix the environment, set the stage's `bashApproval` to `gated`/`escalate`, or set `execution.sandbox.enabled: false` |
 | Acceptance tests regenerating every run | Check `acceptance-meta.json` — stale fingerprints indicate outdated story context |
 
 See the [Troubleshooting Guide](docs/guides/troubleshooting.md) for more.

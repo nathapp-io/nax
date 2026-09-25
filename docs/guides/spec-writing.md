@@ -39,5 +39,16 @@ the same drift more robustly (a real stub-and-assert seam test cannot be paraphr
 into a no-op, and removals are caught by the compiler). Do not write `[verbatim]`,
 `[grep]`, or `[file]` ACs in new specs.
 
+### nax enforces this at plan time
+
+`nax plan` runs the spec linter (`lintSpecContent`, `src/prd/spec-lint.ts`) before
+planning. ACs without a `[unit]`/`[integration]`/`[cli]` tag, with a deprecated
+`[grep]`/`[file]`/`[verbatim]` tag, or containing a shell fragment are reported
+as findings; the plan proceeds. Findings that mean an authorisation you wrote
+would be silently dropped — an empty or unattributed `### Modifies` section, a
+Modifies path that does not exist, an Out-of-Scope section that extracts to
+nothing — **fail** the plan. Opt out with `nax plan --no-spec-lint` (also accepted by
+`nax run --plan`). Inside the nax repo, `bun run spec:lint` lints specs on their own.
+
 For the full guide — structure, sizing bounds, context files, seams, failure modes,
 anti-patterns, and worked examples — see the skill linked above.

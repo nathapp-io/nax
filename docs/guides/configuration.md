@@ -11,14 +11,17 @@ Config is layered — project overrides global:
 |:-----|:------|
 | `~/.nax/config.json` | Global (all projects) |
 | `.nax/config.json` | Project-level override |
+| `.nax/mono/<package>/config.json` | Per-package override (monorepos) |
+
+Every key has a default — the authoritative source is the Zod schema (`src/config/schemas*.ts`); `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. Run `nax config --explain` to see the merged result with field descriptions. Profiles (`profile`, `--profile`, `NAX_PROFILE`) overlay on top — see `nax config profile` in the [CLI reference](cli-reference.md).
 
 **Key options:**
 
 ```json
 {
   "execution": {
-    "maxIterations": 20,
-    "costLimit": 5.0
+    "maxIterations": 10,
+    "costLimit": 30
   },
   "tdd": {
     "strategy": "auto"
@@ -38,6 +41,39 @@ Config is layered — project overrides global:
   }
 }
 ```
+
+### Top-Level Sections
+
+| Section | Key defaults | Purpose |
+|:--------|:-------------|:--------|
+| `name` / `outputDir` | `""` / `~/.nax/<name>` | Project identity for the output registry (name falls back to the directory name) |
+| `models` | `claude`: `haiku`/`sonnet`/`opus`; `native`: `anthropic/claude-haiku-4-5` / `claude-sonnet-5` / `claude-opus-5-5` | Per-agent `fast`/`balanced`/`powerful` model map |
+| `agent` | `protocol: "hybrid"`, `default: "native"` | Agent selection, fallback, ACP/native transport, idle watchdog — [below](#agent-configuration) |
+| `autoMode` | `complexityRouting`: simple→fast, medium→balanced, complex/expert→powerful; `escalation.enabled: true`, 2 attempts per tier | Tier routing and escalation (fast → balanced → powerful) |
+| `autoRoute` | `enabled: false`, `minSamples: 8` | Adjust complexity→tier mapping from run history (see `nax routing calibrate`) |
+| `routing` | `strategy: "keyword"` | Story classification — [below](#routing) |
+| `execution` | `maxIterations: 10`, `costLimit: 30`, `sessionTimeoutSeconds: 3600`, `storyIsolation: "shared"`, `permissionProfile: "unrestricted"` | Run loop, rectification, regression gate, permissions, sandbox |
+| `quality` | `commands: {}`, `autofix.enabled: true`, `shell: "/bin/sh"`, `testing.hermetic: true` | Project lint/typecheck/test commands and gates |
+| `tdd` | `strategy: "auto"`, `sessionTiers` fast/fast | TDD strategy — [options](#tdd-strategy-options) |
+| `review` | `enabled: true`, `checks: ["typecheck", "lint"]`, `pluginMode: "observational"` | Review checks (`typecheck`, `lint`, `test`, `build`, `semantic`, `adversarial`) |
+| `plan` | `model: "balanced"`, `mode` unset (→ `single`), `timeoutSeconds: 600` | `nax plan` — `mode` is `single` or `refine`; the retired `debate`/`pipeline` modes are rejected at load |
+| `acceptance` | `enabled: true`, `maxRetries: 3`, `model: "fast"`, `redGate: true` | Acceptance test generation, refinement and fix |
+| `context` | `v2.enabled: false`, `fileInjection: "disabled"` | Context engine — see [Context engine](context-engine.md) |
+| `constitution` | `enabled: true`, `path: "constitution.md"`, `maxTokens: 2000` | Constitution injected into prompts |
+| `interaction` | `plugin: "cli"`, `defaults.timeout: 600000` | Interaction triggers/plugins — see [Triggers](triggers.md) |
+| `precheck` | `storySizeGate.enabled: true`, `action: "block"` | Pre-run checks and the story-size gate |
+| `prompts` | `behavioralGuardrails: "lite"` | Prompt overrides and guardrail level (`off`/`lite`/`strict`) |
+| `autoPr` | `enabled: false`, `draft: true` | Open a (draft) PR after a run |
+| `finish` | `enabled: false` | Autonomous finish — [below](#autonomous-finish-finish) |
+| `mcp` | `servers: {}` | MCP servers the native agent may call — [below](#mcp-servers) |
+| `reporters` | `webhook.enabled: false`, `otel.enabled: false` | Built-in webhook / OpenTelemetry reporters |
+| `install` | `allowScripts: false` | Dependency-install script policy |
+| `project` | unset (auto-detected) | Language/type overrides — [below](#project-language--type) |
+| `curator` | unset (`enabled: true` when present) | Curator thresholds, rollup path, retention — see [Curator](curator.md) |
+| `plugins` / `disabledPlugins` / `hooks` / `optimizer` / `generate` | unset | Plugin entries, lifecycle hooks, prompt optimizer, `nax generate` agent list |
+| `profile` | `"default"` | Active config profile |
+
+---
 
 ### Agent Configuration
 
@@ -75,6 +111,8 @@ The `agent` block is the canonical source of truth for agent selection and avail
 | `agent.fallback.maxHopsPerStory` | `2` | Swap ceiling per story. Prevents runaway swap loops. |
 | `agent.fallback.rebuildContext` | `true` | Call `ContextOrchestrator.rebuildForAgent()` on swap so the new agent sees a re-rendered bundle. |
 | `agent.fallback.onQualityFailure` | `false` | Also swap on review / verify reject, not just availability. Use with care — often masks real regressions. |
+| `agent.idleWatchdog` | `enabled: true`, `mode: "warn-then-cancel"`, `idleTimeoutSeconds: 900` | Cancels a session that stops producing activity (`mode`: `off`/`observe`/`warn-then-cancel`/`cancel`). |
+| `agent.spinBreaker` | `enabled: true`, `nudgeAfterRepeats: 25`, `stopAfterRepeats: 50` | Nudges, then stops, an agent repeating the same tool call. |
 | `agent.acp.promptRetries` | `0` | ACP only. Becomes acpx's `--prompt-retries`; the retry runs inside the spawned agent process. |
 | `agent.native.transportRetry.maxAttempts` | `3` | Native only. Total attempts for one round trip when the provider stalls or reports itself overloaded. `1` disables retry. |
 | `agent.native.transportRetry.baseDelayMs` | `2000` | Native only. Equal-jitter exponential backoff base, capped by the turn's remaining budget. |
@@ -212,32 +250,15 @@ from the model **string**, so the declared id is the whole address:
 
 ### Shell Operators in Commands
 
-Review commands (`lint`, `typecheck`) are executed directly via `Bun.spawn` — **not** through a shell. This means shell operators like `&&`, `||`, `;`, and `|` are passed as literal arguments and will not work as expected.
+Quality commands run through a shell (`/bin/sh -c <command>`), so quoting, pipes and operators such as `&&` work. Secret environment variables listed in `quality.stripEnvVars` (tokens and API keys by default) are removed before the command is spawned.
 
-**❌ This will NOT work:**
+An `&&` chain, however, stops at the first failing step and hides every failure after it:
+
 ```json
 "typecheck": "bun run build && bun run typecheck"
 ```
 
-**✅ Workaround — wrap in a `package.json` script:**
-```json
-// package.json
-"scripts": {
-  "build-and-check": "bun run build && bun run typecheck"
-}
-```
-```json
-// .nax/config.json
-"quality": {
-  "commands": {
-    "typecheck": "bun run build-and-check"
-  }
-}
-```
-
-This limitation applies to all `quality.commands` entries (`test`, `lint`, `typecheck`, `lintFix`, `formatFix`).
-
-**Configuring the `&&` chain above will not throw** — nax still runs it, since the shim exists for repos mid-migration — but it logs a one-line warning naming the affected key and pointing at the list form below, because a chain silently swallows every failure after the first.
+nax still runs such a chain, but logs a one-line warning at config load naming the affected key and pointing at the list form below, which runs every step and reports every failure in one invocation.
 
 ---
 
@@ -327,7 +348,7 @@ If `testScoped` is not configured, nax falls back to a heuristic that replaces t
 
 | Value | Behaviour |
 |:------|:----------|
-| `auto` | nax decides based on complexity and tags — simple→`tdd-simple`, security/public-api→`three-session-tdd`, else→`three-session-tdd-lite` |
+| `auto` | nax decides based on complexity and title/tags — security/public-api or `expert`→`three-session-tdd`, `complex`→`three-session-tdd-lite`, `simple`/`medium`→`tdd-simple` |
 | `strict` | Always use `three-session-tdd` (strictest — all stories) |
 | `lite` | Always use `three-session-tdd-lite` |
 | `off` | No TDD — tests written after implementation (`test-after`) |
@@ -401,11 +422,15 @@ The `routing.strategy` config controls how stories are classified when PRD routi
     "llm": {
       "model": "fast",
       "fallbackToKeywords": true,
-      "mode": "hybrid"
+      "cacheDecisions": true,
+      "mode": "hybrid",
+      "timeoutMs": 30000
     }
   }
 }
 ```
+
+The `llm` values shown are the defaults. `llm.mode` is `one-shot`, `per-story` or `hybrid`.
 
 > **Note:** LLM routing requires an agent (e.g. `claude`) to be installed and configured. It makes real API calls, which incur cost and latency. For CI or contributor environments, prefer `"keyword"`.
 
@@ -428,7 +453,7 @@ Auto-detects your project's language, type, test framework, and lint tool from m
 
 | Field | Auto-detected from | Values |
 |:------|:-------------------|:-------|
-| `language` | `go.mod`, `Cargo.toml`, `pyproject.toml`, `package.json` | `typescript`, `javascript`, `go`, `rust`, `python` |
+| `language` | `go.mod`, `Cargo.toml`, `pyproject.toml`, `package.json` | `typescript`, `javascript`, `go`, `rust`, `python` (config also accepts `ruby`, `java`, `kotlin`, `php`) |
 | `type` | `package.json` `workspaces`, deps, `bin` field | `monorepo`, `web`, `api`, `cli`, `tui` |
 | `testFramework` | Language + dev dependencies | `go-test`, `cargo-test`, `pytest`, `vitest`, `jest` |
 | `lintTool` | Language + config files | `golangci-lint`, `clippy`, `ruff`, `biome`, `eslint` |
@@ -472,11 +497,10 @@ LLM-based adversarial code review that asks "Where does this break?" rather than
   "review": {
     "checks": ["typecheck", "lint", "semantic", "adversarial"],
     "adversarial": {
-      "modelTier": "balanced",
+      "model": "balanced",
       "diffMode": "ref",
       "rules": [],
       "timeoutMs": 600000,
-      "excludePatterns": [],
       "parallel": false,
       "maxConcurrentSessions": 2
     }
@@ -486,11 +510,11 @@ LLM-based adversarial code review that asks "Where does this break?" rather than
 
 | Key | Default | Description |
 |:----|:--------|:-----------|
-| `modelTier` | `"balanced"` | Model tier for the adversarial reviewer (`"fast"`, `"balanced"`, `"powerful"`) |
+| `model` | `"balanced"` | Tier label (`"fast"`, `"balanced"`, `"powerful"`) or `{ agent, model }` pin. The old `modelTier` key is migrated to `model` with a deprecation warning (same for `review.semantic`) |
 | `diffMode` | `"ref"` | How the diff is provided: `"embedded"` (inlined, ~50KB cap) or `"ref"` (self-serve via git tools, no cap) |
 | `rules` | `[]` | Project-specific rules passed verbatim to the adversarial prompt |
 | `timeoutMs` | `600000` | Session timeout in milliseconds (600s matches semantic review timeout) |
-| `excludePatterns` | `[]` | Git pathspec patterns to exclude from the diff |
+| `excludePatterns` | unset | Git pathspec patterns to exclude from the diff. Unset derives them from `testFilePatterns` + noise dirs (adversarial sees test files); any explicit value, including `[]`, is used as-is |
 | `parallel` | `false` | When `true`, semantic and adversarial reviews run concurrently instead of sequentially |
 | `maxConcurrentSessions` | `2` | Maximum concurrent LLM review sessions when `parallel: true`. Higher values use more LLM quota but complete faster. |
 
@@ -500,7 +524,7 @@ See [Semantic Review — Adversarial Review](semantic-review.md#adversarial-revi
 
 ### Session Error Retries
 
-Controls how many times the ACP adapter retries on session errors:
+Controls how many times a failed agent session is retried on the same agent (hop retry policy):
 
 ```json
 {
@@ -513,8 +537,10 @@ Controls how many times the ACP adapter retries on session errors:
 
 | Field | Default | Description |
 |:------|:--------|:------------|
-| `sessionErrorMaxRetries` | `1` | Retries for non-retryable session errors (stale/locked) |
+| `sessionErrorMaxRetries` | `1` | Retries for non-retryable session errors (stale/locked), 0–5 |
 | `sessionErrorRetryableMaxRetries` | `3` | Retries for retryable errors (queue disconnect) |
+
+See [Retry strategy](retry-strategy.md) for how these interact with fallback and escalation.
 
 ---
 
@@ -536,29 +562,6 @@ Controls whether stories get their own git worktree in sequential mode:
 | `"worktree"` | Each story gets an isolated git worktree (EXEC-002) |
 
 See [Parallel Execution — Sequential Worktree Isolation](parallel-execution.md#sequential-worktree-isolation-exec-002) for details.
-
----
-
-### Rectification Escalation
-
-When rectification retries are exhausted at the current model tier, nax can escalate to the next tier for one additional attempt before escalating the story.
-
-```json
-{
-  "execution": {
-    "rectification": {
-      "escalateOnExhaustion": true
-    }
-  }
-}
-```
-
-| Value | Behaviour |
-|:-------|:----------|
-| `true` | After `maxRetries` at the current tier, retry once at the next tier (fast→balanced→powerful). Last resort before escalating the story. |
-| `false` | Escalate the story immediately after `maxRetries` at current tier. |
-
-**Requires `autoMode.escalation.enabled: true`.**
 
 ---
 
@@ -590,17 +593,19 @@ See [Semantic Review](semantic-review.md) for the behavioral review check.
 
 ---
 
-### Autofix Budget
+### Autofix and Rectification Budget
 
-Control how many agent rectification attempts nax makes when review checks fail:
+When review or verification fails, the unified fix cycle (`runFixCycle`) runs fix strategies (autofix-implementer, autofix-test-writer, full-suite-rectify, …). Its caps live under `execution.rectification`; `quality.autofix` only decides whether the autofix strategies take part.
 
 ```json
 {
   "quality": {
-    "autofix": {
-      "enabled": true,
-      "maxAttempts": 2,
-      "maxTotalAttempts": 10
+    "autofix": { "enabled": true }
+  },
+  "execution": {
+    "rectification": {
+      "maxAttemptsTotal": 12,
+      "maxAttemptsPerStrategy": 3
     }
   }
 }
@@ -608,13 +613,14 @@ Control how many agent rectification attempts nax makes when review checks fail:
 
 | Field | Default | Description |
 |:------|:--------|:------------|
-| `enabled` | `true` | Master switch for autofix |
-| `maxAttempts` | `2` | Max agent rectification attempts per review→autofix cycle |
-| `maxTotalAttempts` | `10` | Global ceiling per story across all review→autofix cycles |
+| `quality.autofix.enabled` | `true` | Whether the autofix strategies participate in the fix cycle |
+| `quality.autofix.maxAttempts` | `3` | Prompt display only ("X attempts available") — not enforced |
+| `execution.rectification.maxAttemptsTotal` | `12` | Loose ceiling on fix-cycle iterations per story (1–50) |
+| `execution.rectification.maxAttemptsPerStrategy` | `3` | Per-strategy cap for LLM-driven strategies (1–20); mechanical strategies run once |
+| `execution.rectification.abortOnIncreasingFailures` / `consecutiveIncreasesToBail` | `true` / `2` | Bail when the finding count keeps rising |
+| `execution.rectification.abortOnNoProgress` / `consecutiveNoProgressToBail` | `true` / `3` | Bail when iterations stop making progress |
 
-**How it works:** When review fails, autofix spawns an agent up to `maxAttempts` times per cycle. If the agent fixes the issue but a subsequent review fails again, a new cycle starts. `maxTotalAttempts` caps the total agent spawns across all cycles to prevent runaway loops.
-
-Example with defaults: a story can cycle through review→autofix up to 5 times (5 × 2 = 10 spawns) before hitting the global ceiling and escalating.
+After the cycle is exhausted the story escalates to the next tier per `autoMode.escalation`. The legacy keys `quality.autofix.maxTotalAttempts`, `quality.autofix.rethinkAtAttempt`, `quality.autofix.urgencyAtAttempt`, `execution.rectification.maxRetries` and `execution.regressionGate.maxRectificationAttempts` are rejected at load with a migration hint; `execution.rectification.escalateOnExhaustion` was removed (tier escalation is unconditional) and is stripped with a warning.
 
 ---
 
@@ -797,9 +803,64 @@ warned about and ignored, and the root config's value always applies
 | `execution.sandbox` | on | OS sandbox for agent-authored commands. When it is unavailable, `raw` Bash refuses with a reason; opt out with `execution.sandbox.enabled: false`. |
 | `execution.commandSafety` | absent (off) | Shadow command classifier; observes every command, decides nothing. |
 
+**`execution.sandbox`** wraps agent-authored Bash and `RunCommand` exec commands:
+
+| Key | Default | Description |
+|:----|:--------|:------------|
+| `enabled` | `true` | Master switch |
+| `backend` | `"srt"` | The only backend today |
+| `filesystem.allowWrite` | `[]` | Extra write roots (`~` expanded, relative paths resolve against the story root) |
+| `filesystem.denyRead` | `[]` | Extra read denies |
+| `network.allowedDomains` | unset | Unset = unrestricted network; `[]` = no network; a list = allow-list |
+
+Sandbox paths must be literal — glob characters (`* ? [ ] { }`) are rejected at load.
+
+**`execution.commandSafety.shadow`** points at a classifier endpoint:
+
+| Key | Default | Description |
+|:----|:--------|:------------|
+| `url` | — (required) | `http`/`https` URL; must be loopback (`127.0.0.1`, `[::1]`, `localhost`) unless `allowRemote` |
+| `timeoutMs` | `3000` | 200–30000 |
+| `authEnv` | `"NAX_COMMAND_SAFETY_AUTH"` | *Name* of the environment variable holding the auth token — no secret is stored in config |
+| `allowRemote` | `false` | Accept a non-loopback URL |
+
+Remembered approvals from `escalate` mode are managed with `nax approvals list` / `nax approvals rm`. See [Bash tool](bash-tool.md) and [ADR-030](../adr/ADR-030-bash-approval-modes.md).
+
 The exception is the permissions map: `permissions.<stage>.bashApproval` stays per-package and
 overrides the root posture for one stage — the documented way to make a package stricter than
 root. See [Permissions](permissions.md) for how the mode feeds rule resolution.
 
 **Warning:** `execution.commandSafety.shadow.allowRemote` allows a non-loopback classifier URL,
 which sends every agent command verbatim off-host. Leave it `false` unless you accept that.
+
+## MCP Servers
+
+The `mcp` block declares external MCP servers whose tools the `native` agent may call. The block is
+`.strict()` — an unknown key fails the load rather than being stripped.
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "codegraph": {
+        "command": "codegraph-mcp",
+        "args": ["--stdio"],
+        "stages": ["run", "review"],
+        "allowedTools": ["search"]
+      }
+    }
+  }
+}
+```
+
+| Key | Default | Description |
+|:----|:--------|:------------|
+| `servers.<id>` | — | Server id: lowercase `[a-z0-9][a-z0-9_-]*`, no `__` (it namespaces tool names) |
+| `command` / `args` / `env` | — / `[]` / `{}` | How to launch the server |
+| `stages` | `[]` | Pipeline stages it attaches to (`plan`, `run`, `setup`, `verify`, `review`, `rectification`, `regression`, `acceptance`, `complete`, or `"*"`) |
+| `allowedTools` | unset | Unset = every locked tool is grantable |
+| `timeoutMs` | `60000` | Per-call ceiling |
+| `enabled` | `true` | Kill switch that does not invalidate the lock |
+
+Pin each server's advertised tools with `nax mcp lock` (writes `.nax/mcp-lock.json`). See
+[MCP and interception](mcp-and-interception.md).
