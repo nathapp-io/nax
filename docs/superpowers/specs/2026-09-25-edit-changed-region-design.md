@@ -161,10 +161,12 @@ string input.
 - `src/tools/edit-region.ts` — literal replacement helper
 - `test/unit/tools/edit-region.test.ts` — `$`-pattern tests (one test file per source file, `test-architecture.md`)
 
+**US-002**
+- `test/unit/tools/edit-region.test.ts` — created by US-001; US-002 adds the view composition, description and runtime tests to it
+
 ### Modifies
 
 **US-002**
-- `test/unit/tools/edit-region.test.ts` — created by US-001; add the view composition, description and runtime tests
 - `test/unit/tools/write-edit.test.ts` — no assertion there checks the success content, so no test
   changes are expected; listed so a failure there is investigated, not rewritten.
 
