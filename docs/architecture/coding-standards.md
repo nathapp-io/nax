@@ -191,6 +191,7 @@ test/
 ├── ui/          # TUI (React/Ink) component tests
 ├── e2e/         # *.e2e.test.ts — excluded from `bun run test`; run via `bun run test:e2e`
 ├── helpers/     # Shared mocks/builders (import via `@test/helpers` barrel)
+├── contracts/   # *.contract.ts — type-level shape checks, compiled by typecheck
 └── fixtures/    # Static fixture data
 ```
 

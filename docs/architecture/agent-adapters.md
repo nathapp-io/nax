@@ -75,14 +75,14 @@ The stage rides on each `Operation.stage` (or `pipelineStage` on a direct manage
 
 | Stage | Carried by |
 |:------|:--------|
-| `plan` | `planOp` / `planInteractiveOp` |
+| `plan` | `planInteractiveOp`, `planRefineOp`, `decomposeOp` |
 | `run` | run-kind ops (test-writer, implementer, etc.); the default when none is passed |
-| `setup` | `nax setup` config generation |
+| `setup` | `nax setup` config generation (`setupGenerateOp`) |
 | `verify` | `verifyScopedOp`, `fullSuiteGateOp` |
 | `rectification` | autofix / full-suite-rectify ops |
-| `complete` | `completeAs` one-shots (`decomposeOp`, etc.) |
+| `complete` | `finishNarrativeOp`; the default for a `completeAs` call that passes no stage |
 | `acceptance` | Acceptance generator / fix ops |
-| `regression` | Regression gate |
+| `regression` | Declared in the union; no op carries it today |
 | `review` | semantic / adversarial review ops, `rectifyOp` |
 
 The profile's mode is the same for every stage; per-stage differences come only from `execution.permissions.<stage>` rules and per-stage `bashApproval`.
@@ -117,7 +117,7 @@ The `AskResolver` is a chain (`chainAskLinks`, `src/permissions/ask-chain.ts`) b
 | **Never hardcode permission modes** | No `?? true`, `?? false`, or literal `"approve-all"` / `"approve-reads"` — enforced by `scripts/check-permission-mode-ssot.ts`; a site that only consumes an already-resolved mode takes `// nax-permission-mode-allow: <reason>` |
 | **Session close is a ruled exemption** | `closePhysicalSession` uses `SESSION_CLOSE_PERMISSION_MODE` (SEC-12): `src/agents/acp/` cannot import `NaxConfig` (`check:adapter-no-config-import`), and no agent work runs under the loaded-then-closed session |
 | **Always pass `pipelineStage` upward** | Callers above the resource opener pass `pipelineStage`; the manager resolves once before invoking the adapter |
-| **Adapter primitives receive `resolvedPermissions`** | `OpenSessionOpts` / `CompleteOpts` carry pre-resolved permissions — adapters never re-resolve |
+| **Adapter primitives receive `resolvedPermissions`** | `OpenSessionOpts` / `ResolvedCompleteOptions` carry pre-resolved permissions — adapters never re-resolve |
 | **Nothing grants Bash but a human rule** | Adding `"Bash"` to a profile's tool list breaks ADR-029 §3; `test/integration/permissions/bash-deny-suite.test.ts` fails on purpose |
 
 ### Adding New Call Sites
@@ -135,6 +135,8 @@ values:
 ```typescript
 // ✅ Correct — sessionless one-shot
 await ctx.runtime.agentManager.completeAs(agentName, prompt, {
+  modelDef,
+  workdir,
   pipelineStage: "complete",
   config,
 });
@@ -143,6 +145,8 @@ await ctx.runtime.agentManager.completeAs(agentName, prompt, {
 const handle = await ctx.runtime.sessionManager.openSession(name, {
   agentName,
   workdir,
+  modelDef,
+  timeoutSeconds,
   pipelineStage: "run",
   signal: ctx.signal,
 });
@@ -230,7 +234,7 @@ interface AgentAdapter {
   closeSession(handle: SessionHandle): Promise<void>;
 
   // Sessionless one-shot — called directly by AgentManager.completeAs
-  complete(prompt: string, opts: CompleteOpts): Promise<CompleteResult>;
+  complete(prompt: string, opts: ResolvedCompleteOptions): Promise<CompleteResult>;
 
   // Optional: close a session this process holds no live handle for (#1702)
   closePhysicalSession?(handle: string, workdir: string, options?: { force?: boolean; signal?: AbortSignal }): Promise<void>;
@@ -260,8 +264,8 @@ of failing to compile, and the two disagreed on the handle type unnoticed.
 **`AgentAdapter.run` is gone** (deleted in ADR-019 Phase D). Functionality lives
 in `SessionManager.runInSession`, which composes the three session primitives.
 
-**`plan` and `decompose` are gone too** — they are typed `kind:"complete"`
-operations under `src/operations/`, dispatched through `callOp` (§37).
+**`plan` and `decompose` are gone too** — they are typed operations under
+`src/operations/` (`planInteractiveOp` / `planRefineOp` are `kind:"run"`, `decomposeOp` is `kind:"complete"`), dispatched through `callOp` (§37).
 
 ### `interactionHandler` — mid-turn callback
 

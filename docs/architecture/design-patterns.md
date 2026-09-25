@@ -49,7 +49,7 @@ const oneShot = OneShotPromptBuilder.for("router")
 
 | Builder | Roles | Purpose |
 |:--------|:------|:--------|
-| `TddPromptBuilder` | implementer, test-writer, verifier, single-session, tdd-simple, batch | TDD execution pipeline |
+| `TddPromptBuilder` | implementer, test-writer, verifier, single-session, tdd-simple, batch, no-test | TDD execution pipeline |
 | `ReviewPromptBuilder` | semantic | Semantic review, AC verification, JSON-retry / re-grounding prompts |
 | `AcceptancePromptBuilder` | generator, diagnoser, fix-executor | Acceptance test generation/diagnosis |
 | `RectifierPromptBuilder` | static factories (`firstAttemptDelta`, `continuation`, `escalated`, `reviewRectification`, `testWriterRectification`, `regressionFailure`, …) | Fix prompts with escalation preambles; the old `for(trigger)` builder form was removed (ADR-018) |
@@ -115,7 +115,7 @@ export class AcpAgentAdapter implements AgentAdapter { ... }    // JSON-RPC over
 export class NativeAgentAdapter implements AgentAdapter { ... } // in-process over @nathapp/nax-ai
 ```
 
-`adapter.run` / `plan` / `decompose` were deleted in ADR-019 — `run` is now `SessionManager.runInSession` (composes the three session primitives), and `plan`/`decompose` are `kind:"complete"` Operations dispatched via `callOp` (§37, `.claude/rules/adapter-wiring.md`).
+`adapter.run` / `plan` / `decompose` were deleted in ADR-019 — `run` is now `SessionManager.runInSession` (composes the three session primitives), and `plan`/`decompose` are Operations dispatched via `callOp` (`planInteractiveOp` / `planRefineOp` are `kind:"run"`, `decomposeOp` is `kind:"complete"`) (§37, `.claude/rules/adapter-wiring.md`).
 
 **Rules:**
 - Interface in `types.ts`, implementations in `src/agents/acp/adapter.ts` and `src/agents/native/adapter.ts`
@@ -140,7 +140,9 @@ All pipeline stages, routing, TDD, and acceptance generators dispatch through th
 // ✅ Correct: dispatch a one-shot through the manager (resolves the default agent)
 const agentName = ctx.agentManager?.getDefault() ?? "claude"; // or resolveDefaultAgent(config) in standalone modules
 const result = await ctx.runtime.agentManager.completeAs(agentName, prompt, {
-  pipelineStage: "decompose",
+  modelDef,
+  workdir,
+  pipelineStage: "complete", // a PipelineStage — there is no "decompose" stage
   config,
 });
 
@@ -157,7 +159,7 @@ const adapter = {
 
 **Where this applies:**
 - Pipeline stages needing LLM calls (routing decompose, classification)
-- CLI commands (`nax analyze --decompose`)
+- CLI commands (`nax plan --decompose <storyId>`)
 - Acceptance test generation and refinement
 - Any future feature that needs one-shot LLM completions
 
