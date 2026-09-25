@@ -122,6 +122,30 @@ export interface ToolAuditSink {
   flush(): Promise<void>;
 }
 
+/**
+ * The sink `createToolAuditSink` returns, plus the shutdown-time flush.
+ *
+ * `flushPartial()` writes whatever is still buffered with `partial: true` so a
+ * sink whose hop `finally` never runs before `process.exit` still leaves its
+ * audit file behind. After it runs, the sink's own `flush()` is a no-op — the
+ * hop `finally` that runs later must not write a second file.
+ */
+export interface RegisteredSink extends ToolAuditSink {
+  flushPartial(): Promise<void>;
+}
+
+/** Register a sink so the run's shutdown can flush whatever it still holds. */
+export function registerToolAuditSink(_runId: string, _sink: RegisteredSink): void {}
+
+/** Drop a sink from the run's registry (see registerToolAuditSink). */
+export function unregisterToolAuditSink(_runId: string, _sink: RegisteredSink): void {}
+
+/**
+ * Flush every still-registered sink for `runId` with `partial: true`, then
+ * clear them. Never rejects: one sink's failure must not stop the drain.
+ */
+export async function flushOpenToolAuditSinks(_runId: string): Promise<void> {}
+
 export function createNoOpToolAuditSink(): ToolAuditSink {
   return { record() {}, async flush() {} };
 }
@@ -171,12 +195,13 @@ export function createToolAuditSink(opts: {
   dir: string;
   sessionName: string;
   header?: ToolAuditHeader;
-}): ToolAuditSink {
+}): RegisteredSink {
   const calls: ToolCallRecord[] = [];
   return {
     record(entry) {
       calls.push(entry);
     },
+    async flushPartial() {},
     async flush() {
       if (calls.length === 0) return;
       await mkdir(opts.dir, { recursive: true });
