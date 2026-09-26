@@ -5,9 +5,11 @@
  * adversarial-passed ref: test files are excluded first (ADR-009 SSOT), `.nax`
  * control files are reported separately (they must never be kept, and must not
  * inflate the source metrics), and every remaining path lands in exactly one of
- * added / modified / deleted. `listCommitsSince` names the commits a restore is
- * about to discard. Split out of `non-blocking-fix.ts` to keep that module under
- * the file-size limit.
+ * added / modified / deleted. `git diff` cannot see untracked paths, so
+ * untracked files under `.nax/` are collected separately — otherwise a control
+ * file the pass CREATED would be invisible. `listCommitsSince` names the commits
+ * a restore is about to discard. Split out of `non-blocking-fix.ts` to keep that
+ * module under the file-size limit.
  */
 import type { TestPatternConfig } from "../config/selectors";
 import { NaxError } from "../errors";
@@ -162,6 +164,24 @@ export function createMeasureSourceDiff(
       else if (status.startsWith("D")) paths.deleted.push(filePath);
       else paths.modified.push(filePath);
       sourceLineCount += addedLines.get(filePath) ?? 0;
+    }
+
+    // `git diff` reports no untracked path at all, so a `.nax` control file the
+    // pass CREATED would otherwise be invisible and the pass kept on a within-cap
+    // tracked diff. `--exclude-standard` mirrors the untracked view
+    // `rollbackToRef` cleans (it reads `git status --porcelain`), so every path
+    // listed here is one a restore can actually remove.
+    const untracked = await runGitStdout(
+      // nax-git-env-allow: runGitStdout hardens via hardenedGitArgv + gitSpawnEnv
+      ["git", "ls-files", "--others", "--exclude-standard", "--", ".nax"],
+      workdir,
+      "git ls-files --others --exclude-standard -- .nax",
+      "GIT_LS_FILES_UNTRACKED_FAILED",
+    );
+    for (const filePath of untracked.trim().split("\n").filter(Boolean)) {
+      // Same order as above: a test file is excluded before anything else.
+      if (isTestFile(filePath)) continue;
+      controlPaths.push(filePath);
     }
 
     const fileCount = paths.added.length + paths.modified.length + paths.deleted.length;

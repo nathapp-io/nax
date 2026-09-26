@@ -139,6 +139,25 @@ describe("createMeasureSourceDiff — path classification (US-003)", () => {
     });
   });
 
+  test("US-003 AC16 (review): an untracked .nax control file the pass created is reported too", async () => {
+    // `git diff` reports no untracked path, so a control file CREATED by the pass
+    // is invisible to `--name-status` alone. Left unfixed, a within-cap tracked
+    // diff would keep the pass and leave the new control file in the tree.
+    await withTempDir(async (dir) => {
+      initRepo(dir);
+      await Bun.write(join(dir, "src/a.ts"), "a1\n");
+      const ref = commitAll(dir, "initial");
+
+      await Bun.write(join(dir, ".nax/rules/new.md"), "rule\n");
+
+      const metrics = await measure(dir)(dir, ref);
+
+      expect(metrics.controlPaths).toEqual([".nax/rules/new.md"]);
+      expect(metrics.fileCount).toBe(0);
+      expect(metrics.sourceLineCount).toBe(0);
+    });
+  });
+
   test("US-003 AC16: a .nax acceptance test file is a control path, not an excluded test file", async () => {
     // The `.nax-acceptance.test.ts` suffix does not match the resolved test globs,
     // so the file reaches the control-path branch rather than the test-file skip.
