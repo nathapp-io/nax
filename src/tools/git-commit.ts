@@ -83,7 +83,7 @@ export interface UnknownPathResult {
  * the batch as unknown even when they are perfectly answerable individually.
  * Fine for the batch sizes a single commit call names.
  */
-async function partitionNaxOwnedPaths(
+export async function partitionNaxOwnedPaths(
   root: string,
   paths: string[],
 ): Promise<{ kept: string[]; skipped: string[]; unknown: UnknownPathResult[] }> {

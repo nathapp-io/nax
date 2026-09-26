@@ -10,7 +10,7 @@ export {
   GIT_READ_VERBS,
   gitTool,
 } from "./git";
-export { buildCommitArgvs, gitCommitTool } from "./git-commit";
+export { buildCommitArgvs, gitCommitTool, partitionNaxOwnedPaths } from "./git-commit";
 export { _globDeps, globTool } from "./glob";
 export { _grepDeps, buildGrepArgv, grepTool } from "./grep";
 export { narrowGrants, type ToolPatternNarrowing } from "./narrow-grants";
