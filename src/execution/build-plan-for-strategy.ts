@@ -37,10 +37,12 @@ import { shouldRunRectification } from "../operations/execution-gates";
 import { makeFullSuiteRectifyStrategy, makeRepoScopedTestFixStrategy } from "../operations/full-suite-rectify";
 import type { CallContext } from "../operations/types";
 import type { UserStory } from "../prd/types";
+import type { ReviewConfig } from "../review/types";
 import { resolveTestFilePatterns } from "../test-runners";
 import { storyPackageDir } from "../utils/path-frame";
 import type { PlanInputs } from "./plan-inputs";
 import { type ExecutionPlan, type RectificationPhaseOptions, StoryOrchestratorBuilder } from "./story-orchestrator";
+import { createFixReviewWrapper } from "./story-orchestrator/fix-review-strategy";
 
 /**
  * Whether the wrapper must capture an initial git ref before the plan runs.
@@ -237,6 +239,17 @@ export async function buildPlanForStrategy(
     // declarations accumulate and mock handoffs are consumed by postValidate.
     const sink = makeDeclarationSink();
 
+    // US-005 — the blocking cycle's `autofix-test-writer` strategy is wrapped so
+    // each dispatch is followed by a scoped fix review. Only an AC-anchored
+    // contradiction feeds back into the cycle; every other non-pass warns and is
+    // dropped (nax#1359 ruling). The wrapper's `drainFindings` is appended to
+    // `postValidate` below, so a contradiction surfaces on the next iteration.
+    const fixReviewWrapper = createFixReviewWrapper({
+      ctx,
+      story,
+      config: config.review as ReviewConfig,
+    });
+
     const strategies: FixStrategy<Finding, unknown, unknown, unknown>[] = [];
 
     // Use package-merged quality config so per-package lintFix/formatFix overrides are respected.
@@ -316,16 +329,30 @@ export async function buildPlanForStrategy(
       // so it claims ONLY test-targeted adversarial findings — source-targeted
       // findings now go to the implementer above (#1333).
       if (isThreeSession) {
-        strategies.push(
-          makeAutofixTestWriterStrategy(story, config, sink, {
-            includeAdversarialReview: false,
-          }) as FixStrategy<Finding, unknown, unknown, unknown>,
-        );
+        // US-005 — wrap the blocking cycle's `autofix-test-writer` strategy so
+        // every dispatch is followed by a scoped fix review. Wrapping is the
+        // blocking-cycle-only path; NBF's strategies stay unwrapped because NBF
+        // runs its own review once at its keep gate (US-004), and a per-dispatch
+        // review on top would double the LLM spend for every best-effort pass.
+        const autofixTestWriter = makeAutofixTestWriterStrategy(story, config, sink, {
+          includeAdversarialReview: false,
+        }) as FixStrategy<Finding, unknown, unknown, unknown>;
+        strategies.push(fixReviewWrapper.wrap(autofixTestWriter));
       }
     }
 
     const postValidate = async (findings: Finding[], validateCtx: FixCycleContext): Promise<Finding[]> => {
-      if (sink.testEdits.length === 0 && sink.mockHandoffs.length === 0) return findings;
+      // US-005 — drain fix-review findings FIRST, so a contradiction can route
+      // through `applyTestEditDeclarations` below alongside the test-writer's
+      // declarations, and so the queue is always cleared even when the
+      // declaration sink is empty. Draining preserves the prior early-return
+      // behaviour: a sink with nothing to consume still returns the existing
+      // findings, with the review's findings appended.
+      const reviewFindings = fixReviewWrapper.drainFindings();
+
+      if (sink.testEdits.length === 0 && sink.mockHandoffs.length === 0) {
+        return [...findings, ...reviewFindings];
+      }
 
       // Wrap mock handoffs as TestEditDeclaration shape for validateMockStructureFiles.
       const pendingMock: TestEditDeclaration[] = sink.mockHandoffs.map((h) => ({
@@ -355,7 +382,7 @@ export async function buildPlanForStrategy(
         allowTestRetag: isThreeSession,
       });
       logRejectedDeclarations(applied.diagnostics, validateCtx);
-      return applied.findings;
+      return [...applied.findings, ...reviewFindings];
     };
 
     const rectOpts: RectificationPhaseOptions = {

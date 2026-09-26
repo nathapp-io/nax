@@ -15,17 +15,19 @@
  * `contradiction` verdict carrying an `acIndex` — becomes a `Finding` for the
  * cycle to act on; every other non-pass warns and is dropped, per nax#1359
  * (scope violations and description-only contradictions are not defects).
- *
- * Declarations only for now: the wrapper's behaviour lands with the
- * implementation.
  */
 
-import type { Finding } from "@/findings";
-import type { FixStrategy } from "@/findings/cycle-types";
+import type { Finding, FixStrategy } from "@/findings";
+import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import type { UserStory } from "@/prd";
-import type { FixReviewVerdict } from "@/review/fix-review";
+import { runFixReview } from "@/review/fix-review/run";
+import { snapshotWorkingTree } from "@/review/fix-review/tree-snapshot";
+import type { FixReviewVerdict } from "@/review/fix-review/types";
 import type { ReviewConfig } from "@/review/types";
+
+/** The warning the wrapper emits for every non-pass it does not feed back. */
+const NON_PASS_WARNING = "fix review non-pass not fed back";
 
 /** A strategy wrapper that runs the scoped fix review after each dispatch. */
 export interface FixReviewWrapper {
@@ -40,24 +42,117 @@ export type AnchoredContradiction = Extract<FixReviewVerdict, { cause: "contradi
   readonly acIndex: number;
 };
 
-/** Placeholder returned until the mapping is implemented. */
-const UNIMPLEMENTED_FINDING: Finding = {
-  source: "lint",
-  severity: "info",
-  category: "fix-review",
-  message: "",
-};
-
-/** Map an AC-anchored contradiction onto the cycle's finding wire format. */
-export function toFixReviewFinding(_verdict: AnchoredContradiction): Finding {
-  return UNIMPLEMENTED_FINDING;
+/**
+ * Map an AC-anchored contradiction onto the cycle's finding wire format.
+ *
+ * The finding reuses `source: "semantic-review"` so it lands in the existing
+ * semantic-review lane the autofix strategies read (see
+ * `findingsToFailedChecks` in `src/operations/_finding-to-check.ts`); the
+ * `category: "fix-review"` distinguishes it from a seeded semantic-review
+ * finding at audit time.
+ */
+export function toFixReviewFinding(verdict: AnchoredContradiction): Finding {
+  const finding: Finding = {
+    source: "semantic-review",
+    severity: "error",
+    category: "fix-review",
+    fixTarget: "test",
+    message: verdict.reason,
+    rule: `fix-review:AC-${verdict.acIndex}`,
+  };
+  if (verdict.file !== undefined) {
+    return { ...finding, file: verdict.file };
+  }
+  return finding;
 }
 
 /** Build the wrapper that reviews each dispatch of the strategy it wraps. */
-export function createFixReviewWrapper(_args: {
+export function createFixReviewWrapper(args: {
   ctx: CallContext;
   story: UserStory;
   config: ReviewConfig;
 }): FixReviewWrapper {
-  return { wrap: (strategy) => strategy, drainFindings: () => [] };
+  const { ctx, story, config } = args;
+  const logger = getSafeLogger();
+  const queue: Finding[] = [];
+
+  return {
+    wrap<F extends Finding, I, O, C>(strategy: FixStrategy<F, I, O, C>): FixStrategy<F, I, O, C> {
+      // Mutable per-dispatch state — populated by buildInput/beforeDispatch, consumed by extractApplied.
+      let pendingFindings: F[] = [];
+      let preFixTree: string | undefined;
+
+      return {
+        ...strategy,
+        buildInput: (findings, priorIterations, cycleCtx) => {
+          // Record the findings the strategy was handed so extractApplied can hand
+          // them to the review. The dispatch's own coordinates are the truth here —
+          // a dispatch fed one finding and reaching for a different list later
+          // would be a silent mismatch with what the agent saw.
+          pendingFindings = [...findings];
+          return strategy.buildInput(findings, priorIterations, cycleCtx);
+        },
+        beforeDispatch: async (_cycleCtx) => {
+          // Snapshot the working tree before the fix edits anything — the review
+          // diffs the fix's delta against this tree. If the snapshot fails, log a
+          // warning and skip the review for this dispatch: a review without a
+          // pre-fix tree has no ground truth, so it would either no-op or lie.
+          try {
+            preFixTree = await snapshotWorkingTree(ctx.packageDir);
+          } catch (err) {
+            preFixTree = undefined;
+            logger?.warn("fix-review", "snapshot failed — review skipped for this dispatch", {
+              storyId: story.id,
+              packageDir: ctx.packageDir,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        },
+        extractApplied: async (output, input) => {
+          const extracted = await (strategy.extractApplied?.(output, input) ?? {});
+          // Only run the review if the snapshot succeeded — without a pre-fix tree
+          // the diff has no anchor, so the review is meaningless. The dispatch's
+          // own `extractApplied` still runs so the cycle's accounting is unchanged.
+          if (preFixTree === undefined) {
+            return extracted;
+          }
+          try {
+            const verdict = await runFixReview(ctx, {
+              workdir: ctx.packageDir,
+              story,
+              preFixTree,
+              findings: pendingFindings,
+              config,
+            });
+            // Only an AC-anchored contradiction feeds back. Everything else warns
+            // and is dropped, per nax#1359.
+            if (verdict.kind === "fail" && verdict.cause === "contradiction" && verdict.acIndex !== undefined) {
+              queue.push(toFixReviewFinding(verdict as AnchoredContradiction));
+            } else if (verdict.kind !== "pass") {
+              logger?.warn("fix-review", NON_PASS_WARNING, {
+                storyId: story.id,
+                kind: verdict.kind,
+                cause: verdict.kind === "fail" ? verdict.cause : undefined,
+                reason: verdict.reason,
+              });
+            }
+          } catch (err) {
+            // A throw from the review path is itself a non-pass — log and drop, the
+            // dispatch's own outcome is preserved above.
+            logger?.warn("fix-review", NON_PASS_WARNING, {
+              storyId: story.id,
+              kind: "error",
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          return extracted;
+        },
+      };
+    },
+    drainFindings(): Finding[] {
+      const drained = [...queue];
+      queue.length = 0;
+      return drained;
+    },
+  };
 }
