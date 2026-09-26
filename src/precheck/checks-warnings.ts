@@ -11,6 +11,7 @@ import { PROJECT_FEATURES_DIR } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
 import type { PrecheckConfig } from "../config/selectors";
 import type { PRD } from "../prd/types";
+import { activeRetiredEntries } from "../utils/gitignore";
 import type { Check } from "./types";
 
 /** Injectable Bun.which for testability */
@@ -234,8 +235,6 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
     ".nax/metrics.json",
     ".nax-pids",
     ".nax-wt/",
-    "**/.nax-acceptance*",
-    "**/_nax_acceptance_test.py",
     "**/_nax_suggested_test.py",
     // Substring-matched, so this also passes for the `**/`-prefixed form
     // `nax init` writes. Never assert the bare feature directory here: a
@@ -244,13 +243,21 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
     `${PROJECT_FEATURES_DIR}/*/fragments/`,
   ];
   const missing = patterns.filter((pattern) => !content.includes(pattern));
-  const passed = missing.length === 0;
+  // A retired entry still in force hides files nax now expects to be committed
+  // (the acceptance tests), so it is as much a warning as a missing one.
+  const retired = activeRetiredEntries(content);
+  const passed = missing.length === 0 && retired.length === 0;
+
+  const problems = [
+    ...(missing.length > 0 ? [`.gitignore missing patterns: ${missing.join(", ")}`] : []),
+    ...(retired.length > 0 ? [`.gitignore still ignores files nax now commits — remove: ${retired.join(", ")}`] : []),
+  ];
 
   return {
     name: "gitignore-covers-nax",
     tier: "warning",
     passed,
-    message: passed ? ".gitignore covers nax runtime files" : `.gitignore missing patterns: ${missing.join(", ")}`,
+    message: passed ? ".gitignore covers nax runtime files" : problems.join("; "),
   };
 }
 

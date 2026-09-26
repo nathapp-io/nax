@@ -8,7 +8,7 @@
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
+import { NAX_GITIGNORE_ENTRIES, NAX_RETIRED_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 import { WorktreeManager } from "@/worktree/manager";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -225,6 +225,53 @@ describe("WorktreeManager.ensureGitExcludes", () => {
       const content = await Bun.file(excludePath).text();
       const exactLine = content.split("\n").some((line) => line.trim() === firstEntry);
       expect(exactLine).toBe(true);
+    } finally {
+      cleanupTempDir(projectRoot);
+    }
+  });
+
+  // `.git/info/exclude` only ever grew, so an entry dropped from
+  // NAX_GITIGNORE_ENTRIES stayed active in every existing clone. Retired
+  // entries must be removed, or un-ignoring a path never takes effect.
+  it("removes retired entries and keeps every other line", async () => {
+    projectRoot = makeTempDir("worktree-excludes-");
+    try {
+      const infoDir = join(projectRoot, ".git", "info");
+      const stale = [...NAX_GITIGNORE_ENTRIES, ...NAX_RETIRED_GITIGNORE_ENTRIES];
+      await Bun.write(join(infoDir, "exclude"), `*.local\n# nax — generated files\n${stale.join("\n")}\n`);
+
+      const manager = new WorktreeManager();
+      await manager.ensureGitExcludes(projectRoot);
+
+      const lines = (await Bun.file(join(infoDir, "exclude")).text()).split("\n").map((line) => line.trim());
+      for (const retired of NAX_RETIRED_GITIGNORE_ENTRIES) {
+        expect(lines).not.toContain(retired);
+      }
+      for (const entry of NAX_GITIGNORE_ENTRIES) {
+        expect(lines.filter((line) => line === entry)).toHaveLength(1);
+      }
+      expect(lines).toContain("*.local");
+    } finally {
+      cleanupTempDir(projectRoot);
+    }
+  });
+
+  it("removes every copy of a retired entry and drops a nax header left with nothing under it", async () => {
+    projectRoot = makeTempDir("worktree-excludes-");
+    try {
+      const infoDir = join(projectRoot, ".git", "info");
+      const header = "# nax — generated files (auto-added by nax parallel)";
+      const [retired] = NAX_RETIRED_GITIGNORE_ENTRIES;
+      await Bun.write(join(infoDir, "exclude"), `*.local\n${header}\n${retired}\n${retired}\n`);
+
+      const manager = new WorktreeManager();
+      await manager.ensureGitExcludes(projectRoot);
+
+      const lines = (await Bun.file(join(infoDir, "exclude")).text()).split("\n").map((line) => line.trim());
+      expect(lines).not.toContain(retired);
+      expect(lines.filter((line) => line === header)).toHaveLength(1);
+      expect(lines.indexOf(header)).toBeLessThan(lines.indexOf(NAX_GITIGNORE_ENTRIES[0]));
+      expect(lines).toContain("*.local");
     } finally {
       cleanupTempDir(projectRoot);
     }
