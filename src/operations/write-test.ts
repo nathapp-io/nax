@@ -60,26 +60,13 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
   session: { role: "test-writer", lifetime: "warm" },
   config: tddConfigSelector,
   // Write/Edit for test files and compile-only stubs. `RunCommand` because step
-  // 6 of the role is "Run the new test files. Confirm tests compile AND fail
-  // with ASSERTION failures" -- the one distinction the prompt insists on, and
-  // one it cannot make without executing. `GitCommit` is declared so the
-  // session CAN commit its own RED state, but no test-writer prompt step
-  // currently directs it to do so -- the committed-boundary benefit for the
-  // implementer's `beforeRef` is not realised until the prompt gains that step.
-  tools: [
-    "Read",
-    "Glob",
-    "Grep",
-    "Write",
-    "Edit",
-    "Delete",
-    "Git",
-    "RunCommand",
-    "GitCommit",
-    "Exec",
-    "Bash",
-    "RequestCapability",
-  ],
+  // 5 of the role is "Run the new test files. Confirm every test fails with an
+  // ASSERTION failure" -- the one distinction the prompt insists on, and one it
+  // cannot make without executing. No `GitCommit`: the story orchestrator
+  // commits the phase's files after it succeeds (src/tdd/red-commit.ts), so the
+  // implementer's `beforeRef` is a committed boundary without the test-writer
+  // ever meeting the repository's pre-commit hook.
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "Delete", "Git", "RunCommand", "Exec", "Bash", "RequestCapability"],
   // Test-writing is a cheap scoped task — follows the configured per-role tier.
   // Defaults to "fast" via the schema; undefined only for partial test configs.
   model: (_input, ctx) => ctx.config.tdd?.sessionTiers?.testWriter,

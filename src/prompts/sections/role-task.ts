@@ -118,6 +118,7 @@ Workflow:
 
 Rules:
 - Stubs are NOT implementations. The implementer in the next session writes real logic.
+- Do not commit. When your session ends, nax commits the files you changed as the RED state.
 - Each test name describes ONE behavior. Use AC IDs in test names when available (e.g. \`it('AC4: throws Division by zero when b === 0')\`).
 - Assert on observable outputs.
 - ${frameworkHint}
@@ -135,10 +136,12 @@ Workflow:
 2. Break the work into small tasks before writing: treat each AC as one task and note the test name(s) you will write (success + boundary) and which file they belong in. This per-AC list is your checklist.
 3. Create test files in the location the project uses for tests (project context names it).
 4. For each AC: write at least one test for the success path AND at least one for a boundary/failure path (zero, empty, negative, missing, throws). ACs worded as "throws X" require a test asserting the throw.
-5. Run the new test files. Confirm every test fails with an ASSERTION failure — NOT an import error, compile error, or runtime crash before assertion. A test that errors before reaching its assertion does not prove the behavior is missing.
+5. Run the new test files. Confirm every test fails with an ASSERTION failure, not an import error or a runtime crash before the assertion. A test that errors before reaching its assertion does not prove the behavior is missing.
 
 Rules:
 - Do NOT create or modify any source files. Read source for types/interfaces only.
+- A type-check error that exists only because the implementer has not yet added a field, parameter or export the acceptance criteria require is the expected RED state. Do not work around it with type casts, type-checker suppression comments, allow-list tags or throwaway type-probe scripts; type each test as the finished code will be.
+- Do not commit. When your session ends, nax commits the files you changed as the RED state.
 - Each test name describes ONE behavior; each test asserts ONE behavior. When the AC has a number or ID, prefix the test name (e.g. \`it('AC4: throws Division by zero when b === 0')\`).
 - Assert on observable outputs (return values, thrown errors, file contents, log output, boundary state). Do not assert on private helpers, internal call counts, or implementation-level mocks unless the AC requires it.
 - ${frameworkHint}
