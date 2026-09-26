@@ -17,6 +17,17 @@ the repository's git hooks. The test-writer prompt stops demanding a typecheck i
 
 **Spec:** `docs/superpowers/specs/2026-09-26-tdd-red-commit-design.md` (read it first; this plan argues from it).
 
+**Where to work:**
+- The branch is `feat/tdd-red-commit` in `~/workspace/subrina-coder/projects/nax/repos/nax`. It is based on `main`
+  `7c21771ab` and holds only the spec and plan commits.
+- Check out that branch; don't create a worktree.
+- Other sessions share this checkout, so check `git status` before starting, and never switch branches while a
+  run is using it.
+- Do not push or open a PR without the user's go-ahead, and run a code review before any push.
+
+**Background:** the evidence behind this change is in the spec's Motivation section. The raw A/B data lives
+outside the repo, at `~/workspace/subrina-coder/projects/nax/ab-r17r19/SETUP.md`.
+
 ## Global Constraints
 
 - Source files ≤ 600 lines (`scripts/check-file-sizes.ts`, `SRC_LIMIT = 600`):
@@ -27,6 +38,9 @@ the repository's git hooks. The test-writer prompt stops demanding a typecheck i
 - Every external call goes through an injectable `_deps` object. Never `mock.module()`.
 - Tests: zero `as unknown as` (`check:test-as-unknown-as` baseline 0), no `@ts-expect-error`; place the test
   file mirroring `src/`, and split files as `<module>-<concern>.test.ts`, never `<module>-<ticket>.test.ts`.
+- Formatting: biome, 120 columns, `organizeImports` on. After writing or editing any file, run `bun run lint:fix`
+  before running its tests. The code blocks in this plan are correct but not guaranteed to be formatter-exact
+  (long test titles, for example).
 - Git spawns go through `gitWithTimeout` (hardened env/argv; `check:git-spawn-env`).
 - Prompt text stays language-neutral (ADR-009): no `as unknown`, `ts-expect-error`, `@ts-`, or the word `tsc`.
 - The commit message is exactly `chore(<storyId>): auto-commit after test-writer session (RED)`.
@@ -303,6 +317,7 @@ Expected: FAIL. The module `@/tdd/red-commit` does not exist (`Cannot find modul
  * `git status --porcelain` print root-relative paths even from a package
  * subdirectory. Never throws.
  */
+import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { partitionNaxOwnedPaths } from "../tools";
 import { errorMessage } from "../utils/errors";
@@ -363,13 +378,16 @@ async function commitFromRoot(opts: RedCommitOptions, deps: RedCommitDeps): Prom
   const files = await expandUntrackedDirs(gitRoot, changed, deps);
   const { kept } = await deps.partitionNaxOwnedPaths(gitRoot, files);
   if (kept.length === 0) return NOTHING;
-  const added = await gitlinkSafeAdd(deps.git, gitRoot, { pathspecs: kept, timeoutMs: RED_COMMIT_GIT_TIMEOUT_MS });
+  const addOpts = { pathspecs: kept, timeoutMs: RED_COMMIT_GIT_TIMEOUT_MS };
+  const added = await gitlinkSafeAdd(deps.git, gitRoot, addOpts);
   if (added.exitCode !== 0) return { status: "failed", reason: `git add failed: ${added.stderr.trim()}` };
   if ((await hasStagedChanges(deps.git, gitRoot, RED_COMMIT_GIT_TIMEOUT_MS)) !== true) return NOTHING;
-  const argv = ["commit", "-m", redCommitMessage(opts.storyId), ...(opts.hooks === "skip" ? ["--no-verify"] : [])];
+  const noVerify = opts.hooks === "skip" ? ["--no-verify"] : [];
+  const argv = ["commit", "-m", redCommitMessage(opts.storyId), ...noVerify];
   const committed = await deps.git(argv, gitRoot, RED_COMMIT_GIT_TIMEOUT_MS);
   if (committed.exitCode !== 0) {
-    return { status: "failed", reason: `git commit failed: ${committed.stderr.trim() || `exit ${committed.exitCode}`}` };
+    const detail = committed.stderr.trim() || `exit ${committed.exitCode}`;
+    return { status: "failed", reason: `git commit failed: ${detail}` };
   }
   return { status: "committed", files: kept, hooksSkipped: opts.hooks === "skip" };
 }
@@ -379,7 +397,8 @@ function isBlocked(gitRoot: string, opts: RedCommitOptions): boolean {
   const root = realOrRaw(gitRoot);
   const blocked = [...opts.blockedWorktrees].filter((tree) => realOrRaw(tree) === root);
   if (blocked.length === 0) return false;
-  getSafeLogger()?.error("tdd", "Refusing to commit the RED state — working tree may still hold an unreverted mutation", {
+  const message = "Refusing to commit the RED state — working tree may still hold an unreverted mutation";
+  getSafeLogger()?.error("tdd", message, {
     storyId: opts.storyId,
     workdir: opts.workdir,
     blocked,
@@ -393,15 +412,25 @@ function isBlocked(gitRoot: string, opts: RedCommitOptions): boolean {
  * `dir/` entry. Expand each to its files so the nax-owned filter sees
  * individual paths — a collapsed `.nax/` must never be staged whole.
  */
-async function expandUntrackedDirs(gitRoot: string, paths: readonly string[], deps: RedCommitDeps): Promise<string[]> {
+async function expandUntrackedDirs(
+  gitRoot: string,
+  paths: readonly string[],
+  deps: RedCommitDeps,
+): Promise<string[]> {
   const out: string[] = [];
   for (const path of paths) {
     if (!path.endsWith("/")) {
       out.push(path);
       continue;
     }
-    const listed = await deps.git(["ls-files", "--others", "--exclude-standard", "--", path], gitRoot, RED_COMMIT_GIT_TIMEOUT_MS);
-    if (listed.exitCode !== 0) throw new Error(`git ls-files ${path} failed: ${listed.stderr.trim()}`);
+    const args = ["ls-files", "--others", "--exclude-standard", "--", path];
+    const listed = await deps.git(args, gitRoot, RED_COMMIT_GIT_TIMEOUT_MS);
+    if (listed.exitCode !== 0) {
+      throw new NaxError(`git ls-files failed: ${listed.stderr.trim()}`, "GIT_LS_FILES_FAILED", {
+        stage: "tdd-red-commit",
+        path,
+      });
+    }
     out.push(...listed.stdout.split("\n").filter(Boolean));
   }
   return out;
@@ -409,14 +438,14 @@ async function expandUntrackedDirs(gitRoot: string, paths: readonly string[], de
 ```
 
   Notes:
-  - If `check:nax-error` or the error-handling rule rejects the bare `new Error` in `expandUntrackedDirs`, use
-    `new NaxError(msg, "GIT_LS_FILES_FAILED", { stage: "tdd-red-commit", path })` from `../errors` instead. It is
-    caught by `commitRedState` either way.
+  - `NaxError` rather than `new Error` is required: `check:nax-error` fails on any new `throw new Error(` in
+    `src/`. The throw is caught by `commitRedState` and becomes `status: "failed"`.
   - `src/tools` never imports `src/tdd` (verified), so `../tools` → `red-commit` → `tdd` barrel forms no cycle.
     If `check:import-cycles` still reports one, move `partitionNaxOwnedPaths` unchanged into
     `src/utils/nax-owned-partition.ts`, import it from there in both `git-commit.ts` and `red-commit.ts`, and
     keep the `src/tools/index.ts` re-export pointing at the new file.
-  - Run `bun x biome format --write src/tdd/red-commit.ts` if lines exceed the formatter width.
+  - Biome's line width is 120. The code above is laid out to fit; if `bun run lint:biome` still complains,
+    run `bun run lint:fix` and re-run the tests.
 
 - [ ] **Step 5: Export from the tdd barrel.** Append to `src/tdd/index.ts`:
 
@@ -463,12 +492,17 @@ git commit -m "feat(tdd): commitRedState commits the test-writer's RED state wit
   - `_storyOrchestratorDeps.commitRedState` (defaults to the real `commitRedState`)
   - the config field `tdd.testWriterCommitHooks?: "skip" | "run"`
 
-- [ ] **Step 1: Write the failing schema and descriptions tests.** Append to `test/unit/tdd/red-commit.test.ts`:
+- [ ] **Step 1: Write the failing schema and descriptions tests.** In `test/unit/tdd/red-commit.test.ts`, add these
+  two imports to the top import block (biome's `organizeImports` sorts them; never leave an import mid-file):
 
 ```ts
-import { TddConfigSchema } from "@/config/schemas-execution";
 import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
+import { TddConfigSchema } from "@/config/schemas-execution";
+```
 
+  Then append this describe block at the end of the file:
+
+```ts
 describe("tdd.testWriterCommitHooks", () => {
   test("AC12: optional, keeps 'run', rejects other values", () => {
     expect(TddConfigSchema.parse({ maxRetries: 2 }).testWriterCommitHooks).toBeUndefined();
@@ -550,7 +584,12 @@ describe("runPhase RED commit", () => {
     const ctx = makeMockCallContext();
     await runPhase(ctx, makeSlot("test-writer"), {}, {}, true);
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ workdir: ctx.packageDir, beforeRef: "abc123", storyId: ctx.storyId, hooks: "skip" });
+    expect(calls[0]).toMatchObject({
+      workdir: ctx.packageDir,
+      beforeRef: "abc123",
+      storyId: ctx.storyId,
+      hooks: "skip",
+    });
   });
 
   test("AC14: tdd.testWriterCommitHooks 'run' is passed through", async () => {
@@ -638,7 +677,8 @@ Expected:
   commitRedState,
 ```
 
-  - Directly before the `return output;` that ends the `try` block (the one after the isolation logging), insert:
+  - Directly before `return output;` (line 354 at `7c21771ab`; it is the only `return output;` in the file, and it
+    ends the `try` block right after the isolation logging), insert:
 
 ```ts
     if (isTddPhase && opName === "test-writer" && !inRectification && beforeRef && outcome === "passed") {
@@ -897,6 +937,33 @@ git commit -m "feat(prompts): test-writer RED state is type-error tolerant and n
 ```
 
 ---
+
+## Known risks for the executor
+
+These surface in Task 2 Step 8 (`bun run test`) and Task 3 Step 8 (`bun run test:e2e`). Read this before
+"fixing" a failure there.
+
+- **The RED commit is new behaviour, on purpose.** Any test that runs a real three-session test-writer phase in a
+  real git repo now sees one more commit, `chore(<story>): auto-commit after test-writer session (RED)`, after
+  the test-writer phase. The e2e harness does this (`test/e2e/*.e2e.test.ts`), and so may
+  `test/integration/execution/*`.
+  - If an assertion fails only because of that commit (a commit count, a `git log` subject list, "the tree is
+    dirty before the implementer"), update the expectation to include the RED commit, with a comment citing the
+    spec.
+  - Do NOT stub `commitRedState` out of e2e to make it pass; that hides the behaviour the feature adds.
+  - Stubbing is fine in unit tests whose subject is something else (see Task 2 Step 6).
+- **Resume / checkpoints** (`test/e2e/resume.e2e.test.ts`, `src/execution/checkpoint/*`). The commit happens
+  inside `runPhase`'s `try`, before its `finally` and before the phase-completed event, so a checkpoint written
+  after the phase already sees the committed tree.
+  - If a resume test fails on a tree-state mismatch, check whether the checkpoint is captured before
+    `runPhase` returns.
+  - If it is, move the call so that it runs before that capture. Don't skip the commit.
+  - Report what you found in the PR body.
+- **Rollback** (`tdd.rollbackOnFailure`, `src/tdd/rollback.ts`) resets to a ref captured before the story, so it
+  also removes the RED commit. That is expected; no change is needed.
+- **Existing unit tests with a three-session test-writer phase** now call the real `commitRedState` against their
+  fake `packageDir` (`/tmp/test`). It resolves `failed` there and logs one warning. This is harmless unless a
+  test asserts on warn-log absence (Task 2 Step 6 covers that).
 
 ## After the tasks
 
