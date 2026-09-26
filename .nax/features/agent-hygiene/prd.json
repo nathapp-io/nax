@@ -1,0 +1,287 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "agent-hygiene",
+  "branchName": "feat/agent-hygiene",
+  "createdAt": "2026-09-26T00:00:00.000Z",
+  "updatedAt": "2026-09-26T14:53:13.340Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Spill marker names a path the session can open",
+      "description": "**Goal** — Make truncated tool-result markers point to a spill file readable through the session's tools.\n\n**Motivation** — A test-writer ran `cat \"spill/Bash-call_00_<id>.txt\"` from the repo root, failed, then ran `find / -name ...`, which burned the full 300 s Bash timeout.\n\n**Approach** — The marker's widest shape becomes\n  `... [truncated: full output at <path> (open with Read or ScratchpadRead); showing N of M bytes]`.\n  The two narrower fallback shapes are unchanged.\n- `<path>` is `.nax/scratchpad/spill/<Tool>-<callId>.txt` when `spillPathStyle` is `\"root-relative\"`\n  (the spill root is the directory the session's tools and shell start in), and the absolute path of\n  the written spill file when it is `\"absolute\"`. `writeSpill` keeps returning the\n  scratchpad-relative `spill/<Tool>-<callId>.txt`; `applyModelTruncationPolicy` turns it into the\n  marker path before calling `composeHead` / `composeTail`: `${SCRATCHPAD_DIR}/${relative}` for\n  `\"root-relative\"`, `join(root, SCRATCHPAD_DIR, relative)` for `\"absolute\"`. The composers receive\n  the finished path and are otherwise unchanged.\n- `shapeToolResult` (`src/tools/runtime.ts`) keeps the default. `truncateNativeToolResult`\n  (`src/agents/native/session/truncation-handler.ts`) passes `\"root-relative\"` when the root came from\n  `nativeSessionScratchpadRoots` and `\"absolute\"` when it fell back to `nativeTranscriptDirs`.\n- `pathsBranch` in `compileToolPolicy` (`src/tools/policy.ts`): for a tool whose scope declares\n  `confineTo`, a path value that starts with `<confineTo>/` has that prefix removed before\n  `resolveWithin` runs. `ScratchpadRead`, `ScratchpadWrite` therefore accept both `spill/x.txt` and\n  `.nax/scratchpad/spill/x.txt`. Containment is unchanged: the stripped value is still resolved\n  inside the confined root. `src/tools/policy.ts` has 10 lines of headroom under the 600-line\n  limit, so the stripping must fit in them.\n\n**Scope** — In: shared marker, native fallback, confined scratchpad prefix handling and runtime Bash-to-Read recovery. Out: Changing which roles are granted `ScratchpadRead`; Excluding `.nax/scratchpad/` from context-engine scans; US-002 raw-Bash screening.\n\n**Interface** — `ModelTruncationOptions` adds `spillPathStyle?: \"root-relative\" | \"absolute\"` (default `\"root-relative\"`).",
+      "acceptanceCriteria": [
+        "When applyModelTruncationPolicy receives a root and a Read-tool body over maxBytes, then its last line is `... [truncated: full output at .nax/scratchpad/spill/Read-<callId>.txt (open with Read or ScratchpadRead); showing N of M bytes]`, with N the delivered and M the original byte count.",
+        "When applyModelTruncationPolicy receives a root and a Bash-tool body over maxBytes, then its content contains a marker line naming `.nax/scratchpad/spill/Bash-<callId>.txt (open with Read or ScratchpadRead)`.",
+        "When applyModelTruncationPolicy uses spillPathStyle: \"absolute\", then the marker names the absolute path `<root>/.nax/scratchpad/spill/<Tool>-<callId>.txt`.",
+        "When the file at join(root, <path named by a root-relative marker>) is read, then it contains the untruncated body passed to applyModelTruncationPolicy.",
+        "When the spill write rejects, then applyModelTruncationPolicy returns a marker of the form `... [truncated: showing N of M bytes]` naming no path.",
+        "When maxBytes is too small for the widest marker shape, then applyModelTruncationPolicy returns content whose byte length is at most maxBytes.",
+        "When truncateNativeToolResult receives a session registered in nativeSessionScratchpadRoots with workdir W, then its marker names `.nax/scratchpad/spill/...` and the spill file exists under `W/.nax/scratchpad/spill/`.",
+        "When truncateNativeToolResult receives a session registered only in nativeTranscriptDirs with directory T, then its marker names an absolute path starting with T.",
+        "When ScratchpadRead is called with path `.nax/scratchpad/spill/x.txt`, then it returns the content of `<root>/.nax/scratchpad/spill/x.txt`.",
+        "When a Bash call exceeds the model cap through one createCodingToolRuntime and Read is called on the marker's path through that same runtime, then Read returns content including the last line of the untruncated command output.",
+        "When ScratchpadRead is called with path `spill/x.txt`, then it still returns the content of `<root>/.nax/scratchpad/spill/x.txt`.",
+        "When ScratchpadWrite is called with path `.nax/scratchpad/notes.md`, then it writes `<root>/.nax/scratchpad/notes.md` and creates no file at `<root>/.nax/scratchpad/.nax/scratchpad/notes.md`.",
+        "When compileToolPolicy(...).check receives ScratchpadRead with path `.nax/scratchpad/../config.json`, then it returns a denied verdict."
+      ],
+      "tags": [
+        "feature",
+        "tools",
+        "spill",
+        "access-control"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Shared truncation crosses two transports and touches tool path-containment policy, a security-sensitive boundary."
+      },
+      "contextFiles": [
+        "src/tools/spill.ts",
+        "src/agents/native/session/truncation-handler.ts",
+        "src/tools/policy.ts",
+        "src/tools/scratchpad.ts",
+        "test/unit/tools/spill-recovery.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Raw Bash refuses whole-filesystem find and permits sandboxed PRD reads",
+      "description": "**Goal** — Block costly root-wide raw find commands while allowing read-only PRD mentions only with an available sandbox.\n\n**Motivation** — A second test-writer ran `find / -name \"approvals.ts\" -path \"*/cli/*\"` and also hit the 300 s timeout; 17 of 22 PRD denials were sandbox-wrapped read-only commands.\n\n**Approach** — **`find` refusal.** In `screenRawBashCommand`, a segment whose first token is `find` is denied when\n  any of its start paths is exactly `/`, `~`, `~/`, `$HOME`, `$HOME/`, `${HOME}` or `${HOME}/`. Start\n  paths are the tokens after `find` and after any leading `-H`, `-L` or `-P`, up to the first token\n  that begins with `-`, `(` or `!`. The comparison uses the token text, including an opaque token.\n  The refusal is non-escalatable and reads\n  `` `find <start>` searches the whole filesystem and runs into the 300s Bash timeout. Search within the repository root instead: <root> ``.\n- The file header's \"must never grow into a general gate\" paragraph gains one sentence naming the\n  whole-filesystem `find` refusal as the single deliberate exception (a cost guard, not a boundary).\n- **prd reads.** When `sandboxWrapped` is `true`, a token hit of kind `\"prd\"` is not refused; a\n  redirect hit of kind `\"prd\"` is still refused. Kinds `\"config\"` and `\"queue\"` are unchanged in both\n  modes, and with `sandboxWrapped` absent or `false` the PRD-path screening behaves exactly as today (the new `find` cost guard still applies).\n- Under `sandboxWrapped` only a redirect into a prd can still be refused, so the changed text is seen\n  only on that path. The prd refusal text replaces \"Bash commands naming it are refused, reads\n  included -- leave it as is.\" with \"Reading it through Bash is allowed; writing it is not -- nax\n  updates it itself.\"\n- **Plumbing.** New `rawScreenOptionsFor(launcher): { rawBashRefusal?: string; sandboxWrapped?: true }`\n  in `src/agents/coding-tool-sandbox.ts` returns `rawBashRefusal` exactly as `rawRefusalFor` does and\n  `sandboxWrapped: true` when `launcher.state.kind === \"available\"`. `buildCodingToolSupport` spreads\n  it into the `compileToolPolicy` options in place of the current `rawBashRefusal` computation.\n  `rawRefusalFor` itself is kept and exported unchanged; `rawScreenOptionsFor` calls it.\n- The raw-mode Bash tool description (`rawDescription`, `src/tools/bash.ts`) gains one sentence\n  stating that `find` from `/`, `~` or `$HOME` is refused and to search within the repository.\n\n**Scope** — In: raw-mode find cost guard, conditional PRD read screening, sandbox state plumbing and raw tool description. Out: Screening `find` in gated or escalate Bash mode, whose root containment already governs start paths; Changing the raw screen for `config` or `queue` paths, or its behaviour when the sandbox is disabled (apart from the explicitly required new `find` guard); Changing the Bash timeout, or adding a timeout hint to the `timed out after` message; US-004 session temp injection.\n\n**Interface** — `RawScreenArgs` adds `sandboxWrapped?: boolean` (default `false`). `naxOwnedBashRefusal(tool, kind, hit, verb, opts?: { sandboxWrapped?: boolean }): string`. `BashCommandBranchArgs` and `ToolPolicyOptions` add `sandboxWrapped?: boolean`; `rawScreenOptionsFor(launcher): { rawBashRefusal?: string; sandboxWrapped?: true }`.",
+      "acceptanceCriteria": [
+        "When screenRawBashCommand receives `find / -name approvals.ts`, then it returns a non-escalatable deny whose reason names the supplied repository root.",
+        "When screenRawBashCommand receives `find ~ -name x`, then it denies the command.",
+        "When screenRawBashCommand receives `find $HOME -name x`, then it denies the command.",
+        "When screenRawBashCommand receives `find -L / -name x`, then it denies the command.",
+        "When screenRawBashCommand receives `git status; find / -name x | head`, then it denies the compound command whose second segment is a whole-filesystem find.",
+        "When screenRawBashCommand receives `find /usr/lib -name x`, then it allows the command.",
+        "When screenRawBashCommand receives `find . -name x`, then it allows the command.",
+        "When screenRawBashCommand receives `find ~/proj -name x`, then it allows the command.",
+        "When screenRawBashCommand receives `git diff .nax/features/f/prd.json` with sandboxWrapped: true, then it allows the command.",
+        "When screenRawBashCommand receives `echo x > .nax/features/f/prd.json` with sandboxWrapped: true, then it denies with a reason containing `Reading it through Bash is allowed`.",
+        "When screenRawBashCommand receives `cat .nax/config.json` with sandboxWrapped: true, then it denies the command.",
+        "When screenRawBashCommand receives `git diff .nax/features/f/prd.json` without sandboxWrapped, then it denies with a reason containing `reads included`.",
+        "When rawScreenOptionsFor receives an available launcher, then it returns `{ sandboxWrapped: true }`.",
+        "When rawScreenOptionsFor receives an unavailable launcher, then it returns `{ rawBashRefusal }`.",
+        "When rawScreenOptionsFor receives a disabled launcher, then it returns `{}`.",
+        "When buildCodingToolSupport uses raw Bash mode, an available launcher and a Bash grant, then its runtime policy allows `git diff .nax/features/f/prd.json`.",
+        "When buildCodingToolSupport uses raw Bash mode, a disabled launcher and a Bash grant, then its runtime policy denies `git diff .nax/features/f/prd.json`.",
+        "When the raw-mode Bash tool description is generated, then it states that find from `/`, `~` or `$HOME` is refused.",
+        "When screenRawBashCommand receives `find $(pwd)/.. -name x`, then the refused lex is allowed unscreened, unchanged from raw mode's existing fail-open lexer behavior."
+      ],
+      "tags": [
+        "feature",
+        "bash",
+        "sandbox",
+        "access-control"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Six existing modules coordinate conditional command screening with sandbox availability; security-sensitive Bash access control requires strict isolated TDD."
+      },
+      "contextFiles": [
+        "src/tools/policy-bash-raw.ts",
+        "src/tools/policy-command-branch.ts",
+        "src/agents/coding-tool-sandbox.ts",
+        "src/tools/nax-owned-writes.ts",
+        "src/tools/bash.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "NBF classifies control files and records restore losses",
+      "description": "**Goal** — Keep `.nax/` edits out of source size metrics while restoring them and logging discarded paths and commits.\n\n**Motivation** — A pass that fixed all 8 findings with 5 files / ~200 lines tripped sourceDiffCap at 211 files because an agent ran `rm -rf .nax`; the log said only `{\"fileCount\":211,\"sourceLineCount\":198}`.\n\n**Approach** — ```ts\nexport interface SourceDiffPaths {\n  readonly added: readonly string[];\n  readonly modified: readonly string[];\n  readonly deleted: readonly string[];\n}\n/** Entries logged per path list; the full count is logged beside it. */\nexport const NBF_LOGGED_PATH_LIMIT = 20;\n```\n- `createMeasureSourceDiff` classifies every changed path against `fromRef`. Test files are excluded\n  first, as today. A remaining path whose first segment is `.nax` goes to `controlPaths` and adds\n  nothing to `fileCount` or `sourceLineCount`. Every other path goes to exactly one of\n  `paths.added`, `paths.modified` or `paths.deleted`. Paths are repo-root-relative, as `git diff`\n  prints them. One way to get the status (non-normative): a second `git diff --name-status <fromRef>`\n  spawn through `hardenedGitArgv` / `gitSpawnEnv`.\n- In `runNonBlockingFix`, inside the existing `if (cap)` block, after measuring and before the cap\n  comparison: when `controlPaths` is\n  non-empty, log\n  `logger?.warn(\"non-blocking-fix\", \"NBF pass touched nax control files — restoring\", { storyId, controlPathCount, controlPaths })`\n  with `controlPaths` capped at `NBF_LOGGED_PATH_LIMIT`, and restore.\n- The existing `\"source diff exceeded cap — restoring\"` info log gains `added`, `modified`, `deleted`\n  (each capped at `NBF_LOGGED_PATH_LIMIT`) and `addedCount`, `modifiedCount`, `deletedCount`.\n- A `SourceDiffMetrics` without `paths` / `controlPaths` (a custom `measureSourceDiff`) is treated as\n  empty lists, so existing callers and test doubles keep working.\n- `restoreToSnapshot` calls `_deps.listCommitsSince(args.workdir, restoreRef.sha)` before\n  `rollbackToRef`, and adds `discardedCommits` (the returned SHAs) to its\n  `\"best-effort fix exhausted — restored to adversarial-passed\"` log. If `listCommitsSince` rejects,\n  `discardedCommits` is `[]` and the restore proceeds.\n- The default `listCommitsSince` runs `git rev-list <ref>..HEAD` in `workdir` through\n  `hardenedGitArgv` / `gitSpawnEnv` and returns the SHAs newest first; a non-zero exit rejects.\n\n**Scope** — In: git source/control classification, capped diagnostic logs and pre-reset commit listing. Out: Snapshotting or diffing `/tmp` around an NBF pass; Changing `sourceDiffCap` defaults or `review.nonBlockingFix` defaults; Measuring the NBF diff when `sourceDiffCap` is absent from the resolved config; US-004 temp-directory lifetime.\n\n**Interface** — `SourceDiffMetrics` adds `paths?: SourceDiffPaths` and `controlPaths?: readonly string[]`; `NonBlockingFixDeps` adds `listCommitsSince: (workdir: string, ref: string) => Promise<string[]>`.",
+      "acceptanceCriteria": [
+        "Given a temporary git repo with tracked src/a.ts modified, src/b.ts added and tracked src/c.ts deleted and committed, when createMeasureSourceDiff(...)(workdir, ref) runs, then paths equals `{ added: [\"src/b.ts\"], modified: [\"src/a.ts\"], deleted: [\"src/c.ts\"] }`.",
+        "When a changed test file is measured by createMeasureSourceDiff, then it appears in none of paths.added, paths.modified, paths.deleted or controlPaths and adds nothing to fileCount.",
+        "When tracked `.nax/features/f/stories/US-001.json` is deleted, then createMeasureSourceDiff returns controlPaths containing that path, fileCount 0 and sourceLineCount 0.",
+        "When measureSourceDiff reports controlPaths: [\".nax/rules/a.md\"] and counts within the cap, then runNonBlockingFix returns `{ kept: false, restored: true }`.",
+        "When measureSourceDiff reports controlPaths: [\".nax/rules/a.md\"] and counts within the cap, then runNonBlockingFix logs `NBF pass touched nax control files — restoring` at warn level with controlPaths [\".nax/rules/a.md\"] and controlPathCount 1.",
+        "When measureSourceDiff reports 25 control paths, then the warn log has 20 controlPaths entries and controlPathCount 25.",
+        "When sourceDiffCap trips, then the `source diff exceeded cap — restoring` log carries added, modified and deleted equal to the metric path lists and addedCount, modifiedCount and deletedCount equal to their lengths.",
+        "When sourceDiffCap trips with 30 added paths, then the cap log has 20 added entries and addedCount 30.",
+        "When measureSourceDiff returns only `{ fileCount: 1, sourceLineCount: 10 }` within the cap, then runNonBlockingFix returns kept: true.",
+        "When runNonBlockingFix restores, then it calls listCommitsSince with the workdir and snapshot sha before rollbackToRef.",
+        "When runNonBlockingFix restores and listCommitsSince resolves SHAs, then its `best-effort fix exhausted — restored to adversarial-passed` log carries discardedCommits equal to those SHAs.",
+        "When listCommitsSince rejects, then runNonBlockingFix still calls rollbackToRef and logs discardedCommits [].",
+        "When runNonBlockingFix keeps a pass, then it never calls listCommitsSince.",
+        "Given a temporary git repo with two commits after ref, when the default listCommitsSince(workdir, ref) dependency runs, then it returns both commit SHAs newest first.",
+        "When measureSourceDiff throws, then runNonBlockingFix logs a warning and restores the snapshot, unchanged from existing failure handling."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "git",
+        "diagnostics"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Changes concentrate in one existing NBF module and use established git-spawn and dependency-override patterns; integration tests can exercise the existing seam."
+      },
+      "contextFiles": [
+        "src/execution/non-blocking-fix.ts",
+        "src/tdd/rollback.ts",
+        "src/utils/git-env.ts",
+        "test/unit/execution/non-blocking-fix.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "Per-session TMPDIR under a run-owned directory",
+      "description": "**Goal** — Give launcher-driven Bash/Exec commands isolated temp directories and wipe the run's temp root at cleanup.\n\n**Motivation** — A stray `/tmp/tsconfig.json` survived an NBF restore and turned a later story's full-suite gate red.\n\n**Approach** — New module `src/sandbox/session-tmp.ts`, exported from the `src/sandbox` barrel:\n\n```ts\n/** `/tmp/nax-<runId>` — the per-run parent of every session temp directory. */\nexport function runTmpRoot(runId: string): string;\n/** `/tmp/nax-<runId>/<sessionName>`, each part reduced to [A-Za-z0-9_-] (others become \"_\"). */\nexport function sessionTmpDir(runId: string, sessionName: string): string;\n```\n\n- `createCommandLauncher` with `tmpDir` set: before each `run`, create `tmpDir` recursively. On\n  success, the command runs with `TMPDIR`, `TMP` and `TEMP` set to `tmpDir`:\n  - unwrapped (state `disabled` or `unavailable`): as an `env` overlay to `runArgv`, where a key the\n    request's own `env` sets wins over the overlay;\n  - wrapped (state `available`): the shell command handed to `backend.wrap` is prefixed with\n    `export TMPDIR=<q> TMP=<q> TEMP=<q>; `, where `<q>` is `tmpDir` single-quoted for the shell, because\n    srt replaces the child environment. The result's `executed` stays the logical argv of the\n    unprefixed command, so the tool-audit ledger records what the agent wrote.\n- If creating `tmpDir` fails, log\n  `getSafeLogger()?.warn(\"sandbox\", \"could not create session temp dir — running without TMPDIR override\", { tmpDir, error })`\n  and run the command with no override.\n- `resolveCodingToolSupport` passes `tmpDir: sessionTmpDir(options.runId, sessionName)` to\n  `resolveSessionSandbox` when `options.runId` is defined, and no `tmpDir` otherwise. `sessionName` is\n  the existing `buildLedgerSessionName(...)` value. `coding-tool-support.ts` is at the 600-line limit:\n  import `sessionTmpDir` by widening the existing `import type { CommandLauncher } from \"@/sandbox\"`\n  line to `import { type CommandLauncher, sessionTmpDir } from \"@/sandbox\"`, and fund the added\n  `tmpDir` line by merging the two-line comment above the `launcher` const (it begins\n  `// P4: the probe is async`) into one line.\n- New `wipeRunTmp(runId, opts?: { dryRun?: boolean })` in new\n  `src/execution/lifecycle/run-tmp-wipe.ts` removes `runTmpRoot(runId)` recursively, tolerating\n  absence; any other failure is logged at warn and swallowed. It mirrors `wipeScratchpad`\n  (`_runTmpWipeDeps.remove` seam). `cleanupRun` calls it through `_runCleanupDeps` whenever\n  `!options.dryRun`, whether or not the run completed: a failed run's `/tmp` files are not kept for\n  inspection, because no later run can find them to clear.\n- `buildScratchpadSection` (`src/prompts/sections/scratchpad.ts`) gains, after the paragraph that\n  mentions `/tmp`: \"Shell commands run with `$TMPDIR` set to a temp directory for this session, which\n  nax deletes when the run ends. Put temporary files there (`$TMPDIR` or `mktemp`), not in `/tmp`\n  directly.\"\n\n**Scope** — In: Bash/Exec launcher temp env, cleanup, scratchpad-section prompt and regenerate the three existing rectifier/review snapshots so the section appears once including the new sentence. Out: A run-start sweep of `/tmp/nax-*` directories; Setting `TMPDIR` for ACP agent sessions or for commands run outside the coding-tool launcher (quality gates run by nax itself); US-005 literal-/tmp shadow instrumentation.\n\n**Interface** — `CommandLauncherOptions` adds `tmpDir?: string`; `resolveSessionSandbox` args add `tmpDir?: string`; `wipeRunTmp(runId, opts?: { dryRun?: boolean }): Promise<void>`.",
+      "acceptanceCriteria": [
+        "When sessionTmpDir(\"run-1\", \"US-001-implementer\") is called, then it returns `/tmp/nax-run-1/US-001-implementer`.",
+        "When sessionTmpDir(\"run-1\", \"a/b\") is called, then it returns `/tmp/nax-run-1/a_b`.",
+        "When runTmpRoot(\"run-1\") is called, then it returns `/tmp/nax-run-1`.",
+        "When a disabled launcher created with tmpDir T runs, then it calls runArgv with env.TMPDIR, env.TMP and env.TEMP all equal to T.",
+        "When a disabled launcher created with tmpDir T runs a request whose env sets TMPDIR to X, then it calls runArgv with env.TMPDIR equal to X.",
+        "When an available launcher created with tmpDir T runs a command, then it hands backend.wrap a command equal to `export TMPDIR='T' TMP='T' TEMP='T'; ` followed by the original command.",
+        "When that available launcher runs a shell command, then its result.executed equals `[shell, \"-c\", <original command>]`.",
+        "When a launcher created with tmpDir T runs, then it creates T recursively before executing the command.",
+        "When creation of T rejects, then the launcher still runs the command with no TMPDIR in runArgv env and logs `could not create session temp dir — running without TMPDIR override` at warn level.",
+        "When a launcher without tmpDir runs a request with no env, then it calls runArgv with no env.",
+        "When resolveSessionSandbox receives a disabled sandbox config and tmpDir T, then its launcher runs the command with TMPDIR T.",
+        "When resolveCodingToolSupport receives runId `r1`, storyId `US-001`, sessionRole `implementer`, a declared and granted Bash tool and a disabled sandbox, then a Bash tool call with stubbed runArgv executes with env.TMPDIR `/tmp/nax-r1/US-001-implementer`.",
+        "When resolveCodingToolSupport receives no runId, then its Bash tool runs a command with no TMPDIR in env.",
+        "When a disabled launcher with tmpDir set to a fresh directory T executes `echo \"$TMPDIR\"`, then stdout equals T.",
+        "When wipeRunTmp(\"r1\") runs, then it calls _runTmpWipeDeps.remove with `/tmp/nax-r1`.",
+        "When _runTmpWipeDeps.remove rejects, then wipeRunTmp(\"r1\") resolves and logs a warning.",
+        "When cleanupRun receives runId `r1`, runCompleted: false and dryRun unset, then it calls wipeRunTmp with `r1`.",
+        "When cleanupRun receives dryRun: true, then it does not call wipeRunTmp.",
+        "When buildScratchpadSection() is called, then its output includes `Put temporary files there (`$TMPDIR` or `mktemp`), not in `/tmp` directly.`"
+      ],
+      "tags": [
+        "feature",
+        "sandbox",
+        "sessions",
+        "lifecycle"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The agent session launcher, sandbox wrapper, run cleanup and prompts are integrated across modules; session isolation merits security-sensitive strict TDD."
+      },
+      "contextFiles": [
+        "src/sandbox/launcher.ts",
+        "src/agents/coding-tool-sandbox.ts",
+        "src/agents/coding-tool-support.ts",
+        "src/execution/lifecycle/scratchpad-wipe.ts",
+        "src/execution/lifecycle/run-cleanup.ts"
+      ],
+      "expectedFiles": [
+        "src/sandbox/session-tmp.ts",
+        "src/execution/lifecycle/run-tmp-wipe.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/prompts/__snapshots__/rectifier-builder.test.ts.snap",
+          "reason": "embeds `buildScratchpadSection()` text verbatim; the new `$TMPDIR` sentence changes it. Regenerate the snapshot; the replacing invariant is that the section still appears once, now including the `$TMPDIR` sentence."
+        },
+        {
+          "path": "test/unit/prompts/builders/__snapshots__/rectifier-builder-helpers.test.ts.snap",
+          "reason": "embeds `buildScratchpadSection()` text verbatim; the new `$TMPDIR` sentence changes it. Regenerate the snapshot; the replacing invariant is that the section still appears once, now including the `$TMPDIR` sentence."
+        },
+        {
+          "path": "test/unit/prompts/__snapshots__/review-builder.test.ts.snap",
+          "reason": "embeds `buildScratchpadSection()` text verbatim; the new `$TMPDIR` sentence changes it. Regenerate the snapshot; the replacing invariant is that the section still appears once, now including the `$TMPDIR` sentence."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-005",
+      "title": "Shadow records literal /tmp write signals",
+      "description": "**Goal** — Record observable literal `/tmp` or `/private/tmp` writes in command-safety rows without changing safety verdicts.\n\n**Motivation** — Agents wrote scratch files to literal `/tmp` through Bash (4, 25 and 33 commands in three sessions of one run); the command-safety shadow's `outside_project` rule family does not match `/tmp`, so the frequency is unmeasured.\n\n**Approach** — New module `src/command-safety/tmp-write.ts`:\n\n```ts\n/** True when the command writes to a literal /tmp or /private/tmp path outside nax's own /tmp/nax-* dirs. */\nexport function detectTmpWrite(command: string, cwd?: string): boolean;\n```\n\n- Lexes with `lexBashCommand`. On a `refused` lex it scans the result's `prefix` segments (the lexable\n  part before the unreadable construct), so `cd /tmp && cat > f <<'EOF'` is still seen; an empty\n  prefix returns `false`.\n- Tracks the working directory across segments: a segment `cd <target>` with a non-opaque target\n  moves the frame to `target` resolved against the current frame (starting at `cwd`, or unknown when\n  `cwd` is absent, in which case relative targets are ignored).\n- Write targets per segment: every redirect target except those of input redirects (`<`, `<<`,\n  `<<<`); for first token `tee`, `touch` or `mkdir`, every later token not starting with `-`; for\n  first token `cp` or `mv`, the last token not starting with `-`. Opaque targets and targets starting\n  with `~` are skipped.\n- A target resolved against the frame counts when it equals `/tmp` or `/private/tmp` or lies under\n  either, and does not lie under `/tmp/nax-` or `/private/tmp/nax-` (nax's own per-run dirs).\n- The shadow's `toRow` (`src/command-safety/shadow.ts`) sets\n  `signals: { tmpWrite: detectTmpWrite(obs.command, cwd) }` using the same `cwd` it records. The\n  signal is recorded only: it is not a `QuestionId`, not in `rules.hits`, and does not change\n  `RULE_SET_VERSION`.\n\n**Scope** — In: nonthrowing literal-temp-write detector, persisted shadow signal and updated existing JSONL row() helper. Out: Refusing or blocking Bash writes to a literal `/tmp`, or removing `/tmp` from the sandbox write roots; this feature only measures them; Adding `/tmp` patterns to the command-safety `outside_project` rule family or bumping `RULE_SET_VERSION`; US-004 per-session TMPDIR assignment.\n\n**Interface** — `detectTmpWrite(command: string, cwd?: string): boolean`; `CommandSafetyRow` adds `signals: { readonly tmpWrite: boolean }`.",
+      "acceptanceCriteria": [
+        "When detectTmpWrite receives `echo x > /tmp/a.txt`, then it returns true.",
+        "When detectTmpWrite receives `cd /tmp && cat > tsconfig.json <<'EOF'\n{}\nEOF`, then it returns true.",
+        "When detectTmpWrite receives `tee /tmp/out.log`, then it returns true.",
+        "When detectTmpWrite receives `cp src/a.ts /private/tmp/`, then it returns true.",
+        "When detectTmpWrite receives `mkdir -p /tmp/probe`, then it returns true.",
+        "When detectTmpWrite receives `cat /tmp/a.txt`, then it returns false.",
+        "When detectTmpWrite receives `echo x > /tmp/nax-r1/US-001-implementer/a.txt`, then it returns false.",
+        "When detectTmpWrite receives `echo x > out.txt` with cwd `/tmp`, then it returns true.",
+        "When detectTmpWrite receives `echo x > out.txt` with cwd `/repo`, then it returns false.",
+        "When detectTmpWrite receives `echo x > \"$TMPDIR/a\"`, then it returns false.",
+        "When createCommandShadow observes and settles `cd /tmp && echo x > a.txt`, then its written row has signals.tmpWrite true.",
+        "When createCommandShadow observes and settles `ls`, then its written row has signals.tmpWrite false and rules.version equal to RULE_SET_VERSION.",
+        "When detectTmpWrite receives a command whose lex is refused, then it returns a boolean based on the lexable prefix without throwing.",
+        "When createCommandShadow observes and settles a command whose lex is refused, then it writes a row with signals.tmpWrite based on that command's lexable prefix instead of throwing."
+      ],
+      "tags": [
+        "feature",
+        "command-safety",
+        "observability"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One new lexer consumer extends a shadow row using existing settle and JSONL flows without altering authorization or rule scoring."
+      },
+      "contextFiles": [
+        "src/command-safety/shadow.ts",
+        "src/command-safety/types.ts",
+        "src/permissions/bash-lex.ts",
+        "test/unit/command-safety/shadow.test.ts",
+        "test/unit/command-safety/row.test.ts"
+      ],
+      "expectedFiles": [
+        "src/command-safety/tmp-write.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/command-safety/row.test.ts",
+          "reason": "its `row()` helper builds a complete `CommandSafetyRow` literal with no `signals` key, which stops typechecking once `signals` is a required field. Add `signals: { tmpWrite: false }` to the literal; the replacing invariant is that the appended JSONL line still round-trips the row, now including `signals`."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing Bun/TypeScript repository. The five changes are independent, with no data migration or new config defaults; US-002 and US-004 both edit coding-tool-support.ts and coding-tool-sandbox.ts, so merge their changes rather than declaring a false dependency. US-001: src/tools/spill.ts:98-109 writes and returns scratchpad-relative spill paths; :111-145 defines ModelTruncationOptions and markerShapes; :250-277 applies the shared policy and currently passes that relative path directly to composeHead/composeTail. src/agents/native/session/truncation-handler.ts:37-70 chooses a scratchpad workdir or transcript fallback. src/tools/scratchpad.ts:26-29 declares SCRATCHPAD_DIR and :40-89 supplies confined pathFields whose implementations consume resolvedPaths rather than resolving them. src/tools/policy.ts:414-457 confines paths via resolveWithin and :565-575 forwards raw options; prefix stripping must occur before containment, never weaken realpath, symlink, traversal or .git protections. policy.ts is exactly 590 lines with ten lines headroom under the source ratchet. src/tools/runtime.ts is the other truncation caller and keeps default marker style. test/unit/tools/spill-recovery.test.ts:1-414 tests spill content, shape, fail-open and byte caps; supplement native, scratchpad and Bash-to-Read tests. US-002: src/tools/policy-bash-raw.ts:1-41 explicitly labels raw screening advisory; :123-167 screens lexable tokens and redirects, with :140-142 allowing refused lexes unscreened. src/permissions/bash-lex.ts:22-61 defines opaque tokens and lexable refused prefixes. A new first-token find cost guard must precede protected-path screening but must not apply to gated/escalate. src/tools/nax-owned-writes.ts:205-238 generates kind-specific messages; preserve queue/config and unsandboxed PRD behavior. src/tools/policy-command-branch.ts:18-61 routes raw screening; src/tools/policy.ts:104-143 accepts options; src/agents/coding-tool-support.ts:215-235 constructs policy; src/agents/coding-tool-sandbox.ts:43-101 makes launchers, :104-106 exports rawRefusalFor unchanged. Actual available launcher, not sandbox configuration, must determine sandboxWrapped: under the sandbox src/sandbox/policy-builder.ts denies feature PRD writes. src/tools/bash.ts:158-207 gives the raw description and currently states 'The only refusal', which needs truthful wording alongside the find sentence. Existing tests: test/unit/tools/policy-bash-raw.test.ts:1-305, test/unit/agents/coding-tool-sandbox.test.ts and test/unit/agents/coding-tool-bash.test.ts. US-003: src/execution/non-blocking-fix.ts:104-141 defines metrics/deps, :210-247 measures numstat with hardenedGitArgv/gitSpawnEnv, :338-367 gates measurement on sourceDiffCap, :431-455 resets and restores phase state. Reconcile status and numstat of committed differences by root-relative path, exclude tests first, never count first-segment .nax paths as source; restore control edits even when counts are within cap. Include full counts next to at-most-20 sampled paths and list discarded commits before hard reset even if listing fails. Existing test/unit/execution/non-blocking-fix.test.ts:531-704 tests cap and restoration and will need typed dep doubles updated if specifying the new required listCommitsSince; src/tdd/rollback.ts and src/utils/git-env.ts define snapshot and git conventions. US-004: src/sandbox/launcher.ts:26-121 is the shared agent Bash/Exec launcher: :41-57 forwards caller env unwrapped, :60-101 hands backend a command and records logical executed argv. src/sandbox/types.ts:60-91 declares launch requests; src/sandbox/index.ts:1-43 exports APIs. Create session tmp per run() and overlay unwrapped env with caller env precedence; srt replaces wrapped child env, so prefix backend.wrap command instead without changing logical executed. src/agents/coding-tool-sandbox.ts:43-101 must forward tmpDir to all three launcher creation sites. src/agents/coding-tool-support.ts:307-316 builds ledger session names and :553-568 resolves sandbox; it is exactly 600 lines: widen existing sandbox import and fund new line by merging two-line comment. src/execution/lifecycle/scratchpad-wipe.ts:31-61 provides fail-open injected remove pattern; src/execution/lifecycle/run-cleanup.ts:44-69 injects cleanup seams and :346-366 wipes scratchpad only on successful non-dry runs, whereas new run-tmp wipe runs for all non-dry outcomes. src/prompts/sections/scratchpad.ts:25-48 is copied into three rectifier/review snapshots specified in the spec. Existing tests include test/unit/sandbox/launcher.test.ts and test/unit/execution/lifecycle/run-cleanup-scratchpad-wipe.test.ts. US-005: src/permissions/bash-lex.ts:42-61 supplies prefix on refused lex and :228-245 emits redirect targets; heredocs refuse at :193-195, so detectTmpWrite must examine completed prefix instead of throwing. src/command-safety/shadow.ts:112-151 builds row at settle with actual cwd (Exec cwd can change), and :147-151 scores rules independently. src/command-safety/types.ts:105-139 describes row; src/command-safety/rule-scorer.ts:24-54 must remain unchanged. test/unit/command-safety/row.test.ts:7-34 constructs a complete row which needs signals: { tmpWrite: false }; test/unit/command-safety/shadow.test.ts covers observe/settle. Protect backward compatibility: existing scratchpad-relative paths, unsandboxed PRD refusal, no tmpDir env when absent, existing metric doubles, and rule version/hits all remain stable. The raw Bash find cost guard is the one deliberate exception to advisory protection semantics; the feature-level disabled-sandbox exclusion refers to existing PRD/config/queue screening, not the explicitly required new find cost guard.",
+  "outOfScope": [
+    "Making `test/unit/operations/typecheck-check.test.ts` AC6 hermetic (mocking `fileExists`); that is a separate manual follow-up.",
+    "Refusing or blocking Bash writes to a literal `/tmp`, or removing `/tmp` from the sandbox write roots; this feature only measures them.",
+    "Snapshotting or diffing `/tmp` around an NBF pass.",
+    "A run-start sweep of `/tmp/nax-*` directories; a concurrent run's live directories share the prefix, so only a run's own `runTmpRoot` is removed, at its end. A crashed run's directory is left for the OS to clear.",
+    "Setting `TMPDIR` for ACP agent sessions or for commands run outside the coding-tool launcher (quality gates run by nax itself).",
+    "Changing the Bash timeout, or adding a timeout hint to the `timed out after` message.",
+    "Stating the absolute working directory in the Bash tool description or the session preamble (#2259 proposal 3).",
+    "Screening `find` in gated or escalate Bash mode, whose root containment already governs start paths.",
+    "Changing the raw screen for `config` or `queue` paths, or its behaviour when the sandbox is disabled.",
+    "Changing `sourceDiffCap` defaults or `review.nonBlockingFix` defaults.",
+    "Measuring the NBF diff when `sourceDiffCap` is absent from the resolved config; the control-path check runs only where the measurement already runs (the schema always defaults the cap).",
+    "Changing which roles are granted `ScratchpadRead`.",
+    "Adding `/tmp` patterns to the command-safety `outside_project` rule family or bumping `RULE_SET_VERSION`.",
+    "Excluding `.nax/scratchpad/` from context-engine scans."
+  ],
+  "routingProfile": "native-ds"
+}
