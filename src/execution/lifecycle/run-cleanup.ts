@@ -33,6 +33,7 @@ import { clearGitRootCache } from "@/verification";
 import { resetRuntimeCrashRetryCounts } from "../escalation";
 import { releaseFeatureLock } from "../feature-lock";
 import { releaseLock } from "../helpers";
+import { wipeRunTmp } from "./run-tmp-wipe";
 // Sibling import: the wipe is a local lifecycle module, and routing it through
 // the lifecycle barrel would point this module at its own barrel to reach the
 // file next door.
@@ -55,6 +56,9 @@ export const _runCleanupDeps = {
   // US-004 — end-of-run scratchpad wipe. Injected so the test can stub a
   // fail-open path without monkey-patching Bun.file / fs.rm.
   wipeScratchpad,
+  // US-004 — end-of-run run-temp wipe. Injected alongside wipeScratchpad so the
+  // test can observe the call; unlike the scratchpad it is not gated on success.
+  wipeRunTmp,
   // P4 — end-of-run sandbox reset. Injected alongside wipeScratchpad so the
   // test can observe the call without spawning real proxy/bridge processes.
   resetSandbox: resetSandboxBackend,
@@ -361,6 +365,22 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
     } catch (err) {
       logger?.warn("cleanup", "End-of-run scratchpad wipe failed — continuing", {
         workdir,
+        error: errorMessage(err),
+      });
+    }
+  }
+
+  // US-004 — end-of-run run-temp wipe. Deliberately NOT gated on
+  // `runCompleted`: a failed run's `/tmp` files are not kept for inspection,
+  // because no later run can find them to clear. A dry run is a preview, not a
+  // mutation, so it is skipped outright. Fail-open: a rejected wipe is logged
+  // at warn and the run's verdict is unaffected — this is the finally block.
+  if (!options.dryRun) {
+    try {
+      await _runCleanupDeps.wipeRunTmp(runId);
+    } catch (err) {
+      logger?.warn("cleanup", "End-of-run run-temp wipe failed — continuing", {
+        runId,
         error: errorMessage(err),
       });
     }

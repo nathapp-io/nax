@@ -10,7 +10,9 @@
  *   stops is the command, never the sandbox.
  */
 import { randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
 import { NaxError } from "../errors";
+import { getSafeLogger } from "../logger";
 import { runArgv } from "../utils/argv-exec";
 import { errorMessage } from "../utils/errors";
 import { quoteArgvForShell } from "./argv-quote";
@@ -27,7 +29,11 @@ import type {
 
 export const DISABLED_SANDBOX_STATE: SandboxState = { kind: "disabled" };
 
-export const _launcherDeps = { runArgv, newCommandId: (): string => randomUUID() };
+export const _launcherDeps = {
+  runArgv,
+  newCommandId: (): string => randomUUID(),
+  mkdir: (path: string): Promise<void> => mkdir(path, { recursive: true }).then(() => undefined),
+};
 
 export interface CommandLauncherOptions {
   readonly state: SandboxState;
@@ -35,27 +41,78 @@ export interface CommandLauncherOptions {
   readonly policyFor?: (root: string) => Promise<SandboxPolicy>;
   /** Runs after every wrapped command, before control returns to nax (e.g. a git tripwire, #2198). */
   readonly afterWrapped?: () => Promise<void>;
+  /**
+   * US-004 — the session's temp directory. Created before every run, then handed
+   * to the child as `TMPDIR`/`TMP`/`TEMP` so stray files land under the run's own
+   * root instead of the shared `/tmp`.
+   */
+  readonly tmpDir?: string;
 }
 
 function logicalArgv(req: LaunchRequest): readonly string[] {
   return req.spec.kind === "shell" ? [req.spec.shell, "-c", req.spec.command] : req.spec.argv;
 }
 
-async function runUnwrapped(req: LaunchRequest, sandbox: SandboxRecord): Promise<LaunchResult> {
+/** POSIX single-quoting: wrap in `'`, turning an embedded `'` into `'\''`. */
+function shellSingleQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/** `export TMPDIR=… TMP=… TEMP=…; ` — the prefix a wrapped command carries, since srt replaces the child env. */
+function tmpEnvPrefix(tmpDir: string): string {
+  const q = shellSingleQuote(tmpDir);
+  return `export TMPDIR=${q} TMP=${q} TEMP=${q}; `;
+}
+
+/** The TMPDIR/TMP/TEMP overlay for an unwrapped run; the request's own env wins per key. */
+function withTmpEnv(req: LaunchRequest, tmpDir: string | undefined): Readonly<Record<string, string>> | undefined {
+  if (tmpDir === undefined) return req.env;
+  return { TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir, ...(req.env ?? {}) };
+}
+
+async function ensureTmpDir(tmpDir: string): Promise<boolean> {
+  try {
+    await _launcherDeps.mkdir(tmpDir);
+    return true;
+  } catch (err) {
+    getSafeLogger()?.warn("sandbox", "could not create session temp dir — running without TMPDIR override", {
+      tmpDir,
+      error: errorMessage(err),
+    });
+    return false;
+  }
+}
+
+async function runUnwrapped(
+  req: LaunchRequest,
+  sandbox: SandboxRecord,
+  tmpDir: string | undefined,
+): Promise<LaunchResult> {
   const argv = logicalArgv(req);
+  const env = withTmpEnv(req, tmpDir);
   const result = await _launcherDeps.runArgv({
     argv,
     cwd: req.cwd,
     timeoutMs: req.timeoutMs,
     stripEnvVars: [...req.stripEnvVars],
-    ...(req.env !== undefined ? { env: req.env } : {}),
+    ...(env !== undefined ? { env } : {}),
     ...(req.signal !== undefined ? { signal: req.signal } : {}),
   });
   return { ...result, executed: argv, sandbox };
 }
 
-async function runWrapped(req: LaunchRequest, backend: SandboxBackend, policy: SandboxPolicy): Promise<LaunchResult> {
-  const command = req.spec.kind === "shell" ? req.spec.command : quoteArgvForShell(req.spec.argv);
+async function runWrapped(
+  req: LaunchRequest,
+  backend: SandboxBackend,
+  policy: SandboxPolicy,
+  tmpDir: string | undefined,
+): Promise<LaunchResult> {
+  const rawCommand = req.spec.kind === "shell" ? req.spec.command : quoteArgvForShell(req.spec.argv);
+  // srt replaces the child environment, so the TMPDIR override cannot ride an
+  // `env` overlay — it has to be part of the shell command itself. `executed`
+  // below stays the unprefixed logical argv, so the ledger records what the
+  // agent wrote, not this shim.
+  const command = tmpDir !== undefined ? `${tmpEnvPrefix(tmpDir)}${rawCommand}` : rawCommand;
   const shell = req.spec.kind === "shell" ? req.spec.shell : "/bin/sh";
   const commandId = _launcherDeps.newCommandId();
   let argv: readonly string[];
@@ -102,9 +159,10 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
   return {
     state,
     async run(req) {
-      if (state.kind === "disabled") return runUnwrapped(req, { backend: "none", wrapped: false });
+      const tmpDir = opts.tmpDir !== undefined && (await ensureTmpDir(opts.tmpDir)) ? opts.tmpDir : undefined;
+      if (state.kind === "disabled") return runUnwrapped(req, { backend: "none", wrapped: false }, tmpDir);
       if (state.kind === "unavailable") {
-        return runUnwrapped(req, { backend: state.backend, wrapped: false, reason: state.reason });
+        return runUnwrapped(req, { backend: state.backend, wrapped: false, reason: state.reason }, tmpDir);
       }
       if (opts.backend === undefined || opts.policyFor === undefined) {
         throw new NaxError("[sandbox] an available launcher needs a backend and a policy", "SANDBOX_NOT_CONFIGURED", {
@@ -112,7 +170,7 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
         });
       }
       try {
-        return await runWrapped(req, opts.backend, await opts.policyFor(req.root));
+        return await runWrapped(req, opts.backend, await opts.policyFor(req.root), tmpDir);
       } finally {
         await opts.afterWrapped?.();
       }

@@ -26,6 +26,7 @@ export {
   sandboxBackendFor,
   warnSandboxUnavailableOnce,
 } from "./registry";
+export { runTmpRoot, sessionTmpDir } from "./session-tmp";
 export { _srtBackendDeps, createSrtBackend } from "./srt-backend";
 export type {
   CommandLauncher,

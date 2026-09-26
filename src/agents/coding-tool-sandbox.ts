@@ -45,16 +45,24 @@ export async function resolveSessionSandbox(args: {
   readonly outputDir?: string;
   readonly needsLauncher: boolean;
   readonly storyId?: string;
+  /** US-004 — per-session temp directory the launcher creates and exports as TMPDIR/TMP/TEMP. */
+  readonly tmpDir?: string;
 }): Promise<CommandLauncher> {
   const config = args.config;
   if (config === undefined || !config.enabled || !args.needsLauncher) {
-    return createCommandLauncher({ state: DISABLED_SANDBOX_STATE });
+    return createCommandLauncher({
+      state: DISABLED_SANDBOX_STATE,
+      ...(args.tmpDir !== undefined ? { tmpDir: args.tmpDir } : {}),
+    });
   }
   const backend = _sessionSandboxDeps.backendFor(config);
   const probe = await _sessionSandboxDeps.probe(backend, args.storyId);
   if (!probe.available) {
     warnSandboxUnavailableOnce(probe.reason, args.storyId);
-    return createCommandLauncher({ state: { kind: "unavailable", backend: backend.name, reason: probe.reason } });
+    return createCommandLauncher({
+      state: { kind: "unavailable", backend: backend.name, reason: probe.reason },
+      ...(args.tmpDir !== undefined ? { tmpDir: args.tmpDir } : {}),
+    });
   }
   const git = await _sessionSandboxDeps.gitLayout(args.root);
   const credentialFiles = await _sessionSandboxDeps.credentialFiles();
@@ -90,6 +98,7 @@ export async function resolveSessionSandbox(args: {
     backend,
     policyFor,
     ...(afterWrapped !== undefined ? { afterWrapped } : {}),
+    ...(args.tmpDir !== undefined ? { tmpDir: args.tmpDir } : {}),
   });
 }
 

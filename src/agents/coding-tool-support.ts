@@ -14,7 +14,7 @@ import type { BashApprovalMode } from "@/config/bash-approval";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { AskResolver } from "@/permissions";
-import type { CommandLauncher } from "@/sandbox";
+import { type CommandLauncher, sessionTmpDir } from "@/sandbox";
 import {
   advertisedSchemaBytes,
   BASH_TOOL_NAME,
@@ -537,8 +537,7 @@ export async function resolveCodingToolSupport(
   // one tool from an otherwise fully-granted provider.
   const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
   const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
-  // P4: the probe is async, so it runs here and reaches the sync seam as data.
-  // execution.sandbox is root-scoped (ADR-031): package configs cannot override it.
+  // P4: the probe is async, so it runs here as data; execution.sandbox is root-scoped (ADR-031).
   const launcher =
     options.codingToolRoot !== undefined && options.codingToolRoot.trim() !== ""
       ? await resolveSessionSandbox({
@@ -547,6 +546,7 @@ export async function resolveCodingToolSupport(
           ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
           needsLauncher: declared.includes(BASH_TOOL_NAME) || declared.includes(EXEC_TOOL_NAME),
           ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
+          ...(options.runId !== undefined ? { tmpDir: sessionTmpDir(options.runId, sessionName) } : {}),
         })
       : undefined;
   return buildCodingToolSupport({
