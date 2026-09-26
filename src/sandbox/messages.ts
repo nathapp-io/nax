@@ -15,7 +15,8 @@ function describeNetwork(network: "open" | readonly string[]): string {
 export function sandboxSentence(network: "open" | readonly string[]): string {
   return (
     "inside an OS sandbox: writes are allowed only under the repository root, the system temp directories and " +
-    "package-manager caches; credential files (~/.ssh, ~/.aws, ~/.npmrc, nax credentials and similar) are unreadable; " +
+    "package-manager caches -- and nothing under .nax/ except .nax/scratchpad/, since .nax/ is nax's own state " +
+    "(change a feature's acceptance test with the Edit tool); credential files (~/.ssh, ~/.aws, ~/.npmrc, nax credentials and similar) are unreadable; " +
     `${describeNetwork(network)}. A write anywhere else fails with "Operation not permitted" or "Read-only file system" ` +
     "-- that is the sandbox, not a bug in your command."
   );

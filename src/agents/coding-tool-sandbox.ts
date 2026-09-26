@@ -16,8 +16,8 @@ import {
   DISABLED_SANDBOX_STATE,
   defaultTempRoots,
   listCredentialFiles,
-  listFeaturePrdPaths,
   listGitGuardFiles,
+  listNaxEntries,
   probeSandboxOnce,
   rawBashRefusalReason,
   resolveGitLayout,
@@ -30,7 +30,7 @@ export const _sessionSandboxDeps = {
   backendFor: sandboxBackendFor,
   probe: probeSandboxOnce,
   gitLayout: resolveGitLayout,
-  featurePrds: listFeaturePrdPaths,
+  naxEntries: listNaxEntries,
   gitGuardFiles: listGitGuardFiles,
   commonDirTripwire: strayCommonDirTripwire,
   credentialFiles: listCredentialFiles,
@@ -63,9 +63,9 @@ export async function resolveSessionSandbox(args: {
     buildSandboxPolicy({
       root,
       git,
-      // Per build, like the PRDs: a worktree added mid-run gets its denies too.
+      // Per build, like the .nax entries: a worktree added mid-run gets its denies too.
       gitGuardFiles: await _sessionSandboxDeps.gitGuardFiles(git),
-      featurePrdPaths: await _sessionSandboxDeps.featurePrds(root),
+      naxEntries: await _sessionSandboxDeps.naxEntries(root),
       credentialFiles,
       ...(approvalsFile !== undefined ? { approvalsFile } : {}),
       home: _sessionSandboxDeps.homedir(),

@@ -132,6 +132,8 @@ export function buildCodingToolSupport(args: {
    * forwarded to `compileToolPolicy` as its `ownedWriteExemption`.
    */
   fileOutputPath?: string;
+  /** nax#2260: `execution.sandbox.filesystem.allowWrite`, forwarded to `compileToolPolicy`. */
+  naxAllowWrite?: readonly string[];
   bashApproval?: BashApprovalMode;
   /** Injectable ask resolver (Task 3); defaults to the headless deny resolver. */
   askResolver?: AskResolver;
@@ -220,6 +222,7 @@ export function buildCodingToolSupport(args: {
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
+      ...(args.naxAllowWrite !== undefined ? { naxAllowWrite: args.naxAllowWrite } : {}),
     }),
     declaredCommands: new Set(declaredCommands.keys()),
     ...(args.abortSignal !== undefined ? { signal: args.abortSignal } : {}),
@@ -588,6 +591,7 @@ export async function resolveCodingToolSupport(
     allowScripts,
     ...(denyPaths !== undefined ? { denyPaths } : {}),
     ...(options.codingToolFileOutput !== undefined ? { fileOutputPath: options.codingToolFileOutput } : {}),
+    naxAllowWrite: options.config?.execution?.sandbox?.filesystem.allowWrite ?? [],
     ...(options.askResolver !== undefined ? { askResolver: options.askResolver } : {}),
     ...(options.commandShadow !== undefined ? { commandShadow: options.commandShadow } : {}),
     ...(launcher !== undefined ? { launcher } : {}),

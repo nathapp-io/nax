@@ -14,7 +14,7 @@ export {
   defaultTempRoots,
   type GitLayout,
   listCredentialFiles,
-  listFeaturePrdPaths,
+  listNaxEntries,
   resolveGitLayout,
 } from "./policy-inputs";
 export { _probeDeps, probeSandbox } from "./probe";

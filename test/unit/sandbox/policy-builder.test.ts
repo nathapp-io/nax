@@ -26,7 +26,7 @@ function input(over: Partial<SandboxPolicyInput> = {}): SandboxPolicyInput {
     root,
     git: { kind: "main", gitDir: join(root, ".git") },
     gitGuardFiles: [],
-    featurePrdPaths: [join(root, ".nax", "features", "f1", "prd.json")],
+    naxEntries: ["config.json", "features", "rules", "scratchpad", "cache"],
     credentialFiles: [join(base, "gnax", "credentials"), join(base, "gnax", "credentials-bak-2")],
     home,
     tempRoots: [join(base, "tmp")],
@@ -52,9 +52,48 @@ describe("buildSandboxPolicy", () => {
     const policy = buildSandboxPolicy(input());
     expect(policy.denyWrite).toContain(join(root, ".nax", "config.json"));
     expect(policy.denyWrite).toContain(join(root, ".nax", "mono"));
-    expect(policy.denyWrite).toContain(join(root, ".nax", "features", "f1", "prd.json"));
     expect(policy.denyWrite).toContain(join(root, ".queue.txt"));
     expect(policy.denyWrite).toContain(join(root, ".queue.txt.processing"));
+  });
+
+  test("#2260: every top-level .nax entry except the scratchpad is denied whole", () => {
+    const policy = buildSandboxPolicy(input());
+    for (const name of ["config.json", "features", "rules", "cache"]) {
+      expect(policy.denyWrite).toContain(join(root, ".nax", name));
+    }
+    expect(policy.denyWrite).not.toContain(join(root, ".nax", "scratchpad"));
+  });
+
+  test("#2260: one features deny replaces the per-feature prd.json denies", () => {
+    const policy = buildSandboxPolicy(input());
+    expect(policy.denyWrite.filter((p) => p.startsWith(join(root, ".nax", "features")))).toEqual([
+      join(root, ".nax", "features"),
+    ]);
+  });
+
+  test("#2260: rules, context.md, config.json and mono are denied even when absent", () => {
+    const policy = buildSandboxPolicy(input({ naxEntries: [] }));
+    for (const name of ["config.json", "mono", "rules", "context.md"]) {
+      expect(policy.denyWrite).toContain(join(root, ".nax", name));
+    }
+  });
+
+  test("#2260: an allowWrite opt-in lifts exactly that entry's deny", () => {
+    const config: SandboxConfig = {
+      ...DEFAULT_SANDBOX_CONFIG,
+      filesystem: { allowWrite: [".nax/rules"], denyRead: [] },
+    };
+    const policy = buildSandboxPolicy(input({ config }));
+    expect(policy.denyWrite).not.toContain(join(root, ".nax", "rules"));
+    expect(policy.denyWrite).toContain(join(root, ".nax", "cache"));
+  });
+
+  test("#2260: features, config.json and mono stay denied even when listed in allowWrite", () => {
+    const allowWrite = [".nax/features", ".nax/config.json", ".nax/mono"];
+    const config: SandboxConfig = { ...DEFAULT_SANDBOX_CONFIG, filesystem: { allowWrite, denyRead: [] } };
+    const policy = buildSandboxPolicy(input({ config }));
+    for (const name of ["features", "config.json", "mono"])
+      expect(policy.denyWrite).toContain(join(root, ".nax", name));
   });
 
   test("main checkout: hooks and config of the git dir are denied", () => {
@@ -193,13 +232,11 @@ describe("buildSandboxPolicy", () => {
 
   test("finding 3: a nonexistent deny under a symlinked parent is emitted in its resolved spelling", () => {
     const real = join(base, "real");
-    mkdirSync(join(real, ".nax", "features", "f9"), { recursive: true });
+    mkdirSync(join(real, ".nax"), { recursive: true });
     const link = join(base, "link");
     symlinkSync(real, link);
-    const policy = buildSandboxPolicy(
-      input({ root: link, featurePrdPaths: [join(link, ".nax", "features", "f9", "prd.json")] }),
-    );
-    expect(policy.denyWrite).toContain(join(real, ".nax", "features", "f9", "prd.json"));
+    const policy = buildSandboxPolicy(input({ root: link, naxEntries: [] }));
+    expect(policy.denyWrite).toContain(join(real, ".nax", "rules"));
     expect(policy.writeRoots).toContain(real);
   });
 

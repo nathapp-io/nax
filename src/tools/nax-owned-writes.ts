@@ -12,8 +12,53 @@
  * tool must still reach.
  */
 
-import { relative, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { realOrRaw } from "@/utils/realpath";
+
+/**
+ * The one top-level `.nax/` entry agents may write freely: the scratchpad.
+ * Must equal the last segment of SCRATCHPAD_DIR (pinned by a test; importing
+ * it here would close a scratchpad -> policy -> nax-owned-writes cycle).
+ */
+export const NAX_SCRATCHPAD_ENTRY = "scratchpad";
+
+/**
+ * Top-level `.nax/` entries an allowWrite opt-in can never open (nax#2260):
+ * config is the trust anchor for ungated commands, `mono` holds package
+ * configs, and `features` holds every PRD plus the running feature's state.
+ */
+const NAX_NEVER_OPT_IN: ReadonlySet<string> = new Set(["config.json", "mono", "features"]);
+
+/**
+ * Entries nax reads as human-authored input. The sandbox denies these even
+ * when absent, so an agent cannot create one (a new `.nax/rules/x.md` would be
+ * injected into every later session's prompt). nax never creates them mid-run.
+ */
+export const NAX_ALWAYS_DENIED_ENTRIES: readonly string[] = ["config.json", "mono", "rules", "context.md"];
+
+const NO_OPT_INS: ReadonlySet<string> = new Set();
+
+/**
+ * Top-level `.nax/` entries a human opened for agent writes by listing them in
+ * `execution.sandbox.filesystem.allowWrite` (nax#2260). Only an exact entry
+ * counts -- `.nax/rules`, never `.nax/rules/a.md` -- and never the scratchpad
+ * (always open) or a NAX_NEVER_OPT_IN entry. Relative entries resolve against
+ * `root`, as the sandbox's own write roots do.
+ */
+export function naxWriteOptIns(root: string, allowWrite: readonly string[]): ReadonlySet<string> {
+  const naxDir = resolve(root, ".nax");
+  const names = allowWrite
+    .map((p) => relative(naxDir, isAbsolute(p) ? resolve(p) : resolve(root, p)))
+    .filter((rel) => rel !== "" && !rel.startsWith("..") && !rel.includes(sep) && !isAbsolute(rel))
+    .filter((name) => name !== NAX_SCRATCHPAD_ENTRY && !NAX_NEVER_OPT_IN.has(name));
+  return new Set(names);
+}
+
+/** `.nax/config.json`, or `.nax/mono/<package...>/config.json`, as root-relative segments. */
+function isNaxConfigSegments(segments: readonly string[]): boolean {
+  if (segments[0] !== ".nax" || segments[segments.length - 1] !== "config.json") return false;
+  return segments.length === 2 || (segments.length >= 4 && segments[1] === "mono");
+}
 
 /**
  * Is `resolved` one of nax's own CONFIG files, relative to `root`?
@@ -34,15 +79,13 @@ import { realOrRaw } from "@/utils/realpath";
 export function isNaxConfigFile(root: string, resolved: string): boolean {
   const rel = relative(realOrRaw(root), resolved);
   if (rel === "" || rel.startsWith("..")) return false;
-  const segments = rel.split(sep);
-  if (segments[0] !== ".nax" || segments[segments.length - 1] !== "config.json") return false;
   // `.nax/config.json` (2), or `.nax/mono/<package>/config.json` at ANY package
   // depth (>= 4). The real override path is nested -- `loadConfigForWorkdir`
   // reads `.nax/mono/<packageDir>/config.json` where packageDir is the
   // repo-relative package path (`src/config/loader.ts:382`), so a normal
   // `packages/*` layout is 5 segments, not 4. A length-exact rule left every
   // such override writable whenever the story's root was the repo root.
-  return segments.length === 2 || (segments.length >= 4 && segments[1] === "mono");
+  return isNaxConfigSegments(rel.split(sep));
 }
 
 /**
@@ -164,9 +207,16 @@ export function naxOwnedBashRefusal(
  * The queue file is the other half of the same concern: it is the run-control
  * channel, and a write there can pause, abort or skip stories outright.
  */
-export function naxOwnedWriteRefusal(tool: string, rel: string, exemptRel?: string): string | undefined {
+export function naxOwnedWriteRefusal(
+  tool: string,
+  rel: string,
+  exemptRel?: string,
+  optIns: ReadonlySet<string> = NO_OPT_INS,
+): string | undefined {
   if (!NAX_OWNED_WRITE_TOOLS.has(tool)) return undefined;
-  if (!isNaxOwnedWritePath(rel)) return undefined;
+  if (!isNaxOwnedWritePath(rel)) {
+    return exemptRel !== undefined && rel === exemptRel ? undefined : naxStateRefusal(rel, optIns);
+  }
   const segments = rel.split("/");
   // SEC-5: the run-control file lives at the root, so match it exactly
   // there and not at any other depth -- a nested `sub/.queue.txt` is an
@@ -188,4 +238,25 @@ export function naxOwnedWriteRefusal(tool: string, rel: string, exemptRel?: stri
   // derived by the policy itself, never taken from the agent's own arguments.
   if (exemptRel !== undefined && rel === exemptRel) return undefined;
   return `"${rel}" is nax's own run state: it holds the acceptance criteria this story is judged against, so no tool may modify it. Change the code, not the criteria.`;
+}
+
+/**
+ * nax#2260: everything else under `.nax/` is nax's own state. Writable: the
+ * scratchpad, files directly inside a feature dir (acceptance and suggested
+ * tests, under whatever name acceptance.testPath gives them -- the tool-audit
+ * ledgers show these are the only file-tool writes agents need there), and
+ * opted-in entries. Config files are left to the earlier, more specific
+ * `isNaxConfigFile` refusal, which covers reads too.
+ */
+function naxStateRefusal(rel: string, optIns: ReadonlySet<string>): string | undefined {
+  const segments = rel.split("/");
+  if (segments[0] !== ".nax" || isNaxConfigSegments(segments)) return undefined;
+  const entry = segments[1];
+  if (segments.length > 2 && (entry === NAX_SCRATCHPAD_ENTRY || optIns.has(entry ?? ""))) return undefined;
+  if (segments.length === 4 && entry === "features") return undefined;
+  return (
+    `"${rel}" is nax's own state, which agents do not modify. Under .nax/, write only to your scratchpad ` +
+    "(.nax/scratchpad/) or to a file directly inside a feature directory, such as its acceptance test. " +
+    "A human can open a path for a story by listing it in execution.sandbox.filesystem.allowWrite in the project config."
+  );
 }

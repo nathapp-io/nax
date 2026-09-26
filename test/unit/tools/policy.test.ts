@@ -764,3 +764,20 @@ describe("compileToolPolicy — plan-op PRD write exemption (nax#2115)", () => {
     expect(policy.check("Write", PATH_SCOPE, { path: ".nax/config.json" }).allowed).toBe(false);
   });
 });
+
+describe("compileToolPolicy — .nax/ state and the allowWrite opt-in (nax#2260)", () => {
+  const grants = [{ tool: "Write", patterns: ["**"] }];
+
+  test("a Write under .nax/rules is refused by default, the scratchpad is not", () => {
+    const policy = compileToolPolicy(grants, root);
+    const verdict = policy.check("Write", PATH_SCOPE, { path: ".nax/rules/a.md" });
+    expect(verdict.allowed === false && verdict.reason).toContain("execution.sandbox.filesystem.allowWrite");
+    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/scratchpad/p.ts" }).allowed).toBe(true);
+  });
+
+  test("naxAllowWrite opens the listed entry and nothing else", () => {
+    const policy = compileToolPolicy(grants, root, { naxAllowWrite: [".nax/rules"] });
+    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/rules/a.md" }).allowed).toBe(true);
+    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/context.md" }).allowed).toBe(false);
+  });
+});
