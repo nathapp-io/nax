@@ -147,7 +147,7 @@ function scopeFiles(verdict: FixReviewVerdict): readonly string[] {
 describe("runFixReview — stage 1: the fixReview switch (US-003 AC10)", () => {
   test("US-003 AC10: a disabled fixReview passes without reviewing and never snapshots or dispatches", async () => {
     const harness = makeHarness();
-    const request = makeRequest({ config: makeReviewConfig({ fixReview: { enabled: false } }) });
+    const request = makeRequest({ config: makeReviewConfig({ fixReview: { enabled: false, timeoutMs: 600_000 } }) });
 
     const verdict = await runFixReview(makeCtx(), request, harness.deps);
 
