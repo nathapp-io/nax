@@ -5,7 +5,7 @@ import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
-import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
+import { NAX_GITIGNORE_ENTRIES, NAX_RETIRED_GITIGNORE_ENTRIES } from "../utils/gitignore";
 import { naxOrphanRefName } from "./nax-orphan-ref";
 import type { WorktreeInfo } from "./types";
 import type { WorktreeId } from "./worktree-id";
@@ -106,13 +106,25 @@ export class WorktreeManager {
             .filter((line) => line.length > 0),
         );
         const missing = NAX_GITIGNORE_ENTRIES.filter((entry) => !existingLines.has(entry));
-        if (missing.length === 0) return;
+        const retired = new Set<string>(NAX_RETIRED_GITIGNORE_ENTRIES.filter((entry) => existingLines.has(entry)));
+        if (missing.length === 0 && retired.size === 0) return;
 
-        const section = `\n# nax — generated files (auto-added by nax parallel)\n${missing.join("\n")}\n`;
-        await Bun.write(excludePath, existing + section);
+        // Retired entries are dropped line-exactly; every other line, including
+        // the user's own rules and comments, is kept verbatim.
+        const kept =
+          retired.size === 0
+            ? existing
+            : existing
+                .split("\n")
+                .filter((line) => !retired.has(line.trim()))
+                .join("\n");
+        const section =
+          missing.length === 0 ? "" : `\n# nax — generated files (auto-added by nax parallel)\n${missing.join("\n")}\n`;
+        await Bun.write(excludePath, kept + section);
 
         logger?.info("worktree", "Updated .git/info/exclude with nax entries", {
           added: missing.length,
+          removed: retired.size,
         });
       });
     } catch (error) {

@@ -137,8 +137,6 @@ describe("checkGitignoreCoversNax", () => {
       ".nax/metrics.json",
       ".nax-pids",
       ".nax-wt/",
-      "**/.nax-acceptance*",
-      "**/_nax_acceptance_test.py",
       "**/_nax_suggested_test.py",
       "**/.nax/features/*/fragments/",
     ].join("\n");
@@ -156,8 +154,6 @@ describe("checkGitignoreCoversNax", () => {
       ".nax/metrics.json",
       ".nax-pids",
       ".nax-wt/",
-      "**/.nax-acceptance*",
-      "**/_nax_acceptance_test.py",
       "**/_nax_suggested_test.py",
       "**/.nax/features/*/fragments/",
     ].join("\n");
@@ -165,6 +161,44 @@ describe("checkGitignoreCoversNax", () => {
 
     const result = await checkGitignoreCoversNax(workdir);
     expect(result.message).not.toContain("status.json");
+  });
+});
+
+describe("checkGitignoreCoversNax — retired acceptance-test patterns", () => {
+  const COVERING = [
+    "nax.lock",
+    ".nax/**/runs/",
+    ".nax/metrics.json",
+    ".nax-pids",
+    ".nax-wt/",
+    "**/_nax_suggested_test.py",
+    "**/.nax/features/*/fragments/",
+  ];
+
+  test("no longer requires the acceptance-test patterns", async () => {
+    const workdir = makeTempDir("nax-gitignore-test-");
+    writeFileSync(join(workdir, ".gitignore"), COVERING.join("\n"));
+
+    const result = await checkGitignoreCoversNax(workdir);
+    expect(result.passed).toBe(true);
+  });
+
+  test("warns and names a retired pattern still present, since it hides the committed acceptance tests", async () => {
+    const workdir = makeTempDir("nax-gitignore-test-");
+    writeFileSync(join(workdir, ".gitignore"), [...COVERING, "**/.nax-acceptance*"].join("\n"));
+
+    const result = await checkGitignoreCoversNax(workdir);
+    expect(result.passed).toBe(false);
+    expect(result.message).toContain("**/.nax-acceptance*");
+    expect(result.message).not.toContain("_nax_acceptance_test.py");
+  });
+
+  test("a commented-out retired pattern is not active and does not warn", async () => {
+    const workdir = makeTempDir("nax-gitignore-test-");
+    writeFileSync(join(workdir, ".gitignore"), [...COVERING, "# **/.nax-acceptance*"].join("\n"));
+
+    const result = await checkGitignoreCoversNax(workdir);
+    expect(result.passed).toBe(true);
   });
 });
 

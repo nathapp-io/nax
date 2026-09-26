@@ -60,8 +60,6 @@ export const NAX_GITIGNORE_ENTRIES = [
   ...FEATURE_RUN_ARTIFACTS,
   ".nax-pids",
   ".nax-wt/",
-  "**/.nax-acceptance*",
-  "**/_nax_acceptance_test.py",
   "**/_nax_suggested_test.py",
   ".nax/prompt-audit/",
   // Only reached when a run has no outputDir — nax-finish normally writes its
@@ -105,6 +103,27 @@ export const NAX_GITIGNORE_ENTRIES = [
  * suggestion block written at file creation (`NAX_NAXIGNORE_SUGGESTIONS`),
  * not here. Only the entries in this list take part in re-run reconciliation.
  */
+/**
+ * Entries nax used to ignore and now wants tracked.
+ *
+ * `.git/info/exclude` is reconciled additively, so dropping an entry from
+ * `NAX_GITIGNORE_ENTRIES` alone leaves it active in every existing clone.
+ * `WorktreeManager.ensureGitExcludes()` removes these lines, and the precheck
+ * warns when a project `.gitignore` still carries one.
+ *
+ * The acceptance tests are the feature's executable spec, paired with the
+ * committed `acceptance-meta.json`. Ignoring them let a `git reset` restore the
+ * fingerprint but not the file, so a resumed run "reused" a test file that no
+ * longer existed.
+ */
+export const NAX_RETIRED_GITIGNORE_ENTRIES = ["**/.nax-acceptance*", "**/_nax_acceptance_test.py"] as const;
+
+/** Retired entries still in force in `content` — commented-out lines do not count. */
+export function activeRetiredEntries(content: string): string[] {
+  const active = new Set(activeIgnoreLines(content));
+  return NAX_RETIRED_GITIGNORE_ENTRIES.filter((entry) => active.has(entry));
+}
+
 export const NAX_NAXIGNORE_ENTRIES = [
   // nax's own state: prd.json, run logs, fragments. Feeding these back into
   // the context engine as if they were project source is pure noise.
