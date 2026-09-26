@@ -29,10 +29,15 @@ import { type SpawnOptions, type SpawnResult, typedSpawn } from "@/utils/bun-dep
 import { gitlinkSafeAdd } from "@/utils/git-add";
 import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
 
-/** Pathspec exclusion that hides the repo-root `.nax/` directory and its contents. */
-const NAX_EXCLUDE_PATHSPEC = ":!.nax";
-/** Pathspec exclusion that hides a `.nax/` directory nested below the cwd. */
-const NAX_NESTED_EXCLUDE_PATHSPEC = ":(glob,exclude)**/.nax/**";
+/**
+ * `diffBetween` pathspecs: the whole tree, minus every `.nax/` directory. All
+ * three are anchored at the repo top (`:/`, `top` magic), so the diff is the
+ * same whatever the cwd, matching the repo-wide `changedPathsBetween`.
+ */
+const DIFF_PATHSPECS = [":/", ":(top,exclude).nax", ":(top,glob,exclude)**/.nax/**"] as const;
+
+/** A git object id: 40 hex (SHA-1) or 64 hex (SHA-256 repositories). */
+const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /**
  * Injectable spawn seam — mirrors `_gitDeps.spawn` (`src/utils/git.ts`) and
@@ -153,14 +158,14 @@ export async function snapshotWorkingTree(workdir: string): Promise<string> {
 
     // `git write-tree` reads the throwaway index and emits its tree id.
     // Output goes to stdout; trailing newline trimmed. The empty-tree case
-    // (an index with no entries) would still produce a valid 40-hex id, and
+    // (an index with no entries) would still produce a valid object id, and
     // a fresh repo with no commits is already rejected at `read-tree HEAD`.
     const write = await runGit(["write-tree"], workdir, indexOverlay);
     if (write.exitCode !== 0)
       gitFailed(stage, ["write-tree"], workdir, write.stderr.trim() || `exit ${write.exitCode}`);
 
     const tree = write.stdout.trim();
-    if (!/^[0-9a-f]{40}$/.test(tree)) {
+    if (!OBJECT_ID.test(tree)) {
       gitFailed(stage, ["write-tree"], workdir, `unexpected tree id: ${tree}`);
     }
     return tree;
@@ -177,52 +182,33 @@ export async function snapshotWorkingTree(workdir: string): Promise<string> {
 /**
  * Repo-root-relative paths that differ between two tree-ishes (no rename detection).
  *
- * `git diff --name-only --no-renames <from> <to>` lists every changed path
- * relative to the repo root, regardless of where the command runs. From a
- * subdirectory cwd (a package story's `workdir`), git shows only the paths
- * under that subtree — exactly the per-package scoping AC7 wants.
+ * A tree-to-tree `git diff --name-only` is not limited by the cwd, so from a
+ * package `workdir` it still lists every changed path in the repo, relative to
+ * the repo root. `-z` makes git print each path verbatim, NUL-terminated: no
+ * C-quoting of non-ASCII names, and no line splitting that would break on a
+ * newline or strip surrounding spaces.
  */
 export async function changedPathsBetween(workdir: string, from: string, to: string): Promise<string[]> {
   const stage = "fix-review-changed-paths";
-  const result = await runGit(["diff", "--name-only", "--no-renames", from, to], workdir);
-  if (result.exitCode !== 0) {
-    gitFailed(
-      stage,
-      ["diff", "--name-only", "--no-renames", from, to],
-      workdir,
-      result.stderr.trim() || `exit ${result.exitCode}`,
-    );
-  }
-  // Output is one repo-root-relative path per line. An empty stdout means
-  // `from` and `to` describe the same tree — NOT "git failed"; the non-zero
-  // exit above already covers the git-failed case.
-  return result.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  const args = ["diff", "--name-only", "-z", "--no-renames", from, to];
+  const result = await runGit(args, workdir);
+  if (result.exitCode !== 0) gitFailed(stage, args, workdir, result.stderr.trim() || `exit ${result.exitCode}`);
+  // An empty stdout means `from` and `to` describe the same tree — NOT "git
+  // failed"; the non-zero exit above already covers that case.
+  return result.stdout.split("\0").filter((path) => path.length > 0);
 }
 
 /**
- * Unified diff between two tree-ishes, excluding paths under `.nax/`.
+ * Unified diff between two tree-ishes, excluding every `.nax/` directory.
  *
- * Mirrors the per-package scoping of `changedPathsBetween`: from a package
- * cwd, git shows only files under that subtree, and the `.nax/` exclusion
- * uses two pathspecs — one for the cwd-level `.nax/` directory and one for
- * nested `.nax/` directories — so neither slips through the filter.
+ * Repo-wide like `changedPathsBetween`, so the diff the reviewer reads covers
+ * exactly the files the scope check judged. A cwd-scoped diff from a package
+ * workdir would hide an out-of-package change the scope check had allowed.
  */
 export async function diffBetween(workdir: string, from: string, to: string): Promise<string> {
   const stage = "fix-review-diff";
-  const result = await runGit(
-    ["diff", from, to, "--", ".", NAX_EXCLUDE_PATHSPEC, NAX_NESTED_EXCLUDE_PATHSPEC],
-    workdir,
-  );
-  if (result.exitCode !== 0) {
-    gitFailed(
-      stage,
-      ["diff", from, to, "--", ".", NAX_EXCLUDE_PATHSPEC, NAX_NESTED_EXCLUDE_PATHSPEC],
-      workdir,
-      result.stderr.trim() || `exit ${result.exitCode}`,
-    );
-  }
+  const args = ["diff", from, to, "--", ...DIFF_PATHSPECS];
+  const result = await runGit(args, workdir);
+  if (result.exitCode !== 0) gitFailed(stage, args, workdir, result.stderr.trim() || `exit ${result.exitCode}`);
   return result.stdout;
 }

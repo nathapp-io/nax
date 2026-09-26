@@ -165,7 +165,7 @@ async function runWrappedDispatch(options: RunOptions = {}): Promise<Run> {
       if (argv.includes("--no-renames")) {
         const from = cmd[cmd.indexOf("--no-renames") + 1];
         const paths = from === STORY_REF ? (options.storyPaths ?? []) : (options.fixPaths ?? [CHANGED_TEST_PATH]);
-        return fakeProc(paths.length === 0 ? "" : `${paths.join("\n")}\n`);
+        return fakeProc(paths.length === 0 ? "" : `${paths.join("\0")}\0`);
       }
       if (argv.includes("diff")) return fakeProc(SMALL_DIFF);
       return fakeProc("");
