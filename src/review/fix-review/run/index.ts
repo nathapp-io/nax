@@ -43,6 +43,12 @@ export interface FixReviewDeps {
   changedPathsBetween: typeof changedPathsBetween;
   diffBetween: typeof diffBetween;
   /**
+   * The deterministic scope check. Injectable so a unit test can pin the
+   * scope-fail branch (spec US-003 AC12/AC19) without arranging real changed
+   * paths for every case; production always uses `checkFixScope`.
+   */
+  checkFixScope: typeof checkFixScope;
+  /**
    * The dispatch-events audit seam. The real implementation lives in
    * `src/execution/story-orchestrator/review-decision.ts`, which `src/review`
    * cannot reach: `noRestrictedImports` bans the `../../` form and
@@ -60,6 +66,7 @@ const DEFAULT_DEPS: FixReviewDeps = {
   snapshotWorkingTree,
   changedPathsBetween,
   diffBetween,
+  checkFixScope,
   emitReviewDecision: () => {},
   resolveTestFilePatterns,
 };
@@ -147,19 +154,22 @@ export async function runFixReview(
 
   // ── Stage 3: deterministic scope check ──────────────────────────────────
   const packageDirRel = packageDirRelFromCtx(ctx);
-  // Anchor on the repo root (workdir) when building the classifier — the
-  // project's `.nax/config.json` lives there and is read directly by
-  // `resolveTestFilePatterns`. Pass `undefined` for packageDir when the story
-  // is rooted at the repo root (single-package project).
+  // Anchor on the repo root when building the classifier — the project's
+  // `.nax/config.json` and its `.nax/mono/<pkg>/config.json` overrides live
+  // there, and `resolveTestFilePatterns` reads them relative to its `workdir`
+  // argument (`ctx.runtime.projectDir`), not the git cwd (`req.workdir`, the
+  // story's package dir). Pass `undefined` for packageDir when the story is
+  // rooted at the repo root (single-package project). Mirrors
+  // `createMeasureSourceDiff` (`src/execution/non-blocking-fix.ts`).
   const fullConfig: TestPatternConfig = ctx.config ?? ctx.packageView.config;
   const resolved = await d.resolveTestFilePatterns(
     fullConfig,
-    req.workdir,
+    ctx.runtime.projectDir,
     packageDirRel === "" ? undefined : packageDirRel,
   );
   const isTestFile = createTestFileClassifier(resolved);
 
-  const scope = checkFixScope({
+  const scope = d.checkFixScope({
     changedFiles: fixFiles,
     storyFiles,
     story: req.story,

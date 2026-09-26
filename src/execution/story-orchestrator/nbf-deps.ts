@@ -20,6 +20,13 @@ import type { NonBlockingFixDeps } from "../non-blocking-fix";
 import { createMeasureSourceDiff } from "../non-blocking-fix";
 import { emitReviewDecision } from "./review-decision";
 
+/**
+ * Injectable seam for the review runner the NBF keep gate dispatches. Mirrors
+ * `_nonBlockingFixDeps` / `_storyOrchestratorDeps` so a test can observe the
+ * wiring without `mock.module()`. Production uses the real `runFixReview`.
+ */
+export const _nbfDeps = { runFixReview };
+
 export function buildNbfDeps(args: { ctx: CallContext; findings: readonly Finding[] }): Partial<NonBlockingFixDeps> {
   const { ctx, findings } = args;
   const deps: Partial<NonBlockingFixDeps> = {
@@ -37,7 +44,7 @@ export function buildNbfDeps(args: { ctx: CallContext; findings: readonly Findin
     // pattern for its `TestPatternConfig`.
     const reviewConfig = ctx.config?.review ?? ctx.packageView.config.review;
     deps.reviewFix = (preFixRef) =>
-      runFixReview(
+      _nbfDeps.runFixReview(
         ctx,
         {
           workdir: ctx.packageDir,

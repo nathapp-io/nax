@@ -19,11 +19,16 @@
  * the fix review needs that spelling (ADR-032).
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertNaxError, cleanupTempDir, makeTempDir, withTempDir } from "@test/helpers";
 import { NaxError } from "@/errors";
-import { changedPathsBetween, diffBetween, snapshotWorkingTree } from "@/review/fix-review/tree-snapshot";
+import {
+  _treeSnapshotDeps,
+  changedPathsBetween,
+  diffBetween,
+  snapshotWorkingTree,
+} from "@/review/fix-review/tree-snapshot";
 
 let testDir: string;
 let repo: string;
@@ -138,6 +143,28 @@ describe("snapshotWorkingTree", () => {
       assertNaxError(err, "snapshotWorkingTree outside a git repository");
       expect(err.code).toBe("FIX_REVIEW_GIT_FAILED");
     });
+  });
+
+  test("reclaims its throwaway index directory with a recursive rm", async () => {
+    const rmCalls: { path: string; options?: { recursive?: boolean; force?: boolean } }[] = [];
+    const origRm = _treeSnapshotDeps.rm;
+    Object.assign(_treeSnapshotDeps, {
+      rm: async (path: string, options?: { recursive?: boolean; force?: boolean }) => {
+        rmCalls.push({ path, options });
+        return origRm(path, options);
+      },
+    });
+    try {
+      await snapshotWorkingTree(repo);
+    } finally {
+      Object.assign(_treeSnapshotDeps, { rm: origRm });
+    }
+
+    // A non-recursive `fs.rm` on a directory rejects ERR_FS_EISDIR and would
+    // leave the temp dir behind on every snapshot; the options are load-bearing.
+    expect(rmCalls).toHaveLength(1);
+    expect(rmCalls[0]?.options).toEqual({ recursive: true, force: true });
+    expect(existsSync(rmCalls[0]?.path ?? "")).toBe(false);
   });
 });
 

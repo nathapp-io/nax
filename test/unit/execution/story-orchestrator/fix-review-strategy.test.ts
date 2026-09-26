@@ -57,6 +57,8 @@ const SEEDED_PATH = "src/nax-us-005-seeded-path.ts";
 const SEED_MESSAGE = "the empty path skips the DELETE";
 const CONTRADICTION_REASON = "drops the AC-2 assertion";
 const CONTRADICTION_ANSWER = `{"passed":false,"reason":"${CONTRADICTION_REASON}","acIndex":2}`;
+/** A contradiction whose `file` is spelled repo-root-relative, as the prompt asks. */
+const CONTRADICTION_ANSWER_WITH_FILE = `{"passed":false,"reason":"${CONTRADICTION_REASON}","acIndex":2,"file":"packages/a/src/x.ts"}`;
 const UNANCHORED_CONTRADICTION_ANSWER = '{"passed":false,"reason":"removes the guard from removeApprovals"}';
 const PASS_ANSWER = '{"passed":true,"reason":"consistent with the ACs"}';
 /** No JSON object at all — `runFixReview` reports this as `kind: "error"`. */
@@ -112,6 +114,8 @@ interface RunOptions {
   readonly findings?: readonly Finding[];
   /** How many times to dispatch the wrapped strategy (default 1). */
   readonly dispatches?: number;
+  /** The story's package dir relative to the repo root (monorepo frame tests). */
+  readonly storyWorkdir?: string;
 }
 
 interface Run {
@@ -172,7 +176,11 @@ async function runWrappedDispatch(options: RunOptions = {}): Promise<Run> {
   });
 
   const config = makeNaxConfig({ quality: { autofix: { enabled: true } } });
-  const story = makeStory({ id: "US-005", storyGitRef: STORY_REF });
+  const story = makeStory({
+    id: "US-005",
+    storyGitRef: STORY_REF,
+    ...(options.storyWorkdir ? { workdir: options.storyWorkdir } : {}),
+  });
   const runtime = makeTestRuntime({
     config,
     agentManager: makeMockAgentManager({
@@ -262,6 +270,20 @@ describe("createFixReviewWrapper — the AC-anchored contradiction it feeds back
     // on every later postValidate, re-dispatching a fix for a contradiction the
     // cycle already answered.
     expect(run.drainedAgain).toEqual([]);
+  });
+
+  test("US-005 AC8: a monorepo verdict file is re-spelled from repo-root-relative into the workdir frame", async () => {
+    const run = await runWrappedDispatch({
+      answer: CONTRADICTION_ANSWER_WITH_FILE,
+      findings: [seedFinding({ file: CHANGED_TEST_PATH })],
+      storyWorkdir: "packages/a",
+    });
+
+    // The reviewer names `packages/a/src/x.ts` (the frame the embedded diff
+    // prints); `Finding.file` is workdir-relative, so the queued finding must
+    // drop the package prefix or downstream fix targeting would double-join it.
+    expect(run.drained).toHaveLength(1);
+    expect(run.drained[0]?.file).toBe("src/x.ts");
   });
 
   test("US-005 AC8 boundary: one contradictory dispatch queues one finding each time", async () => {

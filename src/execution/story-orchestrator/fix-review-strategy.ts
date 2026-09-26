@@ -25,9 +25,22 @@ import { runFixReview } from "@/review/fix-review/run";
 import { snapshotWorkingTree } from "@/review/fix-review/tree-snapshot";
 import type { FixReviewVerdict } from "@/review/fix-review/types";
 import type { ReviewConfig } from "@/review/types";
+import { storyPackageDir } from "@/utils/path-frame";
+import { emitReviewDecision } from "./review-decision";
 
 /** The warning the wrapper emits for every non-pass it does not feed back. */
 const NON_PASS_WARNING = "fix review non-pass not fed back";
+
+/**
+ * Injectable seam for the wrapper's two module-boundary calls: the working-tree
+ * snapshot taken before the dispatch and the scoped review run after it. Mirrors
+ * `_treeSnapshotDeps` / `_storyOrchestratorDeps` so a unit test can observe or
+ * stub the review without `mock.module()`. Production uses the real functions.
+ */
+export const _fixReviewStrategyDeps = {
+  runFixReview,
+  snapshotWorkingTree,
+};
 
 /**
  * Whether `acIndex` is a structurally valid 1-based index into
@@ -111,6 +124,24 @@ export function toFixReviewFinding(verdict: AnchoredContradiction): Finding {
   return finding;
 }
 
+/**
+ * Re-spell a verdict's `file` from the reviewer's repo-root-relative frame into
+ * the workdir-relative frame `Finding.file` requires.
+ *
+ * The prompt asks for the repo-root-relative path (the frame `git diff` prints),
+ * but the queued finding is consumed in the story's workdir, so in a monorepo a
+ * path carrying the package prefix (`packages/a/src/x.ts`) must lose it before
+ * it becomes a `Finding`. A path outside the package dir is left unchanged —
+ * the workdir-relative frame cannot express it, and `isWorkdirRelativeFile`
+ * still guards the shape.
+ */
+function toWorkdirRelativeVerdict(verdict: AnchoredContradiction, packageDirRel: string): AnchoredContradiction {
+  if (packageDirRel === "" || verdict.file === undefined) return verdict;
+  const prefix = `${packageDirRel}/`;
+  if (!verdict.file.startsWith(prefix)) return verdict;
+  return { ...verdict, file: verdict.file.slice(prefix.length) };
+}
+
 /** Build the wrapper that reviews each dispatch of the strategy it wraps. */
 export function createFixReviewWrapper(args: {
   ctx: CallContext;
@@ -120,6 +151,9 @@ export function createFixReviewWrapper(args: {
   const { ctx, story, config } = args;
   const logger = getSafeLogger();
   const queue: Finding[] = [];
+  // The story's package dir relative to the repo root; "" at the root. Used to
+  // re-spell the verdict's repo-root-relative `file` into the workdir frame.
+  const packageDirRel = storyPackageDir(story) ?? "";
 
   return {
     wrap<F extends Finding, I, O, C>(strategy: FixStrategy<F, I, O, C>): FixStrategy<F, I, O, C> {
@@ -174,7 +208,7 @@ export function createFixReviewWrapper(args: {
           // warning and skip the review for this dispatch: a review without a
           // pre-fix tree has no ground truth, so it would either no-op or lie.
           try {
-            preFixTree = await snapshotWorkingTree(ctx.packageDir);
+            preFixTree = await _fixReviewStrategyDeps.snapshotWorkingTree(ctx.packageDir);
           } catch (err) {
             preFixTree = undefined;
             logger?.warn("fix-review", "snapshot failed — review skipped for this dispatch", {
@@ -199,13 +233,21 @@ export function createFixReviewWrapper(args: {
           // path (defensive — `beforeDispatch` always runs first in practice).
           const reviewCtx = dispatchCtx ?? ctx;
           try {
-            const verdict = await runFixReview(reviewCtx, {
-              workdir: ctx.packageDir,
-              story,
-              preFixTree,
-              findings: pendingFindings,
-              config,
-            });
+            const verdict = await _fixReviewStrategyDeps.runFixReview(
+              reviewCtx,
+              {
+                workdir: ctx.packageDir,
+                story,
+                preFixTree,
+                findings: pendingFindings,
+                config,
+              },
+              // ADR-033: every LLM verdict is recorded in review-audit. The runner's
+              // own default emitter is a no-op (it cannot import the emitter from
+              // `src/review`), so the wiring layer injects it — exactly as
+              // `buildNbfDeps` does for the NBF keep gate.
+              { emitReviewDecision },
+            );
             // Only an AC-anchored contradiction feeds back. Everything else warns
             // and is dropped, per nax#1359. `isValidAcIndex` rejects acIndex 0,
             // negative, non-integer, NaN, or out-of-range values — all of which
@@ -216,12 +258,15 @@ export function createFixReviewWrapper(args: {
               verdict.cause === "contradiction" &&
               isValidAcIndex(verdict.acIndex, story)
             ) {
-              queue.push(toFixReviewFinding(verdict as AnchoredContradiction));
+              queue.push(toFixReviewFinding(toWorkdirRelativeVerdict(verdict as AnchoredContradiction, packageDirRel)));
             } else if (verdict.kind !== "pass") {
               logger?.warn("fix-review", NON_PASS_WARNING, {
                 storyId: story.id,
                 kind: verdict.kind,
-                cause: verdict.kind === "fail" ? verdict.cause : undefined,
+                // A `fail` carries its own cause (`scope` | `contradiction`); an
+                // `error` has none, so its `cause` is the verdict kind. Keeps the
+                // spec's `{ storyId, kind, cause, reason }` shape total.
+                cause: verdict.kind === "fail" ? verdict.cause : verdict.kind,
                 reason: verdict.reason,
               });
             }

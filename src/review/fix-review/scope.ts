@@ -61,13 +61,15 @@ function buildAllowedSet(input: FixScopeInput): Set<string> {
 }
 
 /**
- * A path is `.nax/` when it IS `.nax` or starts with `.nax/`. `docs/.nax-notes.md`
- * and `.nax-backup/state.json` are NOT under `.nax/` — only the bare `.nax/`
- * directory and anything beneath it. A simple prefix on the string would let
- * those through; the slash keeps the boundary at the directory.
+ * A path is under a `.nax/` directory when any of its segments IS `.nax`.
+ * Matching the segment anywhere (not only at the repo root) exempts a nested
+ * monorepo artifact such as `packages/a/.nax/state.json` too — the same set
+ * `diffBetween` hides from the embedded diff. `docs/.nax-notes.md`
+ * and `.nax-backup/state.json` are NOT under `.nax/`: the segment must be
+ * exactly `.nax`, so a prefix on the string would let those through.
  */
 function isUnderNaxDir(path: string): boolean {
-  return path === ".nax" || path.startsWith(".nax/");
+  return path.split("/").some((segment) => segment === ".nax");
 }
 
 export function checkFixScope(input: FixScopeInput): FixScopeResult {

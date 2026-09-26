@@ -230,6 +230,15 @@ describe("checkFixScope", () => {
     expect(result.outOfScopeFiles).toEqual(["docs/.nax-notes.md", ".nax-backup/state.json"]);
   });
 
+  test("AC17: ignores a changed path under a nested per-package .nax/ directory (monorepo)", () => {
+    const result = checkFixScope(
+      scopeInput({ changedFiles: ["packages/a/.nax/state.json", "packages/a/.nax", "apps/web/.nax/cache.json"] }),
+    );
+
+    expect(result.inScope).toBe(true);
+    expect(result.outOfScopeFiles).toEqual([]);
+  });
+
   test("AC18: reports a changed non-test file that is in no allowed set", () => {
     const result = checkFixScope(
       scopeInput({

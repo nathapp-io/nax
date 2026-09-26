@@ -44,7 +44,7 @@ const NAX_NESTED_EXCLUDE_PATHSPEC = ":(glob,exclude)**/.nax/**";
 export interface TreeSnapshotDeps {
   readonly spawn: (cmd: string[], opts: SpawnOptions) => SpawnResult;
   readonly mkdtemp: (prefix: string) => Promise<string>;
-  readonly rm: (path: string) => Promise<void>;
+  readonly rm: (path: string, options?: { recursive?: boolean; force?: boolean }) => Promise<void>;
   readonly tmpdir: () => string;
 }
 
@@ -165,8 +165,10 @@ export async function snapshotWorkingTree(workdir: string): Promise<string> {
   } finally {
     // Best-effort cleanup — a leftover temp dir on disk is not a correctness
     // issue (the repo's own index is untouched), but `os.tmpdir()` would
-    // accumulate one per snapshot call otherwise.
-    await _treeSnapshotDeps.rm(tempDir).catch(() => {});
+    // accumulate one per snapshot call otherwise. `fs.rm` on a directory is
+    // non-recursive by default and rejects `ERR_FS_EISDIR`, so the temp dir
+    // (which holds the throwaway `index`) must be removed with `recursive`.
+    await _treeSnapshotDeps.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
