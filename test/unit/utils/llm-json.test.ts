@@ -217,6 +217,32 @@ describe("parseLLMJson", () => {
     expect(parseLLMJson<Obj>(input)).toEqual({ a: 1 });
   });
 
+  // #2264: when the outermost object never closes, every later `{` sits inside
+  // it. Returning one of those balanced inner objects hands the caller a
+  // fragment it cannot tell apart from a real top-level result.
+  test("does not return a nested object when the outer object is truncated", () => {
+    const input = '{"version":1,"tests":{"passCount":27},"details":{"a":1},"reasoning":"ok"';
+    expect(() => parseLLMJson(input)).toThrow(SyntaxError);
+  });
+
+  test("still skips a balanced prose brace to reach a later truncated payload's failure", () => {
+    expect(() => parseLLMJson('see { this } then {"a": {"b": 1}')).toThrow(SyntaxError);
+  });
+
+  // Counter-examples: an UNMATCHED prose brace is not a truncated payload, so
+  // a later independent payload must still be found.
+  test.each<[string, Obj | number[]]>([
+    ['Use { to start objects (see docs). Result: {"a":1}', { a: 1 }],
+    ['Don\'t forget the opening { char. {"a":{"b":1}}', { a: { b: 1 } }],
+    ["Note the { char used to open objects. Result: [1,2,3]", [1, 2, 3]],
+  ])("finds the payload after an unmatched prose brace: %s", (input, expected) => {
+    expect(parseLLMJson<Obj | number[]>(input)).toEqual(expected);
+  });
+
+  test("does not return a nested array when the outer object is truncated", () => {
+    expect(() => parseLLMJson('{"files":[1,2],"note":"cut"')).toThrow(SyntaxError);
+  });
+
   // Counter-example — a `}` inside a JSON string must still parse correctly
   // (string-state tracking must not be broken by the brace-balancing fix).
   test("counter-example — a closing brace inside a JSON string still parses", () => {

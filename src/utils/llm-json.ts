@@ -177,27 +177,76 @@ function findBalancedSpanEnd(text: string, openIndex: number): number {
 const MAX_JSON_CANDIDATES = 50;
 
 /**
+ * True when the never-closed container opening at `openIndex` is a truncated
+ * JSON payload: appending the closers it is missing makes it parse. A stray
+ * prose brace (`Use { to open objects. Result: {"a":1}`) does not, which is
+ * what separates the two.
+ */
+function isTruncatedJsonPayload(text: string, openIndex: number): boolean {
+  const closers: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (let i = openIndex; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+    } else if (ch === "{" || ch === "[") {
+      closers.push(ch === "{" ? "}" : "]");
+    } else if (ch === "}" || ch === "]") {
+      if (closers.pop() !== ch) return false;
+    }
+  }
+  if (inString || closers.length === 0) return false;
+  try {
+    JSON.parse(stripTrailingCommas(text.slice(openIndex) + closers.reverse().join("")));
+    return true;
+  } catch {
+    return false; // not a truncated payload, just an unmatched brace
+  }
+}
+
+/** Result of a balanced-candidate scan. */
+interface CandidateScan<T> {
+  /** Parsed value of the first valid candidate, or undefined when none parsed. */
+  readonly value: T | undefined;
+  /** Index of a truncated payload's opener that stopped the scan, or -1. */
+  readonly truncatedAt: number;
+}
+
+/**
  * Scan `text` for `openChar`/matching-closer candidates in order, and return
  * the parsed value of the first candidate whose balanced span is valid JSON.
  * This handles prose braces preceding the real payload (e.g.
  * `the { payload } was: {"a": 1}`) — the first candidate is structurally
  * balanced but not valid JSON, so the scan moves on to the next `{`.
- * Returns undefined when no candidate parses.
+ *
+ * The scan stops at an opener that never closes when it is a truncated JSON
+ * payload. Every later opener lies inside it, so its balanced span is a nested
+ * fragment, not a top-level result (#2264: a verdict one `}` short parsed as
+ * its inner `tests` object). An unmatched prose brace is skipped as before.
+ * Only openers before `limit` are considered.
  */
-function parseFirstBalancedJsonCandidate<T>(text: string, openChar: "{" | "["): T | undefined {
+function parseFirstBalancedJsonCandidate<T>(text: string, openChar: "{" | "[", limit = text.length): CandidateScan<T> {
   let candidates = 0;
-  for (let i = 0; i < text.length; i++) {
+  for (let i = 0; i < limit; i++) {
     if (text[i] !== openChar) continue;
-    if (candidates++ >= MAX_JSON_CANDIDATES) return undefined;
+    if (candidates++ >= MAX_JSON_CANDIDATES) return { value: undefined, truncatedAt: -1 };
     const end = findBalancedSpanEnd(text, i);
-    if (end === -1) continue;
+    if (end === -1) {
+      if (isTruncatedJsonPayload(text, i)) return { value: undefined, truncatedAt: i };
+      continue;
+    }
     try {
-      return JSON.parse(stripTrailingCommas(text.slice(i, end + 1))) as T;
+      return { value: JSON.parse(stripTrailingCommas(text.slice(i, end + 1))) as T, truncatedAt: -1 };
     } catch {
       /* this candidate's span isn't valid JSON — try the next one */
     }
   }
-  return undefined;
+  return { value: undefined, truncatedAt: -1 };
 }
 
 /**
@@ -311,11 +360,13 @@ function parseJsonTiers<T>(trimmed: string): T | undefined {
 
   // Tier 3a: bare JSON object — brace-balanced scan for { … }, trying each
   // `{` candidate in order (handles prose braces before the real payload).
-  const objResult = parseFirstBalancedJsonCandidate<T>(trimmed, "{");
-  if (objResult !== undefined) return objResult;
+  const objScan = parseFirstBalancedJsonCandidate<T>(trimmed, "{");
+  if (objScan.value !== undefined) return objScan.value;
 
-  // Tier 3b: bare JSON array — fallback to a bracket-balanced [ … ] scan
-  return parseFirstBalancedJsonCandidate<T>(trimmed, "[");
+  // Tier 3b: bare JSON array — fallback to a bracket-balanced [ … ] scan.
+  // An array after a truncated `{` payload is nested inside it, so out of reach.
+  const arrayLimit = objScan.truncatedAt === -1 ? trimmed.length : objScan.truncatedAt;
+  return parseFirstBalancedJsonCandidate<T>(trimmed, "[", arrayLimit).value;
 }
 
 /**
