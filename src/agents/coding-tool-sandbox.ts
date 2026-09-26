@@ -76,8 +76,8 @@ export async function resolveSessionSandbox(args: {
   // Review #17: literal() refuses a glob character in any policy path, and the
   // probe builds its own policy, so a repo path like `re[x]po` passed the probe
   // and then failed every command. Build the policy once here instead.
-  // Residual: a feature directory created mid-run with a glob character still
-  // fails per command.
+  // The old residual (a glob-named feature dir created mid-run failing every
+  // command) is gone: listNaxEntries skips glob-named `.nax` entries (nax#2260).
   const policyError = await literalPolicyError(policyFor, args.root);
   if (policyError !== undefined) {
     warnSandboxUnavailableOnce(policyError, args.storyId);

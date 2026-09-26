@@ -71,9 +71,18 @@ describe("buildSandboxPolicy", () => {
     ]);
   });
 
-  test("#2260: rules, context.md, config.json and mono are denied even when absent", () => {
+  test("#2260: every entry nax loads as input is denied even when absent (rules, hooks, plugins, prompt templates)", () => {
     const policy = buildSandboxPolicy(input({ naxEntries: [] }));
-    for (const name of ["config.json", "mono", "rules", "context.md"]) {
+    for (const name of [
+      "config.json",
+      "mono",
+      "rules",
+      "context.md",
+      "hooks.json",
+      "plugins",
+      "templates",
+      "prompts",
+    ]) {
       expect(policy.denyWrite).toContain(join(root, ".nax", name));
     }
   });

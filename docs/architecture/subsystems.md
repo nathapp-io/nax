@@ -2108,8 +2108,10 @@ Paths must be literal (no glob characters — srt silently drops globbed entries
 - `policy-builder.ts` (pure) + `policy-inputs.ts` (I/O) — per-call policy, rebuilt
   each command and realpath-resolved: write roots (story root, temp roots,
   package-manager caches, `filesystem.allowWrite`); write denies for every
-  top-level `.nax/` entry except `scratchpad/` (plus `config.json`, `mono/`,
-  `rules/`, `context.md` even when absent, minus allowWrite opt-ins, nax#2260),
+  top-level `.nax/` entry except `scratchpad/` (plus the entries nax loads as
+  input -- `config.json`, `mono/`, `rules/`, `context.md`, `hooks.json`,
+  `plugins/`, `templates/`, `prompts/` -- even when absent, minus allowWrite
+  opt-ins, nax#2260),
   the queue-control files, git internals / redirect files and `approvals.json`; read denies for
   credential stores (`~/.ssh`, `~/.aws`, `~/.config/gh`, …, nax's own credentials,
   `filesystem.denyRead`).

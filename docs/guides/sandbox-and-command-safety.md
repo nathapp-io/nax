@@ -63,14 +63,17 @@ and every path in it is literal and realpath-resolved.
 | | Paths |
 |:--|:--|
 | **Writable** | the story root (repo or worktree); the system temp dir and `/tmp`; package-manager caches under `$HOME` (`.bun/install/cache`, `.npm`, `.cache`, `.cargo/registry`, `.cargo/git`, `go/pkg/mod`, `.gradle/caches`, `.m2/repository`, `.pnpm-store`; plus `Library/Caches` and `/tmp/claude` on macOS); `filesystem.allowWrite` |
-| **Write-denied inside those** | every top-level `.nax/` entry except `.nax/scratchpad/` (whole: `features/`, `rules/`, `cache/`, ...), plus `.nax/config.json`, `.nax/mono/`, `.nax/rules/` and `.nax/context.md` even when absent; the root queue files (`.queue.txt`, `.queue.txt.processing`), the approvals file, and the git guards below |
+| **Write-denied inside those** | every top-level `.nax/` entry except `.nax/scratchpad/` (whole: `features/`, `rules/`, `cache/`, ...), plus the entries nax loads as input even when absent (`config.json`, `mono/`, `rules/`, `context.md`, `hooks.json`, `plugins/`, `templates/`, `prompts/`); the root queue files (`.queue.txt`, `.queue.txt.processing`), the approvals file, and the git guards below |
 | **Unreadable** | `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.docker/config.json`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/.config/gh`, nax's own `credentials*` files; `filesystem.denyRead` |
 | **Network** | unrestricted unless `network.allowedDomains` is set |
 
 The file tools (Write, Edit, Delete, GitCommit) apply the same `.nax/` rule in-process, with
-one addition the sandbox cannot express: files directly inside a feature directory, such as
-its acceptance test, stay writable, because acceptance generation and test-fix write them.
-A feature's subdirectories (`stories/`, `sessions/`, ...) do not.
+one addition the sandbox cannot express: a test file directly inside a feature directory (the
+acceptance and suggested tests, or a custom `acceptance.testPath`) stays writable, because
+acceptance generation and test-fix write them. The feature's `context.md`, spec, state files
+and subdirectories (`stories/`, `sessions/`, ...) do not. A test runner that writes next to
+the acceptance test from Bash, such as a first snapshot into `__snapshots__/`, is refused;
+Python's `__pycache__` write fails silently and is harmless.
 
 The agent is told all of this in the tool description, and a wrapped command whose stderr
 looks like a sandbox denial (`Operation not permitted`, `Read-only file system`) gets a note

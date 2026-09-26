@@ -30,11 +30,30 @@ export const NAX_SCRATCHPAD_ENTRY = "scratchpad";
 const NAX_NEVER_OPT_IN: ReadonlySet<string> = new Set(["config.json", "mono", "features"]);
 
 /**
- * Entries nax reads as human-authored input. The sandbox denies these even
- * when absent, so an agent cannot create one (a new `.nax/rules/x.md` would be
- * injected into every later session's prompt). nax never creates them mid-run.
+ * Entries nax loads as human-authored input. The sandbox denies these even
+ * when absent, so an agent cannot create one: a new `.nax/rules/x.md` would be
+ * injected into every later session's prompt, and `hooks.json` / `plugins/`
+ * run unsandboxed on the next `nax run`. `templates/` and `prompts/` are where
+ * `prompts.overrides` points. nax creates none of them mid-run (CLI only).
  */
-export const NAX_ALWAYS_DENIED_ENTRIES: readonly string[] = ["config.json", "mono", "rules", "context.md"];
+export const NAX_ALWAYS_DENIED_ENTRIES: readonly string[] = [
+  "config.json",
+  "mono",
+  "rules",
+  "context.md",
+  "hooks.json",
+  "plugins",
+  "templates",
+  "prompts",
+];
+
+/**
+ * A test file directly inside a feature dir: the acceptance and suggested
+ * tests under their per-language names (`.nax-acceptance.test.ts`,
+ * `_nax_acceptance_test.py`, `.nax-acceptance.rs`, ...) or a custom
+ * `acceptance.testPath`, which is itself a test file name.
+ */
+const FEATURE_TEST_FILE = /^\.nax-(acceptance|suggested)|[._-](test|spec)\.[a-z0-9]+$/i;
 
 const NO_OPT_INS: ReadonlySet<string> = new Set();
 
@@ -242,9 +261,9 @@ export function naxOwnedWriteRefusal(
 
 /**
  * nax#2260: everything else under `.nax/` is nax's own state. Writable: the
- * scratchpad, files directly inside a feature dir (acceptance and suggested
- * tests, under whatever name acceptance.testPath gives them -- the tool-audit
- * ledgers show these are the only file-tool writes agents need there), and
+ * scratchpad, test files directly inside a feature dir (FEATURE_TEST_FILE --
+ * the tool-audit ledgers show these are the only file-tool writes agents need
+ * there; the feature's context.md, spec and state files stay refused), and
  * opted-in entries. Config files are left to the earlier, more specific
  * `isNaxConfigFile` refusal, which covers reads too.
  */
@@ -253,10 +272,10 @@ function naxStateRefusal(rel: string, optIns: ReadonlySet<string>): string | und
   if (segments[0] !== ".nax" || isNaxConfigSegments(segments)) return undefined;
   const entry = segments[1];
   if (segments.length > 2 && (entry === NAX_SCRATCHPAD_ENTRY || optIns.has(entry ?? ""))) return undefined;
-  if (segments.length === 4 && entry === "features") return undefined;
+  if (segments.length === 4 && entry === "features" && FEATURE_TEST_FILE.test(segments[3] ?? "")) return undefined;
   return (
     `"${rel}" is nax's own state, which agents do not modify. Under .nax/, write only to your scratchpad ` +
-    "(.nax/scratchpad/) or to a file directly inside a feature directory, such as its acceptance test. " +
+    "(.nax/scratchpad/) or to a feature's acceptance test file. " +
     "A human can open a path for a story by listing it in execution.sandbox.filesystem.allowWrite in the project config."
   );
 }

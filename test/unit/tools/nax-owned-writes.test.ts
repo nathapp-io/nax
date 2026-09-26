@@ -68,8 +68,8 @@ describe("naxOwnedWriteRefusal", () => {
     }
   });
 
-  test("allows writes elsewhere under .nax/features", () => {
-    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/notes.md")).toBeUndefined();
+  test("#2260: refuses other non-test files under .nax/features too", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/notes.md")).toBeDefined();
   });
 
   test("allows writes to an ordinary prd.json outside .nax", () => {
@@ -252,15 +252,38 @@ describe("naxOwnedWriteRefusal — .nax/ state (nax#2260)", () => {
     expect(naxOwnedWriteRefusal("Delete", ".nax/scratchpad/deep/notes.md")).toBeUndefined();
   });
 
-  test("allows files directly inside a feature dir: acceptance tests under any configured name", () => {
+  test("refuses a feature dir's own state and context files", () => {
+    const names = [
+      "context.md",
+      "spec.md",
+      "acceptance-meta.json",
+      "acceptance-refined.json",
+      "status.json",
+      "checkpoint.jsonl",
+      "debug-import.ts",
+    ];
+    for (const name of names) expect(naxOwnedWriteRefusal("Write", `.nax/features/auth/${name}`)).toBeDefined();
+  });
+
+  test("allows test-shaped files directly inside a feature dir: acceptance tests under any configured name", () => {
     for (const name of [
       ".nax-acceptance.test.ts",
+      ".nax-acceptance.test.tsx",
       "_nax_acceptance_test.py",
+      ".nax-acceptance_test.go",
+      ".nax-acceptance.rs",
       ".nax-suggested.test.ts",
+      "_nax_suggested_test.py",
       "custom.test.ts",
+      "custom.spec.js",
     ]) {
       expect(naxOwnedWriteRefusal("Edit", `.nax/features/auth/${name}`)).toBeUndefined();
     }
+  });
+
+  test("the plan op's exempt path is honoured for a non-PRD .nax path too, and only that path", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/out.json", ".nax/features/auth/out.json")).toBeUndefined();
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/other.json", ".nax/features/auth/out.json")).toBeDefined();
   });
 
   test("reads are never refused", () => {
