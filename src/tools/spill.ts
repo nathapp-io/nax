@@ -6,10 +6,7 @@
  * module decides what happens to the rest. On truncation only, the untruncated
  * body — up to `READ_CEILING` — is written under the scratchpad at
  * `spill/<toolName>-<callId>.txt`, and the marker naming that path and both byte
- * counts is appended to the content the model receives. A body past
- * `READ_CEILING` is the one case where the marker names no path: that spill
- * holds only a prefix of the body, and a marker never points at a file that
- * cannot deliver what the marker promises. `writeSpill` keeps
+ * counts is appended to the content the model receives. `writeSpill` keeps
  * returning the scratchpad-relative spelling; `applyModelTruncationPolicy`
  * turns it into the path the marker names — root-relative
  * (`.nax/scratchpad/spill/...`) by default, so the session's own tools and
@@ -75,19 +72,6 @@ export function spillRelativePath(toolName: string, callId: string): string {
 }
 
 /**
- * True when the spill file will hold `body` in full — the writer's own ceiling
- * test, stated once so the marker and the writer cannot disagree about it.
- *
- * A `false` here means the file written at the spill path is NOT the
- * untruncated body: it is a prefix of it plus an incomplete note. The marker
- * must not name such a file (see `spillMarkerPath`), because a marker that
- * points at a spill is a promise that the whole body is behind that path.
- */
-function spillHoldsWholeBody(body: string): boolean {
-  return Buffer.byteLength(body, "utf8") <= READ_CEILING;
-}
-
-/**
  * The spill file's body: the untruncated output, bounded by `READ_CEILING`.
  *
  * A body past the ceiling is itself cut, and the cut is recorded on the file's
@@ -98,7 +82,7 @@ function spillHoldsWholeBody(body: string): boolean {
  */
 function spillBody(body: string): string {
   const total = Buffer.byteLength(body, "utf8");
-  if (spillHoldsWholeBody(body)) return body;
+  if (total <= READ_CEILING) return body;
   // Two passes because the note quotes how much was kept, which depends on the
   // note's own length. The first pass sizes the note with the largest number it
   // could report (the ceiling), so the second can only make it shorter.
@@ -305,24 +289,22 @@ export async function applyModelTruncationPolicy(body: string, opts: ModelTrunca
 
 /**
  * Write the body and return the path as the marker should spell it, or
- * `undefined` when the marker must name none. The spill writer
+ * `undefined` when there is no root or the write failed. The spill writer
  * keeps returning the scratchpad-relative `spill/<Tool>-<callId>.txt`; this is
  * the one place that turns it into the model-facing spelling, so the two
  * composers receive a finished path and stay unaware of the style.
  *
- * `undefined` covers two cases. No root, or a failed write — the marker must
- * not name a file that is not there. And a body past `READ_CEILING`: the file
- * written there holds a capped prefix, not the untruncated body (see
- * `spillBody`), so the marker falls back to its path-less shape rather than
- * promise completeness the file does not have. The spill is still written — it
- * remains readable by anyone who knows the path — but nothing in the result
- * claims it holds the whole body.
+ * The path appears whenever the wide marker shape fits the byte budget, for a
+ * body of any size: AC1/AC2/AC7/AC8 name the spill path for every truncated
+ * result, and the marker's job is to point at the file nax wrote for this call.
+ * A body past `READ_CEILING` is written capped (see `spillBody`) — that is the
+ * spill writer's own long-standing bound, pinned by `spill-recovery.test.ts`
+ * AC9 — and the cap is recorded on the file's last line rather than hidden.
  */
 async function spillMarkerPath(opts: ModelTruncationOptions, body: string): Promise<string | undefined> {
   if (opts.root === undefined) return undefined;
   const relative = await writeSpill({ root: opts.root, toolName: opts.toolName, callId: opts.callId, body });
   if (relative === undefined) return undefined;
-  if (!spillHoldsWholeBody(body)) return undefined;
   return opts.spillPathStyle === "absolute"
     ? join(opts.root, SCRATCHPAD_DIR, relative)
     : `${SCRATCHPAD_DIR}/${relative}`;
