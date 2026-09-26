@@ -22,9 +22,16 @@
  *
  * US-002 — the cap footer replaces the limit-stop footer when a Read
  * result overflows either model-facing budget. `applyCapCut` is the
- * fit-check → cap-cut → no-k-fits state machine; the cut keeps the
- * largest `k` such that the header, the first `k` body lines, and the
- * cap footer fit both budgets.
+ * fit-check → overlong-line → cap-cut → no-k-fits state machine; the cut
+ * keeps the largest `k` such that the header, the first `k` body lines,
+ * and the cap footer fit both budgets.
+ *
+ * The overlong-line step (US-001 of the spill-marker story) is what keeps a
+ * single enormous line from hiding the file's tail: a whole-line cut can
+ * neither shorten such a line nor skip it, so stopping just before it drops
+ * every line after it — including the last output line of a spilled command,
+ * which is often the only signal in the body. See its comment in
+ * `applyCapCut`.
  *
  * File-local on purpose. These helpers are properties of the `Read`
  * composition, nothing else composes them, and `src/tools` does not
@@ -197,7 +204,26 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
     return { content: candidate };
   }
 
-  // Step 2 — cap cut. Try k from largest to smallest; the first one that
+  // Step 2 — overlong line: hand the body to the after_tool policy.
+  //
+  // A line whose own bytes exceed the WHOLE model-facing byte budget can
+  // never be delivered by this cut, whatever precedes it: the cut is
+  // whole-line, so it can neither shorten such a line nor skip it. Cutting
+  // just before it would therefore spend the result on the short lines in
+  // front of it and drop every line behind it — including the LAST line of a
+  // spilled command's output, which is exactly the line a caller reaches for.
+  // (`[3 lines] / exit 0 / <160 KB blob> / LAST LINE` cut to the 68 bytes
+  // before the blob is the shape this rules out.)
+  //
+  // So the candidate passes through unshaped, exactly as the no-k-fits case
+  // below does, and the after_tool policy shapes it: that policy caps an
+  // overlong line at the per-line ceiling instead of evicting the lines
+  // around it, and spills what it cuts, so the tail stays reachable.
+  if (lines.some((line) => Buffer.byteLength(line, "utf8") > maxBytes)) {
+    return { content: candidate };
+  }
+
+  // Step 3 — cap cut. Try k from largest to smallest; the first one that
   // fits both budgets is the cut. Walking largest-first is what guarantees
   // the result holds the most whole lines that can fit — picking a smaller
   // k would leave whole lines on the floor that could have been delivered.
@@ -225,7 +251,7 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
     }
   }
 
-  // Step 3 — no k fits: today's candidate passes through unchanged. The
+  // Step 4 — no k fits: today's candidate passes through unchanged. The
   // cap footer is absent here — the rule is "no line fits with the header
   // and cap footer", so neither can be appended. The after_tool policy
   // is the backstop for these cases.
