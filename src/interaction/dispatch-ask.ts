@@ -128,10 +128,14 @@ export async function buildDispatchAskWiring(
         stage: req.stage,
         command: req.command ?? "",
         root: req.root ?? opts.repoRoot,
-        origin: "escalate",
-        matchedRule: null,
+        // #2249: record what actually happened. An ask carries `matchedRule`
+        // only when an ask rule matched; otherwise it is an escalated grant
+        // miss. The chain holds exactly the configured plugin
+        // (interaction/init.ts), so that names the channel that answered.
+        origin: req.matchedRule !== undefined ? "askRule" : "escalate",
+        matchedRule: req.matchedRule ?? null,
         approvedAt: new Date().toISOString(),
-        approvedBy: "telegram",
+        approvedBy: opts.config.interaction?.plugin ?? "unknown",
         naxCommit: NAX_COMMIT,
       }),
   });

@@ -58,11 +58,9 @@ export interface AskChannel {
   cancel(requestId: string): Promise<void>;
 }
 
-const OPTIONS = [
-  { key: "allow", label: "Allow once" },
-  { key: "allow-remember", label: "Allow + remember" },
-  { key: "deny", label: "Deny" },
-];
+const ALLOW_ONCE = { key: "allow", label: "Allow once" };
+const ALLOW_REMEMBER = { key: "allow-remember", label: "Allow + remember" };
+const DENY = { key: "deny", label: "Deny" };
 
 /**
  * ONLY these permit. Everything else -- including unrecognised strings from a
@@ -104,6 +102,13 @@ export function createHumanAskLink(opts: {
   // prompt and therefore a single id; different keys are serialised through
   // `queue` and only one is ever on-screen at a time.
   let activeId: string | undefined;
+
+  /**
+   * The approvals cache matches byte-exact on (stage, command), so a call with
+   * no command can never be answered from it: remembering one records an entry
+   * nothing reads (#2249). Such calls are offered, and granted, allow-once only.
+   */
+  const canRemember = (req: AskRequest): boolean => opts.onRemember !== undefined && req.command !== undefined;
 
   const deny = (decidedBy: "human" | "timeout" | "unavailable" | "cancelled" | "unshowable"): AskLinkOutcome => ({
     decision: "deny",
@@ -335,7 +340,7 @@ export function createHumanAskLink(opts: {
               `reason:  ${req.reason ?? req.rule}`,
               `stage:   ${req.stage}`,
             ].join("\n"),
-            options: OPTIONS,
+            options: canRemember(req) ? [ALLOW_ONCE, ALLOW_REMEMBER, DENY] : [ALLOW_ONCE, DENY],
             timeout: opts.timeoutMs,
             // Recorded for the message footer only. This link NEVER consults
             // applyFallback: it maps "continue" AND "escalate" to approve.
@@ -359,7 +364,8 @@ export function createHumanAskLink(opts: {
           if (!PERMITS.has(action)) {
             outcome = deny("human");
           } else {
-            if (action === "allow-remember" && opts.onRemember) {
+            // `opts.onRemember` repeats canRemember's check so the call below narrows.
+            if (action === "allow-remember" && canRemember(req) && opts.onRemember) {
               // Remembering is AUXILIARY: the human already approved this
               // exact call, so a failed persistence (lock timeout, disk)
               // must not revoke that approval. AWAITED so the approval is
