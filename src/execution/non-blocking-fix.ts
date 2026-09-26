@@ -17,6 +17,7 @@ import { NaxError } from "../errors";
 import { isRecurrenceRetired } from "../findings/retirement-stamp";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
+import type { FixReviewVerdict } from "../review/fix-review";
 import type { SnapshotRef } from "../tdd/rollback";
 import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
 import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";
@@ -113,6 +114,17 @@ export interface NonBlockingFixDeps {
    * `runNonBlockingFix` treats them as "cap exceeded" (fail-safe).
    */
   measureSourceDiff: (workdir: string, fromRef: string) => Promise<SourceDiffMetrics>;
+  /**
+   * ADR-033 — the scoped fix review, run on a pass that would otherwise be kept.
+   *
+   * Called with the snapshot sha captured at entry (`restoreRef.sha`). A `pass`
+   * keeps the pass as today; any other verdict (scope fail, contradiction,
+   * dispatch/parse error) restores the adversarial-passed snapshot. Absent ⇒ no
+   * review, keep as today (backward-compatible).
+   *
+   * STUB (test-writer RED state): declared so the acceptance tests compile.
+   */
+  reviewFix?: (preFixRef: string) => Promise<FixReviewVerdict>;
 }
 
 export const _nonBlockingFixDeps = {
