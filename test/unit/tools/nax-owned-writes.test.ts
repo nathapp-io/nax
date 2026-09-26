@@ -132,6 +132,11 @@ describe("naxOwnedWriteRefusal — plan-op exemption (nax#2115)", () => {
     expect(naxOwnedWriteRefusal("Write", PRD, PRD)).toBeUndefined();
   });
 
+  test("#2260: the exemption covers every mutating tool and survives the .nax/ state rule", () => {
+    for (const tool of ["Write", "Edit"]) expect(naxOwnedWriteRefusal(tool, PRD, PRD)).toBeUndefined();
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/spec.md", PRD)).toBeDefined();
+  });
+
   test("exemption is path-exact: another feature's PRD is still refused", () => {
     expect(naxOwnedWriteRefusal("Write", ".nax/features/billing/prd.json", PRD)).toBeDefined();
   });
