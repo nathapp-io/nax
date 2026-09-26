@@ -6,9 +6,12 @@
  * module decides what happens to the rest. On truncation only, the untruncated
  * body — up to `READ_CEILING` — is written under the scratchpad at
  * `spill/<toolName>-<callId>.txt`, and the marker naming that path and both byte
- * counts is appended to the content the model receives. `ScratchpadRead`
- * resolves paths relative to the scratchpad, so the marker names a *relative*
- * path and the spilled body stays recoverable with `offset`/`limit`.
+ * counts is appended to the content the model receives. `writeSpill` keeps
+ * returning the scratchpad-relative spelling; `applyModelTruncationPolicy`
+ * turns it into the path the marker names — root-relative
+ * (`.nax/scratchpad/spill/...`) by default, so the session's own tools and
+ * shell can open it verbatim, or absolute when the root is not the session's
+ * shell root. The spilled body stays recoverable with `offset`/`limit`.
  *
  * The composition lives here, beside the writer, because the marker and the
  * spill are one decision: the path may only appear in the marker when the write
@@ -122,6 +125,14 @@ export interface ModelTruncationOptions {
   readonly root?: string;
   /** Model-facing byte ceiling. Defaults to `MODEL_MAX_BYTES`. */
   readonly maxBytes?: number;
+  /**
+   * How the marker spells the spill path. `"root-relative"` (the default)
+   * names it from the directory the session's tools and shell start in
+   * (`.nax/scratchpad/spill/...`), so the model can open it verbatim;
+   * `"absolute"` names the written file's absolute path, for a caller whose
+   * root is not that directory (the native transcript fallback).
+   */
+  readonly spillPathStyle?: "root-relative" | "absolute";
 }
 
 /** Render a marker. The delivered count is interpolated at call time, so the
@@ -140,7 +151,10 @@ type MarkerRenderer = (deliveredBytes: number) => string;
 function markerShapes(originalBytes: number, spillPath: string | undefined): MarkerRenderer[] {
   const shapes: MarkerRenderer[] = [];
   if (spillPath !== undefined) {
-    shapes.push((d) => `... [truncated: full output at ${spillPath}; showing ${d} of ${originalBytes} bytes]`);
+    shapes.push(
+      (d) =>
+        `... [truncated: full output at ${spillPath} (open with Read or ScratchpadRead); showing ${d} of ${originalBytes} bytes]`,
+    );
   }
   shapes.push((d) => `... [truncated: showing ${d} of ${originalBytes} bytes]`);
   shapes.push(() => "... [truncated]");
@@ -266,12 +280,25 @@ export async function applyModelTruncationPolicy(body: string, opts: ModelTrunca
   const shaped = truncateForModel(body, { direction });
   if (!shaped.truncated && originalBytes <= byteCap) return body;
 
-  const spillPath =
-    opts.root === undefined
-      ? undefined
-      : await writeSpill({ root: opts.root, toolName: opts.toolName, callId: opts.callId, body });
+  const spillPath = await spillMarkerPath(opts, body);
 
   return direction === "head"
     ? composeHead(shaped.content, originalBytes, byteCap, spillPath)
     : composeTail(body, shaped.content, originalBytes, byteCap, spillPath);
+}
+
+/**
+ * Write the body and return the path as the marker should spell it, or
+ * `undefined` when there is no root or the write failed. The spill writer
+ * keeps returning the scratchpad-relative `spill/<Tool>-<callId>.txt`; this is
+ * the one place that turns it into the model-facing spelling, so the two
+ * composers receive a finished path and stay unaware of the style.
+ */
+async function spillMarkerPath(opts: ModelTruncationOptions, body: string): Promise<string | undefined> {
+  if (opts.root === undefined) return undefined;
+  const relative = await writeSpill({ root: opts.root, toolName: opts.toolName, callId: opts.callId, body });
+  if (relative === undefined) return undefined;
+  return opts.spillPathStyle === "absolute"
+    ? join(opts.root, SCRATCHPAD_DIR, relative)
+    : `${SCRATCHPAD_DIR}/${relative}`;
 }
