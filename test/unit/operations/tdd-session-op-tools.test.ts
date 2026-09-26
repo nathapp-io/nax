@@ -36,17 +36,19 @@ describe("testWriterOp tools", () => {
   test("can create test files and compile-only stubs", () => {
     const tools = resolveDeclaredTools(testWriterOp);
 
+    expect(tools).toContain("Read");
     expect(tools).toContain("Write");
     expect(tools).toContain("Edit");
   });
 
   test("can run the tests it wrote, to prove they fail on an assertion", () => {
-    // The role requires distinguishing an ASSERTION failure from an import or
-    // compile error. A test-writer that cannot execute cannot tell them apart.
+    // The role requires telling an ASSERTION failure from an import error or a
+    // runtime crash before the assertion. A test-writer that cannot execute
+    // cannot tell them apart.
     expect(resolveDeclaredTools(testWriterOp)).toContain("RunCommand");
   });
 
-  test("can commit its own RED state so the implementer's beforeRef is a clean boundary", () => {
-    expect(resolveDeclaredTools(testWriterOp)).toContain("GitCommit");
+  test("does not commit: the orchestrator's RED commit makes the implementer's beforeRef a clean boundary", () => {
+    expect(resolveDeclaredTools(testWriterOp)).not.toContain("GitCommit");
   });
 });

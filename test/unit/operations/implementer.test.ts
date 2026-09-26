@@ -220,7 +220,7 @@ describe("implementerOp.verify — isolation", () => {
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
-    _isolationDeps.spawn = makeSpawn(() => "src/foo.ts\ntest/foo.test.ts\n").spawn;
+    _isolationDeps.spawn = makeSpawn(() => "src/foo.ts\0test/foo.test.ts\0").spawn;
 
     try {
       const parsed = {
@@ -255,7 +255,7 @@ describe("implementerOp.verify — isolation", () => {
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
-    _isolationDeps.spawn = makeSpawn(() => "src/foo.ts\n").spawn;
+    _isolationDeps.spawn = makeSpawn(() => "src/foo.ts\0").spawn;
 
     try {
       const parsed = {

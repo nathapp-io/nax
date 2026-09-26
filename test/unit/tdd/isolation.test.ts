@@ -53,6 +53,16 @@ describe("getChangedFiles", () => {
 
     expect(changed).toEqual(["tracked.txt"]);
   });
+
+  test("returns unquoted paths for tracked files and new directories with spaces", async () => {
+    await Bun.write(`${dir}/tracked space.txt`, "v1");
+    await git(dir, ["add", "tracked space.txt"]);
+    await git(dir, ["commit", "-qm", "add spaced path"]);
+    await Bun.write(`${dir}/tracked space.txt`, "v2");
+    await Bun.write(`${dir}/new dir/a.test.ts`, "test('a', () => {});");
+
+    expect(new Set(await getChangedFiles(dir, "HEAD"))).toEqual(new Set(["tracked space.txt", "new dir/"]));
+  });
 });
 
 // BUG-31: a wedged git (NFS / lock contention) must not stall the TDD

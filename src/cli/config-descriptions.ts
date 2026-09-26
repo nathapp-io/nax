@@ -166,6 +166,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "tdd.verifierTimeoutSeconds":
     "Wall-clock budget for one verifier turn in seconds (default: 1800). Its own knob, not execution.sessionTimeoutSeconds",
   "tdd.testWriterAllowedPaths": "Glob patterns for files test-writer can modify",
+  "tdd.testWriterCommitHooks":
+    'Git hooks on the RED commit nax makes after the test-writer phase: "skip" (default, --no-verify) | "run"',
   "tdd.rollbackOnFailure": "Rollback git changes when TDD fails",
   "tdd.greenfieldDetection": "Force tdd-simple on projects with no test files",
 

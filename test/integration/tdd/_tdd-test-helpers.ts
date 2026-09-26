@@ -172,7 +172,8 @@ export function mockGitSpawn(opts: {
     if (cmd[0] === "git" && cmd[1] === "diff") {
       const files = opts.diffFiles[diffCount] || [];
       diffCount++;
-      return `${files.join("\n")}\n`;
+      const separator = cmd.includes("--name-only") ? "\0" : "\n";
+      return files.length > 0 ? `${files.join(separator)}${separator}` : "";
     }
     // Fallback — shouldn't happen in normal test flow
     return "";

@@ -351,6 +351,68 @@ describe("backwards-compat: old API buildRoleTaskSection('standard'/'lite')", ()
 });
 
 // ---------------------------------------------------------------------------
+// TDD RED commit (spec 2026-09-26-tdd-red-commit-design.md, US-002)
+// ---------------------------------------------------------------------------
+
+describe("buildRoleTaskSection — test-writer RED state", () => {
+  const strict = () => buildRoleTaskSection("test-writer", undefined, "bun test", "strict");
+  const lite = () => buildRoleTaskSection("test-writer", undefined, "bun test", "lite");
+  const COMMIT_RULE = "Do not commit. When your session ends, nax commits the files you changed as the RED state.";
+
+  test("AC1: step 5 rejects import errors and runtime crashes, not type errors", () => {
+    expect(strict()).toContain(
+      "Confirm every test fails with an ASSERTION failure, not an import error or a runtime crash before the assertion.",
+    );
+  });
+
+  test("AC2: the strict text no longer demands the absence of compile errors", () => {
+    expect(strict()).not.toContain("compile error");
+  });
+
+  test("AC3: a type error on a symbol the implementer will add is the expected RED state", () => {
+    expect(strict()).toContain("is the expected RED state");
+    expect(strict()).toContain("type each test as the finished code will be");
+  });
+
+  test("AC4: strict isolation still forbids source edits", () => {
+    expect(strict()).toContain("Do NOT create or modify any source files");
+  });
+
+  test("AC5: both variants say nax commits the RED state", () => {
+    expect(strict()).toContain(COMMIT_RULE);
+    expect(lite()).toContain(COMMIT_RULE);
+  });
+
+  test("AC6: the lite variant still requires stubs that compile", () => {
+    expect(lite()).toContain("Confirm tests compile (stubs work) AND fail with ASSERTION failures");
+  });
+
+  test("AC7: both texts stay language-neutral", () => {
+    for (const text of [strict(), lite()]) {
+      expect(text).not.toContain("as unknown");
+      expect(text).not.toContain("ts-expect-error");
+      expect(text).not.toContain("@ts-");
+      expect(text).not.toMatch(/\btsc\b/);
+    }
+  });
+
+  test("AC9: other roles gain none of the RED-state sentences", () => {
+    const others = [
+      buildRoleTaskSection("implementer", "standard"),
+      buildRoleTaskSection("implementer", "lite"),
+      buildRoleTaskSection("verifier"),
+      buildRoleTaskSection("tdd-simple"),
+      buildRoleTaskSection("batch"),
+      buildRoleTaskSection("no-test"),
+    ];
+    for (const text of others) {
+      expect(text).not.toContain("is the expected RED state");
+      expect(text).not.toContain("nax commits the files you changed");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // US-005: commit-naming role-task variants render through the `commit`
 // protocol region. AC1-AC5 mirrored at the role-task level: every variant's
 // commit instruction is a region whose ACP body is the unchanged

@@ -20,6 +20,8 @@ export {
   verifyImplementerIsolation,
   verifyTestWriterIsolation,
 } from "./isolation";
+export type { RedCommitDeps, RedCommitOptions, RedCommitResult } from "./red-commit";
+export { _redCommitDeps, commitRedState, redCommitMessage } from "./red-commit";
 export { _rollbackDeps, rollbackToRef } from "./rollback";
 export type { VerdictCategorization, VerifierVerdict } from "./verdict";
 export { categorizeVerdict, cleanupVerdict, readVerdict, VERDICT_FILE } from "./verdict";

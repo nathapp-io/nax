@@ -17,7 +17,7 @@ import {
   toNoDispatchCheckResult,
 } from "@/review";
 import { totalSpendUsd } from "@/runtime";
-import { cleanupVerdict } from "@/tdd";
+import { cleanupVerdict, commitRedState, type RedCommitResult } from "@/tdd";
 import { errorMessage } from "@/utils/errors";
 import { _gitDeps, captureGitRef } from "@/utils/git";
 import { captureTreeState as realCaptureTreeState } from "../checkpoint/resume-hydrate";
@@ -36,6 +36,8 @@ export const _storyOrchestratorDeps = {
   callOp,
   runFixCycle,
   captureGitRef,
+  /** TDD RED commit after a passed test-writer phase (spec 2026-09-26-tdd-red-commit). */
+  commitRedState,
   cleanupVerdict,
   prepareSemanticReviewInput,
   prepareAdversarialReviewInput,
@@ -351,6 +353,10 @@ export async function runPhase(
       }
     }
 
+    if (isTddPhase && opName === "test-writer" && !inRectification && beforeRef && outcome === "passed") {
+      await commitTestWriterRedState(ctx, beforeRef);
+    }
+
     return output;
   } catch (err) {
     // US-002 — a review whose dispatch never reached a model produced no
@@ -507,6 +513,35 @@ function derivePhaseOutcome(output: unknown): "passed" | "failed" | "skipped" {
   if (built.success) return "passed";
   if (built.data.status === "skipped") return "skipped";
   return "failed";
+}
+
+/** Commit the test-writer's files so the implementer's beforeRef is a committed boundary. Never throws. */
+async function commitTestWriterRedState(ctx: CallContext, beforeRef: string): Promise<void> {
+  const config = ctx.config ?? ctx.runtime.configLoader.current();
+  const result = await _storyOrchestratorDeps.commitRedState({
+    workdir: ctx.packageDir,
+    beforeRef,
+    storyId: ctx.storyId ?? "story",
+    hooks: config.tdd?.testWriterCommitHooks ?? "skip",
+    dryRun: ctx.runtime.dryRun,
+    blockedWorktrees: ctx.runtime.dirtyWorktrees,
+  });
+  logRedCommit(ctx.storyId, result);
+}
+
+function logRedCommit(storyId: string | undefined, result: RedCommitResult): void {
+  const logger = getSafeLogger();
+  if (result.status === "committed") {
+    logger?.info("tdd", "RED state committed", {
+      storyId,
+      files: result.files.length,
+      hooksSkipped: result.hooksSkipped,
+    });
+  } else if (result.status === "skipped") {
+    logger?.debug("tdd", "RED state commit skipped", { storyId, reason: result.reason });
+  } else {
+    logger?.warn("tdd", "RED state not committed", { storyId, reason: result.reason });
+  }
 }
 
 /**
