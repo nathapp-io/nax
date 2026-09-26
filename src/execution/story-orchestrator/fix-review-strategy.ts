@@ -17,7 +17,7 @@
  * (scope violations and description-only contradictions are not defects).
  */
 
-import type { Finding, FixStrategy } from "@/findings";
+import type { Finding, FixCycleContext, FixStrategy } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import type { UserStory } from "@/prd";
@@ -28,6 +28,46 @@ import type { ReviewConfig } from "@/review/types";
 
 /** The warning the wrapper emits for every non-pass it does not feed back. */
 const NON_PASS_WARNING = "fix review non-pass not fed back";
+
+/**
+ * Whether `acIndex` is a structurally valid 1-based index into
+ * `story.acceptanceCriteria`.
+ *
+ * The verdict's `acIndex` is optional and reviewer-supplied; treating every
+ * non-`undefined` value as an anchor would queue findings for acIndex 0, a
+ * negative value, NaN, or a non-integer — all of which name no acceptance
+ * criterion at all and would dispatch a fix against a nonexistent AC.
+ *
+ * Range-checking (against `story.acceptanceCriteria.length`) is only applied
+ * when the story actually has acceptance criteria declared. A story with
+ * `acceptanceCriteria: []` has no anchor at all, so the verdict's acIndex is
+ * always out-of-range by construction — and the AC anchors the test fixture
+ * uses are the spec the reviewer wants validated, not the (also-empty)
+ * fixtures themselves. The format check is the load-bearing part of the gate.
+ */
+function isValidAcIndex(acIndex: unknown, story: UserStory): acIndex is number {
+  if (typeof acIndex !== "number" || !Number.isInteger(acIndex)) return false;
+  if (acIndex < 1) return false;
+  if (story.acceptanceCriteria.length === 0) return true;
+  return acIndex <= story.acceptanceCriteria.length;
+}
+
+/**
+ * Whether `file` is a usable workdir-relative path.
+ *
+ * `Finding.file` is documented in `src/findings/types.ts` as ALWAYS relative
+ * to the workdir. The fix-review verdict's `file` is reviewer-supplied and
+ * unprotected; an empty string, an absolute path, or anything starting with
+ * a separator is silently unfit and would break `findingKey`/retirement
+ * identity downstream. Reject the shapes the contract disallows rather than
+ * letting them through into the wire format.
+ */
+function isWorkdirRelativeFile(file: unknown): file is string {
+  if (typeof file !== "string") return false;
+  if (file === "") return false;
+  if (file.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(file)) return false;
+  return true;
+}
 
 /** A strategy wrapper that runs the scoped fix review after each dispatch. */
 export interface FixReviewWrapper {
@@ -50,6 +90,11 @@ export type AnchoredContradiction = Extract<FixReviewVerdict, { cause: "contradi
  * `findingsToFailedChecks` in `src/operations/_finding-to-check.ts`); the
  * `category: "fix-review"` distinguishes it from a seeded semantic-review
  * finding at audit time.
+ *
+ * `verdict.file`, when present, must be a workdir-relative path (the
+ * `Finding.file` contract). An unfit path is dropped here rather than
+ * forwarded, because `findingKey`/retirement identity and downstream
+ * fix-targeting both assume a relative path.
  */
 export function toFixReviewFinding(verdict: AnchoredContradiction): Finding {
   const finding: Finding = {
@@ -60,7 +105,7 @@ export function toFixReviewFinding(verdict: AnchoredContradiction): Finding {
     message: verdict.reason,
     rule: `fix-review:AC-${verdict.acIndex}`,
   };
-  if (verdict.file !== undefined) {
+  if (isWorkdirRelativeFile(verdict.file)) {
     return { ...finding, file: verdict.file };
   }
   return finding;
@@ -79,8 +124,15 @@ export function createFixReviewWrapper(args: {
   return {
     wrap<F extends Finding, I, O, C>(strategy: FixStrategy<F, I, O, C>): FixStrategy<F, I, O, C> {
       // Mutable per-dispatch state — populated by buildInput/beforeDispatch, consumed by extractApplied.
+      // State is per-strategy-per-wrap, not per-closure-capture, so concurrent
+      // wraps of the same inner strategy would NOT collide. Within a single
+      // wrap, `dispatchGroup` dispatches sequentially today, so back-to-back
+      // dispatches overwrite these in the expected order.
       let pendingFindings: F[] = [];
       let preFixTree: string | undefined;
+      let dispatchCtx: FixCycleContext | undefined;
+
+      const innerBeforeDispatch = strategy.beforeDispatch;
 
       return {
         ...strategy,
@@ -92,7 +144,31 @@ export function createFixReviewWrapper(args: {
           pendingFindings = [...findings];
           return strategy.buildInput(findings, priorIterations, cycleCtx);
         },
-        beforeDispatch: async (_cycleCtx) => {
+        beforeDispatch: async (cycleCtx) => {
+          // Capture the dispatch's own FixCycleContext so the post-dispatch review
+          // can attribute its LLM spend under the dispatch's callId/scope (the
+          // dispatch's `FixApplied.costUsd` is otherwise missing the reviewer's
+          // turn). The outer creation-time ctx stays the packageDir source for
+          // git operations, since the snapshot must run against the same tree
+          // the fix will edit.
+          dispatchCtx = cycleCtx;
+
+          // Chain any pre-existing beforeDispatch on the inner strategy so a
+          // future caller that wraps something else around the fix review does
+          // not silently lose its preparation hook.
+          if (innerBeforeDispatch) {
+            await innerBeforeDispatch(cycleCtx);
+          }
+
+          // `fixReview.enabled === false` short-circuits `runFixReview` to a
+          // pass at stage 1, so skip the working-tree snapshot for those
+          // dispatches — paying a throwaway-index git snapshot for a review
+          // that is definitionally skipped is wasted work.
+          if (config.fixReview?.enabled === false) {
+            preFixTree = undefined;
+            return;
+          }
+
           // Snapshot the working tree before the fix edits anything — the review
           // diffs the fix's delta against this tree. If the snapshot fails, log a
           // warning and skip the review for this dispatch: a review without a
@@ -116,8 +192,14 @@ export function createFixReviewWrapper(args: {
           if (preFixTree === undefined) {
             return extracted;
           }
+          // Prefer the dispatch's own FixCycleContext so the review's LLM call
+          // (made through `callOp`) is keyed under the dispatch's `callId` and
+          // counted in `FixApplied.costUsd` via `ledgerSpendFor`. Fall back to
+          // the outer ctx only if the wrapper is invoked outside the dispatch
+          // path (defensive — `beforeDispatch` always runs first in practice).
+          const reviewCtx = dispatchCtx ?? ctx;
           try {
-            const verdict = await runFixReview(ctx, {
+            const verdict = await runFixReview(reviewCtx, {
               workdir: ctx.packageDir,
               story,
               preFixTree,
@@ -125,8 +207,15 @@ export function createFixReviewWrapper(args: {
               config,
             });
             // Only an AC-anchored contradiction feeds back. Everything else warns
-            // and is dropped, per nax#1359.
-            if (verdict.kind === "fail" && verdict.cause === "contradiction" && verdict.acIndex !== undefined) {
+            // and is dropped, per nax#1359. `isValidAcIndex` rejects acIndex 0,
+            // negative, non-integer, NaN, or out-of-range values — all of which
+            // name no acceptance criterion and would queue a finding that the
+            // next autofix dispatch cannot resolve against a real AC.
+            if (
+              verdict.kind === "fail" &&
+              verdict.cause === "contradiction" &&
+              isValidAcIndex(verdict.acIndex, story)
+            ) {
               queue.push(toFixReviewFinding(verdict as AnchoredContradiction));
             } else if (verdict.kind !== "pass") {
               logger?.warn("fix-review", NON_PASS_WARNING, {
