@@ -57,6 +57,22 @@ async function resolveGitInfoDir(projectRoot: string): Promise<string> {
   return join(resolve(projectRoot, commonDir), "info");
 }
 
+const NAX_EXCLUDE_HEADER = "# nax — generated files (auto-added by nax parallel)";
+
+/**
+ * Drop retired entries line-exactly, keeping every other line (the user's own
+ * rules and comments) verbatim. A nax section header left with no rule under
+ * it goes too, so repeated reconciles do not pile up empty headers.
+ */
+function dropRetiredLines(content: string, retired: ReadonlySet<string>): string {
+  const lines = content.split("\n").filter((line) => !retired.has(line.trim()));
+  const headsEmptySection = (index: number): boolean => {
+    const next = lines.slice(index + 1).find((line) => line.trim().length > 0);
+    return next === undefined || next.trim() === NAX_EXCLUDE_HEADER;
+  };
+  return lines.filter((line, index) => line.trim() !== NAX_EXCLUDE_HEADER || !headsEmptySection(index)).join("\n");
+}
+
 export class WorktreeManager {
   /**
    * Ensures nax runtime files are excluded from git in all worktrees by writing
@@ -109,17 +125,8 @@ export class WorktreeManager {
         const retired = new Set<string>(NAX_RETIRED_GITIGNORE_ENTRIES.filter((entry) => existingLines.has(entry)));
         if (missing.length === 0 && retired.size === 0) return;
 
-        // Retired entries are dropped line-exactly; every other line, including
-        // the user's own rules and comments, is kept verbatim.
-        const kept =
-          retired.size === 0
-            ? existing
-            : existing
-                .split("\n")
-                .filter((line) => !retired.has(line.trim()))
-                .join("\n");
-        const section =
-          missing.length === 0 ? "" : `\n# nax — generated files (auto-added by nax parallel)\n${missing.join("\n")}\n`;
+        const kept = retired.size === 0 ? existing : dropRetiredLines(existing, retired);
+        const section = missing.length === 0 ? "" : `\n${NAX_EXCLUDE_HEADER}\n${missing.join("\n")}\n`;
         await Bun.write(excludePath, kept + section);
 
         logger?.info("worktree", "Updated .git/info/exclude with nax entries", {

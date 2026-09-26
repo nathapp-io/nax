@@ -256,6 +256,27 @@ describe("WorktreeManager.ensureGitExcludes", () => {
     }
   });
 
+  it("removes every copy of a retired entry and drops a nax header left with nothing under it", async () => {
+    projectRoot = makeTempDir("worktree-excludes-");
+    try {
+      const infoDir = join(projectRoot, ".git", "info");
+      const header = "# nax — generated files (auto-added by nax parallel)";
+      const [retired] = NAX_RETIRED_GITIGNORE_ENTRIES;
+      await Bun.write(join(infoDir, "exclude"), `*.local\n${header}\n${retired}\n${retired}\n`);
+
+      const manager = new WorktreeManager();
+      await manager.ensureGitExcludes(projectRoot);
+
+      const lines = (await Bun.file(join(infoDir, "exclude")).text()).split("\n").map((line) => line.trim());
+      expect(lines).not.toContain(retired);
+      expect(lines.filter((line) => line === header)).toHaveLength(1);
+      expect(lines.indexOf(header)).toBeLessThan(lines.indexOf(NAX_GITIGNORE_ENTRIES[0]));
+      expect(lines).toContain("*.local");
+    } finally {
+      cleanupTempDir(projectRoot);
+    }
+  });
+
   it("preserves pre-existing unrelated exclude entries", async () => {
     projectRoot = makeTempDir("worktree-excludes-");
     try {
