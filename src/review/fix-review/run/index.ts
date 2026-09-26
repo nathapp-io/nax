@@ -28,9 +28,9 @@ import { type CallContext, callOp, fixReviewOp } from "@/operations";
 import { truncateDiff } from "@/review";
 import { createTestFileClassifier, resolveTestFilePatterns } from "@/test-runners";
 import { storyPackageDir } from "@/utils/path-frame";
-import { checkFixScope } from "./scope";
-import { changedPathsBetween, diffBetween, snapshotWorkingTree } from "./tree-snapshot";
-import type { FixReviewOpOutput, FixReviewRequest, FixReviewVerdict } from "./types";
+import { checkFixScope } from "../scope";
+import { changedPathsBetween, diffBetween, snapshotWorkingTree } from "../tree-snapshot";
+import type { FixReviewOpOutput, FixReviewRequest, FixReviewVerdict } from "../types";
 
 /**
  * Injectable seam — the same `_deps` pattern as `_nonBlockingFixDeps`. Each

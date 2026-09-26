@@ -377,6 +377,31 @@ export async function runNonBlockingFix(
         return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
       }
     }
+    // ADR-033 — scoped fix review on a pass that would otherwise be kept. A
+    // `pass` keeps the pass as today; any other verdict (scope fail,
+    // contradiction, dispatch/parse error) restores the adversarial-passed
+    // snapshot. Absent `reviewFix` ⇒ no review, keep as today.
+    if (_deps.reviewFix) {
+      const verdict = await _deps.reviewFix(restoreRef.sha);
+      if (verdict.kind !== "pass") {
+        const data: Record<string, unknown> = {
+          storyId: args.storyId,
+          kind: verdict.kind,
+          reason: verdict.reason,
+        };
+        if (verdict.kind === "fail") {
+          data.cause = verdict.cause;
+          if (verdict.cause === "scope") {
+            data.files = verdict.files;
+          } else if (verdict.cause === "contradiction") {
+            if (verdict.acIndex !== undefined) data.acIndex = verdict.acIndex;
+            if (verdict.file !== undefined) data.file = verdict.file;
+          }
+        }
+        logger?.info("non-blocking-fix", "fix review rejected the pass — restoring", data);
+        return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
+      }
+    }
     flakeTriage.commit();
     logger?.info("non-blocking-fix", "best-effort fix kept", { storyId: args.storyId });
     return { ran: true, kept: true, restored: false };

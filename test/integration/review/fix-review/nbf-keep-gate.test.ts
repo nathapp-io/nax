@@ -179,7 +179,7 @@ describe("US-004 — the scoped fix review is wired into the NBF keep gate", () 
     _storyOrchestratorDeps.callOp = mock(
       async (_ctx: CallContext, op: Operation<unknown, unknown, unknown>, input: unknown) => {
         if (op.name === "fix-review") {
-          rec.fixReviewInputs.push(input as FixReviewOpInput);
+          rec.fixReviewInputs.push(input as unknown as FixReviewOpInput); // test-ratchet-allow: as-unknown-as
           return { parsed: true, passed: true, reason: "ok" };
         }
         if (op.name === "adversarial-review") {

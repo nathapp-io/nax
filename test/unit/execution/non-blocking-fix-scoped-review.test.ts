@@ -354,7 +354,7 @@ describe("runNonBlockingFix — the rejection is logged (US-004 AC9)", () => {
     const data = await withInfoSpy(async (infoSpy) => {
       await runNonBlockingFix(makeArgs(), makeDeps(record, { reviewFix: reviewingFix(record, scopeFail) }));
       const call = infoSpy.mock.calls.find((c) => String(c[1]).includes("fix review rejected the pass — restoring"));
-      return call?.[2] as Record<string, unknown> | undefined;
+      return call?.[2] as unknown as Record<string, unknown> | undefined; // test-ratchet-allow: as-unknown-as
     });
 
     expect(data).toBeDefined();
@@ -376,7 +376,7 @@ describe("runNonBlockingFix — the rejection is logged (US-004 AC9)", () => {
         makeDeps(record, { reviewFix: reviewingFix(record, { kind: "error", reason: "dispatch failed" }) }),
       );
       const call = infoSpy.mock.calls.find((c) => String(c[1]).includes("fix review rejected the pass — restoring"));
-      return call?.[2] as Record<string, unknown> | undefined;
+      return call?.[2] as unknown as Record<string, unknown> | undefined; // test-ratchet-allow: as-unknown-as
     });
 
     expect(data?.kind).toBe("error");
@@ -395,7 +395,7 @@ describe("runNonBlockingFix — the rejection is logged (US-004 AC9)", () => {
     const data = await withInfoSpy(async (infoSpy) => {
       await runNonBlockingFix(makeArgs(), makeDeps(record, { reviewFix: reviewingFix(record, contradiction) }));
       const call = infoSpy.mock.calls.find((c) => String(c[1]).includes("fix review rejected the pass — restoring"));
-      return call?.[2] as Record<string, unknown> | undefined;
+      return call?.[2] as unknown as Record<string, unknown> | undefined; // test-ratchet-allow: as-unknown-as
     });
 
     expect(data?.kind).toBe("fail");

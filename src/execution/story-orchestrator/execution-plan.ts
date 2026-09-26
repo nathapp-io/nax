@@ -4,7 +4,8 @@ import type { CallContext } from "@/operations";
 import { errorMessage } from "@/utils/errors";
 import type { QuarantineMemo } from "@/verification";
 import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
-import { createMeasureSourceDiff, nonBlockingExcludePhases, nonBlockingExtraPhases } from "../non-blocking-fix";
+import { nonBlockingExcludePhases, nonBlockingExtraPhases } from "../non-blocking-fix";
+import { buildNbfDeps } from "./nbf-deps";
 import { deriveNbfSeed } from "./nbf-seed";
 import type { GateRegressionDetail } from "./phase-eval";
 import { describeGateRegression, gateFailureKeys, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
@@ -438,13 +439,7 @@ export class ExecutionPlan {
               quarantineMemo,
             }),
         },
-        {
-          measureSourceDiff: createMeasureSourceDiff({
-            config: this.ctx.runtime.configLoader.current(),
-            projectDir: this.ctx.runtime.projectDir,
-            packageDir: this.ctx.packageDir,
-          }),
-        },
+        buildNbfDeps({ ctx: this.ctx, findings: seed.findings }),
       );
     }
 
