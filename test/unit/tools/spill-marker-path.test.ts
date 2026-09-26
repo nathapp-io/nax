@@ -91,6 +91,34 @@ describe("AC1: a truncated Read result ends with the widest marker naming the ro
     expect(Buffer.byteLength(content, "utf8")).toBeLessThanOrEqual(MAX_BYTES);
   });
 
+  // AC1 says N is the DELIVERED count and M the ORIGINAL count of the BODY —
+  // bytes, not characters. The fixture above is ASCII, so a regression that
+  // reported `String#length` would pass it unchanged; this one is multibyte,
+  // where the two numbers differ by a factor of two.
+  test("US-001 AC1 boundary: N and M are UTF-8 byte counts, not character counts", async () => {
+    const body = `héllo\n${"é".repeat(MAX_BYTES)}`;
+    // The fixture discriminates only while char count and byte count differ.
+    expect(body.length).toBeLessThan(Buffer.byteLength(body, "utf8"));
+
+    const content = await applyModelTruncationPolicy(body, {
+      toolName: "Read",
+      callId: "c1u",
+      root,
+      maxBytes: MAX_BYTES,
+    });
+
+    const lastLine = content.split("\n").pop() ?? "";
+    const head = content.slice(0, content.lastIndexOf("\n"));
+    const delivered = Buffer.byteLength(head, "utf8");
+    // Guard the discriminator: the retained head really is multibyte, so a
+    // character count could not coincide with the byte count.
+    expect(head.length).toBeLessThan(delivered);
+    expect(lastLine).toBe(
+      `... [truncated: full output at .nax/scratchpad/spill/Read-c1u.txt (open with Read or ScratchpadRead); showing ${delivered} of ${Buffer.byteLength(body, "utf8")} bytes]`,
+    );
+    expect(Buffer.byteLength(content, "utf8")).toBeLessThanOrEqual(MAX_BYTES);
+  });
+
   test("US-001 AC1 boundary: a Read body within maxBytes is returned unchanged with no marker", async () => {
     const body = "small\nbody";
     const content = await applyModelTruncationPolicy(body, {
@@ -239,6 +267,29 @@ describe("AC5: a rejected spill write yields a marker naming no path", () => {
     expect(Buffer.byteLength(content, "utf8")).toBeLessThanOrEqual(MAX_BYTES);
   });
 
+  test("US-001 AC5 boundary: only the write step rejecting (mkdir succeeds) still yields a path-free marker", async () => {
+    // AC5 names the WRITE as the step that rejects. A writer whose directory
+    // creation succeeds but whose file write fails must take the same
+    // fail-open branch — and must not leave the marker naming the file it
+    // failed to produce.
+    _spillDeps.writeFile = async () => {
+      throw new Error("ENOSPC: no space left on device");
+    };
+
+    const body = headBody();
+    const content = await applyModelTruncationPolicy(body, {
+      toolName: "Read",
+      callId: "c5d",
+      root,
+      maxBytes: MAX_BYTES,
+    });
+
+    expect(content.split("\n").pop() ?? "").toMatch(/^\.\.\. \[truncated: showing \d+ of \d+ bytes\]$/);
+    expect(namedPath(content)).toBe("");
+    expect(existsSync(join(root, ".nax", "scratchpad", "spill", "Read-c5d.txt"))).toBe(false);
+    expect(Buffer.byteLength(content, "utf8")).toBeLessThanOrEqual(MAX_BYTES);
+  });
+
   // Discriminating companion: the assertion above is satisfied trivially by a
   // regression that never names a path at all. The same body, with the writer
   // working, must name the path.
@@ -300,4 +351,27 @@ describe("AC6: a byte budget too small for the widest marker still yields conten
     });
     expect(Buffer.byteLength(content, "utf8")).toBe(0);
   });
+
+  // The budget AC6 is about is a continuum, and the marker shape chosen
+  // changes across it: below ~36 bytes nothing fits, then the path-free
+  // narrow shapes, then the widest shape once the path and its instruction
+  // fit. Sweeping the boundary is what pins the ceiling as unconditional
+  // rather than true only at one convenient size — and it re-checks the
+  // marker's trustworthiness at each step: a marker names a path only when
+  // the file is really there.
+  test.each([0, 16, 48, 100, 140, 200, 400])(
+    "US-001 AC6 boundary: at a %d-byte budget the content fits the budget and any named path exists",
+    async (budget: number) => {
+      const content = await applyModelTruncationPolicy(`a\n${"x".repeat(5_000)}`, {
+        toolName: "Read",
+        callId: `c6s-${budget}`,
+        root,
+        maxBytes: budget,
+      });
+
+      expect(Buffer.byteLength(content, "utf8")).toBeLessThanOrEqual(budget);
+      const named = namedPath(content);
+      if (named !== "") expect(existsSync(join(root, named))).toBe(true);
+    },
+  );
 });
