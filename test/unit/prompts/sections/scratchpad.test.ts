@@ -52,6 +52,21 @@ describe("buildScratchpadSection", () => {
     expect(buildScratchpadSection()).toBe(first);
   });
 
+  // ─── US-004 — shell commands get a session temp dir ───
+
+  describe("US-004 — shell temp files belong in $TMPDIR", () => {
+    test("US-004 AC19: says to put temporary files in $TMPDIR or mktemp, not in /tmp directly", () => {
+      // The sentence is hard-wrapped prose, so the assertion flattens whitespace.
+      const text = buildScratchpadSection().replace(/\s+/g, " ");
+      expect(text).toContain("Put temporary files there (`$TMPDIR` or `mktemp`), not in `/tmp` directly.");
+    });
+
+    test("US-004 AC19 boundary: the $TMPDIR guidance is stated exactly once", () => {
+      const text = buildScratchpadSection().replace(/\s+/g, " ");
+      expect(text.match(/Put temporary files there/g) ?? []).toHaveLength(1);
+    });
+  });
+
   // ─── US-001 — runnable probes, not /tmp scripts ───
 
   describe("US-001 — project-importing probes belong in the scratchpad", () => {

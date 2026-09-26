@@ -3,7 +3,7 @@
   "feature": "agent-hygiene",
   "branchName": "feat/agent-hygiene",
   "createdAt": "2026-09-26T00:00:00.000Z",
-  "updatedAt": "2026-09-26T18:44:32.189Z",
+  "updatedAt": "2026-09-26T19:02:27.683Z",
   "userStories": [
     {
       "id": "US-001",
@@ -163,8 +163,8 @@
         "diagnostics"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -226,7 +226,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The agent session launcher, sandbox wrapper, run cleanup and prompts are integrated across modules; session isolation merits security-sensitive strict TDD."
+        "reasoning": "The agent session launcher, sandbox wrapper, run cleanup and prompts are integrated across modules; session isolation merits security-sensitive strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/sandbox/launcher.ts",
@@ -256,7 +259,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "cd5d013b528ee14e8567b4a3d06f019e9a82de2a"
     },
     {
       "id": "US-005",

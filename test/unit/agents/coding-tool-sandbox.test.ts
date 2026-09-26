@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _sessionSandboxDeps, rawRefusalFor, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
 import { DEFAULT_SANDBOX_CONFIG } from "@/config/schemas-sandbox";
-import { _resetSandboxRegistryForTests } from "@/sandbox";
+import { _launcherDeps, _resetSandboxRegistryForTests } from "@/sandbox";
 import { realOrRaw } from "@/utils/realpath";
 
 let root: string;
@@ -21,6 +21,48 @@ const disabled = { ...DEFAULT_SANDBOX_CONFIG, enabled: false };
 
 describe("resolveSessionSandbox", () => {
   withDepsRestore(_sessionSandboxDeps);
+  // US-004: the launcher the resolver builds is exercised through its own seam.
+  withDepsRestore(_launcherDeps);
+
+  test("US-004 AC11: a disabled config with tmpDir T makes its launcher run with TMPDIR T", async () => {
+    const calls: Parameters<typeof _launcherDeps.runArgv>[0][] = [];
+    _launcherDeps.runArgv = async (o) => {
+      calls.push(o);
+      return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+    };
+    const tmpDir = join(root, "session-tmp");
+
+    const launcher = await resolveSessionSandbox({ config: disabled, root, needsLauncher: true, tmpDir });
+    await launcher.run({
+      spec: { kind: "shell", shell: "/bin/sh", command: "true" },
+      root,
+      cwd: root,
+      timeoutMs: 5000,
+      stripEnvVars: [],
+    });
+
+    expect(launcher.state).toEqual({ kind: "disabled" });
+    expect(calls[0]?.env?.TMPDIR).toBe(tmpDir);
+  });
+
+  test("US-004 AC11 boundary: without tmpDir the resolved launcher sets no TMPDIR", async () => {
+    const calls: Parameters<typeof _launcherDeps.runArgv>[0][] = [];
+    _launcherDeps.runArgv = async (o) => {
+      calls.push(o);
+      return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+    };
+
+    const launcher = await resolveSessionSandbox({ config: disabled, root, needsLauncher: true });
+    await launcher.run({
+      spec: { kind: "shell", shell: "/bin/sh", command: "true" },
+      root,
+      cwd: root,
+      timeoutMs: 5000,
+      stripEnvVars: [],
+    });
+
+    expect(calls[0]?.env?.TMPDIR).toBeUndefined();
+  });
 
   test("disabled config: disabled launcher, probe never runs", async () => {
     let probes = 0;
