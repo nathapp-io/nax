@@ -26,6 +26,7 @@ import { join } from "node:path";
 
 import { NaxError } from "@/errors";
 import { type SpawnOptions, type SpawnResult, typedSpawn } from "@/utils/bun-deps";
+import { gitlinkSafeAdd } from "@/utils/git-add";
 import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
 
 /** Pathspec exclusion that hides the repo-root `.nax/` directory and its contents. */
@@ -114,8 +115,8 @@ function gitFailed(stage: string, args: readonly string[], cwd: string, detail: 
 /**
  * Tree id of the current working tree (tracked + untracked, `.gitignore` honoured).
  *
- * The implementation seeds a throwaway `GIT_INDEX_FILE` from HEAD, runs `git
- * add -A` against it (which respects `.gitignore`), and writes the resulting
+ * The implementation seeds a throwaway `GIT_INDEX_FILE` from HEAD, runs a
+ * gitlink-safe `git add -A` against it (which respects `.gitignore`), and writes the resulting
  * tree. The repository's own `.git/index` and working tree are untouched:
  * `GIT_INDEX_FILE` redirects git to the throwaway index for the duration of
  * the call. The temp directory is deleted before this function returns, so
@@ -140,13 +141,14 @@ export async function snapshotWorkingTree(workdir: string): Promise<string> {
     if (seed.exitCode !== 0)
       gitFailed(stage, ["read-tree", "HEAD"], workdir, seed.stderr.trim() || `exit ${seed.exitCode}`);
 
-    // `git add -A` against the throwaway index: updates tracked entries in
-    // the cwd subtree to their current working-tree content AND stages any
-    // new non-ignored files. `.gitignore` is honoured (the gitignore rules
-    // are part of the index, which we just seeded from HEAD). The command
-    // operates in `workdir` so a package-dir workdir captures only that
-    // subtree — matching the per-package scoping the fix review expects.
-    const add = await runGit(["add", "-A"], workdir, indexOverlay);
+    // `git add -A` against the throwaway index: updates tracked entries to
+    // their current working-tree content AND stages any new non-ignored files,
+    // honouring `.gitignore`. It goes through `gitlinkSafeAdd` because a plain
+    // `add` dirty-checks every gitlink by running git inside the nested repo,
+    // which would run a filter driver that repo's own config names (#2210).
+    // Gitlinks are restaged via `update-index` instead, recording the nested
+    // HEAD exactly as a plain `add` would.
+    const add = await gitlinkSafeAdd((args, cwd) => runGit(args, cwd, indexOverlay), workdir, { flags: ["-A"] });
     if (add.exitCode !== 0) gitFailed(stage, ["add", "-A"], workdir, add.stderr.trim() || `exit ${add.exitCode}`);
 
     // `git write-tree` reads the throwaway index and emits its tree id.

@@ -320,3 +320,64 @@ describe("diffBetween", () => {
     expect(err.code).toBe("FIX_REVIEW_GIT_FAILED");
   });
 });
+
+/**
+ * #2210: a nested repository the agent created can name a filter driver in its
+ * own config. A plain `git add -A` dirty-checks every gitlink by running git
+ * inside it, which runs that driver under nax's unsandboxed git. The snapshot
+ * must stage gitlinks without recursing, and still record the nested HEAD.
+ */
+describe("snapshotWorkingTree — #2210 nested-repo filter driver", () => {
+  let dir: string;
+  let top: string;
+  let marker: string;
+
+  function run(args: string[], cwd: string): string {
+    const r = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
+    return r.stdout.toString().trim();
+  }
+
+  beforeEach(async () => {
+    dir = makeTempDir("fix-review-2210-");
+    top = join(dir, "top");
+    marker = join(dir, "filter-ran");
+    const driver = join(dir, "filter.sh");
+    writeFileSync(driver, `#!/bin/sh\ntouch "${marker}"\ncat\n`);
+    Bun.spawnSync(["chmod", "+x", driver]);
+    run(["init", "-q", "top"], dir);
+    run(["config", "user.email", "t@t"], top);
+    run(["config", "user.name", "t"], top);
+    writeFileSync(join(top, "a.txt"), "a\n");
+    run(["add", "a.txt"], top);
+    run(["commit", "-qm", "init"], top);
+
+    const nested = join(top, "nested");
+    run(["init", "-q", "nested"], top);
+    run(["config", "user.email", "t@t"], nested);
+    run(["config", "user.name", "t"], nested);
+    run(["config", "filter.x.clean", driver], nested);
+    writeFileSync(join(nested, ".gitattributes"), "* filter=x\n");
+    writeFileSync(join(nested, "f.txt"), "v0\n");
+    run(["add", "."], nested);
+    run(["commit", "-qm", "nested"], nested);
+    run(["add", "nested"], top);
+    run(["commit", "-qm", "gitlink"], top);
+    // The nested repo's own `git add` above ran its filter; start clean, then
+    // dirty the nested file so any dirty check must re-clean it.
+    if (existsSync(marker)) Bun.spawnSync(["rm", marker]);
+    writeFileSync(join(nested, "f.txt"), "v1\n");
+  });
+  afterEach(() => cleanupTempDir(dir));
+
+  test("does not run the nested filter, and records the nested HEAD as the gitlink", async () => {
+    writeFileSync(join(top, "a.txt"), "changed\n");
+
+    const tree = await snapshotWorkingTree(top);
+
+    expect(existsSync(marker)).toBe(false);
+    const nestedHead = run(["rev-parse", "HEAD"], join(top, "nested"));
+    expect(run(["ls-tree", tree, "nested"], top)).toContain(`160000 commit ${nestedHead}`);
+    expect(run(["cat-file", "-p", `${tree}:a.txt`], top)).toBe("changed");
+  });
+});
