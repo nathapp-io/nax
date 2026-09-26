@@ -24,6 +24,7 @@ const row = (command: string): CommandSafetyRow => ({
     },
   },
   model: { status: "unavailable", questionSetVersion: 1, error: "network" },
+  signals: { tmpWrite: false },
 });
 
 describe("appendCommandSafetyRow", () => {
@@ -37,6 +38,7 @@ describe("appendCommandSafetyRow", () => {
         .split("\n");
       expect(lines).toHaveLength(2);
       expect(JSON.parse(lines[0] ?? "").command).toBe(nasty);
+      expect(JSON.parse(lines[0] ?? "").signals).toEqual({ tmpWrite: false });
       expect(JSON.parse(lines[1] ?? "").command).toBe("ls");
     });
   });
