@@ -68,6 +68,10 @@ export const fixReviewOp: RunOperation<FixReviewOpInput, FixReviewOpOutput, Revi
     if (parsed) return parsed;
     // No JSON object at all — return the clipped preview so the caller can
     // treat the verdict as `kind: "error"` (AC16) and audit it.
-    return { parsed: false, unparsedPreview: previewOutput(output, UNPARSED_PREVIEW_BYTES) };
+    // `previewOutput` collapses whitespace and trims; a whitespace-only or
+    // empty response would otherwise yield "" and violate AC7's "non-empty
+    // unparsedPreview" contract.
+    const preview = previewOutput(output, UNPARSED_PREVIEW_BYTES);
+    return { parsed: false, unparsedPreview: preview === "" ? "(empty response)" : preview };
   },
 };
