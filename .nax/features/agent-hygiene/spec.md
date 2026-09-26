@@ -13,7 +13,7 @@ Bash commands that write to a literal `/tmp` path (#2262).
 
 ## Motivation
 
-Verified on `main` @ `08e3d8f36`:
+Verified on `main` @ `08e3d8f36`; re-verified after rebase onto `5fca1321e` (fix-review #2267/#2268, tracked acceptance tests #2266 — only US-003 is affected, see its section):
 
 - **Spill marker (#2259).** `markerShapes` (`src/tools/spill.ts`) renders
   `... [truncated: full output at spill/<x>.txt; ...]`. That path is relative to `.nax/scratchpad`
@@ -156,9 +156,12 @@ export interface SourceDiffPaths {
 export const NBF_LOGGED_PATH_LIMIT = 20;
 ```
 
-- `createMeasureSourceDiff` classifies every changed path against `fromRef`. Test files are excluded
-  first, as today. A remaining path whose first segment is `.nax` goes to `controlPaths` and adds
-  nothing to `fileCount` or `sourceLineCount`. Every other path goes to exactly one of
+- `createMeasureSourceDiff` classifies every changed path against `fromRef`. A path whose first
+  segment is `.nax` goes to `controlPaths` and adds nothing to `fileCount` or `sourceLineCount`.
+  This check runs **before** the test-file exclusion: since #2266 a feature's acceptance test
+  (`.nax/features/<f>/.nax-acceptance.test.ts`) is tracked and matches the test-file patterns, but it
+  is nax state, and excluding it as a test would hide an NBF pass that rewrote it. Test files outside
+  `.nax/` are then excluded, as today. Every other path goes to exactly one of
   `paths.added`, `paths.modified` or `paths.deleted`. Paths are repo-root-relative, as `git diff`
   prints them. One way to get the status (non-normative): a second `git diff --name-status <fromRef>`
   spawn through `hardenedGitArgv` / `gitSpawnEnv`.
@@ -171,6 +174,11 @@ export const NBF_LOGGED_PATH_LIMIT = 20;
   (each capped at `NBF_LOGGED_PATH_LIMIT`) and `addedCount`, `modifiedCount`, `deletedCount`.
 - A `SourceDiffMetrics` without `paths` / `controlPaths` (a custom `measureSourceDiff`) is treated as
   empty lists, so existing callers and test doubles keep working.
+- Ordering against the ADR-033 scoped fix review (#2267): `runNonBlockingFix` now runs
+  `_deps.reviewFix(restoreRef.sha)` after the `if (cap)` block and before keeping the pass. The
+  control-path restore and the cap restore both happen inside the `if (cap)` block, so they return
+  before `reviewFix` is reached: a pass that touched nax control files is never sent to the LLM
+  review. No change to the fix-review block itself.
 - `restoreToSnapshot` calls `_deps.listCommitsSince(args.workdir, restoreRef.sha)` before
   `rollbackToRef`, and adds `discardedCommits` (the returned SHAs) to its
   `"best-effort fix exhausted — restored to adversarial-passed"` log. If `listCommitsSince` rejects,
@@ -397,6 +405,8 @@ export function detectTmpWrite(command: string, cwd?: string): boolean;
 12. [unit] When `listCommitsSince` rejects, `runNonBlockingFix` still calls `rollbackToRef` and logs `discardedCommits` `[]`.
 13. [unit] On a kept pass, `runNonBlockingFix` never calls `listCommitsSince`.
 14. [integration] The default `listCommitsSince(workdir, ref)` in a temporary git repo with two commits after `ref` returns both commit SHAs, newest first.
+15. [integration] Modifying the tracked `.nax/features/f/.nax-acceptance.test.ts` yields `controlPaths` containing that path, not an exclusion as a test file, with `fileCount` `0`.
+16. [unit] With a `reviewFix` dependency provided and `measureSourceDiff` returning a non-empty `controlPaths` within the cap, `runNonBlockingFix` restores and never calls `reviewFix`.
 
 ### US-004
 
