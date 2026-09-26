@@ -19,7 +19,6 @@
 import type { Finding } from "@/findings";
 import type { UserStory } from "@/prd";
 import { wrapJsonPrompt } from "@/utils/llm-json";
-import { buildReviewOutOfScopeBlock } from "../sections";
 
 /** Everything the fix-review prompt is built from. */
 export interface FixReviewPromptInput {
@@ -68,6 +67,37 @@ Notes:
 - Omit both fields for a contradiction that names a description rule or an out-of-scope entry without an AC number.`;
 
 /**
+ * Numbered out-of-scope block tailored for the fix-review verdict shape.
+ *
+ * `buildReviewOutOfScopeBlock`'s two tails are both wrong for the fix-review op:
+ * - the non-citable tail ("Report nothing against this list; it is context so
+ *   you do not demand excluded work") tells the model to ignore the list, but
+ *   `FIX_REVIEW_INSTRUCTIONS` simultaneously orders a fail when the diff
+ *   "crosses an out-of-scope boundary" — the model is asked to both ignore
+ *   and enforce the same list.
+ * - the citable tail tells the reviewer to set `scopeQuote` / `scopeIndex`,
+ *   schema fields the fix-review op does not support — the verdict shape is
+ *   `{ passed, reason, acIndex?, file? }` with no `category`/`scopeQuote`.
+ *
+ * Render just the numbered list, with a tailored reminder that no AC-grounding
+ * citation exists for these entries: cite the boundary in `reason` (and the
+ * `file` it lives in) but never invent an `acIndex`.
+ */
+function buildFixReviewOutOfScopeBlock(items: readonly string[] | undefined): string {
+  if (!items || items.length === 0) return "";
+  return [
+    "",
+    "**Out of Scope (feature-level — NOT acceptance criteria):**",
+    ...items.map((item, i) => `${i + 1}. ${item}`),
+    "",
+    "These state what the feature deliberately does not do. They are not acceptance criteria,",
+    "so do NOT set `acIndex` to a number from this list — cite the boundary in `reason` (and the",
+    "`file` the contradiction lives in) instead. Do not flag missing work; only fail when a fix",
+    "edit contradicts one of these boundaries.",
+  ].join("\n");
+}
+
+/**
  * Build the verdict-only fix-review prompt.
  *
  * Renders: role + story (description + numbered acceptance criteria + out-of-scope
@@ -99,7 +129,7 @@ ${story.description}
 
 ### Acceptance Criteria
 ${acList}
-${buildReviewOutOfScopeBlock(story.outOfScope)}
+${buildFixReviewOutOfScopeBlock(story.outOfScope)}
 
 ${findingsBlock}
 ${FIX_REVIEW_INSTRUCTIONS}
@@ -107,9 +137,7 @@ ${FIX_REVIEW_OUTPUT_SCHEMA}
 
 ### Fix diff
 
-\`\`\`diff
-${diff}
-\`\`\``;
+${diff}`;
 
   return wrapJsonPrompt(core);
 }
