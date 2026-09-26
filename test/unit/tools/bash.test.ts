@@ -264,3 +264,45 @@ describe("Bash audit exitCode (nax#2227)", () => {
     });
   });
 });
+
+/**
+ * US-002: `raw` has no containment, so `find / -name x` was previously free to
+ * run and hit the 300s Bash timeout (a second test-writer ran exactly that).
+ * `rawDescription` gains ONE sentence naming the whole-filesystem `find`
+ * refusal and pointing the model at the repository.
+ */
+describe("US-002 raw-mode Bash description: the whole-filesystem find refusal", () => {
+  /**
+   * Everything the description says from its first mention of `find` onward.
+   * Reading the tail rather than one period-delimited sentence keeps the
+   * assertion about CONTENT -- what the model is told about `find` -- and not
+   * about punctuation, since a one- or two-sentence phrasing says the same
+   * thing to the model.
+   */
+  function findGuidance(description: string): string {
+    const at = description.indexOf("find");
+    expect(at).toBeGreaterThan(-1);
+    return description.slice(at);
+  }
+
+  test("AC18: the raw description refuses find from /, ~ or $HOME and points at the repository", () => {
+    const guidance = findGuidance(createBashTool({ bashApproval: "raw" }).description);
+    expect(guidance).toContain("/");
+    expect(guidance).toContain("~");
+    expect(guidance).toContain("$HOME");
+    expect(guidance).toContain("refused");
+    expect(guidance).toContain("repository");
+  });
+
+  test("AC18 boundary: the sandboxed (available-launcher) raw description carries the same guidance", () => {
+    const guidance = findGuidance(
+      createBashTool({
+        bashApproval: "raw",
+        launcher: createCommandLauncher({ state: { kind: "available", backend: "srt", network: "open" } }),
+      }).description,
+    );
+    expect(guidance).toContain("$HOME");
+    expect(guidance).toContain("refused");
+    expect(guidance).toContain("repository");
+  });
+});

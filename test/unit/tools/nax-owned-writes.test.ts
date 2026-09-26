@@ -5,6 +5,7 @@ import {
   isNaxOwnedWritePath,
   NAX_OWNED_WRITE_TOOLS,
   NAX_SCRATCHPAD_ENTRY,
+  naxOwnedBashRefusal,
   naxOwnedKind,
   naxOwnedWriteRefusal,
   naxWriteOptIns,
@@ -331,5 +332,56 @@ describe("naxWriteOptIns (nax#2260)", () => {
 
   test("a path below an entry, or outside .nax, opts nothing in", () => {
     expect(naxWriteOptIns(ROOT, [".nax/rules/a.md", "dist", "../.nax/rules"]).size).toBe(0);
+  });
+});
+
+/**
+ * US-002: `naxOwnedBashRefusal` gains an optional `opts.sandboxWrapped`.
+ * Sandbox-wrapped means the command runs inside the OS sandbox, so a token
+ * that only NAMES a PRD is no longer refused -- reading it through Bash costs
+ * nothing, and writing it is still blocked. `config` and `queue` are unchanged
+ * in both modes, and the PRD text without the flag is unchanged too.
+ */
+describe("naxOwnedBashRefusal — sandboxWrapped (US-002)", () => {
+  const PRD = ".nax/features/f/prd.json";
+
+  test("AC10: sandbox-wrapped, a NAMED PRD says reading is allowed and writing is not", () => {
+    const text = naxOwnedBashRefusal("Bash", "prd", PRD, "names", { sandboxWrapped: true });
+    expect(text).toContain("Reading it through Bash is allowed");
+    expect(text).toContain("writing it is not");
+    expect(text).toContain("nax updates it itself");
+    expect(text).not.toContain("reads included");
+  });
+
+  test("AC10 boundary: sandbox-wrapped, a REDIRECT into the PRD says the same read/write truth", () => {
+    const text = naxOwnedBashRefusal("Bash", "prd", PRD, "redirects into", { sandboxWrapped: true });
+    expect(text).toContain("redirects into");
+    expect(text).toContain(PRD);
+    expect(text).toContain("Reading it through Bash is allowed");
+    expect(text).toContain("writing it is not");
+  });
+
+  test("AC11: sandboxWrapped changes nothing for the config kind", () => {
+    expect(naxOwnedBashRefusal("Bash", "config", ".nax/config.json", "names", { sandboxWrapped: true })).toBe(
+      naxOwnedBashRefusal("Bash", "config", ".nax/config.json", "names"),
+    );
+  });
+
+  test("AC11 boundary: sandboxWrapped changes nothing for the queue kind", () => {
+    expect(naxOwnedBashRefusal("Bash", "queue", ".queue.txt", "redirects into", { sandboxWrapped: true })).toBe(
+      naxOwnedBashRefusal("Bash", "queue", ".queue.txt", "redirects into"),
+    );
+  });
+
+  test("AC12: without sandboxWrapped the PRD text keeps the reads-included wording", () => {
+    const text = naxOwnedBashRefusal("Bash", "prd", PRD, "names");
+    expect(text).toContain("reads included");
+    expect(text).not.toContain("Reading it through Bash is allowed");
+  });
+
+  test("AC12 boundary: an explicit sandboxWrapped: false is identical to the absent flag", () => {
+    expect(naxOwnedBashRefusal("Bash", "prd", PRD, "names", { sandboxWrapped: false })).toBe(
+      naxOwnedBashRefusal("Bash", "prd", PRD, "names"),
+    );
   });
 });

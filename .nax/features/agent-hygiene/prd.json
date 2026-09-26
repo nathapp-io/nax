@@ -3,7 +3,7 @@
   "feature": "agent-hygiene",
   "branchName": "feat/agent-hygiene",
   "createdAt": "2026-09-26T00:00:00.000Z",
-  "updatedAt": "2026-09-26T17:41:38.342Z",
+  "updatedAt": "2026-09-26T18:23:44.169Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,9 +31,9 @@
         "access-control"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
+      "attempts": 3,
       "escalations": [
         {
           "fromTier": "balanced",
@@ -115,7 +115,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Six existing modules coordinate conditional command screening with sandbox availability; security-sensitive Bash access control requires strict isolated TDD."
+        "reasoning": "Six existing modules coordinate conditional command screening with sandbox availability; security-sensitive Bash access control requires strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/tools/policy-bash-raw.ts",
@@ -127,7 +130,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "79f5a88fa38be4b86f2f5ef205540afa05745cf5"
     },
     {
       "id": "US-003",
