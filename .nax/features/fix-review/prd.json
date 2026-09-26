@@ -3,7 +3,7 @@
   "feature": "fix-review",
   "branchName": "feat/fix-review",
   "createdAt": "2026-09-27T00:00:00.000Z",
-  "updatedAt": "2026-09-26T14:28:26.173Z",
+  "updatedAt": "2026-09-26T15:13:50.318Z",
   "userStories": [
     {
       "id": "US-001",
@@ -291,8 +291,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
