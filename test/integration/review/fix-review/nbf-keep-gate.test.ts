@@ -121,7 +121,7 @@ function snapshotCount(calls: readonly string[][]): number {
 }
 
 /**
- * The `from` ref of the `git diff --name-only --no-renames <from> <to>` call whose
+ * The `from` ref of the `git diff --name-only -z --no-renames <from> <to>` call whose
  * `to` is the post-fix tree — i.e. the ref the fix review treated as its pre-fix
  * tree. `undefined` when that diff never ran.
  */
@@ -211,7 +211,7 @@ describe("US-004 — the scoped fix review is wired into the NBF keep gate", () 
         // The fix's own delta (pre-fix tree → post-fix tree) changed a path; the
         // story's own files (story ref → pre-fix tree) changed nothing, so the
         // scope check runs for real against the seed findings.
-        if (argv.includes("--name-only")) return fakeProc(cmd.includes(STORY_REF) ? "" : `${CHANGED_PATH}\n`);
+        if (argv.includes("--name-only")) return fakeProc(cmd.includes(STORY_REF) ? "" : `${CHANGED_PATH}\0`);
         if (argv.includes("diff"))
           return fakeProc(`diff --git a/${CHANGED_PATH} b/${CHANGED_PATH}\n+const guard = 1;\n`);
         return fakeProc("");

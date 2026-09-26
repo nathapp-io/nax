@@ -381,3 +381,94 @@ describe("snapshotWorkingTree — #2210 nested-repo filter driver", () => {
     expect(run(["cat-file", "-p", `${tree}:a.txt`], top)).toBe("changed");
   });
 });
+
+/**
+ * Hardening from the discarded NBF commit 268d13fe0 (points 3, 4, 5): the two
+ * path helpers must agree on scope, survive awkward file names, and accept
+ * SHA-256 object ids.
+ */
+describe("tree-snapshot hardening", () => {
+  test("diffBetween from a package workdir shows the same repo-wide changes changedPathsBetween reports", async () => {
+    write("packages/a/src/x.ts", "export const x = 2;\n");
+    write("packages/b/src/y.ts", "export const y = 2;\n");
+    const pkgDir = join(repo, "packages/a");
+    const tree = await snapshotWorkingTree(pkgDir);
+
+    const paths = await changedPathsBetween(pkgDir, "HEAD", tree);
+    const diff = await diffBetween(pkgDir, "HEAD", tree);
+
+    expect(paths).toEqual(["packages/a/src/x.ts", "packages/b/src/y.ts"]);
+    for (const path of paths) expect(diff).toContain(`+++ b/${path}`);
+  });
+
+  test("changedPathsBetween keeps non-ASCII names and surrounding spaces verbatim", async () => {
+    write("src/café.ts", "export const c = 1;\n");
+    write("src/ spaced .ts", "export const s = 1;\n");
+
+    const paths = await changedPathsBetween(repo, "HEAD", await snapshotWorkingTree(repo));
+
+    expect([...paths].sort()).toEqual(["src/ spaced .ts", "src/café.ts"]);
+  });
+
+  test("snapshotWorkingTree accepts a SHA-256 repository's 64-hex tree id", async () => {
+    const shaRepo = join(testDir, "sha256");
+    mkdirSync(shaRepo, { recursive: true });
+    const run = (args: string[]) => {
+      const r = Bun.spawnSync(["git", ...args], { cwd: shaRepo, stdout: "pipe", stderr: "pipe" });
+      if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
+    };
+    run(["init", "-q", "--object-format=sha256"]);
+    run(["config", "user.email", "t@t"]);
+    run(["config", "user.name", "t"]);
+    writeFileSync(join(shaRepo, "a.txt"), "a\n");
+    run(["add", "a.txt"]);
+    run(["commit", "-qm", "init"]);
+    writeFileSync(join(shaRepo, "a.txt"), "b\n");
+
+    const tree = await snapshotWorkingTree(shaRepo);
+
+    expect(tree).toMatch(/^[0-9a-f]{64}$/);
+    expect(await changedPathsBetween(shaRepo, "HEAD", tree)).toEqual(["a.txt"]);
+  });
+});
+
+/**
+ * A wedged git (a huge monorepo `add -A`, a lock held by another process) must
+ * not hang the fix review: every git call is bounded, and a timeout surfaces as
+ * FIX_REVIEW_GIT_FAILED rather than an unbounded wait.
+ */
+describe("tree-snapshot git timeout", () => {
+  test("a git call that never exits is killed and fails with FIX_REVIEW_GIT_FAILED", async () => {
+    const orig = { ..._treeSnapshotDeps };
+    let killed = false;
+    Object.assign(_treeSnapshotDeps, {
+      gitTimeoutMs: 50,
+      spawn: () => {
+        let exit: (code: number) => void = () => {};
+        const exited = new Promise<number>((resolve) => {
+          exit = resolve;
+        });
+        const closed = () => new ReadableStream<Uint8Array>({ start: (c) => c.close() });
+        return {
+          stdout: closed(),
+          stderr: closed(),
+          exited,
+          pid: 1,
+          kill: () => {
+            killed = true;
+            exit(137);
+          },
+        };
+      },
+    });
+    try {
+      const err = await captureRejection(changedPathsBetween(repo, "HEAD", "HEAD"));
+      expect(killed).toBe(true);
+      assertNaxError(err, "changedPathsBetween against a wedged git");
+      expect(err.code).toBe("FIX_REVIEW_GIT_FAILED");
+      expect(err.message).toContain("timed out");
+    } finally {
+      Object.assign(_treeSnapshotDeps, orig);
+    }
+  });
+});

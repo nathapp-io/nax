@@ -166,6 +166,34 @@ describe("checkFixScope", () => {
     expect(result.outOfScopeFiles).toEqual([]);
   });
 
+  test("a `./`-prefixed finding path and a trailing-slash package dir still join to the changed path", () => {
+    const result = checkFixScope(
+      scopeInput({
+        changedFiles: ["packages/a/src/lock.ts"],
+        findings: [makeFinding({ file: "./src/lock.ts" })],
+        packageDirRel: "packages/a/",
+      }),
+    );
+
+    expect(result.inScope).toBe(true);
+    expect(result.outOfScopeFiles).toEqual([]);
+  });
+
+  test.each([".//src/lock.ts", "./././src/lock.ts", "src//lock.ts"])(
+    "a finding spelled %p still joins to the changed path",
+    (file) => {
+      const result = checkFixScope(
+        scopeInput({
+          changedFiles: ["packages/a/src/lock.ts"],
+          findings: [makeFinding({ file })],
+          packageDirRel: "packages/a",
+        }),
+      );
+
+      expect(result.inScope).toBe(true);
+    },
+  );
+
   test("AC15: a seeding finding that names no file adds nothing to the allowed set", () => {
     const result = checkFixScope(
       scopeInput({

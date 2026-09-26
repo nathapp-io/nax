@@ -182,7 +182,7 @@ describe("US-005 — the scoped fix review on the blocking-cycle autofix-test-wr
         }
         if (argv.includes("--no-renames")) {
           const from = cmd[cmd.indexOf("--no-renames") + 1];
-          return fakeProc(from === STORY_REF ? "" : `${CHANGED_TEST_PATH}\n`);
+          return fakeProc(from === STORY_REF ? "" : `${CHANGED_TEST_PATH}\0`);
         }
         if (argv.includes("diff")) return fakeProc(SMALL_DIFF);
         return fakeProc("");

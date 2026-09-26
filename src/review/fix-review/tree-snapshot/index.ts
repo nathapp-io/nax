@@ -29,10 +29,15 @@ import { type SpawnOptions, type SpawnResult, typedSpawn } from "@/utils/bun-dep
 import { gitlinkSafeAdd } from "@/utils/git-add";
 import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
 
-/** Pathspec exclusion that hides the repo-root `.nax/` directory and its contents. */
-const NAX_EXCLUDE_PATHSPEC = ":!.nax";
-/** Pathspec exclusion that hides a `.nax/` directory nested below the cwd. */
-const NAX_NESTED_EXCLUDE_PATHSPEC = ":(glob,exclude)**/.nax/**";
+/**
+ * `diffBetween` pathspecs: the whole tree, minus every `.nax/` directory. All
+ * three are anchored at the repo top (`:/`, `top` magic), so the diff is the
+ * same whatever the cwd, matching the repo-wide `changedPathsBetween`.
+ */
+const DIFF_PATHSPECS = [":/", ":(top,exclude).nax", ":(top,glob,exclude)**/.nax/**"] as const;
+
+/** A git object id: 40 hex (SHA-1) or 64 hex (SHA-256 repositories). */
+const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /**
  * Injectable spawn seam — mirrors `_gitDeps.spawn` (`src/utils/git.ts`) and
@@ -44,13 +49,24 @@ const NAX_NESTED_EXCLUDE_PATHSPEC = ":(glob,exclude)**/.nax/**";
  */
 export interface TreeSnapshotDeps {
   readonly spawn: (cmd: string[], opts: SpawnOptions) => SpawnResult;
+  /** Wall-clock budget for one git call; the process is SIGKILLed past it. */
+  readonly gitTimeoutMs: number;
   readonly mkdtemp: (prefix: string) => Promise<string>;
   readonly rm: (path: string, options?: { recursive?: boolean; force?: boolean }) => Promise<void>;
   readonly tmpdir: () => string;
 }
 
+/**
+ * Per-call git budget. `add -A` over a large monorepo's working tree is the
+ * slowest call here, so this matches the budget `autoCommitIfDirty` gives the
+ * same operation (`AUTO_COMMIT_GIT_TIMEOUT_MS`, src/utils/git.ts) rather than
+ * the 10s read-only default.
+ */
+const TREE_SNAPSHOT_GIT_TIMEOUT_MS = 30_000;
+
 export const _treeSnapshotDeps: TreeSnapshotDeps = {
   spawn: typedSpawn,
+  gitTimeoutMs: TREE_SNAPSHOT_GIT_TIMEOUT_MS,
   mkdtemp,
   rm,
   tmpdir,
@@ -61,6 +77,7 @@ interface GitRunResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  timedOut?: boolean;
 }
 
 /**
@@ -79,6 +96,7 @@ async function runGit(
   args: readonly string[],
   cwd: string,
   indexOverlay?: { GIT_INDEX_FILE: string },
+  timeoutMs: number = _treeSnapshotDeps.gitTimeoutMs,
 ): Promise<GitRunResult> {
   const proc = _treeSnapshotDeps.spawn(hardenedGitArgv(["git", ...args]), {
     cwd,
@@ -86,11 +104,27 @@ async function runGit(
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  // Same shape as `gitWithTimeout` (src/utils/git.ts), which cannot be reused
+  // because it always spawns with `process.env` and so cannot carry the
+  // GIT_INDEX_FILE overlay. `setTimeout` rather than `Bun.sleep` because the
+  // timer must be cancelled once git exits.
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // Already exited.
+    }
+  }, timeoutMs);
+  // Drain eagerly so a full pipe cannot stop git from reaching `exited`; the
+  // `.catch` covers a SIGKILLed process erroring its pipes.
+  const stdoutText = new Response(proc.stdout).text().catch(() => "");
+  const stderrText = new Response(proc.stderr).text().catch(() => "");
+  const exitCode = await proc.exited;
+  clearTimeout(timer);
+  if (timedOut) return { stdout: "", stderr: `timed out after ${timeoutMs}ms`, exitCode: 1, timedOut: true };
+  const [stdout, stderr] = await Promise.all([stdoutText, stderrText]);
   return { stdout, stderr, exitCode };
 }
 
@@ -148,19 +182,21 @@ export async function snapshotWorkingTree(workdir: string): Promise<string> {
     // which would run a filter driver that repo's own config names (#2210).
     // Gitlinks are restaged via `update-index` instead, recording the nested
     // HEAD exactly as a plain `add` would.
-    const add = await gitlinkSafeAdd((args, cwd) => runGit(args, cwd, indexOverlay), workdir, { flags: ["-A"] });
+    const add = await gitlinkSafeAdd((args, cwd, timeoutMs) => runGit(args, cwd, indexOverlay, timeoutMs), workdir, {
+      flags: ["-A"],
+    });
     if (add.exitCode !== 0) gitFailed(stage, ["add", "-A"], workdir, add.stderr.trim() || `exit ${add.exitCode}`);
 
     // `git write-tree` reads the throwaway index and emits its tree id.
     // Output goes to stdout; trailing newline trimmed. The empty-tree case
-    // (an index with no entries) would still produce a valid 40-hex id, and
+    // (an index with no entries) would still produce a valid object id, and
     // a fresh repo with no commits is already rejected at `read-tree HEAD`.
     const write = await runGit(["write-tree"], workdir, indexOverlay);
     if (write.exitCode !== 0)
       gitFailed(stage, ["write-tree"], workdir, write.stderr.trim() || `exit ${write.exitCode}`);
 
     const tree = write.stdout.trim();
-    if (!/^[0-9a-f]{40}$/.test(tree)) {
+    if (!OBJECT_ID.test(tree)) {
       gitFailed(stage, ["write-tree"], workdir, `unexpected tree id: ${tree}`);
     }
     return tree;
@@ -177,52 +213,33 @@ export async function snapshotWorkingTree(workdir: string): Promise<string> {
 /**
  * Repo-root-relative paths that differ between two tree-ishes (no rename detection).
  *
- * `git diff --name-only --no-renames <from> <to>` lists every changed path
- * relative to the repo root, regardless of where the command runs. From a
- * subdirectory cwd (a package story's `workdir`), git shows only the paths
- * under that subtree — exactly the per-package scoping AC7 wants.
+ * A tree-to-tree `git diff --name-only` is not limited by the cwd, so from a
+ * package `workdir` it still lists every changed path in the repo, relative to
+ * the repo root. `-z` makes git print each path verbatim, NUL-terminated: no
+ * C-quoting of non-ASCII names, and no line splitting that would break on a
+ * newline or strip surrounding spaces.
  */
 export async function changedPathsBetween(workdir: string, from: string, to: string): Promise<string[]> {
   const stage = "fix-review-changed-paths";
-  const result = await runGit(["diff", "--name-only", "--no-renames", from, to], workdir);
-  if (result.exitCode !== 0) {
-    gitFailed(
-      stage,
-      ["diff", "--name-only", "--no-renames", from, to],
-      workdir,
-      result.stderr.trim() || `exit ${result.exitCode}`,
-    );
-  }
-  // Output is one repo-root-relative path per line. An empty stdout means
-  // `from` and `to` describe the same tree — NOT "git failed"; the non-zero
-  // exit above already covers the git-failed case.
-  return result.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  const args = ["diff", "--name-only", "-z", "--no-renames", from, to];
+  const result = await runGit(args, workdir);
+  if (result.exitCode !== 0) gitFailed(stage, args, workdir, result.stderr.trim() || `exit ${result.exitCode}`);
+  // An empty stdout means `from` and `to` describe the same tree — NOT "git
+  // failed"; the non-zero exit above already covers that case.
+  return result.stdout.split("\0").filter((path) => path.length > 0);
 }
 
 /**
- * Unified diff between two tree-ishes, excluding paths under `.nax/`.
+ * Unified diff between two tree-ishes, excluding every `.nax/` directory.
  *
- * Mirrors the per-package scoping of `changedPathsBetween`: from a package
- * cwd, git shows only files under that subtree, and the `.nax/` exclusion
- * uses two pathspecs — one for the cwd-level `.nax/` directory and one for
- * nested `.nax/` directories — so neither slips through the filter.
+ * Repo-wide like `changedPathsBetween`, so the diff the reviewer reads covers
+ * exactly the files the scope check judged. A cwd-scoped diff from a package
+ * workdir would hide an out-of-package change the scope check had allowed.
  */
 export async function diffBetween(workdir: string, from: string, to: string): Promise<string> {
   const stage = "fix-review-diff";
-  const result = await runGit(
-    ["diff", from, to, "--", ".", NAX_EXCLUDE_PATHSPEC, NAX_NESTED_EXCLUDE_PATHSPEC],
-    workdir,
-  );
-  if (result.exitCode !== 0) {
-    gitFailed(
-      stage,
-      ["diff", from, to, "--", ".", NAX_EXCLUDE_PATHSPEC, NAX_NESTED_EXCLUDE_PATHSPEC],
-      workdir,
-      result.stderr.trim() || `exit ${result.exitCode}`,
-    );
-  }
+  const args = ["diff", from, to, "--", ...DIFF_PATHSPECS];
+  const result = await runGit(args, workdir);
+  if (result.exitCode !== 0) gitFailed(stage, args, workdir, result.stderr.trim() || `exit ${result.exitCode}`);
   return result.stdout;
 }
