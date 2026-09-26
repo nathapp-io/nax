@@ -29,12 +29,27 @@ function toModelPassed(value: unknown): boolean | undefined {
  *   - `[]` on a pass,
  *   - one entry carrying the reason (and optional `acIndex`/`file`) on a fail.
  *
- * On unparseable output the helper returns the existing
- * `parsed: false, result: null, unparsedPreview` shape verbatim — no parse
- * retry (per the Out-of-Scope list).
+ * Shape validation (mirrors the seeded-reviewer branch's type-narrowing):
+ *   - `parsed` must be a boolean. The seeded reviewers' branch returns `null`
+ *     when their output's `passed` is not a boolean or `findings` is not an
+ *     array; here the analogous gate is on `parsed` itself, since `FixReviewOpOutput`
+ *     has no `findings` to check. A missing or wrong-typed `parsed` means the
+ *     op produced nothing usable — `toReviewDecisionPayload` then returns
+ *     `null` and no event is emitted.
+ *   - On `parsed: true`, `passed` must be a boolean and `reason` a non-empty
+ *     string. A wrong-typed `passed` (`"yes"`) would otherwise coerce silently.
+ *   - On `parsed: false`, only `unparsedPreview` is read and it is narrowed
+ *     to a string; the helper's `passed` field is `false` (no model claim).
+ *
+ * Returns `null` on shape mismatch so `emitReviewDecision` silently drops
+ * the event, the same way the seeded branch drops a malformed output.
  */
-function fixReviewPayload(record: FixReviewOpOutput): ReviewDecisionPayload {
+function fixReviewPayload(record: FixReviewOpOutput): ReviewDecisionPayload | null {
+  if (record.parsed !== true && record.parsed !== false) return null;
+
   if (record.parsed === true) {
+    if (typeof record.passed !== "boolean") return null;
+    if (typeof record.reason !== "string" || record.reason.length === 0) return null;
     const findings = record.passed
       ? []
       : [
@@ -58,7 +73,7 @@ function fixReviewPayload(record: FixReviewOpOutput): ReviewDecisionPayload {
     parsed: false,
     passed: false,
     result: null,
-    unparsedPreview: record.unparsedPreview,
+    unparsedPreview: typeof record.unparsedPreview === "string" ? record.unparsedPreview : undefined,
   };
 }
 
@@ -262,7 +277,15 @@ export function logUnifiedReviewPhaseResult(storyId: string | undefined, opName:
   }
 
   const findingsCount = payload.result.findings.length;
-  const title = payload.reviewer === "semantic" ? "Semantic review" : "Adversarial review";
+  // US-001 — the scoped fix review has its own reviewer kind; without an
+  // explicit branch it falls through to "Adversarial review", which would
+  // mislabel every fix-review log line in the run summary.
+  const title =
+    payload.reviewer === "semantic"
+      ? "Semantic review"
+      : payload.reviewer === "adversarial"
+        ? "Adversarial review"
+        : "Fix review";
 
   if (payload.passed) {
     logger?.info("review", `${title} passed`, { storyId });

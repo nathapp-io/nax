@@ -14,5 +14,11 @@ import type { ReviewConfig } from "../types";
 const DEFAULT_FIX_REVIEW_MODEL = "balanced";
 
 export function resolveFixReviewModel(review: ReviewConfig): ConfiguredModel {
-  return review.fixReview.model ?? review.semantic?.model ?? DEFAULT_FIX_REVIEW_MODEL;
+  // Defensive `?.` on `fixReview`: the `ReviewConfig` interface declares it
+  // required, but a hand-built fixture, stale persisted object, or any caller
+  // that bypassed `NaxConfigSchema.parse` can reach this function with the
+  // block missing. The seeded semantic reviewer uses optional chaining for
+  // exactly this reason — match it here so the fallback chain is uniformly
+  // safe.
+  return review.fixReview?.model ?? review.semantic?.model ?? DEFAULT_FIX_REVIEW_MODEL;
 }
