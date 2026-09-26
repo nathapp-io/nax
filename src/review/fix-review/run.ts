@@ -21,16 +21,16 @@
  * `truncateDiff(diffBetween(workdir, preFixTree, postTree))`. After the LLM
  * stage, parsed or not, the op output is emitted once through
  * `emitReviewDecision(ctx, "fix-review", output)`.
- *
- * RED STUB (US-003 test-writer session): the body returns a fixed placeholder
- * verdict so AC10-AC20 fail on their assertions rather than on a throw or an
- * import. The implementer supplies the real ordered runner.
  */
 
-import { type CallContext, callOp } from "@/operations";
-import { resolveTestFilePatterns } from "@/test-runners";
+import type { TestPatternConfig } from "@/config";
+import { type CallContext, callOp, fixReviewOp } from "@/operations";
+import { truncateDiff } from "@/review";
+import { createTestFileClassifier, resolveTestFilePatterns } from "@/test-runners";
+import { storyPackageDir } from "@/utils/path-frame";
+import { checkFixScope } from "./scope";
 import { changedPathsBetween, diffBetween, snapshotWorkingTree } from "./tree-snapshot";
-import type { FixReviewRequest, FixReviewVerdict } from "./types";
+import type { FixReviewOpOutput, FixReviewRequest, FixReviewVerdict } from "./types";
 
 /**
  * Injectable seam — the same `_deps` pattern as `_nonBlockingFixDeps`. Each
@@ -64,17 +64,170 @@ const DEFAULT_DEPS: FixReviewDeps = {
   resolveTestFilePatterns,
 };
 
-/** Placeholder reason so an unimplemented stage surfaces as an assertion failure. */
-const NOT_IMPLEMENTED_REASON = "fix-review runner not implemented (US-003)";
+/**
+ * Compute the package directory relative to the workdir. The story's `workdir`
+ * field is the package dir relative to the repo root (ADR-008 / ADR-020); the
+ * fix-review runs git from the package dir, but the scope check operates on
+ * repo-root-relative paths, so it needs that same package dir joined onto each
+ * finding's workdir-relative `file`. `storyPackageDir` collapses the missing-
+ * workdir and root-workdir cases into a single `undefined` — the scope check
+ * reads `undefined` as "single-package project, no join needed".
+ */
+function packageDirRelFromCtx(ctx: CallContext): string {
+  const story = ctx.story;
+  if (!story) return "";
+  return storyPackageDir(story) ?? "";
+}
+
+/** Read a finding's workdir-relative `file` if present. */
+function findingFile(file: unknown): string | undefined {
+  if (typeof file !== "string") return undefined;
+  return file;
+}
 
 export async function runFixReview(
-  _ctx: CallContext,
-  _req: FixReviewRequest,
-  _deps: Partial<FixReviewDeps> = {},
+  ctx: CallContext,
+  req: FixReviewRequest,
+  deps: Partial<FixReviewDeps> = {},
 ): Promise<FixReviewVerdict> {
-  // The real body merges `{ ...DEFAULT_DEPS, ..._deps }` and runs the four
-  // stages above; the placeholder below fails every AC10-AC20 assertion without
-  // throwing, so the RED state still reaches each test's expectations.
-  void DEFAULT_DEPS;
-  return { kind: "fail", cause: "contradiction", reason: NOT_IMPLEMENTED_REASON };
+  const d: FixReviewDeps = { ...DEFAULT_DEPS, ...deps };
+  const logger = ctx.runtime?.logger;
+
+  // ── Stage 1: the fixReview switch ────────────────────────────────────────
+  if (req.config.fixReview?.enabled === false) {
+    return { kind: "pass", reviewed: false, reason: "fixReview is disabled" };
+  }
+
+  // ── Stage 2: snapshot the post-fix tree, list the paths that changed ────
+  let postTree: string;
+  try {
+    postTree = await d.snapshotWorkingTree(req.workdir);
+  } catch (err) {
+    logger?.error("fix-review", "snapshotWorkingTree failed", {
+      storyId: req.story.id,
+      stage: "fix-review-tree-snapshot",
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { kind: "error", reason: `snapshot failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  let fixFiles: string[];
+  try {
+    fixFiles = await d.changedPathsBetween(req.workdir, req.preFixTree, postTree);
+  } catch (err) {
+    logger?.error("fix-review", "changedPathsBetween (fix) failed", {
+      storyId: req.story.id,
+      stage: "fix-review-changed-paths",
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { kind: "error", reason: `diff failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  if (fixFiles.length === 0) {
+    return { kind: "pass", reviewed: false, reason: "no paths changed by the fix" };
+  }
+
+  // The story's own files for the scope check: compute only when we know the
+  // story's start ref (otherwise the comparison has no ground truth, and the
+  // scope check will skip rather than guess).
+  const storyGitRef = req.story.storyGitRef;
+  let storyFiles: readonly string[] | undefined;
+  if (storyGitRef !== undefined) {
+    try {
+      storyFiles = await d.changedPathsBetween(req.workdir, storyGitRef, req.preFixTree);
+    } catch (err) {
+      logger?.error("fix-review", "changedPathsBetween (story) failed", {
+        storyId: req.story.id,
+        stage: "fix-review-changed-paths",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { kind: "error", reason: `diff failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+
+  // ── Stage 3: deterministic scope check ──────────────────────────────────
+  const packageDirRel = packageDirRelFromCtx(ctx);
+  // Anchor on the repo root (workdir) when building the classifier — the
+  // project's `.nax/config.json` lives there and is read directly by
+  // `resolveTestFilePatterns`. Pass `undefined` for packageDir when the story
+  // is rooted at the repo root (single-package project).
+  const fullConfig: TestPatternConfig = ctx.config ?? ctx.packageView.config;
+  const resolved = await d.resolveTestFilePatterns(
+    fullConfig,
+    req.workdir,
+    packageDirRel === "" ? undefined : packageDirRel,
+  );
+  const isTestFile = createTestFileClassifier(resolved);
+
+  const scope = checkFixScope({
+    changedFiles: fixFiles,
+    storyFiles,
+    story: req.story,
+    findings: req.findings.map((f) => ({ file: findingFile(f.file) })),
+    packageDirRel,
+    isTestFile,
+  });
+
+  if (!scope.inScope) {
+    return {
+      kind: "fail",
+      cause: "scope",
+      files: scope.outOfScopeFiles,
+      reason: "fix touches files outside the story's declared scope",
+    };
+  }
+
+  // ── Stage 4: LLM verdict over the embedded fix diff ─────────────────────
+  let rawDiff: string;
+  try {
+    rawDiff = await d.diffBetween(req.workdir, req.preFixTree, postTree);
+  } catch (err) {
+    logger?.error("fix-review", "diffBetween failed", {
+      storyId: req.story.id,
+      stage: "fix-review-diff",
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { kind: "error", reason: `diff failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  const diff = truncateDiff(rawDiff);
+
+  let output: FixReviewOpOutput;
+  try {
+    output = await d.callOp(ctx, fixReviewOp, { story: req.story, diff, findings: req.findings });
+  } catch (err) {
+    d.emitReviewDecision(ctx, "fix-review", {
+      parsed: false,
+      unparsedPreview: `callOp threw: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    logger?.error("fix-review", "callOp dispatch failed", {
+      storyId: req.story.id,
+      stage: "fix-review-dispatch",
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { kind: "error", reason: `dispatch failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  // Always emit the decision through the audit seam — parsed or not — so the
+  // review-audit subscriber records every fix-review verdict exactly once.
+  d.emitReviewDecision(ctx, "fix-review", output);
+
+  if (!output.parsed) {
+    return { kind: "error", reason: `unparseable fix-review response: ${output.unparsedPreview}` };
+  }
+
+  if (output.passed) {
+    return { kind: "pass", reviewed: true, reason: output.reason };
+  }
+
+  // Contradiction — carry the optional acIndex and file from the verdict.
+  const contradiction: {
+    kind: "fail";
+    cause: "contradiction";
+    reason: string;
+    acIndex?: number;
+    file?: string;
+  } = { kind: "fail", cause: "contradiction", reason: output.reason };
+  if (output.acIndex !== undefined) contradiction.acIndex = output.acIndex;
+  if (output.file !== undefined) contradiction.file = output.file;
+  return contradiction;
 }

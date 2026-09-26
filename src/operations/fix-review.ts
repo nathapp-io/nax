@@ -12,21 +12,17 @@
  * (as `semanticReviewOp` uses), not the `ReviewConfig` interface in
  * `src/review/types.ts` — `FixReviewRequest.config` and `resolveFixReviewModel`
  * take the latter.
- *
- * RED STUB (US-003 test-writer session): `session` and `model` are placeholders
- * and `parse` returns a fixed verdict, so AC6-AC9 fail on their assertions
- * rather than on a throw or an import. The implementer supplies the real
- * values: `session` → `{ role: "reviewer-fix", lifetime: "fresh" }`,
- * `model` → `resolveFixReviewModel(ctx.config.review)`, and `parse` → the JSON
- * verdict (or `{ parsed: false, unparsedPreview }`).
  */
 
+import { previewOutput, UNPARSED_PREVIEW_BYTES } from "../agents/retry/parse-retry";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Finding } from "../findings";
 import type { UserStory } from "../prd";
 import { buildFixReviewPrompt } from "../prompts";
 import type { FixReviewOpOutput } from "../review/fix-review";
+import { resolveFixReviewModel } from "../review/fix-review";
+import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
 
 export interface FixReviewOpInput {
@@ -37,24 +33,41 @@ export interface FixReviewOpInput {
   readonly findings: readonly Finding[];
 }
 
-/** Placeholder reason so an unimplemented parse surfaces as an assertion failure. */
-const NOT_IMPLEMENTED_REASON = "fix-review parse not implemented (US-003)";
+/** Coerce a structurally unknown parsed value into the typed `FixReviewOpOutput`. */
+function asFixReviewOutput(value: unknown): FixReviewOpOutput | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.passed !== "boolean" || typeof raw.reason !== "string") return null;
+  const out: {
+    parsed: true;
+    passed: boolean;
+    reason: string;
+    acIndex?: number;
+    file?: string;
+  } = { parsed: true, passed: raw.passed, reason: raw.reason };
+  if (typeof raw.acIndex === "number") out.acIndex = raw.acIndex;
+  if (typeof raw.file === "string") out.file = raw.file;
+  return out;
+}
 
 export const fixReviewOp: RunOperation<FixReviewOpInput, FixReviewOpOutput, ReviewConfig> = {
   kind: "run",
   name: "fix-review",
   stage: "review",
-  // PLACEHOLDER (US-003 RED): AC8 pins the real role/lifetime pair.
-  session: { role: "reviewer-semantic", lifetime: "warm" },
+  session: { role: "reviewer-fix", lifetime: "fresh" },
   tools: ["Read", "Glob", "Grep"],
   config: reviewConfigSelector,
-  // PLACEHOLDER (US-003 RED): AC9 requires resolveFixReviewModel(ctx.config.review).
-  model: () => undefined,
+  model: (_input, ctx) => resolveFixReviewModel(ctx.config.review),
   timeoutMs: (_input, ctx) => ctx.config.review.fixReview.timeoutMs,
   build: (input, _ctx) => ({
     role: { id: "role", content: "", overridable: false },
     task: { id: "task", content: buildFixReviewPrompt(input), overridable: false },
   }),
-  // PLACEHOLDER (US-003 RED): AC6/AC7 require the real verdict parse.
-  parse: (_output, _input, _ctx) => ({ parsed: true, passed: true, reason: NOT_IMPLEMENTED_REASON }),
+  parse: (output, _input, _ctx) => {
+    const parsed = asFixReviewOutput(tryParseLLMJson<unknown>(output));
+    if (parsed) return parsed;
+    // No JSON object at all — return the clipped preview so the caller can
+    // treat the verdict as `kind: "error"` (AC16) and audit it.
+    return { parsed: false, unparsedPreview: previewOutput(output, UNPARSED_PREVIEW_BYTES) };
+  },
 };
