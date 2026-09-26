@@ -9,7 +9,7 @@
  */
 
 import type { z } from "zod";
-import type { NonBlockingFixConfigSchema } from "./schemas-review";
+import type { FixReviewConfigSchema, NonBlockingFixConfigSchema } from "./schemas-review";
 import { pickSelector, reshapeSelector } from "./selector";
 import type { NaxConfig } from "./types";
 
@@ -177,4 +177,6 @@ export type MutationCheckConfig = ReturnType<typeof mutationCheckConfigSelector.
 export type AutofixConfig = ReturnType<typeof autofixConfigSelector.select>;
 export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;
 export type NonBlockingFixConfig = z.infer<typeof NonBlockingFixConfigSchema>;
+/** US-001 (fix-review) — `review.fixReview` slice, beside `NonBlockingFixConfig`. */
+export type FixReviewConfig = z.infer<typeof FixReviewConfigSchema>;
 export type FinishConfig = ReturnType<typeof finishConfigSelector.select>;

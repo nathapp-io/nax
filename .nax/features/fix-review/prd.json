@@ -3,7 +3,7 @@
   "feature": "fix-review",
   "branchName": "feat/fix-review",
   "createdAt": "2026-09-27T00:00:00.000Z",
-  "updatedAt": "2026-09-26T10:04:45.327Z",
+  "updatedAt": "2026-09-26T10:32:22.106Z",
   "userStories": [
     {
       "id": "US-001",
@@ -39,7 +39,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "The same new reviewer must be represented coherently across Zod defaults, hand-written config, model precheck, session dispatch events and persisted audit payloads; testing requires the existing bus/subscriber integration."
+        "reasoning": "The same new reviewer must be represented coherently across Zod defaults, hand-written config, model precheck, session dispatch events and persisted audit payloads; testing requires the existing bus/subscriber integration.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/config/schemas-review.ts",
@@ -52,7 +55,11 @@
         "src/review/fix-review/types.ts",
         "src/review/fix-review/config.ts"
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ae7a78131772bc2d1cd80c02655fe2c5a7a83307"
     },
     {
       "id": "US-002",
@@ -105,7 +112,10 @@
         "src/review/fix-review/tree-snapshot.ts",
         "src/review/fix-review/scope.ts"
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -164,7 +174,10 @@
         "src/prompts/builders/fix-review-builder.ts",
         "src/review/fix-review/run.ts"
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -211,7 +224,10 @@
       "expectedFiles": [
         "src/execution/story-orchestrator/nbf-deps.ts"
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -262,7 +278,10 @@
       "expectedFiles": [
         "src/execution/story-orchestrator/fix-review-strategy.ts"
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Audit against code: this is a Bun/TypeScript orchestration enhancement, not greenfield. src/config/schemas-review.ts:205-310 defines sibling nonBlockingFix and ReviewConfigSchema; src/config/schemas.ts:241-265 supplies the review default object; src/config/selectors.ts:155,179 defines selector-slice ReviewConfig and inferred config exports, whereas src/review/types.ts:294-415 defines a distinct hand-written ReviewConfig with a key-drift assertion. Add fixReview to both config layers, including the explicit review default, and walk only an explicitly set fixReview.model in src/precheck/checks-model-resolution-walk.ts. Agent reviewer roles are named in src/runtime/session-role.ts:18-45 and mapped by src/runtime/middleware/review-audit.ts:5-8. ReviewDecisionPayload is in src/execution/story-orchestrator/types.ts:114-145, event unions in src/runtime/dispatch-events.ts:193, audit entries and auditKey in src/review/review-audit.ts:42-179. src/execution/story-orchestrator/review-decision.ts:24-109 currently rejects unknown reviewers and expects findings arrays: a dedicated fix-review branch must precede that shape-dependent logic; retain original semantic/adversarial conversion. The audit subscriber writes review-decision events to review-audit/<feature>/ using src/review/review-audit.ts:246-262. Git spawns must use hardenedGitArgv/gitSpawnEnv (src/utils/git-env.ts:69-99); its overlay supports GIT_INDEX_FILE. The working-tree snapshot needs an isolated temporary index based on HEAD, updated with tracked and nonignored untracked contents, and must not mutate the real index/status or report git errors as an empty diff. Git outputs are repository-root-relative even with a package cwd. src/prd/types.ts:292-311 provides getContextFiles/getExpectedFiles; Finding.file is workdir-relative (src/findings/types.ts). Scope arithmetic joins finding paths onto packageDirRel; tests and .nax/ are exempt. Existing diff-utils are HEAD-oriented (src/review/diff-utils.ts:1-20), but truncateDiff is reusable. The out-of-scope section builder at src/prompts/sections/out-of-scope.ts:36-76 renders exclusions with a generic admonition not to report missing excluded work; the fix-review prompt must separately distinguish forbidden changed work from missing work and return a verdict, never an open-ended finding list. In src/execution/non-blocking-fix.ts:27-29 the revalidation strips LLM review; its src/execution/non-blocking-fix.ts:326-385 keep path currently checks gate regression and sourceDiffCap then commits flake triage. Rollback restores files, phaseOutputs, and costs at :433-455. NBF is opt-in by default at src/config/schemas-review.ts:207-208. In src/execution/story-orchestrator/execution-plan.ts:390-449 the NBF seed and inline measureSourceDiff override are assembled; replace only the override object with buildNbfDeps, without increasing this 598-line file's net length. The execution stage passes the full story at src/pipeline/stages/execution.ts:183 and builder.build(ctx) at src/execution/build-plan-for-strategy.ts:499 retains it. Blocking strategies and postValidate live at src/execution/build-plan-for-strategy.ts:226-366; NBF strategies at :370-498 must NOT be wrapped. src/findings/cycle-dispatch.ts:74-107 builds input and then dispatches/extracts; src/findings/cycle-types.ts:214-289 defines optional strategy hooks. Add beforeDispatch between buildInput and callOp and wrap only blocking autofix-test-writer, draining AC-anchored feedback into blocking postValidate. src/operations/_finding-to-check.ts:11-46 already maps semantic-review findings to semantic checks. Risks: incorrectly classifying pre-existing untracked files, staged edits being altered, unsafe git subprocesses, path-frame mismatches, treating description-only or scope contradictions as blocking in the test-writer cycle, or accidentally reviewing NBF twice. #2229's directory-creation ban is design prose in story.description, not necessarily an AC; the LLM must see that prose. Existing unit/integration tests for NBF and audit should be extended; no data migration, CLI, revalidation phase-list change, or new FindingSource is needed. All 82 stated ACs are retained below (15+19+20+12+16); every story includes a negative path and backward-compatibility anchors where existing dispatch or NBF behavior changes.",

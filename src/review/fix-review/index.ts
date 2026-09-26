@@ -1,0 +1,9 @@
+/**
+ * Fix-review module barrel (US-001).
+ *
+ * The verdict / op-output types and the model-resolution helper that the
+ * scoped fix review and its consumers (US-003, US-004, US-005) share.
+ */
+
+export { resolveFixReviewModel } from "./config";
+export type { FixReviewOpOutput, FixReviewRequest, FixReviewVerdict } from "./types";

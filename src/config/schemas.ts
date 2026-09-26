@@ -44,7 +44,12 @@ import { McpConfigSchema } from "./schemas-mcp";
 import { ConfiguredModelSchema, ModelMapSchema } from "./schemas-model";
 import { validateProtocolGate } from "./schemas-protocol-gate";
 import { ReportersConfigSchema } from "./schemas-reporters";
-import { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
+import {
+  AdversarialReviewConfigSchema,
+  FixReviewConfigSchema,
+  ReviewConfigSchema,
+  SemanticReviewConfigSchema,
+} from "./schemas-review";
 import { DEFAULT_SANDBOX_CONFIG } from "./schemas-sandbox";
 
 export { ContextConfigSchema, ContextV2ConfigSchema } from "./schemas-context";
@@ -53,6 +58,7 @@ export { AcceptanceConfigSchema, PlanConfigSchema, PromptsConfigSchema } from ".
 export { McpConfigSchema } from "./schemas-mcp";
 export {
   AdversarialReviewConfigSchema,
+  FixReviewConfigSchema,
   NonBlockingFixConfigSchema,
   SemanticReviewConfigSchema,
 } from "./schemas-review";
@@ -245,6 +251,9 @@ export const NaxConfigSchema = z
       audit: { enabled: false },
       conflictDetection: { enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
       blockingThreshold: "error",
+      // US-001 — scoped fix-review config, derived from the schema's own
+      // defaults (SSOT) so it cannot drift from FixReviewConfigSchema.
+      fixReview: FixReviewConfigSchema.parse({}),
 
       pluginMode: "observational",
       parseRetryMaxAttempts: 3,

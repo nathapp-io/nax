@@ -113,7 +113,8 @@ export type DroppedFindingSummary = {
 
 export type ReviewDecisionPayload =
   | {
-      reviewer: "semantic" | "adversarial";
+      /** US-001 — `"fix"` is the scoped fix review's reviewer kind. */
+      reviewer: "semantic" | "adversarial" | "fix";
       parsed: true;
       passed: boolean;
       result: { passed: boolean; findings: unknown[] };
@@ -136,7 +137,8 @@ export type ReviewDecisionPayload =
       modelPassed?: boolean;
     }
   | {
-      reviewer: "semantic" | "adversarial";
+      /** US-001 — see the parsed:true branch. */
+      reviewer: "semantic" | "adversarial" | "fix";
       parsed: false;
       passed?: boolean;
       failOpen?: boolean;
