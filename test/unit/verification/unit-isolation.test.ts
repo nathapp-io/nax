@@ -163,7 +163,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
 
   it("strict: src/ writes outside allowedPaths are HARD violations", async () => {
     mockSpawn((args) => {
-      if (args.includes("--name-only")) return "packages/foo/src/foo.py\n";
+      if (args.includes("--name-only")) return "packages/foo/src/foo.py\0";
       return "10\t0\tpackages/foo/src/foo.py\n";
     });
     const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["packages/*/tests/**"], ["**/test_*.py"], "strict");
@@ -175,7 +175,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
   it("lite: stub-sized src/ writes (≤ ceiling) become SOFT violations", async () => {
     const added = LITE_STUB_ADDED_LINES_CEILING; // exactly at the ceiling — allowed
     mockSpawn((args) => {
-      if (args.includes("--name-only")) return "packages/foo/src/__init__.py\n";
+      if (args.includes("--name-only")) return "packages/foo/src/__init__.py\0";
       return `${added}\t0\tpackages/foo/src/__init__.py\n`;
     });
     const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["packages/*/tests/**"], ["**/test_*.py"], "lite");
@@ -187,7 +187,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
   it("lite: src/ writes exceeding the ceiling stay HARD violations", async () => {
     const added = LITE_STUB_ADDED_LINES_CEILING + 1;
     mockSpawn((args) => {
-      if (args.includes("--name-only")) return "packages/foo/src/big.py\n";
+      if (args.includes("--name-only")) return "packages/foo/src/big.py\0";
       return `${added}\t0\tpackages/foo/src/big.py\n`;
     });
     const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["packages/*/tests/**"], ["**/test_*.py"], "lite");
@@ -197,7 +197,7 @@ describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
 
   it("lite: explicit allowedPaths still take priority over the line-count heuristic", async () => {
     mockSpawn((args) => {
-      if (args.includes("--name-only")) return "src/index.ts\n";
+      if (args.includes("--name-only")) return "src/index.ts\0";
       return "999\t0\tsrc/index.ts\n";
     });
     const result = await verifyTestWriterIsolation("/tmp", "HEAD", ["src/index.ts"], ["**/*.test.ts"], "lite");
@@ -223,7 +223,7 @@ describe("verifyTestWriterIsolation: numstat failures are loud (US-002)", () => 
 
   function stubNumstatFailure(): void {
     _isolationDeps.spawn = makeSpawn(({ cmd }) => {
-      if (cmd.includes("--name-only")) return "src/a.ts\n";
+      if (cmd.includes("--name-only")) return "src/a.ts\0";
       if (cmd.includes("--porcelain")) return "";
       if (cmd.includes("--numstat")) {
         // --numstat exits non-zero — simulates a git hiccup

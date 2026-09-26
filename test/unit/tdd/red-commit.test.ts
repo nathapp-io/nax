@@ -102,6 +102,32 @@ describe("commitRedState", () => {
     expect(await git(repo, ["show", "--name-only", "--format=", "HEAD"])).toBe("test/a.test.ts");
   });
 
+  test("preserves unrelated staged artifacts outside the RED commit", async () => {
+    const { repo, beforeRef } = await makeRepo();
+    mkdirSync(join(repo, ".nax", "scratchpad"), { recursive: true });
+    writeFileSync(join(repo, ".nax", "scratchpad", "notes.md"), "staged\n");
+    await git(repo, ["add", "-f", ".nax/scratchpad/notes.md"]);
+    writeTest(repo);
+
+    const result = await commitRedState(opts(repo, beforeRef));
+
+    expect(result.status).toBe("committed");
+    expect(await git(repo, ["show", "--name-only", "--format=", "HEAD"])).toBe("test/a.test.ts");
+    expect(await git(repo, ["diff", "--cached", "--name-only"])).toBe(".nax/scratchpad/notes.md");
+  });
+
+  test("expands a new untracked test directory whose name contains spaces", async () => {
+    const { repo, beforeRef } = await makeRepo();
+    writeTest(repo, "test dir/a.test.ts");
+
+    expect(await commitRedState(opts(repo, beforeRef))).toEqual({
+      status: "committed",
+      files: ["test dir/a.test.ts"],
+      hooksSkipped: true,
+    });
+    expect(await git(repo, ["show", "--name-only", "--format=", "HEAD"])).toBe("test dir/a.test.ts");
+  });
+
   test("AC5: a changed .nax/scratchpad path is not committed beside the test file", async () => {
     const { repo, beforeRef } = await makeRepo();
     writeTest(repo);
@@ -128,6 +154,21 @@ describe("commitRedState", () => {
     const head = await git(repo, ["rev-parse", "HEAD"]);
     expect(await commitRedState(opts(repo, beforeRef))).toEqual({ status: "skipped", reason: "nothing-to-commit" });
     expect(await git(repo, ["rev-parse", "HEAD"])).toBe(head);
+  });
+
+  test("does not commit an unrelated staged file after the test-writer committed its own work", async () => {
+    const { repo, beforeRef } = await makeRepo();
+    writeTest(repo);
+    await git(repo, ["add", "test/a.test.ts"]);
+    await git(repo, ["commit", "-q", "-m", "test: own commit"]);
+    const head = await git(repo, ["rev-parse", "HEAD"]);
+    mkdirSync(join(repo, ".nax", "scratchpad"), { recursive: true });
+    writeFileSync(join(repo, ".nax", "scratchpad", "notes.md"), "staged elsewhere\n");
+    await git(repo, ["add", "-f", ".nax/scratchpad/notes.md"]);
+
+    expect(await commitRedState(opts(repo, beforeRef))).toEqual({ status: "skipped", reason: "nothing-to-commit" });
+    expect(await git(repo, ["rev-parse", "HEAD"])).toBe(head);
+    expect(await git(repo, ["diff", "--cached", "--name-only"])).toBe(".nax/scratchpad/notes.md");
   });
 
   test("AC8: dry run makes no git call at all", async () => {

@@ -155,7 +155,7 @@ describe("testWriterOp.verify — isolation", () => {
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
-    _isolationDeps.spawn = makeSpawn(() => ({ stdout: "test/foo.test.ts\n" })).spawn;
+    _isolationDeps.spawn = makeSpawn(() => ({ stdout: "test/foo.test.ts\0" })).spawn;
 
     try {
       const parsed: TestWriterOutput = {
@@ -185,7 +185,7 @@ describe("testWriterOp.verify — isolation", () => {
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
-    _isolationDeps.spawn = makeSpawn(() => ({ stdout: "src/foo.ts\ntest/foo.test.ts\n" })).spawn;
+    _isolationDeps.spawn = makeSpawn(() => ({ stdout: "src/foo.ts\0test/foo.test.ts\0" })).spawn;
 
     try {
       const parsed: TestWriterOutput = {

@@ -104,12 +104,13 @@ export function isSourceFile(filePath: string): boolean {
 }
 
 /**
- * Get changed files from git diff, merged with untracked files from git status.
+ * Get changed files from NUL-delimited git diff, merged with untracked files from git status.
  *
  * `git diff --name-only` alone is blind to untracked files (e.g. a brand-new
  * stub or test file a TDD session created), which would let an isolation
  * violation pass silently. Untracked entries (`?? path`) from `git status
- * --porcelain` are merged in and deduped.
+ * --porcelain` are merged in and deduped. `-z` preserves spaces and other
+ * characters that Git quotes in line-delimited output.
  */
 export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promise<string[]> {
   // BUG-31: time-bound the git calls (NFS / lock contention could otherwise
@@ -121,8 +122,8 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
     { stdout: output, stderr, exitCode },
     { stdout: statusOutput, stderr: statusStderr, exitCode: statusExitCode },
   ] = await Promise.all([
-    runGitBounded(["diff", "--name-only", fromRef], workdir),
-    runGitBounded(["status", "--porcelain"], workdir),
+    runGitBounded(["diff", "--name-only", "-z", fromRef], workdir),
+    runGitBounded(["status", "--porcelain", "-z"], workdir),
   ]);
 
   if (exitCode !== 0) {
@@ -149,11 +150,11 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
     );
   }
 
-  const diffFiles = output.trim().split("\n").filter(Boolean);
+  const diffFiles = output.split("\0").filter(Boolean);
   const untrackedFiles = statusOutput
-    .split("\n")
+    .split("\0")
     .filter((line) => line.startsWith("??"))
-    .map((line) => line.slice(2).trim())
+    .map((line) => line.slice(3))
     .filter(Boolean);
 
   return [...new Set([...diffFiles, ...untrackedFiles])];

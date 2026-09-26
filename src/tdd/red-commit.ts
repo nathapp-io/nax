@@ -20,7 +20,7 @@ import { getSafeLogger } from "../logger";
 import { partitionNaxOwnedPaths } from "../tools";
 import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
-import { gitlinkSafeAdd, hasStagedChanges } from "../utils/git-add";
+import { gitlinkSafeAdd } from "../utils/git-add";
 import { realOrRaw } from "../utils/realpath";
 import { getChangedFiles } from "./isolation";
 
@@ -79,9 +79,14 @@ async function commitFromRoot(opts: RedCommitOptions, deps: RedCommitDeps): Prom
   const addOpts = { pathspecs: kept, timeoutMs: RED_COMMIT_GIT_TIMEOUT_MS };
   const added = await gitlinkSafeAdd(deps.git, gitRoot, addOpts);
   if (added.exitCode !== 0) return { status: "failed", reason: `git add failed: ${added.stderr.trim()}` };
-  if ((await hasStagedChanges(deps.git, gitRoot, RED_COMMIT_GIT_TIMEOUT_MS)) !== true) return NOTHING;
+  const staged = await deps.git(["diff", "--cached", "--quiet", "--", ...kept], gitRoot, RED_COMMIT_GIT_TIMEOUT_MS);
+  if (staged.timedOut || (staged.exitCode !== 0 && staged.exitCode !== 1)) {
+    return { status: "failed", reason: `git diff --cached failed: ${staged.stderr.trim()}` };
+  }
+  if (staged.exitCode === 0) return NOTHING;
   const noVerify = opts.hooks === "skip" ? ["--no-verify"] : [];
-  const argv = ["commit", "-m", redCommitMessage(opts.storyId), ...noVerify];
+  // --only builds this commit from the named paths and leaves unrelated staged entries in the caller's index.
+  const argv = ["commit", "--only", "-m", redCommitMessage(opts.storyId), ...noVerify, "--", ...kept];
   const committed = await deps.git(argv, gitRoot, RED_COMMIT_GIT_TIMEOUT_MS);
   if (committed.exitCode !== 0) {
     const detail = committed.stderr.trim() || `exit ${committed.exitCode}`;
@@ -117,7 +122,7 @@ async function expandUntrackedDirs(gitRoot: string, paths: readonly string[], de
       out.push(path);
       continue;
     }
-    const args = ["ls-files", "--others", "--exclude-standard", "--", path];
+    const args = ["ls-files", "--others", "--exclude-standard", "-z", "--", path];
     const listed = await deps.git(args, gitRoot, RED_COMMIT_GIT_TIMEOUT_MS);
     if (listed.exitCode !== 0) {
       throw new NaxError(`git ls-files failed: ${listed.stderr.trim()}`, "GIT_LS_FILES_FAILED", {
@@ -125,7 +130,7 @@ async function expandUntrackedDirs(gitRoot: string, paths: readonly string[], de
         path,
       });
     }
-    out.push(...listed.stdout.split("\n").filter(Boolean));
+    out.push(...listed.stdout.split("\0").filter(Boolean));
   }
   return out;
 }

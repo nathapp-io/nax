@@ -243,7 +243,7 @@ describe("verifierOp.verify — isolation", () => {
     const { _isolationDeps } = await import("@/tdd");
 
     const origSpawn = _isolationDeps.spawn;
-    _isolationDeps.spawn = makeSpawn(() => "src/foo.ts\n").spawn;
+    _isolationDeps.spawn = makeSpawn(() => "src/foo.ts\0").spawn;
 
     try {
       const parsed = {
