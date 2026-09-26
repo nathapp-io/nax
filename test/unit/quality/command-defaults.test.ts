@@ -87,6 +87,16 @@ describe("resolveDefaultQualityCommands", () => {
     expect(await resolveDefaultQualityCommands("/pkg")).toEqual({ typecheck: "pnpm exec tsc --noEmit" });
   });
 
+  test("stray tsconfig/biome/eslint markers without a package.json yield no typecheck or lint", async () => {
+    // A real JS/TS package has a manifest; a lone config file in a non-package
+    // dir (e.g. a scratch file left in /tmp) must not conjure a command. Mirrors
+    // go/rust, whose defaults are gated on go.mod / Cargo.toml.
+    setup({ language: "typescript", files: ["tsconfig.json", "biome.json", ".eslintrc.json"], pkgJson: null });
+    const commands = await resolveDefaultQualityCommands("/pkg");
+    expect(commands.typecheck).toBeUndefined();
+    expect(commands.lint).toBeUndefined();
+  });
+
   test("unknown language yields no defaults", async () => {
     setup({ language: undefined });
     expect(await resolveDefaultQualityCommands("/pkg")).toEqual({});
