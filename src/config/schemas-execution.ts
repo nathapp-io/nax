@@ -496,6 +496,16 @@ export const TddConfigSchema = z.object({
    */
   verifierTimeoutSeconds: z.number().int().min(60).max(7200).default(1800),
   testWriterAllowedPaths: z.array(z.string()).optional(),
+
+  /**
+   * Whether the RED commit nax makes after a successful test-writer phase runs
+   * the repository's git hooks. "skip" (default, resolved at the consumer)
+   * commits with --no-verify: a RED suite may not typecheck until the
+   * implementer adds the symbols its tests reference. "run" restores the
+   * hooks (e.g. a secret-scanning hook that must see every commit); a hook
+   * that rejects leaves the files uncommitted and the run continues.
+   */
+  testWriterCommitHooks: z.enum(["skip", "run"]).optional(),
   rollbackOnFailure: z.boolean().optional(),
   greenfieldDetection: z.boolean().optional(),
 });

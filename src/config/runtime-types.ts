@@ -263,6 +263,8 @@ export interface TddConfig {
   };
   verifierTimeoutSeconds?: number; // Wall-clock budget for one verifier turn, in seconds (default: 1800)
   testWriterAllowedPaths?: string[]; // Glob patterns for files test-writer can modify (soft violations, logged as warnings)
+  /** Git hooks on nax's RED commit after the test-writer phase: "skip" (default, --no-verify) | "run". */
+  testWriterCommitHooks?: "skip" | "run";
   /** Rollback git changes when TDD fails (default: true). Prevents partial commits when TDD fails. */
   rollbackOnFailure?: boolean;
   /** Enable greenfield detection to force tdd-simple on projects with no test files (default: true, BUG-010) */

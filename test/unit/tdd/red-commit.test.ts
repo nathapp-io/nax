@@ -6,6 +6,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
+import { TddConfigSchema } from "@/config/schemas-execution";
 import { _redCommitDeps, commitRedState, type RedCommitOptions } from "@/tdd/red-commit";
 import { _gitDeps } from "@/utils/git";
 
@@ -178,5 +180,17 @@ describe("commitRedState", () => {
       status: "failed",
       reason: "git diff exploded",
     });
+  });
+});
+
+describe("tdd.testWriterCommitHooks", () => {
+  test("AC12: optional, keeps 'run', rejects other values", () => {
+    expect(TddConfigSchema.parse({ maxRetries: 2 }).testWriterCommitHooks).toBeUndefined();
+    expect(TddConfigSchema.parse({ maxRetries: 2, testWriterCommitHooks: "run" }).testWriterCommitHooks).toBe("run");
+    expect(TddConfigSchema.safeParse({ maxRetries: 2, testWriterCommitHooks: "never" }).success).toBe(false);
+  });
+
+  test("AC17: the knob has a config description", () => {
+    expect(FIELD_DESCRIPTIONS["tdd.testWriterCommitHooks"]).toBeString();
   });
 });
