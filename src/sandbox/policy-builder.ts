@@ -95,6 +95,15 @@ function worktreeGitWriteRoots(git: GitLayout): string[] {
  * srt applies deny over allow and on Linux turns every literal deny into a
  * bind mount, so whole entries (one `features` deny, not one per PRD) keep
  * both the protection and the per-command cost bounded.
+ *
+ * Only `<root>/.nax` is covered. A monorepo package's own `.nax/`
+ * (`packages/<pkg>/.nax/`) is deliberately excluded: what lives there --
+ * cache/, scratchpad/, status.json, the features' acceptance tests and run
+ * artifacts -- is gitignored and rebuilt or regenerated, so deleting it is
+ * harmless, and the package's config sits under the root's protected `mono/`.
+ * The exception is an optional `packages/<pkg>/.nax/rules/`, which nax loads
+ * into prompts; covering it needs package discovery, because a `.nax/` at any
+ * depth also matches test-fixture projects (`test/fixtures/<p>/.nax/`).
  */
 function naxDenies(root: string, entries: readonly string[], allowWrite: readonly string[]): string[] {
   const optIns = naxWriteOptIns(root, allowWrite);

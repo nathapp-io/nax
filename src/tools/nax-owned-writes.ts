@@ -266,6 +266,11 @@ export function naxOwnedWriteRefusal(
  * there; the feature's context.md, spec and state files stay refused), and
  * opted-in entries. Config files are left to the earlier, more specific
  * `isNaxConfigFile` refusal, which covers reads too.
+ *
+ * Only a leading `.nax/` segment is matched, so a monorepo package's own
+ * `.nax/` is excluded on purpose -- see `naxDenies` in
+ * src/sandbox/policy-builder.ts for why that is mostly safe to delete and
+ * where the one gap (package `rules/`) remains.
  */
 function naxStateRefusal(rel: string, optIns: ReadonlySet<string>): string | undefined {
   const segments = rel.split("/");
