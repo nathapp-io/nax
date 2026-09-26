@@ -89,6 +89,15 @@ export async function dispatchStrategy<F extends Finding>(
     ...(strategy.sessionRole ? { sessionOverride: { role: strategy.sessionRole } } : {}),
   };
 
+  // US-005 — the optional pre-dispatch hook. Awaited so the dispatch's
+  // preparation (e.g. snapshotting the working tree the fix is about to edit)
+  // is complete before any agent turn runs. A rejecting hook is re-thrown
+  // untouched so the dispatch fails loudly rather than spend an agent turn on a
+  // state whose preparation failed.
+  if (strategy.beforeDispatch) {
+    await strategy.beforeDispatch(fixCtx);
+  }
+
   let output: unknown;
   try {
     output = await deps.callOp(fixCtx, strategy.fixOp, input);

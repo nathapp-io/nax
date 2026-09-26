@@ -2,9 +2,16 @@ import type { IReviewAuditor } from "@/review/review-audit";
 import type { ReviewAck } from "@/review/types";
 import type { DispatchEvent, IDispatchEventBus, ReviewDecisionEvent } from "../dispatch-events";
 
-function reviewerFromRole(role: string): "semantic" | "adversarial" | null {
+/**
+ * Map a dispatch event's session role onto the audit's reviewer kind.
+ *
+ * US-001 — adds the `"reviewer-fix"` → `"fix"` mapping for the scoped fix
+ * review's fresh reviewer session.
+ */
+export function reviewerFromRole(role: string): "semantic" | "adversarial" | "fix" | null {
   if (role === "reviewer-semantic") return "semantic";
   if (role === "reviewer-adversarial") return "adversarial";
+  if (role === "reviewer-fix") return "fix";
   return null;
 }
 

@@ -130,17 +130,18 @@ async function jsDefaults(packageDir: string): Promise<DefaultQualityCommands> {
 
   if (typeof scripts.typecheck === "string") {
     result.typecheck = `${pm} run typecheck`;
-  } else if (await deps.fileExists(join(packageDir, "tsconfig.json"))) {
+  } else if (pkg !== null && (await deps.fileExists(join(packageDir, "tsconfig.json")))) {
     result.typecheck = `${pm === "bun" ? "bunx" : `${pm} exec`} tsc --noEmit`;
   }
 
-  if (await deps.fileExists(join(packageDir, "biome.json"))) {
+  if (pkg !== null && (await deps.fileExists(join(packageDir, "biome.json")))) {
     result.lint = `${pm === "bun" ? "bunx" : `${pm} exec`} biome check .`;
   } else if (
-    (await deps.fileExists(join(packageDir, ".eslintrc"))) ||
-    (await deps.fileExists(join(packageDir, ".eslintrc.json"))) ||
-    (await deps.fileExists(join(packageDir, ".eslintrc.js"))) ||
-    (await deps.fileExists(join(packageDir, "eslint.config.js")))
+    pkg !== null &&
+    ((await deps.fileExists(join(packageDir, ".eslintrc"))) ||
+      (await deps.fileExists(join(packageDir, ".eslintrc.json"))) ||
+      (await deps.fileExists(join(packageDir, ".eslintrc.js"))) ||
+      (await deps.fileExists(join(packageDir, "eslint.config.js"))))
   ) {
     result.lint = `${pm === "bun" ? "bunx" : `${pm} exec`} eslint .`;
   }

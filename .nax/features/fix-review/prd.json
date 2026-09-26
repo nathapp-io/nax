@@ -1,0 +1,339 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "fix-review",
+  "branchName": "feat/fix-review",
+  "createdAt": "2026-09-27T00:00:00.000Z",
+  "updatedAt": "2026-09-26T15:13:50.318Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Fix-review config, model resolution, session role and audit kind",
+      "description": "**Goal** — Add a default-enabled fix-review config, distinct fresh reviewer role, and auditable verdict payload.\n\n**Motivation** — NBF strips both LLM reviews from its re-validation: `REVIEW_PHASE_KINDS` and `nonBlockingExcludePhases()` in `src/execution/non-blocking-fix.ts`. A kept pass is guarded only by lint, typecheck, the full-suite gate, the verifier (when tests were edited) and `sourceDiffCap`.\n\n**Approach** — `ReviewConfigSchema` (`src/config/schemas-review.ts`) gains `fixReview`, next to `nonBlockingFix`:\n```ts\nexport const FixReviewConfigSchema = z.object({\n  enabled: z.boolean().default(true),\n  /** Optional; unset falls back to review.semantic.model, then \"balanced\". */\n  model: ConfiguredModelSchema.optional(),\n  timeoutMs: z.number().int().positive().default(600_000),\n});\n// in ReviewConfigSchema:\nfixReview: FixReviewConfigSchema.default({}),\n```\n- The review default literal in `src/config/schemas.ts` gains `fixReview: FixReviewConfigSchema.parse({})`.\n- The hand-written `ReviewConfig` in `src/review/types.ts` gains `fixReview` (its key-drift guard fails typecheck otherwise). `FixReviewConfig = z.infer<typeof FixReviewConfigSchema>` is exported from `src/config/selectors.ts` beside `NonBlockingFixConfig`.\n- New `resolveFixReviewModel(review: ReviewConfig): ConfiguredModel` in `src/review/fix-review/config.ts`: `review.fixReview.model ?? review.semantic?.model ?? \"balanced\"`.\n- `src/precheck/checks-model-resolution-walk.ts` lists `review.fixReview.model` as a model site when set.\n\n**Session role and audit** — `CanonicalSessionRole` and `KNOWN_SESSION_ROLES` (`src/runtime/session-role.ts`) gain `\"reviewer-fix\"`.\n- The reviewer union `\"semantic\" | \"adversarial\"` gains `\"fix\"` wherever it is spelled out: `ReviewDecisionPayload` (`src/execution/story-orchestrator/types.ts`), `ReviewAuditEntry`, `ReviewAuditDispatch`, `AdvisoryFindingSummaryEntry` and `auditKey` (`src/review/review-audit.ts`), `ReviewDecisionEvent` and `ReviewRepromptEvent` (`src/runtime/dispatch-events.ts`), and `reviewerFromRole` (`src/runtime/middleware/review-audit.ts`, mapping `\"reviewer-fix\"` → `\"fix\"`).\n- `toReviewDecisionPayload` (`src/execution/story-orchestrator/review-decision.ts`) gains a dedicated `\"fix-review\"` branch, taken before its reviewer-name check and before any of the existing branches that read `record.findings`, `acDropped`, `acks` or `advisoryFindings` (`FixReviewOpOutput` has none of them). The branch maps the op to reviewer `\"fix\"`. A parsed `FixReviewOpOutput` becomes `parsed: true` with `result: { passed, findings }`, where `findings` is synthesized: `[]` on a pass and one `{ message: reason, acIndex, file }` entry on a fail. An unparsed output becomes `parsed: false`, `result: null`, with `unparsedPreview`. The semantic and adversarial branches are unchanged.\n\n**Interface** — new module `src/review/fix-review/types.ts`:\n```ts\nimport type { Finding } from \"../../findings/types\";\nimport type { UserStory } from \"../../prd/types\";\nimport type { ReviewConfig } from \"../types\";\n/** Outcome of one scoped fix review. */\nexport type FixReviewVerdict =\n  | { readonly kind: \"pass\"; readonly reviewed: boolean; readonly reason: string }\n  | { readonly kind: \"fail\"; readonly cause: \"scope\"; readonly files: readonly string[]; readonly reason: string }\n  | { readonly kind: \"fail\"; readonly cause: \"contradiction\"; readonly reason: string; /** 1-based index into story.acceptanceCriteria, when the reviewer named one. */ readonly acIndex?: number; readonly file?: string }\n  | { readonly kind: \"error\"; readonly reason: string };\n/** What `fixReviewOp.parse` returns. */\nexport type FixReviewOpOutput =\n  | { readonly parsed: true; readonly passed: boolean; readonly reason: string; readonly acIndex?: number; readonly file?: string }\n  | { readonly parsed: false; readonly unparsedPreview: string };\nexport interface FixReviewRequest {\n  /** The story's package dir (`ctx.packageDir`); git runs here, and git output is repo-root-relative. */\n  readonly workdir: string;\n  readonly story: UserStory;\n  /** Tree-ish of the working tree before the fix (a commit sha or a tree id). */\n  readonly preFixTree: string;\n  /** The findings that seeded this fix. */\n  readonly findings: readonly Finding[];\n  readonly config: ReviewConfig;\n}\n```\n\n**Scope** — In: config/model resolution, role and audit payload types, audit subscriber. Out: tree snapshots and scope math (US-002), reviewer operation and runner (US-003), execution wiring (US-004/US-005).",
+      "acceptanceCriteria": [
+        "[unit] When NaxConfigSchema parses {}, then review.fixReview.enabled equals true.",
+        "[unit] When NaxConfigSchema parses {}, then review.fixReview.timeoutMs equals 600000.",
+        "[unit] When NaxConfigSchema parses {}, then review.fixReview.model is undefined.",
+        "[unit] When NaxConfigSchema parses { review: { fixReview: { timeoutMs: 0 } } }, then it rejects with a validation error on path review.fixReview.timeoutMs.",
+        "[unit] resolveFixReviewModel(review) returns review.fixReview.model when it is set, even when review.semantic.model is set to a different value.",
+        "[unit] resolveFixReviewModel(review) returns review.semantic.model when review.fixReview.model is unset and review.semantic.model is set.",
+        "[unit] resolveFixReviewModel(review) returns \"balanced\" when neither review.fixReview.model nor review.semantic is set.",
+        "[unit] When review.fixReview.model is set, then the precheck model-resolution walk in src/precheck/checks-model-resolution-walk.ts includes a review.fixReview.model site.",
+        "[unit] When review.fixReview.model is unset, then the precheck model-resolution walk includes no review.fixReview.model site.",
+        "[unit] KNOWN_SESSION_ROLES contains \"reviewer-fix\".",
+        "[unit] When emitReviewDecision(ctx, \"fix-review\", { parsed: true, passed: true, reason: \"ok\" }) is called, then it emits one review-decision event whose reviewer is \"fix\" and whose result is { passed: true, findings: [] }.",
+        "[unit] When emitReviewDecision(ctx, \"fix-review\", { parsed: true, passed: false, reason: \"adds mkdir\", acIndex: 4, file: \"src/a.ts\" }) is called, then the review-decision event's result.findings has exactly one entry with message \"adds mkdir\", acIndex 4 and file \"src/a.ts\".",
+        "[unit] When emitReviewDecision(ctx, \"fix-review\", { parsed: false, unparsedPreview: \"garbage\" }) is called, then it emits a review-decision event with parsed: false, result: null and unparsedPreview \"garbage\".",
+        "[integration] Given a review-decision event with reviewer: \"fix\", when the review-audit subscriber handles it, then it writes one JSON record under review-audit/<feature>/ whose reviewer field is \"fix\".",
+        "[unit] reviewerFromRole returns \"fix\" for session role \"reviewer-fix\" in the review-audit middleware."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "audit"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "The same new reviewer must be represented coherently across Zod defaults, hand-written config, model precheck, session dispatch events and persisted audit payloads; testing requires the existing bus/subscriber integration.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schemas-review.ts",
+        "src/review/types.ts",
+        "src/runtime/session-role.ts",
+        "src/runtime/middleware/review-audit.ts",
+        "src/execution/story-orchestrator/review-decision.ts"
+      ],
+      "expectedFiles": [
+        "src/review/fix-review/types.ts",
+        "src/review/fix-review/config.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ae7a78131772bc2d1cd80c02655fe2c5a7a83307"
+    },
+    {
+      "id": "US-002",
+      "title": "Working-tree snapshot helpers and deterministic scope check",
+      "description": "**Goal** — Compute a fix's real working-tree delta without mutating staged changes, then classify changed paths deterministically.\n\n**Motivation** — The diff helpers in `src/review/diff-utils.ts` are hard-wired to `<ref>..HEAD`, and `captureWorkingTreeChanges` (`src/utils/git.ts`) returns `[]` on any git failure and lists every untracked file, pre-existing or not. Neither can say what a fix changed in the working tree.\n\n**Approach** — New module `src/review/fix-review/tree-snapshot.ts`:\n```ts\n/** Tree id of the current working tree (tracked + untracked, .gitignore honoured). Mutates nothing. */\nexport async function snapshotWorkingTree(workdir: string): Promise<string>;\n/** Repo-root-relative paths that differ between two tree-ishes (no rename detection). */\nexport async function changedPathsBetween(workdir: string, from: string, to: string): Promise<string[]>;\n/** Unified diff between two tree-ishes, excluding paths under `.nax/`. */\nexport async function diffBetween(workdir: string, from: string, to: string): Promise<string>;\n```\n- All three throw `NaxError` with code `FIX_REVIEW_GIT_FAILED` on a non-zero git exit. They never return an empty result to mean failure.\n- One way to meet `snapshotWorkingTree`'s contract (non-normative): seed a temporary index file from `HEAD`, add every path to it, and write a tree from it, passing the temporary index through the `gitSpawnEnv` overlay (`src/utils/git-env.ts` documents `GIT_INDEX_FILE` as the intended use), then delete the temporary file. The repository's own index and working tree are never touched.\n- Git spawns go through `hardenedGitArgv` / `gitSpawnEnv` (enforced by `check:git-spawn-env`), mirroring `createMeasureSourceDiff` in `src/execution/non-blocking-fix.ts`.\n\n**Scope check** — New module `src/review/fix-review/scope.ts`:\n```ts\nexport interface FixScopeInput {\n  /** Repo-root-relative paths the fix changed. */\n  readonly changedFiles: readonly string[];\n  /** Repo-root-relative paths the story had changed before the fix; undefined when unknown. */\n  readonly storyFiles: readonly string[] | undefined;\n  readonly story: Pick<UserStory, \"contextFiles\" | \"relevantFiles\" | \"expectedFiles\" | \"modifiedFiles\">;\n  /** Seeding findings; `file` is workdir-relative (src/findings/types.ts). */\n  readonly findings: readonly Pick<Finding, \"file\">[];\n  /** The story package dir relative to the repo root; \"\" at the root. */\n  readonly packageDirRel: string;\n  readonly isTestFile: (repoRelPath: string) => boolean;\n}\nexport interface FixScopeResult {\n  readonly inScope: boolean;\n  readonly outOfScopeFiles: readonly string[];\n  /** True when storyFiles was undefined and the check did not run. */\n  readonly skipped: boolean;\n}\nexport function checkFixScope(input: FixScopeInput): FixScopeResult;\n```\nThe allowed set is the union of `storyFiles`, `getContextFiles(story)`, `getExpectedFiles(story)`, `story.modifiedFiles[].path` (all repo-root-relative, ADR-032), and each finding's `file` joined onto `packageDirRel`. A changed path is exempt when `isTestFile` matches it or it lies under `.nax/`.\n\n**Scope** — In: git tree snapshots/diffs and pure scope classification. Out: config/audit (US-001), LLM dispatch (US-003), NBF/blocking integration (US-004/US-005); Changing `captureWorkingTreeChanges` in `src/utils/git.ts` or any helper in `src/review/diff-utils.ts`; Changes inside git submodules; `snapshotWorkingTree` records submodule entries as git does and does not descend into them.",
+      "acceptanceCriteria": [
+        "[integration] In a clean temporary git repo, snapshotWorkingTree(workdir) returns the same tree id as the tree of HEAD.",
+        "[integration] Given an uncommitted edit to tracked file src/a.ts, changedPathsBetween(workdir, \"HEAD\", await snapshotWorkingTree(workdir)) returns [\"src/a.ts\"].",
+        "[integration] Given the untracked, non-ignored file src/new.ts, changedPathsBetween(workdir, \"HEAD\", await snapshotWorkingTree(workdir)) includes \"src/new.ts\".",
+        "[integration] When a new file matches .gitignore, then it is absent from changedPathsBetween(workdir, \"HEAD\", await snapshotWorkingTree(workdir)).",
+        "[integration] When an untracked file existed before both snapshots and only a tracked file changed between the two snapshotWorkingTree calls, then the pre-existing untracked file is absent from changedPathsBetween(workdir, before, after).",
+        "[integration] snapshotWorkingTree(workdir) leaves the repository's staged paths and working-tree status identical before and after the call, including when tracked and untracked changes are present.",
+        "[integration] When workdir is the package subdirectory packages/a, then changedPathsBetween returns \"packages/a/src/x.ts\" for a change to packages/a/src/x.ts.",
+        "[integration] changedPathsBetween(workdir, \"no-such-ref\", \"HEAD\") rejects with a NaxError whose code is FIX_REVIEW_GIT_FAILED.",
+        "[integration] snapshotWorkingTree on a directory that is not inside a git repository rejects with a NaxError whose code is FIX_REVIEW_GIT_FAILED.",
+        "[integration] diffBetween(workdir, from, to) returns unified diff text containing the changed line of src/a.ts and no hunk for a file changed under .nax/.",
+        "[unit] checkFixScope returns inScope: true with empty outOfScopeFiles when every changed non-test file is in storyFiles.",
+        "[unit] checkFixScope treats a changed file listed only in story.contextFiles as in scope.",
+        "[unit] checkFixScope treats a changed file listed only in story.expectedFiles as in scope.",
+        "[unit] checkFixScope treats a changed file listed only as a story.modifiedFiles entry's path as in scope.",
+        "[unit] Given packageDirRel \"packages/a\" and a seeding finding whose file is \"src/lock.ts\", checkFixScope treats changed file \"packages/a/src/lock.ts\" as in scope.",
+        "[unit] checkFixScope treats a changed file for which isTestFile returns true as in scope even when it is in no allowed set.",
+        "[unit] checkFixScope ignores a changed path under .nax/.",
+        "[unit] checkFixScope returns inScope: false with outOfScopeFiles [\"src/utils/path-file-lock.ts\"] when that non-test file changed and is in no allowed set.",
+        "[unit] checkFixScope returns inScope: true and skipped: true when storyFiles is undefined."
+      ],
+      "tags": [
+        "feature",
+        "git",
+        "scope"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Capturing uncommitted tracked/untracked state safely through an alternate git index while retaining staged state and repository-root path frames needs isolated integration testing.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/utils/git-env.ts",
+        "src/execution/non-blocking-fix.ts",
+        "src/tdd/isolation.ts",
+        "src/prd/types.ts",
+        "src/findings/types.ts"
+      ],
+      "expectedFiles": [
+        "src/review/fix-review/tree-snapshot.ts",
+        "src/review/fix-review/scope.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0854754fdf6af2fa06bc8ae1865903eb837146b7"
+    },
+    {
+      "id": "US-003",
+      "title": "Verdict-only fix-review operation, prompt and ordered runner",
+      "description": "**Goal** — Check each fix delta for scope creep and contradictions without re-reviewing the whole story.\n\n**Motivation** — Simply re-running `semantic-review` does not fit: at dispatch, `refreshReviewInputForDispatch` (`src/execution/story-orchestrator/run-phase.ts`) re-points every revalidation review at the story start ref, so it would re-review the whole story and emit open-ended findings (ADR-033 Context). Rule 4 (\"neither the data file nor its parent directory is created\") lives only in that spec's Design \"Removal rules\"; its US-002 AC 2 pins only that no file exists at the path, which the `mkdir` change still satisfies. So a check that reads only the ACs would miss the #2229 case; the fix review must also read `story.description`, where the planner carries design prose.\n\n**Approach** — `runFixReview` evaluates in this fixed order and stops at the first stage that decides:\n1. `review.fixReview.enabled === false` → pass, not reviewed.\n2. Snapshot the working tree after the fix; list the paths changed between the pre-fix tree and it. No changed path → pass, not reviewed.\n3. Scope check over the changed paths → on violation, fail with cause `scope`. No LLM call.\n4. LLM verdict over the fix diff → pass, or fail with cause `contradiction`.\nAny git failure in stage 2 or 3, an LLM dispatch error, or an unparseable response in stage 4 ends evaluation with kind `error`.\n\n**The op and runner** — `fixReviewOp: RunOperation<FixReviewOpInput, FixReviewOpOutput, ReviewConfig>` in new `src/operations/fix-review.ts`, exported from the ops barrel. Its `ReviewConfig` generic is the selector slice type from `src/config/selectors.ts` (as `semanticReviewOp` uses), not the `ReviewConfig` interface in `src/review/types.ts`; `FixReviewRequest.config` and `resolveFixReviewModel` take the latter. Fields: `name: \"fix-review\"`, `stage: \"review\"`, `session: { role: \"reviewer-fix\", lifetime: \"fresh\" }`, `tools: [\"Read\", \"Glob\", \"Grep\"]` (the diff is embedded; the tools let it read surrounding code), `config: reviewConfigSelector`, `model: (_input, ctx) => resolveFixReviewModel(ctx.config.review)`, `timeoutMs: (_input, ctx) => ctx.config.review.fixReview.timeoutMs`. There is no parse-retry. `FixReviewOpInput` is `{ story: UserStory; diff: string; findings: readonly Finding[] }`.\n- The prompt comes from `buildFixReviewPrompt(input)` in new `src/prompts/builders/fix-review-builder.ts`, exported through the `@/prompts` barrel. It contains the story's acceptance criteria numbered from 1, the story's `description`, the `outOfScope` block from `buildReviewOutOfScopeBlock`, the seeding findings' messages, the embedded fix diff, and an instruction to answer with exactly this JSON object, setting `acIndex` only when the contradicted rule is an acceptance criterion:\n```json\n{ \"passed\": false, \"reason\": \"adds mkdir to removeApprovals; AC 4 forbids creating directories\", \"acIndex\": 4, \"file\": \"src/approvals/remove.ts\" }\n```\n`acIndex` and `file` are optional. A pass is `{ \"passed\": true, \"reason\": \"...\" }`. The generic block's warning not to demand excluded work still applies: judge only fix edits that contradict an outOfScope rule; do not invent missing-work findings.\n- `runFixReview(ctx: CallContext, req: FixReviewRequest, deps?: Partial<FixReviewDeps>): Promise<FixReviewVerdict>` in new `src/review/fix-review/run.ts` follows the Approach order. Story files are `changedPathsBetween(workdir, story.storyGitRef, preFixTree)` when `storyGitRef` is set, else `undefined`. The diff is `truncateDiff(diffBetween(workdir, preFixTree, postTree))` (`src/review/diff-utils.ts`). After the LLM stage, parsed or not, it calls `emitReviewDecision(ctx, \"fix-review\", output)` once. `FixReviewDeps` injects `callOp`, `snapshotWorkingTree`, `changedPathsBetween`, `diffBetween`, `emitReviewDecision` and `resolveTestFilePatterns`, the same `_deps` seam pattern as `_nonBlockingFixDeps`.\n- The test-file classifier is `createTestFileClassifier(await resolveTestFilePatterns(config, projectDir, packageDirRel))`, as in `createMeasureSourceDiff`.\n\n**Interface** — `FixReviewOpInput` is `{ story: UserStory; diff: string; findings: readonly Finding[] }`; `runFixReview(ctx: CallContext, req: FixReviewRequest, deps?: Partial<FixReviewDeps>): Promise<FixReviewVerdict>`. Consume the upstream US-001 `FixReviewOpOutput` / `FixReviewRequest` and US-002 snapshot/scope signatures.\n\n**Scope** — In: prompt builder and prompt-barrel export, operation and ops-barrel export, runner and emitted verdict audit. Out: config/role/audit-shape changes (US-001), git/scope helper implementations (US-002), keep/dispatch wiring (US-004/US-005); A parse-retry for an unparseable fix-review response; it is treated as `kind: \"error\"`.",
+      "acceptanceCriteria": [
+        "[unit] buildFixReviewPrompt output contains each of the story's acceptance criteria prefixed with its 1-based index.",
+        "[unit] buildFixReviewPrompt output contains each story.outOfScope entry when outOfScope is non-empty.",
+        "[unit] buildFixReviewPrompt output contains the story's description text.",
+        "[unit] buildFixReviewPrompt output contains the diff text of its input.",
+        "[unit] buildFixReviewPrompt output contains the message of every seeding finding.",
+        "[unit] fixReviewOp.parse on {\"passed\":false,\"reason\":\"r\",\"acIndex\":4,\"file\":\"src/a.ts\"} returns { parsed: true, passed: false, reason: \"r\", acIndex: 4, file: \"src/a.ts\" }.",
+        "[unit] fixReviewOp.parse on a response containing no JSON object returns parsed: false with a non-empty unparsedPreview.",
+        "[unit] fixReviewOp.session is { role: \"reviewer-fix\", lifetime: \"fresh\" }.",
+        "[unit] fixReviewOp.model(input, ctx) returns resolveFixReviewModel(ctx.config.review).",
+        "[unit] When config.fixReview.enabled is false, runFixReview returns { kind: \"pass\", reviewed: false } without calling snapshotWorkingTree or callOp.",
+        "[unit] When changedPathsBetween(workdir, preFixTree, postTree) returns [], runFixReview returns { kind: \"pass\", reviewed: false } without calling callOp.",
+        "[unit] When checkFixScope reports a violation, runFixReview returns { kind: \"fail\", cause: \"scope\" } whose files lists the out-of-scope file, without calling callOp.",
+        "[unit] When the op output is { parsed: true, passed: true }, runFixReview calls callOp once with fixReviewOp and returns { kind: \"pass\", reviewed: true }.",
+        "[unit] When the op output is { parsed: true, passed: false, acIndex: 4, file: \"src/a.ts\" }, runFixReview returns { kind: \"fail\", cause: \"contradiction\", acIndex: 4, file: \"src/a.ts\" } with the op's reason.",
+        "[unit] When callOp throws, runFixReview returns kind: \"error\".",
+        "[unit] When the op output is { parsed: false }, runFixReview returns kind: \"error\".",
+        "[unit] When snapshotWorkingTree rejects with FIX_REVIEW_GIT_FAILED, runFixReview returns kind: \"error\" without calling callOp.",
+        "[unit] When callOp returns an output, whether or not it parsed, runFixReview calls emitReviewDecision exactly once with op name \"fix-review\".",
+        "[unit] When story.storyGitRef is absent, runFixReview passes the story-files argument undefined to checkFixScope, and still calls callOp.",
+        "[unit] runFixReview passes fixReviewOp a diff equal to truncateDiff of the diffBetween(workdir, preFixTree, postTree) result."
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "llm"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "An operation with a fresh agent session, JSON parser, prompt and staged deterministic/LLM runner integrates two upstream contracts and the review-decision event seam.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/operations/finish-narrative.ts",
+        "src/operations/semantic-review.ts",
+        "src/prompts/builders/review-builder.ts",
+        "src/prompts/sections/out-of-scope.ts",
+        "src/review/diff-utils.ts",
+        "src/review/fix-review/types.ts"
+      ],
+      "expectedFiles": [
+        "src/operations/fix-review.ts",
+        "src/prompts/builders/fix-review-builder.ts",
+        "src/review/fix-review/run.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "782ca5771311f86ae8f03746d4660489fff827dc"
+    },
+    {
+      "id": "US-004",
+      "title": "Scoped fix review at the NBF keep gate",
+      "description": "**Goal** — Keep an NBF fix only when its scoped review passes; otherwise restore the adversarial-passed snapshot.\n\n**Motivation** — #2229 evidence (canary.19, `approvals-cli`): NBF kept a pass that added `mkdir(dirname(path), { recursive: true })` to `removeApprovals`, contradicting the spec's removal rule 4, and changed the shared `withPathFileLock` primitive in `src/utils/path-file-lock.ts`, outside the feature's scope. Every gate stayed green.\n\n**Approach** — `NonBlockingFixDeps` (`src/execution/non-blocking-fix.ts`) gains the optional field `reviewFix?: (preFixRef: string) => Promise<FixReviewVerdict>`.\n- In `runNonBlockingFix`, after the `sourceDiffCap` block and before `flakeTriage.commit()`: when `_deps.reviewFix` is set, call it with `restoreRef.sha`. On `kind: \"pass\"` keep as today. On any other kind, log `logger?.info(\"non-blocking-fix\", \"fix review rejected the pass — restoring\", { storyId, kind, cause, reason, files })` and return `restoreToSnapshot(...)`.\n- New `buildNbfDeps(args: { ctx: CallContext; findings: readonly Finding[] }): Partial<NonBlockingFixDeps>` in new `src/execution/story-orchestrator/nbf-deps.ts` returns `measureSourceDiff`, built exactly as the inline `createMeasureSourceDiff(...)` call does today, plus `reviewFix` when `ctx.story` is defined:\n`(ref) => runFixReview(ctx, { workdir: ctx.packageDir, story: ctx.story, preFixTree: ref, findings, config: ctx.config.review })`.\n- `ctx.story` is populated on this path: the execution stage (`src/pipeline/stages/execution.ts`) builds the `CallContext` it hands to `buildPlanForStrategy` with `story: ctx.story`, and `buildPlanForStrategy` passes that same `ctx` to `ExecutionPlan`. The `reviewFix`-absent branch exists only for callers that construct a `CallContext` without a story.\n- `ExecutionPlan.run` (`src/execution/story-orchestrator/execution-plan.ts`) passes `buildNbfDeps({ ctx: this.ctx, findings: seed.findings })` as the second argument of `runNonBlockingFix` in place of the inline overrides object. The file is at 598 of 600 lines, so this change must not add net lines.\n\n**Interface** — `reviewFix?: (preFixRef: string) => Promise<FixReviewVerdict>`; `buildNbfDeps(args: { ctx: CallContext; findings: readonly Finding[] }): Partial<NonBlockingFixDeps>`.\n\n**Scope** — In: NBF keep decision, new dependency builder, ExecutionPlan's NBF call-site override. Out: blocking test-writer strategy wrapper (US-005); Re-running `adversarial-review` on NBF passes; ADR-024 §3's re-seeding argument still holds for it; Changing NBF's own defaults (`review.nonBlockingFix.enabled` stays `false`) or the `sourceDiffCap` values; Changing any entry of `STRATEGY_TO_REVALIDATION_PHASES` or `REVIEW_PHASE_KINDS`.",
+      "acceptanceCriteria": [
+        "[unit] When runNonBlockingFix receives a reviewFix dep resolving { kind: \"pass\" }, then it returns { ran: true, kept: true, restored: false } and never calls rollbackToRef.",
+        "[unit] When runNonBlockingFix receives a reviewFix dep resolving { kind: \"fail\", cause: \"scope\" }, then it returns { kept: false, restored: true }.",
+        "[unit] When reviewFix resolves { kind: \"fail\", cause: \"contradiction\" }, runNonBlockingFix calls rollbackToRef with the snapshot's sha.",
+        "[unit] When reviewFix resolves { kind: \"error\" }, runNonBlockingFix returns restored: true.",
+        "[unit] On a pass that clears sourceDiffCap, runNonBlockingFix calls reviewFix exactly once with the sha returned by captureSnapshotRef.",
+        "[unit] When the sourceDiffCap check already restored the pass, runNonBlockingFix does not call reviewFix.",
+        "[unit] When runRectify reports rectificationExhausted: true, runNonBlockingFix does not call reviewFix.",
+        "[unit] When no reviewFix dep is supplied, runNonBlockingFix keeps a pass that clears sourceDiffCap, returning kept: true.",
+        "[unit] When reviewFix resolves a non-pass verdict, runNonBlockingFix logs \"fix review rejected the pass — restoring\" at info level with the verdict's kind in the log data.",
+        "[unit] When ctx.story is undefined, buildNbfDeps({ ctx, findings }) returns no reviewFix.",
+        "[integration] With runFixReview stubbed and review.nonBlockingFix.enabled true, running ExecutionPlan.run on a story that is green with adversarial advisory findings invokes runFixReview once, with preFixTree equal to the NBF snapshot sha and findings equal to the NBF seed findings.",
+        "[integration] With the agent stubbed to answer the fix review with {\"passed\":true,\"reason\":\"ok\"}, an ExecutionPlan.run whose NBF pass is kept emits exactly one review-decision event with reviewer: \"fix\"."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "nbf"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "toAgent": "native",
+          "reason": "TDD tests-failing",
+          "timestamp": "2026-09-26T14:15:16.269Z"
+        }
+      ],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "NBF keep/rollback semantics and snapshot-anchored ExecutionPlan wiring cross separate modules, with integration and audit emission required while preserving legacy no-review callers.",
+        "initialComplexity": "complex",
+        "modelTier": "powerful",
+        "initialModelTier": "balanced",
+        "agent": "native"
+      },
+      "contextFiles": [
+        "src/execution/non-blocking-fix.ts",
+        "src/execution/story-orchestrator/execution-plan.ts",
+        "src/tdd/rollback.ts",
+        "test/unit/execution/non-blocking-fix.test.ts",
+        "src/review/fix-review/run.ts"
+      ],
+      "expectedFiles": [
+        "src/execution/story-orchestrator/nbf-deps.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: TDD tests-failing"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced [tests-failing]: TDD tests-failing",
+          "cost": 3.970986143999999,
+          "timestamp": "2026-09-26T14:15:16.269Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "e709bbb68f1413e2d783eed62f4d298eda4dca78"
+    },
+    {
+      "id": "US-005",
+      "title": "Review blocking-cycle autofix-test-writer dispatches for AC contradictions",
+      "description": "**Goal** — Feed back AC-anchored fix contradictions from blocking autofix-test-writer dispatches, warning instead of blocking on other non-passes.\n\n**Motivation** — nax#1359 (closed 2026-09-26) ruled out a blocking gate on out-of-scope findings: scope creep is a non-defect signal, a scope exclusion can forbid the only fixing edit, and invariants belong in ACs, where the existing blocking path already covers them. So on the blocking path only an AC-anchored contradiction may block; scope violations and description-only contradictions warn.\n\n**Approach** — `FixStrategy` (`src/findings/cycle-types.ts`) gains the optional field `beforeDispatch?: (ctx: FixCycleContext) => Promise<void>`. `dispatchStrategy` (`src/findings/cycle-dispatch.ts`) awaits it after `buildInput` and before `callOp`. A strategy without it dispatches exactly as today.\n- New `src/execution/story-orchestrator/fix-review-strategy.ts`:\n```ts\nexport interface FixReviewWrapper {\n  /** Returns a copy of `strategy` that runs the scoped fix review after each dispatch. */\n  wrap<F extends Finding, I, O, C>(strategy: FixStrategy<F, I, O, C>): FixStrategy<F, I, O, C>;\n  /** Findings produced by fix reviews since the last call, then cleared. */\n  drainFindings(): Finding[];\n}\nexport function createFixReviewWrapper(args: { ctx: CallContext; story: UserStory; config: ReviewConfig }): FixReviewWrapper;\n/** An AC-anchored contradiction: the only verdict that may block (nax#1359 ruling). */\nexport type AnchoredContradiction = Extract<FixReviewVerdict, { cause: \"contradiction\" }> & { readonly acIndex: number };\nexport function toFixReviewFinding(verdict: AnchoredContradiction): Finding;\n```\nThe wrapped strategy records the findings passed to `buildInput`. Its `beforeDispatch` stores `snapshotWorkingTree(ctx.packageDir)`; if that throws, it logs a warning and the review is skipped for this dispatch. Its `extractApplied` awaits the original `extractApplied`, then, when a pre-fix tree was stored, calls `runFixReview` with that tree and the recorded findings. Only a `contradiction` verdict that carries an `acIndex` queues `toFixReviewFinding(verdict)`. A `scope` fail, a `contradiction` without an `acIndex`, and an `error` each log `logger?.warn(\"fix-review\", \"fix review non-pass not fed back\", { storyId, kind, cause, reason })` and queue nothing.\n- `toFixReviewFinding` returns `source: \"semantic-review\"`, `severity: \"error\"`, `category: \"fix-review\"`, `fixTarget: \"test\"`, `message: reason`, `rule: \"fix-review:AC-<acIndex>\"`, and the verdict's `file` when present.\n- In `src/execution/build-plan-for-strategy.ts`, only the blocking-cycle `autofix-test-writer` strategy is wrapped. The NBF strategy lists are not wrapped, because NBF reviews once at its keep gate. The blocking cycle's `postValidate` becomes the existing one followed by appending `wrapper.drainFindings()`. Preserve the existing postValidate behavior even when its declaration sink is empty: draining still occurs.\n\n**Scope** — In: optional fix-cycle dispatch hook, wrapper and AC findings, blocking strategy construction and postValidate feedback. Out: NBF keep review (US-004); A blocking finding on the `autofix-test-writer` path for a scope violation or for a contradiction that names no acceptance criterion; per nax#1359 those warn only; Changing whether fix strategies reuse the implementer or test-writer session (warm) or open a fresh one; A new `FindingSource` value for fix-review findings; they use `source: \"semantic-review\"` with `category: \"fix-review\"`; Replacing the full `semantic-review` + `adversarial-review` re-run on `autofix-implementer`, `full-suite-rectify` or `repo-scoped-test-fix` with the scoped fix review; those paths are unchanged.",
+      "acceptanceCriteria": [
+        "[unit] dispatchStrategy awaits the strategy's beforeDispatch before it calls callOp.",
+        "[unit] For a strategy without beforeDispatch, dispatchStrategy calls callOp once, exactly as before.",
+        "[unit] toFixReviewFinding of a contradiction fail with acIndex: 3 returns a finding with rule \"fix-review:AC-3\".",
+        "[unit] toFixReviewFinding of a contradiction fail with file: \"test/a.test.ts\" returns a finding with file \"test/a.test.ts\".",
+        "[unit] toFixReviewFinding returns a finding with source \"semantic-review\".",
+        "[unit] toFixReviewFinding returns a finding with fixTarget \"test\".",
+        "[unit] findingsToFailedChecks of one toFixReviewFinding result returns one check whose check is \"semantic\".",
+        "[unit] After the wrapped strategy's dispatch gets a contradiction verdict with acIndex: 2 from runFixReview, drainFindings() returns exactly one finding, and a second drainFindings() call returns [].",
+        "[unit] After the wrapped strategy's dispatch gets a scope fail verdict, drainFindings() returns [] and the warning \"fix review non-pass not fed back\" is logged.",
+        "[unit] After the wrapped strategy's dispatch gets a contradiction verdict with no acIndex, drainFindings() returns [] and the warning \"fix review non-pass not fed back\" is logged.",
+        "[unit] After the wrapped strategy's dispatch gets a pass verdict, drainFindings() returns [].",
+        "[unit] After the wrapped strategy's dispatch gets an error verdict, drainFindings() returns [] and a warning is logged.",
+        "[unit] When snapshotWorkingTree rejects inside the wrapped strategy's beforeDispatch, the wrapped extractApplied does not call runFixReview.",
+        "[unit] The wrapped strategy calls runFixReview with the same findings its buildInput received.",
+        "[integration] With runFixReview stubbed to return { kind: \"fail\", cause: \"contradiction\", acIndex: 2, reason: \"drops the AC-2 assertion\" }, running ExecutionPlan.run on a story whose adversarial review yields a finding with fixTarget: \"test\" dispatches autofix-test-writer a second time with \"drops the AC-2 assertion\" among its input findings.",
+        "[integration] With review.nonBlockingFix.enabled true and scope \"both\", a green story's NBF pass that dispatches autofix-test-writer calls runFixReview exactly once: at the NBF keep gate, not after the dispatch."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "fix-cycle"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "The hook and generic wrapper couple fix-cycle dispatch, queued feedback, and blocking-only plan construction; regression tests must distinguish the separate NBF strategy list.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/findings/cycle-types.ts",
+        "src/findings/cycle-dispatch.ts",
+        "src/execution/build-plan-for-strategy.ts",
+        "src/execution/story-orchestrator/no-progress-bail.ts",
+        "src/operations/_finding-to-check.ts"
+      ],
+      "expectedFiles": [
+        "src/execution/story-orchestrator/fix-review-strategy.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e7e5e9b4851ac8ef6e01c665261eda65edf19b44"
+    }
+  ],
+  "analysis": "Audit against code: this is a Bun/TypeScript orchestration enhancement, not greenfield. src/config/schemas-review.ts:205-310 defines sibling nonBlockingFix and ReviewConfigSchema; src/config/schemas.ts:241-265 supplies the review default object; src/config/selectors.ts:155,179 defines selector-slice ReviewConfig and inferred config exports, whereas src/review/types.ts:294-415 defines a distinct hand-written ReviewConfig with a key-drift assertion. Add fixReview to both config layers, including the explicit review default, and walk only an explicitly set fixReview.model in src/precheck/checks-model-resolution-walk.ts. Agent reviewer roles are named in src/runtime/session-role.ts:18-45 and mapped by src/runtime/middleware/review-audit.ts:5-8. ReviewDecisionPayload is in src/execution/story-orchestrator/types.ts:114-145, event unions in src/runtime/dispatch-events.ts:193, audit entries and auditKey in src/review/review-audit.ts:42-179. src/execution/story-orchestrator/review-decision.ts:24-109 currently rejects unknown reviewers and expects findings arrays: a dedicated fix-review branch must precede that shape-dependent logic; retain original semantic/adversarial conversion. The audit subscriber writes review-decision events to review-audit/<feature>/ using src/review/review-audit.ts:246-262. Git spawns must use hardenedGitArgv/gitSpawnEnv (src/utils/git-env.ts:69-99); its overlay supports GIT_INDEX_FILE. The working-tree snapshot needs an isolated temporary index based on HEAD, updated with tracked and nonignored untracked contents, and must not mutate the real index/status or report git errors as an empty diff. Git outputs are repository-root-relative even with a package cwd. src/prd/types.ts:292-311 provides getContextFiles/getExpectedFiles; Finding.file is workdir-relative (src/findings/types.ts). Scope arithmetic joins finding paths onto packageDirRel; tests and .nax/ are exempt. Existing diff-utils are HEAD-oriented (src/review/diff-utils.ts:1-20), but truncateDiff is reusable. The out-of-scope section builder at src/prompts/sections/out-of-scope.ts:36-76 renders exclusions with a generic admonition not to report missing excluded work; the fix-review prompt must separately distinguish forbidden changed work from missing work and return a verdict, never an open-ended finding list. In src/execution/non-blocking-fix.ts:27-29 the revalidation strips LLM review; its src/execution/non-blocking-fix.ts:326-385 keep path currently checks gate regression and sourceDiffCap then commits flake triage. Rollback restores files, phaseOutputs, and costs at :433-455. NBF is opt-in by default at src/config/schemas-review.ts:207-208. In src/execution/story-orchestrator/execution-plan.ts:390-449 the NBF seed and inline measureSourceDiff override are assembled; replace only the override object with buildNbfDeps, without increasing this 598-line file's net length. The execution stage passes the full story at src/pipeline/stages/execution.ts:183 and builder.build(ctx) at src/execution/build-plan-for-strategy.ts:499 retains it. Blocking strategies and postValidate live at src/execution/build-plan-for-strategy.ts:226-366; NBF strategies at :370-498 must NOT be wrapped. src/findings/cycle-dispatch.ts:74-107 builds input and then dispatches/extracts; src/findings/cycle-types.ts:214-289 defines optional strategy hooks. Add beforeDispatch between buildInput and callOp and wrap only blocking autofix-test-writer, draining AC-anchored feedback into blocking postValidate. src/operations/_finding-to-check.ts:11-46 already maps semantic-review findings to semantic checks. Risks: incorrectly classifying pre-existing untracked files, staged edits being altered, unsafe git subprocesses, path-frame mismatches, treating description-only or scope contradictions as blocking in the test-writer cycle, or accidentally reviewing NBF twice. #2229's directory-creation ban is design prose in story.description, not necessarily an AC; the LLM must see that prose. Existing unit/integration tests for NBF and audit should be extended; no data migration, CLI, revalidation phase-list change, or new FindingSource is needed. All 82 stated ACs are retained below (15+19+20+12+16); every story includes a negative path and backward-compatibility anchors where existing dispatch or NBF behavior changes.",
+  "outOfScope": [
+    "Replacing the full `semantic-review` + `adversarial-review` re-run on `autofix-implementer`, `full-suite-rectify` or `repo-scoped-test-fix` with the scoped fix review; those paths are unchanged.",
+    "Any scope review of a story's own implementation diff, blocking or telemetry-only; nax#1359 ruled on 2026-09-26 that out-of-scope findings get no blocking gate.",
+    "A blocking finding on the `autofix-test-writer` path for a scope violation or for a contradiction that names no acceptance criterion; per nax#1359 those warn only.",
+    "Re-running `adversarial-review` on NBF passes; ADR-024 §3's re-seeding argument still holds for it.",
+    "Changing any entry of `STRATEGY_TO_REVALIDATION_PHASES` or `REVIEW_PHASE_KINDS`.",
+    "Changing whether fix strategies reuse the implementer or test-writer session (warm) or open a fresh one.",
+    "A parse-retry for an unparseable fix-review response; it is treated as `kind: \"error\"`.",
+    "A new `FindingSource` value for fix-review findings; they use `source: \"semantic-review\"` with `category: \"fix-review\"`.",
+    "Changing NBF's own defaults (`review.nonBlockingFix.enabled` stays `false`) or the `sourceDiffCap` values.",
+    "Changing `captureWorkingTreeChanges` in `src/utils/git.ts` or any helper in `src/review/diff-utils.ts`.",
+    "Changes inside git submodules; `snapshotWorkingTree` records submodule entries as git does and does not descend into them.",
+    "A CLI or viewer for fix-review audit records."
+  ],
+  "routingProfile": "native"
+}

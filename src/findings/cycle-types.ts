@@ -244,6 +244,17 @@ export interface FixStrategy<
   buildInput: (findings: F[], priorIterations: Iteration<F>[], ctx: FixCycleContext) => I;
 
   /**
+   * Optional hook run on every dispatch of this strategy, after `buildInput`
+   * and before `callOp`. `dispatchStrategy` awaits it, so work that must
+   * precede the dispatch (e.g. snapshotting the working tree the fix is about
+   * to edit) is complete before any agent turn runs.
+   *
+   * A strategy without it dispatches exactly as it did before the field
+   * existed.
+   */
+  beforeDispatch?: (ctx: FixCycleContext) => Promise<void>;
+
+  /**
    * Optional: extract targetFiles, summary, and cost from the op output for FixApplied
    * record-keeping. When absent, targetFiles defaults to [] and summary to "".
    *

@@ -24,7 +24,7 @@ export { gatherRectificationFindings, runRectification, type TriageResult, triag
 export { recordReviewRecurrencesForAttempt } from "./recurrence-recording";
 export type { RepoScopedFixRecord } from "./repo-scoped-fix-record";
 export { deriveRepoScopedFixes, REPO_SCOPED_STRATEGY_NAME, recordRepoScopedFixes } from "./repo-scoped-fix-record";
-export { toReviewDecisionPayload } from "./review-decision";
+export { emitReviewDecision, toReviewDecisionPayload } from "./review-decision";
 export {
   classifyMissingReviewPhases,
   type ReviewPhaseReport,

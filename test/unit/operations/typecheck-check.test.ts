@@ -220,17 +220,27 @@ describe("typecheckCheckOp — AC6: no-command early return", () => {
         return passedResult;
       },
     });
-
-    const out = await typecheckCheckOp.execute(
-      { workdir: "/tmp", storyId: "US-003" },
-      ctxWithQuality({ commands: {} }),
-      deps,
-    );
-    expect(out.success).toBe(true);
-    expect(out.status).toBe("skipped");
-    expect(out.findings).toEqual([]);
-    expect(out.durationMs).toBe(0);
-    expect(runQualityCalled).toBe(false);
+    // Stub detection instead of reading the real workdir: stray manifests in a
+    // shared directory like /tmp would otherwise yield a detected command and
+    // turn this "no command" case into a run.
+    const origDetect = _commandDefaultsDeps.detectLanguage;
+    _commandDefaultsDeps.detectLanguage = async () => undefined;
+    clearCommandDefaultsCache();
+    try {
+      const out = await typecheckCheckOp.execute(
+        { workdir: "/repo", storyId: "US-003" },
+        ctxWithQuality({ commands: {} }),
+        deps,
+      );
+      expect(out.success).toBe(true);
+      expect(out.status).toBe("skipped");
+      expect(out.findings).toEqual([]);
+      expect(out.durationMs).toBe(0);
+      expect(runQualityCalled).toBe(false);
+    } finally {
+      _commandDefaultsDeps.detectLanguage = origDetect;
+      clearCommandDefaultsCache();
+    }
   });
 });
 

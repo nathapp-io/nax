@@ -190,7 +190,8 @@ export interface DispatchErrorEvent {
 export interface ReviewDecisionEvent {
   readonly kind: "review-decision";
   readonly runId?: string;
-  readonly reviewer: "semantic" | "adversarial";
+  /** US-001 — `"fix"` is the scoped fix review's reviewer kind. */
+  readonly reviewer: "semantic" | "adversarial" | "fix";
   readonly workdir?: string;
   readonly projectDir?: string;
   readonly outputDir?: string;
@@ -240,7 +241,8 @@ export interface ReviewDecisionEvent {
 export interface ReviewRepromptEvent {
   readonly kind: "review-reprompt-on-drop";
   readonly storyId: string;
-  readonly reviewer: "adversarial" | "semantic";
+  /** US-001 — widened to the same union as `ReviewDecisionEvent.reviewer`. */
+  readonly reviewer: "adversarial" | "semantic" | "fix";
   readonly dropCount: number;
   readonly repromptOutcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
   readonly costUsd: number;

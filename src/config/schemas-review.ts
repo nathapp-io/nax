@@ -232,6 +232,22 @@ export const NonBlockingFixConfigSchema = z.object({
     .default({ maxFiles: 10, maxLines: 500 }),
 });
 
+/**
+ * US-001 (fix-review) — scoped review of a non-blocking fix's own delta.
+ *
+ * The NBF path strips both seeded LLM reviews from its re-validation
+ * (`REVIEW_PHASE_KINDS` / `nonBlockingExcludePhases()` in
+ * `src/execution/non-blocking-fix.ts`), so a kept pass is guarded only by the
+ * deterministic gates. A fix review re-reads the fix's own diff against the
+ * story's ACs and description before the pass is kept (nax#2229).
+ */
+export const FixReviewConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** Optional; unset falls back to review.semantic.model, then "balanced". */
+  model: ConfiguredModelSchema.optional(),
+  timeoutMs: z.number().int().positive().default(600_000),
+});
+
 export const ReviewConfigSchema = z.object({
   enabled: z.boolean(),
   checks: z.array(z.enum(["typecheck", "lint", "test", "build", "semantic", "adversarial"])),
@@ -290,6 +306,15 @@ export const ReviewConfigSchema = z.object({
    * See `NonBlockingFixConfigSchema` for field-level documentation.
    */
   nonBlockingFix: NonBlockingFixConfigSchema.optional(),
+  /**
+   * US-001 — scoped review of a fix's own delta, default-enabled. The
+   * `.optional().default(...)` chain keeps the field permissive on input
+   * (callers may omit it — see the existing `ReviewConfigSchema.conflictDetection`
+   * tests) while guaranteeing the block is populated on output. The default
+   * value is `FixReviewConfigSchema.parse({})`, which carries the inner
+   * schema's own defaults (SSOT — see the review literal in `schemas.ts`).
+   */
+  fixReview: FixReviewConfigSchema.optional().default(FixReviewConfigSchema.parse({})),
   conflictDetection: z
     .object({
       enabled: z.boolean().default(true),

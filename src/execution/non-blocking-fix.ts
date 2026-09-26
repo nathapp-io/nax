@@ -17,6 +17,7 @@ import { NaxError } from "../errors";
 import { isRecurrenceRetired } from "../findings/retirement-stamp";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
+import type { FixReviewVerdict } from "../review/fix-review";
 import type { SnapshotRef } from "../tdd/rollback";
 import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
 import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";
@@ -113,6 +114,17 @@ export interface NonBlockingFixDeps {
    * `runNonBlockingFix` treats them as "cap exceeded" (fail-safe).
    */
   measureSourceDiff: (workdir: string, fromRef: string) => Promise<SourceDiffMetrics>;
+  /**
+   * ADR-033 — the scoped fix review, run on a pass that would otherwise be kept.
+   *
+   * Called with the snapshot sha captured at entry (`restoreRef.sha`). A `pass`
+   * keeps the pass as today; any other verdict (scope fail, contradiction,
+   * dispatch/parse error) restores the adversarial-passed snapshot. Absent ⇒ no
+   * review, keep as today (backward-compatible).
+   *
+   * STUB (test-writer RED state): declared so the acceptance tests compile.
+   */
+  reviewFix?: (preFixRef: string) => Promise<FixReviewVerdict>;
 }
 
 export const _nonBlockingFixDeps = {
@@ -362,6 +374,47 @@ export async function runNonBlockingFix(
           sourceLineCount: metrics.sourceLineCount,
           cap,
         });
+        return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
+      }
+    }
+    // ADR-033 — scoped fix review on a pass that would otherwise be kept. A
+    // `pass` keeps the pass as today; any other verdict (scope fail,
+    // contradiction, dispatch/parse error) restores the adversarial-passed
+    // snapshot. Absent `reviewFix` ⇒ no review, keep as today.
+    //
+    // Wrapped in try/catch for the same reason `runRectify` and `measureSourceDiff`
+    // are: `runFixReview` runs `resolveTestFilePatterns` and `truncateDiff`
+    // outside any try (`src/review/fix-review/run/index.ts`), and an injected stub
+    // `reviewFix` can also throw. Honoring the module contract — never throws into
+    // the caller's verdict path — a throw degrades to a restore, the same way the
+    // neighboring paths do.
+    if (_deps.reviewFix) {
+      let verdict: FixReviewVerdict;
+      try {
+        verdict = await _deps.reviewFix(restoreRef.sha);
+      } catch (err) {
+        logger?.warn("non-blocking-fix", "fix review threw — restoring", {
+          storyId: args.storyId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
+      }
+      if (verdict.kind !== "pass") {
+        const data: Record<string, unknown> = {
+          storyId: args.storyId,
+          kind: verdict.kind,
+          reason: verdict.reason,
+        };
+        if (verdict.kind === "fail") {
+          data.cause = verdict.cause;
+          if (verdict.cause === "scope") {
+            data.files = verdict.files;
+          } else if (verdict.cause === "contradiction") {
+            if (verdict.acIndex !== undefined) data.acIndex = verdict.acIndex;
+            if (verdict.file !== undefined) data.file = verdict.file;
+          }
+        }
+        logger?.info("non-blocking-fix", "fix review rejected the pass — restoring", data);
         return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
       }
     }

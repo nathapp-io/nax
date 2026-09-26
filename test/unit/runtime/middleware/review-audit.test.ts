@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ReviewAuditDecision, ReviewAuditDispatch } from "@/review/review-audit";
 import type { ReviewDecisionEvent, SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
-import { attachReviewAuditSubscriber } from "@/runtime/middleware/review-audit";
+import { attachReviewAuditSubscriber, reviewerFromRole } from "@/runtime/middleware/review-audit";
 
 const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
@@ -247,5 +247,49 @@ describe("attachReviewAuditSubscriber", () => {
     bus.emitReviewDecision(event);
 
     expect(decisions).toHaveLength(1);
+  });
+});
+
+/**
+ * US-001 — the scoped fix review's session dispatches must be attributable to
+ * reviewer `"fix"`, so its session metadata (name, protocol ids, agent) reaches
+ * the audit record the same way the seeded reviewers' does.
+ */
+describe("reviewerFromRole (US-001)", () => {
+  test('US-001 AC15: maps session role "reviewer-fix" to reviewer "fix"', () => {
+    expect(reviewerFromRole("reviewer-fix")).toBe("fix");
+  });
+
+  test("US-001 AC15 boundary: the seeded reviewer roles still map as before", () => {
+    expect(reviewerFromRole("reviewer-semantic")).toBe("semantic");
+    expect(reviewerFromRole("reviewer-adversarial")).toBe("adversarial");
+  });
+
+  test("US-001 AC15 boundary: a non-reviewer role maps to null", () => {
+    expect(reviewerFromRole("implementer")).toBeNull();
+    expect(reviewerFromRole("reviewer")).toBeNull();
+  });
+
+  test("US-001 AC15 boundary: a reviewer-fix dispatch is recorded under reviewer 'fix'", () => {
+    const recorded: ReviewAuditDispatch[] = [];
+    const bus = new DispatchEventBus();
+    attachReviewAuditSubscriber(
+      bus,
+      { recordDispatch: (e) => recorded.push(e), recordDecision() {}, getAdvisoryFindings: () => [], async flush() {} },
+      "run-1",
+    );
+
+    bus.emitDispatch(
+      makeSessionTurnEvent({
+        sessionName: "nax-fix-feat-us-001-reviewer-fix",
+        sessionRole: "reviewer-fix",
+        storyId: "US-001",
+        featureName: "feat",
+      }),
+    );
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].reviewer).toBe("fix");
+    expect(recorded[0].sessionName).toBe("nax-fix-feat-us-001-reviewer-fix");
   });
 });

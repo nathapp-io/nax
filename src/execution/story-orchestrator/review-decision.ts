@@ -1,5 +1,6 @@
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
+import type { FixReviewOpOutput } from "@/review/fix-review";
 import type { AdvisoryFinding } from "@/review/review-audit";
 import type { DroppedFindingSummary, ReviewDecisionPayload } from "./types";
 
@@ -17,9 +18,76 @@ function toModelPassed(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+/**
+ * US-001 — translate a `FixReviewOpOutput` into the audit-ready payload shape.
+ *
+ * Unlike the seeded reviewers, the scoped fix review's op output carries no
+ * `findings`, `acDropped`, `acks` or `advisoryFindings` — it is a verdict with
+ * a single reason (and optionally a named AC + file). The audit subscriber
+ * expects `result.findings` to be an array (the seeded reviewers' interface),
+ * so this helper synthesizes the list:
+ *   - `[]` on a pass,
+ *   - one entry carrying the reason (and optional `acIndex`/`file`) on a fail.
+ *
+ * Shape validation (mirrors the seeded-reviewer branch's type-narrowing):
+ *   - `parsed` must be a boolean. The seeded reviewers' branch returns `null`
+ *     when their output's `passed` is not a boolean or `findings` is not an
+ *     array; here the analogous gate is on `parsed` itself, since `FixReviewOpOutput`
+ *     has no `findings` to check. A missing or wrong-typed `parsed` means the
+ *     op produced nothing usable — `toReviewDecisionPayload` then returns
+ *     `null` and no event is emitted.
+ *   - On `parsed: true`, `passed` must be a boolean and `reason` a non-empty
+ *     string. A wrong-typed `passed` (`"yes"`) would otherwise coerce silently.
+ *   - On `parsed: false`, only `unparsedPreview` is read and it is narrowed
+ *     to a string; the helper's `passed` field is `false` (no model claim).
+ *
+ * Returns `null` on shape mismatch so `emitReviewDecision` silently drops
+ * the event, the same way the seeded branch drops a malformed output.
+ */
+function fixReviewPayload(record: FixReviewOpOutput): ReviewDecisionPayload | null {
+  if (record.parsed !== true && record.parsed !== false) return null;
+
+  if (record.parsed === true) {
+    if (typeof record.passed !== "boolean") return null;
+    if (typeof record.reason !== "string" || record.reason.length === 0) return null;
+    const findings = record.passed
+      ? []
+      : [
+          {
+            source: "semantic-review" as const,
+            category: "fix-review",
+            message: record.reason,
+            ...(record.acIndex !== undefined ? { acIndex: record.acIndex } : {}),
+            ...(record.file !== undefined ? { file: record.file } : {}),
+          },
+        ];
+    return {
+      reviewer: "fix",
+      parsed: true,
+      passed: record.passed,
+      result: { passed: record.passed, findings },
+    };
+  }
+  return {
+    reviewer: "fix",
+    parsed: false,
+    passed: false,
+    result: null,
+    unparsedPreview: typeof record.unparsedPreview === "string" ? record.unparsedPreview : undefined,
+  };
+}
+
 export function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisionPayload | null {
   if (output === null || output === undefined || typeof output !== "object") return null;
   const record = output as Record<string, unknown>;
+
+  // US-001 — the scoped fix review. Taken before the seeded-reviewer branches
+  // because `FixReviewOpOutput` carries no `findings`, `acDropped`, `acks` or
+  // `advisoryFindings` — reading any of those off it would yield `undefined`
+  // and silently strip the audit record's payload.
+  if (opName === "fix-review") {
+    return fixReviewPayload(record as unknown as FixReviewOpOutput);
+  }
 
   const reviewer = opName === "semantic-review" ? "semantic" : opName === "adversarial-review" ? "adversarial" : null;
   if (!reviewer) return null;
@@ -209,7 +277,15 @@ export function logUnifiedReviewPhaseResult(storyId: string | undefined, opName:
   }
 
   const findingsCount = payload.result.findings.length;
-  const title = payload.reviewer === "semantic" ? "Semantic review" : "Adversarial review";
+  // US-001 — the scoped fix review has its own reviewer kind; without an
+  // explicit branch it falls through to "Adversarial review", which would
+  // mislabel every fix-review log line in the run summary.
+  const title =
+    payload.reviewer === "semantic"
+      ? "Semantic review"
+      : payload.reviewer === "adversarial"
+        ? "Adversarial review"
+        : "Fix review";
 
   if (payload.passed) {
     logger?.info("review", `${title} passed`, { storyId });

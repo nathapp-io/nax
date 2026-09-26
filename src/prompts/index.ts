@@ -22,6 +22,9 @@ export { AdversarialReviewPromptBuilder } from "./builders/adversarial-review-bu
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.
 export { buildDecomposePromptSync } from "./builders/decompose-builder";
+export type { FixReviewPromptInput } from "./builders/fix-review-builder";
+// Fix-review prompt builder — verdict-only review of a fix's own delta (ADR-033).
+export { buildFixReviewPrompt } from "./builders/fix-review-builder";
 export type { OneShotRole } from "./builders/one-shot-builder";
 // One-shot prompt builder — escape hatch for structurally trivial prompts.
 // Used by router and decomposer.

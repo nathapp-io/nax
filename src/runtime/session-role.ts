@@ -17,6 +17,8 @@ export type CanonicalSessionRole =
   | "test-fix"
   | "reviewer-semantic"
   | "reviewer-adversarial"
+  /** US-001 — the scoped fix review's own fresh reviewer session. */
+  | "reviewer-fix"
   | "plan"
   | "plan-refine"
   | "decompose"
@@ -43,6 +45,7 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "test-fix",
   "reviewer-semantic",
   "reviewer-adversarial",
+  "reviewer-fix",
   "plan",
   "plan-refine",
   "decompose",

@@ -338,6 +338,12 @@ export interface ReviewConfig {
    * may include both reviewers; the rest of the knobs govern the one fix pass.
    */
   nonBlockingFix?: import("../config/selectors").NonBlockingFixConfig;
+  /**
+   * US-001 (fix-review) — scoped review of a fix's own delta. Required: the
+   * schema declares it with `.default({})`, so every parsed config carries the
+   * block. `resolveFixReviewModel` (src/review/fix-review/config.ts) reads it.
+   */
+  fixReview: import("../config/selectors").FixReviewConfig;
   /** Parsed oscillation + cross-attempt review-recurrence circuit-breaker configuration. */
   conflictDetection: { enabled: boolean; maxOscillations: number; maxCrossAttemptRecurrences: number };
 }

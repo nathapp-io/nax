@@ -55,6 +55,8 @@ export type { FinishReviewInput, FinishReviewOutput } from "./finish-review";
 // through `callOp`; their prompt assembly, parsing and gap auditing live with
 // the rest of finish in `src/finish/`.
 export { finishReviewOp } from "./finish-review";
+export type { FixReviewOpInput } from "./fix-review";
+export { fixReviewOp } from "./fix-review";
 export type {
   FullSuiteGateDeps,
   FullSuiteGateInput,

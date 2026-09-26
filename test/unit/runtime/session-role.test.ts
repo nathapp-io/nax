@@ -83,3 +83,33 @@ describe("KNOWN_SESSION_ROLES — finish role registration", () => {
     expect(Array.isArray(KNOWN_SESSION_ROLES)).toBe(true);
   });
 });
+
+/**
+ * US-001 — the scoped fix review dispatches on its own session role. It is a
+ * *fresh* reviewer distinct from the seeded pair, so the role has to be
+ * registered here (adapter-wiring.md Rule 2: free-form sessionRole strings are
+ * banned outside the registry, and an unregistered role would be a runtime
+ * miss rather than a compile error).
+ *
+ * The widened `readonly string[]` binding is what lets this assertion stay a
+ * runtime check instead of a compile error while the role is still missing.
+ */
+describe("KNOWN_SESSION_ROLES — reviewer-fix registration (US-001)", () => {
+  test("US-001 AC10: KNOWN_SESSION_ROLES contains 'reviewer-fix'", () => {
+    const roles: readonly string[] = KNOWN_SESSION_ROLES;
+    expect(roles).toContain("reviewer-fix");
+  });
+
+  test("US-001 AC10 boundary: isSessionRole('reviewer-fix') accepts the new role", () => {
+    expect(isSessionRole("reviewer-fix")).toBe(true);
+  });
+
+  test("US-001 AC10 boundary: 'reviewer-fix' is registered exactly once", () => {
+    const roles: readonly string[] = KNOWN_SESSION_ROLES;
+    expect(roles.filter((role) => role === "reviewer-fix")).toHaveLength(1);
+  });
+
+  test("US-001 AC10 boundary: a near-miss role is still rejected", () => {
+    expect(isSessionRole("reviewer-fix-scoped")).toBe(false);
+  });
+});

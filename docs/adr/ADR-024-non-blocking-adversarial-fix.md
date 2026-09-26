@@ -1,6 +1,6 @@
 # ADR-024: Non-Blocking Adversarial Fix
 
-**Status:** Accepted
+**Status:** Accepted; §3 amended by ADR-033 (scoped fix review, 2026-09-26)
 **Implementation:** `feat/non-blocking-adversarial-fix-docs` — Tasks 1–7 complete (2026-06-07). Config schema (`schemas-review.ts`), advisory findings surfacing (`adversarial-review.ts`), snapshot primitive (`tdd/rollback.ts`), harness overrides (`story-orchestrator.ts`), best-effort orchestrator (`execution/non-blocking-fix.ts`), story lifecycle wiring (`build-plan-for-strategy.ts`, `story-orchestrator.ts`). Ships with `enabled: false` (opt-in); flip to `true` after diff-cap guard (Open Question 3) lands.
 **Date:** 2026-06-07
 **Author:** William Khoo, Claude

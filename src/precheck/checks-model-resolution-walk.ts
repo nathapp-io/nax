@@ -261,6 +261,12 @@ export function collectConfiguredModelPins(config: unknown): {
     );
     if (pin !== undefined) pins.push(pin);
   }
+  // US-001 — only walked when the operator pinned a model (an unset
+  // fixReview.model falls back to review.semantic.model and resolves there).
+  if (cfg.review?.fixReview?.model !== undefined) {
+    const pin = pinFromConfiguredModel("review.fixReview.model", cfg.review.fixReview.model, defaultAgent, tierEntries);
+    if (pin !== undefined) pins.push(pin);
+  }
   if (cfg.plan !== undefined) {
     const pin = pinFromConfiguredModel("plan.model", cfg.plan.model, defaultAgent, tierEntries);
     if (pin !== undefined) pins.push(pin);

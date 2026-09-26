@@ -9,7 +9,7 @@
  */
 
 import type { z } from "zod";
-import type { NonBlockingFixConfigSchema } from "./schemas-review";
+import type { FixReviewConfigSchema, NonBlockingFixConfigSchema } from "./schemas-review";
 import { pickSelector, reshapeSelector } from "./selector";
 import type { NaxConfig } from "./types";
 
@@ -177,4 +177,15 @@ export type MutationCheckConfig = ReturnType<typeof mutationCheckConfigSelector.
 export type AutofixConfig = ReturnType<typeof autofixConfigSelector.select>;
 export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;
 export type NonBlockingFixConfig = z.infer<typeof NonBlockingFixConfigSchema>;
+/** US-001 (fix-review) — `review.fixReview` slice, beside `NonBlockingFixConfig`.
+ *
+ * Uses `z.infer` (the parsed shape, not the input shape) so `enabled` and
+ * `timeoutMs` carry their schema defaults as required fields. Every parsed
+ * `ReviewConfig.fixReview` has them; downstream readers (US-003 runner,
+ * `resolveFixReviewModel`'s callers) should not need to re-default a value
+ * that is never actually absent at runtime. The schema's `.optional().default(...)`
+ * chain in `ReviewConfigSchema` guarantees the block is always present after
+ * parse, so the required-field type is sound.
+ */
+export type FixReviewConfig = z.infer<typeof FixReviewConfigSchema>;
 export type FinishConfig = ReturnType<typeof finishConfigSelector.select>;

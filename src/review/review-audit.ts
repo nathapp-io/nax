@@ -44,8 +44,11 @@ export type AdvisoryFinding = Finding;
 export interface ReviewAuditEntry {
   /** Runtime run ID for correlation with prompt/cost audit. */
   runId?: string;
-  /** Reviewer type. */
-  reviewer: "semantic" | "adversarial";
+  /**
+   * Reviewer type. US-001 adds `"fix"`: the scoped fix review over a
+   * non-blocking fix's own delta, dispatched on session role `reviewer-fix`.
+   */
+  reviewer: "semantic" | "adversarial" | "fix";
   /** ACP session name — used as part of the filename for correlation with prompt-audit. */
   sessionName: string;
   /** ACP volatile session ID. */
@@ -121,7 +124,8 @@ export interface ReviewAuditEntry {
 
 export interface ReviewAuditDispatch {
   runId: string;
-  reviewer: "semantic" | "adversarial";
+  /** US-001 — `"fix"` in addition to the two seeded reviewers. */
+  reviewer: "semantic" | "adversarial" | "fix";
   sessionName: string;
   sessionId?: string | null;
   recordId?: string | null;
@@ -148,7 +152,8 @@ export type ReviewAuditDecision = Omit<ReviewAuditEntry, "sessionName" | "workdi
 export interface AdvisoryFindingSummaryEntry {
   storyId?: string;
   featureName?: string;
-  reviewer: "semantic" | "adversarial";
+  /** US-001 — advisory findings may also come from the scoped fix review. */
+  reviewer: "semantic" | "adversarial" | "fix";
   severity: Severity;
   category?: string;
   file?: string;
@@ -195,7 +200,7 @@ export const _reviewAuditDeps = {
   findNaxProjectRoot,
 };
 
-function auditKey(reviewer: "semantic" | "adversarial", storyId: string | undefined): string {
+function auditKey(reviewer: "semantic" | "adversarial" | "fix", storyId: string | undefined): string {
   return `${reviewer}:${storyId ?? "_feature"}`;
 }
 
