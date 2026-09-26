@@ -1,6 +1,46 @@
 // test/unit/config/schemas-review.test.ts
 import { describe, expect, test } from "bun:test";
 import { AdversarialReviewConfigSchema, NaxConfigSchema, ReviewConfigSchema } from "@/config";
+import type { FixReviewConfig } from "@/config/selectors";
+
+// Type-level assertions (compile-time, no runtime body) — US-001.
+//
+// The `FixReviewConfig` type alias is what downstream readers (US-003 runner,
+// `resolveFixReviewModel`'s callers) actually consult. It MUST describe the
+// parsed shape — `enabled` and `timeoutMs` carry schema defaults, so every
+// parsed value has them — not the input shape, which leaves every field
+// optional and forces every reader to re-default a value that is never
+// actually absent at runtime.
+//
+// The neighbour `NonBlockingFixConfig` is declared with `z.infer` for exactly
+// this reason. `FixReviewConfig` is declared with `z.input` (#adversarial
+// review, `selectors.ts:186`); these assertions fail to compile until that
+// alias is corrected. The runtime tests below (AC1-AC4) already pin the
+// behaviour; this pins the *type*.
+//
+// AssertTrue is the project-standard compile-time guard
+// (see test/unit/execution/lifecycle/run-regression.test.ts, "Asserted at
+// the type level, not with @ts-expect-error on a value literal"). It fails
+// to typecheck (TS2344) if the type argument is the wrong literal — there is
+// no runtime path that can quietly turn a wrong type green.
+//
+// Each assertion is built on a TS-level conditional, not a runtime expression:
+//   * `enabled` and `timeoutMs` must extend `boolean`/`number` directly.
+//     `(boolean | undefined) extends boolean` is `false`, so a `z.input`
+//     declaration (which makes every field optional) trips both.
+//   * `model` must allow `undefined` (the schema declares `.optional()`).
+//     `undefined extends ConfiguredModel` is `false`, so a `z.input` trip
+//     would surface here too — the control on the *positive* assertion
+//     catches what the negative-direction assertions miss.
+type AssertTrue<T extends true> = T;
+
+type AssertFixReviewEnabledIsRequired = AssertTrue<FixReviewConfig["enabled"] extends boolean ? true : false>;
+type AssertFixReviewTimeoutMsIsRequired = AssertTrue<FixReviewConfig["timeoutMs"] extends number ? true : false>;
+type AssertFixReviewModelIsOptional = AssertTrue<undefined extends FixReviewConfig["model"] ? true : false>;
+
+const _fixReviewEnabledIsRequired: AssertFixReviewEnabledIsRequired = true;
+const _fixReviewTimeoutMsIsRequired: AssertFixReviewTimeoutMsIsRequired = true;
+const _fixReviewModelIsOptional: AssertFixReviewModelIsOptional = true;
 
 describe("AdversarialReviewConfigSchema.recurrenceDemotion", () => {
   test("defaults to enabled with maxBlockingRounds 2", () => {
