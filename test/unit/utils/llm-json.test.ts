@@ -217,6 +217,61 @@ describe("parseLLMJson", () => {
     expect(parseLLMJson<Obj>(input)).toEqual({ a: 1 });
   });
 
+  // #2264: when the outermost object never closes, every later `{` sits inside
+  // it. Returning one of those balanced inner objects hands the caller a
+  // fragment it cannot tell apart from a real top-level result.
+  test("does not return a nested object when the outer object is truncated", () => {
+    const input = '{"version":1,"tests":{"passCount":27},"details":{"a":1},"reasoning":"ok"';
+    expect(() => parseLLMJson(input)).toThrow(SyntaxError);
+  });
+
+  test("still skips a balanced prose brace to reach a later truncated payload's failure", () => {
+    expect(() => parseLLMJson('see { this } then {"a": {"b": 1}')).toThrow(SyntaxError);
+  });
+
+  // Counter-examples: an UNMATCHED prose brace is not a truncated payload, so
+  // a later independent payload must still be found.
+  test.each<[string, Obj | number[]]>([
+    ['Use { to start objects (see docs). Result: {"a":1}', { a: 1 }],
+    ['Don\'t forget the opening { char. {"a":{"b":1}}', { a: { b: 1 } }],
+    ["Note the { char used to open objects. Result: [1,2,3]", [1, 2, 3]],
+    ['Use {, then see the docs. Result: {"a":1}', { a: 1 }],
+    ['Oops { ] mismatched. Result: {"a":1}', { a: 1 }],
+    [
+      'The config accepts { "verbose": true, "level": 3 and other fields. Final response: {"status": "done"}',
+      { status: "done" },
+    ],
+    ['Shape is { "a": [1, 2] and more. Final: {"status": "done"}', { status: "done" }],
+  ])("finds the payload after an unmatched prose brace: %s", (input, expected) => {
+    expect(parseLLMJson<Obj | number[]>(input)).toEqual(expected);
+  });
+
+  // A length cap usually cuts mid-string or mid-key, not between values. The
+  // payload is still truncated, so no nested object may be returned from it.
+  test.each([
+    ["mid-string", '{"tests":{"passCount":27},"reasoning":"The implement'],
+    ["after a trailing backslash", '{"tests":{"passCount":27},"reasoning":"path C:\\'],
+    ["mid-key", '{"tests":{"passCount":27},"reaso'],
+    ["after a colon", '{"tests":{"passCount":27},"reasoning":'],
+  ])("does not return a nested object when the outer object is cut %s", (_label, input) => {
+    expect(() => parseLLMJson(input)).toThrow(SyntaxError);
+  });
+
+  test("a truncated nested object's first key still reads as truncation, not prose", () => {
+    expect(() => parseLLMJson('{"tests":{"passCount":27},"reasoning":{"summ')).toThrow(SyntaxError);
+  });
+
+  // The truncation check runs once per unclosed opener; it must stay linear.
+  test("a long run of stray braces is handled in linear time", () => {
+    const started = performance.now();
+    expect(() => parseLLMJson("{".repeat(16_000))).toThrow(SyntaxError);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test("does not return a nested array when the outer object is truncated", () => {
+    expect(() => parseLLMJson('{"files":[1,2],"note":"cut"')).toThrow(SyntaxError);
+  });
+
   // Counter-example — a `}` inside a JSON string must still parse correctly
   // (string-state tracking must not be broken by the brace-balancing fix).
   test("counter-example — a closing brace inside a JSON string still parses", () => {

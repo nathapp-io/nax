@@ -2096,7 +2096,7 @@ branch — in an OS sandbox. Project-declared commands (`quality.commands`,
 |:---|:---|:---|
 | `enabled` | `true` | Sandbox on by default |
 | `backend` | `"srt"` | `@anthropic-ai/sandbox-runtime`; `srt-backend.ts` is its only importer (`scripts/check-sandbox-imports.ts`) |
-| `filesystem.allowWrite` | `[]` | Extra write roots (`~` expanded; relative to the story root) |
+| `filesystem.allowWrite` | `[]` | Extra write roots (`~` expanded; relative to the story root). A top-level `.nax/` entry listed here is opened to agents (never `features`, `config.json`, `mono`) |
 | `filesystem.denyRead` | `[]` | Extra read denies |
 | `network.allowedDomains` | absent | Absent = unrestricted; `[]` = no network; list = allow-list |
 
@@ -2107,9 +2107,12 @@ Paths must be literal (no glob characters — srt silently drops globbed entries
   never silently runs unwrapped.
 - `policy-builder.ts` (pure) + `policy-inputs.ts` (I/O) — per-call policy, rebuilt
   each command and realpath-resolved: write roots (story root, temp roots,
-  package-manager caches, `filesystem.allowWrite`); write denies for
-  `.nax/config.json`, `.nax/mono/`, feature `prd.json` files, the queue-control
-  files, git internals / redirect files and `approvals.json`; read denies for
+  package-manager caches, `filesystem.allowWrite`); write denies for every
+  top-level `.nax/` entry except `scratchpad/` (plus the entries nax loads as
+  input -- `config.json`, `mono/`, `rules/`, `context.md`, `hooks.json`,
+  `plugins/`, `templates/`, `prompts/` -- even when absent, minus allowWrite
+  opt-ins, nax#2260),
+  the queue-control files, git internals / redirect files and `approvals.json`; read denies for
   credential stores (`~/.ssh`, `~/.aws`, `~/.config/gh`, …, nax's own credentials,
   `filesystem.denyRead`).
 - `probe.ts` / `registry.ts` — availability is decided by running one wrapped

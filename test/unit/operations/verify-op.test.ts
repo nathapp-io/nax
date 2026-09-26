@@ -72,22 +72,6 @@ describe("verifierOp — RunOperation shape", () => {
   });
 });
 
-describe("verifierOp.parse — error handling (strict: throws ParseValidationError)", () => {
-  test.each([
-    ["empty output", ""],
-    ["unparseable prose", "could not parse"],
-    ["malformed JSON", '{ "incomplete":'],
-  ])("throws ParseValidationError when output is %s", async (_label, output) => {
-    const { verifierOp } = await import("@/operations");
-    const { ParseValidationError } = await import("@/agents/retry");
-
-    const ctx = makeParseCtx();
-    const input = { story: makeStory({ id: "US-001" }) };
-
-    expect(() => verifierOp.parse(output, input, ctx)).toThrow(ParseValidationError);
-  });
-});
-
 describe("verifierOp input type", () => {
   test("verifierOp input includes only story (limited context)", async () => {
     const { verifierOp: _verifierOp } = await import("@/operations");
@@ -630,8 +614,8 @@ describe("test-incorrect normalized finding", () => {
 //   - op.retry is declared
 //   - op.recover is fail-closed (always non-null) when disk is missing/invalid
 //
-// Parse *failure* cases (empty stdout, non-JSON, truncated) are covered in the
-// earlier "verifierOp.parse — error handling" describe to avoid duplication.
+// Parse *failure* cases (empty stdout, non-JSON, truncated) are covered in
+// verify-op-parse.test.ts to avoid duplication.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RETRY_VALID_VERDICT = {

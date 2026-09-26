@@ -307,6 +307,7 @@ export class ExecutionPlan {
               skipGateTriage: true,
               gateBaselineKeys: preRectGateFailureKeys,
               isThreeSession: this.isThreeSession,
+              extraRevalidationKinds: [phase.kind],
             });
             if (secondRect.rectificationExhausted) {
               logger?.warn("story-orchestrator", "Second rectification pass exhausted — terminal failure", {
@@ -316,8 +317,9 @@ export class ExecutionPlan {
               });
               break;
             }
-            // Re-check the failed phase: revalidation inside runRectification
-            // may have re-run it. If it now passes, continue; otherwise terminal.
+            // `extraRevalidationKinds` puts the failed phase in revalidation even when the
+            // fixing strategy excludes it (autofix-implementer never revalidates the
+            // verifier, #2264). If it now passes, continue; otherwise terminal.
             if (phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
               continue;
             }

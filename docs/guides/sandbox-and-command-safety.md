@@ -57,15 +57,23 @@ true -- set this stage's bashApproval to gated or escalate, or disable the sandb
 
 ### What the sandbox allows
 
-The policy is rebuilt for every call (so a feature directory created mid-run still gets its
-`prd.json` deny), and every path in it is literal and realpath-resolved.
+The policy is rebuilt for every call (so a `.nax/` entry created mid-run still gets its deny),
+and every path in it is literal and realpath-resolved.
 
 | | Paths |
 |:--|:--|
 | **Writable** | the story root (repo or worktree); the system temp dir and `/tmp`; package-manager caches under `$HOME` (`.bun/install/cache`, `.npm`, `.cache`, `.cargo/registry`, `.cargo/git`, `go/pkg/mod`, `.gradle/caches`, `.m2/repository`, `.pnpm-store`; plus `Library/Caches` and `/tmp/claude` on macOS); `filesystem.allowWrite` |
-| **Write-denied inside those** | `.nax/config.json`, `.nax/mono/`, every `.nax/features/*/prd.json`, the root queue files (`.queue.txt`, `.queue.txt.processing`), the approvals file, and the git guards below |
+| **Write-denied inside those** | every top-level `.nax/` entry except `.nax/scratchpad/` (whole: `features/`, `rules/`, `cache/`, ...), plus the entries nax loads as input even when absent (`config.json`, `mono/`, `rules/`, `context.md`, `hooks.json`, `plugins/`, `templates/`, `prompts/`); the root queue files (`.queue.txt`, `.queue.txt.processing`), the approvals file, and the git guards below |
 | **Unreadable** | `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.docker/config.json`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/.config/gh`, nax's own `credentials*` files; `filesystem.denyRead` |
 | **Network** | unrestricted unless `network.allowedDomains` is set |
+
+The file tools (Write, Edit, Delete, GitCommit) apply the same `.nax/` rule in-process, with
+one addition the sandbox cannot express: a test file directly inside a feature directory (the
+acceptance and suggested tests, or a custom `acceptance.testPath`) stays writable, because
+acceptance generation and test-fix write them. The feature's `context.md`, spec, state files
+and subdirectories (`stories/`, `sessions/`, ...) do not. A test runner that writes next to
+the acceptance test from Bash, such as a first snapshot into `__snapshots__/`, is refused;
+Python's `__pycache__` write fails silently and is harmless.
 
 The agent is told all of this in the tool description, and a wrapped command whose stderr
 looks like a sandbox denial (`Operation not permitted`, `Read-only file system`) gets a note
@@ -109,7 +117,7 @@ mistakes, not a boundary against hostile code (ADR-030, "Threat model unchanged"
 |:--|:--|:--|
 | `enabled` | `true` | Master switch. `false` restores unsandboxed raw bash explicitly. |
 | `backend` | `"srt"` | [`@anthropic-ai/sandbox-runtime`](https://www.npmjs.com/package/@anthropic-ai/sandbox-runtime); the only backend today. |
-| `filesystem.allowWrite` | `[]` | Extra write roots. `~` is expanded; relative paths resolve against the story root. |
+| `filesystem.allowWrite` | `[]` | Extra write roots. `~` is expanded; relative paths resolve against the story root. Listing a top-level `.nax/` entry (e.g. `".nax/rules"`) also lets agents write it, through Bash and the file tools alike; `.nax/features`, `.nax/config.json` and `.nax/mono` can never be opened. |
 | `filesystem.denyRead` | `[]` | Extra read denies. `~` is expanded. |
 | `network.allowedDomains` | unset | Unset = unrestricted; `[]` = no network; a list = allow-list. |
 

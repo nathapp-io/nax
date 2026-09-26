@@ -4,9 +4,12 @@ import {
   isNaxConfigFile,
   isNaxOwnedWritePath,
   NAX_OWNED_WRITE_TOOLS,
+  NAX_SCRATCHPAD_ENTRY,
   naxOwnedKind,
   naxOwnedWriteRefusal,
+  naxWriteOptIns,
 } from "@/tools/nax-owned-writes";
+import { SCRATCHPAD_DIR } from "@/tools/scratchpad";
 
 const ROOT = "/repo";
 
@@ -65,8 +68,8 @@ describe("naxOwnedWriteRefusal", () => {
     }
   });
 
-  test("allows writes elsewhere under .nax/features", () => {
-    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/notes.md")).toBeUndefined();
+  test("#2260: refuses other non-test files under .nax/features too", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/notes.md")).toBeDefined();
   });
 
   test("allows writes to an ordinary prd.json outside .nax", () => {
@@ -127,6 +130,11 @@ describe("naxOwnedWriteRefusal — plan-op exemption (nax#2115)", () => {
 
   test("exempts the one path the plan op declared as its fileOutput", () => {
     expect(naxOwnedWriteRefusal("Write", PRD, PRD)).toBeUndefined();
+  });
+
+  test("#2260: the exemption covers every mutating tool and survives the .nax/ state rule", () => {
+    for (const tool of ["Write", "Edit"]) expect(naxOwnedWriteRefusal(tool, PRD, PRD)).toBeUndefined();
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/spec.md", PRD)).toBeDefined();
   });
 
   test("exemption is path-exact: another feature's PRD is still refused", () => {
@@ -214,5 +222,114 @@ describe("isNaxOwnedWritePath", () => {
 
   test("a non-prd file under a feature dir is not owned", () => {
     expect(isNaxOwnedWritePath(".nax/features/my-feature/notes.md")).toBe(false);
+  });
+});
+
+// nax#2260: `.nax/` is nax's own state. File tools may write there only to the
+// scratchpad, to files directly inside a feature dir (acceptance and suggested
+// tests, whatever acceptance.testPath names them), and to entries a human
+// opted in through execution.sandbox.filesystem.allowWrite.
+describe("naxOwnedWriteRefusal — .nax/ state (nax#2260)", () => {
+  test("refuses every mutating tool under rules/, context.md and the other top-level entries", () => {
+    for (const rel of [
+      ".nax/rules/a.md",
+      ".nax/context.md",
+      ".nax/constitution.md",
+      ".nax/profiles/p.json",
+      ".nax/cache/x",
+    ]) {
+      for (const tool of ["Write", "Edit", "Delete", "GitCommit"])
+        expect(naxOwnedWriteRefusal(tool, rel)).toBeDefined();
+    }
+  });
+
+  test("refuses the .nax directory itself", () => {
+    expect(naxOwnedWriteRefusal("Delete", ".nax")).toBeDefined();
+  });
+
+  test("refuses a feature's run-state subdirectories", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/stories/US-001/manifest.json")).toBeDefined();
+    expect(naxOwnedWriteRefusal("Delete", ".nax/features/auth/sessions/s.json")).toBeDefined();
+  });
+
+  test("allows the scratchpad", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/scratchpad/probe.ts")).toBeUndefined();
+    expect(naxOwnedWriteRefusal("Delete", ".nax/scratchpad/deep/notes.md")).toBeUndefined();
+  });
+
+  test("refuses a feature dir's own state and context files", () => {
+    const names = [
+      "context.md",
+      "spec.md",
+      "acceptance-meta.json",
+      "acceptance-refined.json",
+      "status.json",
+      "checkpoint.jsonl",
+      "debug-import.ts",
+    ];
+    for (const name of names) expect(naxOwnedWriteRefusal("Write", `.nax/features/auth/${name}`)).toBeDefined();
+  });
+
+  test("allows test-shaped files directly inside a feature dir: acceptance tests under any configured name", () => {
+    for (const name of [
+      ".nax-acceptance.test.ts",
+      ".nax-acceptance.test.tsx",
+      "_nax_acceptance_test.py",
+      ".nax-acceptance_test.go",
+      ".nax-acceptance.rs",
+      ".nax-suggested.test.ts",
+      "_nax_suggested_test.py",
+      "custom.test.ts",
+      "custom.spec.js",
+    ]) {
+      expect(naxOwnedWriteRefusal("Edit", `.nax/features/auth/${name}`)).toBeUndefined();
+    }
+  });
+
+  test("the plan op's exempt path is honoured for a non-PRD .nax path too, and only that path", () => {
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/out.json", ".nax/features/auth/out.json")).toBeUndefined();
+    expect(naxOwnedWriteRefusal("Write", ".nax/features/auth/other.json", ".nax/features/auth/out.json")).toBeDefined();
+  });
+
+  test("reads are never refused", () => {
+    for (const tool of ["Read", "Grep", "Glob", "Git"])
+      expect(naxOwnedWriteRefusal(tool, ".nax/rules/a.md")).toBeUndefined();
+  });
+
+  test("an opted-in top-level entry becomes writable, and only that entry", () => {
+    const optIns = new Set(["rules"]);
+    expect(naxOwnedWriteRefusal("Edit", ".nax/rules/a.md", undefined, optIns)).toBeUndefined();
+    expect(naxOwnedWriteRefusal("Edit", ".nax/context.md", undefined, optIns)).toBeDefined();
+  });
+
+  test("the reason names the path, the writable places and the opt-in", () => {
+    const reason = naxOwnedWriteRefusal("Write", ".nax/rules/a.md") ?? "";
+    expect(reason).toContain(".nax/rules/a.md");
+    expect(reason).toContain(".nax/scratchpad/");
+    expect(reason).toContain("execution.sandbox.filesystem.allowWrite");
+  });
+
+  test("the scratchpad entry matches the scratchpad tools' directory", () => {
+    expect(`.nax/${NAX_SCRATCHPAD_ENTRY}`).toBe(SCRATCHPAD_DIR);
+  });
+});
+
+describe("naxWriteOptIns (nax#2260)", () => {
+  test("a relative, ./-prefixed, trailing-slash or absolute spelling of a top-level entry opts it in", () => {
+    for (const p of [".nax/rules", "./.nax/rules/", join(ROOT, ".nax", "rules")]) {
+      expect([...naxWriteOptIns(ROOT, [p])]).toEqual(["rules"]);
+    }
+  });
+
+  test("features, config.json and mono can never be opted in", () => {
+    expect(naxWriteOptIns(ROOT, [".nax/features", ".nax/config.json", ".nax/mono"]).size).toBe(0);
+  });
+
+  test("the scratchpad needs no opt-in and .nax itself is not an entry", () => {
+    expect(naxWriteOptIns(ROOT, [".nax/scratchpad", ".nax"]).size).toBe(0);
+  });
+
+  test("a path below an entry, or outside .nax, opts nothing in", () => {
+    expect(naxWriteOptIns(ROOT, [".nax/rules/a.md", "dist", "../.nax/rules"]).size).toBe(0);
   });
 });

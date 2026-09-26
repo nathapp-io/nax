@@ -176,28 +176,122 @@ function findBalancedSpanEnd(text: string, openIndex: number): number {
  *  retry-storm path. */
 const MAX_JSON_CANDIDATES = 50;
 
+/** Container state after one linear scan of `text[from, to)`. */
+interface ContainerScan {
+  /** Closers for the containers still open, innermost last; null on a mismatched closer. */
+  readonly closers: string[] | null;
+  readonly inString: boolean;
+  readonly escaped: boolean;
+  /** Index of the last structural comma, or -1. */
+  readonly lastComma: number;
+  /** True when a container opened inside the range also closed inside it. */
+  readonly closedOwnContainer: boolean;
+}
+
+/** `outerClosersOk`: a closer with nothing open closes a container opened before `from`. */
+function scanContainers(text: string, from: number, to: number, outerClosersOk = false): ContainerScan {
+  const closers: string[] = [];
+  let inString = false;
+  let escaped = false;
+  let lastComma = -1;
+  let closedOwnContainer = false;
+  for (let i = from; i < to; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+    } else if (ch === "{" || ch === "[") {
+      closers.push(ch === "{" ? "}" : "]");
+    } else if (ch === "}" || ch === "]") {
+      if (outerClosersOk && closers.length === 0) continue;
+      if (closers.pop() !== ch) return { closers: null, inString, escaped, lastComma, closedOwnContainer };
+      closedOwnContainer = true;
+    } else if (ch === ",") {
+      lastComma = i;
+    }
+  }
+  return { closers, inString, escaped, lastComma, closedOwnContainer };
+}
+
+/** Parses as a non-empty object or array — an empty `{}` proves nothing about prose. */
+function parsesAsNonEmptyContainer(candidate: string): boolean {
+  try {
+    const value: unknown = JSON.parse(stripTrailingCommas(candidate));
+    return Array.isArray(value)
+      ? value.length > 0
+      : !!value && typeof value === "object" && Object.keys(value).length > 0;
+  } catch {
+    return false; // not repairable into JSON
+  }
+}
+
+/**
+ * True when the never-closed container opening at `openIndex` is a truncated
+ * JSON payload: closing it makes it parse. A stray prose brace
+ * (`Use { to open objects. Result: {"a":1}`) does not, which is what
+ * separates the two.
+ *
+ * A length cap usually cuts mid-string or mid-key, so two repairs are tried:
+ * close any open string and then every open container; failing that, cut back
+ * to the last structural comma and close the containers open at that point.
+ * The cut is only trusted when the discarded tail closes none of its own
+ * containers: a real truncation leaves a dangling key or unfinished value
+ * there, while prose quoting a JSON-like fragment is followed by the complete
+ * payload. Each scan is linear, so a run of stray braces stays cheap.
+ */
+function isTruncatedJsonPayload(text: string, openIndex: number): boolean {
+  const scan = scanContainers(text, openIndex, text.length);
+  if (!scan.closers || scan.closers.length === 0) return false;
+  const body = scan.escaped ? text.slice(openIndex, -1) : text.slice(openIndex);
+  const closeAll = (closers: readonly string[]) => [...closers].reverse().join("");
+  if (parsesAsNonEmptyContainer(`${body}${scan.inString ? '"' : ""}${closeAll(scan.closers)}`)) return true;
+  if (scan.lastComma === -1) return false;
+  if (scanContainers(text, scan.lastComma + 1, text.length, true).closedOwnContainer) return false;
+  const atComma = scanContainers(text, openIndex, scan.lastComma).closers;
+  return !!atComma && parsesAsNonEmptyContainer(text.slice(openIndex, scan.lastComma) + closeAll(atComma));
+}
+
+/** Result of a balanced-candidate scan. */
+interface CandidateScan<T> {
+  /** Parsed value of the first valid candidate, or undefined when none parsed. */
+  readonly value: T | undefined;
+  /** Index of a truncated payload's opener that stopped the scan, or -1. */
+  readonly truncatedAt: number;
+}
+
 /**
  * Scan `text` for `openChar`/matching-closer candidates in order, and return
  * the parsed value of the first candidate whose balanced span is valid JSON.
  * This handles prose braces preceding the real payload (e.g.
  * `the { payload } was: {"a": 1}`) — the first candidate is structurally
  * balanced but not valid JSON, so the scan moves on to the next `{`.
- * Returns undefined when no candidate parses.
+ *
+ * The scan stops at an opener that never closes when it is a truncated JSON
+ * payload. Every later opener lies inside it, so its balanced span is a nested
+ * fragment, not a top-level result (#2264: a verdict one `}` short parsed as
+ * its inner `tests` object). An unmatched prose brace is skipped as before.
+ * Only openers before `limit` are considered.
  */
-function parseFirstBalancedJsonCandidate<T>(text: string, openChar: "{" | "["): T | undefined {
+function parseFirstBalancedJsonCandidate<T>(text: string, openChar: "{" | "[", limit = text.length): CandidateScan<T> {
   let candidates = 0;
-  for (let i = 0; i < text.length; i++) {
+  for (let i = 0; i < limit; i++) {
     if (text[i] !== openChar) continue;
-    if (candidates++ >= MAX_JSON_CANDIDATES) return undefined;
+    if (candidates++ >= MAX_JSON_CANDIDATES) return { value: undefined, truncatedAt: -1 };
     const end = findBalancedSpanEnd(text, i);
-    if (end === -1) continue;
+    if (end === -1) {
+      if (isTruncatedJsonPayload(text, i)) return { value: undefined, truncatedAt: i };
+      continue;
+    }
     try {
-      return JSON.parse(stripTrailingCommas(text.slice(i, end + 1))) as T;
+      return { value: JSON.parse(stripTrailingCommas(text.slice(i, end + 1))) as T, truncatedAt: -1 };
     } catch {
       /* this candidate's span isn't valid JSON — try the next one */
     }
   }
-  return undefined;
+  return { value: undefined, truncatedAt: -1 };
 }
 
 /**
@@ -311,11 +405,13 @@ function parseJsonTiers<T>(trimmed: string): T | undefined {
 
   // Tier 3a: bare JSON object — brace-balanced scan for { … }, trying each
   // `{` candidate in order (handles prose braces before the real payload).
-  const objResult = parseFirstBalancedJsonCandidate<T>(trimmed, "{");
-  if (objResult !== undefined) return objResult;
+  const objScan = parseFirstBalancedJsonCandidate<T>(trimmed, "{");
+  if (objScan.value !== undefined) return objScan.value;
 
-  // Tier 3b: bare JSON array — fallback to a bracket-balanced [ … ] scan
-  return parseFirstBalancedJsonCandidate<T>(trimmed, "[");
+  // Tier 3b: bare JSON array — fallback to a bracket-balanced [ … ] scan.
+  // An array after a truncated `{` payload is nested inside it, so out of reach.
+  const arrayLimit = objScan.truncatedAt === -1 ? trimmed.length : objScan.truncatedAt;
+  return parseFirstBalancedJsonCandidate<T>(trimmed, "[", arrayLimit).value;
 }
 
 /**

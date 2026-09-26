@@ -94,8 +94,6 @@ skills/
 **/.nax/features/*/acp-sessions.json
 **/.nax/features/*/acceptance-refined.json
 **/.nax/features/*/*.bak
-**/.nax-acceptance*
-**/_nax_acceptance_test.py
 **/_nax_suggested_test.py
 **/.nax/status.json
 

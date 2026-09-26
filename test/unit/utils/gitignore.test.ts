@@ -11,7 +11,12 @@ import { describe, expect, test } from "bun:test";
 import { dirname, join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import { fragmentPath } from "@/context";
-import { NAX_GITIGNORE_ENTRIES, NAX_NAXIGNORE_ENTRIES, patchIgnoreFile } from "@/utils/gitignore";
+import {
+  NAX_GITIGNORE_ENTRIES,
+  NAX_NAXIGNORE_ENTRIES,
+  NAX_RETIRED_GITIGNORE_ENTRIES,
+  patchIgnoreFile,
+} from "@/utils/gitignore";
 import { journalDir } from "@/verification";
 
 describe("NAX_GITIGNORE_ENTRIES", () => {
@@ -87,6 +92,19 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
       for (const committed of ["spec.md", "prd.json", "prd-fidelity-report.md", "acceptance-meta.json"]) {
         expectIgnored(`${feature}/${committed}`, false);
       }
+      // Acceptance tests are the feature's executable spec, paired with the
+      // committed acceptance-meta.json. Ignoring them let a `git reset` restore
+      // the fingerprint but not the file, so a resumed run "reused" a test file
+      // that no longer existed.
+      for (const acceptance of [
+        ".nax-acceptance.test.ts",
+        "_nax_acceptance_test.py",
+        ".nax-acceptance_test.go",
+        ".nax-acceptance.rs",
+      ]) {
+        expectIgnored(`${feature}/${acceptance}`, false);
+        expectIgnored(`packages/api/${feature}/${acceptance}`, false);
+      }
       for (const artifact of ["status.json", "progress.txt", "plan/x.jsonl", "fragments/US-001.md", "prd.json.bak"]) {
         expectIgnored(`${feature}/${artifact}`, true);
       }
@@ -110,6 +128,19 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
       expectIgnored("packages/lib/.nax/cache/test-patterns.json", true);
       expectIgnored("packages/lib/.nax/scratchpad/notes.md", true);
     });
+  });
+});
+
+describe("NAX_RETIRED_GITIGNORE_ENTRIES", () => {
+  test("retires the acceptance-test patterns", () => {
+    expect(NAX_RETIRED_GITIGNORE_ENTRIES).toContain("**/.nax-acceptance*");
+    expect(NAX_RETIRED_GITIGNORE_ENTRIES).toContain("**/_nax_acceptance_test.py");
+  });
+
+  test("never overlaps the active entries — a retired entry would be re-added and removed on every run", () => {
+    for (const entry of NAX_RETIRED_GITIGNORE_ENTRIES) {
+      expect(NAX_GITIGNORE_ENTRIES).not.toContain(entry);
+    }
   });
 });
 

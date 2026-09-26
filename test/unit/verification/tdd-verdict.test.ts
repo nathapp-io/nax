@@ -143,14 +143,6 @@ describe("readVerdict", () => {
       1,
     ],
     [
-      "approved missing",
-      (d: CoercionFixture) => {
-        d.approved = undefined;
-      },
-      (r: VerifierVerdict) => r.approved,
-      false,
-    ],
-    [
       "tests missing",
       (d: CoercionFixture) => {
         d.tests = undefined;
@@ -222,6 +214,15 @@ describe("readVerdict", () => {
     expect(result).not.toBeNull();
     assertDefined(result, "result");
     expect(getField(result)).toEqual(expected);
+  });
+
+  // #2264: no approval signal means no verdict — recover then fails closed
+  // rather than trusting fabricated fail-closed defaults.
+  test("returns null when approved is missing", async () => {
+    const data: CoercionFixture = makeVerdict();
+    data.approved = undefined;
+    await writeVerdictFile(tmpDir, data);
+    expect(await readVerdict(tmpDir)).toBeNull();
   });
 
   test("parses verdict with approved=false correctly", async () => {
@@ -316,9 +317,21 @@ describe("coerceVerdict", () => {
     expect(result?.tests.failCount).toBe(2);
   });
 
-  test("provides defaults for completely empty object", () => {
-    const result = coerceVerdict({});
-    expect(result).not.toBeNull();
+  // #2264: an object with no approval signal is not a verdict. Coercing it
+  // fabricated a fail-closed 0/0 tests-failing result that skipped the
+  // parse-retry re-prompt and the on-disk verdict fallback.
+  test.each([
+    ["an empty object", {}],
+    [
+      "a mis-extracted nested tests object",
+      { allPassing: true, passCount: 27, failCount: 0, details: {}, reasoning: "All ACs met." },
+    ],
+  ])("returns null for %s (no approved/verdict field)", (_label, obj) => {
+    expect(coerceVerdict(obj)).toBeNull();
+  });
+
+  test("defaults the remaining fields when only an approval signal is present", () => {
+    const result = coerceVerdict({ approved: false });
     expect(result?.approved).toBe(false);
     expect(result?.tests.passCount).toBe(0);
     expect(result?.tests.failCount).toBe(0);
