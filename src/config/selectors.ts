@@ -179,9 +179,13 @@ export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelecto
 export type NonBlockingFixConfig = z.infer<typeof NonBlockingFixConfigSchema>;
 /** US-001 (fix-review) — `review.fixReview` slice, beside `NonBlockingFixConfig`.
  *
- * Uses `z.input` so `enabled` and `timeoutMs` are optional in the type — the
- * inner schema applies the defaults at parse time, and `ReviewConfig.fixReview`
- * is declared required so an unconfigured repo still carries the parsed block.
- * Callers that want to read a single field should treat it as `T | undefined`. */
-export type FixReviewConfig = z.input<typeof FixReviewConfigSchema>;
+ * Uses `z.infer` (the parsed shape, not the input shape) so `enabled` and
+ * `timeoutMs` carry their schema defaults as required fields. Every parsed
+ * `ReviewConfig.fixReview` has them; downstream readers (US-003 runner,
+ * `resolveFixReviewModel`'s callers) should not need to re-default a value
+ * that is never actually absent at runtime. The schema's `.optional().default(...)`
+ * chain in `ReviewConfigSchema` guarantees the block is always present after
+ * parse, so the required-field type is sound.
+ */
+export type FixReviewConfig = z.infer<typeof FixReviewConfigSchema>;
 export type FinishConfig = ReturnType<typeof finishConfigSelector.select>;
