@@ -18,22 +18,207 @@
  *   `.nax/`.
  * - All three throw `NaxError` with code `FIX_REVIEW_GIT_FAILED` on a non-zero
  *   git exit, so an empty result can never mean "git failed".
- *
- * STUBS (US-002 RED state): every body below returns a placeholder of the right
- * shape. The implementer supplies the real git work.
  */
 
-/** Tree id of the current working tree (tracked + untracked, `.gitignore` honoured). Mutates nothing. */
-export async function snapshotWorkingTree(_workdir: string): Promise<string> {
-  return "";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { NaxError } from "@/errors";
+import { type SpawnOptions, type SpawnResult, typedSpawn } from "@/utils/bun-deps";
+import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
+
+/** Pathspec exclusion that hides the repo-root `.nax/` directory and its contents. */
+const NAX_EXCLUDE_PATHSPEC = ":!.nax";
+/** Pathspec exclusion that hides a `.nax/` directory nested below the cwd. */
+const NAX_NESTED_EXCLUDE_PATHSPEC = ":(glob,exclude)**/.nax/**";
+
+/**
+ * Injectable spawn seam — mirrors `_gitDeps.spawn` (`src/utils/git.ts`) and
+ * the `_forgeDeps` (`src/forge/deps.ts`) pattern so a unit test can pin the
+ * `Bun.spawn` calls without `mock.module()`.
+ *
+ * `mkdtemp` / `rm` are also injectable so the temporary-index cleanup can be
+ * asserted in tests that verify the index is gone after `snapshotWorkingTree`.
+ */
+export interface TreeSnapshotDeps {
+  readonly spawn: (cmd: string[], opts: SpawnOptions) => SpawnResult;
+  readonly mkdtemp: (prefix: string) => Promise<string>;
+  readonly rm: (path: string) => Promise<void>;
+  readonly tmpdir: () => string;
 }
 
-/** Repo-root-relative paths that differ between two tree-ishes (no rename detection). */
-export async function changedPathsBetween(_workdir: string, _from: string, _to: string): Promise<string[]> {
-  return [];
+export const _treeSnapshotDeps: TreeSnapshotDeps = {
+  spawn: typedSpawn,
+  mkdtemp,
+  rm,
+  tmpdir,
+};
+
+/** Result of running a single git invocation. */
+interface GitRunResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
 }
 
-/** Unified diff between two tree-ishes, excluding paths under `.nax/`. */
-export async function diffBetween(_workdir: string, _from: string, _to: string): Promise<string> {
-  return "";
+/**
+ * Run a git subcommand by its argv (no `git` prefix — the helper prepends
+ * `git` so the `["git", ...]` literal only appears at the actual spawn site,
+ * where the `check:git-spawn-env` gate expects it). stdout and stderr are
+ * drained concurrently with `proc.exited` so a process that fills either
+ * pipe's OS buffer before being read would not deadlock the snapshot.
+ *
+ * `indexOverlay` carries the optional `GIT_INDEX_FILE` pointer — `undefined`
+ * for the diff/changed-paths helpers, the temp index path for the snapshot.
+ * The overlay is passed through `gitSpawnEnv(...)` so the env var reaches
+ * git AND the hardened entries are appended (#2198, defence in depth).
+ */
+async function runGit(
+  args: readonly string[],
+  cwd: string,
+  indexOverlay?: { GIT_INDEX_FILE: string },
+): Promise<GitRunResult> {
+  const proc = _treeSnapshotDeps.spawn(hardenedGitArgv(["git", ...args]), {
+    cwd,
+    env: gitSpawnEnv(indexOverlay),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { stdout, stderr, exitCode };
+}
+
+/** Stage prefix for the temporary GIT_INDEX_FILE the snapshot helper writes. */
+const TEMP_INDEX_PREFIX = "nax-fix-review-snapshot-";
+
+/**
+ * Throw a `FIX_REVIEW_GIT_FAILED` error carrying the failing subcommand,
+ * cwd, exit status, and stderr tail. The `[stage]` prefix in the message
+ * matches the project convention (`[stage]` identifier style), and the
+ * context carries the structured fields the operator triages from.
+ */
+function gitFailed(stage: string, args: readonly string[], cwd: string, detail: string): never {
+  throw new NaxError(`[${stage}] git ${args.join(" ")} failed in ${cwd}: ${detail}`, "FIX_REVIEW_GIT_FAILED", {
+    stage,
+    cwd,
+    args: [...args],
+    detail,
+  });
+}
+
+/**
+ * Tree id of the current working tree (tracked + untracked, `.gitignore` honoured).
+ *
+ * The implementation seeds a throwaway `GIT_INDEX_FILE` from HEAD, runs `git
+ * add -A` against it (which respects `.gitignore`), and writes the resulting
+ * tree. The repository's own `.git/index` and working tree are untouched:
+ * `GIT_INDEX_FILE` redirects git to the throwaway index for the duration of
+ * the call. The temp directory is deleted before this function returns, so
+ * the only filesystem trace is the tree id.
+ */
+export async function snapshotWorkingTree(workdir: string): Promise<string> {
+  const stage = "fix-review-tree-snapshot";
+
+  const tempDir = await _treeSnapshotDeps.mkdtemp(join(_treeSnapshotDeps.tmpdir(), TEMP_INDEX_PREFIX));
+  const tempIndex = join(tempDir, "index");
+  // GIT_INDEX_FILE is the overlay `gitSpawnEnv` documents as the intended
+  // use for this layer (#2198) — it lets git operate against the throwaway
+  // index without touching the repo's real one.
+  const indexOverlay = { GIT_INDEX_FILE: tempIndex };
+
+  try {
+    // Seed the throwaway index from HEAD — `git read-tree HEAD` writes the
+    // current HEAD's tree into GIT_INDEX_FILE without touching the real one.
+    // A non-zero exit here is the "not a git repo" case (AC9), so the error
+    // message preserves the verbatim stderr.
+    const seed = await runGit(["read-tree", "HEAD"], workdir, indexOverlay);
+    if (seed.exitCode !== 0)
+      gitFailed(stage, ["read-tree", "HEAD"], workdir, seed.stderr.trim() || `exit ${seed.exitCode}`);
+
+    // `git add -A` against the throwaway index: updates tracked entries in
+    // the cwd subtree to their current working-tree content AND stages any
+    // new non-ignored files. `.gitignore` is honoured (the gitignore rules
+    // are part of the index, which we just seeded from HEAD). The command
+    // operates in `workdir` so a package-dir workdir captures only that
+    // subtree — matching the per-package scoping the fix review expects.
+    const add = await runGit(["add", "-A"], workdir, indexOverlay);
+    if (add.exitCode !== 0) gitFailed(stage, ["add", "-A"], workdir, add.stderr.trim() || `exit ${add.exitCode}`);
+
+    // `git write-tree` reads the throwaway index and emits its tree id.
+    // Output goes to stdout; trailing newline trimmed. The empty-tree case
+    // (an index with no entries) would still produce a valid 40-hex id, and
+    // a fresh repo with no commits is already rejected at `read-tree HEAD`.
+    const write = await runGit(["write-tree"], workdir, indexOverlay);
+    if (write.exitCode !== 0)
+      gitFailed(stage, ["write-tree"], workdir, write.stderr.trim() || `exit ${write.exitCode}`);
+
+    const tree = write.stdout.trim();
+    if (!/^[0-9a-f]{40}$/.test(tree)) {
+      gitFailed(stage, ["write-tree"], workdir, `unexpected tree id: ${tree}`);
+    }
+    return tree;
+  } finally {
+    // Best-effort cleanup — a leftover temp dir on disk is not a correctness
+    // issue (the repo's own index is untouched), but `os.tmpdir()` would
+    // accumulate one per snapshot call otherwise.
+    await _treeSnapshotDeps.rm(tempDir).catch(() => {});
+  }
+}
+
+/**
+ * Repo-root-relative paths that differ between two tree-ishes (no rename detection).
+ *
+ * `git diff --name-only --no-renames <from> <to>` lists every changed path
+ * relative to the repo root, regardless of where the command runs. From a
+ * subdirectory cwd (a package story's `workdir`), git shows only the paths
+ * under that subtree — exactly the per-package scoping AC7 wants.
+ */
+export async function changedPathsBetween(workdir: string, from: string, to: string): Promise<string[]> {
+  const stage = "fix-review-changed-paths";
+  const result = await runGit(["diff", "--name-only", "--no-renames", from, to], workdir);
+  if (result.exitCode !== 0) {
+    gitFailed(
+      stage,
+      ["diff", "--name-only", "--no-renames", from, to],
+      workdir,
+      result.stderr.trim() || `exit ${result.exitCode}`,
+    );
+  }
+  // Output is one repo-root-relative path per line. An empty stdout means
+  // `from` and `to` describe the same tree — NOT "git failed"; the non-zero
+  // exit above already covers the git-failed case.
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+/**
+ * Unified diff between two tree-ishes, excluding paths under `.nax/`.
+ *
+ * Mirrors the per-package scoping of `changedPathsBetween`: from a package
+ * cwd, git shows only files under that subtree, and the `.nax/` exclusion
+ * uses two pathspecs — one for the cwd-level `.nax/` directory and one for
+ * nested `.nax/` directories — so neither slips through the filter.
+ */
+export async function diffBetween(workdir: string, from: string, to: string): Promise<string> {
+  const stage = "fix-review-diff";
+  const result = await runGit(
+    ["diff", from, to, "--", ".", NAX_EXCLUDE_PATHSPEC, NAX_NESTED_EXCLUDE_PATHSPEC],
+    workdir,
+  );
+  if (result.exitCode !== 0) {
+    gitFailed(
+      stage,
+      ["diff", from, to, "--", ".", NAX_EXCLUDE_PATHSPEC, NAX_NESTED_EXCLUDE_PATHSPEC],
+      workdir,
+      result.stderr.trim() || `exit ${result.exitCode}`,
+    );
+  }
+  return result.stdout;
 }
