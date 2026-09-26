@@ -14,7 +14,9 @@
  * therefore is not screened at all: `sh -c "$(echo rm) .nax/features/f/prd.json"`
  * passes straight through. This is a mistake-catcher, not a boundary, and it
  * must never grow into a general gate — gating lives in policy, once
- * (`src/tools/bash.ts:14-19`).
+ * (`src/tools/bash.ts:14-19`). The ONE deliberate exception is the
+ * whole-filesystem `find` refusal below: a COST guard (a root-wide walk runs
+ * into the 300s Bash timeout), not a containment boundary.
  *
  * A parseable `cd` moves every LATER segment's frame of reference, exactly as
  * it does for `checkBashCommand`, so this screen tracks it too via the shared
@@ -45,7 +47,7 @@
  * while a false pass can abort the run.
  */
 import { relative, resolve, sep } from "node:path";
-import { lexBashCommand } from "@/permissions";
+import { type BashToken, lexBashCommand } from "@/permissions";
 import { realOrRaw } from "@/utils/realpath";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd";
 import type { NaxOwnedKind } from "./nax-owned-writes";
@@ -61,6 +63,54 @@ export interface RawScreenArgs {
   readonly resolvePath: (candidate: string, cwd: string) => string | null;
   /** The permitted root, used to relativise a resolved path. */
   readonly root: string;
+  /**
+   * US-002: true when the command runs inside the OS sandbox (an available
+   * launcher). A token that only NAMES a feature PRD is then no longer refused
+   * -- reading it through Bash costs nothing, and the sandbox still blocks a
+   * write. Absent or false screens exactly as before.
+   */
+  readonly sandboxWrapped?: boolean;
+}
+
+/**
+ * US-002: the start paths that mean "search the whole filesystem". An exact
+ * token comparison, never a prefix one: `~/proj` and `~user` are scoped and
+ * allowed, while `~` and `~/` are not.
+ */
+const BRACE_HOME = "$" + "{HOME}";
+
+const WHOLE_FILESYSTEM_STARTS: ReadonlySet<string> = new Set([
+  "/",
+  "~",
+  "~/",
+  "$HOME",
+  "$HOME/",
+  BRACE_HOME,
+  `${BRACE_HOME}/`,
+]);
+
+/**
+ * US-002: the whole-filesystem start path of a `find` segment, or undefined.
+ *
+ * The start paths are the tokens after `find` -- and after any leading `-H`,
+ * `-L` or `-P` -- up to the first token that begins with `-`, `(` or `!`. The
+ * comparison uses the token TEXT (opaque tokens included: `$HOME` lexes as
+ * opaque and must still match).
+ */
+function wholeFilesystemFind(tokens: readonly BashToken[]): string | undefined {
+  if (tokens[0]?.text !== "find") return undefined;
+  let index = 1;
+  while (index < tokens.length) {
+    const text = tokens[index]?.text;
+    if (text !== "-H" && text !== "-L" && text !== "-P") break;
+    index += 1;
+  }
+  for (; index < tokens.length; index += 1) {
+    const text = tokens[index]?.text ?? "";
+    if (text.startsWith("-") || text.startsWith("(") || text.startsWith("!")) break;
+    if (WHOLE_FILESYSTEM_STARTS.has(text)) return text;
+  }
+  return undefined;
 }
 
 function deny(reason: string): BashCheck {
@@ -137,11 +187,25 @@ export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
   if (lexed.kind === "refused") return { kind: "allow" };
 
   let cwd: readonly string[] = [args.initialPath];
+  const sandboxWrapped = args.sandboxWrapped === true;
   for (const segment of lexed.segments) {
+    // US-002 COST GUARD (see the file header): a `find` rooted at the whole
+    // filesystem walks every mount and runs into the 300s Bash timeout. Raw has
+    // no containment, so nothing else stops it. Not a boundary -- a cost guard.
+    const findStart = wholeFilesystemFind(segment.tokens);
+    if (findStart !== undefined) {
+      return deny(
+        `\`find ${findStart}\` searches the whole filesystem and runs into the 300s Bash timeout. ` +
+          `Search within the repository root instead: ${args.root}`,
+      );
+    }
     for (const token of segment.tokens) {
       if (token.opaque) continue;
       const hit = protectedHit(args, token.text, cwd);
-      if (hit !== undefined) {
+      // US-002: sandbox-wrapped, a token that only NAMES a PRD is allowed --
+      // the sandbox is the boundary, so a read costs nothing. Config and queue
+      // are unchanged in both modes.
+      if (hit !== undefined && !(sandboxWrapped && hit.kind === "prd")) {
         return deny(naxOwnedBashRefusal(tool, hit.kind, hit.hit, "names"));
       }
     }
@@ -149,7 +213,9 @@ export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
       if (redirect.opaque) continue;
       const hit = protectedHit(args, redirect.target, cwd);
       if (hit !== undefined) {
-        return deny(naxOwnedBashRefusal(tool, hit.kind, hit.hit, "redirects into"));
+        // A redirect WRITES, so even sandbox-wrapped it is refused -- with the
+        // read/write truth for a PRD (US-002), unchanged text elsewhere.
+        return deny(naxOwnedBashRefusal(tool, hit.kind, hit.hit, "redirects into", { sandboxWrapped }));
       }
     }
 

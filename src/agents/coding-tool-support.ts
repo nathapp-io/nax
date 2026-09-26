@@ -44,7 +44,7 @@ import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { errorMessage } from "../utils/errors";
 import { resolveBashSupport } from "./coding-tool-bash";
 import { buildDeclaredCommandTools } from "./coding-tool-extras";
-import { rawRefusalFor, resolveSessionSandbox } from "./coding-tool-sandbox";
+import { rawScreenOptionsFor, resolveSessionSandbox } from "./coding-tool-sandbox";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
 import { UNIVERSAL_CODING_TOOLS } from "./universal-coding-tools";
@@ -204,9 +204,9 @@ export function buildCodingToolSupport(args: {
   });
 
   const declaredCommands = args.declaredCommands ?? new Map<string, QualityCommandSpec>();
-  // P4 (Task 8): under `raw`, an UNAVAILABLE launcher refuses every Bash call
-  // at the policy, so the sandbox's absence cannot silently widen raw bash.
-  const rawBashRefusal = rawRefusalFor(args.launcher);
+  // P4/S5: under `raw`, an UNAVAILABLE launcher refuses every Bash call.
+  // US-002: an AVAILABLE one marks the screen sandbox-wrapped, so a PRD it only reads is allowed.
+  const rawScreenOptions = rawScreenOptionsFor(args.launcher);
   const sink =
     args.auditDir !== undefined
       ? createToolAuditSink({
@@ -218,7 +218,7 @@ export function buildCodingToolSupport(args: {
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(effectiveGrants, args.root, {
       bashApproval,
-      ...(rawBashRefusal !== undefined ? { rawBashRefusal } : {}),
+      ...rawScreenOptions,
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),

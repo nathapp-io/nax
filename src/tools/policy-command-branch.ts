@@ -24,6 +24,8 @@ export interface BashCommandBranchArgs {
   readonly bashApproval: BashApprovalMode;
   /** P4: when set, the enabled sandbox is unavailable and `raw` denies every call (spec S5). */
   readonly rawBashRefusal?: string;
+  /** US-002: true when the sandbox wraps the command, so `raw` no longer refuses a PRD it only reads. */
+  readonly sandboxWrapped?: boolean;
   readonly resolvedRoot: string;
   readonly denyBy: ReadonlyMap<string, CompiledEntry>;
   readonly askBy: ReadonlyMap<string, CompiledEntry>;
@@ -40,6 +42,7 @@ export function commandBranch(args: BashCommandBranchArgs): PolicyVerdict | unde
     grant,
     bashApproval,
     rawBashRefusal,
+    sandboxWrapped,
     resolvedRoot,
     denyBy,
     askBy,
@@ -56,6 +59,7 @@ export function commandBranch(args: BashCommandBranchArgs): PolicyVerdict | unde
       command: input[scope.commandField],
       initialPath: resolvedRoot,
       root: resolvedRoot,
+      sandboxWrapped: sandboxWrapped === true,
       resolvePath,
     });
     if (screened.kind === "deny") return deny(screened.reason, screened.breach, screened.escalatable);

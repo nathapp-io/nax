@@ -98,6 +98,25 @@ export function rawRefusalFor(launcher: CommandLauncher | undefined): string | u
   return launcher?.state.kind === "unavailable" ? rawBashRefusalReason(launcher.state.reason) : undefined;
 }
 
+/**
+ * US-002: the raw-screen options `compileToolPolicy` consumes, derived from the
+ * launcher's state.
+ *
+ * `rawBashRefusal` is exactly what `rawRefusalFor` returns (an unavailable
+ * launcher refuses every call). `sandboxWrapped: true` is added for an available
+ * launcher: the command really does run inside the OS sandbox, so the raw screen
+ * stops refusing a feature PRD the command only READS. A disabled launcher
+ * yields neither key.
+ */
+export function rawScreenOptionsFor(launcher: CommandLauncher | undefined): {
+  rawBashRefusal?: string;
+  sandboxWrapped?: true;
+} {
+  if (launcher?.state.kind === "available") return { sandboxWrapped: true };
+  const rawBashRefusal = rawRefusalFor(launcher);
+  return rawBashRefusal !== undefined ? { rawBashRefusal } : {};
+}
+
 async function literalPolicyError(
   policyFor: (root: string) => Promise<unknown>,
   root: string,

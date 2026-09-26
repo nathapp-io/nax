@@ -168,6 +168,7 @@ function rawDescription(shell: string, containment: string = RAW_UNCONTAINED): s
     "writing them directly. That screen is advisory, not a boundary: it matches exact file paths only, so a " +
     "command using command substitution, a directory target (cp x .nax/), a glob, a nested shell (sh -c '...'), " +
     "tar -C or dd of=, or a symlink alias all skip it; use the sandbox for a boundary. " +
+    "A `find` whose start path is `/`, `~` or `$HOME` is refused -- search within the repository instead. " +
     BACKGROUND_PROCESSES_KILLED_SENTENCE
   );
 }

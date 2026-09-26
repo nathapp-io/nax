@@ -140,6 +140,7 @@ export interface ToolPolicyOptions {
    * Ignored under gated/escalate, which run unwrapped with a warning.
    */
   readonly rawBashRefusal?: string;
+  readonly sandboxWrapped?: boolean; // US-002: sandbox-wrapped `raw` allows a PRD the command only NAMES.
 }
 
 function isFieldlessScope(scope: ToolScope): boolean {
@@ -582,6 +583,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
           grant,
           bashApproval,
           rawBashRefusal: options?.rawBashRefusal,
+          sandboxWrapped: options?.sandboxWrapped,
           resolvedRoot,
           denyBy,
           askBy,
