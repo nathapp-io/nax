@@ -240,19 +240,12 @@ export const NonBlockingFixConfigSchema = z.object({
  * `src/execution/non-blocking-fix.ts`), so a kept pass is guarded only by the
  * deterministic gates. A fix review re-reads the fix's own diff against the
  * story's ACs and description before the pass is kept (nax#2229).
- *
- * NOTE (RED stub, US-001 test-writer session): the field SET is declared so
- * fixtures and callers compile, but the defaults and constraints are not
- * applied yet. The implementer must land:
- *   enabled: z.boolean().default(true)
- *   model: ConfiguredModelSchema.optional()   // unset -> review.semantic.model -> "balanced"
- *   timeoutMs: z.number().int().positive().default(600_000)
  */
 export const FixReviewConfigSchema = z.object({
-  enabled: z.boolean().optional(),
+  enabled: z.boolean().default(true),
   /** Optional; unset falls back to review.semantic.model, then "balanced". */
   model: ConfiguredModelSchema.optional(),
-  timeoutMs: z.number().optional(),
+  timeoutMs: z.number().int().positive().default(600_000),
 });
 
 export const ReviewConfigSchema = z.object({
@@ -314,11 +307,14 @@ export const ReviewConfigSchema = z.object({
    */
   nonBlockingFix: NonBlockingFixConfigSchema.optional(),
   /**
-   * US-001 — scoped review of a fix's own delta, default-enabled. `.default({})`
-   * means an unconfigured repo gets the inner schema's own defaults (the same
-   * SSOT-derivation pattern the review literal in `schemas.ts` uses).
+   * US-001 — scoped review of a fix's own delta, default-enabled. The
+   * `.optional().default(...)` chain keeps the field permissive on input
+   * (callers may omit it — see the existing `ReviewConfigSchema.conflictDetection`
+   * tests) while guaranteeing the block is populated on output. The default
+   * value is `FixReviewConfigSchema.parse({})`, which carries the inner
+   * schema's own defaults (SSOT — see the review literal in `schemas.ts`).
    */
-  fixReview: FixReviewConfigSchema.default({}),
+  fixReview: FixReviewConfigSchema.optional().default(FixReviewConfigSchema.parse({})),
   conflictDetection: z
     .object({
       enabled: z.boolean().default(true),

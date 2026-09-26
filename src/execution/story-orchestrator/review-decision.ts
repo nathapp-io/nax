@@ -1,5 +1,6 @@
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
+import type { FixReviewOpOutput } from "@/review/fix-review";
 import type { AdvisoryFinding } from "@/review/review-audit";
 import type { DroppedFindingSummary, ReviewDecisionPayload } from "./types";
 
@@ -17,9 +18,61 @@ function toModelPassed(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+/**
+ * US-001 — translate a `FixReviewOpOutput` into the audit-ready payload shape.
+ *
+ * Unlike the seeded reviewers, the scoped fix review's op output carries no
+ * `findings`, `acDropped`, `acks` or `advisoryFindings` — it is a verdict with
+ * a single reason (and optionally a named AC + file). The audit subscriber
+ * expects `result.findings` to be an array (the seeded reviewers' interface),
+ * so this helper synthesizes the list:
+ *   - `[]` on a pass,
+ *   - one entry carrying the reason (and optional `acIndex`/`file`) on a fail.
+ *
+ * On unparseable output the helper returns the existing
+ * `parsed: false, result: null, unparsedPreview` shape verbatim — no parse
+ * retry (per the Out-of-Scope list).
+ */
+function fixReviewPayload(record: FixReviewOpOutput): ReviewDecisionPayload {
+  if (record.parsed === true) {
+    const findings = record.passed
+      ? []
+      : [
+          {
+            source: "semantic-review" as const,
+            category: "fix-review",
+            message: record.reason,
+            ...(record.acIndex !== undefined ? { acIndex: record.acIndex } : {}),
+            ...(record.file !== undefined ? { file: record.file } : {}),
+          },
+        ];
+    return {
+      reviewer: "fix",
+      parsed: true,
+      passed: record.passed,
+      result: { passed: record.passed, findings },
+    };
+  }
+  return {
+    reviewer: "fix",
+    parsed: false,
+    passed: false,
+    result: null,
+    unparsedPreview: record.unparsedPreview,
+  };
+}
+
 export function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisionPayload | null {
   if (output === null || output === undefined || typeof output !== "object") return null;
   const record = output as Record<string, unknown>;
+
+  // US-001 — the scoped fix review. Taken before the seeded-reviewer branches
+  // because `FixReviewOpOutput` carries no `findings`, `acDropped`, `acks` or
+  // `advisoryFindings` — reading any of those off it would yield `undefined`
+  // and silently strip the audit record's payload.
+  if (opName === "fix-review") {
+    return fixReviewPayload(record as unknown as FixReviewOpOutput);
+  }
 
   const reviewer = opName === "semantic-review" ? "semantic" : opName === "adversarial-review" ? "adversarial" : null;
   if (!reviewer) return null;

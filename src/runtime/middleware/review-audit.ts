@@ -5,13 +5,13 @@ import type { DispatchEvent, IDispatchEventBus, ReviewDecisionEvent } from "../d
 /**
  * Map a dispatch event's session role onto the audit's reviewer kind.
  *
- * US-001 — the return type already admits `"fix"` (the scoped fix review's
- * reviewer kind, recorded from session role `reviewer-fix`), but the mapping
- * itself is not wired yet. RED stub: only the two seeded reviewers resolve.
+ * US-001 — adds the `"reviewer-fix"` → `"fix"` mapping for the scoped fix
+ * review's fresh reviewer session.
  */
 export function reviewerFromRole(role: string): "semantic" | "adversarial" | "fix" | null {
   if (role === "reviewer-semantic") return "semantic";
   if (role === "reviewer-adversarial") return "adversarial";
+  if (role === "reviewer-fix") return "fix";
   return null;
 }
 

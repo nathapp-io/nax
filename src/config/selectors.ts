@@ -177,6 +177,11 @@ export type MutationCheckConfig = ReturnType<typeof mutationCheckConfigSelector.
 export type AutofixConfig = ReturnType<typeof autofixConfigSelector.select>;
 export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;
 export type NonBlockingFixConfig = z.infer<typeof NonBlockingFixConfigSchema>;
-/** US-001 (fix-review) — `review.fixReview` slice, beside `NonBlockingFixConfig`. */
-export type FixReviewConfig = z.infer<typeof FixReviewConfigSchema>;
+/** US-001 (fix-review) — `review.fixReview` slice, beside `NonBlockingFixConfig`.
+ *
+ * Uses `z.input` so `enabled` and `timeoutMs` are optional in the type — the
+ * inner schema applies the defaults at parse time, and `ReviewConfig.fixReview`
+ * is declared required so an unconfigured repo still carries the parsed block.
+ * Callers that want to read a single field should treat it as `T | undefined`. */
+export type FixReviewConfig = z.input<typeof FixReviewConfigSchema>;
 export type FinishConfig = ReturnType<typeof finishConfigSelector.select>;

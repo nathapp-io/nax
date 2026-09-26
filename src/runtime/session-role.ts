@@ -17,12 +17,7 @@ export type CanonicalSessionRole =
   | "test-fix"
   | "reviewer-semantic"
   | "reviewer-adversarial"
-  /**
-   * US-001 — the scoped fix review's own fresh reviewer session. RED stub: the
-   * TYPE member is declared so callers and fixtures compile; the runtime
-   * registry below still has to gain the same value (`isSessionRole` reads
-   * `KNOWN_SESSION_ROLES`, not this union).
-   */
+  /** US-001 — the scoped fix review's own fresh reviewer session. */
   | "reviewer-fix"
   | "plan"
   | "plan-refine"
@@ -50,6 +45,7 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "test-fix",
   "reviewer-semantic",
   "reviewer-adversarial",
+  "reviewer-fix",
   "plan",
   "plan-refine",
   "decompose",
