@@ -78,17 +78,16 @@ function makeFullPlan(ctx: CallContext) {
 }
 
 /**
- * Set up the initial callOp so:
- *  - implementer: succeeds
- *  - verifier: fails (so runFixCycle is triggered)
- *  - all other phases: fail with a lint finding (so they appear in initialFindings)
+ * Set up the initial callOp so only lint-check fails. The main loop then reaches
+ * rectification with a lint finding, so the FIRST runFixCycle call is the primary
+ * cycle under test. (When every phase failed, the primary pass never reached the
+ * fix cycle and these tests were measuring the resume loop's second pass, which
+ * also re-judges the phase that triggered it — #2264.)
  */
 function setupInitialCallOp() {
   _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
-    if (op.name === "implementer") return { success: true };
-    if (op.name === "verifier") return { success: false, findings: [LINT_FINDING] };
-    // All other phases fail to ensure runFixCycle is called
-    return { success: false, findings: [LINT_FINDING] };
+    if (op.name === "lint-check") return { success: false, findings: [LINT_FINDING] };
+    return { success: true, passed: true, findings: [] };
   }) as typeof _storyOrchestratorDeps.callOp;
 }
 
@@ -108,8 +107,12 @@ async function captureAndSetupValidate(ctx: CallContext): Promise<{
   let capturedCtx: FixCycleContext | null = null;
 
   _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>, cycleCtx: FixCycleContext) => {
-    capturedCycle = cycle;
-    capturedCtx = cycleCtx;
+    // Keep the PRIMARY cycle: lint stays red, so the resume loop's second pass
+    // runs too, with a different revalidation set from the one under test.
+    if (capturedCycle === null) {
+      capturedCycle = cycle;
+      capturedCtx = cycleCtx;
+    }
     return {
       iterations: [],
       finalFindings: [],

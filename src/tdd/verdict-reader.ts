@@ -80,12 +80,23 @@ export function isValidVerdict(obj: unknown): obj is VerifierVerdict {
   return true;
 }
 
+function hasApprovalSignal(obj: Record<string, unknown>): boolean {
+  return typeof obj.approved === "boolean" || (typeof obj.verdict === "string" && obj.verdict.trim() !== "");
+}
+
 /**
  * Coerce a free-form verdict object into the expected VerifierVerdict schema.
  * Maps common agent-improvised patterns (verdict:"PASS", verification_summary, etc.)
  * to the structured format. Returns null if too malformed to coerce.
+ *
+ * An object with no approval signal (neither a boolean `approved` nor a
+ * non-empty `verdict` string) is not a verdict and returns null. Filling one
+ * with fail-closed defaults fabricated a 0/0 tests-failing result that the
+ * parse-retry validator accepted, so the re-prompt and the on-disk verdict
+ * fallback never ran (#2264).
  */
 export function coerceVerdict(obj: Record<string, unknown>): VerifierVerdict | null {
+  if (!hasApprovalSignal(obj)) return null;
   try {
     // Determine approval status
     const verdictStr = String(obj.verdict ?? "").toUpperCase();
