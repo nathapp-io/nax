@@ -176,6 +176,46 @@ function findBalancedSpanEnd(text: string, openIndex: number): number {
  *  retry-storm path. */
 const MAX_JSON_CANDIDATES = 50;
 
+/** Container state after one linear scan of `text[from, to)`. */
+interface ContainerScan {
+  /** Closers for the containers still open, innermost last; null on a mismatched closer. */
+  readonly closers: string[] | null;
+  readonly inString: boolean;
+  readonly escaped: boolean;
+  /** Index of the last structural comma, or -1. */
+  readonly lastComma: number;
+  /** True when a container opened inside the range also closed inside it. */
+  readonly closedOwnContainer: boolean;
+}
+
+/** `outerClosersOk`: a closer with nothing open closes a container opened before `from`. */
+function scanContainers(text: string, from: number, to: number, outerClosersOk = false): ContainerScan {
+  const closers: string[] = [];
+  let inString = false;
+  let escaped = false;
+  let lastComma = -1;
+  let closedOwnContainer = false;
+  for (let i = from; i < to; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+    } else if (ch === "{" || ch === "[") {
+      closers.push(ch === "{" ? "}" : "]");
+    } else if (ch === "}" || ch === "]") {
+      if (outerClosersOk && closers.length === 0) continue;
+      if (closers.pop() !== ch) return { closers: null, inString, escaped, lastComma, closedOwnContainer };
+      closedOwnContainer = true;
+    } else if (ch === ",") {
+      lastComma = i;
+    }
+  }
+  return { closers, inString, escaped, lastComma, closedOwnContainer };
+}
+
 /** Parses as a non-empty object or array — an empty `{}` proves nothing about prose. */
 function parsesAsNonEmptyContainer(candidate: string): boolean {
   try {
@@ -197,34 +237,21 @@ function parsesAsNonEmptyContainer(candidate: string): boolean {
  * A length cap usually cuts mid-string or mid-key, so two repairs are tried:
  * close any open string and then every open container; failing that, cut back
  * to the last structural comma and close the containers open at that point.
+ * The cut is only trusted when the discarded tail closes none of its own
+ * containers: a real truncation leaves a dangling key or unfinished value
+ * there, while prose quoting a JSON-like fragment is followed by the complete
+ * payload. Each scan is linear, so a run of stray braces stays cheap.
  */
 function isTruncatedJsonPayload(text: string, openIndex: number): boolean {
-  let closers: readonly string[] = [];
-  let lastComma: { index: number; closers: readonly string[] } | undefined;
-  let inString = false;
-  let escaped = false;
-  for (let i = openIndex; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-    } else if (ch === '"') {
-      inString = true;
-    } else if (ch === "{" || ch === "[") {
-      closers = [...closers, ch === "{" ? "}" : "]"];
-    } else if (ch === "}" || ch === "]") {
-      if (closers[closers.length - 1] !== ch) return false;
-      closers = closers.slice(0, -1);
-    } else if (ch === ",") {
-      lastComma = { index: i, closers };
-    }
-  }
-  if (closers.length === 0) return false;
-  const close = (open: readonly string[]) => [...open].reverse().join("");
-  const body = escaped ? text.slice(openIndex, -1) : text.slice(openIndex);
-  if (parsesAsNonEmptyContainer(`${body}${inString ? '"' : ""}${close(closers)}`)) return true;
-  return !!lastComma && parsesAsNonEmptyContainer(text.slice(openIndex, lastComma.index) + close(lastComma.closers));
+  const scan = scanContainers(text, openIndex, text.length);
+  if (!scan.closers || scan.closers.length === 0) return false;
+  const body = scan.escaped ? text.slice(openIndex, -1) : text.slice(openIndex);
+  const closeAll = (closers: readonly string[]) => [...closers].reverse().join("");
+  if (parsesAsNonEmptyContainer(`${body}${scan.inString ? '"' : ""}${closeAll(scan.closers)}`)) return true;
+  if (scan.lastComma === -1) return false;
+  if (scanContainers(text, scan.lastComma + 1, text.length, true).closedOwnContainer) return false;
+  const atComma = scanContainers(text, openIndex, scan.lastComma).closers;
+  return !!atComma && parsesAsNonEmptyContainer(text.slice(openIndex, scan.lastComma) + closeAll(atComma));
 }
 
 /** Result of a balanced-candidate scan. */

@@ -237,6 +237,11 @@ describe("parseLLMJson", () => {
     ["Note the { char used to open objects. Result: [1,2,3]", [1, 2, 3]],
     ['Use {, then see the docs. Result: {"a":1}', { a: 1 }],
     ['Oops { ] mismatched. Result: {"a":1}', { a: 1 }],
+    [
+      'The config accepts { "verbose": true, "level": 3 and other fields. Final response: {"status": "done"}',
+      { status: "done" },
+    ],
+    ['Shape is { "a": [1, 2] and more. Final: {"status": "done"}', { status: "done" }],
   ])("finds the payload after an unmatched prose brace: %s", (input, expected) => {
     expect(parseLLMJson<Obj | number[]>(input)).toEqual(expected);
   });
@@ -250,6 +255,17 @@ describe("parseLLMJson", () => {
     ["after a colon", '{"tests":{"passCount":27},"reasoning":'],
   ])("does not return a nested object when the outer object is cut %s", (_label, input) => {
     expect(() => parseLLMJson(input)).toThrow(SyntaxError);
+  });
+
+  test("a truncated nested object's first key still reads as truncation, not prose", () => {
+    expect(() => parseLLMJson('{"tests":{"passCount":27},"reasoning":{"summ')).toThrow(SyntaxError);
+  });
+
+  // The truncation check runs once per unclosed opener; it must stay linear.
+  test("a long run of stray braces is handled in linear time", () => {
+    const started = performance.now();
+    expect(() => parseLLMJson("{".repeat(16_000))).toThrow(SyntaxError);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 
   test("does not return a nested array when the outer object is truncated", () => {
