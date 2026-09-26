@@ -49,13 +49,24 @@ const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
  */
 export interface TreeSnapshotDeps {
   readonly spawn: (cmd: string[], opts: SpawnOptions) => SpawnResult;
+  /** Wall-clock budget for one git call; the process is SIGKILLed past it. */
+  readonly gitTimeoutMs: number;
   readonly mkdtemp: (prefix: string) => Promise<string>;
   readonly rm: (path: string, options?: { recursive?: boolean; force?: boolean }) => Promise<void>;
   readonly tmpdir: () => string;
 }
 
+/**
+ * Per-call git budget. `add -A` over a large monorepo's working tree is the
+ * slowest call here, so this matches the budget `autoCommitIfDirty` gives the
+ * same operation (`AUTO_COMMIT_GIT_TIMEOUT_MS`, src/utils/git.ts) rather than
+ * the 10s read-only default.
+ */
+const TREE_SNAPSHOT_GIT_TIMEOUT_MS = 30_000;
+
 export const _treeSnapshotDeps: TreeSnapshotDeps = {
   spawn: typedSpawn,
+  gitTimeoutMs: TREE_SNAPSHOT_GIT_TIMEOUT_MS,
   mkdtemp,
   rm,
   tmpdir,
@@ -66,6 +77,7 @@ interface GitRunResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  timedOut?: boolean;
 }
 
 /**
@@ -84,6 +96,7 @@ async function runGit(
   args: readonly string[],
   cwd: string,
   indexOverlay?: { GIT_INDEX_FILE: string },
+  timeoutMs: number = _treeSnapshotDeps.gitTimeoutMs,
 ): Promise<GitRunResult> {
   const proc = _treeSnapshotDeps.spawn(hardenedGitArgv(["git", ...args]), {
     cwd,
@@ -91,11 +104,27 @@ async function runGit(
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  // Same shape as `gitWithTimeout` (src/utils/git.ts), which cannot be reused
+  // because it always spawns with `process.env` and so cannot carry the
+  // GIT_INDEX_FILE overlay. `setTimeout` rather than `Bun.sleep` because the
+  // timer must be cancelled once git exits.
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // Already exited.
+    }
+  }, timeoutMs);
+  // Drain eagerly so a full pipe cannot stop git from reaching `exited`; the
+  // `.catch` covers a SIGKILLed process erroring its pipes.
+  const stdoutText = new Response(proc.stdout).text().catch(() => "");
+  const stderrText = new Response(proc.stderr).text().catch(() => "");
+  const exitCode = await proc.exited;
+  clearTimeout(timer);
+  if (timedOut) return { stdout: "", stderr: `timed out after ${timeoutMs}ms`, exitCode: 1, timedOut: true };
+  const [stdout, stderr] = await Promise.all([stdoutText, stderrText]);
   return { stdout, stderr, exitCode };
 }
 
@@ -153,7 +182,9 @@ export async function snapshotWorkingTree(workdir: string): Promise<string> {
     // which would run a filter driver that repo's own config names (#2210).
     // Gitlinks are restaged via `update-index` instead, recording the nested
     // HEAD exactly as a plain `add` would.
-    const add = await gitlinkSafeAdd((args, cwd) => runGit(args, cwd, indexOverlay), workdir, { flags: ["-A"] });
+    const add = await gitlinkSafeAdd((args, cwd, timeoutMs) => runGit(args, cwd, indexOverlay, timeoutMs), workdir, {
+      flags: ["-A"],
+    });
     if (add.exitCode !== 0) gitFailed(stage, ["add", "-A"], workdir, add.stderr.trim() || `exit ${add.exitCode}`);
 
     // `git write-tree` reads the throwaway index and emits its tree id.

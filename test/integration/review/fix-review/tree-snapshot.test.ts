@@ -431,3 +431,44 @@ describe("tree-snapshot hardening", () => {
     expect(await changedPathsBetween(shaRepo, "HEAD", tree)).toEqual(["a.txt"]);
   });
 });
+
+/**
+ * A wedged git (a huge monorepo `add -A`, a lock held by another process) must
+ * not hang the fix review: every git call is bounded, and a timeout surfaces as
+ * FIX_REVIEW_GIT_FAILED rather than an unbounded wait.
+ */
+describe("tree-snapshot git timeout", () => {
+  test("a git call that never exits is killed and fails with FIX_REVIEW_GIT_FAILED", async () => {
+    const orig = { ..._treeSnapshotDeps };
+    let killed = false;
+    Object.assign(_treeSnapshotDeps, {
+      gitTimeoutMs: 50,
+      spawn: () => {
+        let exit: (code: number) => void = () => {};
+        const exited = new Promise<number>((resolve) => {
+          exit = resolve;
+        });
+        const closed = () => new ReadableStream<Uint8Array>({ start: (c) => c.close() });
+        return {
+          stdout: closed(),
+          stderr: closed(),
+          exited,
+          pid: 1,
+          kill: () => {
+            killed = true;
+            exit(137);
+          },
+        };
+      },
+    });
+    try {
+      const err = await captureRejection(changedPathsBetween(repo, "HEAD", "HEAD"));
+      expect(killed).toBe(true);
+      assertNaxError(err, "changedPathsBetween against a wedged git");
+      expect(err.code).toBe("FIX_REVIEW_GIT_FAILED");
+      expect(err.message).toContain("timed out");
+    } finally {
+      Object.assign(_treeSnapshotDeps, orig);
+    }
+  });
+});
