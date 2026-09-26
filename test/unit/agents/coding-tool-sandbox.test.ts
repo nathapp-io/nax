@@ -113,7 +113,7 @@ describe("resolveSessionSandbox", () => {
     _sessionSandboxDeps.backendFor = () => makeFakeSandboxBackend();
     _sessionSandboxDeps.probe = async () => ({ available: true });
     _sessionSandboxDeps.gitLayout = async () => ({ kind: "main", gitDir: `${root}/.git` });
-    _sessionSandboxDeps.featurePrds = async () => {
+    _sessionSandboxDeps.naxEntries = async () => {
       throw new Error("boom");
     };
     await expect(resolveSessionSandbox({ config: enabled, root, needsLauncher: true })).rejects.toThrow("boom");

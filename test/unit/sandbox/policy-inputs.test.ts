@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { globalConfigDir } from "@/config/paths";
-import { listCredentialFiles, listFeaturePrdPaths, resolveGitLayout } from "@/sandbox";
+import { listCredentialFiles, listNaxEntries, resolveGitLayout } from "@/sandbox";
 import { realOrRaw } from "@/utils/realpath";
 
 let base: string;
@@ -42,27 +42,24 @@ describe("resolveGitLayout", () => {
   });
 });
 
-describe("listFeaturePrdPaths", () => {
-  test("one prd.json path per feature directory, existing file or not", async () => {
+describe("listNaxEntries", () => {
+  test("every top-level entry under .nax, files and directories alike", async () => {
     mkdirSync(join(base, ".nax", "features", "a"), { recursive: true });
-    mkdirSync(join(base, ".nax", "features", "b"), { recursive: true });
-    writeFileSync(join(base, ".nax", "features", "a", "prd.json"), "{}");
-    const paths = (await listFeaturePrdPaths(base)).sort((a, b) => a.localeCompare(b));
-    expect(paths).toEqual([
-      join(base, ".nax", "features", "a", "prd.json"),
-      join(base, ".nax", "features", "b", "prd.json"),
-    ]);
+    mkdirSync(join(base, ".nax", "rules"), { recursive: true });
+    writeFileSync(join(base, ".nax", "config.json"), "{}");
+    const names = (await listNaxEntries(base)).sort((a, b) => a.localeCompare(b));
+    expect(names).toEqual(["config.json", "features", "rules"]);
   });
 
-  test("F1: a directory that is not a valid feature name is skipped (a glob name would poison every policy build)", async () => {
-    mkdirSync(join(base, ".nax", "features", "ok"), { recursive: true });
-    mkdirSync(join(base, ".nax", "features", "x*"), { recursive: true });
-    mkdirSync(join(base, ".nax", "features", "a[1]"), { recursive: true });
-    expect(await listFeaturePrdPaths(base)).toEqual([join(base, ".nax", "features", "ok", "prd.json")]);
+  test("F1: an entry with a glob character is skipped (it would poison every policy build)", async () => {
+    mkdirSync(join(base, ".nax", "ok"), { recursive: true });
+    mkdirSync(join(base, ".nax", "x*"), { recursive: true });
+    mkdirSync(join(base, ".nax", "a[1]"), { recursive: true });
+    expect(await listNaxEntries(base)).toEqual(["ok"]);
   });
 
-  test("no features directory -> empty", async () => {
-    expect(await listFeaturePrdPaths(base)).toEqual([]);
+  test("no .nax directory -> empty", async () => {
+    expect(await listNaxEntries(base)).toEqual([]);
   });
 });
 

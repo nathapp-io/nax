@@ -809,7 +809,7 @@ warned about and ignored, and the root config's value always applies
 |:----|:--------|:------------|
 | `enabled` | `true` | Master switch |
 | `backend` | `"srt"` | The only backend today |
-| `filesystem.allowWrite` | `[]` | Extra write roots (`~` expanded, relative paths resolve against the story root) |
+| `filesystem.allowWrite` | `[]` | Extra write roots (`~` expanded, relative paths resolve against the story root). Listing a top-level `.nax/` entry such as `.nax/rules` lets agents write it; `.nax/features`, `.nax/config.json` and `.nax/mono` stay closed |
 | `filesystem.denyRead` | `[]` | Extra read denies |
 | `network.allowedDomains` | unset | Unset = unrestricted network; `[]` = no network; a list = allow-list |
 

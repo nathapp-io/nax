@@ -151,6 +151,27 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
     expect(readFileSync(join(root, ".nax", "features", "f2", "prd.json"), "utf8")).toBe("{}");
   }, 30_000);
 
+  test("#2260: rm -rf .nax and mv .nax leave nax state intact; the scratchpad stays writable", async () => {
+    mkdirSync(join(root, ".nax", "rules"), { recursive: true });
+    mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
+    mkdirSync(join(root, ".nax", "features", "f1", "stories", "US-001"), { recursive: true });
+    writeFileSync(join(root, ".nax", "rules", "a.md"), "rule");
+    writeFileSync(join(root, ".nax", "features", "f1", "stories", "US-001", "manifest.json"), "{}");
+    const run = await bash();
+    await run("rm -rf .nax; mv .nax .nax-old");
+    expect(readFileSync(join(root, ".nax", "rules", "a.md"), "utf8")).toBe("rule");
+    expect(existsSync(join(root, ".nax", "features", "f1", "stories", "US-001", "manifest.json"))).toBe(true);
+    expect(existsSync(join(root, ".nax-old"))).toBe(false);
+    await run("mkdir -p .nax/scratchpad && echo ok > .nax/scratchpad/probe.txt");
+    expect(readFileSync(join(root, ".nax", "scratchpad", "probe.txt"), "utf8")).toBe("ok\n");
+  }, 30_000);
+
+  test("#2260: an absent .nax/rules cannot be created to plant a rule", async () => {
+    const run = await bash();
+    await run("mkdir -p .nax/rules && echo planted > .nax/rules/x.md");
+    expect(existsSync(join(root, ".nax", "rules", "x.md"))).toBe(false);
+  }, 30_000);
+
   test("Review Focus 3: approvals.json under an outputDir INSIDE a write root stays unwritable", async () => {
     const outputDir = join(home, ".cache", "nax");
     mkdirSync(outputDir, { recursive: true });

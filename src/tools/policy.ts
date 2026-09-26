@@ -18,7 +18,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { BashApprovalMode } from "@/config/bash-approval";
 import { isInside, realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
-import { isNaxConfigFile, naxOwnedWriteRefusal } from "./nax-owned-writes";
+import { isNaxConfigFile, naxOwnedWriteRefusal, naxWriteOptIns } from "./nax-owned-writes";
 import { pathListElements } from "./path-list";
 import { commandBranch } from "./policy-command-branch";
 import { pathFieldValue } from "./policy-input";
@@ -120,6 +120,8 @@ export interface ToolPolicyOptions {
    * CONFIG refusal is deliberately not exempted.
    */
   readonly ownedWriteExemption?: string;
+  /** nax#2260: `execution.sandbox.filesystem.allowWrite`; a listed top-level `.nax/` entry becomes writable. */
+  readonly naxAllowWrite?: readonly string[];
   /**
    * How a bash command string is adjudicated (ADR-030). Absent means `gated` —
    * today's behaviour — so every caller that does not opt in is unchanged.
@@ -161,6 +163,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     options?.ownedWriteExemption === undefined
       ? undefined
       : relative(resolvedRoot, realOrRaw(options.ownedWriteExemption)).split(sep).join("/");
+  const naxOptIns = naxWriteOptIns(root, options?.naxAllowWrite ?? []);
   const denyBy = compileRuleMap(options?.denyRules);
   const askBy = compileRuleMap(options?.askRules);
   const bashApproval: BashApprovalMode = options?.bashApproval ?? "gated";
@@ -288,7 +291,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * denied and an ask on an ungranted call never becomes an approval prompt.
    */
   function applyPathRules(tool: string, rel: string, state: RuleState): PolicyVerdict | undefined {
-    const naxOwned = naxOwnedWriteRefusal(tool, rel, ownedWriteExemption);
+    const naxOwned = naxOwnedWriteRefusal(tool, rel, ownedWriteExemption, naxOptIns);
     if (naxOwned !== undefined) return deny(`${tool} may not modify ${naxOwned}`);
     const denyEntry = denyBy.get(tool);
     const askEntry = askBy.get(tool);

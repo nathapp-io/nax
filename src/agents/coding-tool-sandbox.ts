@@ -16,8 +16,8 @@ import {
   DISABLED_SANDBOX_STATE,
   defaultTempRoots,
   listCredentialFiles,
-  listFeaturePrdPaths,
   listGitGuardFiles,
+  listNaxEntries,
   probeSandboxOnce,
   rawBashRefusalReason,
   resolveGitLayout,
@@ -30,7 +30,7 @@ export const _sessionSandboxDeps = {
   backendFor: sandboxBackendFor,
   probe: probeSandboxOnce,
   gitLayout: resolveGitLayout,
-  featurePrds: listFeaturePrdPaths,
+  naxEntries: listNaxEntries,
   gitGuardFiles: listGitGuardFiles,
   commonDirTripwire: strayCommonDirTripwire,
   credentialFiles: listCredentialFiles,
@@ -63,9 +63,9 @@ export async function resolveSessionSandbox(args: {
     buildSandboxPolicy({
       root,
       git,
-      // Per build, like the PRDs: a worktree added mid-run gets its denies too.
+      // Per build, like the .nax entries: a worktree added mid-run gets its denies too.
       gitGuardFiles: await _sessionSandboxDeps.gitGuardFiles(git),
-      featurePrdPaths: await _sessionSandboxDeps.featurePrds(root),
+      naxEntries: await _sessionSandboxDeps.naxEntries(root),
       credentialFiles,
       ...(approvalsFile !== undefined ? { approvalsFile } : {}),
       home: _sessionSandboxDeps.homedir(),
@@ -76,8 +76,8 @@ export async function resolveSessionSandbox(args: {
   // Review #17: literal() refuses a glob character in any policy path, and the
   // probe builds its own policy, so a repo path like `re[x]po` passed the probe
   // and then failed every command. Build the policy once here instead.
-  // Residual: a feature directory created mid-run with a glob character still
-  // fails per command.
+  // The old residual (a glob-named feature dir created mid-run failing every
+  // command) is gone: listNaxEntries skips glob-named `.nax` entries (nax#2260).
   const policyError = await literalPolicyError(policyFor, args.root);
   if (policyError !== undefined) {
     warnSandboxUnavailableOnce(policyError, args.storyId);

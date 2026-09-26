@@ -8,6 +8,12 @@ describe("sandbox messages", () => {
     expect(sandboxSentence(["registry.npmjs.org"])).toContain("network access is limited to registry.npmjs.org");
   });
 
+  test("#2260: the sentence says .nax/ is read-only except the scratchpad", () => {
+    const s = sandboxSentence("open");
+    expect(s).toContain("nothing under .nax/ except .nax/scratchpad/");
+    expect(s).toContain("Edit tool");
+  });
+
   test("the raw refusal names the fallback modes", () => {
     const r = rawBashRefusalReason("bwrap missing");
     expect(r).toStartWith("sandbox unavailable (bwrap missing): raw bash requires the sandbox");
