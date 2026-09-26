@@ -381,8 +381,24 @@ export async function runNonBlockingFix(
     // `pass` keeps the pass as today; any other verdict (scope fail,
     // contradiction, dispatch/parse error) restores the adversarial-passed
     // snapshot. Absent `reviewFix` ⇒ no review, keep as today.
+    //
+    // Wrapped in try/catch for the same reason `runRectify` and `measureSourceDiff`
+    // are: `runFixReview` runs `resolveTestFilePatterns` and `truncateDiff`
+    // outside any try (`src/review/fix-review/run/index.ts`), and an injected stub
+    // `reviewFix` can also throw. Honoring the module contract — never throws into
+    // the caller's verdict path — a throw degrades to a restore, the same way the
+    // neighboring paths do.
     if (_deps.reviewFix) {
-      const verdict = await _deps.reviewFix(restoreRef.sha);
+      let verdict: FixReviewVerdict;
+      try {
+        verdict = await _deps.reviewFix(restoreRef.sha);
+      } catch (err) {
+        logger?.warn("non-blocking-fix", "fix review threw — restoring", {
+          storyId: args.storyId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
+      }
       if (verdict.kind !== "pass") {
         const data: Record<string, unknown> = {
           storyId: args.storyId,

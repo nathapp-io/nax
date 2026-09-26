@@ -319,6 +319,23 @@ describe("runNonBlockingFix — the review runs only on a resolved pass (US-004 
     expect(result).toEqual({ ran: true, kept: false, restored: true });
     expect(record.reviewRefs).toEqual([]);
   });
+
+  test("US-004 AC7 boundary: a reviewFix that throws restores and never escapes (never-throws contract)", async () => {
+    // The runner's `runFixReview` runs `resolveTestFilePatterns` outside any try
+    // (`src/review/fix-review/run/index.ts`), and an injected stub `reviewFix` can
+    // throw for any reason. Honouring the module contract — never throws into the
+    // caller's verdict path — a throw degrades to a restore, the same way
+    // `runRectify` and `measureSourceDiff` already do.
+    const record = makeRecorder();
+    const throwingReviewFix: NonBlockingFixDeps["reviewFix"] = async () => {
+      throw new Error("resolveTestFilePatterns blew up");
+    };
+
+    const result = await runNonBlockingFix(makeArgs(), makeDeps(record, { reviewFix: throwingReviewFix }));
+
+    expect(result).toEqual({ ran: true, kept: false, restored: true });
+    expect(record.rollbacks).toEqual([SNAPSHOT_SHA]);
+  });
 });
 
 describe("runNonBlockingFix — no reviewFix dep keeps today's behaviour (US-004 AC8)", () => {
