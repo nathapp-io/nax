@@ -210,6 +210,76 @@ describe("AC8: the same deny rule allows a confined non-secret path", () => {
 });
 
 /**
+ * US-001: a path value spelled WITH the confineTo prefix is accepted, because
+ * the prefix is removed before `resolveWithin` runs. `.nax/scratchpad/spill/x.txt`
+ * and `spill/x.txt` must reach the same file: the first is the spelling the
+ * truncation marker now uses (so a marker's path is openable verbatim), the
+ * second is the spelling every existing caller already uses.
+ *
+ * The stripping is a PREFIX REMOVAL, not a second containment root: what is
+ * left is still resolved inside the confined directory, so the `..` traversal
+ * below stays a breach. Stripping without re-resolving would turn the prefix
+ * into an escape hatch, which is the one way this change could widen
+ * containment.
+ */
+describe("US-001 AC11: a path spelled with the confineTo prefix resolves into the confined directory", () => {
+  test("confined '.nax/scratchpad/spill/x.txt' resolves to <root>/.nax/scratchpad/spill/x.txt", () => {
+    const policy = compileToolPolicy([{ tool: "ScratchpadRead", patterns: ["*"] }], root);
+    const verdict = policy.check("ScratchpadRead", confinedScope(), { path: ".nax/scratchpad/spill/x.txt" });
+    expect(verdict.allowed).toBe(true);
+    if (!verdict.allowed) throw new Error("unreachable");
+    // The SAME resolved file the unprefixed spelling produces — one file, two
+    // accepted spellings.
+    expect(verdict.resolvedPaths).toEqual([join(policy.root, ".nax", "scratchpad", "spill", "x.txt")]);
+  });
+
+  test("confined 'spill/x.txt' still resolves to that same file (the unprefixed spelling)", () => {
+    const policy = compileToolPolicy([{ tool: "ScratchpadRead", patterns: ["*"] }], root);
+    const verdict = policy.check("ScratchpadRead", confinedScope(), { path: "spill/x.txt" });
+    expect(verdict.allowed).toBe(true);
+    if (!verdict.allowed) throw new Error("unreachable");
+    expect(verdict.resolvedPaths).toEqual([join(policy.root, ".nax", "scratchpad", "spill", "x.txt")]);
+  });
+});
+
+describe("US-001 AC13: a prefixed path that climbs out of the confined directory is still denied", () => {
+  test("confined '.nax/scratchpad/../config.json' is denied as a containment breach", () => {
+    // The stripped value is `../config.json`, which resolves to
+    // `<root>/.nax/config.json` — inside the policy root, OUTSIDE the confined
+    // directory. Containment is unchanged by the prefix handling, so this is a
+    // breach rather than an ordinary allowance.
+    const policy = compileToolPolicy([{ tool: "ScratchpadRead", patterns: ["*"] }], root);
+    const verdict = policy.check("ScratchpadRead", confinedScope(), { path: ".nax/scratchpad/../config.json" });
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed) throw new Error("unreachable");
+    expect(verdict.breach).toBe(true);
+  });
+
+  test("the denial also covers a prefixed climb that lands on an ordinary file outside the scratchpad (the discriminating case)", () => {
+    // `.nax/scratchpad/../notes.md` strips to `../notes.md`, which resolves to
+    // `<root>/.nax/notes.md` — inside the policy root, OUTSIDE the confined
+    // directory. Without the re-resolution this is the shape that would turn
+    // the prefix into an escape hatch: keeping the prefix instead (the
+    // pre-change behaviour) resolves it to `<root>/.nax/scratchpad/.nax/notes.md`,
+    // which IS confined and was therefore allowed.
+    const policy = compileToolPolicy([{ tool: "ScratchpadRead", patterns: ["*"] }], root);
+    const verdict = policy.check("ScratchpadRead", confinedScope(), { path: ".nax/scratchpad/../notes.md" });
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed) throw new Error("unreachable");
+    expect(verdict.breach).toBe(true);
+  });
+
+  test("the refusal is not reachable for a genuinely confined sibling path (the AC13 control)", () => {
+    // The control that keeps the denial above discriminating: a path that is
+    // prefixed AND stays inside the confined directory is allowed, so the
+    // denial is caused by the `..` rather than by the prefix.
+    const policy = compileToolPolicy([{ tool: "ScratchpadRead", patterns: ["*"] }], root);
+    const verdict = policy.check("ScratchpadRead", confinedScope(), { path: ".nax/scratchpad/notes.md" });
+    expect(verdict.allowed).toBe(true);
+  });
+});
+
+/**
  * The ACs above pin `pathFields: ["path"]`, but `pathsBranch` has four
  * path-bearing loops (pathFields, listPathFields, arrayPathFields,
  * refPathFields) plus a `pathListElements` call that takes the confined root

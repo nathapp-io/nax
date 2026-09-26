@@ -19,7 +19,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { compileToolPolicy, createCodingToolRuntime, MODEL_MAX_BYTES, READ_CEILING } from "@/tools";
+import {
+  _bashToolDeps,
+  compileToolPolicy,
+  createBashTool,
+  createCodingToolRuntime,
+  MODEL_MAX_BYTES,
+  READ_CEILING,
+} from "@/tools";
 
 let root: string;
 
@@ -411,4 +418,104 @@ describe("spill recovery — supplementary invariants", () => {
 
 // The blocker-file pattern (`writeFileSync(spillDir, "blocker")`) is what
 // triggers the spill-write failure mode for AC8; the file-system import
-// covers the writes used elsewhere.
+// covers the writes elsewhere.
+
+// ============================================================================
+// US-001 AC10 — a Bash call that exceeds the model cap through one
+// createCodingToolRuntime is recoverable with Read through that same runtime.
+//
+// This is the story's headline behaviour, end to end: the marker a truncated
+// Bash result carries must name a path the session can open with its own
+// tools, and the body behind that path must be the UNtruncated command
+// output. The marker's path is read out of the marker itself — never
+// hardcoded — because that is exactly what the model does, and it is what the
+// defect broke: the old marker named `spill/Bash-<id>.txt`, which resolves
+// against the repo root to a file that does not exist there.
+// ============================================================================
+
+describe("US-001 AC10: a truncated Bash result is recoverable with Read through the same runtime", () => {
+  const realRunArgv = _bashToolDeps.runArgv;
+
+  afterEach(() => {
+    _bashToolDeps.runArgv = realRunArgv;
+  });
+
+  /** The path named by a result's truncation marker, or "" when it names none. */
+  function markerPathOf(content: string): string {
+    const markerLine = content.split("\n").find((line) => line.includes("[truncated")) ?? "";
+    const match = /full output at (\S+)/.exec(markerLine);
+    return match?.[1] ?? "";
+  }
+
+  test("US-001 AC10: Read on the path the Bash marker names returns the last line of the untruncated output", async () => {
+    // Both tools share the runtime, so the marker's path is resolved by the
+    // same policy that wrote the spill: a path that opens here is a path the
+    // session can really reach.
+    const stdout = Array.from({ length: 3_000 }, (_, i) => `output line ${i}`).join("\n");
+    const lastLineToken = "LAST-LINE-OF-COMMAND-OUTPUT";
+    const body = `exit 0\n${stdout}\n${lastLineToken}`;
+    // The body must be past the model cap, or nothing is truncated and there
+    // is no marker to follow.
+    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(MODEL_MAX_BYTES);
+    // The spill writer stores the body line-wise; the last line's 1-based
+    // number is what a caller pages to in order to reach it.
+    const totalLines = body.split("\n").length;
+
+    _bashToolDeps.runArgv = async () => ({ exitCode: 0, stdout, stderr: lastLineToken, timedOut: false });
+
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy(
+        [
+          { tool: "Bash", patterns: ["*"] },
+          { tool: "Read", patterns: ["*"] },
+        ],
+        root,
+      ),
+      maxBytes: MODEL_MAX_BYTES,
+      extraTools: [createBashTool()],
+    });
+    rt.advertised(["Bash", "Read"]);
+
+    const bash = await rt.callTool("Bash", { command: "cat big.txt" }, { toolCallId: "b1" });
+    expect(bash.kind).toBe("ok");
+    if (bash.kind !== "ok") throw new Error("unreachable");
+
+    // The marker names a root-relative path under the scratchpad — the shape
+    // both Read and ScratchpadRead accept.
+    const markerPath = markerPathOf(bash.content);
+    expect(markerPath).toBe(".nax/scratchpad/spill/Bash-b1.txt");
+
+    // And Read — through that same runtime — can open it.
+    const read = await rt.callTool("Read", { path: markerPath, offset: totalLines, limit: 1 }, { toolCallId: "r1" });
+    expect(read.kind).toBe("ok");
+    if (read.kind !== "ok") throw new Error("unreachable");
+    expect(read.content).toContain(lastLineToken);
+
+    // The recovered file is the UNtruncated body, not a second copy of the
+    // truncated result.
+    expect(readFileSync(join(root, markerPath), "utf8")).toBe(body);
+  });
+
+  test("US-001 AC10 boundary: a Bash result within the model cap names no path to recover", async () => {
+    _bashToolDeps.runArgv = async () => ({ exitCode: 0, stdout: "small output", stderr: "", timedOut: false });
+
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy(
+        [
+          { tool: "Bash", patterns: ["*"] },
+          { tool: "Read", patterns: ["*"] },
+        ],
+        root,
+      ),
+      maxBytes: MODEL_MAX_BYTES,
+      extraTools: [createBashTool()],
+    });
+    rt.advertised(["Bash", "Read"]);
+
+    const bash = await rt.callTool("Bash", { command: "echo hi" }, { toolCallId: "b2" });
+    expect(bash.kind).toBe("ok");
+    if (bash.kind !== "ok") throw new Error("unreachable");
+    expect(bash.content).toBe("exit 0\nsmall output\n");
+    expect(markerPathOf(bash.content)).toBe("");
+  });
+});
