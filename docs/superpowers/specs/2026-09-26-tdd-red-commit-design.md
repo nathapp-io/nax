@@ -129,19 +129,30 @@ export async function commitRedState(opts: RedCommitOptions, deps?: RedCommitDep
 
 Ordered steps:
 1. `dryRun` returns `skipped/dry-run`, with no git call.
-2. If `blockedWorktrees` contains the workdir's git root (compared by realpath, as `autoCommitIfDirty` does), it
-   returns `skipped/blocked-worktree` and logs an error, with the same hint text as `autoCommitIfDirty`.
-3. It gets `files = getChangedFiles(workdir, beforeRef)`. A throw returns `failed` with the error message.
-4. It partitions `files` with `partitionNaxOwnedPaths` and keeps only the `kept` paths. Nax-owned and
-   unclassifiable paths are never staged.
-5. With nothing kept, it returns `skipped/nothing-to-commit`.
-6. It stages the kept paths with `gitlinkSafeAdd` (pathspecs after `--`). A non-zero exit returns `failed`.
-7. If `hasStagedChanges` is not `true`, it returns `skipped/nothing-to-commit`. This covers a test-writer that
+2. It resolves `gitRoot` with `git rev-parse --show-toplevel` from `workdir`. A non-zero exit returns `failed`.
+   Every later git call runs from `gitRoot`: both `git diff --name-only` and `git status --porcelain` print
+   paths relative to the repository root even when run from a subdirectory (verified 2026-09-26). In a
+   monorepo, `ctx.packageDir` is a package subdirectory, and staging from it would resolve every path wrongly.
+3. If `blockedWorktrees` contains `gitRoot` (compared with `realOrRaw` from `src/utils/realpath.ts`, as
+   `autoCommitIfDirty` does), it returns `skipped/blocked-worktree` and logs an error, with the same hint text as
+   `autoCommitIfDirty`.
+4. It gets `files = getChangedFiles(workdir, beforeRef)`, whose paths are relative to the repository root. A
+   throw returns `failed` with the error message.
+   - `git status --porcelain` collapses a new untracked directory to one `?? dir/` entry (verified 2026-09-26),
+     so an entry ending in `/` is expanded to its files with
+     `git ls-files --others --exclude-standard -- <dir>` (run from `gitRoot`).
+   - Only individual files ever reach step 5. A collapsed `.nax/` must never be staged as a directory.
+5. It partitions `files` with `partitionNaxOwnedPaths(gitRoot, files)` and keeps only the `kept` paths.
+   Nax-owned and unclassifiable paths are never staged.
+6. With nothing kept, it returns `skipped/nothing-to-commit`.
+7. It stages the kept paths with `gitlinkSafeAdd(gitWithTimeout, gitRoot, { pathspecs, timeoutMs })`. A non-zero
+   exit returns `failed`.
+8. If `hasStagedChanges` is not `true`, it returns `skipped/nothing-to-commit`. This covers a test-writer that
    already committed its own work.
-8. It commits with `["commit", "-m", message, ...(hooks === "skip" ? ["--no-verify"] : [])]`, where `message` is
+9. It commits from `gitRoot` with `["commit", "-m", message, ...(hooks === "skip" ? ["--no-verify"] : [])]`, where `message` is
    `` `chore(${storyId}): auto-commit after test-writer session (RED)` ``. A non-zero exit returns `failed` with
    stderr (for example, a hook that rejects the commit under `"run"`).
-9. It returns `committed` with the staged files and `hooksSkipped: hooks === "skip"`.
+10. It returns `committed` with the staged files and `hooksSkipped: hooks === "skip"`.
 
 `commitRedState` never throws. Every git call is time-bounded, as `autoCommitIfDirty` bounds its calls.
 
@@ -293,21 +304,23 @@ tokens.
    zero calls.
 9. [unit] `blockedWorktrees` containing the repo's root (given as a symlinked path to it) returns `{ status:
    "skipped", reason: "blocked-worktree" }` and nothing is committed.
-10. [unit] An injected `getChangedFiles` that throws makes `commitRedState` resolve (not reject) to `status:
+10. [unit] In a repo whose `packages/app/` subdirectory is the `workdir`, a new `packages/app/test/b.test.ts` is
+    committed: the result's `files` is `["packages/app/test/b.test.ts"]`, and `git show --name-only HEAD` lists it.
+11. [unit] An injected `getChangedFiles` that throws makes `commitRedState` resolve (not reject) to `status:
     "failed"` with the thrown message as `reason`.
-11. [unit] `TddConfigSchema.parse({ maxRetries: 2 })` leaves `testWriterCommitHooks` undefined;
+12. [unit] `TddConfigSchema.parse({ maxRetries: 2 })` leaves `testWriterCommitHooks` undefined;
     `TddConfigSchema.parse({ maxRetries: 2, testWriterCommitHooks: "run" })` keeps `"run"`; and
     `testWriterCommitHooks: "never"` fails to parse.
-12. [unit] `runPhase` for a three-session strategy (`isThreeSession: true`), with a test-writer slot whose
+13. [unit] `runPhase` for a three-session strategy (`isThreeSession: true`), with a test-writer slot whose
     injected `callOp` resolves a successful output and an injected `commitRedState` spy, calls the spy once with
     `workdir === ctx.packageDir`, `beforeRef` equal to the ref the injected `captureGitRef` returned,
     `storyId === ctx.storyId` and `hooks: "skip"` when `ctx.config.tdd.testWriterCommitHooks` is unset.
-13. [unit] The AC 12 setup with `ctx.config.tdd.testWriterCommitHooks: "run"` passes `hooks: "run"`.
-14. [unit] `runPhase` does not call the spy when the test-writer's `callOp` rejects, when `isThreeSession` is
+14. [unit] The AC 13 setup with `ctx.config.tdd.testWriterCommitHooks: "run"` passes `hooks: "run"`.
+15. [unit] `runPhase` does not call the spy when the test-writer's `callOp` rejects, when `isThreeSession` is
     false, when `inRectification` is true, or when the slot's op is `implementer`.
-15. [unit] A spy resolving `{ status: "failed", reason: "x" }` leaves `runPhase`'s return value and the
+16. [unit] A spy resolving `{ status: "failed", reason: "x" }` leaves `runPhase`'s return value and the
     `phaseOutputs["test-writer"]` entry identical to a run where the spy resolves `committed`.
-16. [unit] `tdd.testWriterCommitHooks` has an entry in the config descriptions map (`src/cli/config-descriptions.ts`).
+17. [unit] `tdd.testWriterCommitHooks` has an entry in the config descriptions map (`src/cli/config-descriptions.ts`).
 
 ### US-002: test-writer role text and tools
 
