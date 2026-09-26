@@ -16,6 +16,13 @@ export interface AskRequest {
   readonly stage: string;
   /** The rule expression that matched, verbatim from config. */
   readonly rule: string;
+  /**
+   * The ask rule that matched, verbatim. Set ONLY when an ask rule matched;
+   * absent when the ask is an `escalate`-mode grant miss, where `rule` falls
+   * back to the denial reason. A remembered approval derives its `origin`
+   * from this (#2249).
+   */
+  readonly matchedRule?: string;
   /** One human-readable line describing the attempted call. */
   readonly summary: string;
   /**

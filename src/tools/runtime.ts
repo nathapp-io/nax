@@ -477,6 +477,7 @@ export function createCodingToolRuntime(opts: {
               tool: policyIdentity,
               stage: opts.pipelineStage ?? "unknown",
               rule: verdict.rule ?? verdict.reason,
+              ...(verdict.rule !== undefined ? { matchedRule: verdict.rule } : {}),
               summary: ask.summary,
               ...(ask.unshowable ? { unshowable: true as const } : {}),
               ...(typeof input[tool.scope.commandField ?? ""] === "string"

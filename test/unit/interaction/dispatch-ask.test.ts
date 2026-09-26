@@ -131,6 +131,38 @@ describe("buildDispatchAskWiring — resolver", () => {
   });
 });
 
+describe("buildDispatchAskWiring — remembered approval provenance (#2249)", () => {
+  async function rememberOne(config: NaxConfig, req: AskRequest): Promise<ApprovalEntry | undefined> {
+    const dir = outputDir();
+    const wiring = await buildDispatchAskWiring(
+      opts({ config, outputDir: dir, interaction: chainReplying("allow-remember") }),
+      deps(),
+    );
+    await wiring.askResolver.resolve(req);
+    await wiring.dispose();
+    return (await readApprovalsFile(approvalsPath(dir))).entries[0];
+  }
+
+  test("an escalated ask answered via telegram records origin escalate and no rule", async () => {
+    const entry = await rememberOne(makeNaxConfig({ interaction: { plugin: "telegram" } }), REQ);
+    expect(entry).toMatchObject({ origin: "escalate", matchedRule: null, approvedBy: "telegram" });
+  });
+
+  test("an ask-rule ask answered via cli records origin askRule, the matched rule, and the cli plugin", async () => {
+    const entry = await rememberOne(makeNaxConfig({ interaction: { plugin: "cli" } }), {
+      ...REQ,
+      rule: "Bash(bun run *)",
+      matchedRule: "Bash(bun run *)",
+    });
+    expect(entry).toMatchObject({ origin: "askRule", matchedRule: "Bash(bun run *)", approvedBy: "cli" });
+  });
+
+  test("an ask answered via webhook records the webhook plugin", async () => {
+    const entry = await rememberOne(makeNaxConfig({ interaction: { plugin: "webhook" } }), REQ);
+    expect(entry?.approvedBy).toBe("webhook");
+  });
+});
+
 describe("buildDispatchAskWiring — shadow and lifetime", () => {
   test("no commandSafety config: no shadow is built", async () => {
     expect((await buildDispatchAskWiring(opts(), deps())).commandShadow).toBeUndefined();

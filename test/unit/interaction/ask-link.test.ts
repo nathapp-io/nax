@@ -39,12 +39,52 @@ function fakeChain(behaviour: { reply?: string; throws?: boolean; sent?: Interac
 describe("human ask link", () => {
   test("dispatches type 'choose' carrying the command verbatim", async () => {
     const sent: InteractionRequest[] = [];
-    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+    const link = createHumanAskLink({
+      chain: fakeChain({ reply: "allow", sent }),
+      timeoutMs: 1000,
+      onRemember: async () => {},
+    });
     await link.resolve(REQ);
     expect(sent[0]?.type).toBe("choose");
     expect(sent[0]?.options?.map((o) => o.key)).toEqual(["allow", "allow-remember", "deny"]);
     expect(sent[0]?.metadata).toEqual({ approvalPrompt: true });
     expect(JSON.stringify(sent[0])).toContain("bun run test 2>&1 | tail -n 40");
+  });
+
+  test("#2249: a request with no command is not offered allow-remember", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({
+      chain: fakeChain({ reply: "allow", sent }),
+      timeoutMs: 1000,
+      onRemember: async () => {},
+    });
+    const { command: _omitted, ...writeReq } = REQ;
+    await link.resolve({ ...writeReq, tool: "Write", summary: "Write file_path=a.ts" });
+    expect(sent[0]?.options?.map((o) => o.key)).toEqual(["allow", "deny"]);
+  });
+
+  test("#2249: without a remember sink the prompt offers allow-once and deny only", async () => {
+    const sent: InteractionRequest[] = [];
+    const link = createHumanAskLink({ chain: fakeChain({ reply: "allow", sent }), timeoutMs: 1000 });
+    await link.resolve(REQ);
+    expect(sent[0]?.options?.map((o) => o.key)).toEqual(["allow", "deny"]);
+  });
+
+  test("#2249: an allow-remember reply to a command-less request allows once and remembers nothing", async () => {
+    let remembered = false;
+    const link = createHumanAskLink({
+      chain: fakeChain({ reply: "allow-remember" }),
+      timeoutMs: 1000,
+      onRemember: async () => {
+        remembered = true;
+      },
+    });
+    const { command: _omitted, ...writeReq } = REQ;
+    expect(await link.resolve({ ...writeReq, tool: "Write", summary: "Write file_path=a.ts" })).toEqual({
+      decision: "allow",
+      decidedBy: "human",
+    });
+    expect(remembered).toBe(false);
   });
 
   test("US-005 AC1: a supplied stage labels the dispatched request 'review'", async () => {

@@ -65,8 +65,9 @@ the model a human can approve only when one is reachable; otherwise it reads exa
 
 ### The prompt
 
-The prompt is a `choose` interaction with three options: **Allow once**, **Allow + remember**,
-**Deny**. Any other answer denies. It shows the command verbatim (inert secret values masked,
+The prompt is a `choose` interaction offering **Allow once**, **Allow + remember** and
+**Deny**; **Allow + remember** appears only for calls that carry a command (see below). Any
+other answer denies. It shows the command verbatim (inert secret values masked,
 with a footer counting them), a one-line request summary, the directory it runs in, the reason
 it was sent to the gate, and the stage.
 
@@ -97,13 +98,16 @@ it was sent to the gate, and the stage.
 `~/.nax/<project>/approvals.json`, outside the repository — before the call runs. A remembered
 approval is a cached human decision, not a rule: it matches **byte-exact** on
 `(stage, command)`, with no trimming or normalization, so `bun run test` never also admits
-`bun run test --reporter=./x`. Only calls that carry a command string (`Bash`) can match: for
-any other tool the cache link abstains, so remembering such an approval has no effect.
+`bun run test --reporter=./x`. Only calls that carry a command string (`Bash`) can match, so
+the prompt offers **Allow + remember** only for those; any other tool gets **Allow once** and
+**Deny**.
 
 Each entry records `stage`, `command`, `root`, `origin`, `matchedRule`, `approvedAt`,
-`approvedBy` and `naxCommit`. Today the human link writes `origin: "escalate"`,
-`matchedRule: null` and `approvedBy: "telegram"` for every entry, whatever the channel or the
-reason for the ask — treat those three fields as fixed labels, not provenance. Its id is the first 8 hex characters of a SHA-256 of
+`approvedBy` and `naxCommit`. `origin` is `askRule` when an `ask` rule matched (and
+`matchedRule` holds that rule verbatim) or `escalate` for an `escalate`-mode grant miss (and
+`matchedRule` is `null`). `approvedBy` is the interaction plugin that answered (`telegram`,
+`cli` or `webhook`). Entries written before this change carry `origin: "escalate"`,
+`matchedRule: null` and `approvedBy: "telegram"` regardless. Its id is the first 8 hex characters of a SHA-256 of
 `(stage, command, approvedAt)`, computed on read and never stored.
 
 The cache link **abstains** — so the ask goes to the human — whenever it cannot trust the file:
