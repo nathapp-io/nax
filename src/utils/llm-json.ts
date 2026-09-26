@@ -176,14 +176,31 @@ function findBalancedSpanEnd(text: string, openIndex: number): number {
  *  retry-storm path. */
 const MAX_JSON_CANDIDATES = 50;
 
+/** Parses as a non-empty object or array — an empty `{}` proves nothing about prose. */
+function parsesAsNonEmptyContainer(candidate: string): boolean {
+  try {
+    const value: unknown = JSON.parse(stripTrailingCommas(candidate));
+    return Array.isArray(value)
+      ? value.length > 0
+      : !!value && typeof value === "object" && Object.keys(value).length > 0;
+  } catch {
+    return false; // not repairable into JSON
+  }
+}
+
 /**
  * True when the never-closed container opening at `openIndex` is a truncated
- * JSON payload: appending the closers it is missing makes it parse. A stray
- * prose brace (`Use { to open objects. Result: {"a":1}`) does not, which is
- * what separates the two.
+ * JSON payload: closing it makes it parse. A stray prose brace
+ * (`Use { to open objects. Result: {"a":1}`) does not, which is what
+ * separates the two.
+ *
+ * A length cap usually cuts mid-string or mid-key, so two repairs are tried:
+ * close any open string and then every open container; failing that, cut back
+ * to the last structural comma and close the containers open at that point.
  */
 function isTruncatedJsonPayload(text: string, openIndex: number): boolean {
-  const closers: string[] = [];
+  let closers: readonly string[] = [];
+  let lastComma: { index: number; closers: readonly string[] } | undefined;
   let inString = false;
   let escaped = false;
   for (let i = openIndex; i < text.length; i++) {
@@ -195,18 +212,19 @@ function isTruncatedJsonPayload(text: string, openIndex: number): boolean {
     } else if (ch === '"') {
       inString = true;
     } else if (ch === "{" || ch === "[") {
-      closers.push(ch === "{" ? "}" : "]");
+      closers = [...closers, ch === "{" ? "}" : "]"];
     } else if (ch === "}" || ch === "]") {
-      if (closers.pop() !== ch) return false;
+      if (closers[closers.length - 1] !== ch) return false;
+      closers = closers.slice(0, -1);
+    } else if (ch === ",") {
+      lastComma = { index: i, closers };
     }
   }
-  if (inString || closers.length === 0) return false;
-  try {
-    JSON.parse(stripTrailingCommas(text.slice(openIndex) + closers.reverse().join("")));
-    return true;
-  } catch {
-    return false; // not a truncated payload, just an unmatched brace
-  }
+  if (closers.length === 0) return false;
+  const close = (open: readonly string[]) => [...open].reverse().join("");
+  const body = escaped ? text.slice(openIndex, -1) : text.slice(openIndex);
+  if (parsesAsNonEmptyContainer(`${body}${inString ? '"' : ""}${close(closers)}`)) return true;
+  return !!lastComma && parsesAsNonEmptyContainer(text.slice(openIndex, lastComma.index) + close(lastComma.closers));
 }
 
 /** Result of a balanced-candidate scan. */

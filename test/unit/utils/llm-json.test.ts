@@ -235,8 +235,21 @@ describe("parseLLMJson", () => {
     ['Use { to start objects (see docs). Result: {"a":1}', { a: 1 }],
     ['Don\'t forget the opening { char. {"a":{"b":1}}', { a: { b: 1 } }],
     ["Note the { char used to open objects. Result: [1,2,3]", [1, 2, 3]],
+    ['Use {, then see the docs. Result: {"a":1}', { a: 1 }],
+    ['Oops { ] mismatched. Result: {"a":1}', { a: 1 }],
   ])("finds the payload after an unmatched prose brace: %s", (input, expected) => {
     expect(parseLLMJson<Obj | number[]>(input)).toEqual(expected);
+  });
+
+  // A length cap usually cuts mid-string or mid-key, not between values. The
+  // payload is still truncated, so no nested object may be returned from it.
+  test.each([
+    ["mid-string", '{"tests":{"passCount":27},"reasoning":"The implement'],
+    ["after a trailing backslash", '{"tests":{"passCount":27},"reasoning":"path C:\\'],
+    ["mid-key", '{"tests":{"passCount":27},"reaso'],
+    ["after a colon", '{"tests":{"passCount":27},"reasoning":'],
+  ])("does not return a nested object when the outer object is cut %s", (_label, input) => {
+    expect(() => parseLLMJson(input)).toThrow(SyntaxError);
   });
 
   test("does not return a nested array when the outer object is truncated", () => {
