@@ -179,6 +179,21 @@ describe("checkFixScope", () => {
     expect(result.outOfScopeFiles).toEqual([]);
   });
 
+  test.each([".//src/lock.ts", "./././src/lock.ts", "src//lock.ts"])(
+    "a finding spelled %p still joins to the changed path",
+    (file) => {
+      const result = checkFixScope(
+        scopeInput({
+          changedFiles: ["packages/a/src/lock.ts"],
+          findings: [makeFinding({ file })],
+          packageDirRel: "packages/a",
+        }),
+      );
+
+      expect(result.inScope).toBe(true);
+    },
+  );
+
   test("AC15: a seeding finding that names no file adds nothing to the allowed set", () => {
     const result = checkFixScope(
       scopeInput({

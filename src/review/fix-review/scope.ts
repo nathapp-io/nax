@@ -11,6 +11,7 @@
  * is exempt when `isTestFile` matches it or it lies under `.nax/`.
  */
 
+import { posix } from "node:path";
 import type { Finding } from "@/findings";
 import { getContextFiles, getExpectedFiles, type UserStory } from "@/prd";
 
@@ -52,12 +53,14 @@ function buildAllowedSet(input: FixScopeInput): Set<string> {
   // finding's path. An empty `packageDirRel` joins without a stray separator —
   // the package dir is the repo root, the workdir is the repo root, and the
   // finding's path is already repo-root-relative.
-  // Both sides are trimmed first: a finding spelled `./src/x.ts` or a package
-  // dir with a trailing `/` would otherwise join to a path git never prints.
+  // Both sides are normalised first: a finding spelled `./src/x.ts` or
+  // `.//src/x.ts`, or a package dir with a trailing `/`, would otherwise join to
+  // a path git never prints.
   const packageDir = input.packageDirRel.replace(/\/+$/, "");
   const packagePrefix = packageDir === "" ? "" : `${packageDir}/`;
   for (const finding of input.findings) {
-    if (finding.file !== undefined) allowed.add(`${packagePrefix}${finding.file.replace(/^(?:\.\/)+/, "")}`);
+    if (finding.file !== undefined)
+      allowed.add(`${packagePrefix}${posix.normalize(finding.file).replace(/^\.\//, "")}`);
   }
 
   return allowed;
