@@ -206,7 +206,17 @@ describe("US-002 acceptance-setup: coverage of generated content", () => {
 
     const warns = coverageWarns();
     expect(warns).toHaveLength(1);
-    expect(warns[0]?.data).toMatchObject({ expected: 5, found: 3, missing: ["AC-4", "AC-5"] });
+    // checkAcceptanceCoverage logs the same `testPath` it returns, and AC11
+    // requires the returned entry's testPath to be relative to the workdir —
+    // so the setup-phase warn must carry that relative frame too, not leak the
+    // absolute path of the group it describes.
+    expect(warns[0]?.data).toMatchObject({
+      storyId: "US-001",
+      testPath: RELATIVE_TEST_PATH,
+      expected: 5,
+      found: 3,
+      missing: ["AC-4", "AC-5"],
+    });
 
     expect(wired.writeMetaCalls).toHaveLength(1);
     const coverage = wired.writeMetaCalls[0]?.meta.coverage;

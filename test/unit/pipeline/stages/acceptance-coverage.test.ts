@@ -27,6 +27,9 @@ const PRD_CRITERIA = ["AC-1: a", "AC-2: b", "AC-3: c"];
 const PARTIAL_SOURCE = ['test("AC-1: a", () => {})', 'test("AC-2: b", () => {})'].join("\n");
 const FULL_SOURCE = [...PRD_CRITERIA.map((ac) => `test("${ac}", () => {})`)].join("\n");
 
+/** The tail every frame of the group's acceptance test path shares. */
+const GROUP_TEST_SUFFIX = path.join(".nax", "features", "test-feature", ".nax-acceptance.test.ts");
+
 // ---------------------------------------------------------------------------
 // Fixture
 // ---------------------------------------------------------------------------
@@ -112,7 +115,12 @@ describe("US-002 acceptance stage: coverage of an existing test file", () => {
 
     const warns = coverageWarns();
     expect(warns).toHaveLength(1);
-    expect(warns[0]?.data).toMatchObject({ expected: 3, found: 2, missing: ["AC-3"] });
+    const data = warns[0]?.data;
+    expect(data).toMatchObject({ expected: 3, found: 2, missing: ["AC-3"] });
+    // The warn must name the group's own file. Which frame it uses (absolute, as
+    // passed in here, or workdir-relative) is not pinned by the criteria, so this
+    // asserts the file rather than a path form.
+    expect(String(data?.testPath)).toEndWith(GROUP_TEST_SUFFIX);
     expect(result.action).toBe("continue");
   });
 
