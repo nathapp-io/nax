@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A8-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A9-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    247 functions in 215 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     20   (19 src, 1 scripts)   <- THIS DRAIN (pathsBranch drained by A8)
+  over 20    246 functions in 214 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     19   (18 src, 1 scripts)   <- THIS DRAIN (handleRunCompletion drained by A9)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 9 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8)
+batches: 10 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9)
 ```
 
 Refresh this block at the end of every batch:
@@ -149,7 +149,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | A6 | done 2026-09-27 | 91 | `callOpDispatch` | `src/operations/call.ts:80` | 591 | 33 / 17 | yes |
 | A7 | done 2026-09-27 | 74 | `resolveCodingToolSupport` | `src/agents/coding-tool-support.ts:312` | 601 -> 391 (size-gated) | 44 / 18 | yes |
 | A8 | done 2026-09-27 | 127 | `pathsBranch` | `src/tools/policy.ts:429` | 600 -> 332 (at cap, may not grow) | 26 / 16 | yes |
-| A9 | todo | 71 | `handleRunCompletion` | `src/execution/lifecycle/run-completion.ts:111` | 563 | 22 / 18 | none |
+| A9 | done 2026-09-27 | 71 | `handleRunCompletion` | `src/execution/lifecycle/run-completion.ts:111` | 563 -> 220 | 22 / 18 | none |
 | A10 | todo | 83 | `runFixCycle` | `src/findings/cycle.ts:72` | 544 | 16 / 12 | yes |
 | A11 | todo | 70 | `runNonBlockingFix` | `src/execution/non-blocking-fix.ts:230` | 492 | 17 / 13 | yes |
 | A12 | todo | 73 | `collectNeighbors` | `src/context/engine/providers/code-neighbor.ts:264` | 498 | 17 / 11 | yes |
@@ -1001,3 +1001,98 @@ before planning the split; (2) check for a `_deps`-style seam and barrel re-expo
 (A6's one-file-per-branch seam); (4) the post-drain milestone note from §9.8 stands —
 over-60 is now 20, and `buildCodingToolSupport` (38) et al. remain within reach of the
 40-milestone discussion.
+
+### 9.10 - 2026-09-27, A9 done - `handleRunCompletion` 71 -> 1 (one session)
+
+The Wave-A orchestrator §9.9 handed over, §2.2's sweep done first as instructed. One
+session. Pre-flight all answered BEFORE writing code: (1) NO source-text tests pin
+run-completion.ts — grep found comments only, so the refactor commit edited zero tests;
+(2) `_runCompletionDeps` EXISTS (4 members) and is re-exported through
+`src/execution/lifecycle/index.ts` and the outer barrel — it stayed defined in
+run-completion.ts, and each phase receives it BY REFERENCE under a narrow per-phase
+interface (`RegressionGateDeps`, `TeardownDeps`, `PurgeDeps`), reading `deps.X` at call
+time; the siblings import run-completion.ts TYPE-ONLY (a runtime import would cycle back
+to the seam — the A1 trap; `check:import-cycles` stayed 0); (3) A2's traps both clean,
+checked first: the one intentional throw (the regression gate's catch) rethrows out of
+handleRunCompletion entirely after emitting the failed phase event — nothing downstream
+reads state across it — and no closures capture `let`s (straight-line function, no
+SpinFlags shape). The in-place mutations (RL-004 story marking into `prd`, #679 rows
+into `allStoryMetrics`) cross phase boundaries as object/array references, not `let`
+rebindings, so mutate-in-place held without even needing the A2 discipline engaged.
+
+**Characterisation first** (own commit `test: characterise handleRunCompletion unpinned
+branches before complexity drain`, 16 tests, green against the unrefactored function).
+Seven run-completion* mirror suites plus lifecycle-completion, rl002 and dry-run pin most
+branches; NOTHING pinned: the regression-gate throw path (the failed
+postrun:phase:completed is emitted, then the SAME error object is rethrown),
+`on-final-regression-fail` (both arms: fires with hooksConfig, silent without),
+`skipRegression: true`, the `isSequential === false` storyMetrics-withholding
+(#1527/#1528) plus the sequential projection shape, the AC-20 scratch-purge half (the
+manifest half was pinned; projectDir resolution, the archive flag, and the info/warn
+logs were not), `pluginProviderCache.disposeAll()`, the saveRunMetrics payload shape,
+the stalled/aborted final-status arms (EXEC-1), and AC-25's contextCostUsd (log-only).
+Three behaviours were DISCOVERED while writing the pins and pinned as-is (§2.1):
+(a) `context.v2.session` carries a schema DEFAULT (retentionDays 7), so the scratch
+purge always runs under a validated config — the `if (sessionCfg?.retentionDays)` false
+arm is unreachable through config, defensive only; (b) `storiesFailed` mirrors
+`finalCounts.failed` (status-based), not "stories that did not pass"; (c) applyBackfill
+runs BEFORE saveRunMetrics, so the saved payload's `stories` is the live, backfilled
+array — `totalStories` counts synthetic rectification rows the caller never passed.
+New-file ratchet discipline held: zero `as T` casts, looseCast stayed 1474. Two gates
+caught real things mid-flight, both worth knowing for future characterisation commits:
+the pre-commit hook's `check:test-mocks` forbids a local `function makeConfig(` in NEW
+test files (legacy files are skip-listed — the wrapper needed a different name), and the
+escape-hatch ratchet counts `[] as StoryMetrics[]` (typed the literal instead).
+
+**Technique:** the ~450-line body became eight named phases across two siblings, cut at
+the comment seams the original already had. `run-completion-regression.ts` (305):
+`runRegressionGate` 4 (guards + orchestration), `executeRegressionGate` 4 (postrun
+phase events, the `deps.runDeferredRegression` call with its throw-emit-rethrow catch,
+pass/fail surfacing), `markRegressionFailedStories` 3 (RL-004/#1292, comment moved
+verbatim), `mergeRegressionStoryMetrics` 16 (#679 fold-in — the largest helper, one
+coherent loop, not a fake-split candidate). `run-completion-phases.ts` (395):
+`consumeDeferredReview` 3 (#1146 G2), `snapshotCostsAndBackfill` 2 (Bug 909 totals +
+the nax#1721 backfill call), `teardownRunSessions` 1 (ADR-020 §D3/PERF-1),
+`emitRunCompletedAndSaveMetrics` 3 (RL-002 event + drain + best-effort save),
+`purgeStaleRunArtifacts` 12 (the two fail-open halves, AC-20 + US-002),
+`logRunCompletion` 3 (+2 for the AC-25 reduce callback), `writeFinalStatus` 10 (the
+EXEC-1 ternary chain). `handleRunCompletion` itself scores 1: destructure, eight phase
+calls in the original execution order, return literal. `durationMs`/`runCompletedAt`
+stayed computed in the sequencer exactly where the original computed them (after
+backfill, before teardown) so the timing semantics do not shift by a single phase.
+
+**File-size gate, single sibling held — planned from the first line (A6's lesson).**
+run-completion.ts measured 562 going in (the doc's 563 had drifted by one, same as
+A7/A8) and is now 220. The seam was chosen before writing: the regression gate is one
+file, everything after the gate is the other; 305 + 395 after `bun x biome check
+--write`, both under 600 — the first Wave-A batch where the "budget two sibling files"
+rule resolved without an unplanned split, because the split WAS the plan.
+
+**Verification beyond the suite:** a literal fingerprint diff of the original body
+against the new trio — every string literal of length >= 4 (event types, status names,
+log/error messages, hook names) appears verbatim; zero missing. 536 tests across the
+completion-adjacent suites green (the seven lifecycle suites, rl002, dry-run, four
+runner-completion files), then the full suite.
+
+**Nothing else surprising.** `bun run typecheck`, `bun run test` (all phases),
+`bun run check:all` (35 scripts; import-cycles 0, file-sizes green, looseCast 1474),
+and `bun run test:coverage` all green; below-floor count 1 vs baseline 2 (the standing
+A5 improvement). `check:complexity:update` was a pure lower: 247 -> 246 functions,
+215 -> 214 files (`run-completion.ts` left the over-20 baseline entirely —
+`handleRunCompletion` is now 1). One small doc-convention note: `--list | awk '$1 > 20'`
+counts the trailing `Total ...` row (string "Total" compares above "20"), so the §0
+`wc -l` command over-states the function count by one; §0 now records the script's own
+total line instead.
+
+**For the next batch:** A10 `runFixCycle` (`src/findings/cycle.ts:72`, 83, 544 lines,
+test: yes) — the next Wave-A orchestrator and the shape most likely to hit A2's
+mutate-in-place trap for real: a fix CYCLE is exactly where an intentional mid-loop
+throw whose catch reads loop state lives (the loop exists to record failed attempts).
+Check that FIRST, before writing a return-a-new-object version. Then: (1) find its
+`_deps`-style seam if any (`grep -n "_deps\|Deps" src/findings/cycle.ts`) and check
+whether any barrel re-exports it; (2) 544 lines + extraction means the sibling split is
+planned from the first line (A6's seam rule; A9's gate/post-gate cut is the template);
+(3) A10 has mirror tests, so no characterisation commit is expected — but grep the
+mirror suites for which branches they pin before trusting them; (4) the over-60 set is
+down to 19 and every remaining Wave-A function has mirror tests — the remaining
+characterisation-first work in this drain is likely zero.

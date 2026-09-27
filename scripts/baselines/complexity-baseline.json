@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T17:54:45.318Z",
+  "updatedAt": "2026-09-27T18:34:13.568Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -92,7 +92,6 @@
     "src/execution/lifecycle/backfill-story-metrics.ts": [23],
     "src/execution/lifecycle/precheck-runner.ts": [22],
     "src/execution/lifecycle/run-cleanup.ts": [29],
-    "src/execution/lifecycle/run-completion.ts": [71],
     "src/execution/lifecycle/run-initialization.ts": [22],
     "src/execution/lifecycle/run-regression.ts": [73],
     "src/execution/lifecycle/run-setup-init.ts": [21],
