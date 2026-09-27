@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 @ `c28cda278` (chore/complexity-ratchet)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, pre-A1-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
   over 20    254 functions in 220 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     28   (26 src, 1 bin, 1 scripts)  <- THIS DRAIN
-  worst      165   src/execution/unified-executor.ts executeUnified
+  over 60     27   (25 src, 1 bin, 1 scripts)  <- THIS DRAIN
+  worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 1 of 25 done (P0)
+batches: 2 of 25 done (P0, A1)
 ```
 
 Refresh this block at the end of every batch:
@@ -141,7 +141,7 @@ and what the helpers scored; use that to size the rest (see §6).
 
 | Batch | Status | Score | Function | File:line | Lines | Churn / fix | test |
 |:--|:--|---:|:--|:--|---:|:--|:--|
-| A1 | todo | 165 | `executeUnified` | `src/execution/unified-executor.ts:60` | 704 (size-gated) | 30 / 25 | none |
+| A1 | done 2026-09-27 | 165 | `executeUnified` | `src/execution/unified-executor.ts:60` | 704 (size-gated) | 30 / 25 | none |
 | A2 | todo | 97 | `runNativeTurn` | `src/agents/native/session/turn-loop.ts:72` | 484 | 42 / 18 | none |
 | A3 | todo | 101 | `run` (ExecutionPlan) | `src/execution/story-orchestrator/execution-plan.ts:70` | 596 | 20 / 16 | none |
 | A4 | todo | 107 | CLI `run` action | `bin/nax.ts:245` | 1948 (size-gated) | 37 / 21 | none |
@@ -317,3 +317,78 @@ next shape match - expect the same pattern to apply directly. Wave A's orchestra
 (`executeUnified`, `runNativeTurn`, ...) are a different shape (state-machine, not
 field-by-field) and will need the "named phase functions" technique instead - do not assume
 P0's timing (one session) generalises to those.
+
+### 9.2 - 2026-09-27, A1 done - `executeUnified` 165 -> 39 (one session)
+
+The first orchestrator/state-machine batch, matching §3's "extract named phase functions
+that each take and return an explicit state object" prediction. One session - contrary to
+§4's own warning that A1 was one of the two batches most likely to need a split (§8). Read
+the whole 704-line function first, worked out the shape, then wrote it in one pass; no
+half-finished intermediate state needed leaving behind.
+
+**Technique:** the while-loop's mutable locals (`prd`, `prdDirty`, `totalCost`,
+`storiesCompleted`, `lastStoryId`, `warningSent`) became one `LoopState` object
+(`unified-executor-dispatch-phases.ts`). Each dispatch shape is a function taking
+`{ ctx, state, ... }` and returning a `DispatchStep` — `{ action: "continue" | "return" |
+"fallthrough", state, exitReason? }`. `executeUnified` itself shrank to sequencing: reload
+state if dirty, check completion, build `dispatchParams`, call `runParallelDispatch` (falls
+through to sequential when `batch.length === 0`), then `runSequentialDispatch`. Every
+`return buildResult(...)` in the original became `return buildResult(step.exitReason)` after
+assigning `state = step.state` - the exit-reason strings themselves never changed, so this is
+traceable line-for-line against the pre-refactor version in git history.
+
+**The DI trap this batch exists to record:** `_unifiedExecutorDeps` (the test-injection seam
+11 test files reassign — `runParallelBatch`, `runIteration`, `selectIndependentBatch`,
+`preIterationTierCheck`) has to stay defined in `unified-executor.ts`, because
+`src/execution/index.ts` re-exports it by reference for tests to mutate. Importing it INTO
+the new phase files would cycle straight back to `unified-executor.ts`. Fix: the phase
+functions take a `deps` parameter (`ParallelDispatchDeps` / `SequentialDispatchDeps`), and
+`executeUnified` passes `_unifiedExecutorDeps.X` at each call site inside the loop - since
+that's a fresh property read every iteration, a test's reassignment before the run starts is
+still picked up. Getting this wrong would have silently broken the mock seam without any
+type error to catch it - watch for the same shape (a `_xDeps` object with a barrel
+re-export) in any future orchestrator batch.
+
+**File-size gate, three-way split:** `unified-executor.ts` (704, size-gated) dropped to 280.
+The extracted logic didn't fit in one sibling file - the first attempt
+(`unified-executor-dispatch-phases.ts`, all three dispatch shapes) landed at 625 lines,
+over the 600 cap for a NEW file (only grandfathered files may exceed it, and a brand-new
+file is never grandfathered). Split it again: the two parallel-batch shapes
+(`runManyStoryParallelBatch`, `runSingleStoryInBatch`, `runParallelDispatch`, plus their
+private helpers) moved to `unified-executor-parallel-dispatch.ts` (440 lines);
+`runSequentialDispatch` plus the shared `LoopState`/`DispatchStep`/`DispatchPhaseParams`
+types and two small shared helpers (`closeStoryIfTerminal`, `runIterationDelay`) stayed in
+`unified-executor-dispatch-phases.ts` (220 lines). Both comfortably under 600 - budget one
+extra line-count check (`wc -l` after `biome check --write`, per §5) before assuming a single
+sibling file will hold an orchestrator's whole dispatch logic.
+
+**Helper scores:** `runManyStoryParallelBatch` alone scored 21 on the first pass (one over
+20/§2.3) - the many-story branch's own for-loops and nested session-closing ifs still added
+up even after being pulled out of `executeUnified`. Fix: extracted the
+`batchResult.failed`-handling loop (the call into `handlePipelineFailure`) into its own
+`handleParallelBatchFailures` helper, which also reads better on its own. Second pass: every
+function in both new files scored under 20 - no baseline hand-edit needed.
+
+**Source-order tests are the sharpest edge of this technique.** 7 of the ~2340 execution unit
+tests failed after the split - all of them asserted the literal presence/ordering of strings
+(`"cost-limit"`, `"story:started"`, `"handlePipelineFailure"`, `"batchResult.failed"`) inside
+`unified-executor.ts`'s raw source text (`unified-executor-signature.test.ts`,
+`unified-executor-results.test.ts`, `unified-executor-failure.test.ts` - all pre-existing,
+from the original US-003 "unify executors" work). None were behavioural failures - the other
+~2340 tests exercising the same ACs at runtime (mocking `_unifiedExecutorDeps` and asserting
+on results) stayed green throughout. Fixed by repointing each `readSrc(...)` /
+`Bun.file(...)` call at whichever new file the asserted code actually lives in now. Any
+future batch that moves code between files should `grep -rl` the touched function/string
+names across `test/` before declaring done - a green `bun test <targeted dir>` run is what
+surfaces these, not typecheck or `check:all`.
+
+**Nothing else surprising.** `bun run test:coverage` stayed green, same per-file floor count
+as before (1 file below floor, unrelated to this batch). `check:import-cycles` stayed at 0 -
+the DI-parameter approach above is exactly what kept it that way.
+
+**For the next batch:** A4 (`bin/nax.ts` CLI `run` action, also size-gated) is the other
+batch §4 flagged as likely needing a split - expect the same three concerns in order:
+(1) does `_deps`-style test injection exist for this function, and if so does it live in a
+file the extraction would need to import back from; (2) will one sibling file hold everything,
+or does it need splitting again to stay under 600; (3) grep test/ for source-order assertions
+on the function/file being moved, before calling the batch done.

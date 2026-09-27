@@ -339,9 +339,12 @@ describe("results AC-5: totalCost sums all batch costs", () => {
 
 describe("results AC-2: failed stories in batchResult carry pipelineResult for downstream routing", () => {
   test("AC-2: handlePipelineFailure is called with pipelineResult from batchResult.failed", async () => {
-    // Verify at the source level: unified-executor reads batchResult.failed and passes
-    // pipelineResult to handlePipelineFailure inside the loop
-    const source = await Bun.file(new URL("../../../src/execution/unified-executor.ts", import.meta.url)).text();
+    // Verify at the source level: unified-executor-parallel-dispatch reads batchResult.failed
+    // and passes pipelineResult to handlePipelineFailure inside the loop. Complexity drain A1
+    // (docs/plans/STATUS-complexity-drain.md) moved this out of unified-executor.ts.
+    const source = await Bun.file(
+      new URL("../../../src/execution/unified-executor-parallel-dispatch.ts", import.meta.url),
+    ).text();
     expect(source).toContain("batchResult.failed");
     // Each failed entry destructures { story, pipelineResult }
     expect(source).toContain("pipelineResult");

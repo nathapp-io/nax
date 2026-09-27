@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T13:57:52.087Z",
+  "updatedAt": "2026-09-27T14:14:31.263Z",
   "limit": 20,
   "byFile": {
     "bin/nax.ts": [107],
@@ -114,7 +114,7 @@
     "src/execution/story-orchestrator/review-decision.ts": [23, 22],
     "src/execution/story-orchestrator/run-phase.ts": [51],
     "src/execution/tdd-failure-category.ts": [25],
-    "src/execution/unified-executor.ts": [165],
+    "src/execution/unified-executor.ts": [39],
     "src/findings/cycle.ts": [83],
     "src/finish/context.ts": [30],
     "src/finish/phase.ts": [31],

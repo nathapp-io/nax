@@ -57,8 +57,10 @@ describe("exec AC-23 (source): handlePipelineFailure routes escalate action to h
     expect(tierEscalationIdx - escalateCaseIdx).toBeLessThan(500);
   });
 
-  test("AC-23: handlePipelineFailure is imported from pipeline-result-handler in unified-executor.ts", async () => {
-    const source = await Bun.file(join(SRC, "execution/unified-executor.ts")).text();
+  test("AC-23: handlePipelineFailure is imported from pipeline-result-handler in unified-executor-parallel-dispatch.ts", async () => {
+    // Complexity drain A1 (docs/plans/STATUS-complexity-drain.md) moved the parallel
+    // failure-routing loop out of unified-executor.ts into this sibling file.
+    const source = await Bun.file(join(SRC, "execution/unified-executor-parallel-dispatch.ts")).text();
     expect(source).toContain("handlePipelineFailure");
     // The import must reference pipeline-result-handler
     expect(source).toMatch(/from\s+["']\.\/pipeline-result-handler["']/);
