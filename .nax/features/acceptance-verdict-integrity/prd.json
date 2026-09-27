@@ -3,7 +3,7 @@
   "feature": "acceptance-verdict-integrity",
   "branchName": "feat/acceptance-verdict-integrity",
   "createdAt": "2026-09-26T00:00:00Z",
-  "updatedAt": "2026-09-27T04:45:40.486Z",
+  "updatedAt": "2026-09-27T04:59:07.178Z",
   "userStories": [
     {
       "id": "US-001",
@@ -26,8 +26,8 @@
         "tool-policy"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -95,7 +95,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New scanner and warning modules integrate with both setup and post-run stages and fingerprint regeneration, requiring persistence and verdict-invariance tests."
+        "reasoning": "New scanner and warning modules integrate with both setup and post-run stages and fingerprint regeneration, requiring persistence and verdict-invariance tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/pipeline/stages/acceptance-setup.ts",
@@ -111,7 +114,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "aa42a1d937204bfff173e88344e9d9359a3b5ee8"
     },
     {
       "id": "US-003",

@@ -22,7 +22,7 @@
  */
 
 import path from "node:path";
-import type { AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
+import type { AcceptanceCoverageEntry, AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
 import { buildAcceptanceRunCommand, generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
@@ -58,6 +58,8 @@ export interface AcceptanceMeta {
   acCount: number;
   /** Generator identifier */
   generator: string;
+  /** Per-group AC coverage observed when the file was written (US-002) */
+  coverage?: AcceptanceCoverageEntry[];
 }
 
 /**

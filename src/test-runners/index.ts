@@ -10,6 +10,8 @@
  * - resolveTestFilePatterns() + createTestFileClassifier(): ADR-009 SSOT
  */
 
+export type { AcTestCoverage } from "./ac-coverage";
+export { acTestCoverage } from "./ac-coverage";
 export { parseTestFailures, parseTestFailuresDetailed } from "./ac-parser";
 export { createTestFileClassifier } from "./classifier";
 export {

@@ -6,6 +6,8 @@
 
 export type { AcceptanceEntry } from "./content-loader";
 export { loadAcceptanceTestContent } from "./content-loader";
+export type { AcceptanceCoverageEntry } from "./coverage";
+export { checkAcceptanceCoverage } from "./coverage";
 export { loadSourceFilesForDiagnosis } from "./fix-diagnosis";
 
 export {
