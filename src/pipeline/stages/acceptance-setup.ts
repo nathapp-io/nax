@@ -22,14 +22,8 @@
  */
 
 import path from "node:path";
-import type { AcceptanceCoverageEntry, AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
-import {
-  findMissingAcceptanceTestPaths,
-  generateSkeletonTests,
-  groupStoriesByPackage,
-  makeAcceptanceCoverageCollector,
-  warnMissingAcceptanceTests,
-} from "@/acceptance";
+import type { AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
+import { generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { loadConfigForPackage } from "@/config";
@@ -43,6 +37,12 @@ import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import {
+  type AcceptanceCoverageEntry,
+  findMissingAcceptanceTestPaths,
+  makeAcceptanceCoverageCollector,
+  warnMissingAcceptanceTests,
+} from "./acceptance-coverage";
 import { type AcceptanceRedGateEntry, runAcceptanceRedGate } from "./acceptance-red-gate";
 import { refineAcceptanceCriteria } from "./acceptance-refine-criteria";
 
@@ -438,11 +438,12 @@ async function runAcceptanceSetup(
     // P2-B: Store acceptance metadata (centralized in featureDir)
     //
     // #1896: only when every group actually produced a file. A dispatch failure
-    // writes no test, and the reuse branch at the gate above explicitly blesses
-    // a missing file — so stamping a matching fingerprint here would make the
-    // empty suite permanent. The stub guard cannot rescue it either: it keys on
-    // file content, and findExistingAcceptanceTestPath returns undefined when
-    // nothing is on disk. Leaving meta unwritten makes the next run regenerate.
+    // writes no test, so there is nothing for the reuse branch's missing-file
+    // check (findMissingAcceptanceTestPaths) to detect — a group with no file
+    // would simply be absent. Stamping a matching fingerprint here would make
+    // that empty suite permanent. The stub guard cannot rescue it either: it
+    // keys on file content, and findExistingAcceptanceTestPath returns undefined
+    // when nothing is on disk. Leaving meta unwritten makes the next run regenerate.
     if (sawDispatchFailure) {
       getSafeLogger()?.warn(
         "acceptance-setup",

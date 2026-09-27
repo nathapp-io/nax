@@ -29,7 +29,7 @@
  */
 
 import type { HardeningContext } from "@/acceptance";
-import { buildAcceptanceRunCommand, checkAcceptanceCoverage, resolveAcceptanceFeatureTestPath } from "@/acceptance";
+import { buildAcceptanceRunCommand, resolveAcceptanceFeatureTestPath } from "@/acceptance";
 import type { Finding } from "@/findings";
 import { acFailureToFinding, acSentinelToFinding } from "@/findings";
 import { getLogger } from "@/logger";
@@ -43,6 +43,7 @@ import { logTestOutput } from "@/utils/log-test-output";
 import { storyAbsWorkdir } from "@/utils/path-frame";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import { checkAcceptanceCoverage } from "./acceptance-coverage";
 
 /** Injectable deps for testability */
 export const _acceptanceStageDeps = {
