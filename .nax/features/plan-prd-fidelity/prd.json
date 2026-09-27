@@ -3,7 +3,7 @@
   "feature": "plan-prd-fidelity",
   "branchName": "feat/plan-prd-fidelity",
   "createdAt": "2026-09-18T00:00:00.000Z",
-  "updatedAt": "2026-09-27T11:30:51.576Z",
+  "updatedAt": "2026-09-27T11:57:44.992Z",
   "userStories": [
     {
       "id": "US-001",
@@ -195,8 +195,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
