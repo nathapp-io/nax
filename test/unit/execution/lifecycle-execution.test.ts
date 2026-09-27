@@ -666,6 +666,8 @@ describe("runDeferredRegression — unpinned gate and loop arms (B4 characterisa
       costUsd: 0,
     }));
 
+    // Another test file in the same process may have left a logger behind.
+    resetLogger();
     initLogger({ level: "silent" });
     const logCalls: LogEntry[] = [];
     const removeSink = addSink((entry) => logCalls.push(entry));
