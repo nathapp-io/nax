@@ -89,7 +89,13 @@ export async function refineAcceptanceCriteria(
       config,
     )
       .then((refined) => {
-        perStory[i] = refined;
+        // Normalise the discriminator: a caller must be able to read
+        // `refinementFallback` as a boolean rather than treating `undefined`
+        // as a third state for "refined normally".
+        perStory[i] = refined.map((criterion) => ({
+          ...criterion,
+          refinementFallback: criterion.refinementFallback === true,
+        }));
       })
       .catch((err: unknown) => {
         fellBack[i] = true;
