@@ -98,7 +98,7 @@ export {
 export type { MutationCheckDeps, MutationCheckInput, MutationCheckOutput } from "./mutation-check";
 export { _mutationCheckDeps, mutationCheckOp } from "./mutation-check";
 export type { PlanInteractiveInput } from "./plan";
-export { planInteractiveOp } from "./plan";
+export { _planInteractiveDeps, planInteractiveOp } from "./plan";
 export {
   applyPlanFidelity,
   backfillModifiedFiles,

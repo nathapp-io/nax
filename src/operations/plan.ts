@@ -9,6 +9,17 @@ import { PlanPromptBuilder } from "../prompts";
 import { applyPlanFidelity } from "./plan-fidelity";
 import type { RunOperation } from "./types";
 
+/** Injectable I/O for the hopBody self-heal step (testable without disk). */
+export const _planInteractiveDeps = {
+  readFile: async (path: string): Promise<string | null> => {
+    try {
+      return await Bun.file(path).text();
+    } catch {
+      return null;
+    }
+  },
+};
+
 export interface PlanInteractiveInput {
   specContent: string;
   codebaseContext: string;

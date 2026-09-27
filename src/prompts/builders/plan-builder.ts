@@ -20,6 +20,7 @@ import {
   SPEC_ANCHOR_RULES,
   TEST_STRATEGY_GUIDE,
 } from "@/config";
+import type { SpecStructureViolation } from "@/prd";
 import { OneShotPromptBuilder } from "./one-shot-builder";
 
 // ─── Shared rule injection ────────────────────────────────────────────────────
@@ -145,7 +146,7 @@ Please re-write the complete PRD JSON from scratch conforming to the required sc
    * The model must write the revised PRD to disk, then reply with a brief
    * confirmation only.
    */
-  buildRefineContinuation(outputFilePath: string, specGuard = false): string {
+  buildRefineContinuation(outputFilePath: string, specGuard = false, _bindingStructure = false): string {
     const specGuardItems = specGuard
       ? `
 #### orphan-acs
@@ -227,6 +228,18 @@ For each one:
 
 Write the corrected PRD to this file path: ${outputFilePath}
 Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;
+  }
+
+  /**
+   * Structural repair prompt — the single corrective turn fired when the draft
+   * PRD diverges from the story structure the spec declares (missing/extra
+   * stories, wrong workdir or dependencies, orphaned `Modifies` entries).
+   *
+   * NOTE (test-writer session): STUB — returns an empty prompt. The implementer
+   * fills in the violation list and the binding instructions.
+   */
+  buildSpecStructureRepair(_violations: readonly SpecStructureViolation[], _outputFilePath: string): string {
+    return "";
   }
 
   /**

@@ -101,7 +101,7 @@ describe("planInteractiveOp.retry", () => {
 });
 
 describe("planInteractiveOp.fileOutput", () => {
-  test("fileOutput is defined and returns outputPath; hopBody is undefined", async () => {
+  test("fileOutput is defined and returns outputPath; hopBody is defined", async () => {
     const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.fileOutput).toBeDefined();
@@ -113,7 +113,8 @@ describe("planInteractiveOp.fileOutput", () => {
       outputPath: "/tmp/prd.json",
     });
     expect(path).toBe("/tmp/prd.json");
-    expect(planInteractiveOp.hopBody).toBeUndefined();
+    // The interactive op now ends its hop with the spec-structure self-heal turn.
+    expect(typeof planInteractiveOp.hopBody).toBe("function");
   });
 });
 
