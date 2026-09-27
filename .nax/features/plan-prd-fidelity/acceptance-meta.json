@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-27T09:45:14.856Z",
+  "acFingerprint": "sha256:c1209927f49889676a30c389469223ae899b84306bbb746c28e86d05b83b2b44",
+  "layoutFingerprint": "sha256:885af7bc2479f81cc65f4aefcfc562065903934c5cd9b4a69509e2be05d76ae0",
+  "storyCount": 3,
+  "acCount": 61,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": ".nax/features/plan-prd-fidelity/.nax-acceptance.test.ts",
+      "expected": 61,
+      "found": 61,
+      "missing": []
+    }
+  ]
+}
