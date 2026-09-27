@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A4-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A5-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    251 functions in 217 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     24   (23 src, 1 scripts)   <- THIS DRAIN (bin/nax.ts drained by A4)
+  over 20    250 functions in 216 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     23   (22 src, 1 scripts)   <- THIS DRAIN (build-hop-callback.ts drained by A5)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 5 of 25 done (P0, A1, A2, A3, A4)
+batches: 6 of 25 done (P0, A1, A2, A3, A4, A5)
 ```
 
 Refresh this block at the end of every batch:
@@ -145,7 +145,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | A2 | done 2026-09-27 | 97 | `runNativeTurn` | `src/agents/native/session/turn-loop.ts:72` | 484 | 42 / 18 | none |
 | A3 | done 2026-09-27 | 101 | `run` (ExecutionPlan) | `src/execution/story-orchestrator/execution-plan.ts:70` | 596 | 20 / 16 | none |
 | A4 | done 2026-09-27 | 107 | CLI `run` action | `bin/nax.ts:240` | 1948 -> 1609 (size-gated) | 37 / 21 | none |
-| A5 | todo | 93 | hop callback | `src/operations/build-hop-callback.ts:191` | 599 | 33 / 19 | yes |
+| A5 | done 2026-09-27 | 93 | hop callback | `src/operations/build-hop-callback.ts:191` | 599 | 33 / 19 | yes |
 | A6 | todo | 91 | `callOpDispatch` | `src/operations/call.ts:80` | 591 | 33 / 17 | yes |
 | A7 | todo | 74 | `resolveCodingToolSupport` | `src/agents/coding-tool-support.ts:307` | 601 | 44 / 18 | yes |
 | A8 | todo | 127 | `pathsBranch` | `src/tools/policy.ts:429` | 601 | 26 / 16 | yes |
@@ -617,3 +617,104 @@ needing a split. The new lesson for CLI-action rows (B6 `displayFeatureDetails`,
 `generateCommand`): grep for source-text tests on the target file BEFORE extracting — if any
 pin a block, either keep that block inline or move the assertion to the sibling in the same
 commit.
+
+### 9.6 - 2026-09-27, A5 done - hop callback 93 -> 2 (one session)
+
+The Wave-A orchestrator §9.5 handed over, in the file it flagged as one line from the
+size gate. One session. All three A1/A3 pre-flight questions were answered BEFORE writing
+code, and one of them (the `_deps` seam) had the answer "yes, and it must not move".
+
+**The `_deps` seam exists here, unlike A2-A4.** `_buildHopCallbackDeps` (6 reassignable
+members; all four test files + `build-hop-callback-tier.test.ts` reassign its properties)
+stayed in `build-hop-callback.ts`, and the phases receive it BY REFERENCE as
+`input.deps`. That is enough: tests reassign the object's PROPERTIES between
+`buildHopCallback()` and invoking the closure, and every phase reads `deps.X` at call
+time. The A1 failure mode (importing the seam INTO the sibling, cycling back) was avoided
+the same way; the only thing the siblings import from `build-hop-callback.ts` is
+`import type` (erased at runtime, and `check-import-cycles` excludes type-only edges by
+its own design - verified in the script before relying on it). `check:import-cycles`
+stayed 0.
+
+**A2's two traps: one real, one clean.** `preAttemptGitRefPromise` + `priorHopStartedAt`
+are closure-scoped ACROSS closure invocations, and `composeHopPrompt` mutates both - so
+they became one `HopClosureState` created once in the factory and mutated IN PLACE
+(A2's rule). No throw crosses a state boundary: the only intentional throws live inside
+`dispatchHopTurn`, which owns its own `timedOut` local across its try/catch/finally. No
+closure set up once in setup and mutated across iterations (the `SpinFlags` shape) exists
+- `send`/`openFresh` are created and consumed within a single invocation.
+
+**`endpoint` was a closure side effect; now it is a return value.** The original assigned
+a closure-scoped `endpoint` variable inside `openFresh` that only the success return ever
+read - and it stays undefined exactly when a stale-retry reuses a warm handle.
+`openFresh`/`acquireSessionHandle` now return `{ handle, endpoint }`, which makes the
+"defined only when a session was opened" rule explicit (and testable - see below).
+
+**Characterisation first** (own commit `test: characterise hop callback unpinned branches
+before complexity drain`, 9 tests, green against the unrefactored closure): the
+`CODING_TOOL_ROOT_MISSING` -> failed-AgentResult conversion (#1794), the rebuild-manifest
+write's three arms (happy payload / no rebuildInfo / throwing swallow), timedOut-
+overrides-keepOpen in the finally, and the `endpoint`/`dispatched` fields the fallback
+loop reads (nax#1965 / US-001). None of the four was pinned anywhere in the three mirror
+files or the integration suites. Two ratchet encounters along the way, both worth knowing
+for future characterisation commits: (1) the pre-commit hook caught two genuine type
+errors (wrong `HopKind` import path; helper signature misuse) - it works, do not treat
+its failures as friction; (2) the test-escape-hatch ratchet FAILS when a NEW test file
+adds even one `as T` cast (looseCast grows). The fixture cast
+`as AgentRunOptions["modelDef"]` was removable outright (`ModelDef.provider` is a plain
+string) - fix the fixture, not the ratchet.
+
+**Technique:** the ~420-line closure became six named phases whose boundaries are the
+comment-block seams the original already had: `composeHopPrompt` (elapsed bookkeeping,
+once-only pre-attempt git-ref capture, swap rebuild + manifest write + handoff rewrite,
+timeout-retry composition) -> `resolveHopTooling` (pull-tool runtime, preamble,
+codingSupport with the #1794 early-return arm, diff-access substitution, interaction
+handler) -> `prepareHopSession` (session name, transcript owner, pinned-modelDef
+narrowing, `openSessionRequest`, `openFresh`) -> `acquireSessionHandle` (stale-retry
+reuse / cancelled / cache-miss) -> `recordSwapHandoff` -> `dispatchHopTurn` (send
+closure, hopBody, classifyThrownTurn, settleHopSession). `buildHopCallback` itself is now
+setup + a six-call sequence scoring 2.
+
+**Helper scores (first pass, all <= 20 - no second split, no baseline hand-edit):**
+`composeHopPrompt` 18, `resolveHopTooling` 15, `send` 12, `classifyThrownTurn` 7,
+`acquireSessionHandle` 6, `openSessionRequest` 6, `settleHopSession` 6, `dispatchHopTurn`
+4, `prepareHopSession` 4, `turnResultToAgentResult` 3, `recordSwapHandoff` 3;
+`buildHopCallback` 2 and its closure 2. Consistent with A1/A3/A4: phases split cleanly on
+the first pass once the seam map is right.
+
+**File-size gate, the split AGAIN:** `build-hop-callback.ts` 598 -> 197 (strictly
+smaller, as the gate demands). But the single sibling holding all six phases measured
+647 lines after `biome check --write` - over the 600 new-file cap, the FOURTH batch in a
+row to need an unplanned second file (A1, A3, A4, now A5). Split at the natural seam:
+`build-hop-callback-hop.ts` (479: compose/resolve/prepare/acquire/handoff + the shared
+`HopInvocation`/`HopTooling`/`HopOutcome`/`HopClosureState` types) and
+`build-hop-callback-dispatch.ts` (195: `dispatchHopTurn` + `classifyThrownTurn` +
+`settleHopSession`). Treat "one sibling file" as a hypothesis, never a plan: for a
+closure this size, budget two files from the start.
+
+**One lint nuance recorded because it will recur:** `noMisusedPromises` (nursery, error)
+fires on `maybePromise ? await maybePromise : undefined` in the NEW files but did not
+fire on the byte-identical shape inside the old closure - not reproducible in isolation
+(three probes of the exact original shape all fired). Rather than suppress, the check was
+restructured to a local + `!== undefined` comparison, semantically identical (a Promise
+object is always truthy) and shape-clean. Prefer that restructure over a biome-ignore;
+there is no precedent for suppressing this rule in `src/`.
+
+**Nothing else surprising.** 83 hop-callback unit tests green before and after; full
+suite green (all phases); `check:all` green (import-cycles 0, file-sizes green);
+`test:coverage` green with the below-floor count IMPROVING 2 -> 1 (new sibling files are
+well covered via the existing suites + characterisation file - the coverage baseline can
+be lowered at some future batch, not this one's job). `check:complexity:update` was a
+pure lower: 251 -> 250 functions, 217 -> 216 files (`build-hop-callback.ts` left the
+over-20 baseline entirely). One stale comment fixed in passing (`hop-endpoint.ts` header
+still claimed build-hop-callback.ts was at the hard limit).
+
+**For the next batch:** A6 `callOpDispatch` (`src/operations/call.ts:80`, 91, 591 lines,
+test: yes) is the next Wave-A orchestrator and a sibling of this file - it imports
+`buildHopCallback` from `./build-hop-callback`, whose public surface (barrel exports,
+`_buildHopCallbackDeps`, `BuildHopCallbackContext`) is unchanged by A5, so A6 starts
+clean. Pre-flight per this batch: call.ts HAS a `_callOpDeps` object with a
+`buildHopCallback` seam (check whether moving `callOpDispatch` forces that object to
+move - the A1 trap in reverse); check for closures/throws crossing the extraction
+boundary; 591 lines means the extraction CANNOT land in `call.ts` itself, and budget two
+sibling files. New lesson for any characterisation commit: new test files must not add
+`as T` casts (the looseCast ratchet counts per file).
