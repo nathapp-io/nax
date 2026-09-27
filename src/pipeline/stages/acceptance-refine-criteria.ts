@@ -24,6 +24,7 @@ import {
   type Operation,
 } from "@/operations";
 import type { UserStory } from "@/prd/types";
+import { errorMessage } from "@/utils/errors";
 import { storyAbsWorkdir } from "@/utils/path-frame";
 import type { PipelineContext } from "../types";
 
@@ -64,6 +65,7 @@ export async function refineAcceptanceCriteria(
   const maxConcurrency = ctx.config.acceptance.refinementConcurrency ?? 3;
   const perStory: RefinedCriterion[][] = new Array(stories.length);
   const fellBack: boolean[] = new Array(stories.length).fill(false);
+  const failureReasons: string[] = new Array(stories.length).fill("");
   const executing = new Set<Promise<void>>();
 
   for (let i = 0; i < stories.length; i++) {
@@ -89,8 +91,13 @@ export async function refineAcceptanceCriteria(
       .then((refined) => {
         perStory[i] = refined;
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         fellBack[i] = true;
+        // Keep the rejection cause: the run-level warn below is otherwise a
+        // bare list of story ids and diagnosing a fallback (empty output vs
+        // unusable JSON vs count mismatch vs transport error) would require
+        // reproducing the run.
+        failureReasons[i] = errorMessage(err);
         // `testable: true` is deliberate: runHardeningPass discards ACs marked
         // `testable === false`, which would silently drop the story's criteria.
         perStory[i] = story.acceptanceCriteria.map((c) => ({
@@ -113,11 +120,13 @@ export async function refineAcceptanceCriteria(
 
   await Promise.all(executing);
 
-  const fallbackStoryIds = stories.filter((_, i) => fellBack[i]).map((story) => story.id);
+  const failedIndexes = stories.map((_, i) => i).filter((i) => fellBack[i]);
+  const fallbackStoryIds = failedIndexes.map((i) => stories[i].id);
   if (fallbackStoryIds.length > 0) {
     getSafeLogger()?.warn("acceptance-setup", "AC refinement unusable after retries — using unrefined criteria", {
       storyId: fallbackStoryIds[0],
       storyIds: fallbackStoryIds,
+      failures: failedIndexes.map((i) => ({ storyId: stories[i].id, error: failureReasons[i] })),
     });
   }
 

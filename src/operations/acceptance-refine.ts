@@ -47,9 +47,10 @@ export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, Accept
     if (!output?.trim()) {
       throw new ParseValidationError("acceptance-refine: empty output");
     }
-    // Unusable output (non-JSON, or a non-array result) would otherwise be
-    // silently swapped for the unrefined criteria — throw so the op's retry
-    // budget runs and the caller falls back explicitly (US-003).
+    // Unusable output (non-JSON, a non-array result, or an array whose items
+    // carry no refinement) would otherwise be silently swapped for the
+    // unrefined criteria — throw so the op's retry budget runs and the caller
+    // falls back explicitly (US-003).
     if (refinementWouldFallback(output)) {
       throw new ParseValidationError("acceptance-refine: unusable refinement output");
     }

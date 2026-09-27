@@ -46,14 +46,17 @@ export function parseRefinementResponse(response: string, criteria: string[]): R
 /**
  * True when `parseRefinementResponse` would discard the agent's output and fall
  * back to the unrefined criteria — i.e. empty/whitespace response, output that
- * fails JSON extraction/parse, or a non-array result. An empty array `[]` is a
- * *successful* parse (returns `[]`), so it is NOT a fallback.
+ * fails JSON extraction/parse, a non-array result, or a non-empty array in
+ * which any item lacks a usable `refined` string (strings, numbers and nulls
+ * carry none, and a null item makes the parser throw and fall back wholesale).
+ * An empty array `[]` is a *successful* parse (returns `[]`), so it is NOT a
+ * fallback — the count check in the acceptance-refine op rejects it.
  *
  * Mirrors the fallback triggers in `parseRefinementResponse` above and lives
  * beside it so the two stay in sync. Used by the acceptance-refine op (#3B) to
- * log an accurate degradation warning for non-empty unparseable output. Note:
- * empty/whitespace output is handled upstream by the op's parse() — it throws
- * ParseValidationError to trigger a retry rather than falling back immediately.
+ * reject non-empty output it cannot use. Note: empty/whitespace output is
+ * handled upstream by the op's parse() — it throws ParseValidationError to
+ * trigger a retry rather than falling back immediately.
  */
 export function refinementWouldFallback(response: string): boolean {
   if (!response?.trim()) return true;
@@ -61,10 +64,24 @@ export function refinementWouldFallback(response: string): boolean {
     const fromFence = extractJsonFromMarkdown(response);
     const cleaned = stripTrailingCommas(fromFence !== response ? fromFence : response);
     const parsed = recoverJsonArray(cleaned) ?? JSON.parse(cleaned);
-    return !Array.isArray(parsed);
+    if (!Array.isArray(parsed)) return true;
+    return parsed.length > 0 && !parsed.every(isRefinementItem);
   } catch {
     return true;
   }
+}
+
+/**
+ * True when a parsed array item carries a refinement the parser can actually
+ * use. `parseRefinementResponse` substitutes the unrefined criterion for any
+ * item without a non-empty `refined` string — and throws, falling back for the
+ * whole array, when an item is not an object at all — so such an item is not
+ * evidence that the agent produced output worth keeping.
+ */
+function isRefinementItem(item: unknown): boolean {
+  if (typeof item !== "object" || item === null) return false;
+  const refined = (item as { refined?: unknown }).refined;
+  return typeof refined === "string" && refined.length > 0;
 }
 
 /**
