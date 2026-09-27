@@ -3,7 +3,7 @@
   "feature": "plan-prd-fidelity",
   "branchName": "feat/plan-prd-fidelity",
   "createdAt": "2026-09-18T00:00:00.000Z",
-  "updatedAt": "2026-09-27T10:11:35.314Z",
+  "updatedAt": "2026-09-27T10:53:55.647Z",
   "userStories": [
     {
       "id": "US-001",
@@ -115,14 +115,23 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "toAgent": "native",
+          "reason": "Rectification exhausted: none.",
+          "timestamp": "2026-09-27T10:53:53.607Z"
+        }
+      ],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "New fenced Markdown extraction and ordered cross-field validation integrate with write-time error and two strategy recovery paths.",
         "initialComplexity": "complex",
-        "modelTier": "balanced",
-        "initialModelTier": "balanced"
+        "modelTier": "powerful",
+        "initialModelTier": "balanced",
+        "agent": "native"
       },
       "contextFiles": [
         "src/plan/strategies/persist-prd.ts",
@@ -141,8 +150,19 @@
         }
       ],
       "workdirSource": "defaulted",
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted: none."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced: Rectification exhausted: none.",
+          "cost": 0.48834284999999994,
+          "timestamp": "2026-09-27T10:53:53.607Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "0fc63c86ddb2df6c066c79a5d5de6dbb87bb338e"
     },

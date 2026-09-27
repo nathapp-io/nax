@@ -153,6 +153,46 @@ Workdir: apps/api`);
     expect((structure.warnings[0]?.message ?? "").length).toBeGreaterThan(0);
   });
 
+  test("US-002: unions the dependency lists one story states", () => {
+    const spec = specOf(`### US-003 — Lib
+
+- Depends on: US-001
+
+- Depends on: US-004 and US-002`);
+
+    // One story, two statements: a later statement that only names one more
+    // dependency must not be read as replacing what the story already said.
+    expect(story(extractSpecStructure(spec), "US-003")?.dependsOn).toEqual(["US-001", "US-004", "US-002"]);
+  });
+
+  test("US-002: reads the dependency keyword, its ids and its none keyword case-insensitively", () => {
+    const spec = specOf(`### US-001 — Core
+
+- depends on us-001
+
+### US-002 — API
+
+No Dependencies.`);
+
+    const structure = extractSpecStructure(spec);
+
+    // A lowercase id is normalised, and the ids reach the PRD uppercase, so
+    // comparing against `US-001` is only possible if the read is case-blind.
+    expect(story(structure, "US-001")?.dependsOn).toEqual(["US-001"]);
+    expect(story(structure, "US-002")?.dependsOn).toEqual([]);
+  });
+
+  test("US-002: attributes a statement above every story declaration to no story", () => {
+    const spec = specOf(`Workdir: apps/api
+
+### US-001 — Core`);
+
+    // Attribution is to the nearest PRECEDING declaring line. With none above
+    // it, the statement belongs to nothing -- reading it onto US-001 would
+    // enforce a workdir the spec never stated for that story.
+    expect(extractSpecStructure(spec).stories).toEqual([{ id: "US-001" }]);
+  });
+
   test("AC23: a none statement together with an id list warns and leaves dependsOn undefined", () => {
     const spec = specOf(`### US-001 — Core
 
@@ -289,6 +329,45 @@ Prose only.
     // Positive control: an unstated workdir is tolerated, a different one is not.
     const differing = makePRD({ userStories: [makeStory({ id: "US-004", workdir: "packages/lib" })] });
     expect(findSpecStructureViolations(differing, spec).map((v) => v.kind)).toEqual(["workdir-mismatch"]);
+  });
+
+  test("AC10 boundary: compares both workdirs after normalisation, so spelling alone is not a mismatch", () => {
+    const spec = specOf(`### US-004 — API
+
+- Workdir: apps/api/`);
+    // The same package spelled differently on each side: a trailing separator
+    // and a leading `./` are normalisation, not a divergence.
+    const prd = makePRD({ userStories: [makeStory({ id: "US-004", workdir: "./apps/api" })] });
+
+    expect(findSpecStructureViolations(prd, spec)).toEqual([]);
+    // Positive control: the same comparison on a genuinely different package is
+    // still reported, so the empty result above is normalisation and not a
+    // comparison that never fires.
+    const other = makePRD({ userStories: [makeStory({ id: "US-004", workdir: "packages/lib" })] });
+    expect(findSpecStructureViolations(other, spec).map((v) => v.kind)).toEqual(["workdir-mismatch"]);
+  });
+
+  test("US-002: returns every workdir-mismatch before every dependencies-mismatch", () => {
+    const spec = specOf(`### US-001 — Core
+
+- Depends on: US-002
+
+### US-002 — API
+
+- Workdir: apps/api`);
+    const prd = makePRD({
+      userStories: [makeStory({ id: "US-001" }), makeStory({ id: "US-002", workdir: "packages/lib" })],
+    });
+
+    // The kinds are enumerated one after another, so the workdir mismatches are
+    // the whole third group and the dependency mismatches the whole fourth:
+    // US-002's workdir is reported before US-001's dependencies, not after it.
+    // The refusal message lists these lines in order, so an interleaved result
+    // reorders the list the operator reads.
+    expect(findSpecStructureViolations(prd, spec)).toEqual([
+      { kind: "workdir-mismatch", storyId: "US-002", expected: "apps/api", actual: "packages/lib" },
+      { kind: "dependencies-mismatch", storyId: "US-001", expected: ["US-002"], actual: [] },
+    ]);
   });
 
   test("AC12: reports a dependency set that differs from the spec's list", () => {
