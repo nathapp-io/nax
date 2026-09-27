@@ -1,38 +1,62 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { buildStrictConfig, compareToBaseline, parseScores, tallyByFile } from "@scripts/check-complexity";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 const diag = (path: string, score: number) => ({
+  severity: "error",
   category: "lint/complexity/noExcessiveCognitiveComplexity",
   message: `Excessive complexity of ${score} detected (max: 20).`,
   location: { path },
 });
 
 describe("parseScores", () => {
-  test("extracts one score per complexity diagnostic", () => {
-    const report = { diagnostics: [diag("src/a.ts", 42), diag("src/b.ts", 21)] };
+  const report = (diagnostics: object[], errors = diagnostics.length) => ({ summary: { errors }, diagnostics });
 
-    expect(parseScores(report)).toEqual([
+  test("extracts one score per complexity diagnostic", () => {
+    expect(parseScores(report([diag("src/a.ts", 42), diag("src/b.ts", 21)]))).toEqual([
       { file: "src/a.ts", score: 42 },
       { file: "src/b.ts", score: 21 },
     ]);
   });
 
-  test("ignores diagnostics from other rules", () => {
-    const report = { diagnostics: [{ category: "lint/suspicious/noConsole", message: "x", location: { path: "a" } }] };
-
-    expect(parseScores(report)).toEqual([]);
-  });
-
   test("throws when a complexity message no longer carries a score, instead of passing silently", () => {
-    const report = {
-      diagnostics: [{ ...diag("src/a.ts", 1), message: "Cognitive complexity too high." }],
-    };
+    const bad = { ...diag("src/a.ts", 1), message: "Cognitive complexity too high." };
 
-    expect(() => parseScores(report)).toThrow(/score/);
+    expect(() => parseScores(report([bad]))).toThrow(/score/);
   });
 
   test("throws when the report has no diagnostics array", () => {
-    expect(() => parseScores({})).toThrow(/diagnostics/);
+    expect(() => parseScores({ summary: { errors: 0 } })).toThrow(/diagnostics/);
+  });
+
+  test("ignores non-error notices from other categories", () => {
+    const notice = { severity: "information", category: "deserialize", message: "recommended is deprecated" };
+
+    expect(parseScores(report([diag("src/a.ts", 42), notice], 1))).toEqual([{ file: "src/a.ts", score: 42 }]);
+  });
+
+  test("throws when the report has no summary to confirm the run", () => {
+    expect(() => parseScores({ diagnostics: [] })).toThrow(/summary/);
+  });
+
+  // A file biome could not parse or read yields a non-complexity error and no
+  // complexity findings for that file; reading only the complexity rows would
+  // under-count and could let a new violation through.
+  test("throws when biome reported errors other than complexity findings", () => {
+    const parseError = {
+      severity: "error",
+      category: "parse",
+      message: "Expected an expression",
+      location: { path: "src/x.ts" },
+    };
+
+    expect(() => parseScores(report([diag("src/a.ts", 42), parseError]))).toThrow(/parse/);
+  });
+
+  test("throws when the summary counts more errors than the diagnostics it printed", () => {
+    expect(() => parseScores(report([diag("src/a.ts", 42)], 3))).toThrow(/3 errors/);
   });
 });
 
@@ -106,4 +130,79 @@ describe("buildStrictConfig", () => {
       complexity: { noExcessiveCognitiveComplexity: { level: "error", options: { maxAllowedComplexity: 20 } } },
     });
   });
+});
+
+/**
+ * End to end: the real script against the real tree, with a fixture baseline
+ * derived from the committed one. Pins the exit codes and the refusal to raise,
+ * which the pure functions above cannot see.
+ */
+describe("check-complexity script", () => {
+  const REPO = join(import.meta.dir, "..", "..", "..");
+  const SCRIPT = join(REPO, "scripts", "check-complexity.ts");
+  const committed: { byFile: Record<string, number[]> } = JSON.parse(
+    readFileSync(join(REPO, "scripts", "baselines", "complexity-baseline.json"), "utf8"),
+  );
+  const [probeFile, probeScores] = Object.entries(committed.byFile)[0] ?? ["", []];
+  const worst = probeScores[0] ?? 0;
+  let dir: string;
+
+  beforeAll(() => {
+    dir = makeTempDir();
+  });
+  afterAll(() => cleanupTempDir(dir));
+
+  /** Writes a baseline where `probeFile`'s worst score is replaced by `score`. */
+  function fixture(name: string, score: number): string {
+    const path = join(dir, name);
+    const byFile = { ...committed.byFile, [probeFile]: [score, ...probeScores.slice(1)] };
+    writeFileSync(path, JSON.stringify({ ...committed, byFile }));
+    return path;
+  }
+
+  async function run(...args: string[]) {
+    const proc = Bun.spawn(["bun", SCRIPT, ...args], { cwd: REPO, stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    return { exitCode: await proc.exited, stdout, stderr };
+  }
+
+  test("passes against a baseline that matches the tree", async () => {
+    const result = await run(`--baseline=${fixture("match.json", worst)}`);
+
+    expect(result.stderr).toBe("");
+    expect(result.exitCode).toBe(0);
+  }, 30_000);
+
+  test("fails when a function scores higher than its baseline", async () => {
+    const result = await run(`--baseline=${fixture("grown.json", worst - 1)}`);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("ratchet breached");
+    expect(result.stderr).toContain(probeFile);
+  }, 30_000);
+
+  test("fails when the baseline is looser than the tree, so the slack cannot be re-spent", async () => {
+    const result = await run(`--baseline=${fixture("stale.json", worst + 1)}`);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("baseline is stale");
+  }, 30_000);
+
+  test("--update-baseline refuses to raise a baseline and leaves the file untouched", async () => {
+    const path = fixture("refuse.json", worst - 1);
+    const before = readFileSync(path, "utf8");
+
+    const result = await run(`--baseline=${path}`, "--update-baseline");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("only ever goes down");
+    expect(readFileSync(path, "utf8")).toBe(before);
+  }, 30_000);
+
+  test("fails when the baseline file is missing", async () => {
+    const result = await run(`--baseline=${join(dir, "absent.json")}`);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("missing or unreadable");
+  }, 30_000);
 });

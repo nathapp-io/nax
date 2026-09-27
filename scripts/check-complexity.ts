@@ -21,6 +21,11 @@
  *   - A baselined file that improved MUST be lowered, so the slack cannot be
  *     re-spent by a later change.
  *
+ * Known blind spot, accepted for line-independence: scores are compared by
+ * rank, not by function identity. If a file's baselined function is fixed and
+ * a different new function lands on exactly the same score, the file reads as
+ * unchanged. Any other combination is caught.
+ *
  * `--update-baseline` only ever lowers: it refuses while any file is new or
  * grown. Raising the baseline is a deliberate hand edit, visible in review.
  *
@@ -31,6 +36,7 @@
  *   bun scripts/check-complexity.ts                   # check (CI mode)
  *   bun scripts/check-complexity.ts --update-baseline # lower the baseline after a refactor
  *   bun scripts/check-complexity.ts --list            # print every over-limit function
+ *   --baseline=<path>                                 # use another baseline file (tests)
  *
  * Exit codes:
  *   0 — every file is within its baseline
@@ -42,7 +48,7 @@ import { join } from "node:path";
 import { byCodePoint } from "../src/utils/sort";
 
 const ROOT = join(import.meta.dir, "..");
-const BASELINE_FILE = join(import.meta.dir, "baselines", "complexity-baseline.json");
+const DEFAULT_BASELINE_FILE = join(import.meta.dir, "baselines", "complexity-baseline.json");
 const RULE = "complexity/noExcessiveCognitiveComplexity";
 const SCAN_DIRS = ["src/", "bin/", "test/", "scripts/"];
 
@@ -63,26 +69,54 @@ export interface Comparison {
 }
 
 interface Diagnostic {
+  severity?: string;
   category?: string;
   message?: string;
   location?: { path?: string };
 }
 
+interface BiomeReport {
+  summary?: { errors?: number };
+  diagnostics?: Diagnostic[];
+}
+
 const SCORE_RE = /complexity of (\d+)/;
 
-export function parseScores(report: { diagnostics?: Diagnostic[] }): Score[] {
+function readScore(d: Diagnostic): Score {
+  const match = SCORE_RE.exec(d.message ?? "");
+  if (!match || !d.location?.path) {
+    throw new Error(`cannot read a complexity score from biome diagnostic: ${JSON.stringify(d)}`);
+  }
+  return { file: d.location.path, score: Number(match[1]) };
+}
+
+/**
+ * Reads the complexity scores, and refuses a report it cannot vouch for.
+ *
+ * A file biome fails to parse or read produces an error of another category and
+ * no complexity findings, so trusting only the complexity rows would under-count
+ * and could let a new violation through. Every error in the summary must be a
+ * complexity finding this function actually read.
+ */
+export function parseScores(report: BiomeReport): Score[] {
   if (!Array.isArray(report.diagnostics)) {
     throw new Error("biome report has no diagnostics array — reporter format changed?");
   }
-  return report.diagnostics
-    .filter((d) => d.category === `lint/${RULE}`)
-    .map((d) => {
-      const match = SCORE_RE.exec(d.message ?? "");
-      if (!match || !d.location?.path) {
-        throw new Error(`cannot read a complexity score from biome diagnostic: ${JSON.stringify(d)}`);
-      }
-      return { file: d.location.path, score: Number(match[1]) };
-    });
+  if (typeof report.summary?.errors !== "number") {
+    throw new Error("biome report has no summary error count to confirm the run");
+  }
+  const errors = report.diagnostics.filter((d) => d.severity === "error");
+  const foreign = errors.filter((d) => d.category !== `lint/${RULE}`);
+  if (foreign.length > 0) {
+    const first = foreign[0];
+    throw new Error(
+      `biome reported ${foreign.length} non-complexity error(s), first: ${first?.category} ${first?.message}`,
+    );
+  }
+  if (report.summary.errors !== errors.length) {
+    throw new Error(`biome summary counts ${report.summary.errors} errors but printed ${errors.length}`);
+  }
+  return errors.map(readScore);
 }
 
 export function tallyByFile(scores: Score[]): ScoresByFile {
@@ -162,7 +196,8 @@ function runBiome(): Score[] {
       { cwd: ROOT, stdout: "pipe", stderr: "pipe" },
     );
     const stdout = proc.stdout.toString().trim();
-    if (!stdout.startsWith("{")) {
+    // 0 = no findings, 1 = findings. Anything else (a crash, a signal) is not a result.
+    if ((proc.exitCode !== 0 && proc.exitCode !== 1) || !stdout.startsWith("{")) {
       throw new Error(`biome produced no JSON report (exit ${proc.exitCode}): ${proc.stderr.toString().trim()}`);
     }
     return parseScores(JSON.parse(stdout));
@@ -171,19 +206,19 @@ function runBiome(): Score[] {
   }
 }
 
-function loadBaseline(): ScoresByFile | null {
+function loadBaseline(path: string): ScoresByFile | null {
   try {
-    return (JSON.parse(readFileSync(BASELINE_FILE, "utf8")) as { byFile: ScoresByFile }).byFile;
+    return (JSON.parse(readFileSync(path, "utf8")) as { byFile: ScoresByFile }).byFile;
   } catch {
     return null;
   }
 }
 
 /** One line per file, so a refactor's baseline diff is one line per file it touched. */
-function saveBaseline(byFile: ScoresByFile) {
+function saveBaseline(path: string, byFile: ScoresByFile) {
   const rows = Object.entries(byFile).map(([file, scores]) => `    ${JSON.stringify(file)}: [${scores.join(", ")}]`);
   const header = `  "updatedAt": ${JSON.stringify(new Date().toISOString())},\n  "limit": ${STRICT_LIMIT},`;
-  writeFileSync(BASELINE_FILE, `{\n${header}\n  "byFile": {\n${rows.join(",\n")}\n  }\n}\n`);
+  writeFileSync(path, `{\n${header}\n  "byFile": {\n${rows.join(",\n")}\n  }\n}\n`);
 }
 
 function reportFailure(result: Comparison) {
@@ -209,6 +244,8 @@ function reportFailure(result: Comparison) {
 
 function main() {
   const args = process.argv.slice(2);
+  const baselineFile =
+    args.find((a) => a.startsWith("--baseline="))?.slice("--baseline=".length) ?? DEFAULT_BASELINE_FILE;
   const scores = runBiome();
   const current = tallyByFile(scores);
 
@@ -218,14 +255,14 @@ function main() {
     return;
   }
 
-  const baseline = loadBaseline();
+  const baseline = loadBaseline(baselineFile);
   if (!baseline) {
     if (args.includes("--init-baseline")) {
-      saveBaseline(current);
+      saveBaseline(baselineFile, current);
       console.log(`OK: baseline initialised with ${scores.length} functions in ${Object.keys(current).length} files.`);
       return;
     }
-    console.error(`ERROR: ${BASELINE_FILE} missing or unreadable.`);
+    console.error(`ERROR: ${baselineFile} missing or unreadable.`);
     process.exit(1);
   }
 
@@ -238,7 +275,7 @@ function main() {
       console.error("\nRefusing to update: the baseline only ever goes down.");
       process.exit(1);
     }
-    saveBaseline(current);
+    saveBaseline(baselineFile, current);
     console.log(`OK: baseline lowered to ${scores.length} functions in ${Object.keys(current).length} files.`);
     return;
   }
@@ -250,4 +287,11 @@ function main() {
   console.log(`OK: ${scores.length} baselined functions over ${STRICT_LIMIT} in ${Object.keys(current).length} files.`);
 }
 
-if (import.meta.main) main();
+if (import.meta.main) {
+  try {
+    main();
+  } catch (err) {
+    console.error(`ERROR: check-complexity could not measure: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
