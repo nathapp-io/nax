@@ -102,6 +102,46 @@ function unverifiedStampedStoryIds(prd: PRD): string[] {
     .map((story) => story.id);
 }
 
+/** How the refusal describes what became of the rejected draft. */
+interface DraftDisposition {
+  /** The phrase the refusal message uses to say where the draft is. */
+  readonly phrase: string;
+  /** Set when the move was attempted and failed — carried as the refusal's cause. */
+  readonly failure?: unknown;
+}
+
+/**
+ * Move the rejected draft aside, and say what happened to it.
+ *
+ * A rename is a filesystem call and it can fail — a read-only feature directory,
+ * a destination this process may not replace, a directory sitting in its place.
+ * The failure is REPORTED rather than allowed to escape: the divergence is the
+ * reason the plan is refused, and a raw `EACCES` thrown in place of the coded
+ * rejection tells the caller neither what diverged nor that a draft is still
+ * sitting on disk for the next read to recover as a plan.
+ */
+function moveDraftAside(outputPath: string): DraftDisposition {
+  const rejectedPath = join(dirname(outputPath), "prd.rejected.json");
+  if (!_persistPrdDeps.existsSync(outputPath)) {
+    return { phrase: `no draft was on disk at ${outputPath}` };
+  }
+
+  try {
+    _persistPrdDeps.renameSync(outputPath, rejectedPath);
+    return { phrase: `the draft was moved to ${rejectedPath}` };
+  } catch (err) {
+    getLogger().warn("plan", "the rejected PRD draft could not be moved aside", {
+      outputPath,
+      rejectedPath,
+      error: errorMessage(err),
+    });
+    return {
+      phrase: `the draft is still at ${outputPath} — it could not be moved to ${rejectedPath} (${errorMessage(err)})`,
+      failure: err,
+    };
+  }
+}
+
 /**
  * Enforce the spec's declared story structure (US-002), or refuse the write.
  *
@@ -118,7 +158,8 @@ function unverifiedStampedStoryIds(prd: PRD): string[] {
  *
  * The rejected draft is renamed aside BEFORE the throw: leaving `prd.json` on
  * disk is the shape every reader treats as a recoverable plan, so a refusal that
- * left it there would be recovered on the next read as success.
+ * left it there would be recovered on the next read as success. A rename that
+ * fails does not replace the refusal — see `moveDraftAside`.
  */
 function enforceSpecStructure(prd: PRD, specContent: string, outputPath: string): PRD {
   const structure = extractSpecStructure(specContent);
@@ -147,17 +188,13 @@ function enforceSpecStructure(prd: PRD, specContent: string, outputPath: string)
   const violations = findSpecStructureViolations(backfilled.prd, specContent);
   if (violations.length === 0) return backfilled.prd;
 
-  const rejectedPath = join(dirname(outputPath), "prd.rejected.json");
-  const draftOnDisk = _persistPrdDeps.existsSync(outputPath);
-  if (draftOnDisk) _persistPrdDeps.renameSync(outputPath, rejectedPath);
-
-  const where = draftOnDisk ? `the draft was moved to ${rejectedPath}` : `no draft was on disk at ${outputPath}`;
+  const rejected = moveDraftAside(outputPath);
   throw new NaxError(
-    `[plan] PRD does not match the spec's declared story structure — ${where}:\n${violations
+    `[plan] PRD does not match the spec's declared story structure — ${rejected.phrase}:\n${violations
       .map(formatSpecStructureViolation)
       .join("\n")}`,
     "PLAN_SPEC_STRUCTURE_VIOLATION",
-    { stage: "plan", violations },
+    { stage: "plan", violations, ...(rejected.failure !== undefined ? { cause: rejected.failure } : {}) },
   );
 }
 
