@@ -19,6 +19,8 @@ const SPEC = `# SPEC-x
 
 **US-001**: do a thing
 
+**US-002**: do another thing
+
 ### Modifies
 
 **US-001**

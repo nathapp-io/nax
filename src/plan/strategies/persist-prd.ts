@@ -21,13 +21,21 @@
  * deliberately NOT safe to re-run over a PRD that has started executing, so the
  * scope is what stops them rather than a fixed-point property of each.
  */
-import { existsSync as defaultExistsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync as defaultExistsSync, renameSync as defaultRenameSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { type AgentRoutingConfig, DEFAULT_AGENT_NAME, type ModelsConfig } from "@/config";
 import { discoverWorkspacePackages as defaultDiscoverWorkspacePackages } from "@/context/generator";
+import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import { applyPlanFidelity } from "@/operations";
-import { canonicalizePrdWorkdirs, findNonCanonicalDeclaredPaths } from "@/prd";
+import {
+  backfillSpecWorkdirs,
+  canonicalizePrdWorkdirs,
+  extractSpecStructure,
+  findNonCanonicalDeclaredPaths,
+  findSpecStructureViolations,
+  formatSpecStructureViolation,
+} from "@/prd";
 import type { PRD } from "@/prd/types";
 import { errorMessage } from "@/utils/errors";
 import { finalizePrdRouting } from "./finalize-routing";
@@ -39,6 +47,12 @@ import type { PlanModeContext } from "./types";
  */
 export const _persistPrdDeps = {
   existsSync: (path: string): boolean => defaultExistsSync(path),
+  /**
+   * Moves a rejected draft aside (US-002). The structure check renames
+   * `prd.json` to `prd.rejected.json` before refusing the plan, so the draft the
+   * agent wrote is not mistaken for a recoverable plan on the next read.
+   */
+  renameSync: (from: string, to: string): void => defaultRenameSync(from, to),
   discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => defaultDiscoverWorkspacePackages(repoRoot),
 };
 
@@ -67,6 +81,124 @@ export interface PersistPrdArgs {
 }
 
 /**
+ * Ids of the stories whose frame stamp a skipped canonicalization pass leaves
+ * unverified (US-001): every story that already carries a `workdirSource` and
+ * declares at least one path.
+ *
+ * Only these are exposed to the hazard. The stamp is what `resolveScopeFiles`
+ * reads to decide that a declared path needs no runtime re-frame, and the
+ * write-time validator cannot stand in for the skipped pass -- it is spelling-only
+ * by design, so a bare package-relative path on a stamped story passes it. A
+ * story that carries no stamp keeps the legacy runtime re-frame either way, so
+ * it needs no mention here.
+ */
+function unverifiedStampedStoryIds(prd: PRD): string[] {
+  return prd.userStories
+    .filter(
+      (story) =>
+        story.workdirSource !== undefined &&
+        (story.contextFiles?.length ?? 0) + (story.expectedFiles?.length ?? 0) + (story.modifiedFiles?.length ?? 0) > 0,
+    )
+    .map((story) => story.id);
+}
+
+/** How the refusal describes what became of the rejected draft. */
+interface DraftDisposition {
+  /** The phrase the refusal message uses to say where the draft is. */
+  readonly phrase: string;
+  /** Set when the move was attempted and failed — carried as the refusal's cause. */
+  readonly failure?: unknown;
+}
+
+/**
+ * Move the rejected draft aside, and say what happened to it.
+ *
+ * A rename is a filesystem call and it can fail — a read-only feature directory,
+ * a destination this process may not replace, a directory sitting in its place.
+ * The failure is REPORTED rather than allowed to escape: the divergence is the
+ * reason the plan is refused, and a raw `EACCES` thrown in place of the coded
+ * rejection tells the caller neither what diverged nor that a draft is still
+ * sitting on disk for the next read to recover as a plan.
+ */
+function moveDraftAside(outputPath: string): DraftDisposition {
+  const rejectedPath = join(dirname(outputPath), "prd.rejected.json");
+  if (!_persistPrdDeps.existsSync(outputPath)) {
+    return { phrase: `no draft was on disk at ${outputPath}` };
+  }
+
+  try {
+    _persistPrdDeps.renameSync(outputPath, rejectedPath);
+    return { phrase: `the draft was moved to ${rejectedPath}` };
+  } catch (err) {
+    getLogger().warn("plan", "the rejected PRD draft could not be moved aside", {
+      outputPath,
+      rejectedPath,
+      error: errorMessage(err),
+    });
+    return {
+      phrase: `the draft is still at ${outputPath} — it could not be moved to ${rejectedPath} (${errorMessage(err)})`,
+      failure: err,
+    };
+  }
+}
+
+/**
+ * Enforce the spec's declared story structure (US-002), or refuse the write.
+ *
+ * The planner folds a spec story into another and drops its `### Modifies` entry
+ * — the only channel that authorises an implementer to update a test its own
+ * correct change breaks. Nothing downstream notices, and the run deadlocks
+ * against a red suite it may not touch. So the one moment the divergence is
+ * still cheap to report is here, before the PRD is written.
+ *
+ * A workdir the spec states and the planner omitted is not a divergence: it is
+ * filled here (and logged, because the PRD shape changes), and only then is the
+ * structure compared. A spec field the grammar could not read is logged and left
+ * unenforced rather than guessed at.
+ *
+ * The rejected draft is renamed aside BEFORE the throw: leaving `prd.json` on
+ * disk is the shape every reader treats as a recoverable plan, so a refusal that
+ * left it there would be recovered on the next read as success. A rename that
+ * fails does not replace the refusal — see `moveDraftAside`.
+ */
+function enforceSpecStructure(prd: PRD, specContent: string, outputPath: string): PRD {
+  const structure = extractSpecStructure(specContent);
+  for (const warning of structure.warnings) {
+    getLogger().warn("plan", "spec story structure could not be read — field not enforced", {
+      storyId: warning.storyId,
+      field: warning.field,
+      message: warning.message,
+    });
+  }
+
+  // Nothing declared in `## Stories` to compare against: the section is absent,
+  // or holds no story id (some specs declare theirs under Acceptance Criteria
+  // only). There is no divergence to report and nothing to fill in, so the PRD
+  // is written exactly as the planner produced it — planning such a spec is
+  // unchanged by this story.
+  if (structure.stories.length === 0) return prd;
+
+  const backfilled = backfillSpecWorkdirs(prd, structure);
+  if (backfilled.backfilled.length > 0) {
+    getLogger().warn("plan", "PRD stories had no workdir — filled from the spec's Workdir", {
+      storyIds: backfilled.backfilled,
+    });
+  }
+
+  const violations = findSpecStructureViolations(backfilled.prd, specContent);
+  if (violations.length === 0) return backfilled.prd;
+
+  const rejected = moveDraftAside(outputPath);
+  throw new NaxError(
+    `[plan] PRD does not match the spec's declared story structure — ${rejected.phrase}:\n${violations
+      .map(formatSpecStructureViolation)
+      .join("\n")}`,
+    "PLAN_SPEC_STRUCTURE_VIOLATION",
+    { stage: "plan", violations, ...(rejected.failure !== undefined ? { cause: rejected.failure } : {}) },
+  );
+}
+
+/**
  * Repair → canonicalize → finalize routing → write. Returns the path written.
  *
  * Context-free so callers that never build a `PlanModeContext`
@@ -88,11 +220,18 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
   // feature-level fields on a PRD that has started executing.
   const repaired = args.scope ? args.prd : applyPlanFidelity(args.prd, args.specContent, args.featureName);
 
+  // US-002: an unscoped write owns the whole PRD against the whole spec, so the
+  // spec's declared story structure is enforced here. A scoped write
+  // (`nax plan --decompose`) adds sub-stories the spec never declares, so it is
+  // not subject to this check.
+  const structured =
+    args.scope === undefined ? enforceSpecStructure(repaired, args.specContent, args.outputPath) : repaired;
+
   // nax#2067: decide each story's workdir and re-spell its declared paths into
   // the repo frame, while the repo is still in the state the planner described.
   // Degrades to the fidelity-repaired PRD rather than failing the plan: a PRD with
   // an underived workdir is the status quo, a lost plan is not.
-  let canonical = repaired;
+  let canonical = structured;
   try {
     const packages = await _persistPrdDeps.discoverWorkspacePackages(args.repoRoot);
     // nax#2080: a scoped write turns DERIVATION off as well as narrowing the story
@@ -100,11 +239,19 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     // once earlier stories have created files a story that legitimately defaulted at
     // plan time would silently acquire a package. A sub-story inherits its parent's
     // workdir (ADR-025), so there is nothing for derivation to decide.
-    const result = canonicalizePrdWorkdirs(repaired, args.repoRoot, packages, _persistPrdDeps.existsSync, {
+    const result = canonicalizePrdWorkdirs(structured, args.repoRoot, packages, _persistPrdDeps.existsSync, {
       only: args.scope,
       derive: args.scope === undefined,
     });
     canonical = result.prd;
+    // US-001: a re-spell is the one write-time decision that reads the
+    // filesystem, so it is reported. Silently prefixed, it is invisible: the
+    // author wrote a repo-rooted path and the PRD holds a package-rooted one.
+    if (result.respelled.length > 0) {
+      getLogger().warn("plan", "declared paths spelled package-relative were re-spelled into the repo frame", {
+        respelled: result.respelled,
+      });
+    }
     // nax#2067: the only point in `nax plan` where "this story will be root-scoped"
     // is known. Both consequences are named because both are silent at every later
     // stage -- plan output, run log, and the completed run's artifacts.
@@ -116,13 +263,34 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
       );
     }
   } catch (err) {
-    getLogger().warn("plan", "workdir canonicalization skipped", { error: errorMessage(err) });
+    // US-001: the frame of a declared path is decided by canonicalizePrdWorkdirs
+    // and nowhere else -- the validator below is spelling-only by design, since a
+    // bare package-relative path is indistinguishable from a repo-rooted one
+    // without the filesystem. A skipped pass therefore leaves every stamp already
+    // on a story unverified, and `resolveScopeFiles` trusts a stamp: it reads a
+    // stamped story's declared paths as written. A path this pass would have
+    // re-spelled (absent at the root, present under the package) then reaches the
+    // context stage in the package frame unannounced.
+    //
+    // Re-running the pass here is not a fix -- its own failure is what brought us
+    // here, and normalising the spelling of a path it would have written through
+    // would silence the warning below on exactly the legacy shape it reports.
+    // Withholding the stamp is worse: it would re-frame the correctly repo-rooted
+    // paths the stamp legitimises (US-001 AC18). So name the stories, and let the
+    // operator judge.
+    getLogger().warn(
+      "plan",
+      "workdir canonicalization skipped: declared paths on already-stamped stories are unverified and are read as written downstream",
+      { error: errorMessage(err), storyIds: unverifiedStampedStoryIds(structured) },
+    );
   }
 
   // nax#2125: a story THIS pass canonicalized (workdirSource defined) should have
-  // every declared path already in the repo frame. Nothing on the happy path can
-  // violate this -- canonicalizePrdWorkdirs reframes unconditionally -- so a
-  // violation means a caller bypassed the seam or a reframing missed a field.
+  // every declared path spelled canonically (US-001: spelling, not framing --
+  // a repo-rooted path outside the story's package is a designed case). Nothing
+  // on the happy path can violate this -- canonicalizePrdWorkdirs normalises the
+  // spelling of every path it writes -- so a violation means a caller bypassed
+  // the seam or a declared path was written through unnormalised.
   //
   // nax#2080: only inspect stories this pass actually canonicalized. canonicalizePrdWorkdirs
   // returns an out-of-`only` story by IDENTITY, and that story may carry a pre-PR3

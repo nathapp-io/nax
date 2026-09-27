@@ -6,7 +6,7 @@ import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { findMissingOutOfScope, findSpecDriftViolations, getExpectedFiles } from "../prd";
+import { extractSpecStructure, findMissingOutOfScope, findSpecDriftViolations, getExpectedFiles } from "../prd";
 import { validatePlanOutput } from "../prd/schema";
 import type { SpecDriftViolation } from "../prd/spec-drift";
 import type { ContextFileEntry, PRD, UserStory } from "../prd/types";
@@ -15,6 +15,7 @@ import { PlanPromptBuilder } from "../prompts";
 import type { SessionRole } from "../session/types";
 import { errorMessage } from "../utils/errors";
 import { applyPlanFidelity, warnOnSpecDrift } from "./plan-fidelity";
+import { specStructureSelfHealStep } from "./plan-structure-heal";
 import { makeSelfHealStep, runSelfHealChain, type SelfHealStep } from "./self-heal";
 import type { RunOperationWithHooks } from "./types";
 
@@ -387,18 +388,25 @@ export const planRefineOp: RunOperationWithHooks<PlanRefineInput, PRD, PlanConfi
   async hopBody(initialPrompt, ctx) {
     const builder = new PlanPromptBuilder();
     const specGuard = ctx.input.specGuard ?? false;
+    // A spec that pre-decomposes the feature makes its story ids and dependency
+    // graph binding, so the continuation's "remove unnecessary dependencies"
+    // rule must not invite the planner to re-shape them.
+    const bindingStructure = extractSpecStructure(ctx.input.specContent).stories.length > 0;
     const turn1 = await ctx.sendWithParseRetry(initialPrompt);
-    const turn2 = await ctx.send(builder.buildRefineContinuation(ctx.input.outputPath, specGuard));
+    const turn2 = await ctx.send(builder.buildRefineContinuation(ctx.input.outputPath, specGuard, bindingStructure));
 
     const seed: TurnResult = {
       ...turn2,
       estimatedCostUsd: (turn1.estimatedCostUsd ?? 0) + (turn2.estimatedCostUsd ?? 0),
     };
 
-    // Deterministic same-session self-heal: out-of-scope always; spec-drift only
-    // under specGuard. Each step issues at most one corrective turn; `verify`
-    // re-runs the same checks and warns if a repair still misses (the plan continues).
+    // Deterministic same-session self-heal: structure first (both downstream
+    // checks assume the PRD's story ids already match the spec's), then
+    // out-of-scope always, then spec-drift under specGuard. Each step issues at
+    // most one corrective turn; `verify` re-runs the same checks and warns if a
+    // repair still misses (the plan continues).
     const steps: SelfHealStep<PlanRefineInput>[] = [
+      specStructureSelfHealStep(builder, _planRefineDeps.readFile),
       outOfScopeSelfHealStep(builder),
       ...(specGuard ? [specDriftSelfHealStep(builder)] : []),
     ];

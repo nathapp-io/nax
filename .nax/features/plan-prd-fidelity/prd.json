@@ -1,0 +1,249 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "plan-prd-fidelity",
+  "branchName": "feat/plan-prd-fidelity",
+  "createdAt": "2026-09-18T00:00:00.000Z",
+  "updatedAt": "2026-09-27T11:57:44.992Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Repo-rooted declared paths stay as written",
+      "description": "**Goal** — Keep declared PRD paths in their repo-rooted frame, re-spelling only demonstrably package-relative inputs, and preserve legacy runtime scoping.\n\n**Motivation** — A `packages/lib` story that creates the repo-root file `docs/pipelines/report.pipeline.json` gets `expectedFiles: [\"packages/lib/docs/pipelines/report.pipeline.json\"]`. An `apps/api` story reading `packages/db/...` gets `apps/api/packages/db/...`, and at run time that surfaces as \"Relevant file not found\".\n\n**Approach** — `canonicalizeDeclaredPath(path, workdir, repoRoot, exists)`:\n\n1. `p = normalizeDeclaredPathSpelling(path)`: posix separators, strip leading `./` runs, strip trailing `/`, trim.\n2. If `normalizeWorkdir(workdir) === \".\"` or `isWithinPackage(p, workdir)`, return `{ path: p, respelled: false }`.\n3. If `exists(join(repoRoot, p))` is false **and** `exists(join(repoRoot, workdir, p))` is true, return `{ path: workdir + \"/\" + p, respelled: true }`.\n4. Otherwise return `{ path: p, respelled: false }`. This covers existing repo-root files, other packages' files, and paths that exist nowhere (files a story will create). When a path exists both at the root and under the package, the repo-rooted reading wins.\n\n`canonicalizePrdWorkdirs` applies this to `contextFiles` (string and object entries), `expectedFiles` and `modifiedFiles`. It collects each `respelled: true` result into `respelled`. `finalizeAndWritePrd` logs one warn per canonicalization pass when `respelled` is non-empty: message `\"declared paths spelled package-relative were re-spelled into the repo frame\"`, data `{ respelled }`.\n\n`findNonCanonicalDeclaredPaths` target rule: a path on a stamped story (`workdirSource` defined) is non-canonical exactly when `normalizeDeclaredPathSpelling(path) !== path`. It no longer flags a correct repo-rooted path outside the story's package. **Accepted tradeoff:** the check now catches spelling artifacts only (`./`, backslashes, a trailing `/`). A bare package-relative path such as `src/a.ts` on a `packages/lib` stamped story is indistinguishable from a repo-rooted `src/a.ts` without the filesystem, so it is no longer flagged. The existence-aware re-spell in `canonicalizePrdWorkdirs` is now the only place that catches a stray package-relative spelling.\n\n**Interface** — `canonicalizeDeclaredPath(path: string, workdir: string, repoRoot: string, exists: ExistsProbe): { path: string; respelled: boolean }`; `canonicalizePrdWorkdirs(...): { prd: PRD; defaulted: string[]; respelled: RespelledDeclaredPath[] }`; `export type RespelledDeclaredPath = { storyId: string; field: \"contextFiles\" | \"expectedFiles\" | \"modifiedFiles\"; from: string; to: string }`; `normalizeDeclaredPathSpelling(path: string): string`; `findNonCanonicalDeclaredPaths(prd: PRD): NonCanonicalDeclaredPath[]`; `resolveScopeFiles(ctx: PipelineContext): Promise<string[]>`. `toRepoFrame` remains unchanged; only legacy stories without `workdirSource` are re-framed by `resolveScopeFiles`.\n\n**Documentation** — Replace R3's rationale in `docs/adr/ADR-032-single-frame-repo-rooted-paths.md` with: *\"Declared paths are repo-rooted as written, including paths outside the story's package (R5 makes cross-package `modifiedFiles` a designed case). The write step normalises spelling only. It re-spells a path into the package only when the path is absent at the repo root and present under the package, and it reports every such re-spell.\"* Add an `Amended:` line to the header citing #2270. Append a dated note to `docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md` recording that the verification never exercised an out-of-package declared path. Fix the stale header comments in `src/utils/path-frame.ts` (the paragraph on `toRepoFrame`'s callers), `src/prd/workdir-canonical.ts` (`canonicalizeDeclaredPath`) and `src/pipeline/scope-files.ts` (which says declared sources arrive package-relative). Update the five obsolete expectation groups in `test/unit/prd/workdir-canonical.test.ts`, preserving all unrelated tests: (1) rewrite the `canonicalizeDeclaredPath` describe block for the four-argument signature: `src/new.ts` (absent everywhere) stays `src/new.ts`, `packages/application/x.ts` stays as written, and `src/a.ts` present only under the package becomes `packages/app/src/a.ts` with `respelled: true`; (2) change the absent `expectedFiles` `src/b.ts` and `modifiedFiles` `src/existing.ts` expectations to stay unprefixed while package-only existing context entries still acquire the prefix; (3) change the exact result keys to `[\"defaulted\", \"prd\", \"respelled\"]`; (4) use already repo-rooted `packages/app/src/a.ts`, `packages/app/src/new.ts`, `packages/app/src/b.ts` in the first disk-state-independence test, leaving the second unchanged; (5) change the four stamped-story noncanonical tests from bare `src/a.ts`-style examples to spelling-noncanonical `./packages/app/src/a.ts`-style paths. In `test/unit/plan/strategies/persist-prd-workdir.test.ts`, change the discovery-throws stamped-story context path and expected nonCanonical path from `src/a.ts` to `./src/a.ts`, retaining the warning and written-PRD assertions.\n\n**Scope** — In: path spelling, write-time re-spell report, stamped-versus-legacy runtime scoping, ADR/design notes, affected test fixtures. Out: spec-story extraction and enforcement (US-002); planner binding prompt and self-heal (US-003); Changing `toRepoFrame` or any of its package-scoped callers (`src/context/builder.ts`, `src/context/engine/scope-path-match.ts`). Making legacy PRDs (no `workdirSource`) self-heal; they keep today's runtime re-frame in `scope-files.ts`.",
+      "acceptanceCriteria": [
+        "[unit] When `canonicalizeDeclaredPath(\"docs/pipelines/report.pipeline.json\", \"packages/lib\", \"/repo\", exists)` is called and `exists` reports `/repo/docs/pipelines/report.pipeline.json` present, the result is `{ path: \"docs/pipelines/report.pipeline.json\", respelled: false }`.",
+        "[unit] When `canonicalizeDeclaredPath(\"docs/pipelines/report.pipeline.json\", \"packages/lib\", \"/repo\", exists)` is called and `exists` reports every path absent, the result is `{ path: \"docs/pipelines/report.pipeline.json\", respelled: false }` (a file the story will create stays repo-rooted).",
+        "[unit] When `canonicalizeDeclaredPath(\"packages/db/src/schema.ts\", \"apps/api\", \"/repo\", exists)` is called with `/repo/packages/db/src/schema.ts` present, the result path is `packages/db/src/schema.ts` and `respelled` is false.",
+        "[unit] When `canonicalizeDeclaredPath(\"src/a.ts\", \"packages/lib\", \"/repo\", exists)` is called with `/repo/packages/lib/src/a.ts` present and `/repo/src/a.ts` absent, the result is `{ path: \"packages/lib/src/a.ts\", respelled: true }`.",
+        "[unit] When `canonicalizeDeclaredPath(\"src/a.ts\", \"packages/lib\", \"/repo\", exists)` is called with both `/repo/src/a.ts` and `/repo/packages/lib/src/a.ts` present, the result is `{ path: \"src/a.ts\", respelled: false }`.",
+        "[unit] When `canonicalizeDeclaredPath(\"./packages/lib/src/a.ts/\", \"packages/lib\", \"/repo\", exists)` is called, the result path is `packages/lib/src/a.ts` and `respelled` is false, whatever `exists` reports.",
+        "[unit] When `canonicalizeDeclaredPath(\"src/a.ts\", \".\", \"/repo\", exists)` is called at the repo root, the result is `{ path: \"src/a.ts\", respelled: false }` and `exists` is never invoked.",
+        "[unit] When `canonicalizePrdWorkdirs` runs over a story with `workdir: \"packages/lib\"`, `expectedFiles: [\"docs/pipelines/report.pipeline.json\"]` and a probe reporting nothing present, the written story's `expectedFiles` equals `[\"docs/pipelines/report.pipeline.json\"]`.",
+        "[unit] When `canonicalizePrdWorkdirs` runs over a story with `workdir: \"apps/api\"` and `contextFiles: [\"packages/db/src/schema.ts\", { path: \"docs/design.md\", factId: \"F-1\" }]`, both existing at the repo root, the story's `contextFiles` equals the input unchanged, including the `factId` object.",
+        "[unit] When `canonicalizePrdWorkdirs` runs over a story with `workdir: \"packages/lib\"` and `modifiedFiles: [{ path: \"apps/api/tests/test_count.py\", reason: \"r\" }]`, existing at the repo root, the story's `modifiedFiles` equals `[{ path: \"apps/api/tests/test_count.py\", reason: \"r\" }]`.",
+        "[unit] When `canonicalizePrdWorkdirs` re-spells `src/a.ts` into `packages/lib/src/a.ts` on story `US-002`'s `contextFiles`, the returned `respelled` equals `[{ storyId: \"US-002\", field: \"contextFiles\", from: \"src/a.ts\", to: \"packages/lib/src/a.ts\" }]`.",
+        "[unit] When `canonicalizePrdWorkdirs` runs twice over its own output, the second result's stories equal the first's and the second `respelled` is empty (the rule is a fixed point).",
+        "[unit] When `normalizeDeclaredPathSpelling` receives the Windows-style spelling `.\\packages\\lib\\src\\a.ts\\` (leading `.\\`, backslash separators, trailing backslash), it returns `packages/lib/src/a.ts`, and it returns an already-normalised `packages/lib/src/a.ts` unchanged.",
+        "[unit] When `findNonCanonicalDeclaredPaths` inspects a stamped story (`workdirSource: \"stated\"`, `workdir: \"packages/lib\"`) whose `contextFiles` is `[\"docs/x.md\"]` and whose `modifiedFiles` path is `apps/api/tests/t.py`, it returns an empty array.",
+        "[unit] When `findNonCanonicalDeclaredPaths` inspects a stamped story whose `expectedFiles` is `[\"./packages/lib/src/new.ts\"]`, it returns `[{ storyId, field: \"expectedFiles\", path: \"./packages/lib/src/new.ts\" }]`.",
+        "[integration] When `finalizeAndWritePrd` writes a PRD whose `packages/lib` story declares `src/a.ts` (present only under `/repo/packages/lib`) with `_persistPrdDeps.discoverWorkspacePackages` returning `[\"packages/lib\"]`, the plan logger records one warn whose message is `declared paths spelled package-relative were re-spelled into the repo frame` and whose data `respelled` names that entry, and the written PRD carries `packages/lib/src/a.ts`.",
+        "[integration] When `finalizeAndWritePrd` writes a PRD whose `packages/lib` story declares `expectedFiles: [\"docs/pipelines/report.pipeline.json\"]` (absent everywhere), the written PRD keeps that path unchanged and no `outside the repo frame` warning is logged.",
+        "[unit] When `resolveScopeFiles` runs for a story with `workdirSource: \"stated\"`, `workdir: \"packages/lib\"` and `contextFiles: [\"docs/x.md\"]`, with the diff collector returning no files, the result is `[\"docs/x.md\"]`.",
+        "[unit] When `resolveScopeFiles` runs for a legacy story (no `workdirSource`) with `workdir: \"packages/app\"` and `contextFiles: [\"src/declared.ts\"]`, with the diff collector returning no files, the result is `[\"packages/app/src/declared.ts\"]` (legacy re-frame preserved).",
+        "[unit] When `canonicalizePrdWorkdirs` runs with `opts.only` set to one story id, a story outside the set is returned by identity, and its package-relative paths are neither re-spelled nor reported in `respelled`."
+      ],
+      "tags": [
+        "feature",
+        "prd",
+        "path-frame"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Path-frame behavior changes across PRD canonicalization, persistence, runtime scoping, and compatibility fixtures; ambiguous paths need precedence and legacy safeguards.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prd/workdir-canonical.ts",
+        "src/plan/strategies/persist-prd.ts",
+        "src/pipeline/scope-files.ts",
+        "src/utils/path-frame.ts",
+        "docs/adr/ADR-032-single-frame-repo-rooted-paths.md"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/prd/workdir-canonical.test.ts",
+          "reason": "five groups of tests pin the old always-prefix rule; update each and keep every other test in the file as it is. (1) The canonicalizeDeclaredPath describe block calls the two-argument signature and expects \"src/new.ts\" and \"packages/application/x.ts\" to gain the \"packages/app/\" prefix: rewrite it for the four-argument signature, where \"src/new.ts\" (absent everywhere) stays \"src/new.ts\", \"packages/application/x.ts\" stays as written, and \"src/a.ts\" present only under the package becomes \"packages/app/src/a.ts\" with respelled true. (2) In the canonicalizePrdWorkdirs block, \"derives a workdir and re-spells the story's declared paths\" expects expectedFiles \"packages/app/src/b.ts\" and \"reframes modifiedFiles the same way as contextFiles\" expects \"packages/app/src/existing.ts\"; both paths exist nowhere in their probes, so change those two expectations to the unprefixed paths, while contextFiles entries that exist only under the package keep the prefixed expectation. (3) \"the result carries exactly { prd, defaulted }\" expects the keys [\"defaulted\", \"prd\"]; the new invariant is [\"defaulted\", \"prd\", \"respelled\"]. (4) The first test of the describe block \"frame is independent of disk state (single-frame redesign, design §6)\" feeds package-relative paths across two fake-fs states; change its story paths to the repo-rooted spellings \"packages/app/src/a.ts\", \"packages/app/src/new.ts\" and \"packages/app/src/b.ts\" so the byte-identical assertion holds as the new invariant for repo-rooted input, and keep the second test unchanged. (5) The findNonCanonicalDeclaredPaths tests \"flags a contextFiles entry that is not repo-rooted…\", \"flags an expectedFiles entry…\", \"flags a modifiedFiles entry…\" and \"flags a non-string contextFiles entry…\" use a bare \"src/a.ts\"-style example, which the new rule does not flag; change each example to a spelling-non-canonical path such as \"./packages/app/src/a.ts\", keeping the invariant that a spelling the normaliser would change is still flagged on a stamped story."
+        },
+        {
+          "path": "test/unit/plan/strategies/persist-prd-workdir.test.ts",
+          "reason": "\"warns and still writes when packaging discovery throws and a pre-stamped story stays package-relative\" expects a non-canonical warning for the path \"src/a.ts\", which the new rule does not flag. Change the stamped story's contextFiles path and the expected nonCanonical entry's path to \"./src/a.ts\". The invariant is that the warning still fires, and the PRD is still written, when discovery throws and a stamped story carries a non-canonical spelling."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "06c6c4be0c0b25fcd0c99fa0006ac1c9a3f71c06"
+    },
+    {
+      "id": "US-002",
+      "title": "Enforce spec story structure at PRD persistence",
+      "description": "**Goal** — Extract the spec's declared ids, workdirs and dependencies and reject an unscoped PRD that diverges after backfilling missing workdirs.\n\n**Motivation** — A spec with 5 stories, each carrying a single `Workdir` and `Depends on`, planned to 4 stories. US-004 (`apps/api`, three integration ACs, no production change) was folded into US-003 (`packages/lib`). The `### Modifies` entry authorising the api count test was dropped as an orphan with a warn log, so the one existing test the feature legitimately breaks had no authorisation anywhere.\n\n**Interface** — New pure module `src/prd/spec-structure.ts`:\n```typescript\nexport interface SpecStoryStructure {\n  readonly id: string;              // \"US-004\", uppercase\n  readonly workdir?: string;        // undefined = the spec states none\n  readonly dependsOn?: readonly string[]; // undefined = the spec states nothing; [] = \"no dependencies\"\n}\nexport interface SpecStructureWarning {\n  readonly storyId: string;\n  readonly field: \"workdir\" | \"dependsOn\";\n  readonly message: string;\n}\nexport interface SpecStructure {\n  readonly stories: readonly SpecStoryStructure[]; // spec document order\n  readonly warnings: readonly SpecStructureWarning[];\n}\nexport type SpecStructureViolation =\n  | { readonly kind: \"missing-story\"; readonly storyId: string }\n  | { readonly kind: \"extra-story\"; readonly storyId: string }\n  | { readonly kind: \"workdir-mismatch\"; readonly storyId: string; readonly expected: string; readonly actual: string }\n  | { readonly kind: \"dependencies-mismatch\"; readonly storyId: string; readonly expected: readonly string[]; readonly actual: readonly string[] }\n  | { readonly kind: \"orphan-modifies\"; readonly storyId: string | null; readonly path: string };\n\nexport function declaredStoryIds(lines: readonly string[]): string[];\nexport function extractSpecStructure(specContent: string): SpecStructure;\nexport function backfillSpecWorkdirs(prd: PRD, structure: SpecStructure): { prd: PRD; backfilled: string[] };\nexport function findSpecStructureViolations(prd: PRD, specContent: string): SpecStructureViolation[];\nexport function formatSpecStructureViolation(violation: SpecStructureViolation): string;\n```\n\n**Approach** — Extraction grammar. Everything is scoped to the `## Stories` section and skips fenced lines.\n\n- **Story ids:** `declaredStoryIds`, moved unchanged from `spec-lint.ts`.\n- **Attribution:** a `Workdir` or `Depends on` statement belongs to the story id declared on the same line. If none is declared there, it belongs to the nearest preceding line in `## Stories` that declares one. A declaring line is a heading `^#{1,6}\\s+US-\\d+`, a bold lead-in `^\\s*\\*\\*\\s*US-\\d+`, or a bullet/numbered item whose first bold token is a story id (`^\\s*(?:\\d+\\.|[-*])\\s+\\*\\*\\s*US-\\d+`).\n- **Workdir** is read from story-declaring lines, their prose, and the `### Context Files` / `### Creates` subsections. Two forms: `Workdir:` followed by a path, or `Workdir` followed by a backticked path. The path is the first run of characters that are not whitespace or backticks, with trailing `.` `,` `;` `)` `_` stripped. Two different values for one story give a `SpecStructureWarning`, and the story's `workdir` stays `undefined`.\n- **Depends on** is read from story-declaring lines and their prose, but **not** from the `### Modifies`, `### Seams`, `### Context Files` or `### Creates` subsections, whose free-text reasons may mention another story. Matching is case-insensitive.\n  - `no dependencies`, or `depends on` followed (after optional `:`, `*`, `_`, `(` and whitespace) by `none`, gives `[]`.\n  - `depends on` followed the same way by one or more `US-\\d+` ids, separated by `,`, `and`, `&` or whitespace, gives those ids. The list ends at the first token that is neither an id nor a separator.\n  - Several id lists for one story are unioned. A `none` together with an id list for the same story gives a warning, and `dependsOn` stays `undefined`.\n\nThis grammar covers every phrasing in the repo's own specs: `— depends on US-001`, `- **Depends on:** US-001 (reason)`, `*(depends on US-001, US-002)*`, `- Depends on: none`, `— no dependencies`.\n\n`findSpecStructureViolations(prd, specContent)` returns `[]` when the spec declares no story ids. Otherwise it returns, in this order:\n\n1. `missing-story` for each spec id absent from the PRD, in spec order.\n2. `extra-story` for each PRD id absent from the spec, in PRD order.\n3. `workdir-mismatch` for each spec story with a stated `workdir` whose PRD story has a stated workdir that differs from it. Both sides are compared after `normalizeWorkdir`. A PRD story with **no** workdir is not a violation, because the backfill handles it.\n4. `dependencies-mismatch` for each spec story with a defined `dependsOn` whose PRD story's `dependencies` is not the same set.\n5. `orphan-modifies` for each `extractSpecModifiedFiles` entry whose `storyId` is `null` or names no PRD story.\n\n`backfillSpecWorkdirs(prd, structure)` sets `workdir` on each PRD story that has none, when its spec story states a `workdir` other than `\".\"`. It returns the backfilled ids.\n\n**Write step** — `finalizeAndWritePrd`, **unscoped writes only** (`args.scope === undefined`), after `applyPlanFidelity` and before `canonicalizePrdWorkdirs`:\n\n1. `extractSpecStructure(args.specContent)`. Log each warning once at warn level: `\"spec story structure could not be read — field not enforced\"`, data `{ storyId, field, message }`.\n2. `backfillSpecWorkdirs`. When `backfilled` is non-empty, log a warn `\"PRD stories had no workdir — filled from the spec's Workdir\"`, data `{ storyIds }`.\n3. `findSpecStructureViolations(backfilledPrd, args.specContent)`. When non-empty:\n   - if `_persistPrdDeps.existsSync(args.outputPath)`, call `_persistPrdDeps.renameSync(args.outputPath, join(dirname(args.outputPath), \"prd.rejected.json\"))`;\n   - throw `new NaxError(message, \"PLAN_SPEC_STRUCTURE_VIOLATION\", { stage: \"plan\", violations })`. `message` starts with `[plan] PRD does not match the spec's declared story structure`, names the rejected-draft path, and lists `formatSpecStructureViolation` for every violation, one per line.\n4. Otherwise continue with the backfilled PRD.\n\n`formatSpecStructureViolation` output, one line per kind:\n- `US-004: missing — the spec declares it; never merge or rename a spec story`\n- `US-006: not in the spec — remove it or move its ACs back to their spec story`\n- `US-003: workdir is \"packages/lib\"; the spec says \"apps/api\"`\n- `US-005: dependencies are [US-001]; the spec says [US-001, US-003]`\n- `Modifies \"apps/api/tests/test_x.py\" (US-004): no PRD story owns it`\n\n`_persistPrdDeps` gains `renameSync: (from: string, to: string) => void`. `writeOrRecoverPrd` and `SinglePlanStrategy.execute` re-throw the original error when the draft at `ctx.outputPath` cannot be read back; leave both unchanged. In the recovery fixture add `**US-002**: do another thing` immediately after US-001 in `## Stories` so existing fidelity recovery behavior remains verifiable.\n\n**Scope** — In: pure extraction, moved lint helper, immutable backfill, deterministic violation formatting and enforcement/rejected-draft rename for unscoped writes. Out: path canonicalization and its logging (US-001); prompt and repair-turn wiring (US-003); `nax spec lint` checking `Workdir` / `Depends on` statements itself — the lint gains nothing in this feature beyond importing the moved `declaredStoryIds`. Backfilling or enforcing a spec's `### Context Files` entries on the PRD (#1466's ruling that `contextFiles` is planner-chosen and capped at 5 stands). A CLI flag to bypass the structure check.",
+      "acceptanceCriteria": [
+        "[unit] When `extractSpecStructure` reads a spec whose `## Stories` lists `1. **US-001: Core** — `Workdir: packages/core` — no dependencies` and `2. **US-002: API** — `Workdir: apps/api` — depends on US-001`, it returns stories `[{ id: \"US-001\", workdir: \"packages/core\", dependsOn: [] }, { id: \"US-002\", workdir: \"apps/api\", dependsOn: [\"US-001\"] }]` and no warnings.",
+        "[unit] When `extractSpecStructure` reads a spec whose `### Context Files` subsection has a `**US-003**` lead-in followed by the line `_Workdir `apps/web`._`, story US-003's `workdir` is `apps/web`.",
+        "[unit] When `extractSpecStructure` reads story bullets `- **Depends on:** US-001 (shared type)`, `*(depends on US-001, US-002 and US-003)*` and `- Depends on: none` under three different story headings, the stories' `dependsOn` are `[\"US-001\"]`, `[\"US-001\", \"US-002\", \"US-003\"]` and `[]` respectively.",
+        "[unit] When a story declared in `## Stories` carries no dependency statement, `extractSpecStructure` returns that story with `dependsOn` undefined.",
+        "[unit] When a `### Modifies` reason under a `**US-002**` lead-in reads `the count test depends on US-003's registration`, `extractSpecStructure` does not add US-003 to US-002's `dependsOn`.",
+        "[unit] When one story states `Workdir: packages/lib` and later `Workdir: apps/api`, `extractSpecStructure` returns that story with `workdir` undefined and a warning whose `field` is `workdir`.",
+        "[unit] When a spec declares no `US-00N` ids in `## Stories` or `## Acceptance Criteria`, `findSpecStructureViolations` returns an empty array for any PRD.",
+        "[unit] When the spec declares US-001 to US-005 and the PRD has US-001, US-002, US-003 and US-005, `findSpecStructureViolations` returns `[{ kind: \"missing-story\", storyId: \"US-004\" }]` plus any other violations.",
+        "[unit] When the PRD contains a story `US-006` the spec does not declare, `findSpecStructureViolations` includes `{ kind: \"extra-story\", storyId: \"US-006\" }`.",
+        "[unit] When the spec states `Workdir: apps/api` for US-004 and the PRD story US-004 has `workdir: \"packages/lib\"`, `findSpecStructureViolations` includes `{ kind: \"workdir-mismatch\", storyId: \"US-004\", expected: \"apps/api\", actual: \"packages/lib\" }`.",
+        "[unit] When the spec states `Workdir: apps/api` for US-004 and the PRD story US-004 has no `workdir`, `findSpecStructureViolations` reports no `workdir-mismatch` for US-004.",
+        "[unit] When the spec states `depends on US-001, US-003` for US-005 and the PRD story US-005 has `dependencies: [\"US-001\"]`, `findSpecStructureViolations` includes a `dependencies-mismatch` for US-005 with `expected` `[\"US-001\", \"US-003\"]` and `actual` `[\"US-001\"]`.",
+        "[unit] When the spec states `no dependencies` for US-002 and the PRD story US-002 has `dependencies: [\"US-001\"]`, `findSpecStructureViolations` includes a `dependencies-mismatch` for US-002 (an added dependency is a violation).",
+        "[unit] When the spec's `### Modifies` groups `apps/api/tests/test_count.py` under `**US-004**` and the PRD has no US-004, `findSpecStructureViolations` includes `{ kind: \"orphan-modifies\", storyId: \"US-004\", path: \"apps/api/tests/test_count.py\" }`.",
+        "[unit] When `backfillSpecWorkdirs` runs over a PRD whose US-004 has no workdir and whose spec states `Workdir: apps/api` for US-004, the returned PRD's US-004 has `workdir: \"apps/api\"`, `backfilled` equals `[\"US-004\"]`, and the input PRD object is not mutated.",
+        "[unit] When `formatSpecStructureViolation` receives `{ kind: \"dependencies-mismatch\", storyId: \"US-005\", expected: [\"US-001\", \"US-003\"], actual: [\"US-001\"] }`, it returns `US-005: dependencies are [US-001]; the spec says [US-001, US-003]`.",
+        "[integration] When `finalizeAndWritePrd` (unscoped) receives a PRD that omits spec story US-004, and `_persistPrdDeps.existsSync` reports the draft at `outputPath` present, it calls `_persistPrdDeps.renameSync(outputPath, <dir>/prd.rejected.json)`, never calls `writeFile`, and rejects with a `NaxError` whose `code` is `PLAN_SPEC_STRUCTURE_VIOLATION` and whose message contains `US-004: missing`.",
+        "[integration] When `finalizeAndWritePrd` receives a PRD whose only divergence is a missing workdir the spec states, it writes the PRD with that workdir filled in and logs a warn whose message is `PRD stories had no workdir — filled from the spec's Workdir` with data `storyIds` `[\"US-004\"]`.",
+        "[integration] When `SinglePlanStrategy.execute` runs with `_singlePlanDeps.callOp` returning a PRD that folds spec story US-004 into US-003, and the deps' file system holds the draft at `outputPath`, the call rejects with code `PLAN_SPEC_STRUCTURE_VIOLATION`, the draft is renamed to `prd.rejected.json`, and no `prd.json` is written or recovered as a degraded result.",
+        "[integration] When `RefinePlanStrategy.execute` runs with `_refinePlanDeps.callOp` returning the same folded PRD, the call rejects with code `PLAN_SPEC_STRUCTURE_VIOLATION` rather than returning a `PlanResult` with `degraded` set.",
+        "[integration] When `finalizeAndWritePrd` runs with `scope` set (the `--decompose` write) over a PRD whose sub-story ids the spec does not declare, it writes the PRD and throws no `PLAN_SPEC_STRUCTURE_VIOLATION`.",
+        "[unit] When `lintSpecContent` runs over a spec whose `### Modifies` groups a path under `**US-009**` that `## Stories` does not declare, it still reports the unknown-story finding it reported before `declaredStoryIds` moved (spec-lint behaviour unchanged).",
+        "When one story states `depends on none` and `depends on US-001`, then `extractSpecStructure` leaves that story's `dependsOn` undefined and reports a `dependsOn` warning, so the conflicting field is not enforced.",
+        "When a spec declares a story without any dependency statement, then `findSpecStructureViolations` reports no dependencies-mismatch for that story even if its PRD dependencies are nonempty.",
+        "When `finalizeAndWritePrd` detects a structure violation but `_persistPrdDeps.existsSync(outputPath)` is false, then it throws `PLAN_SPEC_STRUCTURE_VIOLATION` without calling `_persistPrdDeps.renameSync`.",
+        "When `finalizeAndWritePrd` reads conflicting `Workdir` values from a declared story, then it logs one warn `spec story structure could not be read — field not enforced` with that storyId and field `workdir`."
+      ],
+      "tags": [
+        "feature",
+        "prd",
+        "spec-fidelity"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "toAgent": "native",
+          "reason": "Rectification exhausted: none.",
+          "timestamp": "2026-09-27T10:53:53.607Z"
+        }
+      ],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New fenced Markdown extraction and ordered cross-field validation integrate with write-time error and two strategy recovery paths.",
+        "initialComplexity": "complex",
+        "modelTier": "powerful",
+        "initialModelTier": "balanced",
+        "agent": "native"
+      },
+      "contextFiles": [
+        "src/plan/strategies/persist-prd.ts",
+        "src/prd/spec-lint.ts",
+        "src/prd/modifies-extract.ts",
+        "src/plan/strategies/write-prd.ts",
+        "src/plan/strategies/single.ts"
+      ],
+      "expectedFiles": [
+        "src/prd/spec-structure.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/plan/fidelity-survives-recovery.test.ts",
+          "reason": "the `SPEC` fixture declares only `**US-001**` under `## Stories`, while `DISK_PRD` has US-001 and US-002, so the new structure check would throw `extra-story`. Add a line `**US-002**: do another thing` under `## Stories`, after the US-001 line. The invariant is unchanged: all three tests still assert that the spec's Modifies authority reaches both stories on the refine, single and happy paths."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted: none."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced: Rectification exhausted: none.",
+          "cost": 0.48834284999999994,
+          "timestamp": "2026-09-27T10:53:53.607Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "0fc63c86ddb2df6c066c79a5d5de6dbb87bb338e"
+    },
+    {
+      "id": "US-003",
+      "title": "Bind planning prompts and repair divergent drafts once",
+      "description": "**Goal** — Make pre-decomposed story structure explicit to the planner and use one disk-driven corrective turn in interactive and refine planning.\n\n**Motivation** — `GROUPING_RULES` says \"NEVER create stories whose primary purpose is writing tests… No exceptions\" and \"Combine small, related tasks into a single story\". Nothing in either plan prompt says a spec's own story ids, workdirs or dependencies are binding. The refine continuation's `dependency-minimization` item tells the planner to remove dependencies.\n\n**Interface** — `specStructureSelfHealStep<I extends { specContent: string; featureName: string; branchName: string; outputPath: string }>(builder: PlanPromptBuilder, readFile: (path: string) => Promise<string | null>): SelfHealStep<I>` in new `src/operations/plan-structure-heal.ts`, built with `makeSelfHealStep`; `PlanPromptBuilder.buildSpecStructureRepair(violations: readonly SpecStructureViolation[], outputFilePath: string): string`; `PlanPromptBuilder.buildRefineContinuation(outputFilePath: string, specGuard = false, bindingStructure = false): string`; `planInteractiveOp: RunOperationWithHooks<PlanInteractiveInput, PRD, PlanConfig, \"hopBody\">`.\n\n**Approach** — It declares no deps object of its own: each op passes its own injectable `readFile`, so the existing hopBody tests that stub `_planRefineDeps.readFile` stay hermetic, and importing the step from `plan-refine.ts` creates no cycle. `planRefineOp` passes `_planRefineDeps.readFile`; `src/operations/plan.ts` gains `export const _planInteractiveDeps = { readFile }` with the same shape and error handling as `_planRefineDeps.readFile`, and `planInteractiveOp` passes `_planInteractiveDeps.readFile`.\n  - `detect` reads `outputPath` through the passed `readFile` and returns `[]` when the file is absent or fails `validatePlanOutput`. Otherwise it returns `findSpecStructureViolations(backfillSpecWorkdirs(prd, extractSpecStructure(specContent)).prd, specContent)`.\n  - `buildRepair` returns `builder.buildSpecStructureRepair(violations, outputPath)`.\n  - `log`: kind `\"plan\"`, message `\"PRD diverged from the spec's declared story structure — issuing one repair turn\"`, meta `{ featureName, violationCount }`.\n\n`planInteractiveOp.hopBody(initialPrompt, ctx)`: `seed = await ctx.sendWithParseRetry(initialPrompt)`, then return `runSelfHealChain(ctx, seed, [specStructureSelfHealStep(new PlanPromptBuilder(), _planInteractiveDeps.readFile)])`.\n`planRefineOp.hopBody`: the step list becomes `[specStructureSelfHealStep(builder, _planRefineDeps.readFile), outOfScopeSelfHealStep(builder), ...(specGuard ? [specDriftSelfHealStep(builder)] : [])]`, and `buildRefineContinuation` receives `bindingStructure = extractSpecStructure(ctx.input.specContent).stories.length > 0`.\n`PlanPromptBuilder.buildSpecStructureRepair(violations: readonly SpecStructureViolation[], outputFilePath: string): string`. It opens with `Your PRD does not match the story structure the spec declares. The spec's stories are binding.`, then the formatted violation lines, then:\n  - restore every missing spec story under its own id, and move each acceptance criterion back to the story the spec states it under;\n  - remove any story the spec does not declare;\n  - set `workdir` and `dependencies` exactly as the Binding Story Structure lists;\n  - never merge, split or rename a spec story;\n  - the standard closing: write the corrected PRD to the file path, then reply with a brief confirmation.\n\n`PlanPromptBuilder.build`: when `extractSpecStructure(specContent).stories.length > 0`, `taskContext` gains a `## Binding Story Structure` section right after `## Spec`. The section's text:\n\n> The spec pre-decomposes this feature into the stories below. This structure is binding: the PRD must contain exactly these story ids — never merge, split, rename or add a story. Set each story's \"workdir\" and \"dependencies\" exactly as listed. Every acceptance criterion stays in the story the spec states it under. A spec story whose acceptance criteria are all integration or test criteria stays its own story: the Story Rules about combining small tasks and about test-only stories do not apply to a story the spec declares.\n\nIt is followed by a table with columns `Story | Workdir | Depends on`: the workdir or `(not stated)`, and the ids comma-separated, `none`, or `(not stated)`. In a monorepo with a binding structure, the `## Monorepo Context` sentence `For each user story, set the \"workdir\" field to the relevant package path…` is replaced by `Set each story's \"workdir\" to the Workdir the Binding Story Structure lists; for a story whose Workdir is not stated, set it to the relevant package path.`\nWhen `bindingStructure` is true, `buildRefineContinuation` appends to `#### dependency-minimization`: `Never add or remove a dependency of a story the Binding Story Structure lists, and never merge, split or rename one of its stories.`\n`GROUPING_RULES` (`src/config/test-strategy.ts`) is **not** edited. It is shared, and it is correct for specs that declare no stories.\n\nUpdate the existing refine hopBody spy expectation to include `false` for the third bindingStructure argument when its spec has no stories, keeping other send counts unchanged; change the interactive fileOutput test to expect a defined hopBody.\n\n**Scope** — In: conditional binding table/instructions, repair prompt, one heal turn in interactive and first heal step in refine, cost aggregation. Out: extraction, backfill and rejection implementation (US-002); path framing (US-001); Editing the `GROUPING_RULES` constant; the binding section overrides it only for spec-declared stories. A CLI flag to bypass the structure check.",
+      "acceptanceCriteria": [
+        "[unit] When `PlanPromptBuilder.build` receives a spec declaring US-001 (`Workdir: packages/core`, no dependencies) and US-002 (`Workdir: apps/api`, depends on US-001), the returned `taskContext` contains a `## Binding Story Structure` section, placed after the `## Spec` section, with one table row per story naming `packages/core` / `none` and `apps/api` / `US-001`.",
+        "[unit] When `PlanPromptBuilder.build` receives a spec that declares no `US-00N` ids, the returned `taskContext` has no `## Binding Story Structure` section.",
+        "[unit] When `PlanPromptBuilder.build` receives a spec story whose dependencies and Workdir are not stated, its table row shows `(not stated)` in both columns.",
+        "[unit] When `PlanPromptBuilder.build` receives a spec with declared stories and a non-empty `packages` list, the monorepo section tells the planner to set each story's `workdir` to the Workdir the Binding Story Structure lists, and no longer says `set the \"workdir\" field to the relevant package path` for every story.",
+        "[unit] When `PlanPromptBuilder.build` receives a spec with declared stories, the binding section states that a spec story whose acceptance criteria are all integration or test criteria stays its own story, and that the Story Rules about combining tasks and test-only stories do not apply to a spec-declared story.",
+        "[unit] When `buildRefineContinuation(path, false, true)` is called, its `#### dependency-minimization` item includes `Never add or remove a dependency of a story the Binding Story Structure lists`; when called with `bindingStructure` false, that sentence is absent.",
+        "[unit] When `buildSpecStructureRepair` receives a `missing-story` violation for US-004 and an `orphan-modifies` violation, the returned prompt contains `US-004: missing` and the orphan's formatted line, instructs the planner to move each acceptance criterion back to the story the spec states it under, and names the output file path.",
+        "[unit] When `specStructureSelfHealStep` is built with a `readFile` returning a draft that omits spec story US-004, the step sends exactly one corrective turn whose prompt is the `buildSpecStructureRepair` output.",
+        "[unit] When the passed `readFile` returns null, or returns content that fails `validatePlanOutput`, `specStructureSelfHealStep` sends no corrective turn.",
+        "[integration] When `planInteractiveOp.hopBody` runs with a spec declaring US-001 to US-005 and `_planInteractiveDeps.readFile` returning a draft that omits US-004, `ctx.sendWithParseRetry` is called once with the initial prompt, and `ctx.send` is called exactly once with the structure repair prompt.",
+        "[integration] When `planInteractiveOp.hopBody` runs with a spec that declares no story ids, `ctx.send` is never called, and the result is the `sendWithParseRetry` turn.",
+        "[integration] When `planRefineOp.hopBody` runs with `_planRefineDeps.readFile` returning a draft that omits a spec story and also drops a feature-level out-of-scope item, the structure repair is sent before the out-of-scope repair (`ctx.send` call order: refine continuation, structure repair, out-of-scope repair).",
+        "[integration] When `planRefineOp.hopBody` runs with a spec declaring stories, the refine continuation it sends contains the binding dependency-minimization sentence.",
+        "[integration] When the draft still omits US-004 after the repair turn, `planInteractiveOp.hopBody` sends no second structure repair (at most one repair turn per plan).",
+        "[unit] When `planInteractiveOp.hopBody` accumulates a seed turn costing 0.2 USD and a repair turn costing 0.1 USD, the returned turn's `estimatedCostUsd` is 0.3."
+      ],
+      "tags": [
+        "feature",
+        "planning",
+        "self-heal"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New injectable self-heal step integrates two different operation hops, conditional prompts, disk parsing and ordered multi-turn cost behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prompts/builders/plan-builder.ts",
+        "src/operations/plan.ts",
+        "src/operations/plan-refine.ts",
+        "src/operations/self-heal.ts",
+        "src/prd/spec-structure.ts"
+      ],
+      "expectedFiles": [
+        "src/operations/plan-structure-heal.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/operations/plan-refine.test.ts",
+          "reason": "the hopBody test asserts that the buildRefineContinuation spy was called with exactly (\"/tmp/plan-refine-prd.json\", false). planRefineOp.hopBody now passes a third bindingStructure argument, which is false for that test's spec because it declares no stories. Change the expectation to (\"/tmp/plan-refine-prd.json\", false, false); every other assertion in the test, including the send and sendWithParseRetry call counts, keeps its value."
+        },
+        {
+          "path": "test/unit/operations/plan-interactive.test.ts",
+          "reason": "\"fileOutput is defined and returns outputPath; hopBody is undefined\" asserts `planInteractiveOp.hopBody` is undefined. Rename the test to \"fileOutput is defined and returns outputPath; hopBody is defined\" and assert `hopBody` is a function. The `fileOutput` assertions stay as they are."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "93f40d402ab7d2b110341429bbd039629ff3e5ab"
+    }
+  ],
+  "analysis": "Existing TypeScript/Bun nax pipeline, not greenfield. src/prd/workdir-canonical.ts:68-95 currently delegates canonicalizeDeclaredPath to toRepoFrame unconditionally; canonicalizePrdWorkdirs:139-197 derives/stamps workdirs, rewrites contextFiles (including factId objects), expectedFiles and modifiedFiles; findNonCanonicalDeclaredPaths:225-241 compares against that prefixing function. Preserve derivation, stamping, identity for opts.only and immutable updates; introduce existence-aware spelling with root-exists precedence, report actual re-spells. src/utils/path-frame.ts:12-20,65-94 has toRepoFrame needed by genuine package-scoped producers and isWithinPackage boundary check; do not alter function. src/pipeline/scope-files.ts:41-64 maps declared paths through toRepoFrame regardless of provenance; use workdirSource gate, matching src/pipeline/stages/context.ts:188. src/plan/strategies/persist-prd.ts:25-41 provides injectable probes, :70-101 applies fidelity before canonicalization, :101-157 catches discovery errors, warns and writes routing output; add renameSync injection and unscoped structural check after fidelity, before canonicalization, outside the discovery catch so errors cannot degrade. src/plan/strategies/write-prd.ts:9-70 and single.ts:16-62 recover drafts on disk; src/plan/strategies/refine.ts:43-73 routes refine through writeOrRecoverPrd: rename the violating draft first so both recovery paths rethrow the original NaxError, without modifying strategies. src/prd/spec-lint.ts:133-172 declares ids from Stories and Acceptance Criteria excluding grouped subsections; move unchanged into new pure spec-structure module and retain lint behavior. src/prd/modifies-extract.ts:65-81 provides extracted path and story ownership; src/prd/types.ts:163-239 defines optional story workdir, required dependencies, context/expected/modified fields and workdirSource; :435-455 PRD envelope. src/prd/index.ts:18-56 exports PRD helpers: update barrel as needed. src/prompts/builders/plan-builder.ts:137-221 has refine dependency-minimization, :278-349 builds spec/monorepo prompt; insert binding section after spec, conditionally change monorepo hint, add repair prompt while keeping GROUPING_RULES unchanged. src/operations/plan.ts:1-98 is currently RunOperation without hopBody; plan-refine.ts:21-32 injectable readFile and :368-395 hopBody with refine continuation plus ordered self-heal; src/operations/self-heal.ts:32-100 defines single-turn step and cost aggregation. New heal module must accept injected readFile to keep tests hermetic and avoid cycles. Test touchpoints: test/unit/prd/workdir-canonical.test.ts:87-404 has explicitly obsolete prefix and fixed-point assertions; test/unit/plan/strategies/persist-prd-workdir.test.ts:15-27,60-125 stubs probes and checks warnings; test/unit/pipeline/scope-files.test.ts; test/unit/plan/fidelity-survives-recovery.test.ts:15-51 fixture declares only US-001 despite PRD US-002; test/unit/operations/plan-refine.test.ts:16-31 and test/unit/operations/plan-interactive.test.ts:101-118 assert old call and absent hook; test/unit/prompts/builders/plan-builder.test.ts tests prompt contracts. Amend docs/adr/ADR-032-single-frame-repo-rooted-paths.md:72-80 R3 against R5 and add verification limitation note to docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md:1-9. Risks: preserving repo-rooted out-of-package and create-intent paths while repairing only demonstrably package-relative paths; disk-state-sensitive re-spelling applies only to ambiguous input, not already repo-rooted paths; legacy unstamped PRDs retain runtime prefixing; scoped decompose bypasses structure check; conflicting/unreadable spec fields warn rather than enforce; plan recovery must not turn a rejected draft into an exit-0 degraded PRD. Implement US-001 then US-002 then US-003; update existing test expectations at the respective story, add new behavioral tests via each story's test strategy, no data migration or CLI bypass.",
+  "outOfScope": [
+    "`nax spec lint` checking `Workdir` / `Depends on` statements itself — the lint gains nothing in this feature beyond importing the moved `declaredStoryIds`.",
+    "Updating the nax-spec-kit-skills spec-writing guide; that change lives in a different repository.",
+    "Backfilling or enforcing a spec's `### Context Files` entries on the PRD (#1466's ruling that `contextFiles` is planner-chosen and capped at 5 stands).",
+    "The exit-0 behaviour of `nax plan` on usage errors and config-validation errors.",
+    "Changing `toRepoFrame` or any of its package-scoped callers (`src/context/builder.ts`, `src/context/engine/scope-path-match.ts`).",
+    "Making legacy PRDs (no `workdirSource`) self-heal; they keep today's runtime re-frame in `scope-files.ts`.",
+    "Editing the `GROUPING_RULES` constant; the binding section overrides it only for spec-declared stories.",
+    "A CLI flag to bypass the structure check."
+  ],
+  "routingProfile": "native-ds-glm"
+}

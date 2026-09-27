@@ -37,6 +37,19 @@ export { findSpecDriftViolations } from "./spec-drift";
 export type { SpecLintFinding, SpecLintOptions } from "./spec-lint";
 export { BLOCKING_SPEC_LINT_CODES, lintSpecContent } from "./spec-lint";
 export type {
+  SpecStoryStructure,
+  SpecStructure,
+  SpecStructureViolation,
+  SpecStructureWarning,
+} from "./spec-structure";
+export {
+  backfillSpecWorkdirs,
+  declaredStoryIds,
+  extractSpecStructure,
+  findSpecStructureViolations,
+  formatSpecStructureViolation,
+} from "./spec-structure";
+export type {
   EscalationAttempt,
   PersistedRepoScopedFix,
   PRD,
@@ -49,8 +62,18 @@ export type {
 } from "./types";
 export { generateHumanHaltSummary, getContextFiles, getExpectedFiles, isStalled, markStoryAsBlocked } from "./types";
 export { assertPrdCommitted, validateStoryId } from "./validate";
-export type { CanonicalizeOptions, ExistsProbe, NonCanonicalDeclaredPath } from "./workdir-canonical";
-export { canonicalizeDeclaredPath, canonicalizePrdWorkdirs, findNonCanonicalDeclaredPaths } from "./workdir-canonical";
+export type {
+  CanonicalizeOptions,
+  ExistsProbe,
+  NonCanonicalDeclaredPath,
+  RespelledDeclaredPath,
+} from "./workdir-canonical";
+export {
+  canonicalizeDeclaredPath,
+  canonicalizePrdWorkdirs,
+  findNonCanonicalDeclaredPaths,
+  normalizeDeclaredPathSpelling,
+} from "./workdir-canonical";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
 export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;

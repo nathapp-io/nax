@@ -7,7 +7,20 @@ import type { PRD } from "../prd/types";
 import type { PackageSummary } from "../prompts";
 import { PlanPromptBuilder } from "../prompts";
 import { applyPlanFidelity } from "./plan-fidelity";
-import type { RunOperation } from "./types";
+import { specStructureSelfHealStep } from "./plan-structure-heal";
+import { runSelfHealChain } from "./self-heal";
+import type { RunOperationWithHooks } from "./types";
+
+/** Injectable I/O for the hopBody self-heal step (testable without disk). */
+export const _planInteractiveDeps = {
+  readFile: async (path: string): Promise<string | null> => {
+    try {
+      return await Bun.file(path).text();
+    } catch {
+      return null;
+    }
+  },
+};
 
 export interface PlanInteractiveInput {
   specContent: string;
@@ -20,7 +33,7 @@ export interface PlanInteractiveInput {
   projectProfile?: ProjectProfile;
 }
 
-export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConfig> = {
+export const planInteractiveOp: RunOperationWithHooks<PlanInteractiveInput, PRD, PlanConfig, "hopBody"> = {
   kind: "run",
   name: "plan-interactive",
   stage: "plan",
@@ -76,6 +89,17 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: `${taskContext}\n\n${outputFormat}`, overridable: false },
     };
+  },
+  // The hop continues past the initial prompt: a draft that diverges from the
+  // story structure the spec declares gets one corrective turn in the same
+  // session. `sendWithParseRetry` keeps the op's declared JSON parse retry on
+  // the seed turn; the repair turn is a single `send` with no retry, so a plan
+  // never spends more than one turn on the structure.
+  async hopBody(initialPrompt, ctx) {
+    const seed = await ctx.sendWithParseRetry(initialPrompt);
+    return runSelfHealChain(ctx, seed, [
+      specStructureSelfHealStep(new PlanPromptBuilder(), _planInteractiveDeps.readFile),
+    ]);
   },
   parse(output, input, _ctx) {
     return validatePlanOutput(output, input.featureName, input.branchName);

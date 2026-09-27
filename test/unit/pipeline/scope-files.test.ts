@@ -353,3 +353,38 @@ describe("resolveScopeFiles — nax#2071 canonical repo frame", () => {
     expect(result).toEqual(["packages/app/src/declared.ts"]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001: declared paths are repo-rooted as written, so a story whose frame the
+// plan step stamped (workdirSource defined) needs no translation here. Legacy
+// stories (no stamp) keep today's runtime re-frame -- they are NOT self-healed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolveScopeFiles — declared frame follows the story's stamp (US-001)", () => {
+  test("US-001 AC18: keeps a stamped story's repo-rooted declared path as written", async () => {
+    const story = makeStory({
+      workdir: "packages/lib",
+      workdirSource: "stated",
+      contextFiles: ["docs/x.md"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => "abc123";
+    _scopeFilesDeps.collectDiffFileList = async () => [];
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["docs/x.md"]);
+  });
+
+  test("US-001 AC19: still re-frames a legacy story's package-relative declared path", async () => {
+    const story = makeStory({
+      workdir: "packages/app",
+      contextFiles: ["src/declared.ts"],
+    });
+    _scopeFilesDeps.resolveEffectiveRef = async () => "abc123";
+    _scopeFilesDeps.collectDiffFileList = async () => [];
+
+    const result = await resolveScopeFiles(makeCtx(story));
+
+    expect(result).toEqual(["packages/app/src/declared.ts"]);
+  });
+});

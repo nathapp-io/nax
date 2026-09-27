@@ -114,6 +114,20 @@ describe("check-spec-extractable", () => {
     expect(codes).toContain("modifies-unknown-story");
   });
 
+  test("US-002 AC22: still flags a Modifies entry grouped under a story ## Stories never declares", async () => {
+    const unknownStory = `### Modifies
+
+**US-009**
+
+- \`scripts/check-spec-extractable.ts\` — reason`;
+    const findings = lintText(specWith(unknownStory));
+
+    const unknown = findings.find((f) => f.code === "modifies-unknown-story");
+    expect(unknown?.level).toBe("error");
+    expect(unknown?.message).toContain("US-009");
+    expect(unknown?.message).toContain("scripts/check-spec-extractable.ts");
+  });
+
   test("warns on a Modifies bullet with no reason after the path", async () => {
     const bareBullet = `### Modifies
 

@@ -12,10 +12,17 @@ import { join } from "node:path";
  *
  * `toRepoFrame` is not a mandatory boundary-translation step; it is the
  * canonical-frame normalizer, used only where a package-scoped producer (a
- * rule's package-relative `appliesTo:` literal, keyword auto-detect output,
- * declared package sources) must be brought into the one repo frame. Every
- * other path set is repo-rooted by construction. `isWithinPackage` is a
- * selector-contract primitive: a membership test that never re-spells.
+ * rule's package-relative `appliesTo:` literal in `scope-path-match.ts`, or
+ * keyword auto-detect output in `context/builder.ts`) must be brought into the
+ * one repo frame. Every other path set is repo-rooted by construction.
+ * `isWithinPackage` is a selector-contract primitive: a membership test that
+ * never re-spells.
+ *
+ * Declared PRD paths are NOT one of those producers (US-001, nax#2270): they
+ * are repo-rooted as written, and the write step normalises their spelling
+ * only. `src/pipeline/scope-files.ts` therefore calls `toRepoFrame` on them
+ * for one case only -- a legacy PRD story with no `workdirSource` stamp, which
+ * keeps today's runtime re-frame.
  *
  * `story.workdir` is a SELECTOR, not a frame boundary: it names which package's
  * rules, config, and command cwd apply — surfaced by `storyWorkdir`,
@@ -35,8 +42,15 @@ import { join } from "node:path";
  * docs/superpowers/specs/2026-09-16-path-frame-convention-design.md.
  */
 
-/** Posix separators, no leading "./", no trailing "/". */
-function toPosix(value: string): string {
+/**
+ * Posix separators, no leading "./", no trailing "/", trimmed.
+ *
+ * Exported because the declared-path spelling normalizer
+ * (`normalizeDeclaredPathSpelling`, src/prd/workdir-canonical.ts) must agree
+ * with this module byte for byte: "a spelling the normaliser would change" is
+ * exactly what its plan-write-time check reports.
+ */
+export function toPosix(value: string): string {
   return value
     .trim()
     .replace(/\\/g, "/")

@@ -374,3 +374,27 @@ glob branch to spell `.nax-wt/...`, and the stories passed first try so no post-
 context rebuild occurred. A real reproduction needs a repo-framed PRD **plus** either real
 reverse-deps or a story that fails once after creating a file. Note that the legacy frame
 *masks* #2134 — reproducing it against a legacy PRD yields a false negative.
+
+### Amendment note (2026-09-27, #2270) — the verification never exercised a path outside the story's package
+
+Every story in both the unit pin above ("same spec planned against trees at two different
+points yields byte-identical declared-path frames", §6) and the six live runs of 2026-09-18
+declared only paths **inside its own package**. For those inputs "repo-rooted as written" and
+"re-framed into the story's package" produce the same string, so neither check could
+distinguish R3's old unconditional re-spell from the behaviour #2270 restores:
+
+- a `packages/lib` story that creates the repo-root file `docs/pipelines/report.pipeline.json`
+  was written as `packages/lib/docs/pipelines/report.pipeline.json`;
+- an `apps/api` story that reads `packages/db/src/schema.ts` was written as
+  `apps/api/packages/db/src/schema.ts`, which at run time surfaced as "Relevant file not
+  found".
+
+The byte-identical-frames pin is also satisfied by both inputs, because the unconditional
+refresh was a pure string operation: the defect was in the rule the pin encodes, not in its
+determinism. A verification of a path-frame rule has to include a declared path that lies
+outside the declaring story's package.
+
+#2270 amends R3 of ADR-032 accordingly: declared paths stay repo-rooted as written (including
+paths in other packages, which R5 already makes a designed case), the write step normalises
+spelling only, a re-spell happens only when the path is absent at the repo root and present
+under the package, and every such re-spell is reported in the plan log.
