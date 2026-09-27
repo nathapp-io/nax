@@ -44,19 +44,23 @@ export function parseRefinementResponse(response: string, criteria: string[]): R
 }
 
 /**
- * True when `parseRefinementResponse` would discard the agent's output and fall
- * back to the unrefined criteria — i.e. empty/whitespace response, output that
- * fails JSON extraction/parse, a non-array result, or a non-empty array in
- * which any item lacks a usable `refined` string (strings, numbers and nulls
- * carry none, and a null item makes the parser throw and fall back wholesale).
- * An empty array `[]` is a *successful* parse (returns `[]`), so it is NOT a
- * fallback — the count check in the acceptance-refine op rejects it.
+ * True when the agent's refinement output is unusable and the op should reject
+ * it — i.e. empty/whitespace response, output that fails JSON extraction/parse,
+ * a non-array result, or a non-empty array in which any item lacks a usable
+ * `refined` string (strings, numbers and nulls carry none).
+ * An empty array `[]` is a *successful* parse (returns `[]`), so it is NOT
+ * rejected here — the count check in the acceptance-refine op catches it.
  *
- * Mirrors the fallback triggers in `parseRefinementResponse` above and lives
- * beside it so the two stay in sync. Used by the acceptance-refine op (#3B) to
- * reject non-empty output it cannot use. Note: empty/whitespace output is
- * handled upstream by the op's parse() — it throws ParseValidationError to
- * trigger a retry rather than falling back immediately.
+ * This is deliberately a SUPERSET of `parseRefinementResponse`'s fallback cases
+ * above: the parser silently substitutes the unrefined criterion for an item
+ * that lacks a usable `refined` string (e.g. `[1,2,3]` maps item-by-item and
+ * returns an array), so it does not fall back there. This predicate lives beside
+ * the parser to be read together, but it does NOT mirror the parser's triggers —
+ * it is the stricter "the agent produced nothing worth keeping" test the op
+ * needs. Used by the acceptance-refine op (#3B) to reject non-empty output it
+ * cannot use. Note: empty/whitespace output is handled upstream by the op's
+ * parse() — it throws ParseValidationError to trigger a retry rather than
+ * falling back immediately.
  */
 export function refinementWouldFallback(response: string): boolean {
   if (!response?.trim()) return true;

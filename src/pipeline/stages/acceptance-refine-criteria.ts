@@ -16,7 +16,7 @@
 import type { RefinedCriterion } from "@/acceptance";
 import type { NaxConfig } from "@/config";
 import type { AcceptanceConfig } from "@/config/selectors";
-import { getSafeLogger, type Logger } from "@/logger";
+import { getSafeLogger } from "@/logger";
 import {
   type AcceptanceRefineInput,
   type AcceptanceRefineOutput,
@@ -129,11 +129,7 @@ export async function refineAcceptanceCriteria(
   const failedIndexes = stories.map((_, i) => i).filter((i) => fellBack[i]);
   const fallbackStoryIds = failedIndexes.map((i) => stories[i].id);
   if (fallbackStoryIds.length > 0) {
-    // Prefer the context's run logger when the caller supplied one (pipeline
-    // stages carry it; the acceptance-setup tests assert against it), falling
-    // back to the process singleton for callers that do not.
-    const logger = (ctx as PipelineContext & { logger?: Logger }).logger ?? getSafeLogger();
-    logger?.warn("acceptance-setup", "AC refinement unusable after retries — using unrefined criteria", {
+    getSafeLogger()?.warn("acceptance-setup", "AC refinement unusable after retries — using unrefined criteria", {
       storyId: fallbackStoryIds[0],
       storyIds: fallbackStoryIds,
       failures: failedIndexes.map((i) => ({ storyId: stories[i].id, error: failureReasons[i] })),
