@@ -13,7 +13,7 @@
         "When applyModelTruncationPolicy receives a root and a Read-tool body over maxBytes, then its last line is `... [truncated: full output at .nax/scratchpad/spill/Read-<callId>.txt (open with Read or ScratchpadRead); showing N of M bytes]`, with N the delivered and M the original byte count.",
         "When applyModelTruncationPolicy receives a root and a Bash-tool body over maxBytes, then its content contains a marker line naming `.nax/scratchpad/spill/Bash-<callId>.txt (open with Read or ScratchpadRead)`.",
         "When applyModelTruncationPolicy uses spillPathStyle: \"absolute\", then the marker names the absolute path `<root>/.nax/scratchpad/spill/<Tool>-<callId>.txt`.",
-        "When the file at join(root, <path named by a root-relative marker>) is read, then it contains the untruncated body passed to applyModelTruncationPolicy.",
+        "When the file at join(root, <path named by a root-relative marker>) is read, then it contains the untruncated body passed to applyModelTruncationPolicy if that body is at most READ_CEILING bytes; for a larger body it holds at most READ_CEILING bytes whose last line is the `... [spill incomplete: showing N of M bytes]` note.",
         "When the spill write rejects, then applyModelTruncationPolicy returns a marker of the form `... [truncated: showing N of M bytes]` naming no path.",
         "When maxBytes is too small for the widest marker shape, then applyModelTruncationPolicy returns content whose byte length is at most maxBytes.",
         "When truncateNativeToolResult receives a session registered in nativeSessionScratchpadRoots with workdir W, then its marker names `.nax/scratchpad/spill/...` and the spill file exists under `W/.nax/scratchpad/spill/`.",
@@ -31,8 +31,8 @@
         "access-control"
       ],
       "dependencies": [],
-      "status": "failed",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 3,
       "escalations": [
         {

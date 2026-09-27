@@ -29,7 +29,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _spillDeps, applyModelTruncationPolicy } from "@/tools";
+import { _spillDeps, applyModelTruncationPolicy, READ_CEILING } from "@/tools";
 
 let root: string;
 /** Original `_spillDeps`, restored after every test that overrides them. */
@@ -235,6 +235,45 @@ describe("AC4: join(root, <path named by the marker>) is readable and holds the 
     const named = namedPath(content);
     expect(named).toBe(".nax/scratchpad/spill/Read-c4b.txt");
     expect(readFileSync(join(root, named), "utf8")).toBe(body);
+  });
+
+  // Past READ_CEILING the spill writer caps the file and says so on its last
+  // line (spill-recovery.test.ts AC9). The marker must still name that file:
+  // dropping the path there leaves the model told "showing N of M bytes" with
+  // no way to reach the READ_CEILING bytes nax did write.
+  test("US-001 AC4 boundary: a body past READ_CEILING is named by the marker and spilled capped with an incomplete note", async () => {
+    const body = `first\n${"y".repeat(READ_CEILING + 5_000)}`;
+    const total = Buffer.byteLength(body, "utf8");
+    const content = await applyModelTruncationPolicy(body, {
+      toolName: "Read",
+      callId: "c4c",
+      root,
+      maxBytes: MAX_BYTES,
+    });
+
+    const named = namedPath(content);
+    expect(named).toBe(".nax/scratchpad/spill/Read-c4c.txt");
+    const spilled = readFileSync(join(root, named), "utf8");
+    expect(Buffer.byteLength(spilled, "utf8")).toBeLessThanOrEqual(READ_CEILING);
+    const noteAt = spilled.lastIndexOf("\n");
+    const kept = spilled.slice(0, noteAt);
+    expect(body.startsWith(kept)).toBe(true);
+    expect(spilled.slice(noteAt + 1)).toBe(
+      `... [spill incomplete: showing ${Buffer.byteLength(kept, "utf8")} of ${total} bytes]`,
+    );
+  });
+
+  test("US-001 AC4 boundary: a Bash body past READ_CEILING still carries a marker naming its spill path", async () => {
+    const body = `${"b".repeat(READ_CEILING + 5_000)}\nlast-line`;
+    const content = await applyModelTruncationPolicy(body, {
+      toolName: "Bash",
+      callId: "c4d",
+      root,
+      maxBytes: MAX_BYTES,
+    });
+
+    expect(namedPath(content)).toBe(".nax/scratchpad/spill/Bash-c4d.txt");
+    expect(existsSync(join(root, ".nax/scratchpad/spill/Bash-c4d.txt"))).toBe(true);
   });
 });
 
