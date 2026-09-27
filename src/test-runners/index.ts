@@ -10,8 +10,12 @@
  * - resolveTestFilePatterns() + createTestFileClassifier(): ADR-009 SSOT
  */
 
+export type { AcTestCoverage } from "./ac-coverage";
+export { acTestCoverage } from "./ac-coverage";
 export { parseTestFailures, parseTestFailuresDetailed } from "./ac-parser";
 export { createTestFileClassifier } from "./classifier";
+export type { AcceptanceCrashClass } from "./compile-crash";
+export { classifyAcceptanceCrash } from "./compile-crash";
 export {
   DEFAULT_SCAN_TEST_DIRS,
   DEFAULT_SEPARATED_TEST_DIRS,

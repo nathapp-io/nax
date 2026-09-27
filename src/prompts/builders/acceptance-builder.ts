@@ -54,6 +54,24 @@ const STEP3_SHARED_RULES = `- **One test per AC**, named exactly "AC-N: <descrip
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.`;
 
+/**
+ * US-004 G2, verbatim. Repeated in the load-repair prompt so a repaired file
+ * still loads before the implementation exists. Shared with the generator's
+ * runtime rules (below) so the two never drift.
+ */
+const G2 =
+  "The file must load before the implementation exists. In languages that resolve imports at runtime (TypeScript, JavaScript, Python), import modules this feature adds inside each test rather than at the top of the file, so a missing module fails only the tests that use it.";
+
+/**
+ * US-001 G1-G3. Appended to the generator's rules so the model knows nax runs
+ * the file it just wrote, that it must load before the implementation exists,
+ * and that it may revise the file in place with Edit rather than spawning a
+ * second test file.
+ */
+const GENERATOR_RUNTIME_RULES = `- nax runs this file as soon as you finish, before any implementation exists; a file that fails to load is sent back for repair.
+- ${G2}
+- Write every AC-N test into this one file. To add or change tests in a file you already wrote, use Edit; do not create a second test file.`;
+
 // ─── Additional parameter interfaces (moved from acceptance domain) ───────────
 
 export interface FixGeneratorParams {
@@ -190,7 +208,8 @@ ${STEP3_HEADER}
 ${STEP3_SHARED_RULES}
 - **File output (REQUIRED)**: Write the acceptance test file DIRECTLY to the path shown below. Do NOT output the test code in your response. After writing the file, reply with a brief confirmation.
 - **Path anchor (CRITICAL — do NOT deviate)**: Write the test file to this exact path: \`${p.targetTestFilePath}\`. This path is repo-rooted and computed by the orchestrator — do not change it based on what you observe in the project. When a story belongs to a specific package (e.g. \`packages/core\`), its acceptance test lives inside that package's own \`.nax/features/\` directory so the test runner can resolve the package's imports correctly.
-- **Process cwd**: When spawning child processes to invoke a CLI or binary, set the working directory to the package's own root — the directory containing that package's manifest (e.g. \`package.json\`, \`go.mod\`) — as your default, unless your Step 2 exploration reveals the CLI uses a different working directory convention (e.g. reads config from \`~/.config/\`, or resolves paths relative to a flag value). Always check how the CLI resolves file paths before assuming.${implSection}`;
+- **Process cwd**: When spawning child processes to invoke a CLI or binary, set the working directory to the package's own root — the directory containing that package's manifest (e.g. \`package.json\`, \`go.mod\`) — as your default, unless your Step 2 exploration reveals the CLI uses a different working directory convention (e.g. reads config from \`~/.config/\`, or resolves paths relative to a flag value). Always check how the CLI resolves file paths before assuming.
+${GENERATOR_RUNTIME_RULES}${implSection}`;
   }
 
   /**
@@ -208,9 +227,29 @@ ${targetTestFilePath}
 Requirements:
 - The file must be at that exact path — same directory and same filename, including any leading dot and dashes. Do NOT sanitize, rename, or relocate it.
 - Preserve the test content you already wrote. Do not regenerate, weaken, or stub the assertions.
-- If you wrote it somewhere else, delete the misplaced copy after moving it so only the canonical path remains.
+- Keep every acceptance test in this one file; do not create a second test file.
 
 After writing the file to the exact path above, reply with a brief confirmation only.`;
+  }
+
+  /**
+   * Prompt for acceptanceRepairOp — the smallest edit that makes the acceptance
+   * test file load while keeping every AC-N test and its assertions.
+   */
+  buildLoadRepairPrompt(targetTestFilePath: string, outputTail: string): string {
+    return `The acceptance test file at \`${targetTestFilePath}\` does not load. nax ran it before any implementation exists, and the runner failed to load it. Here is the tail of the run output:
+
+\`\`\`
+${outputTail}
+\`\`\`
+
+Make the smallest edit that makes the file load while keeping every AC-N test and its assertions intact:
+- Edit the file at exactly this path: \`${targetTestFilePath}\`.
+- Fix only the load failure. Do NOT delete, rename, weaken, stub, or skip any test, and do NOT create a second test file.
+
+${G2}
+
+After editing the file in place, reply with a brief confirmation only.`;
   }
 
   /** Prompt for generateAcceptanceTests() — agent returns raw test code. */

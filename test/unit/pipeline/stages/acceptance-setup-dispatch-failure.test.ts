@@ -125,7 +125,7 @@ describe("US-002: failed dispatch — falsy testCode with adapterFailure", () =>
     };
     _acceptanceSetupDeps.writeFile = mock(async () => {});
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
   }
 
   test("AC1: makes no writeFile call whose path is the group's acceptance test path", async () => {
@@ -206,7 +206,7 @@ describe("US-002: model-quality empty — falsy testCode without adapterFailure"
     };
     _acceptanceSetupDeps.writeFile = mock(async () => {});
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
   }
 
   test("AC3: writes skeleton content to the group's acceptance test path", async () => {
@@ -259,7 +259,7 @@ describe("US-002: truthy testCode with adapterFailure — write the testCode", (
     };
     _acceptanceSetupDeps.writeFile = mock(async () => {});
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -302,7 +302,7 @@ describe("#1896: acceptance-meta is not stamped for a suite that was never writt
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = writeMetaMock;
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
     return writeMetaMock;
   }
 
@@ -372,7 +372,7 @@ describe("#1896: acceptance-meta is not stamped for a suite that was never writt
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = writeMetaMock;
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx({ prd: makePrd(stories), story: stories[0], stories }));
 
@@ -453,7 +453,7 @@ function eventsWireDeps(runTestExitCode: number) {
   };
   _acceptanceSetupDeps.runTest = async () => ({
     exitCode: runTestExitCode,
-    output: runTestExitCode !== 0 ? "1 fail" : "all pass",
+    output: runTestExitCode !== 0 ? "(fail) AC-1: x" : "all pass",
   });
 }
 
@@ -484,7 +484,7 @@ describe("acceptance-setup events — AC1: postrun:phase:started before generati
     _acceptanceSetupDeps.autoCommitIfDirty = async () => {};
     _acceptanceSetupDeps.loadGroupConfig = async () => DEFAULT_CONFIG as PipelineContext["config"];
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
     _acceptanceSetupDeps.callOp = async (_ctx, _pkg, op, _input) => {
       callOrder.push("callOp");
       if (op.name === "acceptance-generate") return { testCode: 'test("x", () => {})' };
@@ -565,7 +565,7 @@ describe("acceptance-setup events — AC3: details match recorded stage values",
     _acceptanceSetupDeps.autoCommitIfDirty = async () => {};
     _acceptanceSetupDeps.loadGroupConfig = async () => DEFAULT_CONFIG as PipelineContext["config"];
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
     // US-001 testable, US-002 not testable → testableCount = 2
     _acceptanceSetupDeps.callOp = async (_ctx, _pkg, op, input) => {
       if (op.name === "acceptance-refine") {

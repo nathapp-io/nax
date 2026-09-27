@@ -23,21 +23,28 @@
 
 import path from "node:path";
 import type { AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
-import { buildAcceptanceRunCommand, generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
+import { generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { loadConfigForPackage } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
-import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "@/operations";
+import { callOp as _callOp, acceptanceGenerateOp } from "@/operations";
 import { isInAcceptanceScope } from "@/prd";
 import { errorMessage } from "@/utils/errors";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
-import { storyAbsWorkdir } from "@/utils/path-frame";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import {
+  type AcceptanceCoverageEntry,
+  findMissingAcceptanceTestPaths,
+  makeAcceptanceCoverageCollector,
+  warnMissingAcceptanceTests,
+} from "./acceptance-coverage";
+import { type AcceptanceRedGateEntry, runAcceptanceRedGate } from "./acceptance-red-gate";
+import { refineAcceptanceCriteria } from "./acceptance-refine-criteria";
 
 // ─── Local helpers ──────────────────────────────────────────────────────────
 
@@ -58,6 +65,8 @@ export interface AcceptanceMeta {
   acCount: number;
   /** Generator identifier */
   generator: string;
+  /** Per-group AC coverage observed when the file was written (US-002) */
+  coverage?: AcceptanceCoverageEntry[];
 }
 
 /**
@@ -275,8 +284,14 @@ async function runAcceptanceSetup(
 
   let shouldGenerate = false;
   let regenerated = false;
-  if (!meta || meta.acFingerprint !== fingerprint || meta.layoutFingerprint !== layoutFingerprint) {
-    if (!meta) {
+  const inputsMatch = !!meta && meta.acFingerprint === fingerprint && meta.layoutFingerprint === layoutFingerprint;
+  const missingTestPaths = await findMissingAcceptanceTestPaths(groups, _acceptanceSetupDeps.fileExists);
+  if (inputsMatch && missingTestPaths.length === 0) {
+    getSafeLogger()?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
+  } else {
+    if (inputsMatch) {
+      warnMissingAcceptanceTests(ctx.story?.id, missingTestPaths);
+    } else if (!meta) {
       getSafeLogger()?.info("acceptance-setup", "No acceptance meta — generating acceptance tests");
     } else {
       getSafeLogger()?.info("acceptance-setup", "Acceptance inputs changed — regenerating acceptance tests", {
@@ -296,11 +311,6 @@ async function runAcceptanceSetup(
     }
     shouldGenerate = true;
     regenerated = true;
-  } else {
-    // Fingerprint matches — reuse existing tests. If the file is missing (e.g.,
-    // overwritten by TDD cycle then deleted in a crash), the existing tests are
-    // still valid: skip generation and let the RED gate decide whether to run.
-    getSafeLogger()?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
   }
 
   if (shouldGenerate) {
@@ -310,58 +320,8 @@ async function runAcceptanceSetup(
     let allRefinedCriteria: RefinedCriterion[];
 
     if (ctx.config.acceptance.refinement) {
-      const maxConcurrency = ctx.config.acceptance.refinementConcurrency ?? 3;
-      const results: RefinedCriterion[][] = new Array(nonFixStories.length);
-      const executing = new Set<Promise<void>>();
-
-      for (let i = 0; i < nonFixStories.length; i++) {
-        const story = nonFixStories[i];
-        const packageDir = storyAbsWorkdir(ctx.workdir, story);
-        const config = groupConfigs.get(packageDir) ?? ctx.config;
-        const task = (
-          _acceptanceSetupDeps.callOp(
-            ctx,
-            packageDir,
-            acceptanceRefineOp,
-            {
-              criteria: story.acceptanceCriteria,
-              codebaseContext: "",
-              storyId: story.id,
-              testStrategy: config.acceptance.testStrategy,
-              testFramework: config.acceptance.testFramework,
-              storyTitle: story.title,
-              storyDescription: story.description,
-            },
-            story.id,
-            config,
-          ) as Promise<RefinedCriterion[]>
-        )
-          .then((refined) => {
-            results[i] = refined;
-          })
-          .catch(() => {
-            getSafeLogger()?.warn("acceptance-setup", "AC refinement failed after retries — using unrefined criteria", {
-              storyId: story.id,
-            });
-            results[i] = story.acceptanceCriteria.map((c) => ({
-              original: c,
-              refined: c,
-              testable: true,
-              storyId: story.id,
-            }));
-          })
-          .finally(() => {
-            executing.delete(task);
-          });
-        executing.add(task);
-
-        if (executing.size >= maxConcurrency) {
-          await Promise.race(executing);
-        }
-      }
-
-      await Promise.all(executing);
-      allRefinedCriteria = results.flat();
+      const refined = await refineAcceptanceCriteria(ctx, nonFixStories, groupConfigs, _acceptanceSetupDeps.callOp);
+      allRefinedCriteria = refined.criteria;
     } else {
       allRefinedCriteria = nonFixStories.flatMap((story) =>
         story.acceptanceCriteria.map((c) => ({
@@ -369,11 +329,14 @@ async function runAcceptanceSetup(
           refined: c,
           testable: true,
           storyId: story.id,
+          refinementFallback: false,
         })),
       );
     }
 
     testableCount = allRefinedCriteria.filter((r) => r.testable).length;
+
+    const coverage = makeAcceptanceCoverageCollector(ctx.workdir);
 
     // Generate one acceptance test file per workdir group via callOp
     for (const group of groups) {
@@ -418,6 +381,7 @@ async function runAcceptanceSetup(
       if (dispatchFailure) sawDispatchFailure = true;
       if (testCode) {
         await _acceptanceSetupDeps.writeFile(testPath, testCode);
+        coverage.record(testPath, testCode, group.criteria.length, groupStoryId);
       } else if (dispatchFailure) {
         // Stage decision: dispatch failed — write nothing. The acceptance
         // stage will surface this as a missing target, with the failure's
@@ -446,6 +410,7 @@ async function runAcceptanceSetup(
           group.language,
         );
         await _acceptanceSetupDeps.writeFile(testPath, skeletonCode);
+        coverage.record(testPath, skeletonCode, group.criteria.length, groupStoryId);
         getSafeLogger()?.warn("acceptance-setup", "agent did not produce test content; using skeleton", {
           storyId: groupStoryId,
           testPath,
@@ -462,6 +427,7 @@ async function runAcceptanceSetup(
           refined: c.refined,
           testable: c.testable,
           storyId: c.storyId,
+          refinementFallback: c.refinementFallback === true,
         })),
         null,
         2,
@@ -472,11 +438,12 @@ async function runAcceptanceSetup(
     // P2-B: Store acceptance metadata (centralized in featureDir)
     //
     // #1896: only when every group actually produced a file. A dispatch failure
-    // writes no test, and the reuse branch at the gate above explicitly blesses
-    // a missing file — so stamping a matching fingerprint here would make the
-    // empty suite permanent. The stub guard cannot rescue it either: it keys on
-    // file content, and findExistingAcceptanceTestPath returns undefined when
-    // nothing is on disk. Leaving meta unwritten makes the next run regenerate.
+    // writes no test, so there is nothing for the reuse branch's missing-file
+    // check (findMissingAcceptanceTestPaths) to detect — a group with no file
+    // would simply be absent. Stamping a matching fingerprint here would make
+    // that empty suite permanent. The stub guard cannot rescue it either: it
+    // keys on file content, and findExistingAcceptanceTestPath returns undefined
+    // when nothing is on disk. Leaving meta unwritten makes the next run regenerate.
     if (sawDispatchFailure) {
       getSafeLogger()?.warn(
         "acceptance-setup",
@@ -491,6 +458,7 @@ async function runAcceptanceSetup(
         storyCount: ctx.prd.userStories.length,
         acCount: totalCriteria,
         generator: "nax",
+        coverage: coverage.entries(),
       });
     }
 
@@ -509,6 +477,7 @@ async function runAcceptanceSetup(
   // Resolve per-package testFramework and commandOverride so the runner uses the
   // correct test framework for each package in a monorepo.
   const acceptanceTestPaths: NonNullable<typeof ctx.acceptanceTestPaths> = [];
+  const redGateEntries: AcceptanceRedGateEntry[] = [];
   for (const g of groups) {
     const groupConfig = groupConfigs.get(g.packageDir) ?? ctx.config;
     acceptanceTestPaths.push({
@@ -518,6 +487,15 @@ async function runAcceptanceSetup(
       commandOverride: groupConfig.acceptance.command,
       storyCount: g.stories.length,
       acceptanceEnabled: groupConfig.acceptance.enabled,
+    });
+    redGateEntries.push({
+      testPath: g.testPath,
+      packageDir: g.packageDir,
+      testFramework: groupConfig.project?.testFramework,
+      commandOverride: groupConfig.acceptance.command,
+      language: g.language,
+      storyId: g.stories[0]?.id,
+      config: groupConfig,
     });
   }
   ctx.acceptanceTestPaths = acceptanceTestPaths;
@@ -536,24 +514,8 @@ async function runAcceptanceSetup(
 
   // @design: BUG-084: Use testFramework-aware single-file command (not quality.commands.test which runs full suite)
   // Run RED gate for each per-package test file from its package directory.
-  // Use per-package testFramework/commandOverride resolved above.
-  let redFailCount = 0;
-  for (const { testPath, packageDir, testFramework, commandOverride } of acceptanceTestPaths) {
-    const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride, packageDir);
-    getSafeLogger()?.info("acceptance-setup", "Running acceptance RED gate command", {
-      cmd: runCmd.join(" "),
-      packageDir,
-    });
-    const { exitCode } = await _acceptanceSetupDeps.runTest(
-      testPath,
-      packageDir,
-      runCmd,
-      ctx.config.acceptance.timeoutMs,
-    );
-    if (exitCode !== 0) {
-      redFailCount++;
-    }
-  }
+  // The gate distinguishes a genuine RED from a load crash and repairs the latter once (US-005).
+  const redFailCount = await runAcceptanceRedGate(ctx, redGateEntries, _acceptanceSetupDeps);
 
   // All tests passing means they are not testing new behavior — skip acceptance gate
   if (redFailCount === 0) {

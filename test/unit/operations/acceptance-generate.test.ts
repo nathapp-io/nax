@@ -57,6 +57,14 @@ describe("acceptanceGenerateOp shape", () => {
   test("session role is acceptance-gen with fresh lifetime", () => {
     expect(acceptanceGenerateOp.session).toEqual({ role: "acceptance-gen", lifetime: "fresh" });
   });
+
+  test("declares Edit so the generator can revise the file it wrote (US-001 AC1)", () => {
+    expect(acceptanceGenerateOp.tools).toEqual(["Read", "Glob", "Grep", "Write", "Edit", "RequestCapability"]);
+  });
+
+  test.each(["Exec", "Bash", "Delete", "RunCommand"])("does not grant %s (US-001 boundary)", (tool) => {
+    expect(acceptanceGenerateOp.tools).not.toContain(tool);
+  });
   test("model resolves from acceptance.model config", () => {
     const config = makeNaxConfig({
       acceptance: {
@@ -144,6 +152,14 @@ describe("acceptanceGenerateOp.build()", () => {
     const ctx = makeBuildCtx();
     const result = acceptanceGenerateOp.build(SAMPLE_INPUT, ctx);
     expect(result.task.content).toContain(needle);
+  });
+
+  test("task section uses the updated generator builder, carrying sentence G3 (US-001 AC8)", () => {
+    const ctx = makeBuildCtx();
+    const result = acceptanceGenerateOp.build(SAMPLE_INPUT, ctx);
+    expect(result.task.content).toContain(
+      "Write every AC-N test into this one file. To add or change tests in a file you already wrote, use Edit; do not create a second test file.",
+    );
   });
 });
 

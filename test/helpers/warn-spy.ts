@@ -40,11 +40,28 @@ type LogSpy = Mock<Logger["warn"]>;
 async function withLogSpy<T>(level: "warn" | "info" | "debug", fn: (spy: LogSpy) => Promise<T>): Promise<T> {
   const { resetLogger, initLogger } = await import("@/logger");
   resetLogger();
-  const spy: LogSpy = spyOn(initLogger({ level: "silent" }), level);
+  const logger = initLogger({ level: "silent" });
+  const originalMethod = logger[level];
+  const spy: LogSpy = spyOn(logger, level);
   try {
     return await fn(spy);
   } finally {
-    spy.mockRestore();
+    // Restore the real method directly rather than through spy.mockRestore():
+    // mockRestore() also clears spy.mock.calls, and some callers assert on the
+    // returned spy *after* withWarnSpy() resolves (AC-22 in
+    // acceptance-verdict-integrity). The spied Logger instance is discarded by
+    // resetLogger() below, so no later call resolves through the stale spy.
+    switch (level) {
+      case "warn":
+        logger.warn = originalMethod;
+        break;
+      case "info":
+        logger.info = originalMethod;
+        break;
+      case "debug":
+        logger.debug = originalMethod;
+        break;
+    }
     resetLogger();
   }
 }

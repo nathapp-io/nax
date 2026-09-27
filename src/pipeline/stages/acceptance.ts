@@ -43,6 +43,7 @@ import { logTestOutput } from "@/utils/log-test-output";
 import { storyAbsWorkdir } from "@/utils/path-frame";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import { checkAcceptanceCoverage } from "./acceptance-coverage";
 
 /** Injectable deps for testability */
 export const _acceptanceStageDeps = {
@@ -152,10 +153,12 @@ export const acceptanceStage: PipelineStage = {
     // US-003: count PRD stories per package for missing-target storyCount fallback.
     // Same SSOT grouping as AcceptanceTestGroup.stories in src/acceptance/test-path.ts.
     const storiesByPackageDir = new Map<string, number>();
+    const acsByPackageDir = new Map<string, number>();
     for (const s of ctx.prd.userStories) {
       if (!isInAcceptanceScope(s)) continue;
       const pkgDir = storyAbsWorkdir(ctx.workdir, s);
       storiesByPackageDir.set(pkgDir, (storiesByPackageDir.get(pkgDir) ?? 0) + 1);
+      acsByPackageDir.set(pkgDir, (acsByPackageDir.get(pkgDir) ?? 0) + s.acceptanceCriteria.length);
     }
 
     // Collect combined results across all packages
@@ -209,6 +212,25 @@ export const acceptanceStage: PipelineStage = {
           });
         }
         continue;
+      }
+
+      // US-002: advisory AC-coverage check. The file exists, so count how many of
+      // the package's in-scope ACs it names as tests. Never gates the verdict, and
+      // never fails the stage: a read error (file removed between the exists-check
+      // and the read, EACCES, transient FS error) is logged and swallowed.
+      try {
+        checkAcceptanceCoverage({
+          testPath,
+          source: await testFile.text(),
+          expected: acsByPackageDir.get(packageDir) ?? 0,
+          storyId: ctx.story.id,
+        });
+      } catch (err) {
+        logger.debug("acceptance", "AC coverage check skipped — test file could not be read", {
+          storyId: ctx.story.id,
+          testPath,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
 
       // @design: BUG-083/BUG-084: Run ONLY the acceptance test file, not the full project test suite.
