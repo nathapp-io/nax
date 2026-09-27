@@ -472,4 +472,73 @@ describe("config/merger", () => {
       expect((result as { polluted?: boolean }).polluted).toBeUndefined();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Characterisation for the complexity drain (C1b): branches nothing above
+  // pins. Each is asserted against the unrefactored merger so the extraction
+  // keeps the behaviour verbatim.
+  // -------------------------------------------------------------------------
+
+  describe("hooks special case — sibling fields and non-plain base defs", () => {
+    test("copies non-hooks config fields (e.g. skipGlobal) from the override hooks object", () => {
+      const base = { hooks: { hooks: { "on-start": { command: "echo base" } } } };
+      const override = { hooks: { skipGlobal: true, hooks: { "on-stop": { command: "echo stop" } } } };
+
+      type WithSkipGlobal = { hooks: { skipGlobal?: boolean; hooks?: Record<string, RawHookEntry> } };
+      const result = deepMergeConfig<WithSkipGlobal>(base, override);
+
+      expect(result.hooks.skipGlobal).toBe(true);
+      expect(result.hooks.hooks).toEqual({ "on-start": { command: "echo base" }, "on-stop": { command: "echo stop" } });
+    });
+
+    test("override hooks.hooks wins when the base's hooks.hooks is not a plain object (array)", () => {
+      const base = { hooks: { hooks: ["legacy"] } };
+      const override = { hooks: { hooks: { "on-start": { command: "echo override" } } } };
+
+      type RequiredHooks = { hooks: { hooks?: Record<string, unknown> } };
+      const result = deepMergeConfig<RequiredHooks>(base, override);
+
+      expect(result.hooks.hooks).toEqual({ "on-start": { command: "echo override" } });
+    });
+
+    test("override hooks.hooks wins when the base defines no nested hooks key at all", () => {
+      const base = { hooks: { skipGlobal: true } };
+      const override = { hooks: { hooks: { "on-start": { command: "echo override" } } } };
+
+      type WithSkipGlobal = { hooks: { skipGlobal?: boolean; hooks?: Record<string, RawHookEntry> } };
+      const result = deepMergeConfig<WithSkipGlobal>(base, override);
+
+      expect(result.hooks.hooks).toEqual({ "on-start": { command: "echo override" } });
+      expect(result.hooks.skipGlobal).toBe(true);
+    });
+
+    test("primitive base hooks is replaced wholesale by a plain-object override", () => {
+      const base = { hooks: "legacy" };
+      const override = { hooks: { hooks: { "on-start": { command: "echo override" } } } };
+
+      const result = deepMergeConfig<typeof override>(base, override);
+
+      // The hooks special case requires BOTH sides to be plain objects, so the
+      // default replace arm runs and the merged value IS the override value.
+      expect(result.hooks).toBe(override.hooks);
+    });
+  });
+
+  describe("type-direction edges of the replace arm", () => {
+    test("primitive base with a plain-object override takes the override object", () => {
+      const override = { a: 1 };
+      const result = deepMergeConfig<{ config: { a: number } }>({ config: "simple" }, { config: override });
+      expect(result.config).toBe(override);
+    });
+
+    test("a prototype key in the override is skipped like the other dangerous keys", () => {
+      // A plain literal creates "prototype" as a normal own data property,
+      // exactly like JSON.parse would — only __proto__ is literal-special.
+      const override = { prototype: { polluted: true }, b: 2 };
+      const result = deepMergeConfig<{ a: number; b: number }>({ a: 1 }, override);
+
+      expect(result.b).toBe(2);
+      expect(Object.hasOwn(result, "prototype")).toBe(false);
+    });
+  });
 });
