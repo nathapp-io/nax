@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T19:22:24.654Z",
+  "updatedAt": "2026-09-27T19:47:56.034Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -69,7 +69,6 @@
     "src/context/engine/orchestrator.ts": [26],
     "src/context/engine/pollution.ts": [21],
     "src/context/engine/provider-weights.ts": [29],
-    "src/context/engine/providers/code-neighbor.ts": [73],
     "src/context/engine/providers/prior-run-failure.ts": [32],
     "src/context/engine/providers/static-rules.ts": [54],
     "src/context/engine/providers/test-path-derivation.ts": [26],

@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A11-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A12-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    244 functions in 212 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     17   (16 src, 1 scripts)   <- THIS DRAIN (runNonBlockingFix drained by A11)
+  over 20    243 functions in 211 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     16   (15 src, 1 scripts)   <- THIS DRAIN (collectNeighbors drained by A12)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 12 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11)
+batches: 13 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12)
 ```
 
 Refresh this block at the end of every batch:
@@ -152,7 +152,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | A9 | done 2026-09-27 | 71 | `handleRunCompletion` | `src/execution/lifecycle/run-completion.ts:111` | 563 -> 220 | 22 / 18 | none |
 | A10 | done 2026-09-27 | 83 | `runFixCycle` | `src/findings/cycle.ts:72` | 544 -> 149 | 16 / 12 | yes |
 | A11 | done 2026-09-27 | 70 | `runNonBlockingFix` | `src/execution/non-blocking-fix.ts:230` | 492 -> 261 | 17 / 13 | yes |
-| A12 | todo | 73 | `collectNeighbors` | `src/context/engine/providers/code-neighbor.ts:264` | 498 | 17 / 11 | yes |
+| A12 | done 2026-09-27 | 73 | `collectNeighbors` | `src/context/engine/providers/code-neighbor.ts:264` | 498 -> 375 | 17 / 11 | yes |
 | A13 | todo | 99 | `callTool` | `src/tools/runtime.ts:318` | 557 | 31 / 8 | yes |
 
 Ordered by fix commits, then by how central the function is to a run. A1 goes first
@@ -1319,3 +1319,118 @@ both A3 (failedPhases) and A11 (acIndex/file) found their unpinned output. Post-
 note: over-60 is down to 17 (16 src + 1 scripts); Wave A has two rows left
 (A12, A13); `nbf-source-diff.ts`'s `createMeasureSourceDiff` inner closure scores 29
 — within reach of the 40-milestone discussion, out of this drain's scope.
+
+### 9.13 - 2026-09-27, A12 done - `collectNeighbors` 73 -> 4 (one session)
+
+The first batch outside `src/execution/`+`src/findings/` since A8, and the shape turned
+out to be the A3/A9 linear multi-stage family (forward deps -> reverse deps -> slot
+merge -> sibling hint), NOT the `while(true)` state machine A1/A2 were. One session,
+including a small characterisation commit — §9.12's warning that "test: yes" is not
+"nothing to characterise" held, but only barely: the three code-neighbor* mirrors pin
+almost everything. Pre-flight, all answered BEFORE writing code: (1) A2's traps both
+clean — the function has NO try/catch at all (nothing throws across any boundary) and
+no closure captures a `let` (the one closure, the `candidates.find((c, i) => ...)`
+predicate, captures nothing mutable). One subtlety shaped the reverse phase instead:
+`anyTruncated` is recorded only for scanned dirs VISITED before the labeled
+`break outer`, so it could NOT be replaced by a `scannedDirs.some(...)` after the
+loop — the phase returns `{ neighbors, anyTruncated }` with the flag set at the same
+position inside the loop. (2) The `_deps` seam exists AND is barrel re-exported
+(`src/context/engine/index.ts:65` re-exports `_codeNeighborDeps` — A1's trap shape,
+first time since A9). Resolved stronger than the type-only back-import A5/A9 used:
+the sibling imports NOTHING from code-neighbor.ts at all — the deps arrive BY
+REFERENCE on every phase input (`deps: _codeNeighborDeps` at each call, properties
+read at call time so test reassignments land) and are typed by a structural
+`PhaseDeps extends ReadCachedDeps` defined in the sibling, so the cycle question
+never even arises. (3) No source-text tests pin the file (sixth batch running). (4)
+No per-file guard allow-list names the file (`grep -Rn "grep -vE" scripts/` — A7's
+sweep, clean here). (5) File measured 498 going in (the doc's number, no drift for
+once — first batch where §4's count was exact).
+
+**Characterisation first** (own commit `test: characterise collectNeighbors unpinned
+branches before complexity drain`, 5 tests, green against the unrefactored function,
+in a new sibling `code-neighbor-collect-edges.test.ts` — the main mirror sits at 745,
+too tight for additions; zero `as T` casts, looseCast stayed 1474). The mirror audit
+found MORE pinned than expected — the forward self-import guard is ALREADY discriminated
+by the "self-reference" test's second half (`src/a.ts` importing `"./a"`), which cut a
+sixth candidate test. What nothing pinned: (a) a forward import resolving OUTSIDE the
+workdir (`resolveImport` -> null -> continue), with a normal sibling import still
+landing; (b) a missing own file collecting no forward deps even when readFile has
+content behind the mock (the mirrors' setupDeps returns "" for missing files, so their
+"regardless of disk existence" test cannot catch the `fileExists` guard being dropped);
+(c) an oversized own file (`readCached` -> null — the mirror's oversized test asserts
+read/stat counts, and its readFile returns ""); (d) the includes() quick-check quirk:
+a directory import (`"."`) whose content never spells the base name is NOT discovered
+as a reverse dep; (e) the AC5 exact-match arm — a scanned file spelled exactly as the
+package's relative path survives the `startsWith(packagePrefix)` filter that drops
+everything else outside it. (d) and (e) are recorded quirks, pinned as-is per §2.1;
+both are now named in the sequencer's doc comment. One test-design lesson from (e)'s
+first run: my fileExists mock made the colocated test candidate "exist", so #526
+first-existing-wins correctly picked it over the mirrored hint I meant to assert —
+a mirrored-fallback test must make the colocated candidates absent too.
+
+**Technique:** the ~120-line body became a sequencer plus four phases in a new sibling,
+`code-neighbor-phases.ts` (307 lines): `collectForwardNeighbors` (the own-file
+import parse), `collectReverseNeighbors` (the labeled nested loop; its two extracted
+predicates `isOutsidePackageScope` and `importsOwnPath` keep the loop reading flat —
+the original's nested `if (content?.includes(...)) { for ... }` became a short-circuit
+`&&`, so candidates lacking the base name are still never parsed), `mergeNeighborSlots`
+(the #1611 min-reverse-slots merge, comment moved verbatim), and
+`resolveSiblingTestHint` (the ADR-009 selection order, comment moved verbatim).
+`parseImportSpecifiers`, `resolveImport`, `packageScopeRelative`, `MAX_NEIGHBORS_PER_FILE`,
+and the `ScannedDir` interface moved wholesale (single-consumer private symbols, A8's
+moved-helper pattern). `collectNeighbors` stays in code-neighbor.ts as the sequencer
+(public surface unchanged) and scores 4; the #1611/#526/nax#2074 comment blocks moved
+with their code. Bonus §3-rule fix for free (A11's precedent): the original's
+7-positional-parameter signature collapsed to one `CollectNeighborsInput` options
+object, so the fetch call site now reads as named fields.
+
+**Helper scores (biome probe at maxAllowedComplexity=1, the gate's own meter):**
+`collectReverseNeighbors` 19 — the largest, one coherent labeled nested loop, not a
+fake-split candidate (compliant per §2.3, fourth batch at-or-near the line: A6's
+`sendWithParseRetry` and A8's `runRefPathFields` and A10's `runFixCycle` all landed
+20); `collectForwardNeighbors` 15, `resolveSiblingTestHint` 10, `parseImportSpecifiers`
+9, `importsOwnPath` 6, `mergeNeighborSlots` 6, `collectNeighbors` 4,
+`packageScopeRelative` 4, `resolveImport` 3, `isOutsidePackageScope` 2. No baseline
+hand-edit (§2.3 never triggered, seventh batch running) — `check:complexity` reported
+only "improved" for code-neighbor.ts, and `check:complexity:update` was a pure lower:
+244 -> 243 functions, 212 -> 211 files (`code-neighbor.ts` left the over-20 baseline
+entirely; `fetch` was measured at 13 — untouched, under 20).
+
+**File-size gate, single sibling held:** `code-neighbor.ts` 498 -> 375 (strictly
+smaller); the sibling landed at 307 after `bun x biome check --write` — under 600
+with room, because the extraction moved ~100 lines of pre-existing helpers rather
+than rehousing the whole function body (A8's observation, second occurrence). The
+"budget two sibling files" rule never came close to firing.
+
+**Verification beyond the suite:** a literal fingerprint diff of the original file
+against the pair — all 69 quoted string literals of length >= 4 appear verbatim (or
+with template `${...}` placeholders stripped for the two `${base}`-style template
+literals), zero missing. The only non-literal textual delta is the nested-if ->
+short-circuit `&&` in the reverse loop noted above, whose evaluation order is
+provably identical.
+
+**One tooling note for the next batch:** measuring helper scores needs a probe config
+(`maxAllowedComplexity: 1`) — writing it to /tmp BREAKS plugin loading (biome resolves
+plugin paths relative to the config file's directory); put `biome.probe.json` in the
+repo root and delete it after.
+
+**Nothing else surprising.** 1273 context-engine tests green (67 files, incl. the 5
+new characterisation tests and the three mirror suites unchanged), `bun run typecheck`,
+`bun run test` (all phases), `bun run check:all` (35 scripts; import-cycles 0, file-
+sizes green, looseCast 1474), and `bun run test:coverage` all green; below-floor count
+1 vs baseline 2 (the standing A5 improvement, not lowered here).
+
+**For the next batch:** A13 `callTool` (`src/tools/runtime.ts:318`, 99, 557 lines,
+test: yes) — the LAST Wave A row, and the worst score left in `src/` after
+`parser.ts` (155, B3) and `validate.ts` (110, C1). Pre-flight per this batch: (1) the
+usual trap sweep — `src/tools/` is A8 territory, so check for a `_deps`-style seam
+re-exported through `src/tools/index.ts` (policy.ts had none, but runtime.ts is the
+dispatcher the barrel exists for); (2) A2's mutate-in-place/closure checks FIRST —
+a tool dispatcher is exactly where result-mutation across an extraction boundary
+lives; (3) grep test/ for source-text assertions on runtime.ts; (4) 557 lines means
+the sibling split is planned from the first line (A6's one-file-per-branch seam);
+(5) expect zero characterisation work per §9.10's rule of thumb, but audit log
+payloads and data-literal construction specifically (A3/A11/A12's hunting ground).
+Post-drain note: over-60 is down to 16 (15 src + 1 scripts); after A13, Wave A is
+done and the worst remaining function outside scripts/ is B3's `parseAcpxJsonLine`
+(155).
