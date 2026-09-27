@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B3-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B4-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    239 functions in 209 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     12   (11 src, 1 scripts)   <- THIS DRAIN (parseAcpxJsonLine drained by B3)
+  over 20    238 functions in 208 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     11   (10 src, 1 scripts)   <- THIS DRAIN (runDeferredRegression drained by B4)
   worst      110   src/config/validate.ts validateConfig
 biome.json cap: 170
-batches: 17 of 25 done (P0, A1-A13, B1-B3)
+batches: 18 of 25 done (P0, A1-A13, B1-B4)
 ```
 
 Refresh this block at the end of every batch:
@@ -167,7 +167,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | B1 | done 2026-09-27 | 96 | `decideStageAction` | `src/execution/post-run.ts:275` | 534 -> 321 | 14 / 7 | none |
 | B2 | done 2026-09-27 | 76 | `sendTurn` | `src/agents/acp/adapter.ts:239` | 454 -> 252 | 15 / 7 | yes |
 | B3 | done 2026-09-27 | 155 | `parseAcpxJsonLine` | `src/agents/acp/parser.ts:88` | 388 | 6 / 5 | yes |
-| B4 | todo | 73 | `runDeferredRegression` | `src/execution/lifecycle/run-regression.ts:205` | 587 | 10 / 6 | yes |
+| B4 | done 2026-09-27 | 73 | `runDeferredRegression` | `src/execution/lifecycle/run-regression.ts:205` | 587 | 10 / 6 | yes |
 | B5 | todo | 63 | `runParallelBatch` | `src/execution/parallel-batch.ts:122` | 417 | 9 / 5 | yes |
 | B6 | todo | 66 | `displayFeatureDetails` | `src/cli/status-features.ts:329` | 503 | 6 / 4 | yes |
 | B7 | todo | 69 | `runSession` | `src/interaction/ask-link.ts:291` | 560 | 5 / 1 | yes |
@@ -1964,3 +1964,136 @@ log payloads and data-literal construction specifically (A3/A11/B1's hunting
 ground). Post-drain note: over-60 is down to 12 (11 src + 1 scripts); worst
 is now C1's `validateConfig` (110); after B4-B7 the 40-milestone discussion
 from §9.8 still stands.
+
+### 9.18 - 2026-09-27, B4 done - `runDeferredRegression` 73 -> 5 (one session)
+
+The first Wave-B orchestrator/gate batch, back in `src/execution/lifecycle/`.
+One session, including an 8-test characterisation commit - the "test: yes is
+not nothing to characterise" warning held for the FIFTH time running (A11,
+A12, B1, B2, B3, now B4).
+
+**Pre-flight, all answered BEFORE writing code:** (1) `_regressionDeps` (6
+members) is defined in run-regression.ts AND re-exported through BOTH barrels
+(`src/execution/lifecycle/index.ts:35` and `src/execution/index.ts:66`) - A1's
+trap shape, and FIVE test files reassign its properties. It stayed defined in
+run-regression.ts; the sibling imports it TYPE-ONLY (`typeof _regressionDeps`)
+and the frame carries the object BY REFERENCE, every `deps.X` read at call
+time, so test stubs assigned before the gate runs still land (`check:import-cycles`
+0 - the triage sibling already imports `DeferredRegressionResult` type-only,
+same pattern). (2) A2's traps, checked first: one shaped the design - the Step-4
+confirmation result reads the loop's accumulators (`rectificationAttempts`,
+cost/duration/outcome records) AFTER the loop, so `RectificationState` was
+designed mutate-in-place from the first line per §9.3, never rebuilt. The
+intentional throw (`runFixCycle` rejection) propagates OUT of the whole gate
+after the `finally`'s `dispatchAsk.dispose()` - pinned by the dispatch-ask
+suite's "disposed even when the fix cycle throws" - and nothing catches it
+locally, so no state is read across a throw boundary. No closure captures a
+`let` (the validate closure captures per-story consts). (3) NO source-text
+tests read run-regression.ts raw - but see the NEW gate shape below, which is
+the source-text trap wearing a different coat. (4) File measured 586 going in
+(the doc's 587 - one line of drift, ninth batch running). (5) No per-file
+guard allow-list names the file.
+
+**A NEW guard shape for the file-move checklist (A7's allow-list surprise,
+recurred as a test-pinned construction site):** `check-bash-dispatch-ask`'s
+own test ("the real tree") pins `src/execution/lifecycle/run-regression.ts`
+as containing a WIRED `CallContext` construction - the `cycleCtx` literal
+(`runtime`+`packageView`+`agentName` naming `askResolver`+`commandShadow`, the
+#2201 fix). Moving the rectification loop wholesale would have emptied that
+file of wired sites and failed `check:all` AFTER everything else was green.
+Resolution WITHOUT touching the guard or its test: the `buildStoryCycle`
+factory (dispatchAsk build + the wired `cycleCtx` literal + the cycle with
+its validate closure) STAYS in run-regression.ts as a closure capturing the
+prologue consts, and the sibling's loop receives it BY REFERENCE as
+`frame.buildStoryCycle(story, initialFindings)`. The construction site stays
+next to `makeFullSuiteRectifyStrategy` - the guard's stated intent - and zero
+test edits were needed. Generalised rule for the checklist: `grep -rn
+"<file>" test/unit/scripts/` alongside the `grep -Rn "grep -vE" scripts/`
+sweep - guards can pin a file through their TESTS, not just their allow-lists.
+
+**Characterisation first** (own commit `test: characterise runDeferredRegression
+unpinned branches before complexity drain`, 8 tests, green against the
+unrefactored function; lifecycle-execution.test.ts had headroom (368 of 800),
+so they joined the existing gate suite rather than a new file - zero cast
+expressions, looseCast stayed 1474). The four regression mirrors pin nearly
+everything. What NOTHING pinned: (a) BUG-REG-001's crashed-runner gate
+(parser yields 0 pass + 0 fail -> accepted as pass; only the source comment
+named it); (b) `regression:detected` event emission - NO test anywhere
+subscribes for that event type; (c) the attempts `: 1` arm (a zero-iteration
+cycle counts one attempt); (d) the mid-loop TIMEOUT-accept arm (early exit,
+passedTests 0); (e) the stale-output arm (an output-less mid re-run leaves
+`currentTestOutput` untouched for the next story); (f) the final re-run
+TIMEOUT-accept arm; (g) the attribution log-payload pair ("Mapped test to
+story via gate transition" fields; "Could not safely map..." with and without
+`transitionStoryId` - A11's hunting ground); (h) `findResponsibleStoryByTransition`'s
+storyId tie-break at equal `completedAt`. One test-infra lesson NEW to this
+batch: `initLogger` THROWS `LOGGER_ALREADY_INITIALIZED` when a previous file
+in the same `bun test` process left the global logger up - my log test passed
+in isolation and in its own directory run, and failed only in the full
+execution-tree run. The established guard is `resetLogger()` BEFORE
+`initLogger(...)` (acceptance-red-gate.test.ts:227); a green targeted run
+does not surface this class of pollution - run the tree.
+
+**Technique:** sequencer + five phases in ONE sibling,
+`src/execution/lifecycle/run-regression-phases.ts` (530 lines after
+`bun x biome check --write`): `resolveRegressionSetup` 6 (mode guard, config
+resolution incl. the verifyOpts literal verbatim, passed-stories guard, the
+"Running deferred..." log - biome's cognitive complexity does not count `??`
+default chains, which is why the guard-heavy setup scores 6),
+`runInitialSuite` 11 (Step 1 + the four guard exits + triage + shortCircuit),
+`attributeAffectedStories` 17 (the mapping loop with its conditional warn
+payload, plus the no-stories-mapped exit - largest helper, one coherent unit),
+`runRectificationLoop` 14, `runFinalVerification` 5, plus `buildRegressionFindings`
+moved with its doc comment and `regressionResult` 8 - a builder for the seven
+near-identical result literals (P0's "shared helper worth naming"; the
+defaults mirror the monolith's early-exit literals field-for-field, and the
+quarantineReport key stays conditionally present). `runDeferredRegression`
+itself is now: setup guard, buildStoryCycle closure, frame literal, initial
+suite, attribution, the `regression:detected` emit loop, rectification loop,
+final verification - and scores 5; `buildStoryCycle` 3, its `validate` closure
+6, `findResponsibleStoryByTransition` 3 (untouched).
+
+**One §2.3 breach, fixed with the standard second split:** first pass put the
+whole success-branch (re-run suite, `midSuccess` decision, early-exit result,
+stale-output update) inside `runRectificationLoop` -> 23. Extracted
+`checkEarlyExitAfterSuccess` (frame, state, `{story, outcome}` - 3 positional
+params per the repo rule); second pass every function in both files <= 17.
+No baseline hand-edit needed.
+
+**File-size gate, single sibling held:** run-regression.ts 586 -> 285
+(strictly smaller); the sibling landed at 530 after `bun x biome check
+--write` - under 600, because the split was planned from the first line
+(A6's lesson, finally costing nothing).
+
+**Verification beyond the suite:** literal fingerprint diff of the original
+file (git HEAD) against the pair - all 47 double-quoted literals of length
+>= 4 verbatim, all 3 template literals' fixed parts verbatim (`Rectifying
+story ${...}`, `Story ${...} rectified successfully`, the synthetic-finding
+message), zero missing; the 6 additions are structural only (two import
+specifiers, the discriminated-union kind tags, one type-level key). 2385
+execution-tree tests green (incl. the 8 characterisation tests), then the
+full suite (22134 tests).
+
+**Nothing else surprising.** `bun run typecheck` (both tsconfigs), `bun run
+test` (all phases), `bun run check:all` (35 scripts; import-cycles 0,
+file-sizes green, looseCast 1474, check-bash-dispatch-ask green), and `bun
+run test:coverage` all green; below-floor count 1 vs baseline 2 (the standing
+A5 improvement, not lowered here). `check:complexity:update` was a pure
+lower: 239 -> 238 functions, 209 -> 208 files (`run-regression.ts` left the
+over-20 baseline entirely - every function in both files scores <= 17).
+
+**For the next batch:** B5 `runParallelBatch`
+(`src/execution/parallel-batch.ts:122`, 63, 417 lines, test: yes) - the
+function A1's dispatch phases call into, so check whether parallel-batch.ts
+has its OWN `_deps`-style seam and whether `src/execution/index.ts`
+re-exports anything mutable from it (A1's write-up shows tests reassign
+`runParallelBatch` itself through `_unifiedExecutorDeps`, which is unaffected
+by this file's internals - but verify). Pre-flight per this batch: (1) the
+usual seam + barrel sweep; (2) A2's traps first - a parallel batch runner is
+exactly where per-story state and mid-loop throws live; (3) `grep -rn
+"parallel-batch" test/unit/scripts/` for guard tests pinning the file (B4's
+new rule), plus the `grep -Rn "grep -vE" scripts/` allow-list sweep; (4) 417
+lines + extraction means plan the sibling split from the first line; (5)
+audit log payloads specifically (B1/B4's hunting ground). Post-drain note:
+over-60 is down to 11 (10 src + 1 scripts); worst is C1's `validateConfig`
+(110); Wave B has three rows left (B5-B7), then the grouped Wave C.

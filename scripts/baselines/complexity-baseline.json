@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T21:32:40.479Z",
+  "updatedAt": "2026-09-27T22:03:29.212Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -90,7 +90,6 @@
     "src/execution/lifecycle/precheck-runner.ts": [22],
     "src/execution/lifecycle/run-cleanup.ts": [29],
     "src/execution/lifecycle/run-initialization.ts": [22],
-    "src/execution/lifecycle/run-regression.ts": [73],
     "src/execution/lifecycle/run-setup-init.ts": [21],
     "src/execution/lifecycle/run-setup.ts": [24],
     "src/execution/nbf-source-diff.ts": [29],
