@@ -24,7 +24,6 @@
 import path from "node:path";
 import type { AcceptanceCoverageEntry, AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
 import {
-  buildAcceptanceRunCommand,
   findMissingAcceptanceTestPaths,
   generateSkeletonTests,
   groupStoriesByPackage,
@@ -44,6 +43,7 @@ import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import { type AcceptanceRedGateEntry, runAcceptanceRedGate } from "./acceptance-red-gate";
 import { refineAcceptanceCriteria } from "./acceptance-refine-criteria";
 
 // ─── Local helpers ──────────────────────────────────────────────────────────
@@ -476,6 +476,7 @@ async function runAcceptanceSetup(
   // Resolve per-package testFramework and commandOverride so the runner uses the
   // correct test framework for each package in a monorepo.
   const acceptanceTestPaths: NonNullable<typeof ctx.acceptanceTestPaths> = [];
+  const redGateEntries: AcceptanceRedGateEntry[] = [];
   for (const g of groups) {
     const groupConfig = groupConfigs.get(g.packageDir) ?? ctx.config;
     acceptanceTestPaths.push({
@@ -485,6 +486,15 @@ async function runAcceptanceSetup(
       commandOverride: groupConfig.acceptance.command,
       storyCount: g.stories.length,
       acceptanceEnabled: groupConfig.acceptance.enabled,
+    });
+    redGateEntries.push({
+      testPath: g.testPath,
+      packageDir: g.packageDir,
+      testFramework: groupConfig.project?.testFramework,
+      commandOverride: groupConfig.acceptance.command,
+      language: g.language,
+      storyId: g.stories[0]?.id,
+      config: groupConfig,
     });
   }
   ctx.acceptanceTestPaths = acceptanceTestPaths;
@@ -503,24 +513,8 @@ async function runAcceptanceSetup(
 
   // @design: BUG-084: Use testFramework-aware single-file command (not quality.commands.test which runs full suite)
   // Run RED gate for each per-package test file from its package directory.
-  // Use per-package testFramework/commandOverride resolved above.
-  let redFailCount = 0;
-  for (const { testPath, packageDir, testFramework, commandOverride } of acceptanceTestPaths) {
-    const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride, packageDir);
-    getSafeLogger()?.info("acceptance-setup", "Running acceptance RED gate command", {
-      cmd: runCmd.join(" "),
-      packageDir,
-    });
-    const { exitCode } = await _acceptanceSetupDeps.runTest(
-      testPath,
-      packageDir,
-      runCmd,
-      ctx.config.acceptance.timeoutMs,
-    );
-    if (exitCode !== 0) {
-      redFailCount++;
-    }
-  }
+  // The gate distinguishes a genuine RED from a load crash and repairs the latter once (US-005).
+  const redFailCount = await runAcceptanceRedGate(ctx, redGateEntries, _acceptanceSetupDeps);
 
   // All tests passing means they are not testing new behavior — skip acceptance gate
   if (redFailCount === 0) {

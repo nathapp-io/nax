@@ -156,7 +156,7 @@ describe("RED to GREEN acceptance cycle", () => {
     };
 
     // RED gate: tests fail before implementation
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "3 failed\n0 passed" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x\n3 failed" });
 
     const ctx = makeCtx(tmpDir);
     const setupResult = await acceptanceSetupStage.execute(ctx);
@@ -212,7 +212,7 @@ describe("RED to GREEN acceptance cycle", () => {
     _acceptanceSetupDeps.writeFile = async (p, content) => {
       await Bun.write(p, content);
     };
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 failed" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const redCtx = makeCtx(tmpDir);
     const redResult = await acceptanceSetupStage.execute(redCtx);
@@ -282,7 +282,7 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     // RED gate still runs even with pre-existing file
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 failed" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx(tmpDir);
     const result = await acceptanceSetupStage.execute(ctx);
@@ -328,7 +328,7 @@ describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
     _acceptanceSetupDeps.writeFile = async () => {
       writeFileCalled = true;
     };
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 failed" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx(tmpDir));
 
@@ -400,7 +400,7 @@ describe("_deps injection: no real LLM calls", () => {
       throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 failed" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx(tmpDir));
 
@@ -426,7 +426,7 @@ describe("_deps injection: no real LLM calls", () => {
       throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 failed" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx(tmpDir));
 
@@ -441,7 +441,7 @@ describe("_deps injection: no real LLM calls", () => {
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async (_testPath, _workdir) => {
       runTestDepsInvoked = true;
-      return { exitCode: 1, output: "injected: 1 failed" };
+      return { exitCode: 1, output: "injected: (fail) AC-1: x" };
     };
 
     const ctx = makeCtx(tmpDir);
