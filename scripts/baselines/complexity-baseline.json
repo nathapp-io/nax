@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T23:27:46.283Z",
+  "updatedAt": "2026-09-27T23:55:55.342Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -57,7 +57,6 @@
     "src/config/merge.ts": [36],
     "src/config/merger.ts": [78],
     "src/config/schemas.ts": [22],
-    "src/config/validate.ts": [110],
     "src/context/builder.ts": [23],
     "src/context/elements.ts": [39],
     "src/context/engine/digest.ts": [21],

@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B7-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C1a-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    235 functions in 206 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     8     (7 src, 1 scripts)   <- THIS DRAIN (runSession drained by B7)
-  worst      110   src/config/validate.ts validateConfig
+  over 20    234 functions in 205 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     7     (6 src, 1 scripts)   <- THIS DRAIN (validateConfig drained by C1a)
+  worst       99   src/cli/generate.ts generateCommand
 biome.json cap: 170
-batches: 21 of 25 done (P0, A1-A13, B1-B7)
+batches: 21 of 25 done (P0, A1-A13, B1-B7; C1 half done - validateConfig landed, deepMergeConfig next)
 ```
 
 Refresh this block at the end of every batch:
@@ -176,7 +176,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 
 | Batch | Status | Score | Function | File:line | Lines | Churn / fix | test |
 |:--|:--|---:|:--|:--|---:|:--|:--|
-| C1 | in progress | 110 | `validateConfig` | `src/config/validate.ts:30` | 175 | 4 / 0 | yes |
+| C1 | done 2026-09-27 | 110 | `validateConfig` | `src/config/validate.ts:30` | 175 | 4 / 0 | yes |
 | C1 | in progress | 78 | `deepMergeConfig` | `src/config/merger.ts:41` | 173 | 2 / 2 | none |
 | C2 | todo | 75 | `parseFrontmatter` | `src/context/rules/rules-frontmatter.ts:110` | 293 | 5 / 2 | yes |
 | C2 | todo | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 | 4 / 4 | none |
