@@ -19,7 +19,7 @@
  * unenforced rather than enforce a coin flip.
  */
 
-import { normalizeWorkdir, storyPackageDir } from "../utils/path-frame";
+import { normalizeWorkdir } from "../utils/path-frame";
 import { extractSpecModifiedFiles } from "./modifies-extract";
 import { collectStoryDeclarations, GROUPED_PATH_SUBSECTION, type StoryDeclarations } from "./spec-structure-grammar";
 import type { PRD } from "./types";
@@ -161,10 +161,10 @@ export function backfillSpecWorkdirs(prd: PRD, structure: SpecStructure): { prd:
   const backfilled: string[] = [];
 
   const userStories = prd.userStories.map((story) => {
-    // `storyPackageDir` reads the field for us: undefined means the story names
-    // no package, which covers both an absent workdir and a stated "." (the repo
-    // root, which is what an absent workdir already means).
-    if (storyPackageDir(story) !== undefined) return story;
+    // Only an ABSENT workdir is filled. A declared value is never overwritten —
+    // and "." is a declared repo root, not a spelling of absent.
+    // workdir-access-allow: the backfill fills absences only; "." is a declared value it must not overwrite
+    if (story.workdir !== undefined) return story;
     const workdir = statedWorkdirs.get(story.id.toUpperCase());
     if (workdir === undefined || normalizeWorkdir(workdir) === ".") return story;
     backfilled.push(story.id);
@@ -211,18 +211,22 @@ function fieldViolations(
   const workdir: SpecStructureViolation[] = [];
   const dependencies: SpecStructureViolation[] = [];
 
-  // A PRD story naming no package is not a divergence: the backfill fills it.
-  const statedWorkdir = storyPackageDir(prdStory);
+  // A PRD story with NO workdir is not a divergence: the backfill fills it. A
+  // declared value — the repo root "." included — is a stated workdir, compared
+  // after normalisation, so a declared root against a spec-named package reads
+  // as the mismatch it is.
+  // workdir-access-allow: "." is a DECLARED root here, distinct from the absent workdir the backfill fills
+  const declaredWorkdir = prdStory.workdir;
   if (
     specStory.workdir !== undefined &&
-    statedWorkdir !== undefined &&
-    statedWorkdir !== normalizeWorkdir(specStory.workdir)
+    declaredWorkdir !== undefined &&
+    normalizeWorkdir(declaredWorkdir) !== normalizeWorkdir(specStory.workdir)
   ) {
     workdir.push({
       kind: "workdir-mismatch",
       storyId: specStory.id,
       expected: specStory.workdir,
-      actual: statedWorkdir,
+      actual: declaredWorkdir,
     });
   }
 
