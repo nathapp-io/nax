@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T20:17:45.925Z",
+  "updatedAt": "2026-09-27T20:45:28.513Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -99,7 +99,7 @@
     "src/execution/parallel-batch.ts": [63],
     "src/execution/pipeline-result-handler.ts": [38, 35],
     "src/execution/plan-inputs.ts": [28],
-    "src/execution/post-run.ts": [96, 38],
+    "src/execution/post-run.ts": [38],
     "src/execution/queue-handler.ts": [27],
     "src/execution/runner-completion.ts": [48],
     "src/execution/story-orchestrator/fix-review-strategy.ts": [23],

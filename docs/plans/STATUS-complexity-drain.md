@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A13-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B1-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    242 functions in 211 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     15   (14 src, 1 scripts)   <- THIS DRAIN (callTool drained by A13)
+  over 20    241 functions in 211 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     14   (13 src, 1 scripts)   <- THIS DRAIN (decideStageAction drained by B1)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 14 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13)
+batches: 15 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, B1)
 ```
 
 Refresh this block at the end of every batch:
@@ -164,7 +164,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 
 | Batch | Status | Score | Function | File:line | Lines | Churn / fix | test |
 |:--|:--|---:|:--|:--|---:|:--|:--|
-| B1 | todo | 96 | `decideStageAction` | `src/execution/post-run.ts:275` | 534 | 14 / 7 | none |
+| B1 | done 2026-09-27 | 96 | `decideStageAction` | `src/execution/post-run.ts:275` | 534 -> 321 | 14 / 7 | none |
 | B2 | todo | 76 | `sendTurn` | `src/agents/acp/adapter.ts:239` | 455 | 15 / 7 | yes |
 | B3 | todo | 155 | `parseAcpxJsonLine` | `src/agents/acp/parser.ts:88` | 388 | 6 / 5 | yes |
 | B4 | todo | 73 | `runDeferredRegression` | `src/execution/lifecycle/run-regression.ts:205` | 587 | 10 / 6 | yes |
@@ -1555,3 +1555,126 @@ scripts/`), and budget the sibling split from the first line. Post-drain note:
 over-60 is down to 15 (14 src + 1 scripts); worst remaining anywhere is B3's
 `parseAcpxJsonLine` (155), and the 40-milestone discussion from §9.8 still
 stands.
+
+### 9.15 - 2026-09-27, B1 done - `decideStageAction` 96 -> 10 (one session)
+
+The first Wave B batch, the third "policy decision tree" (§3's row; A7/A8
+playbook), and the batch that proved §4's `test` column means only "a mirror
+file exists at the heuristic path" - NOT "unexercised". One session.
+
+**§2.2's sweep found real coverage despite `test: none`.** Three suites drive
+`decideStageAction` directly (`post-run-decide-action.test.ts`,
+`post-run-inspection.test.ts`'s TDD-rollback sections,
+`post-run-inspection-exhaustion.test.ts`) plus the oscillation breaker's AC4-AC12
+section in `rectification-oscillation-circuit-breaker.test.ts` (which pins the
+breaker pause, its reason text, the fail-open arms, and even the notify
+send/throw) and `post-run-rollforward.test.ts` (AC12-AC14). What NOTHING pinned,
+characterised in the own commit `test: characterise decideStageAction unpinned
+branches before complexity drain` (9 tests, green against the unrefactored
+function, new file `post-run-decide-action-edges.test.ts`, zero cast
+expressions): (a) the recurrence-breaker RETURN wiring - `maybeHandleRecurrenceBreaker`
+has direct unit tests and the e2e harness explicitly stops short of
+`decideStageAction` (its header says so), so no test proved the sequencer
+consults the breaker and returns its verdict; (b) breaker ORDER (oscillation
+consulted before recurrence - pinned with a both-trip test); (c) the oscillation
+pause notify PAYLOAD (AC11 pins only `type === "notify"`; now also summary/
+detail/fallback/featureName derivation); (d) the `&& opts.initialRef` half of
+the TDD rollback guard; (e) TDD success skipping `autoCommitIfDirty`; (f) the
+`ctx.interaction` and `isTriggerEnabled` halves of the merge-conflict guard;
+(g) the `?? "unknown"` human-review pause reason; (h) the `category=` segment of
+the generic failure reason (reachable only via a fabricated inspection).
+
+**Pre-flight, all answered BEFORE writing code:** (1) `_postRunDeps` exists AND
+is barrel re-exported (`src/execution/index.ts:101`) - A1's trap shape, first
+since A9. It stayed defined in post-run.ts; handlers receive it BY REFERENCE on
+a `DecideFrame` (`{ ctx, planResult, inspection, opts, deps }`) and read
+`deps.X` at call time, so test property reassignments still land. The sibling
+imports post-run.ts TYPE-ONLY - including `_postRunDeps` itself, typed as
+`typeof _postRunDeps`, so the deps type is zero-maintenance
+(`check:import-cycles` stayed 0). (2) A2's traps both clean, checked first: a
+guard chain with no loop-carried state across boundaries (`collectFailedPhases`'
+loop is self-contained), every try/catch self-contained, no closures over
+`let`s. (3) NO source-text tests pin the file - all grep hits are comments
+(eighth batch running). (4) No per-file guard allow-list names post-run.ts
+(A7's sweep, clean).
+
+**Technique:** named predicates + one handler per branch, in a new sibling
+`src/execution/post-run-decide-action.ts` (439 lines). Predicates: `hasRectificationExhaustion`,
+`isTddFailure`, `shouldRollbackTddFailure` (moved wholesale - single-consumer
+private helper, A8's pattern). Handlers in original branch order:
+`routeRectificationExhaustion` (the three exits + TDD-rollback fall-through,
+returning `null` to fall through), `selfVerificationEscalation`,
+`pauseForReason`, `routeTddFailureBranch` (rollback + human-review +
+`routeTddFailure`), `failOnMergeConflict` (guard split into three sequential
+guard clauses - detect, interaction, trigger - same short-circuit order),
+`escalateFailedSession` (+ `collectFailedPhases`, `buildFailureReason`),
+`autoCommitIfNeeded`, `persistRollForward`; shared `cleanupSessionOnFailure`
+shim re-created in the sibling (binds `deps.failAndClose` - the impl module
+takes the callable as a param precisely to avoid importing post-run.ts).
+`decideStageAction` itself stays in post-run.ts as the sequencer - prologue
+side-effect write (`ctx.tddFailureCategory`), then the decision table reading
+as guard clauses in the original order - and scores 10.
+
+**Helper scores (probe at maxAllowedComplexity=1, repo-root probe config per
+§9.13, deleted after):** `routeRectificationExhaustion` 19 (the original
+exhaustion block verbatim, one coherent unit, not a fake-split candidate),
+`collectFailedPhases` 13, `decideStageAction` 10, `routeTddFailureBranch` 9,
+`escalateFailedSession` 6, `oscillationPause` 6, `persistRollForward` 2,
+`failOnMergeConflict` 4, `buildFailureReason` 4, everything else <= 1. Untouched:
+`applyPostRunInspection` 38, `extractPauseReason` 8. No baseline hand-edit
+(§2.3 never triggered, ninth batch running) - `check:complexity:update` was a
+pure lower: 242 -> 241 functions, 211 files unchanged (post-run.ts STAYS
+baselined at `[38]` for `applyPostRunInspection`, exactly as A8 left argv/verb
+and A13 left log/runTool).
+
+**File-size gate, single sibling held:** `post-run.ts` 534 -> 321 (strictly
+smaller; both counts after `bun x biome check --write`). The sibling landed at
+439 - under 600 with room, because the moved mass is one ~260-line function
+body plus ~35 lines of moved helpers, not a whole file's logic. The
+"budget two sibling files" rule never came close to firing for a single-function
+extraction of this size.
+
+**One TDZ near-miss worth naming:** the first draft factored the sources-set
+expression into a module helper named `findingSources` while KEEPING the
+original's local `const findingSources = [...].filter(...)` in the handler -
+same function scope, so the earlier call site resolves to the local's TDZ and
+throws at runtime (tsc flags it as use-before-declaration). Renamed the helper
+`collectFindingSources`; the original local became `findingSourceNames` (its
+log-field KEY `findingSources` unchanged, so runtime output is identical - the
+one textual delta, A6's renamed-variable precedent). Lesson: when factoring an
+expression out of a function whose local survives, never give the helper the
+local's name.
+
+**One ratchet gotcha NEW to this batch:** the escape-hatch ratchet's looseCast
+counter is a TEXT regex (`as` + capitalised word) and it matches COMMENTS -
+this batch's first characterisation draft wrote the words "as T casts" in the
+new test file's header comment and grew the counter. Reworded the prose.
+Rule for every future test file: never spell the cast shape in comments, even
+to say you avoided it.
+
+**Verification beyond the suite:** literal fingerprint diff of the original
+body (git HEAD, lines of the old function) against the pair - all 37 unique
+double-quoted string literals of length >= 4 AND all 14 template literals'
+fixed parts appear verbatim, zero missing; every log message, escalation/fail
+reason, notify payload field and error code is 1:1. 123 tests across the 11
+post-run/recurrence/oscillation suites green (114 pre-existing + 9
+characterisation), then the full suite.
+
+**Nothing else surprising.** `bun run typecheck` (both tsconfigs), `bun run
+test` (all phases), `bun run check:all` (35 scripts; import-cycles 0,
+file-sizes green, looseCast 1474), and `bun run test:coverage` all green;
+below-floor count 1 vs baseline 2 (the standing A5 improvement, not lowered
+here).
+
+**For the next batch:** B2 `sendTurn` (`src/agents/acp/adapter.ts:239`, 76,
+455 lines, test: yes) - first `src/agents/acp/` batch. Pre-flight per this
+batch: (1) the acp adapter almost certainly has a `_deps`-style seam - check
+`src/agents/acp/index.ts` and any barrel re-exports before planning (A1's
+trap); the by-reference-frame pattern above (or A5/A6's) is the known-good
+answer; (2) A2's mutate-in-place check FIRST - a turn sender is exactly where
+per-turn state an intentional mid-loop throw reads lives; (3) grep test/ for
+source-text assertions on adapter.ts; (4) 455 lines + extraction - plan the
+sibling split from the first line; (5) audit log payloads and data-literal
+construction specifically (A3/A11/B1's hunting ground). Post-drain note:
+over-60 is down to 14 (13 src + 1 scripts); worst remaining anywhere is B3's
+`parseAcpxJsonLine` (155); the 40-milestone discussion from §9.8 still stands.

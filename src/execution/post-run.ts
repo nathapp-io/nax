@@ -13,24 +13,29 @@
 
 import type { AgentResult } from "../agents/types";
 import type { Finding } from "../findings/types";
-import { checkMergeConflict, isTriggerEnabled } from "../interaction/triggers";
+import { checkMergeConflict } from "../interaction/triggers";
 import { getLogger } from "../logger";
 import { fullSuiteGateOp, implementerOp } from "../operations";
-import { routeTddFailure } from "../pipeline/stages/execution-helpers";
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { parseSelfVerificationMarker } from "../quality";
 // Leaf import, not the barrel — the barrel pulls formatter.ts, causing a circular ESM init crash (BUG v0.71.0).
-import { isBlockingSeverity } from "../review/severity";
 import { rollbackToRef } from "../tdd/rollback";
-import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../utils/git";
 import { writePostRunScratchEntries } from "./lifecycle/post-run-scratch-entries";
-import { cleanupSessionOnFailure as cleanupSessionOnFailureImpl } from "./lifecycle/post-run-session-cleanup";
-import { type CaptureParsedSummary, invokeRollForwardFromContext } from "./lifecycle/test-baseline-capture";
-import { inspectOscillationBreaker } from "./oscillation-breaker";
-import { sendPostRunNotification } from "./post-run-notifications";
+import type { DecideFrame } from "./post-run-decide-action";
+import {
+  autoCommitIfNeeded,
+  escalateFailedSession,
+  failOnMergeConflict,
+  hasRectificationExhaustion,
+  isTddFailure,
+  pauseForReason,
+  persistRollForward,
+  routeRectificationExhaustion,
+  routeTddFailureBranch,
+  selfVerificationEscalation,
+} from "./post-run-decide-action";
 import { applyReviewsFailedOpen } from "./post-run-review-summary";
-import { maybeHandleRecurrenceBreaker } from "./recurrence-pause";
 import { failAndClose } from "./session-manager-runtime";
 import type { StoryOrchestratorResult } from "./story-orchestrator";
 import { deriveTddFailureCategory } from "./tdd-failure-category";
@@ -78,10 +83,6 @@ export const _postRunDeps = {
   autoCommitIfDirty,
 };
 
-function shouldRollbackTddFailure(tddMode: TddMode | null, failureCategory: FailureCategory | undefined): boolean {
-  return tddMode?.rollbackEnabled === true && failureCategory === "isolation-violation";
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,13 +101,6 @@ export function extractPauseReason(phaseOutputs: Record<string, unknown>): strin
 }
 
 export { deriveTddFailureCategory };
-
-// `cleanupSessionOnFailure` body lives in `./lifecycle/post-run-session-cleanup`
-// (US-002 — kept post-run.ts within the 600-line gate while avoiding a
-// runtime import cycle). The shim binds `_postRunDeps.failAndClose` here.
-async function cleanupSessionOnFailure(ctx: PipelineContext): Promise<void> {
-  await cleanupSessionOnFailureImpl(ctx, _postRunDeps.failAndClose);
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inspection phases
@@ -271,6 +265,10 @@ export async function applyPostRunInspection(
 /**
  * Route execution based on the inspection result.
  * Handles escalation, pause, TDD rollback, merge conflict, and auto-commit.
+ *
+ * This is the decision-table SEQUENCER (complexity drain B1): each branch's
+ * predicate is named and its handler lives in `./post-run-decide-action`.
+ * Branch order is behaviour — it matches the pre-extraction monolith exactly.
  */
 export async function decideStageAction(
   ctx: PipelineContext,
@@ -280,254 +278,44 @@ export async function decideStageAction(
 ): Promise<StageResult> {
   const logger = getLogger();
   const isTdd = opts.tddMode !== null;
-  const isLiteMode = opts.tddMode?.isLite ?? false;
-  const shouldRollback = shouldRollbackTddFailure(opts.tddMode, inspection.failureCategory);
-  const {
-    agentResult,
-    selfVerificationFailed,
-    pauseReason,
-    failureCategory,
-    needsHumanReview,
-    providerUnavailable,
-    combinedOutput,
-  } = inspection;
+  const { failureCategory } = inspection;
 
   if (isTdd && !planResult.success) {
     ctx.tddFailureCategory = failureCategory;
   }
 
-  // Mechanical-only failure: if rectification exhausted but all unfixed findings are from
-  // mechanical sources (lint/typecheck), and any configured LLM reviews ran and passed
-  // (the resume block in the orchestrator runs reviews even when mechanical findings are
-  // unfixed — see story-orchestrator.ts mechanicalOnlyExhausted), proceed rather than
-  // escalating. Reviews absent from phaseOutputs means they were not configured (OK).
-  if (planResult.rectificationExhausted && planResult.unfixedFindings && planResult.unfixedFindings.length > 0) {
-    // Advisory-only escape: if NONE of the remaining unfixed findings meet the
-    // run's blocking threshold, the story is functionally green — do not fail it
-    // on sub-blocking leftovers. This covers findings that no fix strategy can
-    // claim (e.g. `source:"plugin"`, which no `appliesTo` matches) which would
-    // otherwise force a `no-strategy` cycle exit into a hard story failure even
-    // though every gate (tests/lint/typecheck/semantic/adversarial) passed.
-    // Note this escape is threshold-relative: it does not fire when a project
-    // sets `review.blockingThreshold` at or below the leftover's severity, so it
-    // is a backstop — not a licence to mint findings no strategy can claim.
-    // Missing severity is treated as "error" (blocking) so a real defect is
-    // never silently swallowed. Mirrors the severity-based blocking/advisory
-    // partition used by the review layer (isBlockingSeverity).
-    const blockingThreshold = ctx.config?.review?.blockingThreshold ?? "error";
-    const blockingUnfixed = planResult.unfixedFindings.filter((f) =>
-      isBlockingSeverity((f as { severity?: string }).severity ?? "error", blockingThreshold),
-    );
-    if (blockingUnfixed.length === 0) {
-      logger.warn(
-        "execution",
-        "Rectification exhausted but all unfixed findings are advisory (below blocking threshold) — proceeding",
-        {
-          storyId: ctx.story.id,
-          blockingThreshold,
-          unfixedCount: planResult.unfixedFindings.length,
-          unfixedSources: [...new Set(planResult.unfixedFindings.map((f) => (f as { source?: string }).source))],
-        },
-      );
-      return { action: "continue" };
-    }
+  const frame: DecideFrame = { ctx, planResult, inspection, opts, deps: _postRunDeps };
 
-    const sources = new Set(planResult.unfixedFindings.map((f) => (f as { source?: string }).source));
-    const allMechanical = [...sources].every((s) => s === "lint" || s === "typecheck");
-    if (allMechanical) {
-      logger.warn("execution", "Mechanical-only failure unfixable — proceeding (style-only errors remain)", {
-        storyId: ctx.story.id,
-      });
-      return { action: "continue" };
-    }
-
-    if (!(isTdd && shouldRollback)) {
-      const findingSources = [...sources].filter((source): source is string => typeof source === "string");
-      logger.error("execution", "Rectification exhausted with unfixed findings", {
-        storyId: ctx.story.id,
-        findingsCount: planResult.unfixedFindings.length,
-        findingSources,
-        ...(planResult.unresolvedDetail ? { unresolvedDetail: planResult.unresolvedDetail } : {}),
-      });
-      await cleanupSessionOnFailure(ctx);
-      // US-002 rectification oscillation circuit-breaker. When the same story
-      // re-runs the orchestration and a resolved finding source keeps
-      // reappearing across attempts, the operator
-      // would otherwise see only a silent money-drain as the breaker-less
-      // escalator re-runs the same story tier-after-tier. The runtime Map is
-      // accumulated by the increment site in runRectification; reading it
-      // here is fail-open — if the runtime or config is missing, we escalate
-      // exactly as before.
-      const breaker = inspectOscillationBreaker(ctx);
-      if (breaker.trip) {
-        logger.warn("execution", "Rectification oscillation circuit-breaker paused story", {
-          storyId: ctx.story.id,
-          oscillationCount: breaker.count,
-          maxOscillations: breaker.maxOscillations,
-        });
-        if (ctx.interaction) {
-          try {
-            await ctx.interaction.send({
-              id: `oscillation-${ctx.story.id}-${Date.now()}`,
-              type: "notify",
-              featureName: ctx.featureDir ? (ctx.featureDir.split("/").pop() ?? "unknown") : "unknown",
-              storyId: ctx.story.id,
-              stage: "execution",
-              summary: `Oscillation paused: ${ctx.story.id}`,
-              detail: `Story: ${ctx.story.title}\nReason: ${breaker.reason}`,
-              fallback: "continue",
-              createdAt: Date.now(),
-            });
-          } catch (notifyErr) {
-            logger.warn("execution", "Failed to send oscillation pause notification", {
-              storyId: ctx.story.id,
-              error: errorMessage(notifyErr),
-            });
-          }
-        }
-        return { action: "pause", reason: breaker.reason };
-      }
-      // Cross-attempt review-recurrence circuit-breaker (#1666 Part C). Distinct from
-      // the oscillation breaker above: that one catches within-cycle ping-pong, this one
-      // catches a reviewer (semantic or adversarial) raising the SAME finding again on a
-      // LATER escalation attempt — the shape #1666 Part B enables by letting
-      // adversarial-review run even when semantic-review fails.
-      const recurrencePause = await maybeHandleRecurrenceBreaker(ctx, logger);
-      if (recurrencePause) return recurrencePause;
-      const exhaustedReason = planResult.unresolvedDetail
-        ? `Rectification exhausted: ${planResult.unresolvedDetail}`
-        : "Rectification exhausted with unfixed findings";
-      return { action: "escalate", reason: exhaustedReason };
-    }
+  // Rectification exhausted → three exits, or fall through to TDD rollback routing
+  if (hasRectificationExhaustion(planResult)) {
+    const exhausted = await routeRectificationExhaustion(frame);
+    if (exhausted) return exhausted;
   }
 
   // Self-verification failure → escalate
-  if (selfVerificationFailed) {
-    logger.warn("execution", "Self-verification reported explicit failure", {
-      storyId: ctx.story.id,
-      lint: ctx.selfVerification?.lint,
-      typecheck: ctx.selfVerification?.typecheck,
-    });
-    return { action: "escalate", reason: "Self-verification reported lint/typecheck failure" };
-  }
+  if (inspection.selfVerificationFailed) return selfVerificationEscalation(frame);
 
   // pauseReason → pause (with optional notify)
-  if (pauseReason) {
-    logger.warn("execution", "Plan run produced pauseReason", { storyId: ctx.story.id, pauseReason });
-    await sendPostRunNotification(ctx, {
-      idPrefix: "pause",
-      summary: `Execution paused: ${ctx.story.id}`,
-      detail: `Story: ${ctx.story.title}\nReason: ${pauseReason}`,
-      failureMessage: "Failed to send pause notification",
-    });
-    return { action: "pause", reason: pauseReason };
-  }
+  if (inspection.pauseReason) return pauseForReason(frame, inspection.pauseReason);
 
   // TDD failure → isolation rollback (only) + route
-  if (isTdd && !planResult.success) {
-    if (shouldRollback && opts.initialRef) {
-      try {
-        await _postRunDeps.rollbackToRef(ctx.workdir, opts.initialRef, opts.untrackedBefore);
-        logger.info("execution", "Rolled back git changes due to TDD failure", {
-          storyId: ctx.story.id,
-          failureCategory,
-        });
-      } catch (rollbackErr) {
-        logger.error("execution", "Failed to rollback git changes after TDD failure", {
-          storyId: ctx.story.id,
-          error: errorMessage(rollbackErr),
-        });
-      }
-    }
-
-    if (needsHumanReview && !providerUnavailable) {
-      logger.warn("execution", "Human review needed", { storyId: ctx.story.id, failureCategory });
-      await sendPostRunNotification(ctx, {
-        idPrefix: "human-review",
-        summary: `Human review needed: ${ctx.story.id}`,
-        detail: `Story: ${ctx.story.title}\nReason: Human review needed\nCategory: ${failureCategory ?? "unknown"}`,
-        failureMessage: "Failed to send human review notification",
-      });
-      return { action: "pause", reason: `Human review needed: ${failureCategory ?? "unknown"}` };
-    }
-
-    return routeTddFailure(failureCategory, isLiteMode, ctx);
-  }
+  if (isTddFailure(opts, planResult)) return routeTddFailureBranch(frame);
 
   // Merge-conflict trigger
-  if (
-    _postRunDeps.detectMergeConflict(combinedOutput) &&
-    ctx.interaction &&
-    isTriggerEnabled("merge-conflict", ctx.config)
-  ) {
-    const shouldProceed = await _postRunDeps.checkMergeConflict(
-      { featureName: ctx.prd.feature, storyId: ctx.story.id },
-      ctx.config,
-      ctx.interaction,
-    );
-    if (!shouldProceed) {
-      logger.error("execution", "Merge conflict detected — aborting story", { storyId: ctx.story.id });
-      await cleanupSessionOnFailure(ctx);
-      return { action: "fail", reason: "Merge conflict detected" };
-    }
-  }
+  const conflict = await failOnMergeConflict(frame);
+  if (conflict) return conflict;
 
-  if (!planResult.success) {
-    const failedPhases: Record<string, { passed?: boolean; success?: boolean; findingsCount?: number }> = {};
-    for (const [name, output] of Object.entries(planResult.phaseOutputs)) {
-      if (!output || typeof output !== "object") continue;
-      const r = output as Record<string, unknown>;
-      const passed = typeof r.passed === "boolean" ? r.passed : undefined;
-      const success = typeof r.success === "boolean" ? r.success : undefined;
-      const explicitFail = passed === false || success === false;
-      if (!explicitFail) continue;
-      const findings = Array.isArray(r.findings) ? r.findings.length : undefined;
-      failedPhases[name] = { passed, success, findingsCount: findings };
-    }
-    const stderrTail = ((agentResult as { stderr?: string }).stderr ?? "").slice(-500);
-    const outputTail = (agentResult.output ?? "").slice(-500);
-    logger.error("execution", "Agent session failed", {
-      storyId: ctx.story.id,
-      exitCode: agentResult.exitCode,
-      rateLimited: agentResult.rateLimited,
-      failureCategory: failureCategory ?? "unknown",
-      failedPhases: Object.keys(failedPhases).length > 0 ? failedPhases : undefined,
-      stderrTail: stderrTail || undefined,
-      outputTail: outputTail || undefined,
-    });
-    await cleanupSessionOnFailure(ctx);
-    const failedPhaseNames = Object.keys(failedPhases);
-    const reasonParts: string[] = [];
-    reasonParts.push(`agent session failed (exit ${agentResult.exitCode ?? "?"})`);
-    if (failureCategory) reasonParts.push(`category=${failureCategory}`);
-    if (agentResult.rateLimited) reasonParts.push("rate-limited");
-    if (failedPhaseNames.length > 0) reasonParts.push(`phases=${failedPhaseNames.join(",")}`);
-    return { action: "escalate", reason: reasonParts.join("; ") };
-  }
+  if (!planResult.success) return escalateFailedSession(frame);
 
   // Non-TDD success → auto-commit
-  if (!isTdd) {
-    const { workdir, story, runtime } = ctx;
-    await _postRunDeps.autoCommitIfDirty(workdir, "execution", "single-session", story.id, runtime?.dirtyWorktrees);
-  }
+  await autoCommitIfNeeded(frame);
 
   // US-002 — sequential story completion persists the next story's roll-forward baseline.
-  // Single delegated call (600-line gate); the helper resolves next-story-id and gate summary.
-  // The helper swallows disk / permission throws internally so a passing
-  // story's success path is never aborted by a baseline write failure.
-  await invokeRollForwardFromContext({
-    root: ctx.projectDir,
-    featureId: ctx.featureDir ? (ctx.featureDir.split("/").pop() ?? ctx.prd.feature) : ctx.prd.feature,
-    userStories: ctx.prd.userStories,
-    currentStoryId: ctx.story.id,
-    isParallelMode: ctx.skipPrdPersistence === true,
-    gateSummary: (planResult.phaseOutputs[fullSuiteGateOp.name] as { parsedSummary?: CaptureParsedSummary } | undefined)
-      ?.parsedSummary,
-  });
+  await persistRollForward(frame);
 
   logger.info("execution", "Agent session complete", {
     storyId: ctx.story.id,
-    cost: agentResult.estimatedCostUsd,
+    cost: inspection.agentResult.estimatedCostUsd,
   });
   return { action: "continue" };
 }
