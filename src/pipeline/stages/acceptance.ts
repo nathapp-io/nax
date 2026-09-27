@@ -29,7 +29,7 @@
  */
 
 import type { HardeningContext } from "@/acceptance";
-import { buildAcceptanceRunCommand, resolveAcceptanceFeatureTestPath } from "@/acceptance";
+import { buildAcceptanceRunCommand, checkAcceptanceCoverage, resolveAcceptanceFeatureTestPath } from "@/acceptance";
 import type { Finding } from "@/findings";
 import { acFailureToFinding, acSentinelToFinding } from "@/findings";
 import { getLogger } from "@/logger";
@@ -152,10 +152,12 @@ export const acceptanceStage: PipelineStage = {
     // US-003: count PRD stories per package for missing-target storyCount fallback.
     // Same SSOT grouping as AcceptanceTestGroup.stories in src/acceptance/test-path.ts.
     const storiesByPackageDir = new Map<string, number>();
+    const acsByPackageDir = new Map<string, number>();
     for (const s of ctx.prd.userStories) {
       if (!isInAcceptanceScope(s)) continue;
       const pkgDir = storyAbsWorkdir(ctx.workdir, s);
       storiesByPackageDir.set(pkgDir, (storiesByPackageDir.get(pkgDir) ?? 0) + 1);
+      acsByPackageDir.set(pkgDir, (acsByPackageDir.get(pkgDir) ?? 0) + s.acceptanceCriteria.length);
     }
 
     // Collect combined results across all packages
@@ -210,6 +212,15 @@ export const acceptanceStage: PipelineStage = {
         }
         continue;
       }
+
+      // US-002: advisory AC-coverage check. The file exists, so count how many of
+      // the package's in-scope ACs it names as tests. Never gates the verdict.
+      checkAcceptanceCoverage({
+        testPath,
+        source: await testFile.text(),
+        expected: acsByPackageDir.get(packageDir) ?? 0,
+        storyId: ctx.story.id,
+      });
 
       // @design: BUG-083/BUG-084: Run ONLY the acceptance test file, not the full project test suite.
       // Resolution order: per-package commandOverride → per-package testFramework → bun test fallback.

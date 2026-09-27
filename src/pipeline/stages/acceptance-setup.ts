@@ -23,7 +23,14 @@
 
 import path from "node:path";
 import type { AcceptanceCoverageEntry, AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
-import { buildAcceptanceRunCommand, generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
+import {
+  buildAcceptanceRunCommand,
+  findMissingAcceptanceTestPaths,
+  generateSkeletonTests,
+  groupStoriesByPackage,
+  makeAcceptanceCoverageCollector,
+  warnMissingAcceptanceTests,
+} from "@/acceptance";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { loadConfigForPackage } from "@/config";
@@ -277,8 +284,14 @@ async function runAcceptanceSetup(
 
   let shouldGenerate = false;
   let regenerated = false;
-  if (!meta || meta.acFingerprint !== fingerprint || meta.layoutFingerprint !== layoutFingerprint) {
-    if (!meta) {
+  const inputsMatch = !!meta && meta.acFingerprint === fingerprint && meta.layoutFingerprint === layoutFingerprint;
+  const missingTestPaths = await findMissingAcceptanceTestPaths(groups, _acceptanceSetupDeps.fileExists, ctx.workdir);
+  if (inputsMatch && missingTestPaths.length === 0) {
+    getSafeLogger()?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
+  } else {
+    if (inputsMatch) {
+      warnMissingAcceptanceTests(ctx.story?.id, missingTestPaths);
+    } else if (!meta) {
       getSafeLogger()?.info("acceptance-setup", "No acceptance meta — generating acceptance tests");
     } else {
       getSafeLogger()?.info("acceptance-setup", "Acceptance inputs changed — regenerating acceptance tests", {
@@ -298,11 +311,6 @@ async function runAcceptanceSetup(
     }
     shouldGenerate = true;
     regenerated = true;
-  } else {
-    // Fingerprint matches — reuse existing tests. If the file is missing (e.g.,
-    // overwritten by TDD cycle then deleted in a crash), the existing tests are
-    // still valid: skip generation and let the RED gate decide whether to run.
-    getSafeLogger()?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
   }
 
   if (shouldGenerate) {
@@ -377,6 +385,8 @@ async function runAcceptanceSetup(
 
     testableCount = allRefinedCriteria.filter((r) => r.testable).length;
 
+    const coverage = makeAcceptanceCoverageCollector(ctx.workdir);
+
     // Generate one acceptance test file per workdir group via callOp
     for (const group of groups) {
       const { testPath, packageDir } = group;
@@ -420,6 +430,7 @@ async function runAcceptanceSetup(
       if (dispatchFailure) sawDispatchFailure = true;
       if (testCode) {
         await _acceptanceSetupDeps.writeFile(testPath, testCode);
+        coverage.record(testPath, testCode, group.criteria.length, groupStoryId);
       } else if (dispatchFailure) {
         // Stage decision: dispatch failed — write nothing. The acceptance
         // stage will surface this as a missing target, with the failure's
@@ -448,6 +459,7 @@ async function runAcceptanceSetup(
           group.language,
         );
         await _acceptanceSetupDeps.writeFile(testPath, skeletonCode);
+        coverage.record(testPath, skeletonCode, group.criteria.length, groupStoryId);
         getSafeLogger()?.warn("acceptance-setup", "agent did not produce test content; using skeleton", {
           storyId: groupStoryId,
           testPath,
@@ -493,6 +505,7 @@ async function runAcceptanceSetup(
         storyCount: ctx.prd.userStories.length,
         acCount: totalCriteria,
         generator: "nax",
+        coverage: coverage.entries(),
       });
     }
 
