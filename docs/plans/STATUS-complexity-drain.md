@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B5-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B6-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    237 functions in 207 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     10    (9 src, 1 scripts)   <- THIS DRAIN (runParallelBatch drained by B5)
+  over 20    236 functions in 207 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     9     (8 src, 1 scripts)   <- THIS DRAIN (displayFeatureDetails drained by B6)
   worst      110   src/config/validate.ts validateConfig
 biome.json cap: 170
-batches: 19 of 25 done (P0, A1-A13, B1-B5)
+batches: 20 of 25 done (P0, A1-A13, B1-B6)
 ```
 
 Refresh this block at the end of every batch:
@@ -169,7 +169,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | B3 | done 2026-09-27 | 155 | `parseAcpxJsonLine` | `src/agents/acp/parser.ts:88` | 388 | 6 / 5 | yes |
 | B4 | done 2026-09-27 | 73 | `runDeferredRegression` | `src/execution/lifecycle/run-regression.ts:205` | 587 | 10 / 6 | yes |
 | B5 | done 2026-09-27 | 63 | `runParallelBatch` | `src/execution/parallel-batch.ts:122` | 417 -> 235 | 9 / 5 | yes |
-| B6 | todo | 66 | `displayFeatureDetails` | `src/cli/status-features.ts:329` | 503 | 6 / 4 | yes |
+| B6 | done 2026-09-27 | 66 | `displayFeatureDetails` | `src/cli/status-features.ts:329` | 503 -> 415 | 6 / 4 | yes |
 | B7 | todo | 69 | `runSession` | `src/interaction/ask-link.ts:291` | 560 | 5 / 1 | yes |
 
 ### Wave C - stable, mostly pure (grouped)
@@ -2247,3 +2247,142 @@ extraction: plan the sibling from the first line, but expect one file to
 hold. Post-drain note: over-60 is down to 10 (9 src + 1 scripts); worst is
 C1's `validateConfig` (110); Wave B has two rows left (B6, B7), then the
 grouped Wave C - and the 40-milestone discussion from §9.8 still stands.
+
+### 9.20 - 2026-09-27, B6 done - `displayFeatureDetails` 66 -> 4 (one session)
+
+The first CLI-action batch since A4 and §3's "one function per output
+section" row, exactly as the table predicted. One session, including a
+13-test characterisation commit - the "test: yes is not nothing to
+characterise" warning held for the SEVENTH time running (A11, A12, B1, B2,
+B3, B4, B5, now B6): the two suites that drive this function pinned the
+postRun flows and the crash headline, and left entire branches unpinned.
+
+**Pre-flight, all answered BEFORE writing code:** (1) `_statusFeaturesDeps`
+(`projectOutputDir`/`loadConfig`) EXISTS at the top of status-features.ts
+and is property-mutated by all three suites that import the module - but it
+is NOT the A1 trap: `displayFeatureDetails` reads NOTHING off it (its
+collaborators `loadPRD`/`countStories`/`loadStatusFile`/`isPidAlive` are
+direct imports), and no barrel re-exports the seam - `src/cli/status.ts`
+re-exports only `displayFeatureStatus` + type `FeatureStatusOptions`, and
+`status-dispatch.ts` dynamic-imports `displayFeatureStatus`. The seam was
+untouched; the public surface did not change. (2) A2's traps all clean,
+checked first: the function has ZERO `let` bindings, no closures, no
+try/catch at all, and the one loop (stories table) is self-contained -
+nothing mutates across any extraction boundary. (3) NO source-text tests
+pin status-features.ts - grep across `test/unit/cli/` AND
+`test/unit/scripts/` (B4's rule) found comments only (tenth batch running).
+(4) No per-file guard allow-list names the file (`grep -Rn "grep -vE"
+scripts/` - only the naxconfig-cast list, which does not). (5) File
+measured 502 going in (the doc's 503 - one line of drift, tenth batch
+running).
+
+**Characterisation first** (own commit `test: characterise
+displayFeatureDetails unpinned branches before complexity drain`, 13 tests,
+green against the unrefactored function, new file
+`test/unit/cli/status-features-details-edges.test.ts` - the mirror sits at
+710 of the 800 test cap, too tight for additions; zero cast expressions,
+looseCast stayed 1474; the legacy numeric `failedTests` shape is attached
+with Object.assign, the A7 precedent). What NOTHING pinned, one test each:
+(a) the no-prd.json guard (plan hint + nothing else); (b) the Progress
+section's per-count lines INCLUDING the conditional `Skipped:` line
+(skipped-count tests existed nowhere); (c) the story-table icon selection
+(pass/failed/skipped/pending arms) and the `[complexity/tier/strategy]`
+routing suffix; (d) acceptance running + not-run arms; (e) regression
+passed-WITHOUT-skip (green + parens timestamp) and running + not-run arms;
+(f) the numeric `failedTests` arm (typed `string[]`, so this is the A7
+defensive-branch category - pinned as-is per §2.1, not fixed); (g) the
+failedACs count suffix `(2 AC(s))`; (h) the trailing last-run block for a
+completed run; (i) the EXPLICIT `status: "crashed"` arm's detail lines (the
+existing pin drives running+dead-pid only) plus the absent
+crashedAt/crashSignal arms; (j) the active-run section's detail lines. On
+(j): the existing "Active Run:" pin is `skipInCI` (FULL=1), so the new test
+drives it with `pid: process.pid` WITHOUT the skip - the test process's own
+PID is alive in any environment, and `isProcessAlive` fails safe for
+non-ESRCH probes, so it runs in CI.
+
+**Technique:** sequencer + seven section printers (one per output section)
+in ONE new sibling, `src/cli/status-features-details.ts` (165 lines after
+`bun x biome check --write`): `displayNoPrdNotice` 1,
+`displayRunStatusSection` 18 (active/crashed/no-status arms),
+`displayProgressSection` 2, `displayStoriesSection` 12,
+`displayPostRunSection` 3 - itself split into `displayAcceptanceStatus` 9
+and `displayRegressionStatus` 17, one per phase - and `displayLastRunSection`
+1. The split into per-phase printers was made UP FRONT because the combined
+postRun block was heading for the high teens; it is also the more honest
+reading of §3's row (each phase is its own output section).
+`displayFeatureDetails` stays in status-features.ts as the sequencer - the
+prd.json guard, the loads, the header line, five section calls plus the
+postRun/last-run guards - and scores 4. The sibling imports NOTHING from
+status-features.ts: every value arrives as a parameter (the A12
+no-back-import pattern at its strongest), `isPidAlive` is imported directly
+from the `utils/process-alive` leaf, and all status-file/PRD imports are
+type-only (`check:import-cycles` stayed 0 by construction).
+
+**One type-shape lesson:** `displayPostRunSection` takes the `PostRunStatus`
+object, not the whole `NaxStatusFile` - `postRun` is optional on the file
+type, and the naive whole-status parameter failed typecheck on
+`status.postRun.acceptance` inside the helper (the original only compiled
+because the `if (status?.postRun)` guard narrowed it inline). The narrow
+parameter is also the faithful signature: the block only ever read
+`status.postRun`.
+
+**Helper scores (probe at maxAllowedComplexity=1, repo-root probe config as
+a FULL COPY of biome.json - `extends` does not exist in biome 2.x and a
+probe relying on it is rejected at deserialize; `--config-path=` flag per
+§9.17, deleted after):** `displayRunStatusSection` 18, `displayRegression
+Status` 17, `displayStoriesSection` 12, `displayAcceptanceStatus` 9,
+`displayFeatureDetails` 4, `displayPostRunSection` 3,
+`displayProgressSection` 2, `displayNoPrdNotice`/`displayLastRunSection` 1.
+All <= 20 - no baseline hand-edit (§2.3 never triggered, thirteenth batch
+running). Untouched, out of scope: `displayAllFeatures` 37 (pre-existing;
+the file STAYS baselined at `[37]`, exactly as A8 left argv/verb and A13
+left log/runTool), `isUsableStatusFile` 18, `getFeatureSummary` 18.
+`check:complexity` reported only "improved" for status-features.ts, and
+`check:complexity:update` was a pure lower: 237 -> 236 functions, 207 files
+unchanged.
+
+**File-size gate, single sibling held:** status-features.ts 502 -> 415
+(strictly smaller; both counts after `bun x biome check --write`); the
+sibling landed at 165 - under 600 with room, the smallest sibling of any
+batch in this drain, because the moved mass is seven printer bodies plus
+their comments while the loaders/table/banner logic stayed behind. No §9.19
+coverage-floor scare either: `test:coverage` stayed green with the below-
+floor count at 1 vs baseline 2 (the standing A5 improvement) - the residual
+source keeps `loadStatusFile`/`isUsableStatusFile`/`getFeatureSummary`/
+`displayAllFeatures`, all exercised by the existing suites, and the
+sibling's section bodies are covered by the mirrors plus the
+characterisation file. B5's twin-gate trap did not fire.
+
+**Verification beyond the suite:** literal fingerprint diff of the original
+function body against the new pair - all 17 double-quoted literals of
+length >= 4 AND all 31 template-literal fixed parts appear verbatim, zero
+missing (extraction was a verbatim move; comments relocated with their
+code). One asymmetry now PINNED that review could have "cleaned up": the
+regression-failed arm renders its timestamp space-separated
+(` failed${count} 2026-...`) where the passed arm uses parens
+(` passed (2026-...)`) - both preserved exactly.
+
+**Nothing else surprising.** 1188 CLI tests green (incl. the 13
+characterisation tests), `bun run typecheck` (both tsconfigs), `bun run
+test` (all phases), `bun run check:all` (35 scripts; import-cycles 0,
+file-sizes green, looseCast 1474 - the one pre-existing `as` cast moved
+verbatim with its code, A13's precedent), and `bun run test:coverage` all
+green.
+
+**For the next batch:** B7 `runSession` (`src/interaction/ask-link.ts:291`,
+69, 560 lines, test: yes) - the LAST Wave B row, in `src/interaction/`,
+untouched by this drain so far. Pre-flight per this batch: (1) grep for a
+`_deps`-style seam and check whether `src/interaction/index.ts` or any
+barrel re-exports one (A1's trap); ask-link drives interaction channels, so
+also check whether the Telegram/CLI/webhook plugins register anything the
+extraction would need to import back; (2) A2's traps FIRST - a session
+runner is exactly where per-turn state, retry loops, and an intentional
+mid-loop throw whose catch persists partial state live (A2/A10's trap
+shape); (3) grep test/ for source-text assertions on ask-link.ts, incl.
+`test/unit/scripts/` (B4's rule); (4) 560 lines + extraction: the sibling
+split is planned from the first line (A6's seam rule; A9's gate/post-gate
+and B4's phase cuts are the templates); (5) audit log payloads and
+interaction-request literal construction specifically (A3/A11/B1's hunting
+ground). Post-drain note: over-60 is down to 9 (8 src + 1 scripts); after
+B7 only the grouped Wave C remains - and the 40-milestone discussion from
+§9.8 still stands.

@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T22:27:55.733Z",
+  "updatedAt": "2026-09-27T22:59:43.487Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -44,7 +44,7 @@
     "src/cli/plan-decompose.ts": [26],
     "src/cli/prompts-main.ts": [22],
     "src/cli/rules-lint.ts": [37],
-    "src/cli/status-features.ts": [66, 37],
+    "src/cli/status-features.ts": [37],
     "src/command-safety/shadow.ts": [27],
     "src/commands/common.ts": [22],
     "src/commands/curator.ts": [46, 27],
