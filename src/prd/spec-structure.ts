@@ -207,8 +207,9 @@ function storyIdViolations(
 function fieldViolations(
   specStory: SpecStoryStructure,
   prdStory: PRD["userStories"][number],
-): SpecStructureViolation[] {
-  const violations: SpecStructureViolation[] = [];
+): { workdir: SpecStructureViolation[]; dependencies: SpecStructureViolation[] } {
+  const workdir: SpecStructureViolation[] = [];
+  const dependencies: SpecStructureViolation[] = [];
 
   // A PRD story naming no package is not a divergence: the backfill fills it.
   const statedWorkdir = storyPackageDir(prdStory);
@@ -217,7 +218,7 @@ function fieldViolations(
     statedWorkdir !== undefined &&
     statedWorkdir !== normalizeWorkdir(specStory.workdir)
   ) {
-    violations.push({
+    workdir.push({
       kind: "workdir-mismatch",
       storyId: specStory.id,
       expected: specStory.workdir,
@@ -229,10 +230,10 @@ function fieldViolations(
     const expected = [...specStory.dependsOn];
     const actual = [...(prdStory.dependencies ?? [])];
     if (!sameDependencySet(expected, actual)) {
-      violations.push({ kind: "dependencies-mismatch", storyId: specStory.id, expected, actual });
+      dependencies.push({ kind: "dependencies-mismatch", storyId: specStory.id, expected, actual });
     }
   }
-  return violations;
+  return { workdir, dependencies };
 }
 
 /** Every way `prd` diverges from the structure `specContent` declares. */
@@ -247,10 +248,19 @@ export function findSpecStructureViolations(prd: PRD, specContent: string): Spec
 
   const prdById = new Map(prd.userStories.map((story) => [story.id.toUpperCase(), story]));
   const violations = storyIdViolations(structure.stories, prd.userStories);
+  // The two field kinds are enumerated as separate groups — every workdir
+  // divergence is listed before every dependency divergence, never interleaved
+  // per story, because the refusal message lists these lines in order.
+  const workdirMismatches: SpecStructureViolation[] = [];
+  const dependenciesMismatches: SpecStructureViolation[] = [];
   for (const specStory of structure.stories) {
     const prdStory = prdById.get(specStory.id);
-    if (prdStory) violations.push(...fieldViolations(specStory, prdStory));
+    if (!prdStory) continue;
+    const found = fieldViolations(specStory, prdStory);
+    workdirMismatches.push(...found.workdir);
+    dependenciesMismatches.push(...found.dependencies);
   }
+  violations.push(...workdirMismatches, ...dependenciesMismatches);
 
   for (const entry of extractSpecModifiedFiles(specContent)) {
     const owner = entry.storyId?.toUpperCase() ?? null;
