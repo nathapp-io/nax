@@ -28,6 +28,13 @@ export interface RefinedCriterion {
   testable: boolean;
   /** The story ID this criterion belongs to */
   storyId: string;
+  /**
+   * True when refinement was unusable after its retries and this criterion is
+   * the story's unrefined AC text standing in for it. Always set on the
+   * criteria a stage persists (`false` for criteria that refined normally,
+   * including when `acceptance.refinement` is off).
+   */
+  refinementFallback?: boolean;
 }
 
 /**
