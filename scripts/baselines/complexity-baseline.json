@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T13:31:41.905Z",
+  "updatedAt": "2026-09-27T13:57:52.087Z",
   "limit": 20,
   "byFile": {
     "bin/nax.ts": [107],
@@ -152,7 +152,6 @@
     "src/plugins/validator.ts": [35],
     "src/prd/index.ts": [22],
     "src/prd/inject.ts": [36],
-    "src/prd/schema-story.ts": [170],
     "src/prd/spec-lint.ts": [26, 23],
     "src/prd/spec-structure-grammar.ts": [33],
     "src/precheck/checks-config.ts": [27],

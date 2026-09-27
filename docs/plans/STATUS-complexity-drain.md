@@ -48,17 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 @ `9dd73572d` (chore/complexity-ratchet)
+## 0. Current state - measured 2026-09-27 @ `c28cda278` (chore/complexity-ratchet)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    255 functions in 221 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 40     67
-  over 60     29   (27 src, 1 bin, 1 scripts)  <- THIS DRAIN
-  over 100     7
-  worst      170   src/prd/schema-story.ts validateStory
+  over 20    254 functions in 220 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     28   (26 src, 1 bin, 1 scripts)  <- THIS DRAIN
+  worst      165   src/execution/unified-executor.ts executeUnified
 biome.json cap: 170
-batches: 0 of 25 done
+batches: 1 of 25 done (P0)
 ```
 
 Refresh this block at the end of every batch:
@@ -134,7 +132,7 @@ proof. `test` = a mirror test file exists at `test/unit/<path>`.
 
 | Batch | Status | Score | Function | File:line | Lines | Churn / fix | test |
 |:--|:--|---:|:--|:--|---:|:--|:--|
-| P0 | todo | 170 | `validateStory` | `src/prd/schema-story.ts:68` | 525 | 4 / 0 | none |
+| P0 | done 2026-09-27 | 170 | `validateStory` | `src/prd/schema-story.ts:68` | 525 | 4 / 0 | none |
 
 Pure, no I/O, zero fix commits, and the single worst score. Record in §9 how long it took
 and what the helpers scored; use that to size the rest (see §6).
@@ -270,3 +268,52 @@ a half-moved function is the hardest state to reason about.
 cap 176 -> 170. `9dd73572d` made the gate reject biome runs it cannot vouch for (parse
 errors, summary mismatch, unexpected exit codes) and added end-to-end tests.
 Next: P0.
+
+### 9.1 - 2026-09-27, P0 done - `validateStory` 170 -> 0 (one session)
+
+Field-by-field validator, exactly the shape §3's table predicted. One session, as the pilot
+hoped: characterisation tests first (own commit, `test: characterise validateStory before
+complexity drain`), then the refactor.
+
+**Technique:** extracted every field's validation into its own function in a new sibling
+file, `src/prd/schema-story-fields.ts` (417 lines) — not in `schema-story.ts` itself, since
+that file was already 525 lines against the 600-line gate (§2.4). `schema-story.ts` is now
+104 lines: unpack `raw`, call each extractor in the original field order, assemble the
+`UserStory` literal. `normalizeStoryId` and `validateStory` are the only two symbols another
+file (`schema.ts`) imports, so the sibling file's other exports (`extractId`,
+`extractTitle`, ... 14 extractors, plus the local `normalizeComplexity`/`schemaError`
+helpers) stay private to the pair.
+
+**Helper scores:** all 14 extractors landed under 20 on the first pass — no baseline
+hand-edit needed (§2.3 never triggered). The two largest, `extractTestStrategy` (BUG-26's
+auto-downgrade branch) and `extractContextFiles`/`extractExpectedFiles`/`extractModifiedFiles`
+(each doing the same relative-path-no-traversal check), still read as one coherent
+responsibility each — no further split was tempting.
+
+**One shared helper worth naming:** `checkRelativeNoTraversal(path, index, field)` factors
+the identical absolute-path / `..`-traversal check duplicated three times in the original
+(`contextFiles`, `expectedFiles`, `modifiedFiles`) into one function all three extractors
+call. Not in §3's table because it's a cross-cutting duplication removal, not a per-field
+extraction — worth checking for in any future field-by-field validator batch.
+
+**File lines:** `schema-story.ts` 525 -> 104. `schema-story-fields.ts` new, 417 (well under
+600, no near-limit follow-up needed).
+
+**Baseline:** `check:complexity` reported only "improved" for `src/prd/schema-story.ts`
+(never "added"/"grown") — none of the new helpers exceeded 20, so
+`check:complexity:update` was a pure lower: 255 -> 254 functions, 221 -> 220 files (the file
+dropped out of the over-20 baseline entirely, since every remaining function in it scores
+under 20).
+
+**Nothing surprising.** `bun run test:coverage` stayed green with no new file below the
+per-file floor - the field's behaviour was already well covered indirectly via
+`schema.test.ts` / `validatePlanOutput`, and the new characterisation file added direct
+coverage on top.
+
+**For the next batch:** the technique in §3's "Field-by-field validator" row worked exactly
+as documented, including the sibling-file move for a near-the-limit source file (§2.4). Wave
+C (`validateConfig`, `parseFrontmatter`, `coerceVerdict`, `parseTestFailuresDetailed`) is the
+next shape match - expect the same pattern to apply directly. Wave A's orchestrators
+(`executeUnified`, `runNativeTurn`, ...) are a different shape (state-machine, not
+field-by-field) and will need the "named phase functions" technique instead - do not assume
+P0's timing (one session) generalises to those.
