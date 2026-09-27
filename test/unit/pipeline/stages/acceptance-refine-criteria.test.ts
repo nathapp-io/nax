@@ -101,7 +101,9 @@ describe("US-003 AC5: refineAcceptanceCriteria fallback", () => {
 
     const refined = result.criteria.filter((c) => c.storyId === "US-001");
     expect(refined).toHaveLength(1);
-    expect(refined[0]?.refinementFallback).toBeFalsy();
+    // `refinementFallback` is a boolean discriminator, not a three-state flag:
+    // a criterion that refined normally must report `false`, not `undefined`.
+    expect(refined[0]).toHaveProperty("refinementFallback", false);
     expect(refined[0]?.refined).toBe("US-001:AC-1: alpha");
     expect(result.fallbackStoryIds).toEqual(["US-002"]);
   });
@@ -145,6 +147,17 @@ describe("US-003 AC7: no warning when every story refines", () => {
       expect(result.fallbackStoryIds).toEqual([]);
       expect(result.criteria).toHaveLength(3);
     });
+  });
+
+  test("US-003 AC7 boundary: every refined criterion carries an explicit refinementFallback false", async () => {
+    const result = await refineAcceptanceCriteria(makeCtx(), STORIES, new Map(), makeCallOp());
+
+    expect(result.criteria).toHaveLength(3);
+    for (const criterion of result.criteria) {
+      // A caller must be able to read the flag as a boolean without treating
+      // `undefined` as a third state for "refined normally".
+      expect(criterion).toHaveProperty("refinementFallback", false);
+    }
   });
 });
 
