@@ -224,6 +224,14 @@ Requirements:
 After writing the file to the exact path above, reply with a brief confirmation only.`;
   }
 
+  /**
+   * Prompt for acceptanceRepairOp — the smallest edit that makes the acceptance
+   * test file load while keeping every AC-N test and its assertions.
+   */
+  buildLoadRepairPrompt(_targetTestFilePath: string, _outputTail: string): string {
+    return "";
+  }
+
   /** Prompt for generateAcceptanceTests() — agent returns raw test code. */
   buildGeneratorFromSpecPrompt(p: GeneratorFromSpecParams): string {
     return `You are a senior test engineer. Your task is to generate a complete acceptance test file for the "${p.featureName}" feature.

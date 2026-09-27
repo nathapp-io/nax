@@ -58,3 +58,36 @@ describe("AcceptancePromptBuilder.buildGeneratorFromPRDPrompt path anchor", () =
     expect(prompt).not.toContain("join(import.meta.dir");
   });
 });
+
+describe("AcceptancePromptBuilder.buildLoadRepairPrompt", () => {
+  const target = "/r/t.test.ts";
+  const tail = "error: Cannot find module 'x'";
+  const G2 =
+    "The file must load before the implementation exists. In languages that resolve imports at runtime (TypeScript, JavaScript, Python), import modules this feature adds inside each test rather than at the top of the file, so a missing module fails only the tests that use it.";
+
+  function renderLoadRepairPrompt(): string {
+    return new AcceptancePromptBuilder().buildLoadRepairPrompt(target, tail);
+  }
+
+  test("names the target path so the repair edits the right file", () => {
+    expect(renderLoadRepairPrompt()).toContain(target);
+  });
+
+  test("includes the output tail in a fenced block", () => {
+    const prompt = renderLoadRepairPrompt();
+    expect(prompt).toContain(tail);
+    expect(prompt).toContain("```");
+  });
+
+  test("asks for the smallest edit that makes the file load while keeping every AC-N test", () => {
+    const prompt = renderLoadRepairPrompt();
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("smallest");
+    expect(lower).toContain("load");
+    expect(prompt).toContain("AC-N");
+  });
+
+  test("repeats G2 verbatim", () => {
+    expect(renderLoadRepairPrompt()).toContain(G2);
+  });
+});

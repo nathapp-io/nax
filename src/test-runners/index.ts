@@ -14,6 +14,8 @@ export type { AcTestCoverage } from "./ac-coverage";
 export { acTestCoverage } from "./ac-coverage";
 export { parseTestFailures, parseTestFailuresDetailed } from "./ac-parser";
 export { createTestFileClassifier } from "./classifier";
+export type { AcceptanceCrashClass } from "./classify-crash";
+export { classifyAcceptanceCrash } from "./classify-crash";
 export {
   DEFAULT_SCAN_TEST_DIRS,
   DEFAULT_SEPARATED_TEST_DIRS,

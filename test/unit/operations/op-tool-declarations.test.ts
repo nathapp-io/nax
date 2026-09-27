@@ -35,7 +35,14 @@ import type { CodingToolName } from "@/tools";
  * a trait, so adding `Edit` to any other op cannot slip past the Edit-implies-
  * Exec rule above by matching a shape.
  */
-const EDIT_OWN_ARTIFACT_OPS: ReadonlySet<string> = new Set(["plan-refine", "acceptance-generate"]);
+const EDIT_OWN_ARTIFACT_OPS: ReadonlySet<string> = new Set([
+  "plan-refine",
+  "acceptance-generate",
+  // US-004: repairs the acceptance file acceptance-generate wrote — again a
+  // single fresh artifact, never existing source. Its `outputTail` is a
+  // compiler fragment, so it needs no package manager.
+  "acceptance-repair",
+]);
 
 interface DeclaresTools {
   tools?: readonly CodingToolName[];

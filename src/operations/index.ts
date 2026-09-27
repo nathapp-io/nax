@@ -7,6 +7,8 @@ export type { AcceptanceGenerateInput, AcceptanceGenerateOutput } from "./accept
 export { _acceptanceGenerateDeps, acceptanceGenerateOp } from "./acceptance-generate";
 export type { AcceptanceRefineInput, AcceptanceRefineOutput } from "./acceptance-refine";
 export { acceptanceRefineOp } from "./acceptance-refine";
+export type { AcceptanceRepairInput, AcceptanceRepairOutput } from "./acceptance-repair";
+export { acceptanceRepairOp } from "./acceptance-repair";
 export type { AdversarialReviewInput, AdversarialReviewOutput } from "./adversarial-review";
 export { adversarialReviewOp } from "./adversarial-review";
 export type {
