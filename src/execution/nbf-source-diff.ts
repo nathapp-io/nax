@@ -2,10 +2,12 @@
  * US-003 — source/control classification for the non-blocking fix (NBF) keep gate.
  *
  * `createMeasureSourceDiff` classifies every path in the pass's diff against the
- * adversarial-passed ref: test files are excluded first (ADR-009 SSOT), `.nax`
- * control files are reported separately (they must never be kept, and must not
- * inflate the source metrics), and every remaining path lands in exactly one of
- * added / modified / deleted. `git diff` cannot see untracked paths, so
+ * adversarial-passed ref: `.nax` control files are reported separately FIRST
+ * (they must never be kept, and must not inflate the source metrics), then test
+ * files are excluded (ADR-009 SSOT), and every remaining path lands in exactly
+ * one of added / modified / deleted. The `.nax` check leads because a feature's
+ * tracked acceptance test (`.nax/features/<f>/.nax-acceptance.test.ts`, #2266)
+ * matches a root-anchored test glob such as `**\/*.test.ts`. `git diff` cannot see untracked paths, so
  * untracked files under `.nax/` are collected separately — otherwise a control
  * file the pass CREATED would be invisible. `listCommitsSince` names the commits
  * a restore is about to discard. Split out of `non-blocking-fix.ts` to keep that
@@ -152,14 +154,14 @@ export function createMeasureSourceDiff(
       const status = parts[0] ?? "";
       const filePath = parts[parts.length - 1];
       if (!filePath) continue;
-      // Test files are excluded first, as before.
-      if (isTestFile(filePath)) continue;
       // A `.nax` control file is neither source nor a change to keep: it buys no
       // count, but its presence (see `runNonBlockingFix`) forces a restore.
+      // Checked before the test exclusion -- see the module header.
       if (filePath.split("/")[0] === ".nax") {
         controlPaths.push(filePath);
         continue;
       }
+      if (isTestFile(filePath)) continue;
       if (status.startsWith("A")) paths.added.push(filePath);
       else if (status.startsWith("D")) paths.deleted.push(filePath);
       else paths.modified.push(filePath);
@@ -178,11 +180,9 @@ export function createMeasureSourceDiff(
       "git ls-files --others --exclude-standard -- .nax",
       "GIT_LS_FILES_UNTRACKED_FAILED",
     );
-    for (const filePath of untracked.trim().split("\n").filter(Boolean)) {
-      // Same order as above: a test file is excluded before anything else.
-      if (isTestFile(filePath)) continue;
-      controlPaths.push(filePath);
-    }
+    // Every path here is under `.nax`, so each is a control path -- a test file
+    // included, for the same reason as above.
+    controlPaths.push(...untracked.trim().split("\n").filter(Boolean));
 
     const fileCount = paths.added.length + paths.modified.length + paths.deleted.length;
     return { fileCount, sourceLineCount, paths, controlPaths };

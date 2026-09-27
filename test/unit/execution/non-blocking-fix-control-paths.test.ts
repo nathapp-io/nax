@@ -44,18 +44,29 @@ import type { SpawnResult } from "@/utils/bun-deps";
 // ─── classification: createMeasureSourceDiff ──────────────────────────────────
 
 /** Test patterns are supplied explicitly so the resolver never auto-detects. */
-const TEST_CONFIG = testPatternConfigSelector.select(
-  makeNaxConfig({
-    execution: {
-      smartTestRunner: {
-        enabled: true,
-        testFilePatterns: ["test/**/*.test.ts"],
-        fallback: "import-grep",
-        maxScanFiles: 200,
+function testConfigWith(testFilePatterns: string[]) {
+  return testPatternConfigSelector.select(
+    makeNaxConfig({
+      execution: {
+        smartTestRunner: {
+          enabled: true,
+          testFilePatterns,
+          fallback: "import-grep",
+          maxScanFiles: 200,
+        },
       },
-    },
-  }),
-);
+    }),
+  );
+}
+
+const TEST_CONFIG = testConfigWith(["test/**/*.test.ts"]);
+
+/**
+ * A root-anchored glob, as nax's own `.nax/config.json` declares it. Under it the
+ * tracked `.nax/features/<f>/.nax-acceptance.test.ts` (#2266) IS a test file, so
+ * only a control-path check that runs before the test exclusion can catch it.
+ */
+const ROOT_GLOB_TEST_CONFIG = testConfigWith(["**/*.test.ts"]);
 
 function git(cwd: string, ...args: string[]): string {
   const proc = Bun.spawnSync(["git", ...args], { cwd });
@@ -78,8 +89,11 @@ function commitAll(dir: string, message: string): string {
   return git(dir, "rev-parse", "HEAD").trim();
 }
 
-function measure(dir: string): (workdir: string, fromRef: string) => Promise<SourceDiffMetrics> {
-  return createMeasureSourceDiff({ config: TEST_CONFIG, projectDir: dir, packageDir: dir });
+function measure(
+  dir: string,
+  config: typeof TEST_CONFIG = TEST_CONFIG,
+): (workdir: string, fromRef: string) => Promise<SourceDiffMetrics> {
+  return createMeasureSourceDiff({ config, projectDir: dir, packageDir: dir });
 }
 
 describe("createMeasureSourceDiff — path classification (US-003)", () => {
@@ -158,9 +172,10 @@ describe("createMeasureSourceDiff — path classification (US-003)", () => {
     });
   });
 
-  test("US-003 AC16: a .nax acceptance test file is a control path, not an excluded test file", async () => {
-    // The `.nax-acceptance.test.ts` suffix does not match the resolved test globs,
-    // so the file reaches the control-path branch rather than the test-file skip.
+  // Under a root-anchored `**/*.test.ts` glob the acceptance test IS a test
+  // file, so these only pass when the `.nax` check runs before the test
+  // exclusion -- in the tracked diff and in the untracked listing alike.
+  test("US-003 AC16: a changed .nax acceptance test matching the test globs is a control path", async () => {
     await withTempDir(async (dir) => {
       initRepo(dir);
       await Bun.write(join(dir, ".nax/features/f/.nax-acceptance.test.ts"), "t1\n");
@@ -169,9 +184,40 @@ describe("createMeasureSourceDiff — path classification (US-003)", () => {
       await Bun.write(join(dir, ".nax/features/f/.nax-acceptance.test.ts"), "t2\n");
       commitAll(dir, "second");
 
-      const metrics = await measure(dir)(dir, ref);
+      const metrics = await measure(dir, ROOT_GLOB_TEST_CONFIG)(dir, ref);
 
       expect(metrics.controlPaths).toEqual([".nax/features/f/.nax-acceptance.test.ts"]);
+      expect(metrics.fileCount).toBe(0);
+    });
+  });
+
+  test("US-003 AC16 boundary: an untracked .nax acceptance test matching the test globs is a control path", async () => {
+    await withTempDir(async (dir) => {
+      initRepo(dir);
+      await Bun.write(join(dir, "src/a.ts"), "a1\n");
+      const ref = commitAll(dir, "initial");
+
+      await Bun.write(join(dir, ".nax/features/f/.nax-acceptance.test.ts"), "t1\n");
+
+      const metrics = await measure(dir, ROOT_GLOB_TEST_CONFIG)(dir, ref);
+
+      expect(metrics.controlPaths).toEqual([".nax/features/f/.nax-acceptance.test.ts"]);
+      expect(metrics.fileCount).toBe(0);
+    });
+  });
+
+  test("US-003 AC16 boundary: a test file outside .nax is still excluded, not a control path", async () => {
+    await withTempDir(async (dir) => {
+      initRepo(dir);
+      await Bun.write(join(dir, "src/a.test.ts"), "t1\n");
+      const ref = commitAll(dir, "initial");
+
+      await Bun.write(join(dir, "src/a.test.ts"), "t2\n");
+      commitAll(dir, "second");
+
+      const metrics = await measure(dir, ROOT_GLOB_TEST_CONFIG)(dir, ref);
+
+      expect(metrics.controlPaths).toEqual([]);
       expect(metrics.fileCount).toBe(0);
     });
   });
