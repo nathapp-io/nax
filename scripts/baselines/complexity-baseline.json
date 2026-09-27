@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T16:13:15.735Z",
+  "updatedAt": "2026-09-27T16:49:07.930Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -125,7 +125,6 @@
     "src/metrics/aggregator.ts": [28],
     "src/metrics/tracker.ts": [40, 26],
     "src/operations/adversarial-review.ts": [21],
-    "src/operations/call.ts": [91],
     "src/operations/full-suite-rectify.ts": [21],
     "src/operations/mutation-check.ts": [55],
     "src/operations/test-edit-declaration.ts": [30],

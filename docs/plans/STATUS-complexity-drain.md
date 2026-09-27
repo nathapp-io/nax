@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A5-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A6-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    250 functions in 216 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     23   (22 src, 1 scripts)   <- THIS DRAIN (build-hop-callback.ts drained by A5)
+  over 20    249 functions in 215 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     22   (21 src, 1 scripts)   <- THIS DRAIN (call.ts drained by A6)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 6 of 25 done (P0, A1, A2, A3, A4, A5)
+batches: 7 of 25 done (P0, A1, A2, A3, A4, A5, A6)
 ```
 
 Refresh this block at the end of every batch:
@@ -146,7 +146,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | A3 | done 2026-09-27 | 101 | `run` (ExecutionPlan) | `src/execution/story-orchestrator/execution-plan.ts:70` | 596 | 20 / 16 | none |
 | A4 | done 2026-09-27 | 107 | CLI `run` action | `bin/nax.ts:240` | 1948 -> 1609 (size-gated) | 37 / 21 | none |
 | A5 | done 2026-09-27 | 93 | hop callback | `src/operations/build-hop-callback.ts:191` | 599 | 33 / 19 | yes |
-| A6 | todo | 91 | `callOpDispatch` | `src/operations/call.ts:80` | 591 | 33 / 17 | yes |
+| A6 | done 2026-09-27 | 91 | `callOpDispatch` | `src/operations/call.ts:80` | 591 | 33 / 17 | yes |
 | A7 | todo | 74 | `resolveCodingToolSupport` | `src/agents/coding-tool-support.ts:307` | 601 | 44 / 18 | yes |
 | A8 | todo | 127 | `pathsBranch` | `src/tools/policy.ts:429` | 601 | 26 / 16 | yes |
 | A9 | todo | 71 | `handleRunCompletion` | `src/execution/lifecycle/run-completion.ts:111` | 563 | 22 / 18 | none |
@@ -718,3 +718,89 @@ move - the A1 trap in reverse); check for closures/throws crossing the extractio
 boundary; 591 lines means the extraction CANNOT land in `call.ts` itself, and budget two
 sibling files. New lesson for any characterisation commit: new test files must not add
 `as T` casts (the looseCast ratchet counts per file).
+
+### 9.7 - 2026-09-27, A6 done - `callOpDispatch` 91 -> 2 (one session)
+
+The Wave-A orchestrator §9.6 handed over, with its pre-flight questions all answered
+BEFORE writing code. One session, including a 7-test characterisation commit first
+(`test: characterise callOpDispatch unpinned branches before complexity drain`, green
+against the unrefactored dispatch): complete-kind CALL_OP_ABORTED before retry and
+during retry sleep, complete-kind MAX_COMPLETE_RETRY_ATTEMPTS exhaustion (21 attempts),
+completeOptions.sessionName forwarding (both arms of the computeAcpHandle rule),
+ctx.storyScratchDirs forwarding into hopCtx, and the run-kind bare parse-rethrow
+(original error propagates untouched when no retry/fallback/recover/lastRetryTurn
+engaged). Everything else was already pinned by the nine call* mirror suites.
+New-file ratchet discipline held: zero `as T` casts (looseCast stayed 1474).
+
+**The `_deps` seam exists, and the A1 trap applied in reverse exactly as §9.6
+predicted.** `_callOpDeps` (sleep / buildHopCallback / readFileOutput — all three
+properties reassigned by seven test files) stayed defined in `call.ts` because
+`src/operations/index.ts` re-exports it by reference. The phase functions take it BY
+REFERENCE as `params.deps` (the `CallOpDeps` interface in the prologue sibling) and
+read `deps.X` at call time, so test reassignments keep landing. `check:import-cycles`
+stayed 0.
+
+**A2's traps: checked first, both clean.** The run branch's three closure `let`s
+(`retryFallback`, `maxRetriesExceeded`, `lastRetryTurn`) became one `RunRetryState`
+object created once per dispatch and MUTATED IN PLACE by `sendWithParseRetry` from
+deep inside the hop — designed mutate-in-place from the start this time, per §9.3's
+note; the "two sendWithParseRetry calls have independent retry state" test pins the
+reset semantics. No closure set up once in setup and mutated across iterations (the
+SpinFlags shape); no catch reads loop state across an intentional mid-loop throw (the
+abort throws propagate out of callOpDispatch; nothing catches them locally).
+
+**Technique:** the ~506-line body became a three-file phase split around a shared
+prologue — `call-dispatch-prologue.ts` (140 lines: `DispatchPrologue` +
+`buildDispatchPrologue` 8, the `CallOpDeps` type, and the three shared throw helpers
+`throwNoDispatch` / `throwAborted` / `throwRetryBudgetExhausted`, which also factored
+the genuinely duplicated zero-dispatch and fallback-validation literals),
+`call-dispatch-complete.ts` (163: `dispatchCompleteOp` 11, `decideCompleteRetry` 7,
+`buildCompleteOptions` + its `modelDefFor` arrow 4 each), `call-dispatch-run.ts` (529:
+`dispatchRunOp` 6, `buildHopContext` 6, `createRunSenders` holding
+`sendWithParseRetry` 20 / `sendWithFileOutput` 2 / `effectiveHopBody` 2,
+`handleRunEmptyOutput` 5, `parseRunOutcome` 4, `handleRunParseFailure` 6, plus
+`attachOutcomeAdapterFailure` moved here from call.ts and re-exported so its import
+path is unchanged). `callOpDispatch` itself scores 2, `callOp` 3. Verified with a
+string-literal fingerprint diff of the original body against the three siblings:
+every error code, error message, and log message is 1:1 — the only textual deltas are
+the shared helpers now assembling `callOp[op.name]: <message>` from verbatim parts,
+and `(${typeof retryFallback})` -> `(${typeof fallback})` in the invalid-fallback
+message (renamed variable, identical runtime output).
+
+**Helper scores:** largest is `sendWithParseRetry` at 20 — exactly AT the strict
+limit, compliant per §2.3 (same as A4's `printHumanReadable` at 20), and it is one
+coherent per-turn retry loop rather than a candidate for a fake split. Everything
+else <= 11. No baseline hand-edit (§2.3 never triggered).
+
+**File-size gate: the "budget two sibling files" rule did not fire for once —
+because the split was planned in from the start.** `call.ts` 591 -> 72; the siblings
+measured 140 / 163 / 529 after `bun x biome check --write`, all under 600. The
+difference vs A1/A3/A4/A5's first-attempt overruns: each op-kind branch got its OWN
+file and the shared prologue a third, instead of one file holding every phase of the
+function. For a two-branch dispatch function, one file per branch is the natural
+seam; plan it that way from the first line.
+
+**One near-miss worth naming (A3's diff-the-original lesson, verified here):** the
+complete-retry warn log uses `agentName: ctx.agentName` while the shouldRetry CONTEXT
+one line above uses `dispatchAgent`, and the complete branch records
+`resolved.modelTier` (not effectiveTier) — asymmetric on purpose in the original. A
+mechanical "cleanup" unifying either would have been a silent behaviour change the
+suite would not catch. Both preserved exactly.
+
+**Nothing else surprising.** 22043 tests across all phases green (the nine call*
+mirror suites exercise the moved paths directly, plus the 7 characterisation tests);
+`check:all` green (35 scripts, import-cycles 0, file-sizes green); `test:coverage`
+green, below-floor count 1 vs baseline 2 (the improvement A5 noted stands;
+lowering the baseline is a future batch's job). `check:complexity:update` was a pure
+lower: 250 -> 249 functions, 216 -> 215 files (`call.ts` left the over-20 baseline
+entirely — every function in it now scores under 20).
+
+**For the next batch:** A7 `resolveCodingToolSupport` (`src/agents/coding-tool-support.ts:307`,
+74, 601 lines, test: yes) — §3's "policy decision tree" row, the first of that shape
+in Wave A. Its file is ONE LINE OVER the 600 cap going in, so like A3/A6 the
+extraction cannot land in the same file at all. Pre-flight per this batch: (1) check
+for a `_deps`-style seam re-exported through a barrel; (2) the decision-tree shape
+wants guard clauses first, then a named-predicate decision table — NOT named phase
+functions; (3) grep test/ for source-text assertions on the file before extracting;
+(4) still budget the sibling for a split, since moving the function's body out means
+the sibling carries nearly all 601 lines' worth of logic.
