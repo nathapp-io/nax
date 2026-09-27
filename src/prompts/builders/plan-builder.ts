@@ -20,7 +20,12 @@ import {
   SPEC_ANCHOR_RULES,
   TEST_STRATEGY_GUIDE,
 } from "@/config";
-import type { SpecStructureViolation } from "@/prd";
+import {
+  extractSpecStructure,
+  formatSpecStructureViolation,
+  type SpecStoryStructure,
+  type SpecStructureViolation,
+} from "@/prd";
 import { OneShotPromptBuilder } from "./one-shot-builder";
 
 // ─── Shared rule injection ────────────────────────────────────────────────────
@@ -72,6 +77,42 @@ const OUT_OF_SCOPE_SCHEMA_FIELD = `"outOfScope": ["string — verbatim from the 
 
 /** Per-story exclusions, distinct from the feature-level list above. */
 const STORY_OUT_OF_SCOPE_SCHEMA_FIELD = `"outOfScope": ["string — optional, exclusions specific to THIS story: any '**Out of scope:**' block under this story's acceptance criteria in the spec, plus anything else beyond the feature-level list. Omit if none."],`;
+
+// ─── Binding story structure ──────────────────────────────────────────────────
+
+/**
+ * The `## Binding Story Structure` preamble. `GROUPING_RULES` tells the planner
+ * to combine small tasks and never to author test-only stories — correct for a
+ * spec that declares nothing, and wrong for one that pre-decomposes the feature
+ * into named stories. This paragraph establishes that the spec's own structure
+ * wins wherever the two disagree; the rule itself is not edited, so its
+ * guidance still applies to every story the spec does not declare.
+ */
+const BINDING_STRUCTURE_INTRO = `The spec pre-decomposes this feature into the stories below. This structure is binding: the PRD must contain exactly these story ids — never merge, split, rename or add a story. Set each story's "workdir" and "dependencies" exactly as listed. Every acceptance criterion stays in the story the spec states it under. A spec story whose acceptance criteria are all integration or test criteria stays its own story: the Story Rules about combining small tasks and about test-only stories do not apply to a story the spec declares.`;
+
+/** `#### dependency-minimization` addition for a spec that declares its own stories. */
+const BINDING_DEPENDENCY_RULE = `Never add or remove a dependency of a story the Binding Story Structure lists, and never merge, split or rename one of its stories.`;
+
+/** A cell for a field the spec does not state. */
+const NOT_STATED = "(not stated)";
+
+/** One row of the binding table: the spec's id, its workdir, and what it depends on. */
+function bindingRow(story: SpecStoryStructure): string {
+  const workdir = story.workdir === undefined ? NOT_STATED : `\`${story.workdir}\``;
+  // `[]` is the spec SAYING "no dependencies"; undefined is the spec saying nothing.
+  const dependsOn = story.dependsOn === undefined ? NOT_STATED : story.dependsOn.join(", ") || "none";
+  return `| ${story.id} | ${workdir} | ${dependsOn} |`;
+}
+
+/**
+ * The `## Binding Story Structure` section: the preamble plus one table row per
+ * story the spec declares. Prefixed with the blank lines that separate it from
+ * whatever precedes it, so callers can splice it in unconditionally.
+ */
+function buildBindingStructureSection(stories: readonly SpecStoryStructure[]): string {
+  const rows = stories.map(bindingRow).join("\n");
+  return `\n\n## Binding Story Structure\n\n${BINDING_STRUCTURE_INTRO}\n\n| Story | Workdir | Depends on |\n|:------|:--------|:-----------|\n${rows}`;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -146,7 +187,7 @@ Please re-write the complete PRD JSON from scratch conforming to the required sc
    * The model must write the revised PRD to disk, then reply with a brief
    * confirmation only.
    */
-  buildRefineContinuation(outputFilePath: string, specGuard = false, _bindingStructure = false): string {
+  buildRefineContinuation(outputFilePath: string, specGuard = false, bindingStructure = false): string {
     const specGuardItems = specGuard
       ? `
 #### orphan-acs
@@ -181,7 +222,7 @@ For each story, verify:
 For each story, compare contextFiles against files the spec explicitly lists as context (e.g., in "Context Files" sections). Ensure the most critical spec-recommended files are included, up to the 5-file limit. If a spec-recommended file is absent, add it (removing the least critical one if already at 5). Files the story will CREATE must not appear here.
 
 #### dependency-minimization
-Remove unnecessary dependencies between stories. A dependency should exist only if the downstream story truly cannot be implemented or validated first. Also verify that every story ID referenced in any "dependencies" array exists in this PRD — remove references to non-existent story IDs.
+Remove unnecessary dependencies between stories. A dependency should exist only if the downstream story truly cannot be implemented or validated first. Also verify that every story ID referenced in any "dependencies" array exists in this PRD — remove references to non-existent story IDs.${bindingStructure ? ` ${BINDING_DEPENDENCY_RULE}` : ""}
 
 #### routing-realism
 Re-check routing.complexity and routing.testStrategy against the current codebase shape. Prefer the lightest realistic routing. Do not mark stories as "complex" or choose a heavier test strategy unless the codebase evidence requires it. Also verify routing.reasoning is substantive — a generic value like "validated from LLM output" must be replaced with one sentence explaining why this specific complexity and strategy were chosen for this story.
@@ -235,11 +276,25 @@ Do not output the PRD in chat. After writing the file, reply with a brief text c
    * PRD diverges from the story structure the spec declares (missing/extra
    * stories, wrong workdir or dependencies, orphaned `Modifies` entries).
    *
-   * NOTE (test-writer session): STUB — returns an empty prompt. The implementer
-   * fills in the violation list and the binding instructions.
+   * The planner is told what diverged and that the spec's structure wins, then
+   * writes the corrected PRD back to the same path the draft came from. One of
+   * these per planning op — a divergence that survives it is reported by the
+   * write step's structure gate, not repaired again.
    */
-  buildSpecStructureRepair(_violations: readonly SpecStructureViolation[], _outputFilePath: string): string {
-    return "";
+  buildSpecStructureRepair(violations: readonly SpecStructureViolation[], outputFilePath: string): string {
+    const list = violations.map((violation) => `- ${formatSpecStructureViolation(violation)}`).join("\n");
+    return `Your PRD does not match the story structure the spec declares. The spec's stories are binding.
+
+${list}
+
+For each item above:
+- Restore every missing spec story under its own id, and move each acceptance criterion back to the story the spec states it under.
+- Remove any story the spec does not declare.
+- Set "workdir" and "dependencies" exactly as the Binding Story Structure lists.
+- Never merge, split or rename a spec story.
+
+Write the corrected PRD to this file path: ${outputFilePath}
+Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;
   }
 
   /**
@@ -286,8 +341,13 @@ Do not output the PRD in chat. After writing the file, reply with a brief text c
     const isMonorepo = packages && packages.length > 0;
     const packageDetailsSection =
       packageDetails && packageDetails.length > 0 ? buildPackageDetailsSection(packageDetails) : "";
+    // A spec that pre-decomposes the feature makes its own structure binding, so
+    // the `GROUPING_RULES`-driven freedom (and the "relevant package" heuristic)
+    // yields to the ids, workdirs and dependencies the spec states.
+    const declaredStories = extractSpecStructure(specContent).stories;
+    const bindingSection = declaredStories.length > 0 ? buildBindingStructureSection(declaredStories) : "";
     const monorepoHint = isMonorepo
-      ? `\n## Monorepo Context\n\nThis is a monorepo. Detected packages:\n${packages.map((p) => `- ${p}`).join("\n")}\n${packageDetailsSection}\nFor each user story, set the "workdir" field to the relevant package path (e.g. "packages/api"). Stories that span the root should omit "workdir".`
+      ? `\n## Monorepo Context\n\nThis is a monorepo. Detected packages:\n${packages.map((p) => `- ${p}`).join("\n")}\n${packageDetailsSection}\n${buildWorkdirInstruction(declaredStories.length > 0)}`
       : "";
 
     const workdirField = isMonorepo
@@ -302,7 +362,7 @@ Read the spec carefully. Identify the goal, scope, constraints, and what "done" 
 
 ## Spec
 
-${specContent}
+${specContent}${bindingSection}
 
 ## Step 2: Analyze
 
@@ -390,6 +450,18 @@ ${outputDirective}`;
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
+
+/**
+ * The monorepo `workdir` instruction. When the spec declares its own stories,
+ * each story's workdir comes from the Binding Story Structure — the "relevant
+ * package" heuristic is the fallback for a story whose workdir the spec leaves
+ * unstated, not the rule for all of them.
+ */
+function buildWorkdirInstruction(bindingStructure: boolean): string {
+  return bindingStructure
+    ? `Set each story's "workdir" to the Workdir the Binding Story Structure lists; for a story whose Workdir is not stated, set it to the relevant package path. Stories that span the root should omit "workdir".`
+    : `For each user story, set the "workdir" field to the relevant package path (e.g. "packages/api"). Stories that span the root should omit "workdir".`;
+}
 
 /**
  * Build the file-read instruction block for the plan prompt.
