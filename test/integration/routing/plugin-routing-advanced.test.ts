@@ -111,7 +111,7 @@ describe("Plugin router error handling", () => {
       },
     });
 
-    spyOn(loggerModule, "getSafeLogger").mockReturnValue(mockLogger);
+    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(mockLogger);
 
     const errorRouter = createPluginRouter("error-router", () => {
       throw new Error("Plugin router failed");
@@ -132,14 +132,18 @@ describe("Plugin router error handling", () => {
     const story = createTestStory();
     const context = createTestContext();
 
-    await routeStory(story, context, "/tmp", registry);
+    try {
+      await routeStory(story, context, "/tmp", registry);
 
-    // Verify error was logged
-    expect(loggedErrors.length).toBeGreaterThan(0);
-    const errorLog = loggedErrors.find(
-      (log) => log.message.includes("error-router") || log.message.includes("Plugin router failed"),
-    );
-    expect(errorLog).toBeDefined();
+      // Verify error was logged
+      expect(loggedErrors.length).toBeGreaterThan(0);
+      const errorLog = loggedErrors.find(
+        (log) => log.message.includes("error-router") || log.message.includes("Plugin router failed"),
+      );
+      expect(errorLog).toBeDefined();
+    } finally {
+      loggerSpy.mockRestore();
+    }
   });
 
   test("multiple router errors are caught and keyword fallback succeeds", async () => {
@@ -231,7 +235,7 @@ describe("Plugin router error handling", () => {
       },
     });
 
-    spyOn(loggerModule, "getSafeLogger").mockReturnValue(mockLogger);
+    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(mockLogger);
 
     const errorRouter = createPluginRouter("my-custom-router", () => {
       throw new Error("Custom error");
@@ -252,13 +256,17 @@ describe("Plugin router error handling", () => {
     const story = createTestStory();
     const context = createTestContext();
 
-    await routeStory(story, context, "/tmp", registry);
+    try {
+      await routeStory(story, context, "/tmp", registry);
 
-    // Verify error log includes plugin router name
-    const errorLog = loggedErrors.find(
-      (log) => log.message.includes("my-custom-router") || log.data?.toString().includes("my-custom-router"),
-    );
-    expect(errorLog).toBeDefined();
+      // Verify error log includes plugin router name
+      const errorLog = loggedErrors.find(
+        (log) => log.message.includes("my-custom-router") || log.data?.toString().includes("my-custom-router"),
+      );
+      expect(errorLog).toBeDefined();
+    } finally {
+      loggerSpy.mockRestore();
+    }
   });
 });
 
