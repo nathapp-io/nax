@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, pre-A1-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, pre-A2-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    254 functions in 220 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     27   (25 src, 1 bin, 1 scripts)  <- THIS DRAIN
+  over 20    253 functions in 219 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     26   (24 src, 1 bin, 1 scripts)  <- THIS DRAIN
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 2 of 25 done (P0, A1)
+batches: 3 of 25 done (P0, A1, A2)
 ```
 
 Refresh this block at the end of every batch:
@@ -142,7 +142,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | Batch | Status | Score | Function | File:line | Lines | Churn / fix | test |
 |:--|:--|---:|:--|:--|---:|:--|:--|
 | A1 | done 2026-09-27 | 165 | `executeUnified` | `src/execution/unified-executor.ts:60` | 704 (size-gated) | 30 / 25 | none |
-| A2 | todo | 97 | `runNativeTurn` | `src/agents/native/session/turn-loop.ts:72` | 484 | 42 / 18 | none |
+| A2 | done 2026-09-27 | 97 | `runNativeTurn` | `src/agents/native/session/turn-loop.ts:72` | 484 | 42 / 18 | none |
 | A3 | todo | 101 | `run` (ExecutionPlan) | `src/execution/story-orchestrator/execution-plan.ts:70` | 596 | 20 / 16 | none |
 | A4 | todo | 107 | CLI `run` action | `bin/nax.ts:245` | 1948 (size-gated) | 37 / 21 | none |
 | A5 | todo | 93 | hop callback | `src/operations/build-hop-callback.ts:191` | 599 | 33 / 19 | yes |
@@ -392,3 +392,69 @@ batch §4 flagged as likely needing a split - expect the same three concerns in 
 file the extraction would need to import back from; (2) will one sibling file hold everything,
 or does it need splitting again to stay under 600; (3) grep test/ for source-order assertions
 on the function/file being moved, before calling the batch done.
+
+### 9.3 - 2026-09-27, A2 done - `runNativeTurn` 97 -> 16 (one session)
+
+Second orchestrator/state-machine batch. No `_deps`-style test seam here (unlike A1) - the
+DI question from A1's write-up resolved to "no" on the first check, which is worth recording
+as a passing case, not just a trap. Two-pass split, same as A1: the first extraction
+(`runRoundTripLoop` alone in a new sibling file) still scored 50, so it split again into
+three phase functions.
+
+**Technique:** `runNativeTurn`'s while(true){while(true){...}} became three functions in a
+new sibling file, `turn-loop-round-trip.ts` (393 lines): `maybeCompact` (the once-per-round-trip
+compaction check), `runModelRoundTrip` (the model call, usage/anchor bookkeeping, and the
+`after_response` dispatch - returns the tool calls or `undefined` for a clean exit), and
+`dispatchToolBatch` (answers the tool calls, decides continue/break/throw). `runRoundTripLoop`
+itself is now four lines of sequencing calling the three in order. `runTurnEndPhase` (the
+`before_turn_end` dispatch + followUp continuation decision) is the fourth exported function,
+unchanged from the first pass. `turn-loop.ts` drops to 278 lines: setup (transcript load,
+event registry, `before_turn` dispatch, seed, tools) plus a four-line outer `while(true)` and
+the error/completion tail.
+
+**A real regression, caught by the existing suite, not by review.** The first version of
+`runRoundTripLoop` used local `let messages`/`lastUsage`/etc. and returned a fresh
+`TurnLoopState` object at the end - direct copy of A1's `LoopState` pattern. That pattern is
+wrong here: A1's dispatch functions never throw mid-update, but this loop's
+`batch.cancelled` path throws INTENTIONALLY, deliberately mid-loop, specifically so the
+catch block's best-effort `saveTranscript` can persist whatever the tool batch already
+produced (US-002, AC2/AC3). Returning a new object only at a clean return loses every
+update since the LAST return the moment a throw skips it - exactly the synthetic
+cancelled-tool-call messages the design depends on saving. 3 of 594 native tests failed
+(`turn-loop.test.ts` "keeps the work already done when a later round trip throws",
+`turn-loop-cancel.test.ts` AC2/AC3) - transcripts missing the assistant message and the
+synthetic tool results. Fix: `runRoundTripLoop` now takes and MUTATES its `TurnLoopState`
+argument in place (`state.messages = ...`, never `messages = ...` then return), so a throw
+mid-loop still leaves the caller's object (the same reference) fully up to date. Documented
+at length in the file's header comment - this is the one shape difference from A1's pattern
+that matters, and it will recur in any orchestrator batch with an intentional mid-loop throw
+whose catch block reads the loop's working state.
+
+**`spinStopped` / `spinWarned` were two plain `let`s, one of them mutated by a closure set up
+ONCE in setup** (`onSpinStop: () => { spinWarned = true; }`, registered before either
+extracted function is ever called). Splitting the loop body out cannot split that closure's
+target too. Fix: both flags became one `SpinFlags` object (`{ stopped, warned }`) created in
+setup and threaded by reference into every extracted call - same shared-mutable-state
+semantics as the original two `let`s, addressed through an object instead of two closed-over
+bindings. Same category of fix as the state-mutation one above: a closure or a throw crossing
+a function boundary both defeat "return a new value," and the fix in both cases is a shared
+mutable object instead.
+
+**Helper scores:** first pass put the WHOLE round-trip loop in one function at 50 (well over
+20/§2.3). Second pass split it into the three phases above; the largest, `runModelRoundTrip`,
+landed at 18. No baseline hand-edit needed either pass - once under 20, done.
+
+**File-size gate:** `turn-loop.ts` was 483 lines going in (not size-gated, no baseline entry)
+- comfortably clear of 600 even before this batch, so no near-limit follow-up like A1's. The
+new sibling file landed at 393; no further split needed on that axis.
+
+**Nothing else surprising.** `bun run test:coverage` stayed green, no new file below the
+per-file floor. `check:import-cycles` stayed at 0.
+
+**For the next batch:** A3 (`ExecutionPlan.run`, `src/execution/story-orchestrator/execution-plan.ts`)
+is the next Wave A orchestrator. Check for the mutate-in-place trap FIRST this time, before
+writing a return-a-new-object version: does any branch throw partway through a loop whose
+state a catch block downstream reads? If yes, design the state object as mutate-in-place from
+the start rather than discovering it via a failing test. Also check for closures set up once
+in setup and read/written across loop iterations (the `SpinFlags` shape) - grep the function
+for `() =>` closures capturing a `let` before assuming a clean state-object split.

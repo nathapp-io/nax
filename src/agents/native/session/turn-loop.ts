@@ -11,41 +11,32 @@
  * (`readNativeTurnFailureUsage` / `recordNativeTurnFailureUsage`) live in
  * `./turn-types.ts`. Splitting them out keeps this file focused on the
  * algorithm and below the 600-line hard limit (project-conventions.md).
+ *
+ * The round-trip loop and the `before_turn_end` continuation decision live in
+ * `./turn-loop-round-trip.ts` (complexity drain A2,
+ * docs/plans/STATUS-complexity-drain.md) — this file does setup (transcript
+ * load, event registry, `before_turn`), sequences the outer while(true) over
+ * those two phases, and handles the error/completion tail.
  */
 
-import { inputClassTokens } from "@/agents/cost";
 import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { askHumanToolDefinition } from "./ask-human";
-import { estimateContextTokens, type TranscriptMessage as NativeTranscriptMessage, shouldCompact } from "./compaction";
+import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
 import { createInvalidCallBudget } from "./handle-invalid-tool-call";
 import { createLoopEventRegistry } from "./loop-events";
 import { applyHistoryPatch } from "./loop-events/cache-boundary";
 import { registerBuiltinLoopHandlers } from "./loop-handlers";
-import {
-  nativeSessionLastUsage,
-  nativeSessionTranscriptOwners,
-  nativeTranscriptDirs,
-  sessionAnchorFor,
-} from "./session";
+import { nativeSessionTranscriptOwners, nativeTranscriptDirs, sessionAnchorFor } from "./session";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
 import { loadTranscript, saveTranscript, type TranscriptIdentity, transcriptModelIdentity } from "./transcript-store";
-import { createTurnAccumulator, usageBeat } from "./turn-accumulator";
-import { runProactiveCompaction } from "./turn-compaction-step";
-import { completeWithRecovery } from "./turn-complete-step";
+import { createTurnAccumulator } from "./turn-accumulator";
 import { dispatchTurnEndOnError } from "./turn-end-event";
+import type { SpinFlags, TurnLoopState, TurnRoundParams } from "./turn-loop-round-trip";
+import { runRoundTripLoop, runTurnEndPhase } from "./turn-loop-round-trip";
 import { buildTurnResult, logTurnTailWarnings } from "./turn-result";
-import { runToolBatch } from "./turn-tool-batch";
 import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
-
-/**
- * The per-turn bound on `before_turn_end`'s followUp channel (spec 6.4): the
- * only event that can spend money on its own, so injections are capped per
- * turn regardless of what handlers return. At the cap the channel stops and
- * the turn ends.
- */
-const MAX_FOLLOW_UPS_PER_TURN = 3;
 
 /**
  * The messages `before_turn` appends as the turn's seed: the handler's patch
@@ -92,33 +83,27 @@ export async function runNativeTurn(
   };
   let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id, transcriptIdentity))];
 
-  const spinBreaker = deps.spinBreaker;
-  // Set ONLY when the breaker ended the turn, so the wiring layer can classify
-  // it as `fail-spin` rather than a generic incomplete turn.
-  let spinStopped = false;
-  // nax#2120: the first stop verdict spends a terminal round trip rather than
-  // tearing the turn down, so a false positive does not cost the transcript.
-  let spinWarned = false;
-  const invalidCallBudget = createInvalidCallBudget();
   // nax#2151: the invalid-call repair and the spin breaker are `before_tool`
   // registrations rather than inline branches. Absent a caller-supplied
   // registry the loop owns one, so both built-ins run exactly as they did
   // before the seam. The block sits above `before_turn` now: the dispatch
   // needs the registry, and the built-ins must be installed before ANY event
   // fires, exactly as they were installed before any round trip ran.
+  const spinFlags: SpinFlags = { stopped: false, warned: false };
+  const invalidCallBudget = createInvalidCallBudget();
   const loopEvents = deps.loopEvents ?? createLoopEventRegistry();
   registerBuiltinLoopHandlers(loopEvents, {
     sessionName: handle.id,
     budget: invalidCallBudget,
-    ...(spinBreaker !== undefined ? { spinBreaker } : {}),
+    ...(deps.spinBreaker !== undefined ? { spinBreaker: deps.spinBreaker } : {}),
     onSpinStop: () => {
-      spinWarned = true;
+      spinFlags.warned = true;
     },
   });
 
   const anchor = sessionAnchorFor(handle.id, transcriptIdentity.model);
-  let lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
-  let anchorIndex = anchor?.anchorIndex;
+  const lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
+  const anchorIndex = anchor?.anchorIndex;
 
   // P3 `before_turn` (spec 6.1): fires ONCE, after the transcript loads and
   // before the seed push. `boundary` is dispatcher-computed (spec 3.4) and
@@ -163,255 +148,60 @@ export async function runNativeTurn(
     ...(maxInteractions > 0 ? [askHumanToolDefinition] : []),
   ];
 
-  let roundTrips = 0;
   const usage = createTurnAccumulator();
-  let output = "";
   // Reported on the result so the review guards can corroborate a reviewer's
   // self-declared inspection trail against calls it actually made.
   const codingToolsCalled: string[] = [];
-  // Set ONLY on the clean exit — the model returned no further tool calls.
-  // Every other way out of the loop (the deadline, or an abort) leaves work
-  // the model asked for unexecuted.
-  let completedNormally = false;
-  let timedOut = false;
-  // `before_turn_end`'s followUp injections so far this turn (spec 6.4) —
-  // reset every turn, capped at MAX_FOLLOW_UPS_PER_TURN.
-  let followUpsSoFar = 0;
   const interactions: InteractionExchange[] = [];
+
+  const params: TurnRoundParams = {
+    handle,
+    opts,
+    deps,
+    transcriptModel: transcriptIdentity.model,
+    tools,
+    codingToolNames,
+    loopEvents,
+    invalidCallBudget,
+    spinBreaker: deps.spinBreaker,
+    spinFlags,
+    maxInteractions,
+    interactions,
+    codingToolsCalled,
+    usage,
+  };
+
+  let state: TurnLoopState = {
+    messages,
+    lastUsage,
+    anchorIndex,
+    roundTrips: 0,
+    output: "",
+    // Set ONLY on the clean exit — the model returned no further tool calls.
+    // Every other way out of the loop (the deadline, or an abort) leaves work
+    // the model asked for unexecuted.
+    completedNormally: false,
+    timedOut: false,
+    // `before_turn_end`'s followUp injections so far this turn (spec 6.4) —
+    // reset every turn, capped at MAX_FOLLOW_UPS_PER_TURN.
+    followUpsSoFar: 0,
+  };
 
   // nax#1838: the save below the loop is the clean exit's alone. A turn that
   // throws must persist too — the retry reopens the same deterministic session
   // name, so an unsaved conversation is one the model silently resumes without.
   try {
-    // Deliberately unbounded by COUNT of varied calls. A coding agent working a
-    // story is bounded by wall clock (deps.deadline), by the idle watchdog, and
-    // — since nax#2013 — by the spin breaker, which ends a turn that keeps
-    // REPEATING a call it already made. `agent.maxInteractionTurns` is NOT this
-    // budget — it bounds human Q&A exchanges, which are counted separately.
     // The OUTER loop is `before_turn_end`'s followUp continuation (spec 6.4):
-    // an honoured followUp re-enters the round-trip loop below instead of
-    // building the turn's result — the result is built when the turn ENDS.
+    // an honoured followUp re-enters the round-trip loop via runRoundTripLoop
+    // instead of building the turn's result — the result is built when the
+    // turn ENDS.
     while (true) {
-      while (true) {
-        // Checked before starting a round-trip rather than after finishing one:
-        // starting a call we know cannot finish inside the budget spends money for
-        // an answer we will discard.
-        if (deps.deadline?.expired() === true) {
-          timedOut = true;
-          break;
-        }
-
-        // Compaction runs at most once per round trip. That bound is what stops a
-        // compact-still-over-compact loop when the pinned prompt alone is too large.
-        // Read below by the overflow-retry backstop (`canRetry = ... &&
-        // !summarizeFailed && ...`), which suppresses a doomed retry after the
-        // summarizer has already failed this round trip.
-        let summarizeFailed = false;
-        if (
-          deps.summarize !== undefined &&
-          deps.contextWindow !== undefined &&
-          deps.compaction !== undefined &&
-          shouldCompact(estimateContextTokens(messages, lastUsage, anchorIndex), deps.contextWindow, deps.compaction)
-        ) {
-          const step = await runProactiveCompaction({
-            messages,
-            usage,
-            sessionName: handle.id,
-            lastUsage,
-            anchorIndex,
-            // The loop's local, not deps.loopEvents — the same registry
-            // completeWithRecovery and runToolBatch receive below, so every
-            // dispatch seam observes the same handlers.
-            loopEvents,
-            // Copied, not the `deps` object itself: the guard above narrows the
-            // three properties to defined, and a fresh object is what carries that
-            // narrowing into the step's `CompactionStepDeps` parameter.
-            deps: {
-              summarize: deps.summarize,
-              contextWindow: deps.contextWindow,
-              compaction: deps.compaction,
-              onActivity: deps.onActivity,
-              deadline: deps.deadline,
-            },
-            ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-          });
-          messages = [...step.messages];
-          summarizeFailed = step.summarizeFailed;
-          if (step.compacted) {
-            // The anchor described the pre-compaction array; it is meaningless now.
-            lastUsage = undefined;
-            anchorIndex = undefined;
-          }
-        }
-        const step = await completeWithRecovery({
-          messages,
-          tools,
-          usage,
-          summarizeFailed,
-          sessionName: handle.id,
-          lastUsage,
-          anchorIndex,
-          // The loop's local, not deps.loopEvents — the same registry runToolBatch
-          // below receives, so both dispatch seams observe the same handlers.
-          loopEvents,
-          // 1-based, matching the usage beat below: the request being issued is
-          // round trip roundTrips + 1 — before_request(0-based N) and a later
-          // after_response(1-based N) would otherwise disagree on the same trip.
-          roundTrip: roundTrips + 1,
-          ...(handle.modelDef?.model !== undefined ? { model: handle.modelDef.model } : {}),
-          deps,
-          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-        });
-        const res = step.res;
-        messages = [...step.messages];
-        // The anchor described the pre-compaction array (compacted), or a
-        // prefix the provider was never sent (a boundary-exempt transform_context
-        // rewrite — spec 3.6: the wire changed even though the saved array did
-        // not); it is meaningless now. Compaction invalidates it unconditionally;
-        // a transform_context honour clears only when it rode the boundary
-        // exemption — a prefix-stable honour leaves the anchor valid (spec 6.6:
-        // wire and persisted prefix are reference-identical, nothing to invalidate).
-        if (step.compacted || (step.honoured && step.boundary)) {
-          lastUsage = undefined;
-          anchorIndex = undefined;
-        }
-        roundTrips += 1;
-        usage.add(res.usage, res.costUsd, res.rates);
-        output = res.text;
-
-        // nax#1852: the anchor is the whole prompt the provider charged for, not
-        // just its uncached portion. Under prompt caching (which the round trip
-        // above always requests) the cached prefix arrives in the cache fields,
-        // and counting inputTokens alone reads a 71k-token context as ~16.
-        const promptTokens = inputClassTokens(res.usage);
-        lastUsage = { promptTokens };
-        anchorIndex = messages.length - 1;
-        nativeSessionLastUsage.set(handle.id, {
-          promptTokens,
-          anchorIndex,
-          ...(transcriptIdentity.model !== undefined ? { model: transcriptIdentity.model } : {}),
-        });
-
-        // 1-based; `roundTrips` is incremented above, before this beat fires.
-        deps.onActivity?.(usageBeat(res.usage, res.costUsd, roundTrips));
-        if (res.text.length > 0) deps.onActivity?.({ kind: "message", bytes: res.text.length });
-        if (res.thinking !== undefined && res.thinking.length > 0) {
-          deps.onActivity?.({
-            kind: "thinking",
-            bytes: res.thinking.reduce((n, t) => n + t.text.length, 0),
-          });
-        }
-
-        // P3 `after_response` (spec 6.1): fires once per round trip on the
-        // settled assistant message, BEFORE it enters the array — a patch is
-        // safe by construction because it shapes the message, never the array,
-        // so the anchorIndex recorded above (`messages.length - 1`, which runs
-        // before this push) keeps describing the prefix the provider charged
-        // for. `usage`/`costUsd` are surfaced readonly: the registry reads only
-        // the patchable fields off a return, so billing truth cannot surface
-        // even from a handler that bypasses the type.
-        const afterResponse = await loopEvents.dispatch("after_response", {
-          text: res.text,
-          ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
-          ...(res.thinking !== undefined ? { thinking: res.thinking } : {}),
-          usage: res.usage,
-          costUsd: res.costUsd,
-          roundTrip: roundTrips,
-        });
-        // The pushed message carries the patched shape, and the loop acts on
-        // what it records: answering the ORIGINAL calls while recording patched
-        // ones would desync the transcript from what actually executed.
-        const assistantText = afterResponse.text ?? res.text;
-        const assistantToolCalls = afterResponse.toolCalls ?? res.toolCalls;
-        const assistantThinking = afterResponse.thinking ?? res.thinking;
-
-        // Thinking blocks are appended, not merely representable: Anthropic needs
-        // the exact block back to continue a thinking conversation (ADR-028 s8).
-        messages.push({
-          role: "assistant",
-          content: assistantText,
-          ...(assistantToolCalls !== undefined ? { toolCalls: assistantToolCalls } : {}),
-          ...(assistantThinking !== undefined ? { thinking: assistantThinking } : {}),
-        });
-
-        if (assistantToolCalls === undefined || assistantToolCalls.length === 0) {
-          completedNormally = true;
-          break;
-        }
-
-        const batch = await runToolBatch({
-          messages,
-          toolCalls: assistantToolCalls,
-          tools,
-          codingToolNames,
-          roundTrips,
-          opts,
-          deps,
-          loopEvents,
-          invalidCallBudget,
-          spinBreaker,
-          maxInteractions,
-          spinWarned,
-          interactionsSoFar: interactions.length,
-        });
-        messages = [...batch.messages];
-        interactions.push(...batch.interactions);
-        codingToolsCalled.push(...batch.codingToolsCalled);
-        if (batch.spinStopped) spinStopped = true;
-        if (batch.spinStopped) break;
-        if (batch.budgetExceeded) break;
-        // US-002: a cancelled turn signal during the batch answers every
-        // outstanding call synthetically and stops the loop. The throw
-        // routes through the existing catch block — its best-effort
-        // saveTranscript persists the synthetic results before the throw
-        // propagates, keeping one result per assistant id in the saved
-        // transcript (AC2 / AC3). AC4 carries the abort reason verbatim; AC6
-        // — a no-reason abort — produces a DOMException named AbortError,
-        // the contract `build-hop-callback` and the idle-watchdog key on.
-        if (batch.cancelled) {
-          throw deps.signal?.reason ?? new DOMException("signal is aborted without reason", "AbortError");
-        }
-      }
-
-      // P3 `before_turn_end` (spec 6.4): fires at every turn ENDING, before
-      // the final saveTranscript. `stopped` is dispatcher-computed: the three
-      // endings that are stops, not completions — the spin breaker (nax#2120),
-      // the invalid-call budget (nax#2047), and the deadline — close the
-      // followUp channel entirely, because resurrecting a turn a breaker just
-      // killed would re-open the loops those breakers exist to close. The
-      // payload's `stopped` flag is all a handler sees: WHICH breaker fired
-      // is not leaked, and any followUp returned against a stop is ignored
-      // (with a warn — a handler trying to resurrect is worth a trace). The
-      // channel is also capped per turn at MAX_FOLLOW_UPS_PER_TURN.
-      const stopped = spinStopped || invalidCallBudget.exceeded || timedOut;
-      const turnEnd = await loopEvents.dispatch("before_turn_end", {
-        messages,
-        roundTrips,
-        ended: "completed",
-        stopped,
-        followUpsSoFar,
-      });
-      if (stopped || followUpsSoFar >= MAX_FOLLOW_UPS_PER_TURN) {
-        if (turnEnd.followUp !== undefined) {
-          getSafeLogger()?.warn("native-loop-events", "before_turn_end followUp ignored", {
-            sessionName: handle.id,
-            ...(stopped ? { reason: "stopped" } : { reason: "cap", cap: MAX_FOLLOW_UPS_PER_TURN }),
-          });
-        }
-        break;
-      }
-      if (turnEnd.followUp === undefined) break;
-      // Honoured: the user message enters the array and the outer loop
-      // re-enters the round-trip loop — each injection counts as its own
-      // round trip through the normal loop, and the turn's result is NOT
-      // built here.
-      messages.push({ role: "user", content: turnEnd.followUp });
-      followUpsSoFar += 1;
-      // The continuation must earn its own clean exit, and a reprieved stop's
-      // terminal-round-trip snapshot does not carry into it — the breaker's
-      // own cumulative, session-lifetime counters (nax#2047) still enforce.
-      completedNormally = false;
-      spinWarned = false;
+      // Mutates `state` in place, including up to the point of a throw — see
+      // runRoundTripLoop's own header for why this is not `state = await ...`.
+      await runRoundTripLoop(state, params);
+      const turnEnd = await runTurnEndPhase(state, params);
+      if (turnEnd.action === "break") break;
+      state = turnEnd.state;
     }
   } catch (err) {
     // Review #20: the event fires on EVERY ending, so a throwing turn
@@ -423,7 +213,12 @@ export async function runNativeTurn(
     // applies to a single throwing handler.
     await dispatchTurnEndOnError(
       loopEvents,
-      { messages, roundTrips, stopped: spinStopped || invalidCallBudget.exceeded || timedOut, followUpsSoFar },
+      {
+        messages: state.messages,
+        roundTrips: state.roundTrips,
+        stopped: spinFlags.stopped || invalidCallBudget.exceeded || state.timedOut,
+        followUpsSoFar: state.followUpsSoFar,
+      },
       deps.signal,
     ).catch((dispatchErr: unknown) => {
       getSafeLogger()?.warn("native-loop-events", "before_turn_end dispatch failed on the error path; skipping it", {
@@ -435,7 +230,7 @@ export async function runNativeTurn(
     // failure fails the turn, because continuing on unstored history is silent
     // degradation. Here a failure is already in flight, and masking it with a
     // write error would lose the cause.
-    await saveTranscript(dir, handle.id, messages, transcriptIdentity).catch((saveErr: unknown) => {
+    await saveTranscript(dir, handle.id, state.messages, transcriptIdentity).catch((saveErr: unknown) => {
       getSafeLogger()?.warn("native-adapter", "could not persist the transcript of a failed turn", {
         sessionName: handle.id,
         error: saveErr instanceof Error ? saveErr.message : String(saveErr),
@@ -454,28 +249,28 @@ export async function runNativeTurn(
 
   logTurnTailWarnings({
     sessionName: handle.id,
-    completedNormally,
-    spinStopped,
-    roundTrips,
-    timedOut,
-    spinBreaker,
+    completedNormally: state.completedNormally,
+    spinStopped: spinFlags.stopped,
+    roundTrips: state.roundTrips,
+    timedOut: state.timedOut,
+    spinBreaker: deps.spinBreaker,
     invalidCallHalt: invalidCallBudget.halt,
   });
 
   // Persisted before returning, and a write failure fails the turn: continuing
   // on a history that could not be stored is the silent degradation #1794
   // removed from the pipeline (ADR-028 s4).
-  await saveTranscript(dir, handle.id, messages, transcriptIdentity);
+  await saveTranscript(dir, handle.id, state.messages, transcriptIdentity);
 
   return buildTurnResult({
-    output,
+    output: state.output,
     usage,
-    roundTrips,
+    roundTrips: state.roundTrips,
     codingTools,
     codingToolsCalled,
-    completedNormally,
-    timedOut,
-    spinStopped,
+    completedNormally: state.completedNormally,
+    timedOut: state.timedOut,
+    spinStopped: spinFlags.stopped,
     invalidCallHalt: invalidCallBudget.halt,
     interactions,
     pricingSource: deps.pricingSource,

@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:14:31.263Z",
+  "updatedAt": "2026-09-27T14:32:54.832Z",
   "limit": 20,
   "byFile": {
     "bin/nax.ts": [107],
@@ -31,7 +31,6 @@
     "src/agents/manager.ts": [40],
     "src/agents/native/adapter.ts": [21],
     "src/agents/native/session/tool-input-validation.ts": [26],
-    "src/agents/native/session/turn-loop.ts": [97],
     "src/agents/native/session/turn-tool-batch.ts": [59],
     "src/agents/retry/hop-retry-policy.ts": [45],
     "src/agents/retry/parse-retry.ts": [44],
