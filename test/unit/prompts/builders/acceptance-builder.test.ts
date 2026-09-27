@@ -15,6 +15,13 @@ describe("AcceptancePromptBuilder.buildPathCorrection", () => {
     expect(prompt.toLowerCase()).toContain("do not");
     expect(prompt.toLowerCase()).toContain("preserve");
   });
+
+  test("ends its Requirements with P1 and still names the target path (US-001 AC7)", () => {
+    const target = "/r/.nax/features/f/.nax-acceptance.test.ts";
+    const prompt = new AcceptancePromptBuilder().buildPathCorrection(target);
+    expect(prompt).toContain("Keep every acceptance test in this one file; do not create a second test file.");
+    expect(prompt).toContain(target);
+  });
 });
 
 describe("AcceptancePromptBuilder.buildGeneratorFromPRDPrompt path anchor", () => {

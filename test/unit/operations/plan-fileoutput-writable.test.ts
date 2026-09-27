@@ -62,6 +62,26 @@ describe("plan ops can write their own declared fileOutput (nax#2115)", () => {
 });
 
 /**
+ * US-001 AC3: the Edit grant plan-refine now declares is scoped by the same
+ * `ownedWriteExemption` guard -- the op may edit the single PRD its `fileOutput`
+ * names, and a sibling feature's PRD stays refused.
+ */
+describe("plan-refine may edit its own declared fileOutput (US-001)", () => {
+  const editGrants = (planRefineOp.tools ?? [])
+    .filter((tool) => tool === "Edit")
+    .map((tool) => ({ tool, patterns: ["**"] }));
+
+  test("Edit on the owned path is allowed, a sibling feature's PRD is denied (US-001 AC3)", () => {
+    expect(editGrants).toHaveLength(1);
+    const policy = compileToolPolicy(editGrants, root, {
+      ownedWriteExemption: planRefineOp.fileOutput?.(refineInput),
+    });
+    expect(policy.check("Edit", PATH_SCOPE, { path: OWNED_REL }).allowed).toBe(true);
+    expect(policy.check("Edit", PATH_SCOPE, { path: ".nax/features/other/prd.json" }).allowed).toBe(false);
+  });
+});
+
+/**
  * The WIRING, not the leaf.
  *
  * #2115 was a plumbing bug: both the op declaration and the guard were individually

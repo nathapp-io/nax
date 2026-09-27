@@ -89,6 +89,34 @@ describe("builder.buildGeneratorFromPRDPrompt()", () => {
       const result = builder.buildGeneratorFromPRDPrompt({ ...base, frameworkOverrideLine: line });
       expect(result).toContain("FRAMEWORK OVERRIDE");
     });
+
+    // US-001 AC4-AC6: the generator prompt carries these three sentences verbatim.
+    test.each([
+      [
+        "G1 (nax runs the file) (US-001 AC4)",
+        "nax runs this file as soon as you finish, before any implementation exists; a file that fails to load is sent back for repair.",
+      ],
+      [
+        "G2 (load before implementation) (US-001 AC5)",
+        "The file must load before the implementation exists. In languages that resolve imports at runtime (TypeScript, JavaScript, Python), import modules this feature adds inside each test rather than at the top of the file, so a missing module fails only the tests that use it.",
+      ],
+      [
+        "G3 (one file, use Edit) (US-001 AC6)",
+        "Write every AC-N test into this one file. To add or change tests in a file you already wrote, use Edit; do not create a second test file.",
+      ],
+    ])("includes %s", (_label, expected) => {
+      expect(builder.buildGeneratorFromPRDPrompt(base)).toContain(expected);
+    });
+
+    test("still carries the path anchor and the One test per AC rule before G1-G3 (US-001)", () => {
+      const result = builder.buildGeneratorFromPRDPrompt(base);
+      const anchorAt = result.indexOf("Path anchor (CRITICAL");
+      const onePerAcAt = result.indexOf('One test per AC**, named exactly "AC-N: <description>"');
+      const g1At = result.indexOf("nax runs this file as soon as you finish");
+      expect(anchorAt).toBeGreaterThan(-1);
+      expect(onePerAcAt).toBeGreaterThan(-1);
+      expect(g1At).toBeGreaterThan(anchorAt);
+    });
   });
 });
 

@@ -336,10 +336,12 @@ export const planRefineOp: RunOperationWithHooks<PlanRefineInput, PRD, PlanConfi
   session: { role: "plan-refine" as SessionRole, lifetime: "fresh" },
   // Every turn (build/buildRefineContinuation/buildSpecDriftRepair/buildOutOfScopeRepair)
   // instructs the agent to write the PRD to `outputPath` rather than reply with it.
-  // No Exec: this writes a fresh PRD JSON (fileOutput contract), never edits
-  // existing source, so it never needs a package manager. RequestCapability
-  // stays: it only records a want, granting nothing.
-  tools: ["Read", "Glob", "Grep", "Write", "RequestCapability"],
+  // Edit revises the file this op wrote (the PRD output) — it does not open
+  // existing source for editing. No Exec: this writes a fresh PRD JSON
+  // (fileOutput contract) and only revises that file, so it never needs a
+  // package manager. RequestCapability stays: it only records a want, granting
+  // nothing.
+  tools: ["Read", "Glob", "Grep", "Write", "Edit", "RequestCapability"],
   config: planConfigSelector,
   model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,

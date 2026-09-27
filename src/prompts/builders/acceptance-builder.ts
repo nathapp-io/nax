@@ -54,6 +54,16 @@ const STEP3_SHARED_RULES = `- **One test per AC**, named exactly "AC-N: <descrip
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.`;
 
+/**
+ * US-001 G1-G3. Appended to the generator's rules so the model knows nax runs
+ * the file it just wrote, that it must load before the implementation exists,
+ * and that it may revise the file in place with Edit rather than spawning a
+ * second test file.
+ */
+const GENERATOR_RUNTIME_RULES = `- nax runs this file as soon as you finish, before any implementation exists; a file that fails to load is sent back for repair.
+- The file must load before the implementation exists. In languages that resolve imports at runtime (TypeScript, JavaScript, Python), import modules this feature adds inside each test rather than at the top of the file, so a missing module fails only the tests that use it.
+- Write every AC-N test into this one file. To add or change tests in a file you already wrote, use Edit; do not create a second test file.`;
+
 // ─── Additional parameter interfaces (moved from acceptance domain) ───────────
 
 export interface FixGeneratorParams {
@@ -190,7 +200,8 @@ ${STEP3_HEADER}
 ${STEP3_SHARED_RULES}
 - **File output (REQUIRED)**: Write the acceptance test file DIRECTLY to the path shown below. Do NOT output the test code in your response. After writing the file, reply with a brief confirmation.
 - **Path anchor (CRITICAL — do NOT deviate)**: Write the test file to this exact path: \`${p.targetTestFilePath}\`. This path is repo-rooted and computed by the orchestrator — do not change it based on what you observe in the project. When a story belongs to a specific package (e.g. \`packages/core\`), its acceptance test lives inside that package's own \`.nax/features/\` directory so the test runner can resolve the package's imports correctly.
-- **Process cwd**: When spawning child processes to invoke a CLI or binary, set the working directory to the package's own root — the directory containing that package's manifest (e.g. \`package.json\`, \`go.mod\`) — as your default, unless your Step 2 exploration reveals the CLI uses a different working directory convention (e.g. reads config from \`~/.config/\`, or resolves paths relative to a flag value). Always check how the CLI resolves file paths before assuming.${implSection}`;
+- **Process cwd**: When spawning child processes to invoke a CLI or binary, set the working directory to the package's own root — the directory containing that package's manifest (e.g. \`package.json\`, \`go.mod\`) — as your default, unless your Step 2 exploration reveals the CLI uses a different working directory convention (e.g. reads config from \`~/.config/\`, or resolves paths relative to a flag value). Always check how the CLI resolves file paths before assuming.
+${GENERATOR_RUNTIME_RULES}${implSection}`;
   }
 
   /**
@@ -208,7 +219,7 @@ ${targetTestFilePath}
 Requirements:
 - The file must be at that exact path — same directory and same filename, including any leading dot and dashes. Do NOT sanitize, rename, or relocate it.
 - Preserve the test content you already wrote. Do not regenerate, weaken, or stub the assertions.
-- If you wrote it somewhere else, delete the misplaced copy after moving it so only the canonical path remains.
+- Keep every acceptance test in this one file; do not create a second test file.
 
 After writing the file to the exact path above, reply with a brief confirmation only.`;
   }

@@ -102,6 +102,16 @@ describe("planRefineOp export and identity", () => {
     expect(typeof planRefineOp.retry).toBe("function");
   });
 
+  test("declares Edit so refine can patch the PRD it wrote (US-001 AC2)", async () => {
+    const mod = await import("@/operations");
+    expect(mod.planRefineOp.tools).toEqual(["Read", "Glob", "Grep", "Write", "Edit", "RequestCapability"]);
+  });
+
+  test.each(["Exec", "Bash", "Delete", "RunCommand"])("does not grant %s (US-001 boundary)", async (tool) => {
+    const mod = await import("@/operations");
+    expect(mod.planRefineOp.tools).not.toContain(tool);
+  });
+
   test("defines fileOutput so callOp can substitute written PRD content", async () => {
     const mod = await import("@/operations");
     const { planRefineOp } = mod;
