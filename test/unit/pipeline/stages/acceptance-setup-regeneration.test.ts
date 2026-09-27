@@ -185,7 +185,7 @@ describe("acceptance-setup: regenerates when meta is missing (P2-A)", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -215,7 +215,7 @@ describe("acceptance-setup: regenerates when meta is missing (P2-A)", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -255,7 +255,7 @@ describe("acceptance-setup: regenerates when fingerprint is stale (P2-A)", () =>
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -291,7 +291,7 @@ describe("acceptance-setup: regenerates when fingerprint is stale (P2-A)", () =>
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     // Add a new AC to the context
     const stories = [
@@ -333,7 +333,7 @@ describe("acceptance-setup: regenerates when fingerprint is stale (P2-A)", () =>
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     // Modified AC text
     const stories = [
@@ -376,7 +376,7 @@ describe("acceptance-setup: US-FIX-* stories excluded from fingerprint", () => {
       throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     // PRD with original stories + a fix story added by acceptance loop
     const stories = [
@@ -420,7 +420,7 @@ describe("acceptance-setup: no regeneration when fingerprint unchanged (AC-16)",
       throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(ctx);
 
@@ -469,7 +469,7 @@ describe("acceptance-setup: package layout staleness", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(ctx);
 
@@ -499,7 +499,7 @@ describe("acceptance-setup: package layout staleness", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(ctx);
 
@@ -530,7 +530,7 @@ describe("acceptance-setup: writes acceptance-meta.json (P2-B, AC-15)", () => {
       writtenMetaPath = metaPath;
       writtenMeta = meta;
     };
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -554,7 +554,7 @@ describe("acceptance-setup: writes acceptance-meta.json (P2-B, AC-15)", () => {
     _acceptanceSetupDeps.writeMeta = async (_path, meta) => {
       writtenMeta = meta;
     };
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);

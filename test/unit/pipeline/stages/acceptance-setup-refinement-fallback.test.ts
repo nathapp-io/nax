@@ -63,7 +63,7 @@ beforeEach(() => {
   };
   _acceptanceSetupDeps.writeMeta = async () => {};
   _acceptanceSetupDeps.autoCommitIfDirty = async () => {};
-  _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+  _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 });
 
 afterEach(() => {
