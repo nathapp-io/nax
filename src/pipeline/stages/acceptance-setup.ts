@@ -285,7 +285,7 @@ async function runAcceptanceSetup(
   let shouldGenerate = false;
   let regenerated = false;
   const inputsMatch = !!meta && meta.acFingerprint === fingerprint && meta.layoutFingerprint === layoutFingerprint;
-  const missingTestPaths = await findMissingAcceptanceTestPaths(groups, _acceptanceSetupDeps.fileExists, ctx.workdir);
+  const missingTestPaths = await findMissingAcceptanceTestPaths(groups, _acceptanceSetupDeps.fileExists);
   if (inputsMatch && missingTestPaths.length === 0) {
     getSafeLogger()?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
   } else {

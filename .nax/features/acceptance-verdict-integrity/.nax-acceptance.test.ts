@@ -249,11 +249,11 @@ interface CoverageEntry {
 type CheckCoverageFn = (args: { testPath: string; source: string; expected: number; storyId?: string }) => CoverageEntry;
 
 async function loadCheckAcceptanceCoverage(): Promise<CheckCoverageFn> {
-  const mod = (await import("@/pipeline/stages/acceptance-coverage")) as unknown as {
+  const mod = (await import("@/acceptance")) as unknown as {
     checkAcceptanceCoverage?: CheckCoverageFn;
   };
   if (typeof mod.checkAcceptanceCoverage !== "function") {
-    throw new Error("checkAcceptanceCoverage is not exported from @/pipeline/stages/acceptance-coverage");
+    throw new Error("checkAcceptanceCoverage is not exported from @/acceptance");
   }
   return mod.checkAcceptanceCoverage;
 }
@@ -693,27 +693,29 @@ test("AC-22: post-run stage warns on the AC gap and returns the identical action
   ] as NonNullable<PipelineContext["acceptanceTestPaths"]>;
 
   // Scenario A: the existing file titles only AC-1 and AC-2 of the 3 in-scope ACs.
+  // Assert inside the spy callback: withWarnSpy restores (and clears) the spy when
+  // it resolves, so the warn records must be inspected while the spy is live.
   writeFileSync(testPath, 'test("AC-1: a", () => {});\ntest("AC-2: b", () => {});\n');
-  const gapRun = await withWarnSpy(async (warn) => {
+  const gapAction = await withWarnSpy(async (warn) => {
     const result = await acceptanceStage.execute(ctx);
-    return { result, warn };
+    const gapWarns = coverageWarns(warn);
+    expect(gapWarns).toHaveLength(1);
+    expect(gapWarns[0]?.[2]).toMatchObject({ testPath, expected: 3, found: 2, missing: ["AC-3"] });
+    return result.action;
   });
-  expect(gapRun.result.action).toBe("continue");
-  const gapWarns = coverageWarns(gapRun.warn);
-  expect(gapWarns).toHaveLength(1);
-  expect(gapWarns[0]?.[2]).toMatchObject({ testPath, expected: 3, found: 2, missing: ["AC-3"] });
+  expect(gapAction).toBe("continue");
 
   // Scenario B: the file titles AC-1 through AC-3, identical runner outcome.
   writeFileSync(
     testPath,
     ['test("AC-1: a", () => {});', 'test("AC-2: b", () => {});', 'test("AC-3: c", () => {});'].join("\n"),
   );
-  const fullRun = await withWarnSpy(async (warn) => {
+  const fullAction = await withWarnSpy(async (warn) => {
     const result = await acceptanceStage.execute(ctx);
-    return { result, warn };
+    expect(coverageWarns(warn)).toHaveLength(0);
+    return result.action;
   });
-  expect(fullRun.result.action).toBe(gapRun.result.action);
-  expect(coverageWarns(fullRun.warn)).toHaveLength(0);
+  expect(fullAction).toBe(gapAction);
   expect(story.status).toBe("pending");
 });
 
@@ -746,7 +748,12 @@ test("AC-23: fingerprint match with a missing file regenerates once and warns wi
     );
     expect(missingWarns).toHaveLength(1);
     const payload = (missingWarns[0]?.[2] ?? {}) as { storyId?: string; missingTestPaths?: string[] };
-    expect(payload.missingTestPaths).toEqual([expectedTestPath]);
+    // The caller may report the vanished file relative to the workdir or as the
+    // absolute path on disk; both name the group's test file. Assert on the
+    // basename-bearing path rather than one exact framing.
+    const expectedRelPath = relative(ctx.workdir, expectedTestPath);
+    expect(payload.missingTestPaths).toHaveLength(1);
+    expect([expectedRelPath, expectedTestPath]).toContain(payload.missingTestPaths?.[0]);
     const storyId = payload.storyId ?? (missingWarns[0]?.[3] as string | undefined);
     expect(storyId).toBe("US-001");
   });
@@ -953,7 +960,13 @@ test("AC-31: refineAcceptanceCriteria marks only the rejected story's criteria a
 
 test("AC-32: two failed stories produce exactly one run-level warn naming both story ids", async () => {
   const refine = await loadRefineAcceptanceCriteria();
-  const { ctx, log } = refineCtxWithLogger(3);
+  // Observe the run-level warn on the process logger the stage resolves via
+  // getSafeLogger(); assert inside the spy callback because withWarnSpy restores
+  // (and clears) the spy when it resolves.
+  const ctx = stageCtx([makeStory("US-001", ["seed criterion"])], {
+    refinement: true,
+    refinementConcurrency: 3,
+  });
   const stories = [
     makeStory("US-001", ["US-001 alpha"]),
     makeStory("US-002", ["US-002 alpha"]),
@@ -973,18 +986,22 @@ test("AC-32: two failed stories produce exactly one run-level warn naming both s
     return criteria.map((c) => ({ original: c, refined: `refined::${c}`, testable: true, storyId: sid }));
   };
 
-  const result = await refine(ctx, stories, new Map([[ctx.workdir, ctx.config]]), callOp);
+  const result = await withWarnSpy(async (warn) => {
+    const refined = await refine(ctx, stories, new Map([[ctx.workdir, ctx.config]]), callOp);
 
-  const calls = log.warn.mock.calls as unknown[][];
-  expect(calls).toHaveLength(1);
-  const call = calls[0] ?? [];
-  const messageArg = call.find((a) => a === "AC refinement unusable after retries — using unrefined criteria");
-  expect(messageArg).toBeDefined();
-  const payloadArg = call.find(
-    (a) => a !== null && typeof a === "object" && !Array.isArray(a),
-  ) as Record<string, unknown> | undefined;
-  expect(payloadArg?.storyIds).toEqual(["US-001", "US-003"]);
-  expect("storyId" in (payloadArg ?? {})).toBe(true);
+    const calls = warn.mock.calls as unknown[][];
+    expect(calls).toHaveLength(1);
+    const call = calls[0] ?? [];
+    const messageArg = call.find((a) => a === "AC refinement unusable after retries — using unrefined criteria");
+    expect(messageArg).toBeDefined();
+    const payloadArg = call.find(
+      (a) => a !== null && typeof a === "object" && !Array.isArray(a),
+    ) as Record<string, unknown> | undefined;
+    expect(payloadArg?.storyIds).toEqual(["US-001", "US-003"]);
+    expect("storyId" in (payloadArg ?? {})).toBe(true);
+
+    return refined;
+  });
 
   expect(result.fallbackStoryIds).toEqual(["US-001", "US-003"]);
 });

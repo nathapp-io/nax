@@ -73,18 +73,20 @@ export function makeAcceptanceCoverageCollector(workdir: string): {
 }
 
 /**
- * Return the workdir-relative paths of the given groups' test files that are
- * absent from disk. A matching fingerprint proves the inputs were unchanged,
- * not that the files they produced still exist.
+ * Return the paths of the given groups' test files that are absent from disk.
+ * A matching fingerprint proves the inputs were unchanged, not that the files
+ * they produced still exist.
+ *
+ * Paths are returned exactly as supplied (absolute, repo-rooted at the run
+ * workdir) so the caller's warning names the concrete file on disk.
  */
 export async function findMissingAcceptanceTestPaths(
   groups: ReadonlyArray<{ testPath: string }>,
   fileExists: (path: string) => Promise<boolean>,
-  workdir: string,
 ): Promise<string[]> {
   const missing: string[] = [];
   for (const { testPath } of groups) {
-    if (!(await fileExists(testPath))) missing.push(path.relative(workdir, testPath));
+    if (!(await fileExists(testPath))) missing.push(testPath);
   }
   return missing;
 }
