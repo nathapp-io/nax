@@ -343,6 +343,37 @@ describe("US-005 runAcceptanceRedGate: repairable crash", () => {
     expect(harness.writes.filter((write) => write.path === GROUP_TEST_PATH)).toHaveLength(0);
     expect(harness.runTestPaths).toHaveLength(2);
   });
+
+  test("US-005: a second-run executor throw propagates and is not reported as a repair failure", async () => {
+    let runs = 0;
+    const deps: AcceptanceRedGateDeps = {
+      runTest: async () => {
+        runs += 1;
+        if (runs === 2) throw new Error("second run exploded");
+        return { exitCode: 1, output: TS_CRASH_OUTPUT };
+      },
+      callOp: async () => ({ testCode: null }),
+      writeFile: async () => {},
+      autoCommitIfDirty: async () => {},
+    };
+
+    await expect(runAcceptanceRedGate(makeCtx(), [makeEntry()], deps)).rejects.toThrow("second run exploded");
+    expect(entriesWithMessage(REPAIR_FAILED_WARN)).toHaveLength(0);
+  });
+
+  test("US-005: a writeFile rejection surfaces rather than being logged as a repair failure", async () => {
+    const deps: AcceptanceRedGateDeps = {
+      runTest: async () => ({ exitCode: 1, output: TS_CRASH_OUTPUT }),
+      callOp: async () => ({ testCode: "REPAIRED TEST CODE" }),
+      writeFile: async () => {
+        throw new Error("disk full");
+      },
+      autoCommitIfDirty: async () => {},
+    };
+
+    await expect(runAcceptanceRedGate(makeCtx(), [makeEntry()], deps)).rejects.toThrow("disk full");
+    expect(entriesWithMessage(REPAIR_FAILED_WARN)).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

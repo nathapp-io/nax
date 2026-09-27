@@ -74,8 +74,12 @@ async function handleCrash(
     language,
   });
 
+  // Only a rejected repair *dispatch* is swallowed — the crash still counts RED.
+  // Errors from the write, the auto-commit or the second run are genuine
+  // failures of the gate itself and propagate (as a first-run throw does).
+  let repair: { testCode: string | null } | null;
   try {
-    const repair = (await deps.callOp(
+    repair = (await deps.callOp(
       ctx,
       packageDir,
       acceptanceRepairOp,
@@ -83,34 +87,34 @@ async function handleCrash(
       storyId,
       config,
     )) as { testCode: string | null } | null;
-
-    // A repair returning `testCode: null` leaves the file untouched but still re-runs it.
-    if (repair?.testCode != null) {
-      await deps.writeFile(testPath, repair.testCode);
-    }
-
-    await deps.autoCommitIfDirty(
-      ctx.workdir,
-      "acceptance-setup",
-      "pre-run",
-      ctx.prd.feature ?? "feature",
-      undefined,
-      ctx.runtime.dryRun,
-    );
-
-    const second = await deps.runTest(testPath, packageDir, runCmd, config.acceptance.timeoutMs);
-    if (isCrash(second.output, second.exitCode)) {
-      logger?.warn("acceptance-setup", "RED gate: acceptance file still crashes after repair", {
-        storyId,
-        testPath,
-      });
-    }
   } catch (err) {
-    // Repair dispatch rejected — skip the re-run; the crash still counts RED.
     logger?.warn("acceptance-setup", "RED gate: acceptance repair failed", {
       storyId,
       testPath,
       error: errorMessage(err),
+    });
+    return;
+  }
+
+  // A repair returning `testCode: null` leaves the file untouched but still re-runs it.
+  if (repair?.testCode != null) {
+    await deps.writeFile(testPath, repair.testCode);
+  }
+
+  await deps.autoCommitIfDirty(
+    ctx.workdir,
+    "acceptance-setup",
+    "pre-run",
+    ctx.prd.feature ?? "feature",
+    undefined,
+    ctx.runtime.dryRun,
+  );
+
+  const second = await deps.runTest(testPath, packageDir, runCmd, config.acceptance.timeoutMs);
+  if (isCrash(second.output, second.exitCode)) {
+    logger?.warn("acceptance-setup", "RED gate: acceptance file still crashes after repair", {
+      storyId,
+      testPath,
     });
   }
 }
