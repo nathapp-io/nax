@@ -238,11 +238,12 @@ function fieldViolations(
 
 /** Every way `prd` diverges from the structure `specContent` declares. */
 export function findSpecStructureViolations(prd: PRD, specContent: string): SpecStructureViolation[] {
-  // A spec that declares no story ids at all is not a scope to enforce — planning
-  // it is unchanged. When ids ARE declared but none sits in `## Stories` (some
-  // specs declare theirs under Acceptance Criteria only), the structure could not
-  // be read, and every PRD story would read as an intruder: enforce nothing.
-  if (declaredStoryIds(specContent.split("\n")).length === 0) return [];
+  // Enforcement is scoped to what `## Stories` declares, read by the same
+  // grammar that reads workdirs and dependencies — so the guard and the
+  // comparison cannot disagree on what a declaring line is (numbered bullets
+  // included). A spec whose stories cannot be read (none declared, or ids
+  // under Acceptance Criteria only) is not a scope to enforce — planning it is
+  // unchanged, rather than reading every PRD story as an intruder.
   const structure = extractSpecStructure(specContent);
   if (structure.stories.length === 0) return [];
 
