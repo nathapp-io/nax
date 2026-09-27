@@ -166,7 +166,7 @@ export function backfillSpecWorkdirs(prd: PRD, structure: SpecStructure): { prd:
     // workdir-access-allow: the backfill fills absences only; "." is a declared value it must not overwrite
     if (story.workdir !== undefined) return story;
     const workdir = statedWorkdirs.get(story.id.toUpperCase());
-    if (workdir === undefined || normalizeWorkdir(workdir) === ".") return story;
+    if (workdir === undefined) return story;
     backfilled.push(story.id);
     return { ...story, workdir };
   });

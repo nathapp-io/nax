@@ -30,6 +30,17 @@ describe("declared root workdir (US-002)", () => {
 
 - Workdir: apps/api`);
 
+  test("fills an omitted workdir when the spec explicitly declares the repo root", () => {
+    const structure: SpecStructure = { stories: [{ id: "US-004", workdir: "." }], warnings: [] };
+    const prd = makePRD({ userStories: [makeStory({ id: "US-004" })] });
+
+    const result = backfillSpecWorkdirs(prd, structure);
+
+    expect(result.prd.userStories[0]?.workdir).toBe(".");
+    expect(result.backfilled).toEqual(["US-004"]);
+    expect(prd.userStories[0]?.workdir).toBeUndefined();
+  });
+
   test("US-002: the backfill leaves a story that declared the repo root alone", () => {
     const structure: SpecStructure = { stories: [{ id: "US-004", workdir: "apps/api" }], warnings: [] };
     const prd = makePRD({ userStories: [makeStory({ id: "US-004", workdir: "." })] });

@@ -273,16 +273,19 @@ describe("canonicalizePrdWorkdirs", () => {
     expect(prd.userStories[0]?.contextFiles).toEqual(["src/a.ts"]);
   });
 
-  test('an explicitly stated "." is treated as root, not as a package', () => {
-    const exists = probeOf("src/a.ts");
+  test('an explicitly stated "." remains root even when a declared file belongs to a package', () => {
+    const exists = probeOf("packages/app/src/a.ts");
     const { prd } = canonicalizePrdWorkdirs(
-      prdOf([makeStory({ workdir: ".", contextFiles: ["src/a.ts"] })]),
+      prdOf([makeStory({ workdir: ".", contextFiles: ["packages/app/src/a.ts"] })]),
       REPO,
       PACKAGES,
       exists,
     );
     expect(prd.userStories[0]?.workdir).toBeUndefined();
-    expect(prd.userStories[0]?.workdirSource).toBe("defaulted");
+    expect(prd.userStories[0]?.workdirSource).toBe("stated");
+    expect(prd.userStories[0]?.contextFiles).toEqual(["packages/app/src/a.ts"]);
+    const second = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, exists);
+    expect(second.prd.userStories).toEqual(prd.userStories);
   });
 
   test("does not mutate the input PRD", () => {

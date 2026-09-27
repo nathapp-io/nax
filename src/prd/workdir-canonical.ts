@@ -190,9 +190,12 @@ export function canonicalizePrdWorkdirs(
   const respelled: RespelledDeclaredPath[] = [];
   const deriveEnabled = opts?.derive ?? true;
 
-  // normalizeWorkdir collapses "", ".", "./" and absent to "." so a planner that
-  // literally emits "." is treated as root, not as a stated package.
+  // A stated root remains distinct from an absent workdir, including on a
+  // second pass after the root workdir was omitted from the written PRD.
   const decideWorkdir = (story: UserStory, declared: readonly string[]): { workdir: string; source: WorkdirSource } => {
+    if (story.workdir === "." || (story.workdir === undefined && story.workdirSource === "stated")) {
+      return { workdir: ".", source: "stated" };
+    }
     const statedWorkdir = normalizeWorkdir(story.workdir);
     if (statedWorkdir !== ".") return { workdir: statedWorkdir, source: "stated" };
     if (!deriveEnabled) return { workdir: ".", source: "defaulted" };

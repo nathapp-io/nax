@@ -110,7 +110,7 @@ This grammar covers every phrasing in the repo's own specs: `— depends on US-0
 4. `dependencies-mismatch` for each spec story with a defined `dependsOn` whose PRD story's `dependencies` is not the same set.
 5. `orphan-modifies` for each `extractSpecModifiedFiles` entry whose `storyId` is `null` or names no PRD story.
 
-`backfillSpecWorkdirs(prd, structure)` sets `workdir` on each PRD story that has none, when its spec story states a `workdir` other than `"."`. It returns the backfilled ids.
+`backfillSpecWorkdirs(prd, structure)` sets `workdir` on each PRD story that has none, when its spec story states a `workdir`, including `"."` for the repo root. It returns the backfilled ids. Canonicalization keeps an explicit root as root, with `workdirSource: "stated"`, even after omitting the root-valued `workdir` from the written PRD.
 
 **Write step (US-002).** `finalizeAndWritePrd`, **unscoped writes only** (`args.scope === undefined`), after `applyPlanFidelity` and before `canonicalizePrdWorkdirs`:
 

@@ -450,7 +450,7 @@ describe("backfillSpecWorkdirs (US-002)", () => {
     expect(prd.userStories[0]?.workdir).toBeUndefined();
   });
 
-  test("AC15 boundary: leaves a stated workdir, a '.' spec workdir and an unstated workdir alone", () => {
+  test("AC15 boundary: fills a stated root and package workdir but leaves existing and unstated values alone", () => {
     const structure: SpecStructure = {
       stories: [
         { id: "US-001", workdir: "." },
@@ -471,8 +471,8 @@ describe("backfillSpecWorkdirs (US-002)", () => {
 
     const result = backfillSpecWorkdirs(prd, structure);
 
-    expect(result.backfilled).toEqual(["US-002"]);
-    expect(result.prd.userStories.map((s) => s.workdir)).toEqual([undefined, "packages/lib", undefined, "apps/api"]);
+    expect(result.backfilled).toEqual(["US-001", "US-002"]);
+    expect(result.prd.userStories.map((s) => s.workdir)).toEqual([".", "packages/lib", undefined, "apps/api"]);
   });
 });
 
