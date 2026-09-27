@@ -29,10 +29,13 @@ import { resolveDeclaredTools } from "@/operations/types";
 import type { CodingToolName } from "@/tools";
 
 /**
- * Ops that write ONE fresh artifact and never edit existing source. `Edit` on
- * these means "revise my own output" (US-001), so Edit does not imply Exec.
+ * Ops this story gives `Edit` to without `Exec`: they edit only the single
+ * fresh artifact they just wrote (a PRD, an acceptance file), never EXISTING
+ * source, so Edit does not imply Exec for them. Named explicitly rather than by
+ * a trait, so adding `Edit` to any other op cannot slip past the Edit-implies-
+ * Exec rule above by matching a shape.
  */
-const FRESH_ARTIFACT_OPS: ReadonlySet<string> = new Set(["plan-interactive", "plan-refine", "acceptance-generate"]);
+const EDIT_OWN_ARTIFACT_OPS: ReadonlySet<string> = new Set(["plan-refine", "acceptance-generate"]);
 
 interface DeclaresTools {
   tools?: readonly CodingToolName[];
@@ -47,7 +50,7 @@ describe("Exec declarations", () => {
   test("every op that can edit existing source can also install", () => {
     for (const value of Object.values(ops)) {
       if (!declaresTools(value) || value.tools === undefined) continue;
-      if (value.name !== undefined && FRESH_ARTIFACT_OPS.has(value.name)) continue;
+      if (value.name !== undefined && EDIT_OWN_ARTIFACT_OPS.has(value.name)) continue;
       const tools = resolveDeclaredTools(value);
       if (tools.includes("Edit")) {
         expect(tools).toContain("Exec");
@@ -65,11 +68,13 @@ describe("Exec declarations", () => {
     }
   });
 
-  test("an op that writes one fresh artifact cannot install", () => {
+  test("an op this story gives Edit (but no Exec) cannot install", () => {
     for (const value of Object.values(ops)) {
       if (!declaresTools(value) || value.tools === undefined) continue;
-      if (value.name === undefined || !FRESH_ARTIFACT_OPS.has(value.name)) continue;
-      expect(resolveDeclaredTools(value)).not.toContain("Exec");
+      if (value.name === undefined || !EDIT_OWN_ARTIFACT_OPS.has(value.name)) continue;
+      const tools = resolveDeclaredTools(value);
+      expect(tools).toContain("Edit");
+      expect(tools).not.toContain("Exec");
     }
   });
 

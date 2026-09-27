@@ -69,11 +69,13 @@ export const acceptanceGenerateOp: RunOperationWithHooks<
   session: { role: "acceptance-gen", lifetime: "fresh" },
   // buildGeneratorFromPRDPrompt's "File output (REQUIRED)" bullet instructs the
   // agent to write the test file directly, never reply with the code inline.
-  // Edit revises the file this op wrote (the acceptance-test output), so the
-  // model can add or change an AC-N test without spawning a second file.
-  // No Exec: this writes a fresh acceptance-test file and only revises that
-  // file, so it never needs a package manager. RequestCapability stays:
-  // it only records a want, granting nothing.
+  // Edit is declared so the model can revise the acceptance-test file it just
+  // wrote (the G3 rule) instead of spawning a second file. This op declares no
+  // `fileOutput`, so callOp forwards no `ownedWriteExemption` and the policy
+  // does not path-scope Edit to the acceptance output — the prompt's one-file
+  // rule is what keeps it there. No Exec: this writes one fresh acceptance-test
+  // artifact and never needs a package manager. RequestCapability stays: it
+  // only records a want, granting nothing.
   tools: ["Read", "Glob", "Grep", "Write", "Edit", "RequestCapability"],
   config: acceptanceGenConfigSelector,
   model: (_input, ctx) => ctx.config.acceptance.generateModel ?? ctx.config.acceptance.model,
