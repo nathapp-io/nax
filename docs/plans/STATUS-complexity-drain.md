@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A9-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A10-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    246 functions in 214 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     19   (18 src, 1 scripts)   <- THIS DRAIN (handleRunCompletion drained by A9)
+  over 20    245 functions in 213 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     18   (17 src, 1 scripts)   <- THIS DRAIN (runFixCycle drained by A10)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 10 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9)
+batches: 11 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10)
 ```
 
 Refresh this block at the end of every batch:
@@ -150,7 +150,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | A7 | done 2026-09-27 | 74 | `resolveCodingToolSupport` | `src/agents/coding-tool-support.ts:312` | 601 -> 391 (size-gated) | 44 / 18 | yes |
 | A8 | done 2026-09-27 | 127 | `pathsBranch` | `src/tools/policy.ts:429` | 600 -> 332 (at cap, may not grow) | 26 / 16 | yes |
 | A9 | done 2026-09-27 | 71 | `handleRunCompletion` | `src/execution/lifecycle/run-completion.ts:111` | 563 -> 220 | 22 / 18 | none |
-| A10 | todo | 83 | `runFixCycle` | `src/findings/cycle.ts:72` | 544 | 16 / 12 | yes |
+| A10 | done 2026-09-27 | 83 | `runFixCycle` | `src/findings/cycle.ts:72` | 544 -> 149 | 16 / 12 | yes |
 | A11 | todo | 70 | `runNonBlockingFix` | `src/execution/non-blocking-fix.ts:230` | 492 | 17 / 13 | yes |
 | A12 | todo | 73 | `collectNeighbors` | `src/context/engine/providers/code-neighbor.ts:264` | 498 | 17 / 11 | yes |
 | A13 | todo | 99 | `callTool` | `src/tools/runtime.ts:318` | 557 | 31 / 8 | yes |
@@ -1096,3 +1096,122 @@ planned from the first line (A6's seam rule; A9's gate/post-gate cut is the temp
 mirror suites for which branches they pin before trusting them; (4) the over-60 set is
 down to 19 and every remaining Wave-A function has mirror tests — the remaining
 characterisation-first work in this drain is likely zero.
+
+### 9.11 - 2026-09-27, A10 done - `runFixCycle` 83 -> 20 (one session)
+
+The Wave-A orchestrator §9.10 handed over, and its first check (the A2 mutate-in-place
+trap) was exactly where the batch's one real design decision lived. One session, no
+characterisation commit — the pre-flight confirmed §9.10's suspicion that the mirrors
+pin everything. Pre-flight, all answered BEFORE writing code: (1) `_cycleDeps` EXISTS
+(`callOp?`/`now`, exported from cycle.ts and re-exported through `src/findings/index.ts`)
+but NO test reassigns it — the only references in `src/` + `test/` are cycle.ts and the
+barrel itself; it stayed in cycle.ts (the barrel re-exports it by reference, so it could
+not move anyway — A1's trap shape). The reason no test mutates it is structural: the
+function's own `_deps` parameter (callOp/now/logger/declineBacking) is the seam the six
+mirror suites actually use, so the module-level object is a fallback, never the entry
+point. (2) NO source-text tests pin cycle.ts — grep found comments only
+(`_cycle-fixtures.ts` header, `classify-outcome.test.ts` AC8). The refactor commit
+edited zero tests. (3) Per-file guard allow-lists: only `check-no-silent-naxconfig-cast`
+keeps one, and cycle.ts has no `as NaxConfig` casts (its `ops.callOp as unknown as
+CallOpFn` is not tracked) — A7's surprise did not recur. (4) The dynamic
+`await import("@/operations")` (line 86 of the original) exists to keep a static
+`@/operations` edge out of this module — the import-cycles drain depends on it — so it
+stayed in the sequencer's prologue and the phases receive the RESOLVED values
+(`doCallOp`, `newCallId`, `now`) inside a `CycleFrame`.
+
+**A2's traps, checked first — one shaped the design, one was clean.** No intentional
+mid-loop throw crosses an extraction boundary: `dispatchGroup`'s throws propagate out of
+`runFixCycle` unchanged (#1948, pinned), and the two try/catches (lite-validate, full
+validate) are entirely phase-local — each catch handles its own error and exits within
+its own phase. BUT the loop-carried `let`s (`totalCostUsd`, `unresolvedDetail`) are read
+by the `finish` closure on every failing exit, and `unresolvedDetail` is SET mid-iteration
+(give-up phase) then read on a LATER iteration's exit — exactly the cross-iteration
+closure-over-a-`let` shape (SpinFlags' category). So the state was designed mutate-in-place
+from the first line, per §9.3: one `CycleLoopState` (`totalCostUsd`, `unresolvedDetail?`,
+`declines`) threaded by reference through every phase, never returned as a fresh object;
+the original `finish` closure became `finishExit(state, result)` reading
+`state.unresolvedDetail` at call time, with its "deliberately NOT applied to the two
+resolved exits" rule preserved verbatim (both resolved returns bypass it, pinned by
+cycle-retirement's "carries the UNRESOLVED reason onto the later exit" suite).
+
+**No characterisation commit — the mirrors pin every branch.** Verified by name before
+trusting them: no-strategy + orphan warn (cycle.test.ts + cycle-retirement "genuine
+routing gap"), per-strategy cap + exhaustedStrategy, total cap, bail-when + BOTH #1530
+`inheritedIterations` arms (cycle-prior-iterations 296/321), no-dispatch US-003 AC1/AC2/AC5
++ all three boundaries (cycle-no-dispatch), agent-gave-up incl. #1369 cost
+(cycle.test.ts), #1654 fall-through all five arms (cycle-retirement 297-407), partial
+give-up fall-through-to-validate (cycle-retirement "one strategy gives up" suite),
+lite-validate resolved/short-circuit/throw + companion continue + warn fields
+(cycle.test.ts AC2-AC13 + #1369 cost tests), validator retry/recovery, BUG-38
+full-validate short-circuit, US-006 sibling carry. 249 findings tests green unchanged.
+
+**Technique:** the ~470-line body became a prologue + sequencer plus three siblings cut
+at the comment-block seams the original already had. `cycle-loop.ts` (113) holds the
+shared vocabulary: `CycleFrame` (cycle/ctx/logger/logCtx/doCallOp/newCallId/now — fixed
+for the cycle's lifetime, A3's PlanParams pattern), `CycleLoopState`, `DispatchedIteration`
+(group/uncappedActive/findingsBefore/fixesApplied/startedAt — built once by the sequencer
+after dispatch, shared by the three post-dispatch phases), `finishExit`, `buildHistory`
+(the `priorIterations ? [...] : iterations` concat that appeared twice verbatim).
+`cycle-gates.ts` (210) holds everything before the dispatch: `earlyResolvedExit`,
+`selectIterationStrategies` (the four gates in the original order, each failing exit its
+own named function — `noStrategyExit`/`exhaustedExit`/`totalCapExit`/`bailWhenExit` — so
+the selection function itself reads as a guard chain), `firstBailCondition` (the
+bailWhen loop). `cycle-execute.ts` (416) holds everything after: `handleGiveUps`
+(the #1369/#1384/#1654 block, doc comment moved verbatim), `liteValidateIfExhausted`
+(the terminal-exhausted branch incl. its throw arm), `validateRecordAndDecide`
+(full validate with retries + classify/record + the resolved/short-circuit terminal
+decision). `runFixCycle` itself is now: resolve deps, build frame + state, then the
+`for(;;)` reading as eight phase calls with continue/return verdicts
+(`GateSelection`/`GiveUpVerdict`/`LiteVerdict`/`TerminalVerdict` discriminated unions).
+Phases apply `finishExit` themselves at the exact sites the monolith called `finish`;
+the sequencer finishes only the no-dispatch result.
+
+**Helper scores (biome at maxAllowedComplexity=1, so every function is visible):**
+`runFixCycle` 20 — exactly AT the strict limit, compliant per §2.3 (third time: A6's
+`sendWithParseRetry`, A8's `runRefPathFields`); the residual is the loop's own
+continue/return control flow plus the prologue's `??` override chains, which cannot move
+(`_cycleDeps` must stay in cycle.ts for the barrel). `validateRecordAndDecide` 10,
+`liteValidateIfExhausted` 8, `handleGiveUps` 6, `selectIterationStrategies` 4,
+`firstBailCondition` 4, `earlyResolvedExit`/`bailWhenExit`/`buildHistory` 2,
+`noStrategyExit`/`exhaustedExit`/`totalCapExit`/`finishExit`/`normalizeValidateResult` 1.
+No baseline hand-edit (§2.3 never triggered) — `check:complexity` reported only
+"improved" for cycle.ts, and `check:complexity:update` was a pure lower: 246 -> 245
+functions, 214 -> 213 files (`cycle.ts` left the over-20 baseline entirely — every
+function in all four files scores <= 20).
+
+**File-size gate, three siblings planned from the first line and no overrun:**
+`cycle.ts` 543 -> 149 (doc said 544; one line of drift, same as A7-A9). Siblings
+measured AFTER `bun x biome check --write`: 113 + 210 + 416. The difference vs
+A1/A3/A4/A5's unplanned second files: the three-way cut was chosen up front
+(gates / shared vocabulary / post-dispatch), each file holding one phase band.
+One biome nit fixed in passing: an unused `Logger` type import in cycle-execute.ts
+(the phases get the logger from `frame`, not the parameter list).
+
+**Verification beyond the suite:** a literal fingerprint diff of the original file
+against the four new files — all 100 string literals of length >= 4 (exit reasons, log
+messages, log field keys) appear verbatim, zero missing. The one intentional
+textual relocation: the validator-error log spelled `{ storyId, packageDir, cycleName }`
+as outer locals in the original and reads them off `logCtx` now — same keys, same
+order, same values. `recordIteration` calls pass `logCtx` where the monolith built a
+fresh `{ storyId, packageDir, cycleName }` literal — identical shape, and `logCtx` is
+never mutated.
+
+**Nothing else surprising.** `bun run typecheck`, `bun run test` (all phases; 249
+findings tests green unchanged), `bun run check:all` (35 scripts; import-cycles 0 —
+no sibling imports cycle.ts, and the only cross-sibling edges are leaves importing
+`cycle-loop.ts`; file-sizes green; looseCast 1474), and `bun run test:coverage` all
+green; below-floor count 1 vs baseline 2 (the standing A5 improvement, not lowered
+here).
+
+**For the next batch:** A11 `runNonBlockingFix` (`src/execution/non-blocking-fix.ts:230`,
+70, 492 lines, test: yes) — another Wave-A orchestrator, one file further from the
+600-line cap than A10 was. Pre-flight per this batch: (1) the mutate-in-place and
+closure-over-`let` checks FIRST (A2's traps; A10's `finish`-closure-reads-loop-state
+shape is the thing to look for — any exit-decoration helper reading a `let` the loop
+mutates means a `CycleLoopState`-style state object); (2) `_deps`-style seam +
+barrel re-export check (`grep -rn "_deps\|Deps" src/execution/non-blocking-fix.ts`
+and the `src/execution` barrels); (3) grep test/ for source-text assertions on the
+file (A10 again found none — every batch since A1 has; the check costs one grep);
+(4) A10 confirms the characterisation-first work in Wave A is zero — every remaining
+Wave-A row has mirror tests that pin their branches. Post-drain note: over-60 is down
+to 18 (17 src + 1 scripts), Wave A has three rows left (A11-A13).

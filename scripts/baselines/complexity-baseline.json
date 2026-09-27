@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T18:34:13.568Z",
+  "updatedAt": "2026-09-27T19:01:07.175Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -111,7 +111,6 @@
     "src/execution/story-orchestrator/run-phase.ts": [51],
     "src/execution/tdd-failure-category.ts": [25],
     "src/execution/unified-executor.ts": [39],
-    "src/findings/cycle.ts": [83],
     "src/finish/context.ts": [30],
     "src/finish/phase.ts": [31],
     "src/finish/review/audit-gaps.ts": [25],
