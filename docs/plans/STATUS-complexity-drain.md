@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A6-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A7-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    249 functions in 215 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     22   (21 src, 1 scripts)   <- THIS DRAIN (call.ts drained by A6)
+  over 20    248 functions in 215 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     21   (20 src, 1 scripts)   <- THIS DRAIN (resolveCodingToolSupport drained by A7)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 7 of 25 done (P0, A1, A2, A3, A4, A5, A6)
+batches: 8 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7)
 ```
 
 Refresh this block at the end of every batch:
@@ -147,7 +147,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | A4 | done 2026-09-27 | 107 | CLI `run` action | `bin/nax.ts:240` | 1948 -> 1609 (size-gated) | 37 / 21 | none |
 | A5 | done 2026-09-27 | 93 | hop callback | `src/operations/build-hop-callback.ts:191` | 599 | 33 / 19 | yes |
 | A6 | done 2026-09-27 | 91 | `callOpDispatch` | `src/operations/call.ts:80` | 591 | 33 / 17 | yes |
-| A7 | todo | 74 | `resolveCodingToolSupport` | `src/agents/coding-tool-support.ts:307` | 601 | 44 / 18 | yes |
+| A7 | done 2026-09-27 | 74 | `resolveCodingToolSupport` | `src/agents/coding-tool-support.ts:312` | 601 -> 391 (size-gated) | 44 / 18 | yes |
 | A8 | todo | 127 | `pathsBranch` | `src/tools/policy.ts:429` | 601 | 26 / 16 | yes |
 | A9 | todo | 71 | `handleRunCompletion` | `src/execution/lifecycle/run-completion.ts:111` | 563 | 22 / 18 | none |
 | A10 | todo | 83 | `runFixCycle` | `src/findings/cycle.ts:72` | 544 | 16 / 12 | yes |
@@ -804,3 +804,99 @@ wants guard clauses first, then a named-predicate decision table — NOT named p
 functions; (3) grep test/ for source-text assertions on the file before extracting;
 (4) still budget the sibling for a split, since moving the function's body out means
 the sibling carries nearly all 601 lines' worth of logic.
+
+### 9.8 - 2026-09-27, A7 done - `resolveCodingToolSupport` 74 -> 11 (one session)
+
+The first "policy decision tree" batch, the shape §3's table predicted. One session.
+Pre-flight questions all answered BEFORE writing code: (1) `_codingToolSupportDeps`
+(loadConfigForPackage) EXISTS and is reassigned by two test files
+(`coding-tool-support.test.ts` "load failure" test, `one-connection-per-worktree.test.ts`
+via `Object.assign`) — it stayed defined in `coding-tool-support.ts` and reaches
+`loadPackageEffectiveConfig` BY REFERENCE, read at call time; there is no barrel
+re-export to cycle through. (2) A2's traps both clean: no closure captures a `let`
+across the extraction boundary, and the function's one try/catch owns its local
+scope entirely — nothing downstream reads state across a throw. (3) No source-text
+test pins `coding-tool-support.ts` — grep found only comments mentioning the file
+(`coding-tool-bash.test.ts` header, `acceptance-fix.test.ts`, `bash-deny-suite.test.ts`).
+Zero test edits in the refactor commit.
+
+**Characterisation first** (own commit `test: characterise resolveCodingToolSupport
+unpinned branches before complexity drain`, 4 tests, green against the unrefactored
+function). The mirror suites pin nearly everything; four branches nothing covered:
+(a) a provider-only op whose only provider THROWS must log the `[provider] dropped`
+warn AND still return undefined (the warn loop + the empty-union guard after an R15
+op goes unreal); (b) the fully-empty union (`declaredTools: []`, no providers) ->
+undefined; (c) a runtime config whose `stripEnvVars` is not an array (reachable only
+through RULING F2's type lie) must strip nothing, not throw; (d) a command entry
+whose value is neither string nor array is dropped from the declared-command map.
+Checked while writing (d): `QualityCommandSpec = string | string[]`, so the filter
+admits every VALID spec — the junk branch is defensive, not a bug (§2.1 clean). The
+main mirror file sits at exactly 800 lines, so the tests went in a new sibling,
+`coding-tool-support-dispatch-edges.test.ts` — zero `as T` casts (Object.assign for
+the F2-junk configs), looseCast stayed 1474.
+
+**Technique:** guard clauses and branch predicates became named functions in a new
+sibling, `coding-tool-support-resolve.ts` (412 lines): `hasUsablePackageDir` (the
+5-condition package/project guard — duplicated VERBATIM in the original's load guard
+and its packageWorkdir spread; P0's "one shared helper worth naming" showed up here,
+now called from both), `loadPackageEffectiveConfig` 6, `extractDispatchConfigFields`
+4 (the WidenedDispatchConfig read — all members optional, so `NaxConfig | AgentManagerConfig`
+assigns WITHOUT the original's widened-literal cast), `declaredCommandsFrom` 1,
+`resolveCommandCwd` 3, `resolveDispatchAuditDir` 4, `buildLedgerHeader` 4,
+`resolvePackageNameForDispatch` 3, `resolveProviderContribution` 10 (Mcp partition +
+the R12 admits arm + the empty fallback), `unionDeclaredTools` 2,
+`warnDroppedProviders` 1, `resolveDispatchLauncher` 9, `optionalDispatchArgs` 8
+(8 option-forwarding conditional spreads), `resolvedDispatchArgs` 8 (8 resolved-value
+conditional spreads). `resolveCodingToolSupport` itself stays in coding-tool-support.ts
+as the sequencer — public surface unchanged — and scores 11; `buildCodingToolSupport`
+is untouched at 38 (pre-existing; within reach of the 40-milestone discussion).
+
+**The final args literal split by key class:** every conditional-spread key went into
+`optionalDispatchArgs` (from `options`) or `resolvedDispatchArgs` (from earlier
+steps); the 14 unconditional keys stay in the literal in the sequencer. Keys are
+unique across the three parts, so the merged object is identical regardless of
+spread order (verified with a string-literal fingerprint diff of the old body vs the
+new pair: empty delta; and a per-key presence check: 1:1).
+
+**File-size gate, single sibling held for once:** `coding-tool-support.ts` measured
+600 lines at batch start (the doc's 601 had drifted — Biome had re-wrapped under A6's
+gates), exactly AT the 600 cap and NOT in the file-sizes baseline, so it could not
+grow by one line; it is now 391. The sibling landed at 412 after `biome check --write`
+— the per-branch + partial-args split planned from the first line (A6's lesson) is
+why the "budget two sibling files" rule did not need to fire.
+
+**One NEW gate shape, worth naming for every future batch that MOVES code between
+files:** `check:no-silent-naxconfig-cast` allow-lists `as unknown as NaxConfig` PER
+FILE. The F2 cast is exempted in `coding-tool-support.ts` by name — moving the
+byte-identical cast to the sibling tripped the guard mid-`check:all`. Fixed per the
+guard's own documented procedure: swapped the allow-list entry to the new file with
+the ruling text (the old exclusion is gone; main no longer casts). Lesson:
+`grep -Rn "grep -vE" scripts/` for per-file guard allow-lists (naxconfig-cast,
+rules-drift, etc.) covering the file being emptied, BEFORE the first `git mv`-style
+move — they fail only at `check:all`, after everything else is green.
+
+**One self-inflicted near-miss:** replacing the body by line number AFTER editing the
+imports (same step) shifted the cut point by the 5 lines the import edit added and
+silently dropped `_codingToolSupportDeps` from the file. `tsc` caught it on the next
+command (TS2304), restored with a normal edit. Lesson: cut by content marker, never
+by line number, once anything above the cut has been edited in the same session.
+
+**Nothing else surprising.** `bun run typecheck`, `bun run test` (all phases),
+`bun run check:all` (35 scripts; `check:import-cycles` 0 — the sibling imports
+coding-tool-support.ts TYPE-ONLY, which the cycle checker excludes, verified in the
+script per §9.6), and `bun run test:coverage` all green; below-floor count 1 vs
+baseline 2 (the standing improvement, not lowered here). `check:complexity:update`
+was a pure lower: 249 -> 248 functions, 215 -> 215 files — the file stays baselined
+at `[38]` because `buildCodingToolSupport` is still over 20.
+
+**For the next batch:** A8 `pathsBranch` (`src/tools/policy.ts:429`, 127 — the worst
+SRC function now that parser.ts's 155 is the only one above it), 601 lines, test: yes
+— same "policy decision tree" shape as A7, same one-line-over-the-cap file situation.
+Pre-flight, in order: (1) `grep -Rn "grep -vE" scripts/` for per-file guard
+allow-lists naming `tools/policy.ts` (this batch's naxconfig-cast surprise
+generalises), plus the usual `_deps`-seam and source-text-test greps; (2) decision
+table: name each branch's predicate, split conditional spreads/args by key class;
+(3) budget the sibling split anyway. Also worth noting for the post-drain milestone
+discussion: with the over-60 set down to 21, `buildCodingToolSupport` (38) and
+friends are already close enough to 20 that the 40-milestone may be cheaper than §1
+assumed.

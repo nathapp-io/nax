@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T16:49:07.930Z",
+  "updatedAt": "2026-09-27T17:21:25.751Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -25,7 +25,7 @@
     "src/agents/acp/spawn-client-session.ts": [24],
     "src/agents/acp/stdout-line-reader.ts": [32],
     "src/agents/coding-tool-extras.ts": [24],
-    "src/agents/coding-tool-support.ts": [74, 38],
+    "src/agents/coding-tool-support.ts": [38],
     "src/agents/manager-run-fallback.ts": [54],
     "src/agents/manager.ts": [40],
     "src/agents/native/adapter.ts": [21],
