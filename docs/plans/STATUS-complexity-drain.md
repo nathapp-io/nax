@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, pre-A2-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, pre-A3-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    253 functions in 219 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     26   (24 src, 1 bin, 1 scripts)  <- THIS DRAIN
+  over 20    252 functions in 218 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     25   (23 src, 1 bin, 1 scripts)  <- THIS DRAIN
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 3 of 25 done (P0, A1, A2)
+batches: 4 of 25 done (P0, A1, A2, A3)
 ```
 
 Refresh this block at the end of every batch:
@@ -143,7 +143,7 @@ and what the helpers scored; use that to size the rest (see §6).
 |:--|:--|---:|:--|:--|---:|:--|:--|
 | A1 | done 2026-09-27 | 165 | `executeUnified` | `src/execution/unified-executor.ts:60` | 704 (size-gated) | 30 / 25 | none |
 | A2 | done 2026-09-27 | 97 | `runNativeTurn` | `src/agents/native/session/turn-loop.ts:72` | 484 | 42 / 18 | none |
-| A3 | todo | 101 | `run` (ExecutionPlan) | `src/execution/story-orchestrator/execution-plan.ts:70` | 596 | 20 / 16 | none |
+| A3 | done 2026-09-27 | 101 | `run` (ExecutionPlan) | `src/execution/story-orchestrator/execution-plan.ts:70` | 596 | 20 / 16 | none |
 | A4 | todo | 107 | CLI `run` action | `bin/nax.ts:245` | 1948 (size-gated) | 37 / 21 | none |
 | A5 | todo | 93 | hop callback | `src/operations/build-hop-callback.ts:191` | 599 | 33 / 19 | yes |
 | A6 | todo | 91 | `callOpDispatch` | `src/operations/call.ts:80` | 591 | 33 / 17 | yes |
@@ -458,3 +458,68 @@ state a catch block downstream reads? If yes, design the state object as mutate-
 the start rather than discovering it via a failing test. Also check for closures set up once
 in setup and read/written across loop iterations (the `SpinFlags` shape) - grep the function
 for `() =>` closures capturing a `let` before assuming a clean state-object split.
+
+### 9.4 - 2026-09-27, A3 done - `ExecutionPlan.run` 101 -> 0 (one session)
+
+Third orchestrator batch, but a different shape from A1/A2: `run()` is a linear sequence of
+five stages (resume hydration, canonical phase loop, rectification, two conditional resume
+loops, ADR-024 non-blocking fix, verdict aggregation), not a `while(true)` with a
+continuation decision. No throw-mid-loop trap, no `let`-closure trap (A2's two write-ups)
+applied here — every `catch` in this file rethrows immediately, nothing downstream reads
+loop state across a throw boundary. Checked both FIRST this time per A2's own note, and both
+came back "no" cleanly rather than being found by a failing test.
+
+**Technique:** extracted the six stages into a class-external `PlanParams` (`ctx`, `state`,
+`isThreeSession` — bundled because they never change once `ExecutionPlan` is constructed)
+plus a `PhaseTracking` (`phaseCosts`, `phaseOutputs` — the SAME two Records threaded through
+every stage, mutated in place by `runPhase`, exactly as the original single function did:
+nothing here ever reassigns either). `ExecutionPlan.run()` is now 8 sequential calls plus 3
+guard `if`s — `phaseNames()` and the constructor stay on the class; every extraction is a
+free function taking `PlanParams` explicitly rather than a private method, since a class
+body can't itself be split across files.
+
+**File-size gate, three-way split — same shape as A1, worse ratio.** The source file
+(`execution-plan.ts`, 596 lines) was 4 lines from the 600 cap going in — the tightest margin
+of any batch so far. First extraction (`execution-plan-phases.ts`, all six stages) landed at
+684 lines, well over the 600 cap for a new file. Split again along the natural seam: verdict
+aggregation (`buildStoryOrchestratorResult` + its private log helper, the largest and most
+self-contained stage at ~225 lines) moved to `execution-plan-verdict.ts` (228 lines);
+`execution-plan-phases.ts` dropped to 474. `execution-plan.ts` itself is now 98 lines. Same
+lesson as A1's write-up: budget the `wc -l` check after `biome check --write` (§5) before
+assuming one sibling file holds an orchestrator's whole body — for a linear multi-stage
+function this looks like it should fit, and did not.
+
+**A real bug caught while writing the extraction, not by a test.** Moving the verdict logic
+into its own function, the `failedPhases` computation was rewritten as a plain
+`!phasePassed(...)` filter and only caught on review-before-running: the original filter was
+`if (verifierPassedSsot && name === gateName) return false; return !phasePassed(...)` — the
+verifier-SSOT carve-out that exempts the full-suite gate from the failed-phases LIST, not
+just from the `success` boolean. Dropping it would have kept `success: true` correct but
+started listing the gate as a "failed phase" in the summary log for every verifier-carve-out
+story — a silent log-only regression no functional test would catch (the field feeds
+`docs/plans/STATUS-*` telemetry reads, not a return-value assertion). Restored before commit
+by threading `gateName` and `verifierPassedSsot` into the log helper's own input type.
+Worth naming as a category: a linear aggregation function's last stage (build a return value
++ a log) is exactly where a mechanical copy-paste of "the same filter, twice, with different
+outputs" silently drops one branch's copy when only one of the two outputs is checked by
+this session's own re-reading. Diff the extracted body against the original line-for-line
+before moving on, not just against the passing test suite.
+
+**Helper scores:** every extracted function landed under 20 on the first pass across all
+three files - no second split needed inside any one function (unlike A2's `runRoundTripLoop`,
+which needed two passes). The five-stage sequential shape apparently splits more cleanly than
+a `while(true)` loop's tangled continue/break/throw paths - consistent with A1 (also clean on
+the first pass) vs A2 (needed two).
+
+**Nothing else surprising.** 474 tests across the story-orchestrator + related pipeline/nbf
+suites stayed green throughout (151 in `test/unit/execution/story-orchestrator/` + 323 more
+across pipeline stages, resume, nbf, and rectification-exhaustion tests). `test:coverage`
+stayed green, same 1-file-below-floor count as before. `check:import-cycles` stayed at 0.
+
+**For the next batch:** A4 (`bin/nax.ts` CLI `run` action, 1948 lines, size-gated and may not
+grow by even one line) is next in table order and is the OTHER batch §4 flagged as likely
+needing a split. Unlike A1-A3, its extractions cannot land back in the same file at all — every
+extracted line is pure gain against the size gate, never a wash. Check first: does `bin/nax.ts`
+have its own `_deps`-style test seam (A1's trap), any closures spanning a loop or an
+intentional mid-loop throw whose catch reads loop state (A2's trap), and grep test/ for
+CLI-source-order assertions (A1's fix) before writing the first line of the extraction.

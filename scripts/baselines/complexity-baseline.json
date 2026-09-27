@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:32:54.832Z",
+  "updatedAt": "2026-09-27T14:44:32.121Z",
   "limit": 20,
   "byFile": {
     "bin/nax.ts": [107],
@@ -106,7 +106,6 @@
     "src/execution/post-run.ts": [96, 38],
     "src/execution/queue-handler.ts": [27],
     "src/execution/runner-completion.ts": [48],
-    "src/execution/story-orchestrator/execution-plan.ts": [101],
     "src/execution/story-orchestrator/fix-review-strategy.ts": [23],
     "src/execution/story-orchestrator/phase-state.ts": [36],
     "src/execution/story-orchestrator/rectification.ts": [49, 33],

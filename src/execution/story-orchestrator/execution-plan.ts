@@ -1,19 +1,16 @@
-import { NaxError } from "@/errors";
-import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
-import { errorMessage } from "@/utils/errors";
-import type { QuarantineMemo } from "@/verification";
-import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
-import { nonBlockingExcludePhases, nonBlockingExtraPhases } from "../non-blocking-fix";
-import { buildNbfDeps } from "./nbf-deps";
-import { deriveNbfSeed } from "./nbf-seed";
-import type { GateRegressionDetail } from "./phase-eval";
-import { describeGateRegression, gateFailureKeys, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
+import {
+  hydrateResumeState,
+  maybeRunNonBlockingFix,
+  type PlanParams,
+  runCanonicalLoop,
+  runMechanicalOnlyResume,
+  runPostRectificationResume,
+} from "./execution-plan-phases";
+import { buildStoryOrchestratorResult } from "./execution-plan-verdict";
+import { gateFailureKeys } from "./phase-eval";
 import { collectOrderedPhases } from "./phase-state";
 import { runRectification } from "./rectification";
-import { recordReviewRecurrencesForAttempt } from "./recurrence-recording";
-import { classifyMissingReviewPhases } from "./review-phase-report";
-import { _storyOrchestratorDeps, runPhase } from "./run-phase";
 import type { InternalBuildState, StoryOrchestratorResult } from "./types";
 
 export class ExecutionPlan {
@@ -30,31 +27,6 @@ export class ExecutionPlan {
   ) {}
 
   /**
-   * Evaluate the gate against the pre-rectification baseline, as of right now.
-   *
-   * Sole supplier of `describeGateRegression`'s input inside the plan, so nbf's
-   * keep-decision (ADR-024 §3) and the verdict's staleness guard cannot drift apart —
-   * they are the same call with the same memo. Splitting them is what the §3 comment at
-   * the nbf call site warns against, and filtering flakes into only one of them would
-   * reintroduce exactly the main-path/nbf asymmetry #1383 is about.
-   */
-  private describeGateRegressionNow(
-    phaseOutputs: Record<string, unknown>,
-    gateName: string | undefined,
-    options: { baselineKeys: ReadonlySet<string>; quarantineMemo?: QuarantineMemo },
-  ): GateRegressionDetail {
-    return describeGateRegression({
-      gateOutput: gateName === undefined ? undefined : phaseOutputs[gateName],
-      baselineKeys: options.baselineKeys,
-      gateName,
-      storyId: this.ctx.storyId,
-      // Run-scoped: a test this run already probed and quarantined is not attributable
-      // to this story, on either path (#1383).
-      quarantineMemo: options.quarantineMemo ?? this.ctx.runtime.quarantineMemo,
-    });
-  }
-
-  /**
    * Returns the names of all phases in canonical execution order.
    * Phase names correspond to op.name on each RunOperation.
    * When rectification is configured, the sentinel "rectification" appears last.
@@ -67,529 +39,60 @@ export class ExecutionPlan {
     return names;
   }
 
+  /**
+   * Sequences the orchestrator's phases, in the order described by each
+   * phase function in ./execution-plan-phases.ts (complexity drain A3,
+   * docs/plans/STATUS-complexity-drain.md): resume hydration, the canonical
+   * loop, rectification, the post-rectification and mechanical-only resume
+   * loops, the ADR-024 non-blocking fix, and verdict aggregation.
+   */
   async run(): Promise<StoryOrchestratorResult> {
-    const phaseCosts: Record<string, number> = {};
-    const phaseOutputs: Record<string, unknown> = {};
     const startedAt = Date.now();
-    const logger = getSafeLogger();
+    const plan: PlanParams = { ctx: this.ctx, state: this.state, isThreeSession: this.isThreeSession };
 
-    // Capture tree state and build resume plan — seed phaseOutputs from prior
-    // green phases so the main loop skips them. Cheap gates are never seeded:
-    // they always re-execute to confirm the working tree is still green.
-    const tree = await _storyOrchestratorDeps.captureTreeState(this.ctx.packageDir);
-    const checkpoints = await _storyOrchestratorDeps.loadCheckpoints(this.ctx.featureDir ?? "");
-    const storyCp = this.ctx.storyId ? (checkpoints.get(this.ctx.storyId) ?? null) : null;
-    const plan = await _storyOrchestratorDeps.buildResumePlan(storyCp, tree);
-    hydrateFromResumePlan(plan, phaseOutputs);
-
-    // Carry forward seeded phases under the current run's `runId`. A phase
-    // skipped in the main loop below never reaches the `recordGreen` call at
-    // its old position (the skip guard's `continue` bypasses it), so it would
-    // keep only the checkpoint record from the run that originally recorded
-    // it. `loadCheckpoints` now filters per-story (see `reader.ts`), so an
-    // untouched story's older-run records already survive repeated resumes
-    // on their own — this re-recording is a cheap consolidation, not a
-    // correctness requirement: it advances this story's own checkpoint
-    // history to the current `runId` under the tree state already confirmed
-    // to match by `buildResumePlan`, so every still-green phase for THIS
-    // story shares one consistent runId rather than accumulating one stale
-    // record per resume.
-    if (this.ctx.storyId) {
-      for (const skippedPhase of plan.skipPhases) {
-        await _storyOrchestratorDeps.recordGreen(this.ctx.storyId, skippedPhase, tree);
-      }
-    }
-
-    // TDD RED → GREEN → handover contract: a gate failure halts the canonical
-    // sequence unconditionally. Verifier and downstream review phases run only on
-    // green (passing-gate) code — they must never judge a broken state.
-    //
-    // Rectification (when configured) is invoked *after* this loop regardless of
-    // whether the loop broke early; it collects gate findings from phaseOutputs
-    // and drives the fix cycle independently. After rectification drives the gate
-    // back to green, phasesToRevalidate re-dispatches verifier and reviews so they
-    // judge only the fixed code (Task 2).
-    //
-    // This reverts the verifierExempt path added in ff640e6b — that change let
-    // the verifier run on broken-gate code as an "unrelated regression" escape
-    // hatch, at the cost of every common case. The escalation boundary in
-    // deriveTddFailureCategory now handles that case instead.
-    //
-    // #1666 amendment: `semantic-review` failing is an EXCEPTION to the
-    // unconditional halt above, scoped narrowly to that one transition
-    // (semantic-review -> adversarial-review, its immediate successor in
-    // CANONICAL_ORDER). ff640e6b's revert does not cover this case: that change
-    // let the VERIFIER run on a broken-gate tree (judging code that might not even
-    // build), which is exactly the "verifier and reviews must never judge broken
-    // state" hazard above. Here the working tree is green — every gate ahead of
-    // semantic-review (full-suite-gate, verifier, lint-check, typecheck-check) has
-    // already passed for semantic-review to have run at all. Continuing to
-    // adversarial-review asks a second, independent reviewer for its own opinion
-    // on that same green tree; it does not let anything judge broken code. Measured
-    // across 1010 run logs, semantic-review short-circuited 231 times and took
-    // adversarial-review down with it in 132 of those — a lost second opinion, not
-    // a safety hatch. Every OTHER phase (gate, verifier, lint/typecheck, implementer)
-    // still halts unconditionally; this is a continuation, not a general
-    // "reviews are exempt" rule. The story still fails on semantic-review's own
-    // finding (see `success` below) — running adversarial-review changes what gets
-    // reported, not the verdict.
+    const tracking = await hydrateResumeState(plan);
     const orderedPhases = collectOrderedPhases(this.state);
-    // Part A (#1666) — the phase (if any) whose failure caused the loop below to
-    // stop before reaching the end of `orderedPhases`. Used only to classify a
-    // required review phase that later turns up missing from `phaseOutputs`: was
-    // it never reached because of a failure the story already reports elsewhere
-    // (this phase), or is it the separate post-rectification resume case (US-002)
-    // that this variable does not track? See the `missingRequiredReviewPhases`
-    // classification below for how the two are told apart.
-    let shortCircuitPhase: string | undefined;
-    for (const [phaseIndex, phase] of orderedPhases.entries()) {
-      const name = phase.slot.op.name;
+    const { shortCircuitPhase } = await runCanonicalLoop(plan, tracking, orderedPhases);
 
-      // Resume skip guard: phases seeded from a prior checkpoint (via
-      // hydrateFromResumePlan) are already green — skip them. Cheap gates are
-      // never seeded, so they always re-execute even on resume.
-      if (name in phaseOutputs && phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
-        continue;
-      }
-
-      try {
-        await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession, {
-          index: phaseIndex + 1,
-          total: orderedPhases.length,
-        });
-      } catch (error) {
-        logger?.error("story-orchestrator", "Phase threw unexpected error", {
-          storyId: this.ctx.storyId,
-          phase: name,
-          error: errorMessage(error),
-        });
-        throw error;
-      }
-
-      // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution),
-      // with one narrow exception: `semantic-review` failing continues to `adversarial-review` (see the
-      // #1666 amendment above) instead of halting. Every other phase still halts unconditionally — verifier
-      // and reviews must never judge broken-gate code. Gate findings are captured in phaseOutputs before
-      // this check, so runRectification() still consumes them.
-      if (!phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
-        shortCircuitPhase = name;
-        if (name === "semantic-review") {
-          logger?.warn(
-            "story-orchestrator",
-            "semantic-review failed — continuing to adversarial-review for a second opinion",
-            {
-              storyId: this.ctx.storyId,
-              phase: name,
-            },
-          );
-          continue;
-        }
-        logger?.warn("story-orchestrator", "Short-circuiting on phase failure", {
-          storyId: this.ctx.storyId,
-          phase: name,
-        });
-        break;
-      }
-
-      // Record green checkpoint: only after a phase has passed and produced output.
-      // Tree state is captured fresh here (not the pre-loop `tree` used for the
-      // resume-plan comparison above) because the phase that just passed may have
-      // mutated the working tree — a stale, pre-loop digest would make every
-      // record after the first phase disagree with the tree the reader compares
-      // against on resume, forcing a spurious "tree-moved" full rerun.
-      if (!this.ctx.storyId) {
-        logger?.warn("story-orchestrator", "Skipping recordGreen — no storyId on CallContext", {
-          phase: name,
-        });
-      } else {
-        const currentTree = await _storyOrchestratorDeps.captureTreeState(this.ctx.packageDir);
-        try {
-          await _storyOrchestratorDeps.recordGreen(this.ctx.storyId, name, currentTree);
-        } catch (error) {
-          // EXEC-9: recordGreen's CHECKPOINT_WRITE_FAILED (disk full, permission)
-          // is an infra failure, not a verdict on the phase that just genuinely
-          // passed. The story verdict (phasePassed above) is the SSOT — losing a
-          // resume checkpoint costs a full rerun on resume, which is recoverable;
-          // escalating the story through paid tiers for an infra error is not.
-          if (error instanceof NaxError && error.code === "CHECKPOINT_WRITE_FAILED") {
-            logger?.warn(
-              "story-orchestrator",
-              "recordGreen failed — resume checkpoint lost, story verdict unaffected",
-              {
-                storyId: this.ctx.storyId,
-                phase: name,
-                error: errorMessage(error),
-              },
-            );
-          } else {
-            throw error;
-          }
-        }
-      }
-    }
-
-    // Baseline of gate failures the verifier implicitly blessed. The main loop
-    // halts on any phase failure (no exemptions), so a verifier that ran-and-passed
-    // means the gate was green at that point — any gate failure observed after
-    // rectification was therefore introduced by it. Captured before any
-    // rectification (including the ADR-024 non-blocking pass) mutates the gate.
+    // Baseline of gate failures the verifier implicitly blessed. The canonical
+    // loop halts on any phase failure (no exemptions), so a verifier that
+    // ran-and-passed means the gate was green at that point — any gate
+    // failure observed after rectification was therefore introduced by it.
+    // Captured before any rectification (including the ADR-024 non-blocking
+    // pass) mutates the gate.
     const gateName = this.state.fullSuiteGate?.slot.op.name;
-    const preRectGateFailureKeys = gateName ? gateFailureKeys(phaseOutputs[gateName]) : new Set<string>();
+    const preRectGateFailureKeys = gateName ? gateFailureKeys(tracking.phaseOutputs[gateName]) : new Set<string>();
 
-    const rectResult = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
+    const rectResult = await runRectification(this.ctx, this.state, tracking.phaseCosts, tracking.phaseOutputs, {
       gateBaselineKeys: preRectGateFailureKeys,
       isThreeSession: this.isThreeSession,
     });
 
-    // Resume the canonical loop after rectification resolves. The strategy-specific
-    // revalidation set (STRATEGY_TO_REVALIDATION_PHASES) intentionally narrow — e.g.
-    // full-suite-rectify excludes adversarial-review, autofix-test-writer excludes
-    // semantic-review — so without this resume, any phase NOT in the active strategy's
-    // set is silently skipped after the main loop short-circuited on gate failure.
-    //
-    // Restores prior behavior: rectify → gate green → verifier → reviews. Walks the
-    // canonical sequence and runs any phase whose output is missing or non-passing.
-    // Halts on first failure (same RED→GREEN contract as the main loop). Skipped
-    // entirely when rectification was exhausted — the story is already terminal.
-    //
-    // Part A (#1666): also the deciding line for whether a still-missing required
-    // review phase is attributable to the main loop's short-circuit above, or to
-    // this resume loop's own halt (US-002). When this condition is false, the
-    // resume loop never runs at all, so a review phase left unreached by the main
-    // loop gets no second chance — its absence is entirely explained by
-    // `shortCircuitPhase`. When it is true, this loop walks the full canonical
-    // order (including the reviews) and only a phase left missing AFTER this loop
-    // ran can be the US-002 case (this loop broke at a still-red gate before
-    // reaching it).
+    // Part A (#1666): also the deciding line for whether a still-missing
+    // required review phase is attributable to the canonical loop's
+    // short-circuit, or to the post-rectification resume loop's own halt
+    // (US-002) — see runPostRectificationResume's own header.
     const resumeLoopEligible =
       !!this.state.rectification &&
       !rectResult.terminalReviewRequired &&
       (!rectResult.rectificationExhausted || !!rectResult.liteScopeIncomplete);
     if (resumeLoopEligible) {
-      // The first rectification ran with a strategy-specific revalidation set
-      // (STRATEGY_TO_REVALIDATION_PHASES) that may have excluded phases this
-      // resume block runs for the first time (e.g. full-suite-rectify excludes
-      // adversarial-review). A failure here is therefore a *new* finding that
-      // rectification never had as input — distinct from "rectification tried
-      // and could not fix this." Allow one additional rectification pass per
-      // story for such fresh failures before declaring terminal. Per-story
-      // (not per-phase) on purpose: bounds total LLM cost on the recovery path.
-      let resumeRectifyUsed = false;
-      for (const phase of collectOrderedPhases(this.state)) {
-        const name = phase.slot.op.name;
-        if (name in phaseOutputs && phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
-          continue;
-        }
-        try {
-          await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession);
-        } catch (error) {
-          logger?.error("story-orchestrator", "Phase threw unexpected error (post-rectification resume)", {
-            storyId: this.ctx.storyId,
-            phase: name,
-            error: errorMessage(error),
-          });
-          throw error;
-        }
-        if (!phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
-          if (!resumeRectifyUsed) {
-            // Fresh failure: this phase was not in the prior strategy's
-            // revalidation scope, so rectification has never seen its findings.
-            // Invoke rectification once more on the now-current phaseOutputs.
-            // Bounded to a single retry per story; the inner cycle has its own
-            // maxAttempts budget so this cannot loop.
-            resumeRectifyUsed = true;
-            logger?.info(
-              "story-orchestrator",
-              "Phase failed in post-rectification resume — invoking second rectification pass",
-              { storyId: this.ctx.storyId, phase: name, source: "post-rectification-resume" },
-            );
-            const secondRect = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
-              skipGateTriage: true,
-              gateBaselineKeys: preRectGateFailureKeys,
-              isThreeSession: this.isThreeSession,
-              extraRevalidationKinds: [phase.kind],
-            });
-            if (secondRect.rectificationExhausted) {
-              logger?.warn("story-orchestrator", "Second rectification pass exhausted — terminal failure", {
-                storyId: this.ctx.storyId,
-                phase: name,
-                source: "post-rectification-resume",
-              });
-              break;
-            }
-            // `extraRevalidationKinds` puts the failed phase in revalidation even when the
-            // fixing strategy excludes it (autofix-implementer never revalidates the
-            // verifier, #2264). If it now passes, continue; otherwise terminal.
-            if (phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
-              continue;
-            }
-          }
-          logger?.warn(
-            "story-orchestrator",
-            "Terminal phase failure (post-rectification resume — bypasses rectification)",
-            {
-              storyId: this.ctx.storyId,
-              phase: name,
-              source: "post-rectification-resume",
-              secondRectifyUsed: resumeRectifyUsed,
-            },
-          );
-          break;
-        }
-      }
+      await runPostRectificationResume(plan, tracking, preRectGateFailureKeys);
     }
 
-    // Mechanical-only resume: when rectification exhausted with only lint/typecheck
-    // findings, phases that never executed (e.g. semantic-review, adversarial-review)
-    // still need to run. Lint-style errors (E501 line-too-long in docstrings) do not
-    // invalidate LLM analysis — skipping reviews would mean the story passes without
-    // semantic/adversarial judgment, which is unsound. Unlike the normal resume above,
-    // this loop skips phases already in phaseOutputs (pass or fail) rather than
-    // re-running failed phases — the gate will not green since the style error remains.
     if (this.state.rectification && rectResult.rectificationExhausted) {
-      const mechanicalOnly =
-        !!rectResult.unfixedFindings?.length &&
-        rectResult.unfixedFindings.every((f) => f.source === "lint" || f.source === "typecheck");
-      if (mechanicalOnly) {
-        for (const phase of collectOrderedPhases(this.state)) {
-          const name = phase.slot.op.name;
-          if (name in phaseOutputs) continue; // already ran (passed or failed)
-          try {
-            await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession);
-          } catch (error) {
-            logger?.error("story-orchestrator", "Phase threw unexpected error (mechanical-only resume)", {
-              storyId: this.ctx.storyId,
-              phase: name,
-              error: errorMessage(error),
-            });
-            throw error;
-          }
-          if (!phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
-            logger?.warn("story-orchestrator", "Phase failed in mechanical-only resume", {
-              storyId: this.ctx.storyId,
-              phase: name,
-            });
-            break;
-          }
-        }
-      }
+      await runMechanicalOnlyResume(plan, tracking, rectResult);
     }
 
-    // ADR-024 — non-blocking best-effort fix over advisory findings from the
-    // `review.nonBlockingFix.sources`-declared reviewer set (US-002 union).
-    // Only when the story is currently green (every phase that produced
-    // output passed) and rectification did not exhaust.
-    //
-    // This green precondition is load-bearing, not cosmetic: nbf's floor guarantee
-    // (§5, restore-to-adversarial-passed) only holds when the entry state IS the
-    // adversarial-passed tree. Without the guard, a story whose outer rectification
-    // exhausted with unfixed review findings (e.g. semantic-review short-circuit)
-    // still entered nbf, kept cosmetic edits on the red tree, and then escalated on
-    // the real failures it never touched — polluting the next tier's working tree
-    // for no benefit (log 2026-06-24, US-001). Skip nbf entirely when the story is
-    // red: there is no passed state to improve upon, and the blocking failures must
-    // flow to escalation untouched.
-    const storyCurrentlyGreen =
-      !rectResult.rectificationExhausted &&
-      Object.entries(phaseOutputs).every(([name, output]) => phasePassed(name, output, this.ctx.storyId));
-    const nbfCfg = this.state.nonBlockingFix;
-    const seed = deriveNbfSeed({
-      phaseOutputs,
-      sources: nbfCfg?.sources ?? [],
-      storyId: this.ctx.storyId,
-    });
-    if (
-      nbfCfg &&
-      storyCurrentlyGreen &&
-      this.state.rectification &&
-      this.ctx.storyId &&
-      (this.state.adversarialReview || this.state.semanticReview) &&
-      seed.shouldRun
-    ) {
-      await _storyOrchestratorDeps.runNonBlockingFix(
-        {
-          workdir: this.ctx.packageDir,
-          storyId: this.ctx.storyId,
-          advisoryFindings: seed.findings,
-          cfg: nbfCfg,
-          phaseOutputs,
-          phaseCosts,
-          quarantineMemo: this.ctx.runtime.quarantineMemo,
-          gateBaselineKeys: preRectGateFailureKeys,
-          blockedWorktrees: this.ctx.runtime.dirtyWorktrees,
-          runRectify: (maxAttempts, nbfFlakeTriage) =>
-            runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
-              initialFindings: seed.findings,
-              nbfFlakeTriage,
-              strategies: this.state.nonBlockingFixStrategies ?? [],
-              excludePhaseKinds: nonBlockingExcludePhases(),
-              extraRevalidationKinds: nonBlockingExtraPhases(nbfCfg),
-              maxAttempts,
-              postValidate: this.state.nonBlockingFixPostValidate,
-              isThreeSession: this.isThreeSession,
-            }),
-          // ADR-024 §3 — restore any kept pass that regressed the full-suite gate.
-          // Same predicate + baseline the final verdict's staleness guard uses below
-          // (`gateRegressedDuringRect`), so nbf's keep-decision can never disagree with
-          // the verdict: a fix the guard would fail on is restored to adversarial-passed
-          // here instead, leaving the story green with zero net change.
-          // Detail-returning (not boolean) so the restore log can name the regressing
-          // test identities — the only point at which they still exist (#1382).
-          keptTreeRegressed: (quarantineMemo) =>
-            this.describeGateRegressionNow(phaseOutputs, gateName, {
-              baselineKeys: preRectGateFailureKeys,
-              quarantineMemo,
-            }),
-        },
-        buildNbfDeps({ ctx: this.ctx, findings: seed.findings }),
-      );
-    }
+    await maybeRunNonBlockingFix(plan, tracking, rectResult, { gateName, preRectGateFailureKeys });
 
-    // Aggregate success across every op that produced output, including fix-ops
-    // dispatched during rectification (spec §2C / AC: "success === false when
-    // any op returns { success: false }").
-    //
-    // Verifier-as-SSOT carve-out: when a verifier ran AND passed, the full-suite
-    // gate's failure represents pre-existing/unrelated regressions (verifier's
-    // judgment). Exempt the gate from aggregation so the story doesn't roll back
-    // over failures it didn't cause. The gate output stays in `phaseOutputs` for
-    // diagnostics; rectification (when configured) still consumes its findings.
-    //
-    // Staleness guard: the verifier judged the *pre-rectification* tree. If
-    // rectification then introduced NEW gate failures (keys absent from the
-    // verifier-time baseline), the verdict is stale for those — it can no longer
-    // exempt the gate, else a review-fix that breaks a test is silently laundered
-    // into a pass and leaks to the deferred regression sweep.
-    const verifierName = this.state.verifier?.slot.op.name;
-    // `gateName` and `preRectGateFailureKeys` captured above, before rectification.
-    // SSOT requires an explicit pass — see `phaseExplicitlyPassed` for why we
-    // don't use the defensive `phasePassed` here.
-    const verifierExplicitlyPassed = verifierName !== undefined && phaseExplicitlyPassed(phaseOutputs[verifierName]);
-    // Compares the FINAL gate against the verifier-time baseline, including keyless
-    // (timeout / execution-failure) regressions the raw key-diff is blind to (audit #3).
-    const gateRegressedDuringRect = this.describeGateRegressionNow(phaseOutputs, gateName, {
-      baselineKeys: preRectGateFailureKeys,
-    }).regressed;
-    const verifierPassedSsot = verifierExplicitlyPassed && !gateRegressedDuringRect;
-    if (verifierExplicitlyPassed && gateRegressedDuringRect) {
-      logger?.warn(
-        "story-orchestrator",
-        "Gate regressed during rectification after verifier passed — verifier verdict is stale, failing story",
-        { storyId: this.ctx.storyId, packageDir: this.ctx.packageDir },
-      );
-    } else if (
-      verifierPassedSsot &&
-      gateName !== undefined &&
-      !phasePassed(gateName, phaseOutputs[gateName], this.ctx.storyId)
-    ) {
-      logger?.warn(
-        "story-orchestrator",
-        "Full-suite gate failed but verifier judged story OK — treating gate failures as unrelated regressions",
-        { storyId: this.ctx.storyId, packageDir: this.ctx.packageDir },
-      );
-    }
-
-    // Completeness guard (US-002): a configured review phase absent from
-    // phaseOutputs never ran — the post-rectification resume loop can break at a
-    // still-red full-suite-gate (canonical pos 4) before reaching the reviews
-    // (pos 9-10). The verifier-SSOT carve-out must NOT launder such a story into
-    // a pass: it cannot be certified without the semantic/adversarial judgment it
-    // was configured to require. Forcing success=false routes it to escalation
-    // (deriveTddFailureCategory → "review-incomplete") so a stronger tier can
-    // green the gate and actually run the review; the story becomes terminal only
-    // once escalation is exhausted.
-    const requiredReviewPhaseNames = [
-      this.state.semanticReview?.slot.op.name,
-      this.state.adversarialReview?.slot.op.name,
-    ].filter((name): name is string => name !== undefined);
-    const missingRequiredReviewPhases = requiredReviewPhaseNames.filter((name) => !(name in phaseOutputs));
-
-    // Part A (#1666) — see review-phase-report.ts for the two-cause classification
-    // and why only one of them is suppressed from `failedPhases` below.
-    const { upstreamShortCircuited, failedPhaseEntries } = classifyMissingReviewPhases({
-      storyId: this.ctx.storyId,
-      packageDir: this.ctx.packageDir,
-      missingRequiredReviewPhases,
+    return buildStoryOrchestratorResult(plan, tracking, {
+      gateName,
+      preRectGateFailureKeys,
       shortCircuitPhase,
       resumeLoopEligible,
+      rectResult,
+      startedAt,
     });
-
-    // Part C (#1666) — feed this attempt's review findings into the cross-attempt
-    // recurrence store so `inspectRecurrenceBreaker` (post-run.ts) can see a same-source
-    // finding repeating across escalation attempts. Runs regardless of `success` — the
-    // breaker needs every attempt's data, not just failing ones.
-    recordReviewRecurrencesForAttempt(this.ctx.runtime, this.ctx.storyId, phaseOutputs);
-
-    const success =
-      missingRequiredReviewPhases.length === 0 &&
-      Object.entries(phaseOutputs).every(([name, output]) => {
-        if (verifierPassedSsot && name === gateName) return true;
-        return phasePassed(name, output, this.ctx.storyId);
-      });
-    const totalCostUsd = Object.values(phaseCosts).reduce((sum, cost) => sum + cost, 0);
-    const durationMs = Date.now() - startedAt;
-
-    // Final aggregate log — single end-of-run summary so anyone reading the JSONL
-    // can see the orchestrator's verdict without correlating per-phase lines.
-    const failedPhases = [
-      ...Object.entries(phaseOutputs)
-        .filter(([name, output]) => {
-          if (verifierPassedSsot && name === gateName) return false;
-          return !phasePassed(name, output, this.ctx.storyId);
-        })
-        .map(([name]) => name),
-      // Part A (#1666): `failedPhaseEntries` excludes review phases skipped by an
-      // upstream short-circuit — see review-phase-report.ts.
-      ...failedPhaseEntries.map((name) => `${name} (never ran)`),
-    ];
-    const summary: Record<string, unknown> = {
-      storyId: this.ctx.storyId,
-      success,
-      // #2006: sum of the phases the orchestrator ran — not the story total
-      // (see storySpendUsd); the two are different accounting bases, not a bug.
-      orchestratedCostUsd: totalCostUsd,
-      durationMs,
-      phaseCount: Object.keys(phaseOutputs).length,
-      failedPhases: failedPhases.length > 0 ? failedPhases : undefined,
-    };
-    if (rectResult.rectificationExhausted) summary.rectificationExhausted = true;
-    if (rectResult.repoScopedFixes?.length) {
-      // #1658 — surfaced on the story summary, not only in the rectification log,
-      // because the fact that matters is a property of the finished story: its
-      // commit carries files the story did not set out to change. An empty
-      // `filesChanged` next to `success: true` is the sharpest case — a session
-      // was spent, nothing was repaired, and the story passed on the carve-out.
-      summary.repoScopedFixes = rectResult.repoScopedFixes.map((fix) => ({
-        triggeringTests: fix.triggeringTests,
-        filesChanged: fix.filesChanged,
-        findingsCleared: fix.findingsCleared,
-      }));
-    }
-    if (rectResult.unfixedFindings) summary.unfixedFindingsCount = rectResult.unfixedFindings.length;
-    if (missingRequiredReviewPhases.length > 0) {
-      summary.missingRequiredReviewPhases = missingRequiredReviewPhases;
-      // Part A (#1666): distinct key so the upstream-short-circuit cause is not
-      // lost even though it is excluded from `failedPhases` above.
-      if (upstreamShortCircuited) {
-        summary.reviewPhasesSkippedByShortCircuit = missingRequiredReviewPhases;
-        summary.shortCircuitPhase = shortCircuitPhase;
-      }
-    }
-    if (success) {
-      logger?.info("story-orchestrator", "Story orchestration complete", summary);
-    } else {
-      logger?.warn("story-orchestrator", "Story orchestration failed", summary);
-    }
-
-    return {
-      success,
-      phaseCosts,
-      totalCostUsd,
-      durationMs,
-      phaseOutputs,
-      ...rectResult,
-      gateRegressedDuringRect,
-      missingRequiredReviewPhases: missingRequiredReviewPhases.length > 0 ? missingRequiredReviewPhases : undefined,
-    };
   }
 }
