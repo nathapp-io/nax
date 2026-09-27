@@ -1,3 +1,5 @@
+import { extractTestCode } from "../acceptance/generator";
+import { hasLikelyTestContent, isStubTestContent } from "../acceptance/heuristics";
 import { acceptanceGenConfigSelector } from "../config";
 import type { AcceptanceGenConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
@@ -41,10 +43,21 @@ export const acceptanceRepairOp: RunOperationWithHooks<
       },
     };
   },
-  parse(_output, _input, _ctx) {
-    return { testCode: null };
+  parse(output, _input, _ctx) {
+    return { testCode: extractTestCode(output) };
   },
-  async verify(_parsed, _input, _ctx) {
+  async verify(parsed, input, ctx) {
+    // The reply carried the repaired code → accept it as-is.
+    if (parsed.testCode !== null) return parsed;
+
+    // The agent edited the file in place as a tool-call side effect and replied
+    // conversationally. Fall back to the target file's content when it now
+    // holds real test source rather than a placeholder stub.
+    const content = await ctx.readFile(input.targetTestFilePath);
+    if (content === null) return null;
+    if (hasLikelyTestContent(content) && !isStubTestContent(content)) {
+      return { testCode: content };
+    }
     return null;
   },
 };

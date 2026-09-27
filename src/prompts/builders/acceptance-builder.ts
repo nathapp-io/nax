@@ -55,13 +55,21 @@ const STEP3_SHARED_RULES = `- **One test per AC**, named exactly "AC-N: <descrip
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.`;
 
 /**
+ * US-004 G2, verbatim. Repeated in the load-repair prompt so a repaired file
+ * still loads before the implementation exists. Shared with the generator's
+ * runtime rules (below) so the two never drift.
+ */
+const G2 =
+  "The file must load before the implementation exists. In languages that resolve imports at runtime (TypeScript, JavaScript, Python), import modules this feature adds inside each test rather than at the top of the file, so a missing module fails only the tests that use it.";
+
+/**
  * US-001 G1-G3. Appended to the generator's rules so the model knows nax runs
  * the file it just wrote, that it must load before the implementation exists,
  * and that it may revise the file in place with Edit rather than spawning a
  * second test file.
  */
 const GENERATOR_RUNTIME_RULES = `- nax runs this file as soon as you finish, before any implementation exists; a file that fails to load is sent back for repair.
-- The file must load before the implementation exists. In languages that resolve imports at runtime (TypeScript, JavaScript, Python), import modules this feature adds inside each test rather than at the top of the file, so a missing module fails only the tests that use it.
+- ${G2}
 - Write every AC-N test into this one file. To add or change tests in a file you already wrote, use Edit; do not create a second test file.`;
 
 // ─── Additional parameter interfaces (moved from acceptance domain) ───────────
@@ -228,8 +236,20 @@ After writing the file to the exact path above, reply with a brief confirmation 
    * Prompt for acceptanceRepairOp — the smallest edit that makes the acceptance
    * test file load while keeping every AC-N test and its assertions.
    */
-  buildLoadRepairPrompt(_targetTestFilePath: string, _outputTail: string): string {
-    return "";
+  buildLoadRepairPrompt(targetTestFilePath: string, outputTail: string): string {
+    return `The acceptance test file at \`${targetTestFilePath}\` does not load. nax ran it before any implementation exists, and the runner failed to load it. Here is the tail of the run output:
+
+\`\`\`
+${outputTail}
+\`\`\`
+
+Make the smallest edit that makes the file load while keeping every AC-N test and its assertions intact:
+- Edit the file at exactly this path: \`${targetTestFilePath}\`.
+- Fix only the load failure. Do NOT delete, rename, weaken, stub, or skip any test, and do NOT create a second test file.
+
+${G2}
+
+After editing the file in place, reply with a brief confirmation only.`;
   }
 
   /** Prompt for generateAcceptanceTests() — agent returns raw test code. */
