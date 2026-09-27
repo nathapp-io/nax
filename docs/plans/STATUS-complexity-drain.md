@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A10-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A11-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    245 functions in 213 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     18   (17 src, 1 scripts)   <- THIS DRAIN (runFixCycle drained by A10)
+  over 20    244 functions in 212 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     17   (16 src, 1 scripts)   <- THIS DRAIN (runNonBlockingFix drained by A11)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 11 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10)
+batches: 12 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11)
 ```
 
 Refresh this block at the end of every batch:
@@ -151,7 +151,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | A8 | done 2026-09-27 | 127 | `pathsBranch` | `src/tools/policy.ts:429` | 600 -> 332 (at cap, may not grow) | 26 / 16 | yes |
 | A9 | done 2026-09-27 | 71 | `handleRunCompletion` | `src/execution/lifecycle/run-completion.ts:111` | 563 -> 220 | 22 / 18 | none |
 | A10 | done 2026-09-27 | 83 | `runFixCycle` | `src/findings/cycle.ts:72` | 544 -> 149 | 16 / 12 | yes |
-| A11 | todo | 70 | `runNonBlockingFix` | `src/execution/non-blocking-fix.ts:230` | 492 | 17 / 13 | yes |
+| A11 | done 2026-09-27 | 70 | `runNonBlockingFix` | `src/execution/non-blocking-fix.ts:230` | 492 -> 261 | 17 / 13 | yes |
 | A12 | todo | 73 | `collectNeighbors` | `src/context/engine/providers/code-neighbor.ts:264` | 498 | 17 / 11 | yes |
 | A13 | todo | 99 | `callTool` | `src/tools/runtime.ts:318` | 557 | 31 / 8 | yes |
 
@@ -1215,3 +1215,107 @@ file (A10 again found none — every batch since A1 has; the check costs one gre
 (4) A10 confirms the characterisation-first work in Wave A is zero — every remaining
 Wave-A row has mirror tests that pin their branches. Post-drain note: over-60 is down
 to 18 (17 src + 1 scripts), Wave A has three rows left (A11-A13).
+
+### 9.12 - 2026-09-27, A11 done - `runNonBlockingFix` 70 -> 6 (one session)
+
+The Wave-A orchestrator §9.11 handed over — and, contrary to §9.11's expectation that
+characterisation-first work in Wave A was zero, the mirrors left exactly two outputs
+unpinned, so the batch DID open with a (small) characterisation commit. One session.
+Pre-flight, all answered BEFORE writing code: (1) A2's traps both clean, checked first —
+the function has NO loop at all (guard-chain + keep-gauntlet, not a state machine), the
+one try/catch whose catch reads working state (`runRectify` → `exhausted = true`) is
+entirely prologue-local and rethrows nothing, no closure captures a `let` (no SpinFlags
+shape), and the in-place restore of `args.phaseOutputs`/`args.phaseCosts` (the A2-class
+shared-mutable state) crosses the extraction boundary as object references inside the
+frame, so mutate-in-place held without special machinery; (2) the `_deps` seam question
+resolved "the seam is the PARAMETER": `runNonBlockingFix(args, overrides)` merges
+`{ ...DEFAULT_DEPS, ...overrides }` into a local at entry — no module-level mutable
+object for THIS function, so nothing can cycle. The `_nonBlockingFixDeps` object that
+looks like the seam is `nbf-source-diff.ts`'s (spawn/resolveTestFilePatterns for the
+git helpers), re-exported through non-blocking-fix.ts line 96-102 and mutated by two
+test files — that module and its re-export were untouched, and the re-export MUST stay
+(`nbf-keep-gate.test.ts` imports it from `@/execution/non-blocking-fix`). The barrel
+(`src/execution/index.ts`) re-exports only `runNonBlockingFix` by value. (3) NO
+source-text tests pin the file — grep found none (fifth batch in a row). (4) File
+measured 491 lines going in (doc said 492 — one line of drift, sixth batch running).
+
+**Characterisation first anyway** (own commit `test: characterise runNonBlockingFix
+unpinned log payloads before complexity drain`, 3 tests, green against the unrefactored
+function). The eight mirror suites pin nearly everything — but two LOG outputs had no
+assertion: the rejection log's `acIndex`/`file` fields on a contradiction verdict (the
+AC9 boundary test passes a verdict WITH `acIndex` but asserts only `kind`/`cause`, and
+no test verdict ever sets `file`, so that branch never even executed with a defined
+value), and the keep log's payload ("best-effort fix kept" — unasserted anywhere; the
+blocked-worktree WARN message likewise). Pinned in a new sibling,
+`non-blocking-fix-log-data.test.ts` (157 lines — the main mirror is at 765, too tight
+for additions). Zero `as T` casts: `withInfoSpy`'s `mock.calls` tuples carry the real
+`Logger["warn"]` parameters, so `call?.[2]` is already
+`Record<string, unknown> | undefined` and the scoped-review tests'
+`as unknown as` dance is unnecessary in new files.
+
+**Technique:** the guard-chain + keep-gauntlet shape split into a sequencer plus ONE
+new sibling, `non-blocking-fix-phases.ts` (358 lines) — no second file needed, because
+~130 lines of the source moved only as comments/types while the monolith's two private
+helpers (`restoreToSnapshot`, `logGateRegression`) moved wholesale. `NbfFrame` (A3's
+PlanParams pattern) holds what is fixed after the rollback point exists: `args`, `deps`
+(the entry-merged `{ ...DEFAULT_DEPS, ...overrides }`), `logger`, `restoreRef`,
+both snapshots, `flakeTriage`. `beginNbfPass` (snapshots → capture try/catch →
+flakeTriage → rectify try/catch) returns a `BeginPassOutcome` discriminated union —
+`not-ran` / `exhausted` / `pass`, each carrying the frame where one exists;
+`resolveKeepGates` runs the gauntlet (gate regression → `enforceSourceDiffCap` →
+`reviewKeptPass`, each gate logging its own verdict and restoring through the shared
+`restoreToSnapshot(frame)`, falling through as `null` to keep); `finishExhausted` is
+the #1382-parity tail. `reviewRejectionData` factors the verdict-data literal out of
+the rejection log call. Every long comment moved verbatim with its code. The
+sequencer's residual reads as: two entry guards, one prologue dispatch, keep/restore
+branch, commit + keep log.
+
+**Helper scores (biome at maxAllowedComplexity=1):** `reviewRejectionData` 11 (the
+nested fail/cause/acIndex/file construction — nesting increments, not branch count),
+`enforceSourceDiffCap` 9, `beginNbfPass` 8, `runNonBlockingFix` 6,
+`actionableAdvisoryFindings` 6 (untouched), `reviewKeptPass` 5,
+`nonBlockingExtraPhases` 3 (untouched), `restoreToSnapshot` 3, `resolveKeepGates` 2,
+`logGateRegression`/`finishExhausted` 1. Everything ≤ 20 — no baseline hand-edit
+(§2.3 never triggered; sixth batch running). `restoreToSnapshot`'s signature also
+collapsed from 6 positional params to 1 (the frame) — a §3 parameter-rule violation
+the monolith carried since before the drain, fixed for free by the move.
+
+**File-size gate, single sibling held:** `non-blocking-fix.ts` 491 -> 261 (strictly
+smaller, well clear of the cap going in, so unlike A1/A3/A4/A5 nothing forced a
+split); the sibling landed at 358 after `bun x biome check --write`. No
+per-file guard allow-list names the file (the A7 `check-no-silent-naxconfig-cast`
+sweep came back clean — the file has no `as NaxConfig` casts).
+
+**Verification beyond the suite:** a literal fingerprint diff of the original file
+against the pair — all 58 double-quoted string literals of length >= 4 (log messages,
+log field keys, phase kinds) appear verbatim, zero missing. (One tooling note for the
+next batch: extracting string literals from a file full of apostrophe-bearing comments
+with a naive regex yields bogus "missing" entries — quote-class must match the file's
+actual literal style, here all double-quoted.) The only textual deltas are comments.
+
+**Nothing else surprising.** `bun run typecheck`, `bun run test` (all phases; 137
+tests across the ten nbf suites, 134 pre-existing + 3 characterisation),
+`bun run check:all` (35 scripts; import-cycles 0 — the sibling imports
+non-blocking-fix.ts TYPE-ONLY, the runtime edge is sequencer → phases only;
+file-sizes green; looseCast 1474, zero new casts), and `bun run test:coverage` all
+green; below-floor count 1 vs baseline 2 (the standing A5 improvement, not lowered
+here). `check:complexity:update` was a pure lower: 245 -> 244 functions,
+213 -> 212 files (`non-blocking-fix.ts` left the over-20 baseline entirely — every
+function in both files scores ≤ 20).
+
+**For the next batch:** A12 `collectNeighbors`
+(`src/context/engine/providers/code-neighbor.ts:264`, 73, 498 lines, test: yes) — the
+first batch outside `src/execution/`+`src/findings/` since A8, a context-provider in
+`src/context/`. Pre-flight per this batch: (1) the usual trap sweep FIRST —
+mutate-in-place/closure-over-`let` (A2), `_deps`-style seam + whether
+`src/context/index.ts` or a barrel re-exports anything mutable (A1), source-text
+tests (none found five batches running, but the grep costs one command); (2) check
+for per-file guard allow-lists naming the file (`grep -Rn "grep -vE" scripts/` — A7's
+surprise generalises to any file move); (3) 498 lines + extraction means plan the
+sibling split from the first line (A6's one-file-per-branch seam); (4) the mirrors
+pin most branches, but A11 proves "test: yes" is not "nothing to characterise" —
+audit the log payloads and data-literal construction specifically, which is where
+both A3 (failedPhases) and A11 (acIndex/file) found their unpinned output. Post-drain
+note: over-60 is down to 17 (16 src + 1 scripts); Wave A has two rows left
+(A12, A13); `nbf-source-diff.ts`'s `createMeasureSourceDiff` inner closure scores 29
+— within reach of the 40-milestone discussion, out of this drain's scope.
