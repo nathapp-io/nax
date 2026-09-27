@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, pre-A3-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A4-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    252 functions in 218 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     25   (23 src, 1 bin, 1 scripts)  <- THIS DRAIN
+  over 20    251 functions in 217 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     24   (23 src, 1 scripts)   <- THIS DRAIN (bin/nax.ts drained by A4)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 4 of 25 done (P0, A1, A2, A3)
+batches: 5 of 25 done (P0, A1, A2, A3, A4)
 ```
 
 Refresh this block at the end of every batch:
@@ -144,7 +144,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | A1 | done 2026-09-27 | 165 | `executeUnified` | `src/execution/unified-executor.ts:60` | 704 (size-gated) | 30 / 25 | none |
 | A2 | done 2026-09-27 | 97 | `runNativeTurn` | `src/agents/native/session/turn-loop.ts:72` | 484 | 42 / 18 | none |
 | A3 | done 2026-09-27 | 101 | `run` (ExecutionPlan) | `src/execution/story-orchestrator/execution-plan.ts:70` | 596 | 20 / 16 | none |
-| A4 | todo | 107 | CLI `run` action | `bin/nax.ts:245` | 1948 (size-gated) | 37 / 21 | none |
+| A4 | done 2026-09-27 | 107 | CLI `run` action | `bin/nax.ts:240` | 1948 -> 1609 (size-gated) | 37 / 21 | none |
 | A5 | todo | 93 | hop callback | `src/operations/build-hop-callback.ts:191` | 599 | 33 / 19 | yes |
 | A6 | todo | 91 | `callOpDispatch` | `src/operations/call.ts:80` | 591 | 33 / 17 | yes |
 | A7 | todo | 74 | `resolveCodingToolSupport` | `src/agents/coding-tool-support.ts:307` | 601 | 44 / 18 | yes |
@@ -523,3 +523,97 @@ extracted line is pure gain against the size gate, never a wash. Check first: do
 have its own `_deps`-style test seam (A1's trap), any closures spanning a loop or an
 intentional mid-loop throw whose catch reads loop state (A2's trap), and grep test/ for
 CLI-source-order assertions (A1's fix) before writing the first line of the extraction.
+
+### 9.5 - 2026-09-27, A4 done - CLI `run` action 107 -> 15 (one session)
+
+The first CLI-action batch, matching §3's "one function per option group / output section; the
+action just sequences them" prediction. One session, despite §4 flagging it (with A1) as likely
+needing two. All three §9.2/§9.4 pre-flight questions were checked BEFORE writing any code and
+all three had clean answers — writing them down here because A4 is the template for B6/C4
+(the other CLI-action rows):
+
+**(1) `_deps` seam: none, and one would have cycled.** `bin/nax.ts` has no `_deps` object at all
+(every earlier batch's question resolved "no" instantly). But there IS an import-back trap of a
+different shape: `warnIfPlanDegraded` was a top-level helper in `bin/nax.ts` used by BOTH the
+run action and the `plan` command. Extracting the plan phase therefore forced the helper's
+definition out of `bin/nax.ts` too (a sibling importing it back would cycle — same shape as
+A1's `_unifiedExecutorDeps` trap, arrived at from the other direction). It now lives in the
+sibling and `bin/nax.ts` imports it back. Rule of thumb for CLI batches: any symbol a moved
+block calls that other commands ALSO call must move out first, never be imported back.
+
+**(2) Source-order tests: 3 files pin `bin/nax.ts` as text — but only 3, and they pin code this
+batch deliberately kept inline.** `test/unit/cli/bin-nax-parse-async.test.ts` (BUG-15: the
+`loadConfig(naxDir ?? undefined, cliOverrides)` try/catch, every `loadPRD(prdPath)` wrapped),
+`bin-nax-parse-async` ENH-47 (`join(runsDir, "latest.jsonl")` + `unlinkSync`/`symlinkSync`
+within 600 chars, and the `node:fs` import line), `test/unit/cli/init.test.ts` (init delegation),
+`plan-decompose-ac-repair.test.ts` (plan wiring). Rather than repointing them, the extraction
+kept each pinned block inline in `bin/nax.ts` — the loadConfig try/catch, the TUI's loadPRD
+try/catch (only the `renderTui` call moved), and the whole symlink block. Zero test edits. If a
+future CLI batch wants those blocks moved, the tests must move with them (A1's repointing
+pattern) — the sibling files' header comments say so.
+
+**(3) Characterisation first, via the spawn precedent.** The run action had no mirror test
+(`test: none`), but `test/integration/cli/cli-run-max-iterations.test.ts` already spawns
+`bun bin/nax.ts run` for pre-config gates, which sanctions the same for the rest. New
+`test/integration/cli/cli-run-preflight.test.ts` (11 tests, own commit
+`test: characterise nax run preflight gates before complexity drain`, green against the
+unrefactored binary): every pre-config gate's exit code + stderr, PLUS two gate-ORDER tests
+(`-m 0 --plan` must fail with the max-iterations message; `--parallel 0 --schedule never`
+with the parallel message). The order tests are the ones that would catch a scramble the
+per-gate tests cannot. All 11 still pass against the refactored binary.
+
+**Technique:** the ~478-line action body became 15 sequencing calls into two sibling files,
+`bin/run-action.ts` (474: preflight gates, plan phase, logging/init, config overrides) and
+`bin/run-action-execute.ts` (209: TUI mount, schedule wait, bake-off hand-off, the run() call,
+headless summary). `bin/nax.ts` is 1948 -> 1609 (size gate: never grew; every extracted line
+was pure gain). Helpers take explicit options-object params; commander's inferred `options`
+is typed by an explicit `RunActionOptions` interface (two fields must be NON-optional to match
+commander's defaults: `dir: string`, `dryRun: boolean` — typecheck catches this if a future
+batch guesses wrong). The action's residual complexity is 15; it is no longer the worst
+function in `bin/` (pre-existing `printHumanReadable` scores 20, exactly at the strict limit,
+compliant and untouched).
+
+**No A2 traps:** no closures capture `let`s across the extracted boundaries (the one closure
+shape, `onSigint`, is created and consumed entirely inside `waitForScheduledRun`), and every
+`catch` in the action either exits immediately or is the plan phase's own catch which wraps
+only its own phase — nothing downstream reads loop state across a throw. The mutate-in-place
+question was checked first per A2's note and answered "no" cleanly.
+
+**Helper scores:** `validateBakeoffPreflight` 18 (the largest — the bake-off gate's own
+nested ifs), `maybeRunPlanPhase` 11, everything else <= 10 across both files. First pass, no
+second split needed inside any helper — consistent with A1/A3 (linear/sequential shapes split
+cleanly) versus A2 (a `while(true)` needed two passes). No baseline hand-edit: `check:complexity`
+reported only "improved" for `bin/nax.ts`, and `check:complexity:update` was a pure lower
+(252 -> 251 functions, 218 -> 217 files — `bin/nax.ts` left the baseline entirely).
+
+**File-size gate, one unplanned split:** the first sibling landed at 658 lines — over the
+600-line cap a NEW file is held to (the discipline, not `check:file-sizes`, which only scans
+`src/` and `test/`; `bin/` is out of its scope, which is also why 1948-line `bin/nax.ts` was
+never grandfathered by the gate — the size rule here is this doc's §2.4). Split at the natural
+seam (preflight/setup vs execute/summary). Lesson repeated from A1/A3: budget the `wc -l`
+after `biome check --write` before assuming one sibling file suffices.
+
+**Behaviour verified three ways, not two:** the characterisation suite (exit codes + stderr
+per gate, and gate order), the pre-existing spawn-based integration tests (parallel,
+max-iterations, profile flag) and BUG-15/ENH-47 source tests — all green — plus a
+message/exit-code fingerprint diff of the old action vs the new action + siblings: 19/19
+`exit(1)` sites, 3/3 `exit(0)` sites, every console message 1:1 (the only textual deltas were
+variable renames: `finalPrd` -> the extracted function's `prd` parameter).
+
+**One latent quirk found and recorded, not fixed (§2.1):** `--compare ""` (empty string) is
+falsy, so the entire bake-off block is skipped and the run proceeds as a normal single-agent
+run — a user passing an empty `--compare` gets no error. Pinned by a characterisation test so
+the behaviour is at least now deliberate-looking; changing it needs its own issue.
+
+**Nothing else surprising.** `bun run typecheck`, `bun run test` (all phases), `bun run
+check:all` (all 35 scripts, including `check:import-cycles` at 0 and `check:file-sizes`), and
+`bun run test:coverage` all green.
+
+**For the next batch:** A5 (`hop callback`, `src/operations/build-hop-callback.ts:191`, 93,
+599 lines, has tests) is back to a Wave-A orchestrator in a size-gated-adjacent file (599 of
+600 — same tight margin as A3). Expect the A3 playbook: check the mutate-in-place and closure
+traps first, extract phase functions to a sibling, and budget for the sibling file itself
+needing a split. The new lesson for CLI-action rows (B6 `displayFeatureDetails`, C4
+`generateCommand`): grep for source-text tests on the target file BEFORE extracting — if any
+pin a block, either keep that block inline or move the assertion to the sibling in the same
+commit.

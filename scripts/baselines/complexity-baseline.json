@@ -1,8 +1,7 @@
 {
-  "updatedAt": "2026-09-27T14:44:32.121Z",
+  "updatedAt": "2026-09-27T15:34:49.276Z",
   "limit": 20,
   "byFile": {
-    "bin/nax.ts": [107],
     "scripts/analyze-adversarial-convergence.ts": [27],
     "scripts/analyze-coverage-gap.ts": [44],
     "scripts/check-alias-internals.ts": [23],
