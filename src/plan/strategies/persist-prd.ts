@@ -22,12 +22,20 @@
  * scope is what stops them rather than a fixed-point property of each.
  */
 import { existsSync as defaultExistsSync, renameSync as defaultRenameSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { type AgentRoutingConfig, DEFAULT_AGENT_NAME, type ModelsConfig } from "@/config";
 import { discoverWorkspacePackages as defaultDiscoverWorkspacePackages } from "@/context/generator";
+import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import { applyPlanFidelity } from "@/operations";
-import { canonicalizePrdWorkdirs, findNonCanonicalDeclaredPaths } from "@/prd";
+import {
+  backfillSpecWorkdirs,
+  canonicalizePrdWorkdirs,
+  extractSpecStructure,
+  findNonCanonicalDeclaredPaths,
+  findSpecStructureViolations,
+  formatSpecStructureViolation,
+} from "@/prd";
 import type { PRD } from "@/prd/types";
 import { errorMessage } from "@/utils/errors";
 import { finalizePrdRouting } from "./finalize-routing";
@@ -95,6 +103,65 @@ function unverifiedStampedStoryIds(prd: PRD): string[] {
 }
 
 /**
+ * Enforce the spec's declared story structure (US-002), or refuse the write.
+ *
+ * The planner folds a spec story into another and drops its `### Modifies` entry
+ * — the only channel that authorises an implementer to update a test its own
+ * correct change breaks. Nothing downstream notices, and the run deadlocks
+ * against a red suite it may not touch. So the one moment the divergence is
+ * still cheap to report is here, before the PRD is written.
+ *
+ * A workdir the spec states and the planner omitted is not a divergence: it is
+ * filled here (and logged, because the PRD shape changes), and only then is the
+ * structure compared. A spec field the grammar could not read is logged and left
+ * unenforced rather than guessed at.
+ *
+ * The rejected draft is renamed aside BEFORE the throw: leaving `prd.json` on
+ * disk is the shape every reader treats as a recoverable plan, so a refusal that
+ * left it there would be recovered on the next read as success.
+ */
+function enforceSpecStructure(prd: PRD, specContent: string, outputPath: string): PRD {
+  const structure = extractSpecStructure(specContent);
+  for (const warning of structure.warnings) {
+    getLogger().warn("plan", "spec story structure could not be read — field not enforced", {
+      storyId: warning.storyId,
+      field: warning.field,
+      message: warning.message,
+    });
+  }
+
+  // Nothing declared in `## Stories` to compare against: the section is absent,
+  // or holds no story id (some specs declare theirs under Acceptance Criteria
+  // only). There is no divergence to report and nothing to fill in, so the PRD
+  // is written exactly as the planner produced it — planning such a spec is
+  // unchanged by this story.
+  if (structure.stories.length === 0) return prd;
+
+  const backfilled = backfillSpecWorkdirs(prd, structure);
+  if (backfilled.backfilled.length > 0) {
+    getLogger().warn("plan", "PRD stories had no workdir — filled from the spec's Workdir", {
+      storyIds: backfilled.backfilled,
+    });
+  }
+
+  const violations = findSpecStructureViolations(backfilled.prd, specContent);
+  if (violations.length === 0) return backfilled.prd;
+
+  const rejectedPath = join(dirname(outputPath), "prd.rejected.json");
+  const draftOnDisk = _persistPrdDeps.existsSync(outputPath);
+  if (draftOnDisk) _persistPrdDeps.renameSync(outputPath, rejectedPath);
+
+  const where = draftOnDisk ? `the draft was moved to ${rejectedPath}` : `no draft was on disk at ${outputPath}`;
+  throw new NaxError(
+    `[plan] PRD does not match the spec's declared story structure — ${where}:\n${violations
+      .map(formatSpecStructureViolation)
+      .join("\n")}`,
+    "PLAN_SPEC_STRUCTURE_VIOLATION",
+    { stage: "plan", violations },
+  );
+}
+
+/**
  * Repair → canonicalize → finalize routing → write. Returns the path written.
  *
  * Context-free so callers that never build a `PlanModeContext`
@@ -116,11 +183,18 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
   // feature-level fields on a PRD that has started executing.
   const repaired = args.scope ? args.prd : applyPlanFidelity(args.prd, args.specContent, args.featureName);
 
+  // US-002: an unscoped write owns the whole PRD against the whole spec, so the
+  // spec's declared story structure is enforced here. A scoped write
+  // (`nax plan --decompose`) adds sub-stories the spec never declares, so it is
+  // not subject to this check.
+  const structured =
+    args.scope === undefined ? enforceSpecStructure(repaired, args.specContent, args.outputPath) : repaired;
+
   // nax#2067: decide each story's workdir and re-spell its declared paths into
   // the repo frame, while the repo is still in the state the planner described.
   // Degrades to the fidelity-repaired PRD rather than failing the plan: a PRD with
   // an underived workdir is the status quo, a lost plan is not.
-  let canonical = repaired;
+  let canonical = structured;
   try {
     const packages = await _persistPrdDeps.discoverWorkspacePackages(args.repoRoot);
     // nax#2080: a scoped write turns DERIVATION off as well as narrowing the story
@@ -128,7 +202,7 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     // once earlier stories have created files a story that legitimately defaulted at
     // plan time would silently acquire a package. A sub-story inherits its parent's
     // workdir (ADR-025), so there is nothing for derivation to decide.
-    const result = canonicalizePrdWorkdirs(repaired, args.repoRoot, packages, _persistPrdDeps.existsSync, {
+    const result = canonicalizePrdWorkdirs(structured, args.repoRoot, packages, _persistPrdDeps.existsSync, {
       only: args.scope,
       derive: args.scope === undefined,
     });
@@ -170,7 +244,7 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     getLogger().warn(
       "plan",
       "workdir canonicalization skipped: declared paths on already-stamped stories are unverified and are read as written downstream",
-      { error: errorMessage(err), storyIds: unverifiedStampedStoryIds(repaired) },
+      { error: errorMessage(err), storyIds: unverifiedStampedStoryIds(structured) },
     );
   }
 

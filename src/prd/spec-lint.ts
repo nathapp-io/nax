@@ -41,6 +41,10 @@ import { fencedLineIndices } from "../utils/markdown-fence";
 import { extractSpecContextFiles } from "./context-files-extract";
 import { extractSpecModifiedFiles, MAX_MODIFIED_FILES } from "./modifies-extract";
 import { extractSpecOutOfScope } from "./out-of-scope-extract";
+// US-002: story-id reading moved to ./spec-structure so the linter's
+// unknown-story check and the plan-time structure gate cannot disagree on what
+// the spec declares.
+import { declaredStoryIds } from "./spec-structure";
 
 const DEFAULT_MAX_AC_COUNT = 15;
 const SOFT_MAX_STORIES = 7;
@@ -120,47 +124,6 @@ const BACKTICK_TOKEN = /`([^`]+)`/g;
  * only form that separates a swallowed `package.json` from a member access.
  */
 const PATH_LIKE = /\/|\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|py|go|rs|java|rb|yaml|yml|toml|sh|sql)$/i;
-
-/**
- * Story ids this spec declares.
- *
- * Scans `## Stories` and `## Acceptance Criteria` only, and accepts both forms
- * real specs use: a `### US-001 — title` heading, and a `**US-001 — title**`
- * bold lead-in (retire-dead-cli-config-surface uses the latter throughout, with
- * its `### US-00N` headings appearing only under Acceptance Criteria).
- *
- * The `### Modifies` / `### Context Files` / `### Creates` / `### Seams`
- * subsections are skipped deliberately: their own `**US-00N**` group lead-ins
- * are the thing being validated, so counting them as declarations would make
- * the unknown-story check self-satisfying.
- */
-const GROUPED_PATH_SUBSECTION = /^#{1,6}\s*(modifi(?:es|ed\s+files)|context\s+files|creates|seams)\b/i;
-
-function declaredStoryIds(lines: readonly string[]): string[] {
-  const ids = new Set<string>();
-  let inScope = false;
-  let inSkippedSubsection = false;
-
-  for (const line of lines) {
-    if (/^##\s/.test(line)) {
-      inScope = /^##\s+(Stories|Acceptance Criteria)\b/i.test(line);
-      inSkippedSubsection = false;
-      continue;
-    }
-    if (!inScope) continue;
-    if (/^#{3,6}\s/.test(line)) inSkippedSubsection = GROUPED_PATH_SUBSECTION.test(line);
-    if (inSkippedSubsection) continue;
-
-    const heading = /^#{1,6}\s+(US-\d+)\b/i.exec(line);
-    if (heading?.[1]) {
-      ids.add(heading[1].toUpperCase());
-      continue;
-    }
-    const bold = /^\s*\*\*\s*(US-\d+)\b/i.exec(line);
-    if (bold?.[1]) ids.add(bold[1].toUpperCase());
-  }
-  return [...ids];
-}
 
 /**
  * What the author appears to have declared about Modifies, read off the raw
