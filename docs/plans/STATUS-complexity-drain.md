@@ -168,7 +168,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | B2 | done 2026-09-27 | 76 | `sendTurn` | `src/agents/acp/adapter.ts:239` | 454 -> 252 | 15 / 7 | yes |
 | B3 | done 2026-09-27 | 155 | `parseAcpxJsonLine` | `src/agents/acp/parser.ts:88` | 388 | 6 / 5 | yes |
 | B4 | done 2026-09-27 | 73 | `runDeferredRegression` | `src/execution/lifecycle/run-regression.ts:205` | 587 | 10 / 6 | yes |
-| B5 | todo | 63 | `runParallelBatch` | `src/execution/parallel-batch.ts:122` | 417 | 9 / 5 | yes |
+| B5 | in progress | 63 | `runParallelBatch` | `src/execution/parallel-batch.ts:122` | 417 | 9 / 5 | yes |
 | B6 | todo | 66 | `displayFeatureDetails` | `src/cli/status-features.ts:329` | 503 | 6 / 4 | yes |
 | B7 | todo | 69 | `runSession` | `src/interaction/ask-link.ts:291` | 560 | 5 / 1 | yes |
 
