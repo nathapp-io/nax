@@ -10,6 +10,7 @@ export type { Classify, SystemOneClientOptions } from "./systemone-client";
 export { _systemOneClientDeps, createSystemOneClient, parseAnswer } from "./systemone-client";
 export type { ShadowCall, ShadowTap } from "./tap";
 export { openShadowTap, toMechanical } from "./tap";
+export { detectTmpWrite } from "./tmp-write";
 export type {
   CommandSafetyRow,
   CommandShadow,

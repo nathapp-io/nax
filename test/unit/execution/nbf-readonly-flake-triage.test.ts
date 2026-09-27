@@ -277,6 +277,7 @@ describe("runNonBlockingFix quarantine transaction", () => {
   const deps = {
     captureSnapshotRef: async () => ({ sha: "snapshot", untrackedBefore: null }),
     rollbackToRef: async () => {},
+    listCommitsSince: async () => [],
     measureSourceDiff: async () => ({ fileCount: 0, sourceLineCount: 0 }),
   };
 

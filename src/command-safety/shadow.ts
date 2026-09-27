@@ -10,6 +10,7 @@ import { callIdentifiers } from "./identifiers";
 import { QUESTION_SET_VERSION } from "./questions";
 import { scoreRules } from "./rule-scorer";
 import type { Classify } from "./systemone-client";
+import { detectTmpWrite } from "./tmp-write";
 import type {
   CommandSafetyRow,
   CommandShadow,
@@ -132,6 +133,7 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
       mechanical: obs.mechanical,
       outcome,
       rules,
+      signals: { tmpWrite: detectTmpWrite(obs.command, cwd) },
       ...callIdentifiers(obs),
       model: {
         status: model.cached && r.status === "answered" ? "cached" : r.status,

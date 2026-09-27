@@ -182,19 +182,26 @@ export function naxOwnedKind(rel: string): "prd" | "queue" | undefined {
  * The text never spells `.nax/features/` literally: `src/tools/` is covered by
  * the `check:feature-dir-ssot` gate, so the PRD branch names the token the agent
  * used (`hit`) rather than the tree layout.
+ *
+ * US-002: `opts.sandboxWrapped` (an available launcher) swaps only the PRD
+ * sentence -- reading through Bash is then allowed, writing still is not.
+ * `config` and `queue` are unchanged in both modes.
  */
 export function naxOwnedBashRefusal(
   tool: string,
   kind: NaxOwnedKind,
   hit: string,
   verb: "names" | "redirects into",
+  opts?: { sandboxWrapped?: boolean },
 ): string {
   switch (kind) {
     case "prd":
       return (
         `${tool} command ${verb} "${hit}", which holds this story's acceptance criteria. ` +
         "nax updates it itself during the run, so it shows as modified. " +
-        "Bash commands naming it are refused, reads included -- leave it as is. " +
+        (opts?.sandboxWrapped === true
+          ? "Reading it through Bash is allowed; writing it is not -- nax updates it itself. "
+          : "Bash commands naming it are refused, reads included -- leave it as is. ") +
         "To view it, use the `Read` tool."
       );
     case "queue":

@@ -54,3 +54,4 @@ export {
   type InitializeAfterLockResult,
   initializeAfterLock,
 } from "./run-setup-init";
+export { _runTmpWipeDeps, type WipeRunTmpOptions, wipeRunTmp } from "./run-tmp-wipe";

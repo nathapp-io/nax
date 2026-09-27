@@ -69,6 +69,7 @@ function makeDeps(
     rollbackToRef: async (_workdir, ref) => {
       record.rollbacks.push(ref);
     },
+    listCommitsSince: async () => [],
     measureSourceDiff: async () => metrics,
     ...overrides,
   };

@@ -8,6 +8,7 @@ import {
   type ModelResult,
   type Observation,
   QUESTION_SET_VERSION,
+  RULE_SET_VERSION,
   shadowCacheKey,
 } from "@/command-safety";
 
@@ -403,5 +404,50 @@ describe("createCommandShadow: cwd on the row", () => {
     s.settle("b", { ledger: "ok" });
     await s.drain();
     expect(calls).toEqual(["ls"]);
+  });
+});
+
+describe("createCommandShadow: literal /tmp write signal (US-005)", () => {
+  let rows: CommandSafetyRow[];
+  const write = async (row: CommandSafetyRow) => {
+    rows.push(row);
+  };
+  beforeEach(() => {
+    rows = [];
+  });
+
+  test("US-005 AC11: `cd /tmp && echo x > a.txt` writes signals.tmpWrite true", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("cd /tmp && echo x > a.txt"));
+    s.settle("k", { ledger: "ok" });
+    await s.drain();
+    expect(rows[0]?.signals).toEqual({ tmpWrite: true });
+  });
+
+  test("US-005 AC12: `ls` writes signals.tmpWrite false with the unchanged rule-set version", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("ls"));
+    s.settle("k", { ledger: "ok" });
+    await s.drain();
+    expect(rows[0]?.signals).toEqual({ tmpWrite: false });
+    expect(rows[0]?.rules.version).toBe(RULE_SET_VERSION);
+  });
+
+  test("US-005 AC14: a refused-lex command still writes a row, signalling from its lexable prefix", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("ls && echo x > /tmp/a.txt 2>&1"));
+    s.settle("k", { ledger: "ok" });
+    await s.drain();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.signals.tmpWrite).toBe(true);
+  });
+
+  test("US-005 AC11: the cwd the row records is the frame the signal resolves against", async () => {
+    const s = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r", timeoutMs: 3000 });
+    s.observe("k", obs("echo x > out.txt", { cwd: "/tmp" }));
+    s.settle("k", { ledger: "ok" });
+    await s.drain();
+    expect(rows[0]?.cwd).toBe("/tmp");
+    expect(rows[0]?.signals.tmpWrite).toBe(true);
   });
 });

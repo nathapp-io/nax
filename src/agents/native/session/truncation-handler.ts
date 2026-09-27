@@ -54,10 +54,22 @@ export async function truncateNativeToolResult(
   // model-facing content is at most MODEL_MAX_BYTES) is broken by exactly the
   // bytes the caller adds. Reserving is what keeps the ceiling unconditional.
   const reserved = Math.max(0, opts.reserveBytes ?? 0);
+  // A session opened through the runtime has a scratchpad root recorded from its
+  // workdir, which IS the directory its tools and shell start in, so a
+  // root-relative marker resolves there. The transcript-directory fallback is
+  // not that directory, so its marker must name the absolute path or the model
+  // would look for the spill somewhere it is not.
   return applyModelTruncationPolicy(body, {
     toolName: opts.toolName ?? "",
     callId: opts.callId ?? "",
-    ...(root !== undefined ? { root } : {}),
+    ...(root !== undefined
+      ? {
+          root,
+          spillPathStyle: nativeSessionScratchpadRoots.has(sessionId)
+            ? ("root-relative" as const)
+            : ("absolute" as const),
+        }
+      : {}),
     maxBytes: Math.max(0, MODEL_MAX_BYTES - reserved),
   });
 }

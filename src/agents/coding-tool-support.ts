@@ -14,7 +14,7 @@ import type { BashApprovalMode } from "@/config/bash-approval";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { AskResolver } from "@/permissions";
-import type { CommandLauncher } from "@/sandbox";
+import { type CommandLauncher, sessionTmpDir } from "@/sandbox";
 import {
   advertisedSchemaBytes,
   BASH_TOOL_NAME,
@@ -44,7 +44,7 @@ import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { errorMessage } from "../utils/errors";
 import { resolveBashSupport } from "./coding-tool-bash";
 import { buildDeclaredCommandTools } from "./coding-tool-extras";
-import { rawRefusalFor, resolveSessionSandbox } from "./coding-tool-sandbox";
+import { rawScreenOptionsFor, resolveSessionSandbox } from "./coding-tool-sandbox";
 import { resolvePackageName } from "./exec-package-name";
 import type { AgentRunOptions } from "./types";
 import { UNIVERSAL_CODING_TOOLS } from "./universal-coding-tools";
@@ -204,9 +204,9 @@ export function buildCodingToolSupport(args: {
   });
 
   const declaredCommands = args.declaredCommands ?? new Map<string, QualityCommandSpec>();
-  // P4 (Task 8): under `raw`, an UNAVAILABLE launcher refuses every Bash call
-  // at the policy, so the sandbox's absence cannot silently widen raw bash.
-  const rawBashRefusal = rawRefusalFor(args.launcher);
+  // P4/S5: under `raw`, an UNAVAILABLE launcher refuses every Bash call.
+  // US-002: an AVAILABLE one marks the screen sandbox-wrapped, so a PRD it only reads is allowed.
+  const rawScreenOptions = rawScreenOptionsFor(args.launcher);
   const sink =
     args.auditDir !== undefined
       ? createToolAuditSink({
@@ -218,7 +218,7 @@ export function buildCodingToolSupport(args: {
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy(effectiveGrants, args.root, {
       bashApproval,
-      ...(rawBashRefusal !== undefined ? { rawBashRefusal } : {}),
+      ...rawScreenOptions,
       ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
@@ -537,8 +537,7 @@ export async function resolveCodingToolSupport(
   // one tool from an otherwise fully-granted provider.
   const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
   const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
-  // P4: the probe is async, so it runs here and reaches the sync seam as data.
-  // execution.sandbox is root-scoped (ADR-031): package configs cannot override it.
+  // P4: the probe is async, so it runs here as data; execution.sandbox is root-scoped (ADR-031).
   const launcher =
     options.codingToolRoot !== undefined && options.codingToolRoot.trim() !== ""
       ? await resolveSessionSandbox({
@@ -547,6 +546,7 @@ export async function resolveCodingToolSupport(
           ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
           needsLauncher: declared.includes(BASH_TOOL_NAME) || declared.includes(EXEC_TOOL_NAME),
           ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
+          ...(options.runId !== undefined ? { tmpDir: sessionTmpDir(options.runId, sessionName) } : {}),
         })
       : undefined;
   return buildCodingToolSupport({

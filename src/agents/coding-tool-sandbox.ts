@@ -45,16 +45,24 @@ export async function resolveSessionSandbox(args: {
   readonly outputDir?: string;
   readonly needsLauncher: boolean;
   readonly storyId?: string;
+  /** US-004 — per-session temp directory the launcher creates and exports as TMPDIR/TMP/TEMP. */
+  readonly tmpDir?: string;
 }): Promise<CommandLauncher> {
   const config = args.config;
   if (config === undefined || !config.enabled || !args.needsLauncher) {
-    return createCommandLauncher({ state: DISABLED_SANDBOX_STATE });
+    return createCommandLauncher({
+      state: DISABLED_SANDBOX_STATE,
+      ...(args.tmpDir !== undefined ? { tmpDir: args.tmpDir } : {}),
+    });
   }
   const backend = _sessionSandboxDeps.backendFor(config);
   const probe = await _sessionSandboxDeps.probe(backend, args.storyId);
   if (!probe.available) {
     warnSandboxUnavailableOnce(probe.reason, args.storyId);
-    return createCommandLauncher({ state: { kind: "unavailable", backend: backend.name, reason: probe.reason } });
+    return createCommandLauncher({
+      state: { kind: "unavailable", backend: backend.name, reason: probe.reason },
+      ...(args.tmpDir !== undefined ? { tmpDir: args.tmpDir } : {}),
+    });
   }
   const git = await _sessionSandboxDeps.gitLayout(args.root);
   const credentialFiles = await _sessionSandboxDeps.credentialFiles();
@@ -90,12 +98,32 @@ export async function resolveSessionSandbox(args: {
     backend,
     policyFor,
     ...(afterWrapped !== undefined ? { afterWrapped } : {}),
+    ...(args.tmpDir !== undefined ? { tmpDir: args.tmpDir } : {}),
   });
 }
 
 /** The compile-time policy refusal for `raw` (Task 8), or undefined. */
 export function rawRefusalFor(launcher: CommandLauncher | undefined): string | undefined {
   return launcher?.state.kind === "unavailable" ? rawBashRefusalReason(launcher.state.reason) : undefined;
+}
+
+/**
+ * US-002: the raw-screen options `compileToolPolicy` consumes, derived from the
+ * launcher's state.
+ *
+ * `rawBashRefusal` is exactly what `rawRefusalFor` returns (an unavailable
+ * launcher refuses every call). `sandboxWrapped: true` is added for an available
+ * launcher: the command really does run inside the OS sandbox, so the raw screen
+ * stops refusing a feature PRD the command only READS. A disabled launcher
+ * yields neither key.
+ */
+export function rawScreenOptionsFor(launcher: CommandLauncher | undefined): {
+  rawBashRefusal?: string;
+  sandboxWrapped?: true;
+} {
+  if (launcher?.state.kind === "available") return { sandboxWrapped: true };
+  const rawBashRefusal = rawRefusalFor(launcher);
+  return rawBashRefusal !== undefined ? { rawBashRefusal } : {};
 }
 
 async function literalPolicyError(

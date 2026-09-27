@@ -10,22 +10,22 @@
  * After a successful pass, enforces `sourceDiffCap` (maxFiles + maxLines) over
  * the source-only diff (test files excluded by the `measureSourceDiff` dep).
  * A best-effort pass that exceeds the cap is treated as exhausted → restored.
- * Measurement errors are fail-safe: also restored.
+ * A pass that touched a `.nax/` control file is restored too — such files buy no
+ * source count, and an agent that rewrote nax's own state must not be kept.
+ * Measurement errors are fail-safe: also restored. Every restore names the
+ * commits it discards (`listCommitsSince`).
  */
-import type { NonBlockingFixConfig, TestPatternConfig } from "../config/selectors";
-import { NaxError } from "../errors";
+import type { NonBlockingFixConfig } from "../config/selectors";
 import { isRecurrenceRetired } from "../findings/retirement-stamp";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
 import type { FixReviewVerdict } from "../review/fix-review";
 import type { SnapshotRef } from "../tdd/rollback";
 import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
-import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";
-import { typedSpawn } from "../utils/bun-deps";
-import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
-import { packageDirRelative } from "../utils/paths";
 import { isInside } from "../utils/realpath";
 import type { QuarantineMemo } from "../verification";
+import type { SourceDiffMetrics } from "./nbf-source-diff";
+import { listCommitsSince, NBF_LOGGED_PATH_LIMIT } from "./nbf-source-diff";
 import type { GateRegressionDetail, PhaseKind } from "./story-orchestrator";
 import { createNbfFlakeTriageTransaction, type NbfFlakeTriageTransaction } from "./story-orchestrator/nbf-flake-triage";
 
@@ -93,20 +93,23 @@ export function nonBlockingExtraPhases(cfg: NonBlockingFixConfig): readonly Phas
   return (cfg.scope === "both" || cfg.scope === "triage") && cfg.verifierGuard ? ["verifier"] : [];
 }
 
-/**
- * Source-only diff metrics. Test files must already be excluded by the
- * `measureSourceDiff` implementation (e.g. via `resolveTestFilePatterns`).
- */
-export interface SourceDiffMetrics {
-  /** Number of changed source files (test files already excluded). */
-  fileCount: number;
-  /** Total added source lines across those files (test files already excluded). */
-  sourceLineCount: number;
-}
+export type { SourceDiffMetrics, SourceDiffPaths } from "./nbf-source-diff";
+export {
+  _nonBlockingFixDeps,
+  createMeasureSourceDiff,
+  listCommitsSince,
+  NBF_LOGGED_PATH_LIMIT,
+} from "./nbf-source-diff";
 
 export interface NonBlockingFixDeps {
   captureSnapshotRef: typeof captureSnapshotRef;
   rollbackToRef: typeof rollbackToRef;
+  /**
+   * SHAs in `workdir` committed since `ref`, newest first. Read just before a
+   * restore so the discarded pass's commits are named in the restore log.
+   * A rejection degrades to `[]` and the restore still proceeds.
+   */
+  listCommitsSince: (workdir: string, ref: string) => Promise<string[]>;
   /**
    * Measure source-only diff between the adversarial-passed ref and HEAD.
    * Test files must already be excluded by the implementation
@@ -127,14 +130,10 @@ export interface NonBlockingFixDeps {
   reviewFix?: (preFixRef: string) => Promise<FixReviewVerdict>;
 }
 
-export const _nonBlockingFixDeps = {
-  spawn: typedSpawn,
-  resolveTestFilePatterns,
-};
-
 const DEFAULT_DEPS: NonBlockingFixDeps = {
   captureSnapshotRef,
   rollbackToRef,
+  listCommitsSince,
   measureSourceDiff: async () => ({ fileCount: 0, sourceLineCount: 0 }),
 };
 
@@ -207,51 +206,6 @@ export interface NonBlockingFixResult {
   ran: boolean;
   kept: boolean;
   restored: boolean;
-}
-
-interface CreateMeasureSourceDiffArgs {
-  config: TestPatternConfig;
-  projectDir: string;
-  packageDir: string;
-}
-
-export function createMeasureSourceDiff(args: CreateMeasureSourceDiffArgs): NonBlockingFixDeps["measureSourceDiff"] {
-  const packageDirRel = packageDirRelative(args.projectDir, args.packageDir);
-  return async (workdir: string, fromRef: string): Promise<SourceDiffMetrics> => {
-    const resolved = await _nonBlockingFixDeps.resolveTestFilePatterns(args.config, args.projectDir, packageDirRel);
-    const isTestFile = createTestFileClassifier(resolved);
-    const proc = _nonBlockingFixDeps.spawn(hardenedGitArgv(["git", "diff", "--numstat", fromRef]), {
-      cwd: workdir,
-      env: gitSpawnEnv(),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const stdout = await Bun.readableStreamToText(proc.stdout);
-    const stderr = await Bun.readableStreamToText(proc.stderr);
-    const exitCode = await proc.exited;
-
-    if (exitCode !== 0) {
-      const detail = stderr.trim() || `exit ${exitCode}`;
-      throw new NaxError(`[non-blocking-fix] git diff --numstat failed: ${detail}`, "GIT_DIFF_NUMSTAT_FAILED", {
-        stage: "execution",
-        workdir,
-        fromRef,
-        detail,
-      });
-    }
-
-    let fileCount = 0;
-    let sourceLineCount = 0;
-    for (const line of stdout.trim().split("\n").filter(Boolean)) {
-      const [addedStr, _deletedStr, filePath] = line.split("\t");
-      if (!filePath || isTestFile(filePath)) continue;
-      fileCount += 1;
-      const added = Number.parseInt(addedStr ?? "", 10);
-      if (Number.isFinite(added)) sourceLineCount += added;
-    }
-
-    return { fileCount, sourceLineCount };
-  };
 }
 
 /**
@@ -367,12 +321,32 @@ export async function runNonBlockingFix(
         });
         return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
       }
+      // A pass that touched nax's own control files never counts against the cap,
+      // but it must never be kept either: restoring them (and saying so) is the
+      // only safe outcome. Checked before the cap comparison so the control-path
+      // log always wins.
+      const controlPaths = metrics.controlPaths ?? [];
+      if (controlPaths.length > 0) {
+        logger?.warn("non-blocking-fix", "NBF pass touched nax control files — restoring", {
+          storyId: args.storyId,
+          controlPathCount: controlPaths.length,
+          controlPaths: controlPaths.slice(0, NBF_LOGGED_PATH_LIMIT),
+        });
+        return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
+      }
+      const paths = metrics.paths ?? { added: [], modified: [], deleted: [] };
       if (metrics.fileCount > cap.maxFiles || metrics.sourceLineCount > cap.maxLines) {
         logger?.info("non-blocking-fix", "source diff exceeded cap — restoring", {
           storyId: args.storyId,
           fileCount: metrics.fileCount,
           sourceLineCount: metrics.sourceLineCount,
           cap,
+          added: paths.added.slice(0, NBF_LOGGED_PATH_LIMIT),
+          modified: paths.modified.slice(0, NBF_LOGGED_PATH_LIMIT),
+          deleted: paths.deleted.slice(0, NBF_LOGGED_PATH_LIMIT),
+          addedCount: paths.added.length,
+          modifiedCount: paths.modified.length,
+          deletedCount: paths.deleted.length,
         });
         return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
       }
@@ -490,6 +464,14 @@ async function restoreToSnapshot(
   phaseCostsSnapshot: Record<string, number>,
   logger: ReturnType<typeof getSafeLogger>,
 ): Promise<NonBlockingFixResult> {
+  // Name what is about to be discarded before the reset hides it. A failure to
+  // list commits is not a reason to skip the restore — it degrades to [].
+  let discardedCommits: string[] = [];
+  try {
+    discardedCommits = await _deps.listCommitsSince(args.workdir, restoreRef.sha);
+  } catch {
+    discardedCommits = [];
+  }
   await _deps.rollbackToRef(args.workdir, restoreRef.sha, restoreRef.untrackedBefore);
   // In-place restore required: ExecutionPlan.run holds a direct reference to phaseOutputs
   // and phaseCosts; returning new objects would leave the caller with stale gate/verifier
@@ -502,6 +484,7 @@ async function restoreToSnapshot(
   Object.assign(args.phaseCosts, phaseCostsSnapshot);
   logger?.info("non-blocking-fix", "best-effort fix exhausted — restored to adversarial-passed", {
     storyId: args.storyId,
+    discardedCommits,
   });
 
   return { ran: true, kept: false, restored: true };

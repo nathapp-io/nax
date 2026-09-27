@@ -140,6 +140,7 @@ export interface ToolPolicyOptions {
    * Ignored under gated/escalate, which run unwrapped with a warning.
    */
   readonly rawBashRefusal?: string;
+  readonly sandboxWrapped?: boolean; // US-002: sandbox-wrapped `raw` allows a PRD the command only NAMES.
 }
 
 function isFieldlessScope(scope: ToolScope): boolean {
@@ -443,6 +444,14 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       }
     }
     const relativeTo = (resolved: string) => relative(resolvedRoot, resolved).split(sep).join("/");
+    // A path spelled with the confined prefix the tool is already bound to
+    // (`.nax/scratchpad/spill/x.txt`) has it removed before `resolveWithin`
+    // runs, so both spellings reach the same file. This is a prefix REMOVAL,
+    // not a second containment root: what is left is still resolved inside
+    // `effectiveRoot`, so a `..` after the prefix remains a breach.
+    const confinePrefix = scope.confineTo === undefined ? "" : `${scope.confineTo}/`;
+    const stripConfine = (value: string): string =>
+      confinePrefix !== "" && value.startsWith(confinePrefix) ? value.slice(confinePrefix.length) : value;
     const restrictPaths = !grant.unconditional && globs.length > 0;
     const resolvedPaths: string[] = [];
 
@@ -451,7 +460,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       if (value === undefined) continue;
       if (typeof value !== "string") return deny(`"${field}" must be a string path`);
 
-      const resolved = resolveWithin(effectiveRoot, value);
+      const resolved = resolveWithin(effectiveRoot, stripConfine(value));
       if (resolved === null) {
         return deny(`path "${value}" ${outOfRootReason(effectiveRoot, value)}`, true);
       }
@@ -477,7 +486,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
       if (elements === null) return deny(`"${field}" must be a string path or an array of string paths`);
 
       for (const element of elements) {
-        const resolved = resolveWithin(effectiveRoot, element);
+        const resolved = resolveWithin(effectiveRoot, stripConfine(element));
         if (resolved === null) {
           return deny(`path "${element}" ${outOfRootReason(effectiveRoot, element)}`, true);
         }
@@ -498,7 +507,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
 
       for (const value of values) {
         if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
-        const resolved = resolveWithin(effectiveRoot, value);
+        const resolved = resolveWithin(effectiveRoot, stripConfine(value));
         if (resolved === null) {
           return deny(`"${field}" entry "${value}" ${outOfRootReason(effectiveRoot, value)}`, true);
         }
@@ -524,7 +533,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
         const candidatePath = value.slice(colonAt + 1);
         if (candidatePath === "") continue; // e.g. "HEAD:" — no path to check
 
-        const resolved = resolveWithin(effectiveRoot, candidatePath);
+        const resolved = resolveWithin(effectiveRoot, stripConfine(candidatePath));
         if (resolved === null) {
           return deny(`"${field}" entry "${value}" ${outOfRootReason(effectiveRoot, candidatePath)}`, true);
         }
@@ -574,6 +583,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
           grant,
           bashApproval,
           rawBashRefusal: options?.rawBashRefusal,
+          sandboxWrapped: options?.sandboxWrapped,
           resolvedRoot,
           denyBy,
           askBy,

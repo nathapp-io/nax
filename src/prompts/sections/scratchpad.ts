@@ -43,6 +43,9 @@ To try a snippet that imports project code or dependencies, write it under \`${d
 project's package names or path aliases where it has them. A script written outside the repository,
 such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
 
+Shell commands run with \`$TMPDIR\` set to a temp directory for this session, which nax deletes when
+the run ends. Put temporary files there (\`$TMPDIR\` or \`mktemp\`), not in \`/tmp\` directly.
+
 \`${dir}\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.`;
 }

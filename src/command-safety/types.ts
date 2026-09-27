@@ -127,6 +127,14 @@ export interface CommandSafetyRow extends CallIdentifiers {
   readonly mechanical: MechanicalVerdict;
   readonly outcome: { readonly ledger: LedgerOutcome | "unsettled"; readonly decidedBy?: string };
   readonly rules: RuleResult;
+  /**
+   * Observable, never-decided signals recorded beside the row (US-005).
+   * `tmpWrite` is true when the command writes to a literal `/tmp` or
+   * `/private/tmp` path outside nax's own `/tmp/nax-*` run directories. It is
+   * recorded only: not a `QuestionId`, not in `rules.hits`, and it changes no
+   * verdict.
+   */
+  readonly signals: { readonly tmpWrite: boolean };
   readonly model: {
     readonly status: ModelResult["status"] | "cached";
     readonly questionSetVersion: number;

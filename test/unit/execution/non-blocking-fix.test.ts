@@ -94,6 +94,7 @@ describe("runNonBlockingFix keep vs restore", () => {
   const fakeDeps = {
     captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
     rollbackToRef: async () => {},
+    listCommitsSince: async () => [],
   };
 
   test("skips the pass when the worktree may hold an unreverted mutation", async () => {
@@ -174,6 +175,7 @@ describe("runNonBlockingFix keep vs restore", () => {
       },
       {
         captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
+        listCommitsSince: async () => [],
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -204,6 +206,7 @@ describe("runNonBlockingFix keep vs restore", () => {
       },
       {
         captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
+        listCommitsSince: async () => [],
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -412,6 +415,7 @@ describe("runNonBlockingFix keep vs restore", () => {
       },
       {
         captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
+        listCommitsSince: async () => [],
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -554,6 +558,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
       },
       {
         captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
+        listCommitsSince: async () => [],
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -585,6 +590,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
       },
       {
         captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
+        listCommitsSince: async () => [],
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -616,6 +622,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
       },
       {
         captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
+        listCommitsSince: async () => [],
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -647,6 +654,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
       },
       {
         captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
+        listCommitsSince: async () => [],
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
@@ -680,6 +688,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
       },
       {
         captureSnapshotRef: async () => ({ sha: "snap-sha", untrackedBefore: [] }),
+        listCommitsSince: async () => [],
         rollbackToRef: async (_w: string, ref: string) => {
           rolled = ref;
         },
