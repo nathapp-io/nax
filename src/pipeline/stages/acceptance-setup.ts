@@ -37,14 +37,14 @@ import { loadConfigForPackage } from "@/config";
 import type { AdapterFailure } from "@/context/engine";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
-import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "@/operations";
+import { callOp as _callOp, acceptanceGenerateOp } from "@/operations";
 import { isInAcceptanceScope } from "@/prd";
 import { errorMessage } from "@/utils/errors";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
-import { storyAbsWorkdir } from "@/utils/path-frame";
 import { executeWithTimeout, shellQuoteArg } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+import { refineAcceptanceCriteria } from "./acceptance-refine-criteria";
 
 // ─── Local helpers ──────────────────────────────────────────────────────────
 
@@ -320,58 +320,8 @@ async function runAcceptanceSetup(
     let allRefinedCriteria: RefinedCriterion[];
 
     if (ctx.config.acceptance.refinement) {
-      const maxConcurrency = ctx.config.acceptance.refinementConcurrency ?? 3;
-      const results: RefinedCriterion[][] = new Array(nonFixStories.length);
-      const executing = new Set<Promise<void>>();
-
-      for (let i = 0; i < nonFixStories.length; i++) {
-        const story = nonFixStories[i];
-        const packageDir = storyAbsWorkdir(ctx.workdir, story);
-        const config = groupConfigs.get(packageDir) ?? ctx.config;
-        const task = (
-          _acceptanceSetupDeps.callOp(
-            ctx,
-            packageDir,
-            acceptanceRefineOp,
-            {
-              criteria: story.acceptanceCriteria,
-              codebaseContext: "",
-              storyId: story.id,
-              testStrategy: config.acceptance.testStrategy,
-              testFramework: config.acceptance.testFramework,
-              storyTitle: story.title,
-              storyDescription: story.description,
-            },
-            story.id,
-            config,
-          ) as Promise<RefinedCriterion[]>
-        )
-          .then((refined) => {
-            results[i] = refined;
-          })
-          .catch(() => {
-            getSafeLogger()?.warn("acceptance-setup", "AC refinement failed after retries — using unrefined criteria", {
-              storyId: story.id,
-            });
-            results[i] = story.acceptanceCriteria.map((c) => ({
-              original: c,
-              refined: c,
-              testable: true,
-              storyId: story.id,
-            }));
-          })
-          .finally(() => {
-            executing.delete(task);
-          });
-        executing.add(task);
-
-        if (executing.size >= maxConcurrency) {
-          await Promise.race(executing);
-        }
-      }
-
-      await Promise.all(executing);
-      allRefinedCriteria = results.flat();
+      const refined = await refineAcceptanceCriteria(ctx, nonFixStories, groupConfigs, _acceptanceSetupDeps.callOp);
+      allRefinedCriteria = refined.criteria;
     } else {
       allRefinedCriteria = nonFixStories.flatMap((story) =>
         story.acceptanceCriteria.map((c) => ({
@@ -379,6 +329,7 @@ async function runAcceptanceSetup(
           refined: c,
           testable: true,
           storyId: story.id,
+          refinementFallback: false,
         })),
       );
     }
@@ -476,6 +427,7 @@ async function runAcceptanceSetup(
           refined: c.refined,
           testable: c.testable,
           storyId: c.storyId,
+          refinementFallback: c.refinementFallback === true,
         })),
         null,
         2,

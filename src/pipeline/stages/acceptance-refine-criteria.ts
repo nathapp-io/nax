@@ -16,8 +16,15 @@
 import type { RefinedCriterion } from "@/acceptance";
 import type { NaxConfig } from "@/config";
 import type { AcceptanceConfig } from "@/config/selectors";
-import type { AcceptanceRefineInput, AcceptanceRefineOutput, Operation } from "@/operations";
+import { getSafeLogger } from "@/logger";
+import {
+  type AcceptanceRefineInput,
+  type AcceptanceRefineOutput,
+  acceptanceRefineOp,
+  type Operation,
+} from "@/operations";
 import type { UserStory } from "@/prd/types";
+import { storyAbsWorkdir } from "@/utils/path-frame";
 import type { PipelineContext } from "../types";
 
 /** Outcome of refining every supplied story's acceptance criteria. */
@@ -44,13 +51,75 @@ export type RefineCallOp = (
 /**
  * Refine each story's acceptance criteria through `callOp`.
  *
- * @internal stub — the implementer supplies the real loop.
+ * Results are collected into per-story slots (not appended) so the returned
+ * criteria stay in the order the stories were supplied, whatever order the
+ * concurrent dispatches settle in.
  */
-export function refineAcceptanceCriteria(
-  _ctx: PipelineContext,
-  _stories: UserStory[],
-  _groupConfigs: Map<string, NaxConfig>,
-  _callOp: RefineCallOp,
+export async function refineAcceptanceCriteria(
+  ctx: PipelineContext,
+  stories: UserStory[],
+  groupConfigs: Map<string, NaxConfig>,
+  callOp: RefineCallOp,
 ): Promise<RefineAcceptanceCriteriaResult> {
-  return Promise.resolve({ criteria: [], fallbackStoryIds: [] });
+  const maxConcurrency = ctx.config.acceptance.refinementConcurrency ?? 3;
+  const perStory: RefinedCriterion[][] = new Array(stories.length);
+  const fellBack: boolean[] = new Array(stories.length).fill(false);
+  const executing = new Set<Promise<void>>();
+
+  for (let i = 0; i < stories.length; i++) {
+    const story = stories[i];
+    const packageDir = storyAbsWorkdir(ctx.workdir, story);
+    const config = groupConfigs.get(packageDir) ?? ctx.config;
+    const task = callOp(
+      ctx,
+      packageDir,
+      acceptanceRefineOp,
+      {
+        criteria: story.acceptanceCriteria,
+        codebaseContext: "",
+        storyId: story.id,
+        testStrategy: config.acceptance.testStrategy,
+        testFramework: config.acceptance.testFramework,
+        storyTitle: story.title,
+        storyDescription: story.description,
+      },
+      story.id,
+      config,
+    )
+      .then((refined) => {
+        perStory[i] = refined;
+      })
+      .catch(() => {
+        fellBack[i] = true;
+        // `testable: true` is deliberate: runHardeningPass discards ACs marked
+        // `testable === false`, which would silently drop the story's criteria.
+        perStory[i] = story.acceptanceCriteria.map((c) => ({
+          original: c,
+          refined: c,
+          testable: true,
+          storyId: story.id,
+          refinementFallback: true,
+        }));
+      })
+      .finally(() => {
+        executing.delete(task);
+      });
+    executing.add(task);
+
+    if (executing.size >= maxConcurrency) {
+      await Promise.race(executing);
+    }
+  }
+
+  await Promise.all(executing);
+
+  const fallbackStoryIds = stories.filter((_, i) => fellBack[i]).map((story) => story.id);
+  if (fallbackStoryIds.length > 0) {
+    getSafeLogger()?.warn("acceptance-setup", "AC refinement unusable after retries — using unrefined criteria", {
+      storyId: fallbackStoryIds[0],
+      storyIds: fallbackStoryIds,
+    });
+  }
+
+  return { criteria: perStory.flat(), fallbackStoryIds };
 }

@@ -3,7 +3,6 @@ import type { RefinedCriterion } from "../acceptance/types";
 import { ParseValidationError } from "../agents/retry";
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
-import { getSafeLogger } from "../logger";
 import { AcceptancePromptBuilder } from "../prompts";
 import type { CompleteOperation } from "./types";
 
@@ -48,14 +47,20 @@ export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, Accept
     if (!output?.trim()) {
       throw new ParseValidationError("acceptance-refine: empty output");
     }
+    // Unusable output (non-JSON, or a non-array result) would otherwise be
+    // silently swapped for the unrefined criteria — throw so the op's retry
+    // budget runs and the caller falls back explicitly (US-003).
     if (refinementWouldFallback(output)) {
-      getSafeLogger()?.warn(
-        "acceptance",
-        "AC refinement returned no usable JSON — falling back to unrefined criteria",
-        { storyId: input.storyId, criteriaCount: input.criteria.length, responseBytes: output.length },
-      );
+      throw new ParseValidationError("acceptance-refine: unusable refinement output");
     }
     const items = parseRefinementResponse(output, input.criteria);
+    // A count mismatch means the model dropped or invented criteria; the
+    // persisted artifact must map 1:1 onto the input ACs (US-003).
+    if (items.length !== input.criteria.length) {
+      throw new ParseValidationError(
+        `acceptance-refine: returned ${items.length} of ${input.criteria.length} criteria`,
+      );
+    }
     return items.map((item) => ({ ...item, storyId: item.storyId || input.storyId }));
   },
 };
