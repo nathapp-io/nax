@@ -44,6 +44,11 @@ describe("classifyAcceptanceCrash — Go", () => {
   test("returns repairable for empty output", () => {
     expect(classifyAcceptanceCrash("", "go")).toBe("repairable");
   });
+
+  test("strips ANSI color codes before classifying (US-004 review fix)", () => {
+    const colorized = `\x1b[31m${GO_MISSING_SYMBOL}\x1b[0m\n\x1b[31mFAIL\texample.com/pkg [build failed]\x1b[0m`;
+    expect(classifyAcceptanceCrash(colorized, "go")).toBe("expected-red");
+  });
 });
 
 describe("classifyAcceptanceCrash — Rust", () => {
@@ -86,6 +91,11 @@ describe("classifyAcceptanceCrash — Rust", () => {
 
   test("returns repairable for empty output", () => {
     expect(classifyAcceptanceCrash("", "rust")).toBe("repairable");
+  });
+
+  test("strips ANSI color codes before classifying (US-004 review fix)", () => {
+    const colorized = `\x1b[31m${RUST_E0425}\x1b[0m\n\x1b[31m${RUST_SUMMARY}\x1b[0m`;
+    expect(classifyAcceptanceCrash(colorized, "rust")).toBe("expected-red");
   });
 });
 

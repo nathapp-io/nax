@@ -11,6 +11,8 @@
  * symbols also surface as load failures the repair op can still attempt.
  */
 
+import { stripAnsi } from "./detector";
+
 export type AcceptanceCrashClass = "expected-red" | "repairable";
 
 /** A Go compiler error line: `<path>.go:<line>[:<col>]: <message>`. */
@@ -66,13 +68,18 @@ function classifyRust(output: string): AcceptanceCrashClass {
  * Classify the compiler output of an acceptance run that exited non-zero with
  * no `AC-N`-tagged failure. `language` is matched case-insensitively; anything
  * unrecognised (including `undefined`) is `repairable`.
+ *
+ * ANSI escapes are stripped first (the `stripAnsi` SSOT): colorized cargo/Go
+ * output wraps each line in SGR codes, which would otherwise sit ahead of the
+ * start-anchored error regexes and flip an `expected-red` into `repairable`.
  */
 export function classifyAcceptanceCrash(output: string, language: string | undefined): AcceptanceCrashClass {
+  const clean = stripAnsi(output);
   switch (language?.toLowerCase()) {
     case "go":
-      return classifyGo(output);
+      return classifyGo(clean);
     case "rust":
-      return classifyRust(output);
+      return classifyRust(clean);
     default:
       return "repairable";
   }
