@@ -3,7 +3,7 @@
   "feature": "plan-prd-fidelity",
   "branchName": "feat/plan-prd-fidelity",
   "createdAt": "2026-09-18T00:00:00.000Z",
-  "updatedAt": "2026-09-27T09:28:11.093Z",
+  "updatedAt": "2026-09-27T09:45:23.736Z",
   "userStories": [
     {
       "id": "US-001",
@@ -44,7 +44,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Path-frame behavior changes across PRD canonicalization, persistence, runtime scoping, and compatibility fixtures; ambiguous paths need precedence and legacy safeguards."
+        "reasoning": "Path-frame behavior changes across PRD canonicalization, persistence, runtime scoping, and compatibility fixtures; ambiguous paths need precedence and legacy safeguards.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/prd/workdir-canonical.ts",
@@ -63,7 +66,11 @@
           "reason": "\"warns and still writes when packaging discovery throws and a pre-stamped story stays package-relative\" expects a non-canonical warning for the path \"src/a.ts\", which the new rule does not flag. Change the stamped story's contextFiles path and the expected nonCanonical entry's path to \"./src/a.ts\". The invariant is that the warning still fires, and the PRD is still written, when discovery throws and a stamped story carries a non-canonical spelling."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "06c6c4be0c0b25fcd0c99fa0006ac1c9a3f71c06"
     },
     {
       "id": "US-002",
@@ -130,7 +137,10 @@
           "reason": "the `SPEC` fixture declares only `**US-001**` under `## Stories`, while `DISK_PRD` has US-001 and US-002, so the new structure check would throw `extra-story`. Add a line `**US-002**: do another thing` under `## Stories`, after the US-001 line. The invariant is unchanged: all three tests still assert that the spec's Modifies authority reaches both stories on the refine, single and happy paths."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -190,7 +200,10 @@
           "reason": "\"fileOutput is defined and returns outputPath; hopBody is undefined\" asserts `planInteractiveOp.hopBody` is undefined. Rename the test to \"fileOutput is defined and returns outputPath; hopBody is defined\" and assert `hopBody` is a function. The `fileOutput` assertions stay as they are."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Existing TypeScript/Bun nax pipeline, not greenfield. src/prd/workdir-canonical.ts:68-95 currently delegates canonicalizeDeclaredPath to toRepoFrame unconditionally; canonicalizePrdWorkdirs:139-197 derives/stamps workdirs, rewrites contextFiles (including factId objects), expectedFiles and modifiedFiles; findNonCanonicalDeclaredPaths:225-241 compares against that prefixing function. Preserve derivation, stamping, identity for opts.only and immutable updates; introduce existence-aware spelling with root-exists precedence, report actual re-spells. src/utils/path-frame.ts:12-20,65-94 has toRepoFrame needed by genuine package-scoped producers and isWithinPackage boundary check; do not alter function. src/pipeline/scope-files.ts:41-64 maps declared paths through toRepoFrame regardless of provenance; use workdirSource gate, matching src/pipeline/stages/context.ts:188. src/plan/strategies/persist-prd.ts:25-41 provides injectable probes, :70-101 applies fidelity before canonicalization, :101-157 catches discovery errors, warns and writes routing output; add renameSync injection and unscoped structural check after fidelity, before canonicalization, outside the discovery catch so errors cannot degrade. src/plan/strategies/write-prd.ts:9-70 and single.ts:16-62 recover drafts on disk; src/plan/strategies/refine.ts:43-73 routes refine through writeOrRecoverPrd: rename the violating draft first so both recovery paths rethrow the original NaxError, without modifying strategies. src/prd/spec-lint.ts:133-172 declares ids from Stories and Acceptance Criteria excluding grouped subsections; move unchanged into new pure spec-structure module and retain lint behavior. src/prd/modifies-extract.ts:65-81 provides extracted path and story ownership; src/prd/types.ts:163-239 defines optional story workdir, required dependencies, context/expected/modified fields and workdirSource; :435-455 PRD envelope. src/prd/index.ts:18-56 exports PRD helpers: update barrel as needed. src/prompts/builders/plan-builder.ts:137-221 has refine dependency-minimization, :278-349 builds spec/monorepo prompt; insert binding section after spec, conditionally change monorepo hint, add repair prompt while keeping GROUPING_RULES unchanged. src/operations/plan.ts:1-98 is currently RunOperation without hopBody; plan-refine.ts:21-32 injectable readFile and :368-395 hopBody with refine continuation plus ordered self-heal; src/operations/self-heal.ts:32-100 defines single-turn step and cost aggregation. New heal module must accept injected readFile to keep tests hermetic and avoid cycles. Test touchpoints: test/unit/prd/workdir-canonical.test.ts:87-404 has explicitly obsolete prefix and fixed-point assertions; test/unit/plan/strategies/persist-prd-workdir.test.ts:15-27,60-125 stubs probes and checks warnings; test/unit/pipeline/scope-files.test.ts; test/unit/plan/fidelity-survives-recovery.test.ts:15-51 fixture declares only US-001 despite PRD US-002; test/unit/operations/plan-refine.test.ts:16-31 and test/unit/operations/plan-interactive.test.ts:101-118 assert old call and absent hook; test/unit/prompts/builders/plan-builder.test.ts tests prompt contracts. Amend docs/adr/ADR-032-single-frame-repo-rooted-paths.md:72-80 R3 against R5 and add verification limitation note to docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md:1-9. Risks: preserving repo-rooted out-of-package and create-intent paths while repairing only demonstrably package-relative paths; disk-state-sensitive re-spelling applies only to ambiguous input, not already repo-rooted paths; legacy unstamped PRDs retain runtime prefixing; scoped decompose bypasses structure check; conflicting/unreadable spec fields warn rather than enforce; plan recovery must not turn a rejected draft into an exit-0 degraded PRD. Implement US-001 then US-002 then US-003; update existing test expectations at the respective story, add new behavioral tests via each story's test strategy, no data migration or CLI bypass.",

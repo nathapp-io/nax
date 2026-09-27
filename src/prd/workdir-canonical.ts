@@ -70,25 +70,56 @@ export function deriveWorkdir(
   return { workdir: only!, source: "derived" };
 }
 
+/** One declared path a canonicalization pass re-spelled into the repo frame (US-001). */
+export type RespelledDeclaredPath = {
+  readonly storyId: string;
+  readonly field: "contextFiles" | "expectedFiles" | "modifiedFiles";
+  readonly from: string;
+  readonly to: string;
+};
+
 /**
- * Re-spell a declared path into the repo frame (R3, single-frame redesign).
+ * Normalise a declared path's SPELLING only — never its frame (US-001).
  *
- * Unconditional pure-string normalization — no existence probe. Before this
- * change the function probed the filesystem to decide whether a workdir-
- * relative-looking path should be re-spelled, which is exactly the mechanism
- * that produced #2125's mixed-frame PRD: a path absent at plan time (because
- * the story creates it) was left workdir-relative rather than repo-rooted.
- * The planner now emits repo-rooted paths directly (src/prompts/builders/
- * plan-builder.ts, decompose-builder.ts), so this is a defensive re-spell for
- * a stray package-relative spelling, not a disambiguation — there is nothing
- * left to disambiguate. Delegates to toRepoFrame, which already implements
- * the identical segment-boundary-safe re-spell; kept as a distinct named
- * export because this module's own
- * canonicalizePrdWorkdirs calls it as "the PRD write-time re-spell",
- * a narrower and more discoverable name than the general-purpose toRepoFrame.
+ * Posix separators, no leading "./" runs, no trailing "/", trimmed. A path
+ * that is already spelled this way is returned unchanged, byte for byte.
+ *
+ * STUB (US-001 test-writer session): declared so the new tests compile. The
+ * body is a placeholder; the spelling normalisation the tests describe is not
+ * implemented yet.
  */
-export function canonicalizeDeclaredPath(path: string, workdir: string): string {
-  return toRepoFrame(path, workdir);
+export function normalizeDeclaredPathSpelling(path: string): string {
+  return path;
+}
+
+/**
+ * Keep a declared path in its repo-rooted frame, re-spelling it into `workdir`
+ * only when that is demonstrably what the author meant (US-001, nax#2270).
+ *
+ * The four-argument decision table:
+ * 1. `p = normalizeDeclaredPathSpelling(path)`.
+ * 2. At the repo root, or when `p` already lies inside `workdir`, return `p`
+ *    unchanged — no filesystem probe.
+ * 3. When `exists(repoRoot/p)` is false and `exists(repoRoot/workdir/p)` is
+ *    true, re-spell into `workdir` and report `respelled: true`. This is the
+ *    only case in which a path is re-framed, and it is the only place a stray
+ *    package-relative spelling is caught.
+ * 4. Otherwise return `p` unchanged. That covers existing repo-rooted files,
+ *    other packages' files (R5 makes cross-package declared paths a designed
+ *    case), and paths that exist nowhere — files the story will create.
+ *
+ * STUB (US-001 test-writer session): the signature, the return shape and the
+ * `respelled` flag exist so the new tests compile. The decision table above is
+ * NOT implemented yet — the body still re-spells unconditionally, which is the
+ * behaviour this story replaces.
+ */
+export function canonicalizeDeclaredPath(
+  path: string,
+  workdir: string,
+  _repoRoot: string,
+  _exists: ExistsProbe,
+): { path: string; respelled: boolean } {
+  return { path: toRepoFrame(path, workdir), respelled: false };
 }
 
 /**
@@ -144,7 +175,7 @@ export function canonicalizePrdWorkdirs(
   packages: readonly string[],
   exists: ExistsProbe,
   opts?: CanonicalizeOptions,
-): { prd: PRD; defaulted: string[] } {
+): { prd: PRD; defaulted: string[]; respelled: RespelledDeclaredPath[] } {
   const defaulted: string[] = [];
   const deriveEnabled = opts?.derive ?? true;
 
@@ -175,7 +206,7 @@ export function canonicalizePrdWorkdirs(
     const { workdir, source } = decideWorkdir(story, declared);
     if (source === "defaulted") defaulted.push(story.id);
 
-    const reframe = (path: string): string => canonicalizeDeclaredPath(path, workdir);
+    const reframe = (path: string): string => canonicalizeDeclaredPath(path, workdir, repoRoot, exists).path;
 
     const contextFiles = story.contextFiles?.map((entry) =>
       typeof entry === "string" ? reframe(entry) : { ...entry, path: reframe(entry.path) },
@@ -193,7 +224,10 @@ export function canonicalizePrdWorkdirs(
     };
   });
 
-  return { prd: { ...prd, userStories }, defaulted };
+  // STUB (US-001 test-writer session): `respelled` is part of the declared
+  // result shape so the new tests compile; the re-spell report itself is not
+  // collected yet.
+  return { prd: { ...prd, userStories }, defaulted, respelled: [] };
 }
 
 /** One declared path on a canonicalized story that is not in the repo frame. */
@@ -230,7 +264,11 @@ export function findNonCanonicalDeclaredPaths(prd: PRD): NonCanonicalDeclaredPat
     if (story.workdirSource === undefined) continue;
     const workdir = normalizeWorkdir(story.workdir);
     const check = (field: NonCanonicalDeclaredPath["field"], path: string): void => {
-      if (canonicalizeDeclaredPath(path, workdir) !== path) {
+      // STUB (US-001 test-writer session): the rule this story replaces --
+      // compare against the frame the path should have had. The new rule
+      // compares the SPELLING only, so a correct repo-rooted path outside the
+      // story's package stops being flagged.
+      if (toRepoFrame(path, workdir) !== path) {
         violations.push({ storyId: story.id, field, path });
       }
     };

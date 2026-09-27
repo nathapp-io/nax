@@ -12,6 +12,7 @@ import {
   canonicalizePrdWorkdirs,
   deriveWorkdir,
   findNonCanonicalDeclaredPaths,
+  normalizeDeclaredPathSpelling,
   resolvePathOwners,
 } from "@/prd/workdir-canonical";
 
@@ -91,29 +92,97 @@ describe("deriveWorkdir", () => {
   });
 });
 
-describe("canonicalizeDeclaredPath — unconditional pure-string normalization (single-frame redesign)", () => {
-  test("re-spells a package-relative path without touching disk", () => {
-    expect(canonicalizeDeclaredPath("src/a.ts", "packages/app")).toBe("packages/app/src/a.ts");
+describe("canonicalizeDeclaredPath — repo-rooted declared paths stay as written (US-001)", () => {
+  test("US-001 AC1: keeps a declared path that exists at the repo root in its declared spelling", () => {
+    const exists = probeOf("docs/pipelines/report.pipeline.json");
+    expect(canonicalizeDeclaredPath("docs/pipelines/report.pipeline.json", "packages/lib", REPO, exists)).toEqual({
+      path: "docs/pipelines/report.pipeline.json",
+      respelled: false,
+    });
   });
 
-  test("leaves an already repo-rooted path alone", () => {
-    expect(canonicalizeDeclaredPath("packages/app/src/a.ts", "packages/app")).toBe("packages/app/src/a.ts");
+  test("US-001 AC2: keeps a declared path that exists nowhere — a file the story will create stays repo-rooted", () => {
+    expect(canonicalizeDeclaredPath("docs/pipelines/report.pipeline.json", "packages/lib", REPO, probeOf())).toEqual({
+      path: "docs/pipelines/report.pipeline.json",
+      respelled: false,
+    });
   });
 
-  test("re-spells a path that will not exist until this story creates it", () => {
-    // No exists() probe is passed at all — the old signature required one.
-    expect(canonicalizeDeclaredPath("src/new.ts", "packages/app")).toBe("packages/app/src/new.ts");
+  test("US-001 AC3: keeps another package's declared path as written", () => {
+    const exists = probeOf("packages/db/src/schema.ts");
+    expect(canonicalizeDeclaredPath("packages/db/src/schema.ts", "apps/api", REPO, exists)).toEqual({
+      path: "packages/db/src/schema.ts",
+      respelled: false,
+    });
   });
 
-  test("is a no-op at the repo root", () => {
-    expect(canonicalizeDeclaredPath("src/a.ts", ".")).toBe("src/a.ts");
+  test("US-001 AC4: re-spells a package-relative path that is absent at the root and present under the package", () => {
+    const exists = probeOf("packages/lib/src/a.ts");
+    expect(canonicalizeDeclaredPath("src/a.ts", "packages/lib", REPO, exists)).toEqual({
+      path: "packages/lib/src/a.ts",
+      respelled: true,
+    });
   });
 
-  test("does not slice a package whose name extends another", () => {
-    // "packages/app" must not treat "packages/application/x.ts" as already-framed.
-    expect(canonicalizeDeclaredPath("packages/application/x.ts", "packages/app")).toBe(
-      "packages/app/packages/application/x.ts",
-    );
+  test("US-001 AC5: prefers the repo-rooted reading when the path exists at the root and under the package", () => {
+    const exists = probeOf("src/a.ts", "packages/lib/src/a.ts");
+    expect(canonicalizeDeclaredPath("src/a.ts", "packages/lib", REPO, exists)).toEqual({
+      path: "src/a.ts",
+      respelled: false,
+    });
+  });
+
+  test("US-001 AC6: normalises the spelling of a path already inside the package, whatever the probe reports", () => {
+    for (const exists of [probeOf("packages/lib/src/a.ts"), probeOf()]) {
+      expect(canonicalizeDeclaredPath("./packages/lib/src/a.ts/", "packages/lib", REPO, exists)).toEqual({
+        path: "packages/lib/src/a.ts",
+        respelled: false,
+      });
+    }
+  });
+
+  test("US-001 AC7: never probes the filesystem at the repo root", () => {
+    const probed: string[] = [];
+    const exists = (abs: string): boolean => {
+      probed.push(abs);
+      return true;
+    };
+
+    expect(canonicalizeDeclaredPath("src/a.ts", ".", REPO, exists)).toEqual({ path: "src/a.ts", respelled: false });
+    expect(probed).toEqual([]);
+  });
+
+  test("US-001 AC2 boundary: a create-intent path under the package keeps its declared frameless spelling", () => {
+    // "src/new.ts" is nowhere on disk, so there is nothing that proves it was
+    // meant package-relative — it stays exactly as declared.
+    expect(canonicalizeDeclaredPath("src/new.ts", "packages/app", REPO, probeOf())).toEqual({
+      path: "src/new.ts",
+      respelled: false,
+    });
+  });
+
+  test("US-001 AC5 boundary: does not slice a package whose name extends another", () => {
+    // "packages/app" must not read "packages/application/x.ts" as already framed
+    // and must not re-spell it either: the repo-rooted file exists.
+    const exists = probeOf("packages/application/x.ts");
+    expect(canonicalizeDeclaredPath("packages/application/x.ts", "packages/app", REPO, exists)).toEqual({
+      path: "packages/application/x.ts",
+      respelled: false,
+    });
+  });
+});
+
+describe("normalizeDeclaredPathSpelling — spelling only, never framing (US-001)", () => {
+  test("US-001 AC13: normalises backslash separators, a leading `.\\` and a trailing backslash", () => {
+    expect(normalizeDeclaredPathSpelling(".\\packages\\lib\\src\\a.ts\\")).toBe("packages/lib/src/a.ts");
+  });
+
+  test("US-001 AC13: returns an already-normalised path unchanged", () => {
+    expect(normalizeDeclaredPathSpelling("packages/lib/src/a.ts")).toBe("packages/lib/src/a.ts");
+  });
+
+  test("US-001 AC13 boundary: trims surrounding whitespace without re-framing the path", () => {
+    expect(normalizeDeclaredPathSpelling("  src/a.ts  ")).toBe("src/a.ts");
   });
 });
 
@@ -123,7 +192,7 @@ describe("canonicalizePrdWorkdirs", () => {
   // PRD fixtures are what .nax/rules/test-helpers.md forbids anyway.
   const prdOf = (stories: UserStory[]) => makePRD({ userStories: stories });
 
-  test("derives a workdir and re-spells the story's declared paths", () => {
+  test("derives a workdir and re-spells only the declared path that exists under the package", () => {
     const exists = probeOf("packages/app/src/a.ts");
     const { prd } = canonicalizePrdWorkdirs(
       prdOf([makeStory({ contextFiles: ["src/a.ts"], expectedFiles: ["src/b.ts"] })]),
@@ -135,8 +204,9 @@ describe("canonicalizePrdWorkdirs", () => {
     expect(story?.workdir).toBe("packages/app");
     expect(story?.workdirSource).toBe("derived");
     expect(story?.contextFiles).toEqual(["packages/app/src/a.ts"]);
-    // unconditional re-spell now covers create-intent paths too
-    expect(story?.expectedFiles).toEqual(["packages/app/src/b.ts"]);
+    // "src/b.ts" exists nowhere, so nothing proves it is package-relative: it
+    // stays in the frame it was declared in.
+    expect(story?.expectedFiles).toEqual(["src/b.ts"]);
   });
 
   test("keeps a stated workdir and stamps it stated", () => {
@@ -175,7 +245,7 @@ describe("canonicalizePrdWorkdirs", () => {
     expect(prd.userStories[0]?.contextFiles).toEqual([{ path: "packages/app/src/a.ts", factId: "F-1" }]);
   });
 
-  test("reframes modifiedFiles the same way as contextFiles", () => {
+  test("leaves a modifiedFiles path that exists nowhere in its declared spelling", () => {
     const { prd } = canonicalizePrdWorkdirs(
       prdOf([
         makeStory({
@@ -187,14 +257,12 @@ describe("canonicalizePrdWorkdirs", () => {
       PACKAGES,
       probeOf(),
     );
-    expect(prd.userStories[0]?.modifiedFiles).toEqual([
-      { path: "packages/app/src/existing.ts", reason: "fix off-by-one" },
-    ]);
+    expect(prd.userStories[0]?.modifiedFiles).toEqual([{ path: "src/existing.ts", reason: "fix off-by-one" }]);
   });
 
-  test("the result carries exactly { prd, defaulted } — collisions/rootOnly are gone, not stubbed", () => {
+  test("the result carries exactly { prd, defaulted, respelled } — collisions/rootOnly are gone, not stubbed", () => {
     const result = canonicalizePrdWorkdirs(prdOf([makeStory({ workdir: "packages/app" })]), REPO, PACKAGES, probeOf());
-    expect(Object.keys(result).sort()).toEqual(["defaulted", "prd"]);
+    expect(Object.keys(result).sort()).toEqual(["defaulted", "prd", "respelled"]);
   });
 
   test("is a no-op for a single-package repo (no workspace packages)", () => {
@@ -225,6 +293,133 @@ describe("canonicalizePrdWorkdirs", () => {
   });
 });
 
+describe("canonicalizePrdWorkdirs — repo-rooted declared paths stay as written (US-001)", () => {
+  const prdOf = (stories: UserStory[]) => makePRD({ userStories: stories });
+
+  test("US-001 AC8: keeps an expectedFiles path that exists nowhere in its declared spelling", () => {
+    const { prd, respelled } = canonicalizePrdWorkdirs(
+      prdOf([makeStory({ workdir: "packages/lib", expectedFiles: ["docs/pipelines/report.pipeline.json"] })]),
+      REPO,
+      PACKAGES,
+      probeOf(),
+    );
+
+    expect(prd.userStories[0]?.expectedFiles).toEqual(["docs/pipelines/report.pipeline.json"]);
+    expect(respelled).toEqual([]);
+  });
+
+  test("US-001 AC9: keeps cross-package contextFiles as written, including ContextFileEntry objects", () => {
+    const exists = probeOf("packages/db/src/schema.ts", "docs/design.md");
+    const { prd, respelled } = canonicalizePrdWorkdirs(
+      prdOf([
+        makeStory({
+          workdir: "apps/api",
+          contextFiles: ["packages/db/src/schema.ts", { path: "docs/design.md", factId: "F-1" }],
+        }),
+      ]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+
+    expect(prd.userStories[0]?.contextFiles).toEqual([
+      "packages/db/src/schema.ts",
+      { path: "docs/design.md", factId: "F-1" },
+    ]);
+    expect(respelled).toEqual([]);
+  });
+
+  test("US-001 AC10: keeps a modifiedFiles path belonging to another package as written", () => {
+    const exists = probeOf("apps/api/tests/test_count.py");
+    const { prd, respelled } = canonicalizePrdWorkdirs(
+      prdOf([
+        makeStory({
+          workdir: "packages/lib",
+          modifiedFiles: [{ path: "apps/api/tests/test_count.py", reason: "r" }],
+        }),
+      ]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+
+    expect(prd.userStories[0]?.modifiedFiles).toEqual([{ path: "apps/api/tests/test_count.py", reason: "r" }]);
+    expect(respelled).toEqual([]);
+  });
+
+  test("US-001 AC11: reports each re-spell as { storyId, field, from, to }", () => {
+    const exists = probeOf("packages/lib/src/a.ts");
+    const { prd, respelled } = canonicalizePrdWorkdirs(
+      prdOf([makeStory({ id: "US-002", workdir: "packages/lib", contextFiles: ["src/a.ts"] })]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+
+    expect(prd.userStories[0]?.contextFiles).toEqual(["packages/lib/src/a.ts"]);
+    expect(respelled).toEqual([
+      { storyId: "US-002", field: "contextFiles", from: "src/a.ts", to: "packages/lib/src/a.ts" },
+    ]);
+  });
+
+  test("US-001 AC11 boundary: tags every re-spell with the declared-path field it came from", () => {
+    const exists = probeOf("packages/lib/src/a.ts", "packages/lib/src/new.ts", "packages/lib/src/b.ts");
+    const { respelled } = canonicalizePrdWorkdirs(
+      prdOf([
+        makeStory({
+          id: "US-002",
+          workdir: "packages/lib",
+          contextFiles: ["src/a.ts"],
+          expectedFiles: ["src/new.ts"],
+          modifiedFiles: [{ path: "src/b.ts", reason: "r" }],
+        }),
+      ]),
+      REPO,
+      PACKAGES,
+      exists,
+    );
+
+    // Order is the implementation's business; the tag is not.
+    expect(respelled).toHaveLength(3);
+    expect(respelled).toContainEqual({
+      storyId: "US-002",
+      field: "contextFiles",
+      from: "src/a.ts",
+      to: "packages/lib/src/a.ts",
+    });
+    expect(respelled).toContainEqual({
+      storyId: "US-002",
+      field: "expectedFiles",
+      from: "src/new.ts",
+      to: "packages/lib/src/new.ts",
+    });
+    expect(respelled).toContainEqual({
+      storyId: "US-002",
+      field: "modifiedFiles",
+      from: "src/b.ts",
+      to: "packages/lib/src/b.ts",
+    });
+  });
+
+  test("US-001 AC12: running over its own output changes nothing and reports no re-spell", () => {
+    const exists = probeOf("packages/lib/src/a.ts");
+    const prd = prdOf([
+      makeStory({ workdir: "packages/lib", contextFiles: ["src/a.ts"], expectedFiles: ["src/b.ts"] }),
+    ]);
+
+    const first = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, exists);
+    const second = canonicalizePrdWorkdirs(first.prd, REPO, PACKAGES, exists);
+
+    // The control: the first pass DOES re-spell, so an empty second report is a
+    // statement about the fixed point rather than about the report being inert.
+    expect(first.respelled).toEqual([
+      { storyId: "US-001", field: "contextFiles", from: "src/a.ts", to: "packages/lib/src/a.ts" },
+    ]);
+    expect(second.prd.userStories).toEqual(first.prd.userStories);
+    expect(second.respelled).toEqual([]);
+  });
+});
+
 describe("canonicalizePrdWorkdirs — scoped canonicalization (nax#2080)", () => {
   test("leaves a story outside `only` as the identical reference", () => {
     const untouched = makeStory({ id: "US-001", contextFiles: ["src/a.ts"] });
@@ -240,6 +435,24 @@ describe("canonicalizePrdWorkdirs — scoped canonicalization (nax#2080)", () =>
     expect(out.userStories[0]?.workdirSource).toBeUndefined();
     expect(out.userStories[1]?.workdir).toBe("packages/app");
     expect(out.userStories[1]?.contextFiles).toEqual(["packages/app/src/b.ts"]);
+  });
+
+  test("US-001 AC20: a story outside `only` keeps its package-relative paths and is absent from the report", () => {
+    const untouched = makeStory({ id: "US-001", workdir: "packages/lib", contextFiles: ["src/a.ts"] });
+    const target = makeStory({ id: "US-002", workdir: "packages/lib", contextFiles: ["src/c.ts"] });
+    const prd = makePRD({ userStories: [untouched, target] });
+    const exists = probeOf("packages/lib/src/a.ts", "packages/lib/src/c.ts");
+
+    const { prd: out, respelled } = canonicalizePrdWorkdirs(prd, REPO, PACKAGES, exists, { only: new Set(["US-002"]) });
+
+    expect(out.userStories[0]).toBe(untouched);
+    expect(out.userStories[0]?.contextFiles).toEqual(["src/a.ts"]);
+    // The control: the scoped story IS re-spelled, so "not reported" is a
+    // statement about the scope rather than about the report being inert.
+    expect(out.userStories[1]?.contextFiles).toEqual(["packages/lib/src/c.ts"]);
+    expect(respelled).toEqual([
+      { storyId: "US-002", field: "contextFiles", from: "src/c.ts", to: "packages/lib/src/c.ts" },
+    ]);
   });
 
   test("does not report an out-of-scope story as defaulted", () => {
@@ -263,8 +476,8 @@ describe("canonicalizePrdWorkdirs — scoped canonicalization (nax#2080)", () =>
     expect(out.userStories[0]?.workdir).toBeUndefined();
     expect(out.userStories[0]?.workdirSource).toBe("defaulted");
     expect(defaulted).toEqual(["US-001"]);
-    // Zero probes: derivation is skipped, and the unconditional pure-string
-    // re-spell never probes the filesystem.
+    // Zero probes: derivation is skipped, and at the repo root the re-spell is a
+    // pure string operation that short-circuits before touching the filesystem.
     expect(probed).toEqual([]);
   });
 
@@ -281,7 +494,7 @@ describe("canonicalizePrdWorkdirs — scoped canonicalization (nax#2080)", () =>
     expect(out.userStories[0]?.contextFiles).toEqual(["packages/app/src/a.ts"]);
   });
 
-  test("is a fixed point over an already-canonical story", () => {
+  test("is a fixed point: canonicalizing its own output changes nothing", () => {
     const prd = makePRD({
       userStories: [
         makeStory({
@@ -299,19 +512,24 @@ describe("canonicalizePrdWorkdirs — scoped canonicalization (nax#2080)", () =>
     const twice = canonicalizePrdWorkdirs(once, REPO, PACKAGES, exists).prd;
 
     expect(twice.userStories[0]).toEqual(once.userStories[0]);
-    // Pin the new reframe's idempotency explicitly: a re-spell that is not a
-    // fixed point would double-prefix modifiedFiles on the second pass.
-    expect(twice.userStories[0]?.modifiedFiles).toEqual([{ path: "packages/app/src/b.ts", reason: "r" }]);
+    // Pin the re-spell's idempotency explicitly: a re-spell that is not a fixed
+    // point would double-prefix contextFiles on the second pass.
+    expect(twice.userStories[0]?.contextFiles).toEqual(["packages/app/src/a.ts"]);
+    // The paths that resolve nowhere stay exactly as declared, in both passes.
+    expect(twice.userStories[0]?.expectedFiles).toEqual(["src/new.ts"]);
+    expect(twice.userStories[0]?.modifiedFiles).toEqual([{ path: "src/b.ts", reason: "r" }]);
   });
 });
 
 describe("canonicalizePrdWorkdirs — frame is independent of disk state (single-frame redesign, design §6)", () => {
   test("the same PRD canonicalized against two different fake-fs states yields byte-identical declared-path frames", () => {
+    // Repo-rooted inputs (the frame every declared path is written in), so the
+    // invariant is about the write step, not about how the probe answers.
     const story = makeStory({
       workdir: "packages/app",
-      contextFiles: ["src/a.ts"],
-      expectedFiles: ["src/new.ts"],
-      modifiedFiles: [{ path: "src/b.ts", reason: "r" }],
+      contextFiles: ["packages/app/src/a.ts"],
+      expectedFiles: ["packages/app/src/new.ts"],
+      modifiedFiles: [{ path: "packages/app/src/b.ts", reason: "r" }],
     });
     const prd = makePRD({ userStories: [story] });
 
@@ -338,46 +556,69 @@ describe("canonicalizePrdWorkdirs — frame is independent of disk state (single
 describe("findNonCanonicalDeclaredPaths — plan-write-time validation (single-frame redesign)", () => {
   const prdOf = (stories: UserStory[]) => makePRD({ userStories: stories });
 
-  test("flags a contextFiles entry that is not repo-rooted on a canonicalized story", () => {
+  test("flags a contextFiles entry whose spelling is non-canonical on a stamped story", () => {
     const story = makeStory({
       workdir: "packages/app",
       workdirSource: "stated",
-      contextFiles: ["src/a.ts"], // should have been "packages/app/src/a.ts"
+      contextFiles: ["./packages/app/src/a.ts"],
     });
     const violations = findNonCanonicalDeclaredPaths(prdOf([story]));
-    expect(violations).toEqual([{ storyId: story.id, field: "contextFiles", path: "src/a.ts" }]);
+    expect(violations).toEqual([{ storyId: story.id, field: "contextFiles", path: "./packages/app/src/a.ts" }]);
   });
 
-  test("flags an expectedFiles entry that is not repo-rooted", () => {
+  test("flags an expectedFiles entry whose spelling is non-canonical", () => {
     const story = makeStory({
       workdir: "packages/app",
       workdirSource: "stated",
-      expectedFiles: ["src/new.ts"],
+      expectedFiles: ["./packages/app/src/new.ts"],
     });
     expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([
-      { storyId: story.id, field: "expectedFiles", path: "src/new.ts" },
+      { storyId: story.id, field: "expectedFiles", path: "./packages/app/src/new.ts" },
     ]);
   });
 
-  test("flags a modifiedFiles entry that is not repo-rooted", () => {
+  test("flags a modifiedFiles entry whose spelling is non-canonical", () => {
     const story = makeStory({
       workdir: "packages/app",
       workdirSource: "stated",
-      modifiedFiles: [{ path: "src/b.ts", reason: "r" }],
+      modifiedFiles: [{ path: "./packages/app/src/b.ts", reason: "r" }],
     });
     expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([
-      { storyId: story.id, field: "modifiedFiles", path: "src/b.ts" },
+      { storyId: story.id, field: "modifiedFiles", path: "./packages/app/src/b.ts" },
     ]);
   });
 
-  test("flags a non-string contextFiles entry whose path is not repo-rooted", () => {
+  test("flags a non-string contextFiles entry whose spelling is non-canonical", () => {
     const story = makeStory({
       workdir: "packages/app",
       workdirSource: "stated",
-      contextFiles: [{ path: "src/a.ts", factId: "F-1" }],
+      contextFiles: [{ path: ".\\packages\\app\\src\\a.ts", factId: "F-1" }],
     });
     expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([
-      { storyId: story.id, field: "contextFiles", path: "src/a.ts" },
+      { storyId: story.id, field: "contextFiles", path: ".\\packages\\app\\src\\a.ts" },
+    ]);
+  });
+
+  test("US-001 AC14: accepts a repo-rooted path outside the story's package on a stamped story", () => {
+    const story = makeStory({
+      workdir: "packages/lib",
+      workdirSource: "stated",
+      contextFiles: ["docs/x.md"],
+      modifiedFiles: [{ path: "apps/api/tests/t.py", reason: "r" }],
+    });
+
+    expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([]);
+  });
+
+  test("US-001 AC15: still flags an expectedFiles spelling the normaliser would change", () => {
+    const story = makeStory({
+      workdir: "packages/lib",
+      workdirSource: "stated",
+      expectedFiles: ["./packages/lib/src/new.ts"],
+    });
+
+    expect(findNonCanonicalDeclaredPaths(prdOf([story]))).toEqual([
+      { storyId: story.id, field: "expectedFiles", path: "./packages/lib/src/new.ts" },
     ]);
   });
 
