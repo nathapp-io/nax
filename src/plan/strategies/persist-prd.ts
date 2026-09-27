@@ -67,6 +67,28 @@ export interface PersistPrdArgs {
 }
 
 /**
+ * Ids of the stories whose frame stamp a skipped canonicalization pass leaves
+ * unverified (US-001): every story that already carries a `workdirSource` and
+ * declares at least one path.
+ *
+ * Only these are exposed to the hazard. The stamp is what `resolveScopeFiles`
+ * reads to decide that a declared path needs no runtime re-frame, and the
+ * write-time validator cannot stand in for the skipped pass -- it is spelling-only
+ * by design, so a bare package-relative path on a stamped story passes it. A
+ * story that carries no stamp keeps the legacy runtime re-frame either way, so
+ * it needs no mention here.
+ */
+function unverifiedStampedStoryIds(prd: PRD): string[] {
+  return prd.userStories
+    .filter(
+      (story) =>
+        story.workdirSource !== undefined &&
+        (story.contextFiles?.length ?? 0) + (story.expectedFiles?.length ?? 0) + (story.modifiedFiles?.length ?? 0) > 0,
+    )
+    .map((story) => story.id);
+}
+
+/**
  * Repair → canonicalize → finalize routing → write. Returns the path written.
  *
  * Context-free so callers that never build a `PlanModeContext`
@@ -124,7 +146,26 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
       );
     }
   } catch (err) {
-    getLogger().warn("plan", "workdir canonicalization skipped", { error: errorMessage(err) });
+    // US-001: the frame of a declared path is decided by canonicalizePrdWorkdirs
+    // and nowhere else -- the validator below is spelling-only by design, since a
+    // bare package-relative path is indistinguishable from a repo-rooted one
+    // without the filesystem. A skipped pass therefore leaves every stamp already
+    // on a story unverified, and `resolveScopeFiles` trusts a stamp: it reads a
+    // stamped story's declared paths as written. A path this pass would have
+    // re-spelled (absent at the root, present under the package) then reaches the
+    // context stage in the package frame unannounced.
+    //
+    // Re-running the pass here is not a fix -- its own failure is what brought us
+    // here, and normalising the spelling of a path it would have written through
+    // would silence the warning below on exactly the legacy shape it reports.
+    // Withholding the stamp is worse: it would re-frame the correctly repo-rooted
+    // paths the stamp legitimises (US-001 AC18). So name the stories, and let the
+    // operator judge.
+    getLogger().warn(
+      "plan",
+      "workdir canonicalization skipped: declared paths on already-stamped stories are unverified and are read as written downstream",
+      { error: errorMessage(err), storyIds: unverifiedStampedStoryIds(repaired) },
+    );
   }
 
   // nax#2125: a story THIS pass canonicalized (workdirSource defined) should have
