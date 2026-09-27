@@ -105,6 +105,14 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
       derive: args.scope === undefined,
     });
     canonical = result.prd;
+    // US-001: a re-spell is the one write-time decision that reads the
+    // filesystem, so it is reported. Silently prefixed, it is invisible: the
+    // author wrote a repo-rooted path and the PRD holds a package-rooted one.
+    if (result.respelled.length > 0) {
+      getLogger().warn("plan", "declared paths spelled package-relative were re-spelled into the repo frame", {
+        respelled: result.respelled,
+      });
+    }
     // nax#2067: the only point in `nax plan` where "this story will be root-scoped"
     // is known. Both consequences are named because both are silent at every later
     // stage -- plan output, run log, and the completed run's artifacts.
@@ -120,9 +128,11 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
   }
 
   // nax#2125: a story THIS pass canonicalized (workdirSource defined) should have
-  // every declared path already in the repo frame. Nothing on the happy path can
-  // violate this -- canonicalizePrdWorkdirs reframes unconditionally -- so a
-  // violation means a caller bypassed the seam or a reframing missed a field.
+  // every declared path spelled canonically (US-001: spelling, not framing --
+  // a repo-rooted path outside the story's package is a designed case). Nothing
+  // on the happy path can violate this -- canonicalizePrdWorkdirs normalises the
+  // spelling of every path it writes -- so a violation means a caller bypassed
+  // the seam or a declared path was written through unnormalised.
   //
   // nax#2080: only inspect stories this pass actually canonicalized. canonicalizePrdWorkdirs
   // returns an out-of-`only` story by IDENTITY, and that story may carry a pre-PR3

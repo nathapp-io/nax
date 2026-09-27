@@ -7,6 +7,9 @@
 package-frame convention of `docs/superpowers/specs/2026-09-16-path-frame-convention-design.md`
 **Related:** `docs/superpowers/specs/2026-09-18-single-frame-redesign-design.md` — the design
 and delivery record (phases, blast radius, live verification)
+**Amended:** 2026-09-27 — R3, by #2270. Declared paths stay repo-rooted as written, including
+paths outside the story's package; the write step re-spells one only when it is absent at the
+repo root and present under the package, and reports every such re-spell.
 
 ---
 
@@ -69,11 +72,12 @@ manifest, runs in the package dir; a command inherited from the root config runs
   `PackageView.repoRoot` is the main checkout; under `storyIsolation: "worktree"` it escapes
   the worktree silently (#2093). `storyExecRoot` (`src/runtime/packages.ts`) returns the
   worktree root `<repoRoot>/.nax-wt/<storyId>` when isolated, the repo root otherwise.
-- **R3 — Canonicalize at the producer.** The planner emits repo-rooted declared paths, so
-  `canonicalizeDeclaredPath` (`src/prd/workdir-canonical.ts`) is an unconditional pure-string
-  normalization (a defensive `toRepoFrame` for a stray package-relative spelling) with no
-  existence probe. `modifiedFiles` goes through the same write seam. Ruling 8 of the 09-16
-  spec, which made the mixed frame deliberate, is retired.
+- **R3 — Canonicalize at the producer.** Declared paths are repo-rooted as written, including
+  paths outside the story's package (R5 makes cross-package `modifiedFiles` a designed case).
+  The write step normalises spelling only. It re-spells a path into the package only when the
+  path is absent at the repo root and present under the package, and it reports every such
+  re-spell. `modifiedFiles` goes through the same write seam. Ruling 8 of the 09-16 spec,
+  which made the mixed frame deliberate, is retired.
 - **R4 — Per-package command and config resolution for a dispatch goes through
   `loadConfigForPackage`.** It carries the `--profile` chain (#2126/#2127). Do not use
   `packageView.config` to resolve a package's commands (`packages.resolve()` misses under
@@ -163,6 +167,9 @@ manifest, runs in the package dir; a command inherited from the root config runs
 - **Single frame for native only.** See R1.
 - **Keep existence-gated canonicalization.** It is the mechanism that produced #2125; the
   ambiguity it resolved only exists because the planner emitted workdir-relative paths.
+  (#2270 narrows rather than restores it: existence decides a re-spell only for a path absent
+  at the repo root and present under the package, the repo-rooted reading wins every other
+  case, and each re-spell is reported.)
 - **Keep package containment for write safety.** It was an accident of the frame, not a
   designed guard. The real guard for nax's own files is `nax-owned-writes.ts`; cross-package
   edits are governed by `modifiedFiles` and review (R5).

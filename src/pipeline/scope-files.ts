@@ -10,9 +10,12 @@
  * that value-imported from `src/review/` to reach `collectDiffFileList`
  * would close a circular import.
  *
- * The returned set is repo-rooted (nax#2071). Declared sources arrive
- * package-relative and are mapped through `toRepoFrame`; `collectDiffFileList`
- * output is repo-rooted already.
+ * The returned set is repo-rooted (nax#2071). A story stamped by plan-time
+ * canonicalization (`workdirSource` defined) declares repo-rooted paths as
+ * written, so its declared sources are used verbatim (US-001). A legacy story
+ * -- one written before that stamp existed -- still declares package-relative
+ * paths and is mapped through `toRepoFrame` at this seam; it is NOT
+ * self-healed. `collectDiffFileList` output is repo-rooted already.
  *
  * Composition reuses `getContextFiles(story)`, `getExpectedFiles(story)`,
  * `resolveEffectiveRef(workdir, story.storyGitRef, story.id)`, and
@@ -36,10 +39,13 @@ export const _scopeFilesDeps = {
 };
 
 export async function resolveScopeFiles(ctx: PipelineContext): Promise<string[]> {
-  // nax#2071: declared paths are package-relative; collectDiffFileList is
-  // repo-rooted. Frame the declared side so the union speaks one convention.
+  // nax#2071: a legacy story's declared paths are package-relative while
+  // collectDiffFileList is repo-rooted, so frame the declared side to make the
+  // union speak one convention. US-001: a stamped story's declared paths are
+  // repo-rooted already, and toRepoFrame at "." normalises their spelling only.
+  const declaredFrame = ctx.story.workdirSource === undefined ? storyWorkdir(ctx.story) : ".";
   const declared = [...getContextFiles(ctx.story), ...getExpectedFiles(ctx.story)].map((file) =>
-    toRepoFrame(file, storyWorkdir(ctx.story)),
+    toRepoFrame(file, declaredFrame),
   );
 
   let ref: string | undefined;

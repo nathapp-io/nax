@@ -574,6 +574,44 @@ describe("finalizeAndWritePrd — re-spell report (US-001)", () => {
     expect(parsed.userStories[0]?.contextFiles).toEqual(["packages/lib/src/a.ts"]);
   });
 
+  test("US-001 AC16 boundary: one warn per pass, naming every path that pass re-spelled", async () => {
+    _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/lib"];
+    _persistPrdDeps.existsSync = (p: string) =>
+      p === "/repo/packages/lib/src/a.ts" || p === "/repo/packages/lib/src/b.ts";
+
+    const cap = captureWarnings();
+    let written = "";
+    try {
+      written = await persist(
+        makePRD({
+          userStories: [
+            makeStory({ workdir: "packages/lib", contextFiles: ["src/a.ts"], expectedFiles: ["src/b.ts"] }),
+          ],
+        }),
+      );
+    } finally {
+      cap.restore();
+    }
+
+    // One warn for the pass, not one per re-spelled path: `respelled` is the
+    // per-pass report, so a second entry must join the first rather than
+    // producing a second line.
+    const reSpellWarnings = cap.calls.filter(
+      (c) => c.message === "declared paths spelled package-relative were re-spelled into the repo frame",
+    );
+    expect(reSpellWarnings).toHaveLength(1);
+    expect(reSpellWarnings[0]?.data?.respelled).toEqual(
+      expect.arrayContaining([
+        { storyId: "US-001", field: "contextFiles", from: "src/a.ts", to: "packages/lib/src/a.ts" },
+        { storyId: "US-001", field: "expectedFiles", from: "src/b.ts", to: "packages/lib/src/b.ts" },
+      ]),
+    );
+
+    const parsed: PRD = JSON.parse(written);
+    expect(parsed.userStories[0]?.contextFiles).toEqual(["packages/lib/src/a.ts"]);
+    expect(parsed.userStories[0]?.expectedFiles).toEqual(["packages/lib/src/b.ts"]);
+  });
+
   test("US-001 AC17: leaves a create-intent expectedFiles path alone and logs no outside-the-frame warning", async () => {
     _persistPrdDeps.discoverWorkspacePackages = async () => ["packages/lib"];
     _persistPrdDeps.existsSync = () => false;
