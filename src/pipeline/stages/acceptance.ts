@@ -214,13 +214,23 @@ export const acceptanceStage: PipelineStage = {
       }
 
       // US-002: advisory AC-coverage check. The file exists, so count how many of
-      // the package's in-scope ACs it names as tests. Never gates the verdict.
-      checkAcceptanceCoverage({
-        testPath,
-        source: await testFile.text(),
-        expected: acsByPackageDir.get(packageDir) ?? 0,
-        storyId: ctx.story.id,
-      });
+      // the package's in-scope ACs it names as tests. Never gates the verdict, and
+      // never fails the stage: a read error (file removed between the exists-check
+      // and the read, EACCES, transient FS error) is logged and swallowed.
+      try {
+        checkAcceptanceCoverage({
+          testPath,
+          source: await testFile.text(),
+          expected: acsByPackageDir.get(packageDir) ?? 0,
+          storyId: ctx.story.id,
+        });
+      } catch (err) {
+        logger.debug("acceptance", "AC coverage check skipped — test file could not be read", {
+          storyId: ctx.story.id,
+          testPath,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
 
       // @design: BUG-083/BUG-084: Run ONLY the acceptance test file, not the full project test suite.
       // Resolution order: per-package commandOverride → per-package testFramework → bun test fallback.

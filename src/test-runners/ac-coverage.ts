@@ -19,8 +19,9 @@ export interface AcTestCoverage {
   missing: string[];
 }
 
-// `AC-N:` anywhere — test titles in bun/jest/vitest and Go subtests.
-const AC_TITLE_PATTERN = /\bAC-(\d+)\s*:/gi;
+// `AC-N:` anywhere — test titles in bun/jest/vitest and Go subtests. Case-sensitive:
+// the spec marks only the pytest (`test_ac`) and cargo (`fn ac`) forms case-insensitive.
+const AC_TITLE_PATTERN = /\bAC-(\d+)\s*:/g;
 // Go: `TestAC` + optional separator + number, e.g. `TestAC3`, `TestAC_3`.
 const GO_TEST_PATTERN = /\bTestAC[-_]?(\d+)/g;
 // pytest: `test_ac` + optional `_` + number, case-insensitive.

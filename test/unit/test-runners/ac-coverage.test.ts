@@ -123,4 +123,11 @@ describe("US-002 acTestCoverage: bounds", () => {
     expect(result.found).toBe(0);
     expect(result.missing).toEqual(["AC-1", "AC-2"]);
   });
+
+  test("boundary: the `AC-N:` title form is case-sensitive — lowercase ac-1: does not count", () => {
+    const result = acTestCoverage('test("ac-1: a", () => {})', 1);
+
+    expect(result.found).toBe(0);
+    expect(result.missing).toEqual(["AC-1"]);
+  });
 });

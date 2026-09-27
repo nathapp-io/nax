@@ -146,4 +146,31 @@ describe("US-002 acceptance stage: coverage of an existing test file", () => {
     expect(result.action).toBe("fail");
     expect(coverageWarns()).toHaveLength(0);
   });
+
+  test("boundary: a read error during the advisory check does not fail the stage", async () => {
+    const origFile = Bun.file;
+    // The exists-check passes, then the read throws — the exact race the guard covers.
+    Object.assign(Bun, {
+      file: (p: string): { exists: () => Promise<boolean>; text: () => Promise<string> } => {
+        if (p === testPath) {
+          return {
+            exists: async () => true,
+            text: async () => {
+              throw new Error("EACCES: permission denied");
+            },
+          };
+        }
+        return origFile(p);
+      },
+    });
+    captured = [];
+    try {
+      const result = await acceptanceStage.execute(makeCtx());
+
+      expect(result.action).toBe("continue");
+      expect(coverageWarns()).toHaveLength(0);
+    } finally {
+      Object.assign(Bun, { file: origFile });
+    }
+  });
 });
