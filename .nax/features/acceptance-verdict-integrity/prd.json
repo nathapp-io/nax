@@ -3,7 +3,7 @@
   "feature": "acceptance-verdict-integrity",
   "branchName": "feat/acceptance-verdict-integrity",
   "createdAt": "2026-09-26T00:00:00Z",
-  "updatedAt": "2026-09-27T06:16:24.119Z",
+  "updatedAt": "2026-09-27T06:40:27.225Z",
   "userStories": [
     {
       "id": "US-001",
@@ -207,8 +207,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -271,7 +271,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "The RED loop becomes a separate module integrating runner parsing, language classifier, repair dispatch, disk writes, git commit and bounded rerun while preserving setup events and skip behavior."
+        "reasoning": "The RED loop becomes a separate module integrating runner parsing, language classifier, repair dispatch, disk writes, git commit and bounded rerun while preserving setup events and skip behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/pipeline/stages/acceptance-setup.ts",
@@ -304,7 +307,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "700040cabaaecfb812c34f51f4aaca1e107e351c"
     }
   ],
   "analysis": "Existing TypeScript/Bun codebase, not greenfield. src/pipeline/stages/acceptance-setup.ts:20-37 imports grouping, operations and logger; :42-59 defines AcceptanceMeta; :99-176 exposes injectable I/O, runTest and callOp seams; :207-307 computes AC/layout fingerprints and currently reuses a missing test file if meta matches; :309-379 refines stories with bounded concurrency and per-story warnings; :381-455 writes generated code or skeleton and intentionally writes nothing on dispatch failure; :457-499 writes acceptance-refined.json and metadata; :534-557 treats every nonzero exit as RED. At 584 lines, extract refinement and RED gate loops and put coverage calculation into new modules to respect the 600-line cap. src/pipeline/stages/acceptance.ts:126-161 resolves per-package test groups and counts stories for missing-target fallback; :188-227 checks file existence; :229-259 runs tests and parses failures; :276-324 preserves AC-ERROR and override semantics; :372-467 governs verdict and hardening. Read post-run file text only for existing targets; add a distinct per-package count of in-scope ACs (not story counts) for warnings; do not alter verdict or missing-target behavior. src/acceptance/test-path.ts:103-178 defines AcceptanceTestGroup with testPath, packageDir, stories, flat criteria and per-package language; generator numbers ACs per group. src/operations/acceptance-generate.ts:61-120 provides run-op tool list, model/timeout, prompt, parse, verify and on-disk recovery; src/operations/plan-refine.ts:326-351 provides Write-only tool grant plus fileOutput; add Edit without bypassing owned-write scoping or granting command execution. src/prompts/builders/acceptance-builder.ts:43-59 shares generator rules and :193-235 builds PRD generator and path correction; the generator and path-correction snapshot must change. src/operations/acceptance-refine.ts:25-61 has retry maxAttempts 2, empty-output throw and malformed-output warn/fallback; src/acceptance/refinement.ts:19-67 has tolerant parseRefinementResponse and refinementWouldFallback, including truncated JSON recovery; keep the helper tolerant but reject unusable or wrong-length results at the op boundary. src/acceptance/types.ts:20-31 owns RefinedCriterion; refinementFallback is additive and optional for existing consumers, while newly persisted JSON always carries a boolean. src/acceptance/hardening.ts consumes testable; fallback criteria must remain testable true. src/test-runners/ac-parser.ts:43-140 parses tagged failure output, not source-text coverage; implement source scanner separately. src/test-runners/index.ts:15-16 and src/operations/index.ts:1-10 export new helpers and op; src/quality/diagnostics.ts:27 exports MAX_RAW_TAIL_CHARS. Tests to update: test/unit/prompts/__snapshots__/acceptance-builder.test.ts.snap (prompt strings); test/unit/operations/acceptance-refine.test.ts (old malformed-output fallback assertion); test/unit/operations/plan-fileoutput-writable.test.ts (ownedWriteExemption); test/unit/pipeline/stages/acceptance-setup-gate.test.ts and acceptance-setup-fingerprint.test.ts (gate/reuse seams). Change EVERY nonzero bare-output runTest fake in acceptance-setup-criteria.test.ts, acceptance-setup-fingerprint.test.ts, acceptance-setup-dispatch-failure.test.ts and acceptance-missing-target.test.ts to an AC-tagged RED so existing call counts do not start exercising crash repair. Risks: per-group numbering differs from feature-wide persisted numbering (do not reconcile); textual source matching counts comments and named-but-skipped tests, intentionally warning-only; matching fingerprints must not bless vanished files; old metadata lacks optional coverage and must still be readable; dispatch failure still leaves meta unstamped; all-green RED gate still skips; post-run AC-ERROR still handles unresolved crashes. Repair is limited to one op turn plus one rerun per entry, with Go/Rust missing-symbol-only errors treated as legitimate RED. No data migration. US-004 consumes G2 from US-001. US-005 consumes the classifier/repair op from US-004; it does not functionally depend on US-003's independent refinement extraction.",

@@ -430,7 +430,7 @@ function makeCallOpDeps(writtenFiles: Array<{ path: string; content: string }>, 
   };
   _acceptanceSetupDeps.writeMeta = async () => {};
   _acceptanceSetupDeps.autoCommitIfDirty = async () => {};
-  _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+  _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 }
 
 describe("acceptance-setup: ACP agent-written file handling (ADR-020 Wave 3)", () => {
@@ -561,7 +561,7 @@ describe("acceptance-setup: ACP agent-written file handling (ADR-020 Wave 3)", (
     };
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.autoCommitIfDirty = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(agentFileMakeCtx());
 

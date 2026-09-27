@@ -116,7 +116,7 @@ describe("US-004: callOp is invoked during acceptance setup", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
@@ -161,7 +161,7 @@ describe("US-004: fingerprint reuse logging (staleness detection)", () => {
       return {};
     };
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -189,7 +189,7 @@ describe("US-004: fingerprint reuse logging (staleness detection)", () => {
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -246,7 +246,7 @@ describe("US-001: per-package test file generation by workdir", () => {
       if (p.endsWith(".nax-acceptance.test.ts")) writtenPaths.push(p);
     };
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(ctx);
 
@@ -265,7 +265,7 @@ describe("US-001: per-package test file generation by workdir", () => {
       if (p.endsWith(".nax-acceptance.test.ts")) writtenPaths.push(p);
     };
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
@@ -301,7 +301,7 @@ describe("US-001: per-package test file generation by workdir", () => {
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.runTest = async (testPath, packageDir, _cmd) => {
       runTestCalls.push({ testPath, packageDir });
-      return { exitCode: 1, output: "1 fail" };
+      return { exitCode: 1, output: "(fail) AC-1: x" };
     };
 
     await acceptanceSetupStage.execute(ctx);
@@ -334,7 +334,7 @@ describe("US-001: per-package test file generation by workdir", () => {
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(ctx);
 
@@ -371,7 +371,7 @@ describe("US-001: per-package test file generation by workdir", () => {
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(ctx);
 
@@ -448,7 +448,7 @@ function setupGenerationDeps(commitCalls: Array<{ workdir: string; stage: string
   };
   _acceptanceSetupDeps.writeFile = async () => {};
   _acceptanceSetupDeps.writeMeta = async () => {};
-  _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "RED" });
+  _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
   _acceptanceSetupDeps.getAgent = mock(() => undefined);
   _acceptanceSetupDeps.autoCommitIfDirty = async (workdir, stage, role, storyId) => {
     commitCalls.push({ workdir, stage, role, storyId });
@@ -470,7 +470,7 @@ function setupFingerprintMatchDeps(
     acCount: 2,
     generator: "nax",
   });
-  _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "RED" });
+  _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
   _acceptanceSetupDeps.getAgent = mock(() => undefined);
   _acceptanceSetupDeps.autoCommitIfDirty = async (workdir, stage, role, storyId) => {
     commitCalls.push({ workdir, stage, role, storyId });

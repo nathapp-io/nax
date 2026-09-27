@@ -113,7 +113,7 @@ describe("acceptance-setup: writes test file", () => {
     _acceptanceSetupDeps.writeFile = async (path) => {
       if (path.endsWith(".nax-acceptance.test.ts")) writtenPaths.push(path);
     };
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
@@ -140,7 +140,7 @@ describe("acceptance-setup: writes test file", () => {
     _acceptanceSetupDeps.writeFile = async (path, content) => {
       if (path.endsWith(".nax-acceptance.test.ts")) writtenContent = content;
     };
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -164,7 +164,7 @@ describe("acceptance-setup: RED gate — failing tests", () => {
     _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail\n0 pass" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x\n0 pass" });
 
     const ctx = makeCtx();
     const result = await acceptanceSetupStage.execute(ctx);
@@ -177,7 +177,7 @@ describe("acceptance-setup: RED gate — failing tests", () => {
     _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "3 fail\n0 pass" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x\n3 fail" });
 
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
@@ -284,7 +284,7 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
       throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -310,7 +310,7 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.runTest = async () => {
       testRunCalled = true;
-      return { exitCode: 1, output: "1 fail" };
+      return { exitCode: 1, output: "(fail) AC-1: x" };
     };
 
     const ctx = makeCtx();
@@ -339,7 +339,7 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
     _acceptanceSetupDeps.writeFile = async () => {
       writeFileCalled = true;
     };
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -446,7 +446,7 @@ describe("acceptanceSetup context: testableCount", () => {
       throw new Error(`unexpected op: ${op.name}`);
     };
     _acceptanceSetupDeps.writeFile = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "2 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
@@ -531,7 +531,7 @@ describe("acceptance-setup: testStrategy config is consumed (callOp invoked)", (
     _acceptanceSetupDeps.callOp = strategyMakeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
   }
 
   test("stage runs and calls callOp when testStrategy='component'", async () => {
@@ -619,7 +619,7 @@ describe("acceptance-setup: testFramework appears in generate callOp input", () 
     _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
   }
 
   test("frameworkOverrideLine in generate input contains 'ink-testing-library' when set in config", async () => {

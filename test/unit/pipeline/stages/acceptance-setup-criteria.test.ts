@@ -125,7 +125,7 @@ describe("acceptance-setup: criteria collection", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
@@ -142,7 +142,7 @@ describe("acceptance-setup: criteria collection", () => {
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
@@ -175,7 +175,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -202,7 +202,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx({
       config: makeNaxConfig({
@@ -233,7 +233,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx();
     await acceptanceSetupStage.execute(ctx);
@@ -251,7 +251,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
     _acceptanceSetupDeps.callOp = makeDefaultCallOp();
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     const ctx = makeCtx({
       config: makeNaxConfig({
@@ -279,7 +279,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
     };
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
 
     await acceptanceSetupStage.execute(makeCtx());
 
@@ -309,7 +309,7 @@ describe("acceptance-setup: decomposed story exclusion", () => {
     _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
   });
 
   test("decomposed story is not passed to refine op", async () => {
@@ -403,7 +403,7 @@ describe("acceptance-setup: refinement concurrency", () => {
     _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
   }
 
   test("respects refinementConcurrency limit", async () => {
@@ -555,7 +555,7 @@ describe("acceptance-setup: group config inherits the run's profile chain (nax#2
     _acceptanceSetupDeps.writeFile = async () => {};
     _acceptanceSetupDeps.writeMeta = async () => {};
     _acceptanceSetupDeps.autoCommitIfDirty = async () => {};
-    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "(fail) AC-1: x" });
     _acceptanceSetupDeps.callOp = async (_ctx, packageDir, op, input, _storyId, config) => {
       seen.push({ packageDir, nativeFast: config?.models?.native?.fast });
       if (op.name === "acceptance-refine") {
