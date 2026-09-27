@@ -14,14 +14,12 @@
  * exception to the boundary is needed.
  */
 
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import type { BashApprovalMode } from "@/config/bash-approval";
-import { isInside, realOrRaw } from "@/utils/realpath";
+import { realOrRaw } from "@/utils/realpath";
 import { validateArgv } from "./exec-guard";
-import { isNaxConfigFile, naxOwnedWriteRefusal, naxWriteOptIns } from "./nax-owned-writes";
-import { pathListElements } from "./path-list";
+import { naxOwnedWriteRefusal, naxWriteOptIns } from "./nax-owned-writes";
 import { commandBranch } from "./policy-command-branch";
-import { pathFieldValue } from "./policy-input";
 import {
   type CompiledEntry,
   type CompiledPattern,
@@ -34,69 +32,12 @@ import {
   matchesAny,
   matchesArgvGrant,
 } from "./policy-match";
+import { type PathsBranchContext, pathsBranch, type RuleState, resolveWithin } from "./policy-paths-branch";
 import { EXEC_TOOL_NAME, type PolicyVerdict, type ToolGrant, type ToolPolicy, type ToolScope } from "./types";
 import { argvShellHint } from "./verb-denial-argv-hint";
 
-/**
- * Does `resolved` (already absolute and symlink-resolved) enter a `.git`
- * directory anywhere along its path relative to `root`?
- *
- * A path-SEGMENT match, never a prefix or substring one: `.gitignore` and
- * `.github/` are ordinary tracked names a tool must still be able to reach,
- * and `startsWith(".git")` would wrongly swallow both -- the exact defect
- * this function exists to avoid (nax#1943).
- *
- * Matches ANY segment, not only a leading one. A nested repository or a
- * submodule checked into the tree (`vendor/some-lib/.git`, which may be a
- * directory or, for a submodule, a file pointing at the real gitdir
- * elsewhere) carries the same integrity and containment risk `.git/` at the
- * root does -- the ruling behind this function is "no path-bearing tool ever
- * addresses git metadata", not "only the top-level repository's".
- */
-function entersGitMetadata(root: string, resolved: string): boolean {
-  const rel = relative(realOrRaw(root), resolved);
-  if (rel === "" || rel.startsWith("..")) return false;
-  return rel.split(sep).includes(".git");
-}
-
-/**
- * Absolute, symlink-resolved form of `candidate` if it lies inside `root`,
- * is not itself (and does not lie under) `.git/`, and is not one of nax's own
- * config files.
- *
- * The single containment seam. Multi-root support (a future configurable
- * extension) changes this function and nothing else, which is why every tool
- * receives an already-resolved path rather than resolving one itself. The
- * `.git/` exclusion lives here for the same reason: it applies to every
- * path-bearing tool uniformly, reads included, rather than being
- * re-remembered per tool -- which is exactly the failure mode a declaration
- * on `ToolScope` would reintroduce (nax#1943). `.git/` sits INSIDE the root,
- * so containment alone never bars it, and an unconditional ("*") grant --
- * what every non-Exec tool gets under the default `unrestricted` profile --
- * skips glob matching entirely, so nothing downstream of this function would
- * catch it either.
- *
- * Pre-single-frame, this seam carried one exception: an `execTouchedPaths` set
- * (Task 10) admitted a workspace install's repo-ROOT manifest/lockfile even
- * though it sat outside the containment root, which was then the story's
- * package dir. The root move made the containment root the repo root, so the
- * manifest is in-root by construction and that carve-out was retired
- * (PR2/Task 13). There is no exception to this seam now.
- */
-export function resolveWithin(root: string, candidate: string): string | null {
-  const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
-  if (isInside(root, absolute)) {
-    const resolved = realOrRaw(absolute);
-    if (entersGitMetadata(root, resolved) || isNaxConfigFile(root, resolved)) return null;
-    return resolved;
-  }
-  return null;
-}
-
-/** Mutable scratch shared by `check()`'s branch helpers: first ask rule matched. */
-interface RuleState {
-  ask?: string;
-}
+/** The single containment seam now lives beside the path branch that drives it. */
+export { resolveWithin };
 
 export interface ToolPolicyOptions {
   /**
@@ -189,20 +130,6 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     });
   }
 
-  /**
-   * The path globs in a grant, which for a verb-gated tool means the patterns
-   * that are not verb names.
-   *
-   * A grant list is overloaded -- verbs for Git, path globs for Write -- so
-   * matching every pattern against a path denied everything for Git, and
-   * matching none left its paths bounded by the root alone. `allowedVerbs` is a
-   * closed set the tool declares, so the two kinds separate without guessing.
-   */
-  function pathMatchers(matchers: CompiledPattern[], scope: ToolScope): CompiledPattern[] {
-    const verbs = scope.allowedVerbs;
-    return verbs === undefined ? matchers : matchers.filter((m) => !verbs.includes(m.source));
-  }
-
   function deny(reason: string, breach = false, escalatable = false): PolicyVerdict {
     return { allowed: false, reason, breach, escalatable, outcome: "denied" };
   }
@@ -227,61 +154,6 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
   function ruleExpr(tool: string, entry: CompiledEntry, source?: string): string {
     const patterns = source === undefined ? entry.raw : matchedRulePatterns(entry, source);
     return patterns.includes("*") ? tool : `${tool}(${patterns.join(", ")})`;
-  }
-
-  /**
-   * The reason text for a path `resolveWithin` refused (fix round 1, Task 10;
-   * `.git/` case added for nax#1943).
-   *
-   * A bare "resolves outside the permitted root" taught the model nothing
-   * the last time this shape of denial mattered: in the run that motivated
-   * this whole feature, that message is what led an agent to delete a
-   * tsconfig entry instead of installing the package it needed. The design's
-   * own rule is that a denial returns the reason AND what would have been
-   * allowed.
-   *
-   * A `.git/`-metadata refusal gets its own branch, checked first: unlike
-   * every other refusal this function handles, the candidate is genuinely
-   * INSIDE the root, so "resolves outside the permitted root" would be
-   * actively misleading rather than merely unhelpful.
-   *
-   * Every other refused path keeps the plain message. The GitCommit-specific
-   * manifest/lockfile message and its `isKnownManifestOrLockfileName` table
-   * were retired with the `execTouchedPaths` carve-out (PR2/Task 13): that
-   * message existed only to explain the carve-out's rule, and post root move
-   * a repo-root manifest is inside the root by construction, so there is no
-   * distinct rule left to explain.
-   *
-   * This must never get chattier for ordinary containment denials, and must
-   * never reveal repository structure for a path the model never touched.
-   *
-   * The root itself IS named, deliberately. The rule above -- never reveal
-   * repository structure -- is about paths the model never touched; this path is
-   * one the model just passed, and telling it where the boundary is is the
-   * difference between "adapt" and "work around". The dispatch preamble
-   * (src/prompts/sections/agent-scope.ts) states the same boundary only as a
-   * package-relative label (`packages/api`), never as an absolute path, so this
-   * message is where the agent first sees the absolute containment root -- and
-   * naming a path the model itself handed in is the right disclosure.
-   */
-  function outOfRootReason(root: string, candidate: string): string {
-    const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
-    if (isInside(root, absolute) && isNaxConfigFile(root, realOrRaw(absolute))) {
-      return (
-        "is one of nax's own config files, which every tool is refused regardless of grant -- " +
-        "`quality.commands` and `acceptance.command` are run through a shell WITHOUT passing the " +
-        "permission gate because a human wrote them, so editing this file is a route to running " +
-        "an ungated command on the next run"
-      );
-    }
-    if (isInside(root, absolute) && entersGitMetadata(root, realOrRaw(absolute))) {
-      return (
-        "targets git metadata under .git/, which every tool is refused regardless of grant -- " +
-        "writing there can corrupt the repository beyond git's own recovery, and reading its " +
-        "config is a route to influencing what nax executes without passing through Exec (nax#1943)"
-      );
-    }
-    return `resolves outside the permitted root (${root}), which is the only directory this tool can reach`;
   }
 
   /**
@@ -404,151 +276,11 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
   }
 
   /**
-   * Containment runs before any pattern matching and wins over everything.
-   * Each resolved path is then evaluated deny -> ask -> allow. A verb-only
-   * grant declares no path globs, leaving the root as the only bound --
-   * unchanged behaviour, now an authoring choice rather than something the
-   * grant syntax could not express.
-   *
-   * `confineTo` (tool-declared, see `ToolScope`) shifts the root passed to
-   * `resolveWithin` from `<root>` to `<root>/<confineTo>`: containment stays
-   * the one seam, and only its ROOT changes. `relativeTo` keeps rooting at
-   * `resolvedRoot` so grant globs, deny rules and `naxOwnedWriteRefusal`
-   * continue to see the canonical repo-root-relative spelling -- authors
-   * write `.nax/scratchpad/**`, never `**`, regardless of `confineTo`.
-   *
-   * `confineTo` is bound to stay INSIDE `resolvedRoot`: an authoring typo of
-   * `..` or `../shared` would otherwise widen the containment root past the
-   * policy boundary and re-scope `resolveWithin`'s `.git/`-metadata and
-   * `isNaxConfigFile` protections to a root that no longer aligns with the
-   * segments those checks assume -- the repo's own `.nax/config.json` would
-   stop being segment-matched against `.nax`. The boundary is the policy
-   root's invariant, so an out-of-root confineTo refuses the call outright
-   rather than silently widening.
+   * The path branch's collaborators, by reference (see `PathsBranchContext`):
+   * the nested helpers below stay authoritative, and the sibling reads them at
+   * call time — `pathsBranch` itself lives in `./policy-paths-branch`.
    */
-  function pathsBranch(
-    tool: string,
-    scope: ToolScope,
-    input: Record<string, unknown>,
-    grant: CompiledEntry,
-    state: RuleState,
-  ): PolicyVerdict {
-    const globs = pathMatchers(grant.matchers, scope);
-    let effectiveRoot = resolvedRoot;
-    if (scope.confineTo !== undefined) {
-      effectiveRoot = realOrRaw(join(resolvedRoot, scope.confineTo));
-      if (!isInside(resolvedRoot, effectiveRoot)) {
-        return deny(
-          `${tool} declares confineTo "${scope.confineTo}" which resolves outside the policy root "${resolvedRoot}" -- confineTo must be a path INSIDE the policy root, never one that widens it`,
-        );
-      }
-    }
-    const relativeTo = (resolved: string) => relative(resolvedRoot, resolved).split(sep).join("/");
-    // A path spelled with the confined prefix the tool is already bound to
-    // (`.nax/scratchpad/spill/x.txt`) has it removed before `resolveWithin`
-    // runs, so both spellings reach the same file. This is a prefix REMOVAL,
-    // not a second containment root: what is left is still resolved inside
-    // `effectiveRoot`, so a `..` after the prefix remains a breach.
-    const confinePrefix = scope.confineTo === undefined ? "" : `${scope.confineTo}/`;
-    const stripConfine = (value: string): string =>
-      confinePrefix !== "" && value.startsWith(confinePrefix) ? value.slice(confinePrefix.length) : value;
-    const restrictPaths = !grant.unconditional && globs.length > 0;
-    const resolvedPaths: string[] = [];
-
-    for (const field of scope.pathFields) {
-      const value = pathFieldValue(input, field);
-      if (value === undefined) continue;
-      if (typeof value !== "string") return deny(`"${field}" must be a string path`);
-
-      const resolved = resolveWithin(effectiveRoot, stripConfine(value));
-      if (resolved === null) {
-        return deny(`path "${value}" ${outOfRootReason(effectiveRoot, value)}`, true);
-      }
-
-      const rel = relativeTo(resolved);
-      const ruleDenial = applyPathRules(tool, rel, state);
-      if (ruleDenial !== undefined) return ruleDenial;
-      if (!grant.unconditional && !matchesAny(globs, rel)) {
-        return deny(`${tool} is not granted "${rel}" for this stage`);
-      }
-      resolvedPaths.push(resolved);
-    }
-
-    for (const field of scope.listPathFields ?? []) {
-      const value = pathFieldValue(input, field);
-      if (value === undefined) continue;
-      const elements =
-        typeof value === "string"
-          ? pathListElements(value, effectiveRoot)
-          : Array.isArray(value) && value.every((element) => typeof element === "string")
-            ? value
-            : null;
-      if (elements === null) return deny(`"${field}" must be a string path or an array of string paths`);
-
-      for (const element of elements) {
-        const resolved = resolveWithin(effectiveRoot, stripConfine(element));
-        if (resolved === null) {
-          return deny(`path "${element}" ${outOfRootReason(effectiveRoot, element)}`, true);
-        }
-        const rel = relativeTo(resolved);
-        const ruleDenial = applyPathRules(tool, rel, state);
-        if (ruleDenial !== undefined) return ruleDenial;
-        if (!grant.unconditional && !matchesAny(globs, rel)) {
-          return deny(`${tool} is not granted "${rel}" for this stage`);
-        }
-        resolvedPaths.push(resolved);
-      }
-    }
-
-    for (const field of scope.arrayPathFields ?? []) {
-      const values = input[field];
-      if (values === undefined) continue;
-      if (!Array.isArray(values)) return deny(`"${field}" must be an array of string paths`);
-
-      for (const value of values) {
-        if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
-        const resolved = resolveWithin(effectiveRoot, stripConfine(value));
-        if (resolved === null) {
-          return deny(`"${field}" entry "${value}" ${outOfRootReason(effectiveRoot, value)}`, true);
-        }
-        const rel = relativeTo(resolved);
-        const ruleDenial = applyPathRules(tool, rel, state);
-        if (ruleDenial !== undefined) return ruleDenial;
-        if (restrictPaths && !matchesAny(globs, rel)) {
-          return deny(`${tool} is not granted "${rel}" for this stage`);
-        }
-        resolvedPaths.push(resolved);
-      }
-    }
-
-    for (const field of scope.refPathFields ?? []) {
-      const values = input[field];
-      if (values === undefined) continue;
-      if (!Array.isArray(values)) return deny(`"${field}" must be an array of string refs`);
-
-      for (const value of values) {
-        if (typeof value !== "string") return deny(`"${field}" entries must be strings`);
-        const colonAt = value.indexOf(":");
-        if (colonAt === -1) continue; // pure revision, no path to check
-        const candidatePath = value.slice(colonAt + 1);
-        if (candidatePath === "") continue; // e.g. "HEAD:" — no path to check
-
-        const resolved = resolveWithin(effectiveRoot, stripConfine(candidatePath));
-        if (resolved === null) {
-          return deny(`"${field}" entry "${value}" ${outOfRootReason(effectiveRoot, candidatePath)}`, true);
-        }
-        const rel = relativeTo(resolved);
-        const ruleDenial = applyPathRules(tool, rel, state);
-        if (ruleDenial !== undefined) return ruleDenial;
-        if (restrictPaths && !matchesAny(globs, rel)) {
-          return deny(`${tool} is not granted "${rel}" for this stage`);
-        }
-        resolvedPaths.push(resolved);
-      }
-    }
-
-    return state.ask === undefined ? { allowed: true, resolvedPaths } : askVerdict(resolvedPaths, state.ask);
-  }
+  const pathsBranchContext: PathsBranchContext = { resolvedRoot, deny, askVerdict, applyPathRules };
 
   return {
     root: resolvedRoot,
@@ -593,7 +325,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
         }) ??
         argvBranch(tool, scope, input, grant) ??
         verbBranch(tool, scope, input, grant, state) ??
-        pathsBranch(tool, scope, input, grant, state)
+        pathsBranch({ ctx: pathsBranchContext, tool, scope, input, grant, state })
       );
     },
   };

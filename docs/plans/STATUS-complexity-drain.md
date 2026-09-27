@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A7-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A8-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    248 functions in 215 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     21   (20 src, 1 scripts)   <- THIS DRAIN (resolveCodingToolSupport drained by A7)
+  over 20    247 functions in 215 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     20   (19 src, 1 scripts)   <- THIS DRAIN (pathsBranch drained by A8)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 8 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7)
+batches: 9 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8)
 ```
 
 Refresh this block at the end of every batch:
@@ -148,7 +148,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | A5 | done 2026-09-27 | 93 | hop callback | `src/operations/build-hop-callback.ts:191` | 599 | 33 / 19 | yes |
 | A6 | done 2026-09-27 | 91 | `callOpDispatch` | `src/operations/call.ts:80` | 591 | 33 / 17 | yes |
 | A7 | done 2026-09-27 | 74 | `resolveCodingToolSupport` | `src/agents/coding-tool-support.ts:312` | 601 -> 391 (size-gated) | 44 / 18 | yes |
-| A8 | todo | 127 | `pathsBranch` | `src/tools/policy.ts:429` | 601 | 26 / 16 | yes |
+| A8 | done 2026-09-27 | 127 | `pathsBranch` | `src/tools/policy.ts:429` | 600 -> 332 (at cap, may not grow) | 26 / 16 | yes |
 | A9 | todo | 71 | `handleRunCompletion` | `src/execution/lifecycle/run-completion.ts:111` | 563 | 22 / 18 | none |
 | A10 | todo | 83 | `runFixCycle` | `src/findings/cycle.ts:72` | 544 | 16 / 12 | yes |
 | A11 | todo | 70 | `runNonBlockingFix` | `src/execution/non-blocking-fix.ts:230` | 492 | 17 / 13 | yes |
@@ -900,3 +900,104 @@ table: name each branch's predicate, split conditional spreads/args by key class
 discussion: with the over-60 set down to 21, `buildCodingToolSupport` (38) and
 friends are already close enough to 20 that the 40-milestone may be cheaper than §1
 assumed.
+
+### 9.9 - 2026-09-27, A8 done - `pathsBranch` 127 -> 8 (one session)
+
+The second "policy decision tree" batch (§9.8's hand-over), and the last function over
+100 outside `parser.ts`. One session. Pre-flight all answered BEFORE writing code:
+(1) no per-file guard allow-list names `tools/policy.ts` (`grep -Rn "grep -vE" scripts/`
+finds only the naxconfig-cast list; policy.ts is not on it, and the moved code has no
+casts); (2) NO `_deps`-style seam — the barrel (`src/tools/index.ts`) re-exports only
+`compileToolPolicy`, `resolveWithin`, and type `ToolPolicyOptions` from policy.ts, so
+nothing tests mutate through policy.ts; (3) no source-text tests pin the file (grep
+found comments only); (4) file measured 600 lines at start (the doc's 601 had drifted,
+same as A7) — AT the cap, so the extraction could not land in place.
+
+**Characterisation first** (own commit `test: characterise pathsBranch unpinned branches
+before complexity drain`, 13 tests, green against the unrefactored branch). The mirror
+suites (`policy.test.ts` 793 lines, `policy-confine-to.test.ts`, `git-interception.test.ts`)
+pin the allow/deny/breach flows and every confinement AC, but NOTHING pinned: the five
+input-shape guard denials (`"field" must be a string path`, `... or an array of string
+paths`, `... must be an array of string paths`, `... must be an array of string refs`,
+`... entries must be strings`); the `"HEAD:"` empty-path-half continue (pinned
+discriminatingly under a restrictive glob grant, which would deny if the empty half were
+resolved); the confineTo root-ESCAPE refusal (message + breach:false, plus a guard-ORDER
+test); the listPathFields array-of-strings arm; and the two glob predicates' asymmetry
+(see below). `policy.test.ts` had only 7 lines of headroom under the 800-line test cap,
+so the tests went in a new sibling, `policy-paths-branch-edges.test.ts` — zero `as T`
+casts, looseCast stayed 1474. One test-design discovery: an UNconditional deny rule is
+intercepted in `check()` before `pathsBranch` ever runs, so the guard-order test uses a
+SCOPED deny rule (which fires inside the per-path loops) to prove the confineTo guard
+precedes them.
+
+**The load-bearing quirk this batch exists to record:** the four field-kind loops use
+TWO DIFFERENT glob predicates. `pathFields` and `listPathFields` check
+`!grant.unconditional && !matchesAny(globs, rel)`; `arrayPathFields` and `refPathFields`
+check `restrictPaths && !matchesAny(globs, rel)` where `restrictPaths` additionally
+requires `globs.length > 0`. Under a verb-only grant (conditional, no path globs), string
+path fields are DENIED while array/ref paths stay bounded by the root alone. This is
+pinned behaviour ("a verb-only grant leaves paths bounded by the root alone", mirror line
+222), not obviously intentional for the string loops — recorded as a quirk, NOT unified
+(§2.1). The split is preserved as two named frame fields (`enforcePathGlobs` /
+`restrictPaths`) with a module-comment explaining it, and both sides now have
+characterisation tests.
+
+**Technique:** guard clauses + named predicates in a new sibling,
+`src/tools/policy-paths-branch.ts` (399 lines): `entersGitMetadata`, `resolveWithin`
+(re-exported from policy.ts, so `glob.ts`/`package-managers.ts`/`scratchpad.ts`/barrel
+imports are untouched), `outOfRootReason`, and `pathMatchers` moved VERBATIM (all used
+only by `pathsBranch`); then `stripConfinePrefix` (the confined-prefix removal, now a
+named pure function), `repoRelative`, a `PathCheckFrame` (per-policy ctx + the call +
+walk scratch incl. the `resolvedPaths` array, mutated in place per A2's rule), the shared
+`checkPathSegment` (resolve -> breach deny -> applyPathRules -> glob -> record; the two
+things that actually differ between loops — the denial's subject spelling and the glob
+predicate — are its named parameters), and the four handlers `runPathFields` /
+`runListPathFields` / `runArrayPathFields` / `runRefPathFields`. The sibling imports
+NOTHING from policy.ts (no cycle; `check:import-cycles` 0) — the collaborators that stay
+closure-bound in policy.ts (`deny`, `askVerdict`, `applyPathRules` byte-identical at 13,
+plus `resolvedRoot`) arrive by reference in `PathsBranchContext`, read at call time.
+`pathsBranch` is now: confineTo guard -> frame -> four sequential handler calls -> final
+ask/allow ternary. `compileToolPolicy` itself dropped to 4. Verified with a
+template-literal fingerprint diff old vs new: every type-guard literal, breach message
+(incl. the ref loop's `"${field}" entry "${value}"` + `candidatePath` split between
+subject and outOfRootTarget), the `true` breach flag, the four "is not granted" messages
+(now one shared helper), and the confineTo escape message are 1:1.
+
+**Helper scores:** `runRefPathFields` 20 — exactly AT the strict limit, compliant per
+§2.3 (same as A6's `sendWithParseRetry`), and a coherent single loop, not a fake-split
+candidate; `runListPathFields` 17, `runArrayPathFields` 14, `pathsBranch` 8,
+`runPathFields` 7, `checkPathSegment` 4, `resolveWithin` 5, `outOfRootReason` 5,
+`stripConfinePrefix` 4, everything else <= 2. No baseline hand-edit (§2.3 never
+triggered).
+
+**File-size gate, single sibling held:** `policy.ts` 600 -> 332; the sibling landed at
+399 after `bun x biome check --write` — under 600 with room, so for the first time since
+A1 the "budget two sibling files" rule never came close to firing. The difference is that
+this extraction MOVES four whole self-contained helpers (~120 lines of the 600) instead
+of rehousing an entire function body; the moved-helper pattern is worth trying first in
+any batch whose target function has private single-consumer helpers.
+
+**One inverted edit caught in seconds, worth naming:** a removal Edit was submitted with
+old/new swapped, silently RE-ADDING the moved blocks; the next edit's old_string no
+longer matched and the mistake surfaced immediately. Nothing reached a commit — but the
+general lesson stands: after any multi-step sequence of content-marker edits on one file,
+`git diff --stat` BEFORE the next step, not after.
+
+**Nothing else surprising.** `bun run typecheck`, `bun run test` (all phases; the eight
+policy/interception/edges suites alone are 233 tests), `bun run check:all` (35 scripts;
+import-cycles 0, file-sizes green, looseCast 1474), and `bun run test:coverage` all
+green; below-floor count 1 vs baseline 2 (the standing A5 improvement, still not
+lowered). `check:complexity:update` was a pure lower: 248 -> 247 functions, 215 -> 215
+files — policy.ts stays baselined at `[29, 23]` (`argvBranch`/`verbBranch`, untouched,
+out of this batch's scope).
+
+**For the next batch:** A9 `handleRunCompletion`
+(`src/execution/lifecycle/run-completion.ts:111`, 71, 563 lines, `test: none`) — back to
+the Wave-A orchestrator shape, with NO mirror test file, so §2.2's "find what exercises
+it" sweep is the first job and the characterisation commit will be bigger than A7/A8's.
+Pre-flight per this batch: (1) grep test/ for source-text assertions on run-completion.ts
+before planning the split; (2) check for a `_deps`-style seam and barrel re-exports;
+(3) 563 lines + extraction means the sibling split must be planned from the first line
+(A6's one-file-per-branch seam); (4) the post-drain milestone note from §9.8 stands —
+over-60 is now 20, and `buildCodingToolSupport` (38) et al. remain within reach of the
+40-milestone discussion.

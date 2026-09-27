@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T17:21:25.751Z",
+  "updatedAt": "2026-09-27T17:54:45.318Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -185,7 +185,7 @@
     "src/tools/grep.ts": [21],
     "src/tools/policy-bash-raw.ts": [26],
     "src/tools/policy-bash.ts": [21],
-    "src/tools/policy.ts": [127, 29, 23],
+    "src/tools/policy.ts": [29, 23],
     "src/tools/read.ts": [24],
     "src/tools/run-command-exec.ts": [28],
     "src/tools/run-command.ts": [56],
