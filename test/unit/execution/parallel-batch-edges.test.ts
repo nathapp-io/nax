@@ -408,3 +408,39 @@ describe("warn-log payloads", () => {
     expect(conflict?.cost).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Real dep defaults — the seam's built-in implementations, which every other
+// test stubs away. Constructing the manager/engine and running the worker on
+// an empty batch are side-effect-free; the rectify default is NOT exercised
+// (it would start an agent session).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("real dep defaults", () => {
+  test("createWorktreeManager and createMergeEngine build real instances", async () => {
+    const manager = await _parallelBatchDeps.createWorktreeManager();
+    expect(typeof manager.create).toBe("function");
+    expect(typeof manager.remove).toBe("function");
+
+    const engine = await _parallelBatchDeps.createMergeEngine(manager);
+    expect(typeof engine.mergeAll).toBe("function");
+  });
+
+  test("executeParallelBatch on an empty batch resolves an empty result without side effects", async () => {
+    const empty = await _parallelBatchDeps.executeParallelBatch(
+      [],
+      tmpDir,
+      DEFAULT_CONFIG,
+      makeTestContext({ config: DEFAULT_CONFIG, rootConfig: DEFAULT_CONFIG }),
+      new Map(),
+      new Map(),
+      2,
+    );
+    expect(empty.pipelinePassed).toEqual([]);
+    expect(empty.merged).toEqual([]);
+    expect(empty.failed).toEqual([]);
+    expect(empty.mergeConflicts).toEqual([]);
+    expect(empty.storyCosts.size).toBe(0);
+    expect(empty.totalCost).toBe(0);
+  });
+});

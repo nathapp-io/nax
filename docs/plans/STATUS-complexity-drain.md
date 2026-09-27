@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B4-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B5-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    238 functions in 208 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     11   (10 src, 1 scripts)   <- THIS DRAIN (runDeferredRegression drained by B4)
+  over 20    237 functions in 207 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     10    (9 src, 1 scripts)   <- THIS DRAIN (runParallelBatch drained by B5)
   worst      110   src/config/validate.ts validateConfig
 biome.json cap: 170
-batches: 18 of 25 done (P0, A1-A13, B1-B4)
+batches: 19 of 25 done (P0, A1-A13, B1-B5)
 ```
 
 Refresh this block at the end of every batch:
@@ -168,7 +168,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | B2 | done 2026-09-27 | 76 | `sendTurn` | `src/agents/acp/adapter.ts:239` | 454 -> 252 | 15 / 7 | yes |
 | B3 | done 2026-09-27 | 155 | `parseAcpxJsonLine` | `src/agents/acp/parser.ts:88` | 388 | 6 / 5 | yes |
 | B4 | done 2026-09-27 | 73 | `runDeferredRegression` | `src/execution/lifecycle/run-regression.ts:205` | 587 | 10 / 6 | yes |
-| B5 | in progress | 63 | `runParallelBatch` | `src/execution/parallel-batch.ts:122` | 417 | 9 / 5 | yes |
+| B5 | done 2026-09-27 | 63 | `runParallelBatch` | `src/execution/parallel-batch.ts:122` | 417 -> 235 | 9 / 5 | yes |
 | B6 | todo | 66 | `displayFeatureDetails` | `src/cli/status-features.ts:329` | 503 | 6 / 4 | yes |
 | B7 | todo | 69 | `runSession` | `src/interaction/ask-link.ts:291` | 560 | 5 / 1 | yes |
 
@@ -2097,3 +2097,153 @@ lines + extraction means plan the sibling split from the first line; (5)
 audit log payloads specifically (B1/B4's hunting ground). Post-drain note:
 over-60 is down to 11 (10 src + 1 scripts); worst is C1's `validateConfig`
 (110); Wave B has three rows left (B5-B7), then the grouped Wave C.
+
+### 9.19 - 2026-09-27, B5 done - `runParallelBatch` 63 -> 0 (one session)
+
+The function A1's dispatch phases call into, and the batch where the
+"test: yes is not nothing to characterise" warning held for the SIXTH time -
+plus a NEW gate interaction: the per-file coverage floor has an opinion about
+extractions that §2.4's file-size gate does not. One session.
+
+**Pre-flight, all answered BEFORE writing code:** (1) `_parallelBatchDeps`
+(6 members) is defined in parallel-batch.ts and mutated by FOUR test files
+(parallel-batch.test.ts, parallel-batch-structure.test.ts, and the two
+integration files) - but NOT through a barrel: `src/execution/index.ts`
+re-exports NOTHING from parallel-batch.ts; every test imports
+`_parallelBatchDeps` and `runParallelBatch` directly from
+`@/execution/parallel-batch`. It stayed defined in parallel-batch.ts; the
+sibling imports it TYPE-ONLY (`typeof _parallelBatchDeps`) and every phase
+receives it BY REFERENCE on its input, each `deps.X` read at call time
+(B4's pattern; `check:import-cycles` 0). The OTHER seam relationship - the
+one the batch brief flagged - resolved clean: `_unifiedExecutorDeps
+.runParallelBatch` (unified-executor.ts:273) is a closure that
+dynamic-imports `./parallel-batch` FRESH PER CALL, so any refactor keeping
+`runParallelBatch` exported from parallel-batch.ts is invisible to it; the
+unified-executor side was not touched and its four seam suites
+(fallback-seam, signature, results, failure) stayed green unmoved. (2) A2's
+traps all clean, checked first: the function has ZERO `let` bindings (every
+accumulator is a `const` Map/array mutated in place - there is nothing for
+the SpinFlags shape to capture), no closure set up once crosses a phase
+boundary, and no catch reads state across a throw: every catch is
+per-story-contained (worktree-create, dep-prep, config allSettled,
+rectification) and pushes into shared accumulators, while the two unwrapped
+rejections (executeParallelBatch, mergeAll) propagate out of the whole
+function. The BatchFrame was designed mutate-in-place from the first line
+per §9.3 - which here cost nothing, since the original already worked by
+in-place mutation. (3) Source-text tests: TWO pin parallel-batch.ts raw
+(`expect(source).toContain('import("./merge-conflict-rectify")')` - unit
+parallel-batch.test.ts AC-9 and integration parallel-batch-rectification
+.test.ts AC-9), plus the structure suite's whole-tree scans for the
+forbidden old module names. All satisfied with ZERO test edits: the pinned
+string lives in `_parallelBatchDeps.rectifyConflictedStory`'s dynamic
+import, which stayed put with the seam. (4) No per-file guard allow-list
+names the file (`grep -Rn "grep -vE" scripts/` clean; the moved
+`loadConfigForWorkdir` call keeps its 3 arguments, so the
+profile-threading gate stays green wherever it lands - its test-file hit
+at check-config-profile-threading.test.ts:87 is a synthetic fixture, not a
+raw read). (5) File measured 417 going in - the doc's number, exact.
+
+**Characterisation first** (own commit `test: characterise runParallelBatch
+unpinned branches before complexity drain`, 8 tests, green against the
+unrefactored function, new file `test/unit/execution/parallel-batch-edges
+.test.ts` - the main mirror sits at 767 of the 800 test cap, too tight for
+additions; zero `as` expressions, looseCast stayed 1474). The four mirrors
+pin the ACs, US-003 identity rules, BUG-36/36 pipelineContextBase, BUG-37
+cost folding, BUG-60 dep-prep timing, and BUG-007 config resilience. What
+NOTHING pinned: (a) the ENTIRE non-conflict merge-failure branch
+(`failureKind: "error"` -> failed, never mergeConflicts, no rectification
+bought) including the `?? "merge failed"` fallback - a whole behavioral
+branch, the biggest unpinned find since A11; (b) the worktree-create
+failure's synthesized result (stoppedAtStage, context under the batch
+workdir) and its near-instant duration - the worktree arm of the BUG-60
+timing rule, which only ever pinned the dep-prep arm; (c) the dep-prep
+failure's worktree CLEANUP: remove called with the composed identity, a
+throwing remove swallowed, the "worktree-dependencies" stage name, and
+context.workdir pointing at the removed worktree root; (d) per-story config
+THREADING - prepareWorktreeDependencies receives the resolved config by
+identity (not the root default) and the worker receives the effective-config
+map as its 9th argument, plus the empty-map arm forwarding undefined; (e)
+the config-load warn payload; (f) the rectification-throw warn under the odd
+"[parallel-batch]" bracketed stage spelling. Noted, not pinned - defensive
+arms unreachable through the collaborator contract (B2's precedent): the
+config rejection always carries storyId (the enrichment lives in the
+in-function mapper), and merge/conflict entries can only name pipelinePassed
+ids (which come from `stories`).
+
+**THE new thing - the coverage floor is the file-size gate's twin.** After
+the extraction was green everywhere else, `bun run test:coverage` FAILED:
+moving the covered phase bodies OUT left parallel-batch.ts dominated by the
+four real dep bodies in `_parallelBatchDeps` - which NO test executes,
+because every mirror stubs them. The file, previously above the per-file
+floor and therefore absent from coverage-per-file-baseline.json, became a
+"new" below-floor file (94/122 lines = 77.05% vs floor 80) and failed the
+gate - the residual's uncovered FRACTION rose even though uncovered COUNT
+was unchanged. Fix, chosen to add real value rather than fudge the
+baseline: a "real dep defaults" describe in the edges file executing the
+seam's built-in implementations that are provably side-effect-free -
+createWorktreeManager/createMergeEngine (pure constructors) and
+executeParallelBatch with an EMPTY stories array (verified in
+parallel-worker.ts first: the loop never runs, allSettled resolves on an
+empty set, the empty result is returned - no git, no agents). The file went
+94/122 -> 120/122 (98.4%). rectifyConflictedStory's real body stays
+uncovered by design - executing it would start an agent session. Rule for
+every future extraction batch: budget a `test:coverage` run BEFORE
+committing, and when the source file is seam-heavy, check whether the
+residual file is dominated by never-executed dep bodies.
+
+**Technique:** sequencer + eight phases in ONE sibling,
+`src/execution/parallel-batch-phases.ts`, cut at the numbered-comment seams
+the original already had: `createStoryWorktrees` 9 (BUG-05 containment +
+AC-2 start times), `resolveStoryConfigs` 8 (PKG-003 allSettled; its inner
+mapper scores 5 separately), `prepareStoryDependencies` 12, `executeReady
+Stories` 3 (the empty-batch literal verbatim), `mergePassedStories` 19 (the
+three-way merge-result classification - largest helper, one coherent unit,
+not a fake-split candidate), `buildFailedList` (pure synthesis),
+`rectifyMergeConflicts` 8 (builds and returns storyEndTimes), `finalize
+BatchResult` 4 (BUG-37 total + durations). `runParallelBatch` itself is a
+straight-line prologue (logger, worktreeManager, BatchFrame literal) plus
+eight awaited calls returning the assembled literal - probe at
+maxAllowedComplexity=1 gives it 0. All helpers <= 19 - no baseline hand-edit
+(§2.3 never triggered, twelfth batch running). `check:complexity` reported
+only "improved" for parallel-batch.ts, and `check:complexity:update` was a
+pure lower: 238 -> 237 functions, 208 -> 207 files (the file left the
+over-20 baseline entirely).
+
+**File-size gate, single sibling held:** parallel-batch.ts 417 -> 235
+(strictly smaller; both counts after `bun x biome check --write`); the
+sibling landed at 457 - under 600 with room. The "budget two sibling files"
+rule never came close to firing: 417 lines was the smallest source going in
+of any Wave A/B batch, and the seam (60 lines of dynamic-import closures)
+stayed behind in the source.
+
+**Verification beyond the suite:** literal fingerprint diff of the original
+file against the pair - all 43 quoted/template literals (template
+placeholders stripped) appear verbatim, zero missing; all 5 real
+`Date.now()` call sites at identical logical positions (a naive grep
+overcounts: the sibling's header COMMENT mentions `Date.now()` in prose -
+B1's comment-text lesson, reverse direction); `getSafeLogger()` 2/2; dep
+call sites 6/6, every one reading the seam at call time. 2698 execution
+-tree tests green (230 files, incl. all five parallel-batch suites and the
+four unified-executor seam suites), then the full suite (all phases),
+`check:all` (35 scripts; import-cycles 0 - the sibling imports
+parallel-batch.ts TYPE-ONLY; file-sizes green; looseCast 1474), and
+`test:coverage` green after the real-dep tests (below-floor 1 vs baseline
+2 - the standing A5 improvement).
+
+**For the next batch:** B6 `displayFeatureDetails`
+(`src/cli/status-features.ts:329`, 66, 503 lines, test: yes) - the first
+CLI-action batch since A4, §3's "one function per output section" row.
+Pre-flight per this batch: (1) A4's CLI lessons apply in full - `bin/`-style
+deps seams are rare in `src/cli/`, but grep for one and check whether any
+symbol a moved block calls is shared by other commands (§9.5's rule: such a
+symbol moves OUT first, never imported back); (2) grep test/ for source
+-text assertions on status-features.ts (console-output tests sometimes pin
+raw file text); (3) audit console output payloads specifically - the A3/A11
+/B1 log-payload hunting ground translates to printed lines here; (4) the
+NEW coverage lesson above - status-features.ts may be display-heavy with
+its covered mass concentrated in the target function; run `test:coverage`
+before committing and check the residual's floor situation; (5) 503 lines +
+extraction: plan the sibling from the first line, but expect one file to
+hold. Post-drain note: over-60 is down to 10 (9 src + 1 scripts); worst is
+C1's `validateConfig` (110); Wave B has two rows left (B6, B7), then the
+grouped Wave C - and the 40-milestone discussion from §9.8 still stands.

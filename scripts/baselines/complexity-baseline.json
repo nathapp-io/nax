@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T22:03:29.212Z",
+  "updatedAt": "2026-09-27T22:27:55.733Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -93,7 +93,6 @@
     "src/execution/lifecycle/run-setup-init.ts": [21],
     "src/execution/lifecycle/run-setup.ts": [24],
     "src/execution/nbf-source-diff.ts": [29],
-    "src/execution/parallel-batch.ts": [63],
     "src/execution/pipeline-result-handler.ts": [38, 35],
     "src/execution/plan-inputs.ts": [28],
     "src/execution/post-run.ts": [38],
