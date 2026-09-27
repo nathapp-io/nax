@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B2-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B3-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    240 functions in 210 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     13   (12 src, 1 scripts)   <- THIS DRAIN (sendTurn drained by B2)
-  worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
+  over 20    239 functions in 209 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     12   (11 src, 1 scripts)   <- THIS DRAIN (parseAcpxJsonLine drained by B3)
+  worst      110   src/config/validate.ts validateConfig
 biome.json cap: 170
-batches: 16 of 25 done (P0, A1-A13, B1, B2)
+batches: 17 of 25 done (P0, A1-A13, B1-B3)
 ```
 
 Refresh this block at the end of every batch:
@@ -166,7 +166,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 |:--|:--|---:|:--|:--|---:|:--|:--|
 | B1 | done 2026-09-27 | 96 | `decideStageAction` | `src/execution/post-run.ts:275` | 534 -> 321 | 14 / 7 | none |
 | B2 | done 2026-09-27 | 76 | `sendTurn` | `src/agents/acp/adapter.ts:239` | 454 -> 252 | 15 / 7 | yes |
-| B3 | todo | 155 | `parseAcpxJsonLine` | `src/agents/acp/parser.ts:88` | 388 | 6 / 5 | yes |
+| B3 | done 2026-09-27 | 155 | `parseAcpxJsonLine` | `src/agents/acp/parser.ts:88` | 388 | 6 / 5 | yes |
 | B4 | todo | 73 | `runDeferredRegression` | `src/execution/lifecycle/run-regression.ts:205` | 587 | 10 / 6 | yes |
 | B5 | todo | 63 | `runParallelBatch` | `src/execution/parallel-batch.ts:122` | 417 | 9 / 5 | yes |
 | B6 | todo | 66 | `displayFeatureDetails` | `src/cli/status-features.ts:329` | 503 | 6 / 4 | yes |
@@ -1819,3 +1819,148 @@ mirror suite is parser.test.ts - audit which line/event shapes it pins
 before trusting it. Post-drain note:
 over-60 is down to 13 (12 src + 1 scripts); after B3 the worst is C1's
 `validateConfig` (110); the 40-milestone discussion from §9.8 still stands.
+
+### 9.17 - 2026-09-27, B3 done - `parseAcpxJsonLine` 155 -> 7 (one session)
+
+The worst-scoring function anywhere, and the first "line/char parser, big
+if/switch chain" batch - §3's row predicts a dispatch map from event type to a
+handler, which is what landed. One session, including a 21-test
+characterisation commit - §9.12/§9.13/§9.16's warning held a fourth time:
+"test: yes" was not "nothing to characterise".
+
+**Pre-flight, all answered BEFORE writing code:** (1) parser.ts has NO
+`_deps`-style seam at all - the acp barrel (`src/agents/acp/index.ts`) re-exports
+the four parser functions BY VALUE plus two types, and no test mutates anything
+on the module - A1's trap resolved "no" on the first check (like A2). (2) A2's
+traps: the accumulator `state` is MUTATED IN PLACE by every branch and that is
+the contract, so handlers take `state` and mutate it (never build a fresh one) -
+the natural pattern here, designed in from the first line per §9.3. No loops, no
+closures over `let`s; the one try/catch is the sequencer's own legacy-text
+fallback and stayed in the sequencer. (3) NO source-text tests pin parser.ts -
+grep found comments only in `parse-agent-error.test.ts` and
+`cost/calculate.test.ts` (ninth batch running). (4) No per-file guard
+allow-list names the file (`grep -Rn "grep -vE" scripts/`);
+`check:adapter-no-config-import` unthreatened (the sibling imports nothing
+config-shaped). (5) File measured 388 going in - the doc's number, exact, second
+batch in a row (A12 was the first).
+
+**Characterisation first** (own commit `test: characterise parseAcpxJsonLine
+unpinned branches before complexity drain`, 21 tests, new file
+`test/unit/agents/acp/parser-line-edges.test.ts`; zero cast expressions,
+looseCast stayed 1474). The two mirror suites (parser.test.ts, activity-emission)
+plus spawn-client's BUG-1 pin a LOT of this parser. What NOTHING pinned:
+(a) the first-JSON-line fallback purge - an unparseable banner stashes itself as
+fallback text, and the FIRST valid NDJSON line must drop that stash (only the
+stash arm was pinned, never the purge); (b) the catch-guard's third arm - an
+unparseable line after JSON has been seen but with text still EMPTY is not
+stashed (`!state.text && !state.sawJsonLine`, not merely `!state.text`);
+(c) drift-guard `??=` semantics - a drift line never overwrites an error an
+earlier line captured - and BOTH drift log payload shapes (method present /
+absent; pinned via the `initLogger`/`addSink` global-logger pattern -
+`getSafeLogger()` is a module-level read, not a seam); (d) `agent_message_chunk`
+with non-text content emits nothing; (e) an unknown `sessionUpdate` value and a
+session/update without `params.update` fall through to result/error handling;
+(f) the POSITIVE `update.used` fallback - only its Infinity-rejection was pinned
+by BUG-12 - including a non-object `_meta` still falling back; (g) snake_case
+`stop_reason` capture and the both-spellings precedence (snake wins - it is
+assigned second); (h) the JSON-RPC 2.0 error branch's diagnostics: non-string
+message stringifies the whole error object, the `[acpxCode/detailCode]`
+two-code suffix, first-error-wins with a later `retryable: true` ignored; (i)
+legacy STRING error capture and its never-overwrites (`??=`) counterpart; (j)
+legacy non-string `result`/`content`/`text` values change nothing; (k) legacy
+`stopReason`/`stop_reason` capture; (l) `extractToolName`'s whitespace-only
+fall-through to the nested `tool.name`, and the no-usable-name activity with
+`toolName: undefined`.
+
+**Technique:** sequencer + dispatch map, in a new sibling
+`src/agents/acp/parser-line-handlers.ts` (340 lines after `bun x biome check
+--write`). `parseAcpxJsonLine` stays in parser.ts as the sequencer - parse,
+sawJsonLine purge, `isProtocolDrift`/`reportProtocolDrift`, then
+`event.jsonrpc === "2.0" ? handleJsonRpcEvent : handleLegacyLine` with the
+legacy-text catch fallback inline - and scores 7. The sibling holds: the
+drift-guard pair (BUG-53 comment moved verbatim); `handleJsonRpcEvent`
+(session/update guard, then the result+error appliers - the original's
+SEQUENTIAL-not-else-if structure preserved: an unrecognized update still falls
+through to result/error handling); a `Record` dispatch map on
+`update.sessionUpdate` (`agent_message_chunk` / `agent_thought_chunk` /
+`usage_update` / `tool_call`+`tool_call_update` sharing one handler);
+`handleLegacyLine` plus one applier per field group (the result/content/text
+else-if chain with its mutual-exclusion comment, cumulative usage BUG-10,
+usage BUG-59/BUG-54, stop reason, error); `decorateAcpxError` - the
+suffix/retryable `data` block that was byte-identical between the two error
+branches (P0's "shared helper worth naming" pattern); `asFiniteNumber` and
+`extractToolName` moved wholesale (single-consumer private helpers, A8's
+pattern).
+
+**One design note worth naming: dispatch maps on UNTRUSTED wire data need an
+own-property guard.** `SESSION_UPDATE_HANDLERS[update.sessionUpdate]` on a plain
+object literal returns inherited `Object.prototype` members for wire keys like
+`"constructor"` or `"toString"` - the pre-split if-chain returned undefined for
+those, so the naive map would have ADDED a hazard (calling
+`Object.prototype.toString` as a handler). `handleSessionUpdate` guards with
+`typeof key !== "string"` plus `Object.hasOwn(...)` (the repo's established
+dispatch-table pattern). A dispatch map over external input is not a mechanical
+table transplant - check the lookup the way you would check any index.
+
+**Typing:** `type ParsedJson = ReturnType<typeof JSON.parse>` - the honest type
+for untrusted, arbitrarily shaped wire data. Every access stays a
+runtime-guarded dynamic read exactly as before the split, and ZERO new `as`
+casts were needed: the existing casts moved verbatim with their code (looseCast
+stayed 1474). A structural event interface would have pushed those guards into
+new casts without making anything safer.
+
+**Helper scores (probe at maxAllowedComplexity=1, repo-root probe config per
+§9.13, deleted after; note the flag is `--config-path=`, biome 2.5.10 rejects
+`--config`):** `handleUsageUpdate` 16 (largest - one coherent usage-record
+assembly, not a fake-split candidate), `applyJsonRpcResult` 15 (the BUG-54
+block verbatim), `parseAcpxJsonLine` 7, `decorateAcpxError` 7,
+`extractToolName` 7, `applyLegacyCumulativeUsage` 7, `applyJsonRpcError` 6,
+`handleLegacyLine` 6, `asFiniteNumber` 4, `isProtocolDrift` 4,
+`handleJsonRpcEvent` 4, `applyLegacyUsage` 3, `parseAcpxJsonOutput` 3,
+`applyLegacyError` 3, `handleAgentMessageChunk`/`handleAgentThoughtChunk`/
+`applyLegacyStopReason`/`handleSessionUpdate` 2. All <= 20 - no baseline
+hand-edit (§2.3 never triggered, eleventh batch running). `check:complexity`
+reported only "improved" for parser.ts, and `check:complexity:update` was a
+pure lower: 240 -> 239 functions, 210 -> 209 files (parser.ts left the over-20
+baseline entirely - every function in both files scores <= 16).
+
+**File-size gate, single sibling held:** parser.ts 388 -> 158 (strictly
+smaller); the sibling landed at 340 - under 600 with room, because ~30 lines
+moved as whole private helpers and the handlers are individually small (the
+A8 moved-helper observation paid off exactly as §9.16 predicted it might for a
+parser). One lint catch worth knowing: `noParameterAssign` fired on
+`decorateAcpxError`'s `errorMsg` - reassigning it was fine as a local `let`
+inside the monolith but not as a parameter; fixed with an internal `let msg`,
+semantics identical.
+
+**Verification beyond the suite:** a literal fingerprint diff of the original
+file (git show of the pre-refactor commit) against the pair - 19 double-quoted
+literals of length >= 4: 16 verbatim plus 3 that now serve as the dispatch
+map's (unquoted) property keys, runtime-identical; all 7 template-literal
+fixed parts verbatim; zero missing. Every log message, error message, suffix
+join, and state-transition string is 1:1. 429 acp unit tests green across the
+24 suites (incl. the 21 new characterisation tests), then the full suite.
+
+**Nothing else surprising.** `bun run typecheck` (both tsconfigs), `bun run
+test` (all phases), `bun run check:all` (35 scripts; import-cycles 0 - the
+sibling imports parser.ts TYPE-ONLY, the A5/A9 pattern; file-sizes green;
+looseCast 1474; `check:adapter-no-config-import` green), and `bun run
+test:coverage` all green; below-floor count 1 vs baseline 2 (the standing A5
+improvement, not lowered here).
+
+**For the next batch:** B4 `runDeferredRegression`
+(`src/execution/lifecycle/run-regression.ts:205`, 73, 587 lines, test: yes) -
+back in `src/execution/lifecycle/`, where A9 found `_runCompletionDeps`
+barrel-re-exported through `src/execution/lifecycle/index.ts` (A1's trap
+shape). Pre-flight per this batch: (1) grep for a `_deps`-style seam in
+run-regression.ts and check BOTH barrels before planning; (2) A2's traps
+first - a deferred regression runner is exactly where an intentional mid-loop
+throw whose catch reads loop state lives (A10's `finish`-closure shape); (3)
+grep test/ for source-text assertions on the file; (4) 587 lines is 13 under
+the cap going in - the extraction CANNOT land in place, and the sibling split
+is planned from the first line (A9's gate/post-gate cut is the nearest
+template; A10's three-file cut if the first sibling overruns 600); (5) audit
+log payloads and data-literal construction specifically (A3/A11/B1's hunting
+ground). Post-drain note: over-60 is down to 12 (11 src + 1 scripts); worst
+is now C1's `validateConfig` (110); after B4-B7 the 40-milestone discussion
+from §9.8 still stands.

@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T21:09:25.536Z",
+  "updatedAt": "2026-09-27T21:32:40.479Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -20,7 +20,6 @@
     "scripts/report-test-consolidation.ts": [79],
     "src/acceptance/hardening.ts": [27],
     "src/agents/acp/adapter-complete-flow.ts": [29],
-    "src/agents/acp/parser.ts": [155],
     "src/agents/acp/spawn-client-session.ts": [24],
     "src/agents/acp/stdout-line-reader.ts": [32],
     "src/agents/coding-tool-extras.ts": [24],
