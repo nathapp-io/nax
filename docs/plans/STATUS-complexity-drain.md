@@ -176,8 +176,8 @@ A4 are the two most likely to need more than one session; if so, split them per 
 
 | Batch | Status | Score | Function | File:line | Lines | Churn / fix | test |
 |:--|:--|---:|:--|:--|---:|:--|:--|
-| C1 | todo | 110 | `validateConfig` | `src/config/validate.ts:30` | 175 | 4 / 0 | yes |
-| C1 | todo | 78 | `deepMergeConfig` | `src/config/merger.ts:41` | 173 | 2 / 2 | none |
+| C1 | in progress | 110 | `validateConfig` | `src/config/validate.ts:30` | 175 | 4 / 0 | yes |
+| C1 | in progress | 78 | `deepMergeConfig` | `src/config/merger.ts:41` | 173 | 2 / 2 | none |
 | C2 | todo | 75 | `parseFrontmatter` | `src/context/rules/rules-frontmatter.ts:110` | 293 | 5 / 2 | yes |
 | C2 | todo | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 | 4 / 4 | none |
 | C2 | todo | 64 | `parseTestFailuresDetailed` | `src/test-runners/ac-parser.ts:50` | 141 | 4 / 3 | none |
