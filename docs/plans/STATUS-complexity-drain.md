@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B1-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B2-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    241 functions in 211 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     14   (13 src, 1 scripts)   <- THIS DRAIN (decideStageAction drained by B1)
+  over 20    240 functions in 210 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     13   (12 src, 1 scripts)   <- THIS DRAIN (sendTurn drained by B2)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 15 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, B1)
+batches: 16 of 25 done (P0, A1-A13, B1, B2)
 ```
 
 Refresh this block at the end of every batch:
@@ -165,7 +165,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | Batch | Status | Score | Function | File:line | Lines | Churn / fix | test |
 |:--|:--|---:|:--|:--|---:|:--|:--|
 | B1 | done 2026-09-27 | 96 | `decideStageAction` | `src/execution/post-run.ts:275` | 534 -> 321 | 14 / 7 | none |
-| B2 | todo | 76 | `sendTurn` | `src/agents/acp/adapter.ts:239` | 455 | 15 / 7 | yes |
+| B2 | done 2026-09-27 | 76 | `sendTurn` | `src/agents/acp/adapter.ts:239` | 454 -> 252 | 15 / 7 | yes |
 | B3 | todo | 155 | `parseAcpxJsonLine` | `src/agents/acp/parser.ts:88` | 388 | 6 / 5 | yes |
 | B4 | todo | 73 | `runDeferredRegression` | `src/execution/lifecycle/run-regression.ts:205` | 587 | 10 / 6 | yes |
 | B5 | todo | 63 | `runParallelBatch` | `src/execution/parallel-batch.ts:122` | 417 | 9 / 5 | yes |
@@ -1678,3 +1678,144 @@ sibling split from the first line; (5) audit log payloads and data-literal
 construction specifically (A3/A11/B1's hunting ground). Post-drain note:
 over-60 is down to 14 (13 src + 1 scripts); worst remaining anywhere is B3's
 `parseAcpxJsonLine` (155); the 40-milestone discussion from §9.8 still stands.
+
+### 9.16 - 2026-09-27, B2 done - `sendTurn` 76 -> 1 (one session)
+
+The first `src/agents/acp/` batch and the first `while`-bound turn loop since
+A2. One session, including a 5-test characterisation commit - §9.12/§9.13's
+warning held a third time: "test: yes" was not "nothing to characterise".
+
+**Pre-flight, all answered BEFORE writing code:** (1) the `_deps` seam
+(`_acpAdapterDeps`, defined in `adapter-lifecycle.ts`, re-exported through
+adapter.ts AND the `src/agents/acp/index.ts` barrel) is A1's shape but
+harmless here: `sendTurn` reads NOTHING off it - its collaborators
+(`runSessionPrompt`, `ensureAcpSession`, `warnWallClockTimeout`,
+`raceWithAbort`, `buildTurnResult`, `extract*`) are direct value imports from
+the `adapter-lifecycle` / `adapter-output` leaves, and the tests' interception
+point is `_acpAdapterDeps.createClient` (the client/session objects). The new
+sibling imports those leaves DIRECTLY - nothing imports adapter.ts at all, so
+the A1 cycle cannot arise (`check:import-cycles` 0). (2) A2's traps both
+clean, checked first: no intentional mid-loop throw whose catch reads loop
+state (the loop's two try/catches are iteration-local; `runSessionPrompt`
+rejections propagate OUT of sendTurn untouched; the SessionTurnError throw
+happens AFTER the loop), no closure set up once capturing a `let` (the
+setTimeout closures are iteration-local). The handle's `_session` swap is a
+PUBLIC mutable field (documented on the class for exactly this recovery), so
+the frame carries `impl` by reference and mutate-in-place holds. (3)
+Source-text tests: ONE exists - `test/unit/agents/adapter-cleanup.test.ts`
+reads adapter.ts raw, but all four assertions are NEGATIVE (`not.toContain`
+on Phase-4-removed symbols the refactor never touches), so it stayed green
+unmoved - first batch since A1 to find a source-text test, first where
+nothing needed repointing. (4) No per-file guard allow-list names the file
+(`grep -Rn "grep -vE" scripts/`); `check:adapter-no-config-import` is
+unthreatened (the sibling imports nothing config-shaped). (5) File measured
+454 going in (doc said 455 - one line of drift, eighth batch running).
+
+**Characterisation first** (own commit `test: characterise sendTurn unpinned
+branches before complexity drain`, 5 tests, green against the unrefactored
+method, new file `test/unit/agents/acp/adapter-send-turn-edges.test.ts` -
+phase-a sat at 752 of the 800 test cap, too tight for additions; zero cast
+expressions, looseCast stayed 1474; log asserts use the `initLogger`/
+`addSink` pattern from coding-tool-support-dispatch-edges). The ~20 phase-a
+tests plus the rate-card suite pin the main flows; what NOTHING pinned:
+(a) the loop-top `turnDeadline.expired()` branch - the deadline expiring
+BETWEEN iterations (a slow interaction handler consuming the budget), which
+is a different arm from `runSessionPrompt`'s in-flight timeout the mirrors
+use, plus its `warnWallClockTimeout` call; (b) the "Interaction budget spent"
+warn and its payload, together with the DEFAULT `maxInteractions` of 10 (the
+exhaustion test passes an explicit 3 and asserts only the round-trip count);
+(c) NO_SESSION recovery whose re-establishment itself throws - the warn plus
+the documented "fall through to error throw" arm surfacing the dead turn's
+stopReason:"error" as SessionTurnError (the existing double-NO_SESSION test
+exercises the `sessionRecreated` guard, not the catch); (d) the
+externally-cancelled SessionTurnError message variant and the `retryable`
+field; (e) the pre-aborted zero-cost row's `pricingSource` (US-002). One
+defensive branch is UNREACHABLE through the collaborator contract and was
+left untested (noted, not pinned): `if (!lastResponse) break` - `runSessionPrompt`
+returns a null response only on its own timeout/abort arms, which break
+earlier.
+
+**Technique:** the ~206-line body became a three-call sequencer plus one new
+sibling, `src/agents/acp/adapter-send-turn.ts` (364 lines after
+`bun x biome check --write`): `buildSendTurnFrame` (impl/mapper/opts/card/
+deadline/maxInteractions - A3's PlanParams pattern) + `initialSendTurnState`
++ `zeroCostAbortedResult` + `runTurnLoop`, with the loop phases private to
+the sibling: `beginTurnIteration` (deadline check, counter, round-trip,
+timeout/abort/null-response arms - returns a break/response verdict),
+`recoverNoSession` (the ADR-019 block, comment moved verbatim; returns
+"re-queued" to continue), `accumulateUsage`, `awaitInteractionReply` (the
+TWO near-identical Promise.race blocks factored into one helper; the two
+warn messages are assembled from the same prefix plus a per-call suffix, "
+ for context-tool: " vs ": " - runtime-identical), `handleContextToolCall`
+(BUG-18 comment verbatim), `handleQuestion` (#1226 exchange capture),
+`processResponseInteractions` (the isEndTurn classification),
+`maybeWarnBudgetSpent`, `throwIfTurnFailed` (BUG-57 SessionTurnError
+construction). `sendTurn` itself is now: cast, frame, pre-abort guard,
+`runTurnLoop(frame, initialSendTurnState(prompt))` - and scores 1. The
+state object is mutated IN PLACE everywhere (designed that way from the
+first line per §9.3); nothing returns a fresh state. `INTERACTION_TIMEOUT_MS`
+moved with its only consumers (the constant appears once in the sibling
+now); adapter.ts's sendTurn-only imports were pruned (`addTokenUsage`,
+`estimateCostUsd`, `createTurnDeadline`, `SessionTurnError`, `TokenUsage`,
+`runSessionPrompt`, `warnWallClockTimeout`, the adapter-output four) while
+every re-export block (barrel surface) is untouched - the barrel
+(`src/agents/acp/index.ts`) needed zero edits.
+
+**Helper scores (probe at maxAllowedComplexity=1, repo-root probe config per
+§9.13, deleted after):** `processResponseInteractions` 11 (ternary-verdict
+nesting, still one coherent classification), `openSession` 11 (untouched,
+pre-existing), `awaitInteractionReply` 7, `runTurnLoop` 7,
+`beginTurnIteration` 5, `recoverNoSession` 5, `throwIfTurnFailed` 4,
+`accumulateUsage` 3, `handleContextToolCall` 3, `handleQuestion` 2,
+`maybeWarnBudgetSpent` 2; `sendTurn` 1; frame/state builders and the
+pre-abort literal <= 1. Everything <= 20 - no baseline hand-edit (§2.3 never
+triggered, tenth batch running). `check:complexity` reported only "improved"
+for adapter.ts, and `check:complexity:update` was a pure lower: 241 -> 240
+functions, 211 -> 210 files (`adapter.ts` left the over-20 baseline entirely
+- even `openSession` sits at 11).
+
+**File-size gate, single sibling held:** `adapter.ts` 454 -> 252 (strictly
+smaller, both counts after `bun x biome check --write`); the sibling landed
+at 364 - under 600 with room, because the moved mass is one ~206-line method
+plus its comments, and the two iterated interaction races share one helper
+instead of being duplicated. The "budget two sibling files" rule never came
+close to firing.
+
+**Verification beyond the suite:** literal fingerprint check of the original
+body (git HEAD) against the pair - all 27 distinct string/template-literal
+fixed parts (log messages, the abort message, stop-reason strings, the
+SessionTurnError message variants, state-transition markers) appear
+verbatim, zero missing. The two intentional textual deltas, both
+runtime-identical: the NO_SESSION guard inverted into an early-return
+(`exitCode !== 4 || sessionRecreated` returning false vs
+`exitCode === 4 && !sessionRecreated` entering the block - same
+short-circuit order), and the two interaction-failure warns now assemble
+`failed` + suffix + message from verbatim parts. One tooling repeat of
+A11's note: a naive regex literal-scan over a file mixing `"..."` and
+backticks yields bogus multi-line "missing" entries - the explicit-literal
+check above is the form that works. 412 tests across the 24 acp suites
+(incl. the 5 new characterisation tests and the adapter-cleanup source-text
+suite) green unchanged, then the full suite.
+
+**Nothing else surprising.** `bun run typecheck` (both tsconfigs), `bun run
+test` (all phases), `bun run check:all` (35 scripts; import-cycles 0,
+file-sizes green, looseCast 1474, `check:adapter-no-config-import` green),
+and `bun run test:coverage` all green; below-floor count 1 vs baseline 2
+(the standing A5 improvement, not lowered here).
+
+**For the next batch:** B3 `parseAcpxJsonLine`
+(`src/agents/acp/parser.ts:88`, 155 - the worst score anywhere) - §3's
+"line/char parser, big if/switch chain" row, the shape that wants a dispatch
+map from event type/char class to a handler. Pre-flight per this batch:
+(1) parser.ts is a leaf (nothing imports adapter.ts FROM it), but check
+whether the acp barrel or spawn-client files re-export anything mutable from
+it (A1's trap); (2) A2's traps matter less here (a pure parser should have
+no loop-carried mutable state), but check for accumulator arrays mutated
+across a labelled-break boundary (A12's `anyTruncated` shape); (3) grep
+test/ for source-text assertions on parser.ts; (4) 388 lines means the
+extraction MIGHT fit in place, but the moved-handler pattern (A8) is worth
+trying first - parser dispatch handlers are usually self-contained; (5) the
+mirror suite is parser.test.ts - audit which line/event shapes it pins
+before trusting it. Post-drain note:
+over-60 is down to 13 (12 src + 1 scripts); after B3 the worst is C1's
+`validateConfig` (110); the 40-milestone discussion from §9.8 still stands.
