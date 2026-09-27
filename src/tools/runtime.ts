@@ -10,20 +10,11 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { type CommandShadow, openShadowTap } from "@/command-safety";
+import type { CommandShadow } from "@/command-safety";
 import { getSafeLogger } from "@/logger";
-import {
-  ASK_CANCELLED_REASON,
-  type AskControl,
-  type AskResolver,
-  type AskVerdict,
-  headlessAskResolver,
-} from "@/permissions";
-import { errorMessage } from "@/utils/errors";
+import { type AskResolver, headlessAskResolver } from "@/permissions";
 import type { SandboxRecord } from "../sandbox";
-import { askDenyReason, askSummary } from "./ask-request";
 import { deleteTool } from "./delete";
-import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect";
 import { editTool } from "./edit";
 import { gitTool } from "./git";
 import { gitCommitTool } from "./git-commit";
@@ -32,11 +23,12 @@ import { grepTool } from "./grep";
 import { readTool } from "./read";
 import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry";
 import { requestCapabilityTool } from "./request-capability";
+import { openCallShadowTap, resolveAskOutcome, resolveDenialOutcome, resolvePolicyIdentity } from "./runtime-calltool";
 import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad";
 import { applyModelTruncationPolicy } from "./spill";
 import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit";
 import { READ_CEILING } from "./truncate";
-import { EXEC_TOOL_NAME, type ToolPolicy } from "./types";
+import type { ToolPolicy } from "./types";
 import { writeTool } from "./write";
 
 /** Per-call output ceiling, mirroring ToolDescriptor.maxTokensPerCall in spirit. */
@@ -323,38 +315,26 @@ export function createCodingToolRuntime(opts: {
         return { kind: "denied", reason, breach: false };
       }
 
-      // A call carrying the tool's declared argv field (RunCommand's `Exec`
-      // branch) is checked, and ledgered, under the `Exec` identity rather
-      // than the tool's own name. Left as `name`, an `Exec(...)` grant would
-      // never be consulted — the call would run under RunCommand's own grant
-      // (often a wildcard for its declared commands), making the allowlist
-      // decorative. The tool's registered name is unaffected; this changes
-      // only which identity the policy and ledger see for THIS call.
-      const argvField = tool.scope.argvField;
-      const hasArgv = argvField !== undefined && input[argvField] !== undefined;
-      const policyIdentity = hasArgv ? EXEC_TOOL_NAME : name;
+      const { policyIdentity, argvField, hasArgv } = resolvePolicyIdentity(name, tool, input);
 
       const verdict = opts.policy.check(policyIdentity, tool.scope, input);
 
       // P5: observe the command now (not awaited), settle from logCall below.
-      const tap =
-        opts.commandShadow === undefined
-          ? undefined
-          : openShadowTap(opts.commandShadow, {
-              key: randomUUID(),
-              identity: policyIdentity,
-              command: tool.scope.commandField === undefined ? undefined : input[tool.scope.commandField],
-              argv: hasArgv && argvField !== undefined ? input[argvField] : undefined,
-              root: opts.policy.root,
-              verdict,
-              stage: opts.pipelineStage ?? "unknown",
-              ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
-              ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
-              ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),
-              ...(context?.turnId !== undefined ? { turnId: context.turnId } : {}),
-              ...(context?.roundTrips !== undefined ? { roundTrips: context.roundTrips } : {}),
-              ...(context?.toolCallId !== undefined ? { toolCallId: context.toolCallId } : {}),
-            });
+      const tap = openCallShadowTap({
+        shadow: opts.commandShadow,
+        identity: policyIdentity,
+        tool,
+        input,
+        hasArgv,
+        argvField,
+        root: opts.policy.root,
+        stage: opts.pipelineStage,
+        storyId: opts.storyId,
+        callId: opts.callId,
+        scopeId: opts.scopeId,
+        context,
+        verdict,
+      });
       // Every ledger outcome of this call settles the tap exactly once, with
       // `denied:ask` and `decidedBy` intact -- which CodingToolOutcome.kind
       // alone would lose (spec 4.2). The audit is a named parameter, not a
@@ -461,93 +441,36 @@ export function createCodingToolRuntime(opts: {
       }
 
       if (!verdict.allowed && verdict.outcome === "ask") {
-        // US-003: build the AskControl from the per-call context. The turn's
-        // abort signal is forwarded verbatim, and onWaiting is wired so the
-        // resolver can tell the turn loop a human prompt is pending.
-        const callSignal = context?.signal ?? signal;
-        const askControl: AskControl = {
-          ...(callSignal !== undefined ? { signal: callSignal } : {}),
-          ...(context?.onWaiting !== undefined ? { onWaiting: context.onWaiting } : {}),
-        };
-        const ask = askSummary(policyIdentity, tool.scope, input);
-        let askVerdict: AskVerdict;
-        try {
-          askVerdict = await askResolver.resolve(
-            {
-              tool: policyIdentity,
-              stage: opts.pipelineStage ?? "unknown",
-              rule: verdict.rule ?? verdict.reason,
-              ...(verdict.rule !== undefined ? { matchedRule: verdict.rule } : {}),
-              summary: ask.summary,
-              ...(ask.unshowable ? { unshowable: true as const } : {}),
-              ...(typeof input[tool.scope.commandField ?? ""] === "string"
-                ? { command: input[tool.scope.commandField as string] as string }
-                : {}),
-              root: opts.policy.root,
-              reason: verdict.reason,
-              ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
-            },
-            askControl,
-          );
-        } catch (err) {
-          const content = errorMessage(err);
-          logCall(policyIdentity, "error", content.length, input, context, false, content);
-          return { kind: "error", content };
-        }
-        const approval = {
-          decidedBy: askVerdict.decidedBy,
-          remembered: false,
-          latencyMs: askVerdict.latencyMs,
-        };
-        if (askVerdict.decision === "allow") {
-          // US-003 AC11: recheck the turn signal AFTER the resolver returned
-          // allow. A resolver that approves after the turn has been cancelled
-          // would otherwise race ahead and execute the tool; we deny instead
-          // with the same cancelled reason, so the agent never sees a tool
-          // result from a turn that has already ended.
-          if (callSignal?.aborted === true) {
-            const reason = `${verdict.reason} -- ${ASK_CANCELLED_REASON}`;
-            logCall(policyIdentity, "denied:ask", reason.length, input, context, false, reason, undefined, {
-              approval,
-            });
-            return { kind: "denied", reason, breach: false };
-          }
-          return runTool(tool, input, verdict.resolvedPaths ?? [], approval);
-        }
-        const reason = `${verdict.reason} -- ${askDenyReason(askVerdict.decidedBy)}`;
-        logCall(policyIdentity, "denied:ask", reason.length, input, context, false, reason, undefined, { approval });
-        return { kind: "denied", reason, breach: false };
+        return resolveAskOutcome({
+          identity: policyIdentity,
+          tool,
+          input,
+          context,
+          verdict,
+          runtimeSignal: signal,
+          askResolver,
+          stage: opts.pipelineStage,
+          storyId: opts.storyId,
+          root: opts.policy.root,
+          logCall,
+          runTool,
+        });
       }
 
       if (!verdict.allowed) {
-        if (verdict.breach) {
-          // In band so an unattended run survives one bad path guess, but loud:
-          // a path escaping the root can indicate prompt injection.
-          getSafeLogger()?.warn("tools", "[policy] path resolved outside the permitted root", {
-            tool: policyIdentity,
-            reason: verdict.reason,
-            root: opts.policy.root,
-          });
-        }
-        const commandField = tool.scope.commandField;
-        const rawCommand = commandField === undefined ? undefined : input[commandField];
-        const rawArgv = argvField === undefined ? undefined : input[argvField];
-        const verbField = tool.scope.verbField;
-        const rawVerb = verbField === undefined ? undefined : input[verbField];
-        const declared = opts.declaredCommands ?? new Set<string>();
-        // An argv call and a verb call deny through different policy branches;
-        // before #1971 only the first could reach a redirect at all.
-        const extra =
-          typeof rawCommand === "string"
-            ? redirectForCommand(rawCommand, advertisedNames, declared)
-            : Array.isArray(rawArgv)
-              ? redirectForArgv(rawArgv as readonly string[], advertisedNames, declared)
-              : typeof rawVerb === "string"
-                ? redirectForVerb(name, rawVerb, advertisedNames, declared)
-                : undefined;
-        const reason = extra === undefined ? verdict.reason : `${verdict.reason} -- ${extra}`;
-        logCall(policyIdentity, "denied", reason.length, input, context, verdict.breach, reason);
-        return { kind: "denied", reason, breach: verdict.breach };
+        return resolveDenialOutcome({
+          name,
+          identity: policyIdentity,
+          tool,
+          input,
+          context,
+          verdict,
+          argvField,
+          advertisedNames,
+          declaredCommands: opts.declaredCommands,
+          root: opts.policy.root,
+          logCall,
+        });
       }
 
       return runTool(tool, input, verdict.resolvedPaths);

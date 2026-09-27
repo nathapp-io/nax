@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A12-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-A13-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    243 functions in 211 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     16   (15 src, 1 scripts)   <- THIS DRAIN (collectNeighbors drained by A12)
+  over 20    242 functions in 211 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     15   (14 src, 1 scripts)   <- THIS DRAIN (callTool drained by A13)
   worst      155   src/agents/acp/parser.ts parseAcpxJsonLine
 biome.json cap: 170
-batches: 13 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12)
+batches: 14 of 25 done (P0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13)
 ```
 
 Refresh this block at the end of every batch:
@@ -153,7 +153,7 @@ and what the helpers scored; use that to size the rest (see §6).
 | A10 | done 2026-09-27 | 83 | `runFixCycle` | `src/findings/cycle.ts:72` | 544 -> 149 | 16 / 12 | yes |
 | A11 | done 2026-09-27 | 70 | `runNonBlockingFix` | `src/execution/non-blocking-fix.ts:230` | 492 -> 261 | 17 / 13 | yes |
 | A12 | done 2026-09-27 | 73 | `collectNeighbors` | `src/context/engine/providers/code-neighbor.ts:264` | 498 -> 375 | 17 / 11 | yes |
-| A13 | todo | 99 | `callTool` | `src/tools/runtime.ts:318` | 557 | 31 / 8 | yes |
+| A13 | done 2026-09-27 | 99 | `callTool` | `src/tools/runtime.ts:318` | 557 -> 479 | 31 / 8 | yes |
 
 Ordered by fix commits, then by how central the function is to a run. A1 goes first
 because it has the worst ratio (25 of 30 commits are fixes) and sits on every story's path
@@ -1434,3 +1434,124 @@ payloads and data-literal construction specifically (A3/A11/A12's hunting ground
 Post-drain note: over-60 is down to 16 (15 src + 1 scripts); after A13, Wave A is
 done and the worst remaining function outside scripts/ is B3's `parseAcpxJsonLine`
 (155).
+
+### 9.14 - 2026-09-27, A13 done - `callTool` 99 -> 7 (one session) - Wave A complete
+
+The last Wave A row, and the first batch whose target is a method on a returned
+object literal (`callTool` is one of two closures `createCodingToolRuntime`
+returns, nested three deep in the factory). The 99 was mostly NESTING INCREMENTS:
+the probe at `maxAllowedComplexity: 1` attributed the file's scores per function
+node (`callTool` 99, `log` 40, `runTool` 24, `logCall` 7 - the nested bodies
+measure separately), but every branch inside `callTool` sat three nesting levels
+down, so each conditional spread and ternary cost 3-4 points. Moving the branch
+bodies into FREE functions collapses the nesting, which is why the residual is 7.
+One session, including a 7-test characterisation commit - §9.13's warning held
+again: "test: yes" was not "nothing to characterise".
+
+**Pre-flight, all answered BEFORE writing code:** (1) the `_deps` seam exists AND
+is barrel re-exported - `_codingToolDeps` (`{ getLogger }`, runtime.ts:69,
+re-exported by `src/tools/index.ts:41`) is reassigned by FIVE test files through
+`@/tools` (runtime.test.ts, both command-shadow files, coding-tool-support.test.ts,
+build-hop-callback-diff-access.test.ts). It stayed in runtime.ts; the sibling
+imports NOTHING from it at runtime - the closure-bound collaborators (`logCall`,
+`runTool`) arrive BY REFERENCE as helper parameters and runtime.ts imports the
+sibling's four functions (A5/A6/A12 by-reference pattern; `check:import-cycles`
+0). (2) A2's traps all clean, checked first: `callTool` has NO loop; the factory's
+one cross-call `let` (`advertisedNames`, written by `advertised()`) is only READ
+by the deny branch, and the helper receives it as a value at helper-CALL time -
+exactly the original read point, so test-set advertised sets still land. No
+closure captures a `let` across an extraction boundary (`logCall`/`runTool` stay
+closures and are passed by reference); no throw crosses a boundary (runTool's
+try/catch is self-contained; an ask-resolver rejection is caught INSIDE
+`resolveAskOutcome` and returned as an error outcome, never propagated). (3) NO
+source-text tests pin runtime.ts - the five grep hits are all comments (seventh
+batch running). (4) No per-file guard allow-list names tools/runtime.ts (A7's
+sweep, clean here). (5) File measured 556 going in (doc said 557 - one line of
+drift, seventh batch running).
+
+**Characterisation first** (own commit `test: characterise callTool unpinned
+branches before complexity drain`, 7 tests, green against the unrefactored
+function, new file `runtime-calltool-edges.test.ts` - the main mirror sits at
+744, too tight for additions; zero `as T` casts, looseCast stayed 1474). The six
+runtime* mirrors pin nearly everything (outcomes, log levels, ask-cancel
+AC1/AC11/AC12, tap settle contract, sandbox rows, AC15 signals). What nothing
+pinned: (a) the ask REQUEST's `command` field - the `typeof
+input[commandField] === "string"` arm and its not-a-string/not-declared inverse
+(approval-audit tests exercise the interaction path, never `callTool`); (b) the
+`unshowable` propagation from askSummary into the request (raw command still
+forwarded - pinned as-is, the masking is summary-only by design); (c) the deny
+branch's redirect SELECTION end-to-end, all three arms (command / argv / verb)
+plus the `-- ` join onto the policy reason - sandbox-wiring deliberately asserts
+only `toStartWith`; (d) the containment-breach WARN record
+(`stage: "tools"`, message, tool/reason/root payload) - asserted nowhere. Two
+test-design discoveries: (1) "Bash" is NOT a registry builtin - it is assembled
+per provider - so the command-field paths needed a `commandField` stub tool via
+`extraTools` (the argv paths' RunCommand-stub precedent); (2) the breach warn
+calls the module-level `getSafeLogger()` import DIRECTLY, not the
+`_codingToolDeps` seam - the only way in is the GLOBAL logger
+(`resetLogger`/`initLogger`/`addSink`), the first tools test to need that. The
+asymmetry is now pinned behaviour: seam-stubbing `_codingToolDeps.getLogger`
+never intercepts the warn.
+
+**Technique:** the ~236-line body became a sequencer plus four free functions in
+a new sibling, `src/tools/runtime-calltool.ts` (254 lines): `resolvePolicyIdentity`
+2 (the argv/Exec identity computation, comment moved verbatim),
+`openCallShadowTap` 11 (the P5 tap construction), `resolveAskOutcome` 15 (the
+whole ask branch incl. the resolver try/catch, AC11 aborted recheck and both
+approval arms), `resolveDenialOutcome` 12 (breach warn + the command/argv/verb
+redirect selection). `callTool` stays in runtime.ts as the sequencer - unknown-tool
+guard, identity, `policy.check`, tap, then the two helper calls around the
+unchanged `logCall`/`runTool` closures - and scores 7. `log` (40) and `runTool`
+(24) are UNTOUCHED: separate baseline entries, same scope as A8 leaving
+`argvBranch`/`verbBranch` baselined. The helpers type their verdict parameter as
+`Extract<PolicyVerdict, { allowed: false }>` - the original narrowing
+(`if (!verdict.allowed)`) does not survive a function boundary, so the denied arm
+is the faithful encoding. One near-miss from a careless `sed` hitting all three
+`verdict:` params: the TAP helper receives the FULL union (it runs before the
+branches) - `tsc` caught it instantly.
+
+**Helper scores (biome probe at maxAllowedComplexity=1, repo-root probe config
+per §9.13's tooling note, deleted after):** `resolveAskOutcome` 15,
+`resolveDenialOutcome` 12, `openCallShadowTap` 11, `resolvePolicyIdentity` 2;
+`callTool` 7; every pre-existing function unchanged (`log` 40, `runTool` 24,
+`logCall` 7, `advertised` 8, `record` arrows 8/5). All extracted helpers <= 20 -
+no baseline hand-edit (§2.3 never triggered, eighth batch running).
+`check:complexity` reported only "improved" for runtime.ts, and
+`check:complexity:update` was a pure lower: 243 -> 242 functions, 211 -> 211
+files - runtime.ts STAYS baselined at `[40, 24]` because `log` and `runTool` are
+still over 20, and the new sibling entered nothing.
+
+**File-size gate, single sibling held:** `runtime.ts` 556 -> 479 (strictly
+smaller; the extraction moved only the two branch bodies - `log`/`runTool`/
+`logCall`/`shapeToolResult` stay closures in the factory because they bind
+`sink`/`opts`/`tap`); the sibling landed at 254 after `bun x biome check
+--write` - under 600 with room. The barrel (`src/tools/index.ts`) needed zero
+edits: everything it re-exports from runtime.ts is unchanged.
+
+**Verification beyond the suite:** a literal fingerprint diff of the original
+callTool body against the pair - all 12 double-quoted literals of length >= 4
+appear verbatim, plus all 4 template literals' fixed parts
+(`unknown tool "`, the three ` -- ` reason joins incl. `ASK_CANCELLED_REASON`),
+zero missing. Every log payload key, error message and ask-request field is 1:1.
+
+**Nothing else surprising.** `bun run typecheck`, `bun run test` (all phases;
+1329 tools-directory tests incl. the 7 characterisation tests), `bun run
+check:all` (35 scripts; import-cycles 0, file-sizes green, looseCast 1474 - the
+two `as` casts moved verbatim with their code), and `bun run test:coverage` all
+green; below-floor count 1 vs baseline 2 (the standing A5 improvement, not
+lowered here).
+
+**For the next batch:** Wave A is DONE. B1 `decideStageAction`
+(`src/execution/post-run.ts:275`, 96, 534 lines) opens Wave B - and it is
+`test: NONE`, so §2.2's "find what exercises it" sweep is the first job and the
+characterisation commit will be bigger than A11-A13's (A9's 16-test precedent is
+the template; its file `post-run.ts` is in `src/execution/`, where A9/A10/A11
+all found seams - check `src/execution/index.ts` and any barrel re-exports
+BEFORE planning the split). The shape is §3's "policy decision tree" (A7/A8
+playbook): guard clauses first, named branch predicates, split conditional
+spreads by key class. Then the usual order: A2's mutate-in-place/closure traps,
+source-text-test grep, per-file guard allow-list sweep (`grep -Rn "grep -vE"
+scripts/`), and budget the sibling split from the first line. Post-drain note:
+over-60 is down to 15 (14 src + 1 scripts); worst remaining anywhere is B3's
+`parseAcpxJsonLine` (155), and the 40-milestone discussion from §9.8 still
+stands.
