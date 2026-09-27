@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import * as codingToolSandbox from "@/agents/coding-tool-sandbox";
@@ -458,6 +458,15 @@ function rawScreenArgs(command: string, root: string, sandboxWrapped?: boolean) 
   } as never;
 }
 
+/**
+ * A temp root real-pathed the way `compileToolPolicy` hands it to the screen
+ * (`realOrRaw(root)`). On macOS `tmpdir()` is under the `/var` -> `/private/var`
+ * symlink, so an unresolved root makes every resolved PRD path look outside it.
+ */
+function realTempDir(prefix: string): string {
+  return realpathSync(makeTempDir(prefix));
+}
+
 /** The coding-tool config the US-004 wiring ACs run under: unrestricted, sandbox off. */
 function codingSupportConfig(): AnyRecord {
   return {
@@ -775,7 +784,7 @@ describe("US-002 raw Bash screen refuses whole-filesystem find and permits sandb
 
     expect(isDenied(result)).toBe(true);
     expect(reasonOf(result)).toContain(
-      `find ~ searches the whole filesystem and runs into the 300s Bash timeout. ` +
+      `\`find ~\` searches the whole filesystem and runs into the 300s Bash timeout. ` +
         `Search within the repository root instead: ${root}`,
     );
   });
@@ -786,7 +795,7 @@ describe("US-002 raw Bash screen refuses whole-filesystem find and permits sandb
 
     expect(isDenied(result)).toBe(true);
     expect(reasonOf(result)).toContain(
-      `find $HOME searches the whole filesystem and runs into the 300s Bash timeout. ` +
+      `\`find $HOME\` searches the whole filesystem and runs into the 300s Bash timeout. ` +
         `Search within the repository root instead: ${root}`,
     );
   });
@@ -796,7 +805,7 @@ describe("US-002 raw Bash screen refuses whole-filesystem find and permits sandb
     const result = screenRawBashCommand(rawScreenArgs("find -L / -name x", root));
 
     expect(isDenied(result)).toBe(true);
-    expect(reasonOf(result)).toContain("find / searches the whole filesystem");
+    expect(reasonOf(result)).toContain("`find /` searches the whole filesystem");
   });
 
   test("AC-18: 'git status; find / -name x | head' is denied for its second segment", () => {
@@ -804,7 +813,7 @@ describe("US-002 raw Bash screen refuses whole-filesystem find and permits sandb
     const result = screenRawBashCommand(rawScreenArgs("git status; find / -name x | head", root));
 
     expect(isDenied(result)).toBe(true);
-    expect(reasonOf(result)).toContain("find / searches the whole filesystem");
+    expect(reasonOf(result)).toContain("`find /` searches the whole filesystem");
   });
 
   test("AC-19: 'find /usr/lib -name x' is not refused", () => {
@@ -832,7 +841,7 @@ describe("US-002 raw Bash screen refuses whole-filesystem find and permits sandb
   });
 
   test("AC-22: 'git diff .nax/features/f/prd.json' is allowed when sandboxWrapped is true", () => {
-    const root = makeTempDir("nax-hygiene-ac22-");
+    const root = realTempDir("nax-hygiene-ac22-");
     const result = screenRawBashCommand(rawScreenArgs("git diff .nax/features/f/prd.json", root, true));
 
     expect(isAllowed(result)).toBe(true);
@@ -840,7 +849,7 @@ describe("US-002 raw Bash screen refuses whole-filesystem find and permits sandb
   });
 
   test("AC-23: 'echo x > .nax/features/f/prd.json' is still denied when sandboxWrapped is true", () => {
-    const root = makeTempDir("nax-hygiene-ac23-");
+    const root = realTempDir("nax-hygiene-ac23-");
     const result = screenRawBashCommand(rawScreenArgs("echo x > .nax/features/f/prd.json", root, true));
 
     expect(isDenied(result)).toBe(true);
@@ -848,7 +857,7 @@ describe("US-002 raw Bash screen refuses whole-filesystem find and permits sandb
   });
 
   test("AC-24: 'cat .nax/config.json' is denied when sandboxWrapped is true, with the config wording", () => {
-    const root = makeTempDir("nax-hygiene-ac24-");
+    const root = realTempDir("nax-hygiene-ac24-");
     const result = screenRawBashCommand(rawScreenArgs("cat .nax/config.json", root, true));
 
     expect(isDenied(result)).toBe(true);
@@ -856,7 +865,7 @@ describe("US-002 raw Bash screen refuses whole-filesystem find and permits sandb
   });
 
   test("AC-25: without sandboxWrapped, a prd read is denied with the unchanged 'reads included' wording", () => {
-    const root = makeTempDir("nax-hygiene-ac25-");
+    const root = realTempDir("nax-hygiene-ac25-");
 
     const unset = screenRawBashCommand(rawScreenArgs("git diff .nax/features/f/prd.json", root));
     const explicitFalse = screenRawBashCommand(rawScreenArgs("git diff .nax/features/f/prd.json", root, false));
@@ -932,8 +941,8 @@ describe("US-002 raw Bash screen refuses whole-filesystem find and permits sandb
 
     const result = await support.runtime.callTool("Bash", { command: "git diff .nax/features/f/prd.json" });
 
-    expect(result.kind).toBe("denied");
-    expect(result.content).toContain("reads included");
+    if (result.kind !== "denied") throw new Error(`expected a denied result, got ${result.kind}`);
+    expect(result.reason).toContain("reads included");
   });
 
   test("AC-31: the raw-mode Bash description states that find from /, ~ or $HOME is refused", () => {
