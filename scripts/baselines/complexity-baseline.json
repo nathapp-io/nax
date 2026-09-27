@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T22:59:43.487Z",
+  "updatedAt": "2026-09-27T23:27:46.283Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -109,7 +109,6 @@
     "src/finish/phase.ts": [31],
     "src/finish/review/audit-gaps.ts": [25],
     "src/finish/review/parse.ts": [29],
-    "src/interaction/ask-link.ts": [69],
     "src/interaction/plugins/telegram.ts": [21],
     "src/log-format/formatter.ts": [26, 22],
     "src/logger/logger.ts": [22],

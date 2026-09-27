@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B6-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-B7-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    236 functions in 207 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     9     (8 src, 1 scripts)   <- THIS DRAIN (displayFeatureDetails drained by B6)
+  over 20    235 functions in 206 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     8     (7 src, 1 scripts)   <- THIS DRAIN (runSession drained by B7)
   worst      110   src/config/validate.ts validateConfig
 biome.json cap: 170
-batches: 20 of 25 done (P0, A1-A13, B1-B6)
+batches: 21 of 25 done (P0, A1-A13, B1-B7)
 ```
 
 Refresh this block at the end of every batch:
@@ -170,7 +170,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | B4 | done 2026-09-27 | 73 | `runDeferredRegression` | `src/execution/lifecycle/run-regression.ts:205` | 587 | 10 / 6 | yes |
 | B5 | done 2026-09-27 | 63 | `runParallelBatch` | `src/execution/parallel-batch.ts:122` | 417 -> 235 | 9 / 5 | yes |
 | B6 | done 2026-09-27 | 66 | `displayFeatureDetails` | `src/cli/status-features.ts:329` | 503 -> 415 | 6 / 4 | yes |
-| B7 | todo | 69 | `runSession` | `src/interaction/ask-link.ts:291` | 560 | 5 / 1 | yes |
+| B7 | done 2026-09-27 | 69 | `runSession` | `src/interaction/ask-link.ts:216` | 559 -> 402 | 5 / 1 | yes |
 
 ### Wave C - stable, mostly pure (grouped)
 
@@ -2386,3 +2386,159 @@ interaction-request literal construction specifically (A3/A11/B1's hunting
 ground). Post-drain note: over-60 is down to 9 (8 src + 1 scripts); after
 B7 only the grouped Wave C remains - and the 40-milestone discussion from
 §9.8 still stands.
+
+### 9.21 - 2026-09-27, B7 done - `runSession` 69 -> 16 (one session)
+
+The last Wave B row, closing the wave. One session, including a 7-test
+characterisation commit - the "test: yes is not nothing to characterise"
+warning held for the EIGHTH time running (A11, A12, B1-B6, now B7): the
+mirror suite is one of the most thorough in the repo (46 tests pinning
+allowlist denies, timeout-vs-fallback, AC4-AC10, keepalive, masking, dedupe
+keys), and still left whole branches unpinned.
+
+**Pre-flight, all answered BEFORE writing code:** (1) `_askLinkDeps`
+(setTimeout/clearTimeout/ASK_KEEPALIVE_MS) EXISTS and is property-swapped by
+the mirror suite for a fake clock - but only there, and no barrel re-exports
+it (`src/interaction/index.ts` exports only the two factory/entry functions
+plus three types). The seam stayed in ask-link.ts together with its only
+consumers (`runKeepalive`, `clearKeepalive`, the timer arm in `resolve`);
+nothing extracted needed it, so no deps-threading at all. (2) A2's traps,
+checked first: the closure state (`activeId`, `queue`, `liveSessions`) is
+touched ONLY by code that stays in ask-link.ts - the sequencer's activeId
+one-liners, resolve, cancel, pending - so no SpinFlags shape crosses an
+extraction boundary. The throw question resolved by design: `runSession`'s
+inner catch settles waiters unavailable, and since `Session` is a shared
+mutable object every phase already receives BY REFERENCE, mutate-in-place is
+the native shape here (the session object IS the loop state; nothing is ever
+returned). (3) NO source-text tests pin ask-link.ts - the Bun.file reads in
+test/unit/interaction/ target unified-executor.ts and audit JSONL fixtures,
+not source (eleventh batch running; B4's `test/unit/scripts/` rule checked
+too, zero hits). (4) No per-file guard allow-list names the file (only
+naxconfig-cast and permission-mode lists exist). (5) ask-link.ts is NOT in
+coverage-per-file-baseline.json - above floor going in - so B5's twin-gate
+trap was live; it did not fire (see below). (6) File measured 559 going in
+(the doc's 560 - one line of drift, eleventh batch running).
+
+**Characterisation first** (own commit `test: characterise runSession
+unpinned branches before complexity drain`, 7 tests, green against the
+unrefactored function, new file `test/unit/interaction/ask-link-session-edges
+.test.ts` - the mirror sits at 681 of the 800 test cap, 119 headroom, too
+tight for comfort; zero cast expressions, looseCast stayed 1474). What
+NOTHING pinned, one test each: (a) `pending()` clearing once the prompt
+settles (the activeId-reset adversarial hardening had zero assertions) on
+both the allow path and after link-level cancel; (b) the cancel path's
+`decidedBy: "unavailable"` (SPEC CASE 15 and the cancel tests assert only
+`.decision`); (c) `featureName`/`storyId`/`summary` on the dispatched
+request when supplied (storyId had NO test coverage at all - both arms: key
+present, key absent); (d) the `featureName ?? "unknown"` default; (e) the
+detail fallback arms `runs in: unknown` (root-less) and `reason:  <rule>`
+(reason-less) plus the `stage:` line - every existing test's request carries
+root AND reason; (f) a throwing chain's `decidedBy` (the mirror's throw test
+checks decision only); (g) the `session.waiters.size === 0` arm of the
+post-race guard - a real "allow" arriving after the sole waiter aborted
+settles nobody and releases the serial queue (AC6 covers the second-waiter
+case, nobody covered the no-waiters-left case with a non-null response).
+
+**Technique:** sequencer + phases in ONE new sibling,
+`src/interaction/ask-link-session.ts` (245 lines after `bun x biome check
+--write`). The function-local `Waiter`/`Session` interfaces lifted to module
+level in the sibling (type-only back-import; interfaces are erased, so the
+lift is behaviour-neutral) - the sibling holds `deny` 1, `makeWaiter` 1,
+`canRemember` (sibling-internal), `settleWaiters` 4 (the settle-and-detach
+loop, called with `deny("unavailable")` from THREE sites - the no-chain arm,
+the catch arm, and `settleAllUnavailable`, which was the same loop a fourth
+time: P0's "one shared helper worth naming" again), `removeSettledSession` 3,
+`buildApprovalRequest` 8 (the whole InteractionRequest literal; takes an
+`ApprovalPromptInput` options object - featureName/storyId/stage/timeoutMs/
+onRemember passed through and the builder keeps the `??` defaults and
+conditional spreads, so the literal text is verbatim), `decideSessionOutcome`
+9 (timeout / allowlist / remember-await; the original's nested if/else
+outcome assignment became early returns - value-identical per branch, no
+intervening side effects). `runSession` stays in ask-link.ts as the
+sequencer: chain guard, AC9 guard, activeId + cancelPrompt setup, the
+Promise.race, `decideSessionOutcome` + `settleWaiters`, both finallys.
+`resolve`, `attachWaiter` (needs `opts.chain` in its onAbort closure),
+`notifyWaiting`, `runKeepalive`, `clearKeepalive`, `cancel`,
+`settleAllUnavailable` are untouched. The sibling imports ask-link.ts
+TYPE-ONLY (`AskChannelResponse`) - `check:import-cycles` 0.
+
+**One score surprise worth naming: the sequencer's finally nesting.** First
+pass left `runSession` at 21 - the prediction was ~11. The delta is nesting
+increments, not branches: every `if` inside a try/finally that is itself
+inside a try/finally counts at +2/+3, so the inner finally's one-line
+activeId guard and the outer finally's liveSessions sweep added ~10 points
+between them with zero additional decisions. Fix was the A2 pattern one more
+time: `removeSettledSession(liveSessions, session)` extracts the sweep with
+the map passed BY REFERENCE (closure state mutated in place, exactly the
+SpinFlags lesson - only the reference crosses the boundary, the closure's
+own reads in resolve/cancel keep working). `runSession` 21 -> 16, and - the
+real prize - every function in ask-link.ts landed under 20 (runKeepalive 19,
+resolve 19, the rest smaller), so the file LEFT the over-20 baseline
+entirely instead of staying baselined at [21]. Lesson: for a
+try/catch/finally-heavy sequencer, budget the finally guards' nesting into
+the score prediction.
+
+**Helper scores (probe at maxAllowedComplexity=1, repo-root probe config as
+a FULL COPY of biome.json, deleted after - B4's tooling note):**
+`decideSessionOutcome` 9, `buildApprovalRequest` 8, `settleWaiters` 4,
+`removeSettledSession` 3, `deny`/`makeWaiter` 1; untouched residents:
+`runKeepalive` 19, `resolve` 19 (its inner `onAbort` closure 15),
+`attachWaiter` 9, `notifyWaiting` 7, `settleAllUnavailable` 13 -> 5 (the
+dedupe), `cancel` 3, `clearKeepalive` 2, `runSession` 69 -> 16. All <= 20 -
+no baseline hand-edit (§2.3 never triggered, fourteenth batch running).
+`check:complexity` reported only "improved" for ask-link.ts, and
+`check:complexity:update` was a pure lower: 236 -> 235 functions,
+207 -> 206 files (ask-link.ts left the over-20 baseline entirely;
+ask-link-session.ts added nothing).
+
+**File-size gate, single sibling held:** ask-link.ts 559 -> 402 (strictly
+smaller; both counts after `bun x biome check --write`); the sibling landed
+at 245 - under 600 with room. The moved mass is the types (lifted, ~60
+lines with their comments), the request literal, the outcome decision, and
+the settle loops; the queue/session bookkeeping stayed behind. One type
+note: `AskLinkOutcome` is NOT re-exported by ask-link.ts (it is imported
+there from `@/permissions`), so the sibling takes it from the same source -
+type-only edges only, both verified.
+
+**One migration slip caught by the suite + tsc, worth the minute it cost:**
+`maskedFooter` is used by BOTH the prompt builder AND `resolve` (the
+footer-length precheck before the MAX_COMMAND_CHARS denial) - the first cut
+moved it without exporting it back, and `typecheck` plus the "Review Focus
+4" mirror test caught it immediately. The sibling exports it; ask-link.ts
+imports it back. No cycle: the import direction ask-link -> sibling is the
+only runtime edge.
+
+**Verification beyond the suite:** literal fingerprint diff of the original
+file against the pair - all 37 double-quoted literals AND all 53
+template-literal fixed parts (placeholders stripped) appear verbatim, zero
+missing; `Date.now()` 1 -> 1 (createdAt in the builder, same logical
+position); the settle loops were byte-identical across their four original
+occurrences before dedupe (checked line-by-line before unifying); the outer
+finally's statement ORDER is unchanged (settled -> cancelPrompt -> activeId
+-> sweep -> clearKeepalive).
+
+**Nothing else surprising.** 320 interaction tests green (incl. the 7
+characterisation tests), `bun run test` all phases, `bun run typecheck`
+(both tsconfigs), `bun run check:all` (35 scripts; import-cycles 0,
+file-sizes green, looseCast 1474, 'as unknown as' 0), and `bun run
+test:coverage` all green - below-floor count 1 vs baseline 2 (the standing
+A5 improvement). B5's twin-gate trap did NOT fire: the residual ask-link.ts
+keeps resolve/attachWaiter/keepalive/the sequencer, all executed by the
+mirror suites, and the sibling's phase bodies are covered by the mirrors
+plus the characterisation file.
+
+**For the next batch:** only the grouped Wave C remains. C1 is next in
+table order and is TWO functions: `validateConfig` (110 - the worst score
+left in the repo, `src/config/validate.ts`, 175 lines, test: yes) and
+`deepMergeConfig` (78, `src/config/merger.ts`, 173 lines, test: none), each
+getting its own `refactor:` commit in one session. `validateConfig` is
+P0's exact shape - field-by-field validator, expect the table-driven /
+one-extractor-per-field-group playbook to apply directly (P0's §9.1 is the
+manual; note its shared `checkRelativeNoTraversal` trick). `deepMergeConfig`
+is `test: none`: run §2.2's grep BEFORE anything else, and expect to write
+its characterisation from scratch. Also from C1's row: `merger.ts` and
+`validate.ts` are small files (173/175 lines) - in-place helpers are
+affordable there if the 600-line gate allows, but still prefer the sibling
+when it reads better. Post-drain note: over-60 is down to 8 (7 src + 1
+scripts); after C1-C4 the drain can set the biome cap to 60 - and the
+40-milestone discussion from §9.8 still stands.
