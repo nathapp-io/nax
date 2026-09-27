@@ -37,6 +37,19 @@ export { findSpecDriftViolations } from "./spec-drift";
 export type { SpecLintFinding, SpecLintOptions } from "./spec-lint";
 export { BLOCKING_SPEC_LINT_CODES, lintSpecContent } from "./spec-lint";
 export type {
+  SpecStoryStructure,
+  SpecStructure,
+  SpecStructureViolation,
+  SpecStructureWarning,
+} from "./spec-structure";
+export {
+  backfillSpecWorkdirs,
+  declaredStoryIds,
+  extractSpecStructure,
+  findSpecStructureViolations,
+  formatSpecStructureViolation,
+} from "./spec-structure";
+export type {
   EscalationAttempt,
   PersistedRepoScopedFix,
   PRD,

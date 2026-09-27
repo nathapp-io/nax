@@ -21,7 +21,7 @@
  * deliberately NOT safe to re-run over a PRD that has started executing, so the
  * scope is what stops them rather than a fixed-point property of each.
  */
-import { existsSync as defaultExistsSync } from "node:fs";
+import { existsSync as defaultExistsSync, renameSync as defaultRenameSync } from "node:fs";
 import { join } from "node:path";
 import { type AgentRoutingConfig, DEFAULT_AGENT_NAME, type ModelsConfig } from "@/config";
 import { discoverWorkspacePackages as defaultDiscoverWorkspacePackages } from "@/context/generator";
@@ -39,6 +39,12 @@ import type { PlanModeContext } from "./types";
  */
 export const _persistPrdDeps = {
   existsSync: (path: string): boolean => defaultExistsSync(path),
+  /**
+   * Moves a rejected draft aside (US-002). The structure check renames
+   * `prd.json` to `prd.rejected.json` before refusing the plan, so the draft the
+   * agent wrote is not mistaken for a recoverable plan on the next read.
+   */
+  renameSync: (from: string, to: string): void => defaultRenameSync(from, to),
   discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => defaultDiscoverWorkspacePackages(repoRoot),
 };
 

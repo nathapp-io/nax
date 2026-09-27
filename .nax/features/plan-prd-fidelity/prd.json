@@ -3,7 +3,7 @@
   "feature": "plan-prd-fidelity",
   "branchName": "feat/plan-prd-fidelity",
   "createdAt": "2026-09-18T00:00:00.000Z",
-  "updatedAt": "2026-09-27T09:45:23.736Z",
+  "updatedAt": "2026-09-27T10:11:35.314Z",
   "userStories": [
     {
       "id": "US-001",
@@ -37,8 +37,8 @@
         "path-frame"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -119,7 +119,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New fenced Markdown extraction and ordered cross-field validation integrate with write-time error and two strategy recovery paths."
+        "reasoning": "New fenced Markdown extraction and ordered cross-field validation integrate with write-time error and two strategy recovery paths.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/plan/strategies/persist-prd.ts",
@@ -140,7 +143,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0fc63c86ddb2df6c066c79a5d5de6dbb87bb338e"
     },
     {
       "id": "US-003",
