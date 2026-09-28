@@ -17,6 +17,12 @@
  * the end-of-run guarantee entirely. The new text covers all three
  * transitions so the lifetime is unambiguous.
  *
+ * US-003 — the `$TMPDIR` paragraph now opens by naming the scratchpad as the
+ * agent's temp folder. The scratchpad is reachable from every tool the agent
+ * has (shell, file tools, Scratchpad tools) while `$TMPDIR` is only reachable
+ * from the shell, so the scratchpad is the default answer to "where do I put a
+ * file", and `/tmp` is stated to be off limits under a confined sandbox.
+ *
  * Composed unconditionally, like the guardrail sections — the builders carry no
  * permission context. A project that does not grant the scratchpad tools still
  * gets the section; it just does not get the tools.
@@ -43,8 +49,12 @@ To try a snippet that imports project code or dependencies, write it under \`${d
 project's package names or path aliases where it has them. A script written outside the repository,
 such as in \`/tmp\`, cannot resolve the project's modules, and the file tools cannot write there.
 
-Shell commands run with \`$TMPDIR\` set to a temp directory for this session, which nax deletes when
-the run ends. Put temporary files there (\`$TMPDIR\` or \`mktemp\`), not in \`/tmp\` directly.
+Use the scratchpad as your temp folder. Files you make while working — command output you want to
+re-read, generated inputs, one-off scripts — go under \`${dir}\`: the shell, the file tools
+and the scratchpad tools can all reach it, and it is cleared after the run. For throwaway files a
+command creates on its own, shell commands run with \`$TMPDIR\` set to this run's temp directory; use
+\`$TMPDIR\` or \`mktemp\` for those. Never write to \`/tmp\` directly: in the sandbox, \`/tmp\` outside
+\`$TMPDIR\` is not writable and the write fails.
 
 \`${dir}\` is the one directory under \`.nax/\` you may write to. Every other path under \`.nax/\`
 must still never be moved, renamed, or deleted.`;

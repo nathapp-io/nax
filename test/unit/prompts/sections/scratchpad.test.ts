@@ -52,18 +52,28 @@ describe("buildScratchpadSection", () => {
     expect(buildScratchpadSection()).toBe(first);
   });
 
-  // ─── US-004 — shell commands get a session temp dir ───
+  // ─── US-003 — the scratchpad is the agent's temp folder ───
 
-  describe("US-004 — shell temp files belong in $TMPDIR", () => {
-    test("US-004 AC19: says to put temporary files in $TMPDIR or mktemp, not in /tmp directly", () => {
-      // The sentence is hard-wrapped prose, so the assertion flattens whitespace.
-      const text = buildScratchpadSection().replace(/\s+/g, " ");
-      expect(text).toContain("Put temporary files there (`$TMPDIR` or `mktemp`), not in `/tmp` directly.");
+  describe("US-003 — the scratchpad is named as the temp folder", () => {
+    // The paragraph is hard-wrapped prose, so every assertion flattens
+    // whitespace: "temp folder. Files you make" may be one line or two.
+    const flattened = () => buildScratchpadSection().replace(/\s+/g, " ");
+
+    test("US-003 AC7: names the scratchpad as the temp folder exactly once", () => {
+      expect(flattened().match(/Use the scratchpad as your temp folder\./g) ?? []).toHaveLength(1);
     });
 
-    test("US-004 AC19 boundary: the $TMPDIR guidance is stated exactly once", () => {
-      const text = buildScratchpadSection().replace(/\s+/g, " ");
-      expect(text.match(/Put temporary files there/g) ?? []).toHaveLength(1);
+    test("US-003 AC8: says never to write to /tmp directly", () => {
+      expect(flattened()).toContain("Never write to `/tmp` directly");
+    });
+
+    test("US-003 AC9: keeps the $TMPDIR guidance for command-created files", () => {
+      expect(flattened()).toContain("$TMPDIR");
+      expect(flattened()).toContain("mktemp");
+    });
+
+    test("US-003 AC10: drops the retired sentence", () => {
+      expect(flattened()).not.toContain("Put temporary files there");
     });
   });
 
