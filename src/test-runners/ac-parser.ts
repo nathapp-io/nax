@@ -10,7 +10,76 @@
  * acceptance-domain question: "which acceptance criteria failed?"
  */
 
+import type { Framework } from "./detector";
 import { detectFramework, stripAnsi } from "./detector";
+
+/**
+ * A per-line AC-failure matcher: returns the canonical AC id for a failing
+ * line, or null when the line carries no tagged failure.
+ */
+type LineFailureMatcher = (line: string) => string | null;
+
+// Bun: "(fail) AC-N: description [duration]"
+function matchBunFailure(line: string): string | null {
+  if (!line.includes("(fail)")) return null;
+  const acMatch = line.match(/(AC-\d+):/i);
+  return acMatch ? acMatch[1].toUpperCase() : null;
+}
+
+// Go: "--- FAIL: TestAC-1_desc (0.00s)" or "--- FAIL: TestAC1Desc"
+// Anchored to immediately follow the "--- FAIL: " marker (with an optional
+// "Test" prefix) so a test merely NAMED like "TestMac_2" — which contains
+// "ac_2" as a case-insensitive substring — does not fabricate a phantom AC.
+function matchGoFailure(line: string): string | null {
+  if (!line.includes("--- FAIL:")) return null;
+  const acMatch = line.match(/^\s*--- FAIL: (?:Test)?AC[-_]?(\d+)/i);
+  return acMatch ? `AC-${acMatch[1]}` : null;
+}
+
+// pytest: "FAILED tests/...::test_AC_1_desc"
+// Requires the "AC" token not be preceded by a letter, so "test_mac_2.py"
+// (the "ac" in "mac" is a case-insensitive substring) does not fabricate
+// a phantom AC, while "test_AC_2_desc" (preceded by "_") still matches.
+function matchPytestFailure(line: string): string | null {
+  if (!/FAILED\s/.test(line)) return null;
+  const acMatch = line.match(/(?<![A-Za-z])AC[-_]?(\d+)/i);
+  return acMatch ? `AC-${acMatch[1]}` : null;
+}
+
+// Jest / Vitest. Two output shapes carry the failing test name (and AC label):
+//  - bullet markers: "  ● AC-N: description" (jest summary) / "× AC-N: ..." (vitest verbose)
+//  - vitest default-reporter block headers: " FAIL  <file> > <suite> > AC-N: ..."
+// The default reporter never uses bullet glyphs, so the FAIL header is the only
+// place the AC id appears — without it these failures fell through to AC-ERROR.
+// The FAIL badge is anchored to the (ANSI-stripped) line start, so a passing line
+// whose title merely contains the word "FAIL" is not matched; `\s` after FAIL also
+// excludes pytest's "FAILED" (handled by its own branch above).
+// Anchored so the AC token must immediately follow a bullet marker, the
+// line-start "FAIL" marker, or the "> " suite-path separator (optionally
+// with a "Test" prefix) — otherwise a test merely NAMED like "TestMac2"
+// (a case-insensitive "ac2" substring) would fabricate a phantom AC
+// unrelated to any real acceptance criterion.
+function matchJestVitestFailure(line: string): string | null {
+  if (!(/[●×✕]/.test(line) || /^\s*FAIL\s/.test(line))) return null;
+  const acMatch = line.match(/(?:^\s*FAIL\b|[●×✕]|>)\s*(?:Test)?AC[-_]?(\d+)/i);
+  return acMatch ? `AC-${acMatch[1]}` : null;
+}
+
+/**
+ * Per-framework matcher sets, mirroring the parser's framework guards.
+ * "unknown" runs every matcher; rust and mocha have none — their outputs
+ * carry no failure marker this parser reads.
+ */
+const MATCHERS_BY_FRAMEWORK: Record<Framework, LineFailureMatcher[]> = {
+  bun: [matchBunFailure],
+  go: [matchGoFailure],
+  pytest: [matchPytestFailure],
+  jest: [matchJestVitestFailure],
+  vitest: [matchJestVitestFailure],
+  rust: [],
+  mocha: [],
+  unknown: [matchBunFailure, matchGoFailure, matchPytestFailure, matchJestVitestFailure],
+};
 
 /**
  * Parse test runner output to extract failed AC IDs.
@@ -56,72 +125,14 @@ export function parseTestFailuresDetailed(output: string): { failedACs: string[]
   const failedACs: string[] = [];
   let taggedFailureCount = 0;
   const lines = clean.split("\n");
+  const matchers = MATCHERS_BY_FRAMEWORK[framework];
 
   for (const line of lines) {
-    // Bun: "(fail) AC-N: description [duration]"
-    if (framework === "bun" || framework === "unknown") {
-      if (line.includes("(fail)")) {
-        const acMatch = line.match(/(AC-\d+):/i);
-        if (acMatch) {
-          const acId = acMatch[1].toUpperCase();
-          if (!failedACs.includes(acId)) failedACs.push(acId);
-          taggedFailureCount++;
-        }
-      }
-    }
-
-    // Go: "--- FAIL: TestAC-1_desc (0.00s)" or "--- FAIL: TestAC1Desc"
-    // Anchored to immediately follow the "--- FAIL: " marker (with an optional
-    // "Test" prefix) so a test merely NAMED like "TestMac_2" — which contains
-    // "ac_2" as a case-insensitive substring — does not fabricate a phantom AC.
-    if (framework === "go" || framework === "unknown") {
-      if (line.includes("--- FAIL:")) {
-        const acMatch = line.match(/^\s*--- FAIL: (?:Test)?AC[-_]?(\d+)/i);
-        if (acMatch) {
-          const acId = `AC-${acMatch[1]}`;
-          if (!failedACs.includes(acId)) failedACs.push(acId);
-          taggedFailureCount++;
-        }
-      }
-    }
-
-    // pytest: "FAILED tests/...::test_AC_1_desc"
-    // Requires the "AC" token not be preceded by a letter, so "test_mac_2.py"
-    // (the "ac" in "mac" is a case-insensitive substring) does not fabricate
-    // a phantom AC, while "test_AC_2_desc" (preceded by "_") still matches.
-    if (framework === "pytest" || framework === "unknown") {
-      if (/FAILED\s/.test(line)) {
-        const acMatch = line.match(/(?<![A-Za-z])AC[-_]?(\d+)/i);
-        if (acMatch) {
-          const acId = `AC-${acMatch[1]}`;
-          if (!failedACs.includes(acId)) failedACs.push(acId);
-          taggedFailureCount++;
-        }
-      }
-    }
-
-    // Jest / Vitest. Two output shapes carry the failing test name (and AC label):
-    //  - bullet markers: "  ● AC-N: description" (jest summary) / "× AC-N: ..." (vitest verbose)
-    //  - vitest default-reporter block headers: " FAIL  <file> > <suite> > AC-N: ..."
-    // The default reporter never uses bullet glyphs, so the FAIL header is the only
-    // place the AC id appears — without it these failures fell through to AC-ERROR.
-    // The FAIL badge is anchored to the (ANSI-stripped) line start, so a passing line
-    // whose title merely contains the word "FAIL" is not matched; `\s` after FAIL also
-    // excludes pytest's "FAILED" (handled by its own branch above).
-    // Anchored so the AC token must immediately follow a bullet marker, the
-    // line-start "FAIL" marker, or the "> " suite-path separator (optionally
-    // with a "Test" prefix) — otherwise a test merely NAMED like "TestMac2"
-    // (a case-insensitive "ac2" substring) would fabricate a phantom AC
-    // unrelated to any real acceptance criterion.
-    if (framework === "jest" || framework === "vitest" || framework === "unknown") {
-      if (/[●×✕]/.test(line) || /^\s*FAIL\s/.test(line)) {
-        const acMatch = line.match(/(?:^\s*FAIL\b|[●×✕]|>)\s*(?:Test)?AC[-_]?(\d+)/i);
-        if (acMatch) {
-          const acId = `AC-${acMatch[1]}`;
-          if (!failedACs.includes(acId)) failedACs.push(acId);
-          taggedFailureCount++;
-        }
-      }
+    for (const matchFailure of matchers) {
+      const acId = matchFailure(line);
+      if (acId === null) continue;
+      if (!failedACs.includes(acId)) failedACs.push(acId);
+      taggedFailureCount++;
     }
   }
 

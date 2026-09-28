@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C2b-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C2-commit, batch C2 complete)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    231 functions in 203 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     4     (3 src, 1 scripts)   <- THIS DRAIN (C1 drained validateConfig + deepMergeConfig; C2a parseFrontmatter, C2b coerceVerdict)
+  over 20    230 functions in 202 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     3     (2 src, 1 scripts)   <- THIS DRAIN (only C3 lexBashCommand + C4 generateCommand/main left)
   worst       99   src/cli/generate.ts generateCommand
 biome.json cap: 170
-batches: 22 of 25 done (P0, A1-A13, B1-B7, C1, C2a-C2b)
+batches: 23 of 25 done (P0, A1-A13, B1-B7, C1, C2)
 ```
 
 Refresh this block at the end of every batch:
@@ -180,7 +180,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | C1 | done 2026-09-27 | 78 | `deepMergeConfig` | `src/config/merger.ts:41` | 173 | 2 / 2 | none |
 | C2 | done 2026-09-27 | 75 | `parseFrontmatter` | `src/context/rules/rules-frontmatter.ts:110` | 293 -> 323 | 5 / 2 | yes |
 | C2 | done 2026-09-27 | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 -> 393 | 4 / 4 | none |
-| C2 | in progress | 64 | `parseTestFailuresDetailed` | `src/test-runners/ac-parser.ts:50` | 141 | 4 / 3 | none |
+| C2 | done 2026-09-27 | 64 | `parseTestFailuresDetailed` | `src/test-runners/ac-parser.ts:50` | 141 -> 151 | 4 / 3 | none |
 | C3 | todo | 93 | `lexBashCommand` | `src/permissions/bash-lex.ts:78` | 248 | 3 / 2 | yes |
 | C4 | todo | 99 | `generateCommand` | `src/cli/generate.ts:49` | 267 | 1 / 1 | none |
 | C4 | todo | 79 | `main` | `scripts/report-test-consolidation.ts:293` | 485 | 3 / 1 | none |
@@ -2837,3 +2837,91 @@ entire Detailed API, BUG-32) and the parser-level AC-HOOK detection have ZERO
 coverage anywhere - characterise those. Framework is a closed 8-value union;
 a Record dispatch keyed on it needs no own-property guard (unlike B3's
 untrusted wire keys) but must preserve rust/mocha running NO branch.
+
+### 9.25 - 2026-09-27, C2c done - `parseTestFailuresDetailed` 64 -> 11 (one session, C2 complete)
+
+Third and last of the grouped C2 batch; the drain's over-60 set is down to
+C3/C4. §3's "line parser, big if/switch chain" row, and this one is the
+cleanest dispatch-map shape of the whole drain: four framework-guarded
+branches per line, each an independent predicate + regex. One session,
+including a 13-test characterisation commit - `test: none` meant only "no
+file at the heuristic path" again: the `failedACs` HALF is thoroughly pinned
+through the parseTestFailures wrapper in acceptance.test.ts, but the entire
+`parseTestFailuresDetailed` API had zero direct coverage.
+
+**What nothing pinned, characterised in new file
+`test/unit/test-runners/ac-parser-edges.test.ts`** (13 tests; zero cast
+expressions): (a) `taggedFailureCount` counting every tagged line vs the
+deduplicated id count (BUG-32's raw-vs-dedup contract, incl. the overridden-AC
+3-cases-one-id scenario); (b) failure lines without an AC tag counting
+nothing; (c) the AC-HOOK sentinel's positive arms ("hook timed out" AND
+"hook failed" markers) with count +1; (d) both negative arms (unnamed without
+hook marker; hook marker without unnamed failure); (e) AC-HOOK emitted
+exactly once for several unnamed failures; (f) framework GATING - a
+bun-detected output ignoring an indented go `--- FAIL:` marker (the same
+line extracts AC-2 under "unknown"; detector checks go before bun, so the go
+marker had to be indented in the bun-detected fixture); (g) rust- and
+mocha-detected outputs running NO matcher even with bun markers present;
+(h) the bun matcher's `toUpperCase` (a lowercase `(fail) ac-2:` yields
+"AC-2" - go/pytest/jest build the id, bun is the only branch that
+uppercases). One fixture lesson: an un-indented `--- FAIL:` line in a
+supposedly-framework-less fixture silently flips detection to go and the
+bun branch never runs - write framework-sensitive fixtures with the
+detector's ordering open.
+
+**Pre-flight:** (1) no `_deps`-style seam - the test-runners barrel
+re-exports parseTestFailures/parseTestFailuresDetailed BY VALUE; no test
+mutates the module. (2) A2's traps: the only accumulators are the local
+failedACs array and the counter, both loop-local; the hook `lines.some(...)`
+closures read `lines` (a const); no throws. (3) No source-text tests; no
+per-file guard allow-list names the file. (4) File measured 141 going in -
+the doc's number, exact.
+
+**Technique:** framework-keyed dispatch map, in place (§2.4 did not force a
+sibling at 141 lines). `type LineFailureMatcher = (line: string) => string |
+null`; one matcher per framework family (`matchBunFailure` 2,
+`matchGoFailure` 2, `matchPytestFailure` 2, `matchJestVitestFailure` 3 -
+each carrying its branch's anchor/phantom-AC comment VERBATIM), then
+`MATCHERS_BY_FRAMEWORK: Record<Framework, LineFailureMatcher[]>` - bun/go/
+pytest singleton, jest+vitest sharing the bullet/FAIL matcher, rust/mocha
+EMPTY arrays, unknown = all four. The Framework union is closed
+(detector-owned), so the map needs no own-property guard - the B3 hazard
+does not apply to a typed internal key. `parseTestFailuresDetailed` is now:
+stripAnsi -> detect -> split -> nested for-loop over matchers (push dedupe +
+count, exactly the original's per-branch tail) -> hook-timeout sentinel
+(verbatim) -> return, and scores 11. `parseTestFailures` (wrapper) untouched
+at 1. A behavioural subtlety preserved by construction: under "unknown" ONE
+line can match MULTIPLE matchers and each match increments the count and
+attempts the push - the dispatch loop reproduces the original's four
+sequential guards exactly.
+
+**Helper scores (probe at maxAllowedComplexity=1, repo-root probe config per
+§9.13/§9.17, deleted after):** matchers 2/2/2/3, `parseTestFailuresDetailed`
+64 -> 11. No §2.3 breach, no second split, no baseline hand-edit (§2.3 never
+triggered, sixteenth batch running). `check:complexity` reported only
+"improved" for ac-parser.ts, and `check:complexity:update` was a pure lower:
+231 -> 230 functions, 203 -> 202 files (ac-parser.ts left the over-20
+baseline entirely).
+
+**File-size gate:** in place, 141 -> 151 after `bun x biome check --write`
+(+10 lines of matcher signatures and the map; far under the cap; no new
+file, so the §9.19 coverage-floor twin gate never arises).
+
+**Verification beyond the suite:** literal fingerprint diff of the original
+file against the refactored file - all 43 quoted literals verbatim EXCEPT
+the three framework-guard strings ("pytest", "jest", "vitest"), which now
+serve as the dispatch map's unquoted property keys - B3's exact precedent,
+runtime-identical; all 4 `.match()` regex sources and the hook-timeout
+`.some()` regex verbatim. 556 tests across the test-runners + acceptance +
+acceptance-red-gate + hardening + acceptance-loop suites green (incl. the 13
+characterisation tests), `bun run typecheck` (both tsconfigs) clean.
+
+**For the next batch:** C3 `lexBashCommand`
+(`src/permissions/bash-lex.ts:78`, 93, 248 lines, test: yes) - ALONE, not
+grouped, because it feeds the permission decision: run the command-safety
+corpus eval (`scripts/command-safety-eval.ts`) before AND after and record
+both results in §9. The usual pre-flight (seam/barrel sweep, A2 traps,
+source-text greps, allow-lists) applies; 248 lines means in-place extraction
+is likely affordable. After C3, C4 finishes the drain and sets `biome.json`
+`maxAllowedComplexity` to 60. The 40-milestone discussion from §9.8 still
+stands.
