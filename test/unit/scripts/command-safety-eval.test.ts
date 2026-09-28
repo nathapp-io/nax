@@ -9,11 +9,17 @@ import {
   isInsideRepo,
   type NarrowableRow,
   narrowingCost,
+  narrowingLines,
   parseArgs,
   parseWeights,
+  perCategoryLines,
+  perCategoryRates,
   rateAt,
   renderReport,
+  type Scored,
   scoreModel,
+  scorerStats,
+  scorerTableLines,
   singleQuestionSetVersion,
 } from "@scripts/command-safety-eval";
 import { withTempDir } from "@test/helpers";
@@ -224,5 +230,56 @@ describe("renderReport", () => {
     expect(md).toContain('per story {"US-1":2}');
     expect(md).toContain("Question set v1");
     expect(md).toContain("- unavailable: 2");
+  });
+});
+
+describe("extracted report helpers", () => {
+  const scored: Scored[] = [
+    { label: "dangerous", category: "deletes_data", scores: { rule: 1 } },
+    { label: "dangerous", category: "discards_work", scores: { rule: 0 } },
+    { label: "benign", category: null, scores: { rule: 0 } },
+    { label: "grey", category: null, scores: { rule: 1 } },
+  ];
+
+  test("scorerStats returns one entry with AUROC over dangerous vs benign, grey ignored", () => {
+    const [stats] = scorerStats(scored, "rule");
+    expect(stats?.name).toBe("rule");
+    expect(stats?.auroc).toBeCloseTo(0.75);
+    expect(stats?.ece).toBeUndefined();
+  });
+
+  test("scorerStats returns nothing when a side is empty", () => {
+    expect(
+      scorerStats(
+        scored.filter((s) => s.label !== "benign"),
+        "rule",
+      ),
+    ).toEqual([]);
+  });
+
+  test("perCategoryRates gives one entry per scorer and dangerous category, sorted", () => {
+    const rates = perCategoryRates(scored, [{ name: "rule" }]);
+    expect(rates.map((r) => r.category)).toEqual(["deletes_data", "discards_work"]);
+    expect(rates[0]?.rates.find((r) => r.threshold === 0.5)?.catchRate).toBe(1);
+    expect(rates[1]?.n).toBe(1);
+  });
+
+  test("line helpers render the same text renderReport embeds", () => {
+    const table = scorerTableLines([
+      { name: "rule", auroc: 0.7, atFp: [{ maxFp: 0.02, catchRate: 0.5, threshold: 1 }], fixed: [], ece: undefined },
+    ]);
+    expect(table[0]).toBe("| scorer | AUROC | catch @2% FP | catch @5% FP | catch @10% FP | ECE |");
+    expect(table[2]).toContain("| rule | 0.700 | 0.500 (t=1.000) | n/a | n/a | n/a |");
+    expect(
+      perCategoryLines([{ scorer: "rule", category: "x", n: 2, rates: [{ threshold: 0.5, catchRate: 1 }] }]),
+    ).toEqual(["- rule / x (n=2): t=0.5: 1.000"]);
+    expect(
+      narrowingLines([{ scorer: "rule", maxFp: 0.05, threshold: 1, total: 1, perRun: { r: 1 }, perStory: { s: 1 } }]),
+    ).toEqual(['- rule at 5% FP budget (t=1.000): 1 total; per run {"r":1}; per story {"s":1}']);
+  });
+
+  test("parseArgs reads --labels", () => {
+    expect(parseArgs(["--labels", "/x/labels"]).labels).toBe("/x/labels");
+    expect(parseArgs([]).labels).toBeUndefined();
   });
 });
