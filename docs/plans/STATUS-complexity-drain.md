@@ -3257,6 +3257,13 @@ order. Corrections to earlier entries are made inline and point back here.
   cost at each of the three `reconcileRunCost` sites, which are where the old local was
   assigned. The heartbeat reads that live value. The test drives one tick from inside
   `statusWriter.update`. It was red before the fix (wrote 0) and green after (wrote 5).
+- *The heartbeat was also stale outside the loop.* This one predates A1. The heartbeat
+  outlives `executeUnified`: it runs through a long story, the post-run pipeline and the
+  acceptance loop. In all of those it wrote a cost that left out spend the loop had not yet
+  folded in. It could also overwrite `handleRunCompletion`'s aggregator-based total before
+  `stopHeartbeat()`. The heartbeat now reports
+  `max(liveCost, totalSpendUsd(aggregator.snapshot()))`, which is the same directional max
+  `reconcileRunCost` applies. It is pinned by a test that ticks mid-story.
 
 **2. Both ways past the ratchet gate are closed** (`scripts/check-complexity.ts`).
 - *Rank comparison let a specific function get worse.* Per-file scores were compared by
@@ -3265,16 +3272,27 @@ order. Corrections to earlier entries are made inline and point back here.
   label: the name Biome's span covers, `=>` for an anonymous arrow (30 of 227 today), and
   `#2`, `#3` for repeats in one file, in source order. A label the baseline does not record
   counts as growth. Migration check: all 199 files kept exactly the same multiset of scores.
-  The only blind spot left is between anonymous arrows in the same file (documented in the
-  header). A rename now fails as growth, which is safe; §2.3 now says so.
+  A rename now fails as growth, which is safe; §2.3 now says so.
+- *Remaining blind spots,* documented in the header:
+  - A label repeated in one file is told apart only by source order. That covers `=>`,
+    `function` (anonymous function expressions) and same-named methods on two classes.
+  - Biome never scores getters or setters.
 - *A `biome-ignore` hid a function completely.* The script now scans `src/ bin/ test/ scripts/`
   and fails on any suppression that covers the rule: the rule itself, `lint/complexity`, or
-  bare `lint`, including the `-all` and `-start` forms. A probe comment added to
+  bare `lint`, including the `-all` and `-start` forms. It checks every selector in a
+  comment, because Biome also honours a list of rules
+  (`biome-ignore lint/style/useConst lint/complexity/...`); a first draft checked only the
+  first selector and missed this. A probe comment added to
   `src/utils/sort.ts` failed the gate as intended.
 - *Nits:* a corrupt or old-format baseline is now an error, not "missing".
   `--init-baseline` is documented, and it refuses to overwrite an existing baseline.
   `saveBaseline` writes exactly Biome's JSON layout, expanding rows longer than 120 columns,
-  so `lint:biome` passes on the regenerated file.
+  and writes an empty `byFile` as `{}`, so `lint:biome` passes on the regenerated file.
+- *Labels:* a label is whatever text the diagnostic span covers, sliced by code point
+  (Biome's column unit). So `#priv`, `["computed"]` and `"str-name"` get labels instead of
+  crashing the gate, and an error names the file.
+- *Biome binary:* the gate runs `node_modules/.bin/biome` and fails clearly when it is
+  missing. `bun x biome` without `node_modules` fetches the unrelated npm package `biome`.
 
 **3. Pre-existing bug, filed as nax#2278.** `runFixCycle`'s validator-error exit returns
 `costUsd` without the current iteration's strategy spend, and skips `recordIteration`. It was
@@ -3338,10 +3356,11 @@ the code it pins.
 - §9.11: `cycle-execute.ts` is 415 lines, and its "pin every branch" claim has one exception.
 - §9.18: the sibling is 546 lines.
 - §9.22: 19 existing mirror tests, 16 added.
-- Commit `14edda8d` had no entry. Its lesson: a `beforeEach` snapshot of a `_deps` object
-  captures whatever an earlier test file leaked into it. Snapshot at module load instead.
-  The leak came from `code-neighbor-collect-edges.test.ts`, and the victim was
-  `code-neighbor.test.ts`.
+- Commit `14edda8d` had no entry. Its lesson: a `_deps` snapshot, whether taken in
+  `beforeEach` or at module load, captures whatever an EARLIER test file leaked into it. The
+  fix is for the leaking file to restore its own stubs, as `14edda8d` did. A module-load
+  snapshot only guards against leaks within one file. The leak came from
+  `code-neighbor-collect-edges.test.ts`, and the victim was `code-neighbor.test.ts`.
 
 **Gates at the end of this pass (Bun 1.4.2, macOS):**
 - `typecheck`, `lint:biome` and `check:all-without-biome` are green.
