@@ -94,6 +94,19 @@ type _AssertNoPatchFieldDrift<_T extends never> = true;
 type _patchableFieldsExhaustive = _AssertNoPatchFieldDrift<UnmappedPatchField>;
 
 /**
+ * The event names, at runtime (US-001).
+ *
+ * A plugin's registration is validated against this set before it is staged,
+ * because an event name arriving from a plugin is `unknown` until then. The
+ * list is read off `PATCHABLE_FIELDS` rather than written out again: that map
+ * is pinned to `LoopEvent` in both directions — a missing event fails the
+ * `satisfies` clause, an extra one fails the field map's exhaustiveness pin —
+ * so its keys are the event set, and a second hand-written copy cannot drift
+ * out of step with the type.
+ */
+export const LOOP_EVENTS: readonly LoopEvent[] = Object.freeze(Object.keys(PATCHABLE_FIELDS) as LoopEvent[]);
+
+/**
  * Only the patchable fields are read, so a handler that returns a
  * denied-bearing object (bypassing the type) cannot surface one — the same
  * defence keeps `usage` off an `after_response` patch, and every other event's

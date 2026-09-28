@@ -4,16 +4,84 @@
  * Central registry for all loaded plugins with typed getters.
  */
 
-import type { LoopHandlerSet } from "../agents/native/session/loop-events/types";
+import { LOOP_EVENTS } from "../agents/native/session/loop-events";
+import type {
+  ExternalHandlerOf,
+  LoopEvent,
+  LoopHandlerEntry,
+  LoopHandlerSet,
+} from "../agents/native/session/loop-events/types";
 import type { AgentAdapter } from "../agents/types";
 import { getSafeLogger } from "../logger";
 import type { RoutingStrategy } from "../routing/router";
+import { errorMessage } from "../utils/errors";
 import type { LoadedPlugin, PluginSource } from "./loader";
-import type { IContextProvider, IPostRunAction, IPromptOptimizer, IReporter, IReviewPlugin, NaxPlugin } from "./types";
+import type {
+  IContextProvider,
+  ILoopHandlerProvider,
+  IPostRunAction,
+  IPromptOptimizer,
+  IReporter,
+  IReviewPlugin,
+  LoopHandlerRegistrar,
+  NaxPlugin,
+} from "./types";
+
+/**
+ * The event names a plugin may register against, for the one place that reads
+ * an event name off a plugin rather than off the type system.
+ */
+const LOOP_EVENT_NAMES: ReadonlySet<string> = new Set<string>(LOOP_EVENTS);
 
 export interface PostRunActionRegistration {
   pluginName: string;
   action: IPostRunAction;
+}
+
+/**
+ * Stage one provider's registrations, in the order its `register` makes them.
+ *
+ * Both ways a stage can fail drop the plugin's entries WHOLESALE rather than
+ * keep the ones that arrived before the failure: a plugin that throws
+ * mid-`register`, or names an event that does not exist, has declared a
+ * registration set nax cannot honour, so half-installing it would leave the
+ * loop running a contract the plugin never asked for. Each failure logs a
+ * `plugins` warning naming the plugin — and, for an unknown event, the event.
+ *
+ * @param pluginName - The declaring plugin's name, carried onto every entry
+ * @param provider - The plugin's loop-handler extension
+ * @returns The plugin's staged entries, empty when it failed
+ */
+function stagePluginHandlers(pluginName: string, provider: ILoopHandlerProvider): LoopHandlerEntry[] {
+  const logger = getSafeLogger();
+  const staged: LoopHandlerEntry[] = [];
+  let failed = false;
+
+  const on: LoopHandlerRegistrar = (event, handler) => {
+    if (!LOOP_EVENT_NAMES.has(event)) {
+      failed = true;
+      logger?.warn("plugins", `Plugin '${pluginName}' registered a handler for unknown loop event '${event}'`, {
+        plugin: pluginName,
+        event,
+      });
+      return;
+    }
+    // Erase E for storage: the entry is what the installer reads, and it can
+    // only be dispatched back to the event it names.
+    staged.push({ plugin: pluginName, event, handler: handler as unknown as ExternalHandlerOf<LoopEvent> });
+  };
+
+  try {
+    provider.register(on);
+  } catch (err) {
+    failed = true;
+    logger?.warn("plugins", `Plugin '${pluginName}' loop-handler registration failed; its handlers are skipped`, {
+      plugin: pluginName,
+      error: errorMessage(err),
+    });
+  }
+
+  return failed ? [] : staged;
 }
 
 /**
@@ -42,6 +110,13 @@ export class PluginRegistry {
    *    own `shouldRun()` (e.g. `config.autoPr.enabled`).
    */
   private readonly builtinPostRunActions: ReadonlyArray<PostRunActionRegistration>;
+
+  /**
+   * The run's loop handlers, built on first `getLoopHandlers()` (US-001).
+   * `undefined` until then: a plugin's `register` may only run inside the run
+   * whose sessions will receive the handlers.
+   */
+  private loopHandlers: LoopHandlerSet | undefined;
 
   constructor(
     loadedPlugins: LoadedPlugin[] | NaxPlugin[],
@@ -206,10 +281,21 @@ export class PluginRegistry {
    * @returns The run's loop handlers, empty when no plugin provides any
    */
   getLoopHandlers(): LoopHandlerSet {
-    // STUB (US-001 RED): the implementer stages each provider's registrations
-    // through a validating registrar, drops a failing plugin's entries with a
-    // `plugins` warning, then freezes and memoises the result.
-    return [];
+    if (this.loopHandlers !== undefined) {
+      return this.loopHandlers;
+    }
+    const entries: LoopHandlerEntry[] = [];
+    for (const plugin of this.plugins) {
+      if (!plugin.provides.includes("loop-handlers")) {
+        continue;
+      }
+      const provider = plugin.extensions.loopHandlers;
+      if (provider !== undefined) {
+        entries.push(...stagePluginHandlers(plugin.name, provider));
+      }
+    }
+    this.loopHandlers = Object.freeze(entries);
+    return this.loopHandlers;
   }
 
   /**

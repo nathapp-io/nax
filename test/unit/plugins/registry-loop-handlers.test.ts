@@ -8,11 +8,12 @@
 
 import { describe, expect, type Mock, test } from "bun:test";
 import { assertDefined, withWarnSpy } from "@test/helpers";
-import type {
-  ExternalHandlerOf,
-  LoopHandlerContext,
-  LoopHandlerEntry,
-  LoopHandlerSet,
+import {
+  type ExternalHandlerOf,
+  LOOP_EVENTS,
+  type LoopHandlerContext,
+  type LoopHandlerEntry,
+  type LoopHandlerSet,
 } from "@/agents/native/session/loop-events";
 import type { Logger } from "@/logger";
 import {
@@ -193,6 +194,32 @@ describe("PluginRegistry.getLoopHandlers", () => {
     expect(beforeTurnEntry.handler).toBe(beforeTurnHandler);
     // The entry carries the plugin identity, the event and the handler — no more.
     expect(Object.keys(afterToolEntry).sort()).toEqual(["event", "handler", "plugin"]);
+  });
+
+  test("AC5 (US-001): stages a registration for every event in the loop-event vocabulary", () => {
+    // The registry validates a plugin's event name against the runtime
+    // vocabulary, so a missing entry would silently drop a legitimate
+    // registration. Pin the vocabulary against all eight events.
+    const vocabulary = [
+      "before_tool",
+      "after_tool",
+      "before_turn",
+      "transform_context",
+      "before_request",
+      "after_response",
+      "before_compaction",
+      "before_turn_end",
+    ] as const;
+    const registry = new PluginRegistry([
+      makeLoopHandlerPlugin("all-events-plugin", (on) => {
+        for (const event of vocabulary) {
+          on(event, () => undefined);
+        }
+      }),
+    ]);
+
+    expect(registry.getLoopHandlers().map((entry) => entry.event)).toEqual([...vocabulary]);
+    expect(LOOP_EVENTS).toEqual([...vocabulary]);
   });
 
   test("AC6: orders entries by registry.plugins order, then by on() call order within a plugin", () => {

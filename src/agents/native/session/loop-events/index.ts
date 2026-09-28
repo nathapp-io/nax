@@ -4,7 +4,7 @@
  * no importer churns.
  */
 export { type BuildToolResultArgs, buildToolResult, type DenialInfo, type ToolResultMessage } from "../tool-result";
-export { createLoopEventRegistry, type LoopEventRegistry } from "./registry";
+export { createLoopEventRegistry, LOOP_EVENTS, type LoopEventRegistry } from "./registry";
 export type {
   AfterToolPatch,
   AfterToolPayload,

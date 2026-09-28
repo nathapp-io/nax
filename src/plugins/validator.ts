@@ -422,8 +422,22 @@ function validatePostRunAction(pluginName: string, action: unknown): boolean {
  * registration then registers — the event names and handlers — is checked by
  * `PluginRegistry.getLoopHandlers()`, not here.
  */
-function validateLoopHandlers(_pluginName: string, _ext: unknown): boolean {
-  // STUB (US-001 RED): the implementer adds the object + `register` checks and
-  // the `plugins` warning naming the plugin.
-  return false;
+function validateLoopHandlers(pluginName: string, ext: unknown): boolean {
+  if (typeof ext !== "object" || ext === null) {
+    getSafeLogger()?.warn(
+      "plugins",
+      `Plugin '${pluginName}' validation failed: loopHandlers extension must be an object`,
+    );
+    return false;
+  }
+
+  if (typeof (ext as Record<string, unknown>).register !== "function") {
+    getSafeLogger()?.warn(
+      "plugins",
+      `Plugin '${pluginName}' validation failed: loopHandlers.register must be a function`,
+    );
+    return false;
+  }
+
+  return true;
 }
