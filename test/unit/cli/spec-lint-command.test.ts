@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { makeTempDir } from "@test/helpers";
 import type { ResolveResult } from "@/cli";
 import { specLintCommand } from "@/cli";
 
@@ -152,6 +153,31 @@ describe("specLintCommand", () => {
     const result = await specLintCommand({ dir: "/repo", paths: ["/repo/ghost.md"] }, depsFor({}, out));
     expect(result.exitCode).toBe(2);
     expect(result.reports[0].missing).toBe(true);
+  });
+
+  test("US-002 AC-13: --strict exits 0 on a spec whose only ac-numeric-reference warn is not a blocking code", async () => {
+    const out: string[] = [];
+    const refSpec = `# SPEC: Reference
+
+## Acceptance Criteria
+
+### US-001 — Reference story
+
+1. \`[unit]\` foo() returns 1.
+2. \`[unit]\` In the AC-1 setup, foo() returns 2.
+`;
+    const tempDir = makeTempDir("nax-ac13-");
+    const specPath = `${tempDir}/ref.md`;
+    const result = await specLintCommand(
+      { dir: tempDir, paths: [specPath], strict: true },
+      depsFor({ [specPath]: refSpec }, out),
+    );
+    // The ac-numeric-reference finding is a warn, not an error, so --strict
+    // (which gates on `error`-level findings) still passes — the strict CLI
+    // and the plan gate agree that this is a non-blocking observation.
+    expect(result.exitCode).toBe(0);
+    expect(result.reports[0].findings.map((f) => f.code)).toContain("ac-numeric-reference");
+    expect(result.reports[0].blocking.map((f) => f.code)).not.toContain("ac-numeric-reference");
   });
 
   test("exits 2 when neither a path nor a feature was given", async () => {

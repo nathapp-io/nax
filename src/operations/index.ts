@@ -103,6 +103,7 @@ export {
   applyPlanFidelity,
   backfillModifiedFiles,
   backfillOutOfScope,
+  warnOnAcCrossReferences,
   warnOnDroppedContextFiles,
 } from "./plan-fidelity";
 export type { PlanRefineInput } from "./plan-refine";

@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makePRD, makeStory } from "@test/helpers";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
-import { applyPlanFidelity, backfillModifiedFiles, backfillOutOfScope, warnOnDroppedContextFiles } from "@/operations";
+import {
+  applyPlanFidelity,
+  backfillModifiedFiles,
+  backfillOutOfScope,
+  warnOnAcCrossReferences,
+  warnOnDroppedContextFiles,
+} from "@/operations";
 import { byCodePoint } from "@/utils/sort";
 
 const SPEC = [
@@ -292,5 +298,145 @@ describe("applyPlanFidelity", () => {
 
     expect(viaFidelity.outOfScope).toEqual(viaOutOfScope.outOfScope);
     expect(viaFidelity.userStories.every((s) => s.modifiedFiles === undefined)).toBe(true);
+  });
+});
+
+describe("warnOnAcCrossReferences — US-002", () => {
+  let entries: LogEntry[];
+
+  beforeEach(() => {
+    resetLogger();
+    initLogger({ level: "debug" });
+    entries = [];
+    addSink((entry) => entries.push(entry));
+  });
+
+  afterEach(() => {
+    resetLogger();
+  });
+
+  const AC_CROSS_REF_MESSAGE =
+    "PRD acceptance criterion refers to another criterion by number — AC numbering is not stable across plan runs";
+
+  function acCrossRefWarns(): LogEntry[] {
+    return entries.filter((e) => e.level === "warn" && e.stage === "plan" && e.message === AC_CROSS_REF_MESSAGE);
+  }
+
+  test("AC-14: emits exactly one plan-stage warn when one AC references AC-1 by number", () => {
+    const prd = makePRD({
+      userStories: [
+        makeStory({
+          id: "US-001",
+          acceptanceCriteria: ["foo() returns 1", "Given the AC-1 setup, foo() returns 2"],
+        }),
+      ],
+    });
+
+    warnOnAcCrossReferences(prd, "feat");
+
+    const warnings = acCrossRefWarns();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].message).toBe(AC_CROSS_REF_MESSAGE);
+  });
+
+  test("AC-15: warn data has storyId first, then featureName/acIndex/references", () => {
+    const prd = makePRD({
+      userStories: [
+        makeStory({
+          id: "US-001",
+          acceptanceCriteria: ["foo() returns 1", "Given the AC-1 setup, foo() returns 2"],
+        }),
+      ],
+    });
+
+    warnOnAcCrossReferences(prd, "feat");
+
+    const warning = acCrossRefWarns()[0];
+    const dataKeys = Object.keys(warning.data ?? {});
+    expect(dataKeys[0]).toBe("storyId");
+    expect(warning.data).toMatchObject({
+      storyId: "US-001",
+      featureName: "feat",
+      acIndex: 2,
+      references: ["AC-1"],
+    });
+  });
+
+  test("AC-16: emits one warn per story whose AC carries a numeric reference", () => {
+    const prd = makePRD({
+      userStories: [
+        makeStory({
+          id: "US-001",
+          acceptanceCriteria: ["no refs", "In the AC-1 shape, bar() throws"],
+        }),
+        makeStory({
+          id: "US-002",
+          acceptanceCriteria: ["Given the AC 3 setup, baz() returns 0"],
+        }),
+      ],
+    });
+
+    warnOnAcCrossReferences(prd, "feat");
+
+    const warnings = acCrossRefWarns();
+    expect(warnings).toHaveLength(2);
+    expect(warnings.map((w) => String(w.data?.storyId)).sort(byCodePoint)).toEqual(["US-001", "US-002"]);
+  });
+
+  test("AC-17: emits no warn when no AC carries a numeric reference", () => {
+    const prd = makePRD({
+      userStories: [
+        makeStory({
+          id: "US-001",
+          acceptanceCriteria: ["foo() returns 1", "the refined criterion is returned unchanged"],
+        }),
+      ],
+    });
+
+    warnOnAcCrossReferences(prd, "feat");
+
+    expect(acCrossRefWarns()).toHaveLength(0);
+  });
+});
+
+describe("applyPlanFidelity — AC cross-references (US-002)", () => {
+  let entries: LogEntry[];
+
+  beforeEach(() => {
+    resetLogger();
+    initLogger({ level: "debug" });
+    entries = [];
+    addSink((entry) => entries.push(entry));
+  });
+
+  afterEach(() => {
+    resetLogger();
+  });
+
+  const AC_CROSS_REF_MESSAGE =
+    "PRD acceptance criterion refers to another criterion by number — AC numbering is not stable across plan runs";
+
+  test("AC-18: applyPlanFidelity emits the AC cross-reference warn after warnOnDroppedContextFiles", () => {
+    const prd = makePRD({
+      userStories: [makeStory({ id: "US-001", acceptanceCriteria: ["Given the AC-1 setup, foo() returns 2"] })],
+    });
+
+    applyPlanFidelity(prd, "# Feature\n\n## Design\n\nno spec sections", "feat");
+
+    const warnings = entries.filter(
+      (e) => e.level === "warn" && e.stage === "plan" && e.message === AC_CROSS_REF_MESSAGE,
+    );
+    expect(warnings).toHaveLength(1);
+  });
+
+  test("AC-19: applyPlanFidelity returns the input's acceptanceCriteria element-for-element (no PRD mutation by the cross-reference warning)", () => {
+    const inputAcs = ["Given the AC-1 setup, foo() returns 2"];
+    const prd = makePRD({
+      userStories: [makeStory({ id: "US-001", acceptanceCriteria: inputAcs })],
+    });
+
+    const result = applyPlanFidelity(prd, "# Feature\n\n## Design\n\nno spec sections", "feat");
+
+    expect(result.userStories[0].acceptanceCriteria).toEqual(inputAcs);
   });
 });

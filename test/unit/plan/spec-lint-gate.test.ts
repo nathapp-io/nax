@@ -71,4 +71,20 @@ describe("assertSpecLintClean", () => {
   test("returns no findings for a spec whose sections all round-trip", () => {
     expect(assertSpecLintClean(spec(CLEAN), OPTIONS)).toEqual([]);
   });
+
+  test("US-002 AC-12: does not throw on an AC bullet that references AC-1 by number, and returns the warn in its findings", () => {
+    const refSpec = `# SPEC: Reference
+
+## Acceptance Criteria
+
+### US-001 — Reference story
+
+1. \`[unit]\` foo() returns 1.
+2. \`[unit]\` In the AC-1 setup, foo() returns 2.
+`;
+    const findings = assertSpecLintClean(refSpec, OPTIONS);
+    const numericRefs = findings.filter((f) => f.code === "ac-numeric-reference");
+    expect(numericRefs).toHaveLength(1);
+    expect(numericRefs[0].level).toBe("warn");
+  });
 });
