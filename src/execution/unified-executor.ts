@@ -272,7 +272,6 @@ export { reconcileBatchOutcome } from "./reconcile-batch-outcome";
 
 /**
  * Injectable dependencies for testing.
- * Defined after executeUnified so "story:started" precedes "runParallelBatch" in source order.
  * @internal — test use only.
  */
 export const _unifiedExecutorDeps = {

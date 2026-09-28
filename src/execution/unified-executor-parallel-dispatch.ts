@@ -46,12 +46,11 @@ export interface ParallelDispatchDeps {
 /** Routes each of a parallel batch's failed stories through handlePipelineFailure (AC-6), folding the escalated PRD in. */
 async function handleParallelBatchFailures(
   ctx: SequentialExecutionContext,
-  prd: PRD,
-  totalCost: number,
-  allStoryMetrics: StoryMetrics[],
   batchResult: RunParallelBatchResult,
+  loop: { prd: PRD; totalCost: number; allStoryMetrics: StoryMetrics[] },
 ): Promise<PRD> {
-  let nextPrd = prd;
+  const { totalCost, allStoryMetrics } = loop;
+  let nextPrd = loop.prd;
   for (const { story, pipelineResult } of batchResult.failed) {
     const storyRouting = nextPrd.userStories.find((s) => s.id === story.id)?.routing;
     // BUG-04: capture the escalated prd, or canEscalate never trips.
@@ -213,7 +212,7 @@ async function runManyStoryParallelBatch(
     prd,
   });
   // Route parallel failures through handlePipelineFailure (AC-6)
-  prd = await handleParallelBatchFailures(ctx, prd, totalCost, allStoryMetrics, batchResult);
+  prd = await handleParallelBatchFailures(ctx, batchResult, { prd, totalCost, allStoryMetrics });
 
   // Single-writer PRD reconciliation (H-1): worktree pipelines skipped persistence, so record completed + merge-conflict outcomes here.
   reconcileBatchOutcome(prd, batchResult);

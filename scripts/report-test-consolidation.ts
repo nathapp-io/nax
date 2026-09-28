@@ -439,9 +439,9 @@ function printGroupDetail(row: Row, groups: Map<string, string[]>, stats: Map<st
 function runGroupReport(
   argv: string[],
   rows: Row[],
-  groups: Map<string, string[]>,
-  stats: Map<string, FileStat>,
+  population: { groups: Map<string, string[]>; stats: Map<string, FileStat> },
 ): never {
+  const { groups, stats } = population;
   const requested = argv[argv.indexOf("--group") + 1];
   if (!requested) {
     console.error("--group needs a base test path. Run without --group to list the groups.");
@@ -534,7 +534,7 @@ async function main() {
   const argv = process.argv.slice(2);
 
   if (argv.includes("--mirrors")) printMirrorsReport(paths, stats, groups);
-  if (argv.includes("--group")) runGroupReport(argv, rows, groups, stats);
+  if (argv.includes("--group")) runGroupReport(argv, rows, { groups, stats });
 
   const totals = buildTotals(paths, stats, rows);
   if (argv.includes("--json")) runJsonReport(totals, rows);

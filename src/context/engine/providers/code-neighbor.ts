@@ -166,6 +166,17 @@ function scanDirectory(
   return { workdir, files, truncated };
 }
 
+/** `collectNeighbors`'s arguments. */
+interface CollectNeighborsInput {
+  filePath: string;
+  execRoot: string;
+  packageDir: string;
+  neighborScope: "repo" | "package";
+  scannedDirs: ScannedDir[];
+  contentCacheState: ContentCacheState;
+  siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] };
+}
+
 /**
  * Collect neighbors for a single file: forward deps (JS/TS only), reverse deps
  * (language-aware glob, configurable cap), and sibling tests (ADR-009 SSOT).
@@ -201,16 +212,6 @@ function scanDirectory(
  * reverse quick-check (`includes(fileBaseName)`) misses directory imports
  * whose content never spells the base name.
  */
-interface CollectNeighborsInput {
-  filePath: string;
-  execRoot: string;
-  packageDir: string;
-  neighborScope: "repo" | "package";
-  scannedDirs: ScannedDir[];
-  contentCacheState: ContentCacheState;
-  siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] };
-}
-
 async function collectNeighbors(input: CollectNeighborsInput): Promise<{ neighbors: string[]; truncated: boolean }> {
   const { filePath, execRoot, packageDir, neighborScope, scannedDirs, contentCacheState, siblingTestContext } = input;
   // AC5: package-scope filter applies the legacy "scan only this package"

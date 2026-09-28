@@ -105,7 +105,7 @@ export async function createStoryWorktrees(input: {
 }
 
 /**
- * PKG-003 (parallel): Resolve per-story effective configs so per-package quality/review
+ * Phase 2 — PKG-003 (parallel): resolve per-story effective configs so per-package quality/review
  * command overrides apply in parallel mode (same as iteration-runner does for sequential).
  * Without this, all parallel stories use the root config regardless of story.workdir.
  * allSettled so a single malformed per-package config doesn't crash the whole batch.

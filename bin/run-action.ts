@@ -65,7 +65,6 @@ export interface RunActionOptions {
   resume?: boolean | string;
 }
 
-export type RunConfig = NaxConfig;
 export type LoadedPrd = Awaited<ReturnType<typeof loadPRD>>;
 export type FormatterMode = "quiet" | "normal" | "verbose" | "json";
 export type TuiInstance = ReturnType<typeof renderTui>;
@@ -276,7 +275,7 @@ export async function resolveRunProjectContext(
 
 export interface RunPlanPhaseParams {
   options: RunActionOptions;
-  config: RunConfig;
+  config: NaxConfig;
   workdir: string;
   projectRoot: string;
   featureDir: string;
@@ -331,7 +330,7 @@ export async function maybeRunPlanPhase(params: RunPlanPhaseParams): Promise<voi
 async function runPlanningPhase(params: {
   options: RunActionOptions;
   from: string;
-  config: RunConfig;
+  config: NaxConfig;
   workdir: string;
   projectRoot: string;
   featureDir: string;
@@ -406,7 +405,7 @@ export interface RunLogSetup {
 /** Resolve output/run dirs, the run id, headless mode, and initialize the run logger. */
 export function initRunLogging(params: {
   options: RunActionOptions;
-  config: RunConfig;
+  config: NaxConfig;
   workdir: string;
   isTTY: boolean;
   logLevel: LogLevel;
@@ -450,10 +449,10 @@ export function initRunLogging(params: {
  * sequence as the original inline block.
  */
 export function applyRunCliOverrides(
-  config: RunConfig,
+  config: NaxConfig,
   options: RunActionOptions,
   maxIterationsFlag: ResolvedMaxIterationsFlag,
-): RunConfig {
+): NaxConfig {
   // Override config from CLI
   if (options.agent) {
     config.agent ??= {};

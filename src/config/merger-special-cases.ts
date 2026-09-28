@@ -74,9 +74,10 @@ function mergeHookDefs(
  * the dispatcher); the merged value concatenates hook definitions and carries
  * the override's other hook config fields (e.g., skipGlobal).
  */
-export function mergeHooks(baseValue: unknown, overrideValue: unknown): Record<string, unknown> {
-  const baseHooks = baseValue as Record<string, unknown>;
-  const overrideHooks = overrideValue as Record<string, unknown>;
+export function mergeHooks(
+  baseHooks: Record<string, unknown>,
+  overrideHooks: Record<string, unknown>,
+): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...baseHooks };
 
   // Merge the nested hooks object
@@ -105,13 +106,10 @@ export function mergeHooks(baseValue: unknown, overrideValue: unknown): Record<s
  * recursive merger passed in by the dispatcher.
  */
 export function mergeConstitution(
-  baseValue: unknown,
-  overrideValue: unknown,
+  baseConst: Record<string, unknown>,
+  overrideConst: Record<string, unknown>,
   mergeDeep: MergeDeep,
 ): Record<string, unknown> {
-  const baseConst = baseValue as Record<string, unknown>;
-  const overrideConst = overrideValue as Record<string, unknown>;
-
   const baseContent = typeof baseConst.content === "string" ? baseConst.content : "";
   const overrideContent = typeof overrideConst.content === "string" ? overrideConst.content : "";
 

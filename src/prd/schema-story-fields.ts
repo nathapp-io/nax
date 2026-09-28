@@ -275,7 +275,15 @@ export function extractTags(s: Record<string, unknown>, index: number): string[]
   return rawTags as string[];
 }
 
-/** workdir — optional, relative path only, no traversal. */
+/**
+ * workdir — optional, relative path only, no traversal.
+ * Sibling contextFiles/expectedFiles/modifiedFiles entries on this story are
+ * REPO-ROOTED, not relative to this workdir (single-frame redesign, nax#2125).
+ * This is a plan-WRITE-time contract enforced by findNonCanonicalDeclaredPaths
+ * at the write seam (src/plan/strategies/persist-prd.ts), not here: PRD.parse()
+ * must keep accepting a legacy or hand-edited PRD whose paths predate this
+ * convention.
+ */
 export function extractWorkdir(s: Record<string, unknown>, index: number): string | undefined {
   const rawWorkdir = s.workdir;
   if (rawWorkdir === undefined || rawWorkdir === null) {
@@ -324,6 +332,9 @@ function checkRelativeNoTraversal(path: string, index: number, field: string): v
 /**
  * contextFiles — optional array of relative file paths (string or {path, factId?} objects).
  * Non-string, non-object entries are silently filtered (42, null, etc.).
+ * Repo-rooted for any story canonicalized by nax plan (nax#2125); accepted here
+ * regardless of frame — this validator only rejects malformed paths (absolute,
+ * '..'), never an un-canonicalized one.
  */
 export function extractContextFiles(s: Record<string, unknown>, index: number): Array<string | ContextFileEntry> {
   const rawContextFiles = s.contextFiles;
@@ -355,6 +366,9 @@ export function extractContextFiles(s: Record<string, unknown>, index: number): 
  * expectedFiles — optional array of relative paths the story CREATES. Same
  * path rules as contextFiles, but plain strings only (no factId citations —
  * a file that does not exist yet cannot be grounded in the facts manifest).
+ * Repo-rooted for any story canonicalized by nax plan (nax#2125); accepted here
+ * regardless of frame — this validator only rejects malformed paths (absolute,
+ * '..'), never an un-canonicalized one.
  */
 export function extractExpectedFiles(s: Record<string, unknown>, index: number): string[] {
   const rawExpectedFiles = s.expectedFiles;
@@ -375,6 +389,9 @@ export function extractExpectedFiles(s: Record<string, unknown>, index: number):
 /**
  * modifiedFiles — optional list of EXISTING files this story is authorised to
  * change, each with the spec's reason. Same path rules as contextFiles.
+ * Populated deterministically from the spec's `### Modifies` section rather
+ * than by the planner (see ./modifies-extract), but validated here all the
+ * same: a prd.json edited by hand reaches this path too.
  */
 export function extractModifiedFiles(s: Record<string, unknown>, index: number): ModifiedFileEntry[] {
   const rawModifiedFiles = s.modifiedFiles;

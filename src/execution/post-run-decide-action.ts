@@ -57,7 +57,11 @@ export interface DecideFrame {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Rectification ran to exhaustion and left findings behind. */
-export function hasRectificationExhaustion(planResult: StoryOrchestratorResult): boolean {
+export function hasRectificationExhaustion(
+  planResult: StoryOrchestratorResult,
+): planResult is StoryOrchestratorResult & {
+  unfixedFindings: NonNullable<StoryOrchestratorResult["unfixedFindings"]>;
+} {
   return !!(planResult.rectificationExhausted && planResult.unfixedFindings && planResult.unfixedFindings.length > 0);
 }
 
@@ -130,7 +134,7 @@ export async function routeRectificationExhaustion(frame: DecideFrame): Promise<
   // (the resume block in the orchestrator runs reviews even when mechanical findings are
   // unfixed — see story-orchestrator.ts mechanicalOnlyExhausted), proceed rather than
   // escalating. Reviews absent from phaseOutputs means they were not configured (OK).
-  if (planResult.rectificationExhausted && planResult.unfixedFindings && planResult.unfixedFindings.length > 0) {
+  if (hasRectificationExhaustion(planResult)) {
     // Advisory-only escape: if NONE of the remaining unfixed findings meet the
     // run's blocking threshold, the story is functionally green — do not fail it
     // on sub-blocking leftovers. This covers findings that no fix strategy can
@@ -153,7 +157,7 @@ export async function routeRectificationExhaustion(frame: DecideFrame): Promise<
           storyId: ctx.story.id,
           blockingThreshold,
           unfixedCount: planResult.unfixedFindings.length,
-          unfixedSources: [...new Set(planResult.unfixedFindings.map((f) => (f as { source?: string }).source))],
+          unfixedSources: [...collectFindingSources(planResult.unfixedFindings)],
         },
       );
       return { action: "continue" };

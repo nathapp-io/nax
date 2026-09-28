@@ -12,20 +12,14 @@
 import { join } from "node:path";
 
 import chalk from "chalk";
+import type { NaxConfig } from "../src/config";
 import { run } from "../src/execution";
 import type { LoadedHooksConfig } from "../src/hooks";
 import type { AgentStreamEventBus } from "../src/runtime";
 import { waitForSchedule } from "../src/schedule";
 import { type PipelineEventEmitter, renderTui, type StoryDisplayState } from "../src/tui";
 import { NAX_BUILD_INFO } from "../src/version";
-import type {
-  FormatterMode,
-  LoadedPrd,
-  ResolvedScheduleGate,
-  RunActionOptions,
-  RunConfig,
-  TuiInstance,
-} from "./run-action";
+import type { FormatterMode, LoadedPrd, ResolvedScheduleGate, RunActionOptions, TuiInstance } from "./run-action";
 
 /** Render the TUI for a non-headless run from the already-loaded PRD. */
 export function mountRunTui(params: {
@@ -96,9 +90,9 @@ export async function runBakeoffMode(params: {
   options: RunActionOptions;
   workdir: string;
   outputDir: string;
-  config: RunConfig;
+  config: NaxConfig;
   tuiInstance: TuiInstance | undefined;
-}): Promise<void> {
+}): Promise<never> {
   const { options, workdir, outputDir, config, tuiInstance } = params;
   const { handleRunAction, _bakeoffCliDeps } = await import("../src/bakeoff");
   const bakeoffResult = await handleRunAction(
@@ -133,7 +127,7 @@ export async function runBakeoffMode(params: {
  */
 export async function executeSingleAgentRun(params: {
   options: RunActionOptions;
-  config: RunConfig;
+  config: NaxConfig;
   hooks: LoadedHooksConfig;
   prdPath: string;
   workdir: string;

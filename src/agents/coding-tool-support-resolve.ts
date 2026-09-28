@@ -124,13 +124,17 @@ export interface ResolvedDispatchInputs {
  * dispatch's own config.
  */
 export function hasUsablePackageDir(packageDir: string | undefined, projectDir: string | undefined): boolean {
-  return (
-    packageDir !== undefined &&
-    packageDir.trim() !== "" &&
-    packageDir !== "." &&
-    projectDir !== undefined &&
-    projectDir.trim() !== ""
-  );
+  return usablePackageDirs(packageDir, projectDir) !== undefined;
+}
+
+/** `hasUsablePackageDir`'s rule, returning both dirs narrowed to `string` when it holds. */
+function usablePackageDirs(
+  packageDir: string | undefined,
+  projectDir: string | undefined,
+): { packageDir: string; projectDir: string } | undefined {
+  if (packageDir === undefined || packageDir.trim() === "" || packageDir === ".") return undefined;
+  if (projectDir === undefined || projectDir.trim() === "") return undefined;
+  return { packageDir, projectDir };
 }
 
 /**
@@ -149,10 +153,9 @@ export async function loadPackageEffectiveConfig(
   deps: { loadConfigForPackage: typeof loadConfigForPackage },
   options: ResolveCodingToolSupportOptions,
 ): Promise<NaxConfig | undefined> {
-  const packageDir = options.codingToolPackageDir;
-  const projectDir = options.projectDir;
-  if (packageDir === undefined || packageDir.trim() === "" || packageDir === ".") return undefined;
-  if (projectDir === undefined || projectDir.trim() === "" || options.config === undefined) return undefined;
+  const dirs = usablePackageDirs(options.codingToolPackageDir, options.projectDir);
+  if (dirs === undefined || options.config === undefined) return undefined;
+  const { packageDir, projectDir } = dirs;
   try {
     return await deps.loadConfigForPackage(
       projectDir,

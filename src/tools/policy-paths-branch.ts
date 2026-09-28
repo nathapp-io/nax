@@ -195,7 +195,6 @@ interface PathCheckFrame {
   readonly tool: string;
   readonly scope: ToolScope;
   readonly input: Record<string, unknown>;
-  readonly grant: CompiledEntry;
   readonly globs: readonly CompiledPattern[];
   /** The containment root for this call: the policy root, or its confined subtree. */
   readonly effectiveRoot: string;
@@ -381,7 +380,6 @@ export function pathsBranch(args: {
     tool,
     scope,
     input,
-    grant,
     globs,
     effectiveRoot,
     state,

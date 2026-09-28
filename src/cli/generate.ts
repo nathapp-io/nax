@@ -77,10 +77,10 @@ function printDryRunNotice(dryRun: boolean): void {
  */
 function reportPackageResults(
   frame: GenerateFrame,
-  pkgDir: string,
   results: PackageGenerationResult[],
-  displayDir: string = pkgDir,
+  dirs: { pkgDir: string; displayDir?: string },
 ): number {
+  const { pkgDir, displayDir = pkgDir } = dirs;
   let errorCount = 0;
   for (const result of results) {
     if (result.error) {
@@ -110,7 +110,7 @@ async function runAllPackages(frame: GenerateFrame): Promise<void> {
 
   for (const pkgDir of packages) {
     const results = await generateForPackage(pkgDir, frame.config, frame.dryRun, frame.workdir);
-    errorCount += reportPackageResults(frame, pkgDir, results);
+    errorCount += reportPackageResults(frame, results, { pkgDir });
   }
 
   if (errorCount > 0) {
@@ -232,7 +232,7 @@ async function generateDiscoveredPackages(frame: GenerateFrame): Promise<void> {
   for (const pkgDir of packages) {
     const pkgResults = await generateForPackage(pkgDir, frame.config, frame.dryRun, frame.workdir);
     const rel = pkgDir.startsWith(frame.workdir) ? pkgDir.slice(frame.workdir.length + 1) : pkgDir;
-    pkgErrorCount += reportPackageResults(frame, pkgDir, pkgResults, rel);
+    pkgErrorCount += reportPackageResults(frame, pkgResults, { pkgDir, displayDir: rel });
   }
   if (pkgErrorCount > 0) {
     console.error(chalk.red(`\n✗ ${pkgErrorCount} package generation(s) failed`));

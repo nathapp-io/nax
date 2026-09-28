@@ -58,9 +58,9 @@ export interface PhaseTracking {
 export function describeGateRegressionNow(
   ctx: CallContext,
   phaseOutputs: Record<string, unknown>,
-  gateName: string | undefined,
-  options: { baselineKeys: ReadonlySet<string>; quarantineMemo?: QuarantineMemo },
+  options: { gateName: string | undefined; baselineKeys: ReadonlySet<string>; quarantineMemo?: QuarantineMemo },
 ): GateRegressionDetail {
+  const { gateName } = options;
   return describeGateRegression({
     gateOutput: gateName === undefined ? undefined : phaseOutputs[gateName],
     baselineKeys: options.baselineKeys,
@@ -460,7 +460,8 @@ export async function maybeRunNonBlockingFix(
       // regressing test identities — the only point at which they still exist
       // (#1382).
       keptTreeRegressed: (quarantineMemo) =>
-        describeGateRegressionNow(ctx, phaseOutputs, gateName, {
+        describeGateRegressionNow(ctx, phaseOutputs, {
+          gateName,
           baselineKeys: preRectGateFailureKeys,
           quarantineMemo,
         }),
@@ -470,5 +471,5 @@ export async function maybeRunNonBlockingFix(
 }
 
 // Verdict aggregation (buildStoryOrchestratorResult) lives in
-// ./execution-plan-verdict.ts — this file landed at 625 lines against the
+// ./execution-plan-verdict.ts — this file reached 684 lines against the
 // 600-line gate once that logic joined the other extracted phases.

@@ -2,7 +2,7 @@
  * Verdict aggregation for `ExecutionPlan.run()` (./execution-plan.ts).
  *
  * Split out of ./execution-plan-phases.ts during the complexity drain
- * (docs/plans/STATUS-complexity-drain.md A3): that file landed at 625 lines
+ * (docs/plans/STATUS-complexity-drain.md A3): that file reached 684 lines
  * against the 600-line gate once the verdict logic joined the other
  * extracted phases. A pure extraction: no verdict rule changed.
  */
@@ -67,7 +67,8 @@ export function buildStoryOrchestratorResult(
   const verifierExplicitlyPassed = verifierName !== undefined && phaseExplicitlyPassed(phaseOutputs[verifierName]);
   // Compares the FINAL gate against the verifier-time baseline, including keyless
   // (timeout / execution-failure) regressions the raw key-diff is blind to (audit #3).
-  const gateRegressedDuringRect = describeGateRegressionNow(ctx, phaseOutputs, gateName, {
+  const gateRegressedDuringRect = describeGateRegressionNow(ctx, phaseOutputs, {
+    gateName,
     baselineKeys: preRectGateFailureKeys,
   }).regressed;
   const verifierPassedSsot = verifierExplicitlyPassed && !gateRegressedDuringRect;
