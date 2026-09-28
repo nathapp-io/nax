@@ -382,7 +382,9 @@ describe("runFixCycle — validator-error exit reports the iteration's spend (US
       { callOp, logger },
     );
 
-    const errorLog = logger.calls.find((c) => c.level === "error" && c.message === "cycle exited — validator error");
+    const errorLog = logger.calls.find(
+      (c) => c.level === "error" && c.stage === "findings.cycle" && c.message === "cycle exited — validator error",
+    );
     expect(errorLog).toBeDefined();
     expect(errorLog?.data?.strategiesRun).toEqual(["lint-fix"]);
     expect(errorLog?.data?.iterationCostUsd).toBeCloseTo(0.5, 5);
