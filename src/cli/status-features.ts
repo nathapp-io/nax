@@ -247,6 +247,17 @@ async function displayAllFeatures(projectRoot: string): Promise<void> {
   const features = readdirSync(featuresRepoDir, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
+    // featureDir() validates each name — silently drop directories that
+    // don't look like feature IDs (e.g. .DS_Store, Finder temp files, names
+    // containing whitespace) so a stray entry can't abort the whole listing.
+    .filter((name) => {
+      try {
+        configFeatureDir(projectRoot, name);
+        return true;
+      } catch {
+        return false;
+      }
+    })
     .sort();
 
   if (features.length === 0) {

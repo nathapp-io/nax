@@ -571,6 +571,36 @@ describe("US-001: nax status reads the repo feature directory", () => {
       rmSync(O, { recursive: true, force: true });
     }
   });
+
+  // ============================================================================
+  // Adversarial: a directory under .nax/features that fails featureId validation
+  // (e.g. .DS_Store, whitespace) must NOT abort the all-features listing. The
+  // status command is a diagnostic; a stray sibling directory should be
+  // silently ignored, not throw an INVALID_FEATURE_ID across the whole view.
+  // ============================================================================
+  test("all-features view silently skips directories that fail featureId validation (.DS_Store, whitespace, etc.)", async () => {
+    const { R, O } = buildStatusFixture();
+    // Plant two junk entries alongside feat-a
+    mkdirSync(join(R, ".nax", "features", ".DS_Store"), { recursive: true });
+    mkdirSync(join(R, ".nax", "features", "foo bar"), { recursive: true });
+    _statusFeaturesDeps.findProjectDir = (() => join(R, ".nax")) as typeof _statusFeaturesDeps.findProjectDir;
+    _statusFeaturesDeps.projectOutputDir = (() => O) as typeof _statusFeaturesDeps.projectOutputDir;
+
+    try {
+      // Must not throw
+      await displayFeatureStatus({ dir: R });
+
+      const output = consoleOutput.join("\n");
+      // feat-a row should still be present; junk entries must not appear
+      const featARow = output.split("\n").find((line) => line.trimStart().startsWith("feat-a "));
+      expect(featARow).toBeDefined();
+      expect(output).not.toContain(".DS_Store");
+      expect(output).not.toContain("foo bar");
+    } finally {
+      rmSync(R, { recursive: true, force: true });
+      rmSync(O, { recursive: true, force: true });
+    }
+  });
 });
 
 // ============================================================================
