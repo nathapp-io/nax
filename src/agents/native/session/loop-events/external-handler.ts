@@ -18,15 +18,8 @@
 
 import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
-import type {
-  BeforeToolPayload,
-  HandlerOf,
-  LoopEvent,
-  LoopHandlerContext,
-  LoopHandlerEntry,
-  PatchOf,
-  PayloadOf,
-} from "./types";
+import { isBeforeToolOutcome } from "./registry";
+import type { HandlerOf, LoopEvent, LoopHandlerContext, LoopHandlerEntry, PatchOf, PayloadOf } from "./types";
 
 /**
  * How long a plugin handler may run before the wrapper answers for it. A
@@ -43,9 +36,6 @@ export const LOOP_HANDLER_TIMEOUT_MS = 10_000;
 export const _externalHandlerDeps = {
   timeoutMs: LOOP_HANDLER_TIMEOUT_MS,
 };
-
-/** The only `before_tool` outcomes that answer the tool call. */
-const BEFORE_TOOL_KINDS: readonly unknown[] = ["allow", "nudge", "block", "terminate"];
 
 /**
  * The patch fields whose presence is worth tracing: the ones a later
@@ -65,6 +55,14 @@ type Settlement =
  * first to settle wins, every later settlement is discarded, and the timer is
  * cleared the moment the race settles so an instant handler never holds the
  * event loop open for the full deadline.
+ *
+ * The abort is honoured for the lifetime of THIS dispatch: the listener is
+ * wired synchronously, before the handler is called. A signal that was already
+ * aborted when the dispatch began is deliberately NOT honoured — one registry
+ * is installed once and repointed per turn (`./loop-handlers`), so a signal
+ * carried over from an earlier turn would otherwise fail-close every later
+ * `before_tool` dispatch to `block` without ever calling the handler. The
+ * deadline still bounds such a dispatch, so nothing hangs.
  *
  * `setTimeout` and not `Bun.sleep()`: the handle has to be cancelled mid-flight
  * (`clearTimeout`), which is the sanctioned exception to the Bun-native delay
@@ -88,16 +86,21 @@ function raceSettlement(
     };
     const onAbort = (): void => finish({ ok: false, reason: "aborted before it settled" });
     timer = setTimeout(() => finish({ ok: false, reason: `did not settle within ${timeoutMs}ms` }), timeoutMs);
-    if (deps.signal.aborted) {
-      onAbort();
+    deps.signal.addEventListener("abort", onAbort, { once: true });
+    // The context is read here, at dispatch, so a handler always sees the facts
+    // of the turn it is running in. Read in its OWN try: a `getCtx` throw is
+    // nax's own defect, and it must not be reported as the plugin's handler
+    // failing (US-002 review).
+    let ctx: LoopHandlerContext;
+    try {
+      ctx = deps.getCtx();
+    } catch (err) {
+      finish({ ok: false, reason: `reading the handler context failed: ${errorMessage(err)}` });
       return;
     }
-    deps.signal.addEventListener("abort", onAbort, { once: true });
     let returned: unknown;
     try {
-      // The context is read here, at dispatch, so a handler always sees the
-      // facts of the turn it is running in.
-      returned = entry.handler(payload as PayloadOf<LoopEvent>, deps.getCtx());
+      returned = entry.handler(payload as PayloadOf<LoopEvent>, ctx);
     } catch (err) {
       finish({ ok: false, reason: errorMessage(err) });
       return;
@@ -114,15 +117,19 @@ function raceSettlement(
  * block — a failed guard must never read as a silent allow — and every other
  * event answers `{}` (no patch). One warn per failure either way, naming the
  * plugin the failure belongs to.
+ *
+ * The tool name is read defensively: this runs on the failure path, outside any
+ * try, and a wrapper whose contract is that it never rethrows must not throw
+ * from its own diagnosis of a malformed payload.
  */
 function failure(entry: LoopHandlerEntry, payload: unknown, reason: FailureReason): PatchOf<LoopEvent> {
   const logger = getSafeLogger();
   if (entry.event === "before_tool") {
-    const tool = (payload as BeforeToolPayload).call.name;
+    const tool = (payload as { readonly call?: { readonly name?: string } } | undefined)?.call?.name;
     logger?.warn("native-loop-events", `plugin '${entry.plugin}' failed on before_tool; blocking the call`, {
       plugin: entry.plugin,
       event: entry.event,
-      tool,
+      ...(tool !== undefined ? { tool } : {}),
       error: reason,
     });
     return {
@@ -158,14 +165,9 @@ function tracePatch(entry: LoopHandlerEntry, value: unknown): void {
   });
 }
 
-function isBeforeToolOutcome(value: unknown): boolean {
-  if (typeof value !== "object" || value === null) return false;
-  const kind = (value as { kind?: unknown }).kind;
-  return typeof kind === "string" && BEFORE_TOOL_KINDS.includes(kind);
-}
-
 function describeValue(value: unknown): string {
   if (value === null) return "null";
+  if (Array.isArray(value)) return "an array";
   if (typeof value === "object") return "an object whose kind is not a before_tool outcome";
   return `a ${typeof value} value`;
 }
@@ -176,7 +178,7 @@ function settled(entry: LoopHandlerEntry, payload: unknown, value: unknown): Pat
     // `undefined` is the handler declining to decide, which is an allow.
     if (value === undefined) return { kind: "allow" };
     if (!isBeforeToolOutcome(value)) return failure(entry, payload, `returned ${describeValue(value)}`);
-    return value as PatchOf<LoopEvent>;
+    return value;
   }
   if (value === undefined) return {};
   tracePatch(entry, value);

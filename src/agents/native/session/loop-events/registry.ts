@@ -123,16 +123,33 @@ function pickPatchFields(returned: unknown, fields: readonly string[]): Record<s
   return picked;
 }
 
+/** The four kinds that make a `before_tool` answer an outcome, and nothing else. */
+const BEFORE_TOOL_KINDS: readonly unknown[] = ["allow", "nudge", "block", "terminate"];
+
 /**
- * A handler's answer arrives typed, but a plugin module is plain JavaScript
- * and can answer nothing at all. Reading `kind` off that answer is a
- * dereference the dispatcher must not do: it would throw out of a seam whose
- * whole contract is that it never fails the turn, and it would do so OUTSIDE
- * the handler's try (US-002).
+ * US-002: is this a well-formed `before_tool` outcome?
+ *
+ * A plugin module is plain JavaScript and can answer anything at all — a
+ * string, `null`, an array, or an object whose `kind` is not a decision. What
+ * makes an answer an outcome is its SHAPE, not merely its object-ness, so the
+ * dispatcher and `wrapExternalHandler` ask this one question rather than each
+ * holding a half of it.
  */
-function asOutcome(returned: unknown, tool: string): unknown {
-  if (typeof returned === "object" && returned !== null) return returned;
-  getSafeLogger()?.warn("native-loop-events", "before_tool handler answered no outcome; treating it as allow", {
+export function isBeforeToolOutcome(value: unknown): value is BeforeToolOutcome {
+  if (typeof value !== "object" || value === null) return false;
+  const kind = (value as { kind?: unknown }).kind;
+  return typeof kind === "string" && BEFORE_TOOL_KINDS.includes(kind);
+}
+
+/**
+ * A handler's answer arrives typed, but its `kind` may be missing or invented,
+ * and reading `kind` off such an answer is a dereference the dispatcher must
+ * not do: it would throw out of a seam whose whole contract is that it never
+ * fails the turn, and it would do so OUTSIDE the handler's try (US-002).
+ */
+function asOutcome(returned: unknown, tool: string): BeforeToolOutcome {
+  if (isBeforeToolOutcome(returned)) return returned;
+  getSafeLogger()?.warn("native-loop-events", "before_tool handler answered no valid outcome; treating it as allow", {
     tool,
   });
   return { kind: "allow" };
@@ -175,7 +192,7 @@ async function dispatchBeforeTool(
     } finally {
       restoreMutated(snapshot, "before_tool", index);
     }
-    const outcome = asOutcome(returned, call.name) as BeforeToolOutcome;
+    const outcome = asOutcome(returned, call.name);
     if (outcome.kind === "block" || outcome.kind === "terminate") return outcome;
     if (outcome.kind === "nudge") nudgeText = outcome.text;
     if (outcome.input !== undefined) input = outcome.input;
