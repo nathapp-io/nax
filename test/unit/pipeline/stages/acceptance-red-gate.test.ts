@@ -543,3 +543,77 @@ describe("US-005 acceptanceSetupStage: RED gate repair wiring", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-001: the gate hands the runner ONE shell command string
+// ---------------------------------------------------------------------------
+
+interface RunTestCall {
+  testPath: string;
+  workdir: string;
+  cmd: string;
+  timeoutMs: number | undefined;
+}
+
+/** A gate deps set whose `runTest` records every argument it is handed. */
+function makeRecordingDeps(outputs: ReadonlyArray<{ exitCode: number; output: string }>): {
+  deps: AcceptanceRedGateDeps;
+  calls: RunTestCall[];
+} {
+  const calls: RunTestCall[] = [];
+  let runIndex = 0;
+  const deps: AcceptanceRedGateDeps = {
+    runTest: async (testPath, workdir, cmd, timeoutMs) => {
+      calls.push({ testPath, workdir, cmd, timeoutMs });
+      const result = outputs[Math.min(runIndex, outputs.length - 1)];
+      runIndex += 1;
+      assertDefined(result, "runTest output fixture");
+      return result;
+    },
+    callOp: async () => ({ testCode: null }),
+    writeFile: async () => {},
+    autoCommitIfDirty: async () => {},
+  };
+  return { deps, calls };
+}
+
+describe("US-001 runAcceptanceRedGate: command string, not argv", () => {
+  test("AC11: passes the built command string to runTest for an override with an env assignment", async () => {
+    const { deps, calls } = makeRecordingDeps([{ exitCode: 0, output: "1 pass" }]);
+
+    const redCount = await runAcceptanceRedGate(
+      makeCtx(),
+      [makeEntry({ testPath: "/repo/.nax-acceptance.test.ts", commandOverride: "FOO=1 bun test {{FILE}}" })],
+      deps,
+    );
+
+    expect(redCount).toBe(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.testPath).toBe("/repo/.nax-acceptance.test.ts");
+    expect(calls[0]?.workdir).toBe(GROUP_PACKAGE_DIR);
+    expect(calls[0]?.cmd).toBe("FOO=1 bun test '/repo/.nax-acceptance.test.ts'");
+  });
+
+  test("AC11 boundary: an entry without an override runs the quote-joined framework default", async () => {
+    const { deps, calls } = makeRecordingDeps([{ exitCode: 0, output: "1 pass" }]);
+
+    await runAcceptanceRedGate(makeCtx(), [makeEntry({ testFramework: "jest" })], deps);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.cmd).toBe(`'npx' 'jest' '${GROUP_TEST_PATH}'`);
+  });
+
+  test("AC11 boundary: the logged command is the same shell string the runner receives", async () => {
+    const { deps } = makeRecordingDeps([{ exitCode: 0, output: "1 pass" }]);
+
+    await runAcceptanceRedGate(
+      makeCtx(),
+      [makeEntry({ testPath: "/repo/.nax-acceptance.test.ts", commandOverride: "FOO=1 bun test {{FILE}}" })],
+      deps,
+    );
+
+    const logged = entriesWithMessage("Running acceptance RED gate command");
+    expect(logged).toHaveLength(1);
+    expect(logged[0]?.data?.cmd).toBe("FOO=1 bun test '/repo/.nax-acceptance.test.ts'");
+  });
+});

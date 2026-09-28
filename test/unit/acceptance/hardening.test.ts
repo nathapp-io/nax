@@ -5,8 +5,10 @@ import {
   makeNaxConfig,
   makePRD,
   makeSessionManager,
+  makeSpawn,
   makeStory,
 } from "@test/helpers";
+import { resolveSuggestedPackageFeatureTestPath } from "@/acceptance";
 import { _hardeningDeps, type HardeningContext, runHardeningPass } from "@/acceptance/hardening";
 import type { NaxConfig } from "@/config";
 
@@ -688,5 +690,78 @@ describe("runHardeningPass()", () => {
     } finally {
       process.kill = originalKill;
     }
+  });
+
+  // US-001 AC13: the acceptance command is one shell string, so hardening must
+  // spawn `/bin/sh -c <cmd>` — not hand the string to Bun.spawn as an argv, and
+  // not quote-split it first. `detached: true` still rides along so the kill
+  // timer reaches the real test-runner process group.
+  test("US-001 AC13: spawns /bin/sh -c with the built command string and detached: true", async () => {
+    const story = makeStory({
+      acceptanceCriteria: ["spec AC"],
+      suggestedCriteria: ["edge case"],
+      status: "passed",
+      passes: true,
+      attempts: 1,
+    });
+    const ctx = makeCtx({
+      prd: makePRD({ userStories: [story] }),
+      config: {
+        ...TEST_CONFIG,
+        acceptance: { ...TEST_CONFIG.acceptance, command: "FOO=1 bun test {{FILE}}" },
+      },
+    });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [{ original: "edge case", refined: "edge case", testable: true, storyId: "US-001" }],
+      { testCode: 'test("AC-1", () => {})' },
+    );
+    _hardeningDeps.writeFile = mock(async () => {});
+    _hardeningDeps.savePRD = mock(async () => {});
+    const spawnStub = makeSpawn(() => "(pass) AC-1: edge case\n");
+    _hardeningDeps.spawn = spawnStub.spawn;
+
+    await runHardeningPass(ctx);
+
+    const suggestedTestPath = resolveSuggestedPackageFeatureTestPath(
+      ctx.workdir,
+      ctx.prd.feature,
+      ctx.config.acceptance?.suggestedTestPath,
+      undefined,
+    );
+    expect(spawnStub.calls).toHaveLength(1);
+    expect(spawnStub.calls[0]?.cmd).toEqual(["/bin/sh", "-c", `FOO=1 bun test '${suggestedTestPath}'`]);
+    expect(spawnStub.calls[0]?.opts.detached).toBe(true);
+    expect(spawnStub.calls[0]?.opts.cwd).toBe(ctx.workdir);
+  });
+
+  test("US-001 AC13 boundary: without an override the spawn runs the quote-joined framework default", async () => {
+    const story = makeStory({
+      acceptanceCriteria: ["spec AC"],
+      suggestedCriteria: ["edge case"],
+      status: "passed",
+      passes: true,
+      attempts: 1,
+    });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [{ original: "edge case", refined: "edge case", testable: true, storyId: "US-001" }],
+      { testCode: 'test("AC-1", () => {})' },
+    );
+    _hardeningDeps.writeFile = mock(async () => {});
+    _hardeningDeps.savePRD = mock(async () => {});
+    const spawnStub = makeSpawn(() => "(pass) AC-1: edge case\n");
+    _hardeningDeps.spawn = spawnStub.spawn;
+
+    await runHardeningPass(ctx);
+
+    const suggestedTestPath = resolveSuggestedPackageFeatureTestPath(
+      ctx.workdir,
+      ctx.prd.feature,
+      ctx.config.acceptance?.suggestedTestPath,
+      undefined,
+    );
+    expect(spawnStub.calls[0]?.cmd).toEqual(["/bin/sh", "-c", `'bun' 'test' '${suggestedTestPath}' '--timeout=60000'`]);
   });
 });

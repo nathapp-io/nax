@@ -20,7 +20,9 @@ export const acceptanceTestFilename = defaultAcceptanceTestFilename;
 export const resolveAcceptanceTestFile = defaultResolveAcceptanceTestFile;
 
 /**
- * Build the command to run a single acceptance test file.
+ * Build the command to run a single acceptance test file as ONE shell command
+ * string (US-001) — a string, not an argv array, because the override is
+ * authored as a shell line (env assignments, `&&`, pipes, its own quoting).
  *
  * Priority:
  * 1. `acceptance.command` override (with optional {{FILE}} placeholder)
@@ -60,7 +62,12 @@ export function buildAcceptanceRunCommand(
   testFramework?: string,
   commandOverride?: string,
   packageDir?: string,
-): string[] {
+): string {
+  // STUB (US-001): the pre-change argv build, space-joined without shell
+  // quoting. The implementer replaces the two `join(" ")` calls with the
+  // single shell string the ACs describe — trim the override and substitute
+  // `shellQuoteArg(testPath)` for the placeholders, or quote-join the
+  // framework default argv (US-001 AC1–AC8).
   if (commandOverride) {
     // Split on whitespace BEFORE substitution so a testPath containing spaces stays
     // a single argv element instead of being torn apart by the split below.
@@ -68,22 +75,23 @@ export function buildAcceptanceRunCommand(
     return commandOverride
       .trim()
       .split(/\s+/)
-      .map((part) => substituteAcceptanceTestPath(part, testPath));
+      .map((part) => substituteAcceptanceTestPath(part, testPath))
+      .join(" ");
   }
 
   switch (testFramework?.toLowerCase()) {
     case "vitest":
-      return ["npx", "vitest", "run", testPath];
+      return ["npx", "vitest", "run", testPath].join(" ");
     case "jest":
-      return ["npx", "jest", testPath];
+      return ["npx", "jest", testPath].join(" ");
     case "pytest":
-      return [resolvePytestBin(packageDir), testPath];
+      return [resolvePytestBin(packageDir), testPath].join(" ");
     case "go-test":
-      return ["go", "test", testPath];
+      return ["go", "test", testPath].join(" ");
     case "cargo-test":
-      return ["cargo", "test", "--test", "acceptance"];
+      return ["cargo", "test", "--test", "acceptance"].join(" ");
     default:
-      return ["bun", "test", testPath, "--timeout=60000"];
+      return ["bun", "test", testPath, "--timeout=60000"].join(" ");
   }
 }
 

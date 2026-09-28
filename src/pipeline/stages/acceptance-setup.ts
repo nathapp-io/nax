@@ -151,11 +151,15 @@ export const _acceptanceSetupDeps = {
   runTest: async (
     _testPath: string,
     _workdir: string,
-    _cmd: string[],
+    _cmd: string,
     timeoutMs = 1_800_000,
   ): Promise<{ exitCode: number; output: string }> => {
+    // STUB (US-001 AC9/AC10): the command is one shell string, and the real
+    // runner must hand it to `/bin/sh -c` verbatim. Until then this keeps the
+    // pre-change quote-per-word behaviour — a leading `VAR=value` assignment
+    // does not survive it.
     const execution = await executeWithTimeout(
-      _cmd.map(shellQuoteArg).join(" "),
+      _cmd.split(/\s+/).map(shellQuoteArg).join(" "),
       Math.ceil(timeoutMs / 1000),
       undefined,
       {

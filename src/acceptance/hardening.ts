@@ -168,12 +168,20 @@ async function processPackageGroup(
     config.acceptance?.command,
     packageDir,
   );
+  // US-001: the built command is one shell string, so it runs through
+  // `/bin/sh -c` — a leading `VAR=1` assignment and the user's own quoting
+  // reach the shell as written.
   // detached: true so killProcessGroup(-pid) below reaches the real test-runner
   // process (Bun does not setpgid children into their own group by default —
   // without this the process becomes its own session/group leader via setsid()
   // and killProcessGroup would only be able to signal the immediate child).
   // nax-git-env-allow: not git: acceptance test command
-  const proc = _hardeningDeps.spawn(testCmd, { cwd: packageDir, stdout: "pipe", stderr: "pipe", detached: true });
+  const proc = _hardeningDeps.spawn(["/bin/sh", "-c", testCmd], {
+    cwd: packageDir,
+    stdout: "pipe",
+    stderr: "pipe",
+    detached: true,
+  });
 
   // LLM-generated acceptance tests can hang (open server, watch mode) — enforce
   // a hard wall-clock deadline with SIGTERM -> SIGKILL escalation so the run's

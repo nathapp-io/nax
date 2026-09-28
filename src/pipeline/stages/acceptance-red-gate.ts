@@ -52,7 +52,7 @@ async function handleCrash(
   ctx: PipelineContext,
   entry: AcceptanceRedGateEntry,
   output: string,
-  runCmd: string[],
+  runCmd: string,
   deps: AcceptanceRedGateDeps,
 ): Promise<void> {
   const { testPath, packageDir, language, storyId, config } = entry;
@@ -137,7 +137,7 @@ export async function runAcceptanceRedGate(
     const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride, packageDir);
     logger?.info("acceptance-setup", "Running acceptance RED gate command", {
       storyId: entry.storyId,
-      cmd: runCmd.join(" "),
+      cmd: runCmd,
       packageDir,
     });
 

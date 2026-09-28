@@ -41,7 +41,7 @@ import {
 } from "@/test-runners";
 import { logTestOutput } from "@/utils/log-test-output";
 import { storyAbsWorkdir } from "@/utils/path-frame";
-import { executeWithTimeout, shellQuoteArg } from "@/verification";
+import { executeWithTimeout } from "@/verification";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import { checkAcceptanceCoverage } from "./acceptance-coverage";
 
@@ -239,14 +239,14 @@ export const acceptanceStage: PipelineStage = {
       // resolved by acceptance-setup. In fallback (single-package) mode they fall back to ctx.config.
       const resolvedFramework = testFramework ?? ctx.config.project?.testFramework;
       const resolvedCommand = commandOverride ?? ctx.config.acceptance.command;
-      const testCmdParts = buildAcceptanceRunCommand(testPath, resolvedFramework, resolvedCommand, packageDir);
+      const testCmd = buildAcceptanceRunCommand(testPath, resolvedFramework, resolvedCommand, packageDir);
       logger.info("acceptance", "Running acceptance command", {
         storyId: ctx.story.id,
-        cmd: testCmdParts.join(" "),
+        cmd: testCmd,
         packageDir,
       });
       const execution = await executeWithTimeout(
-        testCmdParts.map(shellQuoteArg).join(" "),
+        testCmd,
         Math.ceil(ctx.config.acceptance.timeoutMs / 1000),
         undefined,
         { cwd: packageDir },
