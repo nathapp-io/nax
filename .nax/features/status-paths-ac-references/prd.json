@@ -3,7 +3,7 @@
   "feature": "status-paths-ac-references",
   "branchName": "feat/status-paths-ac-references",
   "createdAt": "2026-09-28T00:00:00.000Z",
-  "updatedAt": "2026-09-28T16:49:25.799Z",
+  "updatedAt": "2026-09-28T16:59:53.087Z",
   "userStories": [
     {
       "id": "US-001",
@@ -41,7 +41,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Localized status-features changes plus a separate fixture and Commander integration test; established path helpers and existing dispatch contracts avoid new abstractions."
+        "reasoning": "Localized status-features changes plus a separate fixture and Commander integration test; established path helpers and existing dispatch contracts avoid new abstractions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/status-features.ts",
@@ -53,7 +56,11 @@
       "expectedFiles": [
         "test/unit/cli/status-features-repo-paths.test.ts"
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "96673c17df8804cac350cefdd540310175f61cc9"
     },
     {
       "id": "US-002",
@@ -107,7 +114,10 @@
         "src/prd/ac-references.ts",
         "test/unit/prd/ac-references.test.ts"
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Existing TypeScript/Bun CLI; no migration or schema change. Status path bug: src/cli/status-features.ts:27-30 has injectable projectOutputDir/loadConfig, but not findProjectDir. src/cli/status-features.ts:388-415 routes the single-feature --dir branch to the per-user output feature tree and the all-features --dir branch through resolveProject, which does not walk up. src/cli/status-dispatch.ts:102-178 validates the directory, walks up for config, but forwards the raw --dir; Commander defaults --dir to cwd, making the broken branch the CLI norm. src/config/loader.ts:284-299 exports findProjectDir (returns the .nax directory containing config.json or null). src/config/paths/index.ts:104-117 exports featuresDir and featureDir (feature ID validation and feature-path SSOT); avoid hand-joining .nax/features. src/cli/status-features.ts:149-233 reads PRD/story counts and feature status from the feature directory passed in (currently incorrectly supplied from output for --dir); it also reads runs from that same directory; split out a runsDir argument. src/cli/status-features.ts:235-333 loads config with catch fallback, lists/sorts output-feature subdirectories, calls getFeatureSummary and keeps the project-level banner from loadProjectStatusFile, which reads output/status.json at src/cli/status-features.ts:91-108. Single-feature details and missing-PRD notice are already implemented at src/cli/status-features.ts:337-371 and src/cli/status-features-details.ts:32-85, so only their directory input changes. src/prd/index.ts:92-144 loads/normalizes PRDs; countStories at src/prd/index.ts:231-257 drives Done/Pending. Tests: test/unit/cli/status-features.test.ts:1-136 stubs projectOutputDir to testDir/.nax, hiding path separation; add test/unit/cli/status-features-repo-paths.test.ts with truly separate R and O and a Commander end-to-end dispatch seam. Preserve no-dir resolveProject behavior, no-config root fallback, per-user run-log lookup, project banner location and status schema guard; do not modify cost views or run writers. Numeric reference bug: src/prd/spec-lint.ts:328-393 already walks only ## Acceptance Criteria, tracks ### US-n, increments counts for numbered bullets, and emits per-AC findings; add a warn from the shared matcher without changing blocking set at src/prd/spec-lint.ts:79-87. Re-export matcher from src/prd/index.ts:8-47. src/plan/spec-lint-gate.ts:51-78 returns nonblocking findings, and src/cli/spec-lint-command.ts:198-216 does not fail strict mode on warnings. src/operations/plan-fidelity.ts:126-191 contains warn-only context-file checks and shared applyPlanFidelity; add post-plan per-AC warn after the repairs and context-file warning, without altering PRD. Both planning strategies call applyPlanFidelity at src/operations/plan.ts:111 and src/operations/plan-refine.ts:425. src/operations/index.ts:111-119 re-exports plan-fidelity helpers if tests/consumers use the operations barrel. test/unit/operations/plan-fidelity.test.ts:54-145 shows initLogger/addSink capture and PRD builders. New matcher should strip paired inline backtick spans then match uppercase numeric AC tokens with one hyphen or space, normalize/dedupe in first-seen order; warnings are observational, not renumbering fixes. Tests should distinguish code-span data from real prose pointers. Risks: accidentally reading feature status from output rather than repo, accidentally reading run logs from repo, regressions for nested --dir and fallback config, blocking planning or mutating ACs, accidental regex matches of symbolic AC tokens. No data migration: existing repo PRDs/status files and per-user runs remain in their writer-defined locations.",
