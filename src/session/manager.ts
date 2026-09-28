@@ -7,6 +7,7 @@
  * See: docs/specs/SPEC-session-manager-integration.md
  */
 
+import type { LoopHandlerSet } from "../agents/native/session/loop-events/types";
 import type { AgentAdapter, SessionHandle, TurnResult } from "../agents/types";
 import { SessionFailureError } from "../agents/types";
 import { type NaxConfig, trackedSpawnDeadlines } from "../config";
@@ -17,7 +18,17 @@ import { getLogger } from "../logger";
 import { NO_OP_INTERACTION_HANDLER } from "../runtime/no-op-interaction-handler";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import { decideReuse } from "./endpoint-identity";
-import { _sessionManagerDeps, deriveNativeTranscriptDir, resolveProjectDirFromScratchDir } from "./manager-deps";
+import {
+  buildLoopHandlerTurnOpts,
+  LOOP_HANDLERS_NATIVE_ONLY_MESSAGE,
+  shouldLogNativeOnlyScope,
+} from "./loop-handler-forwarding";
+import {
+  _sessionManagerDeps,
+  deriveNativeTranscriptDir,
+  persistDescriptor,
+  resolveProjectDirFromScratchDir,
+} from "./manager-deps";
 import { DEFAULT_ORPHAN_TTL_MS, sweepOrphansImpl } from "./manager-sweep";
 import { selectModel } from "./model-selection";
 import { formatSessionName } from "./naming";
@@ -34,6 +45,7 @@ import type {
   TransitionOptions,
 } from "./types";
 import { SESSION_TRANSITIONS } from "./types";
+import { WatchdogCancelTracker } from "./watchdog-cancel-tracker";
 import { isWatchdogCancelledTurn } from "./watchdog-turn-classification";
 
 export { _sessionManagerDeps } from "./manager-deps";
@@ -44,6 +56,9 @@ export { _sessionManagerDeps } from "./manager-deps";
 
 /** Null protocol IDs used when no adapter has reported back yet */
 const NULL_PROTOCOL_IDS: ProtocolIds = { recordId: null, sessionId: null };
+
+/** An empty loop-handler set — the default until run setup delivers one (US-004). */
+const NO_LOOP_HANDLERS: LoopHandlerSet = Object.freeze([]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SessionManager
@@ -73,12 +88,20 @@ export class SessionManager implements ISessionManager {
   private _transcriptRoot: string | undefined;
   private _onStreamActivity: ((event: import("../runtime/agent-stream-events").AgentStreamEvent) => void) | undefined;
   /**
-   * Bookkeeping: per-session callIds whose cancel was invoked via the watchdog
-   * registry. Populated by the wrapped `onActiveCall` cancel closure; consumed
-   * when the adapter surfaces `cancelled: true` so we can map the failure to
-   * fail-stale without cross-session contamination in parallel runs.
+   * The run's plugin loop handlers, delivered once by
+   * `initializeAfterLock` through `configureLoopHandlers` (US-004). Empty until
+   * then, and for a manager no run setup ever configured.
    */
-  private readonly _watchdogCancelledCallsBySession = new Map<string, Set<string>>();
+  private _loopHandlers: LoopHandlerSet = NO_LOOP_HANDLERS;
+  /** Whether the native-only scope line has already been logged for this manager. */
+  private _loopHandlerScopeLogged = false;
+  /**
+   * Watchdog-invoked cancels, per session — populated by the wrapped
+   * `onActiveCall` cancel closure; consumed when the adapter surfaces
+   * `cancelled: true` so we can map the failure to fail-stale without
+   * cross-session contamination in parallel runs.
+   */
+  private readonly _watchdogCancels = new WatchdogCancelTracker();
   /** Disposer for the agent.call_ended subscription; cleared in `close()` if added. */
   private _agentStreamUnsubscribe: (() => void) | undefined;
 
@@ -126,53 +149,13 @@ export class SessionManager implements ISessionManager {
   }
 
   /**
-   * Build the `onActiveCall` callback handed to the adapter. It populates the
-   * watchdog controller registry with a wrapped cancel that records the callId
-   * in `_watchdogCancelledCalls` BEFORE invoking the adapter's cancel — that
-   * way, when the adapter surfaces `cancelled: true`, sendPrompt can confirm
-   * it was the watchdog (vs an unrelated process kill) and classify as
-   * fail-stale. Returns undefined when no registry is configured.
+   * Store the run's plugin loop handlers for this manager's turns (US-004).
+   * Called once at run setup with `PluginRegistry.getLoopHandlers()` —
+   * `sendPrompt` forwards them to the native adapter's `sendTurn`. Sessions on
+   * any other agent ignore them.
    */
-  private _buildOnActiveCall(sessionName: string): ((callId: string, cancel: () => Promise<void>) => void) | undefined {
-    const registry = this._watchdogControllerRegistry;
-    if (!registry) return undefined;
-    return (callId, cancel) => {
-      registry.set(callId, async () => {
-        const cancelledCalls = this._watchdogCancelledCallsBySession.get(sessionName) ?? new Set<string>();
-        cancelledCalls.add(callId);
-        this._watchdogCancelledCallsBySession.set(sessionName, cancelledCalls);
-        await cancel();
-      });
-    };
-  }
-
-  private _clearWatchdogCancelledCalls(sessionName: string): void {
-    this._watchdogCancelledCallsBySession.delete(sessionName);
-  }
-
-  /**
-   * Fire-and-forget disk re-persistence on descriptor mutations.
-   *
-   * `writeDescriptor` is also called from `create()` for the initial write;
-   * subsequent mutations (transition, bindHandle, handoff) must re-persist so
-   * the on-disk copy stays in sync with the in-memory registry. Without this,
-   * the disk descriptor freezes at CREATED state with `protocolIds: null`
-   * forever, defeating cross-iteration disk discovery.
-   *
-   * Failures log a warning and are swallowed — disk persistence is
-   * supplementary to the in-memory Map, never authoritative.
-   */
-  private _persistDescriptor(descriptor: SessionDescriptor): void {
-    if (!descriptor.scratchDir) return;
-    const projectDir = resolveProjectDirFromScratchDir(descriptor.scratchDir);
-    void _sessionManagerDeps.writeDescriptor(descriptor.scratchDir, descriptor, projectDir).catch((err) => {
-      getLogger().warn("session", "Failed to re-persist session descriptor", {
-        storyId: descriptor.storyId,
-        sessionId: descriptor.id,
-        scratchDir: descriptor.scratchDir,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
+  configureLoopHandlers(set: LoopHandlerSet): void {
+    this._loopHandlers = set;
   }
 
   create(options: CreateSessionOptions): SessionDescriptor {
@@ -267,7 +250,7 @@ export class SessionManager implements ISessionManager {
     }
 
     this._sessions.set(id, updated);
-    this._persistDescriptor(updated);
+    persistDescriptor(updated);
 
     getLogger().debug("session", "Session transitioned", {
       storyId: session.storyId,
@@ -296,7 +279,7 @@ export class SessionManager implements ISessionManager {
     };
 
     this._sessions.set(id, updated);
-    this._persistDescriptor(updated);
+    persistDescriptor(updated);
 
     getLogger().debug("session", "Session handle bound", {
       storyId: session.storyId,
@@ -322,7 +305,7 @@ export class SessionManager implements ISessionManager {
       lastActivityAt: _sessionManagerDeps.now(),
     };
     this._sessions.set(id, updated);
-    this._persistDescriptor(updated);
+    persistDescriptor(updated);
 
     getLogger().info("session", "Session handed off to fallback agent", {
       storyId: session.storyId,
@@ -361,7 +344,7 @@ export class SessionManager implements ISessionManager {
       if (terminal.includes(session.state)) continue;
 
       const updated: SessionDescriptor = { ...session, state: "COMPLETED", lastActivityAt: now };
-      this._persistDescriptor(updated);
+      persistDescriptor(updated);
       this._sessions.delete(id);
       if (updated.handle) this._liveHandles.delete(updated.handle);
       closed.push({ ...updated });
@@ -474,7 +457,7 @@ export class SessionManager implements ISessionManager {
       onSessionEstablished: opts.onSessionEstablished,
       signal: opts.signal,
       resume,
-      onActiveCall: this._buildOnActiveCall(name),
+      onActiveCall: this._watchdogCancels.buildOnActiveCall(name, this._watchdogControllerRegistry),
       onStreamActivity: this._onStreamActivity,
       // Finding 1: callers never supplied transcriptDir, so derive it here — the one place ADR-028 §3
       // documents. An explicit caller value wins. transcriptOwner is nax#1877's ownership key.
@@ -513,7 +496,7 @@ export class SessionManager implements ISessionManager {
         lastActivityAt: _sessionManagerDeps.now(),
       };
       this._sessions.set(existingDescriptor.id, updated);
-      this._persistDescriptor(updated);
+      persistDescriptor(updated);
     } else {
       // RUNNING: session is already active — no-op for the descriptor, but warn
       // so callers can detect missing closeSession calls (single-flight invariant).
@@ -556,7 +539,7 @@ export class SessionManager implements ISessionManager {
 
     this._busySessions.delete(handle.id);
     this._cancelledSessions.delete(handle.id);
-    this._clearWatchdogCancelledCalls(handle.id);
+    this._watchdogCancels.clear(handle.id);
   }
 
   async sendPrompt(handle: SessionHandle, prompt: string, opts?: SendPromptOpts): Promise<TurnResult> {
@@ -594,12 +577,23 @@ export class SessionManager implements ISessionManager {
       );
     }
 
+    // US-004: deliver the run's plugin loop handlers to this turn. A session on
+    // any other agent gets neither key, and a non-empty set reaching a
+    // non-native session is worth saying once — the native loop is the only
+    // consumer, so those handlers can never fire here.
+    const loopHandlerOpts = buildLoopHandlerTurnOpts({ handle, descriptor: terminalDesc, set: this._loopHandlers });
+    if (shouldLogNativeOnlyScope(this._loopHandlers, handle, this._loopHandlerScopeLogged)) {
+      this._loopHandlerScopeLogged = true;
+      getLogger().info("plugins", LOOP_HANDLERS_NATIVE_ONLY_MESSAGE, { sessionName: handle.id });
+    }
+
     this._busySessions.add(handle.id);
 
     try {
       const result = await adapter.sendTurn(handle, prompt, {
         ...opts,
         interactionHandler: opts?.interactionHandler ?? NO_OP_INTERACTION_HANDLER,
+        ...loopHandlerOpts,
       });
       return { ...result, protocolIds: result.protocolIds ?? handle.protocolIds };
     } catch (err) {
@@ -608,7 +602,7 @@ export class SessionManager implements ISessionManager {
       // (nax#2218). Anything else is an unrelated kill: pass through.
       if (
         isWatchdogCancelledTurn({
-          watchdogFired: (this._watchdogCancelledCallsBySession.get(handle.id)?.size ?? 0) > 0,
+          watchdogFired: this._watchdogCancels.hasCancelled(handle.id),
           err,
           signalAborted: opts?.signal?.aborted === true,
         })
@@ -635,7 +629,7 @@ export class SessionManager implements ISessionManager {
     } finally {
       // Clear per-session watchdog-cancel bookkeeping after each turn: this
       // call is complete (success or error), and single-flight is per session.
-      this._clearWatchdogCancelledCalls(handle.id);
+      this._watchdogCancels.clear(handle.id);
       this._busySessions.delete(handle.id);
     }
   }

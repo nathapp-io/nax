@@ -35,6 +35,7 @@
 
 import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
+import { isThenable } from "@/utils/thenable";
 import { restoreMutated, snapshotArrays } from "./payload-guard";
 import type { BeforeToolOutcome, BeforeToolPayload, HandlerOf, LoopEvent, PatchOf, PayloadOf } from "./types";
 
@@ -94,6 +95,19 @@ type _AssertNoPatchFieldDrift<_T extends never> = true;
 type _patchableFieldsExhaustive = _AssertNoPatchFieldDrift<UnmappedPatchField>;
 
 /**
+ * The event names, at runtime (US-001).
+ *
+ * A plugin's registration is validated against this set before it is staged,
+ * because an event name arriving from a plugin is `unknown` until then. The
+ * list is read off `PATCHABLE_FIELDS` rather than written out again: that map
+ * is pinned to `LoopEvent` in both directions — a missing event fails the
+ * `satisfies` clause, an extra one fails the field map's exhaustiveness pin —
+ * so its keys are the event set, and a second hand-written copy cannot drift
+ * out of step with the type.
+ */
+export const LOOP_EVENTS: readonly LoopEvent[] = Object.freeze(Object.keys(PATCHABLE_FIELDS) as LoopEvent[]);
+
+/**
  * Only the patchable fields are read, so a handler that returns a
  * denied-bearing object (bypassing the type) cannot surface one — the same
  * defence keeps `usage` off an `after_response` patch, and every other event's
@@ -108,6 +122,62 @@ function pickPatchFields(returned: unknown, fields: readonly string[]): Record<s
     if (value !== undefined) picked[field] = value;
   }
   return picked;
+}
+
+/** The four kinds that make a `before_tool` answer an outcome, and nothing else. */
+const BEFORE_TOOL_KINDS: readonly unknown[] = ["allow", "nudge", "block", "terminate"];
+
+/**
+ * US-002: is this a well-formed `before_tool` outcome?
+ *
+ * A plugin module is plain JavaScript and can answer anything at all — a
+ * string, `null`, an array, or an object whose `kind` is not a decision. What
+ * makes an answer an outcome is its SHAPE, not merely its object-ness, so the
+ * dispatcher and `wrapExternalHandler` ask this one question rather than each
+ * holding a half of it.
+ *
+ * This checks the `kind` only. The dispatcher also calls it on built-in
+ * handlers, whose return type already guarantees the kind's payload, so
+ * requiring the payload here would reject a built-in that a mutable test
+ * fixture handed an out-of-type value. The untrusted boundary — a plugin's
+ * answer — additionally needs the payload and is checked by
+ * `isCompleteBeforeToolOutcome`.
+ */
+export function isBeforeToolOutcome(value: unknown): value is BeforeToolOutcome {
+  if (typeof value !== "object" || value === null) return false;
+  const kind = (value as { kind?: unknown }).kind;
+  return typeof kind === "string" && BEFORE_TOOL_KINDS.includes(kind);
+}
+
+/**
+ * Is this a plugin answer that carries everything its `kind` promises? A
+ * `kind` alone is not enough: `block`/`terminate` must carry the `content` the
+ * loop records as the call's result, and `nudge` must carry the `text` it
+ * appends. A plugin answering `{ kind: "block" }` with nothing to say would
+ * otherwise reach the transcript builder as `content: undefined`, and a
+ * textless `nudge` would be silently downgraded to `allow` — so both are
+ * malformed, exactly like a `kind` that is not a decision.
+ */
+export function isCompleteBeforeToolOutcome(value: unknown): value is BeforeToolOutcome {
+  if (!isBeforeToolOutcome(value)) return false;
+  const outcome = value as { content?: unknown; text?: unknown };
+  if (value.kind === "block" || value.kind === "terminate") return typeof outcome.content === "string";
+  if (value.kind === "nudge") return typeof outcome.text === "string";
+  return true;
+}
+
+/**
+ * A handler's answer arrives typed, but its `kind` may be missing or invented,
+ * and reading `kind` off such an answer is a dereference the dispatcher must
+ * not do: it would throw out of a seam whose whole contract is that it never
+ * fails the turn, and it would do so OUTSIDE the handler's try (US-002).
+ */
+function asOutcome(returned: unknown, tool: string): BeforeToolOutcome {
+  if (isBeforeToolOutcome(returned)) return returned;
+  getSafeLogger()?.warn("native-loop-events", "before_tool handler answered no valid outcome; treating it as allow", {
+    tool,
+  });
+  return { kind: "allow" };
 }
 
 /**
@@ -129,15 +199,25 @@ async function dispatchBeforeTool(
   let input: Record<string, unknown> | undefined;
   let nudgeText: string | undefined;
   for (const [index, handler] of handlers.entries()) {
-    let outcome: BeforeToolOutcome;
+    let returned: unknown;
     const snapshot = snapshotArrays({ tools });
     try {
       // Each handler sees the previous handler's output, so an `allow`
       // rewrite is what the next one judges — and what the loop runs.
-      outcome = await (handler as HandlerOf<"before_tool">)({
+      //
+      // Invoke synchronously and await ONLY a real thenable. The two built-in
+      // handlers ahead of the plugin entries answer synchronously; awaiting
+      // them would yield a microtask before a plugin wrapper is invoked, and
+      // its abort subscription is installed when it is called. An abort
+      // landing in that gap would then be missed and a never-settling plugin
+      // handler would run to its deadline instead of blocking promptly
+      // (nax#2151 US-003). A thenable is still awaited inside the try, so a
+      // rejection is caught exactly like a throw (spec 4.2).
+      const candidate = (handler as HandlerOf<"before_tool">)({
         call: { ...call, input: input ?? call.input },
         tools,
       });
+      returned = isThenable(candidate) ? await candidate : candidate;
     } catch (err) {
       getSafeLogger()?.warn("native-loop-events", "before_tool handler threw; skipping it", {
         tool: call.name,
@@ -147,6 +227,7 @@ async function dispatchBeforeTool(
     } finally {
       restoreMutated(snapshot, "before_tool", index);
     }
+    const outcome = asOutcome(returned, call.name);
     if (outcome.kind === "block" || outcome.kind === "terminate") return outcome;
     if (outcome.kind === "nudge") nudgeText = outcome.text;
     if (outcome.input !== undefined) input = outcome.input;

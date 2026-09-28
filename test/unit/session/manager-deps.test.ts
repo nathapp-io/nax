@@ -1,47 +1,38 @@
 /**
  * Tests for src/session/manager-deps.ts
  *
- * Covers: resolveProjectDirFromScratchDir, toProjectRelativePath
+ * Covers: resolveProjectDirFromScratchDir, toProjectRelativePath,
+ * deriveNativeTranscriptDir, persistDescriptor and the production
+ * `_sessionManagerDeps.writeDescriptor`.
  *
- * The third export, `_sessionManagerDeps.writeDescriptor`, is intentionally
- * not unit-tested here — its function body is a thin shell over the helpers
- * above plus `mkdir` and `Bun.write`, and several integration test files
- * (`manager.test.ts`, `manager-pid-lifecycle.test.ts`, etc.) swap it for a
- * no-op mock in their `beforeEach`. Calling the real impl from a parallel
- * test runner races with those mocks. The on-disk write path is therefore
- * covered indirectly via the manager integration tests when their mocks
- * fall through; the helpers above are the substantive logic and are tested
- * directly here.
+ * `writeDescriptor` is part of the `_sessionManagerDeps` object that other
+ * test files swap for a mock in their `beforeEach` (manager.test.ts). This file
+ * captures the production impl once at module load and calls that reference, so
+ * it exercises the real body without depending on the shared mutable property
+ * (and without a query-suffixed re-import, which Bun does not attribute to the
+ * file's coverage record).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import {
+  _sessionManagerDeps,
   deriveNativeTranscriptDir,
+  persistDescriptor,
   resolveProjectDirFromScratchDir,
   toProjectRelativePath,
 } from "@/session/manager-deps";
 import type { SessionDescriptor } from "@/session/types";
 
-// `writeDescriptor` is part of the `_sessionManagerDeps` object that other
-// test files swap for no-op mocks. To exercise the real write path here, we
-// re-read the production impl on every test from a freshly-imported module
-// reference and use that directly, bypassing any mocks applied to the shared
-// `_sessionManagerDeps` object.
-let writeDescriptor: (scratchDir: string, descriptor: SessionDescriptor, projectDir?: string) => Promise<void>;
-
-beforeEach(async () => {
-  // Force a fresh module evaluation so the captured closure is the production
-  // impl, not whatever the previous test left on `_sessionManagerDeps`.
-  const mod = await import(`@/session/manager-deps?cachebust=${Math.random()}`);
-  writeDescriptor = mod._sessionManagerDeps.writeDescriptor;
-});
-
-afterEach(async () => {
-  // Best-effort cleanup; per-test `scratchDir` is removed inside each test.
-});
+// The production `writeDescriptor` captured at module load. Other test files
+// swap `_sessionManagerDeps.writeDescriptor` for a mock on the shared object
+// (see manager.test.ts); calling this reference directly exercises the real
+// body deterministically instead of depending on the shared property.
+const realWriteDescriptor = _sessionManagerDeps.writeDescriptor;
 
 function makeDescriptor(overrides: Partial<SessionDescriptor> = {}): SessionDescriptor {
   return {
@@ -141,7 +132,7 @@ describe("deriveNativeTranscriptDir", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _sessionManagerDeps.writeDescriptor (production impl, via fresh module ref)
+// _sessionManagerDeps.writeDescriptor (production impl, via captured reference)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("_sessionManagerDeps.writeDescriptor (production impl)", () => {
@@ -157,7 +148,7 @@ describe("_sessionManagerDeps.writeDescriptor (production impl)", () => {
   });
 
   it("writes descriptor.json and strips the physical handle", async () => {
-    await writeDescriptor(scratchDir, makeDescriptor(), "/tmp/project");
+    await realWriteDescriptor(scratchDir, makeDescriptor(), "/tmp/project");
     const file = Bun.file(join(scratchDir, "descriptor.json"));
     expect(await file.exists()).toBe(true);
     const parsed: { handle?: unknown; id?: unknown; state?: unknown } = JSON.parse(await file.text());
@@ -167,13 +158,13 @@ describe("_sessionManagerDeps.writeDescriptor (production impl)", () => {
 
   it("creates the scratch directory if it does not exist", async () => {
     const nested = join(scratchDir, "nested", "deeper");
-    await writeDescriptor(nested, makeDescriptor(), "/tmp/project");
+    await realWriteDescriptor(nested, makeDescriptor(), "/tmp/project");
     expect(await Bun.file(join(nested, "descriptor.json")).exists()).toBe(true);
   });
 
   it("normalizes workdir and scratchDir when projectDir is supplied", async () => {
     const projectDir = "/tmp/project";
-    await writeDescriptor(
+    await realWriteDescriptor(
       scratchDir,
       makeDescriptor({
         workdir: "/tmp/project/src",
@@ -192,7 +183,7 @@ describe("_sessionManagerDeps.writeDescriptor (production impl)", () => {
     // scratchDir is <projectDir>/.nax/features/<feature>/sessions/<id> — the
     // function should recover projectDir from the path marker.
     const nestedScratch = join(scratchDir, ".nax", "features", "demo", "sessions", "sess-1");
-    await writeDescriptor(
+    await realWriteDescriptor(
       nestedScratch,
       makeDescriptor({
         workdir: join(scratchDir, "src"),
@@ -201,5 +192,90 @@ describe("_sessionManagerDeps.writeDescriptor (production impl)", () => {
     );
     const parsed: { workdir?: unknown } = JSON.parse(await Bun.file(join(nestedScratch, "descriptor.json")).text());
     expect(parsed.workdir).toBe("src");
+  });
+
+  it("writes the descriptor and normalises workdir and scratchDir against a supplied projectDir", async () => {
+    // Exercises the real production body through the captured reference; the
+    // assertions below pin the on-disk normalisation it performs.
+    const dir = makeTempDir("nax-session-deps-real-");
+    try {
+      const descriptor = makeDescriptor({
+        workdir: join(dir, "src"),
+        scratchDir: join(dir, ".nax", "features", "demo", "sessions", "sess-1"),
+      });
+      await realWriteDescriptor(descriptor.scratchDir as string, descriptor, dir);
+      const parsed: { workdir?: unknown; scratchDir?: unknown; handle?: unknown } = JSON.parse(
+        await Bun.file(join(descriptor.scratchDir as string, "descriptor.json")).text(),
+      );
+      expect(parsed.workdir).toBe("src");
+      expect(parsed.scratchDir).toBe(".nax/features/demo/sessions/sess-1");
+      expect(parsed.handle).toBeUndefined();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// persistDescriptor (fire-and-forget re-persist on a descriptor mutation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("persistDescriptor", () => {
+  it("is a no-op when the descriptor has no scratchDir to persist to", () => {
+    const original = _sessionManagerDeps.writeDescriptor;
+    let calls = 0;
+    _sessionManagerDeps.writeDescriptor = async () => {
+      calls += 1;
+    };
+    try {
+      persistDescriptor(makeDescriptor({ scratchDir: undefined }));
+      expect(calls).toBe(0);
+    } finally {
+      _sessionManagerDeps.writeDescriptor = original;
+    }
+  });
+
+  it("re-persists to disk through the real writeDescriptor, deriving projectDir from the scratchDir marker", async () => {
+    const dir = makeTempDir("nax-persist-");
+    const original = _sessionManagerDeps.writeDescriptor;
+    _sessionManagerDeps.writeDescriptor = realWriteDescriptor;
+    try {
+      const descriptor = makeDescriptor({
+        workdir: join(dir, "src"),
+        scratchDir: join(dir, ".nax", "features", "demo", "sessions", "sess-1"),
+      });
+      persistDescriptor(descriptor);
+      const descriptorPath = join(descriptor.scratchDir as string, "descriptor.json");
+      await waitForCondition(() => existsSync(descriptorPath), 1000);
+      const parsed: { workdir?: unknown; scratchDir?: unknown } = JSON.parse(await Bun.file(descriptorPath).text());
+      expect(parsed.workdir).toBe("src");
+      expect(parsed.scratchDir).toBe(".nax/features/demo/sessions/sess-1");
+    } finally {
+      _sessionManagerDeps.writeDescriptor = original;
+      cleanupTempDir(dir);
+    }
+  });
+
+  it("swallows a failed re-persist and logs a session warning naming the error", async () => {
+    const original = _sessionManagerDeps.writeDescriptor;
+    _sessionManagerDeps.writeDescriptor = async () => {
+      throw new Error("disk full");
+    };
+    resetLogger();
+    initLogger({ level: "debug", suppressConsole: true });
+    const records: LogEntry[] = [];
+    const dispose = addSink((record) => records.push(record));
+    try {
+      // Must not throw and must not surface an unhandled rejection.
+      persistDescriptor(makeDescriptor());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const warn = records.find((record) => record.stage === "session" && record.level === "warn");
+      expect(warn).toBeDefined();
+      expect(String(warn?.data?.error)).toContain("disk full");
+    } finally {
+      dispose();
+      resetLogger();
+      _sessionManagerDeps.writeDescriptor = original;
+    }
   });
 });

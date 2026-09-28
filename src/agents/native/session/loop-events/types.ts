@@ -208,3 +208,48 @@ export interface LoopEventMap {
 export type PayloadOf<E extends LoopEvent> = LoopEventMap[E]["payload"];
 export type PatchOf<E extends LoopEvent> = LoopEventMap[E]["patch"];
 export type HandlerOf<E extends LoopEvent> = (payload: PayloadOf<E>) => PatchOf<E> | Promise<PatchOf<E>>;
+
+// ============================================================================
+// Plugin-contributed ("external") handlers (US-001)
+// ============================================================================
+
+/**
+ * The read-only facts a plugin handler is handed alongside its payload.
+ *
+ * Owned by the coding-agent side on purpose: a plugin imports these types, and
+ * native code never imports the plugin system. Everything here is a fact about
+ * the session the handler is running in — there is deliberately no abort, no UI
+ * and no config access, so a plugin scopes itself by reading this at runtime
+ * rather than by declaring filters.
+ */
+export interface LoopHandlerContext {
+  readonly sessionName: string;
+  readonly role?: string;
+  readonly storyId?: string;
+  readonly feature?: string;
+  readonly workdir?: string;
+  readonly model?: string;
+  readonly provider?: string;
+}
+
+/**
+ * A plugin's handler for one event: same payload and patch as a built-in,
+ * plus the context, and `undefined` is a valid "no patch" answer.
+ */
+export type ExternalHandlerOf<E extends LoopEvent> = (
+  payload: PayloadOf<E>,
+  ctx: LoopHandlerContext,
+) => PatchOf<E> | undefined | Promise<PatchOf<E> | undefined>;
+
+/** One staged registration: which plugin it came from, its event, its handler. */
+export interface LoopHandlerEntry {
+  readonly plugin: string;
+  readonly event: LoopEvent;
+  readonly handler: ExternalHandlerOf<LoopEvent>;
+}
+
+/**
+ * Every plugin-contributed handler for a run, in install order. The registry
+ * returns this frozen, and an empty set is the normal case.
+ */
+export type LoopHandlerSet = readonly LoopHandlerEntry[];

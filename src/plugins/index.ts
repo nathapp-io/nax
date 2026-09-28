@@ -24,10 +24,12 @@ export { PluginRegistry, type PostRunActionRegistration } from "./registry";
 export type {
   ContextProviderResult,
   IContextProvider,
+  ILoopHandlerProvider,
   IPostRunAction,
   IPromptOptimizer,
   IReporter,
   IReviewPlugin,
+  LoopHandlerRegistrar,
   NaxPlugin,
   PluginConfigEntry,
   PluginExtensions,

@@ -3,7 +3,7 @@
  *
  * Discovers, imports, validates, and initializes plugins from:
  * 1. Global directory (~/.nax/plugins/)
- * 2. Project directory (<project>/nax/plugins/)
+ * 2. Project directory (<project>/.nax/plugins/)
  * 3. Config entries (explicit module paths)
  */
 
@@ -88,14 +88,14 @@ export interface LoadedPlugin {
  *
  * Load order:
  * 1. Scan ~/.nax/plugins/ (if exists)
- * 2. Scan <project>/nax/plugins/ (if exists)
+ * 2. Scan <project>/.nax/plugins/ (if exists)
  * 3. Load explicit modules from config.plugins[]
  *
  * Each plugin is validated, then setup() is called with its config.
  * Plugins can be disabled via config.plugins[].enabled or config.disabledPlugins[].
  *
  * @param globalDir - Global plugins directory (e.g., ~/.nax/plugins)
- * @param projectDir - Project plugins directory (e.g., <project>/nax/plugins)
+ * @param projectDir - Project plugins directory (e.g., <project>/.nax/plugins)
  * @param configPlugins - Explicit plugin entries from config
  * @param projectRoot - Project root directory for resolving relative paths in config
  * @param disabledPlugins - List of plugin names to disable (auto-discovered plugins only)

@@ -6,6 +6,7 @@
  *
  * See: docs/specs/SPEC-session-manager-integration.md
  */
+import type { LoopHandlerSet } from "../agents/native/session/loop-events/types";
 import type { ToolDescriptor } from "../context/engine";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
@@ -359,6 +360,15 @@ export interface ISessionManager {
    * Returns undefined when the session is not currently open.
    */
   getLiveHandle(name: string): import("../agents/types").SessionHandle | undefined;
+
+  /**
+   * Store the run's plugin-contributed loop handlers for this manager's turns
+   * (US-004). Delivered once at run setup from
+   * `PluginRegistry.getLoopHandlers()`; `sendPrompt` forwards them to the
+   * native adapter's `sendTurn`, which installs them between its built-ins.
+   * Sessions on any other agent ignore them — loop events are native-only.
+   */
+  configureLoopHandlers(set: LoopHandlerSet): void;
 
   /**
    * Look up a SessionDescriptor by session name (the handle string).

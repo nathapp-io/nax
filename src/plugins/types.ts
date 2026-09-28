@@ -8,16 +8,18 @@
 import type { AgentAdapter } from "../agents/types";
 import type { IPromptOptimizer } from "../optimizer/types";
 import type { RoutingStrategy } from "../routing/router";
-import type { IContextProvider, IPostRunAction, IReporter, IReviewPlugin } from "./extensions";
+import type { IContextProvider, ILoopHandlerProvider, IPostRunAction, IReporter, IReviewPlugin } from "./extensions";
 
 // Re-export extension types
 export type {
   ContextProviderResult,
   EscalationEvent,
   IContextProvider,
+  ILoopHandlerProvider,
   IPostRunAction,
   IReporter,
   IReviewPlugin,
+  LoopHandlerRegistrar,
   PhaseCompleteEvent,
   PhaseDetails,
   PhaseStartEvent,
@@ -42,7 +44,8 @@ export type PluginType =
   | "reviewer"
   | "context-provider"
   | "reporter"
-  | "post-run-action";
+  | "post-run-action"
+  | "loop-handlers";
 
 /**
  * A nax plugin module.
@@ -132,6 +135,9 @@ export interface PluginExtensions {
 
   /** Custom post-run action (executes after run completes) */
   postRunAction?: IPostRunAction;
+
+  /** Custom loop handlers (native session's in-process loop events) */
+  loopHandlers?: ILoopHandlerProvider;
 }
 
 // ============================================================================

@@ -42,7 +42,7 @@ import {
 } from "./session/session";
 import { buildNativeStreamEvent } from "./session/turn-events";
 import { runNativeTurn } from "./session/turn-loop";
-import { readNativeTurnFailureUsage } from "./session/turn-types";
+import { readNativeTurnFailureUsage, type TurnDeps } from "./session/turn-types";
 import { nativeSessionId, newSessionKey } from "./session-affinity";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
@@ -92,6 +92,21 @@ export const _adapterDeps = {
   setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
   clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
 };
+
+/**
+ * US-003: the plugin-contributed loop handlers a turn carries, in the shape
+ * `runNativeTurn` takes them in. Built here rather than inline in `sendTurn`
+ * because those two conditional spreads are what pushed that method past its
+ * recorded cognitive complexity; each field is omitted entirely when the
+ * caller supplied none, so a session that loaded no `loop-handlers` plugin
+ * carries neither key.
+ */
+function loopHandlerDeps(opts: SendTurnOpts): Pick<TurnDeps, "loopHandlers" | "loopHandlerContext"> {
+  return {
+    ...(opts.loopHandlers !== undefined ? { loopHandlers: opts.loopHandlers } : {}),
+    ...(opts.loopHandlerContext !== undefined ? { loopHandlerContext: opts.loopHandlerContext } : {}),
+  };
+}
 
 export class NativeAgentAdapter implements AgentAdapter {
   readonly name = NATIVE_AGENT;
@@ -352,6 +367,11 @@ export class NativeAgentAdapter implements AgentAdapter {
           ? { spinBreaker: nativeSessionSpinBreaker.get(handle.id) }
           : {}),
         ...(opts.loopEvents !== undefined ? { loopEvents: opts.loopEvents } : {}),
+        // US-003: the run's plugin-contributed loop handlers and the facts
+        // their handlers read travel the same way as `loopEvents` — both are
+        // per-turn inputs the loop installs onto its registry rather than
+        // state the adapter owns.
+        ...loopHandlerDeps(opts),
         // US-002: the one per-turn signal threaded into the batch and the
         // in-flight coding-tool runtime. When `opts.signal` and the watchdog
         // and the deadline are all absent, `turnSignal` is a non-aborted
