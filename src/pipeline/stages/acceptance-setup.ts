@@ -34,7 +34,7 @@ import { callOp as _callOp, acceptanceGenerateOp } from "@/operations";
 import { isInAcceptanceScope } from "@/prd";
 import { errorMessage } from "@/utils/errors";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
-import { executeWithTimeout, shellQuoteArg } from "@/verification";
+import { executeWithTimeout } from "@/verification";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 import {
@@ -154,18 +154,13 @@ export const _acceptanceSetupDeps = {
     _cmd: string,
     timeoutMs = 1_800_000,
   ): Promise<{ exitCode: number; output: string }> => {
-    // STUB (US-001 AC9/AC10): the command is one shell string, and the real
-    // runner must hand it to `/bin/sh -c` verbatim. Until then this keeps the
-    // pre-change quote-per-word behaviour — a leading `VAR=value` assignment
-    // does not survive it.
-    const execution = await executeWithTimeout(
-      _cmd.split(/\s+/).map(shellQuoteArg).join(" "),
-      Math.ceil(timeoutMs / 1000),
-      undefined,
-      {
-        cwd: _workdir,
-      },
-    );
+    // US-001: `buildAcceptanceRunCommand` returns ONE shell command string, so
+    // the runner hands it to `/bin/sh -c` verbatim. A leading `VAR=value`
+    // assignment and the override's own quoting reach the shell as written —
+    // `executeWithTimeout` is the same trust boundary as `quality.commands`.
+    const execution = await executeWithTimeout(_cmd, Math.ceil(timeoutMs / 1000), undefined, {
+      cwd: _workdir,
+    });
     return {
       exitCode: execution.exitCode ?? (execution.success ? 0 : 1),
       output: execution.output ?? "",

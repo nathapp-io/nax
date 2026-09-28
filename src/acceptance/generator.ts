@@ -8,6 +8,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
+import { shellQuoteArg } from "../verification/shell-quote";
 import {
   acceptanceTestFilename as defaultAcceptanceTestFilename,
   resolveAcceptanceTestFile as defaultResolveAcceptanceTestFile,
@@ -63,36 +64,46 @@ export function buildAcceptanceRunCommand(
   commandOverride?: string,
   packageDir?: string,
 ): string {
-  // STUB (US-001): the pre-change argv build, space-joined without shell
-  // quoting. The implementer replaces the two `join(" ")` calls with the
-  // single shell string the ACs describe — trim the override and substitute
-  // `shellQuoteArg(testPath)` for the placeholders, or quote-join the
-  // framework default argv (US-001 AC1–AC8).
-  if (commandOverride) {
-    // Split on whitespace BEFORE substitution so a testPath containing spaces stays
-    // a single argv element instead of being torn apart by the split below.
-    // Support {{files}}, {{file}}, {{FILE}} — all resolve to the single acceptance test path.
-    return commandOverride
-      .trim()
-      .split(/\s+/)
-      .map((part) => substituteAcceptanceTestPath(part, testPath))
-      .join(" ");
+  // US-001: every acceptance runner executes the same shell command string
+  // through `/bin/sh -c`, so the override and the framework default are both
+  // returned as ONE string — with shell-quoting applied where needed.
+  if (commandOverride !== undefined && commandOverride !== null) {
+    // An override is a shell line: env assignments, `&&`, pipes, the user's own
+    // quoting all reach `sh` verbatim. Only the test path is untrusted, so we
+    // single-quote it via shellQuoteArg at every placeholder occurrence.
+    return substituteAcceptanceTestPath(commandOverride.trim(), shellQuoteArg(testPath));
   }
 
+  // No override: take the framework default argv and quote-join it. The default
+  // is a fully-trusted string (lives in config), so wrapping every argv word in
+  // single quotes cannot change which program is exec'd — the resulting string
+  // is byte-identical to what `sh -c` would have seen under the pre-change
+  // argv layout.
+  let defaultArgv: string[];
   switch (testFramework?.toLowerCase()) {
     case "vitest":
-      return ["npx", "vitest", "run", testPath].join(" ");
+      defaultArgv = ["npx", "vitest", "run", testPath];
+      break;
     case "jest":
-      return ["npx", "jest", testPath].join(" ");
+      defaultArgv = ["npx", "jest", testPath];
+      break;
     case "pytest":
-      return [resolvePytestBin(packageDir), testPath].join(" ");
+      defaultArgv = [resolvePytestBin(packageDir), testPath];
+      break;
     case "go-test":
-      return ["go", "test", testPath].join(" ");
+      defaultArgv = ["go", "test", testPath];
+      break;
     case "cargo-test":
-      return ["cargo", "test", "--test", "acceptance"].join(" ");
+      // US-001: the cargo default intentionally does NOT include the testPath —
+      // `cargo test --test acceptance` runs the package's `acceptance` test
+      // binary, which is discovered by name. Keeps the pre-change intent.
+      defaultArgv = ["cargo", "test", "--test", "acceptance"];
+      break;
     default:
-      return ["bun", "test", testPath, "--timeout=60000"].join(" ");
+      defaultArgv = ["bun", "test", testPath, "--timeout=60000"];
+      break;
   }
+  return defaultArgv.map(shellQuoteArg).join(" ");
 }
 
 export function parseAcceptanceCriteria(specContent: string): AcceptanceCriterion[] {
