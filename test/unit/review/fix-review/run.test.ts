@@ -434,6 +434,15 @@ describe("runFixReview — the logged verdict (#2286)", () => {
     });
   });
 
+  test("#2286: a git failure before the LLM stage logs an error verdict without a start line", async () => {
+    const { ctx, logger } = makeLoggedCtx();
+    const harness = makeHarness({ snapshotError: makeGitFailure("fix-review-tree-snapshot") });
+
+    await runFixReview(ctx, makeRequest(), harness.deps);
+
+    expect(reviewLines(logger)).toEqual(["warn: Fix review errored"]);
+  });
+
   test("#2286: an unparseable response logs an error verdict at warn", async () => {
     const { ctx, logger } = makeLoggedCtx();
     const harness = makeHarness({ opOutput: { parsed: false, unparsedPreview: "I could not review this fix." } });
