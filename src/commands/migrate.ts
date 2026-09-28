@@ -187,36 +187,27 @@ export async function partitionTrackedCandidates(
     return { migratable: [...candidates], tracked: [] };
   }
 
-  const trackedPrefixes: string[] = [];
+  // Collect every listed path under `.nax/`. A candidate with name `X` is
+  // tracked when some listed path equals `.nax/X` OR starts with `.nax/X/`.
+  // The `/` boundary is what keeps a tracked `.nax/runs-archive/x.json`
+  // (prefix `.nax/runs-archive`) from marking an unrelated `runs` candidate
+  // (prefix `.nax/runs`), and what keeps a tracked
+  // `.nax/features/f/stories/US-001/...` manifest from marking an untracked
+  // `features/g/runs` candidate — they share the top-level `features`
+  // segment but the candidate's own prefix doesn't match any listed path.
+  const listedPaths: string[] = [];
   for (const listed of stdout.split("\0")) {
-    if (!listed) continue;
-    // ls-files emits exactly `.nax/<rel>` (or `.nax` itself for the dir, but
-    // we only seeded candidates under it). Take the prefix before the next
-    // separator as the candidate boundary — this is what lets us match a
-    // directory candidate like `features/f/runs` against any tracked file
-    // underneath it, and a file candidate like `metrics.json` against itself.
-    if (listed === ".nax") continue;
-    const rest = listed.startsWith(".nax/") ? listed.slice(".nax/".length) : null;
-    if (rest === null) continue;
-    const sep = rest.indexOf("/");
-    const top = sep === -1 ? rest : rest.slice(0, sep);
-    if (!top) continue;
-    trackedPrefixes.push(`.nax/${top}`);
+    if (!listed || listed === ".nax") continue;
+    if (listed.startsWith(".nax/")) listedPaths.push(listed);
   }
 
-  // A candidate `name` is tracked when its top-level `.nax/<name>` segment
-  // matches a tracked prefix. The candidate's own `name` may have further
-  // segments (e.g. `features/old/stories/US-001/...` or `features/f/runs`),
-  // so equality against `.nax/<name>` is the wrong test: it only works when
-  // the candidate's top-level segment equals the prefix AND nothing deeper
-  // is tracked. Instead, slice the candidate's first segment and compare
-  // against the prefix set.
-  const tracked = new Set<string>(trackedPrefixes);
   const migratable: MigrateCandidate[] = [];
   const trackedOut: MigrateCandidate[] = [];
   for (const candidate of candidates) {
-    const firstSegment = candidate.name.split("/")[0];
-    if (firstSegment !== undefined && tracked.has(`.nax/${firstSegment}`)) {
+    const target = `.nax/${candidate.name}`;
+    const targetWithSlash = `${target}/`;
+    const isTracked = listedPaths.some((listed) => listed === target || listed.startsWith(targetWithSlash));
+    if (isTracked) {
       trackedOut.push(candidate);
     } else {
       migratable.push(candidate);

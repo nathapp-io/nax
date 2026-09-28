@@ -50,8 +50,7 @@
     "src/commands/logs-reader.ts": { "extractRunSummary": 29 },
     "src/commands/migrate.ts": {
       "detectGeneratedContent": 54,
-      "migrateCommand": 41,
-      "partitionTrackedCandidates": 22
+      "migrateCommand": 41
     },
     "src/commands/runs.ts": { "runsCommand": 21 },
     "src/commands/unlock.ts": { "unlockCommand": 58 },

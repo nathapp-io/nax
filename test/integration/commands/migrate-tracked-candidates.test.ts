@@ -212,6 +212,31 @@ describe("US-003 partitionTrackedCandidates", () => {
     expect(migratable[0]).toBe(candidates[0]);
   });
 
+  test("US-003 regression: a tracked file under one feature does not block an untracked sibling under a different feature", async () => {
+    // Adversarial-review regression: a prior implementation partitioned by
+    // the candidate's first path segment, so a tracked manifest under
+    // `.nax/features/f/stories/...` caused any candidate whose name started
+    // with `features/` to be marked tracked — including an untracked
+    // `.nax/features/g/runs/` candidate that nothing had committed.
+    const dir = makeWorkdir();
+    initRepo(dir);
+    const trackedManifestRel = join(".nax", "features", "f", "stories", "US-001", "context-manifest-a.json");
+    const untrackedRunsRel = join(".nax", "features", "g", "runs", "r.json");
+    await writeFixture(dir, trackedManifestRel);
+    await writeFixture(dir, untrackedRunsRel);
+    commitPaths(dir, [trackedManifestRel]);
+
+    const candidates = await detectGeneratedContent(join(dir, ".nax"));
+    const manifestName = join("features", "f", "stories", "US-001", "context-manifest-a.json");
+    const runsName = join("features", "g", "runs");
+    expect(sorted(names(candidates))).toEqual(sorted([manifestName, runsName]));
+
+    const { migratable, tracked } = await partitionTrackedCandidates(dir, candidates);
+
+    expect(names(tracked)).toEqual([manifestName]);
+    expect(names(migratable)).toEqual([runsName]);
+  });
+
   test("US-003 AC4: a workdir that is not a git repo leaves every candidate migratable", async () => {
     const dir = makeWorkdir(); // deliberately never `git init`-ed
     await writeFixture(dir, RUNS_REL);
