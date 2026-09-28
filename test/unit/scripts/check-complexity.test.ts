@@ -1,30 +1,57 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildStrictConfig, compareToBaseline, parseScores, tallyByFile } from "@scripts/check-complexity";
+import {
+  ARROW_LABEL,
+  buildStrictConfig,
+  compareToBaseline,
+  findSuppressions,
+  labelAt,
+  loadBaseline,
+  parseScores,
+  tallyByFile,
+} from "@scripts/check-complexity";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
-const diag = (path: string, score: number) => ({
+/** Each fake file holds one function per line, named after the line: `function f1() {}`, `function f2() {}`, … */
+const readFake = (_file: string) => Array.from({ length: 9 }, (_, i) => `function f${i + 1}() {}`).join("\n");
+
+/** A diagnostic whose span covers `f<line>` on that line of the fake file. */
+const diag = (path: string, score: number, line = 1) => ({
   severity: "error",
   category: "lint/complexity/noExcessiveCognitiveComplexity",
   message: `Excessive complexity of ${score} detected (max: 20).`,
-  location: { path },
+  location: { path, start: { line, column: 10 }, end: { line, column: 12 } },
+});
+
+const score = (file: string, value: number, label: string, line = 1) => ({
+  file,
+  score: value,
+  label,
+  line,
+  column: 1,
 });
 
 describe("parseScores", () => {
   const report = (diagnostics: object[], errors = diagnostics.length) => ({ summary: { errors }, diagnostics });
 
-  test("extracts one score per complexity diagnostic", () => {
-    expect(parseScores(report([diag("src/a.ts", 42), diag("src/b.ts", 21)]))).toEqual([
-      { file: "src/a.ts", score: 42 },
-      { file: "src/b.ts", score: 21 },
+  test("extracts one labelled score per complexity diagnostic", () => {
+    expect(parseScores(report([diag("src/a.ts", 42), diag("src/b.ts", 21, 2)]), readFake)).toEqual([
+      { file: "src/a.ts", score: 42, label: "f1", line: 1, column: 10 },
+      { file: "src/b.ts", score: 21, label: "f2", line: 2, column: 10 },
     ]);
+  });
+
+  test("throws when a diagnostic has no span to label the function by", () => {
+    const bare = { ...diag("src/a.ts", 42), location: { path: "src/a.ts" } };
+
+    expect(() => parseScores(report([bare]), readFake)).toThrow(/score/);
   });
 
   test("throws when a complexity message no longer carries a score, instead of passing silently", () => {
     const bad = { ...diag("src/a.ts", 1), message: "Cognitive complexity too high." };
 
-    expect(() => parseScores(report([bad]))).toThrow(/score/);
+    expect(() => parseScores(report([bad]), readFake)).toThrow(/score/);
   });
 
   test("throws when the report has no diagnostics array", () => {
@@ -34,7 +61,9 @@ describe("parseScores", () => {
   test("ignores non-error notices from other categories", () => {
     const notice = { severity: "information", category: "deserialize", message: "recommended is deprecated" };
 
-    expect(parseScores(report([diag("src/a.ts", 42), notice], 1))).toEqual([{ file: "src/a.ts", score: 42 }]);
+    expect(parseScores(report([diag("src/a.ts", 42), notice], 1), readFake)).toEqual([
+      { file: "src/a.ts", score: 42, label: "f1", line: 1, column: 10 },
+    ]);
   });
 
   test("throws when the report has no summary to confirm the run", () => {
@@ -52,64 +81,161 @@ describe("parseScores", () => {
       location: { path: "src/x.ts" },
     };
 
-    expect(() => parseScores(report([diag("src/a.ts", 42), parseError]))).toThrow(/parse/);
+    expect(() => parseScores(report([diag("src/a.ts", 42), parseError]), readFake)).toThrow(/parse/);
   });
 
   test("throws when the summary counts more errors than the diagnostics it printed", () => {
-    expect(() => parseScores(report([diag("src/a.ts", 42)], 3))).toThrow(/3 errors/);
+    expect(() => parseScores(report([diag("src/a.ts", 42)], 3), readFake)).toThrow(/3 errors/);
+  });
+});
+
+describe("labelAt", () => {
+  const at = (source: string, line: number, from: number, to: number) =>
+    labelAt(source, { line, column: from }, { line, column: to });
+
+  test("returns the function name the span covers", () => {
+    expect(at("export function runFixCycle() {}", 1, 17, 28)).toBe("runFixCycle");
+  });
+
+  test("returns the arrow label when the span covers an anonymous arrow's =>", () => {
+    expect(at("items.map((item) => {", 1, 18, 21)).toBe(ARROW_LABEL);
+  });
+
+  test("throws on a span that is neither a name nor an arrow, instead of inventing a label", () => {
+    expect(() => at("const x = 1;", 1, 1, 12)).toThrow(/cannot label/);
   });
 });
 
 describe("tallyByFile", () => {
-  test("groups scores per file, highest first, with files in code-point order", () => {
+  test("groups functions per file, highest first, with files in code-point order", () => {
     const byFile = tallyByFile([
-      { file: "src/b.ts", score: 30 },
-      { file: "src/a.ts", score: 25 },
-      { file: "src/b.ts", score: 90 },
+      score("src/b.ts", 30, "low"),
+      score("src/a.ts", 25, "only"),
+      score("src/b.ts", 90, "high", 5),
     ]);
 
     expect(Object.keys(byFile)).toEqual(["src/a.ts", "src/b.ts"]);
-    expect(byFile["src/b.ts"]).toEqual([90, 30]);
+    expect(Object.entries(byFile["src/b.ts"] ?? {})).toEqual([
+      ["high", 90],
+      ["low", 30],
+    ]);
+  });
+
+  test("numbers repeated labels in source order, not score order", () => {
+    const byFile = tallyByFile([score("src/a.ts", 24, ARROW_LABEL, 9), score("src/a.ts", 50, ARROW_LABEL, 3)]);
+
+    expect(byFile["src/a.ts"]).toEqual({ [ARROW_LABEL]: 50, [`${ARROW_LABEL}#2`]: 24 });
   });
 });
 
 describe("compareToBaseline", () => {
   test("a file matching its baseline exactly passes", () => {
-    const result = compareToBaseline({ "src/a.ts": [90, 30] }, { "src/a.ts": [90, 30] });
+    const result = compareToBaseline({ "src/a.ts": { a: 90, b: 30 } }, { "src/a.ts": { a: 90, b: 30 } });
 
     expect(result).toEqual({ added: [], grown: [], lowerable: [] });
   });
 
   test("a file absent from the baseline is a new violation", () => {
-    const result = compareToBaseline({}, { "src/new.ts": [21] });
+    const result = compareToBaseline({}, { "src/new.ts": { fresh: 21 } });
 
-    expect(result.added).toEqual([{ file: "src/new.ts", scores: [21] }]);
+    expect(result.added).toEqual([{ file: "src/new.ts", scores: { fresh: 21 } }]);
   });
 
   test("a baselined function whose score rises is growth", () => {
-    const result = compareToBaseline({ "src/a.ts": [90, 30] }, { "src/a.ts": [90, 35] });
+    const result = compareToBaseline({ "src/a.ts": { a: 90, b: 30 } }, { "src/a.ts": { a: 90, b: 35 } });
 
-    expect(result.grown).toEqual([{ file: "src/a.ts", scores: [90, 35], baseline: [90, 30] }]);
+    expect(result.grown).toEqual([{ file: "src/a.ts", scores: { a: 90, b: 35 }, baseline: { a: 90, b: 30 } }]);
   });
 
   test("a new over-limit function in a baselined file is growth, even if a sibling improved", () => {
     // Splitting a 165 into 100 + a 30-point helper: the helper is new code and must meet the limit.
-    const result = compareToBaseline({ "src/a.ts": [165] }, { "src/a.ts": [100, 30] });
+    const result = compareToBaseline({ "src/a.ts": { big: 165 } }, { "src/a.ts": { big: 100, helper: 30 } });
 
     expect(result.grown).toHaveLength(1);
   });
 
+  // REVIEW-complexity-drain.md §2.1: comparing by rank read both of these as "lowerable".
+  test("one function rising while another falls is growth, not a lower", () => {
+    const result = compareToBaseline({ "src/a.ts": { a: 80, b: 30 } }, { "src/a.ts": { a: 25, b: 79 } });
+
+    expect(result.grown).toHaveLength(1);
+    expect(result.lowerable).toEqual([]);
+  });
+
+  test("a new helper that fits under a fixed function's old score is still growth", () => {
+    const result = compareToBaseline({ "src/a.ts": { a: 80, b: 30 } }, { "src/a.ts": { b: 30, helper: 30 } });
+
+    expect(result.grown).toHaveLength(1);
+    expect(result.lowerable).toEqual([]);
+  });
+
   test("a baselined file that improved must be lowered, so the slack cannot be re-spent", () => {
-    const result = compareToBaseline({ "src/a.ts": [90, 30] }, { "src/a.ts": [80, 30] });
+    const result = compareToBaseline({ "src/a.ts": { a: 90, b: 30 } }, { "src/a.ts": { a: 80, b: 30 } });
 
     expect(result.grown).toEqual([]);
     expect(result.lowerable).toEqual(["src/a.ts"]);
   });
 
+  test("a baselined function that dropped under the limit must be lowered", () => {
+    const result = compareToBaseline({ "src/a.ts": { a: 90, b: 30 } }, { "src/a.ts": { a: 90 } });
+
+    expect(result.lowerable).toEqual(["src/a.ts"]);
+  });
+
   test("a baselined file with no remaining violations must be lowered", () => {
-    const result = compareToBaseline({ "src/gone.ts": [40] }, {});
+    const result = compareToBaseline({ "src/gone.ts": { a: 40 } }, {});
 
     expect(result.lowerable).toEqual(["src/gone.ts"]);
+  });
+});
+
+describe("findSuppressions", () => {
+  // Assembled at runtime so this test file does not itself trip the scan.
+  const IGNORE = ["biome", "ignore"].join("-");
+
+  test.each([
+    ["the rule", `// ${IGNORE} lint/complexity/noExcessiveCognitiveComplexity: legacy`],
+    ["the whole complexity group", `// ${IGNORE} lint/complexity: legacy`],
+    ["every lint rule", `// ${IGNORE} lint: legacy`],
+    ["the rule, file-wide", `// ${IGNORE}-all lint/complexity/noExcessiveCognitiveComplexity: legacy`],
+    ["the rule, over a range", `// ${IGNORE}-start lint/complexity/noExcessiveCognitiveComplexity: legacy`],
+  ])("flags a suppression of %s", (_what, comment) => {
+    expect(findSuppressions("src/x.ts", `const a = 1;\n${comment}\nfunction f() {}`)).toEqual(["src/x.ts:2"]);
+  });
+
+  test.each([
+    ["another complexity rule", `// ${IGNORE} lint/complexity/useLiteralKeys: generated`],
+    ["another group", `// ${IGNORE} lint/suspicious/noExplicitAny: fixture`],
+    ["a formatter directive", `// ${IGNORE} format: table`],
+  ])("ignores a suppression of %s", (_what, comment) => {
+    expect(findSuppressions("src/x.ts", comment)).toEqual([]);
+  });
+});
+
+describe("loadBaseline", () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = makeTempDir();
+  });
+  afterAll(() => cleanupTempDir(dir));
+
+  test("returns null only when the file does not exist", () => {
+    expect(loadBaseline(join(dir, "absent.json"))).toBeNull();
+  });
+
+  test("throws on a baseline in the old rank-ordered format instead of treating it as missing", () => {
+    const path = join(dir, "old-format.json");
+    writeFileSync(path, JSON.stringify({ byFile: { "src/a.ts": [90, 30] } }));
+
+    expect(() => loadBaseline(path)).toThrow(/not a baseline/);
+  });
+
+  test("throws on a file that is not JSON", () => {
+    const path = join(dir, "corrupt.json");
+    writeFileSync(path, "{ not json");
+
+    expect(() => loadBaseline(path)).toThrow();
   });
 });
 
@@ -140,11 +266,11 @@ describe("buildStrictConfig", () => {
 describe("check-complexity script", () => {
   const REPO = join(import.meta.dir, "..", "..", "..");
   const SCRIPT = join(REPO, "scripts", "check-complexity.ts");
-  const committed: { byFile: Record<string, number[]> } = JSON.parse(
+  const committed: { byFile: Record<string, Record<string, number>> } = JSON.parse(
     readFileSync(join(REPO, "scripts", "baselines", "complexity-baseline.json"), "utf8"),
   );
-  const [probeFile, probeScores] = Object.entries(committed.byFile)[0] ?? ["", []];
-  const worst = probeScores[0] ?? 0;
+  const [probeFile, probeScores] = Object.entries(committed.byFile)[0] ?? ["", {}];
+  const [probeLabel, worst] = Object.entries(probeScores)[0] ?? ["", 0];
   let dir: string;
 
   beforeAll(() => {
@@ -152,10 +278,10 @@ describe("check-complexity script", () => {
   });
   afterAll(() => cleanupTempDir(dir));
 
-  /** Writes a baseline where `probeFile`'s worst score is replaced by `score`. */
-  function fixture(name: string, score: number): string {
+  /** Writes a baseline where `probeFile`'s worst function is recorded at `value`. */
+  function fixture(name: string, value: number): string {
     const path = join(dir, name);
-    const byFile = { ...committed.byFile, [probeFile]: [score, ...probeScores.slice(1)] };
+    const byFile = { ...committed.byFile, [probeFile]: { ...probeScores, [probeLabel]: value } };
     writeFileSync(path, JSON.stringify({ ...committed, byFile }));
     return path;
   }
@@ -203,6 +329,17 @@ describe("check-complexity script", () => {
     const result = await run(`--baseline=${join(dir, "absent.json")}`);
 
     expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("missing or unreadable");
+    expect(result.stderr).toContain("missing");
+  }, 30_000);
+
+  test("--init-baseline refuses to overwrite an existing baseline", async () => {
+    const path = fixture("existing.json", worst);
+    const before = readFileSync(path, "utf8");
+
+    const result = await run(`--baseline=${path}`, "--init-baseline");
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("never overwrites");
+    expect(readFileSync(path, "utf8")).toBe(before);
   }, 30_000);
 });

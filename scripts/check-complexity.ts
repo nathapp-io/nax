@@ -10,21 +10,29 @@
  * those files. So the strict limit lives here instead, with the existing
  * offenders recorded in ONE baseline file rather than in the source.
  *
- * The baseline records, per file, the scores of its over-limit functions
- * (highest first). Keyed by file and score, never by line, so ordinary edits
- * above a function do not churn it. A file passes when its current scores are
- * pointwise no worse than its baseline:
- *   - No file outside the baseline may have an over-limit function.
- *   - No baselined file may gain an over-limit function (a helper split out of
- *     a baselined function is new code and must meet the limit).
- *   - No baselined function may get worse.
+ * The baseline records, per file, each over-limit function's score under a
+ * label: the function's name as Biome points at it, `=>` for an anonymous
+ * arrow, and `#2`, `#3`… for a repeat of the same label in one file, in source
+ * order. Keyed by label, never by line, so ordinary edits above a function do
+ * not churn it. A file passes when:
+ *   - No file outside the baseline has an over-limit function.
+ *   - No baselined file has an over-limit function under a label the baseline
+ *     does not record (a helper split out of a baselined function is new code
+ *     and must meet the limit).
+ *   - No baselined function scores higher than its recorded score.
  *   - A baselined file that improved MUST be lowered, so the slack cannot be
  *     re-spent by a later change.
  *
- * Known blind spot, accepted for line-independence: scores are compared by
- * rank, not by function identity. If a file's baselined function is fixed and
- * a different new function lands on exactly the same score, the file reads as
- * unchanged. Any other combination is caught.
+ * Known blind spots:
+ *   - Anonymous arrows share the `=>` label, told apart only by source order.
+ *     If a file's over-limit arrow is fixed and a different arrow in the same
+ *     file lands at or under its score, the file reads as improved.
+ *   - Renaming a baselined function (or its file) reads as a new function. That
+ *     fails safe: move the entry by hand in the same commit.
+ *
+ * Suppressions: a `biome-ignore` covering this rule (the rule itself,
+ * `lint/complexity`, or bare `lint`) hides the function from Biome entirely, so
+ * this check fails on any such comment in the scanned directories.
  *
  * `--update-baseline` only ever lowers: it refuses while any file is new or
  * grown. Raising the baseline is a deliberate hand edit, visible in review.
@@ -35,44 +43,62 @@
  * Usage:
  *   bun scripts/check-complexity.ts                   # check (CI mode)
  *   bun scripts/check-complexity.ts --update-baseline # lower the baseline after a refactor
+ *   bun scripts/check-complexity.ts --init-baseline   # write a baseline when none exists yet
  *   bun scripts/check-complexity.ts --list            # print every over-limit function
  *   --baseline=<path>                                 # use another baseline file (tests)
  *
  * Exit codes:
  *   0 — every file is within its baseline
- *   1 — a new/grown violation, a baseline that must be lowered, or a biome failure
+ *   1 — a new/grown violation, a suppression, a baseline that must be lowered,
+ *       an unreadable baseline, or a biome failure
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { byCodePoint } from "../src/utils/sort";
 
 const ROOT = join(import.meta.dir, "..");
 const DEFAULT_BASELINE_FILE = join(import.meta.dir, "baselines", "complexity-baseline.json");
 const RULE = "complexity/noExcessiveCognitiveComplexity";
 const SCAN_DIRS = ["src/", "bin/", "test/", "scripts/"];
+const SOURCE_GLOB = "**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}";
 
 export const STRICT_LIMIT = 20;
+
+/** An anonymous arrow's label: Biome points at its `=>` token, not a name. */
+export const ARROW_LABEL = "=>";
 
 export interface Score {
   file: string;
   score: number;
+  /** The function's name, or ARROW_LABEL. Not yet unique within the file. */
+  label: string;
+  line: number;
+  column: number;
 }
 
-/** Relative path -> scores of its over-limit functions, highest first. */
-export type ScoresByFile = Record<string, number[]>;
+/** Function label -> score. */
+export type FunctionScores = Record<string, number>;
+
+/** Relative path -> its over-limit functions. */
+export type ScoresByFile = Record<string, FunctionScores>;
 
 export interface Comparison {
-  added: { file: string; scores: number[] }[];
-  grown: { file: string; scores: number[]; baseline: number[] }[];
+  added: { file: string; scores: FunctionScores }[];
+  grown: { file: string; scores: FunctionScores; baseline: FunctionScores }[];
   lowerable: string[];
+}
+
+interface Position {
+  line?: number;
+  column?: number;
 }
 
 interface Diagnostic {
   severity?: string;
   category?: string;
   message?: string;
-  location?: { path?: string };
+  location?: { path?: string; start?: Position; end?: Position };
 }
 
 interface BiomeReport {
@@ -80,14 +106,37 @@ interface BiomeReport {
   diagnostics?: Diagnostic[];
 }
 
-const SCORE_RE = /complexity of (\d+)/;
+export type SourceReader = (file: string) => string;
 
-function readScore(d: Diagnostic): Score {
+const SCORE_RE = /complexity of (\d+)/;
+const IDENTIFIER_RE = /^[A-Za-z_$][\w$]*$/;
+
+const readRepoSource: SourceReader = (file) => readFileSync(resolve(ROOT, file), "utf8");
+
+/** The text Biome's span covers: the function's name, or `=>` for an anonymous arrow. */
+export function labelAt(source: string, start: Required<Position>, end: Required<Position>): string {
+  const text =
+    source
+      .split("\n")
+      [start.line - 1]?.slice(start.column - 1, end.column - 1)
+      .trim() ?? "";
+  if (start.line === end.line && IDENTIFIER_RE.test(text)) return text;
+  if (text === ARROW_LABEL) return ARROW_LABEL;
+  throw new Error(`cannot label the function at ${start.line}:${start.column} (span text ${JSON.stringify(text)})`);
+}
+
+function readScore(d: Diagnostic, readSource: SourceReader): Score {
   const match = SCORE_RE.exec(d.message ?? "");
-  if (!match || !d.location?.path) {
+  const { path, start, end } = d.location ?? {};
+  if (!match || !path || start?.line === undefined || start.column === undefined) {
     throw new Error(`cannot read a complexity score from biome diagnostic: ${JSON.stringify(d)}`);
   }
-  return { file: d.location.path, score: Number(match[1]) };
+  if (end?.line === undefined || end.column === undefined) {
+    throw new Error(`biome diagnostic has no span end: ${JSON.stringify(d)}`);
+  }
+  const from = { line: start.line, column: start.column };
+  const label = labelAt(readSource(path), from, { line: end.line, column: end.column });
+  return { file: path, score: Number(match[1]), label, ...from };
 }
 
 /**
@@ -98,7 +147,7 @@ function readScore(d: Diagnostic): Score {
  * and could let a new violation through. Every error in the summary must be a
  * complexity finding this function actually read.
  */
-export function parseScores(report: BiomeReport): Score[] {
+export function parseScores(report: BiomeReport, readSource: SourceReader = readRepoSource): Score[] {
   if (!Array.isArray(report.diagnostics)) {
     throw new Error("biome report has no diagnostics array — reporter format changed?");
   }
@@ -116,29 +165,34 @@ export function parseScores(report: BiomeReport): Score[] {
   if (report.summary.errors !== errors.length) {
     throw new Error(`biome summary counts ${report.summary.errors} errors but printed ${errors.length}`);
   }
-  return errors.map(readScore);
+  return errors.map((d) => readScore(d, readSource));
+}
+
+/** One file's functions, keyed by label in source order (`name`, `name#2`, …), highest score first. */
+function keyFunctions(scores: Score[]): FunctionScores {
+  const inSourceOrder = [...scores].sort((a, b) => a.line - b.line || a.column - b.column);
+  const seen = new Map<string, number>();
+  const keyed = inSourceOrder.map((s) => {
+    const n = (seen.get(s.label) ?? 0) + 1;
+    seen.set(s.label, n);
+    return [n === 1 ? s.label : `${s.label}#${n}`, s.score] as const;
+  });
+  return Object.fromEntries([...keyed].sort((a, b) => b[1] - a[1] || byCodePoint(a[0], b[0])));
 }
 
 export function tallyByFile(scores: Score[]): ScoresByFile {
   const files = [...new Set(scores.map((s) => s.file))].sort(byCodePoint);
-  return Object.fromEntries(
-    files.map((file) => [
-      file,
-      scores
-        .filter((s) => s.file === file)
-        .map((s) => s.score)
-        .sort((a, b) => b - a),
-    ]),
-  );
+  return Object.fromEntries(files.map((file) => [file, keyFunctions(scores.filter((s) => s.file === file))]));
 }
 
-/** True when every current score is <= the baseline score at the same rank, and there are no extra ones. */
-function withinBaseline(current: number[], baseline: number[]): boolean {
-  return current.length <= baseline.length && current.every((score, i) => score <= (baseline[i] ?? 0));
+/** True when every current function is baselined at or above its score. */
+function withinBaseline(current: FunctionScores, baseline: FunctionScores): boolean {
+  return Object.entries(current).every(([label, score]) => score <= (baseline[label] ?? Number.NEGATIVE_INFINITY));
 }
 
-function sameScores(a: number[], b: number[]): boolean {
-  return a.length === b.length && a.every((score, i) => score === b[i]);
+function sameScores(a: FunctionScores, b: FunctionScores): boolean {
+  const labels = Object.keys(a);
+  return labels.length === Object.keys(b).length && labels.every((label) => a[label] === b[label]);
 }
 
 export function compareToBaseline(baseline: ScoresByFile, current: ScoresByFile): Comparison {
@@ -151,11 +205,30 @@ export function compareToBaseline(baseline: ScoresByFile, current: ScoresByFile)
   }
   const lowerable = Object.entries(baseline)
     .filter(([file, recorded]) => {
-      const scores = current[file] ?? [];
+      const scores = current[file] ?? {};
       return withinBaseline(scores, recorded) && !sameScores(scores, recorded);
     })
     .map(([file]) => file);
   return { added, grown, lowerable };
+}
+
+/** Matches a biome-ignore whose selector covers this rule: the rule, its group, or all of `lint`. */
+const SUPPRESSION_RE =
+  /biome-ignore(?:-all|-start)?\s+lint(?:\/complexity(?:\/noExcessiveCognitiveComplexity)?)?(?![\w/])/;
+
+/** `file:line` for every suppression of this rule in `source`. */
+export function findSuppressions(file: string, source: string): string[] {
+  return source.split("\n").flatMap((text, i) => (SUPPRESSION_RE.test(text) ? [`${file}:${i + 1}`] : []));
+}
+
+function scanSuppressions(): string[] {
+  const glob = new Bun.Glob(SOURCE_GLOB);
+  return SCAN_DIRS.flatMap((dir) =>
+    [...glob.scanSync({ cwd: join(ROOT, dir) })]
+      .filter((rel) => !rel.includes("node_modules/"))
+      .sort(byCodePoint)
+      .flatMap((rel) => findSuppressions(`${dir}${rel}`, readRepoSource(`${dir}${rel}`))),
+  );
 }
 
 interface RepoBiomeConfig {
@@ -206,20 +279,51 @@ function runBiome(): Score[] {
   }
 }
 
-function loadBaseline(path: string): ScoresByFile | null {
-  try {
-    return (JSON.parse(readFileSync(path, "utf8")) as { byFile: ScoresByFile }).byFile;
-  } catch {
-    return null;
-  }
+function isFunctionScores(value: unknown): value is FunctionScores {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((score) => typeof score === "number")
+  );
 }
 
-/** One line per file, so a refactor's baseline diff is one line per file it touched. */
+/** null only when the file does not exist; a file that exists but cannot be read as a baseline throws. */
+export function loadBaseline(path: string): ScoresByFile | null {
+  if (!existsSync(path)) return null;
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as { byFile?: unknown };
+  const byFile = parsed.byFile;
+  if (typeof byFile !== "object" || byFile === null || !Object.values(byFile).every(isFunctionScores)) {
+    throw new Error(`${path} is not a baseline: "byFile" must map each file to { label: score }`);
+  }
+  return byFile as ScoresByFile;
+}
+
+/** biome.json's formatter.lineWidth: a baseline row longer than this is expanded, one function per line. */
+const BASELINE_LINE_WIDTH = 120;
+
+/**
+ * One line per file where it fits, so a refactor's baseline diff is one line per
+ * file it touched. Laid out exactly as Biome formats JSON, so `lint:biome` passes
+ * on the file this writes.
+ */
+function baselineRow(file: string, scores: FunctionScores): string {
+  const entries = Object.entries(scores).map(([label, score]) => `${JSON.stringify(label)}: ${score}`);
+  const oneLine = `    ${JSON.stringify(file)}: { ${entries.join(", ")} }`;
+  if (oneLine.length <= BASELINE_LINE_WIDTH) return oneLine;
+  return `    ${JSON.stringify(file)}: {\n${entries.map((e) => `      ${e}`).join(",\n")}\n    }`;
+}
+
 function saveBaseline(path: string, byFile: ScoresByFile) {
-  const rows = Object.entries(byFile).map(([file, scores]) => `    ${JSON.stringify(file)}: [${scores.join(", ")}]`);
+  const rows = Object.entries(byFile).map(([file, scores]) => baselineRow(file, scores));
   const header = `  "updatedAt": ${JSON.stringify(new Date().toISOString())},\n  "limit": ${STRICT_LIMIT},`;
   writeFileSync(path, `{\n${header}\n  "byFile": {\n${rows.join(",\n")}\n  }\n}\n`);
 }
+
+const formatScores = (scores: FunctionScores) =>
+  Object.entries(scores)
+    .map(([label, score]) => `${label} ${score}`)
+    .join(", ");
 
 function reportFailure(result: Comparison) {
   const breached = result.added.length > 0 || result.grown.length > 0;
@@ -227,12 +331,12 @@ function reportFailure(result: Comparison) {
   console.error(`ERROR: cognitive complexity ${headline} (limit ${STRICT_LIMIT}).`);
   if (result.added.length > 0) {
     console.error("\nFunctions over the limit in files with no baseline — simplify before merging:");
-    for (const a of result.added) console.error(`  ${a.file}: ${a.scores.join(", ")}`);
+    for (const a of result.added) console.error(`  ${a.file}: ${formatScores(a.scores)}`);
   }
   if (result.grown.length > 0) {
     console.error("\nBaselined files that got worse (a new over-limit function, or a higher score):");
     for (const g of result.grown)
-      console.error(`  ${g.file}: ${g.scores.join(", ")} (baseline ${g.baseline.join(", ")})`);
+      console.error(`  ${g.file}: ${formatScores(g.scores)} (baseline ${formatScores(g.baseline)})`);
   }
   if (result.lowerable.length > 0) {
     console.error("\nBaselined files that improved — lock the gain in:");
@@ -242,45 +346,60 @@ function reportFailure(result: Comparison) {
   console.error(`\nFind the functions with: bun scripts/check-complexity.ts --list`);
 }
 
+function failOnSuppressions() {
+  const suppressions = scanSuppressions();
+  if (suppressions.length === 0) return;
+  console.error(`ERROR: ${suppressions.length} biome-ignore comment(s) hide ${RULE} from this check:`);
+  for (const s of suppressions) console.error(`  ${s}`);
+  console.error("\nSimplify the function instead; a baselined one belongs in the baseline, not in a comment.");
+  process.exit(1);
+}
+
+function listScores(scores: Score[], fileCount: number) {
+  for (const s of [...scores].sort((a, b) => b.score - a.score)) console.log(`${s.score}  ${s.file}  ${s.label}`);
+  console.log(`\nTotal over ${STRICT_LIMIT}: ${scores.length} functions in ${fileCount} files`);
+}
+
+function initBaseline(baselineFile: string, current: ScoresByFile, count: number) {
+  if (existsSync(baselineFile)) {
+    console.error(`ERROR: ${baselineFile} already exists; --init-baseline never overwrites a baseline.`);
+    process.exit(1);
+  }
+  saveBaseline(baselineFile, current);
+  console.log(`OK: baseline initialised with ${count} functions in ${Object.keys(current).length} files.`);
+}
+
+function updateBaseline(baselineFile: string, result: Comparison, current: ScoresByFile, count: number) {
+  if (result.added.length > 0 || result.grown.length > 0) {
+    reportFailure({ ...result, lowerable: [] });
+    console.error("\nRefusing to update: the baseline only ever goes down.");
+    process.exit(1);
+  }
+  saveBaseline(baselineFile, current);
+  console.log(`OK: baseline lowered to ${count} functions in ${Object.keys(current).length} files.`);
+}
+
 function main() {
   const args = process.argv.slice(2);
   const baselineFile =
     args.find((a) => a.startsWith("--baseline="))?.slice("--baseline=".length) ?? DEFAULT_BASELINE_FILE;
+  failOnSuppressions();
   const scores = runBiome();
   const current = tallyByFile(scores);
 
-  if (args.includes("--list")) {
-    for (const s of [...scores].sort((a, b) => b.score - a.score)) console.log(`${s.score}  ${s.file}`);
-    console.log(`\nTotal over ${STRICT_LIMIT}: ${scores.length} functions in ${Object.keys(current).length} files`);
-    return;
-  }
+  if (args.includes("--list")) return listScores(scores, Object.keys(current).length);
+  if (args.includes("--init-baseline")) return initBaseline(baselineFile, current, scores.length);
 
   const baseline = loadBaseline(baselineFile);
   if (!baseline) {
-    if (args.includes("--init-baseline")) {
-      saveBaseline(baselineFile, current);
-      console.log(`OK: baseline initialised with ${scores.length} functions in ${Object.keys(current).length} files.`);
-      return;
-    }
-    console.error(`ERROR: ${baselineFile} missing or unreadable.`);
+    console.error(`ERROR: ${baselineFile} missing. Create one with --init-baseline.`);
     process.exit(1);
   }
 
   const result = compareToBaseline(baseline, current);
-  const breached = result.added.length > 0 || result.grown.length > 0;
+  if (args.includes("--update-baseline")) return updateBaseline(baselineFile, result, current, scores.length);
 
-  if (args.includes("--update-baseline")) {
-    if (breached) {
-      reportFailure({ ...result, lowerable: [] });
-      console.error("\nRefusing to update: the baseline only ever goes down.");
-      process.exit(1);
-    }
-    saveBaseline(baselineFile, current);
-    console.log(`OK: baseline lowered to ${scores.length} functions in ${Object.keys(current).length} files.`);
-    return;
-  }
-
-  if (breached || result.lowerable.length > 0) {
+  if (result.added.length > 0 || result.grown.length > 0 || result.lowerable.length > 0) {
     reportFailure(result);
     process.exit(1);
   }
