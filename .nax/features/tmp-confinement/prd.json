@@ -3,7 +3,7 @@
   "feature": "tmp-confinement",
   "branchName": "feat/tmp-confinement",
   "createdAt": "2026-09-28T00:00:00.000Z",
-  "updatedAt": "2026-09-28T08:39:03.594Z",
+  "updatedAt": "2026-09-28T09:14:04.773Z",
   "userStories": [
     {
       "id": "US-001",
@@ -111,8 +111,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -168,7 +168,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Several small existing call sites and prompt snapshot updates, with a backward-compatible default and no policy or permission changes in this story."
+        "reasoning": "Several small existing call sites and prompt snapshot updates, with a backward-compatible default and no policy or permission changes in this story.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/sandbox/messages.ts",
@@ -202,7 +205,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a77a9acdfd7c5ed3ba6fd2b8b9cd39fd186ba016"
     }
   ],
   "analysis": "Goal: replace instruction-only TMPDIR isolation with default sandbox-enforced per-run temp write roots, retaining explicitly opted-in shared temp and fail-open behavior when the session temp directory cannot be created. Architecture: src/sandbox/session-tmp.ts:16-30 currently sanitizes each run/session part using /[^A-Za-z0-9_-]/g -> '_' and puts sessions under /tmp/nax-<runId>; expose synchronous, mutable _sessionTmpDeps for lstat/access/getuid and resolve /tmp/nax on every call, falling back to /tmp/nax-<uid> for non-directory, symlink, inaccessible or non-ENOENT errors. src/sandbox/index.ts:29 exports runTmpRoot/sessionTmpDir and should export the new seam and runTempRoots. src/execution/lifecycle/run-tmp-wipe.ts:27-49 already removes exactly runTmpRoot(runId), force-recursive, warns and swallows removal errors; preserve run-only cleanup and update obsolete layout comments/test. src/command-safety/tmp-write.ts:15-74 uses a lexer and normalized POSIX paths for redirects and write-target commands; current nax- prefix exclusion must also exclude /tmp/nax/ and /private/tmp/nax/ without excluding /tmp/naxfoo. This is a telemetry signal, not a command refusal. src/sandbox/policy-inputs.ts:70-72 provides the legacy defaultTempRoots of os.tmpdir() plus /tmp; add runTempRoots alongside it, excluding os.tmpdir when /tmp or /private/tmp or descendants, retaining other os tmpdirs. src/agents/coding-tool-support-resolve.ts:18,364-380 is the dispatch seam already passing sessionTmpDir only when options.runId exists; pass runTmpRoot under that same condition. src/agents/coding-tool-sandbox.ts:28-106 has the injectable _sessionSandboxDeps and async resolveSessionSandbox: only the enabled, probed-available, needsLauncher branch builds a policy, currently calling tempRoots() per policy build; create tmpDir before the first policy build and select confined roots or fall back to tempRoots on mkdir failure; inject mkdir, tmpdir and runTempRoots to avoid uninjected reads. Existing disabled/unavailable branches continue exporting TMPDIR without confinement. src/sandbox/launcher.ts:73-84,157-179 independently mkdir-p's tmpDir before each command and exports TMPDIR/TMP/TEMP (wrapped commands get shell export); do not change launcher semantics. src/sandbox/policy-builder.ts:115-141 puts tempRoots into writeRoots, realpath-normalizes paths with literal()/realOrRaw(), and independently allows /tmp/claude on darwin; tests must compare realOrRaw(path). src/sandbox/types.ts:47-50 available state should gain optional sharedTmp=false only for confinement; omitted must retain old constructor/equality behavior. src/config/schemas-sandbox.ts:23-40 uses zod 4 prefault({}) so the added allowSharedTmp=false gets populated for {} and nested filesystem {}; old full-object schema tests require updated expectations. src/sandbox/messages.ts:15-38 houses reusable sandboxSentence/denialHintLine; src/tools/bash.ts:183-203 uses sentence in raw and gated/escalate descriptions, src/tools/run-command.ts:261-266 uses it for Exec descriptions, so pass sharedTmp !== false at all three sites. src/prompts/sections/scratchpad.ts:29-51 provides unconditional scratchpad instructions; replace only the old TMPDIR paragraph with the exact prescribed wording while retaining the separate failed-run retention text. Existing .nax/scratchpad Write/Edit exemption is in src/tools/nax-owned-writes.ts:23,286. Tests: test/unit/sandbox/session-tmp.test.ts:20-49, test/unit/execution/lifecycle/run-tmp-wipe.test.ts:19-28, and test/unit/agents/coding-tool-support-session-tmp.test.ts:20-30,75 pin old flat /tmp/nax-... paths; stub the new dependency seam so tests do not depend on host /tmp/nax, and update cleanup to use runTmpRoot. test/unit/command-safety/tmp-write.test.ts:29-32 covers legacy nax-* exclusion. test/unit/agents/coding-tool-sandbox.test.ts:12-107 has injected backend/probe, withDepsRestore and deep-equality available-state assertion with no runTmpRoot; test/unit/config/schemas-sandbox.test.ts:6-24 and :40-46 pin full schema defaults; test/unit/sandbox/policy-inputs.test.ts covers I/O helpers, test/unit/sandbox/policy-builder.test.ts:202 checks realpath behavior. test/integration/sandbox/sandbox-live.test.ts:19-83 probes actual srt, skips when unavailable (required CI fails instead), and stubs tempRoots on its shared branch; extend using unique run IDs to prove $TMPDIR writes succeed and direct /tmp writes fail. test/unit/sandbox/messages.test.ts:24 asserts the old hint ending; test/unit/prompts/sections/scratchpad.test.ts:57-68 expects retired paragraph; test/unit/tools/bash-sandbox.test.ts and test/unit/tools/run-command-exec.test.ts test descriptions. Three snapshots requiring solely scratchpad paragraph regeneration are test/unit/prompts/__snapshots__/rectifier-builder.test.ts.snap, test/unit/prompts/__snapshots__/review-builder.test.ts.snap, and test/unit/prompts/builders/__snapshots__/rectifier-builder-helpers.test.ts.snap. Risks/migration: /tmp symlinks to /private/tmp on macOS, so compare canonicalized roots; never re-grant os.tmpdir() when it aliases a system /tmp subtree; nonwritable shared /tmp/nax requires a per-user fallback (not chmod 1777); mkdir failure must not leave a confined policy with unwritable TMPDIR; existing projects can restore shared roots with allowSharedTmp=true; sessions without runId and unsandboxed sessions retain legacy roots/permissions; no stale-run sweep. ADR-030 amendment already records the decision, no documentation story or new source files needed.",
