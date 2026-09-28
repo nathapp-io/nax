@@ -126,6 +126,7 @@ interface GateHarness {
   deps: AcceptanceRedGateDeps;
   order: string[];
   runTestPaths: string[];
+  runTestCmds: string[];
   repairOps: unknown[];
   repairInputs: RepairInput[];
   repairPackageDirs: string[];
@@ -140,6 +141,7 @@ function makeHarness(options: {
 }): GateHarness {
   const order: string[] = [];
   const runTestPaths: string[] = [];
+  const runTestCmds: string[] = [];
   const repairOps: unknown[] = [];
   const repairInputs: RepairInput[] = [];
   const repairPackageDirs: string[] = [];
@@ -149,10 +151,11 @@ function makeHarness(options: {
   let runIndex = 0;
 
   const deps: AcceptanceRedGateDeps = {
-    runTest: async (testPath, _workdir, _cmd) => {
+    runTest: async (testPath, _workdir, cmd) => {
       runIndex += 1;
       order.push(`runTest#${runIndex}`);
       runTestPaths.push(testPath);
+      runTestCmds.push(cmd);
       const result = options.outputs[Math.min(runIndex - 1, options.outputs.length - 1)];
       assertDefined(result, "runTest output fixture");
       return result;
@@ -176,7 +179,18 @@ function makeHarness(options: {
     },
   };
 
-  return { deps, order, runTestPaths, repairOps, repairInputs, repairPackageDirs, repairStoryIds, writes, commits };
+  return {
+    deps,
+    order,
+    runTestPaths,
+    runTestCmds,
+    repairOps,
+    repairInputs,
+    repairPackageDirs,
+    repairStoryIds,
+    writes,
+    commits,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -541,5 +555,172 @@ describe("US-005 acceptanceSetupStage: RED gate repair wiring", () => {
     } finally {
       off();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-001: the gate hands the runner ONE shell command string
+// ---------------------------------------------------------------------------
+
+interface RunTestCall {
+  testPath: string;
+  workdir: string;
+  cmd: string;
+  timeoutMs: number | undefined;
+}
+
+/** A gate deps set whose `runTest` records every argument it is handed. */
+function makeRecordingDeps(outputs: ReadonlyArray<{ exitCode: number; output: string }>): {
+  deps: AcceptanceRedGateDeps;
+  calls: RunTestCall[];
+} {
+  const calls: RunTestCall[] = [];
+  let runIndex = 0;
+  const deps: AcceptanceRedGateDeps = {
+    runTest: async (testPath, workdir, cmd, timeoutMs) => {
+      calls.push({ testPath, workdir, cmd, timeoutMs });
+      const result = outputs[Math.min(runIndex, outputs.length - 1)];
+      runIndex += 1;
+      assertDefined(result, "runTest output fixture");
+      return result;
+    },
+    callOp: async () => ({ testCode: null }),
+    writeFile: async () => {},
+    autoCommitIfDirty: async () => {},
+  };
+  return { deps, calls };
+}
+
+describe("US-001 runAcceptanceRedGate: command string, not argv", () => {
+  test("AC11: passes the built command string to runTest for an override with an env assignment", async () => {
+    const { deps, calls } = makeRecordingDeps([{ exitCode: 0, output: "1 pass" }]);
+
+    const redCount = await runAcceptanceRedGate(
+      makeCtx(),
+      [makeEntry({ testPath: "/repo/.nax-acceptance.test.ts", commandOverride: "FOO=1 bun test {{FILE}}" })],
+      deps,
+    );
+
+    expect(redCount).toBe(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.testPath).toBe("/repo/.nax-acceptance.test.ts");
+    expect(calls[0]?.workdir).toBe(GROUP_PACKAGE_DIR);
+    expect(calls[0]?.cmd).toBe("FOO=1 bun test '/repo/.nax-acceptance.test.ts'");
+  });
+
+  test("AC11 boundary: an entry without an override runs the quote-joined framework default", async () => {
+    const { deps, calls } = makeRecordingDeps([{ exitCode: 0, output: "1 pass" }]);
+
+    await runAcceptanceRedGate(makeCtx(), [makeEntry({ testFramework: "jest" })], deps);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.cmd).toBe(`'npx' 'jest' '${GROUP_TEST_PATH}'`);
+  });
+
+  test("AC11 boundary: the logged command is the same shell string the runner receives", async () => {
+    const { deps } = makeRecordingDeps([{ exitCode: 0, output: "1 pass" }]);
+
+    await runAcceptanceRedGate(
+      makeCtx(),
+      [makeEntry({ testPath: "/repo/.nax-acceptance.test.ts", commandOverride: "FOO=1 bun test {{FILE}}" })],
+      deps,
+    );
+
+    const logged = entriesWithMessage("Running acceptance RED gate command");
+    expect(logged).toHaveLength(1);
+    expect(logged[0]?.data?.cmd).toBe("FOO=1 bun test '/repo/.nax-acceptance.test.ts'");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-002: command not runnable (exit 126 / 127) — named, not repaired
+// ---------------------------------------------------------------------------
+
+const COMMAND_NOT_RUNNABLE_RED_MSG = "RED gate: acceptance command could not run — check acceptance.command";
+const TS_EXIT_1_OUTPUT = "SyntaxError: Unexpected token";
+
+describe("US-002 runAcceptanceRedGate: command not runnable (exit 126/127)", () => {
+  test("AC5: exit 127 never dispatches acceptanceRepairOp — deps.callOp is never called", async () => {
+    const harness = makeHarness({ outputs: [{ exitCode: 127, output: "/bin/sh: FOO: command not found" }] });
+
+    const redCount = await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+
+    expect(harness.repairOps).toHaveLength(0);
+    expect(harness.order.filter((entry) => entry.startsWith("callOp:"))).toHaveLength(0);
+    expect(redCount).toBe(1);
+  });
+
+  test("AC6: exit 127 calls runTest exactly once and never calls writeFile or autoCommitIfDirty", async () => {
+    const harness = makeHarness({ outputs: [{ exitCode: 127, output: "/bin/sh: FOO: command not found" }] });
+
+    await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+
+    expect(harness.runTestPaths).toHaveLength(1);
+    expect(harness.writes).toHaveLength(0);
+    expect(harness.commits).toHaveLength(0);
+  });
+
+  test("AC7: exit 127 logs one error from stage 'acceptance-setup' with storyId first, cmd, and exitCode", async () => {
+    const harness = makeHarness({ outputs: [{ exitCode: 127, output: "/bin/sh: FOO: command not found" }] });
+
+    await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+
+    const errors = captured.filter(
+      (entry) =>
+        entry.level === "error" && entry.stage === "acceptance-setup" && entry.message === COMMAND_NOT_RUNNABLE_RED_MSG,
+    );
+    expect(errors).toHaveLength(1);
+    const data = errors[0]?.data ?? {};
+    expect(Object.keys(data)[0]).toBe("storyId");
+    expect(data.storyId).toBe(STAGE_STORY_ID);
+    // cmd must equal the command the gate handed to deps.runTest (AC7 explicitly
+    // requires it — a bare "non-empty string" would also pass if the gate logged
+    // a different shell string than the one it actually ran).
+    expect(harness.runTestCmds).toHaveLength(1);
+    expect(data.cmd).toBe(harness.runTestCmds[0]);
+    expect(data.exitCode).toBe(127);
+  });
+
+  test("AC8: exit 127 returns 1 from runAcceptanceRedGate, so the entry still counts RED", async () => {
+    const harness = makeHarness({ outputs: [{ exitCode: 127, output: "/bin/sh: FOO: command not found" }] });
+
+    const redCount = await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+
+    expect(redCount).toBe(1);
+  });
+
+  test("AC9 boundary: exit 126 also skips repair and logs the not-runnable error", async () => {
+    const harness = makeHarness({ outputs: [{ exitCode: 126, output: "sh: FOO: Permission denied" }] });
+
+    await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+
+    expect(harness.repairOps).toHaveLength(0);
+    expect(harness.writes).toHaveLength(0);
+    expect(harness.commits).toHaveLength(0);
+
+    const errors = captured.filter(
+      (entry) =>
+        entry.level === "error" && entry.stage === "acceptance-setup" && entry.message === COMMAND_NOT_RUNNABLE_RED_MSG,
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.data?.exitCode).toBe(126);
+  });
+
+  test("AC10: a TypeScript exit 1 still goes through the existing repair path", async () => {
+    const harness = makeHarness({
+      outputs: [{ exitCode: 1, output: TS_EXIT_1_OUTPUT }],
+      repair: async () => ({ testCode: null }),
+    });
+
+    const redCount = await runAcceptanceRedGate(makeCtx(), [makeEntry({ language: "typescript" })], harness.deps);
+
+    expect(harness.repairOps).toHaveLength(1);
+    expect(harness.repairOps[0]).toBe(acceptanceRepairOp);
+    expect(redCount).toBe(1);
+    // The not-runnable error is not emitted for an exit 1 with no AC failures.
+    const notRunnable = captured.filter(
+      (entry) => entry.level === "error" && entry.message === COMMAND_NOT_RUNNABLE_RED_MSG,
+    );
+    expect(notRunnable).toHaveLength(0);
   });
 });

@@ -266,6 +266,131 @@ describe("runFixCycle — dispatch cost is read from the cost ledger (#1932)", (
   });
 });
 
+// ─── Validator-error exit reports the iteration's spend (US-004) ─────────────
+
+describe("runFixCycle — validator-error exit reports the iteration's spend (US-004)", () => {
+  /**
+   * Record a cost row the way the real cost subscriber does: keyed on the
+   * callId `runFixCycle` stamped onto the dispatch context.
+   */
+  function makeLedgerCallOpMock(costPerCall: number) {
+    const seenCallIds: (string | undefined)[] = [];
+    const callOp = makeCallOpMock(({ ctx }) => {
+      seenCallIds.push(ctx.callId);
+      ctx.runtime.costAggregator.record({
+        ts: Date.now(),
+        runId: "run-1",
+        agentName: "claude",
+        model: "test-model",
+        storyId: ctx.storyId,
+        callId: ctx.callId,
+        estimatedCostUsd: costPerCall,
+        exactCostUsd: costPerCall,
+        costUsd: costPerCall,
+        confidence: "estimated",
+        durationMs: 1,
+      });
+      return {};
+    });
+    return { callOp, seenCallIds };
+  }
+
+  /**
+   * Strategy whose extractApplied reports the given costUsd. Mirrors how a
+   * real strategy would surface its own dispatch cost. Each call increments
+   * the provided counter so different dispatches can return different costs.
+   */
+  function makeCostlyStrategy(name: string, reportedCosts: number[], maxAttempts: number) {
+    let callIdx = 0;
+    return makeStrategy({
+      name,
+      maxAttempts,
+      extractApplied: () => ({ summary: "", costUsd: reportedCosts[callIdx++] ?? 0 }),
+    });
+  }
+
+  test("validator-error includes the single dispatch's cost in costUsd (AC-1)", async () => {
+    // maxAttempts: 3 so the strategy is NOT exhausted on the first dispatch.
+    // liteValidateIfExhausted falls through to full validate, where the throw
+    // fires the validator-error exit before any iteration is recorded.
+    const s = makeCostlyStrategy("lint-fix", [0.5], 3);
+    const { callOp } = makeLedgerCallOpMock(0);
+    // validate throws on every call — exhausts the retry budget immediately
+    const r = await runFixCycle(
+      makeCycle([lintA], [s], async () => {
+        throw new Error("validation failed");
+      }),
+      makeCtx(),
+      "test-cycle",
+      { callOp },
+    );
+
+    expect(r.exitReason).toBe("validator-error");
+    expect(r.costUsd).toBeCloseTo(0.5, 5);
+  });
+
+  test("validator-error leaves cycle.iterations empty (AC-2)", async () => {
+    // Same setup as the first test: the dispatch runs but validate throws
+    // before any iteration is recorded, so cycle.iterations stays empty.
+    const s = makeCostlyStrategy("lint-fix", [0.5], 3);
+    const { callOp } = makeLedgerCallOpMock(0);
+    const cycle = makeCycle([lintA], [s], async () => {
+      throw new Error("validation failed");
+    });
+
+    await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp });
+
+    expect(cycle.iterations).toHaveLength(0);
+  });
+
+  test("validator-error includes both iterations' dispatch costs in costUsd (AC-3)", async () => {
+    // First iteration: dispatch reports 0.2, validate returns unchanged → recorded.
+    // Second iteration: dispatch reports 0.5, validate throws → validator-error exit.
+    // maxAttempts: 3 ensures the second dispatch is not exhausted before full validate.
+    const s = makeCostlyStrategy("lint-fix", [0.2, 0.5], 3);
+    const { callOp } = makeLedgerCallOpMock(0);
+    let validateCallCount = 0;
+
+    const r = await runFixCycle(
+      makeCycle([lintA], [s], async () => {
+        validateCallCount++;
+        if (validateCallCount === 1) return [lintA]; // first: unchanged
+        throw new Error("validation failed"); // second: throws → validator-error
+      }),
+      makeCtx(),
+      "test-cycle",
+      { callOp },
+    );
+
+    expect(r.exitReason).toBe("validator-error");
+    // 0.2 (iter 1) + 0.5 (iter 2) = 0.7
+    expect(r.costUsd).toBeCloseTo(0.7, 5);
+  });
+
+  test("validator-error logger includes strategiesRun and iterationCostUsd (AC-4)", async () => {
+    // maxAttempts: 3 ensures the validator-error exit is reached (same reasoning as the first test).
+    const s = makeCostlyStrategy("lint-fix", [0.5], 3);
+    const { callOp } = makeLedgerCallOpMock(0);
+    const logger = makeLogger();
+
+    await runFixCycle(
+      makeCycle([lintA], [s], async () => {
+        throw new Error("validation failed");
+      }),
+      makeCtx(),
+      "test-cycle",
+      { callOp, logger },
+    );
+
+    const errorLog = logger.calls.find(
+      (c) => c.level === "error" && c.stage === "findings.cycle" && c.message === "cycle exited — validator error",
+    );
+    expect(errorLog).toBeDefined();
+    expect(errorLog?.data?.strategiesRun).toEqual(["lint-fix"]);
+    expect(errorLog?.data?.iterationCostUsd).toBeCloseTo(0.5, 5);
+  });
+});
+
 // ─── ledgerSpendFor — direct unit coverage of the read itself ────────────────
 
 describe("ledgerSpendFor", () => {

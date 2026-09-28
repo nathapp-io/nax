@@ -13,7 +13,7 @@ import type { NaxConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
 import { acceptanceRepairOp } from "@/operations";
 import { MAX_RAW_TAIL_CHARS } from "@/quality";
-import { classifyAcceptanceCrash, parseTestFailuresDetailed } from "@/test-runners";
+import { classifyAcceptanceCrash, isCommandNotRunnable, parseTestFailuresDetailed } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import type { PipelineContext } from "../types";
 import type { _acceptanceSetupDeps } from "./acceptance-setup";
@@ -52,7 +52,7 @@ async function handleCrash(
   ctx: PipelineContext,
   entry: AcceptanceRedGateEntry,
   output: string,
-  runCmd: string[],
+  runCmd: string,
   deps: AcceptanceRedGateDeps,
 ): Promise<void> {
   const { testPath, packageDir, language, storyId, config } = entry;
@@ -137,12 +137,27 @@ export async function runAcceptanceRedGate(
     const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride, packageDir);
     logger?.info("acceptance-setup", "Running acceptance RED gate command", {
       storyId: entry.storyId,
-      cmd: runCmd.join(" "),
+      cmd: runCmd,
       packageDir,
     });
 
     const first = await deps.runTest(testPath, packageDir, runCmd, config.acceptance.timeoutMs);
     if (first.exitCode === 0) continue;
+
+    // Exit 126 / 127: the shell itself could not run the command. The runner
+    // never started, so the test file is not to blame — name it and move on,
+    // skipping both the repair turn and the re-run. The entry still counts
+    // RED (this branch is reached on a non-zero exit, so `redFailCount++`
+    // below applies).
+    if (isCommandNotRunnable(first.exitCode)) {
+      logger?.error("acceptance-setup", "RED gate: acceptance command could not run — check acceptance.command", {
+        storyId: entry.storyId,
+        cmd: runCmd,
+        exitCode: first.exitCode,
+      });
+      redFailCount++;
+      continue;
+    }
 
     if (isCrash(first.output, first.exitCode)) {
       await handleCrash(ctx, entry, first.output, runCmd, deps);
