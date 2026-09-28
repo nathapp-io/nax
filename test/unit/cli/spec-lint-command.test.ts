@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { makeTempDir } from "@test/helpers";
 import type { ResolveResult } from "@/cli";
 import { specLintCommand } from "@/cli";
 
@@ -166,11 +165,12 @@ describe("specLintCommand", () => {
 1. \`[unit]\` foo() returns 1.
 2. \`[unit]\` In the AC-1 setup, foo() returns 2.
 `;
-    const tempDir = makeTempDir("nax-ac13-");
-    const specPath = `${tempDir}/ref.md`;
+    // The injected `readFile` returns the spec from an in-memory map keyed on
+    // path, so no real directory or file is needed — `dir` is just a frame
+    // passed through to specLintCommand.
     const result = await specLintCommand(
-      { dir: tempDir, paths: [specPath], strict: true },
-      depsFor({ [specPath]: refSpec }, out),
+      { dir: "/repo", paths: ["/repo/ref.md"], strict: true },
+      depsFor({ "/repo/ref.md": refSpec }, out),
     );
     // The ac-numeric-reference finding is a warn, not an error, so --strict
     // (which gates on `error`-level findings) still passes — the strict CLI
