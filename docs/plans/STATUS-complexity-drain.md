@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C2-commit, batch C2 complete)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C3-commit, batch C3 complete)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    230 functions in 202 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     3     (2 src, 1 scripts)   <- THIS DRAIN (only C3 lexBashCommand + C4 generateCommand/main left)
+  over 20    229 functions in 201 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     2     (1 src, 1 scripts)   <- THIS DRAIN (only C4 generateCommand/main left)
   worst       99   src/cli/generate.ts generateCommand
 biome.json cap: 170
-batches: 23 of 25 done (P0, A1-A13, B1-B7, C1, C2)
+batches: 24 of 25 done (P0, A1-A13, B1-B7, C1, C2, C3)
 ```
 
 Refresh this block at the end of every batch:
@@ -181,7 +181,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | C2 | done 2026-09-27 | 75 | `parseFrontmatter` | `src/context/rules/rules-frontmatter.ts:110` | 293 -> 323 | 5 / 2 | yes |
 | C2 | done 2026-09-27 | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 -> 393 | 4 / 4 | none |
 | C2 | done 2026-09-27 | 64 | `parseTestFailuresDetailed` | `src/test-runners/ac-parser.ts:50` | 141 -> 151 | 4 / 3 | none |
-| C3 | todo | 93 | `lexBashCommand` | `src/permissions/bash-lex.ts:78` | 248 | 3 / 2 | yes |
+| C3 | done 2026-09-27 | 93 | `lexBashCommand` | `src/permissions/bash-lex.ts:78` | 248 -> 340 | 3 / 2 | yes |
 | C4 | todo | 99 | `generateCommand` | `src/cli/generate.ts:49` | 267 | 1 / 1 | none |
 | C4 | todo | 79 | `main` | `scripts/report-test-consolidation.ts:293` | 485 | 3 / 1 | none |
 
@@ -2925,3 +2925,143 @@ source-text greps, allow-lists) applies; 248 lines means in-place extraction
 is likely affordable. After C3, C4 finishes the drain and sets `biome.json`
 `maxAllowedComplexity` to 60. The 40-milestone discussion from §9.8 still
 stands.
+
+### 9.26 - 2026-09-27, C3 done - `lexBashCommand` 93 -> 7 (one session)
+
+The security-relevant batch, alone as §4 mandated. One session, including a
+15-test characterisation commit - the "test: yes is not nothing to
+characterise" warning held for the TENTH time running (A11-A13, B1-B7, C2a,
+now C3).
+
+**The §4 C3 gate, first thing done and last thing re-checked:** the
+command-safety corpus eval (`bun scripts/command-safety-eval.ts --corpus
+test/fixtures/command-safety/corpus.jsonl --out <outside the repo>`, rule
+scorer, no live rows) ran BEFORE the refactor and AFTER it, and the two
+reports are byte-identical (`diff` clean): rule AUROC 0.877, catch@FP 0.754
+(t=1.000) at every budget, per-category catches deletes_data 0.600 /
+discards_work 0.789 / network_send 0.643 / outside_project 0.706 /
+privilege 1.000 / system_change 0.941, corpus 134 dangerous / 154 benign /
+16 grey.
+
+**Pre-flight, all answered BEFORE writing code:** (1) NO `_deps`-style seam -
+bash-lex.ts has ZERO imports BY DESIGN (module header), so there is nothing
+to thread and nothing to cycle; `src/permissions/index.ts` re-exports
+`lexBashCommand` and the types BY VALUE, and no test mutates the module.
+(2) A2's traps: the lexer's mutable accumulators (`word`, `opaque`,
+`started`, `pendingRedirect`, `tokens`, `redirects`, `segments`) are exactly
+the closure state the function-local `refusedHere`/`flushWord`/
+`flushSegment` helpers mutate - lifted to module level as one `LexerState`
+MUTATED IN PLACE (the A2 rule, needed here because a refusal can strike at
+any step and the prefix contract reads whatever the interrupted segment had
+completed); no closure set up once in setup (no SpinFlags shape); no throw
+crosses a state boundary (refusals return values, never throw). (3) NO
+source-text tests pin the file (grep across `test/` incl. `test/unit/
+scripts/` - B4's rule - found only value imports). (4) No per-file guard
+allow-list names the file (`grep -Rn "grep -vE" scripts/`). (5) File
+measured 247 going in (the doc's 248 - one line of drift, seventeenth batch
+running).
+
+**Characterisation first** (own commit `test: characterise lexBashCommand
+unpinned lexer branches before complexity drain`, 15 tests, green against
+the unrefactored lexer, new file `test/unit/permissions/bash-lex-edges.test
+.ts`; zero cast expressions, looseCast stayed 1474). The mirror pins the
+tokenizer/segmenter ACs, all four US-001 prefix ACs, and 20 refusal cases -
+but left unpinned: (a) the `separator` VALUE on interrupted segments (`;`,
+`&&`, `||`, `|`, `&`, and `\n` which folds to `;`) plus its ABSENCE on the
+final segment - the whole `BashSegmentSeparator` contract had zero
+assertions; (b) `\t` and `\r` splitting words like a space; (c) a
+double-quoted word WITHOUT `$` staying non-opaque; (d) a backtick inside
+double quotes refusing (the mirror pins only bare backtick and `$(`-in-
+quotes); (e) an escaped `\$` being a literal NON-opaque part of the word
+(the escape handler never sets opaque - correct, the value is known); (f)
+the escaped-`\$`-then-`(` interaction, which still refuses as a subshell;
+(g) the `>(` arm of process substitution; (h) the `<&` arm of fd
+duplication; (i) a trailing background `&` refusing as "an empty command
+segment"; (j) `;;` - an empty MIDDLE segment refusing with the completed
+first segment kept in the prefix; (k) `''` yielding an empty non-opaque
+token (the `started`-with-empty-word quirk); (l) `2>>` (the fd-digit reset
+against the APPEND operator); (m) multiple redirects keeping their order;
+(n) a refusal AFTER a completed redirect keeping that redirect in the
+prefix; (o) a redirect operator still awaiting its target being DROPPED
+from the prefix (the doc-comment contract nothing pinned; also pins that
+whitespace does not flush a pending redirect). The pre-commit hook caught
+one genuine type error in the first draft (a `string` test.each column
+against the `BashSegmentSeparator` union in a `toBe`) - typed the case
+table instead of casting; the hook works, per §9.6.
+
+**Technique:** §3's dispatch-map row, IN PLACE (247 lines, far under 600;
+no new file, so §9.19's coverage-floor twin gate never arises).
+`lexBashCommand` stays the sequencer: empty-command guard, `LexerState`
+init, the while-loop dispatching through `stepAt`, the plain-word-character
+fallback kept inline, final `flushSegment` - and scores 7. Ten ordered
+handlers, each `(state, i) => LexStep | undefined` where `LexStep` is
+`{ kind: "advance", by } | { kind: "refuse", construct }`: `lexSingleQuote`
+2, `lexDoubleQuote` 5, `lexEscape` 2, `refuseGroupingOrExpansion` 9,
+`refuseRedirectForm` 10, `lexDollar` 1, `skipWhitespace` 2,
+`lexLineSeparator` 3, `lexControlOperator` 12, `lexRedirect` 6; plus the
+three lifted closure helpers `refusedHere` 2, `flushWord` 3, `flushSegment`
+4, `doubleQuoteEnd` 5 (untouched), and `stepAt` 3 (first-claimant finder).
+ORDER IS BEHAVIOUR: the HANDLERS table must stay in the original guard
+chain's order (`$(` before `$`, `<<` before `<`, `&>` before `&`), and the
+table carries a comment saying so - a future handler appended out of order
+is the likeliest regression vector for this file.
+
+**A behavioural subtlety preserved by construction, worth naming:** a bare
+`<`/`>` handler must run AFTER the three redirect-form refusals AND the
+separators, and the redirect handler's fd-digit reset (`/^\d$/.test(word)`)
+must read the word BEFORE `flushWord` clears it - the differential harness
+below sweeps all of these, which is why it exists.
+
+**Verification - differential testing instead of literal fingerprinting.**
+The first fingerprint attempt (naive quote-paired literal extraction)
+produced FALSE "missing" artifacts - single quotes inside code confuse any
+regex pairing, and A3's diff-the-original lesson deserves a sharper tool
+for a lexer, whose entire surface is quoting. Replaced with a differential
+harness: the ORIGINAL (from git) and REFACTORED lexers ran on 9801 inputs -
+every string of length <= 3 over a 21-symbol shell alphabet
+(`' " \ $ \` ( ) < > & | ; \n \t \r space a 2 ! # E` = 9261 + shorter, plus
+all 304 command-safety corpus commands, plus every double-quoted literal
+from both test files) - with FULL result JSON compared: **0 diffs**, 8232
+of the cases refused (so the prefix contract was swept too). This is the
+strongest equivalence evidence of any batch in the drain and the cheap
+default for any future pure-function batch: exhaustive small-alphabet
+enumeration catches order swaps no example list thinks of.
+
+**Probe tooling note (sharper than §9.17 recorded):** the
+maxAllowedComplexity=1 probe config must be a FULL COPY at the REPO ROOT -
+a /tmp copy fails with "Cannot read file" because biome.json's plugin paths
+are relative. Also `sed` must match the actual formatting
+(`"maxAllowedComplexity": 170` sits inside `"options":` on its own line).
+Probe deleted after.
+
+**File-size gate:** in place, 247 -> 340 after `bun x biome check --write`
+(+93 lines of handler signatures, the state/step types, and relocated
+comments; far under the 600 cap). The zero-imports rule is untouched - the
+refactor added no imports at all.
+
+**Nothing else surprising.** 195 permissions tests green (incl. the 15
+characterisation tests), `bun run test` all phases (22255 tests),
+`bun run typecheck` (both tsconfigs), `bun run check:all` (35 scripts;
+import-cycles 0, file-sizes green, looseCast 1474, 'as unknown as' 0), and
+`bun run test:coverage` all green - below-floor count 1 vs baseline 2 (the
+standing A5 improvement). `check:complexity` reported only "improved" for
+bash-lex.ts, and `check:complexity:update` was a pure lower: 230 -> 229
+functions, 202 -> 201 files (bash-lex.ts left the over-20 baseline
+entirely - §2.3 never triggered, eighteenth batch running).
+
+**For the next batch:** C4 finishes the drain with TWO functions -
+`generateCommand` (`src/cli/generate.ts:49`, 99, 267 lines, test: none) and
+`main` (`scripts/report-test-consolidation.ts:293`, 79, 485 lines,
+test: none) - each with its own `refactor:` commit, and the SECOND one's
+commit also sets `biome.json` `maxAllowedComplexity` 170 -> 60. Lessons
+that transfer: (1) both rows say `test: none` - the heuristic-path-only
+reading was wrong in B1/C1/C2, so grep for integration mirrors and MESSAGE
+strings before writing from scratch; (2) `generateCommand` is the CLI-action
+shape (§3's row; §9.5 is the manual: grep source-text tests first, keep
+pinned blocks inline, one function per output section); (3) `main` is a
+scripts/ file - B4's `test/unit/scripts/` rule applies to its greps too;
+(4) the differential harness pattern (exhaustive small-alphabet enumeration
+against the git original) is available for any pure function. Post-drain:
+zero functions over 60, cap drops to 60, and the 40-milestone discussion
+from §9.8 (38 functions over 20, many already in the high teens) goes to
+the user.

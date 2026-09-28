@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-28T00:35:21.659Z",
+  "updatedAt": "2026-09-28T00:58:46.990Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -117,7 +117,6 @@
     "src/operations/mutation-check.ts": [55],
     "src/operations/test-edit-declaration.ts": [30],
     "src/operations/verify-scoped.ts": [24],
-    "src/permissions/bash-lex.ts": [93],
     "src/pipeline/runner.ts": [50],
     "src/pipeline/stages/acceptance-setup.ts": [54],
     "src/pipeline/stages/acceptance.ts": [59],
