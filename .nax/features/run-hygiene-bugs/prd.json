@@ -1,0 +1,194 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "run-hygiene-bugs",
+  "branchName": "feat/run-hygiene-bugs",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-09-28T04:49:35.588Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "acceptance.command runs as one shell string",
+      "description": "**Goal** — Make all acceptance runners execute the same shell command string rather than quote-split override arguments.\n\n**Motivation** — `buildAcceptanceRunCommand` splits an override on whitespace into argv; the RED gate and post-run quote every word, while hardening passes the argv directly to Bun.spawn, breaking env assignments, cd/&& and quoted arguments.\n\n**Approach** — Acceptance command string (US-001). `buildAcceptanceRunCommand` builds the command as follows:\n\n1. **With an override:** trim it, then replace every `{{files}}`, `{{file}}` and `{{FILE}}` with `shellQuoteArg(testPath)`. Every other character stays verbatim, so env assignments, `&&`, pipes and the user's own quoting reach `sh` as written. An override without a placeholder runs as written, and the path is not appended (today's behaviour).\n2. **Without an override:** take the framework default argv, unchanged (`bun test <path> --timeout=60000`, `npx vitest run <path>`, `npx jest <path>`, `<pytest bin> <path>`, `go test <path>`, `cargo test --test acceptance`), and return `argv.map(shellQuoteArg).join(\" \")`. This is byte-identical to the string `sh` received before this change.\n\nAll three runners execute that same string through `/bin/sh -c`. The RED gate and post-run stage use `executeWithTimeout`, and hardening spawns `[\"/bin/sh\", \"-c\", cmd]`. `acceptance.command` is repo config, so it sits inside the same shell trust boundary as `quality.commands` (`executor.ts` `@design`). Only `testPath` is untrusted relative to the override, and it is always quoted. Preserve `substituteAcceptanceTestPath` as placeholder-dialect SSOT; use it with the quoted path. Rewrite every existing array expectation in `test/unit/acceptance/generator-core.test.ts` as the equivalent shell string, retain each framework/placeholder intent, and rename the spaces test to say single shell word.\n\n**Scope** — In: builder, RED gate command type/logging, setup runner, post-run execution, hardening spawn, existing generator tests. Out: US-002 exit 126/127 classification and finding message; US-003 git-tracked migration; US-004 validator spend. Config-schema validation of `acceptance.command`. Treating `acceptance.command` as untrusted input; it shares the `quality.commands` shell trust boundary.\n\n**Interface** — `buildAcceptanceRunCommand(testPath: string, testFramework?: string, commandOverride?: string, packageDir?: string): string`; `AcceptanceRedGateDeps[\"runTest\"]` / `_acceptanceSetupDeps.runTest`: `runTest(testPath: string, workdir: string, cmd: string, timeoutMs?): Promise<{ exitCode: number; output: string }>`; private `handleCrash` receives `runCmd: string`; `runAcceptanceRedGate(ctx, entries, deps): Promise<number>` retains its outer signature; `runHardeningPass` acceptance spawn uses `spawn([\"/bin/sh\", \"-c\", testCmd], …)` with `detached: true` and existing kill timer.",
+      "acceptanceCriteria": [
+        "[unit] When `buildAcceptanceRunCommand(\"/pkg/.nax-acceptance.test.ts\", undefined, \"KODA_DB_TESTS=1 npx jest -c j.js {{FILE}}\")` is called, it returns the string `KODA_DB_TESTS=1 npx jest -c j.js '/pkg/.nax-acceptance.test.ts'`.",
+        "[unit] When `buildAcceptanceRunCommand(\"/pkg with spaces/.nax-acceptance.test.ts\", undefined, \"bun test {{FILE}}\")` is called, it returns `bun test '/pkg with spaces/.nax-acceptance.test.ts'`.",
+        "[unit] When `buildAcceptanceRunCommand(\"/p/it's/.nax-acceptance.test.ts\", undefined, \"bun test {{file}}\")` is called, it returns `bun test '/p/it'\\''s/.nax-acceptance.test.ts'`, so the embedded quote cannot end the shell word.",
+        "[unit] When `buildAcceptanceRunCommand(\"/pkg/a.test.ts\", undefined, \"cd sub && bun test {{files}}\")` is called, it returns `cd sub && bun test '/pkg/a.test.ts'`, with the `&&` operator unquoted.",
+        "[unit] When `buildAcceptanceRunCommand(\"/pkg/a.test.ts\", undefined, \"  bun test {{FILE}}  \")` is called with surrounding whitespace, it returns `bun test '/pkg/a.test.ts'`.",
+        "[unit] When `buildAcceptanceRunCommand(\"/pkg/a.test.ts\", undefined, \"bun test\")` is called with an override that has no placeholder, it returns `bun test`, with no test path appended.",
+        "[unit] When `buildAcceptanceRunCommand(\"/project/.nax-acceptance.test.ts\")` is called with no framework and no override, it returns `'bun' 'test' '/project/.nax-acceptance.test.ts' '--timeout=60000'`.",
+        "[unit] When `buildAcceptanceRunCommand(\"/pkg/.nax-acceptance.test.ts\", \"jest\")` is called with no override, it returns `'npx' 'jest' '/pkg/.nax-acceptance.test.ts'`.",
+        "[integration] When the production `_acceptanceSetupDeps.runTest` is called with the command string `NAX_ACC_PROBE=1 true` and a temp workdir, it resolves with `exitCode` 0, because a leading assignment reaches the real shell unquoted.",
+        "[integration] When the production `_acceptanceSetupDeps.runTest` is called with the command string `NAX_ACC_PROBE=abc printenv NAX_ACC_PROBE` and a temp workdir, the resolved `output` contains `abc`.",
+        "[unit] When `runAcceptanceRedGate` runs one entry with `commandOverride: \"FOO=1 bun test {{FILE}}\"` and `testPath: \"/repo/.nax-acceptance.test.ts\"`, with `deps.runTest` stubbed to exit 0, `deps.runTest` is called once with the command string `FOO=1 bun test '/repo/.nax-acceptance.test.ts'` as its third argument.",
+        "[integration] When `acceptanceStage.execute` runs a package whose `commandOverride` is `FOO=1 bun test {{FILE}}`, with `_executorDeps.spawn` stubbed to return exit 0, the spawn argv for that package is `[\"/bin/sh\", \"-c\", \"FOO=1 bun test '<testPath>'\"]`, where `<testPath>` is that package's acceptance test path.",
+        "[integration] When `runHardeningPass` runs with `config.acceptance.command` set to `FOO=1 bun test {{FILE}}` and `_hardeningDeps.spawn` stubbed, the spawn is called with argv `[\"/bin/sh\", \"-c\", \"FOO=1 bun test '<suggestedTestPath>'\"]` and options that include `detached: true`."
+      ],
+      "tags": [
+        "bugfix",
+        "acceptance",
+        "shell"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Changes a shared return type and three execution seams across several modules; preserves exact default shell bytes and test-path quoting."
+      },
+      "contextFiles": [
+        "src/acceptance/generator.ts",
+        "src/pipeline/stages/acceptance-red-gate.ts",
+        "src/pipeline/stages/acceptance-setup.ts",
+        "src/pipeline/stages/acceptance.ts",
+        "src/acceptance/hardening.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/acceptance/generator-core.test.ts",
+          "reason": "the \"buildAcceptanceRunCommand\" describe block asserts argv arrays with \"toEqual([...])\". Rewrite each expectation as the equivalent command string, and keep every test's intent. The default-framework test expects \"'bun' 'test' '/project/.nax-acceptance.test.ts' '--timeout=60000'\". Each framework-table row expects its argv quote-joined, for example \"'npx' 'jest' '/pkg/.nax-acceptance.test.ts'\" and \"'cargo' 'test' '--test' 'acceptance'\". The three placeholder rows expect \"bun test '/pkg/.nax-acceptance.test.ts'\". Rename \"keeps a substituted path containing spaces as a single argv element\" to \"keeps a substituted path containing spaces as a single shell word\", expecting \"bun test '/pkg with spaces/.nax-acceptance.test.ts'\"."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "A command that could not run is named, not repaired",
+      "description": "**Goal** — Classify acceptance shell exits 126/127 as a non-runnable command, skipping RED repair and identifying the command in the post-run finding.\n\n**Motivation** — `isCrash` treats nonzero/no-AC output as a crash, so exit 127 dispatches `acceptanceRepairOp` to edit the test and post-run misleadingly reports a runner crash.\n\n**Approach** — Command could not run (US-002). `isCommandNotRunnable(exitCode)` returns true exactly for 126 (found, not executable) and 127 (not found). These are the POSIX shell's own codes, and no supported test runner uses them for test failures.\n\n- The RED gate checks this **before** `isCrash`. When the command can't run, the gate logs one `error`, does not dispatch `acceptanceRepairOp`, does not re-run, and still counts the entry RED.\n- In the post-run stage's existing \"non-zero exit, no AC failures parsed\" branch, a not-runnable exit logs a distinct `error` instead of \"Tests errored with no AC failures parsed\". The finding becomes `acSentinelToFinding(\"AC-ERROR\", output)` spread with `message: \"Acceptance command could not run (exit <code>): <cmd>\"`. `failedACs`, `failedPackages` and the fix routing are unchanged. Ensure RED error message is `RED gate: acceptance command could not run — check acceptance.command`, post-run error message is `Acceptance command could not run — check acceptance.command`, and logger data starts with storyId and includes command/exit details (plus post-run packageDir). Other non-126/127 crashes continue down the existing path, including repair turn for TypeScript exit 1.\n\n**Scope** — In: predicate/barrel, RED early branch, post-run no-AC branch and message override. Out: US-001 shell-string construction (upstream); US-003 migration; US-004 cost; the sentinel adapter itself. Changing the post-run fix routing for an `AC-ERROR` whose command could not run; only its log line and finding message change.\n\n**Interface** — `isCommandNotRunnable(exitCode: number): boolean` exported from `src/test-runners/compile-crash.ts` and re-exported from `src/test-runners/index.ts`; `runAcceptanceRedGate(ctx, entries, deps): Promise<number>` unchanged; `acceptanceStage.execute` keeps its existing signature; `classifyAcceptanceCrash(output, language)` and `acSentinelToFinding(\"AC-ERROR\", output)` unchanged.",
+      "acceptanceCriteria": [
+        "[unit] `isCommandNotRunnable(127)`, imported from the `src/test-runners` barrel, returns `true`.",
+        "[unit] `isCommandNotRunnable(126)` returns `true`.",
+        "[unit] `isCommandNotRunnable(1)` returns `false`.",
+        "[unit] `isCommandNotRunnable(0)` returns `false`.",
+        "[unit] When `runAcceptanceRedGate` runs one entry and `deps.runTest` resolves `{ exitCode: 127, output: \"/bin/sh: FOO: command not found\" }`, `deps.callOp` is never called, so no `acceptanceRepairOp` is dispatched.",
+        "[unit] In the same exit-127 case, `deps.runTest` is called exactly once for that entry, and `deps.writeFile` and `deps.autoCommitIfDirty` are never called.",
+        "[unit] In the same exit-127 case, the logger records one `error` from stage `acceptance-setup` with message `RED gate: acceptance command could not run — check acceptance.command`. Its data has `storyId` as the first key, `cmd` equal to the command string passed to `deps.runTest`, and `exitCode` 127.",
+        "[unit] In the same exit-127 case, `runAcceptanceRedGate` returns 1, so the entry still counts RED.",
+        "[unit] When `deps.runTest` resolves `{ exitCode: 1, output: \"SyntaxError: Unexpected token\" }` with no AC-tagged failure and the entry's language is TypeScript, `deps.callOp` is called once with `acceptanceRepairOp`; the existing crash path is unchanged for non-126/127 exits.",
+        "[integration] When `acceptanceStage.execute` runs a package and `_executorDeps.spawn` is stubbed to exit 127 with output `sh: FOO: command not found`, `ctx.acceptanceFailures.findings` contains a finding with category `test-runner-error` and message `Acceptance command could not run (exit 127): <cmd>`, where `<cmd>` is the command string the stage built for that package.",
+        "[integration] In the same post-run exit-127 case, the logger records an `error` from stage `acceptance` with message `Acceptance command could not run — check acceptance.command`, whose data has `storyId` first plus `exitCode` 127, `cmd` and `packageDir`. No log line with message `Tests errored with no AC failures parsed` is recorded for that package.",
+        "[integration] In the same post-run exit-127 case, `ctx.acceptanceFailures.failedACs` equals `[\"AC-ERROR\"]` and `ctx.acceptanceFailures.failedPackages` has one entry for that package, so the fix routing input is unchanged.",
+        "[integration] When `acceptanceStage.execute` runs a package whose spawn exits 1 with output that carries no AC-tagged failure, the recorded finding's message is `Test runner crashed before test bodies ran`."
+      ],
+      "tags": [
+        "bugfix",
+        "acceptance",
+        "error-classification"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small predicate and two well-defined branches across existing modules, using US-001 command string."
+      },
+      "contextFiles": [
+        "src/test-runners/compile-crash.ts",
+        "src/test-runners/index.ts",
+        "src/pipeline/stages/acceptance-red-gate.ts",
+        "src/pipeline/stages/acceptance.ts",
+        "src/findings/adapters/test-runner.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Auto-migration leaves git-tracked .nax files in place",
+      "description": "**Goal** — Skip git-tracked generated migration candidates in both startup auto-migration and the migrate CLI while moving untracked candidates.\n\n**Motivation** — `setupRun` renames tracked `.nax/` entries into output, auto-commit restores them and logs per-file errors, and the next run hits `MIGRATE_CONFLICT`, stranding other files.\n\n**Approach** — Git-tracked candidates (US-003). `partitionTrackedCandidates` makes one `gitWithTimeout([\"ls-files\", \"-z\", \"--\", \".nax\"], workdir)` call. The NUL-separated output is relative to `workdir`. A candidate is **tracked** when some listed path equals `.nax/<name>` or starts with `.nax/<name>/`. The `/` boundary means a tracked `.nax/runs-archive/x.json` does not mark `runs`. If git exits non-zero, times out or throws (including a non-git workdir), every candidate is migratable, one `debug` log is written, and the result matches today's behaviour.\n\n`autoMigrateGeneratedContent(workdir)` owns what the inline block in `setupRun` did:\n\n1. Detect the candidates, then partition them.\n2. If any are tracked, log **one** `warn`: \"Skipping git-tracked generated content under .nax/ — untrack it with git rm -r --cached\". The data object is `{ storyId: \"_setup\", count, paths, fix }`, where `paths` holds the first 5 tracked `srcPath`s relative to `workdir`, and `fix` is `git rm -r --cached <path>` for the first of them.\n3. If any are migratable, log the existing info \"Found generated content under .nax/ — migrating to output dir\" with `count` = migratable count, then call `migrateCommand({ workdir })`, and on success log the existing info \"Auto-migration complete\".\n4. If `migrateCommand` throws, log the existing warn \"Auto-migration failed — continuing without migration\" and return normally.\n\n`migrateCommand`'s full-migration path partitions too, so the `nax migrate` CLI never moves tracked files either. Each skipped candidate gets an `info` log line. Under `--dry-run`, a tracked candidate logs `[dry-run] Skip (git-tracked): <srcPath>` and never logs `[dry-run] Would move`. The auto helper never rejects, including detection and partition failure. Preserve reclaim/merge branches, existing migration conflict semantics for untracked paths, and existing info logging for successful untracked moves.\n\n**Scope** — In: migrate candidate partition and full path including CLI dry-run, best-effort auto helper and output logs, commands barrel, setup injectable lazy import/call, existing migration/setup tests. Out: US-001/002 acceptance runners; US-004 spend. Changing `autoCommitIfDirty`'s `.nax/` restore guard or its `error` log level. nax running `git rm --cached` itself on tracked generated files; the warning names the command and the user runs it. The `MIGRATE_CONFLICT` mid-loop abort for an untracked candidate whose destination already exists.\n\n**Interface** — `partitionTrackedCandidates(workdir: string, candidates: readonly MigrateCandidate[]): Promise<{ migratable: MigrateCandidate[]; tracked: MigrateCandidate[] }>`; `autoMigrateGeneratedContent(workdir: string): Promise<void>`; `migrateCommand(options: MigrateOptions): Promise<void>` unchanged; `_runSetupDeps.autoMigrateGeneratedContent: (workdir: string) => Promise<void>` defaults to lazy `await import(\"@/commands\")` and `setupRun` calls it exactly once after loading PRD.",
+      "acceptanceCriteria": [
+        "[integration] In a temp git repo where `.nax/features/old/stories/US-001/context-manifest-a.json` is committed and `.nax/runs/r.json` is untracked, `partitionTrackedCandidates(workdir, candidates)` over the two candidates from `detectGeneratedContent` returns the manifest candidate in `tracked` and the `runs` candidate in `migratable`.",
+        "[integration] In a temp git repo where `.nax/features/f/runs/r.json` is committed, the candidate named `features/f/runs` (a directory) is returned in `tracked`.",
+        "[integration] In a temp git repo where only `.nax/runs-archive/x.json` is committed, a candidate named `runs` is returned in `migratable`, not `tracked`.",
+        "[integration] In a temp dir that is not a git repo, `partitionTrackedCandidates` returns every candidate in `migratable` and an empty `tracked`, and does not throw.",
+        "[integration] When `autoMigrateGeneratedContent(workdir)` runs in a temp git repo with a `.nax/config.json` whose `outputDir` points into the temp dir, one committed manifest candidate and one untracked `.nax/runs/r.json`, the `runs` entry is moved to the output dir and the committed manifest file still exists at its original path.",
+        "[integration] In the same case, the logger records exactly one `warn` with message `Skipping git-tracked generated content under .nax/ — untrack it with git rm -r --cached`. Its data is `storyId: \"_setup\"` first, `count: 1`, `paths` naming the manifest path relative to the workdir, and `fix` equal to `git rm -r --cached <that path>`.",
+        "[integration] When `autoMigrateGeneratedContent(workdir)` runs a second time on the same repo, no `warn` with message `Auto-migration failed — continuing without migration` is recorded, and the committed manifest file still exists at its original path.",
+        "[integration] When every candidate in a temp git repo is committed, `autoMigrateGeneratedContent(workdir)` records no info log with message `Found generated content under .nax/ — migrating to output dir`, and git reports no deleted paths in the working tree afterwards.",
+        "[integration] When seven committed candidates exist, the tracked-content `warn` data has `count: 7` and a `paths` array of length 5.",
+        "[integration] When `autoMigrateGeneratedContent(workdir)` runs with an untracked `.nax/runs/r.json` and no `.nax/config.json` (so `migrateCommand` throws `MIGRATE_NO_CONFIG`), the promise resolves, and the logger records one `warn` with message `Auto-migration failed — continuing without migration`.",
+        "[integration] When `migrateCommand({ workdir })` runs in a temp git repo with one committed manifest candidate and one untracked `.nax/runs/r.json`, it moves only the `runs` entry, and the committed manifest file still exists at its original path.",
+        "[integration] When `migrateCommand({ workdir, dryRun: true })` runs in the same repo, the logger records `[dry-run] Skip (git-tracked): <manifest srcPath>` for the committed candidate, a `[dry-run] Would move` line only for the `runs` candidate, and no file moves.",
+        "[integration] When `partitionTrackedCandidates` runs over three candidates in a temp git repo with `_gitDeps.spawn` wrapped by a spy that delegates to the real spawn, the spy records exactly one spawned process whose argv includes `ls-files`.",
+        "[unit] When `setupRun` runs with a valid PRD and `_runSetupDeps.autoMigrateGeneratedContent` stubbed, the stub is called exactly once, with `options.workdir` as its argument. The call is observed even if `setupRun` rejects at a later setup step."
+      ],
+      "tags": [
+        "bugfix",
+        "git",
+        "migration",
+        "startup"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Filesystem/git integration, tracking-prefix semantics and two migration entry points across four modules with best-effort startup behavior."
+      },
+      "contextFiles": [
+        "src/commands/migrate.ts",
+        "src/commands/index.ts",
+        "src/execution/lifecycle/run-setup.ts",
+        "src/utils/git.ts",
+        "test/unit/commands/migrate.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "The validator-error exit reports the iteration's spend",
+      "description": "**Goal** — Add the current dispatched strategies' cost before a fix cycle exits on exhausted validator retries.\n\n**Motivation** — `validateRecordAndDecide` returns the validator-error exit with `costUsd: state.totalCostUsd` before `state.totalCostUsd += iterationCostUsd`, dropping the current iteration's strategy spend.\n\n**Approach** — Validator-error cost (US-004). In `validateRecordAndDecide`, before returning the `validator-error` exit, add `fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0)` to `state.totalCostUsd`. The existing `logger.error(\"findings.cycle\", \"cycle exited — validator error\", …)` data gains `strategiesRun: group.map((s) => s.name)` and `iterationCostUsd`. No `recordIteration` call is added. A code comment states why: validation threw, so no after-set exists, and a record would feed a fabricated outcome to the oscillation counter, the curator and the strategy-attempt history. Accumulate only once upon exhausted retries; prior completed iterations are already included. Extend `test/unit/findings/cycle-cost.test.ts`, not size-baseline `cycle.test.ts`.\n\n**Scope** — In: validator-error exit spend, diagnostics and existing cost tests. Out: US-001/002 acceptance execution; US-003 migration. Recording a validator-error iteration in `cycle.iterations`, or adding a new `IterationOutcome` value.\n\n**Interface** — `validateRecordAndDecide` keeps its existing signature; `handleGiveUps` and `liteValidateIfExhausted` are the #1369 cost-accumulation pattern to mirror.",
+      "acceptanceCriteria": [
+        "[unit] When `runFixCycle` runs a cycle whose single strategy, named `lint-fix`, has an `extractApplied` that reports `costUsd: 0.5` and whose `validate` throws on every call, the result's `exitReason` is `validator-error` and its `costUsd` is 0.5 (within 1e-5).",
+        "[unit] In the same case, `cycle.iterations` has length 0 after `runFixCycle` returns.",
+        "[unit] When the strategy reports `costUsd: 0.2` on its first dispatch and `0.5` on its second, and `validate` returns `[lintA]` unchanged on its first call and throws on every later call, the result's `exitReason` is `validator-error` and its `costUsd` is 0.7 (within 1e-5).",
+        "[unit] In the single-dispatch case, the logger records the `error` `cycle exited — validator error` from stage `findings.cycle` with data that includes `strategiesRun: [\"lint-fix\"]` (the strategy's name) and `iterationCostUsd: 0.5`."
+      ],
+      "tags": [
+        "bugfix",
+        "cost",
+        "findings"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized accounting and logging change within one production module, using established accumulation pattern."
+      },
+      "contextFiles": [
+        "src/findings/cycle-execute.ts",
+        "src/findings/cycle-loop.ts",
+        "test/unit/findings/_cycle-fixtures.ts",
+        "test/unit/findings/cycle-cost.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing Bun/TypeScript repo (@nathapp/nax, package.json:2); this is three independent runtime fixes split into four binding stories. Acceptance: src/acceptance/generator.ts:46-91 owns the placeholder dialect and currently returns argv; src/acceptance/index.ts:20 exports the builder. src/pipeline/stages/acceptance-red-gate.ts:38-45 classifies any nonzero without AC tags as a crash, :48-110 repairs it, and :137-150 builds/logs/runs argv. src/pipeline/stages/acceptance-setup.ts:149-170 quotes/rejoins argv through executeWithTimeout; src/pipeline/stages/acceptance.ts:238-255 does likewise in the post-run package loop, and :273-289 emits the generic AC-ERROR finding and routing. src/acceptance/hardening.ts:165-180 directly spawns builder output with detached process group; retain timer/kill logic (:182-209). Switch builder to one string, quote only the substituted test path using the existing verification shellQuoteArg, leave substituteAcceptanceTestPath unchanged as dialect SSOT, quote/join framework defaults exactly like old shell input, pass override unchanged after trim/path substitution into /bin/sh -c in all three runners. Configured acceptance.command shares quality.commands shell trust boundary; no schema/security redesign. Change runTest and handleCrash string types and replace join/map usages, including logging; search other builder consumers and test stubs for string[] assumptions. src/test-runners/compile-crash.ts:76-85 only classifies output/language; export exit-code predicate from src/test-runners/index.ts:17-18, check 126/127 ahead of RED crash repair and in post-run's no-AC branch; src/findings/adapters/test-runner.ts:62-80 provides the unchanged sentinel metadata so override only the message, preserving AC-ERROR routing. Tests to extend: test/unit/acceptance/generator-core.test.ts:30-69 expects arrays and must switch to strings; test/unit/pipeline/stages/acceptance-red-gate.test.ts, acceptance-setup-gate.test.ts, acceptance.test.ts and hardening tests; existing exit-1 crash regression remains. Migration: src/commands/migrate.ts:41-124 detects candidate files/directories, :214-303 checks config, resolves destination, dry-runs or moves and may throw MIGRATE_CONFLICT; partition only full-migration candidates, leave --reclaim/--merge alone. src/utils/git.ts:74-139 gitWithTimeout supplies NUL output, timedOut and injectable _gitDeps.spawn; use a single git ls-files -z -- .nax query per partition and slash-boundary prefix matching, fall back to all migratable with one debug log on git failure. src/commands/index.ts:21-22 exports migration symbols. src/execution/lifecycle/run-setup.ts:67-87 contains injectable deps and :337-359 contains inline auto-migration after PRD/status setup; replace with a lazy-import default dependency and single call, keep successful info/failed warn strings. Auto-migration is best-effort and never rejects, skips tracked files and emits exactly one actionable tracked warning; CLI migration also skips them including dry-run. src/utils/git.ts:~418-440 auto-commit restore guard is untouched. Existing test/unit/commands/migrate.test.ts:1-113 uses temp dirs; add git-temp-repo integration and run-setup dep tests. Cost: src/findings/cycle-execute.ts:318-355 exits validator-error before :380-381 adds this iteration's costs; mirror accumulation at :108-110 and :184-188 before error exit, log strategiesRun and iterationCostUsd, deliberately do not call recordIteration because there is no valid after-set. Extend test/unit/findings/cycle-cost.test.ts (cycle.test.ts at baseline), with test/unit/findings/_cycle-fixtures.ts helpers. Risks: changing builder's public return type can break all importers/stubs; changing quoting of override intentionally permits repo-config shell syntax but only path substitution must be escaped, while default argv shell bytes must remain identical. Git tracking detection must not confuse runs with runs-archive or fail non-git dirs; migration still has pre-existing conflict behavior for untracked destinations. Validator retry must add cost once after retries exhaust, not on every throw, and keep iteration history empty for validator-error. No data/schema migration: existing git-tracked artifacts stay put until operator runs suggested git rm -r --cached; prior non-git migrations continue.",
+  "outOfScope": [
+    "The #2154 breaker signal (counting consecutive same-source finding rotations); it stays gated on a corpus measurement.",
+    "Changing `autoCommitIfDirty`'s `.nax/` restore guard or its `error` log level.",
+    "nax running `git rm --cached` itself on tracked generated files; the warning names the command and the user runs it.",
+    "Changing the post-run fix routing for an `AC-ERROR` whose command could not run; only its log line and finding message change.",
+    "Recording a validator-error iteration in `cycle.iterations`, or adding a new `IterationOutcome` value.",
+    "The `MIGRATE_CONFLICT` mid-loop abort for an untracked candidate whose destination already exists.",
+    "Config-schema validation of `acceptance.command`.",
+    "Treating `acceptance.command` as untrusted input; it shares the `quality.commands` shell trust boundary.",
+    "The \"TDD plan failed but no failure category derived — defaulting to pause\" diagnosis in `src/execution/post-run.ts`."
+  ],
+  "routingProfile": "native"
+}
