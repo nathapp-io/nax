@@ -8,7 +8,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import chalk from "chalk";
 import { resolveProject } from "../commands/common";
-import { loadConfig } from "../config";
+import { findProjectDir, loadConfig } from "../config";
+import { featureDir as configFeatureDir, featuresDir as configFeaturesDir } from "../config/paths";
 import { NaxError } from "../errors";
 import type { NaxStatusFile } from "../execution/status-file";
 import { countStories, loadPRD } from "../prd";
@@ -27,6 +28,7 @@ import {
 export const _statusFeaturesDeps = {
   projectOutputDir: projectOutputDir as typeof projectOutputDir,
   loadConfig: loadConfig as typeof loadConfig,
+  findProjectDir: findProjectDir as typeof findProjectDir,
 };
 
 /** Options for feature status command */
@@ -143,7 +145,7 @@ function isUsableStatusFile(value: unknown): value is NaxStatusFile {
 }
 
 /** Get feature summary from prd.json and optional status.json */
-async function getFeatureSummary(featureName: string, featureDir: string): Promise<FeatureSummary> {
+async function getFeatureSummary(featureName: string, featureDir: string, runsDir: string): Promise<FeatureSummary> {
   const prdPath = join(featureDir, "prd.json");
 
   // Guard: prd.json may not exist (e.g. plan failed before writing it)
@@ -212,8 +214,7 @@ async function getFeatureSummary(featureName: string, featureDir: string): Promi
     // summary at its prd.json-derived defaults rather than crashing.
   }
 
-  // Get last run timestamp from runs/ directory
-  const runsDir = join(featureDir, "runs");
+  // Get last run timestamp from runs/ directory (per-user output location).
   if (existsSync(runsDir)) {
     const runs = readdirSync(runsDir, { withFileTypes: true })
       .filter((e) => e.isFile() && e.name.endsWith(".jsonl") && e.name !== "latest.jsonl")
@@ -232,18 +233,18 @@ async function getFeatureSummary(featureName: string, featureDir: string): Promi
 }
 
 /** Display all features table */
-async function displayAllFeatures(projectDir: string): Promise<void> {
-  const config = await _statusFeaturesDeps.loadConfig(projectDir).catch(() => null);
-  const projectKey = config?.name?.trim() || basename(projectDir);
+async function displayAllFeatures(projectRoot: string): Promise<void> {
+  const config = await _statusFeaturesDeps.loadConfig(projectRoot).catch(() => null);
+  const projectKey = config?.name?.trim() || basename(projectRoot);
   const outputDir = _statusFeaturesDeps.projectOutputDir(projectKey, config?.outputDir);
-  const featuresDir = join(outputDir, "features");
+  const featuresRepoDir = configFeaturesDir(projectRoot);
 
-  if (!existsSync(featuresDir)) {
+  if (!existsSync(featuresRepoDir)) {
     console.log(chalk.dim("No features found."));
     return;
   }
 
-  const features = readdirSync(featuresDir, { withFileTypes: true })
+  const features = readdirSync(featuresRepoDir, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
     .sort();
@@ -254,7 +255,7 @@ async function displayAllFeatures(projectDir: string): Promise<void> {
   }
 
   // Load project-level status if available (current run info)
-  const projectStatus = await loadProjectStatusFile(projectDir);
+  const projectStatus = await loadProjectStatusFile(projectRoot);
 
   // Display current run info if available
   if (projectStatus) {
@@ -297,7 +298,11 @@ async function displayAllFeatures(projectDir: string): Promise<void> {
   }
 
   // Load summaries for all features
-  const summaries = await Promise.all(features.map((name) => getFeatureSummary(name, join(featuresDir, name))));
+  const summaries = await Promise.all(
+    features.map((name) =>
+      getFeatureSummary(name, configFeatureDir(projectRoot, name), join(outputDir, "features", name, "runs")),
+    ),
+  );
 
   console.log(chalk.bold("📊 Features\n"));
 
@@ -391,11 +396,10 @@ export async function displayFeatureStatus(options: FeatureStatusOptions = {}): 
     // to avoid requiring config.json (status display only needs feature files)
     let featureDir: string;
     if (options.dir) {
-      const projectDir = resolve(options.dir);
-      const config = await _statusFeaturesDeps.loadConfig(projectDir).catch(() => null);
-      const projectKey = config?.name?.trim() || basename(projectDir);
-      const outputDir = _statusFeaturesDeps.projectOutputDir(projectKey, config?.outputDir);
-      featureDir = join(outputDir, "features", options.feature);
+      const projectRootResolved = resolve(options.dir);
+      const naxDirFound = _statusFeaturesDeps.findProjectDir(projectRootResolved);
+      const projectRoot = naxDirFound ? join(naxDirFound, "..") : projectRootResolved;
+      featureDir = configFeatureDir(projectRoot, options.feature);
     } else {
       const resolved = resolveProject({ feature: options.feature });
       if (!resolved.featureDir) {
@@ -409,7 +413,15 @@ export async function displayFeatureStatus(options: FeatureStatusOptions = {}): 
     await displayFeatureDetails(options.feature, featureDir);
   } else {
     // All features table
-    const resolved = resolveProject({ dir: options.dir });
-    await displayAllFeatures(resolved.projectDir);
+    let projectRoot: string;
+    if (options.dir) {
+      const projectRootResolved = resolve(options.dir);
+      const naxDirFound = _statusFeaturesDeps.findProjectDir(projectRootResolved);
+      projectRoot = naxDirFound ? join(naxDirFound, "..") : projectRootResolved;
+    } else {
+      const resolved = resolveProject({ dir: options.dir });
+      projectRoot = resolved.projectDir;
+    }
+    await displayAllFeatures(projectRoot);
   }
 }
