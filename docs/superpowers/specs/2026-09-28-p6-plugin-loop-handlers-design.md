@@ -1,6 +1,6 @@
 # Plugin loop handlers — design
 
-**Date:** 2026-09-28 · **Status:** designed, awaiting spec review
+**Date:** 2026-09-28 · **Status:** designed; design review 2026-09-28 folded in (1 major, 4 minor)
 **Baseline:** `main` @ `870a9f72d`. Every citation below was read against it.
 **Implements:** the first code-shipping slice of phase 6 of the native-coding-agent arc
 (`nax-coding` boundary, direction ruling "C + some B, A-ready", 2026-09-24)
@@ -201,8 +201,9 @@ loopHandlerContext: Object.freeze({
 }),
 ```
 
-where `desc` is the descriptor `sendPrompt` already looks up (`_findByName(handle.id)`,
-`manager.ts:579`). Undefined fields are omitted, not set to `undefined`. When the set is empty,
+where `desc` is the descriptor `sendPrompt` already looks up as `terminalDesc`
+(`_findByName(handle.id)`, `manager.ts:579`, today used only for the terminal-state guard) —
+passed to the forwarding helper, not re-looked-up. Undefined fields are omitted, not set to `undefined`. When the set is empty,
 neither field is added — the no-plugin path is byte-identical to today.
 
 `SendTurnOpts` (`src/agents/session-types.ts:131`) gains `loopHandlers?: LoopHandlerSet` and
@@ -228,11 +229,26 @@ through `deps` and installs, in one place:
 
 Consequences:
 - a plugin `before_tool` judges the call AFTER null-optional repair;
+- **a plugin `before_tool` is never invoked for a call a built-in already refused.**
+  `dispatchBeforeTool` returns on the first `block`/`terminate` (`registry.ts:150`); invalid-call
+  repair blocks a genuinely invalid call (`loop-handlers.ts:101`) and the spin breaker terminates
+  (`loop-handlers.ts:115`). Accepted: a refused call never executes, so a guard on it protects
+  nothing — but a plugin cannot observe, annotate or re-word those refusals;
+- when the invalid-call budget is exceeded, the built-ins return `allow` (`loop-handlers.ts:111`)
+  and the loop halts the batch without executing the call — plugin `before_tool` handlers DO run
+  for that final call, so a handler must not assume every call it sees will execute;
 - a plugin `after_tool` result is still truncated to the size budget;
 - among plugins, load order then registration order.
 
+`BuiltinLoopHandlerDeps` (`loop-handlers.ts:24-44`) gains `loopHandlers?`, `loopHandlerContext?`
+and `signal?: AbortSignal`, the last sourced from `deps.signal` (the adapter's `turnSignal`,
+`adapter.ts:333`) at the `turn-loop.ts:95` call.
+
 The WeakMap repoint rule (`loop-handlers.ts:51-65`) still holds: a second call for the same
-registry repoints the per-turn state and registers nothing — plugin handlers included. Plugin
+registry repoints the per-turn state and registers nothing — plugin handlers included. In
+production the path is never taken — `turn-loop.ts:94` builds a fresh registry every turn and
+`registerBuiltinLoopHandlers` has one call site — so plugin entries register exactly once per
+real turn; the repoint only runs when a test supplies `deps.loopEvents`. Plugin
 entries read `ctx` through the same per-turn state, so a repoint also repoints `ctx`.
 `deps.loopEvents` stays test-only.
 
@@ -309,6 +325,8 @@ No other registry change.
 | plugin rewrites cached prefix off-boundary | patch rejected by `applyHistoryPatch`, turn continues; debug line names the plugin |
 | plugin `before_turn_end` keeps returning `followUp` | honoured up to 3 per turn, ignored after a stop |
 | plugin returns `terminate` on `before_tool` | honoured (all eight events are exposed by ruling) |
+| built-in `before_tool` blocks or terminates first | plugin `before_tool` handlers are not invoked for that call |
+| invalid-call budget exceeded | plugin `before_tool` handlers run, the loop then halts without executing the call |
 | ACP session | fields ignored, one info line per run |
 | session with no descriptor | `ctx` carries `sessionName`, `role` from the handle, model/provider; other fields absent |
 
@@ -378,8 +396,8 @@ Touched, all well under the 600-line gate: `loop-events/types.ts`, `loop-events/
 `session-types.ts`, `session/manager.ts`, `run-setup.ts`, `plugins/{types,extensions,
 validator,registry,loader}.ts`, `check-adapter-no-config-import.sh`, `turn-end-event.ts`.
 **File-size ratchet.** `src/session/manager.ts` is 678 lines — over the 600 limit and
-grandfathered in `scripts/baselines/file-sizes-baseline.json`, so ANY net growth fails
-`check:file-sizes`. The ctx build and the ACP info line therefore live in a new
+grandfathered at 679 in `scripts/baselines/file-sizes-baseline.json`, so it has ONE line of
+headroom. The ctx build and the ACP info line therefore live in a new
 `src/session/loop-handler-forwarding.ts` (`buildLoopHandlerTurnOpts(handle, desc, set)`), and
 manager.ts takes only the field, the `configureRuntime` option and one spread — offset by
 extracting an equal-or-larger block in the same PR (the plan names it). `adapter.ts` is 547
