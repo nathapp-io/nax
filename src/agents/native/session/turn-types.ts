@@ -19,7 +19,7 @@ import type { ResolvedRates, TokenUsage } from "@/agents/cost";
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import type { SpinBreaker } from "@/runtime/spin-breaker";
 import type { TranscriptMessage as NativeTranscriptMessage, ResolvedCompaction } from "./compaction";
-import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events";
+import type { CompleteCallOptions, LoopEventRegistry, LoopHandlerContext, LoopHandlerSet } from "./loop-events";
 import type { toToolDefinitions } from "./tool-mapping";
 import type { TurnRetryConfig } from "./turn-retry";
 
@@ -128,6 +128,18 @@ export interface TurnDeps {
    * the registry it is given, because both of them reset with the turn.
    */
   loopEvents?: LoopEventRegistry;
+  /**
+   * The run's plugin-contributed loop handlers (US-003), forwarded from
+   * `SendTurnOpts` by the adapter. Installed by `registerBuiltinLoopHandlers`
+   * between the built-in `before_tool` pair and the built-in truncation.
+   * Absent or empty is the normal case — most runs load no such plugin.
+   */
+  loopHandlers?: LoopHandlerSet;
+  /**
+   * The read-only facts each plugin handler is handed (US-003), forwarded from
+   * `SendTurnOpts`. Read at dispatch, like the rest of the per-turn state.
+   */
+  loopHandlerContext?: LoopHandlerContext;
 }
 
 /**

@@ -133,6 +133,18 @@ export interface SendTurnOpts {
   interactionHandler: import("./interaction-handler").InteractionHandler;
   /** Native-only in-process loop-event registrations for this turn. ACP ignores this. */
   loopEvents?: import("./native/session/loop-events").LoopEventRegistry;
+  /**
+   * Native: the run's plugin-contributed loop handlers (US-003), attached by
+   * `SessionManager.sendPrompt`. The adapter forwards them into the turn's
+   * deps, where `registerBuiltinLoopHandlers` installs them between the
+   * built-ins. ACP ignores this.
+   */
+  loopHandlers?: import("./native/session/loop-events").LoopHandlerSet;
+  /**
+   * Native: the read-only facts every plugin handler is handed (US-003). ACP
+   * ignores this.
+   */
+  loopHandlerContext?: import("./native/session/loop-events").LoopHandlerContext;
   /** Abort signal for mid-turn cancellation. */
   signal?: AbortSignal;
   /**

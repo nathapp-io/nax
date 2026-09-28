@@ -96,6 +96,9 @@ export async function runNativeTurn(
     sessionName: handle.id,
     budget: invalidCallBudget,
     ...(deps.spinBreaker !== undefined ? { spinBreaker: deps.spinBreaker } : {}),
+    ...(deps.loopHandlers !== undefined ? { loopHandlers: deps.loopHandlers } : {}),
+    ...(deps.loopHandlerContext !== undefined ? { loopHandlerContext: deps.loopHandlerContext } : {}),
+    ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
     onSpinStop: () => {
       spinFlags.warned = true;
     },

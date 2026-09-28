@@ -1,8 +1,9 @@
 /**
  * Review #20: `before_turn_end` also fires when a turn throws, so a handler
  * sees every ending. The result is ignored on this path -- there is no turn
- * left to continue. Handlers are awaited without a timeout; only built-ins
- * register today.
+ * left to continue. The dispatch is awaited without a timeout of its own: a
+ * plugin handler is timed by its wrapper (`wrapExternalHandler`, US-002),
+ * and a built-in handler is not timed at all.
  */
 import { getSafeLogger } from "@/logger";
 import type { LoopEventRegistry } from "./loop-events";
