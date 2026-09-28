@@ -222,6 +222,7 @@ async function runManyStoryParallelBatch(
   await pipelineEventBus.drain();
   // #2006: fold in aggregator spend the phaseCosts sum cannot see (pre-run pipeline, failed dispatches).
   totalCost = reconcileRunCost(totalCost + batchResult.totalCost, ctx.runtime.costAggregator);
+  params.reportCost(totalCost);
   storiesCompleted += batchResult.completed.length + batchResult.mergeConflicts.filter((c) => c.rectified).length;
   prdDirty = true;
   await closeParallelBatchSessions(ctx, batchResult);
@@ -384,6 +385,7 @@ async function runSingleStoryInBatch(
   prd = singleIter.prd;
   storiesCompleted += singleIter.storiesCompletedDelta;
   totalCost = reconcileRunCost(totalCost + singleIter.costDelta, ctx.runtime.costAggregator);
+  params.reportCost(totalCost);
   prdDirty = singleIter.prdDirty;
   await closeStoryIfTerminal(ctx, singleStory.id, singleIter);
   if (singleIter.prdDirty) {

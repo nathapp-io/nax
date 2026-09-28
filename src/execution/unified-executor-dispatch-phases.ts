@@ -62,6 +62,8 @@ export interface DispatchPhaseParams {
   allStoryMetrics: StoryMetrics[];
   naxIgnoreIndex: NaxIgnoreIndex;
   costLimit: number;
+  /** Publishes the reconciled run cost the moment it changes, for the heartbeat. */
+  reportCost: (totalCost: number) => void;
 }
 
 export interface SequentialDispatchDeps {
@@ -186,6 +188,7 @@ export async function runSequentialDispatch(
   prd = iter.prd;
   storiesCompleted += iter.storiesCompletedDelta;
   totalCost = reconcileRunCost(totalCost + iter.costDelta, ctx.runtime.costAggregator);
+  params.reportCost(totalCost);
   prdDirty = iter.prdDirty;
   await closeStoryIfTerminal(ctx, selection.story.id, iter);
   warningSent = await maybeSendCostWarning(ctx, totalCost, costLimit, warningSent); // #2006: totalCost is now the reconciled max — same reading as the guard.

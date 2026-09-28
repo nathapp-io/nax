@@ -49,6 +49,9 @@ export async function executeUnified(
     lastStoryId: null, // feeds retry-priority (BUG-39)
     warningSent: false,
   };
+  // The heartbeat reads this, not state.totalCost: `state` is only replaced when a
+  // dispatch phase returns, which is after its statusWriter.update and iteration delay.
+  let liveCost = state.totalCost;
 
   const runStartRef = await captureRunStartRef(ctx.workdir);
   let cachedNaxIgnoreKey: string | undefined;
@@ -102,7 +105,7 @@ export async function executeUnified(
 
   startHeartbeat(
     ctx.statusWriter,
-    () => state.totalCost,
+    () => liveCost,
     () => iterations,
     ctx.logFilePath,
   );
@@ -185,7 +188,10 @@ export async function executeUnified(
       }
 
       const costLimit = ctx.config.execution.costLimit;
-      const dispatchParams = { ctx, state, iterations, allStoryMetrics, naxIgnoreIndex, costLimit };
+      const reportCost = (cost: number) => {
+        liveCost = cost;
+      };
+      const dispatchParams = { ctx, state, iterations, allStoryMetrics, naxIgnoreIndex, costLimit, reportCost };
 
       // Parallel dispatch when parallelCount > 0 and batch > 1 story. Never under a dry run: runIteration owns that short-circuit (nax#1808).
       if ((ctx.parallelCount ?? 0) > 0 && !ctx.dryRun) {
