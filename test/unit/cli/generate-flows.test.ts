@@ -240,3 +240,70 @@ describe("generateCommand — top-level catch", () => {
     expect(errors.join("\n")).toContain("Generation failed");
   });
 });
+
+describe("generateCommand — project config generate.agents filter", () => {
+  test("filters generation by the project config's generate.agents and says so", async () => {
+    // Project config replaces the global layer's generate.agents wholesale
+    // (deepMergeConfig: arrays replace), so this is deterministic even on a
+    // machine whose ~/.nax/config.json carries its own generate.agents.
+    writeFileSync(join(tmpDir, ".nax/config.json"), JSON.stringify({ generate: { agents: ["claude"] } }));
+
+    await generateCommand({ dir: tmpDir });
+
+    const out = logs.join("\n");
+    expect(out).toContain("Generating configs for: claude (from config)...");
+    expect(out).not.toContain("Generating configs for all agents");
+    expect(out).toContain("claude → CLAUDE.md");
+    expect(out).not.toContain("aider");
+  });
+
+  test("falls back to generating all agents when the project config's generate.agents is empty", async () => {
+    writeFileSync(join(tmpDir, ".nax/config.json"), JSON.stringify({ generate: { agents: [] } }));
+
+    await generateCommand({ dir: tmpDir });
+
+    expect(logs.join("\n")).toContain("Generating configs for all agents");
+  });
+});
+
+describe("generateCommand — prologue and success-tail output", () => {
+  test("non-dry run logs the context path, the auto-inject notice, and the written-to tail", async () => {
+    await generateCommand({ dir: tmpDir });
+
+    const out = logs.join("\n");
+    expect(out).toContain(`→ Loading context from ${join(tmpDir, ".nax/context.md")}`);
+    expect(out).toContain("Auto-injecting project metadata...");
+    expect(out).toContain(`✓ Agent configs written to ${tmpDir}`);
+  });
+
+  test("noAutoInject suppresses the auto-inject notice", async () => {
+    await generateCommand({ dir: tmpDir, noAutoInject: true });
+
+    expect(logs.join("\n")).not.toContain("Auto-injecting project metadata");
+  });
+
+  test("dry run suppresses the written-to tail", async () => {
+    await generateCommand({ dir: tmpDir, dryRun: true });
+
+    expect(logs.join("\n")).not.toContain("Agent configs written to");
+  });
+});
+
+describe("generateCommand — unknown agent detail", () => {
+  test("lists the valid agents after rejecting an unknown one", async () => {
+    mockProcessExit();
+
+    let caught: unknown;
+    try {
+      await generateCommand({ dir: tmpDir, agent: "unknown" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(String(caught)).toContain("process.exit(1)");
+
+    const err = errors.join("\n");
+    expect(err).toContain("Unknown agent: unknown");
+    expect(err).toContain("Valid agents: claude, codex, opencode, cursor, windsurf, aider, gemini");
+  });
+});
