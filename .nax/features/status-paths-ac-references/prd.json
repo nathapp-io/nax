@@ -3,7 +3,7 @@
   "feature": "status-paths-ac-references",
   "branchName": "feat/status-paths-ac-references",
   "createdAt": "2026-09-28T00:00:00.000Z",
-  "updatedAt": "2026-09-28T17:09:08.795Z",
+  "updatedAt": "2026-09-28T17:17:48.851Z",
   "userStories": [
     {
       "id": "US-001",
@@ -94,8 +94,8 @@
         "bugfix"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
