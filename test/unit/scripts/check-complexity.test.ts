@@ -323,14 +323,18 @@ describe("check-complexity script", () => {
     return { exitCode: await proc.exited, stdout, stderr };
   }
 
-  test("passes against a baseline that matches the tree", async () => {
+  // The script runs biome against the full source tree each invocation; the 6
+  // scenarios are independent of each other (unique fixture files, no shared
+  // state mutation), so run them concurrently to collapse ~2.8 s of serial
+  // biome scans into ~470 ms of wall-clock.
+  test.concurrent("passes against a baseline that matches the tree", async () => {
     const result = await run(`--baseline=${fixture("match.json", worst)}`);
 
     expect(result.stderr).toBe("");
     expect(result.exitCode).toBe(0);
   }, 30_000);
 
-  test("fails when a function scores higher than its baseline", async () => {
+  test.concurrent("fails when a function scores higher than its baseline", async () => {
     const result = await run(`--baseline=${fixture("grown.json", worst - 1)}`);
 
     expect(result.exitCode).toBe(1);
@@ -338,14 +342,14 @@ describe("check-complexity script", () => {
     expect(result.stderr).toContain(probeFile);
   }, 30_000);
 
-  test("fails when the baseline is looser than the tree, so the slack cannot be re-spent", async () => {
+  test.concurrent("fails when the baseline is looser than the tree, so the slack cannot be re-spent", async () => {
     const result = await run(`--baseline=${fixture("stale.json", worst + 1)}`);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("baseline is stale");
   }, 30_000);
 
-  test("--update-baseline refuses to raise a baseline and leaves the file untouched", async () => {
+  test.concurrent("--update-baseline refuses to raise a baseline and leaves the file untouched", async () => {
     const path = fixture("refuse.json", worst - 1);
     const before = readFileSync(path, "utf8");
 
@@ -356,14 +360,14 @@ describe("check-complexity script", () => {
     expect(readFileSync(path, "utf8")).toBe(before);
   }, 30_000);
 
-  test("fails when the baseline file is missing", async () => {
+  test.concurrent("fails when the baseline file is missing", async () => {
     const result = await run(`--baseline=${join(dir, "absent.json")}`);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("missing");
   }, 30_000);
 
-  test("--init-baseline refuses to overwrite an existing baseline", async () => {
+  test.concurrent("--init-baseline refuses to overwrite an existing baseline", async () => {
     const path = fixture("existing.json", worst);
     const before = readFileSync(path, "utf8");
 

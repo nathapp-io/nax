@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { cpSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { gitWithTimeout } from "@/utils/git";
@@ -88,6 +89,50 @@ describe("gitlinkSafeAdd argv", () => {
  * names a filter driver. Any git that checks the gitlink for dirtiness runs
  * `git status` inside it, which runs the driver on the modified file.
  */
+// The same fixture (top repo with a gitlink to a nested repo that has a
+// filter driver) is needed by every test below. Building it from scratch
+// per test is ~500 ms of git init / config / commit work; instead, build it
+// once in beforeAll and `cp -R` a fresh copy to each test's temp dir, then
+// rewrite the per-test filter driver and config. Per-test setup drops from
+// ~500 ms to ~10 ms.
+let gitAddTemplateDir: string;
+beforeAll(() => {
+  gitAddTemplateDir = makeTempDir("git-add-tmpl-");
+  const tmplTop = join(gitAddTemplateDir, "top");
+  const tmplMarker = join(gitAddTemplateDir, "filter-ran");
+  const tmplFilter = join(gitAddTemplateDir, "filter.sh");
+  writeFileSync(tmplFilter, `#!/bin/sh\ntouch "${tmplMarker}"\ncat\n`);
+  Bun.spawnSync(["chmod", "+x", tmplFilter]);
+  // The template's nested repo points its filter driver at a path inside
+  // the template dir; each test rewrites that path via `git config` to its
+  // own driver after copying.
+  Bun.spawnSync(["git", "init", "-q", "top"], { cwd: gitAddTemplateDir });
+  Bun.spawnSync(["git", "config", "user.email", "t@t"], { cwd: tmplTop });
+  Bun.spawnSync(["git", "config", "user.name", "t"], { cwd: tmplTop });
+  writeFileSync(join(tmplTop, "a.txt"), "a\n");
+  Bun.spawnSync(["git", "add", "a.txt"], { cwd: tmplTop });
+  Bun.spawnSync(["git", "commit", "-qm", "init"], { cwd: tmplTop });
+  Bun.spawnSync(["git", "init", "-q", "nested"], { cwd: tmplTop });
+  Bun.spawnSync(["git", "config", "user.email", "t@t"], { cwd: join(tmplTop, "nested") });
+  Bun.spawnSync(["git", "config", "user.name", "t"], { cwd: join(tmplTop, "nested") });
+  Bun.spawnSync(["git", "config", "filter.x.clean", tmplFilter], { cwd: join(tmplTop, "nested") });
+  writeFileSync(join(tmplTop, "nested", ".gitattributes"), "* filter=x\n");
+  writeFileSync(join(tmplTop, "nested", "f.txt"), "v0\n");
+  Bun.spawnSync(["git", "add", "."], { cwd: join(tmplTop, "nested") });
+  Bun.spawnSync(["git", "commit", "-qm", "nested"], { cwd: join(tmplTop, "nested") });
+  Bun.spawnSync(["git", "add", "nested"], { cwd: tmplTop });
+  Bun.spawnSync(["git", "commit", "-qm", "gitlink"], { cwd: tmplTop });
+  // The nested repo's own `git add` above ran its filter (against the
+  // template's marker); remove that marker so each per-test cp doesn't see
+  // it left behind.
+  try {
+    unlinkSync(tmplMarker);
+  } catch {
+    // marker not present — fine
+  }
+});
+afterAll(() => cleanupTempDir(gitAddTemplateDir));
+
 describe("#2210 nested-repo filter driver never runs under nax's git", () => {
   let dir: string;
   let top: string;
@@ -117,28 +162,15 @@ describe("#2210 nested-repo filter driver never runs under nax's git", () => {
     dir = makeTempDir("git-add-");
     top = join(dir, "top");
     marker = join(dir, "filter-ran");
+
+    // Copy the pre-built template (built in beforeAll) into this test's temp
+    // dir, then rewrite the per-test filter driver and config.
+    cpSync(join(gitAddTemplateDir, "top"), top, { recursive: true });
     const driver = join(dir, "filter.sh");
     await Bun.write(driver, `#!/bin/sh\ntouch "${marker}"\ncat\n`);
     Bun.spawnSync(["chmod", "+x", driver]);
-    git(["init", "-q", "top"], dir);
-    git(["config", "user.email", "t@t"], top);
-    git(["config", "user.name", "t"], top);
-    await Bun.write(join(top, "a.txt"), "a\n");
-    git(["add", "a.txt"], top);
-    git(["commit", "-qm", "init"], top);
-
-    const nested = join(top, "nested");
-    git(["init", "-q", "nested"], top);
-    git(["config", "user.email", "t@t"], nested);
-    git(["config", "user.name", "t"], nested);
-    git(["config", "filter.x.clean", driver], nested);
-    await Bun.write(join(nested, ".gitattributes"), "* filter=x\n");
-    await Bun.write(join(nested, "f.txt"), "v0\n");
-    git(["add", "."], nested);
-    git(["commit", "-qm", "nested"], nested);
-    git(["add", "nested"], top);
-    git(["commit", "-qm", "gitlink"], top);
-    // The nested repo's own `git add` above ran its filter; start each test clean.
+    git(["config", "filter.x.clean", driver], join(top, "nested"));
+    bump = 0;
     await clearMarker();
   });
   afterEach(() => cleanupTempDir(dir));
