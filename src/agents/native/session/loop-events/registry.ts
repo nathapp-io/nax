@@ -124,6 +124,21 @@ function pickPatchFields(returned: unknown, fields: readonly string[]): Record<s
 }
 
 /**
+ * A handler's answer arrives typed, but a plugin module is plain JavaScript
+ * and can answer nothing at all. Reading `kind` off that answer is a
+ * dereference the dispatcher must not do: it would throw out of a seam whose
+ * whole contract is that it never fails the turn, and it would do so OUTSIDE
+ * the handler's try (US-002).
+ */
+function asOutcome(returned: unknown, tool: string): unknown {
+  if (typeof returned === "object" && returned !== null) return returned;
+  getSafeLogger()?.warn("native-loop-events", "before_tool handler answered no outcome; treating it as allow", {
+    tool,
+  });
+  return { kind: "allow" };
+}
+
+/**
  * Registration order is the chain order. `block` and `terminate` are a single
  * decision, not a chained one: they short-circuit, because the outcome is the
  * dispatcher's verdict and a later handler must not be able to veto it.
@@ -142,12 +157,12 @@ async function dispatchBeforeTool(
   let input: Record<string, unknown> | undefined;
   let nudgeText: string | undefined;
   for (const [index, handler] of handlers.entries()) {
-    let outcome: BeforeToolOutcome;
+    let returned: unknown;
     const snapshot = snapshotArrays({ tools });
     try {
       // Each handler sees the previous handler's output, so an `allow`
       // rewrite is what the next one judges — and what the loop runs.
-      outcome = await (handler as HandlerOf<"before_tool">)({
+      returned = await (handler as HandlerOf<"before_tool">)({
         call: { ...call, input: input ?? call.input },
         tools,
       });
@@ -160,6 +175,7 @@ async function dispatchBeforeTool(
     } finally {
       restoreMutated(snapshot, "before_tool", index);
     }
+    const outcome = asOutcome(returned, call.name) as BeforeToolOutcome;
     if (outcome.kind === "block" || outcome.kind === "terminate") return outcome;
     if (outcome.kind === "nudge") nudgeText = outcome.text;
     if (outcome.input !== undefined) input = outcome.input;
