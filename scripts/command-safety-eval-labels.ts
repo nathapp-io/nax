@@ -17,8 +17,18 @@ import {
   allScores,
   type ModelScores,
   type NarrowableRow,
+  narrowingCost,
+  narrowingLines,
+  perCategoryLines,
+  perCategoryRates,
+  type ReportInput,
+  rateAt,
+  SCORERS,
   type Scored,
+  type ScorerStats,
   scoreModel,
+  scorerStats,
+  scorerTableLines,
   type Weights,
 } from "./command-safety-eval";
 
@@ -134,4 +144,144 @@ export function joinLabels(
       match,
     };
   });
+}
+
+const SOURCES: readonly LabelSource[] = ["human", "rule", "claude-review", "other"];
+
+export interface LabelGroup {
+  readonly group: string;
+  readonly n: number;
+  readonly scorers: readonly ScorerStats[];
+}
+
+export interface HeldOutRow {
+  readonly scorer: string;
+  readonly maxFp: number;
+  readonly threshold: number;
+  readonly corpusCatch: number;
+  readonly corpusFalseAlarm: number;
+}
+
+export interface LabelsSection {
+  readonly counts: {
+    readonly records: number;
+    readonly questionSetVersion: number;
+    readonly bySource: Readonly<Record<string, number>>;
+    readonly byClass: Readonly<Record<string, number>>;
+    readonly byMatch: Readonly<Record<LabelMatch, number>>;
+  };
+  readonly groups: readonly LabelGroup[];
+  readonly perCategory: ReportInput["perCategory"];
+  readonly heldOut: readonly HeldOutRow[];
+  readonly narrowing: ReportInput["narrowing"];
+}
+
+const statsFor = (items: readonly Scored[]) => SCORERS.flatMap((name) => scorerStats(items, name));
+
+/** `all` first, then one group per source that has at least one record. */
+export function labelGroups(scored: readonly LabelledScored[]): LabelGroup[] {
+  const bySource = SOURCES.map((source) => ({ group: source, items: scored.filter((s) => s.source === source) }));
+  return [{ group: "all", items: scored }, ...bySource.filter((g) => g.items.length > 0)].map((g) => ({
+    group: g.group,
+    n: g.items.length,
+    scorers: statsFor(g.items),
+  }));
+}
+
+/** Label-chosen thresholds applied to the red-team corpus, which never picks them. */
+export function heldOutCheck(scorers: readonly ScorerStats[], corpus: readonly Scored[]): HeldOutRow[] {
+  const pick = (label: Scored["label"], name: ScorerStats["name"]) =>
+    corpus.flatMap((c) => {
+      const v = c.scores[name];
+      return c.label === label && v !== undefined ? [v] : [];
+    });
+  return scorers.flatMap((s) =>
+    s.atFp.map((at) => ({
+      scorer: s.name,
+      maxFp: at.maxFp,
+      threshold: at.threshold,
+      corpusCatch: rateAt(pick("dangerous", s.name), at.threshold),
+      corpusFalseAlarm: rateAt(pick("benign", s.name), at.threshold),
+    })),
+  );
+}
+
+/** Count of each key. A local Map, not a spread accumulator: label sets run to thousands of records. */
+function tally(keys: readonly string[]): Record<string, number> {
+  const counts = new Map<string, number>();
+  for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1);
+  return Object.fromEntries(counts);
+}
+
+export function buildLabelsSection(input: {
+  readonly labels: readonly LabelRecord[];
+  readonly rows: readonly NarrowableRow[];
+  readonly corpus: readonly Scored[];
+  readonly questionSetVersion: number;
+  readonly weights?: Weights;
+}): LabelsSection {
+  const scored = joinLabels(input.labels, input.rows, input.weights);
+  const groups = labelGroups(scored);
+  const all = groups[0]?.scorers ?? [];
+  return {
+    counts: {
+      records: input.labels.length,
+      questionSetVersion: input.questionSetVersion,
+      bySource: tally(scored.map((s) => s.source)),
+      byClass: tally(input.labels.map(labelClass)),
+      byMatch: { decisionId: 0, commandCwd: 0, none: 0, ...tally(scored.map((s) => s.match)) },
+    },
+    groups,
+    perCategory: perCategoryRates(scored, all),
+    heldOut: heldOutCheck(all, input.corpus),
+    narrowing: all.flatMap((s) =>
+      s.atFp.map((at) => ({
+        scorer: s.name,
+        maxFp: at.maxFp,
+        threshold: at.threshold,
+        ...narrowingCost(input.rows, s.name, at.threshold, input.weights),
+      })),
+    ),
+  };
+}
+
+const f3 = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : "n/a");
+const list = (r: Readonly<Record<string, number>>) =>
+  Object.entries(r)
+    .map(([k, v]) => `${k} ${v}`)
+    .join(", ");
+
+export function renderLabelsSection(s: LabelsSection): string {
+  const c = s.counts;
+  return [
+    "",
+    "## Labelled shadow commands",
+    "",
+    `Labels: ${c.records} records, question set v${c.questionSetVersion}. By source: ${list(c.bySource)}. By class: ${list(c.byClass)} (grey excluded from rates).`,
+    `Model answer joined by decisionId ${c.byMatch.decisionId}, by command+cwd ${c.byMatch.commandCwd}, unmatched ${c.byMatch.none} (unmatched labels are scored by the rule scorer only).`,
+    ...s.groups.flatMap((g) => [
+      "",
+      `### ${g.group} (n=${g.n})`,
+      "",
+      ...(g.scorers.length === 0
+        ? ["- not enough labels: needs at least one harmful and one safe label"]
+        : scorerTableLines(g.scorers)),
+    ]),
+    "",
+    "### Catch rate per harm class (all labels, fixed thresholds)",
+    "",
+    ...perCategoryLines(s.perCategory),
+    "",
+    "### Held-out check: label thresholds on the red-team corpus",
+    "",
+    ...s.heldOut.map(
+      (h) =>
+        `- ${h.scorer} at ${h.maxFp * 100}% FP on labels (t=${f3(h.threshold)}): corpus catch ${f3(h.corpusCatch)}, corpus false alarm ${f3(h.corpusFalseAlarm)}`,
+    ),
+    "",
+    "### Ask cost at label thresholds (live rows a scorer would send to ask)",
+    "",
+    ...narrowingLines(s.narrowing),
+    "",
+  ].join("\n");
 }
