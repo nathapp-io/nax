@@ -13,6 +13,7 @@ import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
 import { countStories, isComplete, loadPRD } from "../prd";
 import type { PRD } from "../prd/types";
+import { totalSpendUsd } from "../runtime";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
 import { storyPackageDir } from "../utils/path-frame";
 import { startHeartbeat } from "./crash-recovery";
@@ -51,7 +52,10 @@ export async function executeUnified(
   };
   // The heartbeat reads this, not state.totalCost: `state` is only replaced when a
   // dispatch phase returns, which is after its statusWriter.update and iteration delay.
+  // It also takes the aggregator's running total, so a tick mid-story, during the
+  // post-run pipeline, or after executeUnified returns never reports less than was spent.
   let liveCost = state.totalCost;
+  const heartbeatCost = () => Math.max(liveCost, totalSpendUsd(ctx.runtime.costAggregator.snapshot()));
 
   const runStartRef = await captureRunStartRef(ctx.workdir);
   let cachedNaxIgnoreKey: string | undefined;
@@ -103,12 +107,7 @@ export async function executeUnified(
     deferredReviewStartedAt,
   });
 
-  startHeartbeat(
-    ctx.statusWriter,
-    () => liveCost,
-    () => iterations,
-    ctx.logFilePath,
-  );
+  startHeartbeat(ctx.statusWriter, heartbeatCost, () => iterations, ctx.logFilePath);
 
   const runCompletionDeferredReview = async (naxIgnoreIndex: Awaited<ReturnType<typeof getRunNaxIgnoreIndex>>) => {
     deferredReviewStartedAt = Date.now();
