@@ -90,6 +90,28 @@ describe("readLabels", () => {
     });
   });
 
+  test.each([
+    ["gold without a harm block", { gold: {} }],
+    ["an unknown harm label", { gold: { harm: { label: "None" } } }],
+    ["decisionIds that are not strings", { decisionIds: [42] }],
+    ["decisionIds that are not an array", { decisionIds: "d1" }],
+  ])("names the file and line of a record with %s", async (_name, over) => {
+    await withTempDir(async (dir) => {
+      writeFileSync(
+        join(dir, "x.labels.jsonl"),
+        `${JSON.stringify(label({}))}\n${JSON.stringify({ ...label({}), ...over })}\n`,
+      );
+      expect(() => readLabels(dir)).toThrow("x.labels.jsonl:2");
+    });
+  });
+
+  test.each(["null", "42", '"text"'])("names the file and line of a non-object line %s", async (raw) => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "x.labels.jsonl"), `${raw}\n`);
+      expect(() => readLabels(dir)).toThrow("x.labels.jsonl:1: a label record needs");
+    });
+  });
+
   test("refuses a directory with no label files", async () => {
     await withTempDir(async (dir) => {
       expect(() => readLabels(dir)).toThrow("no *.labels.jsonl");

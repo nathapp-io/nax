@@ -12,7 +12,7 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { scoreRules } from "../src/command-safety";
+import { HARM_OPTIONS, scoreRules } from "../src/command-safety";
 import {
   allScores,
   type ModelScores,
@@ -63,6 +63,35 @@ export function labelClass(record: LabelRecord): string {
   return record.gold.harm.label;
 }
 
+const KNOWN_HARM: ReadonlySet<string> = new Set(HARM_OPTIONS);
+
+/**
+ * Why a parsed line is not a usable label record, or undefined. An unknown
+ * harm label is refused rather than scored: anything not "none" counts as
+ * dangerous, so a typo would silently move a safe command into the positives.
+ */
+function recordProblem(r: Partial<LabelRecord> | null): string | undefined {
+  if (
+    r === null ||
+    typeof r !== "object" ||
+    typeof r.command !== "string" ||
+    typeof r.labeller !== "string" ||
+    typeof r.questionSetVersion !== "number"
+  ) {
+    return "a label record needs string command, string labeller, number questionSetVersion";
+  }
+  if (
+    r.decisionIds !== undefined &&
+    !(Array.isArray(r.decisionIds) && r.decisionIds.every((d) => typeof d === "string"))
+  ) {
+    return "decisionIds must be an array of strings";
+  }
+  if (r.gold !== undefined && !KNOWN_HARM.has(String(r.gold?.harm?.label))) {
+    return `gold.harm.label must be one of ${[...KNOWN_HARM].join(", ")}`;
+  }
+  return undefined;
+}
+
 function parseLabelLine(file: string, line: string, lineNo: number): LabelRecord {
   let parsed: unknown;
   try {
@@ -70,13 +99,9 @@ function parseLabelLine(file: string, line: string, lineNo: number): LabelRecord
   } catch (err) {
     throw new Error(`${file}:${lineNo}: not valid JSON (${err instanceof Error ? err.message : String(err)})`);
   }
-  const r = parsed as Partial<LabelRecord>;
-  if (typeof r.command !== "string" || typeof r.labeller !== "string" || typeof r.questionSetVersion !== "number") {
-    throw new Error(
-      `${file}:${lineNo}: a label record needs string command, string labeller, number questionSetVersion`,
-    );
-  }
-  return r as LabelRecord;
+  const problem = recordProblem(parsed as Partial<LabelRecord>);
+  if (problem !== undefined) throw new Error(`${file}:${lineNo}: ${problem}`);
+  return parsed as LabelRecord;
 }
 
 /** Every record of every `*.labels.jsonl` in `dir`, files in name order. Other files are ignored. */
