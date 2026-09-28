@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C1-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C2a-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    233 functions in 204 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     6     (5 src, 1 scripts)   <- THIS DRAIN (validateConfig + deepMergeConfig drained by C1)
+  over 20    232 functions in 203 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     5     (4 src, 1 scripts)   <- THIS DRAIN (C1 drained validateConfig + deepMergeConfig; C2a drained parseFrontmatter)
   worst       99   src/cli/generate.ts generateCommand
 biome.json cap: 170
-batches: 22 of 25 done (P0, A1-A13, B1-B7, C1)
+batches: 22 of 25 done (P0, A1-A13, B1-B7, C1, C2a)
 ```
 
 Refresh this block at the end of every batch:
@@ -178,9 +178,9 @@ A4 are the two most likely to need more than one session; if so, split them per 
 |:--|:--|---:|:--|:--|---:|:--|:--|
 | C1 | done 2026-09-27 | 110 | `validateConfig` | `src/config/validate.ts:30` | 175 | 4 / 0 | yes |
 | C1 | done 2026-09-27 | 78 | `deepMergeConfig` | `src/config/merger.ts:41` | 173 | 2 / 2 | none |
-| C2 | todo | 75 | `parseFrontmatter` | `src/context/rules/rules-frontmatter.ts:110` | 293 | 5 / 2 | yes |
-| C2 | todo | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 | 4 / 4 | none |
-| C2 | todo | 64 | `parseTestFailuresDetailed` | `src/test-runners/ac-parser.ts:50` | 141 | 4 / 3 | none |
+| C2 | done 2026-09-27 | 75 | `parseFrontmatter` | `src/context/rules/rules-frontmatter.ts:110` | 293 -> 323 | 5 / 2 | yes |
+| C2 | in progress | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 | 4 / 4 | none |
+| C2 | in progress | 64 | `parseTestFailuresDetailed` | `src/test-runners/ac-parser.ts:50` | 141 | 4 / 3 | none |
 | C3 | todo | 93 | `lexBashCommand` | `src/permissions/bash-lex.ts:78` | 248 | 3 / 2 | yes |
 | C4 | todo | 99 | `generateCommand` | `src/cli/generate.ts:49` | 267 | 1 / 1 | none |
 | C4 | todo | 79 | `main` | `scripts/report-test-consolidation.ts:293` | 485 | 3 / 1 | none |
@@ -2651,3 +2651,87 @@ if any target function recurses into itself (constitution did), plan the
 by-reference parameter before writing the sibling. Post-drain note: over-60
 is down to 6 (5 src + 1 scripts); after C2-C4 the drain sets the biome cap
 to 60 - and the 40-milestone discussion from §9.8 still stands.
+
+### 9.23 - 2026-09-27, C2a done - `parseFrontmatter` 75 -> 13 (one session)
+
+First of the grouped C2 batch (three functions, one session, one `refactor:`
+commit each). P0 + B3's hybrid shape exactly as §3's table predicted: a
+line-parser displacement preamble (BOM / blank lines / HTML comments) feeding
+a field-by-field YAML validator. One session, including a 14-test
+characterisation commit - the "test: yes is not nothing to characterise"
+warning held for the NINTH time (A11-A13, B1-B7, now C2a).
+
+**Pre-flight, all answered BEFORE writing code:** (1) NO `_deps`-style seam -
+rules-frontmatter.ts is a leaf; its importers (`rule-sections`, `rule-budget`,
+`canonical-loader`) import the parse functions and types by value. (2) A2's
+traps: no loop-carried mutable state beyond the comment-strip accumulator
+(which moved wholesale into its helper), no closures over `let`s, every throw
+propagates out of the function untouched. (3) NO source-text tests pin the
+file - the grep hits import the module normally. (4) No per-file guard
+allow-list names the file (`grep -Rn "grep -vE" scripts/` - only the
+naxconfig-cast list, which does not). (5) File measured 293 going in - the
+doc's number, exact.
+
+**Characterisation first** (own commit `test: characterise parseFrontmatter
+unpinned validation branches before complexity drain`, 14 tests, new file
+`test/unit/context/rules/rules-frontmatter-edges.test.ts` - the main mirror
+sits at 664 of the 800 test cap; zero cast expressions). The two mirrors pin
+the displacement ACs, BUG-03, stages AC1-AC9, and ALL FOUR description
+branches. What NOTHING pinned, one test each: (a) the "Frontmatter must be a
+YAML object" throw for a top-level YAML LIST; (b) the same throw for a
+top-level YAML SCALAR; (c) the "Failed to parse YAML frontmatter:" wrapper
+(unclosed-quote input); (d) priority as a string ("high"); (e) priority as
+`.inf` - which Bun.YAML parses as NULL, so it lands on the not-a-number error,
+not the `!Number.isFinite` arm (that arm is defensive-only through YAML; a
+newly discovered quirk, pinned as-is per §2.1); (f) fractional priority
+truncation (3.7 -> 3); (g) paths as empty string; (h) paths as a number;
+(i) paths array with a whitespace-only entry; (j) appliesTo as a bare string;
+(k) appliesTo array with a whitespace-only entry; (l) stages as a bare string;
+(m) stages array with a whitespace-only entry; (n) a DISPLACED block with no
+closing delimiter returns the default result carrying the displaced warning
+instead of throwing - the `if (!close) { if (warnings.length > 0) ... }` arm
+nothing exercised.
+
+**Technique:** in-place extraction (§2.4 did not force a sibling at 293
+lines, and the whole file is one cohesive parser unit). `parseFrontmatter`
+stays the sequencer: displacement detection -> warning push ->
+comment-displaced early return -> no-delimiter early return -> closing-
+delimiter match (with the BUG-03 compact-empty special case kept verbatim
+inline) -> YAML -> unknown keys -> five field extractors -> return literal,
+and scores 13. New private helpers: `detectDisplacedFrontmatter` 6 (the
+BOM/blank/comment preamble with its AC10/AC11/AC15 comments moved verbatim;
+returns the stripped content plus both reason strings so the `??=` precedence
+and the comment early-return semantics are unchanged), `parseYamlDocument` 8
+(the try/catch + object gate), `assertKnownKeys` 3, and the field extractors
+`extractPriority` 3, `extractPaths` 6, `extractAppliesTo` 3, `extractStages`
+10, `extractDescription` 5; `stripLeadingBlankLines` (pre-existing) 4. Every
+error message byte-identical; the `Bun.YAML.parse(close[1] ?? "")` call moved
+into `parseYamlDocument` whole.
+
+**Helper scores (probe at maxAllowedComplexity=1, repo-root probe config per
+§9.13/§9.17, deleted after):** all ≤ 10 except the sequencer's 13 - no §2.3
+breach, no second split, no baseline hand-edit (§2.3 never triggered, fifteenth
+batch running). `check:complexity` reported only "improved" for
+rules-frontmatter.ts, and `check:complexity:update` was a pure lower:
+233 -> 232 functions, 204 -> 203 files (the file left the over-20 baseline
+entirely).
+
+**File-size gate:** in place, 293 -> 323 after `bun x biome check --write`
+(+30 lines of helper signatures and doc comments; far under the 600 cap). The
+in-place choice also sidesteps §9.19's coverage-floor twin gate entirely - no
+new file, and the extracted bodies are the same well-covered code in the same
+well-covered file.
+
+**Verification beyond the suite:** literal fingerprint diff of the original
+file against the refactored file - all 52 quoted/template literals of length
+>= 4 appear verbatim, zero missing. 182 context/rules tests green (incl. the
+14 characterisation tests), 1724 across the context tree, `bun run typecheck`
+(both tsconfigs) clean.
+
+**For the next function in this batch (C2b `coerceVerdict`):** §4's
+`test: none` is heuristic-path-only again - `test/unit/verification/
+tdd-verdict.test.ts` (753 of the 800 cap) drives it directly and pins the
+approval/ratio logic thoroughly; the unpinned set is the reasoning fallback
+chain, the top-level acceptanceCriteria branch, the obj-quality branch,
+fixes/testFailureDiagnosis, and several coercion defaults. New tests need a
+sibling file (753 is too tight).

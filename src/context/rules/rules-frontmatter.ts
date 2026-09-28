@@ -107,8 +107,17 @@ function stripLeadingBlankLines(content: string): string {
   return out;
 }
 
-export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
-  const warnings: string[] = [];
+/**
+ * Detect frontmatter displaced from byte 0 by a UTF-8 BOM (AC10), leading
+ * blank lines (AC11), or leading HTML comments (AC15), and return the content
+ * with the displacement stripped. `displacedReason` is the first displacement
+ * kind found; `commentDisplacedReason` is reported separately because a
+ * comment-displaced block is never honoured (see parseFrontmatter).
+ */
+function detectDisplacedFrontmatter(
+  raw: string,
+  filePath: string,
+): { effectiveContent: string; displacedReason?: string; commentDisplacedReason?: string } {
   let effectiveContent = raw;
   let displacedReason: string | undefined;
 
@@ -150,6 +159,116 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
     displacedReason ??= commentDisplacedReason;
   }
 
+  return { effectiveContent, displacedReason, commentDisplacedReason };
+}
+
+/** Parse the YAML text between the delimiters, requiring an object document (possibly empty). */
+function parseYamlDocument(yamlText: string | undefined, filePath: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = Bun.YAML.parse(yamlText ?? "");
+  } catch (err) {
+    throw new RulesFrontmatterError(
+      `Failed to parse YAML frontmatter: ${err instanceof Error ? err.message : String(err)}`,
+      filePath,
+    );
+  }
+
+  if (parsed !== null && (typeof parsed !== "object" || Array.isArray(parsed))) {
+    throw new RulesFrontmatterError("Frontmatter must be a YAML object", filePath);
+  }
+
+  return (parsed ?? {}) as Record<string, unknown>;
+}
+
+/** Reject any key outside KNOWN_FRONTMATTER_KEYS, naming every offender. */
+function assertKnownKeys(doc: Record<string, unknown>, filePath: string): void {
+  const unknownKeys = Object.keys(doc).filter((key) => !KNOWN_FRONTMATTER_KEYS.has(key));
+  if (unknownKeys.length > 0) {
+    throw new RulesFrontmatterError(
+      `Canonical rule frontmatter declares unknown key(s): ${unknownKeys.join(", ")}. Only priority, paths, appliesTo, stages, and description are recognised.`,
+      filePath,
+    );
+  }
+}
+
+function extractPriority(doc: Record<string, unknown>, filePath: string): number {
+  const priorityRaw = doc.priority;
+  if (priorityRaw === undefined) return FRONTMATTER_PRIORITY_DEFAULT;
+  if (typeof priorityRaw !== "number" || !Number.isFinite(priorityRaw)) {
+    throw new RulesFrontmatterError("frontmatter.priority must be a number", filePath);
+  }
+  return Math.trunc(priorityRaw);
+}
+
+function extractPaths(doc: Record<string, unknown>, filePath: string): string[] | undefined {
+  const pathsRaw = doc.paths;
+  if (pathsRaw === undefined) return undefined;
+  if (typeof pathsRaw === "string") {
+    const trimmed = pathsRaw.trim();
+    if (!trimmed) throw new RulesFrontmatterError("frontmatter.paths cannot be empty", filePath);
+    return [trimmed];
+  }
+  if (Array.isArray(pathsRaw) && pathsRaw.every((v) => typeof v === "string" && v.trim())) {
+    return pathsRaw.map((v) => v.trim());
+  }
+  throw new RulesFrontmatterError("frontmatter.paths must be a string or string[]", filePath);
+}
+
+function extractAppliesTo(doc: Record<string, unknown>, filePath: string): string[] | undefined {
+  const appliesRaw = doc.appliesTo;
+  if (appliesRaw === undefined) return undefined;
+  if (Array.isArray(appliesRaw) && appliesRaw.every((v) => typeof v === "string" && v.trim())) {
+    return appliesRaw.map((v) => v.trim());
+  }
+  throw new RulesFrontmatterError("frontmatter.appliesTo must be a list of strings", filePath);
+}
+
+/** AC1-AC9: stages parsing with type validation and advisory warnings */
+function extractStages(doc: Record<string, unknown>, filePath: string, warnings: string[]): string[] | undefined {
+  const stagesRaw = doc.stages;
+  if (stagesRaw === undefined) return undefined;
+  // AC4: throws when stages is not an array of strings
+  if (!Array.isArray(stagesRaw)) {
+    throw new RulesFrontmatterError("frontmatter.stages must be a list of strings", filePath);
+  }
+  // AC3: empty list → undefined (falls through to the no-op below)
+  if (stagesRaw.length === 0) return undefined;
+  for (const v of stagesRaw) {
+    if (typeof v !== "string" || !v.trim()) {
+      throw new RulesFrontmatterError("frontmatter.stages must be a list containing only strings", filePath);
+    }
+  }
+  const stages = stagesRaw.map((v) => v.trim());
+  // AC8/AC9: advisory warning for unknown stage names
+  for (const s of stages) {
+    if (!KNOWN_VALID_STAGES.has(s)) {
+      warnings.push(`Unknown stage name "${s}" — rule will still load but may never be applied`);
+    }
+  }
+  return stages;
+}
+
+function extractDescription(doc: Record<string, unknown>, filePath: string): string | undefined {
+  const descriptionRaw = doc.description;
+  if (descriptionRaw === undefined) return undefined;
+  if (typeof descriptionRaw !== "string") {
+    throw new RulesFrontmatterError("frontmatter.description must be a string", filePath);
+  }
+  if (descriptionRaw.includes("\n") || descriptionRaw.includes("\r")) {
+    throw new RulesFrontmatterError("frontmatter.description must be a single line", filePath);
+  }
+  const trimmed = descriptionRaw.trim();
+  if (!trimmed) {
+    throw new RulesFrontmatterError("frontmatter.description cannot be empty", filePath);
+  }
+  return trimmed;
+}
+
+export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatter {
+  const warnings: string[] = [];
+  const { effectiveContent, displacedReason, commentDisplacedReason } = detectDisplacedFrontmatter(raw, filePath);
+
   if (displacedReason && effectiveContent.startsWith("---")) {
     warnings.push(displacedReason);
   }
@@ -183,102 +302,14 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
     throw new RulesFrontmatterError("Canonical rule frontmatter is missing closing '---'", filePath);
   }
 
-  let parsed: unknown;
-  try {
-    parsed = Bun.YAML.parse(close[1] ?? "");
-  } catch (err) {
-    throw new RulesFrontmatterError(
-      `Failed to parse YAML frontmatter: ${err instanceof Error ? err.message : String(err)}`,
-      filePath,
-    );
-  }
+  const doc = parseYamlDocument(close[1], filePath);
+  assertKnownKeys(doc, filePath);
 
-  if (parsed !== null && (typeof parsed !== "object" || Array.isArray(parsed))) {
-    throw new RulesFrontmatterError("Frontmatter must be a YAML object", filePath);
-  }
-
-  const doc = (parsed ?? {}) as Record<string, unknown>;
-  const unknownKeys = Object.keys(doc).filter((key) => !KNOWN_FRONTMATTER_KEYS.has(key));
-  if (unknownKeys.length > 0) {
-    throw new RulesFrontmatterError(
-      `Canonical rule frontmatter declares unknown key(s): ${unknownKeys.join(", ")}. Only priority, paths, appliesTo, stages, and description are recognised.`,
-      filePath,
-    );
-  }
-
-  const priorityRaw = doc.priority;
-  let priority = FRONTMATTER_PRIORITY_DEFAULT;
-  if (priorityRaw !== undefined) {
-    if (typeof priorityRaw !== "number" || !Number.isFinite(priorityRaw)) {
-      throw new RulesFrontmatterError("frontmatter.priority must be a number", filePath);
-    }
-    priority = Math.trunc(priorityRaw);
-  }
-
-  const pathsRaw = doc.paths;
-  let paths: string[] | undefined;
-  if (pathsRaw !== undefined) {
-    if (typeof pathsRaw === "string") {
-      const trimmed = pathsRaw.trim();
-      if (!trimmed) throw new RulesFrontmatterError("frontmatter.paths cannot be empty", filePath);
-      paths = [trimmed];
-    } else if (Array.isArray(pathsRaw) && pathsRaw.every((v) => typeof v === "string" && v.trim())) {
-      paths = pathsRaw.map((v) => v.trim());
-    } else {
-      throw new RulesFrontmatterError("frontmatter.paths must be a string or string[]", filePath);
-    }
-  }
-
-  const appliesRaw = doc.appliesTo;
-  let appliesTo: string[] | undefined;
-  if (appliesRaw !== undefined) {
-    if (Array.isArray(appliesRaw) && appliesRaw.every((v) => typeof v === "string" && v.trim())) {
-      appliesTo = appliesRaw.map((v) => v.trim());
-    } else {
-      throw new RulesFrontmatterError("frontmatter.appliesTo must be a list of strings", filePath);
-    }
-  }
-
-  // AC1-AC9: stages parsing with type validation and advisory warnings
-  const stagesRaw = doc.stages;
-  let stages: string[] | undefined;
-  if (stagesRaw !== undefined) {
-    // AC4: throws when stages is not an array of strings
-    if (!Array.isArray(stagesRaw)) {
-      throw new RulesFrontmatterError("frontmatter.stages must be a list of strings", filePath);
-    }
-    // AC3: empty list → undefined (falls through to the no-op below)
-    if (stagesRaw.length > 0) {
-      for (const v of stagesRaw) {
-        if (typeof v !== "string" || !v.trim()) {
-          throw new RulesFrontmatterError("frontmatter.stages must be a list containing only strings", filePath);
-        }
-      }
-      stages = stagesRaw.map((v) => v.trim());
-      // AC8/AC9: advisory warning for unknown stage names
-      for (const s of stages) {
-        if (!KNOWN_VALID_STAGES.has(s)) {
-          warnings.push(`Unknown stage name "${s}" — rule will still load but may never be applied`);
-        }
-      }
-    }
-  }
-
-  const descriptionRaw = doc.description;
-  let description: string | undefined;
-  if (descriptionRaw !== undefined) {
-    if (typeof descriptionRaw !== "string") {
-      throw new RulesFrontmatterError("frontmatter.description must be a string", filePath);
-    }
-    if (descriptionRaw.includes("\n") || descriptionRaw.includes("\r")) {
-      throw new RulesFrontmatterError("frontmatter.description must be a single line", filePath);
-    }
-    const trimmed = descriptionRaw.trim();
-    if (!trimmed) {
-      throw new RulesFrontmatterError("frontmatter.description cannot be empty", filePath);
-    }
-    description = trimmed;
-  }
+  const priority = extractPriority(doc, filePath);
+  const paths = extractPaths(doc, filePath);
+  const appliesTo = extractAppliesTo(doc, filePath);
+  const stages = extractStages(doc, filePath, warnings);
+  const description = extractDescription(doc, filePath);
 
   return {
     content: effectiveContent.slice(close[0].length).trim(),

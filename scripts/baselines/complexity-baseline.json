@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-28T00:01:16.392Z",
+  "updatedAt": "2026-09-28T00:20:33.132Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -75,7 +75,6 @@
     "src/context/feature-context-filter.ts": [22],
     "src/context/greenfield.ts": [21],
     "src/context/rules/canonical-loader/index.ts": [29],
-    "src/context/rules/rules-frontmatter.ts": [75],
     "src/context/test-scanner/index.ts": [29],
     "src/execution/build-plan-for-strategy.ts": [56],
     "src/execution/checkpoint/reader.ts": [22],
