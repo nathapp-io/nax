@@ -29,7 +29,7 @@
  * code-neighbor.test.ts.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _codeNeighborDeps, CodeNeighborProvider } from "@/context/engine/providers/code-neighbor";
 import { MAX_NEIGHBOR_FILE_SIZE_BYTES } from "@/context/engine/providers/code-neighbor-cache";
 import type { ContextRequest } from "@/context/engine/types";
@@ -84,6 +84,28 @@ function setupDeps(overrides: DepsOverrides = {}) {
   _codeNeighborDeps.glob = () => ({ files: globFiles, truncated: false });
   _codeNeighborDeps.detectLanguage = async () => undefined;
 }
+
+let origFileExists: typeof _codeNeighborDeps.fileExists;
+let origReadFile: typeof _codeNeighborDeps.readFile;
+let origFileSize: typeof _codeNeighborDeps.fileSize;
+let origGlob: typeof _codeNeighborDeps.glob;
+let origDetectLanguage: typeof _codeNeighborDeps.detectLanguage;
+
+beforeEach(() => {
+  origFileExists = _codeNeighborDeps.fileExists;
+  origReadFile = _codeNeighborDeps.readFile;
+  origFileSize = _codeNeighborDeps.fileSize;
+  origGlob = _codeNeighborDeps.glob;
+  origDetectLanguage = _codeNeighborDeps.detectLanguage;
+});
+
+afterEach(() => {
+  _codeNeighborDeps.fileExists = origFileExists;
+  _codeNeighborDeps.readFile = origReadFile;
+  _codeNeighborDeps.fileSize = origFileSize;
+  _codeNeighborDeps.glob = origGlob;
+  _codeNeighborDeps.detectLanguage = origDetectLanguage;
+});
 
 /** Neighbor lines ("- <path>") rendered in the chunk body — the paths that matter. */
 function neighborLines(content: string): string[] {
