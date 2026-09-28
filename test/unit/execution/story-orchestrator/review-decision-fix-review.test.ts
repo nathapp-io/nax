@@ -19,9 +19,10 @@
  * that some op computes and the emitter then drops on the floor.
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeMockCallContext } from "@test/helpers";
-import { emitReviewDecision } from "@/execution/story-orchestrator/review-decision";
+import { emitReviewDecision, logUnifiedReviewPhaseResult } from "@/execution/story-orchestrator/review-decision";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { FixReviewOpOutput } from "@/review/fix-review";
 import type { NaxRuntime } from "@/runtime";
 import type { ReviewDecisionEvent } from "@/runtime/dispatch-events";
@@ -123,5 +124,35 @@ describe("emitReviewDecision — fix-review unparsed output (US-001)", () => {
     expect(events[0].parsed).toBe(false);
     expect(events[0].result).toBeNull();
     expect(events[0].unparsedPreview).toBe('{"passed": tru');
+  });
+});
+
+/**
+ * #2286 — `runFixReview` logs its own verdict, so the shared phase-result
+ * logger must stay silent for a fix-review payload; otherwise a
+ * future caller that routes the fix review through it logs every verdict twice.
+ */
+describe("logUnifiedReviewPhaseResult — fix-review payloads (#2286)", () => {
+  let logs: LogEntry[];
+  beforeEach(() => {
+    resetLogger();
+    logs = [];
+    initLogger({ level: "silent" });
+    addSink((e) => logs.push(e));
+  });
+  afterEach(() => {
+    resetLogger();
+  });
+
+  test("#2286: a parsed fix-review pass logs nothing", () => {
+    logUnifiedReviewPhaseResult("US-001", "fix-review", { parsed: true, passed: true, reason: "fine" });
+
+    expect(logs.filter((e) => e.stage === "review")).toEqual([]);
+  });
+
+  test("#2286 boundary: a semantic pass still logs", () => {
+    logUnifiedReviewPhaseResult("US-001", "semantic-review", { parsed: true, passed: true, findings: [] });
+
+    expect(logs.filter((e) => e.stage === "review").map((e) => e.message)).toEqual(["Semantic review passed"]);
   });
 });

@@ -21,9 +21,13 @@
  * `truncateDiff(diffBetween(workdir, preFixTree, postTree))`. After the LLM
  * stage, parsed or not, the op output is emitted once through
  * `emitReviewDecision(ctx, "fix-review", output)`.
+ *
+ * Every verdict, including a skip, is logged once on the `review` stage
+ * (#2286), and stage 4 logs `Running fix review` before it dispatches.
  */
 
 import type { TestPatternConfig } from "@/config";
+import type { Logger } from "@/logger";
 import { type CallContext, callOp, fixReviewOp } from "@/operations";
 import { truncateDiff } from "@/review";
 import { createTestFileClassifier, resolveTestFilePatterns } from "@/test-runners";
@@ -97,7 +101,43 @@ export async function runFixReview(
   req: FixReviewRequest,
   deps: Partial<FixReviewDeps> = {},
 ): Promise<FixReviewVerdict> {
-  const d: FixReviewDeps = { ...DEFAULT_DEPS, ...deps };
+  const verdict = await evaluateFixReview(ctx, req, { ...DEFAULT_DEPS, ...deps });
+  logVerdict(ctx.runtime?.logger, req.story.id, verdict);
+  return verdict;
+}
+
+/**
+ * #2286 — one `review`-stage line per verdict, so `nax logs` shows the review at
+ * the default level. The seeded reviewers get theirs from `run-phase`, which
+ * this runner never passes through. A skip is logged as a skip: before this, a
+ * disabled or no-op review read exactly like no review at all.
+ */
+function logVerdict(logger: Logger | undefined, storyId: string, verdict: FixReviewVerdict): void {
+  if (verdict.kind === "pass") {
+    if (verdict.reviewed) {
+      logger?.info("review", "Fix review passed", { storyId, reason: verdict.reason });
+    } else {
+      logger?.info("review", `Fix review skipped — ${verdict.reason}`, { storyId });
+    }
+    return;
+  }
+  if (verdict.kind === "error") {
+    logger?.warn("review", "Fix review errored", { storyId, reason: verdict.reason });
+    return;
+  }
+  if (verdict.cause === "scope") {
+    logger?.info("review", "Fix review failed (scope)", { storyId, files: verdict.files, reason: verdict.reason });
+    return;
+  }
+  logger?.info("review", "Fix review failed (contradiction)", {
+    storyId,
+    reason: verdict.reason,
+    acIndex: verdict.acIndex,
+    file: verdict.file,
+  });
+}
+
+async function evaluateFixReview(ctx: CallContext, req: FixReviewRequest, d: FixReviewDeps): Promise<FixReviewVerdict> {
   const logger = ctx.runtime?.logger;
 
   // ── Stage 1: the fixReview switch ────────────────────────────────────────
@@ -200,6 +240,12 @@ export async function runFixReview(
     return { kind: "error", reason: `diff failed: ${err instanceof Error ? err.message : String(err)}` };
   }
   const diff = truncateDiff(rawDiff);
+
+  logger?.info("review", "Running fix review", {
+    storyId: req.story.id,
+    fixFiles: fixFiles.length,
+    storyFiles: storyFiles?.length,
+  });
 
   let output: FixReviewOpOutput;
   try {
