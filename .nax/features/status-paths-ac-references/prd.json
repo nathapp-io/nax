@@ -1,0 +1,125 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "status-paths-ac-references",
+  "branchName": "feat/status-paths-ac-references",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "updatedAt": "2026-09-28T16:49:25.799Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "nax status reads the repo feature directory",
+      "description": "**Goal** — Make both feature status views read PRD and feature status from the repo tree and run logs from the per-user output tree.\n\n**Motivation** — `nax status -f <feature>` prints \"No prd.json found\" for planned features, and `nax status` reports zero counts, no cost and no crash state because their reader points at output directories where the files are not written.\n\n**Approach** — **Status paths (US-001).** `prd.json` and the feature `status.json` are VCS-side inputs and run state written into the repo feature directory. Run logs (`runs/*.jsonl`) are per-user output. The status views read each from where its writer puts it:\n\n1. **Project root.** When `options.dir` is given, `projectRoot` is the parent of `_statusFeaturesDeps.findProjectDir(resolve(options.dir))`. If that returns `null`, `projectRoot` is `resolve(options.dir)`. This mirrors `nax run` (`bin/nax.ts:243-275`), which walks up from its workdir and takes the `.nax` directory's parent.\n2. **Single feature.** `displayFeatureDetails(feature, featureDir(projectRoot, feature))`.\n3. **All features.** `displayAllFeatures(projectRoot)` lists the subdirectories of `featuresDir(projectRoot)`, sorted by name. For each, `getFeatureSummary(name, featureDir(projectRoot, name), join(outputDir, \"features\", name, \"runs\"))`, where `outputDir` is `projectOutputDir(config?.name?.trim() || basename(projectRoot), config?.outputDir)`, with the config loaded as today (`.catch(() => null)`). A directory that exists only under `<outputDir>/features/` is not listed, because it has no PRD to summarise. When `featuresDir(projectRoot)` is absent or holds no subdirectories, the view prints `No features found.` as today.\n\nThe project-level banner (`loadProjectStatusFile`) keeps reading `<outputDir>/status.json`.\n\nThe status fixture used by US-001: a temp project root `R` holding `.nax/config.json` with `{\"name\":\"status-fixture\"}`; `_statusFeaturesDeps.projectOutputDir` stubbed to return a separate temp dir `O` that is not under `R`; and `R/.nax/features/feat-a/prd.json` with feature `feat-a` and two stories, `US-001` with status `passed` and `US-002` with status `pending`.\n\n**Interface** — `_statusFeaturesDeps` — `src/cli/status-features.ts:27`\n  - Baseline: `{ projectOutputDir, loadConfig }`\n  - Target: `{ projectOutputDir, loadConfig, findProjectDir }`, where `findProjectDir` defaults to the `@/config` export\n- `displayFeatureStatus(options: FeatureStatusOptions = {}): Promise<void>` — same signature. Whenever `options.dir` is given, it resolves `projectRoot` by the Approach's project-root rule, in both branches:\n  - Baseline, single feature: `featureDir = join(projectOutputDir(...), \"features\", feature)`. Target: `displayFeatureDetails(feature, featureDir(projectRoot, feature))`.\n  - Baseline, all features: `displayAllFeatures(resolveProject({ dir: options.dir }).projectDir)`, which throws `NAX_DIR_NOT_FOUND` from a subdirectory because `resolveProject` does not walk up. Target: `displayAllFeatures(projectRoot)`.\n  - Without `options.dir`, both branches keep calling `resolveProject` as today.\n- `displayAllFeatures(projectDir)` (private) — lists `featuresDir(projectDir)` instead of `<outputDir>/features`\n- `getFeatureSummary` (private)\n  - Baseline: `getFeatureSummary(featureName: string, featureDir: string): Promise<FeatureSummary>`, which reads `runs/` under `featureDir`\n  - Target: `getFeatureSummary(featureName: string, featureDir: string, runsDir: string): Promise<FeatureSummary>`, which reads `prd.json` and `status.json` from `featureDir` and run logs from `runsDir`\n\n**Scope** — In: status-features paths and injectable root discovery, distinct-output-directory tests including Commander dispatch; preserve missing-PRD notice, project banner and current no-dir behavior.\n**Scope** — Out: Numeric AC reference matcher and lint/plan warnings (US-002); Listing features that exist only under the per-user output directory in the all-features table.; `nax status --cost` and its sub-views, which read run metrics, not feature directories.; The project-key mismatch where `nax run` keys its output directory on `basename(workdir)` while `nax status` keys it on `basename(projectRoot)` when `config.name` is unset.",
+      "acceptanceCriteria": [
+        "[unit] In the status fixture, displayFeatureStatus({ feature: \"feat-a\", dir: R }) prints both US-001 and US-002, and never prints No prd.json found.",
+        "[unit] In the status fixture, with R/.nax/features/feat-a/status.json holding a usable status file whose run.status is crashed, displayFeatureStatus({ feature: \"feat-a\", dir: R }) prints Crashed Run Detected.",
+        "[unit] In the status fixture, with an existing subdirectory R/packages/app that has no .nax/ of its own, displayFeatureStatus({ feature: \"feat-a\", dir: join(R, \"packages\", \"app\") }) prints US-001 and never prints No prd.json found.",
+        "[unit] In the status fixture, with O/features/feat-a/prd.json holding a different PRD whose only story is US-099, displayFeatureStatus({ feature: \"feat-a\", dir: R }) prints US-001 and never prints US-099.",
+        "[unit] In the status fixture, with R/.nax/features/feat-b/ present and holding no prd.json, displayFeatureStatus({ feature: \"feat-b\", dir: R }) prints No prd.json found. Run: nax plan -f feat-b --from <spec>.",
+        "[unit] In the status fixture, with R/.nax/features/feat-b/prd.json holding one pending story and no O/features/ directory at all, displayFeatureStatus({ dir: R }) prints one table row that starts with feat-a and one that starts with feat-b.",
+        "[unit] In the status fixture, displayFeatureStatus({ dir: R }) prints a feat-a row whose Done column is 1 and whose Pending column is 1.",
+        "[unit] In the status fixture, with a run log O/features/feat-a/runs/2026-09-28T10-00-00.jsonl, displayFeatureStatus({ dir: R }) prints a feat-a row whose Last Run column is 2026-09-28T10-00-00.",
+        "[unit] In the status fixture, with R/.nax/features/feat-a/status.json holding a usable status file whose cost.spent is 1.5 and whose run.status is completed, displayFeatureStatus({ dir: R }) prints a feat-a row whose Cost column is $1.5000.",
+        "[unit] In the status fixture, with O/features/ghost/runs/2026-09-28T10-00-00.jsonl present and no R/.nax/features/ghost/ directory, displayFeatureStatus({ dir: R }) prints no table row that starts with ghost.",
+        "[unit] For a temp project root holding .nax/config.json and no .nax/features/ directory, with projectOutputDir stubbed to a separate temp dir, displayFeatureStatus({ dir: <root> }) prints No features found.",
+        "[unit] In the status fixture, with an existing subdirectory R/packages/app that has no .nax/ of its own, displayFeatureStatus({ dir: join(R, \"packages\", \"app\") }) resolves without throwing and prints a table row that starts with feat-a.",
+        "[integration] In the status fixture, a fresh commander program with registerStatusCommand(program) and the default _statusCommandActionDeps, parsing [\"status\", \"-f\", \"feat-a\", \"--dir\", R], prints US-001 and never prints No prd.json found.",
+        "[unit] In the status fixture, with no O/features/feat-a/runs/ directory, displayFeatureStatus({ dir: R }) prints a feat-a row whose Last Run column is No runs yet.",
+        "[unit] For a fresh temp directory T with no .nax/config.json in it or any of its ancestors, displayFeatureStatus({ feature: \"feat-a\", dir: T }) prints No prd.json found. Run: nax plan -f feat-a --from <spec> and does not throw.",
+        "[unit] In the status fixture, with R/.nax/config.json rewritten to hold the text not json and _statusFeaturesDeps.projectOutputDir stubbed to record its arguments, displayFeatureStatus({ dir: R }) calls projectOutputDir with the project key equal to the base name of R.",
+        "When the status fixture has R/.nax/features/feat-b/ with no prd.json, displayFeatureStatus({ dir: R }) prints a feat-b row whose Done/Failed/Pending columns are 0/0/0 as today."
+      ],
+      "tags": [
+        "cli",
+        "status",
+        "bugfix"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized status-features changes plus a separate fixture and Commander integration test; established path helpers and existing dispatch contracts avoid new abstractions."
+      },
+      "contextFiles": [
+        "src/cli/status-features.ts",
+        "src/cli/status-features-details.ts",
+        "src/cli/status-dispatch.ts",
+        "src/config/paths/index.ts",
+        "test/unit/cli/status-features.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/cli/status-features-repo-paths.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Numeric AC references are reported at spec lint and after plan",
+      "description": "**Goal** — Detect numeric AC cross-references in spec criteria and generated PRD criteria and warn without modifying the PRD or blocking planning.\n\n**Motivation** — The plan prompt says \"One assertion per AC\", so splitting compound criteria renumbers later ACs while their text can still point at the previous number, silently changing what an implementer reads.\n\n**Approach** — **Numeric AC references (US-002).** `findAcNumericReferences(text)` first removes every inline code span (text between a pair of backticks), then collects each match of `\\bAC[- ](\\d+)\\b`: an uppercase `AC`, then one hyphen or one space, then digits, then a word boundary. It returns each match normalised to `AC-<digits>`, deduplicated, in first-seen order. Code spans are removed because a quoted `AC-1: a` is data, such as a test title, not a pointer at another criterion. `AC-ERROR` and `AC-HOOK` have no digits, so they never match.\n\n- **Spec lint.** For every AC bullet that `checkAcceptanceCriteria` already counts, a non-empty result adds one finding: level `warn`, code `ac-numeric-reference`, message `<story> AC <n> refers to another criterion by number (<refs joined by \", \">). nax plan splits compound ACs and renumbers the rest, so the number can point at a different criterion in the PRD — name the setup instead.` The code is not added to `BLOCKING_SPEC_LINT_CODES`, so it neither fails `nax spec lint` nor blocks `nax plan`.\n- **Post-plan.** `warnOnAcCrossReferences(prd, featureName)` walks every story's `acceptanceCriteria`. For each AC with a non-empty result it logs one warn from stage `plan`, message `PRD acceptance criterion refers to another criterion by number — AC numbering is not stable across plan runs`, data `{ storyId, featureName, acIndex, references }`, where `acIndex` is 1-based. It never changes the PRD. `applyPlanFidelity` calls it last, after `warnOnDroppedContextFiles`, so both plan strategies (`src/operations/plan.ts:111`, `src/operations/plan-refine.ts:425`) and `finalizeAndWritePrd` get it.\n\n**Interface** — New export `findAcNumericReferences(text: string): string[]` — new file `src/prd/ac-references.ts`, re-exported from the `src/prd` barrel\n- `checkAcceptanceCriteria` (private) — `src/prd/spec-lint.ts`: gains the `ac-numeric-reference` warn\n- New export `warnOnAcCrossReferences(prd: PRD, featureName: string): void` — `src/operations/plan-fidelity.ts`\n- `applyPlanFidelity(prd: PRD, specContent: string, featureName: string): PRD` — same signature; it calls `warnOnAcCrossReferences` on the repaired PRD after `warnOnDroppedContextFiles`\n\n**Scope** — In: shared matcher, spec bullet-only nonblocking warning, post-plan warning, barrel export, strict CLI lint result and tests.\n**Scope** — Out: Status path fixes (US-001); Changing the plan prompt so the planner rewrites or inlines numeric AC references when it splits a criterion.; Making `ac-numeric-reference` a blocking spec-lint code, or failing `nax plan` on a PRD AC that contains a numeric reference.; Rewriting or stripping numeric AC references in the PRD.",
+      "acceptanceCriteria": [
+        "[unit] findAcNumericReferences(\"In the AC-7 shape, a write fails\"), imported from the src/prd barrel, returns [\"AC-7\"].",
+        "[unit] findAcNumericReferences(\"Given the AC 14 setup, the call is rejected\") returns [\"AC-14\"], normalising the space form to the hyphen form.",
+        "[unit] findAcNumericReferences(\"AC-3 holds, then AC-12 and AC-3 again\") returns [\"AC-3\", \"AC-12\"], deduplicated in first-seen order.",
+        "[unit] findAcNumericReferences(\"failedACs equals [\\\"AC-ERROR\\\"] and the AC-HOOK sentinel is set\") returns [].",
+        "[unit] findAcNumericReferences returns [] for the text: the test titled `AC-1: a` passes. The only candidate sits inside an inline code span.",
+        "[unit] findAcNumericReferences(\"the refined criterion is returned unchanged\") returns [].",
+        "[unit] When lintSpecContent runs on the reference spec, a spec whose ## Acceptance Criteria section has a ### US-001 heading with bullet 1. [unit] foo() returns 1. and bullet 2. [unit] In the AC-1 setup, foo() returns 2., the result has exactly one finding with code ac-numeric-reference, and that finding's level is warn.",
+        "[unit] For the reference spec, the ac-numeric-reference finding's message contains US-001 AC 2 and AC-1.",
+        "[unit] BLOCKING_SPEC_LINT_CODES.has(\"ac-numeric-reference\") returns false.",
+        "[unit] When lintSpecContent runs on a spec whose only AC-1 token is in an AC bullet inside backticks (1. [unit] the test titled `AC-1: a` passes.), the result contains no finding with code ac-numeric-reference.",
+        "[unit] When lintSpecContent runs on a spec whose ## Design prose says see AC-3 below and whose AC bullets carry no numeric reference, the result contains no finding with code ac-numeric-reference.",
+        "[unit] When assertSpecLintClean runs on the reference spec with { specPath: \"spec.md\", featureName: \"f\", workdir: <temp dir> }, it does not throw, and its returned findings include one with code ac-numeric-reference.",
+        "[unit] When specLintCommand runs with { dir: <temp dir>, paths: [<path to the reference spec>], strict: true } and deps whose readFile returns that spec, the result's exitCode is 0.",
+        "[unit] When warnOnAcCrossReferences runs on a PRD whose story US-001 has acceptance criteria [\"foo() returns 1\", \"Given the AC-1 setup, foo() returns 2\"] with feature name feat, the logger records exactly one warn from stage plan with message PRD acceptance criterion refers to another criterion by number — AC numbering is not stable across plan runs.",
+        "[unit] In that same run, the warn's data has storyId US-001 as its first key, plus featureName feat, acIndex 2 and references [\"AC-1\"].",
+        "[unit] When warnOnAcCrossReferences runs on a PRD with story US-001 whose second AC says In the AC-1 shape, bar() throws and story US-002 whose first AC says Given the AC 3 setup, baz() returns 0, the logger records two warns with that message, one with storyId US-001 and one with storyId US-002.",
+        "[unit] When warnOnAcCrossReferences runs on a PRD whose acceptance criteria contain no numeric reference, the logger records no warn with that message.",
+        "[unit] When applyPlanFidelity(prd, specContent, \"feat\") runs on a PRD whose story US-001 has the criterion Given the AC-1 setup, foo() returns 2 and a spec with no ## Out of Scope, ### Modifies or ### Context Files section, the logger records one warn with message PRD acceptance criterion refers to another criterion by number — AC numbering is not stable across plan runs.",
+        "[unit] In that same applyPlanFidelity run, the returned PRD's US-001 acceptanceCriteria equals the input's acceptanceCriteria element for element."
+      ],
+      "tags": [
+        "prd",
+        "lint",
+        "plan",
+        "bugfix"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A small pure matcher plus localized edits to spec-lint, plan-fidelity and the PRD barrel use existing logging and gate conventions; the CLI and two plan strategies already delegate to these modules, so tests can verify their behavior without modifying those callers."
+      },
+      "contextFiles": [
+        "src/prd/spec-lint.ts",
+        "src/operations/plan-fidelity.ts",
+        "src/prd/index.ts",
+        "src/plan/spec-lint-gate.ts",
+        "test/unit/operations/plan-fidelity.test.ts"
+      ],
+      "expectedFiles": [
+        "src/prd/ac-references.ts",
+        "test/unit/prd/ac-references.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing TypeScript/Bun CLI; no migration or schema change. Status path bug: src/cli/status-features.ts:27-30 has injectable projectOutputDir/loadConfig, but not findProjectDir. src/cli/status-features.ts:388-415 routes the single-feature --dir branch to the per-user output feature tree and the all-features --dir branch through resolveProject, which does not walk up. src/cli/status-dispatch.ts:102-178 validates the directory, walks up for config, but forwards the raw --dir; Commander defaults --dir to cwd, making the broken branch the CLI norm. src/config/loader.ts:284-299 exports findProjectDir (returns the .nax directory containing config.json or null). src/config/paths/index.ts:104-117 exports featuresDir and featureDir (feature ID validation and feature-path SSOT); avoid hand-joining .nax/features. src/cli/status-features.ts:149-233 reads PRD/story counts and feature status from the feature directory passed in (currently incorrectly supplied from output for --dir); it also reads runs from that same directory; split out a runsDir argument. src/cli/status-features.ts:235-333 loads config with catch fallback, lists/sorts output-feature subdirectories, calls getFeatureSummary and keeps the project-level banner from loadProjectStatusFile, which reads output/status.json at src/cli/status-features.ts:91-108. Single-feature details and missing-PRD notice are already implemented at src/cli/status-features.ts:337-371 and src/cli/status-features-details.ts:32-85, so only their directory input changes. src/prd/index.ts:92-144 loads/normalizes PRDs; countStories at src/prd/index.ts:231-257 drives Done/Pending. Tests: test/unit/cli/status-features.test.ts:1-136 stubs projectOutputDir to testDir/.nax, hiding path separation; add test/unit/cli/status-features-repo-paths.test.ts with truly separate R and O and a Commander end-to-end dispatch seam. Preserve no-dir resolveProject behavior, no-config root fallback, per-user run-log lookup, project banner location and status schema guard; do not modify cost views or run writers. Numeric reference bug: src/prd/spec-lint.ts:328-393 already walks only ## Acceptance Criteria, tracks ### US-n, increments counts for numbered bullets, and emits per-AC findings; add a warn from the shared matcher without changing blocking set at src/prd/spec-lint.ts:79-87. Re-export matcher from src/prd/index.ts:8-47. src/plan/spec-lint-gate.ts:51-78 returns nonblocking findings, and src/cli/spec-lint-command.ts:198-216 does not fail strict mode on warnings. src/operations/plan-fidelity.ts:126-191 contains warn-only context-file checks and shared applyPlanFidelity; add post-plan per-AC warn after the repairs and context-file warning, without altering PRD. Both planning strategies call applyPlanFidelity at src/operations/plan.ts:111 and src/operations/plan-refine.ts:425. src/operations/index.ts:111-119 re-exports plan-fidelity helpers if tests/consumers use the operations barrel. test/unit/operations/plan-fidelity.test.ts:54-145 shows initLogger/addSink capture and PRD builders. New matcher should strip paired inline backtick spans then match uppercase numeric AC tokens with one hyphen or space, normalize/dedupe in first-seen order; warnings are observational, not renumbering fixes. Tests should distinguish code-span data from real prose pointers. Risks: accidentally reading feature status from output rather than repo, accidentally reading run logs from repo, regressions for nested --dir and fallback config, blocking planning or mutating ACs, accidental regex matches of symbolic AC tokens. No data migration: existing repo PRDs/status files and per-user runs remain in their writer-defined locations.",
+  "outOfScope": [
+    "Changing the plan prompt so the planner rewrites or inlines numeric AC references when it splits a criterion.",
+    "Making `ac-numeric-reference` a blocking spec-lint code, or failing `nax plan` on a PRD AC that contains a numeric reference.",
+    "Rewriting or stripping numeric AC references in the PRD.",
+    "The project-key mismatch where `nax run` keys its output directory on `basename(workdir)` while `nax status` keys it on `basename(projectRoot)` when `config.name` is unset.",
+    "Listing features that exist only under the per-user output directory in the all-features table.",
+    "`nax status --cost` and its sub-views, which read run metrics, not feature directories.",
+    "`src/pipeline/subscribers/registry.ts:65` recording `statusPath` under the output directory in `meta.json`, and `src/commands/migrate.ts` classifying a feature `status.json` as generated content.",
+    "#1796: acceptance-refine's retry-once-then-warn already shipped in #2272; the unmarked fallback in `src/acceptance/hardening.ts` has no reader for `refinementFallback` and is not changed here."
+  ],
+  "routingProfile": "native"
+}
