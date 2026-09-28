@@ -5,9 +5,11 @@
  * synchronous and on the hot dispatch path, so it only receives the result as
  * data. Nothing here may be called from the sync path.
  */
-import { homedir } from "node:os";
+import { mkdir } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import type { SandboxConfig } from "@/config/schemas-sandbox";
 import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
 import { approvalsPath } from "@/permissions";
 import {
   buildSandboxPolicy,
@@ -21,10 +23,12 @@ import {
   probeSandboxOnce,
   rawBashRefusalReason,
   resolveGitLayout,
+  runTempRoots,
   sandboxBackendFor,
   strayCommonDirTripwire,
   warnSandboxUnavailableOnce,
 } from "@/sandbox";
+import { errorMessage } from "@/utils/errors";
 
 export const _sessionSandboxDeps = {
   backendFor: sandboxBackendFor,
@@ -37,7 +41,57 @@ export const _sessionSandboxDeps = {
   tempRoots: defaultTempRoots,
   homedir,
   platform: (): NodeJS.Platform => process.platform,
+  /** US-002 — creates the session temp dir before the policy is built. */
+  mkdir: (path: string): Promise<unknown> => mkdir(path, { recursive: true }),
+  /** US-002 — the host temp dir, kept injectable so the policy choice is testable. */
+  tmpdir: (): string => tmpdir(),
+  /** US-002 — the temp roots of one confined run, given its own root. */
+  runTempRoots,
 };
+
+/** The temp roots a session's policy grants, and whether they are run-confined. */
+interface SessionTempRoots {
+  readonly tempRoots: readonly string[];
+  readonly confined: boolean;
+}
+
+/**
+ * US-002: which temp roots a session's policy grants.
+ *
+ * Shared roots are today's behaviour and the fallback: the opt-out
+ * (`allowSharedTmp`), a session with no run root, and a failed directory
+ * creation all land there.
+ *
+ * Confinement needs both `runTmpRoot` and `tmpDir` — the session temp dir the
+ * launcher exports as TMPDIR is no more writable than `/tmp` is, so it has to
+ * be created here, BEFORE the policy that grants it. A creation failure fails
+ * OPEN to the shared roots: a session must never run with a TMPDIR its own
+ * sandbox cannot write.
+ */
+async function sessionTempRoots(args: {
+  readonly config: SandboxConfig;
+  readonly storyId?: string;
+  readonly runTmpRoot?: string;
+  readonly tmpDir?: string;
+}): Promise<SessionTempRoots> {
+  const { runTmpRoot, tmpDir } = args;
+  const shared = (): SessionTempRoots => ({ tempRoots: _sessionSandboxDeps.tempRoots(), confined: false });
+  if (args.config.filesystem.allowSharedTmp || runTmpRoot === undefined || tmpDir === undefined) return shared();
+  try {
+    await _sessionSandboxDeps.mkdir(tmpDir);
+  } catch (err) {
+    getSafeLogger()?.warn("sandbox", "could not create the session temp dir — granting the shared temp roots", {
+      storyId: args.storyId ?? "_dispatch",
+      tmpDir,
+      error: errorMessage(err),
+    });
+    return shared();
+  }
+  return {
+    tempRoots: _sessionSandboxDeps.runTempRoots({ runTmpRoot, tmpdir: _sessionSandboxDeps.tmpdir() }),
+    confined: true,
+  };
+}
 
 export async function resolveSessionSandbox(args: {
   readonly config: SandboxConfig | undefined;
@@ -47,6 +101,8 @@ export async function resolveSessionSandbox(args: {
   readonly storyId?: string;
   /** US-004 — per-session temp directory the launcher creates and exports as TMPDIR/TMP/TEMP. */
   readonly tmpDir?: string;
+  /** US-002 — the run's own temp root, present whenever `tmpDir` is (dispatch-supplied). */
+  readonly runTmpRoot?: string;
 }): Promise<CommandLauncher> {
   const config = args.config;
   if (config === undefined || !config.enabled || !args.needsLauncher) {
@@ -67,6 +123,13 @@ export async function resolveSessionSandbox(args: {
   const git = await _sessionSandboxDeps.gitLayout(args.root);
   const credentialFiles = await _sessionSandboxDeps.credentialFiles();
   const approvalsFile = args.outputDir !== undefined ? approvalsPath(args.outputDir) : undefined;
+  // Before the policy: the confined roots include the session temp dir itself.
+  const { tempRoots, confined } = await sessionTempRoots({
+    config,
+    storyId: args.storyId,
+    runTmpRoot: args.runTmpRoot,
+    tmpDir: args.tmpDir,
+  });
   const policyFor = async (root: string) =>
     buildSandboxPolicy({
       root,
@@ -77,7 +140,7 @@ export async function resolveSessionSandbox(args: {
       credentialFiles,
       ...(approvalsFile !== undefined ? { approvalsFile } : {}),
       home: _sessionSandboxDeps.homedir(),
-      tempRoots: _sessionSandboxDeps.tempRoots(),
+      tempRoots,
       platform: _sessionSandboxDeps.platform(),
       config,
     });
@@ -94,7 +157,9 @@ export async function resolveSessionSandbox(args: {
   const afterWrapped = await _sessionSandboxDeps.commonDirTripwire(git, args.storyId);
   const network = config.network.allowedDomains ?? "open"; // absent = open (spec S2)
   return createCommandLauncher({
-    state: { kind: "available", backend: backend.name, network },
+    // `sharedTmp` is present only when confined: absent means the shared temp
+    // roots are writable, which is what every pre-US-002 launcher says.
+    state: { kind: "available", backend: backend.name, network, ...(confined ? { sharedTmp: false } : {}) },
     backend,
     policyFor,
     ...(afterWrapped !== undefined ? { afterWrapped } : {}),

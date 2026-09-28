@@ -64,7 +64,11 @@ describe("execution.sandbox", () => {
     const fs = SandboxConfigSchema.parse({
       filesystem: { allowWrite: ["~/.cache/custom", "build-out", "/abs/dir"], denyRead: ["~/secrets"] },
     }).filesystem;
-    expect(fs).toEqual({ allowWrite: ["~/.cache/custom", "build-out", "/abs/dir"], denyRead: ["~/secrets"] });
+    expect(fs).toEqual({
+      allowWrite: ["~/.cache/custom", "build-out", "/abs/dir"],
+      denyRead: ["~/secrets"],
+      allowSharedTmp: false,
+    });
   });
 
   test("BUG-20: the NaxConfig execution default carries the schema-derived sandbox default", () => {

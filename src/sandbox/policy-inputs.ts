@@ -70,3 +70,18 @@ export async function listCredentialFiles(): Promise<string[]> {
 export function defaultTempRoots(): string[] {
   return [_policyInputDeps.tmpdir(), "/tmp"];
 }
+
+/** The shared temp root under both spellings: `/tmp`, and its macOS realpath. */
+const SHARED_TMP_ROOTS = ["/tmp", "/private/tmp"];
+
+/**
+ * US-002: the temp roots a CONFINED session gets -- the run's own root, plus
+ * the host tmpdir only when that is not the shared one. `os.tmpdir()` is
+ * `/tmp` on most Linux hosts and keeping it would re-grant exactly the shared
+ * directory the confinement exists to remove; a tmpdir of `/private/tmp` is
+ * the same directory seen through macOS's symlink.
+ */
+export function runTempRoots(opts: { runTmpRoot: string; tmpdir: string }): string[] {
+  const shared = SHARED_TMP_ROOTS.some((root) => opts.tmpdir === root || opts.tmpdir.startsWith(`${root}/`));
+  return shared ? [opts.runTmpRoot] : [opts.tmpdir, opts.runTmpRoot];
+}

@@ -17,7 +17,7 @@
  */
 
 import { getSafeLogger } from "@/logger";
-import { type CommandLauncher, sessionTmpDir } from "@/sandbox";
+import { type CommandLauncher, runTmpRoot, sessionTmpDir } from "@/sandbox";
 import {
   BASH_TOOL_NAME,
   type CodingToolName,
@@ -373,7 +373,9 @@ export async function resolveDispatchLauncher(
         ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
         needsLauncher: declared.includes(BASH_TOOL_NAME) || declared.includes(EXEC_TOOL_NAME),
         ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
-        ...(options.runId !== undefined ? { tmpDir: sessionTmpDir(options.runId, sessionName) } : {}),
+        ...(options.runId !== undefined
+          ? { tmpDir: sessionTmpDir(options.runId, sessionName), runTmpRoot: runTmpRoot(options.runId) }
+          : {}),
       })
     : undefined;
 }

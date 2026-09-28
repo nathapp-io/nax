@@ -16,6 +16,7 @@ export {
   listCredentialFiles,
   listNaxEntries,
   resolveGitLayout,
+  runTempRoots,
 } from "./policy-inputs";
 export { _probeDeps, probeSandbox } from "./probe";
 export {

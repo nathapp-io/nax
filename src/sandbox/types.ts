@@ -45,7 +45,17 @@ export interface SandboxBackend {
 
 export type SandboxState =
   | { readonly kind: "disabled" }
-  | { readonly kind: "available"; readonly backend: SandboxBackendName; readonly network: "open" | readonly string[] }
+  | {
+      readonly kind: "available";
+      readonly backend: SandboxBackendName;
+      readonly network: "open" | readonly string[];
+      /**
+       * US-002: `false` when temp writes are confined to this run's own temp
+       * root. Absent means the shared temp roots are writable (today's
+       * behaviour), so every pre-US-002 construction of this variant holds.
+       */
+      readonly sharedTmp?: boolean;
+    }
   | { readonly kind: "unavailable"; readonly backend: SandboxBackendName; readonly reason: string };
 
 export interface SandboxRecord {
