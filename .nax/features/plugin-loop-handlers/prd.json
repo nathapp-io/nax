@@ -1,0 +1,233 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "plugin-loop-handlers",
+  "branchName": "feat/plugin-loop-handlers",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "updatedAt": "2026-09-28T10:17:28.921Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Plugins can declare loop handlers",
+      "description": "**Goal** — Add coding-agent-owned public loop-handler types, a validated plugin extension, and a run-scoped registry getter.\n\n**Motivation** — The P3 loop-event registry has no external registration surface; every steering or policy idea inside the agent loop must currently be merged into nax as a built-in.\n\n**Approach** — Build once per run. `PluginRegistry.getLoopHandlers()` iterates `registry.plugins` (load order: global dir, project dir, `config.plugins[]`), keeps those whose `provides` includes `\"loop-handlers\"`, and calls each `register(on)` with a registrar that stages `{ plugin: plugin.name, event, handler }`. The result is `Object.freeze`d and memoised. A plugin's `register()` throwing drops that plugin's entries, logs a `plugins` warning naming the plugin, and continues; an unknown event likewise drops all that plugin's entries and warns with its name and the invalid event. Add `\"loop-handlers\"` to `PluginType` and `VALID_PLUGIN_TYPES`; when declared, `validatePlugin` calls a new `validateLoopHandlers(pluginName, ext)` beside `validatePostRunAction`, requiring `extensions.loopHandlers` to be an object with a function `register`. Export public types from `loop-events/index.ts`; `src/plugins/` imports coding-agent types, never the reverse.\n\n**Scope** — In: plugin declarations, validation, registration ordering/atomicity, memoization and type exports. Out: US-002 invocation/timeout wrapper; US-003 installation into turns; US-004 run/session forwarding; Declarative per-role or per-stage filters on a registration; plugin handlers scope themselves by reading `LoopHandlerContext` at runtime. Unsubscribing a handler, registering handlers per turn or per story, and any `LoopHandlerContext` capability beyond read-only facts (no abort, no UI, no config access). Extracting the coding agent into a standalone package; this slice only cuts the types so that move stays mechanical.\n\n**Interface** — In `src/agents/native/session/loop-events/types.ts` (exported from `loop-events/index.ts`):\n```ts\nexport interface LoopHandlerContext {\n  readonly sessionName: string;\n  readonly role?: string;\n  readonly storyId?: string;\n  readonly feature?: string;\n  readonly workdir?: string;\n  readonly model?: string;\n  readonly provider?: string;\n}\n\nexport type ExternalHandlerOf<E extends LoopEvent> = (\n  payload: PayloadOf<E>,\n  ctx: LoopHandlerContext,\n) => PatchOf<E> | undefined | Promise<PatchOf<E> | undefined>;\n\nexport interface LoopHandlerEntry {\n  readonly plugin: string;\n  readonly event: LoopEvent;\n  readonly handler: ExternalHandlerOf<LoopEvent>;\n}\n\nexport type LoopHandlerSet = readonly LoopHandlerEntry[];\n```\nIn `src/plugins/extensions.ts`:\n```ts\nexport type LoopHandlerRegistrar = <E extends LoopEvent>(event: E, handler: ExternalHandlerOf<E>) => void;\n\nexport interface ILoopHandlerProvider {\n  register(on: LoopHandlerRegistrar): void;\n}\n```\n`PluginExtensions` gains `loopHandlers?: ILoopHandlerProvider`; `PluginRegistry` gains `getLoopHandlers(): LoopHandlerSet`.",
+      "acceptanceCriteria": [
+        "validatePlugin() returns the plugin when provides is [\"loop-handlers\"] and extensions.loopHandlers.register is a function.",
+        "validatePlugin() returns null and logs a plugins warning when provides includes \"loop-handlers\" and extensions.loopHandlers is absent.",
+        "validatePlugin() returns null and logs a plugins warning when provides includes \"loop-handlers\" and extensions.loopHandlers.register is not a function.",
+        "PluginRegistry.getLoopHandlers() returns an empty array when no loaded plugin provides \"loop-handlers\".",
+        "PluginRegistry.getLoopHandlers() returns a LoopHandlerEntry { plugin, event, handler } for each on(event, handler) call a plugin's register makes, with plugin equal to the plugin's name.",
+        "PluginRegistry.getLoopHandlers() orders entries by the order of registry.plugins, then by on(...) call order within one plugin.",
+        "PluginRegistry.getLoopHandlers() returns an array for which Object.isFrozen is true.",
+        "Calling PluginRegistry.getLoopHandlers() twice invokes each plugin's register exactly once and returns the same array instance both times.",
+        "When one plugin's register throws, PluginRegistry.getLoopHandlers() returns no entries for that plugin, still returns the other plugins' entries, and logs a plugins warning carrying that plugin's name.",
+        "When a plugin's register calls on(\"before_everything\", handler), PluginRegistry.getLoopHandlers() returns no entries for that plugin, including entries it registered before the unknown event, and logs a plugins warning naming the plugin and before_everything.",
+        "LoopHandlerContext, ExternalHandlerOf, LoopHandlerEntry and LoopHandlerSet are importable from @/agents/native/session/loop-events, and a LoopHandlerEntry built from an ExternalHandlerOf<\"after_tool\"> is accepted by PluginRegistry.getLoopHandlers()'s return type."
+      ],
+      "tags": [
+        "feature",
+        "plugins",
+        "native-agent"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New shared type boundary, validation, and ordered atomic memoized registry contributions across plugin and native modules."
+      },
+      "contextFiles": [
+        "src/plugins/validator.ts",
+        "src/plugins/registry.ts",
+        "src/plugins/extensions.ts",
+        "src/agents/native/session/loop-events/types.ts",
+        "test/unit/plugins/registry.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/plugins/registry-loop-handlers.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Wrap external handlers with timeout, context and attributed failure",
+      "description": "**Goal** — Safely invoke external loop handlers with current context, bounded lifetime and event-specific failure behavior.\n\n**Motivation** — `src/hooks/` fires around a story, shells out with a 5s timeout and cannot return a patch; in-process external handlers must not hang a turn or silently allow a failed tool guard.\n\n**Approach** — `wrapExternalHandler(entry, getCtx, signal)` in the new `src/agents/native/session/loop-events/external-handler.ts` returns a built-in `HandlerOf<E>` that calls `entry.handler(payload, getCtx())` and composes, as an ordered pipeline:\n1. race the handler's settlement against a `LOOP_HANDLER_TIMEOUT_MS` (10_000) timer and the `signal`'s abort — the first to settle wins, later settlements are discarded, and the timer is cleared once the race settles;\n2. a throw, rejection, timeout or abort is a **failure**;\n3. on `before_tool` only, a settled value that is not an object with a `kind` of `allow`, `nudge`, `block` or `terminate` — other than `undefined` — is a **failure**;\n4. a settled `undefined` becomes `{ kind: \"allow\" }` on `before_tool` and `{}` on every other event;\n5. a failure on `before_tool` returns `{ kind: \"block\", isError: true, content: \"Blocked: loop handler from plugin '<plugin>' failed (<reason>).\" }` and logs `native-loop-events` warn with `{ plugin, event, tool, error }`; a failure on any other event returns `{}` and logs `native-loop-events` warn with `{ plugin, event, error }`. The wrapper never rethrows;\n6. a successful patch carrying any of `seed`, `history`, `messages` or `summary` is logged at debug with `{ plugin, event, fields }` so a later `applyHistoryPatch` rejection can be traced.\nThe timeout is read through `_externalHandlerDeps.timeoutMs` so tests can shorten it. `dispatchBeforeTool` must treat a built-in outcome not an object carrying a `kind` as `{ kind: \"allow\" }` with a `native-loop-events` warning, rather than dereferencing `kind` outside its try. Keep dispatcher patch-field picking, array restoration, cache-boundary history rejection and follow-up cap intact.\n\n**Scope** — In: wrapper, timeout test seam, failure logs, malformed dispatcher return guard. Out: US-003 installation and adapter plumbing; US-004 delivery through session manager; A timeout on built-in loop handlers; only plugin handlers are timed. Freezing nested payload objects; plugin handlers get the same readonly-typed, array-restored payloads built-ins get. Changes to the dispatcher's history cache-boundary rule, the `MAX_FOLLOW_UPS_PER_TURN` cap, or the patchable-field lists. Configuring the plugin handler timeout through `NaxConfig`; it is the constant `LOOP_HANDLER_TIMEOUT_MS`.\n\n**Interface** — `wrapExternalHandler(entry, getCtx, signal)` returns `HandlerOf<E>`; export `LOOP_HANDLER_TIMEOUT_MS = 10_000` and `_externalHandlerDeps.timeoutMs` from `src/agents/native/session/loop-events/external-handler.ts`. Use the US-001 `LoopHandlerEntry`, `LoopHandlerContext` and `ExternalHandlerOf<E>` interfaces without importing `src/plugins/` into native code.",
+      "acceptanceCriteria": [
+        "LOOP_HANDLER_TIMEOUT_MS imported from external-handler.ts equals 10000.",
+        "The handler returned by wrapExternalHandler(entry, getCtx, signal) calls entry.handler with the dispatched payload and the value getCtx() returns at dispatch time.",
+        "For an after_tool entry whose handler returns undefined, the wrapped handler resolves to {}.",
+        "For a before_tool entry whose handler returns undefined, the wrapped handler resolves to { kind: \"allow\" }.",
+        "For a before_tool entry whose handler returns { kind: \"block\", content: \"no\", isError: true }, the wrapped handler resolves to that same outcome.",
+        "For a before_tool entry from plugin p whose handler throws, the wrapped handler resolves to { kind: \"block\", isError: true } with content starting Blocked: loop handler from plugin 'p' failed.",
+        "For a before_tool entry whose handler returns a rejected promise, the wrapped handler resolves to a block outcome whose content names the plugin.",
+        "For a before_tool entry whose handler never settles, with _externalHandlerDeps.timeoutMs set to 20, the wrapped handler resolves to a block outcome whose content names the plugin.",
+        "For a before_tool entry whose handler returns the string \"allow\", the wrapped handler resolves to a block outcome whose content names the plugin.",
+        "For a before_tool entry whose handler returns { kind: \"maybe\" }, the wrapped handler resolves to a block outcome whose content names the plugin.",
+        "When a before_tool wrapped handler blocks on a failure, one native-loop-events warning is logged with plugin, event equal to before_tool, tool equal to the call's name, and error.",
+        "For an after_tool entry from plugin p whose handler throws, the wrapped handler resolves to {} and one native-loop-events warning is logged with plugin equal to p and event equal to after_tool.",
+        "For a before_turn_end entry whose handler never settles, with _externalHandlerDeps.timeoutMs set to 20, the wrapped handler resolves to {} and logs a native-loop-events warning naming the plugin.",
+        "For a before_tool entry whose handler never settles, aborting the signal passed to wrapExternalHandler makes the wrapped handler resolve to a block outcome before _externalHandlerDeps.timeoutMs elapses.",
+        "For a before_tool entry whose handler resolves { kind: \"allow\" } only after the timeout fired, the wrapped handler's result is the timeout block, not the late allow.",
+        "After a wrapped handler whose handler resolves immediately settles, the timeout timer it armed has been cleared (no timer callback runs afterwards).",
+        "When a before_turn entry from plugin p returns { seed: [message] }, the wrapped handler resolves to that patch and logs at debug with plugin equal to p, event equal to before_turn and fields equal to [\"seed\"].",
+        "A registry built with createLoopEventRegistry() whose only before_tool handler is a wrapped throwing plugin handler logs exactly one warning for one dispatch(\"before_tool\", …) call.",
+        "dispatch(\"before_tool\", …) on a registry whose only before_tool handler returns undefined resolves to { kind: \"allow\" } and logs a native-loop-events warning instead of throwing."
+      ],
+      "tags": [
+        "feature",
+        "native-agent",
+        "reliability"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Concurrent settlement/abort/timer races, attributed fail-closed tool guards and dispatcher integration; tool access-control behavior triggers the security override."
+      },
+      "contextFiles": [
+        "src/agents/native/session/loop-events/registry.ts",
+        "src/agents/native/session/loop-events/types.ts",
+        "src/agents/native/session/loop-events/index.ts",
+        "test/unit/agents/native/session/loop-events.test.ts"
+      ],
+      "expectedFiles": [
+        "src/agents/native/session/loop-events/external-handler.ts",
+        "test/unit/agents/native/session/loop-events/external-handler.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Install plugin handlers between native turn built-ins",
+      "description": "**Goal** — Pass per-turn plugin entries and context from the adapter into a native registry in safe installation order.\n\n**Motivation** — `turn-loop.ts:94` creates a registry and then registers built-ins, so pre-populating one would put plugin guards ahead of invalid-call repair and shaping ahead of truncation.\n\n**Approach** — Install per turn. `registerBuiltinLoopHandlers` registers, in order: invalid-call repair (`before_tool`), spin breaker (`before_tool`), each set entry wrapped by `wrapExternalHandler`, truncation (`after_tool`). `turn-loop.ts:94` builds a fresh registry every turn, so plugin entries register once per real turn; the WeakMap repoint path (`loop-handlers.ts:51-65`) runs only when a test supplies `deps.loopEvents`, and on repoint the wrapped entries read the new context through the per-turn state. The loop forwards `deps.loopHandlers`, `deps.loopHandlerContext` and `deps.signal` to registration. The adapter forwards `opts.loopHandlers` and `opts.loopHandlerContext` into `runNativeTurn` deps beside `opts.loopEvents`. Built-in `before_tool` block/terminate short-circuits before plugins; final truncation applies after all after_tool plugin patches. Keep the same entry installed once on repeated registration to a reused registry while repointing state and signal to the latest turn. Correct `turn-end-event.ts:1-5` comment: plugin handlers are timed by their wrapper, built-ins are not.\n\n**Scope** — In: native deps/options types, built-in ordering, WeakMap state repoint, adapter/turn forwarding, comment. Out: US-004 SessionManager/run-scoped delivery; A timeout on built-in loop handlers; only plugin handlers are timed. A plugin `before_tool` handler observing, annotating or re-wording a call that a built-in `before_tool` handler already blocked or terminated.\n\n**Interface** — `BuiltinLoopHandlerDeps` in `src/agents/native/session/loop-handlers.ts` retains `{ sessionName, budget, spinBreaker?, onSpinStop }` and gains `loopHandlers?: LoopHandlerSet`, `loopHandlerContext?: LoopHandlerContext`, `signal?: AbortSignal`. `TurnDeps` and `SendTurnOpts` each gain `loopHandlers?: LoopHandlerSet` and `loopHandlerContext?: LoopHandlerContext`. `registerBuiltinLoopHandlers(registry: LoopEventRegistry, deps: BuiltinLoopHandlerDeps): void` installs the US-002 `wrapExternalHandler` entries without any native import of the plugin system.",
+      "acceptanceCriteria": [
+        "With a loopHandlers entry on before_tool, dispatching a call whose optional property is null through a registry installed by registerBuiltinLoopHandlers hands the plugin handler a call whose input no longer has that property.",
+        "With a loopHandlers entry on after_tool that returns content larger than the truncation budget, the after_tool dispatch result through a registry installed by registerBuiltinLoopHandlers is the truncated content.",
+        "With two loopHandlers entries on after_tool, the second handler receives the content the first returned.",
+        "When invalid-call repair blocks a call that fails schema validation, a loopHandlers entry on before_tool is not invoked for that call.",
+        "When the spin breaker returns terminate, a loopHandlers entry on before_tool is not invoked for that call.",
+        "Calling registerBuiltinLoopHandlers twice on the same registry with the same loopHandlers invokes a before_tool plugin handler once per dispatch.",
+        "Calling registerBuiltinLoopHandlers a second time on the same registry with a different loopHandlerContext makes the next dispatch hand the plugin handler the second context.",
+        "Aborting the signal passed to registerBuiltinLoopHandlers while a plugin before_tool handler is pending makes the before_tool dispatch resolve to a block outcome naming the plugin.",
+        "NativeAgentAdapter.sendTurn with opts.loopHandlers holding a before_turn entry that returns a seed message makes that message part of the first model request's messages.",
+        "NativeAgentAdapter.sendTurn with opts.loopHandlers holding a before_tool entry that returns { kind: \"block\", content: \"refused\", isError: true } for a Bash call leaves the command unexecuted and records refused as that call's tool result.",
+        "NativeAgentAdapter.sendTurn with opts.loopHandlers holding a throwing before_tool entry from plugin p records a tool result whose content starts Blocked: loop handler from plugin 'p' failed.",
+        "NativeAgentAdapter.sendTurn with opts.loopHandlers holding a before_turn_end entry that returns followUp only on its first call sends exactly one extra user message and one extra model request.",
+        "NativeAgentAdapter.sendTurn hands every plugin handler the object passed as opts.loopHandlerContext."
+      ],
+      "tags": [
+        "feature",
+        "native-agent",
+        "integration"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module session and adapter plumbing plus registry reuse, tool-policy ordering and real model/tool dispatch seams; session and access-control behavior triggers the security override."
+      },
+      "contextFiles": [
+        "src/agents/native/session/loop-handlers.ts",
+        "src/agents/native/session/turn-loop.ts",
+        "src/agents/native/adapter.ts",
+        "src/agents/native/session/loop-events/external-handler.ts",
+        "test/unit/agents/native/adapter-turn-signal.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/agents/native/session/loop-handlers-plugins.test.ts",
+        "test/unit/agents/native/adapter-loop-handlers.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "Deliver run-scoped plugin handlers to native sessions",
+      "description": "**Goal** — Deliver one loaded plugin-handler set to each native session's turns through the session-manager interface.\n\n**Motivation** — `SendTurnOpts.loopEvents` is forwarded by the adapter but supplied by no caller, so a run-loaded plugin cannot steer the native loop.\n\n**Approach** — Inject. `initializeAfterLock` hands the set to the run's session manager through `ISessionManager.configureLoopHandlers`. Forward. `sendPrompt` calls `buildLoopHandlerTurnOpts({ handle, descriptor, set })` from the new `src/session/loop-handler-forwarding.ts`, passing the `terminalDesc` it already looks up (`manager.ts:579`), and spreads the result into the `adapter.sendTurn` options. `buildLoopHandlerTurnOpts` returns `{}` when the set is empty or `handle.agentName` is not `NATIVE_AGENT_NAME`; otherwise `{ loopHandlers, loopHandlerContext }` with a frozen context whose undefined fields are omitted. When no descriptor is found, use handle.role for role and omit storyId, feature and workdir. SessionManager stores an empty set by default and logs the `plugins` info line `loop handlers apply to the native agent only` only once per manager when non-native sessions receive a non-empty set. Add an overridable no-op `configureLoopHandlers` to the interface-typed `makeSessionManager` mock. Extend `scripts/check-adapter-no-config-import.sh` to reject imports from `src/plugins` anywhere under `src/agents/native/` (`@/plugins` or a relative path ending in `/plugins`) without rejecting loop-event type imports. Write `docs/guides/loop-handlers.md` covering events, patches, ordering, failure semantics, timeout, native-only scope, `nax plan` exclusion and plugin code running in the nax process outside the sandbox; fix loader comment to `<project>/.nax/plugins/`. `src/session/manager.ts` is grandfathered at 679 lines (678 today); keep the file-size check passing by extracting an equal or larger block, and if shorter lower its baseline entry to the new line count via the update script. No `instanceof SessionManager` narrowing: `NaxRuntime.sessionManager` is `ISessionManager`.\n\n**Scope** — In: run setup, session manager interface/storage/forwarding and size-offsetting helper extraction, mock, boundary-gate CLI behavior, unit/integration verification, plugin author guide and loader comment. Out: `nax plan` sessions: plan builds its own runtime (`src/runtime/index.ts:388`) and never calls `loadPlugins`, so plan sessions receive no plugin loop handlers. ACP agents: loop events are native-only; no ACP equivalent is added. A project-trust gate for plugins: `<project>/.nax/plugins/` keeps loading without consent for every plugin type, including `loop-handlers`; this is a separate issue covering all plugin types. Changes to US-003 native installation or US-002 failure semantics.\n\n**Interface** — `ISessionManager` gains `configureLoopHandlers(set: LoopHandlerSet): void`; `SessionManager` implements it. `buildLoopHandlerTurnOpts({ handle, descriptor, set })` returns `{}` or `{ loopHandlers, loopHandlerContext }`; the latter context is frozen and contains `sessionName: handle.id`, descriptor `role`, `storyId`, `featureName` mapped to `feature`, `workdir`, plus `handle.modelDef`'s `model` and `provider` when present. `initializeAfterLock` immediately after `loadPlugins` returns calls `runtime.sessionManager.configureLoopHandlers(pluginRegistry.getLoopHandlers())`.",
+      "acceptanceCriteria": [
+        "buildLoopHandlerTurnOpts() returns {} when the set is empty.",
+        "buildLoopHandlerTurnOpts() returns {} when handle.agentName is not NATIVE_AGENT_NAME, even with a non-empty set.",
+        "buildLoopHandlerTurnOpts() for a native handle, a descriptor and a non-empty set returns loopHandlers equal to the set.",
+        "buildLoopHandlerTurnOpts() for a native handle and a descriptor returns a loopHandlerContext with sessionName equal to handle.id, role, storyId, feature and workdir taken from the descriptor's role, storyId, featureName and workdir, and model and provider from handle.modelDef.",
+        "buildLoopHandlerTurnOpts() returns a loopHandlerContext for which Object.isFrozen is true.",
+        "buildLoopHandlerTurnOpts() with no descriptor returns a loopHandlerContext whose role is handle.role and which has no storyId, feature or workdir key.",
+        "SessionManager.sendPrompt() after configureLoopHandlers(set) calls adapter.sendTurn with opts.loopHandlers equal to set and opts.loopHandlerContext.storyId equal to the session descriptor's storyId.",
+        "SessionManager.sendPrompt() without a configured loopHandlers calls adapter.sendTurn with options that have no loopHandlers key.",
+        "SessionManager.sendPrompt() for two non-native sessions after configureLoopHandlers with a non-empty set logs the plugins info line \"loop handlers apply to the native agent only\" exactly once.",
+        "initializeAfterLock() with a workdir whose .nax/plugins/ contains a plugin providing \"loop-handlers\" calls runtime.sessionManager.configureLoopHandlers once with an array holding that plugin's entry.",
+        "A plugin file in a temp workdir's .nax/plugins/ whose before_turn handler returns a seed message, loaded by loadPlugins, handed to a SessionManager through configureLoopHandlers(registry.getLoopHandlers()), and driven through SessionManager.sendPrompt() on a native session with a fake model, makes that message part of the first model request.",
+        "When bash scripts/check-adapter-no-config-import.sh runs from a directory whose src/agents/native/x.ts imports from @/plugins, then it exits 1 and prints x.ts.",
+        "When bash scripts/check-adapter-no-config-import.sh runs from a directory whose src/agents/native/x.ts imports only from @/agents/native/session/loop-events, then it exits 0."
+      ],
+      "tags": [
+        "feature",
+        "plugins",
+        "sessions",
+        "integration"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Existing run lifecycle and session interface need coordinated changes across multiple modules plus a real plugin-loading integration and manager-size extraction; session behavior triggers the security strategy override."
+      },
+      "contextFiles": [
+        "src/session/manager.ts",
+        "src/execution/lifecycle/run-setup-init.ts",
+        "scripts/check-adapter-no-config-import.sh",
+        "test/unit/session/manager-phase-b-prompt.test.ts",
+        "test/unit/execution/lifecycle/run-setup-approvals-seal.test.ts"
+      ],
+      "expectedFiles": [
+        "src/session/loop-handler-forwarding.ts",
+        "test/unit/session/loop-handler-forwarding.test.ts",
+        "test/integration/plugins/loop-handlers.test.ts",
+        "docs/guides/loop-handlers.md"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/helpers/mock-session-manager.ts",
+          "reason": "`makeSessionManager` returns an object literal typed `ISessionManager`; once US-004 adds the required `configureLoopHandlers` member to the interface, the literal no longer satisfies it and every test using the helper fails to compile. US-004 owns adding a no-op `configureLoopHandlers` default that `overrides` can replace."
+        },
+        {
+          "path": "scripts/baselines/file-sizes-baseline.json",
+          "reason": "its entry for src/session/manager.ts pins the grandfathered size at 679 lines. If US-004's offsetting extraction leaves the session manager shorter, lower that entry with the check:file-sizes:update script; the replacing invariant is that the entry equals the file's new line count."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing-code enhancement, not greenfield. Plugin declarations and exports live at src/plugins/types.ts:12-32,38-46,114-136; extension interfaces in src/plugins/extensions.ts:1-12; runtime validation uses VALID_PLUGIN_TYPES and validateExtension plus per-extension validators at src/plugins/validator.ts:22-31,105-141,375-413. PluginRegistry retains load order and exposes typed getters at src/plugins/registry.ts:21-69,166-176; add memoized, frozen staged registrations there, dropping an entire plugin's entries after any registration error. The coding-agent-owned LoopEvent union, payload/patch maps and handler types are in src/agents/native/session/loop-events/types.ts:20-28,195-210; its barrel at src/agents/native/session/loop-events/index.ts:6-8 must export the new public types. Plugin files may import native loop-event types, but the reverse import must never occur. The public `LoopHandlerEntry.handler: ExternalHandlerOf<LoopEvent>` is a widened heterogeneous storage shape; keep the generic registrar's narrower event/payload pairing sound when staging entries, and preserve the spec's compile-time after_tool compatibility criterion. The dispatcher at src/agents/native/session/loop-events/registry.ts:133-169 currently dereferences outcome.kind after try/finally, so undefined from a built-in escapes instead of warning/allowing; dispatchChain already serializes and picks declared patch fields at src/agents/native/session/loop-events/registry.ts:178-233, restoring array payloads and preserving cache-boundary/follow-up semantics. Add the external wrapper in its own native-side file with attributed warnings, fail-closed before_tool outcomes, fail-open other events, timeout/abort race and settled-timer cleanup. Native install ordering is controlled by registerBuiltinLoopHandlers at src/agents/native/session/loop-handlers.ts:58-81: invalid-call repair, spin breaker, then after_tool truncation; its WeakMap repoints state on reused registries. src/agents/native/session/turn-loop.ts:94-103 creates a fresh registry absent deps.loopEvents, so entries must be passed as a list and installed between the built-ins, never pre-registered in a supplied registry; for repoints use state.current for new context/signal. TurnDeps at src/agents/native/session/turn-types.ts:20-24,130-137, SendTurnOpts at src/agents/session-types.ts:131-145 and the forwarding at src/agents/native/adapter.ts:340-360 form the native turn plumbing. src/agents/native/session/turn-end-event.ts:1-5 has an obsolete unbounded-handler comment. Runtime handoff should call the ISessionManager method, not narrow concrete SessionManager: interface src/session/types.ts:244-309; mock test/helpers/mock-session-manager.ts:9-58 returns an interface-typed object literal requiring a new default method. src/session/manager.ts:61-104 holds runtime state and src/session/manager.ts:562-608 locates terminalDesc before adapter.sendTurn; extract forwarding into new src/session/loop-handler-forwarding.ts, use handle.agentName against NATIVE_AGENT_NAME from src/config/agent-defaults.ts:19, descriptor fields from src/session/types.ts:66-107 and modelDef from src/agents/session-types.ts:25-42; freeze and omit undefined context keys, fall back to handle.role without a descriptor. src/execution/lifecycle/run-setup-init.ts:161-177 loads plugins in global/project/config order; immediately configure the run manager once after load. src/plugins/loader.ts:1-8 misdocuments the project directory as /nax/plugins/ instead of /.nax/plugins/. scripts/check-adapter-no-config-import.sh:8-26 presently bans config imports in both agent trees; extend to ban native-only plugin imports without banning loop-event types. Baseline scripts/baselines/file-sizes-baseline.json:7 pins manager.ts at 679 lines versus current 678, requiring an equal/larger extraction for additions, then lower the baseline to exactly the new line count if reduced. Relevant existing tests: test/unit/plugins/registry.test.ts:1-35, test/unit/agents/native/session/loop-events.test.ts:1-60, test/unit/agents/native/adapter-turn-signal.test.ts, test/unit/session/manager-phase-b-prompt.test.ts:1-55, test/unit/execution/lifecycle/run-setup-approvals-seal.test.ts:1-50. Risks: external before_tool failures must not inherit dispatcher fail-open behavior; timeout promises must be consumed without unhandled rejections or leaked timers; built-ins must retain short-circuit and final truncation ordering; reused registry must not accumulate stale handlers; unrelated ACP/plan sessions must remain unchanged; adding an ISessionManager required method affects mocks/alternate implementations. Additive optional turn fields preserve old callers; no user configuration or migration, and no plugin-system import under native agents. Run-scoped frozen set is constructed once, delivered via interface, filtered per native handle, and installed per real turn.",
+  "outOfScope": [
+    "A project-trust gate for plugins: `<project>/.nax/plugins/` keeps loading without consent for every plugin type, including `loop-handlers`; this is a separate issue covering all plugin types.",
+    "`nax plan` sessions: plan builds its own runtime (`src/runtime/index.ts:388`) and never calls `loadPlugins`, so plan sessions receive no plugin loop handlers.",
+    "ACP agents: loop events are native-only; no ACP equivalent is added.",
+    "Declarative per-role or per-stage filters on a registration; plugin handlers scope themselves by reading `LoopHandlerContext` at runtime.",
+    "Unsubscribing a handler, registering handlers per turn or per story, and any `LoopHandlerContext` capability beyond read-only facts (no abort, no UI, no config access).",
+    "A plugin `before_tool` handler observing, annotating or re-wording a call that a built-in `before_tool` handler already blocked or terminated.",
+    "A timeout on built-in loop handlers; only plugin handlers are timed.",
+    "Freezing nested payload objects; plugin handlers get the same readonly-typed, array-restored payloads built-ins get.",
+    "Changes to the dispatcher's history cache-boundary rule, the `MAX_FOLLOW_UPS_PER_TURN` cap, or the patchable-field lists.",
+    "Extracting the coding agent into a standalone package; this slice only cuts the types so that move stays mechanical.",
+    "Configuring the plugin handler timeout through `NaxConfig`; it is the constant `LOOP_HANDLER_TIMEOUT_MS`."
+  ],
+  "routingProfile": "native-ds-glm"
+}
