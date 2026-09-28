@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C2a-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C2b-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    232 functions in 203 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     5     (4 src, 1 scripts)   <- THIS DRAIN (C1 drained validateConfig + deepMergeConfig; C2a drained parseFrontmatter)
+  over 20    231 functions in 203 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     4     (3 src, 1 scripts)   <- THIS DRAIN (C1 drained validateConfig + deepMergeConfig; C2a parseFrontmatter, C2b coerceVerdict)
   worst       99   src/cli/generate.ts generateCommand
 biome.json cap: 170
-batches: 22 of 25 done (P0, A1-A13, B1-B7, C1, C2a)
+batches: 22 of 25 done (P0, A1-A13, B1-B7, C1, C2a-C2b)
 ```
 
 Refresh this block at the end of every batch:
@@ -179,7 +179,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | C1 | done 2026-09-27 | 110 | `validateConfig` | `src/config/validate.ts:30` | 175 | 4 / 0 | yes |
 | C1 | done 2026-09-27 | 78 | `deepMergeConfig` | `src/config/merger.ts:41` | 173 | 2 / 2 | none |
 | C2 | done 2026-09-27 | 75 | `parseFrontmatter` | `src/context/rules/rules-frontmatter.ts:110` | 293 -> 323 | 5 / 2 | yes |
-| C2 | in progress | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 | 4 / 4 | none |
+| C2 | done 2026-09-27 | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 -> 393 | 4 / 4 | none |
 | C2 | in progress | 64 | `parseTestFailuresDetailed` | `src/test-runners/ac-parser.ts:50` | 141 | 4 / 3 | none |
 | C3 | todo | 93 | `lexBashCommand` | `src/permissions/bash-lex.ts:78` | 248 | 3 / 2 | yes |
 | C4 | todo | 99 | `generateCommand` | `src/cli/generate.ts:49` | 267 | 1 / 1 | none |
@@ -2735,3 +2735,105 @@ approval/ratio logic thoroughly; the unpinned set is the reasoning fallback
 chain, the top-level acceptanceCriteria branch, the obj-quality branch,
 fixes/testFailureDiagnosis, and several coercion defaults. New tests need a
 sibling file (753 is too tight).
+
+### 9.24 - 2026-09-27, C2b done - `coerceVerdict` 72 -> 4 (one session)
+
+Second of the grouped C2 batch. Field-by-field coercion exactly as §3's row
+predicted, and §4's `test: none` was heuristic-path-only for the third time
+(B1, C1): `test/unit/verification/tdd-verdict.test.ts` (753 of the 800 cap)
+drives `coerceVerdict` directly and pins the approval tokens, the BUG-1 ratio
+rules, and the #2264 no-signal guard thoroughly. One session, including a
+20-test characterisation commit in a new sibling,
+`test/unit/verification/tdd-verdict-coerce-edges.test.ts` (753 is too tight
+for additions; zero cast expressions - the diagnosis fixture is typed via
+`import type { TestFailureDiagnosis }`).
+
+**What the mirror left unpinned, one test each:** the APPROVED token; the
+`obj.approved === true` disjunct asserted DIRECTLY (the mirror only ever
+asserts passCount beside it); the whole reasoning fallback chain
+(obj.reasoning -> obj.overall_status -> summary.overall_status -> the
+"Coerced from free-form verdict:" note, whose verdict is the UPPERCASED
+string); allMet defaulting to the approval value; the `c.met === true` arm
+(no status); the criterion-text fallbacks (c.criterion, then the review key);
+the evidence note truncation at 200 and its absent arm; the top-level
+acceptanceCriteria branch (allMet OVERWRITE + criteria merged as-is) plus its
+quirk pinned as-is per §2.1 - top-level entries with met:false do NOT flip a
+true allMet, only the review loop folds; the summary "4/4 SATISFIED" count
+met===total rule (the mirror pins it only incidentally inside the big
+free-form fixture); the obj-quality rating branch; an unrecognised quality
+value -> acceptable; fixes carried/non-array->[]; testFailureDiagnosis
+carried/malformed-dropped; the fail-closed testModifications placeholder; a
+non-string summary.test_results parsing nothing; a non-object tests value
+being ignored.
+
+**Pre-flight:** (1) verdict-reader.ts is NOT barrel-exported - `src/tdd/
+index.ts` re-exports readVerdict/cleanupVerdict/VERDICT_FILE from `./verdict`
+(a DIFFERENT file that re-exports from verdict-reader), so no mutable seam
+exists; the test-runners-style barrel question resolved clean. (2) A2's
+traps: no loops, no closures over `let`s; the one try/catch is the coercion
+fail-safe (catch -> null) and stayed in the sequencer, wrapping the helper
+calls exactly as it wrapped the monolith's blocks. (3) No source-text tests
+read the file. (4) No per-file guard allow-list names it.
+
+**The §9.22 looseCast lesson shaped the split:** the escape-hatch counter is
+GLOBAL, and the monolith's six `as Record<string, unknown>` casts each had to
+land EXACTLY once. `summaryOf` (the verification_summary cast) became a named
+reader called by the four summary-reading helpers; every other cast moved
+whole into its single consumer. Zero new cast expressions.
+
+**Technique:** in-place extraction (319-line file). `coerceVerdict` stays the
+sequencer - approval-signal guard, try{ four coercion calls + return
+literal }catch{ return null } - and scores 4. Helpers: `resolveApproval` 4
+(returns { approved, verdictStr } because the reasoning fallback quotes the
+UPPERCASED string), `coerceTestCounts` 13, `coerceCriteria` 5, `resolveQuality`
+9, `buildReasoning` 3, `summaryOf` 1. `isValidVerdict` (27, pre-existing) and
+`readVerdict` (9) untouched.
+
+**A REAL REGRESSION caught by the suite, worth its paragraph:** the first
+pass split `coerceCriteria` from a 39-point monolith (§2.3 breach, standard
+second split into `collectReviewCriteria` / `mergeTopLevelCriteria` /
+`allMetFromSummary`) and folded the review verdict as
+`let allMet = approved && collectReviewCriteria(criteria, acReview)` - the
+`&&` SHORT-CIRCUITED the call whenever approved was false, so FAIL-verdict
+inputs collected zero criteria. The mirror's UNSATISFIED test and the new
+met:true test both failed instantly (570/572). The comment above the line had
+LITERALLY warned against short-circuiting the call; the code did it anyway.
+Fix: call first, fold the returned boolean after
+(`const reviewAllMet = collectReviewCriteria(...); let allMet = approved &&
+reviewAllMet;`). Lesson generalised from A2's state-mutation rule: a helper
+with side effects (here, building the list) must never sit on the right side
+of a `&&` whose left side can be false - same shape as "never return a fresh
+state object across a throw", arrived at from the boolean direction. The
+`reviewAllMet` fold is exactly equivalent: review entries can only flip
+allMet to false, so `approved && reviewAllMet` reproduces the original
+if(!met) allMet = false loop.
+
+**Helper scores (probe at maxAllowedComplexity=1, repo-root probe config per
+§9.13/§9.17, deleted after):** coerceTestCounts 13, collectReviewCriteria 14,
+mergeTopLevelCriteria 10, resolveQuality 9, coerceCriteria 5,
+resolveApproval 4, coerceVerdict 4, buildReasoning 3, allMetFromSummary 3,
+summaryOf 1. The first-pass 39 on coerceCriteria is this batch's §2.3 breach,
+fixed by the second split above - no baseline hand-edit needed.
+`check:complexity` reported only "improved"; `check:complexity:update` was a
+pure lower: 232 -> 231 functions, 203 files unchanged (verdict-reader.ts
+STAYS baselined at [27] for isValidVerdict, untouched, out of scope - same
+pattern as A8 leaving argvBranch/verbBranch).
+
+**File-size gate:** in place, 319 -> 393 after `bun x biome check --write`
+(+74 lines of helper signatures, doc comments, and the CoercedCriterion type;
+far under the 600 cap; no new file, so §9.19's coverage-floor twin gate never
+arises).
+
+**Verification beyond the suite:** literal fingerprint diff of the original
+file against the refactored file - all 40 quoted/template literals of length
+>= 4 appear verbatim, zero missing. 572 verification + tdd-integration tests
+green (incl. the 20 characterisation tests), verify-op-parse green,
+`bun run typecheck` (both tsconfigs) clean.
+
+**For the next function in this batch (C2c parseTestFailuresDetailed):**
+`failedACs` is heavily pinned through the parseTestFailures wrapper
+(test/unit/pipeline/stages/acceptance.test.ts) but `taggedFailureCount` (the
+entire Detailed API, BUG-32) and the parser-level AC-HOOK detection have ZERO
+coverage anywhere - characterise those. Framework is a closed 8-value union;
+a Record dispatch keyed on it needs no own-property guard (unlike B3's
+untrusted wire keys) but must preserve rust/mocha running NO branch.

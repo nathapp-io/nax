@@ -84,6 +84,179 @@ function hasApprovalSignal(obj: Record<string, unknown>): boolean {
   return typeof obj.approved === "boolean" || (typeof obj.verdict === "string" && obj.verdict.trim() !== "");
 }
 
+/** The free-form summary block, if it is an object. */
+function summaryOf(obj: Record<string, unknown>): Record<string, unknown> | undefined {
+  return obj.verification_summary as Record<string, unknown> | undefined;
+}
+
+/**
+ * Determine approval status from the free-form verdict string and/or the
+ * boolean `approved` field. Returns the uppercased verdict string alongside
+ * the boolean because the reasoning fallback quotes it verbatim.
+ */
+function resolveApproval(obj: Record<string, unknown>): { approved: boolean; verdictStr: string } {
+  const verdictStr = String(obj.verdict ?? "").toUpperCase();
+  // A "VERIFIED" prefix only counts as approval when it isn't immediately
+  // contradicted by a failure indicator later in the string (e.g. the
+  // agent writing "VERIFIED FAILED: 3 tests red").
+  const isVerifiedButFailed = /VERIFIED\b.*\b(FAIL|FAILED|RED|NOT MET)\b/.test(verdictStr);
+  // "ALL ACCEPTANCE CRITERIA MET" must not match its own negation
+  // ("NOT ALL ACCEPTANCE CRITERIA MET").
+  const isNegated = /\bNOT\b/.test(verdictStr);
+  const approved =
+    verdictStr === "PASS" ||
+    verdictStr === "PASSED" ||
+    verdictStr === "APPROVED" ||
+    (verdictStr.startsWith("VERIFIED") && !isVerifiedButFailed) ||
+    (verdictStr.includes("ALL ACCEPTANCE CRITERIA MET") && !isNegated) ||
+    obj.approved === true;
+  return { approved, verdictStr };
+}
+
+/**
+ * Parse test results from verification_summary or top-level.
+ * BUG-1 (D-1): allPassing must never be seeded from `approved` — it is
+ * only ever set true from actual test evidence here.
+ */
+function coerceTestCounts(obj: Record<string, unknown>): { passCount: number; failCount: number; allPassing: boolean } {
+  let passCount = 0;
+  let failCount = 0;
+  let allPassing = false;
+  const summary = summaryOf(obj);
+  if (summary?.test_results && typeof summary.test_results === "string") {
+    // Parse "45/45 PASS" or "42/45 PASS" patterns — anchored to test-count
+    // context so an unrelated "N/N" substring (e.g. a "2024/05/13" date)
+    // is never mistaken for a pass/fail ratio. The pass/fail keyword is
+    // captured (not discarded) so a same-count "5/5 FAIL" ratio is never
+    // read as all-passing.
+    const match = (summary.test_results as string).match(/(\d+)\/(\d+)\s+(?:tests?\s+)?(pass|fail)/i);
+    if (match) {
+      passCount = Number.parseInt(match[1], 10);
+      const total = Number.parseInt(match[2], 10);
+      failCount = total - passCount;
+      allPassing = match[3].toLowerCase() === "pass" && failCount === 0 && total > 0;
+    }
+  }
+  // Also check top-level tests object (partial schema compliance)
+  if (obj.tests && typeof obj.tests === "object") {
+    const t = obj.tests as Record<string, unknown>;
+    if (typeof t.passCount === "number") passCount = t.passCount;
+    if (typeof t.failCount === "number") failCount = t.failCount;
+    if (typeof t.allPassing === "boolean") allPassing = t.allPassing;
+  }
+  return { passCount, failCount, allPassing };
+}
+
+/** One coerced acceptance-criterion entry. */
+interface CoercedCriterion {
+  criterion: string;
+  met: boolean;
+  note?: string;
+}
+
+/**
+ * Collect the criteria declared by a free-form acceptance_criteria_review
+ * block into `criteria`. Returns whether every qualifying entry is met (true
+ * when the block is absent or declares none) — the review can only ever flip
+ * allMet to false, so the caller folds this with `&&`.
+ */
+function collectReviewCriteria(criteria: CoercedCriterion[], acReview: Record<string, unknown> | undefined): boolean {
+  let allMet = true;
+  if (!acReview) return true;
+  for (const [key, val] of Object.entries(acReview)) {
+    if (key.startsWith("criterion") && val && typeof val === "object") {
+      const c = val as Record<string, unknown>;
+      const met = String(c.status ?? "").toUpperCase() === "SATISFIED" || c.met === true;
+      criteria.push({
+        criterion: String(c.name ?? c.criterion ?? key),
+        met,
+        note: c.evidence ? String(c.evidence).slice(0, 200) : undefined,
+      });
+      if (!met) allMet = false;
+    }
+  }
+  return allMet;
+}
+
+/**
+ * Merge a structured top-level acceptanceCriteria object's entries into
+ * `criteria` (as-is). Returns its explicit `allMet` boolean — an OVERWRITE of
+ * the folded value, not a fold — or undefined when absent or not a boolean.
+ */
+function mergeTopLevelCriteria(criteria: CoercedCriterion[], obj: Record<string, unknown>): boolean | undefined {
+  if (!obj.acceptanceCriteria || typeof obj.acceptanceCriteria !== "object") return undefined;
+  const ac = obj.acceptanceCriteria as Record<string, unknown>;
+  if (Array.isArray(ac.criteria)) {
+    for (const c of ac.criteria) {
+      if (c && typeof c === "object") {
+        criteria.push(c as CoercedCriterion);
+      }
+    }
+  }
+  return typeof ac.allMet === "boolean" ? ac.allMet : undefined;
+}
+
+/**
+ * Parse summary AC count like "4/4 SATISFIED". Returns undefined when no
+ * count is parseable (allMet stays untouched) — only consulted when no
+ * criteria were collected from either structured source.
+ */
+function allMetFromSummary(obj: Record<string, unknown>): boolean | undefined {
+  const summary = summaryOf(obj);
+  if (!(summary?.acceptance_criteria && typeof summary.acceptance_criteria === "string")) return undefined;
+  const acMatch = (summary.acceptance_criteria as string).match(/(\d+)\/(\d+)/);
+  if (!acMatch) return undefined;
+  const met = Number.parseInt(acMatch[1], 10);
+  const total = Number.parseInt(acMatch[2], 10);
+  return met === total;
+}
+
+/**
+ * Parse acceptance criteria from acceptance_criteria_review or
+ * acceptanceCriteria, defaulting allMet to the approval value.
+ */
+function coerceCriteria(
+  obj: Record<string, unknown>,
+  approved: boolean,
+): { allMet: boolean; criteria: CoercedCriterion[] } {
+  const criteria: CoercedCriterion[] = [];
+  const acReview = obj.acceptance_criteria_review as Record<string, unknown> | undefined;
+  // The review collection must always run (it builds the list), so the call
+  // itself is never short-circuited; only its VERDICT is folded with the
+  // approval value, which the review can only lower.
+  const reviewAllMet = collectReviewCriteria(criteria, acReview);
+  let allMet = approved && reviewAllMet;
+  const explicitAllMet = mergeTopLevelCriteria(criteria, obj);
+  if (explicitAllMet !== undefined) allMet = explicitAllMet;
+  if (criteria.length === 0) {
+    const fromSummary = allMetFromSummary(obj);
+    if (fromSummary !== undefined) allMet = fromSummary;
+  }
+  return { allMet, criteria };
+}
+
+/** Parse quality from summary.code_quality, falling back to obj.quality.rating. */
+function resolveQuality(obj: Record<string, unknown>): "good" | "acceptable" | "poor" {
+  const summary = summaryOf(obj);
+  const qualityStr = summary?.code_quality
+    ? String(summary.code_quality).toLowerCase()
+    : obj.quality && typeof obj.quality === "object"
+      ? String((obj.quality as Record<string, unknown>).rating ?? "acceptable").toLowerCase()
+      : "acceptable";
+  if (qualityStr === "high" || qualityStr === "good") return "good";
+  if (qualityStr === "low" || qualityStr === "poor") return "poor";
+  return "acceptable";
+}
+
+/** Reasoning falls back through the obj fields, then the summary, then a coercion note. */
+function buildReasoning(obj: Record<string, unknown>, verdictStr: string): string {
+  if (typeof obj.reasoning === "string") return obj.reasoning;
+  if (typeof obj.overall_status === "string") return obj.overall_status;
+  const summary = summaryOf(obj);
+  if (summary?.overall_status) return String(summary.overall_status);
+  return `Coerced from free-form verdict: ${verdictStr}`;
+}
+
 /**
  * Coerce a free-form verdict object into the expected VerifierVerdict schema.
  * Maps common agent-improvised patterns (verdict:"PASS", verification_summary, etc.)
@@ -98,101 +271,10 @@ function hasApprovalSignal(obj: Record<string, unknown>): boolean {
 export function coerceVerdict(obj: Record<string, unknown>): VerifierVerdict | null {
   if (!hasApprovalSignal(obj)) return null;
   try {
-    // Determine approval status
-    const verdictStr = String(obj.verdict ?? "").toUpperCase();
-    // A "VERIFIED" prefix only counts as approval when it isn't immediately
-    // contradicted by a failure indicator later in the string (e.g. the
-    // agent writing "VERIFIED FAILED: 3 tests red").
-    const isVerifiedButFailed = /VERIFIED\b.*\b(FAIL|FAILED|RED|NOT MET)\b/.test(verdictStr);
-    // "ALL ACCEPTANCE CRITERIA MET" must not match its own negation
-    // ("NOT ALL ACCEPTANCE CRITERIA MET").
-    const isNegated = /\bNOT\b/.test(verdictStr);
-    const approved =
-      verdictStr === "PASS" ||
-      verdictStr === "PASSED" ||
-      verdictStr === "APPROVED" ||
-      (verdictStr.startsWith("VERIFIED") && !isVerifiedButFailed) ||
-      (verdictStr.includes("ALL ACCEPTANCE CRITERIA MET") && !isNegated) ||
-      obj.approved === true;
-
-    // Parse test results from verification_summary or top-level.
-    // BUG-1 (D-1): allPassing must never be seeded from `approved` — it is
-    // only ever set true from actual test evidence below.
-    let passCount = 0;
-    let failCount = 0;
-    let allPassing = false;
-    const summary = obj.verification_summary as Record<string, unknown> | undefined;
-    if (summary?.test_results && typeof summary.test_results === "string") {
-      // Parse "45/45 PASS" or "42/45 PASS" patterns — anchored to test-count
-      // context so an unrelated "N/N" substring (e.g. a "2024/05/13" date)
-      // is never mistaken for a pass/fail ratio. The pass/fail keyword is
-      // captured (not discarded) so a same-count "5/5 FAIL" ratio is never
-      // read as all-passing.
-      const match = (summary.test_results as string).match(/(\d+)\/(\d+)\s+(?:tests?\s+)?(pass|fail)/i);
-      if (match) {
-        passCount = Number.parseInt(match[1], 10);
-        const total = Number.parseInt(match[2], 10);
-        failCount = total - passCount;
-        allPassing = match[3].toLowerCase() === "pass" && failCount === 0 && total > 0;
-      }
-    }
-    // Also check top-level tests object (partial schema compliance)
-    if (obj.tests && typeof obj.tests === "object") {
-      const t = obj.tests as Record<string, unknown>;
-      if (typeof t.passCount === "number") passCount = t.passCount;
-      if (typeof t.failCount === "number") failCount = t.failCount;
-      if (typeof t.allPassing === "boolean") allPassing = t.allPassing;
-    }
-
-    // Parse acceptance criteria from acceptance_criteria_review or acceptanceCriteria
-    const criteria: Array<{ criterion: string; met: boolean; note?: string }> = [];
-    let allMet = approved;
-    const acReview = obj.acceptance_criteria_review as Record<string, unknown> | undefined;
-    if (acReview) {
-      for (const [key, val] of Object.entries(acReview)) {
-        if (key.startsWith("criterion") && val && typeof val === "object") {
-          const c = val as Record<string, unknown>;
-          const met = String(c.status ?? "").toUpperCase() === "SATISFIED" || c.met === true;
-          criteria.push({
-            criterion: String(c.name ?? c.criterion ?? key),
-            met,
-            note: c.evidence ? String(c.evidence).slice(0, 200) : undefined,
-          });
-          if (!met) allMet = false;
-        }
-      }
-    }
-    // Also check top-level acceptanceCriteria
-    if (obj.acceptanceCriteria && typeof obj.acceptanceCriteria === "object") {
-      const ac = obj.acceptanceCriteria as Record<string, unknown>;
-      if (typeof ac.allMet === "boolean") allMet = ac.allMet;
-      if (Array.isArray(ac.criteria)) {
-        for (const c of ac.criteria) {
-          if (c && typeof c === "object") {
-            criteria.push(c as { criterion: string; met: boolean; note?: string });
-          }
-        }
-      }
-    }
-    // Parse summary AC count like "4/4 SATISFIED"
-    if (criteria.length === 0 && summary?.acceptance_criteria && typeof summary.acceptance_criteria === "string") {
-      const acMatch = (summary.acceptance_criteria as string).match(/(\d+)\/(\d+)/);
-      if (acMatch) {
-        const met = Number.parseInt(acMatch[1], 10);
-        const total = Number.parseInt(acMatch[2], 10);
-        allMet = met === total;
-      }
-    }
-
-    // Parse quality
-    let rating: "good" | "acceptable" | "poor" = "acceptable";
-    const qualityStr = summary?.code_quality
-      ? String(summary.code_quality).toLowerCase()
-      : obj.quality && typeof obj.quality === "object"
-        ? String((obj.quality as Record<string, unknown>).rating ?? "acceptable").toLowerCase()
-        : "acceptable";
-    if (qualityStr === "high" || qualityStr === "good") rating = "good";
-    else if (qualityStr === "low" || qualityStr === "poor") rating = "poor";
+    const { approved, verdictStr } = resolveApproval(obj);
+    const { passCount, failCount, allPassing } = coerceTestCounts(obj);
+    const { allMet, criteria } = coerceCriteria(obj, approved);
+    const rating = resolveQuality(obj);
 
     // Build coerced verdict
     return {
@@ -211,14 +293,7 @@ export function coerceVerdict(obj: Record<string, unknown>): VerifierVerdict | n
       acceptanceCriteria: { allMet, criteria },
       quality: { rating, issues: [] },
       fixes: Array.isArray(obj.fixes) ? (obj.fixes as string[]) : [],
-      reasoning:
-        typeof obj.reasoning === "string"
-          ? obj.reasoning
-          : typeof obj.overall_status === "string"
-            ? (obj.overall_status as string)
-            : summary?.overall_status
-              ? String(summary.overall_status)
-              : `Coerced from free-form verdict: ${verdictStr}`,
+      reasoning: buildReasoning(obj, verdictStr),
     };
   } catch {
     return null;

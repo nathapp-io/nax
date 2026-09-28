@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-28T00:20:33.132Z",
+  "updatedAt": "2026-09-28T00:31:13.036Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -158,7 +158,7 @@
     "src/runtime/session-run-hop.ts": [57],
     "src/runtime/spin-breaker/index.ts": [25],
     "src/session/manager.ts": [21],
-    "src/tdd/verdict-reader.ts": [72, 27],
+    "src/tdd/verdict-reader.ts": [27],
     "src/test-runners/ac-parser.ts": [64],
     "src/test-runners/conventions.ts": [22],
     "src/test-runners/detect/framework-configs-python.ts": [26],
