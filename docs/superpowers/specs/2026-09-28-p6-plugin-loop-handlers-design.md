@@ -178,10 +178,13 @@ export default plugin;
 ### 5.2 Inject into the SessionManager
 
 The `SessionManager` is constructed at `src/execution/lifecycle/run-setup.ts:227`, before
-plugins load (`run-setup-init.ts:161`). After init returns, run setup calls
-`sessionManager.configureRuntime({ loopHandlers: pluginRegistry.getLoopHandlers() })`.
-`configureRuntime` (`src/session/manager.ts:90`) gains the optional field, stored as
-`_loopHandlers` (default: empty).
+plugins load (`run-setup-init.ts:161`). `initializeAfterLock` already receives the run's
+`runtime`, so right after `loadPlugins` returns it calls
+`runtime.sessionManager.configureLoopHandlers(pluginRegistry.getLoopHandlers())`.
+`NaxRuntime.sessionManager` is typed `ISessionManager` (`src/runtime/index.ts:159`), which has no
+`configureRuntime`, so `ISessionManager` gains `configureLoopHandlers(set)`; `SessionManager`
+stores it as `_loopHandlers` (default: empty) and the test mock gets a no-op (spec review
+2026-09-28).
 
 ### 5.3 One chokepoint
 
@@ -209,9 +212,9 @@ neither field is added — the no-plugin path is byte-identical to today.
 `SendTurnOpts` (`src/agents/session-types.ts:131`) gains `loopHandlers?: LoopHandlerSet` and
 `loopHandlerContext?: LoopHandlerContext`.
 
-**ACP.** The ACP adapter ignores both fields. When the set is non-empty and an ACP session
-receives it, the SessionManager logs one `plugins` info line per run: "loop handlers apply to
-the native agent only".
+**ACP.** The fields are attached only when `handle.agentName === NATIVE_AGENT_NAME`. When the set
+is non-empty and a non-native session sends a prompt, nothing is attached and the SessionManager
+logs one `plugins` info line per run: "loop handlers apply to the native agent only".
 
 ### 5.4 Adapter → loop
 
