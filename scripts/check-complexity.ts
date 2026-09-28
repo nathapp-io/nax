@@ -11,10 +11,11 @@
  * offenders recorded in ONE baseline file rather than in the source.
  *
  * The baseline records, per file, each over-limit function's score under a
- * label: the function's name as Biome points at it, `=>` for an anonymous
- * arrow, and `#2`, `#3`… for a repeat of the same label in one file, in source
- * order. Keyed by label, never by line, so ordinary edits above a function do
- * not churn it. A file passes when:
+ * label: the text Biome's diagnostic span covers — the function's name (`run`,
+ * `#priv`, `["key"]`), `function` for an anonymous function expression, `=>`
+ * for an anonymous arrow — plus `#2`, `#3`… for a repeat of the same label in
+ * one file, in source order. Keyed by label, never by line, so ordinary edits
+ * above a function do not churn it. A file passes when:
  *   - No file outside the baseline has an over-limit function.
  *   - No baselined file has an over-limit function under a label the baseline
  *     does not record (a helper split out of a baselined function is new code
@@ -24,15 +25,20 @@
  *     re-spent by a later change.
  *
  * Known blind spots:
- *   - Anonymous arrows share the `=>` label, told apart only by source order.
- *     If a file's over-limit arrow is fixed and a different arrow in the same
- *     file lands at or under its score, the file reads as improved.
+ *   - A repeated label in one file is told apart only by source order. That
+ *     covers anonymous arrows (`=>`), anonymous function expressions
+ *     (`function`) and same-named methods (`run` on two classes). If one is
+ *     fixed and a different function with the same label lands at or under a
+ *     recorded score, the file reads as improved.
+ *   - Biome does not score getters or setters at all, so logic moved into an
+ *     accessor escapes both this gate and biome.json's cap.
  *   - Renaming a baselined function (or its file) reads as a new function. That
  *     fails safe: move the entry by hand in the same commit.
  *
- * Suppressions: a `biome-ignore` covering this rule (the rule itself,
- * `lint/complexity`, or bare `lint`) hides the function from Biome entirely, so
- * this check fails on any such comment in the scanned directories.
+ * Suppressions: a `biome-ignore` listing any selector that covers this rule
+ * (the rule itself, `lint/complexity`, or bare `lint`, in a comment of one or
+ * several rules) hides the function from Biome entirely, so this check fails
+ * on any such comment in the scanned directories.
  *
  * `--update-baseline` only ever lowers: it refuses while any file is new or
  * grown. Raising the baseline is a deliberate hand edit, visible in review.
@@ -109,20 +115,26 @@ interface BiomeReport {
 export type SourceReader = (file: string) => string;
 
 const SCORE_RE = /complexity of (\d+)/;
-const IDENTIFIER_RE = /^[A-Za-z_$][\w$]*$/;
-
 const readRepoSource: SourceReader = (file) => readFileSync(resolve(ROOT, file), "utf8");
 
-/** The text Biome's span covers: the function's name, or `=>` for an anonymous arrow. */
+/**
+ * The text Biome's span covers: normally the function's name (`run`, `#priv`,
+ * `["computed"]`, `"str-name"`), `function` for an anonymous function
+ * expression, or `=>` for an anonymous arrow. Biome counts columns in code
+ * points, so the line is sliced by code point, not by UTF-16 unit.
+ */
 export function labelAt(source: string, start: Required<Position>, end: Required<Position>): string {
+  const line = source.split("\n")[start.line - 1] ?? "";
   const text =
-    source
-      .split("\n")
-      [start.line - 1]?.slice(start.column - 1, end.column - 1)
-      .trim() ?? "";
-  if (start.line === end.line && IDENTIFIER_RE.test(text)) return text;
-  if (text === ARROW_LABEL) return ARROW_LABEL;
-  throw new Error(`cannot label the function at ${start.line}:${start.column} (span text ${JSON.stringify(text)})`);
+    start.line === end.line
+      ? Array.from(line)
+          .slice(start.column - 1, end.column - 1)
+          .join("")
+          .trim()
+      : "";
+  if (text === "")
+    throw new Error(`cannot label the function at ${start.line}:${start.column} (empty or multi-line span)`);
+  return text;
 }
 
 function readScore(d: Diagnostic, readSource: SourceReader): Score {
@@ -135,8 +147,12 @@ function readScore(d: Diagnostic, readSource: SourceReader): Score {
     throw new Error(`biome diagnostic has no span end: ${JSON.stringify(d)}`);
   }
   const from = { line: start.line, column: start.column };
-  const label = labelAt(readSource(path), from, { line: end.line, column: end.column });
-  return { file: path, score: Number(match[1]), label, ...from };
+  try {
+    const label = labelAt(readSource(path), from, { line: end.line, column: end.column });
+    return { file: path, score: Number(match[1]), label, ...from };
+  } catch (err) {
+    throw new Error(`${path}: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
+  }
 }
 
 /**
@@ -212,13 +228,21 @@ export function compareToBaseline(baseline: ScoresByFile, current: ScoresByFile)
   return { added, grown, lowerable };
 }
 
-/** Matches a biome-ignore whose selector covers this rule: the rule, its group, or all of `lint`. */
-const SUPPRESSION_RE =
-  /biome-ignore(?:-all|-start)?\s+lint(?:\/complexity(?:\/noExcessiveCognitiveComplexity)?)?(?![\w/])/;
+/** A biome-ignore comment's selector list: everything after the directive, up to its `:` explanation. */
+const IGNORE_DIRECTIVE_RE = /biome-ignore(?:-all|-start)?\s+([^:\n]*?)\s*(?::|\*\/|$)/g;
+/** One selector that covers this rule: the rule itself, its group, or all of `lint`, optionally with a `(value)`. */
+const COVERING_SELECTOR_RE = /^lint(?:\/complexity(?:\/noExcessiveCognitiveComplexity)?)?(?:\(.*\))?$/;
+
+/** True when any biome-ignore on the line lists a selector covering this rule (Biome accepts several per comment). */
+function suppressesRule(text: string): boolean {
+  return [...text.matchAll(IGNORE_DIRECTIVE_RE)].some((m) =>
+    (m[1] ?? "").split(/\s+/).some((selector) => COVERING_SELECTOR_RE.test(selector)),
+  );
+}
 
 /** `file:line` for every suppression of this rule in `source`. */
 export function findSuppressions(file: string, source: string): string[] {
-  return source.split("\n").flatMap((text, i) => (SUPPRESSION_RE.test(text) ? [`${file}:${i + 1}`] : []));
+  return source.split("\n").flatMap((text, i) => (suppressesRule(text) ? [`${file}:${i + 1}`] : []));
 }
 
 function scanSuppressions(): string[] {
@@ -249,16 +273,21 @@ export function buildStrictConfig(repoConfig: RepoBiomeConfig, limit: number) {
   };
 }
 
+/**
+ * The repo's own Biome. `bun x biome` without node_modules fetches the unrelated
+ * npm package `biome` (an env-var manager), which exits 0 with no report.
+ */
+const BIOME_BIN = join(ROOT, "node_modules", ".bin", "biome");
+
 function runBiome(): Score[] {
+  if (!existsSync(BIOME_BIN)) throw new Error(`${BIOME_BIN} not found — run \`bun install\` first`);
   const repoConfig = JSON.parse(readFileSync(join(ROOT, "biome.json"), "utf8")) as RepoBiomeConfig;
   const configDir = mkdtempSync(join(tmpdir(), "nax-complexity-"));
   try {
     writeFileSync(join(configDir, "biome.json"), JSON.stringify(buildStrictConfig(repoConfig, STRICT_LIMIT)));
     const proc = Bun.spawnSync(
       [
-        "bun",
-        "x",
-        "biome",
+        BIOME_BIN,
         "lint",
         `--config-path=${configDir}`,
         `--only=${RULE}`,
@@ -317,7 +346,8 @@ function baselineRow(file: string, scores: FunctionScores): string {
 function saveBaseline(path: string, byFile: ScoresByFile) {
   const rows = Object.entries(byFile).map(([file, scores]) => baselineRow(file, scores));
   const header = `  "updatedAt": ${JSON.stringify(new Date().toISOString())},\n  "limit": ${STRICT_LIMIT},`;
-  writeFileSync(path, `{\n${header}\n  "byFile": {\n${rows.join(",\n")}\n  }\n}\n`);
+  const body = rows.length === 0 ? "{}" : `{\n${rows.join(",\n")}\n  }`;
+  writeFileSync(path, `{\n${header}\n  "byFile": ${body}\n}\n`);
 }
 
 const formatScores = (scores: FunctionScores) =>

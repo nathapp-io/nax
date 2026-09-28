@@ -42,6 +42,15 @@ describe("parseScores", () => {
     ]);
   });
 
+  test("names the file when a function cannot be labelled", () => {
+    const empty = {
+      ...diag("src/odd.ts", 42),
+      location: { path: "src/odd.ts", start: { line: 1, column: 3 }, end: { line: 1, column: 3 } },
+    };
+
+    expect(() => parseScores(report([empty]), readFake)).toThrow(/src\/odd\.ts/);
+  });
+
   test("throws when a diagnostic has no span to label the function by", () => {
     const bare = { ...diag("src/a.ts", 42), location: { path: "src/a.ts" } };
 
@@ -101,8 +110,23 @@ describe("labelAt", () => {
     expect(at("items.map((item) => {", 1, 18, 21)).toBe(ARROW_LABEL);
   });
 
-  test("throws on a span that is neither a name nor an arrow, instead of inventing a label", () => {
-    expect(() => at("const x = 1;", 1, 1, 12)).toThrow(/cannot label/);
+  test.each([
+    ["a private method", "  #priv() {", 3, 8, "#priv"],
+    ["a computed key", '  ["computed"]() {', 3, 15, '["computed"]'],
+    ["a string-literal method name", '  "str-name"() {', 3, 13, '"str-name"'],
+    ["an anonymous function expression", "export default function () {", 16, 24, "function"],
+  ])("labels %s by the text its span covers, instead of crashing", (_what, source, from, to, label) => {
+    expect(at(source, 1, from, to)).toBe(label);
+  });
+
+  // Biome's columns count code points; a UTF-16 slice would shift one unit per astral character.
+  test("counts columns in code points, so an emoji earlier on the line does not shift the label", () => {
+    expect(at('const s = "日本語😀"; function crlf() {}', 1, 28, 32)).toBe("crlf");
+  });
+
+  test("throws on an empty or multi-line span, instead of inventing a label", () => {
+    expect(() => at("function f() {}", 1, 5, 5)).toThrow(/cannot label/);
+    expect(() => labelAt("a\nb", { line: 1, column: 1 }, { line: 2, column: 2 })).toThrow(/cannot label/);
   });
 });
 
@@ -199,6 +223,12 @@ describe("findSuppressions", () => {
     ["every lint rule", `// ${IGNORE} lint: legacy`],
     ["the rule, file-wide", `// ${IGNORE}-all lint/complexity/noExcessiveCognitiveComplexity: legacy`],
     ["the rule, over a range", `// ${IGNORE}-start lint/complexity/noExcessiveCognitiveComplexity: legacy`],
+    // Biome honours a list of rules in one comment; only checking the first one let this through.
+    [
+      "the rule, listed after another rule",
+      `// ${IGNORE} lint/style/useConst lint/complexity/noExcessiveCognitiveComplexity: x`,
+    ],
+    ["the rule, in a block comment", `/* ${IGNORE} lint/complexity/noExcessiveCognitiveComplexity: legacy */`],
   ])("flags a suppression of %s", (_what, comment) => {
     expect(findSuppressions("src/x.ts", `const a = 1;\n${comment}\nfunction f() {}`)).toEqual(["src/x.ts:2"]);
   });
@@ -207,6 +237,7 @@ describe("findSuppressions", () => {
     ["another complexity rule", `// ${IGNORE} lint/complexity/useLiteralKeys: generated`],
     ["another group", `// ${IGNORE} lint/suspicious/noExplicitAny: fixture`],
     ["a formatter directive", `// ${IGNORE} format: table`],
+    ["several other rules", `// ${IGNORE} lint/style/useConst lint/suspicious/noExplicitAny: fixture`],
   ])("ignores a suppression of %s", (_what, comment) => {
     expect(findSuppressions("src/x.ts", comment)).toEqual([]);
   });
