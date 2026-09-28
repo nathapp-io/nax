@@ -48,16 +48,21 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C3-commit, batch C3 complete)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C4-commit, DRAIN COMPLETE)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    229 functions in 201 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     2     (1 src, 1 scripts)   <- THIS DRAIN (only C4 generateCommand/main left)
-  worst       99   src/cli/generate.ts generateCommand
-biome.json cap: 170
-batches: 24 of 25 done (P0, A1-A13, B1-B7, C1, C2, C3)
+  over 20    227 functions in 199 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     0                           <- DRAIN COMPLETE (C4 was the final batch)
+  worst       59   src/pipeline/stages/acceptance.ts and src/agents/native/session/turn-tool-batch.ts
+biome.json cap: 60   (dropped from 170 by C4b, the final batch - every `biome check` run now enforces it)
+batches: 25 of 25 done (P0, A1-A13, B1-B7, C1, C2, C3, C4)
 ```
+
+The drain's goal (§1) is met: zero functions over 60 and the cap at 60. New code is held to
+20 by `check:complexity` against the baseline, and ALL code is now held to 60 by biome
+itself. The next milestone (40, ~38 functions, worst 59) is the user's call per §1 - do not
+start it by default.
 
 Refresh this block at the end of every batch:
 ```
@@ -182,8 +187,8 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | C2 | done 2026-09-27 | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 -> 393 | 4 / 4 | none |
 | C2 | done 2026-09-27 | 64 | `parseTestFailuresDetailed` | `src/test-runners/ac-parser.ts:50` | 141 -> 151 | 4 / 3 | none |
 | C3 | done 2026-09-27 | 93 | `lexBashCommand` | `src/permissions/bash-lex.ts:78` | 248 -> 340 | 3 / 2 | yes |
-| C4 | in progress | 99 | `generateCommand` | `src/cli/generate.ts:49` | 267 | 1 / 1 | none |
-| C4 | in progress | 79 | `main` | `scripts/report-test-consolidation.ts:293` | 485 | 3 / 1 | none |
+| C4 | done 2026-09-27 | 99 | `generateCommand` | `src/cli/generate.ts:49` | 267 -> 334 | 1 / 1 | none |
+| C4 | done 2026-09-27 | 79 | `main` | `scripts/report-test-consolidation.ts:293` | 485 -> 547 | 3 / 1 | none |
 
 A grouped batch is one session; each function in it still gets its own `refactor:` commit.
 C3 is alone because `lexBashCommand` is security-relevant (it feeds the permission
@@ -3065,3 +3070,162 @@ against the git original) is available for any pure function. Post-drain:
 zero functions over 60, cap drops to 60, and the 40-milestone discussion
 from §9.8 (38 functions over 20, many already in the high teens) goes to
 the user.
+
+### 9.27 - 2026-09-27, C4 done - `generateCommand` 99 -> 4 and `main` 79 -> 3 (one session, two refactor commits + the cap drop) - DRAIN COMPLETE
+
+The final batch, and with it the drain's §1 goal: zero functions over 60,
+and `biome.json` `maxAllowedComplexity` 170 -> 60 (folded into C4b's
+refactor commit, per the §4 rule). Both functions were `test: none`, and
+the heuristic-path-only reading was wrong for BOTH - the tenth and
+eleventh time that warning fired (A11-A13, B1-B7, C2-C3, now C4a and C4b).
+
+**C4a - `generateCommand` (`src/cli/generate.ts`, 99 -> 4, in place,
+266 -> 334 lines).** §3's CLI-action row, §9.5's manual applied directly.
+One session. Pre-flight, all answered BEFORE writing code: (1) NO
+`_deps`-style seam in generate.ts itself - the `_generatorDeps` seam lives
+in `src/context/generator.ts` (untouched; generateCommand consumes the
+generator's exports by value), and the module's only importer is
+`bin/nax.ts:79` plus the `src/cli/index.ts` barrel (by-value re-export) -
+A1's trap resolved "no". (2) A2's traps all clean: no loops with
+cross-phase state, no closures over `let`s, every `process.exit` is
+terminal inside its own branch, and the root path's try/catch owns only
+the root path (the all-packages and single-package branches intentionally
+propagate straight out - preserved by keeping them outside the catch).
+(3) NO source-text tests pin the file - the three suites that reference it
+(`generate-flows`, `generate-package`, `cli-core-generate`) all import the
+function normally. (4) No per-file guard allow-list names the file
+(`grep -Rn "grep -vE" scripts/`). (5) File measured 266 going in (the
+doc's 267 - one line of drift, eighteenth batch running).
+
+**C4a characterisation first** (own commit `821b311f2`, 7 tests appended to
+`generate-flows.test.ts` - 242 lines, plenty of headroom; green against
+the unrefactored command). The three existing suites pin most branches:
+all-packages (empty/success/dry-run/failure), single-package
+(success/dry-run/missing-context), the US-002 `!== undefined` empty-string
+guard, auto-discovered packages after a root generate (incl. the relative
+`rel` label), the top-level catch, unknown-agent exit 1, and --agent
+happy paths for five agents. What NOTHING pinned, one test each: (a) the
+project config's `generate.agents` filter ("Generating configs for: ...
+(from config)..." plus only the filtered agents generated); (b) the empty
+`agents: []` fallback to all-agents (the `length > 0` guard); (c) the
+success tail "✓ Agent configs written to <outputDir>" (non-dry-run only);
+(d) the "Auto-injecting project metadata..." line and its noAutoInject
+suppression; (e) the dry-run suppression of the written-to tail; (f) the
+"→ Loading context from <path>" line; (g) the "Valid agents: ..." detail
+line after an unknown agent. Test-infra finding worth keeping: the
+developer's GLOBAL `~/.nax/config.json` carries its own
+`generate.agents`, so config-filter tests must pin the PROJECT layer
+(deepMergeConfig: arrays replace, so a project config deterministically
+overrides global - the test comments say so).
+
+**The latent quirk found while auditing, recorded not fixed (§2.1):** the
+misplaced-config warning branch (`autoMode.generate.agents` ->
+"nested under autoMode" warn + adoption) is UNREACHABLE through
+`loadConfig`: `AutoModeConfigSchema` is a plain zod object, so zod's
+.strip() drops the unknown `generate` key inside `autoMode` before the
+command ever sees it. The branch is defensive-only dead code through the
+only config source the command has. Left as-is, moved verbatim into
+`resolveAgentFilter`.
+
+**C4a technique:** in-place extraction (§2.4 never forced a sibling at
+266 lines; the C2/C3 precedent). `generateCommand` is now the sequencer -
+build the `GenerateFrame` (`workdir`/`config`/`dryRun`), two option-group
+guards, root path - and scores 4. Phase helpers, each taking the frame
+(≤ 3 positional params everywhere): `loadCommandConfig` (the try/catch
+degrading to `{}` - its own function so the catch is honest about scope),
+`runAllPackages` 3, `runSinglePackage` 9 (the US-002 validation + its
+loop; the error message keeps the literal "generateCommand:" prefix),
+`runRootGeneration` 9 (validation, notices, genOptions, the try/catch and
+tail), `validateRootInputs` 3, `generateSingleAgent` 2,
+`generateFromConfig` 4, `resolveAgentFilter` 5 (the misplaced-config block
+verbatim), `generateDiscoveredPackages` 5, plus two shared printers -
+`reportPackageResults` 7 (all-packages and discovered-packages share the
+`✗ pkgDir: error` / `✓ displayDir/file` shape, folded with a
+`displayDir = pkgDir` default param; the single-package loop's bare
+`✗ error` format was NOT unified into it - B6's pinned-asymmetry rule) and
+`reportAgentResults` 7, and `printDryRunNotice` (the thrice-duplicated
+notice - P0's shared-helper trick).
+
+**C4b - `main` (`scripts/report-test-consolidation.ts`, 79 -> 3, in
+place, 484 -> 547 lines).** The orchestrator shape, §3's "extract named
+phase functions" row. Pre-flight: (1) NO test drives `main()` anywhere -
+the exported primitives (`walk`/`readStat`/`buildGroups`/`packGroup`/
+`mirrorsSrcModule`/`SCAN_DIRS`/`TICKET_RE`) are consumed by
+`check-test-satellites.ts` and tested through ITS unit test, but the
+report modes, argument validation, and exit codes had zero coverage; and
+the complexity baseline confirmed it: `[79]` was the file's only entry.
+(2) No `_deps`-style seam, no barrel (a standalone script; its consumers
+import four primitives by value, all untouched). (3) A2's traps clean -
+each report mode is a straight shot from parsed argv to output, every
+`process.exit` terminal, no loops carrying state across a phase boundary.
+(4) No per-file guard allow-list names the file. (5) File measured 484
+going in (the doc's 485 - one line of drift, nineteenth batch running).
+(6) The per-file coverage floor does not apply: the ratchet scans `src/`
+only, so B5's twin gate cannot fire on a scripts/ extraction.
+
+**C4b characterisation first** (own commit, 7 tests, new file
+`test/unit/scripts/report-test-consolidation.test.ts`, green against the
+unrefactored script; the A4 spawn precedent and the
+`biome-nested-worktree-config` Bun.spawn harness). Because main() scans
+the LIVE repo, the tests pin branch BEHAVIOUR and structural invariants,
+never volatile counts: default mode exits 0 with the headline/table/
+floor lines; `--json` parses, `totals.groups === rows.length`, the
+removableFiles/removableLines sort invariant, and the full Row key set;
+`--group <full path>` exits 0 with GROUP/fill-target/packing/members
+sections; `--group` without a value, an unknown base, and an AMBIGUOUS
+bare filename (three groups named `manager.test.ts` - found by scanning
+the --json output for duplicate basenames) each exit 1 with their exact
+message; `--mirrors` exits 0 with the never-merge banner.
+
+**C4b technique:** main() is now: loadFrozenBaseline -> scanPopulation ->
+buildRows -> mode dispatch (`--mirrors` / `--group`) -> buildTotals ->
+`--json` -> printHumanReport, scoring 3. Phases: `loadFrozenBaseline` 2,
+`scanPopulation` 1 (returns one `ScanResult`), `buildRows` (the row loop
++ sort, ≤ 1 - the literal's filter/reduce arrows are separate function
+nodes), `printMirrorsReport` 7, `runGroupReport` 5 (the three validation
+exits), `printGroupDetail` (≤ 1; split into `printGroupWarnings` 16 -
+mirrors/frozen/unrestored/unclear sections, the largest helper -
+`printPackingPlan` 5, `printMemberDetails` 11), `buildTotals` 1,
+`runJsonReport` 1, `printHumanReport` 11. All ≤ 20 - §2.3 never triggered
+(nineteenth batch running). One lint nuance (§9.6's class, second
+occurrence): `useArraySortCompare` fired on `mirrors.sort()` in the moved
+site while the byte-identical shape inside the old monolith was never
+flagged - fixed with an explicit UTF-16 comparator spelled out in a
+comment (semantics-identical for string arrays), not a biome-ignore.
+
+**Verification beyond the suite:** a literal fingerprint diff of the
+original generate.ts (git HEAD) against the refactored file - every
+string/template literal identical except `${options.package}` ->
+`${pkg}` in the NaxError template (renamed parameter, runtime-identical,
+A6's precedent); report-test-consolidation.ts was a verbatim
+decomposition (bodies moved, not rewritten) re-checked against the
+characterisation suite's exit codes and messages; the pre-existing
+residents of both files (walk 8, hookBodies 12, buildGroups 13, packGroup
+15) are all under 20 and untouched.
+
+**Helper scores (probe at maxAllowedComplexity=1, repo-root probe config
+per §9.13/§9.17, deleted after):** generateCommand 4, runSinglePackage 9,
+runRootGeneration 9, reportPackageResults 7, reportAgentResults 7,
+resolveAgentFilter 5, generateDiscoveredPackages 5, runAllPackages 3,
+validateRootInputs 3, generateSingleAgent 2, loadCommandConfig/
+printDryRunNotice ≤ 1; printGroupWarnings 16, printMemberDetails 11,
+printHumanReport 11, printMirrorsReport 7, runGroupReport 5,
+printPackingPlan 5, loadFrozenBaseline 2, main 3, scanPopulation/
+buildRows/printGroupDetail/buildTotals/runJsonReport ≤ 1.
+
+**Both baselines were pure lowers:** complexity 229 -> 228 -> 227
+functions, 201 -> 200 -> 199 files (both files left the over-20 baseline
+entirely). `biome.json` cap 170 -> 60 in C4b's refactor commit, and the
+full gate suite was re-run AT 60 to prove the cap holds: `lint:biome`
+clean across 2797 files, `bun run check:all` green (35 scripts),
+`bun run test` green (all phases), typecheck both tsconfigs, and
+`bun run test:coverage` green (below-floor count 1 vs baseline 2 - the
+standing A5 improvement, still not lowered).
+
+**Nothing else surprising.** `check:import-cycles` 0, file-sizes green,
+looseCast 1474 (one `as Error` in the first C4a test draft grew it and
+the pre-commit hook caught it - restructured to `String(caught)`, no cast
+needed). Post-drain state for the milestone discussion: the worst
+remaining functions are `acceptance.ts` and `turn-tool-batch.ts` at 59,
+then `unlock.ts` 58 and `session-run-hop.ts` 57 - the 40-milestone (§1/§9.8)
+now has a concrete, short ladder.

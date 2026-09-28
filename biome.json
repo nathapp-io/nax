@@ -20,7 +20,7 @@
       "complexity": {
         "noExcessiveCognitiveComplexity": {
           "level": "error",
-          "options": { "maxAllowedComplexity": 170 }
+          "options": { "maxAllowedComplexity": 60 }
         }
       },
       "suspicious": {

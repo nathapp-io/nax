@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-28T01:17:46.577Z",
+  "updatedAt": "2026-09-28T01:30:04.420Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -17,7 +17,6 @@
     "scripts/command-safety-eval.ts": [23],
     "scripts/find-memory-leak.ts": [23],
     "scripts/generate-changelog.ts": [38, 33],
-    "scripts/report-test-consolidation.ts": [79],
     "src/acceptance/hardening.ts": [27],
     "src/agents/acp/adapter-complete-flow.ts": [29],
     "src/agents/acp/spawn-client-session.ts": [24],
