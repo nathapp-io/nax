@@ -48,15 +48,15 @@ half-refactored tree for the next session.
 
 ---
 
-## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C1a-commit)
+## 0. Current state - measured 2026-09-27 (chore/complexity-ratchet, post-C1-commit)
 
 ```
 bun scripts/check-complexity.ts --list        (strict limit 20)
-  over 20    234 functions in 205 files   <- recorded in scripts/baselines/complexity-baseline.json
-  over 60     7     (6 src, 1 scripts)   <- THIS DRAIN (validateConfig drained by C1a)
+  over 20    233 functions in 204 files   <- recorded in scripts/baselines/complexity-baseline.json
+  over 60     6     (5 src, 1 scripts)   <- THIS DRAIN (validateConfig + deepMergeConfig drained by C1)
   worst       99   src/cli/generate.ts generateCommand
 biome.json cap: 170
-batches: 21 of 25 done (P0, A1-A13, B1-B7; C1 half done - validateConfig landed, deepMergeConfig next)
+batches: 22 of 25 done (P0, A1-A13, B1-B7, C1)
 ```
 
 Refresh this block at the end of every batch:
@@ -177,7 +177,7 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | Batch | Status | Score | Function | File:line | Lines | Churn / fix | test |
 |:--|:--|---:|:--|:--|---:|:--|:--|
 | C1 | done 2026-09-27 | 110 | `validateConfig` | `src/config/validate.ts:30` | 175 | 4 / 0 | yes |
-| C1 | in progress | 78 | `deepMergeConfig` | `src/config/merger.ts:41` | 173 | 2 / 2 | none |
+| C1 | done 2026-09-27 | 78 | `deepMergeConfig` | `src/config/merger.ts:41` | 173 | 2 / 2 | none |
 | C2 | todo | 75 | `parseFrontmatter` | `src/context/rules/rules-frontmatter.ts:110` | 293 | 5 / 2 | yes |
 | C2 | todo | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 | 4 / 4 | none |
 | C2 | todo | 64 | `parseTestFailuresDetailed` | `src/test-runners/ac-parser.ts:50` | 141 | 4 / 3 | none |
@@ -2542,3 +2542,112 @@ affordable there if the 600-line gate allows, but still prefer the sibling
 when it reads better. Post-drain note: over-60 is down to 8 (7 src + 1
 scripts); after C1-C4 the drain can set the biome cap to 60 - and the
 40-milestone discussion from §9.8 still stands.
+
+### 9.22 - 2026-09-27, C1 done - `validateConfig` 110 -> 0 and `deepMergeConfig` 78 -> 0 (one session, two refactor commits)
+
+The first grouped batch: two functions, one session, each with its own
+`refactor:` commit (`acaa28381` for validateConfig; deepMergeConfig's refactor
+commit carries this entry, its baseline lower and the §0/§4 close-out), each
+preceded by its own `test: characterise ...` commit (`7d79fabe6`,
+`fdb8f914b`). Both are P0's exact shape - field-by-field
+validator / per-key decision chain - and the P0 playbook applied directly.
+
+**The mirror-vs-pinned trap has a deprecated-twin variant.** `validateConfig`
+was `test: yes` and its mirror (validate.test.ts, 15 tests) pins the
+fallback-map / tierOrder / complexityRouting groups thoroughly - but the basic
+field groups (version, models, execution limits, agent.default, tierOrder
+attempts) had NO validateConfig-level tests anywhere. The same message strings
+ARE pinned in test/integration/config/config.test.ts - through
+`NaxConfigSchema.safeParse`, the zod validator the module header says
+validateConfig is deprecated in favour of. A grep for the function name misses
+that; a grep for the MESSAGE finds it, and the hit is the wrong function.
+20 characterisation tests pinned every unpinned branch through validateConfig
+itself (byte-exact messages), including a `??`-semantics quirk: an empty-string
+`agent.default` is used verbatim as the models key (`??` only falls back on
+null/undefined), producing `models. is required (default agent has no model
+map)`. deepMergeConfig's §4 `test: none` was the heuristic-path-only reading
+again (B1's lesson): test/integration/config/merger.test.ts (475 lines) pins a
+LOT - SEC-07, hook flattening, constitution, immutability - and 6 new tests
+pinned what it left: the hooks sibling-field copy loop (skipGlobal), BOTH
+non-plain-baseHooks arms, primitive-to-object replacement, the `prototype`
+dangerous key, and the hooks-both-plain requirement.
+
+**A latent crash found while characterising, recorded not fixed (§2.1):**
+`validateConfig` with `models: undefined` and a POPULATED complexityRouting
+THROWS TypeError - the routing block reads `config.models[defaultAgentKey]`
+(line 152 of the original) without re-checking `config.models`, so it never
+returns the "models mapping is required" error in that state. Pinned as-is
+(both facets: the returned error with empty routing, the throw with populated
+routing). Same class, noted not pinned: missing `execution`/`autoMode`
+sections crash their blocks identically - defensive-only for the type-honest
+callers the module is kept for.
+
+**Technique - validateConfig:** eight group validators in a new sibling,
+`src/config/validate-fields.ts` (224 lines after `bun x biome check --write`),
+in original push order: `checkVersion` 1, `checkModelsMapping` 6 (+ private
+`checkModelEntry` 7), `checkExecutionLimits` 3, `checkAgentDefault` 2,
+`checkTierOrder` 6, `checkFallbackMapAgents` 2, `checkTierOrderAgentKeys` 16,
+`checkComplexityRouting` 16; shared helpers `defaultAgentKey` (the thrice-
+duplicated `?? DEFAULT_AGENT_NAME`) and `missingTierMessage` (the fallback-map
+message is the default-agent message plus its parenthetical suffix - P0's
+shared-helper trick, composition verified byte-identical at runtime).
+`checkFallbackMapAgents` breached §2.3 on the FIRST pass (26): standard second
+split into `fallbackMapAgents` (the set builder, 6) and `fallbackAgentErrors`
+(11). `validateConfig` itself is an eight-call push sequence scoring 0;
+validate.ts is 175 -> 63.
+
+**Technique - deepMergeConfig:** new sibling
+`src/config/merger-special-cases.ts` (126) holds `DANGEROUS_MERGE_KEYS`,
+`isPlainObject` (both moved wholesale - merger.ts re-exports the keys set, so
+dotenv.ts's `./merger` import path is unchanged), `mergeHooks` 7 (+ private
+`mergeHookDefs` 13), and `mergeConstitution` 6. THE cycle question mattered
+here: mergeConstitution recurses into deepMergeConfig, so a sibling
+import-back would cycle - resolved with the A5/A6 by-reference pattern (the
+merger arrives as a `MergeDeep` parameter, the dispatcher passes itself).
+First pass left `deepMergeConfig` at 18 - the B7 finally-lesson in a for-loop
+shape: the loop's +1 nesting inflates all eight branch decisions. Second
+split: the loop body became `applyOverrideKey(result, key, value)` (10) - it
+mutates the accumulator in place, legal because EVERY original branch settled
+its key with `continue`, so there is no fall-through to preserve.
+`deepMergeConfig` is now clone / loop / return, scoring 0; merger.ts is
+173 -> 98.
+
+**Ratchet gotcha, sharper than §9.6 recorded:** the escape-hatch looseCast
+counter is GLOBAL - a cast added to an EXISTING test file grows it just like a
+new file. The first merger characterisation draft added two `as Record` casts
+(1474 -> 1476, FAIL). Fix was cheaper than expected: a plain
+`{ prototype: {...} }` literal creates the same own data property JSON.parse
+would (only `__proto__` is literal-special), so the test needed no cast at
+all. looseCast stayed 1474.
+
+**File-size gate trivially met:** both source files were small going in, and
+the sibling extraction left them strictly smaller (175 -> 63, 173 -> 98) with
+both siblings (224, 126) far under 600. No §9.19 coverage-floor scare: both
+siblings are covered by the mirrors plus the two characterisation suites;
+`test:coverage` green, below-floor count 1 vs baseline 2 (the standing A5
+improvement).
+
+**Verification beyond the suite:** literal fingerprint diffs of each original
+file against its pair - validateConfig: 20/20 double-quoted literals and
+36/36 template fixed parts verbatim (the one flagged "missing" is the
+fallback tier message now composed from `missingTierMessage` + suffix; proven
+runtime-identical with a direct probe); merger: 8/8 and 15/15, delete-site
+count 1 -> 1. 1209 config unit tests + the merger integration suite green
+before each refactor commit; full suite (all phases) green at close-out;
+check:all 35 scripts (import-cycles 0, file-sizes green, looseCast 1474);
+typecheck both tsconfigs.
+
+**For the next batch:** C2 is three functions - `parseFrontmatter`
+(`src/context/rules/rules-frontmatter.ts:110`, 75), `coerceVerdict`
+(`src/tdd/verdict-reader.ts:98`, 72), `parseTestFailuresDetailed`
+(`src/test-runners/ac-parser.ts:50`, 64). Lessons that transfer: (1) probe
+helper scores EARLY - both C1 functions needed one second split (the §2.3
+breach and the nesting-inflated sequencer were both found by the
+maxAllowedComplexity=1 probe, not by reading); (2) grep test/ for the exact
+message strings too, not just function names - a deprecated twin (zod schema)
+can hold lookalike pins; (3) coerceVerdict is `test: none` at the unit path -
+check for an integration mirror before assuming §2.2 means from-scratch; (4)
+if any target function recurses into itself (constitution did), plan the
+by-reference parameter before writing the sibling. Post-drain note: over-60
+is down to 6 (5 src + 1 scripts); after C2-C4 the drain sets the biome cap
+to 60 - and the 40-milestone discussion from §9.8 still stands.
