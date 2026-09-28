@@ -46,8 +46,8 @@ function resolvePytestBin(packageDir?: string): string {
 
 /**
  * Substitute `{{files}}` / `{{file}}` / `{{FILE}}` in a command template with a
- * single resolved test path. Shared by `buildAcceptanceRunCommand` (per-argv-part,
- * for the actual exec) and `resolveAcceptanceFixTarget` (whole-string, for the
+ * single resolved test path. Shared by `buildAcceptanceRunCommand` (whole-string,
+ * with a pre-quoted path, for the actual exec) and `resolveAcceptanceFixTarget` (whole-string, for the
  * fix-role prompt) — one regex set so the placeholder dialect can't drift between
  * the two call sites.
  *
@@ -73,11 +73,12 @@ export function buildAcceptanceRunCommand(
   // US-001: every acceptance runner executes the same shell command string
   // through `/bin/sh -c`, so the override and the framework default are both
   // returned as ONE string — with shell-quoting applied where needed.
-  if (commandOverride !== undefined && commandOverride !== null) {
+  const trimmedOverride = commandOverride?.trim();
+  if (trimmedOverride) {
     // An override is a shell line: env assignments, `&&`, pipes, the user's own
     // quoting all reach `sh` verbatim. Only the test path is untrusted, so we
     // single-quote it via shellQuoteArg at every placeholder occurrence.
-    return substituteAcceptanceTestPath(commandOverride.trim(), shellQuoteArg(testPath));
+    return substituteAcceptanceTestPath(trimmedOverride, shellQuoteArg(testPath));
   }
 
   // No override: take the framework default argv and quote-join it. The default

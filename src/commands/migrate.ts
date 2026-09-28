@@ -425,17 +425,17 @@ export async function migrateCommand(options: MigrateOptions): Promise<void> {
   const destBase = projectOutputDir(projectKey, config.outputDir);
   const candidates = await detectGeneratedContent(naxDir);
 
+  if (candidates.length === 0) {
+    logger.info("migrate", "Nothing to migrate — already up to date", { storyId: "_migrate" });
+    return;
+  }
+
   // US-003: git-tracked generated content cannot be moved out of .nax/ — the
   // next auto-commit would restore it, log a per-file error, and leave the
   // destination behind. Partition here so the CLI path matches the startup
   // helper; tracked candidates are surfaced per-file, migratable ones are moved
   // (or reported as moves, under --dry-run).
   const { migratable, tracked } = await partitionTrackedCandidates(options.workdir, candidates);
-
-  if (candidates.length === 0) {
-    logger.info("migrate", "Nothing to migrate — already up to date", { storyId: "_migrate" });
-    return;
-  }
 
   if (migratable.length === 0) {
     // Every candidate was tracked — log each skip so the operator sees which
