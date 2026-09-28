@@ -3,7 +3,7 @@
   "feature": "run-hygiene-bugs",
   "branchName": "feat/run-hygiene-bugs",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-28T05:46:42.234Z",
+  "updatedAt": "2026-09-28T06:33:22.186Z",
   "userStories": [
     {
       "id": "US-001",
@@ -140,8 +140,8 @@
         "startup"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -188,7 +188,10 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Localized accounting and logging change within one production module, using established accumulation pattern."
+        "reasoning": "Localized accounting and logging change within one production module, using established accumulation pattern.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "src/findings/cycle-execute.ts",
@@ -199,7 +202,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1a1f76aac1ddbb04ce3abe665f4865a77420b3ba"
     }
   ],
   "analysis": "Existing Bun/TypeScript repo (@nathapp/nax, package.json:2); this is three independent runtime fixes split into four binding stories. Acceptance: src/acceptance/generator.ts:46-91 owns the placeholder dialect and currently returns argv; src/acceptance/index.ts:20 exports the builder. src/pipeline/stages/acceptance-red-gate.ts:38-45 classifies any nonzero without AC tags as a crash, :48-110 repairs it, and :137-150 builds/logs/runs argv. src/pipeline/stages/acceptance-setup.ts:149-170 quotes/rejoins argv through executeWithTimeout; src/pipeline/stages/acceptance.ts:238-255 does likewise in the post-run package loop, and :273-289 emits the generic AC-ERROR finding and routing. src/acceptance/hardening.ts:165-180 directly spawns builder output with detached process group; retain timer/kill logic (:182-209). Switch builder to one string, quote only the substituted test path using the existing verification shellQuoteArg, leave substituteAcceptanceTestPath unchanged as dialect SSOT, quote/join framework defaults exactly like old shell input, pass override unchanged after trim/path substitution into /bin/sh -c in all three runners. Configured acceptance.command shares quality.commands shell trust boundary; no schema/security redesign. Change runTest and handleCrash string types and replace join/map usages, including logging; search other builder consumers and test stubs for string[] assumptions. src/test-runners/compile-crash.ts:76-85 only classifies output/language; export exit-code predicate from src/test-runners/index.ts:17-18, check 126/127 ahead of RED crash repair and in post-run's no-AC branch; src/findings/adapters/test-runner.ts:62-80 provides the unchanged sentinel metadata so override only the message, preserving AC-ERROR routing. Tests to extend: test/unit/acceptance/generator-core.test.ts:30-69 expects arrays and must switch to strings; test/unit/pipeline/stages/acceptance-red-gate.test.ts, acceptance-setup-gate.test.ts, acceptance.test.ts and hardening tests; existing exit-1 crash regression remains. Migration: src/commands/migrate.ts:41-124 detects candidate files/directories, :214-303 checks config, resolves destination, dry-runs or moves and may throw MIGRATE_CONFLICT; partition only full-migration candidates, leave --reclaim/--merge alone. src/utils/git.ts:74-139 gitWithTimeout supplies NUL output, timedOut and injectable _gitDeps.spawn; use a single git ls-files -z -- .nax query per partition and slash-boundary prefix matching, fall back to all migratable with one debug log on git failure. src/commands/index.ts:21-22 exports migration symbols. src/execution/lifecycle/run-setup.ts:67-87 contains injectable deps and :337-359 contains inline auto-migration after PRD/status setup; replace with a lazy-import default dependency and single call, keep successful info/failed warn strings. Auto-migration is best-effort and never rejects, skips tracked files and emits exactly one actionable tracked warning; CLI migration also skips them including dry-run. src/utils/git.ts:~418-440 auto-commit restore guard is untouched. Existing test/unit/commands/migrate.test.ts:1-113 uses temp dirs; add git-temp-repo integration and run-setup dep tests. Cost: src/findings/cycle-execute.ts:318-355 exits validator-error before :380-381 adds this iteration's costs; mirror accumulation at :108-110 and :184-188 before error exit, log strategiesRun and iterationCostUsd, deliberately do not call recordIteration because there is no valid after-set. Extend test/unit/findings/cycle-cost.test.ts (cycle.test.ts at baseline), with test/unit/findings/_cycle-fixtures.ts helpers. Risks: changing builder's public return type can break all importers/stubs; changing quoting of override intentionally permits repo-config shell syntax but only path substitution must be escaped, while default argv shell bytes must remain identical. Git tracking detection must not confuse runs with runs-archive or fail non-git dirs; migration still has pre-existing conflict behavior for untracked destinations. Validator retry must add cost once after retries exhaust, not on every throw, and keep iteration history empty for validator-error. No data/schema migration: existing git-tracked artifacts stay put until operator runs suggested git rm -r --cached; prior non-git migrations continue.",
