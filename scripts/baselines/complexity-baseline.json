@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-28T00:58:46.990Z",
+  "updatedAt": "2026-09-28T01:17:46.577Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": [27],
@@ -38,7 +38,6 @@
     "src/cli/config-display.ts": [46, 22],
     "src/cli/context-fragments.ts": [22],
     "src/cli/context.ts": [35],
-    "src/cli/generate.ts": [99],
     "src/cli/init-context.ts": [25],
     "src/cli/init.ts": [23],
     "src/cli/plan-decompose.ts": [26],

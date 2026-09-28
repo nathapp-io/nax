@@ -182,8 +182,8 @@ A4 are the two most likely to need more than one session; if so, split them per 
 | C2 | done 2026-09-27 | 72 | `coerceVerdict` | `src/tdd/verdict-reader.ts:98` | 319 -> 393 | 4 / 4 | none |
 | C2 | done 2026-09-27 | 64 | `parseTestFailuresDetailed` | `src/test-runners/ac-parser.ts:50` | 141 -> 151 | 4 / 3 | none |
 | C3 | done 2026-09-27 | 93 | `lexBashCommand` | `src/permissions/bash-lex.ts:78` | 248 -> 340 | 3 / 2 | yes |
-| C4 | todo | 99 | `generateCommand` | `src/cli/generate.ts:49` | 267 | 1 / 1 | none |
-| C4 | todo | 79 | `main` | `scripts/report-test-consolidation.ts:293` | 485 | 3 / 1 | none |
+| C4 | in progress | 99 | `generateCommand` | `src/cli/generate.ts:49` | 267 | 1 / 1 | none |
+| C4 | in progress | 79 | `main` | `scripts/report-test-consolidation.ts:293` | 485 | 3 / 1 | none |
 
 A grouped batch is one session; each function in it still gets its own `refactor:` commit.
 C3 is alone because `lexBashCommand` is security-relevant (it feeds the permission

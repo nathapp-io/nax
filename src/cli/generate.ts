@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import chalk from "chalk";
 import { findProjectDir, loadConfig } from "../config/loader";
+import type { GenerateOptions, GenerationResult, PackageGenerationResult } from "../context/generator";
 import { discoverPackages, generateAll, generateFor, generateForPackage } from "../context/generator";
 import type { AgentType } from "../context/types";
 import { NaxError } from "../errors";
@@ -43,219 +44,258 @@ export interface GenerateCommandOptions {
 
 const VALID_AGENTS: AgentType[] = ["claude", "codex", "opencode", "cursor", "windsurf", "aider", "gemini"];
 
-/**
- * `nax generate` command handler.
- */
-export async function generateCommand(options: GenerateCommandOptions): Promise<void> {
-  const workdir = options.dir ?? process.cwd();
-  const dryRun = options.dryRun ?? false;
+/** Resolved command context shared by every `nax generate` phase. */
+interface GenerateFrame {
+  /** Project directory the command runs against. */
+  workdir: string;
+  /** Loaded config; a failed load degrades to an empty object (never throws). */
+  config: Awaited<ReturnType<typeof loadConfig>>;
+  /** Dry run — preview without writing. */
+  dryRun: boolean;
+}
 
-  // Load config early — needed for all paths
-  let config: Awaited<ReturnType<typeof loadConfig>>;
+/** Load the effective config for the command; a failed load degrades to an empty object. */
+async function loadCommandConfig(workdir: string): Promise<Awaited<ReturnType<typeof loadConfig>>> {
   try {
-    config = await loadConfig(workdir);
+    return await loadConfig(workdir);
   } catch {
-    config = {} as Awaited<ReturnType<typeof loadConfig>>;
+    return {} as Awaited<ReturnType<typeof loadConfig>>;
   }
+}
 
-  // --all-packages: discover and generate for all packages
-  if (options.allPackages) {
-    if (dryRun) {
-      console.log(chalk.yellow("⚠ Dry run — no files will be written"));
+/** Print the dry-run notice (identical wording in all three generation paths). */
+function printDryRunNotice(dryRun: boolean): void {
+  if (dryRun) {
+    console.log(chalk.yellow("⚠ Dry run — no files will be written"));
+  }
+}
+
+/**
+ * Print one package's generation results; returns the failure count.
+ * Failure lines always name `pkgDir`; success lines use `displayDir`
+ * (defaults to `pkgDir`; the discovered-packages path passes a workdir-relative label).
+ */
+function reportPackageResults(
+  frame: GenerateFrame,
+  pkgDir: string,
+  results: PackageGenerationResult[],
+  displayDir: string = pkgDir,
+): number {
+  let errorCount = 0;
+  for (const result of results) {
+    if (result.error) {
+      console.error(chalk.red(`✗ ${pkgDir}: ${result.error}`));
+      errorCount++;
+    } else {
+      const suffix = frame.dryRun ? " (dry run)" : "";
+      console.log(chalk.green(`✓ ${displayDir}/${result.outputFile} (${result.content.length} bytes${suffix})`));
     }
-    console.log(chalk.blue("→ Discovering packages with .nax/mono/*/context.md..."));
-    const packages = await discoverPackages(workdir);
+  }
+  return errorCount;
+}
 
-    if (packages.length === 0) {
-      console.log(chalk.yellow("  No packages found (no .nax/mono/*/context.md or .nax/mono/*/*/context.md)"));
-      return;
-    }
+/** --all-packages: discover every package and generate for each. */
+async function runAllPackages(frame: GenerateFrame): Promise<void> {
+  printDryRunNotice(frame.dryRun);
+  console.log(chalk.blue("→ Discovering packages with .nax/mono/*/context.md..."));
+  const packages = await discoverPackages(frame.workdir);
 
-    console.log(chalk.blue(`→ Generating agent files for ${packages.length} package(s)...`));
-    let errorCount = 0;
-
-    for (const pkgDir of packages) {
-      const results = await generateForPackage(pkgDir, config, dryRun, workdir);
-      for (const result of results) {
-        if (result.error) {
-          console.error(chalk.red(`✗ ${pkgDir}: ${result.error}`));
-          errorCount++;
-        } else {
-          const suffix = dryRun ? " (dry run)" : "";
-          console.log(chalk.green(`✓ ${pkgDir}/${result.outputFile} (${result.content.length} bytes${suffix})`));
-        }
-      }
-    }
-
-    if (errorCount > 0) {
-      console.error(chalk.red(`\n✗ ${errorCount} generation(s) failed`));
-      process.exit(1);
-    }
+  if (packages.length === 0) {
+    console.log(chalk.yellow("  No packages found (no .nax/mono/*/context.md or .nax/mono/*/*/context.md)"));
     return;
   }
 
-  // --package: generate for a specific package. Guard on `!== undefined` rather
-  // than truthiness so an explicit "--package \"\"" flows into validation
-  // instead of silently falling through to root-package generation.
-  if (options.package !== undefined) {
-    if (!isRelativeAndSafe(options.package)) {
-      throw new NaxError(
-        `generateCommand: package "${options.package}" is not a safe relative path (must be non-empty, relative, and free of ".." segments)`,
-        "INVALID_PACKAGE_PATH",
-        { stage: "generate", package: options.package },
-      );
-    }
-    const packageDir = join(workdir, options.package);
-    if (dryRun) {
-      console.log(chalk.yellow("⚠ Dry run — no files will be written"));
-    }
-    console.log(chalk.blue(`→ Generating agent files for package: ${options.package}`));
-    const pkgResults = await generateForPackage(packageDir, config, dryRun, workdir);
-    let pkgHasError = false;
-    for (const result of pkgResults) {
-      if (result.error) {
-        console.error(chalk.red(`✗ ${result.error}`));
-        pkgHasError = true;
-      } else {
-        const suffix = dryRun ? " (dry run)" : "";
-        console.log(chalk.green(`✓ ${options.package}/${result.outputFile} (${result.content.length} bytes${suffix})`));
-      }
-    }
-    if (pkgHasError) process.exit(1);
-    return;
+  console.log(chalk.blue(`→ Generating agent files for ${packages.length} package(s)...`));
+  let errorCount = 0;
+
+  for (const pkgDir of packages) {
+    const results = await generateForPackage(pkgDir, frame.config, frame.dryRun, frame.workdir);
+    errorCount += reportPackageResults(frame, pkgDir, results);
   }
 
-  const contextPath = options.context ? join(workdir, options.context) : join(workdir, ".nax/context.md");
-  const outputDir = options.output ? join(workdir, options.output) : workdir;
-  const autoInject = !options.noAutoInject;
+  if (errorCount > 0) {
+    console.error(chalk.red(`\n✗ ${errorCount} generation(s) failed`));
+    process.exit(1);
+  }
+}
 
-  // Validate context file
+/** --package <path>: generate for one explicit package, validated first. */
+async function runSinglePackage(frame: GenerateFrame, pkg: string): Promise<void> {
+  if (!isRelativeAndSafe(pkg)) {
+    throw new NaxError(
+      `generateCommand: package "${pkg}" is not a safe relative path (must be non-empty, relative, and free of ".." segments)`,
+      "INVALID_PACKAGE_PATH",
+      { stage: "generate", package: pkg },
+    );
+  }
+  const packageDir = join(frame.workdir, pkg);
+  printDryRunNotice(frame.dryRun);
+  console.log(chalk.blue(`→ Generating agent files for package: ${pkg}`));
+  const pkgResults = await generateForPackage(packageDir, frame.config, frame.dryRun, frame.workdir);
+  let pkgHasError = false;
+  for (const result of pkgResults) {
+    if (result.error) {
+      console.error(chalk.red(`✗ ${result.error}`));
+      pkgHasError = true;
+    } else {
+      const suffix = frame.dryRun ? " (dry run)" : "";
+      console.log(chalk.green(`✓ ${pkg}/${result.outputFile} (${result.content.length} bytes${suffix})`));
+    }
+  }
+  if (pkgHasError) process.exit(1);
+}
+
+/** Validate the root-path inputs: the context file must exist and --agent must be known. */
+function validateRootInputs(contextPath: string, agent: string | undefined): void {
   if (!existsSync(contextPath)) {
     console.error(chalk.red(`✗ Context file not found: ${contextPath}`));
     console.error(chalk.yellow("  Create .nax/context.md first, or run `nax init` to scaffold it."));
     process.exit(1);
   }
 
-  // Validate agent if specified
-  if (options.agent && !VALID_AGENTS.includes(options.agent as AgentType)) {
-    console.error(chalk.red(`✗ Unknown agent: ${options.agent}`));
+  if (agent && !VALID_AGENTS.includes(agent as AgentType)) {
+    console.error(chalk.red(`✗ Unknown agent: ${agent}`));
     console.error(chalk.yellow(`  Valid agents: ${VALID_AGENTS.join(", ")}`));
     process.exit(1);
   }
+}
 
-  if (dryRun) {
-    console.log(chalk.yellow("⚠ Dry run — no files will be written"));
+/** --agent <name>: generate one specific agent, overriding any config filter. */
+async function generateSingleAgent(frame: GenerateFrame, agent: AgentType, genOptions: GenerateOptions): Promise<void> {
+  console.log(chalk.blue(`→ Generating config for ${agent}...`));
+
+  const result = await generateFor(agent, genOptions, frame.config);
+
+  if (result.error) {
+    console.error(chalk.red(`✗ ${agent}: ${result.error}`));
+    process.exit(1);
   }
+
+  const suffix = frame.dryRun ? " (dry run)" : "";
+  console.log(chalk.green(`✓ ${agent} → ${result.outputFile} (${result.content.length} bytes${suffix})`));
+}
+
+/**
+ * Resolve the agent filter from config, or null for "generate all". Only a
+ * project-level config's generate.agents filters — global config's should not
+ * restrict generation in unconfigured projects.
+ */
+function resolveAgentFilter(workdir: string, config: Awaited<ReturnType<typeof loadConfig>>): AgentType[] | null {
+  const projectNaxDir = findProjectDir(workdir);
+  let configAgents = projectNaxDir ? config?.generate?.agents : null;
+
+  // Detect misplaced generate config (autoMode.generate.agents) and warn
+  const misplacedAgents = (config?.autoMode as unknown as Record<string, unknown> | undefined)?.generate as
+    | { agents?: string[] }
+    | undefined;
+  if (!configAgents && misplacedAgents?.agents && misplacedAgents.agents.length > 0) {
+    console.warn(
+      chalk.yellow(
+        '⚠ Warning: "generate.agents" is nested under "autoMode" in your config — it should be at the top level.',
+      ),
+    );
+    console.warn(chalk.yellow('  Move it to: { "generate": { "agents": [...] } }'));
+    configAgents = misplacedAgents.agents as Array<
+      "claude" | "codex" | "opencode" | "cursor" | "windsurf" | "aider" | "gemini"
+    >;
+  }
+
+  return configAgents && configAgents.length > 0 ? configAgents : null;
+}
+
+/** Print root-level (per-agent) generation results; returns the failure count. */
+function reportAgentResults(frame: GenerateFrame, results: GenerationResult[]): number {
+  let errorCount = 0;
+
+  for (const result of results) {
+    if (result.error) {
+      console.error(chalk.red(`✗ ${result.agent}: ${result.error}`));
+      errorCount++;
+    } else {
+      const suffix = frame.dryRun ? " (dry run)" : "";
+      console.log(chalk.green(`✓ ${result.agent} → ${result.outputFile} (${result.content.length} bytes${suffix})`));
+    }
+  }
+
+  return errorCount;
+}
+
+/** Generate per-package agent files for packages discovered under .nax/mono/. */
+async function generateDiscoveredPackages(frame: GenerateFrame): Promise<void> {
+  const packages = await discoverPackages(frame.workdir);
+  if (packages.length === 0) {
+    return;
+  }
+
+  console.log(chalk.blue(`\n→ Discovered ${packages.length} package(s) with context.md — generating agent files...`));
+  let pkgErrorCount = 0;
+  for (const pkgDir of packages) {
+    const pkgResults = await generateForPackage(pkgDir, frame.config, frame.dryRun, frame.workdir);
+    const rel = pkgDir.startsWith(frame.workdir) ? pkgDir.slice(frame.workdir.length + 1) : pkgDir;
+    pkgErrorCount += reportPackageResults(frame, pkgDir, pkgResults, rel);
+  }
+  if (pkgErrorCount > 0) {
+    console.error(chalk.red(`\n✗ ${pkgErrorCount} package generation(s) failed`));
+    process.exit(1);
+  }
+}
+
+/** No --agent flag: honor the config's agent filter (or all agents), then the discovered packages. */
+async function generateFromConfig(frame: GenerateFrame, genOptions: GenerateOptions): Promise<void> {
+  const agentFilter = resolveAgentFilter(frame.workdir, frame.config);
+
+  if (agentFilter) {
+    console.log(chalk.blue(`→ Generating configs for: ${agentFilter.join(", ")} (from config)...`));
+  } else {
+    console.log(chalk.blue("→ Generating configs for all agents..."));
+  }
+
+  // Pass agentFilter to generateAll so only matching agents are written to disk
+  const results = await generateAll(genOptions, frame.config, agentFilter ?? undefined);
+
+  const errorCount = reportAgentResults(frame, results);
+  if (errorCount > 0) {
+    console.error(chalk.red(`\n✗ ${errorCount} generation(s) failed`));
+    process.exit(1);
+  }
+
+  // Auto-generate per-package agent files when packages with .nax/mono/*/context.md are discovered
+  await generateDiscoveredPackages(frame);
+}
+
+/** Default path: validate inputs, then generate for --agent or per the config filter. */
+async function runRootGeneration(frame: GenerateFrame, options: GenerateCommandOptions): Promise<void> {
+  const contextPath = options.context ? join(frame.workdir, options.context) : join(frame.workdir, ".nax/context.md");
+  const outputDir = options.output ? join(frame.workdir, options.output) : frame.workdir;
+  const autoInject = !options.noAutoInject;
+
+  validateRootInputs(contextPath, options.agent);
+
+  printDryRunNotice(frame.dryRun);
 
   console.log(chalk.blue(`→ Loading context from ${contextPath}`));
   if (autoInject) {
     console.log(chalk.dim("  Auto-injecting project metadata..."));
   }
 
-  const genOptions = {
+  const genOptions: GenerateOptions = {
     contextPath,
     outputDir,
-    workdir,
-    dryRun,
+    workdir: frame.workdir,
+    dryRun: frame.dryRun,
     autoInject,
   };
 
   try {
     if (options.agent) {
       // CLI --agent flag: single specific agent (overrides config)
-      const agent = options.agent as AgentType;
-      console.log(chalk.blue(`→ Generating config for ${agent}...`));
-
-      const result = await generateFor(agent, genOptions, config);
-
-      if (result.error) {
-        console.error(chalk.red(`✗ ${agent}: ${result.error}`));
-        process.exit(1);
-      }
-
-      const suffix = dryRun ? " (dry run)" : "";
-      console.log(chalk.green(`✓ ${agent} → ${result.outputFile} (${result.content.length} bytes${suffix})`));
+      await generateSingleAgent(frame, options.agent as AgentType, genOptions);
     } else {
       // No --agent flag: use config.generate.agents filter, or generate all.
-      // Only apply the filter when a project-level config exists — global config's
-      // generate.agents should not restrict generation in unconfigured projects.
-      const projectNaxDir = findProjectDir(workdir);
-      let configAgents = projectNaxDir ? config?.generate?.agents : null;
-
-      // Detect misplaced generate config (autoMode.generate.agents) and warn
-      const misplacedAgents = (config?.autoMode as unknown as Record<string, unknown> | undefined)?.generate as
-        | { agents?: string[] }
-        | undefined;
-      if (!configAgents && misplacedAgents?.agents && misplacedAgents.agents.length > 0) {
-        console.warn(
-          chalk.yellow(
-            '⚠ Warning: "generate.agents" is nested under "autoMode" in your config — it should be at the top level.',
-          ),
-        );
-        console.warn(chalk.yellow('  Move it to: { "generate": { "agents": [...] } }'));
-        configAgents = misplacedAgents.agents as Array<
-          "claude" | "codex" | "opencode" | "cursor" | "windsurf" | "aider" | "gemini"
-        >;
-      }
-
-      const agentFilter = configAgents && configAgents.length > 0 ? configAgents : null;
-
-      if (agentFilter) {
-        console.log(chalk.blue(`→ Generating configs for: ${agentFilter.join(", ")} (from config)...`));
-      } else {
-        console.log(chalk.blue("→ Generating configs for all agents..."));
-      }
-
-      // Pass agentFilter to generateAll so only matching agents are written to disk
-      const results = await generateAll(genOptions, config, agentFilter ?? undefined);
-
-      let errorCount = 0;
-
-      for (const result of results) {
-        if (result.error) {
-          console.error(chalk.red(`✗ ${result.agent}: ${result.error}`));
-          errorCount++;
-        } else {
-          const suffix = dryRun ? " (dry run)" : "";
-          console.log(
-            chalk.green(`✓ ${result.agent} → ${result.outputFile} (${result.content.length} bytes${suffix})`),
-          );
-        }
-      }
-
-      if (errorCount > 0) {
-        console.error(chalk.red(`\n✗ ${errorCount} generation(s) failed`));
-        process.exit(1);
-      }
-
-      // Auto-generate per-package agent files when packages with .nax/mono/*/context.md are discovered
-      const packages = await discoverPackages(workdir);
-      if (packages.length > 0) {
-        console.log(
-          chalk.blue(`\n→ Discovered ${packages.length} package(s) with context.md — generating agent files...`),
-        );
-        let pkgErrorCount = 0;
-        for (const pkgDir of packages) {
-          const pkgResults = await generateForPackage(pkgDir, config, dryRun, workdir);
-          for (const result of pkgResults) {
-            if (result.error) {
-              console.error(chalk.red(`✗ ${pkgDir}: ${result.error}`));
-              pkgErrorCount++;
-            } else {
-              const suffix = dryRun ? " (dry run)" : "";
-              const rel = pkgDir.startsWith(workdir) ? pkgDir.slice(workdir.length + 1) : pkgDir;
-              console.log(chalk.green(`✓ ${rel}/${result.outputFile} (${result.content.length} bytes${suffix})`));
-            }
-          }
-        }
-        if (pkgErrorCount > 0) {
-          console.error(chalk.red(`\n✗ ${pkgErrorCount} package generation(s) failed`));
-          process.exit(1);
-        }
-      }
+      await generateFromConfig(frame, genOptions);
     }
 
-    if (!dryRun) {
+    if (!frame.dryRun) {
       console.log(chalk.green(`\n✓ Agent configs written to ${outputDir}`));
     }
   } catch (err) {
@@ -263,4 +303,32 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
     console.error(chalk.red(`✗ Generation failed: ${error}`));
     process.exit(1);
   }
+}
+
+/**
+ * `nax generate` command handler.
+ */
+export async function generateCommand(options: GenerateCommandOptions): Promise<void> {
+  const workdir = options.dir ?? process.cwd();
+  const frame: GenerateFrame = {
+    workdir,
+    config: await loadCommandConfig(workdir),
+    dryRun: options.dryRun ?? false,
+  };
+
+  // --all-packages: discover and generate for all packages
+  if (options.allPackages) {
+    await runAllPackages(frame);
+    return;
+  }
+
+  // --package: generate for a specific package. Guard on `!== undefined` rather
+  // than truthiness so an explicit "--package \"\"" flows into validation
+  // instead of silently falling through to root-package generation.
+  if (options.package !== undefined) {
+    await runSinglePackage(frame, options.package);
+    return;
+  }
+
+  await runRootGeneration(frame, options);
 }
