@@ -94,7 +94,11 @@ bun scripts/check-complexity.ts --list | awk '$1 > 60'
    a baselined function as new code: an extra over-20 function in a baselined file is
    "grown", and one in a new file is "added". If a helper genuinely cannot get under 20,
    hand-edit the baseline in the same commit and justify it in the §9 entry. The file's
-   total must still go down.
+   total must still go down. The baseline is keyed by function name within the file (an
+   anonymous arrow is `=>`, repeats get `#2`, `#3`), so **renaming a baselined function
+   also reads as "grown"**: move its entry to the new name by hand in the same commit.
+   A `biome-ignore` covering the complexity rule is not an escape either - the gate
+   fails on it (§9.28).
 4. **File-size gate: extract to a sibling file, not in place.** 13 of the 29 files are
    within 100 lines of the 600-line limit, and `unified-executor.ts` (704) and `bin/nax.ts`
    (1948) are grandfathered and may not grow by one line. Splitting a function into helpers
@@ -340,7 +344,9 @@ state if dirty, check completion, build `dispatchParams`, call `runParallelDispa
 through to sequential when `batch.length === 0`), then `runSequentialDispatch`. Every
 `return buildResult(...)` in the original became `return buildResult(step.exitReason)` after
 assigning `state = step.state` - the exit-reason strings themselves never changed, so this is
-traceable line-for-line against the pre-refactor version in git history.
+traceable line-for-line against the pre-refactor version in git history - except for two
+behaviour changes found in the branch review and recorded in §9.28 (a last-iteration pre-check
+skip now hands on the updated PRD; the heartbeat read a stale cost, since fixed).
 
 **The DI trap this batch exists to record:** `_unifiedExecutorDeps` (the test-injection seam
 11 test files reassign — `runParallelBatch`, `runIteration`, `selectIndependentBatch`,
@@ -467,14 +473,14 @@ for `() =>` closures capturing a `let` before assuming a clean state-object spli
 ### 9.4 - 2026-09-27, A3 done - `ExecutionPlan.run` 101 -> 0 (one session)
 
 Third orchestrator batch, but a different shape from A1/A2: `run()` is a linear sequence of
-five stages (resume hydration, canonical phase loop, rectification, two conditional resume
+seven stages (resume hydration, canonical phase loop, rectification, two conditional resume
 loops, ADR-024 non-blocking fix, verdict aggregation), not a `while(true)` with a
 continuation decision. No throw-mid-loop trap, no `let`-closure trap (A2's two write-ups)
 applied here — every `catch` in this file rethrows immediately, nothing downstream reads
 loop state across a throw boundary. Checked both FIRST this time per A2's own note, and both
 came back "no" cleanly rather than being found by a failing test.
 
-**Technique:** extracted the six stages into a class-external `PlanParams` (`ctx`, `state`,
+**Technique:** extracted the seven stages into a class-external `PlanParams` (`ctx`, `state`,
 `isThreeSession` — bundled because they never change once `ExecutionPlan` is constructed)
 plus a `PhaseTracking` (`phaseCosts`, `phaseOutputs` — the SAME two Records threaded through
 every stage, mutated in place by `runPhase`, exactly as the original single function did:
@@ -485,7 +491,7 @@ body can't itself be split across files.
 
 **File-size gate, three-way split — same shape as A1, worse ratio.** The source file
 (`execution-plan.ts`, 596 lines) was 4 lines from the 600 cap going in — the tightest margin
-of any batch so far. First extraction (`execution-plan-phases.ts`, all six stages) landed at
+of any batch so far. First extraction (`execution-plan-phases.ts`, all seven stages) landed at
 684 lines, well over the 600 cap for a new file. Split again along the natural seam: verdict
 aggregation (`buildStoryOrchestratorResult` + its private log helper, the largest and most
 self-contained stage at ~225 lines) moved to `execution-plan-verdict.ts` (228 lines);
@@ -494,7 +500,7 @@ lesson as A1's write-up: budget the `wc -l` check after `biome check --write` (�
 assuming one sibling file holds an orchestrator's whole body — for a linear multi-stage
 function this looks like it should fit, and did not.
 
-**A real bug caught while writing the extraction, not by a test.** Moving the verdict logic
+**A regression introduced while writing the extraction, and caught on review, not by a test** (not a pre-existing defect; §9.28). Moving the verdict logic
 into its own function, the `failedPhases` computation was rewritten as a plain
 `!phasePassed(...)` filter and only caught on review-before-running: the original filter was
 `if (verifierPassedSsot && name === gateName) return false; return !phasePassed(...)` — the
@@ -512,7 +518,7 @@ before moving on, not just against the passing test suite.
 
 **Helper scores:** every extracted function landed under 20 on the first pass across all
 three files - no second split needed inside any one function (unlike A2's `runRoundTripLoop`,
-which needed two passes). The five-stage sequential shape apparently splits more cleanly than
+which needed two passes). The seven-stage sequential shape apparently splits more cleanly than
 a `while(true)` loop's tangled continue/break/throw paths - consistent with A1 (also clean on
 the first pass) vs A2 (needed two).
 
@@ -1139,7 +1145,7 @@ the original `finish` closure became `finishExit(state, result)` reading
 resolved exits" rule preserved verbatim (both resolved returns bypass it, pinned by
 cycle-retirement's "carries the UNRESOLVED reason onto the later exit" suite).
 
-**No characterisation commit — the mirrors pin every branch.** Verified by name before
+**No characterisation commit — the mirrors pin every branch** except the validator-error exit's cost and iteration record, which nothing pinned and which under-reports (pre-existing; §9.28, #2278). Verified by name before
 trusting them: no-strategy + orphan warn (cycle.test.ts + cycle-retirement "genuine
 routing gap"), per-strategy cap + exhaustedStrategy, total cap, bail-when + BOTH #1530
 `inheritedIterations` arms (cycle-prior-iterations 296/321), no-dispatch US-003 AC1/AC2/AC5
@@ -1161,7 +1167,7 @@ after dispatch, shared by the three post-dispatch phases), `finishExit`, `buildH
 `selectIterationStrategies` (the four gates in the original order, each failing exit its
 own named function — `noStrategyExit`/`exhaustedExit`/`totalCapExit`/`bailWhenExit` — so
 the selection function itself reads as a guard chain), `firstBailCondition` (the
-bailWhen loop). `cycle-execute.ts` (416) holds everything after: `handleGiveUps`
+bailWhen loop). `cycle-execute.ts` (415) holds everything after: `handleGiveUps`
 (the #1369/#1384/#1654 block, doc comment moved verbatim), `liteValidateIfExhausted`
 (the terminal-exhausted branch incl. its throw arm), `validateRecordAndDecide`
 (full validate with retries + classify/record + the resolved/short-circuit terminal
@@ -1186,7 +1192,7 @@ function in all four files scores <= 20).
 
 **File-size gate, three siblings planned from the first line and no overrun:**
 `cycle.ts` 543 -> 149 (doc said 544; one line of drift, same as A7-A9). Siblings
-measured AFTER `bun x biome check --write`: 113 + 210 + 416. The difference vs
+measured AFTER `bun x biome check --write`: 113 + 210 + 415. The difference vs
 A1/A3/A4/A5's unplanned second files: the three-way cut was chosen up front
 (gates / shared vocabulary / post-dispatch), each file holding one phase band.
 One biome nit fixed in passing: an unused `Logger` type import in cycle-execute.ts
@@ -2040,7 +2046,7 @@ execution-tree run. The established guard is `resetLogger()` BEFORE
 does not surface this class of pollution - run the tree.
 
 **Technique:** sequencer + five phases in ONE sibling,
-`src/execution/lifecycle/run-regression-phases.ts` (530 lines after
+`src/execution/lifecycle/run-regression-phases.ts` (546 lines after
 `bun x biome check --write`): `resolveRegressionSetup` 6 (mode guard, config
 resolution incl. the verifyOpts literal verbatim, passed-stories guard, the
 "Running deferred..." log - biome's cognitive complexity does not count `??`
@@ -2066,7 +2072,7 @@ params per the repo rule); second pass every function in both files <= 17.
 No baseline hand-edit needed.
 
 **File-size gate, single sibling held:** run-regression.ts 586 -> 285
-(strictly smaller); the sibling landed at 530 after `bun x biome check
+(strictly smaller); the sibling landed at 546 after `bun x biome check
 --write` - under 600, because the split was planned from the first line
 (A6's lesson, finally costing nothing).
 
@@ -2558,7 +2564,7 @@ preceded by its own `test: characterise ...` commit (`7d79fabe6`,
 validator / per-key decision chain - and the P0 playbook applied directly.
 
 **The mirror-vs-pinned trap has a deprecated-twin variant.** `validateConfig`
-was `test: yes` and its mirror (validate.test.ts, 15 tests) pins the
+was `test: yes` and its mirror (validate.test.ts, 19 tests) pins the
 fallback-map / tierOrder / complexityRouting groups thoroughly - but the basic
 field groups (version, models, execution limits, agent.default, tierOrder
 attempts) had NO validateConfig-level tests anywhere. The same message strings
@@ -2566,7 +2572,7 @@ ARE pinned in test/integration/config/config.test.ts - through
 `NaxConfigSchema.safeParse`, the zod validator the module header says
 validateConfig is deprecated in favour of. A grep for the function name misses
 that; a grep for the MESSAGE finds it, and the hit is the wrong function.
-20 characterisation tests pinned every unpinned branch through validateConfig
+16 characterisation tests (13 call sites, two of them `test.each`) pinned every unpinned branch through validateConfig
 itself (byte-exact messages), including a `??`-semantics quirk: an empty-string
 `agent.default` is used verbatim as the models key (`??` only falls back on
 null/undefined), producing `models. is required (default agent has no model
@@ -3229,3 +3235,116 @@ needed). Post-drain state for the milestone discussion: the worst
 remaining functions are `acceptance.ts` and `turn-tool-batch.ts` at 59,
 then `unlock.ts` 58 and `session-run-hop.ts` 57 - the 40-milestone (§1/§9.8)
 now has a concrete, short ladder.
+
+### 9.28 - 2026-09-28, branch review follow-ups (`docs/plans/REVIEW-complexity-drain.md`)
+
+A whole-branch review compared all 29 refactors against their originals. 28 were
+behaviour-preserving. This entry records what it found and what was done, in the review's §9
+order. Corrections to earlier entries are made inline and point back here.
+
+**1. A1 broke §2 rule 1 twice.** Both changes are now covered by
+`test/unit/execution/unified-executor-state-handoff.test.ts`.
+- *Pre-check skip hands on the updated PRD.* The old loop set only `prdDirty` on a skip.
+  The phase functions return `prd: seqPre.prd` / `singlePre.prd`. The next iteration reloads
+  from disk anyway, so the difference only shows when the skip lands on the LAST iteration.
+  The new behaviour is kept deliberately: `buildResult("max-iterations")` and the post-run
+  acceptance step now see the PRD that matches disk, where before they saw a stale one. It is
+  now pinned in both shapes, sequential and single-story-in-batch.
+- *The heartbeat could overwrite the status file with the previous cost.* `startHeartbeat`
+  read `state.totalCost`, but `state` is only replaced when a phase returns, which happens
+  after its `statusWriter.update` and iteration delay. A tick in that window rewrote the old
+  cost over the new one. Fixed: `DispatchPhaseParams.reportCost` publishes the reconciled
+  cost at each of the three `reconcileRunCost` sites, which are where the old local was
+  assigned. The heartbeat reads that live value. The test drives one tick from inside
+  `statusWriter.update`. It was red before the fix (wrote 0) and green after (wrote 5).
+
+**2. Both ways past the ratchet gate are closed** (`scripts/check-complexity.ts`).
+- *Rank comparison let a specific function get worse.* Per-file scores were compared by
+  position, so a function going 30 -> 79 while another went 80 -> 25 read as "lowerable".
+  So did a fixed 80 plus a NEW 30-point helper. The baseline is now keyed by function
+  label: the name Biome's span covers, `=>` for an anonymous arrow (30 of 227 today), and
+  `#2`, `#3` for repeats in one file, in source order. A label the baseline does not record
+  counts as growth. Migration check: all 199 files kept exactly the same multiset of scores.
+  The only blind spot left is between anonymous arrows in the same file (documented in the
+  header). A rename now fails as growth, which is safe; §2.3 now says so.
+- *A `biome-ignore` hid a function completely.* The script now scans `src/ bin/ test/ scripts/`
+  and fails on any suppression that covers the rule: the rule itself, `lint/complexity`, or
+  bare `lint`, including the `-all` and `-start` forms. A probe comment added to
+  `src/utils/sort.ts` failed the gate as intended.
+- *Nits:* a corrupt or old-format baseline is now an error, not "missing".
+  `--init-baseline` is documented, and it refuses to overwrite an existing baseline.
+  `saveBaseline` writes exactly Biome's JSON layout, expanding rows longer than 120 columns,
+  so `lint:biome` passes on the regenerated file.
+
+**3. Pre-existing bug, filed as nax#2278.** `runFixCycle`'s validator-error exit returns
+`costUsd` without the current iteration's strategy spend, and skips `recordIteration`. It was
+the same before A10: old `cycle.ts:495` returned before the spend was added at `:526`. The
+only test asserts `exitReason` alone. Not fixed here (§2 rule 1).
+
+**4. Functions with more than 3 positional parameters now take options objects:**
+- `handleParallelBatchFailures(ctx, batchResult, { prd, totalCost, allStoryMetrics })`
+- `reportPackageResults(frame, results, { pkgDir, displayDir? })`
+- `runGroupReport(argv, rows, { groups, stats })`
+- `describeGateRegressionNow(ctx, phaseOutputs, { gateName, baselineKeys, quarantineMemo? })`
+
+**5. Comments, dead code and duplication:**
+- Restored the four P0 design comments (nax#2125 repo-rooted frame on
+  workdir/contextFiles/expectedFiles, and the `### Modifies` / hand-edited prd.json note)
+  onto their extractors in `schema-story-fields.ts`.
+- Removed the dead `PathCheckFrame.grant`.
+- `hasRectificationExhaustion` is now a type guard, and `routeRectificationExhaustion` uses
+  it instead of a second copy of the expression. The advisory log uses `collectFindingSources`.
+- `hasUsablePackageDir` and `loadPackageEffectiveConfig` share one rule
+  (`usablePackageDirs`, which returns both dirs narrowed).
+- Moved the `collectNeighbors` doc comment from the input interface onto the function.
+- Dropped the stale source-order comment on `_unifiedExecutorDeps`.
+- Numbered `resolveStoryConfigs` as Phase 2.
+- Corrected "landed at 625 lines" to 684 in the A3 files.
+- `runBakeoffMode` now returns `Promise<never>`.
+- Removed the `RunConfig = NaxConfig` alias.
+- `mergeHooks`/`mergeConstitution` now take `Record<string, unknown>` (the caller has
+  already narrowed), with no casts.
+- Left as is: `turn-loop-round-trip.ts` building a new messages array on followUp. No
+  `before_turn_end` handler keeps the array reference.
+
+**6. Tests tightened.** Each strengthened assertion was checked red against a mutation of
+the code it pins.
+- The full `validateConfig` error array is pinned with `toEqual`. `validateStory` has 9
+  pairwise "which error wins" rows.
+- `cli-run-preflight` now pins every adjacent pair of pre-flight gates, from feature name
+  through `--plan`/`--from`. The `bin/run-action.ts` header now names exactly what is pinned;
+  the plan phase and schedule wait are not.
+- Other tests tightened:
+  - The ACP parser has an unknown-`sessionUpdate`-with-result/error fall-through case.
+  - The hop-swap test checks the exact rebuilt prompt.
+  - The status details test checks section order, and that a zero Skipped line is absent.
+  - AC-7 is scoped to `runManyStoryParallelBatch`'s body.
+  - The legacy `runParallelExecution` ban covers both dispatch siblings.
+- Stale headers and line references were replaced with symbol names.
+- The `_deps` snapshots in `parallel-batch-edges`, `code-neighbor` and
+  `code-neighbor-collect-edges` are now taken at module load.
+- **Trap:** a module-load snapshot still cannot survive a leak from an EARLIER file, because
+  Bun evaluates a file's top level after the previous file's tests. A fresh `?query` import
+  of the module does dodge the leak, but Bun's coverage then stops crediting the real file:
+  `parallel-batch.ts` fell to 27% and `code-neighbor.ts` to 34%, and the per-file ratchet
+  failed. Kept instead: the "real dep defaults" tests assert `toBeInstanceOf`, so a leak
+  fails loudly instead of passing against a stub.
+- Left alone: the real-time 100ms/300ms margin in `adapter-send-turn-edges`.
+
+**7. Log corrections, made inline:**
+- §9.2: two behaviour changes (above).
+- §9.4: seven stages, not five or six. The "real bug" was a regression introduced during the
+  extraction.
+- §9.11: `cycle-execute.ts` is 415 lines, and its "pin every branch" claim has one exception.
+- §9.18: the sibling is 546 lines.
+- §9.22: 19 existing mirror tests, 16 added.
+- Commit `14edda8d` had no entry. Its lesson: a `beforeEach` snapshot of a `_deps` object
+  captures whatever an earlier test file leaked into it. Snapshot at module load instead.
+  The leak came from `code-neighbor-collect-edges.test.ts`, and the victim was
+  `code-neighbor.test.ts`.
+
+**Gates at the end of this pass (Bun 1.4.2, macOS):**
+- `typecheck`, `lint:biome` and `check:all-without-biome` are green.
+- `check:complexity`: 227 functions in 199 files, unchanged.
+- `test:coverage`: 22,272 pass, 0 fail. The per-file gate is OK, with 1 file below the floor
+  (baseline 2, the standing A5 improvement, still not lowered).
