@@ -12,7 +12,7 @@
  * resets it in afterAll.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, waitForCondition, withDepsRestore } from "@test/helpers";
 import { _sessionSandboxDeps, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
@@ -20,7 +20,13 @@ import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import type { BashApprovalMode } from "@/config/bash-approval";
 import { DEFAULT_SANDBOX_CONFIG } from "@/config/schemas-sandbox";
 import { type AskResolver, chainAskLinks } from "@/permissions";
-import { _resetSandboxRegistryForTests, probeSandboxOnce, resetSandboxBackend, sandboxBackendFor } from "@/sandbox";
+import {
+  _resetSandboxRegistryForTests,
+  probeSandboxOnce,
+  resetSandboxBackend,
+  runTmpRoot,
+  sandboxBackendFor,
+} from "@/sandbox";
 
 const CONFIG = { ...DEFAULT_SANDBOX_CONFIG, enabled: true };
 const probe = await probeSandboxOnce(sandboxBackendFor(CONFIG));
@@ -319,4 +325,65 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
     await run("echo PWNED > .nax/features/f3/prd.json");
     expect(existsSync(join(root, ".nax", "features", "f3", "prd.json"))).toBe(false);
   }, 30_000);
+
+  describe("US-002 — the run's own temp root is the only writable temp root", () => {
+    /** A run root under this host's resolvable parent, unique to this test. */
+    function makeRun() {
+      const runId = `us002-${process.pid}-${Date.now()}`;
+      const runRoot = runTmpRoot(runId);
+      return { runRoot, sessionDir: join(runRoot, "US-002-live") };
+    }
+
+    function confinedLauncher(runRoot: string, sessionDir: string) {
+      return resolveSessionSandbox({
+        config: CONFIG,
+        root,
+        needsLauncher: true,
+        runTmpRoot: runRoot,
+        tmpDir: sessionDir,
+      });
+    }
+
+    function request(command: string) {
+      return {
+        spec: { kind: "shell" as const, shell: "/bin/sh", command },
+        root,
+        cwd: root,
+        timeoutMs: 30_000,
+        stripEnvVars: [],
+      };
+    }
+
+    test("US-002 AC21/AC22: a write through the confined $TMPDIR succeeds and lands on disk", async () => {
+      const { runRoot, sessionDir } = makeRun();
+      try {
+        const launcher = await confinedLauncher(runRoot, sessionDir);
+        expect(launcher.state.kind).toBe("available");
+
+        const result = await launcher.run(request('echo x > "$TMPDIR/ok.txt"'));
+
+        expect(result.exitCode).toBe(0);
+        expect(existsSync(join(sessionDir, "ok.txt"))).toBe(true);
+      } finally {
+        cleanupTempDir(runRoot);
+      }
+    }, 60_000);
+
+    test("US-002 AC23/AC24: a write straight into /tmp is refused and leaves nothing behind", async () => {
+      const { runRoot, sessionDir } = makeRun();
+      // Directly under /tmp, outside the run's own /tmp/nax/<runId> root.
+      const stray = `/tmp/nax-us002-${process.pid}-${Date.now()}.txt`;
+      try {
+        const launcher = await confinedLauncher(runRoot, sessionDir);
+
+        const result = await launcher.run(request(`echo x > ${stray}`));
+
+        expect(result.exitCode).not.toBe(0);
+        expect(existsSync(stray)).toBe(false);
+      } finally {
+        if (existsSync(stray)) rmSync(stray, { force: true });
+        cleanupTempDir(runRoot);
+      }
+    }, 60_000);
+  });
 });

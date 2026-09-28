@@ -29,6 +29,12 @@ export const SandboxConfigSchema = z.object({
       allowWrite: z.array(literalPath).default([]),
       /** Extra read denies, "~" expanded. */
       denyRead: z.array(literalPath).default([]),
+      /**
+       * US-002: grant the shared temp roots (`os.tmpdir()`, `/tmp`) as well as
+       * the run's own temp root. Off by default — a sandboxed command writes
+       * temp files under `$TMPDIR` and nowhere else.
+       */
+      allowSharedTmp: z.boolean().default(false),
     })
     .prefault({}),
   network: z

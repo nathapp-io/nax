@@ -16,6 +16,7 @@ export {
   listCredentialFiles,
   listNaxEntries,
   resolveGitLayout,
+  runTempRoots,
 } from "./policy-inputs";
 export { _probeDeps, probeSandbox } from "./probe";
 export {
@@ -26,7 +27,7 @@ export {
   sandboxBackendFor,
   warnSandboxUnavailableOnce,
 } from "./registry";
-export { runTmpRoot, sessionTmpDir } from "./session-tmp";
+export { _sessionTmpDeps, runTmpRoot, sessionTmpDir, sessionTmpDirUnder } from "./session-tmp";
 export { _srtBackendDeps, createSrtBackend } from "./srt-backend";
 export type {
   CommandLauncher,

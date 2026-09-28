@@ -260,7 +260,8 @@ function otherCommandsDeclaring(
 
 function execSandboxNote(launcher: CommandLauncher | undefined): string {
   const state = launcher?.state;
-  if (state?.kind === "available") return ` An "argv" call runs ${sandboxSentence(state.network)}`;
+  if (state?.kind === "available")
+    return ` An "argv" call runs ${sandboxSentence(state.network, state.sharedTmp !== false)}`;
   if (state?.kind === "unavailable") return ` ${unsandboxedSentence(state.reason)}`;
   return "";
 }

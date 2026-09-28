@@ -185,7 +185,10 @@ function bashToolDescription(shell: string, opts: BashToolOptions): string {
   const state = opts.launcher?.state ?? { kind: "disabled" as const };
   if (opts.bashApproval === "raw") {
     if (state.kind === "available")
-      return rawDescription(shell, `The command runs from the repository root ${sandboxSentence(state.network)} `);
+      return rawDescription(
+        shell,
+        `The command runs from the repository root ${sandboxSentence(state.network, state.sharedTmp !== false)} `,
+      );
     if (state.kind === "unavailable") return rawUnavailableDescription(shell, state.reason);
     return rawDescription(shell);
   }
@@ -200,7 +203,7 @@ function bashToolDescription(shell: string, opts: BashToolOptions): string {
       ? escalateDescription(shell, opts.patterns)
       : gatedDescription(shell, opts.patterns);
   if (state.kind === "available") {
-    return `${policyDescription} Commands that pass run ${sandboxSentence(state.network)}`;
+    return `${policyDescription} Commands that pass run ${sandboxSentence(state.network, state.sharedTmp !== false)}`;
   }
   if (state.kind === "unavailable") return `${policyDescription} ${unsandboxedSentence(state.reason)}`;
   return policyDescription;

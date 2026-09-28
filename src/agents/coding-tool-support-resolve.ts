@@ -17,7 +17,7 @@
  */
 
 import { getSafeLogger } from "@/logger";
-import { type CommandLauncher, sessionTmpDir } from "@/sandbox";
+import { type CommandLauncher, runTmpRoot, sessionTmpDirUnder } from "@/sandbox";
 import {
   BASH_TOOL_NAME,
   type CodingToolName,
@@ -366,16 +366,19 @@ export async function resolveDispatchLauncher(
   declared: readonly CodingToolName[],
   sessionName: string,
 ): Promise<CommandLauncher | undefined> {
-  return options.codingToolRoot !== undefined && options.codingToolRoot.trim() !== ""
-    ? await resolveSessionSandbox({
-        config: options.config?.execution?.sandbox,
-        root: options.codingToolRoot,
-        ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
-        needsLauncher: declared.includes(BASH_TOOL_NAME) || declared.includes(EXEC_TOOL_NAME),
-        ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
-        ...(options.runId !== undefined ? { tmpDir: sessionTmpDir(options.runId, sessionName) } : {}),
-      })
-    : undefined;
+  if (options.codingToolRoot === undefined || options.codingToolRoot.trim() === "") return undefined;
+  // One parent resolution feeds both the policy root and the session TMPDIR:
+  // `runTmpRoot` re-resolves on every call with no cache, so two independent
+  // calls could observe a host flip and split the pair the sandbox trusts.
+  const runRoot = options.runId !== undefined ? runTmpRoot(options.runId) : undefined;
+  return await resolveSessionSandbox({
+    config: options.config?.execution?.sandbox,
+    root: options.codingToolRoot,
+    ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
+    needsLauncher: declared.includes(BASH_TOOL_NAME) || declared.includes(EXEC_TOOL_NAME),
+    ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
+    ...(runRoot !== undefined ? { tmpDir: sessionTmpDirUnder(runRoot, sessionName), runTmpRoot: runRoot } : {}),
+  });
 }
 
 /** The option-forwarding conditional spreads, unchanged in key and shape. */

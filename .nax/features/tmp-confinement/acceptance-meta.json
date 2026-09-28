@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-28T08:05:37.767Z",
+  "acFingerprint": "sha256:a7edd57854f6f69536e963c14ae47e284fac5c3fb9be17c65c273436d9695c09",
+  "layoutFingerprint": "sha256:4a18670a8b3eb5bae76fca1c7879bb50daaa0b3165cc0447887183e121a0c95c",
+  "storyCount": 3,
+  "acCount": 48,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": ".nax/features/tmp-confinement/.nax-acceptance.test.ts",
+      "expected": 48,
+      "found": 48,
+      "missing": []
+    }
+  ]
+}

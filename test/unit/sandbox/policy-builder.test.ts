@@ -90,7 +90,7 @@ describe("buildSandboxPolicy", () => {
   test("#2260: an allowWrite opt-in lifts exactly that entry's deny", () => {
     const config: SandboxConfig = {
       ...DEFAULT_SANDBOX_CONFIG,
-      filesystem: { allowWrite: [".nax/rules"], denyRead: [] },
+      filesystem: { allowWrite: [".nax/rules"], denyRead: [], allowSharedTmp: false },
     };
     const policy = buildSandboxPolicy(input({ config }));
     expect(policy.denyWrite).not.toContain(join(root, ".nax", "rules"));
@@ -99,7 +99,10 @@ describe("buildSandboxPolicy", () => {
 
   test("#2260: features, config.json and mono stay denied even when listed in allowWrite", () => {
     const allowWrite = [".nax/features", ".nax/config.json", ".nax/mono"];
-    const config: SandboxConfig = { ...DEFAULT_SANDBOX_CONFIG, filesystem: { allowWrite, denyRead: [] } };
+    const config: SandboxConfig = {
+      ...DEFAULT_SANDBOX_CONFIG,
+      filesystem: { allowWrite, denyRead: [], allowSharedTmp: false },
+    };
     const policy = buildSandboxPolicy(input({ config }));
     for (const name of ["features", "config.json", "mono"])
       expect(policy.denyWrite).toContain(join(root, ".nax", name));
@@ -212,7 +215,7 @@ describe("buildSandboxPolicy", () => {
   test("config extras: ~ expands, relative allowWrite resolves against the root", () => {
     const config: SandboxConfig = {
       ...DEFAULT_SANDBOX_CONFIG,
-      filesystem: { allowWrite: ["~/.cache/custom", "build-out"], denyRead: ["~/secrets"] },
+      filesystem: { allowWrite: ["~/.cache/custom", "build-out"], denyRead: ["~/secrets"], allowSharedTmp: false },
     };
     const policy = buildSandboxPolicy(input({ config }));
     expect(policy.writeRoots).toContain(join(home, ".cache", "custom"));
@@ -223,17 +226,20 @@ describe("buildSandboxPolicy", () => {
   test("F1: config extras are pinned glob-free too", () => {
     const config: SandboxConfig = {
       ...DEFAULT_SANDBOX_CONFIG,
-      filesystem: { allowWrite: ["~/.cache/custom", "build-out"], denyRead: ["~/secrets"] },
+      filesystem: { allowWrite: ["~/.cache/custom", "build-out"], denyRead: ["~/secrets"], allowSharedTmp: false },
     };
     const policy = buildSandboxPolicy(input({ config }));
     for (const p of [...policy.denyWrite, ...policy.denyRead, ...policy.writeRoots]) expect(p).not.toMatch(GLOB);
   });
 
   test("F1: a glob that bypassed the schema throws instead of reaching the backend", () => {
-    const withAllow: SandboxConfig = { ...DEFAULT_SANDBOX_CONFIG, filesystem: { allowWrite: ["out-*"], denyRead: [] } };
+    const withAllow: SandboxConfig = {
+      ...DEFAULT_SANDBOX_CONFIG,
+      filesystem: { allowWrite: ["out-*"], denyRead: [], allowSharedTmp: false },
+    };
     const withDeny: SandboxConfig = {
       ...DEFAULT_SANDBOX_CONFIG,
-      filesystem: { allowWrite: [], denyRead: ["~/secret*"] },
+      filesystem: { allowWrite: [], denyRead: ["~/secret*"], allowSharedTmp: false },
     };
     expect(() => buildSandboxPolicy(input({ config: withAllow }))).toThrow(/glob/);
     expect(() => buildSandboxPolicy(input({ config: withDeny }))).toThrow(/glob/);

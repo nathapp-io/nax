@@ -84,3 +84,34 @@ describe("Bash through the launcher", () => {
     expect("audit" in r).toBe(false);
   });
 });
+
+// US-003: a confined session's sandbox writes only under the run's own temp
+// root, so the description must not keep advertising "the system temp
+// directories" -- an agent that believes /tmp is writable wastes a turn on a
+// denied write. Both available-state call sites (raw and policy-gated) carry
+// the confined wording; a shared-temp launcher keeps the legacy sentence.
+describe("US-003 — Bash description names the confined temp root", () => {
+  const launcherFor = (confined: boolean) =>
+    createCommandLauncher({
+      state: confined
+        ? { kind: "available", backend: "srt", network: "open", sharedTmp: false }
+        : { kind: "available", backend: "srt", network: "open" },
+      backend: makeFakeSandboxBackend(),
+      policyFor,
+    });
+
+  test.each([{ bashApproval: "raw" as const }, { bashApproval: "gated" as const }])(
+    "US-003 AC5: sharedTmp:false names this run's temp directory ($bashApproval)",
+    ({ bashApproval }) => {
+      const tool = createBashTool({ bashApproval, patterns: ["bun *"], launcher: launcherFor(true) });
+      expect(tool.description).toContain("this run's temp directory ($TMPDIR)");
+      expect(tool.description).not.toContain("the system temp directories");
+    },
+  );
+
+  test("US-003 AC5 boundary: a shared-temp launcher keeps the pre-change wording", () => {
+    const tool = createBashTool({ bashApproval: "gated", patterns: ["bun *"], launcher: launcherFor(false) });
+    expect(tool.description).toContain("the system temp directories");
+    expect(tool.description).not.toContain("this run's temp directory ($TMPDIR)");
+  });
+});

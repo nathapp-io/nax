@@ -2,9 +2,11 @@
  * End-of-run temp-directory wipe (US-004).
  *
  * The complement of `scratchpad-wipe.ts`: it removes the run's OWN temp root
- * (`/tmp/nax-<runId>`), never a `/tmp/nax-*` sweep — a concurrent run's live
+ * (`runTmpRoot(runId)` — `<parent>/<runId>` under the shared `/tmp/nax`, or the
+ * per-user fallback), never a `/tmp/nax*` sweep — a concurrent run's live
  * directories share that prefix, and a crashed run's directory is left for the
- * OS to clear. Unlike the scratchpad wipe it is NOT gated on `runCompleted`: a
+ * OS to clear. It never removes the shared parent either, which the next run is
+ * about to use. Unlike the scratchpad wipe it is NOT gated on `runCompleted`: a
  * failed run's `/tmp` files are not kept for inspection because no later run can
  * find them to clear.
  *

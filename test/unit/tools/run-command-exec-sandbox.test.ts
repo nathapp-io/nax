@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _launcherDeps, createCommandLauncher } from "@/sandbox";
+import { createRunCommandTool } from "@/tools";
 import { runExecBranch } from "@/tools/run-command-exec";
 
 let root: string;
@@ -13,6 +14,7 @@ beforeEach(() => {
 afterEach(() => cleanupTempDir(root));
 
 const ctx = () => ({ root, resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_000_000 });
+const policyFor = async (r: string) => ({ writeRoots: [r], denyWrite: [], denyRead: [], network: {} });
 
 describe("Exec through the launcher", () => {
   test("Review Focus 5: package target runs in the package dir, roots derive from ctx.root, audit carries the record", async () => {
@@ -39,6 +41,41 @@ describe("Exec through the launcher", () => {
       wrapped: true,
       argv: ["/bin/sh", "-c", "'bun' '--version'"],
     });
+  });
+});
+
+// US-003: the Exec branch's description carries the sandbox sentence. Under a
+// confined session the writable temp root is this run's own directory, so the
+// description must stop promising "the system temp directories".
+describe("US-003 — RunCommand description names the confined temp root", () => {
+  const execTool = (state: "confined" | "shared") =>
+    createRunCommandTool(new Map([["test", "bun test"]]), {
+      exec: {
+        repoRoot: root,
+        packageWorkdir: root,
+        allowScripts: false,
+        patterns: ["bun *"],
+        launcher: createCommandLauncher({
+          state:
+            state === "confined"
+              ? { kind: "available", backend: "srt", network: "open", sharedTmp: false }
+              : { kind: "available", backend: "srt", network: "open" },
+          backend: makeFakeSandboxBackend(),
+          policyFor,
+        }),
+      },
+    });
+
+  test("US-003 AC6: sharedTmp:false names this run's temp directory", () => {
+    const description = execTool("confined").description;
+    expect(description).toContain("this run's temp directory ($TMPDIR)");
+    expect(description).not.toContain("the system temp directories");
+  });
+
+  test("US-003 AC6 boundary: a shared-temp launcher keeps the pre-change wording", () => {
+    const description = execTool("shared").description;
+    expect(description).toContain("the system temp directories");
+    expect(description).not.toContain("this run's temp directory ($TMPDIR)");
   });
 });
 

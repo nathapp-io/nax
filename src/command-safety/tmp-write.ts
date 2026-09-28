@@ -2,9 +2,10 @@
  * Observable literal-temp-write signal (US-005).
  *
  * Records, never decides. True when a command writes to a literal `/tmp` or
- * `/private/tmp` path outside nax's own per-run `/tmp/nax-*` directories, so
- * the frequency of that scratch-write habit is measurable. The caller only
- * stores the boolean on the shadow row: it is not a `QuestionId`, not in
+ * `/private/tmp` path outside nax's own temp trees — the shared `/tmp/nax/`
+ * parent of every run root and the per-user `/tmp/nax-<uid>` fallback — so the
+ * frequency of that scratch-write habit is measurable. The caller only stores
+ * the boolean on the shadow row: it is not a `QuestionId`, not in
  * `rules.hits`, and changes no verdict.
  *
  * Total by construction: `lexBashCommand` is safe-by-refusal and does no I/O,
@@ -16,8 +17,10 @@ import { type BashSegment, type BashToken, lexBashCommand } from "@/permissions"
 /** The literal temp roots a flagged write must land in. */
 const TEMP_ROOTS = ["/tmp", "/private/tmp"] as const;
 
-/** nax's own per-run subtree under a temp root, never counted. */
-const NAX_PREFIX = "nax-";
+/** nax's shared temp parent, a directory directly under a temp root. */
+const NAX_PARENT_SEGMENT = "nax";
+/** nax's per-user fallback parent, whose `<uid>` keeps it outside the shared parent's subtree. */
+const NAX_FALLBACK_SEGMENT = "nax-";
 
 /** First tokens whose later non-flag words are all write targets. */
 const ARG_TARGET_COMMANDS: ReadonlySet<string> = new Set(["tee", "touch", "mkdir"]);
@@ -59,11 +62,20 @@ function resolveTarget(target: Target, frame: string | undefined): string | unde
   return frame === undefined ? undefined : posix.normalize(posix.join(frame, target.text));
 }
 
+/** True when `path` lies in nax's own temp tree under `root`, never counted. */
+function isNaxTempTree(path: string, root: string): boolean {
+  // A path-boundary prefix, not a string prefix: `/tmp/naxfoo` is a different
+  // directory from `/tmp/nax` and stays counted. The shared parent is checked
+  // with its trailing separator because it is a directory of run roots; the
+  // fallback is a whole name prefix, `<uid>` and all.
+  return path.startsWith(`${root}/${NAX_PARENT_SEGMENT}/`) || path.startsWith(`${root}/${NAX_FALLBACK_SEGMENT}`);
+}
+
 /** True when `path` is a temp root or lies under one, but not under nax's own subtree. */
 function isTmpPath(path: string): boolean {
   for (const root of TEMP_ROOTS) {
     if (path !== root && !path.startsWith(`${root}/`)) continue;
-    return !path.startsWith(`${root}/${NAX_PREFIX}`);
+    return !isNaxTempTree(path, root);
   }
   return false;
 }

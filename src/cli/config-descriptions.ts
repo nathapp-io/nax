@@ -125,6 +125,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.sandbox.filesystem": "Filesystem policy additions for the sandbox",
   "execution.sandbox.filesystem.allowWrite": "Extra literal paths the sandbox may write (no glob characters)",
   "execution.sandbox.filesystem.denyRead": "Extra literal paths the sandbox may not read (no glob characters)",
+  "execution.sandbox.filesystem.allowSharedTmp":
+    "Also grant the shared temp directories (os.tmpdir(), /tmp) to sandboxed commands. Off by default: temp writes stay inside this run's own temp root",
   "execution.sandbox.network": "Network policy for sandboxed commands",
   "execution.sandbox.network.allowedDomains": "Domains sandboxed commands may reach; absent means open",
   "execution.commandSafety": "Shadow command classifier; observes every command, decides nothing. Root-only (ADR-031)",

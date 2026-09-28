@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { globalConfigDir } from "@/config/paths";
 import { listCredentialFiles, listNaxEntries, resolveGitLayout } from "@/sandbox";
+import * as policyInputs from "@/sandbox/policy-inputs";
 import { realOrRaw } from "@/utils/realpath";
 
 let base: string;
@@ -77,5 +78,50 @@ describe("listCredentialFiles", () => {
     } finally {
       for (const f of made) rmSync(f, { force: true });
     }
+  });
+});
+
+describe("runTempRoots (US-002)", () => {
+  /**
+   * Called through the module namespace with an OPTIONAL call on purpose: in
+   * the RED state `runTempRoots` has no export yet, and a named import of a
+   * missing export is a load-time SyntaxError that would take this whole file
+   * (including `resolveGitLayout`'s and `listNaxEntries`'s tests) down with it,
+   * proving nothing. `policyInputs.runTempRoots?.(…)` yields `undefined` when
+   * the function is absent, so the failure lands on the assertion below.
+   */
+  const run = (opts: { runTmpRoot: string; tmpdir: string }): readonly string[] | undefined =>
+    policyInputs.runTempRoots?.(opts);
+
+  test("US-002 AC3: a tmpdir outside /tmp is kept, ahead of the run root", () => {
+    expect(run({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/var/folders/x/T" })).toEqual(["/var/folders/x/T", "/tmp/nax/r1"]);
+  });
+
+  test("US-002 AC3 boundary: any tmpdir outside /tmp is kept, /var included", () => {
+    expect(run({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/var" })).toEqual(["/var", "/tmp/nax/r1"]);
+  });
+
+  test("US-002 AC4: a tmpdir of /tmp is dropped — keeping it would re-grant all of /tmp", () => {
+    expect(run({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/tmp" })).toEqual(["/tmp/nax/r1"]);
+  });
+
+  test("US-002 AC4 boundary: a tmpdir merely under /tmp is dropped too", () => {
+    expect(run({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/tmp/nax" })).toEqual(["/tmp/nax/r1"]);
+  });
+
+  test("US-002 AC5: a tmpdir nested under /tmp is dropped", () => {
+    expect(run({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/tmp/user-tmp" })).toEqual(["/tmp/nax/r1"]);
+  });
+
+  test("US-002 AC5 boundary: a deeper path under /tmp is dropped as well", () => {
+    expect(run({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/tmp/user-tmp/deeper" })).toEqual(["/tmp/nax/r1"]);
+  });
+
+  test("US-002 AC6: the macOS spelling /private/tmp is dropped", () => {
+    expect(run({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/private/tmp" })).toEqual(["/tmp/nax/r1"]);
+  });
+
+  test("US-002 AC6 boundary: a path under /private/tmp is dropped as well", () => {
+    expect(run({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/private/tmp/other" })).toEqual(["/tmp/nax/r1"]);
   });
 });
