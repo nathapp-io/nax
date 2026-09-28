@@ -338,11 +338,22 @@ export async function validateRecordAndDecide<F extends Finding>(
       break;
     } catch (err) {
       if (validatorAttempt >= cycle.config.validatorRetries) {
+        // Accumulate this iteration's spend before exiting, mirroring
+        // handleGiveUps and liteValidateIfExhausted (#1369). No recordIteration
+        // call here: validation threw, so there is no post-dispatch findingsAfter
+        // to pass to it, and a fabricated outcome would feed a false signal to
+        // the oscillation counter, the curator, and the strategy-attempt history.
+        // Prior completed iterations' costs were already accumulated in their
+        // respective passes through this function.
+        const iterationCostUsd = fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
+        state.totalCostUsd += iterationCostUsd;
         logger?.error("findings.cycle", "cycle exited — validator error", {
           storyId: logCtx.storyId,
           packageDir: logCtx.packageDir,
           cycleName: logCtx.cycleName,
           reason: "validator-error",
+          strategiesRun: group.map((s) => s.name),
+          iterationCostUsd,
           error: errorMessage(err),
         });
         return {
