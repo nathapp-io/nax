@@ -131,17 +131,23 @@ describe("AC-6 — parallel failures routed through handlePipelineFailure (sourc
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-7 — cost-limit check after parallel batch (source)", () => {
-  test("unified-executor-parallel-dispatch.ts has cost-limit check after runParallelBatch in source order", async () => {
+  test("runManyStoryParallelBatch runs its own cost-limit check after deps.runParallelBatch", async () => {
     const src = await readSrc("execution/unified-executor-parallel-dispatch.ts");
-    const batchIdx = src.indexOf("deps.runParallelBatch");
-    // First occurrence AFTER runParallelBatch — the post-batch check. (A plain
-    // lastIndexOf would land on the sequential gate and never catch the
-    // post-batch check being deleted.)
-    const postGateIdx = src.indexOf("cost-limit", batchIdx);
-    expect(src).toContain("costLimit");
+    // Scope to runManyStoryParallelBatch's body: a whole-file search after the
+    // batch call would also match runSingleStoryInBatch's single-story gate
+    // further down, so it would still pass with the post-batch check deleted.
+    const fnStart = src.indexOf("async function runManyStoryParallelBatch(");
+    const fnEnd = src.indexOf("\n}\n", fnStart);
+    expect(fnStart).toBeGreaterThan(0);
+    expect(fnEnd).toBeGreaterThan(fnStart);
+    const body = src.slice(fnStart, fnEnd);
+
+    const batchIdx = body.indexOf("deps.runParallelBatch");
+    const postCheckIdx = body.indexOf("enforceCostLimit(", batchIdx);
+    const postExitIdx = body.indexOf('exitReason: "cost-limit"', postCheckIdx);
     expect(batchIdx).toBeGreaterThan(0);
-    expect(postGateIdx).toBeGreaterThan(0);
-    expect(postGateIdx).toBeGreaterThan(batchIdx);
+    expect(postCheckIdx).toBeGreaterThan(batchIdx);
+    expect(postExitIdx).toBeGreaterThan(postCheckIdx);
   });
 });
 

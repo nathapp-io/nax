@@ -4,8 +4,14 @@
  * Extracted for the cognitive-complexity drain (docs/plans/STATUS-complexity-drain.md
  * §4 A4): the action body was a single ~478-line function scoring 107. It now
  * sequences the named phases below; every phase preserves the original's exit
- * codes, stderr messages and gate ORDER (pinned by
- * test/integration/cli/cli-run-preflight.test.ts).
+ * codes, stderr messages and gate ORDER. test/integration/cli/cli-run-preflight.test.ts
+ * pins each adjacent pair of the pre-flight gates: feature name -> directory
+ * -> -m -> --parallel -> --compare/--agent exclusivity -> empty contestant
+ * list -> contestant validation -> --max-cost -> worst-case confirmation ->
+ * --schedule -> --plan/--from. ("--plan without --from" and "missing --from
+ * file" cannot fire together, so their relative order is unobservable.) The
+ * plan phase, the schedule wait and every later phase are NOT order-pinned by
+ * that file.
  *
  * Boundaries that must not drift:
  * - Nothing here may import from bin/nax.ts (it imports this file — a back

@@ -275,8 +275,9 @@ describe("buildHopCallback — rebuild manifest write on swap", () => {
 
     expect(hop.result.success).toBe(true);
     expect(hop.dispatched).toBe(true);
-    // The swap-handoff prompt rewrite still reached the agent.
-    expect(hop.prompt).not.toBe("original prompt");
+    // The swap-handoff prompt rewrite still reached the agent: the rebuilt
+    // bundle's push markdown is prepended to the original prompt.
+    expect(hop.prompt).toBe("## Rebuilt context\n\noriginal prompt");
   });
 });
 

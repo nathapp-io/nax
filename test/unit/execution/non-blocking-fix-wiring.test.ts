@@ -341,7 +341,9 @@ describe("non-blocking-fix runtime wiring", () => {
   });
 
   test("non-blocking fix is SKIPPED when every advisory finding is stamped retired (#1966)", async () => {
-    // The wiring's own filter (actionableAdvisoryFindings at execution-plan.ts:402)
+    // The wiring's own filter (actionableAdvisoryFindings, applied per bucket in
+    // deriveNbfSeed in story-orchestrator/nbf-seed.ts, called from
+    // maybeRunNonBlockingFix in story-orchestrator/execution-plan-phases.ts)
     // must close the gate, and runNonBlockingFix must never be invoked. The
     // retirement-filter suite below asserts the same shape on the raw helpers;
     // this test pins the production wiring against a future change that bypasses
@@ -514,8 +516,8 @@ describe("runNonBlockingFix — retired-only seed closes the gate (US-004 AC 11)
 
     // End-to-end: even if the gate is bypassed somehow, the harness must not be
     // invoked. We drive runNonBlockingFix directly with the raw advisoryFindings
-    // field set to the UNFILTERED bucket — the same shape execution-plan.ts
-    // passes after running actionableAdvisoryFindings — and assert no
+    // field set to the UNFILTERED bucket — the same shape maybeRunNonBlockingFix
+    // passes after deriveNbfSeed runs actionableAdvisoryFindings — and assert no
     // snapshot/commit ever happens. If the actionable filter did not drop the
     // retired entries, the pass would be opened (and a snapshot would fire).
     let snapshots = 0;

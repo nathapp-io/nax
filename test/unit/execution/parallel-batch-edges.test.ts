@@ -36,7 +36,7 @@ import { _parallelBatchDeps, type ParallelBatchCtx, runParallelBatch } from "@/e
 import type { ParallelBatchResult } from "@/execution/parallel-worker";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { PRD, UserStory } from "@/prd/types";
-import type { WorktreeId } from "@/worktree";
+import { MergeEngine, type WorktreeId, WorktreeManager } from "@/worktree";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures (same local pattern the mirror suites use over the shared helpers)
@@ -83,15 +83,28 @@ function emptyWorkerResult(overrides: Partial<ParallelBatchResult> = {}): Parall
 // ─────────────────────────────────────────────────────────────────────────────
 
 let tmpDir: string;
-let origDeps: typeof _parallelBatchDeps;
+
+// Snapshot of the deps taken ONCE, at module load — not in beforeEach. A
+// per-test snapshot records whatever the live object holds at that moment as
+// the "original", so a stub left behind by an earlier test in this file (or
+// set in a describe-level beforeAll) would be restored as if it were real (the
+// 14edda8d lesson). Every test starts from, and is restored to, this snapshot.
+const LOAD_TIME_PARALLEL_BATCH_DEPS = { ..._parallelBatchDeps };
+
+// The snapshot cannot guard against an EARLIER TEST FILE: bun evaluates each
+// file's top level only after the previous file's tests ran, so a stub that
+// file leaked would be captured here too. The "real dep defaults" tests assert
+// real instances (toBeInstanceOf), so such a leak fails them loudly instead of
+// letting them pass against a stub. (A fresh `?query` import of the module
+// would dodge the leak, but bun's coverage then stops crediting the real file.)
 
 beforeEach(() => {
   tmpDir = makeTempDir("nax-pb-edges-");
-  origDeps = { ..._parallelBatchDeps };
+  Object.assign(_parallelBatchDeps, LOAD_TIME_PARALLEL_BATCH_DEPS);
 });
 
 afterEach(() => {
-  Object.assign(_parallelBatchDeps, origDeps);
+  Object.assign(_parallelBatchDeps, LOAD_TIME_PARALLEL_BATCH_DEPS);
   cleanupTempDir(tmpDir);
   mock.restore();
 });
@@ -419,11 +432,10 @@ describe("warn-log payloads", () => {
 describe("real dep defaults", () => {
   test("createWorktreeManager and createMergeEngine build real instances", async () => {
     const manager = await _parallelBatchDeps.createWorktreeManager();
-    expect(typeof manager.create).toBe("function");
-    expect(typeof manager.remove).toBe("function");
+    expect(manager).toBeInstanceOf(WorktreeManager);
 
     const engine = await _parallelBatchDeps.createMergeEngine(manager);
-    expect(typeof engine.mergeAll).toBe("function");
+    expect(engine).toBeInstanceOf(MergeEngine);
   });
 
   test("executeParallelBatch on an empty batch resolves an empty result without side effects", async () => {

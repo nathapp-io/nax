@@ -413,3 +413,57 @@ describe("validateStory — forced runtime state", () => {
     expect(story.escalations).toEqual([]);
   });
 });
+
+describe("validateStory — which error wins when several fields are invalid", () => {
+  // validateStory throws on the first failing extractor, so extractor order in
+  // schema-story.ts is observable: each row makes two adjacent fields invalid
+  // and pins that the earlier extractor's error is the one thrown.
+  test.each([
+    ["id before title", { id: "", title: "" }, "[schema] story[0].id is required and must be non-empty"],
+    [
+      "title before description",
+      { title: "", description: "" },
+      "[schema] story[0].title is required and must be non-empty",
+    ],
+    [
+      "description before acceptanceCriteria",
+      { description: "", acceptanceCriteria: [] },
+      "[schema] story[0].description is required and must be non-empty",
+    ],
+    [
+      "suggestedCriteria before complexity",
+      { suggestedCriteria: "nope", complexity: "bogus" },
+      "[schema] story[0].suggestedCriteria must be an array when present",
+    ],
+    [
+      "complexity before testStrategy",
+      { complexity: "bogus", testStrategy: "no-test" },
+      '[schema] story[0].routing.complexity "bogus" is invalid. Valid values: simple, medium, complex, expert',
+    ],
+    [
+      "testStrategy before dependencies",
+      { testStrategy: "no-test", dependencies: ["US-999"] },
+      '[schema] story[0].routing.noTestJustification is required when testStrategy is "no-test"',
+    ],
+    [
+      "dependencies before tags",
+      { dependencies: ["US-999"], tags: [1] },
+      '[schema] story[0].dependencies references unknown story ID "US-999"',
+    ],
+    ["tags before workdir", { tags: [1], workdir: "/abs" }, "[schema] story[0].tags[0] must be a string (got number)"],
+    [
+      "workdir before verifiedBy",
+      { workdir: "/abs", verifiedBy: { kind: "nope" } },
+      '[schema] story[0].workdir must be relative (no leading /): "/abs"',
+    ],
+  ] as const)("%s", (_label, overrides, message) => {
+    let thrown: unknown;
+    try {
+      validate(baseStory(overrides));
+    } catch (err) {
+      thrown = err;
+    }
+    assertCaughtInstanceOf(thrown, NaxError, "validateStory rejection");
+    expect(thrown.message).toBe(message);
+  });
+});

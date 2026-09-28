@@ -434,9 +434,11 @@ describe("validateConfig — version and models-mapping guards", () => {
   });
 
   test("missing models mapping with a populated complexityRouting THROWS (quirk, pinned as-is)", () => {
-    // Recorded quirk, not fixed (behaviour-preserving batch): line 152 reads
-    // `config.models[defaultAgentKey]` without re-checking config.models, so a
-    // models-less config with any defined routing entry crashes mid-validation.
+    // Recorded quirk, not fixed (behaviour-preserving batch): checkComplexityRouting
+    // (src/config/validate-fields.ts) reads `config.models[defaultAgent]`, where
+    // `const defaultAgent = defaultAgentKey(config)`, without re-checking
+    // config.models, so a models-less config with any defined routing entry
+    // crashes mid-validation.
     expect(() => validateConfig(cfg({ models: undefined }))).toThrow(TypeError);
   });
 
@@ -531,5 +533,66 @@ describe("validateConfig — agent.default and escalation.tierOrder guards", () 
       }),
     );
     expect(result.errors).toContain(message);
+  });
+});
+
+describe("validateConfig — error order across field groups", () => {
+  // validate.ts documents the groups as "evaluated in this order; every error
+  // collected, none short-circuit". One config that trips every group except
+  // agent.default (which needs an empty default and so a different models
+  // key) pins the whole sequence; the second case slots agent.default in.
+  test("collects one error per group in the documented evaluation order", () => {
+    const result = validateConfig(
+      cfg({
+        version: 2,
+        models: { claude: { fast: "haiku", balanced: "sonnet" } },
+        execution: { ...cfg({}).execution, maxIterations: 0, costLimit: 0, sessionTimeoutSeconds: 0 },
+        agent: { default: "claude", fallback: { map: { claude: ["codex"] } } },
+        autoMode: {
+          complexityRouting: { simple: "bogus", expert: { tier: "missing" } },
+          escalation: {
+            tierOrder: [
+              { tier: "fast", attempts: 0 },
+              { tier: "powerful", attempts: 1, agent: "ghost" },
+              { tier: "ultra", attempts: 1 },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(result.errors).toEqual([
+      "Invalid version: expected 1, got 2",
+      "models.claude.powerful is required",
+      "maxIterations must be > 0, got 0",
+      "costLimit must be > 0, got 0",
+      "sessionTimeoutSeconds must be > 0, got 0",
+      'escalation.tierOrder: tier "fast" attempts must be 1-20, got 0',
+      'models.claude.powerful is required (fallback agent "claude" in agent.fallback.map)',
+      'agent.fallback.map: agent "codex" is not a key in models (available: claude)',
+      'autoMode.escalation.tierOrder: tier "powerful" agent "ghost" is not a key in models (available: claude)',
+      'autoMode.escalation.tierOrder: tier "ultra" does not resolve under agent "claude" (the default agent)',
+      "complexityRouting.simple must be one of: fast, balanced (got 'bogus')",
+      'complexityRouting.expert: tier "missing" not found under agent "claude"',
+    ]);
+  });
+
+  test("agent.default error lands after execution limits and before tierOrder", () => {
+    const result = validateConfig(
+      cfg({
+        version: 2,
+        models: { "": { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
+        execution: { ...cfg({}).execution, maxIterations: 0 },
+        agent: { default: "" },
+        autoMode: { complexityRouting: {}, escalation: { tierOrder: [{ tier: "fast", attempts: 0 }] } },
+      }),
+    );
+
+    expect(result.errors).toEqual([
+      "Invalid version: expected 1, got 2",
+      "maxIterations must be > 0, got 0",
+      "agent.default must be non-empty",
+      'escalation.tierOrder: tier "fast" attempts must be 1-20, got 0',
+    ]);
   });
 });

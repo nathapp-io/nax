@@ -85,26 +85,21 @@ function setupDeps(overrides: DepsOverrides = {}) {
   _codeNeighborDeps.detectLanguage = async () => undefined;
 }
 
-let origFileExists: typeof _codeNeighborDeps.fileExists;
-let origReadFile: typeof _codeNeighborDeps.readFile;
-let origFileSize: typeof _codeNeighborDeps.fileSize;
-let origGlob: typeof _codeNeighborDeps.glob;
-let origDetectLanguage: typeof _codeNeighborDeps.detectLanguage;
+// Snapshot of every dep taken ONCE, at module load — not in beforeEach. A
+// per-test snapshot records whatever the live object holds at that moment as
+// the "original", so a stub left behind by an earlier test in this file (or set
+// in a describe-level beforeAll) would be restored as if it were real (the
+// 14edda8d lesson). Every test here stubs the deps it uses via setupDeps(), so
+// none depends on the snapshot holding the real implementations; restoring to
+// it is what keeps this file from leaking its stubs into later files.
+const REAL_CODE_NEIGHBOR_DEPS = { ..._codeNeighborDeps };
 
 beforeEach(() => {
-  origFileExists = _codeNeighborDeps.fileExists;
-  origReadFile = _codeNeighborDeps.readFile;
-  origFileSize = _codeNeighborDeps.fileSize;
-  origGlob = _codeNeighborDeps.glob;
-  origDetectLanguage = _codeNeighborDeps.detectLanguage;
+  Object.assign(_codeNeighborDeps, REAL_CODE_NEIGHBOR_DEPS);
 });
 
 afterEach(() => {
-  _codeNeighborDeps.fileExists = origFileExists;
-  _codeNeighborDeps.readFile = origReadFile;
-  _codeNeighborDeps.fileSize = origFileSize;
-  _codeNeighborDeps.glob = origGlob;
-  _codeNeighborDeps.detectLanguage = origDetectLanguage;
+  Object.assign(_codeNeighborDeps, REAL_CODE_NEIGHBOR_DEPS);
 });
 
 /** Neighbor lines ("- <path>") rendered in the chunk body — the paths that matter. */

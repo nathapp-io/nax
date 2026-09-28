@@ -19,7 +19,10 @@
  *     (#1527/#1528) while sequential runs project them;
  *  5. the AC-20 session-scratch purge half (manifest half is pinned):
  *     resolved projectDir, archive-on-feature-archive flag, info/warn logs,
- *     and the no-retention no-op;
+ *     and that the schema-default session block (retentionDays 7) purges with
+ *     no explicit override. The no-retention no-op is NOT pinned: the
+ *     `if (sessionCfg?.retentionDays)` false arm is unreachable through a
+ *     validated config (schema min(1));
  *  6. pluginProviderCache.disposeAll() is awaited during completion;
  *  7. the saveRunMetrics payload shape (runId, counts, stories reference);
  *  8. the final-status ternary's "stalled" and "aborted" arms (EXEC-1);

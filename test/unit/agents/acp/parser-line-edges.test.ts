@@ -141,6 +141,31 @@ describe("parseAcpxJsonLine — session/update guard arms", () => {
     expect(finalizeParseState(state).error).toBeUndefined();
   });
 
+  test("an unknown sessionUpdate on a line that also carries result and error falls through to both", () => {
+    // handleJsonRpcEvent only returns early when handleSessionUpdate yields an
+    // activity; an unrecognised update must still reach the result and error
+    // appliers on the same line.
+    const state = createParseState();
+    const line = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "session/update",
+      params: { sessionId: "x", update: { sessionUpdate: "plan_update", plan: "..." } },
+      result: { stopReason: "end_turn", usage: { inputTokens: 11, outputTokens: 22 } },
+      error: { code: -32000, message: "fell through to the error arm" },
+    });
+
+    expect(parseAcpxJsonLine(line, state)).toBeUndefined();
+    expect(state.stopReason).toBe("end_turn");
+    expect(state.tokenUsage).toEqual({
+      input_tokens: 11,
+      output_tokens: 22,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    });
+    expect(state.error).toContain("fell through to the error arm");
+  });
+
   test("a session/update without params.update emits no activity", () => {
     const state = createParseState();
     const line = JSON.stringify({ jsonrpc: "2.0", method: "session/update", params: { sessionId: "x" } });

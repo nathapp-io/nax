@@ -150,6 +150,65 @@ describe("displayFeatureDetails — unpinned branches (B6 characterisation)", ()
     expect(output).toContain("Skipped:    1");
   });
 
+  test("progress section omits the Skipped line when the skipped count is zero", async () => {
+    writePrd([
+      story({ id: "US-001", title: "Passed story", status: "passed", passes: true }),
+      story({ id: "US-002", title: "Pending story", status: "pending" }),
+    ]);
+    writeStatus();
+
+    await displayFeatureStatus({ feature: "test-feature", dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).toContain("Pending:    1");
+    expect(output).not.toContain("Skipped:");
+  });
+
+  test("sections print in order: header, run status, progress, stories, post-run, last run", async () => {
+    writePrd([story({ id: "US-001", title: "Only story", status: "skipped" })]);
+    writeStatus({
+      run: {
+        id: "run-2026-06-03T00-00-00-000Z",
+        feature: "test-feature",
+        startedAt: "2026-06-03T00:00:00.000Z",
+        status: "crashed",
+        dryRun: false,
+        pid: 999999,
+      },
+      postRun: {
+        acceptance: { status: "passed" },
+        regression: { status: "not-run" },
+      },
+    });
+
+    await displayFeatureStatus({ feature: "test-feature", dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    const markers = [
+      "📊 prd-feature-name",
+      "Crashed Run Detected:",
+      "Recovery Hints:",
+      "Progress:\n",
+      "Branch:",
+      "Updated:",
+      "Total:",
+      "Passed:",
+      "Failed:",
+      "Pending:",
+      "Skipped:",
+      "Stories:",
+      "US-001: Only story",
+      "Post-Run Status:",
+      "Acceptance: passed",
+      "Regression: not-run",
+      "Last run:",
+      "Cost: $0.1234",
+    ];
+    const positions = markers.map((marker) => output.indexOf(marker));
+    expect(positions).not.toContain(-1);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
   test("story table picks icons from passes/status and appends the routing suffix", async () => {
     writePrd([
       story({ id: "US-001", title: "Passed story", status: "passed", passes: true }),
