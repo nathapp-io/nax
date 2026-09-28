@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { featureDir, PROJECT_FEATURES_DIR } from "@/config";
+import { getLogger } from "@/logger";
 import type { SessionDescriptor } from "./types";
 
 export function resolveProjectDirFromScratchDir(scratchDir: string): string | undefined {
@@ -45,6 +46,31 @@ export function toProjectRelativePath(projectDir: string, pathValue: string): st
 export function deriveNativeTranscriptDir(opts: { featureName?: string; transcriptRoot?: string }): string | undefined {
   if (!opts.featureName || !opts.transcriptRoot) return undefined;
   return join(opts.transcriptRoot, "features", opts.featureName, "sessions");
+}
+
+/**
+ * Fire-and-forget disk re-persistence on a descriptor mutation.
+ *
+ * `create()` writes the initial copy itself; every later mutation (transition,
+ * bindHandle, handoff, an open that revives a terminal session) must re-persist
+ * so the on-disk copy stays in sync with the in-memory registry. Without this
+ * the disk descriptor freezes at CREATED state with `protocolIds: null` forever,
+ * defeating cross-iteration disk discovery.
+ *
+ * Failures log a warning and are swallowed — disk persistence is supplementary
+ * to the in-memory Map, never authoritative.
+ */
+export function persistDescriptor(descriptor: SessionDescriptor): void {
+  if (!descriptor.scratchDir) return;
+  const projectDir = resolveProjectDirFromScratchDir(descriptor.scratchDir);
+  void _sessionManagerDeps.writeDescriptor(descriptor.scratchDir, descriptor, projectDir).catch((err) => {
+    getLogger().warn("session", "Failed to re-persist session descriptor", {
+      storyId: descriptor.storyId,
+      sessionId: descriptor.id,
+      scratchDir: descriptor.scratchDir,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 }
 
 export const _sessionManagerDeps = {

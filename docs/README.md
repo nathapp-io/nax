@@ -34,6 +34,7 @@ description: User guides, architecture references, and specs for nax
 | [Monorepo Support](guides/monorepo.md) | Multi-package projects with per-package configuration |
 | [Language Awareness](guides/language-awareness.md) | Auto-detected language, project type, test framework, and lint tool |
 | [Hooks](guides/hooks.md) | Lifecycle hooks for notifications and CI triggers |
+| [Loop Handlers](guides/loop-handlers.md) | Plugin-contributed handlers inside the native agent's turn loop — events, patches, ordering, failure semantics and timeout |
 | [Interaction Triggers](guides/triggers.md) | Interactive pause-and-prompt configuration |
 | [Prompt Customization](guides/prompt-customization.md) | Customizing agent prompts per feature |
 | [Troubleshooting](guides/troubleshooting.md) | Common issues and resolutions |

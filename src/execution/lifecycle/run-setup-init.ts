@@ -171,6 +171,14 @@ export async function initializeAfterLock(options: InitializeAfterLockOptions): 
     // The LLM routing cache is run-scoped (runtime.routingCache, BUG-19) and
     // already starts empty for this run — no explicit clear needed here.
 
+    // US-004: hand the run's plugin loop handlers to the run's session manager —
+    // this is the only place they can be delivered, since the run's plugins are
+    // loaded here. Those plugins declared `loop-handlers`, so their handlers
+    // must reach the native loop's turns; a session on any other agent ignores
+    // them. (A plan session builds its own runtime and never calls loadPlugins,
+    // so it receives none.)
+    runtime.sessionManager.configureLoopHandlers(pluginRegistry.getLoopHandlers());
+
     // Log plugins loaded
     logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
       plugins: pluginRegistry.plugins.map((p) => ({ name: p.name, version: p.version, provides: p.provides })),
