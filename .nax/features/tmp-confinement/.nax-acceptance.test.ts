@@ -673,7 +673,12 @@ describe("tmp-confinement — sandbox sentences and tool descriptions", () => {
   });
 
   test("AC-44: the run-command description uses the confined temp-directory wording", () => {
-    const state = { kind: "available", sharedTmp: false } as SandboxState;
+    const state = {
+      kind: "available",
+      backend: "srt",
+      network: "open",
+      sharedTmp: false,
+    } as SandboxState;
     const tool = createRunCommandTool(new Map(), {
       exec: {
         repoRoot: "/repo",

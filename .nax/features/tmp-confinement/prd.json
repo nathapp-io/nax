@@ -3,7 +3,7 @@
   "feature": "tmp-confinement",
   "branchName": "feat/tmp-confinement",
   "createdAt": "2026-09-28T00:00:00.000Z",
-  "updatedAt": "2026-09-28T09:14:04.773Z",
+  "updatedAt": "2026-09-28T09:24:09.220Z",
   "userStories": [
     {
       "id": "US-001",
@@ -161,8 +161,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
