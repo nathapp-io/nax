@@ -50,12 +50,18 @@ function resolvePytestBin(packageDir?: string): string {
  * for the actual exec) and `resolveAcceptanceFixTarget` (whole-string, for the
  * fix-role prompt) — one regex set so the placeholder dialect can't drift between
  * the two call sites.
+ *
+ * The replacement is passed through a function so the substitution string is
+ * treated as a literal — `String.prototype.replace` interprets `$&`, `$'`,
+ * `` $` `` and `$<n>` in plain-string replacement values, which would let a
+ * `testPath` containing `$'` inject arbitrary text into the command line and
+ * escape the shell-quoted word handed to `/bin/sh -c`.
  */
 export function substituteAcceptanceTestPath(command: string, testPath: string): string {
   return command
-    .replace(/\{\{files\}\}/g, testPath)
-    .replace(/\{\{file\}\}/g, testPath)
-    .replace(/\{\{FILE\}\}/g, testPath);
+    .replace(/\{\{files\}\}/g, () => testPath)
+    .replace(/\{\{file\}\}/g, () => testPath)
+    .replace(/\{\{FILE\}\}/g, () => testPath);
 }
 
 export function buildAcceptanceRunCommand(
