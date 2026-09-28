@@ -19,6 +19,7 @@ import {
   makeCallOp,
   makeConfigSlice,
   makeFinding,
+  makeLogger,
   makeMockCallContext,
   makeResolvedTestPatterns,
   makeStory,
@@ -357,5 +358,88 @@ describe("runFixReview — the embedded fix diff (US-003 AC20)", () => {
     await runFixReview(makeCtx(), makeRequest(), harness.deps);
 
     expect(harness.inputs[0]?.diff).toBe(SMALL_DIFF);
+  });
+});
+
+/**
+ * #2286 — the verdict must be visible in `nax logs` at the default level. The
+ * seeded reviewers log `Running … check` / `… review passed` from `run-phase`,
+ * which the fix review never passes through, so the runner logs its own
+ * outcome. A pass, a skip and a scope fail used to leave no info line at all.
+ */
+describe("runFixReview — the logged verdict (#2286)", () => {
+  function makeLoggedCtx(): { ctx: CallContext; logger: ReturnType<typeof makeLogger> } {
+    const base = makeCtx();
+    const logger = makeLogger();
+    return { ctx: { ...base, runtime: { ...base.runtime, logger } }, logger };
+  }
+
+  function reviewLines(logger: ReturnType<typeof makeLogger>): readonly string[] {
+    return logger.calls.filter((c) => c.stage === "review").map((c) => `${c.level}: ${c.message}`);
+  }
+
+  test("#2286: an LLM pass logs the start and the pass at info", async () => {
+    const { ctx, logger } = makeLoggedCtx();
+
+    await runFixReview(ctx, makeRequest(), makeHarness().deps);
+
+    expect(reviewLines(logger)).toEqual(["info: Running fix review", "info: Fix review passed"]);
+    expect(logger.calls.find((c) => c.message === "Fix review passed")?.data).toMatchObject({
+      storyId: "US-003",
+      reason: "no contradiction",
+    });
+  });
+
+  test("#2286: a disabled fixReview logs a skip, never a pass", async () => {
+    const { ctx, logger } = makeLoggedCtx();
+    const request = makeRequest({ config: makeReviewConfig({ fixReview: { enabled: false, timeoutMs: 600_000 } }) });
+
+    await runFixReview(ctx, request, makeHarness().deps);
+
+    expect(reviewLines(logger)).toEqual(["info: Fix review skipped — fixReview is disabled"]);
+  });
+
+  test("#2286: a fix that changed nothing logs a skip, never a pass", async () => {
+    const { ctx, logger } = makeLoggedCtx();
+
+    await runFixReview(ctx, makeRequest(), makeHarness({ fixFiles: [] }).deps);
+
+    expect(reviewLines(logger)).toEqual(["info: Fix review skipped — no paths changed by the fix"]);
+  });
+
+  test("#2286: a scope fail logs the cause and the out-of-scope files without a start line", async () => {
+    const { ctx, logger } = makeLoggedCtx();
+    const harness = makeHarness({ storyFiles: ["src/a.ts"], fixFiles: ["src/creep.ts", "src/a.ts"] });
+
+    await runFixReview(ctx, makeRequest(), harness.deps);
+
+    expect(reviewLines(logger)).toEqual(["info: Fix review failed (scope)"]);
+    expect(logger.calls.find((c) => c.message === "Fix review failed (scope)")?.data).toMatchObject({
+      files: ["src/creep.ts"],
+    });
+  });
+
+  test("#2286: a contradiction logs the cause and the acIndex", async () => {
+    const { ctx, logger } = makeLoggedCtx();
+    const harness = makeHarness({
+      opOutput: { parsed: true, passed: false, reason: CONTRADICTION_REASON, acIndex: 4, file: "src/a.ts" },
+    });
+
+    await runFixReview(ctx, makeRequest(), harness.deps);
+
+    expect(reviewLines(logger)).toEqual(["info: Running fix review", "info: Fix review failed (contradiction)"]);
+    expect(logger.calls.find((c) => c.message === "Fix review failed (contradiction)")?.data).toMatchObject({
+      acIndex: 4,
+      reason: CONTRADICTION_REASON,
+    });
+  });
+
+  test("#2286: an unparseable response logs an error verdict at warn", async () => {
+    const { ctx, logger } = makeLoggedCtx();
+    const harness = makeHarness({ opOutput: { parsed: false, unparsedPreview: "I could not review this fix." } });
+
+    await runFixReview(ctx, makeRequest(), harness.deps);
+
+    expect(reviewLines(logger)).toEqual(["info: Running fix review", "warn: Fix review errored"]);
   });
 });

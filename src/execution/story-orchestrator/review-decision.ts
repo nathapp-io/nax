@@ -262,6 +262,10 @@ export function logUnifiedReviewPhaseResult(storyId: string | undefined, opName:
   const logger = getSafeLogger();
   const payload = toReviewDecisionPayload(opName, output);
   if (!payload) return;
+  // #2286 — the scoped fix review never runs as a phase, so it never reaches
+  // this helper; `runFixReview` logs its own verdict. Returning here keeps a
+  // future caller from logging it twice.
+  if (payload.reviewer === "fix") return;
 
   if (!payload.parsed) {
     if (payload.noDispatch) {
@@ -277,15 +281,7 @@ export function logUnifiedReviewPhaseResult(storyId: string | undefined, opName:
   }
 
   const findingsCount = payload.result.findings.length;
-  // US-001 — the scoped fix review has its own reviewer kind; without an
-  // explicit branch it falls through to "Adversarial review", which would
-  // mislabel every fix-review log line in the run summary.
-  const title =
-    payload.reviewer === "semantic"
-      ? "Semantic review"
-      : payload.reviewer === "adversarial"
-        ? "Adversarial review"
-        : "Fix review";
+  const title = payload.reviewer === "semantic" ? "Semantic review" : "Adversarial review";
 
   if (payload.passed) {
     logger?.info("review", `${title} passed`, { storyId });
