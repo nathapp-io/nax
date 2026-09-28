@@ -48,7 +48,11 @@
     "src/commands/curator.ts": { "curatorCommit": 46, "parseCheckedProposals": 27 },
     "src/commands/detect.ts": { "detectCommand": 36 },
     "src/commands/logs-reader.ts": { "extractRunSummary": 29 },
-    "src/commands/migrate.ts": { "detectGeneratedContent": 54, "migrateCommand": 31 },
+    "src/commands/migrate.ts": {
+      "detectGeneratedContent": 54,
+      "migrateCommand": 41,
+      "partitionTrackedCandidates": 22
+    },
     "src/commands/runs.ts": { "runsCommand": 21 },
     "src/commands/unlock.ts": { "unlockCommand": 58 },
     "src/config/config-guards.ts": { "validatePermissionsBlock": 49 },
@@ -86,7 +90,7 @@
     "src/execution/lifecycle/run-cleanup.ts": { "cleanupRun": 29 },
     "src/execution/lifecycle/run-initialization.ts": { "initializeRun": 22 },
     "src/execution/lifecycle/run-setup-init.ts": { "initializeAfterLock": 21 },
-    "src/execution/lifecycle/run-setup.ts": { "setupRun": 24 },
+    "src/execution/lifecycle/run-setup.ts": {},
     "src/execution/nbf-source-diff.ts": { "=>": 29 },
     "src/execution/pipeline-result-handler.ts": { "handlePipelineSuccess": 38, "handlePipelineFailure": 35 },
     "src/execution/plan-inputs.ts": { "assemblePlanInputsFromCtx": 28 },

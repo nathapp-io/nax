@@ -240,14 +240,16 @@ describe("US-003 partitionTrackedCandidates", () => {
     // observed. `_gitDeps` is the shared git seam `gitWithTimeout` spawns
     // through, re-exported from this module.
     const spy = spyOn(_gitDeps, "spawn");
+    let calls: unknown[][];
     try {
       await partitionTrackedCandidates(dir, candidates);
+      calls = spy.mock.calls;
     } finally {
       spy.mockRestore();
     }
 
-    expect(spy.mock.calls).toHaveLength(1);
-    const call = spy.mock.calls[0];
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
     assertDefined(call, "the single git spawn");
     expect(call[0]).toContain("ls-files");
   });

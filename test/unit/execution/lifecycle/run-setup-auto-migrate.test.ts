@@ -149,8 +149,12 @@ describe("setupRun — US-003 AC14: .nax/ auto-migration seam", () => {
     const result = await setupRun(harness.options);
     try {
       expect(harness.calls).toEqual([harness.options.workdir]);
+      // The seam is the only place that moves files: `.nax/runs/` is still
+      // on disk because the stub never touched it. (outputDir itself may
+      // exist — `acquireFeatureLock` creates `outputDir/features/<feature>/`
+      // for the lock file regardless of whether anything migrates.)
       expect(existsSync(join(harness.options.workdir, ".nax", "runs"))).toBe(true);
-      expect(existsSync(outputDir)).toBe(false);
+      expect(existsSync(join(harness.options.workdir, ".nax", "runs", "r.json"))).toBe(true);
     } finally {
       result.cleanupCrashHandlers();
     }

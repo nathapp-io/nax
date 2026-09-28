@@ -342,27 +342,10 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // ── Prime StatusWriter with PRD so precheck-failed can be recorded ─────────
     statusWriter.setPrd(prd);
 
-    // Auto-migrate generated content out of .nax/ if needed (no-op when already migrated)
-    {
-      const { detectGeneratedContent, migrateCommand } = await import("@/commands");
-      const naxDir = path.join(workdir, ".nax");
-      const candidates = await detectGeneratedContent(naxDir).catch(() => []);
-      if (candidates.length > 0) {
-        logger?.info("setup", "Found generated content under .nax/ — migrating to output dir", {
-          storyId: "_setup",
-          count: candidates.length,
-        });
-        try {
-          await migrateCommand({ workdir });
-          logger?.info("setup", "Auto-migration complete", { storyId: "_setup" });
-        } catch (err) {
-          logger?.warn("setup", "Auto-migration failed — continuing without migration", {
-            storyId: "_setup",
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-    }
+    // US-003: auto-migrate generated content out of .nax/ if needed. Routed
+    // through `_runSetupDeps.autoMigrateGeneratedContent` so tests can observe
+    // the seam (US-003 AC14); the helper itself never rejects.
+    await _runSetupDeps.autoMigrateGeneratedContent(workdir);
 
     // Claim project identity on first run (no-op if already claimed for this workdir)
     {
