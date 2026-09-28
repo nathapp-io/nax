@@ -1,4 +1,5 @@
 import { mock } from "bun:test";
+import type { LoopHandlerSet } from "@/agents/native/session/loop-events";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import type { ISessionManager, SessionDescriptor } from "@/session/types";
 
@@ -53,6 +54,10 @@ export function makeSessionManager(overrides: Partial<ISessionManager> = {}): IS
     getLiveHandle: mock((_name: string) => undefined as SessionHandle | undefined),
     // nax#2218: cancelled-flag query used by warm-handle reuse sites (stale-retry).
     isCancelled: mock((_name: string) => false),
+    // US-004: run setup hands the run's plugin loop handlers to the session
+    // manager through this method; a mock that does not accept them would make
+    // every test of that delivery a type error.
+    configureLoopHandlers: mock((_set: LoopHandlerSet) => {}),
     ...overrides,
   } as ISessionManager;
 }
