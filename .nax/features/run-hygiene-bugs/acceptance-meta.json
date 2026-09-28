@@ -1,0 +1,21 @@
+{
+  "generatedAt": "2026-09-28T05:00:46.838Z",
+  "acFingerprint": "sha256:a886b28558743981f7c80288bd0246a392e0c7848ae06283a14805138c3b70ab",
+  "layoutFingerprint": "sha256:dff19f98f33cdddc1b5e1dd9707eb9a517196763e9740499ac2d489e002b4373",
+  "storyCount": 4,
+  "acCount": 44,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": ".nax/features/run-hygiene-bugs/.nax-acceptance.test.ts",
+      "expected": 44,
+      "found": 40,
+      "missing": [
+        "AC-14",
+        "AC-15",
+        "AC-16",
+        "AC-17"
+      ]
+    }
+  ]
+}
