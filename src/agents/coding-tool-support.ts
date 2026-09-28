@@ -14,7 +14,7 @@ import type { BashApprovalMode } from "@/config/bash-approval";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { AskResolver } from "@/permissions";
-import { type CommandLauncher, sessionTmpDir } from "@/sandbox";
+import type { CommandLauncher } from "@/sandbox";
 import {
   advertisedSchemaBytes,
   BASH_TOOL_NAME,
@@ -27,27 +27,32 @@ import {
   createToolAuditSink,
   EXEC_TOOL_NAME,
   expandMcpRuleGrants,
-  mcpRuleAdmits,
-  partitionMcpRules,
-  type ResolvedProviderTools,
-  resolveProviderTools,
   type ToolAuditSink,
   type ToolGrant,
   type ToolPatternNarrowing,
 } from "@/tools";
-import type { NaxConfig } from "../config";
 import { loadConfigForPackage } from "../config";
-import { toolAuditDir } from "../config/paths";
 import { resolvePermissions } from "../config/permissions";
 import type { QualityCommandSpec } from "../quality";
-import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
-import { errorMessage } from "../utils/errors";
 import { resolveBashSupport } from "./coding-tool-bash";
 import { buildDeclaredCommandTools } from "./coding-tool-extras";
-import { rawScreenOptionsFor, resolveSessionSandbox } from "./coding-tool-sandbox";
-import { resolvePackageName } from "./exec-package-name";
-import type { AgentRunOptions } from "./types";
-import { UNIVERSAL_CODING_TOOLS } from "./universal-coding-tools";
+import { rawScreenOptionsFor } from "./coding-tool-sandbox";
+import {
+  buildLedgerHeader,
+  declaredCommandsFrom,
+  extractDispatchConfigFields,
+  loadPackageEffectiveConfig,
+  optionalDispatchArgs,
+  type ResolveCodingToolSupportOptions,
+  resolveCommandCwd,
+  resolveDispatchAuditDir,
+  resolveDispatchLauncher,
+  resolvedDispatchArgs,
+  resolvePackageNameForDispatch,
+  resolveProviderContribution,
+  unionDeclaredTools,
+  warnDroppedProviders,
+} from "./coding-tool-support-resolve";
 
 export interface CodingToolSupport {
   readonly runtime: CodingToolRuntime;
@@ -305,107 +310,21 @@ export const _codingToolSupportDeps = {
 };
 
 export async function resolveCodingToolSupport(
-  options: Pick<
-    AgentRunOptions,
-    | "declaredTools"
-    | "providers"
-    | "toolPatterns"
-    | "codingToolRoot"
-    | "codingToolFileOutput"
-    | "outputDir"
-    | "pipelineStage"
-    | "storyId"
-    | "sessionRole"
-    | "featureName"
-    | "config"
-    | "projectDir"
-    | "codingToolPackageDir"
-    | "runId"
-    | "callId"
-    | "scopeId"
-    | "askResolver"
-    | "commandShadow"
-    | "abortSignal"
-  >,
+  options: ResolveCodingToolSupportOptions,
 ): Promise<CodingToolSupport | undefined> {
   const declared = options.declaredTools ?? [];
   const resolved = resolvePermissions(options.config, options.pipelineStage ?? "run");
-  // PR1 (single-frame redesign, #2066 residual): resolve the declared-command
-  // map (and the quality-derived fields around it) from the STORY'S PACKAGE
-  // config when one is known, not the config this dispatch happened to be
-  // threaded with. loadConfigForPackage is the R4-mandated resolver — never
-  // loadConfigForWorkdir directly, never packageView.config
-  // (packages.resolve() misses under worktree/parallel isolation, #2069);
-  // its required `from` carries the --profile chain (#2126/#2127). Cheap on
-  // a hit: loadConfigForWorkdir's own packageConfigCache
-  // (rootConfigPath, packageDir, profileKey) serves every dispatch after the
-  // first for the same package/profile.
-  const packageDir = options.codingToolPackageDir;
-  const projectDir = options.projectDir;
-  let packageEffectiveConfig: NaxConfig | undefined;
-  if (
-    packageDir !== undefined &&
-    packageDir.trim() !== "" &&
-    packageDir !== "." &&
-    projectDir !== undefined &&
-    projectDir.trim() !== "" &&
-    options.config !== undefined
-  ) {
-    try {
-      packageEffectiveConfig = await _codingToolSupportDeps.loadConfigForPackage(
-        projectDir,
-        // Under storyIsolation "worktree" the package dir is prefixed with
-        // `.nax-wt/<storyId>/`, which never matches the plain `<pkg>` keys the
-        // per-package override lookup stored — normalize for the LOOKUP ONLY.
-        // commandCwd below keeps the RAW dir so the command runs in the story's
-        // worktree (see packageOverrideKey in src/runtime/packages.ts).
-        packageOverrideKey(packageDir),
-        // RULING F2 (see below): options.config's declared type is a Pick,
-        // but at runtime both hops source it from the full NaxConfig.
-        options.config as unknown as NaxConfig,
-      );
-    } catch (err) {
-      getSafeLogger()?.warn("tools", "Per-package config failed to load for dispatch — using root config", {
-        storyId: options.storyId ?? "_dispatch",
-        packageDir,
-        error: errorMessage(err),
-      });
-    }
-  }
-
-  // RULING F2: AgentRunOptions['config'] is typed as the agent-manager Pick
-  // (agent/execution/profile), yet both hops source it from configLoader.current(),
-  // so it carries the full NaxConfig at runtime — only the type lies. The read is
-  // widened locally here; the shared agentManagerConfigSelector stays untouched.
-  // Now sourced from packageEffectiveConfig when a package story resolved one
-  // above, so a per-package quality.commands/install override is honored —
-  // falls back to options.config for a root story or when resolution failed.
-  const widenedConfig = (packageEffectiveConfig ?? options.config) as
-    | {
-        quality?: { commands?: Partial<Record<string, QualityCommandSpec>>; stripEnvVars?: unknown; shell?: unknown };
-        // AgentManagerConfig (agentManagerConfigSelector) only picks
-        // agent/execution/profile, so `install` is not in its type even
-        // though both hops source this from the full NaxConfig at runtime
-        // (see RULING F2 above). Widen locally rather than broaden the
-        // shared selector.
-        install?: { allowScripts?: boolean };
-      }
-    | undefined;
-  const quality = widenedConfig?.quality;
-  const commands = quality?.commands ?? {};
-  const stripEnvVars = Array.isArray(quality?.stripEnvVars)
-    ? quality.stripEnvVars.filter((value): value is string => typeof value === "string")
-    : [];
-  const shell = typeof quality?.shell === "string" ? quality.shell : undefined;
-  const allowScripts = widenedConfig?.install?.allowScripts ?? false;
-  // Same package-first fallback as widenedConfig above — a package can
-  // override execution.denyPaths too.
-  const denyPaths = (packageEffectiveConfig ?? options.config)?.execution?.denyPaths;
-  const declaredCommands = new Map(
-    Object.entries(commands).filter(
-      (e): e is [string, QualityCommandSpec] => typeof e[1] === "string" || Array.isArray(e[1]),
-    ),
-  );
+  // PR1 (single-frame redesign, #2066 residual): the declared-command map and
+  // the quality-derived fields around it resolve from the STORY'S PACKAGE
+  // config when one is known — see loadPackageEffectiveConfig.
+  const packageEffectiveConfig = await loadPackageEffectiveConfig(_codingToolSupportDeps, options);
+  // RULING F2: options.config is typed as the agent-manager Pick, yet carries
+  // the full NaxConfig at runtime — the read is widened inside
+  // extractDispatchConfigFields. Package-first: a per-package
+  // quality.commands/install/execution override is honored; options.config
+  // covers a root story or a failed resolution.
+  const fields = extractDispatchConfigFields(packageEffectiveConfig ?? options.config);
+  const declaredCommands = declaredCommandsFrom(fields.commands);
   // nax#2066: the declared-command map came from the ROOT config for a package
   // story, and nothing in the run artifacts said so — it took a transcript audit
   // to find. Name what the agent was actually given, once per dispatch.
@@ -416,118 +335,18 @@ export async function resolveCodingToolSupport(
     codingToolRoot: options.codingToolRoot,
   });
   const root = options.codingToolRoot;
-  // Independent of `root`: PR2 repoints `codingToolRoot` at the story's
-  // execution root, so declared commands must resolve their cwd from the
-  // story's own relative package dir + the (stable) project root rather
-  // than from whatever `root` means at dispatch time. Falls back to `root`
-  // when either input is unavailable (legacy callers, or a single-package
-  // repo where the two already coincide).
-  const commandCwd =
-    projectDir !== undefined && projectDir.trim() !== ""
-      ? packageWorkdir({ packageDir: packageDir ?? "", repoRoot: projectDir })
-      : root;
-  const auditDir =
-    root !== undefined && root.trim() !== ""
-      ? toolAuditDir(
-          { root, ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}) },
-          options.featureName,
-        )
-      : undefined;
+  const commandCwd = resolveCommandCwd(options.codingToolPackageDir, options.projectDir, root);
+  const auditDir = resolveDispatchAuditDir(root, options.outputDir, options.featureName);
   const sessionName = buildLedgerSessionName({
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     ...(options.sessionRole !== undefined ? { sessionRole: options.sessionRole } : {}),
     ...(options.featureName !== undefined ? { featureName: options.featureName } : {}),
   });
-  const header = {
-    ...(options.runId !== undefined ? { runId: options.runId } : {}),
-    ...(options.featureName !== undefined ? { featureName: options.featureName } : {}),
-    ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
-    ...(options.sessionRole !== undefined ? { sessionRole: options.sessionRole } : {}),
-  };
-  // Resolved here, ahead of the sync tool seam (buildCodingToolSupport):
-  // both dispatch hops call that seam on a hot path, so it stays synchronous
-  // and never touches the filesystem itself. Skipped unless the op declared
-  // Exec — no reason to read a manifest off disk on every dispatch when
-  // nothing downstream will use the result.
-  //
-  // The manifest is read from the STORY'S PACKAGE dir (`commandCwd`), never
-  // from `root`: post-PR2 `root` is `storyExecRoot` (the repo root), so
-  // resolving there would scope cargo/uv/yarn workspace installs with the
-  // root manifest's name — or deny outright for a virtual Cargo workspace.
-  // `commandCwd` is absolute and worktree-aware, and falls back to `root`
-  // when no package/project dir was supplied.
-  const packageName =
-    root !== undefined && root.trim() !== "" && declared.includes(EXEC_TOOL_NAME)
-      ? await resolvePackageName(commandCwd ?? root)
-      : undefined;
-  // Provider tools bypass the DECLARATION half of advertisement (spec R4):
-  // operation declarations live in code, so requiring a code edit to use a
-  // configured provider would defeat config-only onboarding. `advertised()`
-  // itself is unchanged — the names are appended to `declared` here.
-  //
-  // The profile is the OTHER half, and it is not bypassed (R12): `scoped`
-  // admits exactly what the stage's `Mcp(...)` rules name — evaluated before a
-  // tool is adapted, so an unadmitted tool still contributes no tool, grant or
-  // map entry — while `safe` continues to contribute nothing at all and
-  // `unrestricted` keeps every attached provider. An empty/absent root already
-  // throws in buildCodingToolSupport, so skipping resolution there is correct;
-  // it also keeps a possibly-undefined root out of resolveProviderTools.
-  //
-  // Mcp(...) is surface syntax: partition it out BEFORE anything compiles a
-  // policy. A surviving {tool:"Mcp"} grant keys the compiled map on "Mcp",
-  // matches no advertised name and denies every call while every parser test
-  // stays green (provider-tools R3).
-  const allow = partitionMcpRules(resolved.toolGrants ?? []);
-  const denied = partitionMcpRules(resolved.denyRules ?? []);
-  const asked = partitionMcpRules(resolved.askRules ?? []);
-
-  // The root test is written inline rather than hoisted to a `hasRoot` boolean
-  // so TypeScript narrows `root` inside the branch — a hoisted flag would force
-  // an `as string` cast on a value the condition already proved.
-  const providerScope = resolved.providerScope ?? "none";
-  const providerResult: ResolvedProviderTools =
-    providerScope !== "none" && root !== undefined && root.trim() !== ""
-      ? await resolveProviderTools(options.providers ?? [], options.pipelineStage ?? "run", root, {
-          // "all" keeps today's behaviour; "rules" admits only what the stage's
-          // Mcp rules name, evaluated before a tool is ever adapted.
-          ...(providerScope === "rules"
-            ? {
-                admits: (providerId: string, localName: string) =>
-                  mcpRuleAdmits(allow.mcpPatterns, providerId, localName),
-              }
-            : {}),
-        })
-      : {
-          tools: [],
-          grants: [],
-          failures: [] as readonly { providerId: string; reason: string }[],
-          providerIdByTool: new Map<string, string>(),
-          entries: [],
-        };
-  // The scratchpad tools are the universal layer every op receives. The
-  // append only fires when the op declared any built-in names OR a provider
-  // contributed names — an op that declared nothing and has no providers is
-  // a no-op hop that should NOT receive coding-tool support (it would force
-  // `buildCodingToolSupport` to throw CODING_TOOL_ROOT_MISSING when the
-  // caller has no root to give it, which breaks the dispatch shape these
-  // tests pin). Filtered against `declared` because an op that omits `tools`
-  // resolves to DEFAULT_CODING_TOOLS, which already carries all three.
-  const universalTools = UNIVERSAL_CODING_TOOLS.filter((name) => !declared.includes(name));
-  const declaredWithProviders = [
-    ...declared,
-    ...providerResult.tools.map((t) => t.name),
-    ...(declared.length > 0 || providerResult.tools.length > 0 ? universalTools : []),
-  ] as readonly CodingToolName[];
-  // Logged before the empty-union return: a provider-only op whose only
-  // provider failed must still say so, not vanish silently. A no-op when
-  // providers were gated off (R12) and `failures` is empty.
-  for (const failure of providerResult.failures) {
-    getSafeLogger()?.warn("tools", "[provider] dropped", {
-      storyId: options.storyId,
-      providerId: failure.providerId,
-      reason: failure.reason,
-    });
-  }
+  const header = buildLedgerHeader(options);
+  const packageName = await resolvePackageNameForDispatch(root, declared, commandCwd);
+  const { allow, denied, asked, providerResult } = await resolveProviderContribution(resolved, options, root);
+  const declaredWithProviders = unionDeclaredTools(declared, providerResult);
+  warnDroppedProviders(providerResult, options.storyId);
   // Resolved BEFORE this guard (R15): a provider-only op declares no built-in
   // names, yet appending the provider names above is exactly what makes it a
   // real op. An empty union is the only case that yields no support.
@@ -537,64 +356,36 @@ export async function resolveCodingToolSupport(
   // one tool from an otherwise fully-granted provider.
   const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
   const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
-  // P4: the probe is async, so it runs here as data; execution.sandbox is root-scoped (ADR-031).
-  const launcher =
-    options.codingToolRoot !== undefined && options.codingToolRoot.trim() !== ""
-      ? await resolveSessionSandbox({
-          config: options.config?.execution?.sandbox,
-          root: options.codingToolRoot,
-          ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
-          needsLauncher: declared.includes(BASH_TOOL_NAME) || declared.includes(EXEC_TOOL_NAME),
-          ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
-          ...(options.runId !== undefined ? { tmpDir: sessionTmpDir(options.runId, sessionName) } : {}),
-        })
-      : undefined;
+  const launcher = await resolveDispatchLauncher(options, declared, sessionName);
   return buildCodingToolSupport({
     root: options.codingToolRoot,
     pipelineStage: options.pipelineStage ?? "run",
     // No `repoRoot`: post single-frame redesign (PR2) it equals `root`, so
     // buildCodingToolSupport's `args.repoRoot ?? args.root` fallback supplies it.
-    // Task 10: Exec's package target needs the story's ABSOLUTE package dir.
-    // `codingToolPackageDir` is RELATIVE to projectDir (and worktree-prefixed
-    // in production), while Exec compares it against an absolute repoRoot —
-    // passing it raw would produce garbage. `commandCwd` is the same value
-    // already computed above via packageWorkdir({ packageDir, repoRoot:
-    // projectDir }): absolute and worktree-aware. Omitted when either input is
-    // unavailable, so buildCodingToolSupport falls back to `root` (correct for
-    // a single-package repo, where the two coincide).
-    ...(packageDir !== undefined &&
-    packageDir.trim() !== "" &&
-    packageDir !== "." &&
-    projectDir !== undefined &&
-    projectDir.trim() !== ""
-      ? { packageWorkdir: commandCwd }
-      : {}),
     commandCwd,
     grants: [...allow.grants, ...providerResult.grants],
     bashApproval: resolved.bashApproval,
     declared: declaredWithProviders,
     extraTools: providerResult.tools,
     providerIdByTool: providerResult.providerIdByTool,
-    ...(options.toolPatterns !== undefined ? { toolPatterns: options.toolPatterns } : {}),
-    ...(denyRules.length > 0 ? { denyRules } : {}),
-    ...(askRules.length > 0 ? { askRules } : {}),
-    ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     declaredCommands,
-    stripEnvVars,
-    ...(shell !== undefined ? { shell } : {}),
-    ...(auditDir !== undefined ? { auditDir } : {}),
+    stripEnvVars: fields.stripEnvVars,
     sessionName,
     header,
-    ...(options.callId !== undefined ? { callId: options.callId } : {}),
-    ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
-    ...(packageName !== undefined ? { packageName } : {}),
-    allowScripts,
-    ...(denyPaths !== undefined ? { denyPaths } : {}),
-    ...(options.codingToolFileOutput !== undefined ? { fileOutputPath: options.codingToolFileOutput } : {}),
+    allowScripts: fields.allowScripts,
     naxAllowWrite: options.config?.execution?.sandbox?.filesystem.allowWrite ?? [],
-    ...(options.askResolver !== undefined ? { askResolver: options.askResolver } : {}),
-    ...(options.commandShadow !== undefined ? { commandShadow: options.commandShadow } : {}),
-    ...(launcher !== undefined ? { launcher } : {}),
-    ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
+    ...optionalDispatchArgs(options),
+    ...resolvedDispatchArgs({
+      packageDir: options.codingToolPackageDir,
+      projectDir: options.projectDir,
+      commandCwd,
+      denyRules,
+      askRules,
+      denyPaths: fields.denyPaths,
+      shell: fields.shell,
+      auditDir,
+      packageName,
+      launcher,
+    }),
   });
 }

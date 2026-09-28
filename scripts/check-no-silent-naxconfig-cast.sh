@@ -29,13 +29,15 @@
 #       property copy, and every field read off `finish` below is optional
 #       with a DEFAULTS fallback — a partial input yields defaults, not an
 #       undefined-access.
-#   src/agents/coding-tool-support.ts
+#   src/agents/coding-tool-support-resolve.ts
 #       RULING F2: `AgentRunOptions['config']` is typed as the agent-manager
 #       pick (agent/execution/profile), but both dispatch hops source it from
 #       `configLoader.current()`, so at runtime it is the full NaxConfig. The
 #       cast feeds `loadConfigForPackage`, which reads only
 #       `profile`/`profileChain` off `from` (profileOverrideFromConfig) —
-#       both present on the runtime NaxConfig.
+#       both present on the runtime NaxConfig. (The cast is byte-identical to
+#       the one previously allow-listed in coding-tool-support.ts; it moved
+#       there in the A7 complexity extraction of `resolveCodingToolSupport`.)
 #
 # NOTE: entries are matched per FILE, so a new cast added to an allow-listed
 # file is also exempt. Tighten to a per-line ratchet if that becomes a problem.
@@ -54,7 +56,7 @@ matches=$(grep -RnE 'as (unknown as )?NaxConfig\b' src/ \
   | grep -vE '^src/cli/routing-calibrate\.ts:' \
   | grep -vE '^src/plugins/builtin/nax-finish/config\.ts:' \
   | grep -vE '^src/finish/config\.ts:' \
-  | grep -vE '^src/agents/coding-tool-support\.ts:' \
+  | grep -vE '^src/agents/coding-tool-support-resolve\.ts:' \
   || true)
 
 if [ -n "$matches" ]; then

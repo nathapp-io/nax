@@ -15,18 +15,20 @@
  */
 import { type AskControl, type AskLink, type AskLinkOutcome, type AskRequest, maskForPrompt } from "@/permissions";
 import { getSafeLogger } from "../logger";
+import type { PromptView, Session, Waiter } from "./ask-link-session";
+import {
+  buildApprovalRequest,
+  decideSessionOutcome,
+  deny,
+  makeWaiter,
+  maskedFooter,
+  removeSettledSession,
+  settleWaiters,
+} from "./ask-link-session";
 import type { InteractionRequest, InteractionStage } from "./types";
 
 /** Headroom under MAX_MESSAGE_CHARS (4000) for the header, reason and footer. */
 const MAX_COMMAND_CHARS = 3500;
-
-/** What the prompt shows: the command with inert secret spans masked (review #9, D18). */
-interface PromptView {
-  readonly command: string;
-  readonly maskedCount: number;
-}
-
-const maskedFooter = (count: number): string => `${count} secret value(s) masked; the approved command contains them`;
 
 /**
  * Injectable keepalive timing for the human ask link (US-004).
@@ -57,16 +59,6 @@ export interface AskChannel {
   prompt(request: InteractionRequest): Promise<AskChannelResponse>;
   cancel(requestId: string): Promise<void>;
 }
-
-const ALLOW_ONCE = { key: "allow", label: "Allow once" };
-const ALLOW_REMEMBER = { key: "allow-remember", label: "Allow + remember" };
-const DENY = { key: "deny", label: "Deny" };
-
-/**
- * ONLY these permit. Everything else -- including unrecognised strings from a
- * future or malformed plugin -- denies. An allowlist, never a denylist.
- */
-const PERMITS = new Set(["allow", "allow-remember"]);
 
 /** An AskLink that also exposes the prompt currently awaiting a human. */
 export interface HumanAskLink extends AskLink {
@@ -107,74 +99,8 @@ export function createHumanAskLink(opts: {
    * The approvals cache matches byte-exact on (stage, command), so a call with
    * no command can never be answered from it: remembering one records an entry
    * nothing reads (#2249). Such calls are offered, and granted, allow-once only.
+   * The predicate itself (`canRemember`) lives in ask-link-session.ts.
    */
-  const canRemember = (req: AskRequest): boolean => opts.onRemember !== undefined && req.command !== undefined;
-
-  const deny = (decidedBy: "human" | "timeout" | "unavailable" | "cancelled" | "unshowable"): AskLinkOutcome => ({
-    decision: "deny",
-    decidedBy,
-  });
-
-  /**
-   * One waiter per `resolve` call. Each one watches its own signal and
-   * settles independently when that signal aborts -- that is what makes
-   * AC4/AC6/AC7/AC8 possible: same-key resolve calls share the on-screen
-   * prompt, but a signal abort cancels only that one waiter.
-   *
-   * `signal` and `onAbort` are kept on the waiter so a normal settlement
-   * (adversarial finding) can detach the listener -- leaving it
-   * attached would retain waiter/session state until the signal
-   * eventually aborts.
-   */
-  interface Waiter {
-    settle(outcome: AskLinkOutcome): void;
-    done: Promise<AskLinkOutcome>;
-    aborted: boolean;
-    signal?: AbortSignal;
-    onAbort?: () => void;
-    /**
-     * US-004: this waiter's per-call keepalive notifier. The session's
-     * keepalive timer fires it for every live waiter once each
-     * ASK_KEEPALIVE_MS so the turn-loop watchdog is told the native turn
-     * is still legitimately waiting on a human approval prompt.
-     */
-    onWaiting?: () => void;
-  }
-
-  function makeWaiter(): Waiter {
-    let settleFn: ((outcome: AskLinkOutcome) => void) | undefined;
-    const done = new Promise<AskLinkOutcome>((resolve) => {
-      settleFn = resolve;
-    });
-    return {
-      settle: (outcome) => settleFn?.(outcome),
-      done,
-      aborted: false,
-    };
-  }
-
-  /**
-   * A "session" is the live prompt for one key. It carries the on-screen
-   * prompt's id and the live waiters sharing it. A session is "settled"
-   * when its prompt has resolved (or thrown), so a late-joining waiter
-   * does not double-settle.
-   */
-  interface Session {
-    readonly id: string;
-    readonly waiters: Set<Waiter>;
-    settled: boolean;
-    /** Whether `chain.cancel(id)` has been called for this session. */
-    cancelledOnChain: boolean;
-    /** Releases the serial queue when a channel leaves its prompt pending after cancel. */
-    cancelPrompt?: () => void;
-    /**
-     * US-004: the cancellable keepalive handle (`setTimeout`, never
-     * `setInterval`). Re-armed by `runKeepalive` each time it fires, and
-     * cleared in runSession's `finally` so a settled prompt never keepsalives
-     * again. `undefined` means no keepalive has been armed yet.
-     */
-    keepaliveTimer?: unknown;
-  }
 
   function attachWaiter(session: Session, control: AskControl | undefined): Waiter {
     const signal = control?.signal;
@@ -294,13 +220,7 @@ export function createHumanAskLink(opts: {
       if (chain === null || chain === undefined) {
         // No channel: every live waiter settles unavailable, none of them
         // are ever prompted.
-        for (const w of [...session.waiters]) {
-          w.settle(deny("unavailable"));
-          if (w.signal !== undefined && w.onAbort !== undefined) {
-            w.signal.removeEventListener("abort", w.onAbort);
-          }
-          session.waiters.delete(w);
-        }
+        settleWaiters(session, deny("unavailable"));
         session.settled = true;
         return;
       }
@@ -320,95 +240,26 @@ export function createHumanAskLink(opts: {
       // each caller's watchdog is notified exactly once.
       try {
         const response = await Promise.race([
-          chain.prompt({
-            id: session.id,
-            type: "choose",
-            featureName: opts.featureName ?? "unknown",
-            ...(opts.storyId !== undefined ? { storyId: opts.storyId } : {}),
-            stage: opts.stage ?? "execution",
-            summary: `${req.tool} - approval required`,
-            detail: [
-              // A Write/Edit ask carries no command: showing `req.summary` keeps
-              // the operator informed about what is being approved instead of an
-              // empty code block. The command is shown with inert secret spans
-              // masked (review #9); a command that cannot be shown safely never
-              // reaches this prompt (denied `unshowable` in resolve).
-              ...(view.command.length > 0 ? ["```", view.command, "```"] : []),
-              ...(view.maskedCount > 0 ? [maskedFooter(view.maskedCount)] : []),
-              `request: ${req.summary}`,
-              `runs in: ${req.root ?? "unknown"}`,
-              `reason:  ${req.reason ?? req.rule}`,
-              `stage:   ${req.stage}`,
-            ].join("\n"),
-            options: canRemember(req) ? [ALLOW_ONCE, ALLOW_REMEMBER, DENY] : [ALLOW_ONCE, DENY],
-            timeout: opts.timeoutMs,
-            // Recorded for the message footer only. This link NEVER consults
-            // applyFallback: it maps "continue" AND "escalate" to approve.
-            fallback: "abort",
-            createdAt: Date.now(),
-            metadata: { approvalPrompt: true },
-          }),
+          chain.prompt(
+            buildApprovalRequest({
+              id: session.id,
+              req,
+              view,
+              featureName: opts.featureName,
+              storyId: opts.storyId,
+              stage: opts.stage,
+              timeoutMs: opts.timeoutMs,
+              onRemember: opts.onRemember,
+            }),
+          ),
           promptCancelled,
         ]);
         if (response === null || session.waiters.size === 0) return;
-        let outcome: AskLinkOutcome;
-        if (response.respondedBy === "timeout") {
-          outcome = deny("timeout");
-        } else {
-          // `action` is declared as InteractionAction ("approve" | "reject" |
-          // "choose" | "input" | "skip" | "abort"), but prompt() remaps a
-          // choose reply to the OPTION KEY through a cast
-          // (src/interaction/chain.ts:135), so at runtime it carries our keys.
-          // Widen to string once, here.
-          const action: string = response.action;
-          if (!PERMITS.has(action)) {
-            outcome = deny("human");
-          } else {
-            // `opts.onRemember` repeats canRemember's check so the call below narrows.
-            if (action === "allow-remember" && canRemember(req) && opts.onRemember) {
-              // Remembering is AUXILIARY: the human already approved this
-              // exact call, so a failed persistence (lock timeout, disk)
-              // must not revoke that approval. AWAITED so the approval is
-              // recorded before the tool runs (adversarial finding:
-              // fire-and-forget let the resolver return allow before the
-              // approval was persisted, racing the next same-key call).
-              try {
-                await opts.onRemember(req);
-              } catch (err) {
-                getSafeLogger()?.warn("permissions", "[ask] approved call not remembered; allowing anyway", {
-                  tool: req.tool,
-                  stage: req.stage,
-                  error: err instanceof Error ? err.message : String(err),
-                });
-              }
-            }
-            outcome = { decision: "allow", decidedBy: "human" };
-          }
-        }
-        // Settle every still-live waiter with the shared outcome. A waiter
-        // that already aborted (and was removed from the set) is gone; a
-        // waiter that aborts between snapshot and iteration gets the
-        // outcome anyway (it does not matter whether its listener fires
-        // before or after settle -- both are idempotent on `aborted`).
-        for (const w of [...session.waiters]) {
-          w.settle(outcome);
-          // Detach the per-waiter abort listener so the caller's signal
-          // does not retain a reference to this waiter/session forever
-          // (adversarial finding).
-          if (w.signal !== undefined && w.onAbort !== undefined) {
-            w.signal.removeEventListener("abort", w.onAbort);
-          }
-          session.waiters.delete(w);
-        }
+        const outcome = await decideSessionOutcome(response, req, opts.onRemember);
+        settleWaiters(session, outcome);
       } catch {
         // Chain threw: every waiter settles unavailable.
-        for (const w of [...session.waiters]) {
-          w.settle(deny("unavailable"));
-          if (w.signal !== undefined && w.onAbort !== undefined) {
-            w.signal.removeEventListener("abort", w.onAbort);
-          }
-          session.waiters.delete(w);
-        }
+        settleWaiters(session, deny("unavailable"));
       } finally {
         session.settled = true;
         // Clear `activeId` so `pending()` no longer reports a stale prompt
@@ -422,9 +273,7 @@ export function createHumanAskLink(opts: {
       session.settled = true;
       session.cancelPrompt = undefined;
       if (activeId === session.id) activeId = undefined;
-      for (const [key, current] of liveSessions) {
-        if (current === session) liveSessions.delete(key);
-      }
+      removeSettledSession(liveSessions, session);
       // US-004: a settled prompt must never keepalive again, even on the
       // no-chain / queued-aborted early-return paths that bypass the inner
       // try/finally. Without this outer guard the timer remains armed until
@@ -514,13 +363,7 @@ export function createHumanAskLink(opts: {
   function settleAllUnavailable(): void {
     for (const session of liveSessions.values()) {
       if (session.settled) continue;
-      for (const w of [...session.waiters]) {
-        w.settle(deny("unavailable"));
-        if (w.signal !== undefined && w.onAbort !== undefined) {
-          w.signal.removeEventListener("abort", w.onAbort);
-        }
-        session.waiters.delete(w);
-      }
+      settleWaiters(session, deny("unavailable"));
       session.settled = true;
       session.cancelPrompt?.();
     }

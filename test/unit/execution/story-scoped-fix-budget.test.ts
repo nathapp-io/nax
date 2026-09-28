@@ -358,8 +358,10 @@ describe("US-003 AC5: enabled + store accumulates iterations across cycles", () 
 // cap reached.
 //
 // Driven end-to-end through `ExecutionPlan.run` so the resume loop's
-// wiring (`execution-plan.ts:193` resume-block entry, `:218` phase-fail
-// detection, `:231` second-rectification call) is exercised by the
+// wiring (the `resumeLoopEligible` entry in `ExecutionPlan.run`,
+// story-orchestrator/execution-plan.ts; then, in `runPostRectificationResume`,
+// story-orchestrator/execution-plan-phases.ts, the `phasePassed` phase-fail
+// detection and the second `runRectification` call) is exercised by the
 // production seam. A wiring regression in any of those three locations
 // would surface as either (a) the store never recording the main rect's
 // iterations, (b) the resume loop never being entered, or (c) the

@@ -37,23 +37,26 @@ const DEFAULT_TEST_PATTERNS = makePatterns(["test/unit/**/*.test.ts"]);
 // Saved originals
 // ─────────────────────────────────────────────────────────────────────────────
 
-let origFileExists: typeof _codeNeighborDeps.fileExists;
-let origReadFile: typeof _codeNeighborDeps.readFile;
-let origGlob: typeof _codeNeighborDeps.glob;
-let origDetectLanguage: typeof _codeNeighborDeps.detectLanguage;
+// Snapshot of every dep taken ONCE, at module load — not in beforeEach. A
+// per-test snapshot records whatever the live object holds at that moment as
+// the "original", so a stub left behind by an earlier test in this file (or set
+// in a describe-level beforeAll) would be restored as if it were real (the
+// 14edda8d lesson). Every test starts from, and is restored to, this snapshot.
+const LOAD_TIME_CODE_NEIGHBOR_DEPS = { ..._codeNeighborDeps };
+
+// The snapshot cannot guard against an EARLIER TEST FILE: bun evaluates each
+// file's top level only after the previous file's tests ran, so a stub that
+// file leaked would be captured here too. The glob tests below assert real
+// filesystem results, so such a leak fails them loudly rather than silently.
+// (A fresh `?query` import would dodge the leak, but bun's coverage then stops
+// crediting the real file.) Leaking files must restore their own stubs.
 
 beforeEach(() => {
-  origFileExists = _codeNeighborDeps.fileExists;
-  origReadFile = _codeNeighborDeps.readFile;
-  origGlob = _codeNeighborDeps.glob;
-  origDetectLanguage = _codeNeighborDeps.detectLanguage;
+  Object.assign(_codeNeighborDeps, LOAD_TIME_CODE_NEIGHBOR_DEPS);
 });
 
 afterEach(() => {
-  _codeNeighborDeps.fileExists = origFileExists;
-  _codeNeighborDeps.readFile = origReadFile;
-  _codeNeighborDeps.glob = origGlob;
-  _codeNeighborDeps.detectLanguage = origDetectLanguage;
+  Object.assign(_codeNeighborDeps, LOAD_TIME_CODE_NEIGHBOR_DEPS);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

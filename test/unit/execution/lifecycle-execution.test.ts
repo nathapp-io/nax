@@ -10,8 +10,10 @@ import { randomUUID } from "node:crypto";
 import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { _regressionDeps, runDeferredRegression } from "@/execution/lifecycle/run-regression";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
-import type { VerificationResult } from "@/verification";
+import type { FlakeTriageInput, FlakeTriageResult, VerificationResult } from "@/verification";
 
 const WORKDIR_DISABLED = `/tmp/nax-test-disabled-${randomUUID()}`;
 const WORKDIR_PER_STORY = `/tmp/nax-test-per-story-${randomUUID()}`;
@@ -364,5 +366,342 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
     expect(result.success).toBe(false);
     expect(result.affectedStories).toEqual([]);
     expect(_regressionDeps.runFixCycle).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Characterisation tests (B4 complexity drain) — branches the other suites
+// leave unpinned. Written against the unrefactored runDeferredRegression; the
+// refactor must keep every assertion in this block green unchanged.
+// ---------------------------------------------------------------------------
+
+describe("runDeferredRegression — unpinned gate and loop arms (B4 characterisation)", () => {
+  let savedDeps: typeof _regressionDeps;
+  beforeEach(() => {
+    savedDeps = { ..._regressionDeps };
+    // Pass-through triage stub — isolates these tests from the real triage
+    // implementation, same pattern as run-regression.test.ts.
+    _regressionDeps.triageFlakyFindings = async (input: FlakeTriageInput): Promise<FlakeTriageResult> => ({
+      findings: input.findings.map((f) => ({ ...f })),
+      quarantineReport: { keys: [], reasons: [] },
+    });
+  });
+  afterEach(() => {
+    Object.assign(_regressionDeps, savedDeps);
+  });
+
+  function failingWithOutput(output: string, passCount = 0): VerificationResult {
+    return {
+      status: "TEST_FAILURE",
+      success: false,
+      countsTowardEscalation: true,
+      output,
+      passCount,
+      failCount: 2,
+    };
+  }
+
+  test("BUG-REG-001: a crashed runner (zero parsed results) is accepted as a pass, not a regression", async () => {
+    const verifyCalls: string[] = [];
+    _regressionDeps.runVerification = mock(async () => {
+      verifyCalls.push(`call-${verifyCalls.length}`);
+      return failingWithOutput("error TS2304: Cannot find name 'missingSymbol'");
+    });
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 0, failures: [] }));
+    _regressionDeps.runFixCycle = mock(async () => {
+      throw new Error("no rectification may run for a crashed runner");
+    });
+
+    const result = await runDeferredRegression({
+      config: makeConfig("deferred", "bun test"),
+      prd: makePRD([{ id: "US-001", status: "passed" }]),
+      workdir: WORKDIR_COUNTS,
+      runtime: makeRuntime(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.passedTests).toBe(0);
+    expect(result.rectificationAttempts).toBe(0);
+    expect(result.affectedStories).toEqual([]);
+    expect(verifyCalls).toHaveLength(1);
+    expect(_regressionDeps.runFixCycle).not.toHaveBeenCalled();
+  });
+
+  test("emits one regression:detected event per affected story with the parsed failure count", async () => {
+    _regressionDeps.runVerification = mock(async () => failingWithOutput("FAIL OUTPUT"));
+    _regressionDeps.parseTestOutput = mock(() => ({
+      passed: 0,
+      failed: 92,
+      failures: [
+        { file: "foo.test.ts", testName: "f", error: "boom", stackTrace: [] },
+        { file: "bar.test.ts", testName: "b", error: "boom", stackTrace: [] },
+      ],
+    }));
+    _regressionDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "max-attempts-total" as const,
+      costUsd: 0,
+    }));
+
+    const events: Array<{ storyId: string; failedTests: number }> = [];
+    const off = pipelineEventBus.on("regression:detected", (event) => {
+      events.push({ storyId: event.storyId, failedTests: event.failedTests });
+    });
+
+    try {
+      await runDeferredRegression({
+        config: makeConfig("deferred", "bun test"),
+        prd: makePRD([
+          { id: "US-001", status: "passed" },
+          { id: "US-002", status: "passed" },
+        ]),
+        workdir: WORKDIR_STORY_IDS,
+        runtime: makeRuntime(),
+        storyMetrics: [
+          { storyId: "US-001", completedAt: "2026-01-01T00:00:00.000Z", failingTestFiles: ["foo.test.ts"] },
+          { storyId: "US-002", completedAt: "2026-01-01T00:01:00.000Z", failingTestFiles: ["bar.test.ts"] },
+        ],
+      });
+    } finally {
+      off();
+    }
+
+    expect(events).toHaveLength(2);
+    expect(events.map((e) => e.storyId).sort((a, b) => a.localeCompare(b))).toEqual(["US-001", "US-002"]);
+    for (const event of events) {
+      expect(event.failedTests).toBe(92);
+    }
+  });
+
+  test("a zero-iteration cycle still counts one rectification attempt", async () => {
+    let verifyCallIndex = 0;
+    _regressionDeps.runVerification = mock(async () => {
+      const i = verifyCallIndex++;
+      if (i === 0) return failingWithOutput("FAIL OUTPUT");
+      return {
+        status: "SUCCESS" as const,
+        success: true,
+        countsTowardEscalation: false,
+        output: "5 pass | 0 fail",
+        passCount: 5,
+        failCount: 0,
+      };
+    });
+    _regressionDeps.parseTestOutput = mock(() => ({
+      passed: 0,
+      failed: 2,
+      failures: [{ file: "foo.test.ts", testName: "f", error: "boom", stackTrace: [] }],
+    }));
+    _regressionDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "resolved" as const,
+      costUsd: 0.2,
+    }));
+
+    const result = await runDeferredRegression({
+      config: makeConfig("deferred", "bun test"),
+      prd: makePRD([{ id: "US-001", status: "passed" }]),
+      workdir: WORKDIR_SHAPE,
+      runtime: makeRuntime(),
+      storyMetrics: [{ storyId: "US-001", completedAt: "2026-01-01T00:00:00.000Z", failingTestFiles: ["foo.test.ts"] }],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.rectificationAttempts).toBe(1);
+    expect(result.storyCosts?.["US-001"]).toBeCloseTo(0.2);
+  });
+
+  test("a mid-loop re-run that times out is accepted and the run exits early", async () => {
+    let verifyCallIndex = 0;
+    _regressionDeps.runVerification = mock(async () => {
+      const i = verifyCallIndex++;
+      if (i === 0) return failingWithOutput("FAIL OUTPUT");
+      return { status: "TIMEOUT" as const, success: false, countsTowardEscalation: false };
+    });
+    _regressionDeps.parseTestOutput = mock(() => ({
+      passed: 0,
+      failed: 2,
+      failures: [{ file: "foo.test.ts", testName: "f", error: "boom", stackTrace: [] }],
+    }));
+    _regressionDeps.runFixCycle = mock(async () => ({
+      iterations: [
+        {
+          iterationNum: 1,
+          findingsBefore: [],
+          fixesApplied: [],
+          findingsAfter: [],
+          outcome: "resolved" as const,
+          startedAt: "",
+          finishedAt: "",
+        },
+      ],
+      finalFindings: [],
+      exitReason: "resolved" as const,
+      costUsd: 0.1,
+    }));
+
+    const result = await runDeferredRegression({
+      config: makeConfig("deferred", "bun test"),
+      prd: makePRD([
+        { id: "US-001", status: "passed" },
+        { id: "US-002", status: "passed" },
+      ]),
+      workdir: WORKDIR_TIMEOUT_ACCEPT,
+      runtime: makeRuntime(),
+      storyMetrics: [{ storyId: "US-001", completedAt: "2026-01-01T00:00:00.000Z", failingTestFiles: ["foo.test.ts"] }],
+    });
+
+    // Early exit with the accepted timeout: success, no passCount available.
+    expect(result.success).toBe(true);
+    expect(result.passedTests).toBe(0);
+    expect(result.rectificationAttempts).toBe(1);
+    expect(verifyCallIndex).toBe(2);
+  });
+
+  test("when a mid-loop re-run fails without output, the next story still sees the previous output", async () => {
+    let verifyCallIndex = 0;
+    _regressionDeps.runVerification = mock(async () => {
+      const i = verifyCallIndex++;
+      if (i === 0) return failingWithOutput("INITIAL_FAIL_OUTPUT");
+      if (i === 1) return { status: "TEST_FAILURE" as const, success: false, countsTowardEscalation: true };
+      return {
+        status: "SUCCESS" as const,
+        success: true,
+        countsTowardEscalation: false,
+        output: "5 pass | 0 fail",
+        passCount: 5,
+        failCount: 0,
+      };
+    });
+    const capturedParseArgs: string[] = [];
+    _regressionDeps.parseTestOutput = (output: string) => {
+      capturedParseArgs.push(output);
+      return {
+        passed: 0,
+        failed: 2,
+        failures: [
+          { file: "foo.test.ts", testName: "f", error: "boom", stackTrace: [] },
+          { file: "bar.test.ts", testName: "b", error: "boom", stackTrace: [] },
+        ],
+      };
+    };
+    _regressionDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "resolved" as const,
+      costUsd: 0,
+    }));
+
+    await runDeferredRegression({
+      config: makeConfig("deferred", "bun test"),
+      prd: makePRD([
+        { id: "US-001", status: "passed" },
+        { id: "US-002", status: "passed" },
+      ]),
+      workdir: WORKDIR_BEHAVIORAL,
+      runtime: makeRuntime(),
+      storyMetrics: [
+        { storyId: "US-001", completedAt: "2026-01-01T00:00:00.000Z", failingTestFiles: ["foo.test.ts"] },
+        { storyId: "US-002", completedAt: "2026-01-01T00:01:00.000Z", failingTestFiles: ["bar.test.ts"] },
+      ],
+    });
+
+    // capturedParseArgs[0] = initial summary; [1] = US-001 findings; [2] = US-002 findings.
+    // The output-less mid re-run must NOT clear the forwarded context.
+    expect(capturedParseArgs[1]).toBe("INITIAL_FAIL_OUTPUT");
+    expect(capturedParseArgs[2]).toBe("INITIAL_FAIL_OUTPUT");
+  });
+
+  test("the final re-run timing out is accepted as success after rectification", async () => {
+    let verifyCallIndex = 0;
+    _regressionDeps.runVerification = mock(async () => {
+      const i = verifyCallIndex++;
+      if (i === 0) return failingWithOutput("FAIL OUTPUT");
+      if (i === 1) return failingWithOutput("STILL_FAIL_OUTPUT"); // mid after US-001: no early exit
+      return { status: "TIMEOUT" as const, success: false, countsTowardEscalation: false };
+    });
+    _regressionDeps.parseTestOutput = mock(() => ({
+      passed: 0,
+      failed: 2,
+      failures: [{ file: "foo.test.ts", testName: "f", error: "boom", stackTrace: [] }],
+    }));
+    _regressionDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "resolved" as const,
+      costUsd: 0.3,
+    }));
+
+    const result = await runDeferredRegression({
+      config: makeConfig("deferred", "bun test"),
+      prd: makePRD([{ id: "US-001", status: "passed" }]),
+      workdir: WORKDIR_TIMEOUT_REJECT,
+      runtime: makeRuntime(),
+      storyMetrics: [{ storyId: "US-001", completedAt: "2026-01-01T00:00:00.000Z", failingTestFiles: ["foo.test.ts"] }],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.rectificationAttempts).toBe(1);
+    expect(result.storyCosts?.["US-001"]).toBeCloseTo(0.3);
+    expect(verifyCallIndex).toBe(3);
+  });
+
+  test("attribution logs name the mapped story, and unresolved transitions warn per arm", async () => {
+    _regressionDeps.runVerification = mock(async () => failingWithOutput("FAIL OUTPUT"));
+    _regressionDeps.parseTestOutput = mock(() => ({
+      passed: 0,
+      failed: 3,
+      failures: [
+        { file: "foo.test.ts", testName: "f", error: "boom", stackTrace: [] },
+        { file: "bar.test.ts", testName: "b", error: "boom", stackTrace: [] },
+        { file: "baz.test.ts", testName: "z", error: "boom", stackTrace: [] },
+      ],
+    }));
+    _regressionDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "max-attempts-total" as const,
+      costUsd: 0,
+    }));
+
+    // Another test file in the same process may have left a logger behind.
+    resetLogger();
+    initLogger({ level: "silent" });
+    const logCalls: LogEntry[] = [];
+    const removeSink = addSink((entry) => logCalls.push(entry));
+    try {
+      // US-002 is FAILED: foo.test.ts transitions there but cannot be blamed on
+      // it (warn carries transitionStoryId). bar.test.ts maps to passed US-003.
+      // baz.test.ts has no transition at all (warn carries no transitionStoryId).
+      await runDeferredRegression({
+        config: makeConfig("deferred", "bun test"),
+        prd: makePRD([
+          { id: "US-001", status: "passed" },
+          { id: "US-002", status: "failed" },
+          { id: "US-003", status: "passed" },
+        ]),
+        workdir: WORKDIR_UNMAPPED,
+        runtime: makeRuntime(),
+        storyMetrics: [
+          { storyId: "US-002", completedAt: "2026-01-01T00:00:00.000Z", failingTestFiles: ["foo.test.ts"] },
+          { storyId: "US-003", completedAt: "2026-01-01T00:01:00.000Z", failingTestFiles: ["bar.test.ts"] },
+        ],
+      });
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+
+    const mapped = logCalls.find((l) => l.message === "Mapped test to story via gate transition");
+    expect(mapped?.stage).toBe("regression");
+    expect(mapped?.data).toMatchObject({ storyId: "US-003", testFile: "bar.test.ts" });
+
+    const unresolved = logCalls.filter((l) => l.message === "Could not safely map test file to a passed story");
+    expect(unresolved).toHaveLength(2);
+    expect(unresolved[0]?.data).toMatchObject({ testFile: "foo.test.ts", transitionStoryId: "US-002" });
+    expect(unresolved[1]?.data).toMatchObject({ testFile: "baz.test.ts" });
+    expect(unresolved[1]?.data?.transitionStoryId).toBeUndefined();
   });
 });

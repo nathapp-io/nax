@@ -503,11 +503,16 @@ describe("AC-5 — executeUnified is the only dispatch entry point; removed func
     expect(exportedKeys).not.toContain(legacyName);
   });
 
-  test("unified-executor.ts source does not import or define the old removed dispatch function", async () => {
-    const src = await Bun.file(new URL("../../../src/execution/unified-executor.ts", import.meta.url).pathname).text();
-    const legacyName = ["runParallel", "Execution"].join("");
-    expect(src).not.toContain(legacyName);
-  });
+  // The dispatch code now spans unified-executor.ts and its two sibling
+  // modules, so the ban scans all three.
+  test.each(["unified-executor.ts", "unified-executor-dispatch-phases.ts", "unified-executor-parallel-dispatch.ts"])(
+    "%s source does not import or define the old removed dispatch function",
+    async (file) => {
+      const src = await Bun.file(new URL(`../../../src/execution/${file}`, import.meta.url).pathname).text();
+      const legacyName = ["runParallel", "Execution"].join("");
+      expect(src).not.toContain(legacyName);
+    },
+  );
 
   test("runner-execution.ts source does not reference the old removed dispatch function", async () => {
     const src = await Bun.file(new URL("../../../src/execution/runner-execution.ts", import.meta.url).pathname).text();

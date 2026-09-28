@@ -1,7 +1,8 @@
 /**
  * The endpoint one hop dispatches to, and the tier (if any) that selected it.
  *
- * Extracted from build-hop-callback.ts, which is at the 600-line hard limit. It is
+ * Extracted from build-hop-callback.ts when that file sat at the 600-line hard limit
+ * (A5 has since drained the closure itself into sibling files). It is
  * also the seam nax#1965 needed: the value returned here is what the hop REPORTS
  * back, so cooldown marking and candidate exclusion key on the endpoint that
  * actually dispatched rather than on whatever tier the HopKind happened to declare

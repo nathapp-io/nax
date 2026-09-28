@@ -59,6 +59,16 @@ describe("findResponsibleStoryByTransition", () => {
     ];
     expect(findResponsibleStoryByTransition("foo.test.ts", snapshots)).toBe("US-002");
   });
+
+  test("breaks a completedAt tie deterministically by storyId (B4 characterisation)", () => {
+    // Two snapshots share a timestamp and both show the failure: the sort's
+    // secondary storyId key must pick the same story regardless of array order.
+    const snapshots: StorySnapshot[] = [
+      snap("US-002", "2026-01-01T00:01:00.000Z", ["foo.test.ts"]),
+      snap("US-001", "2026-01-01T00:01:00.000Z", ["foo.test.ts"]),
+    ];
+    expect(findResponsibleStoryByTransition("foo.test.ts", snapshots)).toBe("US-001");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

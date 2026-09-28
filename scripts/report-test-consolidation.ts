@@ -45,8 +45,9 @@
  * The pure primitives (`walk`, `readStat`, `buildGroups`, `packGroup`, and the
  * constants above them) are exported so `scripts/check-test-satellites.ts` and its
  * unit test can reuse one definition of "satellite"/"ticket"/"mirror" instead of
- * re-implementing them. Everything that scans the repo or writes to stdout lives in
- * `main()`, run only under `import.meta.main`, so importing this module is free of
+ * re-implementing them. Everything that scans the repo or writes to stdout is
+ * invoked from `main()` (one named phase function per report mode), run only
+ * under `import.meta.main`, so importing this module is free of
  * side effects (it used to scan and `process.exit` at module load).
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -290,15 +291,30 @@ export type Row = {
   frozenBases: string[];
 };
 
-async function main() {
-  const frozen: Record<string, number> = existsSync(BASELINE_PATH)
-    ? (JSON.parse(readFileSync(BASELINE_PATH, "utf8")).byFile ?? {})
-    : {};
+/** Frozen file-sizes baseline entries, by test path. */
+type FrozenMap = Record<string, number>;
 
+/** The frozen baseline may be absent (fresh clone); an empty map freezes nothing. */
+function loadFrozenBaseline(): FrozenMap {
+  if (!existsSync(BASELINE_PATH)) return {};
+  return (JSON.parse(readFileSync(BASELINE_PATH, "utf8")).byFile ?? {}) as FrozenMap;
+}
+
+/** Everything one report run scans, computed once and shared by every phase. */
+interface ScanResult {
+  paths: string[];
+  stats: Map<string, FileStat>;
+  groups: Map<string, string[]>;
+}
+
+function scanPopulation(frozen: FrozenMap): ScanResult {
   const paths = SCAN_DIRS.flatMap((d) => walk(d));
   const stats = new Map(paths.map((p) => [p, readStat(p, frozen)] as const));
   const groups = buildGroups(paths);
+  return { paths, stats, groups };
+}
 
+function buildRows(groups: Map<string, string[]>, stats: Map<string, FileStat>): Row[] {
   const rows: Row[] = [];
   for (const [base, satellites] of groups) {
     const all = [base, ...satellites].map((p) => stats.get(p) as FileStat);
@@ -325,102 +341,129 @@ async function main() {
     });
   }
   rows.sort((a, b) => b.removableFiles - a.removableFiles || b.removableLines - a.removableLines);
+  return rows;
+}
 
-  const argv = process.argv.slice(2);
-
-  if (argv.includes("--mirrors")) {
-    const satellitePaths = new Set([...groups.values()].flat());
-    const mirrors = paths.filter((p) => stats.get(p)?.mirror && satellitePaths.has(p));
-    console.log(`Mirrors — satellites that ARE the per-source test file. NEVER merge these. (${mirrors.length})`);
-    for (const p of mirrors.sort()) {
-      const stem = p.replace(/^test\/(unit|integration|ui)\//, "src/").replace(/\.test\.tsx?$/, "");
-      const src = [".ts", ".tsx", "/index.ts"].map((s) => stem + s).find((s) => existsSync(join(ROOT, s)));
-      console.log(`  ${p}\n      → ${src}`);
-    }
-    process.exit(0);
+/** --mirrors: the do-not-merge list, then exit. */
+function printMirrorsReport(paths: string[], stats: Map<string, FileStat>, groups: Map<string, string[]>): never {
+  const satellitePaths = new Set([...groups.values()].flat());
+  const mirrors = paths.filter((p) => stats.get(p)?.mirror && satellitePaths.has(p));
+  console.log(`Mirrors — satellites that ARE the per-source test file. NEVER merge these. (${mirrors.length})`);
+  // Explicit comparator: identical ordering to the default for arrays of strings
+  // (UTF-16 code-unit ascending), spelled out for useArraySortCompare.
+  for (const p of mirrors.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+    const stem = p.replace(/^test\/(unit|integration|ui)\//, "src/").replace(/\.test\.tsx?$/, "");
+    const src = [".ts", ".tsx", "/index.ts"].map((s) => stem + s).find((s) => existsSync(join(ROOT, s)));
+    console.log(`  ${p}\n      → ${src}`);
   }
+  process.exit(0);
+}
 
-  if (argv.includes("--group")) {
-    const requested = argv[argv.indexOf("--group") + 1];
-    if (!requested) {
-      console.error("--group needs a base test path. Run without --group to list the groups.");
-      process.exit(1);
-    }
-    const matches = rows.filter((r) => r.base === requested || r.base.endsWith(`/${requested}`));
-    if (matches.length === 0) {
-      console.error(`No group with base ${requested}. Run without --group to list them.`);
-      process.exit(1);
-    }
-    if (matches.length > 1) {
-      console.error(`Ambiguous: ${requested} matches ${matches.length} groups. Use the full path:`);
-      for (const m of matches) console.error(`    ${m.base}`);
-      process.exit(1);
-    }
-    const row = matches[0];
-    const all = [row.base, ...(groups.get(row.base) ?? [])];
-    const { bins } = packGroup(
-      all.map((p) => stats.get(p) as FileStat),
-      row.base,
-    );
-    console.log(`GROUP ${row.base}`);
-    console.log(
-      `  ${row.members} files, ${row.staticTests} static test sites, ${row.expects} expect(), ${row.lines} lines`,
-    );
-    console.log(
-      `  packs to ${row.packedFiles} files / ${row.packedLines} lines  (-${row.removableFiles} files, -${row.removableLines} lines)`,
-    );
-    console.log(`  fill target ${FILL_TARGET}, hard cap ${TEST_LINE_LIMIT}`);
-    if (row.mirrors.length) {
-      console.log(`\n  MIRRORS — do NOT merge, each is its own src module's test file:`);
-      for (const p of row.mirrors) console.log(`      ${p}`);
-    }
-    if (row.frozenBases.length) {
-      console.log(`\n  FROZEN (file-sizes-baseline) — receives nothing:`);
-      for (const p of row.frozenBases) {
-        const s = stats.get(p) as FileStat;
-        const head = (s.frozenAt ?? 0) - s.lines;
-        console.log(
-          `      ${p}  ${s.lines}l, recorded ${s.frozenAt}l${head > 0 ? ` (${head}l headroom)` : " (no headroom)"}`,
-        );
-      }
-    }
-    if (row.unrestored.length) {
-      console.log(`\n  ⚠ mutates _deps with NO restore — fix before merging:`);
-      for (const p of row.unrestored) console.log(`      ${p}`);
-    }
-    if (row.unclear.length) {
-      console.log(`\n  ? mutates _deps, has a hook, no restore detected — READ before merging:`);
-      for (const p of row.unclear) console.log(`      ${p}`);
-    }
-    console.log(`\n  proposed packing:`);
-    for (const [i, b] of bins.entries()) {
-      console.log(`    bin ${i + 1}: ${b.lines}l${b.frozen ? " (pinned)" : ""}`);
-      for (const p of b.members) {
-        const s = stats.get(p) as FileStat;
-        console.log(
-          `        ${String(s.lines).padStart(4)}l (preamble ${String(s.preamble).padStart(3)}, body ${String(s.lines - s.preamble).padStart(4)})  ${p}`,
-        );
-      }
-    }
-    console.log(`\n  members in detail:`);
-    for (const p of all) {
+/** The mirrors / frozen / unrestored / unclear warning sections of a --group report. */
+function printGroupWarnings(row: Row, stats: Map<string, FileStat>): void {
+  if (row.mirrors.length) {
+    console.log(`\n  MIRRORS — do NOT merge, each is its own src module's test file:`);
+    for (const p of row.mirrors) console.log(`      ${p}`);
+  }
+  if (row.frozenBases.length) {
+    console.log(`\n  FROZEN (file-sizes-baseline) — receives nothing:`);
+    for (const p of row.frozenBases) {
       const s = stats.get(p) as FileStat;
-      const flags = [
-        s.mirror ? "MIRROR" : "",
-        s.ticket ? "ticket" : "",
-        s.restore === "unrestored" ? "deps!" : "",
-        s.restore === "unclear" ? "deps?" : "",
-      ]
-        .filter(Boolean)
-        .join(",");
-      console.log(`  ${String(s.staticTests).padStart(3)}t ${String(s.lines).padStart(4)}l ${flags.padEnd(20)} ${p}`);
-      for (const d of s.describes) console.log(`        describe: ${d.slice(0, 96)}`);
+      const head = (s.frozenAt ?? 0) - s.lines;
+      console.log(
+        `      ${p}  ${s.lines}l, recorded ${s.frozenAt}l${head > 0 ? ` (${head}l headroom)` : " (no headroom)"}`,
+      );
     }
-    process.exit(0);
   }
+  if (row.unrestored.length) {
+    console.log(`\n  ⚠ mutates _deps with NO restore — fix before merging:`);
+    for (const p of row.unrestored) console.log(`      ${p}`);
+  }
+  if (row.unclear.length) {
+    console.log(`\n  ? mutates _deps, has a hook, no restore detected — READ before merging:`);
+    for (const p of row.unclear) console.log(`      ${p}`);
+  }
+}
 
+function printPackingPlan(bins: Bin[], stats: Map<string, FileStat>): void {
+  console.log(`\n  proposed packing:`);
+  for (const [i, b] of bins.entries()) {
+    console.log(`    bin ${i + 1}: ${b.lines}l${b.frozen ? " (pinned)" : ""}`);
+    for (const p of b.members) {
+      const s = stats.get(p) as FileStat;
+      console.log(
+        `        ${String(s.lines).padStart(4)}l (preamble ${String(s.preamble).padStart(3)}, body ${String(s.lines - s.preamble).padStart(4)})  ${p}`,
+      );
+    }
+  }
+}
+
+function printMemberDetails(all: string[], stats: Map<string, FileStat>): void {
+  console.log(`\n  members in detail:`);
+  for (const p of all) {
+    const s = stats.get(p) as FileStat;
+    const flags = [
+      s.mirror ? "MIRROR" : "",
+      s.ticket ? "ticket" : "",
+      s.restore === "unrestored" ? "deps!" : "",
+      s.restore === "unclear" ? "deps?" : "",
+    ]
+      .filter(Boolean)
+      .join(",");
+    console.log(`  ${String(s.staticTests).padStart(3)}t ${String(s.lines).padStart(4)}l ${flags.padEnd(20)} ${p}`);
+    for (const d of s.describes) console.log(`        describe: ${d.slice(0, 96)}`);
+  }
+}
+
+/** One --group report: the merge arithmetic, warnings, packing plan, and members. */
+function printGroupDetail(row: Row, groups: Map<string, string[]>, stats: Map<string, FileStat>): void {
+  const all = [row.base, ...(groups.get(row.base) ?? [])];
+  const { bins } = packGroup(
+    all.map((p) => stats.get(p) as FileStat),
+    row.base,
+  );
+  console.log(`GROUP ${row.base}`);
+  console.log(
+    `  ${row.members} files, ${row.staticTests} static test sites, ${row.expects} expect(), ${row.lines} lines`,
+  );
+  console.log(
+    `  packs to ${row.packedFiles} files / ${row.packedLines} lines  (-${row.removableFiles} files, -${row.removableLines} lines)`,
+  );
+  console.log(`  fill target ${FILL_TARGET}, hard cap ${TEST_LINE_LIMIT}`);
+  printGroupWarnings(row, stats);
+  printPackingPlan(bins, stats);
+  printMemberDetails(all, stats);
+}
+
+/** --group <base>: validate the request, print one group, then exit. */
+function runGroupReport(
+  argv: string[],
+  rows: Row[],
+  population: { groups: Map<string, string[]>; stats: Map<string, FileStat> },
+): never {
+  const { groups, stats } = population;
+  const requested = argv[argv.indexOf("--group") + 1];
+  if (!requested) {
+    console.error("--group needs a base test path. Run without --group to list the groups.");
+    process.exit(1);
+  }
+  const matches = rows.filter((r) => r.base === requested || r.base.endsWith(`/${requested}`));
+  if (matches.length === 0) {
+    console.error(`No group with base ${requested}. Run without --group to list them.`);
+    process.exit(1);
+  }
+  if (matches.length > 1) {
+    console.error(`Ambiguous: ${requested} matches ${matches.length} groups. Use the full path:`);
+    for (const m of matches) console.error(`    ${m.base}`);
+    process.exit(1);
+  }
+  printGroupDetail(matches[0], groups, stats);
+  process.exit(0);
+}
+
+function buildTotals(paths: string[], stats: Map<string, FileStat>, rows: Row[]) {
   const allStats = [...stats.values()];
-  const totals = {
+  return {
     scope: SCAN_DIRS.join(" + "),
     files: paths.length,
     staticTests: allStats.reduce((a, s) => a + s.staticTests, 0),
@@ -436,12 +479,17 @@ async function main() {
     unrestored: [...new Set(rows.flatMap((r) => r.unrestored))].length,
     unclear: [...new Set(rows.flatMap((r) => r.unclear))].length,
   };
+}
 
-  if (argv.includes("--json")) {
-    console.log(JSON.stringify({ totals, rows }, null, 2));
-    process.exit(0);
-  }
+type Totals = ReturnType<typeof buildTotals>;
 
+/** --json: the machine-readable report, then exit. */
+function runJsonReport(totals: Totals, rows: Row[]): never {
+  console.log(JSON.stringify({ totals, rows }, null, 2));
+  process.exit(0);
+}
+
+function printHumanReport(totals: Totals, rows: Row[]): void {
   console.log("Test-consolidation ranker");
   console.log(`  scope              ${totals.scope}  (test/e2e/ excluded — separate CI step)`);
   console.log(`  scanned            ${totals.files} files, ${totals.lines} lines, ${totals.expects} expect()`);
@@ -477,6 +525,21 @@ async function main() {
   }
   console.log("");
   console.log(`  groups already at their floor: ${rows.filter((r) => r.removableFiles <= 0).length}`);
+}
+
+async function main() {
+  const frozen = loadFrozenBaseline();
+  const { paths, stats, groups } = scanPopulation(frozen);
+  const rows = buildRows(groups, stats);
+  const argv = process.argv.slice(2);
+
+  if (argv.includes("--mirrors")) printMirrorsReport(paths, stats, groups);
+  if (argv.includes("--group")) runGroupReport(argv, rows, { groups, stats });
+
+  const totals = buildTotals(paths, stats, rows);
+  if (argv.includes("--json")) runJsonReport(totals, rows);
+
+  printHumanReport(totals, rows);
 }
 
 if (import.meta.main) {

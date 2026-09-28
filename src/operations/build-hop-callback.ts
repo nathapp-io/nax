@@ -3,17 +3,21 @@
  *
  * Returned closure matches AgentRunRequest["executeHop"] and is passed
  * directly to runWithFallback.
+ *
+ * The closure body lives in two siblings: build-hop-callback-hop.ts (composeHopPrompt
+ * → resolveHopTooling → prepareHopSession → acquireSessionHandle → recordSwapHandoff)
+ * and build-hop-callback-dispatch.ts (dispatchHopTurn: the turn try/catch/finally).
+ * What stays here is the callback-scoped state: `_buildHopCallbackDeps` (the
+ * test-injection seam tests reassign by PROPERTY, so it must remain the object the
+ * phases read through), the session-scoped pull budgets and run counter, and
+ * `HopClosureState` — the US-003/AC5 cross-hop bookkeeping mutated in place by the
+ * phases.
  */
 
-import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
-import { resolveCodingToolSupport } from "../agents/coding-tool-support";
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
-import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "../agents/tool-preamble";
-import type { AgentResult, AgentRunOptions, SessionHandle, TurnResult } from "../agents/types";
-import { SessionFailureError, SessionTurnError } from "../agents/types";
-import type { NaxConfig } from "../config";
-import { DEFAULT_CONFIG, type resolveModelForAgent } from "../config";
-import type { AdapterFailure, ContextBundle, RunCallCounter } from "../context/engine";
+import type { AgentRunOptions, TurnResult } from "../agents/types";
+import type { NaxConfig, resolveModelForAgent } from "../config";
+import type { ContextBundle, RunCallCounter } from "../context/engine";
 import {
   ContextOrchestrator,
   createContextToolRuntime,
@@ -21,16 +25,23 @@ import {
   createSessionToolBudgets,
 } from "../context/engine";
 import { writeRebuildManifest } from "../context/engine/manifest-store";
-import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import type { TimeoutRetryInput } from "../prompts";
-import { timeoutRetry as defaultTimeoutRetry, RectifierPromptBuilder } from "../prompts";
+import { timeoutRetry as defaultTimeoutRetry } from "../prompts";
 import type { ISessionManager } from "../session";
-import { recordAgentHandoff } from "../session";
-import type { OpenSessionRequest } from "../session/types";
 import { captureGitRef, captureWorkingTreeChanges } from "../utils/git";
-import type { HopEndpoint } from "./hop-endpoint";
-import { hopModelId, hopTier, resolveHopEndpoint } from "./hop-endpoint";
+import { dispatchHopTurn } from "./build-hop-callback-dispatch";
+import {
+  acquireSessionHandle,
+  composeHopPrompt,
+  type HopClosureState,
+  type HopInvocation,
+  type HopOutcome,
+  prepareHopSession,
+  recordSwapHandoff,
+  resolveHopTooling,
+} from "./build-hop-callback-hop";
+import { hopModelId, hopTier } from "./hop-endpoint";
 
 // Re-exported from their new home so existing importers (and
 // test/unit/operations/build-hop-callback-tier.test.ts) are unaffected.
@@ -40,7 +51,7 @@ export const _buildHopCallbackDeps = {
   rebuildForAgent: (
     prior: ContextBundle,
     newAgentId: string,
-    failure: AdapterFailure,
+    failure: import("../context/engine").AdapterFailure,
     storyId?: string,
   ): ContextBundle => new ContextOrchestrator([]).rebuildForAgent(prior, { newAgentId, failure, storyId }),
   writeRebuildManifest,
@@ -106,69 +117,25 @@ export interface BuildHopCallbackContext {
   hopBodyInput?: unknown;
 }
 
-function turnResultToAgentResult(r: TurnResult): AgentResult {
-  return {
-    success: !r.adapterFailure,
-    exitCode: r.adapterFailure ? 1 : 0,
-    output: r.output,
-    rateLimited: r.adapterFailure?.outcome === "fail-rate-limit",
-    durationMs: 0,
-    estimatedCostUsd: r.estimatedCostUsd ?? 0,
-    exactCostUsd: r.exactCostUsd,
-    tokenUsage: r.tokenUsage,
-    protocolIds: r.protocolIds,
-    internalRoundTrips: r.internalRoundTrips,
-    ...(r.adapterFailure ? { adapterFailure: r.adapterFailure } : {}),
-  };
-}
-
 export function buildHopCallback(
   ctx: BuildHopCallbackContext,
   sessionId: string | undefined,
   _initialOptions: AgentRunOptions,
 ): NonNullable<AgentRunRequest["executeHop"]> {
-  const {
-    sessionManager,
-    agentManager,
-    story,
-    config,
-    projectDir,
-    featureName,
-    workdir,
-    effectiveTier,
-    defaultAgent,
-    pinnedModelAgent,
-    contextToolRunCounter,
-    storyScratchDirs,
-    pipelineStage,
-    interactionBridge,
-    maxInteractionTurns,
-    hopBody,
-    hopBodyInput,
-  } = ctx;
+  const { contextToolRunCounter, pipelineStage } = ctx;
 
   const stage = pipelineStage ?? "run";
 
-  // US-003: closure-scoped memoization of the pre-attempt git ref + start time.
-  // Capture is fire-and-forget on the FIRST primary hop (no `await` so the hot
-  // path stays synchronous) and awaited only when the subsequent timeout-retry
-  // hop needs the result. Best-effort — absence falls through to the generic
-  // preamble path inside _buildHopCallbackDeps.timeoutRetry (AC8).
-  let preAttemptGitRefPromise: Promise<string | undefined> | undefined;
-  // Tracks when the PRECEDING hop started (unlike preAttemptGitRefPromise,
-  // which stays pinned to the first primary hop so captureWorkingTreeChanges
-  // sees the full cumulative diff). elapsedMs must report the timed-out
-  // attempt's own duration, not time spent in any stale-retry hops that
-  // happened to precede it (AC5), so it is read before being overwritten with
-  // this hop's own start time.
-  let priorHopStartedAt: number | undefined;
+  // US-003 / AC5: cross-hop state, mutated IN PLACE by the phase functions in
+  // build-hop-callback-hop.ts. See HopClosureState there for what each field pins.
+  const state: HopClosureState = {};
 
   // Gap finding 7: pull-tool budgets must be scoped to the SESSION, not the hop.
-  // createContextToolRuntime is called inside the closure below (once per hop),
-  // so a runtime-local registry reset maxCallsPerSession on every retry /
-  // fallback / escalation. Created here, outside the closure, alongside
-  // contextToolRunCounter — which until now was declared but never populated by
-  // any production caller, so the run-level cap reset per hop too (call.ts).
+  // The context-tool runtime is created once per hop, so a runtime-local registry
+  // reset maxCallsPerSession on every retry / fallback / escalation. Created here,
+  // outside the closure, alongside contextToolRunCounter — which until now was
+  // declared but never populated by any production caller, so the run-level cap
+  // reset per hop too (call.ts).
   const sessionToolBudgets = createSessionToolBudgets();
   // The counter is now threaded from the context stage through CallContext and
   // hopCtx (call.ts), so a real one arrives here. The fallback covers callers
@@ -176,423 +143,55 @@ export function buildHopCallback(
   // the pipeline. Hoisted out of the closure either way so it survives hops.
   const runCounterForHops = contextToolRunCounter ?? createRunCallCounter();
 
-  return async (
-    agentName,
-    hopBundle,
-    hopKind,
-    resolvedRunOptions,
-  ): Promise<{
-    result: AgentResult;
-    bundle: ContextBundle | undefined;
-    prompt?: string;
-    endpoint?: HopEndpoint;
-    /** US-001: see AgentRunRequest["executeHop"]. */
-    dispatched?: boolean;
-  }> => {
-    const logger = getLogger();
-    let workingBundle = hopBundle;
-    // Set by whichever hop-endpoint resolution branch runs below; Task 3 returns
-    // this from the callback so the fallback loop can report the dispatched endpoint.
-    let endpoint: HopEndpoint | undefined;
-    let prompt: string = resolvedRunOptions.prompt;
-    const elapsedSincePriorHop = priorHopStartedAt ? Date.now() - priorHopStartedAt : 0;
-    priorHopStartedAt = Date.now();
-
-    // US-003: start pre-attempt git ref capture once on the first primary hop,
-    // without awaiting. The promise is awaited later on the timeout-retry hop.
-    if (hopKind.kind === "primary" && !preAttemptGitRefPromise) {
-      preAttemptGitRefPromise = _buildHopCallbackDeps.captureGitRef(workdir);
-    }
-
-    // SWAP only: rebuild bundle for the new agent, rewrite the prompt, and record the handoff.
-    // Stale-retry reuses the same agent and session — no rebuild, no prompt rewrite.
-    if (hopKind.kind === "swap" && hopBundle) {
-      workingBundle = _buildHopCallbackDeps.rebuildForAgent(hopBundle, agentName, hopKind.failure, story.id);
-      if (projectDir && featureName && workingBundle.manifest.rebuildInfo) {
-        try {
-          await _buildHopCallbackDeps.writeRebuildManifest(projectDir, featureName, story.id, {
-            requestId: workingBundle.manifest.requestId,
-            stage: "execution",
-            priorAgentId: workingBundle.manifest.rebuildInfo.priorAgentId,
-            newAgentId: workingBundle.manifest.rebuildInfo.newAgentId,
-            failureCategory: workingBundle.manifest.rebuildInfo.failureCategory,
-            failureOutcome: workingBundle.manifest.rebuildInfo.failureOutcome,
-            priorChunkIds: workingBundle.manifest.rebuildInfo.priorChunkIds,
-            newChunkIds: workingBundle.manifest.rebuildInfo.newChunkIds,
-            chunkIdMap: workingBundle.manifest.rebuildInfo.chunkIdMap,
-            createdAt: new Date().toISOString(),
-          });
-        } catch (err) {
-          logger.warn("execution", "Failed to write rebuild manifest", {
-            storyId: story.id,
-            error: String(err),
-          });
-        }
-      }
-      prompt = RectifierPromptBuilder.swapHandoff(resolvedRunOptions.prompt, workingBundle.pushMarkdown);
-    }
-
-    // US-003: compose the timeout-retry prompt with the pre-attempt ref + elapsed time.
-    // Called exactly once on the timeout-retry hop; absent a captured ref the helper
-    // degrades to the generic preamble (AC8) and never throws.
-    if (hopKind.kind === "timeout-retry") {
-      const preAttemptGitRef = preAttemptGitRefPromise ? await preAttemptGitRefPromise : undefined;
-      const changedFiles = preAttemptGitRef
-        ? await _buildHopCallbackDeps.captureWorkingTreeChanges(workdir, preAttemptGitRef)
-        : [];
-      prompt = _buildHopCallbackDeps.timeoutRetry({
-        prompt: resolvedRunOptions.prompt,
-        changedFiles,
-        elapsedMs: elapsedSincePriorHop,
-        attempt: hopKind.attempt,
-        ...(hopKind.failure !== undefined ? { failure: hopKind.failure } : {}), // nax#2200
-      });
-    }
-
-    const contextToolRuntime = workingBundle
-      ? _buildHopCallbackDeps.createContextToolRuntime({
-          bundle: workingBundle,
-          story,
-          config,
-          repoRoot: workdir,
-          runCounter: runCounterForHops,
-          sessionBudgets: sessionToolBudgets,
-          // US-005: thread the requesting agent so query_scratch neutralizes
-          // tool references for the actual reader (AC10), not story.id.
-          agentId: agentName,
-          // US-005: thread the story scratch dirs the stage-assembly path
-          // resolved, so query_scratch reads the same data the push
-          // providers (SessionScratchProvider / ToolDiagnosticsProvider) read.
-          ...(storyScratchDirs?.length ? { storyScratchDirs } : {}),
-        })
-      : undefined;
-    const contextPullTools = workingBundle?.pullTools;
-    // nax#1744: the run() path dispatches through this callback as
-    // AgentManager's `executeHop`, and runWithFallback invokes `executeHop`
-    // INSTEAD OF `_runHop` — so createSessionRunHop (runtime/session-run-hop.ts)
-    // is bypassed here, and it was the only place that told the agent the pull
-    // tools exist. #1737/#1741/#1742 assembled the bundle, the descriptors and
-    // the runtime correctly, but nothing advertised them: no agent could emit a
-    // <nax_tool_call>, so every pull tool was unreachable outside unit tests.
-    // The three lines that made it reachable are the preamble below, the
-    // handler that answers the call, and the turn budget in `send`.
-    const hasContextTools = Boolean(contextToolRuntime && (contextPullTools?.length ?? 0) > 0);
-    // Unconditional: the scope block must reach every dispatch, even a
-    // tool-less one; only the pull-tool catalogue inside stays gated, since
-    // buildContextToolPreamble returns the prompt unchanged without tools.
-    // AFTER the swap-handoff / timeout-retry rewrites above, both of which
-    // replace the prompt wholesale — a preamble applied before either would
-    // be discarded, leaving that hop's agent with tools it was never told
-    // about. Safe against compounding across hops: `prompt` is re-seeded from
-    // resolvedRunOptions.prompt on every hop, and the `finalPrompt` the hop
-    // returns is audit-only (manager.ts) — it never feeds a later hop's
-    // runOptions.
-    prompt = promptWithToolPreamble(agentName, {
-      ...resolvedRunOptions,
-      prompt,
-      contextPullTools,
-      contextToolRuntime,
-    });
-
-    // Coding tools are resolved per hop rather than per run: a swap changes the
-    // agent, and the grants are stage-scoped, so a runtime captured once above
-    // would outlive the dispatch it was resolved for.
-    //
-    // US-002 — the substitution happens AFTER coding-tool support resolves,
-    // not before. Native rendering additionally requires `Git` AND `Read` to
-    // be advertised, and the resolved runtime is the single source of truth
-    // for what the agent will advertise: the intersection of the operation's
-    // declared tools with the policy grants at this pipeline stage. The
-    // advertised names are read directly from the runtime (see CodingToolRuntime.advertised),
-    // so a fallback swap that changes the protocol cannot change the tool set,
-    // and the gate at dispatch matches the gate the agent is gated on at
-    // call-time.
-    //
-    // `resolveCodingToolSupport` can throw `NaxError('CODING_TOOL_ROOT_MISSING')`
-    // when declared tools + grants exist but `codingToolRoot` is undefined
-    // (issue #1794 lesson — refuse rather than silently default to cwd). The
-    // hop MUST convert that into a failed AgentResult rather than letting the
-    // throw propagate: callers like `runWithFallback` rely on the hop always
-    // returning an AgentResult so the swap policy can classify the outcome.
-    // A propagated throw also skips the `finally` block's `closeSession` /
-    // `auditSink.flush()` — at this point neither has run yet (no session has
-    // been opened, no runtime was created), but the seam still matters for
-    // future maintainers who might add side-effects before this line.
-    let codingSupport: Awaited<ReturnType<typeof resolveCodingToolSupport>>;
-    try {
-      codingSupport = await resolveCodingToolSupport(resolvedRunOptions);
-    } catch (err) {
-      const errMessage = err instanceof Error ? err.message : String(err);
-      // US-001: coding-tool setup failed before any adapter was reached — no model
-      // was dispatched. Same signal as the catch path below.
-      return {
-        result: {
-          success: false,
-          exitCode: 1,
-          // Always prefix with agent name so downstream logs can attribute the
-          // failure even when the underlying error message doesn't carry it
-          // (e.g. bare `new Error("timeout")`).
-          output: `Agent "${agentName}" failed: ${errMessage}`,
-          rateLimited: false,
-          durationMs: 0,
-          estimatedCostUsd: 0,
-        },
-        bundle: workingBundle,
-        prompt,
-        dispatched: false,
-      };
-    }
-    const advertisedTools = codingSupport ? codingSupport.tools.map((t) => t.name) : [];
-
-    // Unconditional, unlike the preamble above: a review prompt carries a
-    // diff-access region whether or not the op also has context pull tools, and
-    // ACP needs the markers stripped even though it keeps the body. Placed after
-    // the preamble for the same reason the preamble is placed after the swap
-    // rewrites — those replace the prompt wholesale, and a region rendered
-    // before one would be discarded. Placed after `codingSupport` resolves for
-    // the same reason: the gate depends on the advertised tools.
-    prompt = applyDiffAccessForAgentProtocol(agentName, prompt, advertisedTools);
-
-    // A bridge is no longer required: without a handler, sendPrompt falls back
-    // to NO_OP_INTERACTION_HANDLER and a well-formed tool call goes unanswered.
-    // Coding tools join that predicate for the same reason — a review op
-    // declares tools but carries no bridge and often no context bundle, so
-    // gating on those two alone left it with a handler-less session.
-    const interactionHandler =
-      interactionBridge || hasContextTools || codingSupport
-        ? buildRunInteractionHandler({
-            ...resolvedRunOptions,
-            contextToolRuntime,
-            contextPullTools,
-            ...(codingSupport ? { codingToolRuntime: codingSupport.runtime } : {}),
-            ...(interactionBridge ? { interactionBridge } : {}),
-          })
-        : undefined;
-
-    const sessionName = sessionManager.nameFor({
-      workdir,
-      featureName,
-      storyId: story.id,
-      role: resolvedRunOptions.sessionRole ?? "implementer",
-      pipelineStage: stage,
-    });
-
-    // nax#1877: the transcript's owner. `scopeId` when the caller scopes a
-    // session across stages, else this op invocation's `callId` — either way an
-    // identity that survives this invocation's hops and retries and changes for
-    // the next one, so a stale transcript at this deterministic session name is
-    // recognised as foreign instead of silently resumed.
-    const transcriptOwner = resolvedRunOptions.scopeId ?? resolvedRunOptions.callId;
-    // The caller's pinned model is usable only on the agent it was resolved for; any
-    // other agent re-resolves from its own tier map (nax#1722 — see pinnedModelAgent).
-    const pinnedModelDef =
-      pinnedModelAgent === undefined || pinnedModelAgent === agentName ? resolvedRunOptions.modelDef : undefined;
-
-    // Identical across every non-reuse branch (stale-retry fallback, primary,
-    // swap) — each branch resolves `endpoint` first, then opens with it.
-    const openSessionRequest = (
-      modelDef: OpenSessionRequest["modelDef"],
-      modelTier?: OpenSessionRequest["modelTier"],
-    ): OpenSessionRequest => ({
+  return async (agentName, hopBundle, hopKind, resolvedRunOptions): Promise<HopOutcome> => {
+    // deps is _buildHopCallbackDeps BY REFERENCE: tests reassign its properties
+    // between buildHopCallback() and invoking the closure, so every phase must
+    // read deps.X at call time (never destructure outside a hop).
+    const input: HopInvocation = {
+      ctx,
+      deps: _buildHopCallbackDeps,
+      stage,
+      sessionId,
+      sessionToolBudgets,
+      runCounterForHops,
+      state,
       agentName,
-      role: resolvedRunOptions.sessionRole ?? "implementer",
-      workdir,
-      pipelineStage: stage,
-      // SEC-3: thread per-package config so monorepo permissionProfile is honored.
-      config,
-      modelDef,
-      ...(modelTier ? { modelTier } : {}),
-      timeoutSeconds:
-        resolvedRunOptions.timeoutSeconds ??
-        config.execution?.sessionTimeoutSeconds ??
-        DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
-      featureName,
-      storyId: story.id,
-      ...(transcriptOwner !== undefined ? { transcriptOwner } : {}),
-      signal: resolvedRunOptions.abortSignal,
-    });
-    // Resolve the hop endpoint and open (or resume) the session on it.
-    // openSession errors propagate naturally — no handle, no closeSession needed.
-    const openFresh = async (): Promise<SessionHandle> => {
-      endpoint = resolveHopEndpoint({
-        hopKind,
-        pinnedModelDef,
-        models: config.models,
-        agentName,
-        effectiveTier,
-        defaultAgent,
-      });
-      return sessionManager.openSession(sessionName, openSessionRequest(endpoint.modelDef, endpoint.modelTier));
+      hopBundle,
+      hopKind,
+      resolvedRunOptions,
     };
 
-    // STALE-RETRY: reuse the existing live handle — no openSession, no acpx reconnect.
-    // nax#2218: a CANCELLED warm handle is poisoned — sendPrompt's SESSION_CANCELLED
-    // guard would kill the retry before reaching a model. Close it and reopen so the
-    // "same-agent retry with fresh session" actually dispatches.
-    let handle: SessionHandle;
-    if (hopKind.kind === "stale-retry") {
-      const cached = sessionManager.getLiveHandle(sessionName);
-      if (cached && cached.agentName === agentName && !sessionManager.isCancelled(sessionName)) {
-        handle = cached;
-      } else {
-        if (cached && sessionManager.isCancelled(sessionName)) {
-          logger.warn("execution", "Stale-retry: cached session was cancelled — closing and reopening fresh", {
-            storyId: story.id,
-            sessionName,
-            attempt: hopKind.attempt,
-          });
-          await sessionManager.closeSession(cached);
-        } else {
-          // Defensive: cache miss should never happen in practice (the handle was just
-          // used by the prior attempt), but fall back to openSession so the retry
-          // can still proceed. Logged at warn to detect unexpected misses in production.
-          logger.warn("execution", "Stale-retry: live handle missing, re-opening session", {
-            storyId: story.id,
-            sessionName,
-            attempt: hopKind.attempt,
-          });
-        }
-        handle = await openFresh();
-      }
-    } else {
-      handle = await openFresh();
-    }
+    // Swap rebuild / timeout-retry prompt composition + the once-only pre-attempt
+    // git-ref capture (US-003). Mutates input.state in place.
+    const composed = await composeHopPrompt(input);
 
-    // Record the descriptor handoff for any swap, whether or not a bundle was rebuilt. nax#1722:
-    // callOp carries no sessionId, so otherwise the descriptor kept naming the failed primary on every production swap.
-    if (hopKind.kind === "swap") {
-      if (sessionId) sessionManager.handoff?.(sessionId, agentName, hopKind.failure.outcome);
-      else recordAgentHandoff(sessionManager, sessionName, agentName, hopKind.failure.outcome);
-    }
-
-    let timedOut = false;
-    try {
-      // Bound `send` closure: each call dispatches one turn through AgentManager
-      // (so middleware fires) against the current hop's handle. Reused by both
-      // the default single-prompt path and any caller-supplied hopBody.
-      //
-      // US-002 — the closure substitutes every turn prompt it is handed, so a
-      // hopBody's follow-up turn is gated on the same advertised tools the
-      // initial prompt was. Without this, the substitution that happens for
-      // the initial prompt is the only one and a region-bearing prompt sent
-      // from inside the body would reach the agent verbatim — the very
-      // failure AC8 guards against.
-      const send = (turnPrompt: string): Promise<TurnResult> =>
-        agentManager.runAsSession(
-          agentName,
-          handle,
-          applyDiffAccessForAgentProtocol(agentName, turnPrompt, advertisedTools),
-          {
-            storyId: story.id,
-            featureName,
-            workdir,
-            projectDir,
-            pipelineStage: stage,
-            // SEC-3: thread per-package config so monorepo permissionProfile is honored.
-            config,
-            sessionRole: resolvedRunOptions.sessionRole,
-            signal: resolvedRunOptions.abortSignal,
-            contextPullTools,
-            contextToolRuntime,
-            codingTools: codingSupport?.tools,
-            ...(resolvedRunOptions.callId !== undefined ? { callId: resolvedRunOptions.callId } : {}),
-            ...(resolvedRunOptions.scopeId !== undefined ? { scopeId: resolvedRunOptions.scopeId } : {}),
-            ...(interactionHandler ? { interactionHandler } : {}),
-            // Context tools need at least one extra round-trip to answer a call;
-            // the adapter default of a single turn leaves no room. Mirrors
-            // session-run-hop.ts. Bridge-only callers keep their prior behaviour.
-            // Mirrors session-run-hop.ts — the two must not drift. Forwarded as
-            // the Q&A budget it is documented to be; the native loop no longer
-            // spends it on round-trips.
-            ...(hasContextTools
-              ? { maxInteractions: maxInteractionTurns ?? 10 }
-              : maxInteractionTurns !== undefined
-                ? { maxInteractions: maxInteractionTurns }
-                : {}),
-          },
-        );
-
-      const turnResult = hopBody ? await hopBody(prompt, { send, input: hopBodyInput }) : await send(prompt);
-      // Capture timedOut from the TurnResult so the finally block can force-close
-      // the session when keepOpen is true. classifyEmptyOutputFailure (called by
-      // sendWithFileOutput → hopBody) synthesises a fail-timeout adapterFailure for
-      // timedOut turns but the hop returns normally — the catch block never executes.
-      if (turnResult.timedOut) timedOut = true;
-      // US-001: a turn was returned (even empty). Distinct from the catch path
-      // below, which synthesises a failure from a thrown runAsSession.
+    // Pull-tool runtime, tool preamble, coding-tool support (its #1794 refusal is
+    // converted into the failed AgentResult below, not propagated), diff-access
+    // substitution, interaction handler.
+    const tooling = await resolveHopTooling(input, composed);
+    if (!tooling.ok) {
+      // US-001: coding-tool setup failed before any adapter was reached — no
+      // model was dispatched. Same signal as the dispatch catch path.
       return {
-        result: turnResultToAgentResult(turnResult),
-        bundle: workingBundle,
-        prompt,
-        endpoint,
-        dispatched: true,
-      };
-    } catch (err) {
-      // Preserve typed adapter failure on SessionFailureError so runWithFallback's
-      // swap policy sees the real outcome (rate-limit, auth, quota) instead of
-      // a generic "fail-adapter-error" reclassification. Mirrors session-run-hop.ts.
-      //
-      // nax#1840: native's sendTurn throws SessionTurnError (not
-      // SessionFailureError) so it can also carry the cost fields, so
-      // classification falls back to SessionTurnError.adapterFailure when the
-      // error is not a SessionFailureError.
-      const turnError = err instanceof SessionTurnError ? err : undefined;
-      const sessionFailure =
-        (err instanceof SessionFailureError ? err.adapterFailure : undefined) ?? turnError?.adapterFailure;
-      timedOut = sessionFailure?.outcome === "fail-timeout";
-      const errMessage = err instanceof Error ? err.message : String(err);
-      return {
-        result: {
-          success: false,
-          exitCode: 1,
-          // Always prefix with agent name so downstream logs can attribute the
-          // failure even when the underlying error message doesn't carry it
-          // (e.g. bare `new Error("timeout")`).
-          output: `Agent "${agentName}" failed: ${errMessage}`,
-          rateLimited: sessionFailure?.outcome === "fail-rate-limit",
-          durationMs: 0,
-          // BUG-57: a SessionTurnError (e.g. mid-flight cancel) can carry real
-          // tokens already burned before the failure — read them instead of
-          // hardcoding zero, or the spend silently disappears from cost accounting.
-          estimatedCostUsd: turnError?.estimatedCostUsd ?? 0,
-          exactCostUsd: turnError?.exactCostUsd,
-          tokenUsage: turnError?.tokenUsage,
-          adapterFailure: sessionFailure ?? {
-            category: "availability",
-            outcome: "fail-adapter-error",
-            retriable: turnError?.retryable ?? false,
-            message: errMessage.slice(0, 500),
-          },
-        },
-        bundle: workingBundle,
-        prompt,
-        // US-001: catch path synthesises a failure from a thrown runAsSession —
-        // no model was reached. `runWithFallback` reads this to count dispatches.
+        result: tooling.result,
+        bundle: composed.workingBundle,
+        prompt: tooling.prompt,
         dispatched: false,
       };
-    } finally {
-      // Best-effort ledger write (mirrors review-audit doctrine): a flush
-      // failure logs a warning and never replaces the hop's return value.
-      try {
-        await codingSupport?.auditSink.flush();
-      } catch (flushErr) {
-        logger.warn("tools", "coding-tool audit flush failed", {
-          storyId: story.id,
-          error: flushErr instanceof Error ? flushErr.message : String(flushErr),
-        });
-      }
-      // STALE-RETRY: keep the handle open for the next attempt. The session stays
-      // cached in _liveHandles; the subsequent hop (success, swap, or exhaustion)
-      // either closes it in its own finally or SessionManager teardown handles it.
-      // keepOpen: callers that need session continuity across pipeline stages (e.g.
-      // execution.ts with review/rectification enabled, or warm-lifetime callOp ops
-      // like implementerRectifyOp) set this flag so downstream stages can reuse the
-      // same ACP session via sessionManager.getLiveHandle().
-      // Timeout overrides keepOpen: a wall-clock-timed-out session is dead —
-      // leaving it cached would hand the retry a non-functional handle.
-      if (hopKind.kind !== "stale-retry" && (!resolvedRunOptions.keepOpen || timedOut)) {
-        await sessionManager.closeSession(handle);
-      }
     }
+
+    // Session identity + the opener; openFresh returns the endpoint it resolved.
+    const session = prepareHopSession(input);
+    // endpoint is undefined exactly when a stale-retry reused a warm handle.
+    const acquired = await acquireSessionHandle(input, session);
+    // nax#1722: record the descriptor handoff for any swap, sessionId or not.
+    recordSwapHandoff(input, session.sessionName);
+
+    return dispatchHopTurn({
+      input,
+      tooling: tooling.tooling,
+      handle: acquired.handle,
+      endpoint: acquired.endpoint,
+    });
   };
 }

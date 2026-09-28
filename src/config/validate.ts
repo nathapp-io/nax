@@ -4,11 +4,22 @@
  * @deprecated Use NaxConfigSchema.safeParse() from schema.ts instead.
  * This module is kept for backward compatibility only.
  *
- * Validates NaxConfig structure and constraints.
+ * Validates NaxConfig structure and constraints. Each field group's checks
+ * live in `./validate-fields`; this file sequences the groups in the original
+ * evaluation order and assembles the result.
  */
 
-import { DEFAULT_AGENT_NAME } from "./agent-defaults";
 import type { NaxConfig } from "./schema";
+import {
+  checkAgentDefault,
+  checkComplexityRouting,
+  checkExecutionLimits,
+  checkFallbackMapAgents,
+  checkModelsMapping,
+  checkTierOrder,
+  checkTierOrderAgentKeys,
+  checkVersion,
+} from "./validate-fields";
 
 /** Validation result */
 export interface ValidationResult {
@@ -19,153 +30,31 @@ export interface ValidationResult {
 /**
  * Validate NaxConfig
  *
- * Checks:
+ * Checks (evaluated in this order; every error collected, none short-circuit):
  * - version === 1
- * - maxIterations > 0
- * - costLimit > 0
- * - sessionTimeoutSeconds > 0
- * - defaultAgent is non-empty
+ * - models mapping: default agent has a map; required tiers present; entry
+ *   content (non-empty string ids / provider+model)
+ * - execution.maxIterations > 0
+ * - execution.costLimit > 0
+ * - execution.sessionTimeoutSeconds > 0
+ * - agent.default is non-empty
  * - escalation.tierOrder has at least one tier with valid attempts
+ * - agent.fallback.map agents exist as keys in models (AC5 — US-001-5)
+ * - tierOrder agent keys exist in models; agentless rungs resolve under the
+ *   default agent's map
+ * - complexityRouting values reference tiers that exist in models config
  */
 export function validateConfig(config: NaxConfig): ValidationResult {
   const errors: string[] = [];
 
-  // Version check
-  if (config.version !== 1) {
-    errors.push(`Invalid version: expected 1, got ${config.version}`);
-  }
-
-  // Models mapping (per-agent structure: Record<agentName, Record<ModelTier, ModelEntry>>)
-  const requiredTiers = ["fast", "balanced", "powerful"] as const;
-  if (!config.models) {
-    errors.push("models mapping is required");
-  } else {
-    const defaultAgent = config.agent?.default ?? DEFAULT_AGENT_NAME;
-    const agentModels = config.models[defaultAgent];
-    if (!agentModels) {
-      errors.push(`models.${defaultAgent} is required (default agent has no model map)`);
-    } else {
-      for (const tier of requiredTiers) {
-        const entry = agentModels[tier];
-        if (!entry) {
-          errors.push(`models.${defaultAgent}.${tier} is required`);
-        } else if (typeof entry === "string") {
-          if (entry.trim() === "") {
-            errors.push(`models.${defaultAgent}.${tier} must be a non-empty model identifier`);
-          }
-        } else {
-          if (!entry.provider || entry.provider.trim() === "") {
-            errors.push(`models.${defaultAgent}.${tier}.provider must be non-empty`);
-          }
-          if (!entry.model || entry.model.trim() === "") {
-            errors.push(`models.${defaultAgent}.${tier}.model must be non-empty`);
-          }
-        }
-      }
-    }
-  }
-
-  // Execution limits
-  if (config.execution.maxIterations <= 0) {
-    errors.push(`maxIterations must be > 0, got ${config.execution.maxIterations}`);
-  }
-
-  if (config.execution.costLimit <= 0) {
-    errors.push(`costLimit must be > 0, got ${config.execution.costLimit}`);
-  }
-
-  if (config.execution.sessionTimeoutSeconds <= 0) {
-    errors.push(`sessionTimeoutSeconds must be > 0, got ${config.execution.sessionTimeoutSeconds}`);
-  }
-
-  // Agent config
-  const agentDefault = config.agent?.default;
-  if (!agentDefault || agentDefault.trim() === "") {
-    errors.push("agent.default must be non-empty");
-  }
-
-  if (!config.autoMode.escalation.tierOrder || config.autoMode.escalation.tierOrder.length === 0) {
-    errors.push("escalation.tierOrder must have at least one tier");
-  } else {
-    for (const tc of config.autoMode.escalation.tierOrder) {
-      if (tc.attempts < 1 || tc.attempts > 20) {
-        errors.push(`escalation.tierOrder: tier "${tc.tier}" attempts must be 1-20, got ${tc.attempts}`);
-      }
-    }
-  }
-
-  // Validate agent.fallback.map agents exist as keys in models (AC5 — US-001-5)
-  if (config.models && config.agent?.fallback?.map) {
-    const modelKeys = Object.keys(config.models);
-    const fallbackAgents = new Set<string>();
-    for (const [primary, candidates] of Object.entries(config.agent.fallback.map)) {
-      fallbackAgents.add(primary);
-      for (const c of candidates) fallbackAgents.add(typeof c === "string" ? c : c.agent);
-    }
-    for (const agent of fallbackAgents) {
-      if (!modelKeys.includes(agent)) {
-        errors.push(`agent.fallback.map: agent "${agent}" is not a key in models (available: ${modelKeys.join(", ")})`);
-      } else {
-        for (const tier of requiredTiers) {
-          if (!config.models[agent]?.[tier]) {
-            errors.push(`models.${agent}.${tier} is required (fallback agent "${agent}" in agent.fallback.map)`);
-          }
-        }
-      }
-    }
-  }
-
-  // Validate tierOrder entries with agent field exist as keys in models
-  if (config.models && config.autoMode?.escalation?.tierOrder) {
-    const modelKeys = Object.keys(config.models);
-    for (const tc of config.autoMode.escalation.tierOrder) {
-      if (tc.agent !== undefined && !modelKeys.includes(tc.agent)) {
-        errors.push(
-          `autoMode.escalation.tierOrder: tier "${tc.tier}" agent "${tc.agent}" is not a key in models (available: ${modelKeys.join(", ")})`,
-        );
-      }
-      // Spec §8 (narrowed, revision 3): only AGENTLESS rungs — schemas.ts:512-517 already
-      // hard-errors an agent-qualified rung whose tier is missing under its own agent.
-      // An agentless rung resolves against the default agent's map, and a typo there
-      // otherwise only surfaces mid-run as "budget unbounded" + a failed resolution.
-      if (tc.agent === undefined) {
-        const owner = config.agent?.default ?? DEFAULT_AGENT_NAME;
-        const ownerMap = config.models[owner];
-        if (ownerMap && ownerMap[tc.tier] === undefined) {
-          errors.push(
-            `autoMode.escalation.tierOrder: tier "${tc.tier}" does not resolve under agent "${owner}" (the default agent)`,
-          );
-        }
-      }
-    }
-  }
-
-  // Validate complexityRouting values reference tiers that exist in models config
-  const defaultAgentKey = config.agent?.default ?? DEFAULT_AGENT_NAME;
-  const complexities = ["simple", "medium", "complex", "expert"] as const;
-  for (const complexity of complexities) {
-    const entry = config.autoMode.complexityRouting[complexity];
-    if (entry === undefined) continue;
-
-    // String form: message BYTE-IDENTICAL to the pre-plan-C one (spec §11).
-    if (typeof entry === "string") {
-      const configuredTiers = Object.keys(config.models[defaultAgentKey] ?? {});
-      if (!configuredTiers.includes(entry)) {
-        errors.push(`complexityRouting.${complexity} must be one of: ${configuredTiers.join(", ")} (got '${entry}')`);
-      }
-      continue;
-    }
-
-    // Object form: new shape, new messages — nothing pre-existing to preserve.
-    if (entry.agent !== undefined && config.models[entry.agent] === undefined) {
-      errors.push(`complexityRouting.${complexity}: agent "${entry.agent}" is not a key in models`);
-      continue;
-    }
-    const owner = entry.agent ?? defaultAgentKey;
-    if (!Object.keys(config.models[owner] ?? {}).includes(entry.tier)) {
-      errors.push(`complexityRouting.${complexity}: tier "${entry.tier}" not found under agent "${owner}"`);
-    }
-  }
+  errors.push(...checkVersion(config));
+  errors.push(...checkModelsMapping(config));
+  errors.push(...checkExecutionLimits(config));
+  errors.push(...checkAgentDefault(config));
+  errors.push(...checkTierOrder(config));
+  errors.push(...checkFallbackMapAgents(config));
+  errors.push(...checkTierOrderAgentKeys(config));
+  errors.push(...checkComplexityRouting(config));
 
   return {
     valid: errors.length === 0,
