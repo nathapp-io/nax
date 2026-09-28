@@ -82,6 +82,17 @@ export {
 } from "./runtime";
 export { type FakeSandboxMode, makeFakeSandboxBackend } from "./sandbox";
 export {
+  type ConfinedSessionOptions,
+  type ConfinedSessionSeam,
+  type FakeSandboxBackend,
+  NON_SHARED_TMPDIR,
+  POLICY_BUILT,
+  type RunTempRootsArgs,
+  type SessionSandboxDepsLike,
+  stubSessionSandboxDeps,
+  withSessionSandboxSeam,
+} from "./session-sandbox-deps";
+export {
   type NaxParentFailure,
   type NaxParentKind,
   type NaxParentStat,

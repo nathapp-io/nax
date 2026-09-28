@@ -1,10 +1,22 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore } from "@test/helpers";
+import {
+  assertDefined,
+  type ConfinedSessionSeam,
+  cleanupTempDir,
+  makeFakeSandboxBackend,
+  makeTempDir,
+  NON_SHARED_TMPDIR,
+  POLICY_BUILT,
+  stubSessionSandboxDeps,
+  withDepsRestore,
+  withSessionSandboxSeam,
+  withWarnSpy,
+} from "@test/helpers";
 import { _sessionSandboxDeps, rawRefusalFor, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
-import { DEFAULT_SANDBOX_CONFIG } from "@/config/schemas-sandbox";
-import { _launcherDeps, _resetSandboxRegistryForTests } from "@/sandbox";
+import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "@/config/schemas-sandbox";
+import { _launcherDeps, _resetSandboxRegistryForTests, type LaunchRequest, type SandboxPolicy } from "@/sandbox";
 import { realOrRaw } from "@/utils/realpath";
 
 let root: string;
@@ -163,5 +175,200 @@ describe("resolveSessionSandbox", () => {
 
   test("rawRefusalFor is undefined unless unavailable", () => {
     expect(rawRefusalFor(undefined)).toBeUndefined();
+  });
+});
+
+describe("resolveSessionSandbox — US-002 confined run temp roots", () => {
+  withDepsRestore(_sessionSandboxDeps);
+  withSessionSandboxSeam(_sessionSandboxDeps);
+  withDepsRestore(_launcherDeps);
+
+  beforeEach(() => {
+    // The launcher's own seams: nothing here may spawn a process or create a
+    // directory under the real /tmp.
+    _launcherDeps.runArgv = async () => ({ exitCode: 0, stdout: "", stderr: "", timedOut: false });
+    _launcherDeps.mkdir = async () => undefined;
+  });
+
+  const RUN_TMP_ROOT = "/tmp/nax/r1";
+  const SESSION_TMP_DIR = "/tmp/nax/r1/s";
+
+  function sandboxConfig(allowSharedTmp: boolean): SandboxConfig {
+    return {
+      ...DEFAULT_SANDBOX_CONFIG,
+      enabled: true,
+      filesystem: { ...DEFAULT_SANDBOX_CONFIG.filesystem, allowSharedTmp },
+    };
+  }
+
+  /** The confined-session setup: an enabled sandbox and a run root plus session dir. */
+  const confinedArgs = () => ({
+    config: sandboxConfig(false),
+    root,
+    needsLauncher: true,
+    runTmpRoot: RUN_TMP_ROOT,
+    tmpDir: SESSION_TMP_DIR,
+  });
+
+  /** The same setup with neither a run root nor a session dir supplied. */
+  const sharedArgs = () => ({ config: sandboxConfig(false), root, needsLauncher: true });
+
+  function launchRequest(): LaunchRequest {
+    return {
+      spec: { kind: "shell", shell: "/bin/sh", command: "true" },
+      root,
+      cwd: root,
+      timeoutMs: 5000,
+      stripEnvVars: [],
+    };
+  }
+
+  /** The policy the fake backend was handed on its first wrap. */
+  function wrappedPolicy(seam: ConfinedSessionSeam): SandboxPolicy {
+    const call = seam.backend.calls[0];
+    assertDefined(call, "the request backend.wrap received");
+    return call.policy;
+  }
+
+  test("US-002 AC7: the confined launcher is available and its temp roots are not shared", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    expect(launcher.state).toEqual({ kind: "available", backend: "srt", network: "open", sharedTmp: false });
+  });
+
+  test("US-002 AC8: the session temp dir is created before the policy is built", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
+
+    await resolveSessionSandbox(confinedArgs());
+
+    expect(seam.mkdirCalls).toContain(SESSION_TMP_DIR);
+    expect(seam.events.indexOf(`mkdir:${SESSION_TMP_DIR}`)).toBeLessThan(seam.events.indexOf(POLICY_BUILT));
+  });
+
+  test("US-002 AC9: the policy grants the run temp root, asked for with the host tmpdir", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    await launcher.run(launchRequest());
+
+    expect(wrappedPolicy(seam).writeRoots).toContain(realOrRaw(RUN_TMP_ROOT));
+    expect(seam.runTempRootCalls).toContainEqual({ runTmpRoot: RUN_TMP_ROOT, tmpdir: NON_SHARED_TMPDIR });
+  });
+
+  test("US-002 AC10: the policy no longer grants the shared /tmp root", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    await launcher.run(launchRequest());
+
+    expect(wrappedPolicy(seam).writeRoots).not.toContain(realOrRaw("/tmp"));
+  });
+
+  test("US-002 AC13: allowSharedTmp true keeps the shared temp roots", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
+    const launcher = await resolveSessionSandbox({ ...confinedArgs(), config: sandboxConfig(true) });
+
+    await launcher.run(launchRequest());
+
+    expect(wrappedPolicy(seam).writeRoots).toContain(realOrRaw("/tmp"));
+  });
+
+  test("US-002 AC13 boundary: allowSharedTmp true creates no confined session dir", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
+
+    await resolveSessionSandbox({ ...confinedArgs(), config: sandboxConfig(true) });
+
+    expect(seam.mkdirCalls).toEqual([]);
+  });
+
+  test("US-002 AC14: allowSharedTmp true leaves the launcher state without a sharedTmp field", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+
+    const launcher = await resolveSessionSandbox({ ...confinedArgs(), config: sandboxConfig(true) });
+
+    expect("sharedTmp" in launcher.state).toBe(false);
+  });
+
+  test("US-002 AC15: with no runTmpRoot the shared temp roots stay granted", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
+    const launcher = await resolveSessionSandbox(sharedArgs());
+
+    await launcher.run(launchRequest());
+
+    expect(wrappedPolicy(seam).writeRoots).toContain(realOrRaw("/tmp"));
+  });
+
+  test("US-002 AC15 boundary: no runTmpRoot means no run root is resolved and nothing is created", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
+
+    await resolveSessionSandbox(sharedArgs());
+
+    expect(seam.runTempRootCalls).toEqual([]);
+    expect(seam.mkdirCalls).toEqual([]);
+  });
+
+  test("US-002 AC16: with no runTmpRoot the launcher state has no sharedTmp field", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+
+    const launcher = await resolveSessionSandbox(sharedArgs());
+
+    expect(launcher.state.kind).toBe("available");
+    expect("sharedTmp" in launcher.state).toBe(false);
+  });
+
+  test("US-002 AC17: a failing mkdir falls back to the shared temp roots", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps, { mkdir: "fails" });
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    await launcher.run(launchRequest());
+
+    expect(wrappedPolicy(seam).writeRoots).toContain(realOrRaw("/tmp"));
+  });
+
+  test("US-002 AC18: a failing mkdir leaves the launcher available without a sharedTmp field", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps, { mkdir: "fails" });
+
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    expect(launcher.state.kind).toBe("available");
+    expect("sharedTmp" in launcher.state).toBe(false);
+  });
+
+  test("US-002 AC19: a failing mkdir warns exactly once at stage sandbox", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps, { mkdir: "fails" });
+
+    await withWarnSpy(async (warnSpy) => {
+      await resolveSessionSandbox(confinedArgs());
+      expect(warnSpy.mock.calls.filter((call) => call[0] === "sandbox")).toHaveLength(1);
+    });
+  });
+
+  test("US-002 AC19 boundary: a successful mkdir warns about nothing", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+
+    await withWarnSpy(async (warnSpy) => {
+      await resolveSessionSandbox(confinedArgs());
+      expect(warnSpy.mock.calls).toEqual([]);
+    });
+  });
+
+  test("US-002 AC20: on darwin the srt /tmp/claude root is still granted", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps, { platform: "darwin" });
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    await launcher.run(launchRequest());
+
+    expect(wrappedPolicy(seam).writeRoots).toContain(realOrRaw("/tmp/claude"));
+  });
+
+  test("US-002 AC20 boundary: /tmp/claude stays macOS-only", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps, { platform: "linux" });
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    await launcher.run(launchRequest());
+
+    expect(wrappedPolicy(seam).writeRoots).not.toContain(realOrRaw("/tmp/claude"));
   });
 });
