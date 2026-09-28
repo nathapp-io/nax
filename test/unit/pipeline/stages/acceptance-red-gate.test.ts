@@ -126,6 +126,7 @@ interface GateHarness {
   deps: AcceptanceRedGateDeps;
   order: string[];
   runTestPaths: string[];
+  runTestCmds: string[];
   repairOps: unknown[];
   repairInputs: RepairInput[];
   repairPackageDirs: string[];
@@ -140,6 +141,7 @@ function makeHarness(options: {
 }): GateHarness {
   const order: string[] = [];
   const runTestPaths: string[] = [];
+  const runTestCmds: string[] = [];
   const repairOps: unknown[] = [];
   const repairInputs: RepairInput[] = [];
   const repairPackageDirs: string[] = [];
@@ -149,10 +151,11 @@ function makeHarness(options: {
   let runIndex = 0;
 
   const deps: AcceptanceRedGateDeps = {
-    runTest: async (testPath, _workdir, _cmd) => {
+    runTest: async (testPath, _workdir, cmd) => {
       runIndex += 1;
       order.push(`runTest#${runIndex}`);
       runTestPaths.push(testPath);
+      runTestCmds.push(cmd);
       const result = options.outputs[Math.min(runIndex - 1, options.outputs.length - 1)];
       assertDefined(result, "runTest output fixture");
       return result;
@@ -176,7 +179,18 @@ function makeHarness(options: {
     },
   };
 
-  return { deps, order, runTestPaths, repairOps, repairInputs, repairPackageDirs, repairStoryIds, writes, commits };
+  return {
+    deps,
+    order,
+    runTestPaths,
+    runTestCmds,
+    repairOps,
+    repairInputs,
+    repairPackageDirs,
+    repairStoryIds,
+    writes,
+    commits,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -659,8 +673,11 @@ describe("US-002 runAcceptanceRedGate: command not runnable (exit 126/127)", () 
     const data = errors[0]?.data ?? {};
     expect(Object.keys(data)[0]).toBe("storyId");
     expect(data.storyId).toBe(STAGE_STORY_ID);
-    expect(typeof data.cmd).toBe("string");
-    expect((data.cmd as string).length).toBeGreaterThan(0);
+    // cmd must equal the command the gate handed to deps.runTest (AC7 explicitly
+    // requires it — a bare "non-empty string" would also pass if the gate logged
+    // a different shell string than the one it actually ran).
+    expect(harness.runTestCmds).toHaveLength(1);
+    expect(data.cmd).toBe(harness.runTestCmds[0]);
     expect(data.exitCode).toBe(127);
   });
 
