@@ -11,14 +11,16 @@
  * `_launcherDeps.runArgv` stubbed, so no command is really executed (the
  * session directory itself is still created by the launcher, and removed in
  * afterEach).
+ *
+ * US-001 moved the run root under a shared `/tmp/nax` parent, so the test pins
+ * the host (`/tmp/nax` absent) through the `_sessionTmpDeps` seam: without the
+ * pin the expected path would depend on the machine, and comparing TMPDIR with
+ * `sessionTmpDir(...)` would only prove the two calls agree with each other.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { cleanupTempDir, makeNaxConfig, makeTempDir, withDepsRestore } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir, stubSessionTmpDeps, withDepsRestore } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support";
-import { _launcherDeps, _resetSandboxRegistryForTests } from "@/sandbox";
-
-/** `runTmpRoot("r1")` — the directory the launcher creates for run `r1`. */
-const RUN_TMP_ROOT = "/tmp/nax-r1";
+import { _launcherDeps, _resetSandboxRegistryForTests, _sessionTmpDeps, runTmpRoot } from "@/sandbox";
 
 let root: string;
 beforeEach(() => {
@@ -26,7 +28,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanupTempDir(root);
-  cleanupTempDir(RUN_TMP_ROOT);
   _resetSandboxRegistryForTests(); // sandbox on by default: drop the cached backend
 });
 
@@ -51,6 +52,17 @@ function recordingRunArgv() {
 
 describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
   withDepsRestore(_launcherDeps);
+  withDepsRestore(_sessionTmpDeps);
+
+  // US-001: with `/tmp/nax` absent the parent is `/tmp/nax`, so the run root of
+  // `r1` is `/tmp/nax/r1` on every machine. `runRoot` is captured while the stub
+  // is in place, so the cleanup can still name the directory the launcher made.
+  let runRoot: string;
+  beforeEach(() => {
+    stubSessionTmpDeps(_sessionTmpDeps, { parent: "ENOENT" });
+    runRoot = runTmpRoot("r1");
+  });
+  afterEach(() => cleanupTempDir(runRoot));
 
   test("US-004 AC12: a Bash call runs with TMPDIR at the run's session directory", async () => {
     const calls = recordingRunArgv();
@@ -70,9 +82,10 @@ describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
 
     expect(outcome?.kind).toBe("ok");
     expect(calls).toHaveLength(1);
-    // The ledger session name is `US-001-implementer`, so that is the directory
-    // the run id must be scoped under.
-    expect(calls[0]?.env?.TMPDIR).toBe("/tmp/nax-r1/US-001-implementer");
+    // The ledger session name is `US-001-implementer`, scoped under the run's
+    // own root — `sessionTmpDir("r1", "US-001-implementer")` under the pinned
+    // layout, so a flat `/tmp/nax-r1` root fails here.
+    expect(calls[0]?.env?.TMPDIR).toBe("/tmp/nax/r1/US-001-implementer");
   });
 
   test("US-004 AC13: with no runId the Bash call runs with no TMPDIR", async () => {
