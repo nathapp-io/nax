@@ -321,6 +321,23 @@ describe("external handler wrapper — before_tool failures block", () => {
 
     expect(await wrapped(beforeToolPayload())).toEqual(attributedBlock(PLUGIN));
   });
+
+  test("AC10 (boundary): a block with no content is incomplete, not a block", async () => {
+    const entry = entryReturning(PLUGIN, "before_tool", { kind: "block" });
+    const wrapped = wrapExternalHandler(entry, getCtx, freshSignal());
+
+    // A plugin can be plain JavaScript; a `kind` without the `content` the
+    // transcript builder records would put `undefined` in the tool result.
+    expect(await wrapped(beforeToolPayload())).toEqual(attributedBlock(PLUGIN));
+  });
+
+  test("AC10 (boundary): a nudge with no text is incomplete, not an allow", async () => {
+    const entry = entryReturning(PLUGIN, "before_tool", { kind: "nudge" });
+    const wrapped = wrapExternalHandler(entry, getCtx, freshSignal());
+
+    // A textless nudge would otherwise be silently downgraded to `allow`.
+    expect(await wrapped(beforeToolPayload())).toEqual(attributedBlock(PLUGIN));
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

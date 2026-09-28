@@ -22,7 +22,7 @@
 import { SessionTurnError } from "../agents/types";
 
 export interface WatchdogTurnClassificationInput {
-  /** `_watchdogCancelledCallsBySession` non-empty for this handle — the watchdog's wrapped cancel ran. */
+  /** `WatchdogCancelTracker.hasCancelled(handle.id)` — the watchdog's wrapped cancel ran. */
   readonly watchdogFired: boolean;
   /** The error the adapter threw for the cancelled turn. */
   readonly err: unknown;

@@ -22,10 +22,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { assertDefined, waitForCondition } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
 import { createInvalidCallBudget } from "@/agents/native/session/handle-invalid-tool-call";
 import { createLoopEventRegistry, type LoopEventRegistry } from "@/agents/native/session/loop-events";
 import type {
@@ -49,13 +46,13 @@ const CTX: LoopHandlerContext = { sessionName: SESSION, role: "implementer" };
 
 let dir: string;
 
-beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), "nax-loop-handlers-plugins-"));
+beforeEach(() => {
+  dir = makeTempDir("nax-loop-handlers-plugins-");
   nativeTranscriptDirs.set(SESSION, dir);
 });
-afterEach(async () => {
+afterEach(() => {
   nativeTranscriptDirs.delete(SESSION);
-  await rm(dir, { recursive: true, force: true });
+  cleanupTempDir(dir);
 });
 
 /**
@@ -433,10 +430,15 @@ describe("US-003 — registerBuiltinLoopHandlers: the per-turn signal", () => {
       signal: controller.signal,
     });
 
+    const startedAt = Date.now();
     const pending = registry.dispatch("before_tool", readCall("c1", { path: "a.ts" }));
-    await waitForCondition(() => invoked, 1000).catch(() => {});
+    await waitForCondition(() => invoked, 1000);
     controller.abort();
     const outcome = await pending;
+    // The abort, not the 10s deadline, must have settled the dispatch: a
+    // regression that stopped the wrapper subscribing would still yield this
+    // block, but only after the timeout.
+    expect(Date.now() - startedAt).toBeLessThan(1000);
 
     expect(outcome.kind).toBe("block");
     expect(outcome).toHaveProperty("isError", true);
@@ -460,10 +462,12 @@ describe("US-003 — registerBuiltinLoopHandlers: the per-turn signal", () => {
       signal: controller.signal,
     });
 
+    const startedAt = Date.now();
     const pending = registry.dispatch("before_tool", readCall("c1", { path: "a.ts" }));
-    await waitForCondition(() => invoked, 1000).catch(() => {});
+    await waitForCondition(() => invoked, 1000);
     controller.abort();
     await pending;
+    expect(Date.now() - startedAt).toBeLessThan(1000);
 
     const patch = await registry.dispatch("after_tool", afterToolPayload("original"));
 

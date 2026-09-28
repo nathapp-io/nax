@@ -111,9 +111,6 @@ function contextFor(state: BuiltinTurnState): LoopHandlerContext {
 function turnSignalView(state: BuiltinTurnState): AbortSignal {
   const current = (): AbortSignal => state.current.signal ?? NEVER_ABORTED;
   return {
-    get aborted(): boolean {
-      return current().aborted;
-    },
     addEventListener: (...args: Parameters<AbortSignal["addEventListener"]>) => current().addEventListener(...args),
     removeEventListener: (...args: Parameters<AbortSignal["removeEventListener"]>) =>
       current().removeEventListener(...args),

@@ -18,7 +18,7 @@
 
 import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
-import { isBeforeToolOutcome } from "./registry";
+import { isCompleteBeforeToolOutcome } from "./registry";
 import type { HandlerOf, LoopEvent, LoopHandlerContext, LoopHandlerEntry, PatchOf, PayloadOf } from "./types";
 
 /**
@@ -177,7 +177,10 @@ function settled(entry: LoopHandlerEntry, payload: unknown, value: unknown): Pat
   if (entry.event === "before_tool") {
     // `undefined` is the handler declining to decide, which is an allow.
     if (value === undefined) return { kind: "allow" };
-    if (!isBeforeToolOutcome(value)) return failure(entry, payload, `returned ${describeValue(value)}`);
+    // The plugin boundary, so the answer must be COMPLETE: a `kind` without
+    // the payload it promises (`block`/`terminate` content, `nudge` text) is
+    // malformed, not a decision.
+    if (!isCompleteBeforeToolOutcome(value)) return failure(entry, payload, `returned ${describeValue(value)}`);
     return value;
   }
   if (value === undefined) return {};

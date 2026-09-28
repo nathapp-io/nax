@@ -15,6 +15,7 @@ import type { AgentAdapter } from "../agents/types";
 import { getSafeLogger } from "../logger";
 import type { RoutingStrategy } from "../routing/router";
 import { errorMessage } from "../utils/errors";
+import { isThenable } from "../utils/thenable";
 import type { LoadedPlugin, PluginSource } from "./loader";
 import type {
   IContextProvider,
@@ -44,14 +45,6 @@ export interface PostRunActionRegistration {
  */
 function warnPluginRegistration(pluginName: string, message: string, data?: Record<string, unknown>): void {
   getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' ${message}`, { plugin: pluginName, ...data });
-}
-
-/**
- * Whether a value is a promise-like, for the one place nax reads a return
- * value the type system already declared `void`.
- */
-function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return typeof value === "object" && value !== null && typeof (value as PromiseLike<unknown>).then === "function";
 }
 
 /**
