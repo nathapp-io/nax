@@ -392,6 +392,36 @@ async function segmentationReport(
   return seg.renderSegmentation(corpus, liveCmp, SEGMENT_FP_BUDGET);
 }
 
+/** The --labels section: labelled shadow commands scored with every scorer (see command-safety-eval-labels.ts). */
+async function labelsReport(opts: {
+  readonly dir: string | undefined;
+  readonly live: readonly NarrowableRow[];
+  readonly corpus: readonly Scored[];
+  readonly liveVersion: number | undefined;
+  readonly weights: Weights | undefined;
+}): Promise<string> {
+  if (opts.dir === undefined) return "";
+  const lab = await import("./command-safety-eval-labels");
+  const labels = lab.readLabels(opts.dir);
+  const questionSetVersion = lab.checkLabelVersions(labels, opts.liveVersion);
+  return lab.renderLabelsSection(
+    lab.buildLabelsSection({
+      labels,
+      rows: opts.live,
+      corpus: opts.corpus,
+      questionSetVersion,
+      ...(opts.weights ? { weights: opts.weights } : {}),
+    }),
+  );
+}
+
+/** Fails fast, before any model call: labelled commands take their model answers from the stored shadow rows. */
+function assertLabelsHaveRows(labels: string | undefined, liveRows: number): void {
+  if (labels !== undefined && liveRows === 0) {
+    throw new Error("--labels needs --rows: labelled commands take their model answers from the stored shadow rows");
+  }
+}
+
 /**
  * A local async wrapper: biome's type-aware `useAwaitThenable` cannot see
  * through the re-exported `Classify` alias and flags a direct `await classify(...)`.
@@ -475,6 +505,7 @@ async function main(): Promise<void> {
   const weights = a.weights === undefined ? undefined : parseWeights(a.weights);
   const live = a.rows.flatMap((p) => readJsonl<NarrowableRow & { outcome?: { ledger?: string } }>(p));
   const questionSetVersion = singleQuestionSetVersion(live);
+  assertLabelsHaveRows(a.labels, live.length);
   const corpus = readJsonl<CorpusRow>(a.corpus);
   const auth = a.authEnv === undefined ? undefined : process.env[a.authEnv];
   const classify: Classify | undefined =
@@ -522,11 +553,18 @@ async function main(): Promise<void> {
     ...(questionSetVersion === undefined ? {} : { questionSetVersion }),
   };
   const report = renderReport({ scorers, statusCounts, narrowing, perCategory, counts });
+  const labelsSection = await labelsReport({
+    dir: a.labels,
+    live,
+    corpus: scored,
+    liveVersion: questionSetVersion,
+    weights,
+  });
   const segmentation =
     a.segments && classify !== undefined
       ? await segmentationReport(classify, corpusScored, live, scorers, weights)
       : "";
-  writeFileSync(a.out, report + segmentation);
+  writeFileSync(a.out, report + labelsSection + segmentation);
   process.stdout.write(`wrote ${a.out}\n`);
 }
 
