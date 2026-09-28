@@ -344,6 +344,81 @@ describe("PluginRegistry.getLoopHandlers failure isolation", () => {
     });
   });
 
+  test("US-001: staging rejects a non-function handler and drops that plugin's entries", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const registry = new PluginRegistry([
+        makeLoopHandlerPlugin("bad-handler-plugin", (on) => {
+          on("after_tool", (): undefined => undefined);
+          // A plugin module is JavaScript at runtime, so `on` can be handed a
+          // value the typed API cannot express — the registrar is the only
+          // place that sees it before it is frozen into the set.
+          Reflect.apply(on, undefined, ["after_tool", null]);
+        }),
+      ]);
+
+      expect(registry.getLoopHandlers()).toHaveLength(0);
+      expect(pluginWarnings(warnSpy)).toContain("bad-handler-plugin");
+    });
+  });
+
+  test("US-001: an async register() is skipped with a warning so a registration after its first await is never half-installed", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const registry = new PluginRegistry([
+        // `register` is declared `: void`, and TypeScript still accepts an
+        // async implementation — so this shape reaches the registry.
+        makeLoopHandlerPlugin("async-plugin", async (on) => {
+          on("after_tool", (): undefined => undefined);
+          await Promise.resolve();
+          on("before_turn", (): undefined => undefined);
+        }),
+        makeLoopHandlerPlugin("sync-plugin", (on) => on("after_tool", () => undefined)),
+      ]);
+
+      const set = registry.getLoopHandlers();
+
+      expect(set.map((entry) => entry.plugin)).toEqual(["sync-plugin"]);
+      expect(pluginWarnings(warnSpy)).toContain("async-plugin");
+      // The late on(...) call cannot reach the frozen set, and it is not
+      // picked up by a second call either.
+      await Promise.resolve();
+      expect(registry.getLoopHandlers()).toBe(set);
+      expect(set).toHaveLength(1);
+    });
+  });
+
+  test("US-001: an async register() that rejects logs the rejection rather than leaving it unhandled", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const registry = new PluginRegistry([
+        makeLoopHandlerPlugin("rejecting-plugin", async () => {
+          throw new Error("async register blew up");
+        }),
+      ]);
+
+      expect(registry.getLoopHandlers()).toHaveLength(0);
+      // A `try` around a sync-looking call cannot catch this: the rejection is
+      // drained by the registry and reported as a `plugins` warning.
+      await Promise.resolve();
+      await Promise.resolve();
+      const warnings = pluginWarnings(warnSpy);
+      expect(warnings).toContain("rejecting-plugin");
+      expect(warnings).toContain("async register blew up");
+    });
+  });
+
+  test("US-001: a plugin declaring 'loop-handlers' without the extension is warned about, not silently skipped", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      // validatePlugin() rejects this shape (AC2), but a directly-constructed
+      // registry — the legacy `NaxPlugin[]` path — never passes through it.
+      const registry = new PluginRegistry([
+        { name: "mismatched-plugin", version: "1.0.0", provides: ["loop-handlers"], extensions: {} },
+        makeLoopHandlerPlugin("intact-plugin", (on) => on("after_tool", () => undefined)),
+      ]);
+
+      expect(registry.getLoopHandlers().map((entry) => entry.plugin)).toEqual(["intact-plugin"]);
+      expect(pluginWarnings(warnSpy)).toContain("mismatched-plugin");
+    });
+  });
+
   test("AC10: an unknown event leaves another plugin's entries alone", async () => {
     await withWarnSpy(async () => {
       const registry = new PluginRegistry([

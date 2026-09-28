@@ -512,6 +512,12 @@ export type LoopHandlerRegistrar = <E extends LoopEvent>(event: E, handler: Exte
  * ```
  */
 export interface ILoopHandlerProvider {
-  /** Contribute handlers; call `on(event, handler)` once per handler. */
+  /**
+   * Contribute handlers; call `on(event, handler)` once per handler.
+   *
+   * Synchronous by contract: the run's set is built and frozen in a single
+   * pass, so an `async` implementation's promise is never awaited — that
+   * plugin's handlers are skipped and a `plugins` warning naming it is logged.
+   */
   register(on: LoopHandlerRegistrar): void;
 }

@@ -39,30 +39,57 @@ export interface PostRunActionRegistration {
 }
 
 /**
+ * Warn about one plugin's staging failure. Each failure carries the plugin's
+ * name — the run's only handle on which plugin misbehaved.
+ */
+function warnPluginRegistration(pluginName: string, message: string, data?: Record<string, unknown>): void {
+  getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' ${message}`, { plugin: pluginName, ...data });
+}
+
+/**
+ * Whether a value is a promise-like, for the one place nax reads a return
+ * value the type system already declared `void`.
+ */
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return typeof value === "object" && value !== null && typeof (value as PromiseLike<unknown>).then === "function";
+}
+
+/**
  * Stage one provider's registrations, in the order its `register` makes them.
  *
- * Both ways a stage can fail drop the plugin's entries WHOLESALE rather than
+ * Every way a stage can fail drops the plugin's entries WHOLESALE rather than
  * keep the ones that arrived before the failure: a plugin that throws
- * mid-`register`, or names an event that does not exist, has declared a
- * registration set nax cannot honour, so half-installing it would leave the
- * loop running a contract the plugin never asked for. Each failure logs a
- * `plugins` warning naming the plugin — and, for an unknown event, the event.
+ * mid-`register`, names an event that does not exist, hands over something
+ * that is not a handler, or returns a promise instead of registering
+ * synchronously has declared a registration set nax cannot honour, so
+ * half-installing it would leave the loop running a contract the plugin never
+ * asked for. Each failure logs a `plugins` warning naming the plugin, and the
+ * offending event where there is one.
  *
  * @param pluginName - The declaring plugin's name, carried onto every entry
  * @param provider - The plugin's loop-handler extension
  * @returns The plugin's staged entries, empty when it failed
  */
 function stagePluginHandlers(pluginName: string, provider: ILoopHandlerProvider): LoopHandlerEntry[] {
-  const logger = getSafeLogger();
   const staged: LoopHandlerEntry[] = [];
   let failed = false;
 
   const on: LoopHandlerRegistrar = (event, handler) => {
     if (!LOOP_EVENT_NAMES.has(event)) {
       failed = true;
-      logger?.warn("plugins", `Plugin '${pluginName}' registered a handler for unknown loop event '${event}'`, {
-        plugin: pluginName,
+      warnPluginRegistration(pluginName, `registered a handler for unknown loop event '${event}'`, { event });
+      return;
+    }
+    // A plugin module is JavaScript at runtime, so `on` can be handed a
+    // non-function the type system never saw. Checking here is what keeps a
+    // handler that cannot be called out of the frozen set — the alternative is
+    // a failure per turn, once US-003 installs it, which is the one moment
+    // nothing can report which plugin it came from.
+    if (typeof handler !== "function") {
+      failed = true;
+      warnPluginRegistration(pluginName, `registered a non-function handler for '${event}'`, {
         event,
+        handlerType: typeof handler,
       });
       return;
     }
@@ -71,13 +98,27 @@ function stagePluginHandlers(pluginName: string, provider: ILoopHandlerProvider)
     staged.push({ plugin: pluginName, event, handler: handler as unknown as ExternalHandlerOf<LoopEvent> });
   };
 
+  let returned: unknown;
   try {
-    provider.register(on);
+    returned = provider.register(on);
   } catch (err) {
     failed = true;
-    logger?.warn("plugins", `Plugin '${pluginName}' loop-handler registration failed; its handlers are skipped`, {
-      plugin: pluginName,
+    warnPluginRegistration(pluginName, "loop-handler registration failed; its handlers are skipped", {
       error: errorMessage(err),
+    });
+  }
+  // `register` is declared `: void`, which an `async` implementation still
+  // satisfies. Such a plugin's registrations are not knowable here: `on` calls
+  // after its first `await` land after this set is frozen, and its rejection
+  // arrives nowhere a `try` can reach. Staging is not awaited (the set is
+  // built synchronously per AC8), so the promise is treated as the contract
+  // violation it is — dropped wholesale, said out loud — and drained, so a
+  // later failure is logged rather than surfacing as an unhandled rejection.
+  if (isThenable(returned)) {
+    failed = true;
+    warnPluginRegistration(pluginName, "register() returned a promise; loop-handler registration must be synchronous");
+    returned.then(undefined, (err: unknown) => {
+      warnPluginRegistration(pluginName, "async register() rejected", { error: errorMessage(err) });
     });
   }
 
@@ -290,9 +331,15 @@ export class PluginRegistry {
         continue;
       }
       const provider = plugin.extensions.loopHandlers;
-      if (provider !== undefined) {
-        entries.push(...stagePluginHandlers(plugin.name, provider));
+      if (provider === undefined) {
+        // A declaration/extension mismatch. `validatePlugin()` rejects this
+        // shape (AC2), but a registry built directly from `NaxPlugin[]` never
+        // passes through it — and a plugin that asked for handlers and got
+        // none has the same right to hear about it as one that failed here.
+        warnPluginRegistration(plugin.name, "provides 'loop-handlers' but declares no loopHandlers extension");
+        continue;
       }
+      entries.push(...stagePluginHandlers(plugin.name, provider));
     }
     this.loopHandlers = Object.freeze(entries);
     return this.loopHandlers;
