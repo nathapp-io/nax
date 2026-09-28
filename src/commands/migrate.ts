@@ -204,7 +204,13 @@ export async function partitionTrackedCandidates(
   const migratable: MigrateCandidate[] = [];
   const trackedOut: MigrateCandidate[] = [];
   for (const candidate of candidates) {
-    const target = `.nax/${candidate.name}`;
+    // `candidate.name` is built with `path.join`, which on Windows uses
+    // backslashes; `git ls-files` always emits POSIX-style paths with forward
+    // slashes. Normalise to forward slashes here so the prefix match works on
+    // every platform — the comparison-only side has no filesystem effect, so
+    // a plain `replace` is safe (no `path.posix` import needed).
+    const normalisedName = candidate.name.split("\\").join("/");
+    const target = `.nax/${normalisedName}`;
     const targetWithSlash = `${target}/`;
     const isTracked = listedPaths.some((listed) => listed === target || listed.startsWith(targetWithSlash));
     if (isTracked) {

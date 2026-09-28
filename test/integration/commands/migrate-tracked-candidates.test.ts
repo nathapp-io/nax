@@ -17,7 +17,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 import {
   _gitDeps,
   autoMigrateGeneratedContent,
@@ -277,6 +277,44 @@ describe("US-003 partitionTrackedCandidates", () => {
     const call = calls[0];
     assertDefined(call, "the single git spawn");
     expect(call[0]).toContain("ls-files");
+  });
+
+  test("US-003 regression: tracked-prefix match works when candidate.name uses the platform separator (Windows backslashes)", async () => {
+    // Adversarial-review regression: a prior implementation built the
+    // comparison target from `candidate.name` directly, but `candidate.name`
+    // comes from `path.join()` and on Windows uses backslashes, while
+    // `git ls-files -z` always emits POSIX-style paths with forward slashes.
+    // A tracked `.nax/features/f/...` candidate whose name contained
+    // backslashes would never match the listed path and so be misclassified
+    // as migratable.
+    //
+    // Mock `_gitDeps.spawn` so the test runs identically on every platform —
+    // no real git repo, no real git binary — and feed candidates whose `name`
+    // mirrors what `path.join` produces on win32.
+    const stdout = ".nax/features/f/stories/US-001/context-manifest-a.json\u0000";
+    const origSpawn = _gitDeps.spawn;
+    const stub = makeSpawn(({ cmd }) => (cmd.includes("ls-files") ? stdout : ""));
+    _gitDeps.spawn = stub.spawn;
+    try {
+      const candidates: MigrateCandidate[] = [
+        // Simulates what detectGeneratedContent returns on Windows: names
+        // built with `path.join`, which yields backslashes on win32.
+        {
+          name: "features\\f\\stories\\US-001\\context-manifest-a.json",
+          srcPath: "/x/.nax/features/f/stories/US-001/context-manifest-a.json",
+        },
+        // Untracked sibling under a different feature — must NOT be marked
+        // tracked just because they share the top-level `features` segment.
+        { name: "features\\g\\runs", srcPath: "/x/.nax/features/g/runs" },
+      ];
+
+      const { migratable, tracked } = await partitionTrackedCandidates("/anywhere", candidates);
+
+      expect(names(tracked)).toEqual(["features\\f\\stories\\US-001\\context-manifest-a.json"]);
+      expect(names(migratable)).toEqual(["features\\g\\runs"]);
+    } finally {
+      _gitDeps.spawn = origSpawn;
+    }
   });
 });
 
