@@ -215,9 +215,9 @@ None. `sharedTmp` is optional and omitted unless the session is confined, so the
 
 ### Seams
 
-- `runTmpRoot` (US-001) is consumed by US-002's `resolveDispatchLauncher` change. US-002 AC-9 triggers `resolveDispatchLauncher` with a `runId` and asserts the policy the stubbed backend receives contains `runTmpRoot(runId)`.
-- `SandboxState.sharedTmp` (US-002) is consumed by US-003's tool descriptions. US-003 AC-4 builds the Bash tool description from an available state with `sharedTmp: false` and asserts the confined wording.
-- `runTempRoots` (US-002) is exported and consumed in the same story. AC-3 to AC-6 exercise it directly, and AC-9 through the production path.
+- `runTmpRoot` (US-001) is consumed by US-002's `resolveDispatchLauncher` change. US-002's dispatch-setup AC triggers `resolveDispatchLauncher` with a `runId` and asserts the policy the stubbed backend receives contains `runTmpRoot(runId)`.
+- `SandboxState.sharedTmp` (US-002) is consumed by US-003's tool descriptions. US-003's Bash-description AC builds the Bash tool description from an available state with `sharedTmp: false` and asserts the confined wording.
+- `runTempRoots` (US-002) is exported and consumed in the same story. Its four direct `runTempRoots` ACs exercise it directly, and the dispatch-setup AC through the production path.
 
 ## Acceptance Criteria
 
@@ -245,15 +245,15 @@ None. `sharedTmp` is optional and omitted unless the session is confined, so the
 4. `[unit]` `runTempRoots({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/tmp" })` returns `["/tmp/nax/r1"]`.
 5. `[unit]` `runTempRoots({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/tmp/user-tmp" })` returns `["/tmp/nax/r1"]`.
 6. `[unit]` `runTempRoots({ runTmpRoot: "/tmp/nax/r1", tmpdir: "/private/tmp" })` returns `["/tmp/nax/r1"]`.
-7. `[unit]` `resolveSessionSandbox` is given an enabled sandbox config, an available stubbed backend and probe, `_sessionSandboxDeps.tmpdir` returning `/var/folders/x/T`, `runTmpRoot: "/tmp/nax/r1"` and `tmpDir: "/tmp/nax/r1/s"`. It returns a launcher whose `state` is `{ kind: "available", backend: "srt", network: "open", sharedTmp: false }`, and it calls `_sessionSandboxDeps.mkdir` with `/tmp/nax/r1/s` before building the policy.
-8. `[unit]` In the AC-7 shape, running a shell command through the returned launcher passes a policy to the stubbed backend's `wrap` whose `writeRoots` include `realOrRaw("/tmp/nax/r1")` and exclude `realOrRaw("/tmp")`.
-9. `[integration]` `resolveDispatchLauncher` is called with `runId: "r1"`, a coding-tool root, Bash declared, an enabled sandbox config, a stubbed available backend and probe, and `/tmp/nax` absent. A shell command run through the returned launcher reaches the stubbed backend's `wrap` with a policy whose `writeRoots` include `realOrRaw(runTmpRoot("r1"))` and exclude `realOrRaw("/tmp")`.
-10. `[unit]` In the AC-7 shape with `filesystem.allowSharedTmp: true` and `_sessionSandboxDeps.tempRoots` returning `["/tmp"]`, the policy passed to `wrap` has `writeRoots` including `realOrRaw("/tmp")`, and the state has no `sharedTmp` field.
-11. `[unit]` In the AC-7 shape with `runTmpRoot` and `tmpDir` omitted and `_sessionSandboxDeps.tempRoots` returning `["/tmp"]`, the policy passed to `wrap` has `writeRoots` including `realOrRaw("/tmp")`, and the state has no `sharedTmp` field.
-12. `[unit]` In the AC-7 shape with `_sessionSandboxDeps.mkdir` rejecting and `_sessionSandboxDeps.tempRoots` returning `["/tmp"]`, the policy passed to `wrap` has `writeRoots` including `realOrRaw("/tmp")`, the state has no `sharedTmp` field, and one `warn` is logged with stage `sandbox`.
-13. `[unit]` In the AC-7 shape on platform `darwin`, the policy passed to `wrap` has `writeRoots` including `realOrRaw("/tmp/claude")`.
-14. `[integration]` When the srt backend is available on the host (skipped otherwise, following `test/integration/sandbox/sandbox-live.test.ts`), a launcher resolved with `runTmpRoot` and `tmpDir` under a unique run id runs `echo x > "$TMPDIR/ok.txt"` with exit code 0 and the file present afterwards.
-15. `[integration]` In the AC-14 setup, the launcher runs a command writing a file directly under `/tmp` (a name unique to the test, outside `/tmp/nax/`) with a non-zero exit code, and that file is absent afterwards.
+7. `[unit]` The confined-session setup: `resolveSessionSandbox` is given an enabled sandbox config, an available stubbed backend and probe, `_sessionSandboxDeps.tmpdir` returning `/var/folders/x/T`, `runTmpRoot: "/tmp/nax/r1"` and `tmpDir: "/tmp/nax/r1/s"`. It returns a launcher whose `state` is `{ kind: "available", backend: "srt", network: "open", sharedTmp: false }`, and it calls `_sessionSandboxDeps.mkdir` with `/tmp/nax/r1/s` before building the policy.
+8. `[unit]` In the confined-session setup, running a shell command through the returned launcher passes a policy to the stubbed backend's `wrap` whose `writeRoots` include `realOrRaw("/tmp/nax/r1")` and exclude `realOrRaw("/tmp")`.
+9. `[integration]` The dispatch setup: `resolveDispatchLauncher` is called with `runId: "r1"`, a coding-tool root, Bash declared, an enabled sandbox config, a stubbed available backend and probe, and `/tmp/nax` absent. A shell command run through the returned launcher reaches the stubbed backend's `wrap` with a policy whose `writeRoots` include `realOrRaw(runTmpRoot("r1"))` and exclude `realOrRaw("/tmp")`.
+10. `[unit]` In the confined-session setup with `filesystem.allowSharedTmp: true` and `_sessionSandboxDeps.tempRoots` returning `["/tmp"]`, the policy passed to `wrap` has `writeRoots` including `realOrRaw("/tmp")`, and the state has no `sharedTmp` field.
+11. `[unit]` In the confined-session setup with `runTmpRoot` and `tmpDir` omitted and `_sessionSandboxDeps.tempRoots` returning `["/tmp"]`, the policy passed to `wrap` has `writeRoots` including `realOrRaw("/tmp")`, and the state has no `sharedTmp` field.
+12. `[unit]` In the confined-session setup with `_sessionSandboxDeps.mkdir` rejecting and `_sessionSandboxDeps.tempRoots` returning `["/tmp"]`, the policy passed to `wrap` has `writeRoots` including `realOrRaw("/tmp")`, the state has no `sharedTmp` field, and one `warn` is logged with stage `sandbox`.
+13. `[unit]` In the confined-session setup on platform `darwin`, the policy passed to `wrap` has `writeRoots` including `realOrRaw("/tmp/claude")`.
+14. `[integration]` The live srt setup: when the srt backend is available on the host (skipped otherwise, following `test/integration/sandbox/sandbox-live.test.ts`), a launcher resolved with `runTmpRoot` and `tmpDir` under a unique run id runs `echo x > "$TMPDIR/ok.txt"` with exit code 0 and the file present afterwards.
+15. `[integration]` In the live srt setup, the launcher runs a command writing a file directly under `/tmp` (a name unique to the test, outside `/tmp/nax/`) with a non-zero exit code, and that file is absent afterwards.
 
 ### US-003
 
