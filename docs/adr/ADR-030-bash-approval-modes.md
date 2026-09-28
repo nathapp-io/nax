@@ -531,6 +531,78 @@ enabled unless a config turns the sandbox off.
 
 The same change makes the native agent the default (ADR-027 amendment of the same date).
 
+## Amendment — 2026-09-28: temp writes are confined to the run's temp root
+
+**Status:** Proposed. **Implementation:** `docs/specs/SPEC-tmp-confinement.md`.
+
+**Supersedes:** the P4 posture's grant of the shared temp directories. `defaultTempRoots()`
+returns `[os.tmpdir(), "/tmp"]` and the policy makes both writable (P4 spec F3), so a sandboxed
+command could write anywhere in `/tmp`.
+
+### Context
+
+#2269 gave every launcher-driven Bash/Exec command a per-session `TMPDIR` and told the agent to
+use it. That redirects tools that honour `TMPDIR`, but a command that names `/tmp/x` still writes
+there, because the sandbox allows it. The command-safety shadow rows measure the habit:
+
+- before #2269, 4.9% of agent Bash commands named a literal `/tmp` path;
+- on builds that include #2269 the rate was 0.4-2.4%, with one run at 35 such commands.
+
+Stray `/tmp` files are the failure #2269 was written for: a leftover `/tmp/tsconfig.json`
+turned a later story's gate red. They are also the largest class of `outside_project`
+positives in the P5 labels.
+
+### Decision
+
+1. **Layout.** The per-run temp root moves from `/tmp/nax-<runId>` to `/tmp/nax/<runId>`: one
+   parent to inspect, one prefix to recognise. When `/tmp/nax` exists but is not a real
+   directory writable by the current user (another OS user created it, or it is a symlink or a
+   file), the root is `/tmp/nax-<uid>/<runId>`. `/tmp/nax` is never made world-writable. The
+   end-of-run wipe still removes only the run's own root.
+2. **Confinement.** When a session has a run temp root, the sandbox's temp write roots are that
+   root, plus `os.tmpdir()` only when it is not `/tmp` or under it. On Linux `os.tmpdir()` is
+   usually `/tmp`, and keeping it would silently re-grant all of `/tmp`. srt's own
+   `/tmp/claude` on macOS is unaffected.
+3. **Escape hatch.** `execution.sandbox.filesystem.allowSharedTmp: true` (default `false`)
+   restores the shared roots, for projects whose tools hardcode `/tmp` and ignore `TMPDIR`.
+   `filesystem.allowWrite` can still add a specific path.
+4. **Fail open to today's posture, never to a broken one.** If the session temp directory cannot
+   be created, that session uses the shared roots and logs a warning. A `TMPDIR` the sandbox
+   cannot write would break every temp-using tool the agent runs. Sessions with no run id (and
+   so no temp root) keep the shared roots too.
+5. **Say it where the agent reads it.** The sandbox sentence names "this run's temp directory
+   (`$TMPDIR`)" instead of "the system temp directories". The denial hint adds "For temporary
+   files use `$TMPDIR` or `.nax/scratchpad/`, not `/tmp`". The scratchpad prompt section calls
+   `.nax/scratchpad/` the agent's temp folder, because the shell, the file tools and the
+   scratchpad tools can all reach it, while `/tmp` is reachable by the shell only.
+
+### Consequences
+
+- A literal `/tmp/x` write in a sandboxed command now fails with "Operation not permitted" or
+  "Read-only file system", and the denial hint tells the agent where to write instead. The
+  instruction #2269 could only state is now enforced.
+- The command-safety `tmpWrite` signal recognises both `/tmp/nax/` and `/tmp/nax-` as nax's own,
+  so a compliant `$TMPDIR` write is not counted as a stray one.
+- Unsandboxed sessions (sandbox disabled or unavailable, `gated`/`escalate` unwrapped) are
+  unchanged: only the prompt text applies there.
+- A tool that writes to a hardcoded `/tmp` path without honouring `TMPDIR` fails in a sandboxed
+  session until the project sets `allowSharedTmp` or adds an `allowWrite` entry. This is the
+  cost of making the default strict. The flag is the documented way out.
+
+### Threat model unchanged (D1)
+
+This bounds where the agent's own mistakes can land. It is not a boundary against a hostile
+local user. The symlink and ownership checks on `/tmp/nax` exist so a run never writes through
+a path it does not own by accident, not to defeat an attacker who controls `/tmp`.
+
+### What this does not decide
+
+- Sweeping stale temp directories left by crashed runs: the wipe stays run-scoped.
+- Windows, or any platform without `process.getuid`.
+- Rewriting agent commands: nax never edits an agent-authored command (D14).
+- The command-safety question set, and whether A-mode excludes `outside_project`. That is P5's
+  ruling, which this change informs but does not make.
+
 ---
 
 ## See also
