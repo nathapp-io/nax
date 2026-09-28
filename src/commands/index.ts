@@ -17,7 +17,12 @@ export {
 export { type LogsOptions, logsCommand } from "./logs";
 export { type FollowLogsDeps, followLogs } from "./logs-formatter";
 export type { MigrateCandidate, MigrateOptions } from "./migrate";
-export { detectGeneratedContent, migrateCommand } from "./migrate";
+export {
+  autoMigrateGeneratedContent,
+  detectGeneratedContent,
+  migrateCommand,
+  partitionTrackedCandidates,
+} from "./migrate";
 export { type PrecheckOptions, precheckCommand } from "./precheck";
 export {
   _replayCmdDeps,

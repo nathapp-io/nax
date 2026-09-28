@@ -81,6 +81,13 @@ export const _runSetupDeps = {
   // record ordering; the acquisition sequence itself is the implementer's work.
   acquireLock,
   acquireFeatureLock,
+  // US-003 seam: the `.nax/` auto-migration `setupRun` runs once, right after
+  // the PRD loads. Dynamic import so run-setup does not pull the whole command
+  // surface in at module load.
+  async autoMigrateGeneratedContent(workdir: string): Promise<void> {
+    const { autoMigrateGeneratedContent } = await import("@/commands");
+    await autoMigrateGeneratedContent(workdir);
+  },
 };
 
 export interface RunSetupOptions {

@@ -17,6 +17,17 @@ import { getLogger } from "../logger";
 import { projectOutputDir, readProjectIdentity, writeProjectIdentity } from "../runtime";
 import { gitSpawnEnv } from "../utils/git-env";
 
+/**
+ * The git subprocess seam the candidate partition spawns through.
+ *
+ * Re-exported from `../utils/git` (the same object `gitWithTimeout` uses, not a
+ * copy) so tests can observe the single `ls-files` call at this module's own
+ * injection point, like every other `_deps` object in `src/commands`.
+ *
+ * @internal
+ */
+export { _gitDeps } from "../utils/git";
+
 export interface MigrateCandidate {
   name: string;
   srcPath: string;
@@ -125,6 +136,43 @@ export async function detectGeneratedContent(naxDir: string): Promise<MigrateCan
   }
 
   return candidates;
+}
+
+/**
+ * Split migration candidates into the ones git still tracks and the ones it
+ * does not.
+ *
+ * Moving a tracked candidate is undone by the next auto-commit, which logs a
+ * per-file restore error and leaves the destination behind — the run then
+ * refuses with `MIGRATE_CONFLICT` on the next attempt. Only untracked paths are
+ * migratable.
+ *
+ * A candidate is tracked when a listed path equals `.nax/<name>` or lies under
+ * `.nax/<name>/`: the `/` boundary is what keeps a tracked `.nax/runs-archive/`
+ * file from marking the `runs` candidate. Any git failure (non-zero exit,
+ * timeout, throw, not a repo) leaves every candidate migratable.
+ *
+ * @internal
+ */
+export async function partitionTrackedCandidates(
+  _workdir: string,
+  _candidates: readonly MigrateCandidate[],
+): Promise<{ migratable: MigrateCandidate[]; tracked: MigrateCandidate[] }> {
+  // Stub — the implementer adds the single `gitWithTimeout(["ls-files", "-z", "--", ".nax"])`
+  // call and the `.nax/<name>` / `.nax/<name>/` boundary match.
+  return { migratable: [], tracked: [] };
+}
+
+/**
+ * Startup auto-migration: move generated `.nax/` content to the output dir,
+ * skipping everything git still tracks, and never reject.
+ *
+ * @internal
+ */
+export async function autoMigrateGeneratedContent(_workdir: string): Promise<void> {
+  // Stub — the implementer wires detection, the partition, the tracked-content
+  // warn, the existing info logs, `migrateCommand({ workdir })` and the
+  // never-reject catch here.
 }
 
 export interface MigrateOptions {

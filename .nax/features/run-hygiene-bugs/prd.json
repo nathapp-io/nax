@@ -3,7 +3,7 @@
   "feature": "run-hygiene-bugs",
   "branchName": "feat/run-hygiene-bugs",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-28T05:23:31.052Z",
+  "updatedAt": "2026-09-28T05:46:42.234Z",
   "userStories": [
     {
       "id": "US-001",
@@ -88,8 +88,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -147,7 +147,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Filesystem/git integration, tracking-prefix semantics and two migration entry points across four modules with best-effort startup behavior."
+        "reasoning": "Filesystem/git integration, tracking-prefix semantics and two migration entry points across four modules with best-effort startup behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/commands/migrate.ts",
@@ -159,7 +162,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "25c691de39fec70d630806ca2a7514ef69c68176"
     },
     {
       "id": "US-004",
