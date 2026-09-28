@@ -15,6 +15,20 @@ import { stripAnsi } from "./detector";
 
 export type AcceptanceCrashClass = "expected-red" | "repairable";
 
+/**
+ * POSIX shell exit codes for "the command could not run":
+ *  - 126: command was found but is not executable
+ *  - 127: command was not found
+ *
+ * These are the shell's own codes, and no supported test runner uses them for
+ * test failures — when a gate sees one of them, the runner never started. The
+ * gate names it as not-runnable and skips any repair / re-run path, since
+ * editing the test cannot make a missing command appear.
+ */
+export function isCommandNotRunnable(exitCode: number): boolean {
+  return exitCode === 126 || exitCode === 127;
+}
+
 /** A Go compiler error line: `<path>.go:<line>[:<col>]: <message>`. */
 const GO_ERROR_LINE = /([^\s:]+\.go):\d+(?::\d+)?:\s*(.*)$/;
 

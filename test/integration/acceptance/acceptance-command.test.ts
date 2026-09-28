@@ -17,7 +17,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import path from "node:path";
 import { cleanupTempDir, makeSpawn, makeTempDir, makeTestContext, makeTestPRD, makeTestStory } from "@test/helpers";
-import { initLogger, resetLogger } from "@/logger";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { acceptanceStage } from "@/pipeline/stages/acceptance";
 import { _acceptanceSetupDeps } from "@/pipeline/stages/acceptance-setup";
 import { _executorDeps } from "@/verification";
@@ -133,6 +133,186 @@ describe("US-001: the post-run acceptance stage spawns one shell string", () => 
 
       expect(result.action).toBe("continue");
       expect(spawnStub.calls[0]?.cmd).toEqual(["/bin/sh", "-c", `'bun' 'test' '${testPath}' '--timeout=60000'`]);
+    } finally {
+      _executorDeps.spawn = originalSpawn;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-002: the post-run stage names a command that could not run (exit 126/127)
+// instead of calling it a runner crash.
+// ---------------------------------------------------------------------------
+
+const POST_RUN_NOT_RUNNABLE_MSG = "Acceptance command could not run — check acceptance.command";
+const TESTS_ERRORED_NO_AC_MSG = "Tests errored with no AC failures parsed";
+
+describe("US-002: the post-run stage names a command that could not run (exit 126/127)", () => {
+  let captured: LogEntry[];
+  let unsubscribe: (() => void) | null = null;
+
+  function makeExit127Ctx(commandOverride?: string) {
+    const story = makeTestStory({
+      id: "US-001",
+      status: "passed",
+      passes: true,
+      acceptanceCriteria: ["AC-1: works"],
+    });
+    return makeTestContext({
+      workdir,
+      projectDir: workdir,
+      featureDir: path.join(workdir, ".nax/features/test-feature"),
+      story,
+      prd: makeTestPRD([story]),
+      acceptanceTestPaths: [
+        {
+          testPath,
+          packageDir: workdir,
+          commandOverride,
+          storyCount: 1,
+          acceptanceEnabled: true,
+        },
+      ],
+    });
+  }
+
+  beforeEach(() => {
+    resetLogger();
+    initLogger({ level: "debug", suppressConsole: true });
+    captured = [];
+    unsubscribe = addSink((entry) => {
+      captured.push(entry);
+    });
+  });
+
+  afterEach(() => {
+    unsubscribe?.();
+    unsubscribe = null;
+    resetLogger();
+  });
+
+  function entriesWithMessage(message: string): LogEntry[] {
+    return captured.filter((entry) => entry.message === message);
+  }
+
+  test("AC12: exit 127 produces a 'test-runner-error' finding naming the command", async () => {
+    const originalSpawn = _executorDeps.spawn;
+    const spawnStub = makeSpawn(() => ({ stdout: "sh: FOO: command not found\n", exitCode: 127 }));
+    _executorDeps.spawn = spawnStub.spawn;
+
+    try {
+      const ctx = makeExit127Ctx();
+      const result = await acceptanceStage.execute(ctx);
+
+      expect(result.action).toBe("fail");
+      const findings = ctx.acceptanceFailures?.findings ?? [];
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.category).toBe("test-runner-error");
+      expect(findings[0]?.message).toBe(`Acceptance command could not run (exit 127): ${spawnStub.calls[0]?.cmd[2]}`);
+      expect(spawnStub.calls[0]?.cmd[2]).toBeTruthy();
+    } finally {
+      _executorDeps.spawn = originalSpawn;
+    }
+  });
+
+  test("AC13: exit 127 logs a distinct error from stage 'acceptance' with storyId first, cmd, exitCode, and packageDir", async () => {
+    const originalSpawn = _executorDeps.spawn;
+    const spawnStub = makeSpawn(() => ({ stdout: "sh: FOO: command not found\n", exitCode: 127 }));
+    _executorDeps.spawn = spawnStub.spawn;
+
+    try {
+      const ctx = makeExit127Ctx();
+      await acceptanceStage.execute(ctx);
+
+      const errors = captured.filter(
+        (entry) =>
+          entry.level === "error" && entry.stage === "acceptance" && entry.message === POST_RUN_NOT_RUNNABLE_MSG,
+      );
+      expect(errors).toHaveLength(1);
+      const data = errors[0]?.data ?? {};
+      expect(Object.keys(data)[0]).toBe("storyId");
+      expect(data.exitCode).toBe(127);
+      expect(data.cmd).toBe(spawnStub.calls[0]?.cmd[2]);
+      expect(data.packageDir).toBe(workdir);
+    } finally {
+      _executorDeps.spawn = originalSpawn;
+    }
+  });
+
+  test("AC13 boundary: the generic 'Tests errored with no AC failures parsed' is NOT logged on exit 127", async () => {
+    const originalSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = makeSpawn(() => ({ stdout: "sh: FOO: command not found\n", exitCode: 127 })).spawn;
+
+    try {
+      await acceptanceStage.execute(makeExit127Ctx());
+      expect(entriesWithMessage(TESTS_ERRORED_NO_AC_MSG)).toHaveLength(0);
+    } finally {
+      _executorDeps.spawn = originalSpawn;
+    }
+  });
+
+  test("AC14: failedACs is ['AC-ERROR'] and failedPackages has one entry for the package — fix routing input unchanged", async () => {
+    const originalSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = makeSpawn(() => ({ stdout: "sh: FOO: command not found\n", exitCode: 127 })).spawn;
+
+    try {
+      const ctx = makeExit127Ctx();
+      const result = await acceptanceStage.execute(ctx);
+
+      expect(result.action).toBe("fail");
+      expect(ctx.acceptanceFailures?.failedACs).toEqual(["AC-ERROR"]);
+      expect(ctx.acceptanceFailures?.failedPackages).toEqual([
+        expect.objectContaining({
+          testPath,
+          packageDir: workdir,
+          failedACs: ["AC-ERROR"],
+        }),
+      ]);
+      expect(ctx.acceptanceFailures?.failedPackages).toHaveLength(1);
+    } finally {
+      _executorDeps.spawn = originalSpawn;
+    }
+  });
+
+  test("AC14 boundary: exit 126 follows the same override path as 127", async () => {
+    const originalSpawn = _executorDeps.spawn;
+    const spawnStub = makeSpawn(() => ({ stdout: "sh: FOO: Permission denied\n", exitCode: 126 }));
+    _executorDeps.spawn = spawnStub.spawn;
+
+    try {
+      const ctx = makeExit127Ctx();
+      await acceptanceStage.execute(ctx);
+
+      const errors = captured.filter(
+        (entry) =>
+          entry.level === "error" && entry.stage === "acceptance" && entry.message === POST_RUN_NOT_RUNNABLE_MSG,
+      );
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.data?.exitCode).toBe(126);
+
+      const findings = ctx.acceptanceFailures?.findings ?? [];
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.category).toBe("test-runner-error");
+      expect(findings[0]?.message).toBe(`Acceptance command could not run (exit 126): ${spawnStub.calls[0]?.cmd[2]}`);
+    } finally {
+      _executorDeps.spawn = originalSpawn;
+    }
+  });
+
+  test("AC15: a non-126/127 crash (exit 1) still produces the original 'Test runner crashed before test bodies ran' finding", async () => {
+    const originalSpawn = _executorDeps.spawn;
+    _executorDeps.spawn = makeSpawn(() => ({ stdout: "SyntaxError: Unexpected token\n", exitCode: 1 })).spawn;
+
+    try {
+      const ctx = makeExit127Ctx();
+      await acceptanceStage.execute(ctx);
+
+      const findings = ctx.acceptanceFailures?.findings ?? [];
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.category).toBe("test-runner-error");
+      expect(findings[0]?.message).toBe("Test runner crashed before test bodies ran");
+
+      expect(entriesWithMessage(POST_RUN_NOT_RUNNABLE_MSG)).toHaveLength(0);
     } finally {
       _executorDeps.spawn = originalSpawn;
     }

@@ -617,3 +617,93 @@ describe("US-001 runAcceptanceRedGate: command string, not argv", () => {
     expect(logged[0]?.data?.cmd).toBe("FOO=1 bun test '/repo/.nax-acceptance.test.ts'");
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-002: command not runnable (exit 126 / 127) — named, not repaired
+// ---------------------------------------------------------------------------
+
+const COMMAND_NOT_RUNNABLE_RED_MSG = "RED gate: acceptance command could not run — check acceptance.command";
+const TS_EXIT_1_OUTPUT = "SyntaxError: Unexpected token";
+
+describe("US-002 runAcceptanceRedGate: command not runnable (exit 126/127)", () => {
+  test("AC5: exit 127 never dispatches acceptanceRepairOp — deps.callOp is never called", async () => {
+    const harness = makeHarness({ outputs: [{ exitCode: 127, output: "/bin/sh: FOO: command not found" }] });
+
+    const redCount = await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+
+    expect(harness.repairOps).toHaveLength(0);
+    expect(harness.order.filter((entry) => entry.startsWith("callOp:"))).toHaveLength(0);
+    expect(redCount).toBe(1);
+  });
+
+  test("AC6: exit 127 calls runTest exactly once and never calls writeFile or autoCommitIfDirty", async () => {
+    const harness = makeHarness({ outputs: [{ exitCode: 127, output: "/bin/sh: FOO: command not found" }] });
+
+    await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+
+    expect(harness.runTestPaths).toHaveLength(1);
+    expect(harness.writes).toHaveLength(0);
+    expect(harness.commits).toHaveLength(0);
+  });
+
+  test("AC7: exit 127 logs one error from stage 'acceptance-setup' with storyId first, cmd, and exitCode", async () => {
+    const harness = makeHarness({ outputs: [{ exitCode: 127, output: "/bin/sh: FOO: command not found" }] });
+
+    await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+
+    const errors = captured.filter(
+      (entry) =>
+        entry.level === "error" && entry.stage === "acceptance-setup" && entry.message === COMMAND_NOT_RUNNABLE_RED_MSG,
+    );
+    expect(errors).toHaveLength(1);
+    const data = errors[0]?.data ?? {};
+    expect(Object.keys(data)[0]).toBe("storyId");
+    expect(data.storyId).toBe(STAGE_STORY_ID);
+    expect(typeof data.cmd).toBe("string");
+    expect((data.cmd as string).length).toBeGreaterThan(0);
+    expect(data.exitCode).toBe(127);
+  });
+
+  test("AC8: exit 127 returns 1 from runAcceptanceRedGate, so the entry still counts RED", async () => {
+    const harness = makeHarness({ outputs: [{ exitCode: 127, output: "/bin/sh: FOO: command not found" }] });
+
+    const redCount = await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+
+    expect(redCount).toBe(1);
+  });
+
+  test("AC9 boundary: exit 126 also skips repair and logs the not-runnable error", async () => {
+    const harness = makeHarness({ outputs: [{ exitCode: 126, output: "sh: FOO: Permission denied" }] });
+
+    await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+
+    expect(harness.repairOps).toHaveLength(0);
+    expect(harness.writes).toHaveLength(0);
+    expect(harness.commits).toHaveLength(0);
+
+    const errors = captured.filter(
+      (entry) =>
+        entry.level === "error" && entry.stage === "acceptance-setup" && entry.message === COMMAND_NOT_RUNNABLE_RED_MSG,
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.data?.exitCode).toBe(126);
+  });
+
+  test("AC10: a TypeScript exit 1 still goes through the existing repair path", async () => {
+    const harness = makeHarness({
+      outputs: [{ exitCode: 1, output: TS_EXIT_1_OUTPUT }],
+      repair: async () => ({ testCode: null }),
+    });
+
+    const redCount = await runAcceptanceRedGate(makeCtx(), [makeEntry({ language: "typescript" })], harness.deps);
+
+    expect(harness.repairOps).toHaveLength(1);
+    expect(harness.repairOps[0]).toBe(acceptanceRepairOp);
+    expect(redCount).toBe(1);
+    // The not-runnable error is not emitted for an exit 1 with no AC failures.
+    const notRunnable = captured.filter(
+      (entry) => entry.level === "error" && entry.message === COMMAND_NOT_RUNNABLE_RED_MSG,
+    );
+    expect(notRunnable).toHaveLength(0);
+  });
+});

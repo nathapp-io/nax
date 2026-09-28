@@ -37,6 +37,7 @@ import { countStories, isInAcceptanceScope } from "@/prd";
 import {
   parseTestFailures as _parseTestFailures,
   analyzeTestExitCode,
+  isCommandNotRunnable,
   parseTestFailuresDetailed,
 } from "@/test-runners";
 import { logTestOutput } from "@/utils/log-test-output";
@@ -99,6 +100,93 @@ function areAllStoriesComplete(ctx: PipelineContext): boolean {
   const counts = countStories(ctx.prd);
   const totalComplete = counts.passed + counts.failed + counts.skipped;
   return totalComplete === counts.total;
+}
+
+/** Mutable carrier for the per-run error state — passed to {@link recordPackageCrash}. */
+interface AcceptanceErrorState {
+  anyError: boolean;
+  errorExitCode: number;
+}
+
+/**
+ * Record an `AC-ERROR` package crash: non-zero exit with no AC-tagged failures
+ * parsed. Exit 126/127 (shell could not run the command) is named distinctly
+ * in the log line and finding message — every other non-zero exit is the
+ * generic test-runner crash. Either way, `failedACs` becomes `["AC-ERROR"]`
+ * and the package is recorded for fix routing.
+ */
+function recordPackageCrash(params: {
+  logger: ReturnType<typeof getLogger>;
+  storyId: string;
+  exitCode: number;
+  packageDir: string;
+  testPath: string;
+  testFramework: string | undefined;
+  commandOverride: string | undefined;
+  testCmd: string;
+  output: string;
+  allFailedACs: string[];
+  allFindings: Finding[];
+  failedPackages: Array<{
+    testPath: string;
+    packageDir: string;
+    testFramework?: string;
+    commandOverride?: string;
+    output: string;
+    failedACs: string[];
+  }>;
+  errorState: AcceptanceErrorState;
+}): void {
+  const {
+    logger,
+    storyId,
+    exitCode,
+    packageDir,
+    testPath,
+    testFramework,
+    commandOverride,
+    testCmd,
+    output,
+    allFailedACs,
+    allFindings,
+    failedPackages,
+    errorState,
+  } = params;
+  const notRunnable = isCommandNotRunnable(exitCode);
+  if (notRunnable) {
+    logger.error("acceptance", "Acceptance command could not run — check acceptance.command", {
+      storyId,
+      exitCode,
+      cmd: testCmd,
+      packageDir,
+    });
+  } else {
+    logger.error("acceptance", "Tests errored with no AC failures parsed", {
+      storyId,
+      exitCode,
+      packageDir,
+    });
+  }
+  logTestOutput(logger, "acceptance", output);
+  errorState.anyError = true;
+  errorState.errorExitCode = exitCode;
+  allFailedACs.push("AC-ERROR");
+  allFindings.push(
+    notRunnable
+      ? {
+          ...acSentinelToFinding("AC-ERROR", output),
+          message: `Acceptance command could not run (exit ${exitCode}): ${testCmd}`,
+        }
+      : acSentinelToFinding("AC-ERROR", output),
+  );
+  failedPackages.push({
+    testPath,
+    packageDir,
+    testFramework,
+    commandOverride,
+    output,
+    failedACs: ["AC-ERROR"],
+  });
 }
 
 export const acceptanceStage: PipelineStage = {
@@ -178,8 +266,7 @@ export const acceptanceStage: PipelineStage = {
     }> = [];
     const missingTargets: string[] = [];
     const allOutputParts: string[] = [];
-    let anyError = false;
-    let errorExitCode = 0;
+    const errorState: AcceptanceErrorState = { anyError: false, errorExitCode: 0 };
     // Acceptance criteria promoted by the non-blocking hardening pass. Reported
     // on the verdict under its own key — it is NOT a retry count (#1424).
     let hardeningPromoted = 0;
@@ -271,19 +358,26 @@ export const acceptanceStage: PipelineStage = {
         });
       }
 
-      // Non-zero exit but no AC failures parsed — test crashed
+      // Non-zero exit but no AC failures parsed — test crashed.
+      // Exit 126/127 is named (not repaired); every other non-zero exit is
+      // the generic test-runner crash. Either way, `failedACs` becomes
+      // `["AC-ERROR"]` and the package is recorded for fix routing.
       if (failedACs.length === 0 && exitCode !== 0) {
-        logger.error("acceptance", "Tests errored with no AC failures parsed", {
+        recordPackageCrash({
+          logger,
           storyId: ctx.story.id,
           exitCode,
           packageDir,
+          testPath,
+          testFramework,
+          commandOverride,
+          testCmd,
+          output,
+          allFailedACs,
+          allFindings,
+          failedPackages,
+          errorState,
         });
-        logTestOutput(logger, "acceptance", output);
-        anyError = true;
-        errorExitCode = exitCode;
-        allFailedACs.push("AC-ERROR");
-        allFindings.push(acSentinelToFinding("AC-ERROR", output));
-        failedPackages.push({ testPath, packageDir, testFramework, commandOverride, output, failedACs: ["AC-ERROR"] });
         continue;
       }
 
@@ -327,8 +421,8 @@ export const acceptanceStage: PipelineStage = {
             },
           );
           logTestOutput(logger, "acceptance", output);
-          anyError = true;
-          errorExitCode = exitCode;
+          errorState.anyError = true;
+          errorState.errorExitCode = exitCode;
           allFailedACs.push("AC-ERROR");
           allFindings.push(acSentinelToFinding("AC-ERROR", output));
           failedPackages.push({
@@ -474,10 +568,10 @@ export const acceptanceStage: PipelineStage = {
       durationMs,
     });
 
-    if (anyError) {
+    if (errorState.anyError) {
       return {
         action: "fail",
-        reason: `Acceptance tests errored (exit code ${errorExitCode}): syntax error, import failure, or unhandled exception`,
+        reason: `Acceptance tests errored (exit code ${errorState.errorExitCode}): syntax error, import failure, or unhandled exception`,
       };
     }
 

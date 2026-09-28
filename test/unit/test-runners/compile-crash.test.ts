@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyAcceptanceCrash } from "@/test-runners";
+import { classifyAcceptanceCrash, isCommandNotRunnable } from "@/test-runners";
 
 const GO_MISSING_SYMBOL = "./acceptance_test.go:12:5: undefined: ParseConfig";
 const GO_NO_FIELD = "./acceptance_test.go:9:14: cfg.Parse undefined (type *Config has no field or method Parse)";
@@ -110,5 +110,23 @@ describe("classifyAcceptanceCrash — other languages", () => {
     ["", "error: Cannot find module 'x'"],
   ])("returns repairable for unsupported language %p", (language, output) => {
     expect(classifyAcceptanceCrash(output, language)).toBe("repairable");
+  });
+});
+
+describe("isCommandNotRunnable", () => {
+  test("AC1: returns true for exit 127 (command not found), imported from the src/test-runners barrel", () => {
+    expect(isCommandNotRunnable(127)).toBe(true);
+  });
+
+  test("AC2: returns true for exit 126 (found, not executable)", () => {
+    expect(isCommandNotRunnable(126)).toBe(true);
+  });
+
+  test("AC3: returns false for exit 1 (real test failure)", () => {
+    expect(isCommandNotRunnable(1)).toBe(false);
+  });
+
+  test("AC4: returns false for exit 0 (success)", () => {
+    expect(isCommandNotRunnable(0)).toBe(false);
   });
 });
