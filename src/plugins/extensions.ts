@@ -4,6 +4,7 @@
  * Defines interfaces for specific plugin extensions that can be provided.
  */
 
+import type { ExternalHandlerOf, LoopEvent } from "@/agents/native/session/loop-events/types";
 import type { TestStrategy } from "../config";
 import type { RegressionGateConfig } from "../config/runtime-types";
 import type { FindingSeverity, FixTarget } from "../findings/types";
@@ -476,4 +477,41 @@ export interface IReporter {
 
   /** Called when a story escalates from one model tier to another */
   onEscalation?(event: EscalationEvent): Promise<void>;
+}
+
+// ============================================================================
+// Loop Handler Extension
+// ============================================================================
+
+/**
+ * The single callback a plugin uses to contribute handlers to the native
+ * session's in-process loop events.
+ *
+ * Called once, when `PluginRegistry.getLoopHandlers()` builds the run's set.
+ * `E` is inferred from the event name, so the handler's payload and patch are
+ * typed exactly as the built-in ones are.
+ */
+export type LoopHandlerRegistrar = <E extends LoopEvent>(event: E, handler: ExternalHandlerOf<E>) => void;
+
+/**
+ * Loop-handler provider interface.
+ *
+ * A plugin declaring `provides: ["loop-handlers"]` must supply this extension.
+ * Handlers are built once per run and installed on every native session's
+ * per-turn loop-event registry; a handler that throws, times out or is aborted
+ * never fails the turn for its own defect (see the loop-handler guide).
+ *
+ * @example
+ * ```ts
+ * const provider: ILoopHandlerProvider = {
+ *   register(on) {
+ *     on("before_turn", (_payload, ctx) =>
+ *       ctx.role === "implementer" ? { seed: [{ role: "user", content: "…" }] } : undefined);
+ *   },
+ * };
+ * ```
+ */
+export interface ILoopHandlerProvider {
+  /** Contribute handlers; call `on(event, handler)` once per handler. */
+  register(on: LoopHandlerRegistrar): void;
 }

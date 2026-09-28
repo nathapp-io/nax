@@ -27,6 +27,7 @@ const VALID_PLUGIN_TYPES: readonly PluginType[] = [
   "context-provider",
   "reporter",
   "post-run-action",
+  "loop-handlers",
 ] as const;
 
 /**
@@ -137,6 +138,8 @@ function validateExtension(pluginName: string, type: PluginType, extensions: Rec
       return validateReporter(pluginName, extensions.reporter);
     case "post-run-action":
       return validatePostRunAction(pluginName, extensions.postRunAction);
+    case "loop-handlers":
+      return validateLoopHandlers(pluginName, extensions.loopHandlers);
     default:
       getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: unknown extension type '${type}'`);
       return false;
@@ -410,4 +413,17 @@ function validatePostRunAction(pluginName: string, action: unknown): boolean {
   }
 
   return true;
+}
+
+/**
+ * Validate loop-handlers extension (US-001).
+ *
+ * The extension must be an object exposing a `register` function. What a
+ * registration then registers — the event names and handlers — is checked by
+ * `PluginRegistry.getLoopHandlers()`, not here.
+ */
+function validateLoopHandlers(_pluginName: string, _ext: unknown): boolean {
+  // STUB (US-001 RED): the implementer adds the object + `register` checks and
+  // the `plugins` warning naming the plugin.
+  return false;
 }

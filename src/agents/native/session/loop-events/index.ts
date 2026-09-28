@@ -5,4 +5,13 @@
  */
 export { type BuildToolResultArgs, buildToolResult, type DenialInfo, type ToolResultMessage } from "../tool-result";
 export { createLoopEventRegistry, type LoopEventRegistry } from "./registry";
-export type { AfterToolPatch, AfterToolPayload, BeforeToolOutcome, CompleteCallOptions } from "./types";
+export type {
+  AfterToolPatch,
+  AfterToolPayload,
+  BeforeToolOutcome,
+  CompleteCallOptions,
+  ExternalHandlerOf,
+  LoopHandlerContext,
+  LoopHandlerEntry,
+  LoopHandlerSet,
+} from "./types";

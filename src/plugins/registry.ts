@@ -4,6 +4,7 @@
  * Central registry for all loaded plugins with typed getters.
  */
 
+import type { LoopHandlerSet } from "../agents/native/session/loop-events/types";
 import type { AgentAdapter } from "../agents/types";
 import { getSafeLogger } from "../logger";
 import type { RoutingStrategy } from "../routing/router";
@@ -192,6 +193,23 @@ export class PluginRegistry {
       return plugin.provides.includes("post-run-action") && action ? [{ pluginName: plugin.name, action }] : [];
     });
     return [...pluginActions, ...this.builtinPostRunActions];
+  }
+
+  /**
+   * Get every plugin-contributed loop handler for this run (US-001).
+   *
+   * Built once, from the plugins whose `provides` includes `"loop-handlers"`,
+   * in plugin load order and, within one plugin, in `on(...)` call order. The
+   * returned set is frozen and memoised: the second call returns the same
+   * array, and no plugin's `register` runs twice.
+   *
+   * @returns The run's loop handlers, empty when no plugin provides any
+   */
+  getLoopHandlers(): LoopHandlerSet {
+    // STUB (US-001 RED): the implementer stages each provider's registrations
+    // through a validating registrar, drops a failing plugin's entries with a
+    // `plugins` warning, then freezes and memoises the result.
+    return [];
   }
 
   /**

@@ -3,7 +3,7 @@
   "feature": "plugin-loop-handlers",
   "branchName": "feat/plugin-loop-handlers",
   "createdAt": "2026-09-28T00:00:00.000Z",
-  "updatedAt": "2026-09-28T10:17:28.921Z",
+  "updatedAt": "2026-09-28T10:31:49.476Z",
   "userStories": [
     {
       "id": "US-001",
@@ -35,7 +35,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New shared type boundary, validation, and ordered atomic memoized registry contributions across plugin and native modules."
+        "reasoning": "New shared type boundary, validation, and ordered atomic memoized registry contributions across plugin and native modules.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/plugins/validator.ts",
@@ -47,7 +50,11 @@
       "expectedFiles": [
         "test/unit/plugins/registry-loop-handlers.test.ts"
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bb4cc46e902ddb3eb751b949cba12f22035b75d5"
     },
     {
       "id": "US-002",
@@ -101,7 +108,10 @@
         "src/agents/native/session/loop-events/external-handler.ts",
         "test/unit/agents/native/session/loop-events/external-handler.test.ts"
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -150,7 +160,10 @@
         "test/unit/agents/native/session/loop-handlers-plugins.test.ts",
         "test/unit/agents/native/adapter-loop-handlers.test.ts"
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -212,7 +225,10 @@
           "reason": "its entry for src/session/manager.ts pins the grandfathered size at 679 lines. If US-004's offsetting extraction leaves the session manager shorter, lower that entry with the check:file-sizes:update script; the replacing invariant is that the entry equals the file's new line count."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Existing-code enhancement, not greenfield. Plugin declarations and exports live at src/plugins/types.ts:12-32,38-46,114-136; extension interfaces in src/plugins/extensions.ts:1-12; runtime validation uses VALID_PLUGIN_TYPES and validateExtension plus per-extension validators at src/plugins/validator.ts:22-31,105-141,375-413. PluginRegistry retains load order and exposes typed getters at src/plugins/registry.ts:21-69,166-176; add memoized, frozen staged registrations there, dropping an entire plugin's entries after any registration error. The coding-agent-owned LoopEvent union, payload/patch maps and handler types are in src/agents/native/session/loop-events/types.ts:20-28,195-210; its barrel at src/agents/native/session/loop-events/index.ts:6-8 must export the new public types. Plugin files may import native loop-event types, but the reverse import must never occur. The public `LoopHandlerEntry.handler: ExternalHandlerOf<LoopEvent>` is a widened heterogeneous storage shape; keep the generic registrar's narrower event/payload pairing sound when staging entries, and preserve the spec's compile-time after_tool compatibility criterion. The dispatcher at src/agents/native/session/loop-events/registry.ts:133-169 currently dereferences outcome.kind after try/finally, so undefined from a built-in escapes instead of warning/allowing; dispatchChain already serializes and picks declared patch fields at src/agents/native/session/loop-events/registry.ts:178-233, restoring array payloads and preserving cache-boundary/follow-up semantics. Add the external wrapper in its own native-side file with attributed warnings, fail-closed before_tool outcomes, fail-open other events, timeout/abort race and settled-timer cleanup. Native install ordering is controlled by registerBuiltinLoopHandlers at src/agents/native/session/loop-handlers.ts:58-81: invalid-call repair, spin breaker, then after_tool truncation; its WeakMap repoints state on reused registries. src/agents/native/session/turn-loop.ts:94-103 creates a fresh registry absent deps.loopEvents, so entries must be passed as a list and installed between the built-ins, never pre-registered in a supplied registry; for repoints use state.current for new context/signal. TurnDeps at src/agents/native/session/turn-types.ts:20-24,130-137, SendTurnOpts at src/agents/session-types.ts:131-145 and the forwarding at src/agents/native/adapter.ts:340-360 form the native turn plumbing. src/agents/native/session/turn-end-event.ts:1-5 has an obsolete unbounded-handler comment. Runtime handoff should call the ISessionManager method, not narrow concrete SessionManager: interface src/session/types.ts:244-309; mock test/helpers/mock-session-manager.ts:9-58 returns an interface-typed object literal requiring a new default method. src/session/manager.ts:61-104 holds runtime state and src/session/manager.ts:562-608 locates terminalDesc before adapter.sendTurn; extract forwarding into new src/session/loop-handler-forwarding.ts, use handle.agentName against NATIVE_AGENT_NAME from src/config/agent-defaults.ts:19, descriptor fields from src/session/types.ts:66-107 and modelDef from src/agents/session-types.ts:25-42; freeze and omit undefined context keys, fall back to handle.role without a descriptor. src/execution/lifecycle/run-setup-init.ts:161-177 loads plugins in global/project/config order; immediately configure the run manager once after load. src/plugins/loader.ts:1-8 misdocuments the project directory as /nax/plugins/ instead of /.nax/plugins/. scripts/check-adapter-no-config-import.sh:8-26 presently bans config imports in both agent trees; extend to ban native-only plugin imports without banning loop-event types. Baseline scripts/baselines/file-sizes-baseline.json:7 pins manager.ts at 679 lines versus current 678, requiring an equal/larger extraction for additions, then lower the baseline to exactly the new line count if reduced. Relevant existing tests: test/unit/plugins/registry.test.ts:1-35, test/unit/agents/native/session/loop-events.test.ts:1-60, test/unit/agents/native/adapter-turn-signal.test.ts, test/unit/session/manager-phase-b-prompt.test.ts:1-55, test/unit/execution/lifecycle/run-setup-approvals-seal.test.ts:1-50. Risks: external before_tool failures must not inherit dispatcher fail-open behavior; timeout promises must be consumed without unhandled rejections or leaked timers; built-ins must retain short-circuit and final truncation ordering; reused registry must not accumulate stale handlers; unrelated ACP/plan sessions must remain unchanged; adding an ISessionManager required method affects mocks/alternate implementations. Additive optional turn fields preserve old callers; no user configuration or migration, and no plugin-system import under native agents. Run-scoped frozen set is constructed once, delivered via interface, filtered per native handle, and installed per real turn.",
