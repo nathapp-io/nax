@@ -316,6 +316,44 @@ describe("US-003 partitionTrackedCandidates", () => {
       _gitDeps.spawn = origSpawn;
     }
   });
+
+  test("US-003 regression: a non-zero git ls-files exit is logged at debug (not silently swallowed)", async () => {
+    // Adversarial-review regression: the previous implementation returned
+    // every candidate as migratable on a non-zero exit without logging
+    // anything, while the thrown-error branch DID log at debug. That
+    // asymmetry hid why tracked-file detection fell back — the same
+    // fallback, but no breadcrumb. The fix unifies the two branches: a
+    // non-zero exit now also logs `debug` with `exitCode` and `stderr`.
+    const origSpawn = _gitDeps.spawn;
+    // Simulate "not a git repo" — `ls-files` exits 128 with the canonical
+    // fatal-on-stderr message.
+    const stub = makeSpawn(({ cmd }) =>
+      cmd.includes("ls-files") ? { stdout: "", stderr: "fatal: not a git repository", exitCode: 128 } : "",
+    );
+    _gitDeps.spawn = stub.spawn;
+    try {
+      const candidates: MigrateCandidate[] = [
+        { name: "runs", srcPath: "/x/.nax/runs" },
+        { name: "metrics.json", srcPath: "/x/.nax/metrics.json" },
+      ];
+
+      const { entries, result } = await captureLogs(() => partitionTrackedCandidates("/anywhere", candidates));
+
+      // All candidates migratable, none tracked — the documented fallback.
+      expect(result.migratable).toHaveLength(2);
+      expect(result.tracked).toEqual([]);
+
+      // …and the debug log that proves WHY the fallback fired. Same shape
+      // as the thrown-error branch, so an operator gets one breadcrumb per
+      // git failure, not "silent" on one path and "loud" on the other.
+      const debugs = entries.filter((entry) => entry.level === "debug" && entry.message.includes("non-zero"));
+      expect(debugs).toHaveLength(1);
+      expect(debugs[0]?.data?.exitCode).toBe(128);
+      expect(debugs[0]?.data?.stderr).toContain("not a git repository");
+    } finally {
+      _gitDeps.spawn = origSpawn;
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

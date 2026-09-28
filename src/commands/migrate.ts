@@ -170,7 +170,19 @@ export async function partitionTrackedCandidates(
     if (result.exitCode !== 0) {
       // Non-zero (not a repo, error reading the index, etc.) — leave every
       // candidate migratable so behaviour matches "today's" baseline for any
-      // caller that cannot rely on git.
+      // caller that cannot rely on git. Log once at debug so the silent
+      // fallback is attributable — the same shape as the thrown branch
+      // below, so an operator chasing a `MIGRATE_CONFLICT` on the next run
+      // can see why their tracked manifest didn't get skipped this time.
+      logger?.debug(
+        "migrate",
+        "partitionTrackedCandidates: git ls-files returned non-zero, treating all candidates as migratable",
+        {
+          storyId: "_migrate",
+          exitCode: result.exitCode,
+          stderr: result.stderr.trim(),
+        },
+      );
       return { migratable: [...candidates], tracked: [] };
     }
     stdout = result.stdout;
