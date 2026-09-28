@@ -154,12 +154,11 @@ const US002_KEYS = ["mkdir", "tmpdir", "runTempRoots"];
  * exactly the keys that were absent before the test.
  */
 export function withSessionSandboxSeam(deps: object): void {
-  let presentBeforeTest = false;
+  let absentBeforeTest: readonly string[] = [];
   beforeEach(() => {
-    presentBeforeTest = US002_KEYS.every((key) => key in deps);
+    absentBeforeTest = US002_KEYS.filter((key) => !(key in deps));
   });
   afterEach(() => {
-    if (presentBeforeTest) return;
-    for (const key of US002_KEYS) Reflect.deleteProperty(deps, key);
+    for (const key of absentBeforeTest) Reflect.deleteProperty(deps, key);
   });
 }

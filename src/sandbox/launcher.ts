@@ -83,19 +83,24 @@ async function ensureTmpDir(tmpDir: string): Promise<boolean> {
   }
 }
 
-async function runUnwrapped(
-  req: LaunchRequest,
-  sandbox: SandboxRecord,
-  tmpDir: string | undefined,
-): Promise<LaunchResult> {
+/**
+ * Per-launch environment: the session temp directory (recreated before every
+ * run) and whether the policy still grants the shared temp roots.
+ */
+interface LaunchEnv {
+  readonly tmpDir?: string;
+  readonly sharedTmp: boolean;
+}
+
+async function runUnwrapped(req: LaunchRequest, sandbox: SandboxRecord, env: LaunchEnv): Promise<LaunchResult> {
   const argv = logicalArgv(req);
-  const env = withTmpEnv(req, tmpDir);
+  const overlay = env.tmpDir !== undefined ? withTmpEnv(req, env.tmpDir) : req.env;
   const result = await _launcherDeps.runArgv({
     argv,
     cwd: req.cwd,
     timeoutMs: req.timeoutMs,
     stripEnvVars: [...req.stripEnvVars],
-    ...(env !== undefined ? { env } : {}),
+    ...(overlay !== undefined ? { env: overlay } : {}),
     ...(req.signal !== undefined ? { signal: req.signal } : {}),
   });
   return { ...result, executed: argv, sandbox };
@@ -105,14 +110,14 @@ async function runWrapped(
   req: LaunchRequest,
   backend: SandboxBackend,
   policy: SandboxPolicy,
-  tmpDir: string | undefined,
+  env: LaunchEnv,
 ): Promise<LaunchResult> {
   const rawCommand = req.spec.kind === "shell" ? req.spec.command : quoteArgvForShell(req.spec.argv);
   // srt replaces the child environment, so the TMPDIR override cannot ride an
   // `env` overlay — it has to be part of the shell command itself. `executed`
   // below stays the unprefixed logical argv, so the ledger records what the
   // agent wrote, not this shim.
-  const command = tmpDir !== undefined ? `${tmpEnvPrefix(tmpDir)}${rawCommand}` : rawCommand;
+  const command = env.tmpDir !== undefined ? `${tmpEnvPrefix(env.tmpDir)}${rawCommand}` : rawCommand;
   const shell = req.spec.kind === "shell" ? req.spec.shell : "/bin/sh";
   const commandId = _launcherDeps.newCommandId();
   let argv: readonly string[];
@@ -137,7 +142,10 @@ async function runWrapped(
     });
     const denied = result.exitCode !== 0 && LIKELY_SANDBOX_DENIAL.test(result.stderr);
     const violations = backend.annotate(commandId, result.stderr);
-    const extra = [...(denied ? [denialHintLine(policy.writeRoots)] : []), ...(violations !== "" ? [violations] : [])];
+    const extra = [
+      ...(denied ? [denialHintLine(policy.writeRoots, env.sharedTmp)] : []),
+      ...(violations !== "" ? [violations] : []),
+    ];
     return {
       ...result,
       stderr: extra.length > 0 ? `${result.stderr}\n${extra.join("\n")}` : result.stderr,
@@ -156,13 +164,19 @@ async function runWrapped(
 
 export function createCommandLauncher(opts: CommandLauncherOptions): CommandLauncher {
   const { state } = opts;
+  const env: LaunchEnv = {
+    tmpDir: opts.tmpDir,
+    // A confined session's denial hint points at $TMPDIR instead of /tmp; a
+    // shared-temp session's hint must not contradict the policy it runs under.
+    sharedTmp: state.kind !== "available" || state.sharedTmp !== false,
+  };
   return {
     state,
     async run(req) {
-      const tmpDir = opts.tmpDir !== undefined && (await ensureTmpDir(opts.tmpDir)) ? opts.tmpDir : undefined;
-      if (state.kind === "disabled") return runUnwrapped(req, { backend: "none", wrapped: false }, tmpDir);
+      const tmpDir = env.tmpDir !== undefined && (await ensureTmpDir(env.tmpDir)) ? env.tmpDir : undefined;
+      if (state.kind === "disabled") return runUnwrapped(req, { backend: "none", wrapped: false }, { ...env, tmpDir });
       if (state.kind === "unavailable") {
-        return runUnwrapped(req, { backend: state.backend, wrapped: false, reason: state.reason }, tmpDir);
+        return runUnwrapped(req, { backend: state.backend, wrapped: false, reason: state.reason }, { ...env, tmpDir });
       }
       if (opts.backend === undefined || opts.policyFor === undefined) {
         throw new NaxError("[sandbox] an available launcher needs a backend and a policy", "SANDBOX_NOT_CONFIGURED", {
@@ -170,7 +184,7 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
         });
       }
       try {
-        return await runWrapped(req, opts.backend, await opts.policyFor(req.root), tmpDir);
+        return await runWrapped(req, opts.backend, await opts.policyFor(req.root), { ...env, tmpDir });
       } finally {
         await opts.afterWrapped?.();
       }

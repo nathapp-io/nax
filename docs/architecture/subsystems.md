@@ -2097,6 +2097,7 @@ branch — in an OS sandbox. Project-declared commands (`quality.commands`,
 | `enabled` | `true` | Sandbox on by default |
 | `backend` | `"srt"` | `@anthropic-ai/sandbox-runtime`; `srt-backend.ts` is its only importer (`scripts/check-sandbox-imports.ts`) |
 | `filesystem.allowWrite` | `[]` | Extra write roots (`~` expanded; relative to the story root). A top-level `.nax/` entry listed here is opened to agents (never `features`, `config.json`, `mono`) |
+| `filesystem.allowSharedTmp` | `false` | By default temp writes are confined to this run's temp root (`/tmp/nax/<runId>/...`, where `$TMPDIR` points); `true` re-grants the system temp dir and `/tmp` |
 | `filesystem.denyRead` | `[]` | Extra read denies |
 | `network.allowedDomains` | absent | Absent = unrestricted; `[]` = no network; list = allow-list |
 

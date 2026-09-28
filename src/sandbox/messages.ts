@@ -46,11 +46,13 @@ export function rawBashRefusalReason(reason: string): string {
  * US-003: the denial path is exactly where an agent discovers the sandbox
  * refuses a `/tmp` write, so the hint names the two roots that do work -- the
  * session temp dir and the scratchpad -- rather than only listing the policy's
- * write roots.
+ * write roots. A shared-temp session (`allowSharedTmp: true`) can write `/tmp`,
+ * so its hint omits the "not /tmp" clause that would contradict its policy.
  */
-export function denialHintLine(writeRoots: readonly string[]): string {
+export function denialHintLine(writeRoots: readonly string[], sharedTmp = false): string {
+  const tempClause = sharedTmp ? "" : " For temporary files use $TMPDIR or .nax/scratchpad/, not /tmp.";
   return (
     `note: this command ran in the nax sandbox; that failure may be a sandbox denial -- writable roots: ${writeRoots.join(", ")}.` +
-    " For temporary files use $TMPDIR or .nax/scratchpad/, not /tmp."
+    tempClause
   );
 }

@@ -57,6 +57,16 @@ describe("sandbox messages", () => {
     },
   );
 
+  // A shared-temp session (allowSharedTmp: true) can write /tmp, so its hint
+  // must not tell the agent "not /tmp" -- that would contradict the policy the
+  // command just ran under.
+  test("a shared-temp session's denial hint omits the not-/tmp clause", () => {
+    const hint = denialHintLine(["/repo", "/tmp"], true);
+    expect(hint).toContain("writable roots: /repo, /tmp.");
+    expect(hint).not.toContain("not /tmp");
+    expect(hint).not.toContain("$TMPDIR");
+  });
+
   test("denial detection matches both platforms' wording", () => {
     expect(LIKELY_SANDBOX_DENIAL.test("sh: /x: Operation not permitted")).toBe(true);
     expect(LIKELY_SANDBOX_DENIAL.test("cannot create /x: Read-only file system")).toBe(true);

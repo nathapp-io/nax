@@ -85,7 +85,17 @@ export function runTmpRoot(runId: string): string {
   return `${tmpParent()}/${sanitizePart(runId)}`;
 }
 
+/**
+ * `<root>/<sessionName>`, the session part reduced to [A-Za-z0-9_.-] (others
+ * become "_"). Takes an ALREADY-RESOLVED run root so a caller that needs the
+ * root too (the sandbox policy) resolves the parent once and cannot observe it
+ * flip between two calls.
+ */
+export function sessionTmpDirUnder(root: string, sessionName: string): string {
+  return `${root}/${sanitizePart(sessionName)}`;
+}
+
 /** `<parent>/<runId>/<sessionName>`, each part reduced to [A-Za-z0-9_.-] (others become "_"). */
 export function sessionTmpDir(runId: string, sessionName: string): string {
-  return `${runTmpRoot(runId)}/${sanitizePart(sessionName)}`;
+  return sessionTmpDirUnder(runTmpRoot(runId), sessionName);
 }

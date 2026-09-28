@@ -3,7 +3,8 @@
  *
  * `resolveCodingToolSupport` is the seam both dispatch hops use, so it is the
  * only place the run id can be threaded into `resolveSessionSandbox` as
- * `tmpDir: sessionTmpDir(runId, sessionName)`. A test against
+ * `tmpDir: sessionTmpDirUnder(runTmpRoot(runId), sessionName)` — one parent
+ * resolution feeding both the policy root and the TMPDIR. A test against
  * `resolveSessionSandbox` alone would stay green if this thread were dropped,
  * and every real Bash command would keep writing into the shared `/tmp`.
  *
@@ -83,8 +84,8 @@ describe("resolveCodingToolSupport — per-session TMPDIR (US-004)", () => {
     expect(outcome?.kind).toBe("ok");
     expect(calls).toHaveLength(1);
     // The ledger session name is `US-001-implementer`, scoped under the run's
-    // own root — `sessionTmpDir("r1", "US-001-implementer")` under the pinned
-    // layout, so a flat `/tmp/nax-r1` root fails here.
+    // own root — `sessionTmpDirUnder("/tmp/nax/r1", "US-001-implementer")` under
+    // the pinned layout, so a flat `/tmp/nax-r1` root fails here.
     expect(calls[0]?.env?.TMPDIR).toBe("/tmp/nax/r1/US-001-implementer");
   });
 

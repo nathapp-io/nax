@@ -6,10 +6,11 @@
  * once and trusted: a `/tmp/nax` made by one OS user is not writable by
  * another. Instead the parent is re-resolved on every call from three host
  * facts the `_sessionTmpDeps` seam exposes — what `lstat("/tmp/nax")` reports,
- * whether `access` succeeds, and the uid — falling back to `/tmp/nax-<uid>`
- * whenever `/tmp/nax` is missing (the ordinary case, created by the launcher's
- * recursive mkdir), is a real directory the current user can write, or is
- * anything else at all.
+ * whether `access` succeeds, and the uid. Absence is the ordinary shared-parent
+ * case (the launcher's recursive mkdir creates it), and so is a real directory
+ * the current user can write and search; anything else — a symlink, a
+ * non-directory, a failed `access`, or an `lstat` error other than ENOENT —
+ * falls back to `/tmp/nax-<uid>`.
  *
  * Imported through the `@/sandbox` BARREL, not the leaf module: the story's
  * interface promises `runTmpRoot`, `sessionTmpDir` and `_sessionTmpDeps` are
