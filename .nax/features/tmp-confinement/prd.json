@@ -1,0 +1,201 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "tmp-confinement",
+  "branchName": "feat/tmp-confinement",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "updatedAt": "2026-09-28T07:31:34.624Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Move run temp roots under /tmp/nax with per-user fallback",
+      "description": "**Goal** \u2014 Move sanitized session temp directories into run-owned roots under /tmp/nax (or a per-user fallback), preserve run-scoped cleanup and exclude nax's temp trees from tmpWrite telemetry.\n\n**Motivation** \u2014 A flat `/tmp/nax-<runId>` root is hard to find and list. A single `/tmp/nax/` parent is easier to inspect, but a shared parent created by one OS user is not writable by another, so it needs a fallback.\n\n**Approach** \u2014 **Temp root layout (US-001).** `runTmpRoot` resolves the parent on every call. That's a few\nsynchronous `lstat`/`access` calls through an injectable `_sessionTmpDeps`\n(`{ lstat, access, uid }`), and there is no cache.\n\n1. `lstat(\"/tmp/nax\")` fails with ENOENT: the parent is `/tmp/nax`. `mkdir -p` in the launcher\n   creates it with the default mode.\n2. `lstat` reports a directory (not a symlink), and `access(W_OK | X_OK)` succeeds: the parent is\n   `/tmp/nax`.\n3. Otherwise the parent is `/tmp/nax-<uid>`, where `<uid>` is `process.getuid()`. The otherwise\n   case covers: a symlink, a regular file, `access` failing, or `lstat` failing with anything\n   other than ENOENT.\n\nThe wipe removes `runTmpRoot(runId)` only, never the parent, so concurrent runs under\n`/tmp/nax/` are untouched.\n\n**Scope** \u2014 In: update session-tmp, its sandbox barrel export, run-only wipe expectations and tmpWrite exclusions for both `/tmp` and `/private/tmp`; update existing tests that pin the flat path. Out: sandbox policy selection/configuration (US-002) and agent-facing descriptions (US-003). Windows and any platform without `process.getuid` \u2014 `/tmp` paths already assume POSIX. A `/tmp/nax-*` or `/tmp/nax/*` sweep of stale directories from crashed runs \u2014 the wipe stays run-scoped. The command-safety question set, model, labels and the `outside_project` rule regexes \u2014 the rule scorer never matches `/tmp`, so no rule change is needed. Making `/tmp/nax` world-writable (mode 1777) \u2014 the per-user fallback covers multi-user hosts instead.\n\n**Interface** \u2014 `_sessionTmpDeps` \u2014 new in `src/sandbox/session-tmp.ts`, re-exported from `src/sandbox/index.ts`. Shape: `{ lstat(path): { isDirectory(): boolean; isSymbolicLink(): boolean }, access(path, mode): void, uid(): number }`, synchronous and throw-based like `lstatSync` / `accessSync`; production values are `lstatSync`, `accessSync` and `process.getuid`.\n`runTmpRoot(runId: string): string` \u2014 `src/sandbox/session-tmp.ts`. Target: returns `<parent>/<sanitized runId>`, where `<parent>` is `/tmp/nax` when that path is absent or is a real directory writable by the current user, and `/tmp/nax-<uid>` otherwise. `sessionTmpDir(runId, sessionName)` is `runTmpRoot(runId)/<sanitized sessionName>`, with sanitization unchanged. `detectTmpWrite(command, cwd?)` also excludes paths under `<root>/nax/`, for both `/tmp` and `/private/tmp`.",
+      "acceptanceCriteria": [
+        "When _sessionTmpDeps.lstat fails with ENOENT for /tmp/nax, then runTmpRoot(\"run-1\") returns /tmp/nax/run-1.",
+        "When _sessionTmpDeps.lstat reports /tmp/nax is a directory and _sessionTmpDeps.access succeeds, then runTmpRoot(\"run-1\") returns /tmp/nax/run-1.",
+        "When /tmp/nax is a directory, _sessionTmpDeps.access throws EACCES, and _sessionTmpDeps.uid returns 501, then runTmpRoot(\"run-1\") returns /tmp/nax-501/run-1.",
+        "When _sessionTmpDeps.lstat reports /tmp/nax is a symbolic link, _sessionTmpDeps.access succeeds, and _sessionTmpDeps.uid returns 501, then runTmpRoot(\"run-1\") returns /tmp/nax-501/run-1.",
+        "When _sessionTmpDeps.lstat reports /tmp/nax is a regular file and _sessionTmpDeps.uid returns 501, then runTmpRoot(\"run-1\") returns /tmp/nax-501/run-1.",
+        "When _sessionTmpDeps.lstat fails with EACCES and _sessionTmpDeps.uid returns 501, then runTmpRoot(\"run-1\") returns /tmp/nax-501/run-1.",
+        "When /tmp/nax is absent, then sessionTmpDir(\"run-1\", \"US 001/impl\") returns /tmp/nax/run-1/US_001_impl.",
+        "When /tmp/nax is absent, then runTmpRoot(\"../x\") returns /tmp/nax/.._x with no / after the parent.",
+        "When /tmp/nax is absent, then wipeRunTmp(\"r1\") calls _runTmpWipeDeps.remove exactly once with /tmp/nax/r1.",
+        "detectTmpWrite(\"echo x > /tmp/nax/r1/US-001-implementer/a.txt\") returns false.",
+        "detectTmpWrite(\"touch /private/tmp/nax/r1/a\") returns false.",
+        "detectTmpWrite(\"echo x > /tmp/nax-501/r1/a.txt\") returns false.",
+        "detectTmpWrite(\"echo x > /tmp/naxfoo/a.txt\") returns true.",
+        "detectTmpWrite(\"echo x > /tmp/other/a.txt\") returns true."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "sandbox",
+        "filesystem"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four small existing source modules and a standard injectable filesystem dependency; filesystem path containment and permission checks trigger the mandatory security test-strategy override."
+      },
+      "contextFiles": [
+        "src/sandbox/session-tmp.ts",
+        "src/command-safety/tmp-write.ts",
+        "src/execution/lifecycle/run-tmp-wipe.ts",
+        "src/sandbox/index.ts",
+        "test/unit/sandbox/session-tmp.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/sandbox/session-tmp.test.ts",
+          "reason": "the tests at lines 20-36 assert flat per-run roots of the form /tmp/nax-run-1/US-001-implementer, and the test at lines 43-45 asserts the session directory is a flat child of a /tmp/nax- prefix. The new layout necessarily breaks both. Replace them with the invariant: with the stubbed deps reporting /tmp/nax absent, the session directory for run \"run-1\" and session \"a/b\" is /tmp/nax/run-1/a_b, and sanitization is unchanged."
+        },
+        {
+          "path": "test/unit/execution/lifecycle/run-tmp-wipe.test.ts",
+          "reason": "line 27 expects the removed path to be /tmp/nax-r1. Replace it with the invariant: the removed path equals runTmpRoot(\"r1\") under the stubbed layout (/tmp/nax/r1), and the /tmp/nax parent is never removed."
+        },
+        {
+          "path": "test/unit/agents/coding-tool-support-session-tmp.test.ts",
+          "reason": "line 21 fixes the run root at /tmp/nax-r1, and line 75 expects TMPDIR to be /tmp/nax-r1/US-001-implementer. Replace them with the invariant: TMPDIR equals sessionTmpDir(\"r1\", \"US-001-implementer\") under the stubbed layout, and the afterEach cleanup at line 29 removes runTmpRoot(\"r1\") so the test still clears the directory it creates."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Confine available sandbox temp writes to run root by default",
+      "description": "**Goal** \u2014 Confine available sandbox launchers with a run ID to the run's temp root by default while preserving shared-root opt-out, no-run fallback, and safe mkdir failure fallback.\n\n**Motivation** \u2014 The sandbox grants the whole of `/tmp`: `defaultTempRoots()` returns `[os.tmpdir(), \"/tmp\"]` (`src/sandbox/policy-inputs.ts:70`) and `buildSandboxPolicy` adds every temp root to `writeRoots` (`src/sandbox/policy-builder.ts:120`).\n\n**Approach** \u2014 **Temp roots (US-002).** In `resolveSessionSandbox`:\n\n- `config.filesystem.allowSharedTmp` is true, or `args.runTmpRoot` is undefined: the temp roots\n  are `_sessionSandboxDeps.tempRoots()` (today's call, still `defaultTempRoots` in production, so\n  `test/integration/sandbox/sandbox-live.test.ts` keeps its stub) and the state omits `sharedTmp`.\n- Otherwise, create `args.tmpDir` with `_sessionSandboxDeps.mkdir` before building the policy.\n  - Creation fails: log `warn` (stage `sandbox`) and use `_sessionSandboxDeps.tempRoots()`; the\n    state omits `sharedTmp`.\n  - Creation succeeds: use `_sessionSandboxDeps.runTempRoots({ runTmpRoot, tmpdir: _sessionSandboxDeps.tmpdir() })`,\n    and the state carries `sharedTmp: false`.\n\n`runTempRoots` returns `[runTmpRoot]`, prefixed by `tmpdir` only when `tmpdir` is neither `/tmp`,\n`/private/tmp`, nor under either. On Linux, `os.tmpdir()` is usually `/tmp`, and keeping it would\nre-grant all of `/tmp`. The darwin `/tmp/claude` root that srt needs stays, because\n`buildSandboxPolicy` adds it independently of `tempRoots`.\n\n**Scope** \u2014 In: schema allowSharedTmp default false, runTempRoots, optional available-state sharedTmp, injectable mkdir/tmpdir/runTempRoots, policy selection, dispatch propagation of runTmpRoot, and unit/live sandbox tests. Out: layout and fallback selection implementation (US-001) and agent-facing wording (US-003). Rewriting agent commands to replace `/tmp` paths \u2014 nax never edits agent-authored commands. The unsandboxed path (sandbox disabled or unavailable): writes to `/tmp` stay allowed there; only the prompt text applies.\n\n**Interface** \u2014 `defaultTempRoots(): string[]` stays the shared-tmp roots; add `runTempRoots(opts: { runTmpRoot: string; tmpdir: string }): string[]` next to it. `_sessionSandboxDeps` gains `mkdir`, `tmpdir` (`() => os.tmpdir()`) and `runTempRoots`, so `resolveSessionSandbox` makes no un-injected external read. `resolveSessionSandbox(args)` gains `readonly runTmpRoot?: string`, supplied by `resolveDispatchLauncher(options, declared, sessionName)` as `runTmpRoot(options.runId)` whenever it supplies `tmpDir`. `SandboxState` available variant gains OPTIONAL `readonly sharedTmp?: boolean`: absent means shared temp roots (today's behaviour), so every existing construction of the variant stays valid. `SandboxConfigSchema.filesystem` gains `allowSharedTmp: z.boolean().default(false)`. Policy writeRoots compare via `realOrRaw(...)` on macOS because `/tmp/...` realpaths as `/private/tmp/...`. Do not change the launcher\u2019s existing TMPDIR export or the independently added darwin `/tmp/claude` root.",
+      "acceptanceCriteria": [
+        "When SandboxConfigSchema parses {}, then filesystem.allowSharedTmp is false.",
+        "When SandboxConfigSchema parses { filesystem: { allowSharedTmp: true } }, then filesystem.allowSharedTmp is true, with allowWrite still [].",
+        "runTempRoots({ runTmpRoot: \"/tmp/nax/r1\", tmpdir: \"/var/folders/x/T\" }) returns [\"/var/folders/x/T\", \"/tmp/nax/r1\"].",
+        "runTempRoots({ runTmpRoot: \"/tmp/nax/r1\", tmpdir: \"/tmp\" }) returns [\"/tmp/nax/r1\"].",
+        "runTempRoots({ runTmpRoot: \"/tmp/nax/r1\", tmpdir: \"/tmp/user-tmp\" }) returns [\"/tmp/nax/r1\"].",
+        "runTempRoots({ runTmpRoot: \"/tmp/nax/r1\", tmpdir: \"/private/tmp\" }) returns [\"/tmp/nax/r1\"].",
+        "Given the confined-session setup (an enabled sandbox config, available stubbed backend and probe, _sessionSandboxDeps.tmpdir returning /var/folders/x/T, runTmpRoot: \"/tmp/nax/r1\" and tmpDir: \"/tmp/nax/r1/s\"), when resolveSessionSandbox runs, then its launcher state is { kind: \"available\", backend: \"srt\", network: \"open\", sharedTmp: false }.",
+        "Given the confined-session setup, when resolveSessionSandbox runs, then it calls _sessionSandboxDeps.mkdir with /tmp/nax/r1/s before building the policy.",
+        "Given the confined-session setup, when a shell command runs through the returned launcher, then the policy sent to backend.wrap has writeRoots including realOrRaw(\"/tmp/nax/r1\").",
+        "Given the confined-session setup, when a shell command runs through the returned launcher, then the policy sent to backend.wrap has writeRoots excluding realOrRaw(\"/tmp\").",
+        "Given the dispatch setup (runId: \"r1\", a coding-tool root, Bash declared, an enabled sandbox config, an available stubbed backend and probe, and /tmp/nax absent), when resolveDispatchLauncher returns a launcher and it runs a shell command, then backend.wrap receives a policy whose writeRoots include realOrRaw(runTmpRoot(\"r1\")).",
+        "Given the dispatch setup, when the launcher runs a shell command, then backend.wrap receives a policy whose writeRoots exclude realOrRaw(\"/tmp\").",
+        "Given the confined-session setup with filesystem.allowSharedTmp: true and _sessionSandboxDeps.tempRoots returning [\"/tmp\"], when a shell command runs, then backend.wrap receives a policy whose writeRoots include realOrRaw(\"/tmp\").",
+        "Given the confined-session setup with filesystem.allowSharedTmp: true and _sessionSandboxDeps.tempRoots returning [\"/tmp\"], when resolveSessionSandbox runs, then the launcher state has no sharedTmp field.",
+        "Given the confined-session setup with runTmpRoot and tmpDir omitted and _sessionSandboxDeps.tempRoots returning [\"/tmp\"], when a shell command runs, then backend.wrap receives a policy whose writeRoots include realOrRaw(\"/tmp\").",
+        "Given the confined-session setup with runTmpRoot and tmpDir omitted and _sessionSandboxDeps.tempRoots returning [\"/tmp\"], when resolveSessionSandbox runs, then the launcher state has no sharedTmp field.",
+        "Given the confined-session setup with _sessionSandboxDeps.mkdir rejecting and _sessionSandboxDeps.tempRoots returning [\"/tmp\"], when a shell command runs, then backend.wrap receives a policy whose writeRoots include realOrRaw(\"/tmp\").",
+        "Given the confined-session setup with _sessionSandboxDeps.mkdir rejecting and _sessionSandboxDeps.tempRoots returning [\"/tmp\"], when resolveSessionSandbox runs, then the launcher state has no sharedTmp field.",
+        "Given the confined-session setup with _sessionSandboxDeps.mkdir rejecting and _sessionSandboxDeps.tempRoots returning [\"/tmp\"], when resolveSessionSandbox runs, then exactly one warn is logged with stage sandbox.",
+        "Given the confined-session setup on platform darwin, when a shell command runs, then backend.wrap receives a policy whose writeRoots include realOrRaw(\"/tmp/claude\").",
+        "Given the live srt setup (the srt backend is available on the host (skipped otherwise, following test/integration/sandbox/sandbox-live.test.ts) and a launcher resolved with runTmpRoot and tmpDir under a unique run id), when it runs echo x > \"$TMPDIR/ok.txt\", then its exit code is 0.",
+        "Given the live srt setup, when the launcher runs echo x > \"$TMPDIR/ok.txt\", then the file is present afterwards.",
+        "Given the live srt setup, when the launcher runs a command writing a unique file directly under /tmp outside /tmp/nax/, then its exit code is non-zero.",
+        "Given the live srt setup, when the launcher runs a command writing a unique file directly under /tmp outside /tmp/nax/, then the file is absent afterwards."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "sandbox",
+        "config",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Config, dispatch, injectable policy selection and live srt tests span several existing modules; sandbox filesystem write access control mandates strict three-session TDD even though the extension follows established seams."
+      },
+      "contextFiles": [
+        "src/agents/coding-tool-sandbox.ts",
+        "src/agents/coding-tool-support-resolve.ts",
+        "src/sandbox/policy-inputs.ts",
+        "src/sandbox/types.ts",
+        "src/config/schemas-sandbox.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Tell agents to use scratchpad and confined TMPDIR",
+      "description": "**Goal** \u2014 Describe confined temp roots accurately in Bash/Exec tools, append temp guidance on sandbox denials, and name the scratchpad as the agent's temp folder.\n\n**Motivation** \u2014 The scratchpad prompt section describes `.nax/scratchpad/` only as a place for notes and snippet scripts. It is the one temp location that every tool can reach (shell, Read/Write/Edit, and the Scratchpad tools), but the prompt never calls it a temp folder.\n\n**Approach** \u2014 **Agent-facing text (US-003).** Exact strings:\n\n- `sandboxSentence(network, false)` replaces \"the system temp directories\" with \"this run's temp\n  directory ($TMPDIR)\". `sandboxSentence(network, true)` returns today's text unchanged.\n- `denialHintLine(writeRoots)` appends: ` For temporary files use $TMPDIR or .nax/scratchpad/, not /tmp.`\n- `buildScratchpadSection()` replaces the paragraph beginning \"Shell commands run with `$TMPDIR`\"\n  with:\n\n```\nUse the scratchpad as your temp folder. Files you make while working \u2014 command output you want to\nre-read, generated inputs, one-off scripts \u2014 go under `.nax/scratchpad/`: the shell, the file tools\nand the scratchpad tools can all reach it, and it is cleared after the run. For throwaway files a\ncommand creates on its own, shell commands run with `$TMPDIR` set to this run's temp directory; use\n`$TMPDIR` or `mktemp` for those. Never write to `/tmp` directly: in the sandbox, `/tmp` outside\n`$TMPDIR` is not writable and the write fails.\n```\n\n**Scope** \u2014 In: update sandbox messages, the three available-state Bash/Exec sentence call sites, the scratchpad paragraph, related existing assertions and only the affected snapshot text. Out: changing actual sandbox roots (US-002) and renaming temp roots (US-001). Rewriting agent commands to replace `/tmp` paths \u2014 nax never edits agent-authored commands. The unsandboxed path (sandbox disabled or unavailable): writes to `/tmp` stay allowed there; only the prompt text applies.\n\n**Interface** \u2014 `sandboxSentence(network, sharedTmp = true)`; single-argument calls keep today's text. Callers `src/tools/bash.ts:188,203` and `src/tools/run-command.ts:263` pass `state.sharedTmp !== false`. `denialHintLine(writeRoots)` appends the exact temp-folder sentence. `buildScratchpadSection()` replaces the `$TMPDIR` paragraph only, preserving the rest of the scratchpad lifecycle guidance. Available-state `sharedTmp: false` (from US-002) triggers the confined wording; omitted sharedTmp retains legacy wording.",
+      "acceptanceCriteria": [
+        "sandboxSentence(\"open\", false) returns a sentence that names this run's temp directory ($TMPDIR) as a writable root in place of the system temp directories.",
+        "sandboxSentence(\"open\", true) returns the pre-change sentence for network \"open\".",
+        "sandboxSentence(\"open\") returns the pre-change sentence for network \"open\".",
+        "denialHintLine([\"/repo\"]) ends with For temporary files use $TMPDIR or .nax/scratchpad/, not /tmp.",
+        "Given a launcher whose available state is { kind: \"available\", backend: \"srt\", network: \"open\", sharedTmp: false }, when the Bash tool description is built, then it contains this run's temp directory ($TMPDIR).",
+        "Given an available state with sharedTmp: false, when the run-command tool description is built, then it contains this run's temp directory ($TMPDIR).",
+        "When buildScratchpadSection() is called, then its text contains Use the scratchpad as your temp folder. exactly once.",
+        "When buildScratchpadSection() is called, then its text contains Never write to `/tmp` directly.",
+        "When buildScratchpadSection() is called, then its text contains $TMPDIR.",
+        "When buildScratchpadSection() is called, then its text does not contain the retired sentence beginning Put temporary files there."
+      ],
+      "tags": [
+        "feature",
+        "sandbox",
+        "prompts",
+        "tools"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Several small existing call sites and prompt snapshot updates, with a backward-compatible default and no policy or permission changes in this story."
+      },
+      "contextFiles": [
+        "src/sandbox/messages.ts",
+        "src/tools/bash.ts",
+        "src/tools/run-command.ts",
+        "src/prompts/sections/scratchpad.ts",
+        "test/unit/sandbox/messages.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/sandbox/messages.test.ts",
+          "reason": "line 24 asserts the denial hint ends with \"writable roots: /a, /b.\" and the new appended temp-folder sentence necessarily breaks it. Replace it with the invariant: the hint contains \"writable roots: /a, /b.\" and ends with \"For temporary files use $TMPDIR or .nax/scratchpad/, not /tmp.\""
+        },
+        {
+          "path": "test/unit/prompts/sections/scratchpad.test.ts",
+          "reason": "lines 61 and 66 pin the old sentence \"Put temporary files there ($TMPDIR or mktemp), not in /tmp directly.\" Replace them with the invariant: the section includes the \"Use the scratchpad as your temp folder.\" paragraph exactly once."
+        },
+        {
+          "path": "test/unit/prompts/__snapshots__/rectifier-builder.test.ts.snap",
+          "reason": "the snapshots embed the old scratchpad paragraph. Regenerate them so they embed the new paragraph; no other snapshot text changes."
+        },
+        {
+          "path": "test/unit/prompts/__snapshots__/review-builder.test.ts.snap",
+          "reason": "the snapshots embed the old scratchpad paragraph. Regenerate them so they embed the new paragraph; no other snapshot text changes."
+        },
+        {
+          "path": "test/unit/prompts/builders/__snapshots__/rectifier-builder-helpers.test.ts.snap",
+          "reason": "the snapshots embed the old scratchpad paragraph. Regenerate them so they embed the new paragraph; no other snapshot text changes."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Goal: replace instruction-only TMPDIR isolation with default sandbox-enforced per-run temp write roots, retaining explicitly opted-in shared temp and fail-open behavior when the session temp directory cannot be created. Architecture: src/sandbox/session-tmp.ts:16-30 currently sanitizes each run/session part using /[^A-Za-z0-9_-]/g -> '_' and puts sessions under /tmp/nax-<runId>; expose synchronous, mutable _sessionTmpDeps for lstat/access/getuid and resolve /tmp/nax on every call, falling back to /tmp/nax-<uid> for non-directory, symlink, inaccessible or non-ENOENT errors. src/sandbox/index.ts:29 exports runTmpRoot/sessionTmpDir and should export the new seam and runTempRoots. src/execution/lifecycle/run-tmp-wipe.ts:27-49 already removes exactly runTmpRoot(runId), force-recursive, warns and swallows removal errors; preserve run-only cleanup and update obsolete layout comments/test. src/command-safety/tmp-write.ts:15-74 uses a lexer and normalized POSIX paths for redirects and write-target commands; current nax- prefix exclusion must also exclude /tmp/nax/ and /private/tmp/nax/ without excluding /tmp/naxfoo. This is a telemetry signal, not a command refusal. src/sandbox/policy-inputs.ts:70-72 provides the legacy defaultTempRoots of os.tmpdir() plus /tmp; add runTempRoots alongside it, excluding os.tmpdir when /tmp or /private/tmp or descendants, retaining other os tmpdirs. src/agents/coding-tool-support-resolve.ts:18,364-380 is the dispatch seam already passing sessionTmpDir only when options.runId exists; pass runTmpRoot under that same condition. src/agents/coding-tool-sandbox.ts:28-106 has the injectable _sessionSandboxDeps and async resolveSessionSandbox: only the enabled, probed-available, needsLauncher branch builds a policy, currently calling tempRoots() per policy build; create tmpDir before the first policy build and select confined roots or fall back to tempRoots on mkdir failure; inject mkdir, tmpdir and runTempRoots to avoid uninjected reads. Existing disabled/unavailable branches continue exporting TMPDIR without confinement. src/sandbox/launcher.ts:73-84,157-179 independently mkdir-p's tmpDir before each command and exports TMPDIR/TMP/TEMP (wrapped commands get shell export); do not change launcher semantics. src/sandbox/policy-builder.ts:115-141 puts tempRoots into writeRoots, realpath-normalizes paths with literal()/realOrRaw(), and independently allows /tmp/claude on darwin; tests must compare realOrRaw(path). src/sandbox/types.ts:47-50 available state should gain optional sharedTmp=false only for confinement; omitted must retain old constructor/equality behavior. src/config/schemas-sandbox.ts:23-40 uses zod 4 prefault({}) so the added allowSharedTmp=false gets populated for {} and nested filesystem {}; old full-object schema tests require updated expectations. src/sandbox/messages.ts:15-38 houses reusable sandboxSentence/denialHintLine; src/tools/bash.ts:183-203 uses sentence in raw and gated/escalate descriptions, src/tools/run-command.ts:261-266 uses it for Exec descriptions, so pass sharedTmp !== false at all three sites. src/prompts/sections/scratchpad.ts:29-51 provides unconditional scratchpad instructions; replace only the old TMPDIR paragraph with the exact prescribed wording while retaining the separate failed-run retention text. Existing .nax/scratchpad Write/Edit exemption is in src/tools/nax-owned-writes.ts:23,286. Tests: test/unit/sandbox/session-tmp.test.ts:20-49, test/unit/execution/lifecycle/run-tmp-wipe.test.ts:19-28, and test/unit/agents/coding-tool-support-session-tmp.test.ts:20-30,75 pin old flat /tmp/nax-... paths; stub the new dependency seam so tests do not depend on host /tmp/nax, and update cleanup to use runTmpRoot. test/unit/command-safety/tmp-write.test.ts:29-32 covers legacy nax-* exclusion. test/unit/agents/coding-tool-sandbox.test.ts:12-107 has injected backend/probe, withDepsRestore and deep-equality available-state assertion with no runTmpRoot; test/unit/config/schemas-sandbox.test.ts:6-24 and :40-46 pin full schema defaults; test/unit/sandbox/policy-inputs.test.ts covers I/O helpers, test/unit/sandbox/policy-builder.test.ts:202 checks realpath behavior. test/integration/sandbox/sandbox-live.test.ts:19-83 probes actual srt, skips when unavailable (required CI fails instead), and stubs tempRoots on its shared branch; extend using unique run IDs to prove $TMPDIR writes succeed and direct /tmp writes fail. test/unit/sandbox/messages.test.ts:24 asserts the old hint ending; test/unit/prompts/sections/scratchpad.test.ts:57-68 expects retired paragraph; test/unit/tools/bash-sandbox.test.ts and test/unit/tools/run-command-exec.test.ts test descriptions. Three snapshots requiring solely scratchpad paragraph regeneration are test/unit/prompts/__snapshots__/rectifier-builder.test.ts.snap, test/unit/prompts/__snapshots__/review-builder.test.ts.snap, and test/unit/prompts/builders/__snapshots__/rectifier-builder-helpers.test.ts.snap. Risks/migration: /tmp symlinks to /private/tmp on macOS, so compare canonicalized roots; never re-grant os.tmpdir() when it aliases a system /tmp subtree; nonwritable shared /tmp/nax requires a per-user fallback (not chmod 1777); mkdir failure must not leave a confined policy with unwritable TMPDIR; existing projects can restore shared roots with allowSharedTmp=true; sessions without runId and unsandboxed sessions retain legacy roots/permissions; no stale-run sweep. ADR-030 amendment already records the decision, no documentation story or new source files needed.",
+  "outOfScope": [
+    "Rewriting agent commands to replace `/tmp` paths \u2014 nax never edits agent-authored commands.",
+    "The unsandboxed path (sandbox disabled or unavailable): writes to `/tmp` stay allowed there; only the prompt text applies.",
+    "Windows and any platform without `process.getuid` \u2014 `/tmp` paths already assume POSIX.",
+    "A `/tmp/nax-*` or `/tmp/nax/*` sweep of stale directories from crashed runs \u2014 the wipe stays run-scoped.",
+    "The command-safety question set, model, labels and the `outside_project` rule regexes \u2014 the rule scorer never matches `/tmp`, so no rule change is needed.",
+    "Making `/tmp/nax` world-writable (mode 1777) \u2014 the per-user fallback covers multi-user hosts instead."
+  ],
+  "routingProfile": "native-ds-glm"
+}
