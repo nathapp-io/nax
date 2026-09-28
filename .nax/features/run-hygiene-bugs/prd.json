@@ -3,7 +3,7 @@
   "feature": "run-hygiene-bugs",
   "branchName": "feat/run-hygiene-bugs",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-28T05:00:57.487Z",
+  "updatedAt": "2026-09-28T05:23:31.052Z",
   "userStories": [
     {
       "id": "US-001",
@@ -30,8 +30,8 @@
         "shell"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -95,7 +95,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Small predicate and two well-defined branches across existing modules, using US-001 command string."
+        "reasoning": "Small predicate and two well-defined branches across existing modules, using US-001 command string.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/test-runners/compile-crash.ts",
@@ -107,7 +110,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "23b35324046e8bc8dc4d23929c0810ef1040d630"
     },
     {
       "id": "US-003",
