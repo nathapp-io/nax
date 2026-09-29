@@ -1,5 +1,5 @@
 /**
- * US-005 — credential sources and helper management in the auth CLI.
+ * US-007 — credential sources and helper management in the auth CLI.
  *
  * `nax auth list` reports which source pays for a provider and which account a
  * helper-served credential belongs to, `nax auth rm` refuses a provider the exec
