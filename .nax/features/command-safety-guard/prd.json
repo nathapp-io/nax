@@ -3,7 +3,7 @@
   "feature": "command-safety-guard",
   "branchName": "feat/command-safety-guard",
   "createdAt": "2026-09-29T00:00:00Z",
-  "updatedAt": "2026-09-29T04:07:07.948Z",
+  "updatedAt": "2026-09-29T04:49:38.561Z",
   "userStories": [
     {
       "id": "US-001",
@@ -103,8 +103,8 @@
         "sandbox"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -176,7 +176,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New permission-narrowing guard across config, model cache and scoring; access-control security override requires strict isolation."
+        "reasoning": "New permission-narrowing guard across config, model cache and scoring; access-control security override requires strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/config/schemas-command-safety.ts",
@@ -193,7 +196,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8ba5a39613e1148e14eb1460b85e57c339aabc86"
     },
     {
       "id": "US-004",

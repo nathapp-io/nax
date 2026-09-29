@@ -168,6 +168,27 @@ describe("buildDispatchAskWiring — shadow and lifetime", () => {
     expect((await buildDispatchAskWiring(opts(), deps())).commandShadow).toBeUndefined();
   });
 
+  test("AC8: execution.commandSafety.guard reaches the built shadow through buildCommandShadow", async () => {
+    const config = makeNaxConfig({
+      execution: {
+        commandSafety: {
+          shadow: {
+            url: "http://127.0.0.1:8020/x",
+            timeoutMs: 3000,
+            authEnv: "NAX_COMMAND_SAFETY_AUTH",
+            allowRemote: false,
+          },
+          guard: { threshold: 0.6 },
+        },
+      },
+    });
+
+    const wiring = await buildDispatchAskWiring(opts({ config }), deps());
+
+    expect(wiring.commandShadow?.guard?.threshold).toBe(0.6);
+    await wiring.dispose();
+  });
+
   test("the built shadow is exposed with the run and story ids, and drained by dispose", async () => {
     const spy = spyShadow();
     const seen: unknown[] = [];

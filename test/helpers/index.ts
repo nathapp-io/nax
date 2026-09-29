@@ -17,10 +17,18 @@ export { assertCaughtInstanceOf, assertNaxError } from "./assert-nax-error";
 export { makeMockCallContext } from "./call-context";
 export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp } from "./call-op";
 export {
+  GUARD_HIGH_ANSWER,
+  GUARD_LOW_ANSWER,
+  GUARD_THRESHOLD,
+  type GuardClassifyAnswer,
+  type GuardFixture,
+  type GuardFixtureOptions,
   IDENTIFIER_KEYS,
   type IdentifierKeysMatchContract,
   makeCommandShadowRecorder,
+  makeGuardFixture,
   observedOnly,
+  requireGuard,
 } from "./command-safety";
 export { opSelector } from "./config-selector";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";

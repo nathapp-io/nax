@@ -62,3 +62,18 @@ describe("buildCommandShadow", () => {
     });
   });
 });
+
+describe("buildCommandShadow — the guard config (US-003)", () => {
+  test("AC7: the guard is built only when the config carries one", () => {
+    const withoutGuard = buildCommandShadow({ config: shadowConfig, outputDir: "/x", runId: "r1", env: {} });
+    const withGuard = buildCommandShadow({
+      config: { shadow: shadowConfig.shadow, guard: { threshold: 0.6 } },
+      outputDir: "/x",
+      runId: "r1",
+      env: {},
+    });
+
+    expect(withoutGuard?.guard).toBeUndefined();
+    expect(withGuard?.guard?.threshold).toBe(0.6);
+  });
+});
