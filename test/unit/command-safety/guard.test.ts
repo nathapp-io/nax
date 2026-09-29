@@ -181,6 +181,30 @@ describe("guard.assess", () => {
     await shadow.drain();
   });
 
+  test("US-003 (AC17 counterpart): observe a temp-only command then assess it — classify runs once, basis stays temp-only", async () => {
+    // The row opened by `observe` still classifies, but `assess` sees the
+    // temp-only exemption and skips the classifier for its decision. The
+    // shadow and the guard share one classifier promise per command, so
+    // the count is exactly one and the basis is `temp-only` — not `model`.
+    const { shadow, guard, classifyCalls } = makeGuardFixture(GUARD_HIGH_ANSWER);
+    const obs: Observation = {
+      command: "cp src/a.ts /tmp/a.bak",
+      identity: "Bash",
+      stage: "run",
+      mechanical: { verdict: "allow", breach: false },
+      cwd: ROOT,
+    };
+
+    shadow.observe("k1", obs);
+    const decision = await guard.assess({ command: "cp src/a.ts /tmp/a.bak", cwd: ROOT, tempConfined: true });
+
+    expect(classifyCalls).toEqual(["cp src/a.ts /tmp/a.bak"]);
+    expect(decision.flagged).toBe(false);
+    expect(decision.score).toBe(0);
+    expect(decision.basis).toBe("temp-only");
+    await shadow.drain();
+  });
+
   test("AC21: a score exactly equal to the threshold flags", async () => {
     const { guard } = makeGuardFixture(HALF_ANSWER, { threshold: HALF_THRESHOLD });
 
