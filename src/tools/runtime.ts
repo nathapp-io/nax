@@ -23,7 +23,13 @@ import { grepTool } from "./grep";
 import { readTool } from "./read";
 import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry";
 import { requestCapabilityTool } from "./request-capability";
-import { openCallShadowTap, resolveAskOutcome, resolveDenialOutcome, resolvePolicyIdentity } from "./runtime-calltool";
+import {
+  openCallShadowTap,
+  resolveAskOutcome,
+  resolveDenialOutcome,
+  resolveGuardDenial,
+  resolvePolicyIdentity,
+} from "./runtime-calltool";
 import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad";
 import { applyModelTruncationPolicy } from "./spill";
 import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit";
@@ -170,9 +176,20 @@ export function createCodingToolRuntime(opts: {
   pipelineStage?: string;
   /**
    * P5 shadow classifier (spec 2026-09-23-p5-command-safety-shadow-design.md).
-   * Observational only: it never changes a verdict, delays or fails a call.
+   * The shadow itself is observational: it never changes a verdict, delays or
+   * fails a call. Its optional `guard` (US-004) is the one exception the
+   * master plan allows (D4a) — a flag-for-review guardrail, never an
+   * auto-approver: a flagged ALLOWED `Bash`/`Exec` call is routed through the
+   * existing ask channel, which decides.
    */
   commandShadow?: CommandShadow;
+  /**
+   * US-004: whether the session's sandbox confines temp writes to this run's
+   * own temp root (#2285). Forwarded to the guard's temp-only exemption;
+   * absent reads as false, the shared-temp posture every pre-US-002 launcher
+   * has. Derived from `isTempConfined(launcher)` in coding-tool-support.
+   */
+  tempConfined?: boolean;
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its
@@ -470,6 +487,38 @@ export function createCodingToolRuntime(opts: {
           declaredCommands: opts.declaredCommands,
           root: opts.policy.root,
           logCall,
+        });
+      }
+
+      // US-004: an ALLOWED `Bash`/`Exec` call the configured guard flags is
+      // routed through the existing ask channel; every other call (no guard,
+      // unflagged, any other identity) runs exactly as before. The tap above
+      // was opened BEFORE this await, so the shadow's observation starts the
+      // shared classification the guard then reuses.
+      const guardDenial = await resolveGuardDenial({
+        identity: policyIdentity,
+        tool,
+        input,
+        argvField,
+        guard: opts.commandShadow?.guard,
+        root: opts.policy.root,
+        tempConfined: opts.tempConfined ?? false,
+        resolvedPaths: verdict.resolvedPaths,
+      });
+      if (guardDenial !== undefined) {
+        return resolveAskOutcome({
+          identity: policyIdentity,
+          tool,
+          input,
+          context,
+          verdict: guardDenial,
+          runtimeSignal: signal,
+          askResolver,
+          stage: opts.pipelineStage,
+          storyId: opts.storyId,
+          root: opts.policy.root,
+          logCall,
+          runTool,
         });
       }
 

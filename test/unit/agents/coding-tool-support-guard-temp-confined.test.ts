@@ -6,7 +6,7 @@
  * AND `sharedTmp === false`: only then are temp writes confined to this run's
  * own temp root, which is the condition under which the guard may skip the
  * classifier for a temp-only command. Every other launcher state — an
- * available one without `sharedTmp`, and a disabled one — must read as NOT
+ * available one without `sharedTmp`, and a disabled one — must read as not
  * confined, so the classifier is consulted as before.
  *
  * Driven through `buildCodingToolSupport -> runtime.callTool` with a STUB

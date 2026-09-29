@@ -11,11 +11,16 @@ strings and `RunCommand` `Exec` argv:
 - **The OS sandbox** (`src/sandbox/`, `execution.sandbox`) changes *how* such a command runs:
   it is wrapped so writes and credential reads are confined. **On by default.**
 - **The command-safety shadow** (`src/command-safety/`, `execution.commandSafety`) records a
-  classification of every such command beside the verdict the policy actually reached. It
-  decides nothing. **Off by default.**
+  classification of every such command beside the verdict the policy actually reached. On its
+  own it decides nothing; the opt-in **guard** layered on it turns a flagged *allowed* call
+  into an ask (see [The flag-for-review guard](#the-flag-for-review-guard-opt-in)). **Off by
+  default.**
 
-Neither decides *whether* a command runs — that is the permission policy's job alone
-([Permissions](permissions.md)). Both are recorded in
+Neither decides *whether* a command runs on its own — that is the permission policy's job alone
+([Permissions](permissions.md)) — with one exception: the shadow's opt-in guard may turn an
+allowed `Bash`/`Exec` call into the same **ask** the policy's own ask rules produce, which the
+ask channel then decides. The guard never approves and never denies by itself; it only routes a
+flag to the configured approver, or to the headless refusal. Both are recorded in
 [ADR-030](../adr/ADR-030-bash-approval-modes.md) (P4, P5 and the 2026-09-25 default-on
 amendment), and all four `execution` keys involved are root-only
 ([ADR-031](../adr/ADR-031-root-scoped-command-safety-config.md)): a package config that sets one
@@ -184,8 +189,9 @@ stage, the acceptance-fix loop, the deferred regression gate and `nax finish`), 
    `discards_work`, `outside_project`, `system_change`, `network_send`, `privilege`,
 
 then writes one row beside the mechanical verdict and the ledger outcome. Nothing in the policy
-reads it. It never delays or fails a call: a hanging or failing classifier only marks the row's
-model half `unavailable`, and the per-story drain is bounded by one timeout.
+reads it. The row never delays or fails a call: a hanging or failing classifier only marks the
+row's model half `unavailable`, and the per-story drain is bounded by one timeout. The guard
+below is the one reader, and it only flags — a flag becomes an ask, never a silent allow or deny.
 
 Results are cached per command (byte-exact, keyed on the question-set version) within one
 dispatch scope; a repeat shows `model.status: "cached"`.
@@ -231,6 +237,57 @@ Absent `shadow` means off.
 
 > **Warning:** `allowRemote: true` sends every agent command verbatim off-host. nax carries no
 > model runtime; whatever serves the URL may also forward commands elsewhere.
+
+### The flag-for-review guard (opt-in)
+
+The shadow's `guard` block turns the classifier from a bystander into a **flag-for-review
+guardrail** (master plan D4a — a model is never an auto-approver). When it is configured, every
+**allowed** `Bash`/`Exec` call is assessed before it runs:
+
+- the command is scored by the rule families *and* by the shadow's classifier (the same cached
+  answer the row carries — the guard never re-classifies), and
+- when the composite score reaches `guard.threshold`, the runtime turns the call into an **ask**:
+  the same ask channel the policy's own ask rules use. The asked rule is `command-safety`, and the
+  reason names the flag (`flagged for review by command safety: <category> (score X >= T)`). An
+  approver that allows the call runs it; a denial — or the **headless refusal** below — refuses it
+  and the command never runs.
+
+Nothing else changes. A policy denial, a policy ask, an allowed non-command tool (Read, Grep, …)
+and a `RunCommand` *verb* call are never assessed; `RunCommand`'s argv branch resolves to the
+`Exec` identity and **is**. The guard gates nothing else, and when `guard` is absent the runtime
+behaves exactly as it did before this layer existed.
+
+**Headless refusal.** A guard ask goes through the ordinary ask resolver, so it inherits the ask
+channel's behaviour unchanged: a successful flag on a run with no approval channel is refused
+with the usual `... no approval channel is configured for this run, so the call is refused`, and
+the command does not run.
+
+**Sandbox temp confinement.** When the sandbox confines temp writes to this run's own temp root
+(the launcher is available and `filesystem.allowSharedTmp` is `false`), a temp-only command skips
+the classifier — the rules alone decide — because its temp paths are contained. In every other
+sandbox state (unavailable, disabled, or shared `/tmp`) the classifier is consulted as before.
+
+```json
+{
+  "execution": {
+    "commandSafety": {
+      "shadow": { "url": "http://127.0.0.1:8020/t/nax-command-safety/v1/systemone" },
+      "guard": { "threshold": 0.75 }
+    }
+  }
+}
+```
+
+| Key | Default | Meaning |
+|:--|:--|:--|
+| `guard.threshold` | `0.75` | The flag cut, in `(0, 1]`; a score **at or above** it flags. `0` is rejected (it would flag everything): leave `guard` out to disable. |
+
+`guard` **requires** `shadow` — the guard reuses the shadow's classifier, so a `guard` without a
+`shadow` is a config validation error rather than a silently dead key.
+
+The guard is total by contract: if an assessment ever rejects, the call runs **unguarded** and the
+failure is logged once per rejecting call at stage `command-safety`
+(`Command-safety guard failed; the call runs unguarded`). A guard failure never refuses a command.
 
 ### Evaluating the rows
 
