@@ -24,6 +24,7 @@ import {
   servedAuth,
 } from "@/agents/native";
 import { readGlobalAuthConfig } from "@/config";
+import { errorCode, safeAccountLabel } from "./auth-list";
 import { PromptCancelledError, promptForLine, promptForSecret, promptForSelect } from "./auth-prompt";
 import { openUrl } from "./open-url";
 
@@ -169,51 +170,6 @@ export async function authImportCommand(options: { from?: string; force?: boolea
     _cliAuthDeps.log(chalk.red((error as Error).message));
     return 1;
   }
-}
-
-function errorCode(error: unknown, fallback: string): string {
-  if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") {
-    return error.code;
-  }
-  return fallback;
-}
-
-function skipAnsiSequence(value: string, start: number): number {
-  const next = value.charCodeAt(start + 1);
-  let index = start + 2;
-  if (next === 91) {
-    while (index < value.length) {
-      const code = value.charCodeAt(index);
-      if (code >= 64 && code <= 126) return index;
-      index++;
-    }
-    return value.length - 1;
-  }
-  if (next === 93) {
-    while (index < value.length) {
-      const code = value.charCodeAt(index);
-      if (code === 7) return index;
-      if (code === 27 && value.charCodeAt(index + 1) === 92) return index + 1;
-      index++;
-    }
-    return value.length - 1;
-  }
-  return Math.min(start + 1, value.length - 1);
-}
-
-function safeAccountLabel(account: string): string {
-  let clean = "";
-  for (let index = 0; index < account.length; index++) {
-    const code = account.charCodeAt(index);
-    if (code === 27) {
-      index = skipAnsiSequence(account, index);
-    } else if (code < 32 || (code >= 127 && code <= 159)) {
-      if (code === 9 || code === 10 || code === 13) clean += " ";
-    } else {
-      clean += account[index];
-    }
-  }
-  return clean.replace(/\s+/g, " ").trim();
 }
 
 async function helperRowStatus(providerId: string): Promise<string> {
