@@ -380,7 +380,6 @@ Add `src/utils/agent-output-env.ts`, re-export from `src/verification/executor.t
 - [unit] With `enabled: true`, `bash: true` and `which` returning `null`, `interceptShell` answers `{ kind: "declined", reason: "rtk binary not found on PATH" }` and `rewrite` is never called.
 - [unit] With `enabled: true`, `bash: true` and `which` throwing `boom`, `interceptShell` answers `{ kind: "declined", reason: "rtk probe failed: boom" }`.
 - [unit] The recorded `InterceptorState` carries `bash: true` when the interceptor is created with `bash: true`, and `bash: false` when the option is absent.
-- [unit] `RTK_REWRITE_TIMEOUT_MS` imported from `@/execution/interceptors/rtk` equals `2000`.
 - [integration] The default `rewrite`, given a fake `rtk` executable on `PATH` that records its pid to a file and then sleeps, resolves with `timedOut: true` within `RTK_REWRITE_TIMEOUT_MS` plus one second, and the recorded pid is no longer a running process afterwards.
 - [integration] The default `rewrite`, given a fake `rtk` executable on `PATH` that prints `rtk bun test` and exits 3 when called as `rtk rewrite "bun test"`, resolves `{ exitCode: 3, stdout: "rtk bun test\n", timedOut: false }`.
 
