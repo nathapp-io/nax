@@ -27,6 +27,7 @@ import { type CommandLauncher, rawBashRefusalReason, sandboxSentence, unsandboxe
 import { agentOutputOverlay } from "../utils/agent-output-env";
 import type { ArgvExecResult } from "../utils/argv-exec";
 import { runArgv } from "../utils/argv-exec";
+import { formatExecBody } from "../utils/exec-framing";
 import type { CodingTool, ToolRunContext } from "./registry";
 import { cutToByteCap, READ_CEILING } from "./truncate";
 import { BASH_TOOL_NAME } from "./types";
@@ -340,22 +341,14 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
 
       try {
         const { launched, stdout } = await launchIntercepted({ command, shell, opts, ctx, timeoutMs });
-        // US-001: an aborted call's body opens with the cancellation line and
-        // surfaces whatever partial output the readers captured before the
-        // process group was SIGKILLed (AC14). An orphansKilled call appends
-        // the "[nax] background processes ..." final line so the model can
-        // tell that a `&`ed process held the pipe and was reaped (AC15). Both
-        // are independent of the regular `timed out` / `exit N` framing.
-        let body: string;
-        if (launched.aborted === true) {
-          body = `Cancelled: the turn ended while this command was running.\nexit ${launched.exitCode}\n${stdout}\n${launched.stderr}`;
-        } else if (launched.orphansKilled === true) {
-          body = `exit ${launched.exitCode}\n${stdout}\n${launched.stderr}\n[nax] background processes still holding the output were killed`;
-        } else if (launched.timedOut) {
-          body = `timed out after ${timeoutMs}ms`;
-        } else {
-          body = `exit ${launched.exitCode}\n${stdout}\n${launched.stderr}`;
-        }
+        // Same framing ladder as RunCommand (Exec) via the shared
+        // `formatExecBody`: an aborted call opens with the cancellation line
+        // and surfaces whatever partial output the readers captured before the
+        // process group was SIGKILLed (AC14); an orphansKilled call appends the
+        // "[nax] background processes ..." footer so the model can tell that a
+        // `&`ed process held the pipe and was reaped (AC15). Both are
+        // independent of the regular `timed out` / `exit N` framing.
+        const body = formatExecBody({ ...launched, stdout }, timeoutMs);
         // The tool's own bound is the I/O ceiling, not the model-facing cap:
         // `maxBytes` shapes what the model is told and belongs to the session's
         // truncation policy (which also spills what it cuts), while this one

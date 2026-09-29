@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-29T06:56:56.936Z",
+  "updatedAt": "2026-09-29T07:59:10.983Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -165,7 +165,6 @@
     "src/test-runners/parse-rust.ts": { "extractRustFailures": 23 },
     "src/test-runners/parser.ts": { "parseJestOutput": 27, "parsePytestOutput": 22 },
     "src/test-runners/resolver.ts": { "resolveTestFilePatterns": 24 },
-    "src/tools/bash.ts": { "run": 21 },
     "src/tools/git-commit.ts": { "run": 22 },
     "src/tools/git.ts": { "buildGitArgv": 47 },
     "src/tools/grep.ts": { "run": 21 },

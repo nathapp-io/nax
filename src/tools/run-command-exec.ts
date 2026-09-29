@@ -26,6 +26,7 @@ import type { CommandLauncher, SandboxRecord } from "../sandbox";
 import { agentOutputOverlay } from "../utils/agent-output-env";
 import type { ArgvExecResult } from "../utils/argv-exec";
 import { runArgv } from "../utils/argv-exec";
+import { formatExecBody } from "../utils/exec-framing";
 import { deniedFlag, validateArgv } from "./exec-guard";
 import { normalizeExec } from "./package-managers";
 import type { ExecTarget } from "./package-managers-types";
@@ -61,33 +62,6 @@ function mergedExecEnv(
   const agentOverlay = agentOutputOverlay(strippedVars);
   if (agentOverlay === undefined) return execEnv !== undefined ? { ...execEnv } : undefined;
   return { ...(execEnv ?? {}), ...agentOverlay };
-}
-
-/**
- * Frame the spawn result the way the model expects to see it: an aborted call
- * opens with the cancellation line, an orphansKilled call appends the
- * `[nax]` footer, and everything else gets `exit N\nstdout\nstderr` (US-001
- * AC14/AC15 mirrors). One function so the if-else ladder doesn't pile on
- * `runExecBranch`'s complexity score.
- */
-function formatExecBody(launched: {
-  aborted?: boolean;
-  orphansKilled?: boolean;
-  timedOut: boolean;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}): string {
-  if (launched.aborted === true) {
-    return `Cancelled: the turn ended while this command was running.\nexit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
-  }
-  if (launched.orphansKilled === true) {
-    return `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}\n[nax] background processes still holding the output were killed`;
-  }
-  if (launched.timedOut) {
-    return `timed out after ${EXEC_TIMEOUT_MS}ms`;
-  }
-  return `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
 }
 
 /**
@@ -186,7 +160,7 @@ export async function runExecBranch(
     // US-001: match Bash's framing so an aborted Exec is rendered as an
     // error with the cancellation banner (AC14 mirror) and an orphansKilled
     // Exec appends the same `[nax]` footer (AC15 mirror).
-    const text = formatExecBody(launched);
+    const text = formatExecBody(launched, EXEC_TIMEOUT_MS);
 
     return {
       content: cutToByteCap(text, ctx.readCeiling ?? READ_CEILING),
