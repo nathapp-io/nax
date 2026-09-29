@@ -221,6 +221,9 @@ describe("createChainedCredentialStore", () => {
       const err = await caught(() => chained.read("anthropic"));
 
       expect(err.code).toBe("CREDENTIAL_FILE_UNREADABLE");
+      // error-handling.md: every NaxError context carries a stage. Pinned here so
+      // the same code's stage cannot be dropped to "match" another site.
+      expect(err.context?.stage).toBe("credentials");
     });
 
     test("AC7: the CREDENTIAL_FILE_UNREADABLE error carries the file store's original error as cause", async () => {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   _resetCredentialStore,
   credentialFilePath,
@@ -9,6 +9,7 @@ import {
   readStoredEntries,
   servedAuth,
 } from "@/agents/native/credentials";
+import type { NaxError } from "@/errors";
 
 let dir: string;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
@@ -43,6 +44,20 @@ describe("naxCredentialStore", () => {
   });
 });
 
+/**
+ * `run` is expected to reject with a NaxError; returns the caught error so the
+ * test can assert its shape (code, context) rather than only its message.
+ */
+async function caughtNaxError(run: () => Promise<unknown>): Promise<NaxError> {
+  try {
+    await run();
+  } catch (err) {
+    assertNaxError(err, "readStoredEntries rejection");
+    return err;
+  }
+  throw new Error("expected readStoredEntries to reject, but it resolved");
+}
+
 describe("readStoredEntries", () => {
   test("is empty when no credential file exists", async () => {
     expect(await readStoredEntries()).toEqual([]);
@@ -63,14 +78,36 @@ describe("readStoredEntries", () => {
     ]);
   });
 
-  test("throws rather than reporting empty when the file is unparseable", async () => {
+  test("throws CREDENTIAL_FILE_UNREADABLE rather than reporting empty when the file is unparseable", async () => {
     writeFileSync(credentialFilePath(), "{ not json");
-    await expect(readStoredEntries()).rejects.toThrow(/could not be parsed/);
+
+    const err = await caughtNaxError(() => readStoredEntries());
+
+    expect(err.message).toMatch(/could not be parsed/);
+    expect(err.code).toBe("CREDENTIAL_FILE_UNREADABLE");
+    // error-handling.md: every NaxError context carries a stage, so stage-based
+    // triage can see this site. Same stage as the chained store's identical code.
+    expect(err.context?.stage).toBe("credentials");
   });
 
-  test("throws the crafted message rather than a raw TypeError when credentials is null", async () => {
+  test("throws CREDENTIAL_FILE_UNREADABLE rather than a raw TypeError when credentials is null", async () => {
     writeFileSync(credentialFilePath(), JSON.stringify({ credentials: null }));
-    await expect(readStoredEntries()).rejects.toThrow(/could not be parsed/);
+
+    const err = await caughtNaxError(() => readStoredEntries());
+
+    expect(err.message).toMatch(/could not be parsed/);
+    expect(err.code).toBe("CREDENTIAL_FILE_UNREADABLE");
+    expect(err.context?.stage).toBe("credentials");
+  });
+
+  test("throws CREDENTIAL_FILE_UNREADABLE when credentials is not an object", async () => {
+    writeFileSync(credentialFilePath(), JSON.stringify({ credentials: [] }));
+
+    const err = await caughtNaxError(() => readStoredEntries());
+
+    expect(err.message).toMatch(/could not be parsed/);
+    expect(err.code).toBe("CREDENTIAL_FILE_UNREADABLE");
+    expect(err.context?.stage).toBe("credentials");
   });
 });
 
