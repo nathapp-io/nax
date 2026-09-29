@@ -21,7 +21,7 @@
  * observable result.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import type {
@@ -174,7 +174,11 @@ describe("US-003 Bash interception", () => {
   withDepsRestore(_bashToolDeps, ["runArgv", "interceptor"]);
 
   beforeEach(() => {
-    root = makeTempDir("bash-intercept-");
+    // `compileToolPolicy` realpaths its root (`realOrRaw`), so the root the
+    // runtime hands the tool is the resolved one: macOS resolves /tmp ->
+    // /private/tmp. Compare like with like — on Linux realpath is a no-op.
+    // Same seam as test/unit/tools/ask-request-payload.test.ts.
+    root = realpathSync(makeTempDir("bash-intercept-"));
     calls = [];
     mkdirSync(join(root, "src"), { recursive: true });
     writeFileSync(join(root, "src", "a.ts"), "export const a = 1;\n");

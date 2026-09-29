@@ -40,7 +40,7 @@ import { detectProjectProfile } from "@/project";
 import { createRuntime, type NaxRuntime } from "@/runtime";
 import { SessionManager, sweepFeatureTranscripts } from "@/session";
 import { discoverWorkspacePackages } from "@/test-runners";
-import { _gitToolDeps } from "@/tools";
+import { _bashToolDeps, _gitToolDeps } from "@/tools";
 import { errorMessage } from "@/utils/errors";
 import { gitSpawnEnv } from "@/utils/git-env";
 import { storyPackageDir } from "@/utils/path-frame";
@@ -204,10 +204,19 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // distinguishable. Entry points that skip setupRun leave the seam undefined
   // and interception simply does not apply — fail-safe.
   const ci = config.execution.commandInterceptor;
-  _gitToolDeps.interceptor = createRtkInterceptor({
+  // US-003: ONE interceptor for every site this run intercepts. Two instances
+  // would probe the rtk binary twice and could disagree about the mode, so the
+  // Bash and Git sites share the object (and the `bash` flag decides whether a
+  // shell command is ever offered to the provider). The request the Bash tool
+  // sends carries the command the MODEL wrote and is validated before it runs;
+  // config-supplied strings are never routed here (R10).
+  const interceptor = createRtkInterceptor({
     enabled: ci.enabled,
     verbs: ci.git.verbs,
+    bash: ci.bash.enabled,
   });
+  _gitToolDeps.interceptor = interceptor;
+  _bashToolDeps.interceptor = interceptor;
 
   // ── Status writer (encapsulates status file state and write logic) ───────
   const statusWriter = new StatusWriter(statusFile, config, {

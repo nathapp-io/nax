@@ -20,9 +20,13 @@
  * an OS sandbox when enabled -- never WHETHER.
  */
 import type { BashApprovalMode } from "../config/bash-approval";
+import type { CommandInterceptor, ShellInterceptRequest } from "../execution/command-interceptor";
+import { interceptShell } from "../execution/command-interceptor";
+import type { SandboxRecord } from "../sandbox";
 import { type CommandLauncher, rawBashRefusalReason, sandboxSentence, unsandboxedSentence } from "../sandbox";
+import type { ArgvExecResult } from "../utils/argv-exec";
 import { runArgv } from "../utils/argv-exec";
-import type { CodingTool } from "./registry";
+import type { CodingTool, ToolRunContext } from "./registry";
 import { cutToByteCap, READ_CEILING } from "./truncate";
 import { BASH_TOOL_NAME } from "./types";
 
@@ -72,8 +76,18 @@ export interface BashToolOptions {
   readonly launcher?: CommandLauncher;
 }
 
-/** Injectable seam, mirroring `_argvExecDeps` / `_gitToolDeps`. */
-export const _bashToolDeps = { runArgv };
+/**
+ * Injectable seam, mirroring `_argvExecDeps` / `_gitToolDeps`.
+ *
+ * `interceptor` is the run-scoped instance `setupRun` installs (US-003) — the
+ * SAME object the Git tool holds, so both sites share one binary probe and one
+ * mode. Undefined for entry points that skip `setupRun`; interception then
+ * simply does not apply, the fail-safe both sites state.
+ */
+export const _bashToolDeps = {
+  runArgv,
+  interceptor: undefined as CommandInterceptor | undefined,
+};
 
 function describeGrants(patterns: readonly string[] | undefined): string {
   const named = (patterns ?? []).filter((pattern) => pattern !== "*");
@@ -209,6 +223,70 @@ function bashToolDescription(shell: string, opts: BashToolOptions): string {
   return policyDescription;
 }
 
+/** What the tool launched, plus the logical argv the ledger records. */
+interface BashLaunch extends ArgvExecResult {
+  readonly executed: readonly string[];
+  readonly sandbox?: SandboxRecord;
+}
+
+/** One intercepted call: what the model asked for, and how this run launches it. */
+interface BashLaunchRequest {
+  readonly command: string;
+  readonly shell: string;
+  readonly opts: BashToolOptions;
+  readonly ctx: ToolRunContext;
+  readonly timeoutMs: number;
+}
+
+/**
+ * Intercept, launch, post-process — everything that decides WHICH command ran.
+ * `run` keeps only the framing.
+ *
+ * The interception belongs HERE and not above the tool: `callTool` has already
+ * lexed and gated the model's ORIGINAL string against the stage's `Bash(...)`
+ * rules, and this is the first point after that verdict. The rewrite is
+ * therefore never the string the policy judged, which is exactly why
+ * `interceptShell` re-validates the provider's answer rather than trusting it.
+ */
+async function launchIntercepted({
+  command,
+  shell,
+  opts,
+  ctx,
+  timeoutMs,
+}: BashLaunchRequest): Promise<{ launched: BashLaunch; stdout: string }> {
+  const intercepted = await interceptShell(command, ctx.root, _bashToolDeps.interceptor);
+  const executed = [shell, "-c", intercepted.command];
+  const common = {
+    cwd: ctx.root,
+    timeoutMs,
+    stripEnvVars: [...(opts.stripEnvVars ?? [])],
+    ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
+  };
+  const launched: BashLaunch =
+    opts.launcher !== undefined
+      ? await opts.launcher.run({
+          spec: { kind: "shell", shell, command: intercepted.command },
+          root: ctx.root,
+          ...common,
+        })
+      : { ...(await _bashToolDeps.runArgv({ argv: executed, ...common })), executed, sandbox: undefined };
+  if (!intercepted.rewritten) return { launched, stdout: launched.stdout };
+
+  // The request describes the command the MODEL wrote — the same shape
+  // `interceptShell` sent — so post-processing stays keyed to the original,
+  // mirroring the Git site, which passes the original argv.
+  const req: ShellInterceptRequest = { kind: "shell", command, cwd: ctx.root, site: "bash" };
+  try {
+    const processed = _bashToolDeps.interceptor?.postProcess?.(launched.stdout, req)?.output;
+    return { launched, stdout: processed ?? launched.stdout };
+  } catch {
+    // Advisory, like the rewrite-time fail-open: a sick post-processor must not
+    // discard the output of a command that actually ran.
+    return { launched, stdout: launched.stdout };
+  }
+}
+
 export function createBashTool(opts: BashToolOptions = {}): CodingTool {
   const shell = opts.shell ?? DEFAULT_BASH_SHELL;
   return {
@@ -243,30 +321,9 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
       const requested =
         typeof input.timeoutMs === "number" && Number.isFinite(input.timeoutMs) ? input.timeoutMs : BASH_TIMEOUT_MS;
       const timeoutMs = Math.min(Math.max(Math.trunc(requested), MIN_BASH_TIMEOUT_MS), BASH_TIMEOUT_MS);
-      const argv = [shell, "-c", command];
 
       try {
-        const launched =
-          opts.launcher !== undefined
-            ? await opts.launcher.run({
-                spec: { kind: "shell", shell, command },
-                root: ctx.root,
-                cwd: ctx.root,
-                timeoutMs,
-                stripEnvVars: opts.stripEnvVars ?? [],
-                ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
-              })
-            : {
-                ...(await _bashToolDeps.runArgv({
-                  argv,
-                  cwd: ctx.root,
-                  timeoutMs,
-                  stripEnvVars: [...(opts.stripEnvVars ?? [])],
-                  ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
-                })),
-                executed: argv,
-                sandbox: undefined,
-              };
+        const { launched, stdout } = await launchIntercepted({ command, shell, opts, ctx, timeoutMs });
         // US-001: an aborted call's body opens with the cancellation line and
         // surfaces whatever partial output the readers captured before the
         // process group was SIGKILLed (AC14). An orphansKilled call appends
@@ -275,13 +332,13 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
         // are independent of the regular `timed out` / `exit N` framing.
         let body: string;
         if (launched.aborted === true) {
-          body = `Cancelled: the turn ended while this command was running.\nexit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
+          body = `Cancelled: the turn ended while this command was running.\nexit ${launched.exitCode}\n${stdout}\n${launched.stderr}`;
         } else if (launched.orphansKilled === true) {
-          body = `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}\n[nax] background processes still holding the output were killed`;
+          body = `exit ${launched.exitCode}\n${stdout}\n${launched.stderr}\n[nax] background processes still holding the output were killed`;
         } else if (launched.timedOut) {
           body = `timed out after ${timeoutMs}ms`;
         } else {
-          body = `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
+          body = `exit ${launched.exitCode}\n${stdout}\n${launched.stderr}`;
         }
         // The tool's own bound is the I/O ceiling, not the model-facing cap:
         // `maxBytes` shapes what the model is told and belongs to the session's

@@ -57,7 +57,7 @@ description: User guides, architecture references, and specs for nax
 | [Sandbox & Command Safety](guides/sandbox-and-command-safety.md) | The OS sandbox around agent-authored commands (`execution.sandbox`, on by default) and the command-safety shadow classifier (`execution.commandSafety`) |
 | [Approvals](guides/approvals.md) | Interactive approval prompts, remembered approvals, and revoking them with `nax approvals list` / `nax approvals rm` |
 | [Exec Allowlist](guides/exec-allowlist.md) | What an agent may execute via `RunCommand`'s argv branch — the default install-only list, writing an `Exec(...)` grant, and install hardening |
-| [MCP & Command Interception](guides/mcp-and-interception.md) | Attaching MCP servers as tools (`mcp`, `nax mcp lock`) and rewriting the `Git` tool through `rtk` (`execution.commandInterceptor`) — both native-agent only |
+| [MCP & Command Interception](guides/mcp-and-interception.md) | Attaching MCP servers as tools (`mcp`, `nax mcp lock`) and rewriting the native agent's `Git` argv and model-authored `Bash` commands through `rtk` (`execution.commandInterceptor`) — both native-agent only |
 
 ### Contributing to nax
 
