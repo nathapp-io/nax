@@ -841,7 +841,10 @@ describe("credential-sources exec credential source", () => {
     const source = await makeExecSource({ command: [helper] });
     const first = await source.read("anthropic");
     const second = await source.read("anthropic");
-    expect(first).toEqual({ kind: "api-key", key: "K1", expiresAt: Number(soon) });
+    // read() resolves to {kind,key} only — the lease's expiresAt stays internal to the
+    // source (SPEC-credential-sources.md:78, nax-ai's StoredCredential), so the spawn
+    // count is what shows the 30s lease was not fresh.
+    expect(first).toEqual({ kind: "api-key", key: "K1" });
     expect(second).toEqual({ kind: "api-key", key: "K2" });
     expect(spawnCount(counter)).toBe(2);
   }, 15000);
@@ -859,8 +862,10 @@ describe("credential-sources exec credential source", () => {
     const source = await makeExecSource({ command: [helper] });
     const first = await source.read("anthropic");
     const second = await source.read("anthropic");
-    expect(first).toEqual({ kind: "api-key", key: "K1", expiresAt: Number(later) });
-    expect(second).toEqual({ kind: "api-key", key: "K1", expiresAt: Number(later) });
+    // Same-lease reuse, asserted on the values read() actually returns; one spawn
+    // is what proves the far-future lease was fresh.
+    expect(first).toEqual({ kind: "api-key", key: "K1" });
+    expect(second).toEqual({ kind: "api-key", key: "K1" });
     expect(spawnCount(counter)).toBe(1);
   }, 15000);
 
@@ -1043,8 +1048,8 @@ describe("credential-sources exec credential source", () => {
     const source = await makeExecSource({ command: [helper] });
     const first = await source.read("anthropic");
     const second = await source.read("anthropic");
-    expect(first).toEqual({ kind: "api-key", key: "GOOD", expiresAt: Number(soon) });
-    expect(second).toEqual({ kind: "api-key", key: "GOOD", expiresAt: Number(soon) });
+    expect(first).toEqual({ kind: "api-key", key: "GOOD" });
+    expect(second).toEqual({ kind: "api-key", key: "GOOD" });
     expect(spawnCount(counter)).toBe(2);
   }, 15000);
 
@@ -1062,7 +1067,7 @@ describe("credential-sources exec credential source", () => {
     const entries = captureLog();
     await source.read("anthropic");
     const second = await source.read("anthropic");
-    expect(second).toEqual({ kind: "api-key", key: "GOOD", expiresAt: Number(soon) });
+    expect(second).toEqual({ kind: "api-key", key: "GOOD" });
     const failed = named(entries, "credential.helper_failed");
     expect(failed).toHaveLength(1);
     const data = failed[0].data as Record<string, unknown>;
@@ -1081,7 +1086,10 @@ describe("credential-sources exec credential source", () => {
     const dir = tempDir("nax-credsrc-helper-");
     const counter = join(dir, "spawns");
     const doneMarker = join(dir, "first-done");
-    const shortly = String(Date.now() + 300);
+    // The lease must outlive the helper's cold exec (a few hundred ms on a path the
+    // OS has not seen) and still expire inside the test: one that is already past at
+    // receipt is INVALID, not a lease (AC-63).
+    const shortly = String(Date.now() + 3000);
     const helper = writeExecutableScript(
       dir,
       "helper-expired2.sh",
@@ -1089,9 +1097,9 @@ describe("credential-sources exec credential source", () => {
     );
     const source = await makeExecSource({ command: [helper] });
     const first = await source.read("anthropic");
-    expect(first).toEqual({ kind: "api-key", key: "GOOD", expiresAt: Number(shortly) });
+    expect(first).toEqual({ kind: "api-key", key: "GOOD" });
     // Let the lease expire, then fail.
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await pollUntil(() => Date.now() > Number(shortly), 8000);
     await rejectsNaxCode(source.read("anthropic"), "CREDENTIAL_HELPER_FAILED");
   }, 15000);
 
@@ -1109,8 +1117,8 @@ describe("credential-sources exec credential source", () => {
     const entries = captureLog();
     const first = await source.read("anthropic");
     const second = await source.read("anthropic");
-    expect(first).toEqual({ kind: "api-key", key: "GOOD", expiresAt: Number(soon) });
-    expect(second).toEqual({ kind: "api-key", key: "GOOD", expiresAt: Number(soon) });
+    expect(first).toEqual({ kind: "api-key", key: "GOOD" });
+    expect(second).toEqual({ kind: "api-key", key: "GOOD" });
     expect(named(entries, "credential.helper_failed")).toHaveLength(1);
   }, 15000);
 
@@ -1118,7 +1126,9 @@ describe("credential-sources exec credential source", () => {
     const dir = tempDir("nax-credsrc-helper-");
     const counter = join(dir, "spawns");
     const doneMarker = join(dir, "first-done");
-    const shortly = String(Date.now() + 300);
+    // Same cold-exec margin as AC-67: the lease has to be live when the reply is
+    // read and expired by the time of the second read.
+    const shortly = String(Date.now() + 3000);
     const helper = writeExecutableScript(
       dir,
       "helper-decline-after-lease.sh",
@@ -1126,8 +1136,8 @@ describe("credential-sources exec credential source", () => {
     );
     const source = await makeExecSource({ command: [helper] });
     const first = await source.read("anthropic");
-    expect(first).toEqual({ kind: "api-key", key: "GOOD", expiresAt: Number(shortly) });
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(first).toEqual({ kind: "api-key", key: "GOOD" });
+    await pollUntil(() => Date.now() > Number(shortly), 8000);
     await rejectsNaxCode(source.read("anthropic"), "CREDENTIAL_HELPER_INVALID");
   }, 15000);
 });
