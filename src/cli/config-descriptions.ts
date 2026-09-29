@@ -8,6 +8,12 @@
 export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Top-level
   version: "Configuration schema version",
+  auth: "Global-only authentication credential source configuration",
+  "auth.source": 'Credential source: "file" (default) or "exec" helper',
+  "auth.exec": "Exec credential helper settings; nax appends the get operation",
+  "auth.exec.command": "Argument vector for the credential helper, executed without a shell",
+  "auth.exec.timeoutMs": "Credential helper timeout in milliseconds (1000–60000; default 10000)",
+  "auth.onChange": 'Credential-change behavior: "warn" (default) or "refuse"',
 
   // Models
   models:

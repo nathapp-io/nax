@@ -25,6 +25,7 @@ import {
   warnQualityCommandChains,
 } from "./config-guards";
 import { resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
+import { rejectGlobalOnlyKeys } from "./global-only-keys";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { packageConfigCache } from "./package-config-cache";
@@ -135,7 +136,7 @@ async function applyProjectLayer(
   if (!projDir) return rawConfig;
   const projConf = await loadJsonFileStrict<Record<string, unknown>>(join(projDir, "config.json"), "config");
   if (!projConf) return rawConfig;
-  const { profile: _pProfile, ...projConfStripped } = projConf;
+  const { profile: _pProfile, ...projConfStripped } = rejectGlobalOnlyKeys(projConf, "project");
   const resolvedProjConf = applyConfigCompatShims(projConfStripped, ctx.logger, ctx.warnDedupe);
   const preProjectMergeConfig = rawConfig;
   const merged = deepMergeConfig<Record<string, unknown>>(rawConfig, resolvedProjConf);
@@ -396,7 +397,7 @@ export async function loadPackageOverride(repoRoot: string, packageDir: string):
   const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
   const override = await loadJsonFileStrict<Partial<NaxConfig> & { profile?: string }>(packageConfigPath, "config");
   if (!override) return null;
-  const { profile: _profile, ...fields } = override;
+  const { profile: _profile, ...fields } = rejectGlobalOnlyKeys(override, `package:${packageDir}`);
   return fields;
 }
 
@@ -471,7 +472,7 @@ export async function loadConfigForWorkdir(
   }
 
   logger.debug("config", "Per-package config loaded", { packageConfigPath, packageDir });
-  const { profile: packageProfile, ...packageFields } = packageOverride;
+  const { profile: packageProfile, ...packageFields } = rejectGlobalOnlyKeys(packageOverride, `package:${packageDir}`);
 
   // #1620: one dedupe per package resolution, mirroring `loadConfig`'s per-load
   // dedupe — the overlay and its package profiles run the same chain, so a legacy

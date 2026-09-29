@@ -12,6 +12,7 @@ export { DEFAULT_CONFIG } from "./defaults";
 // Zod schemas
 export {
   AcceptanceConfigSchema,
+  AuthConfigSchema,
   ContextConfigSchema,
   ContextV2ConfigSchema,
   McpConfigSchema,
@@ -24,6 +25,7 @@ export type {
   AcceptanceFixConfig,
   AcceptanceTestStrategy,
   AgentConfig,
+  AuthConfig,
   AutoModeConfig,
   AutoRouteConfig,
   AutoRouteDowngradeConfig,

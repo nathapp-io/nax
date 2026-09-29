@@ -9,6 +9,7 @@ import { z } from "zod";
 import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, DEFAULT_MODEL_MAPS } from "./agent-defaults";
 import { DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
 import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "./schema-types";
+import { AuthConfigSchema } from "./schemas-auth";
 import { ContextConfigSchema } from "./schemas-context";
 import {
   AutoModeConfigSchema,
@@ -52,6 +53,8 @@ import {
 } from "./schemas-review";
 import { DEFAULT_SANDBOX_CONFIG } from "./schemas-sandbox";
 
+export type { AuthConfig } from "./schemas-auth";
+export { AuthConfigSchema } from "./schemas-auth";
 export { ContextConfigSchema, ContextV2ConfigSchema } from "./schemas-context";
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
 export { AcceptanceConfigSchema, PlanConfigSchema, PromptsConfigSchema } from "./schemas-infra";
@@ -65,6 +68,7 @@ export {
 
 export const NaxConfigSchema = z
   .object({
+    auth: AuthConfigSchema.optional(),
     name: z
       .string()
       .default("")

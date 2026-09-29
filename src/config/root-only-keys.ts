@@ -48,5 +48,8 @@ export function pinRootOnlyKeysRaw(
   const pinned = Object.fromEntries(
     ROOT_ONLY_EXECUTION_KEYS.flatMap((k) => (rootExecution[k] === undefined ? [] : [[k, rootExecution[k]]])),
   );
-  return { ...raw, execution: { ...rest, ...pinned } };
+  if ("auth" in raw && !Bun.deepEquals(raw.auth, root.auth)) {
+    onIgnored(`auth is root-only; the value set for package "${packageDir}" is ignored`);
+  }
+  return { ...raw, auth: root.auth, execution: { ...rest, ...pinned } };
 }

@@ -5,7 +5,6 @@
  * for the nax configuration system.
  */
 
-// Runtime types
 export type {
   AcceptanceConfig,
   AcceptanceFixConfig,
@@ -77,3 +76,5 @@ export {
   resolveModelForAgent,
   resolveTierMembership,
 } from "./schema-types";
+// Runtime types
+export type { AuthConfig } from "./schemas-auth";
