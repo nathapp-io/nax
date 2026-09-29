@@ -3,7 +3,7 @@
   "feature": "cli-json-output",
   "branchName": "feat/cli-json-output",
   "createdAt": "2026-06-01T00:00:00.000Z",
-  "updatedAt": "2026-09-29T16:58:27.725Z",
+  "updatedAt": "2026-09-29T17:27:28.943Z",
   "userStories": [
     {
       "id": "US-001",
@@ -153,8 +153,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -204,14 +204,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Small derived report and one injectable shared helper across a few modules; no new credential handling."
+        "reasoning": "Small derived report and one injectable shared helper across a few modules; no new credential handling.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/agents/native/tier-providers.ts",
@@ -227,7 +230,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8db16e3441b237142a49452d50375182fc93278d"
     },
     {
       "id": "US-005",
@@ -276,7 +280,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Multiple CLI/config modules integrate profile resolution, secret masking, single-document error reporting and backward-compatible text paths."
+        "reasoning": "Multiple CLI/config modules integrate profile resolution, secret masking, single-document error reporting and backward-compatible text paths.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/config-display.ts",
@@ -292,7 +299,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "bc95b55aa25f3f7160ed1e9f87066212ec67084f"
     }
   ],
   "analysis": "Existing Bun/TypeScript CLI enhancement, not greenfield. src/precheck/checks-native-credentials.ts:24-69 derives provider prefixes, skips catalogOverrides, guards on resolveDefaultAgent and queries providersWithoutCredentials; move the private providerOf/providerTiers algorithm into src/agents/native/tier-providers.ts and export through src/agents/native/index.ts:16-45, retaining the seam in _nativeCredentialDeps. src/config/selectors.ts:1-18 supplies leaf config selector types. Existing check tests at test/unit/precheck/checks-native-credentials.test.ts:1-86 assert the blocker, tiers, deduplication and override exclusions; extend seam tests and restore injected deps after each test. src/cli/auth.ts:13-31 owns terminal dependency seam and currently prints the source header before listing credentials at :247-280; helperRowStatus, formatAuthListRow, ANSI stripping and account sanitization live at :175-245. Move shared parsing/sanitization into auth-list.ts; keep login/rm references to naxCredentialStore, servedAuth, ambientShadows and errorCode (:112-146, :283-314) and preserve successful text rows, including expiry colouring and shadow warnings. readGlobalAuthConfig in src/config/auth.ts:7-36 validates global auth only; src/agents/native/auth.ts:228-264 lists stored entries and ambientShadows swallows per-provider probe errors; src/agents/native/credentials/index.ts:147-155 gives servedAuth and :170-215 rejects damaged credential files. An exec error must fail closed for that provider without aborting the report; failures from top-level auth config/file reads or unexpected collector errors abort with a one-document JSON error. No credential, fingerprint or salt may enter the report. test/unit/cli/auth-credential-source.test.ts:1-92 provides executable helper and isolated global-config harness; test/preload.ts:20-73 redirects global credentials and stubs precheck by default. Auth collector tests must stub and restore _authDeps.ambientAuthAvailable. bin/nax.ts:883-890 registers auth list and must forward --json. src/cli/config-display.ts:19-53 owns mutually exclusive text flags and :113-121 discovers sources from cwd; export determineConfigSources(startDir?) without altering default text calls, reject --diff with a nonempty chain, and use existing masking in config-profile.ts:166-186. src/config/loader.ts:305-381 accepts project root or .nax dir, resolves CLI > NAX_PROFILE > project > global profile chain, merges left-to-right, force-sets profile and profileChain; src/config/profile.ts:182-195 splits repeatable comma-separated chains; bin/nax.ts:125-133 already has collectProfile, while :764-790 currently validates dir then loads config without profiles. JSON branch must precede bin validation; JSON handler validates via src/config/path-security.ts:24-75 and reports its NaxError code. For both text and JSON, load from findProjectDir(validatedDir) ?? validatedDir and only supply { profile: chain } when nonempty. For JSON discover sources relative to the provided dir, call requirements seam once, mask resolved config and log one JSON document; make errors code-fallback CONFIG_JSON_FAILED. src/agents/utils.ts:6-10 resolves default agent; src/config/agent-defaults.ts:11-16 defines default protocol hybrid; native transport uses NATIVE_AGENT and only its root models.native providers; sandbox means configured need, not host capability. src/cli/config.ts:1-22 and src/cli/index.ts:18-28 supply re-exports. test/unit/cli/config-display.test.ts:1-56 covers existing masking; new tests should create .nax/config.json (findProjectDir criterion), unset NAX_PROFILE, isolate global dir, and restore injected output seams. Main risks are unchanged successful text formatting, auth confidentiality, per-provider helper exceptions vs fatal listing errors, profile resolution from project subdirs, mutually exclusive flags, and native provider/precheck parity; no data or file format migration is needed. Implement US-001 and US-002 independently, US-003 after US-002, US-004 after US-001, and US-005 after US-004.",

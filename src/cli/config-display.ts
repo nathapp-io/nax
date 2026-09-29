@@ -21,6 +21,8 @@ export interface ConfigCommandOptions {
   explain?: boolean;
   /** Show only fields where project overrides global */
   diff?: boolean;
+  /** Profile chain to overlay on the resolved config (`--diff` cannot take one) */
+  profile?: string[];
 }
 
 /**
@@ -108,9 +110,10 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
 /**
  * Determine which config files are present.
  *
+ * @param _startDir - Directory to resolve the project config from (defaults to cwd)
  * @returns Paths to global and project config files (null if not found)
  */
-function determineConfigSources(): { global: string | null; project: string | null } {
+export function determineConfigSources(_startDir?: string): { global: string | null; project: string | null } {
   const globalPath = globalConfigPath();
   const projectDir = findProjectDir();
   const projectPath = projectDir ? join(projectDir, "config.json") : null;
