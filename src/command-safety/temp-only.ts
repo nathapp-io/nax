@@ -146,7 +146,9 @@ function frameAfter(segment: BashSegment, frame: string | undefined, cwd: string
 /** Classifies every path-like token and redirect target in one segment.
  * Returns `true` when any verdict was `temp` (so far). Returns `false` when
  * any verdict was `refuse`; the caller then returns false from the whole
- * predicate. */
+ * predicate. A `--flag=value` token is judged by its VALUE — the flag name
+ * hides any `/`, `.`, `..`, or `~` the value contains, so the whole token
+ * would not look path-like on its own. */
 function classifySegment(
   segment: BashSegment,
   frame: string | undefined,
@@ -159,8 +161,10 @@ function classifySegment(
     if (verdict === "temp") hasTempPath = true;
   }
   for (const token of segment.tokens) {
-    if (!isPathLike(token.text)) continue;
-    const verdict = classify({ text: token.text, opaque: token.opaque }, frame, cwd);
+    const value = flagValue(token.text);
+    const judgedText = value ?? token.text;
+    if (!isPathLike(judgedText)) continue;
+    const verdict = classify({ text: judgedText, opaque: token.opaque }, frame, cwd);
     if (verdict === "refuse") return { hasTempPath, refused: true };
     if (verdict === "temp") hasTempPath = true;
   }
