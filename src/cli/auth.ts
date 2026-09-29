@@ -17,9 +17,13 @@ import {
   authImportOutcomeLabel,
   importPiCredentials,
   listStoredProviders,
+  naxCredentialStore,
   removeStoredProvider,
   runLogin,
+  type StoredEntry,
+  servedAuth,
 } from "@/agents/native";
+import { readGlobalAuthConfig } from "@/config";
 import { PromptCancelledError, promptForLine, promptForSecret, promptForSelect } from "./auth-prompt";
 import { openUrl } from "./open-url";
 
@@ -116,6 +120,20 @@ export async function authLoginCommand(providerId: string, method?: AuthMethod):
         chalk.dim(`(method: ${result.method}, credential: ${result.kind})`),
     );
 
+    const authConfig = await readGlobalAuthConfig();
+    if (authConfig.source === "exec") {
+      try {
+        await naxCredentialStore().read(result.providerId);
+        if (servedAuth(result.providerId)?.source === "exec") {
+          _cliAuthDeps.log(
+            `Note: the credential helper serves ${result.providerId}; this stored login is not used while it does.`,
+          );
+        }
+      } catch {
+        // The login succeeded; a helper status probe must not change its exit code.
+      }
+    }
+
     if ((await ambientShadows([result.providerId])).length > 0) {
       _cliAuthDeps.log(
         chalk.yellow(
@@ -150,25 +168,55 @@ export async function authImportCommand(options: { from?: string; force?: boolea
   }
 }
 
-export async function authListCommand(): Promise<number> {
+async function helperRowStatus(providerId: string): Promise<string> {
   try {
+    await naxCredentialStore().read(providerId);
+    const provenance = servedAuth(providerId);
+    return provenance?.source === "exec"
+      ? ` exec${provenance.account === undefined ? "" : ` (${provenance.account})`}`
+      : " file (declined)";
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "UNKNOWN";
+    return ` error: ${code}`;
+  }
+}
+
+function formatAuthListRow(
+  providerId: string,
+  entry: StoredEntry | undefined,
+  helperStatus: string,
+  isShadowed: boolean,
+): string {
+  const expiry =
+    entry?.expires === undefined
+      ? ""
+      : entry.expires <= Date.now()
+        ? chalk.red(" expired")
+        : chalk.dim(` expires ${new Date(entry.expires).toISOString()}`);
+  const shadow = isShadowed ? chalk.yellow(" shadows an environment variable") : "";
+  return `  ${providerId.padEnd(20)} ${entry?.kind ?? ""}${helperStatus}${expiry}${shadow}`;
+}
+
+export async function authListCommand(providerIds: readonly string[] = []): Promise<number> {
+  try {
+    const auth = await readGlobalAuthConfig();
+    const sourceLabel = auth.source === "exec" ? `exec (${auth.exec?.command.join(" ") ?? ""})` : "file";
+    _cliAuthDeps.log(`Credential source: ${sourceLabel}`);
+
     const entries = await listStoredProviders();
-    if (entries.length === 0) {
+    const entriesByProvider = new Map(entries.map((entry) => [entry.providerId, entry]));
+    const providers = [...new Set([...entries.map((entry) => entry.providerId), ...providerIds])].sort();
+    if (providers.length === 0) {
       _cliAuthDeps.log("No credentials stored. Add one with `nax auth login <provider>`.");
       return 0;
     }
 
-    const shadowed = new Set(await ambientShadows(entries.map((entry) => entry.providerId)));
-
-    for (const entry of entries) {
-      const expiry =
-        entry.expires === undefined
-          ? ""
-          : entry.expires <= Date.now()
-            ? chalk.red(" expired")
-            : chalk.dim(` expires ${new Date(entry.expires).toISOString()}`);
-      const shadow = shadowed.has(entry.providerId) ? chalk.yellow(" shadows an environment variable") : "";
-      _cliAuthDeps.log(`  ${entry.providerId.padEnd(20)} ${entry.kind}${expiry}${shadow}`);
+    const shadowed = new Set(await ambientShadows(providers));
+    for (const providerId of providers) {
+      const helperStatus = auth.source === "exec" ? await helperRowStatus(providerId) : "";
+      _cliAuthDeps.log(
+        formatAuthListRow(providerId, entriesByProvider.get(providerId), helperStatus, shadowed.has(providerId)),
+      );
     }
     return 0;
   } catch (error) {
@@ -179,6 +227,14 @@ export async function authListCommand(): Promise<number> {
 
 export async function authRmCommand(providerId: string): Promise<number> {
   try {
+    const auth = await readGlobalAuthConfig();
+    if (auth.source === "exec") {
+      await naxCredentialStore().read(providerId);
+      if (servedAuth(providerId)?.source === "exec") {
+        _cliAuthDeps.log(`${providerId} is managed by the credential helper; nothing was removed.`);
+        return 1;
+      }
+    }
     const stored = await listStoredProviders();
     if (!stored.some((entry) => entry.providerId === providerId)) {
       _cliAuthDeps.log(chalk.red(`No stored credential for "${providerId}".`));
