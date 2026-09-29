@@ -114,6 +114,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.commandInterceptor.provider": "Which interceptor to use. Only 'rtk' exists today.",
   "execution.commandInterceptor.git.verbs":
     "Git subcommands eligible for interception. Measured values: log and diff. status and blame measured no benefit; show is excluded for changing git's exit code.",
+  "execution.commandInterceptor.bash.enabled":
+    "Opt-in for the BASH site (US-002). When true, the model-authored Bash string is routed through the provider's `rewrite` before it runs. Requires execution.commandInterceptor.enabled to be true — leaving it false with bash.enabled: true is a config load error.",
   "execution.bashApproval":
     "How agent Bash commands are approved: raw (screened only), gated (policy decides), escalate (a human decides on ask). Root-only (ADR-031)",
   "execution.approvalTimeout":

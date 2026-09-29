@@ -2,6 +2,7 @@ import type {
   CommandInterceptor,
   InterceptRequest,
   InterceptResult,
+  ShellInterceptRequest,
   ShellInterceptResult,
 } from "@/execution/command-interceptor";
 import { getSafeLogger } from "@/logger";
@@ -40,13 +41,42 @@ export interface RtkInterceptorOptions {
 export const RTK_REWRITE_TIMEOUT_MS = 2000;
 
 /**
- * STUB (US-002): the bounded `rtk rewrite` subprocess is not implemented yet.
- * The implementation spawns `["rtk", "rewrite", command]` in `cwd`, kills the
- * child once RTK_REWRITE_TIMEOUT_MS has passed, and resolves `exitCode: -1`
- * with `timedOut: true` when that happens.
+ * The default implementation of `RtkDeps.rewrite`. Spawns `["rtk", "rewrite",
+ * command]` in `cwd` and resolves with the raw answer — exit code, stdout,
+ * and a `timedOut` flag when the child was killed because
+ * RTK_REWRITE_TIMEOUT_MS elapsed.
+ *
+ * `setTimeout` is the documented exception in `forbidden-patterns-source.md`:
+ * the timer handle must be cancellable so a fast-exiting child does not get
+ * killed after the race. Reads stdout/stderr concurrently with `proc.exited`
+ * per the Bun-native async pattern; sequential reads deadlock past 64KB.
+ *
+ * A spawn failure (e.g. ENOENT for `rtk`) rejects; the provider's
+ * `interceptShell` maps that rejection to `rtk rewrite failed: <message>`.
  */
-export async function defaultRewrite(_command: string, _cwd: string): Promise<RtkRewriteResult> {
-  return { exitCode: -1, stdout: "", timedOut: false };
+export async function defaultRewrite(command: string, cwd: string): Promise<RtkRewriteResult> {
+  const proc = Bun.spawn(["rtk", "rewrite", command], { cwd, stdout: "pipe", stderr: "pipe" });
+  // setTimeout is required here so we can cancel on fast exit; Bun.sleep is uncancellable.
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill();
+  }, RTK_REWRITE_TIMEOUT_MS);
+  try {
+    // Read stdout/stderr concurrently with proc.exited — sequential reads
+    // deadlock past 64KB on the Bun-native async pattern.
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    // Drain stderr to avoid pipe back-pressure on noisy rejects; not part of
+    // the contract, but a leaked pipe blocks the parent on the next spawn.
+    void stderr;
+    return timedOut ? { exitCode: -1, stdout: "", timedOut: true } : { exitCode, stdout, timedOut: false };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Resolve the provider binary via PATH. Exit code 0 + non-empty stdout is "found". */
@@ -77,6 +107,7 @@ function defaultRecord(state: InterceptorState): void {
     enabled: state.enabled,
     version: state.version,
     verbs: state.verbs,
+    bash: state.bash,
   });
 }
 
@@ -138,9 +169,49 @@ export function createRtkInterceptor(opts: RtkInterceptorOptions): CommandInterc
       if (verb === undefined || !verbs.includes(verb)) return { kind: "unchanged" };
       return { kind: "rewritten", argv: ["rtk", ...req.argv], provider: "rtk" };
     },
-    /** STUB (US-002): the rewrite decision table is not implemented yet. */
-    async interceptShell(): Promise<ShellInterceptResult> {
-      return { kind: "declined", reason: "interceptShell not implemented" };
+    /**
+     * The Bash site's rewrite decision table. Runs the provider's `rewrite`,
+     * then interprets its raw answer per the AC7-AC15 contract:
+     *
+     *   1. timedOut: true → declined "rtk rewrite timed out"
+     *   2. exit 0 or 3 with trimmed non-empty stdout that DIFFERS from the
+     *      original command → rewritten, command = trimmed stdout, provider = "rtk"
+     *   3. exit 0 or 3 with empty/identical/whitespace-only stdout → unchanged
+     *   4. exit 1 → unchanged (per AC9; the rest of 1/0/3 stays in (2)/(3))
+     *   5. any other exit code (including 2) → declined "rtk rewrite exited <code>"
+     *
+     * Falls through to "unchanged" before any rewrite happens when the master
+     * switch is off (AC17) or the bash site was not opted in (AC16); falls
+     * through to "declined" with the probe's reason when the binary was
+     * missing (AC18) or the probe threw (AC19). A rejecting `deps.rewrite`
+     * (e.g. ENOENT for `rtk`) maps to "rtk rewrite failed: <message>" (AC15).
+     *
+     * Runs in the nax process on the host, never inside the sandbox: see
+     * scope-of-US-002 in the story.
+     */
+    async interceptShell(req: ShellInterceptRequest): Promise<ShellInterceptResult> {
+      if (mode.kind === "disabled") return { kind: "unchanged" };
+      if (mode.kind === "declined") return { kind: "declined", reason: mode.reason };
+      if (!bash) return { kind: "unchanged" };
+
+      let result: RtkRewriteResult;
+      try {
+        result = await deps.rewrite(req.command, req.cwd);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { kind: "declined", reason: `rtk rewrite failed: ${message}` };
+      }
+
+      if (result.timedOut) return { kind: "declined", reason: "rtk rewrite timed out" };
+
+      const candidate = result.stdout.trim();
+      if ((result.exitCode === 0 || result.exitCode === 3) && candidate !== "" && candidate !== req.command) {
+        return { kind: "rewritten", command: candidate, provider: "rtk" };
+      }
+      if (result.exitCode === 0 || result.exitCode === 3 || result.exitCode === 1) {
+        return { kind: "unchanged" };
+      }
+      return { kind: "declined", reason: `rtk rewrite exited ${result.exitCode}` };
     },
     postProcess(output: string): { output: string } {
       return { output: output.replace(RTK_HINT_LINE, "") };
