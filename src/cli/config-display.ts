@@ -21,7 +21,7 @@ export interface ConfigCommandOptions {
   explain?: boolean;
   /** Show only fields where project overrides global */
   diff?: boolean;
-  /** Profile chain to overlay on the resolved config (`--diff` cannot take one) */
+  /** Profile chain, used only to reject `--diff` (the caller overlays it before calling) */
   profile?: string[];
 }
 

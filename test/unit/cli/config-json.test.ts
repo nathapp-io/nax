@@ -34,6 +34,7 @@ const FIXED_REQUIREMENTS: ConfigRequirements = {
 };
 
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+const originalProfile = process.env.NAX_PROFILE;
 const realLog = _configJsonDeps.log;
 const realBuildConfigRequirements = _configJsonDeps.buildConfigRequirements;
 
@@ -89,6 +90,11 @@ afterEach(() => {
   _configJsonDeps.log = realLog;
   _configJsonDeps.buildConfigRequirements = realBuildConfigRequirements;
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+  if (originalProfile === undefined) {
+    delete process.env.NAX_PROFILE;
+  } else {
+    process.env.NAX_PROFILE = originalProfile;
+  }
   while (tempDirs.length > 0) cleanupTempDir(tempDirs.pop());
 });
 
