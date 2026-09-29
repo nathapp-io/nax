@@ -332,6 +332,64 @@ describe("createChangeGuard", () => {
     expect(guard.servedAuth("anthropic")).toBeUndefined();
   });
 
+  // The guard wraps only `read`; `modify` and `delete` pass straight through.
+
+  test("pass-through: modify delegates to the inner store and returns its result", async () => {
+    const stub = makeStubStore();
+    stub.set(API_KEY("K1"));
+    const guard = createChangeGuard(stub.store, { onChange: "warn", describe: () => undefined });
+
+    const updated = API_KEY("K2");
+    const returned = await guard.modify("anthropic", async () => updated);
+
+    expect(returned).toEqual(updated);
+    expect(await stub.store.read("anthropic")).toEqual(updated);
+  });
+
+  test("pass-through: delete delegates to the inner store", async () => {
+    const stub = makeStubStore();
+    stub.set(API_KEY("K1"));
+    const guard = createChangeGuard(stub.store, { onChange: "warn", describe: () => undefined });
+
+    await guard.delete("anthropic");
+
+    expect(await stub.store.read("anthropic")).toBeUndefined();
+  });
+
+  test("pass-through: a write records no identity and logs no credential.* entry", async () => {
+    const stub = makeStubStore();
+    stub.set(API_KEY("K1"));
+    const guard = createChangeGuard(stub.store, { onChange: "warn", describe: () => undefined });
+
+    await guard.modify("anthropic", async () => API_KEY("K2"));
+    await guard.delete("anthropic");
+
+    // A write is not a change of who is being billed: it neither mints nor clears an identity.
+    expect(guard.servedAuth("anthropic")).toBeUndefined();
+    expect(credentialEvents()).toHaveLength(0);
+  });
+
+  test("pass-through: a write leaves the identity a read established intact", async () => {
+    const stub = makeStubStore();
+    stub.set(API_KEY("K1"));
+    const guard = createChangeGuard(stub.store, { onChange: "refuse", describe: () => undefined });
+    await guard.read("anthropic");
+    const stamp = guard.servedAuth("anthropic");
+    entries.length = 0;
+
+    await guard.modify("anthropic", async () => API_KEY("K2"));
+    await guard.delete("anthropic");
+
+    expect(guard.servedAuth("anthropic")).toEqual(stamp);
+    expect(credentialEvents()).toHaveLength(0);
+
+    // The next read is still classified against the identity read established, not against the write.
+    stub.set(API_KEY("K2"));
+    const error = await guard.read("anthropic").catch((caught: unknown) => caught);
+    assertNaxError(error, "guard.read rejection");
+    expect(error.code).toBe("CREDENTIAL_CHANGED");
+  });
+
   test("AC24: no credential.* log entry's data or message carries the key, access or refresh value", async () => {
     const key = "SENTINEL-KEY-VALUE";
     const access = "SENTINEL-ACCESS-VALUE";
