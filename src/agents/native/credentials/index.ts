@@ -187,7 +187,7 @@ export async function readStoredEntries(): Promise<StoredEntry[]> {
     throw new NaxError(
       `The credential file at ${path} could not be parsed. Refusing to read it.`,
       "CREDENTIAL_FILE_UNREADABLE",
-      { path },
+      { stage: "credentials", path },
     );
   }
 
@@ -201,7 +201,7 @@ export async function readStoredEntries(): Promise<StoredEntry[]> {
     throw new NaxError(
       `The credential file at ${path} could not be parsed as a credential store.`,
       "CREDENTIAL_FILE_UNREADABLE",
-      { path },
+      { stage: "credentials", path },
     );
   }
 
