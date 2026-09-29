@@ -299,23 +299,26 @@ export async function providersWithoutCredentials(providerIds: readonly string[]
 
   const store = naxCredentialStore();
   const stored = new Set<string>();
-  try {
-    // Read every provider concurrently. These reads sit outside the ambient
-    // race below on purpose — a helper slower than AMBIENT_PROBE_TIMEOUT_MS is
-    // still asked — so a sequential walk would cost the SUM of every helper's
-    // latency before the sweep even starts, where one batch costs the slowest.
-    const served = await Promise.all(
-      unique.map(async (providerId) => ({ providerId, credential: await store.read(providerId) })),
-    );
-    for (const { providerId, credential } of served) {
-      if (credential !== undefined) stored.add(providerId);
+  // `allSettled`, not `all`: a rejection here is fatal for the run, and `all`
+  // would return the moment the first one failed while every sibling read kept
+  // going — leaving up to N-1 helper subprocesses alive for their own full
+  // timeout, still writing `credential.resolved` entries and guard baselines for
+  // a caller that has already thrown. Settling first costs nothing on the happy
+  // path (it is one batch either way) and makes the failure path clean.
+  // (These reads sit outside the ambient race below on purpose — a helper slower
+  // than AMBIENT_PROBE_TIMEOUT_MS is still asked.)
+  const served = await Promise.allSettled(
+    unique.map(async (providerId) => ({ providerId, credential: await store.read(providerId) })),
+  );
+  for (const outcome of served) {
+    if (outcome.status === "rejected") {
+      // A damaged credential file stays "unknown", which is the behaviour this
+      // check has always had: reporting the provider missing would look exactly
+      // like "you have no credentials" for a file that is merely unreadable.
+      if (outcome.reason instanceof NaxError && outcome.reason.code === "CREDENTIAL_FILE_UNREADABLE") return [];
+      throw outcome.reason;
     }
-  } catch (error) {
-    // A damaged credential file stays "unknown", which is the behaviour this
-    // check has always had: reporting the provider missing would look exactly
-    // like "you have no credentials" for a file that is merely unreadable.
-    if (error instanceof NaxError && error.code === "CREDENTIAL_FILE_UNREADABLE") return [];
-    throw error;
+    if (outcome.value.credential !== undefined) stored.add(outcome.value.providerId);
   }
 
   const sweep = Promise.all(

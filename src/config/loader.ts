@@ -218,18 +218,18 @@ async function resolveProfileEnvVars(
   }
 }
 
+/** Layer 4: CLI overrides (highest priority). */
 function applyCliOverridesLayer(
   rawConfig: Record<string, unknown>,
   cliOverrides: Record<string, unknown> | undefined,
   ctx: ConfigLoadCtx,
 ): Record<string, unknown> {
   if (!cliOverrides) return rawConfig;
-  const shimmedCliOverrides = applyConfigCompatShims(
-    rejectGlobalOnlyKeys(cliOverrides, "CLI"),
-    ctx.logger,
-    ctx.warnDedupe,
-  );
+  const globalOnly = rejectGlobalOnlyKeys(cliOverrides, "CLI");
+  const shimmedCliOverrides = applyConfigCompatShims(globalOnly, ctx.logger, ctx.warnDedupe);
   const merged = deepMergeConfig<Record<string, unknown>>(rawConfig, shimmedCliOverrides);
+  // SEC-2 — CLI overrides win over every other layer; warn when one changes a
+  // security-sensitive key so the change isn't silently invisible.
   warnSecuritySensitiveOverrides(rawConfig, merged, ctx.warnDedupe.warn, {
     layerName: "CLI override",
     sourceLayerConf: shimmedCliOverrides,

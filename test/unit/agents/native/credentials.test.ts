@@ -141,7 +141,15 @@ describe("servedAuth (US-004)", () => {
     expect(servedAuth("anthropic")).toMatchObject({ source: "exec", account: "team-a" });
   });
 
-  test("AC11 boundary: servedAuth is undefined for a provider the store never read", () => {
+  // Reads one provider first so the store is actually assembled and an identity is
+  // genuinely recorded. Asserted on `anthropic` alone it passed on the optional
+  // chain in `servedAuth` (`inner?.servedAuth(...)` with `inner` still undefined),
+  // so it would have held even if every real identity came back `undefined`.
+  test("AC11 boundary: servedAuth is undefined for a provider the store never read", async () => {
+    await naxCredentialStore().modify("openrouter", async () => ({ kind: "api-key", key: "sk-file" }));
+    await naxCredentialStore().read("openrouter");
+
+    expect(servedAuth("openrouter")).toBeDefined();
     expect(servedAuth("anthropic")).toBeUndefined();
   });
 

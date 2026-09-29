@@ -53,4 +53,18 @@ describe("completeResultProvenance — failed results (US-006)", () => {
 
     expect(Object.keys(provenance)).toEqual([]);
   });
+
+  // The AC added on review (2026-09-30) also promises the siblings still come
+  // through. The test above cannot show that: its result carries no `pricingSource`
+  // or `rates`, so "siblings survive" and "everything suppressed" look identical.
+  test("still forwards pricingSource and rates on a failed result that carries them", () => {
+    const rates = { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3, cacheCreationPer1M: 3.75 };
+    const provenance = completeResultProvenance(
+      result({ output: "", auth: STAMP, adapterFailure: FAILURE, pricingSource: "catalog-rates", rates }),
+    );
+
+    expect("auth" in provenance).toBe(false);
+    expect(provenance.pricingSource).toBe("catalog-rates");
+    expect(provenance.rates).toEqual(rates);
+  });
 });

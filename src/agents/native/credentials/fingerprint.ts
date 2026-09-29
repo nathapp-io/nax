@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import type { StoredCredential } from "@nathapp/nax-ai";
 import { globalConfigDir } from "@/config";
 import { getSafeLogger } from "@/logger";
+import { errorMessage } from "@/utils/errors";
 
 /** Exactly one HMAC key's worth. Anything shorter is a damaged file, not a salt. */
 const SALT_BYTES = 32;
@@ -101,14 +102,40 @@ async function createSaltFile(path: string): Promise<Buffer | undefined> {
  * random in-memory salt for this process, and `credential.salt_invalid` is
  * logged once for that path. Rewriting the file would destroy whatever an
  * operator put there, and reusing a short read would be worse than a fresh key.
+ *
+ * Any filesystem failure resolves the same way. This runs on the run-start probe
+ * (`providersWithoutCredentials`), where a raw `EACCES`/`EISDIR` would escape as a
+ * non-`NaxError` and take the whole precheck report down with it.
+ *
+ * The trade is deliberate and it is a real loss: a random salt breaks the
+ * cross-process comparison on THIS machine, which is the one thing a per-machine
+ * salt exists to provide (fingerprints still cannot cross machines either way —
+ * that is what the salt buys). So a run whose `~/.nax` is unwritable reports
+ * `credential.changed`/`credential.renewed` against a baseline no sibling process
+ * shares, and its `auth` fingerprints do not line up with the next run's. The
+ * errno rides along on the event so an operator can tell a permissions problem
+ * from a truncated file, which is the difference between a fixable machine and a
+ * mysterious one.
  */
 async function loadSalt(path: string): Promise<Buffer> {
-  const stored = (await readSaltFile(path)) ?? (await createSaltFile(path));
+  let stored: Buffer | undefined;
+  let failure: unknown;
+  try {
+    stored = (await readSaltFile(path)) ?? (await createSaltFile(path));
+  } catch (error) {
+    stored = undefined;
+    failure = error;
+  }
   if (stored !== undefined && stored.byteLength === SALT_BYTES) return stored;
 
   if (!warnedInvalidPaths.has(path)) {
     warnedInvalidPaths.add(path);
-    getSafeLogger()?.warn("credentials", "credential.salt_invalid", { saltPath: path });
+    getSafeLogger()?.warn("credentials", "credential.salt_invalid", {
+      saltPath: path,
+      ...(failure !== undefined
+        ? { errno: (failure as NodeJS.ErrnoException).code, error: errorMessage(failure) }
+        : {}),
+    });
   }
   return randomBytes(SALT_BYTES);
 }

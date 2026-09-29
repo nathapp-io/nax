@@ -8,8 +8,6 @@
  * is invalid, never a best-effort read of the nearest field.
  */
 
-import { errorMessage } from "@/utils/errors";
-
 /** The request/reply protocol version this source speaks. */
 export const REQUEST_VERSION = 1;
 
@@ -50,22 +48,31 @@ export function parseReply(stdout: string): ParsedReply {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stdout);
-  } catch (cause) {
-    return invalid(`stdout was not JSON: ${errorMessage(cause)}`);
+  } catch {
+    // The parser's message quotes the text it failed on, so it carries a fragment
+    // of stdout — which is where the key lives. The reply is malformed either
+    // way, and the caller has the code; naming the parser's text would put a
+    // secret in an error message, and from there in the CLI and the precheck
+    // report. See the Secrets rule in docs/specs/SPEC-credential-sources.md.
+    return invalid("stdout was not JSON");
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     return invalid("the reply was not a JSON object");
   }
 
   const reply = parsed as Record<string, unknown>;
+  // Neither `version` nor `kind` is echoed back: both are helper-controlled and
+  // unvalidated, so `JSON.stringify` on one would copy an arbitrarily large
+  // subtree of stdout — which is where the key is — into the message. Naming the
+  // field and the expected value is enough to debug a helper.
   if (reply.version !== REQUEST_VERSION) {
-    return invalid(`version was ${JSON.stringify(reply.version)}, expected ${REQUEST_VERSION}`);
+    return invalid(`version was not ${REQUEST_VERSION}`);
   }
   // The decline reply carries no kind, so it is recognised before the credential
   // fields are required.
   if (reply.decline === true) return { kind: "decline" };
 
-  if (reply.kind !== "api-key") return invalid(`kind was ${JSON.stringify(reply.kind)}, expected "api-key"`);
+  if (reply.kind !== "api-key") return invalid('kind was not "api-key"');
 
   const key = reply.key;
   if (typeof key !== "string" || key.length === 0) return invalid("the reply carried no key");

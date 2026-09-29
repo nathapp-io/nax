@@ -162,6 +162,23 @@ function named(name: string): LogEntry[] {
   return entries.filter((entry) => entry.message === name);
 }
 
+/**
+ * Every run of `LEAK_MIN_RUN` consecutive characters of `secret` that `haystack`
+ * contains — the fragments a message would carry if it echoed part of the
+ * helper's stdout. A whole-message equality check would be brittle; this asserts
+ * the one thing that matters (no verbatim stdout reached the message) without
+ * pinning the message's fixed wording.
+ */
+const LEAK_MIN_RUN = 8;
+function leakedFragments(haystack: string, secret: string): string[] {
+  const found: string[] = [];
+  for (let i = 0; i + LEAK_MIN_RUN <= secret.length; i++) {
+    const fragment = secret.slice(i, i + LEAK_MIN_RUN);
+    if (haystack.includes(fragment) && !found.includes(fragment)) found.push(fragment);
+  }
+  return found;
+}
+
 describe("createExecCredentialSource", () => {
   describe("helper invocation", () => {
     test('AC1: read spawns the helper with argv [script, "get"]', async () => {
@@ -456,6 +473,49 @@ describe("createExecCredentialSource", () => {
       const credential = await sourceFor().read("anthropic");
 
       expect(credential).toEqual({ kind: "api-key", key: "HELPER-KEY" });
+    });
+
+    // Review finding (2026-09-30): JSON.parse's message quotes the text it failed
+    // on, so a non-JSON reply used to carry a fragment of stdout into the thrown
+    // NaxError message — and from there into `nax auth list` and the precheck
+    // report. The spec's Secrets rule is that stdout is never logged.
+    test("review: a non-JSON reply that is a bare key leaks no 8-character fragment of it", async () => {
+      const stdout = "ghp_A1b2C3d4E5f6G7h8I9j0KLMNOPQRSTuVWXyZ0123";
+      helper.set({ stdout });
+
+      const err = await readError(sourceFor());
+
+      expect(err.code).toBe("CREDENTIAL_HELPER_INVALID");
+      expect(leakedFragments(err.message, stdout)).toEqual([]);
+    });
+
+    test("review: a JSON reply that is not an object also leaks no stdout fragment", async () => {
+      const stdout = '"sk-a-b-c-d-e-f-g-h-i-j-k-l-m-n-o-p"';
+      helper.set({ stdout });
+
+      const err = await readError(sourceFor());
+
+      expect(err.code).toBe("CREDENTIAL_HELPER_INVALID");
+      expect(leakedFragments(err.message, stdout)).toEqual([]);
+    });
+
+    // The two above cover the non-JSON parse path. `version` and `kind` were the
+    // other two: both helper-controlled and unvalidated, so echoing either with
+    // JSON.stringify copied an arbitrary subtree of stdout into the message.
+    test.each([
+      { label: "kind", stdout: '{"version":1,"kind":{"key":"ghp_A1b2C3d4E5f6G7h8I9j0KLMNOPQRSTuVWXyZ0123"}}' },
+      {
+        label: "version",
+        stdout: '{"version":{"key":"ghp_A1b2C3d4E5f6G7h8I9j0KLMNOPQRSTuVWXyZ0123"},"kind":"api-key","key":"K"}',
+      },
+      { label: "a string kind", stdout: '{"version":1,"kind":"ghp_A1b2C3d4E5f6G7h8I9j0KLMNOPQRSTuVWXyZ0123"}' },
+    ])("review: a reply whose $label carries a key leaks no fragment of it", async ({ stdout }) => {
+      helper.set({ stdout });
+
+      const err = await readError(sourceFor());
+
+      expect(err.code).toBe("CREDENTIAL_HELPER_INVALID");
+      expect(leakedFragments(err.message, stdout)).toEqual([]);
     });
   });
 

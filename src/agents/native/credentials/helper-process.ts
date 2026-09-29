@@ -210,22 +210,28 @@ interface ProcessRun {
   stderr: string;
 }
 
+/**
+ * SIGKILL a helper, tolerating a child that is already gone.
+ *
+ * A deadline that a helper can ignore is not a deadline: the call would wait on
+ * a process that never exits, and `read` would never settle. The `try` is for the
+ * race where the child is reaped between the decision to kill it and the signal.
+ */
+function killHelper(proc: HelperProcess): void {
+  try {
+    proc.kill("SIGKILL");
+  } catch {
+    // The child was already gone; its exit code decides the outcome either way.
+  }
+}
+
 /** Run one helper process to its end, killing it if either kill switch trips first. */
 async function runHelperProcess(proc: HelperProcess, providerId: string, timeoutMs: number): Promise<ProcessRun> {
-  /** Kill without letting a race with an already-reaped child escape a timer callback. */
-  const kill = (): void => {
-    try {
-      proc.kill("SIGKILL");
-    } catch {
-      // The child was already gone; its exit code decides the outcome either way.
-    }
-  };
-
   // Whichever trips first decides the outcome; both kill the process.
   let trip: "timeout" | "cap" | undefined;
   const timer = _execSourceDeps.setTimeout(() => {
     if (trip === undefined) trip = "timeout";
-    kill();
+    killHelper(proc);
   }, timeoutMs);
 
   const stdoutController = new AbortController();
@@ -239,7 +245,7 @@ async function runHelperProcess(proc: HelperProcess, providerId: string, timeout
         signal: stdoutController.signal,
         onExceeded: () => {
           if (trip === undefined) trip = "cap";
-          kill();
+          killHelper(proc);
         },
       }),
       stderr: readCapped(proc.stderr, AUTH_HELPER_STDERR_COLLECT_MAX_BYTES, { signal: stderrController.signal }),
@@ -275,8 +281,14 @@ export async function runHelper(
   try {
     run = await runHelperProcess(proc, providerId, timeoutMs);
   } catch (cause) {
-    // The streams or the exit wait failed under us; nothing was learned about the
-    // provider, and the helper is dead either way.
+    // The streams or the exit wait failed under us, so nothing was learned about
+    // the provider. The child is NOT necessarily dead, though: the `finally` in
+    // runHelperProcess has already cleared the deadline timer that would have
+    // killed it, and that call's abort controllers died with the throw. Left
+    // alone it runs until it chooses to stop, holding two open pipes. Kill it
+    // and drop the readers here, where `proc` is still in scope.
+    killHelper(proc);
+    await Promise.allSettled([proc.stdout.cancel(), proc.stderr.cancel()]);
     return { kind: "no-answer", detail: `could not be read: ${errorMessage(cause)}`, stderr: "" };
   }
 

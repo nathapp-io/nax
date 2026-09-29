@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _resetFingerprintSalt, fingerprintCredential } from "@/agents/native/credentials/fingerprint";
@@ -139,5 +139,27 @@ describe("fingerprintCredential", () => {
     await fingerprintCredential({ kind: "api-key", key: "K2" });
 
     expect(named("credential.salt_invalid")).toHaveLength(0);
+  });
+
+  // Review finding (2026-09-30): loadSalt's filesystem errors used to escape, and
+  // this runs on the run-start probe, where a non-NaxError takes the whole precheck
+  // report down. An unreadable salt path must degrade like a wrong-length one.
+  test("review: an unreadable salt path falls back to a random in-memory salt instead of throwing", async () => {
+    mkdirSync(saltPath);
+
+    const first = await fingerprintCredential({ kind: "api-key", key: "K" });
+
+    expect(first).toMatch(/^[0-9a-f]{12}$/);
+    expect(named("credential.salt_invalid")).toHaveLength(1);
+  });
+
+  test("review: a second call on an unreadable salt path still resolves and does not re-warn", async () => {
+    mkdirSync(saltPath);
+
+    await fingerprintCredential({ kind: "api-key", key: "K" });
+    const second = await fingerprintCredential({ kind: "api-key", key: "K" });
+
+    expect(second).toMatch(/^[0-9a-f]{12}$/);
+    expect(named("credential.salt_invalid")).toHaveLength(1);
   });
 });
