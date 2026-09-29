@@ -388,6 +388,16 @@ async function displayFeatureDetails(featureName: string, featureDir: string): P
 }
 
 /**
+ * Resolve the repo root from a `--dir` value, walking up to the nearest `.nax`
+ * directory's parent the way `nax run` does. Falls back to the resolved dir.
+ */
+function resolveRootFromDir(dir: string): string {
+  const resolved = resolve(dir);
+  const naxDir = _statusFeaturesDeps.findProjectDir(resolved);
+  return naxDir ? join(naxDir, "..") : resolved;
+}
+
+/**
  * Display feature status (all features table or single feature details)
  *
  * @param options - Command options
@@ -407,10 +417,7 @@ export async function displayFeatureStatus(options: FeatureStatusOptions = {}): 
     // to avoid requiring config.json (status display only needs feature files)
     let featureDir: string;
     if (options.dir) {
-      const projectRootResolved = resolve(options.dir);
-      const naxDirFound = _statusFeaturesDeps.findProjectDir(projectRootResolved);
-      const projectRoot = naxDirFound ? join(naxDirFound, "..") : projectRootResolved;
-      featureDir = configFeatureDir(projectRoot, options.feature);
+      featureDir = configFeatureDir(resolveRootFromDir(options.dir), options.feature);
     } else {
       const resolved = resolveProject({ feature: options.feature });
       if (!resolved.featureDir) {
@@ -426,9 +433,7 @@ export async function displayFeatureStatus(options: FeatureStatusOptions = {}): 
     // All features table
     let projectRoot: string;
     if (options.dir) {
-      const projectRootResolved = resolve(options.dir);
-      const naxDirFound = _statusFeaturesDeps.findProjectDir(projectRootResolved);
-      projectRoot = naxDirFound ? join(naxDirFound, "..") : projectRootResolved;
+      projectRoot = resolveRootFromDir(options.dir);
     } else {
       const resolved = resolveProject({ dir: options.dir });
       projectRoot = resolved.projectDir;
