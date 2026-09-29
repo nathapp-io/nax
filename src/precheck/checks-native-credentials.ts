@@ -24,6 +24,7 @@
 import { resolveDefaultAgent } from "../agents";
 import { NATIVE_AGENT, providersWithoutCredentials } from "../agents/native";
 import type { PrecheckConfig } from "../config/selectors";
+import { NaxError } from "../errors";
 import type { Check } from "./types";
 
 const CHECK_NAME = "native-credentials";
@@ -78,10 +79,39 @@ export function describeMissingNativeCredentials(missing: readonly MissingNative
   );
 }
 
+/**
+ * A credential fault the store refused the run for, as an actionable blocker.
+ *
+ * The code is the part a user acts on — `CREDENTIAL_HELPER_FAILED` names a
+ * broken helper, `CREDENTIAL_CHANGED` a credential that moved under the run —
+ * and the message is nax's own, which names the provider without ever carrying
+ * the credential (US-004 AC8).
+ */
+function describeCredentialFault(error: NaxError): string {
+  return (
+    `The default native agent's credentials could not be read (${error.code}): ${error.message} ` +
+    `Fix the credential source, or set agent.default "claude" to use an acpx agent.`
+  );
+}
+
 export async function checkNativeCredentials(config: PrecheckConfig): Promise<Check> {
-  const missing = await findMissingNativeCredentials(config);
-  if (missing.length === 0) {
-    return { name: CHECK_NAME, tier: "blocker", passed: true, message: "native default agent credentials found" };
+  try {
+    const missing = await findMissingNativeCredentials(config);
+    if (missing.length === 0) {
+      return { name: CHECK_NAME, tier: "blocker", passed: true, message: "native default agent credentials found" };
+    }
+    return { name: CHECK_NAME, tier: "blocker", passed: false, message: describeMissingNativeCredentials(missing) };
+  } catch (error) {
+    // US-004: `providersWithoutCredentials` now surfaces a helper failure, a
+    // malformed helper reply or a refused credential change instead of
+    // swallowing every read error to []. Throwing here would take the whole
+    // report down with it — `runPrecheck` / `runEnvironmentPrecheck` await each
+    // check bare, so neither the human walk nor the --json document is printed.
+    // Reporting it as the failed blocker it already is keeps both the refusal
+    // (a failed blocker stops the run, as the setupRun throw does) and the
+    // report. A non-NaxError is a bug, not a credential condition, and still
+    // propagates.
+    if (!(error instanceof NaxError)) throw error;
+    return { name: CHECK_NAME, tier: "blocker", passed: false, message: describeCredentialFault(error) };
   }
-  return { name: CHECK_NAME, tier: "blocker", passed: false, message: describeMissingNativeCredentials(missing) };
 }

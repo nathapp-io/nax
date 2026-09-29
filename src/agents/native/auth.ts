@@ -291,23 +291,31 @@ export async function ambientShadows(providerIds: readonly string[]): Promise<st
  * baseline (`credential.resolved`) before any story starts, which is what the
  * guard later compares against. They happen before, and outside, the ambient
  * sweep's race below, so a helper slower than the sweep's timeout is still
- * asked.
+ * asked — and they are issued as one batch, so N helper-served providers cost
+ * the slowest helper rather than the sum of all of them.
  */
 export async function providersWithoutCredentials(providerIds: readonly string[]): Promise<string[]> {
   const unique = [...new Set(providerIds)];
 
   const store = naxCredentialStore();
   const stored = new Set<string>();
-  for (const providerId of unique) {
-    try {
-      if ((await store.read(providerId)) !== undefined) stored.add(providerId);
-    } catch (error) {
-      // A damaged credential file stays "unknown", which is the behaviour this
-      // check has always had: reporting the provider missing would look exactly
-      // like "you have no credentials" for a file that is merely unreadable.
-      if (error instanceof NaxError && error.code === "CREDENTIAL_FILE_UNREADABLE") return [];
-      throw error;
+  try {
+    // Read every provider concurrently. These reads sit outside the ambient
+    // race below on purpose — a helper slower than AMBIENT_PROBE_TIMEOUT_MS is
+    // still asked — so a sequential walk would cost the SUM of every helper's
+    // latency before the sweep even starts, where one batch costs the slowest.
+    const served = await Promise.all(
+      unique.map(async (providerId) => ({ providerId, credential: await store.read(providerId) })),
+    );
+    for (const { providerId, credential } of served) {
+      if (credential !== undefined) stored.add(providerId);
     }
+  } catch (error) {
+    // A damaged credential file stays "unknown", which is the behaviour this
+    // check has always had: reporting the provider missing would look exactly
+    // like "you have no credentials" for a file that is merely unreadable.
+    if (error instanceof NaxError && error.code === "CREDENTIAL_FILE_UNREADABLE") return [];
+    throw error;
   }
 
   const sweep = Promise.all(
