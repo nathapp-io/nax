@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-29T08:24:01.957Z",
+  "acFingerprint": "sha256:80df91fa4558bfa7d51bf27de1083370c4b67114433c0b99f37013cf6fb5499f",
+  "layoutFingerprint": "sha256:60681bde96f26f27f3d7a208a5c7cbf51b6be18f82c3b97f740dc2283f4d740f",
+  "storyCount": 7,
+  "acCount": 138,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": ".nax/features/credential-sources/.nax-acceptance.test.ts",
+      "expected": 138,
+      "found": 138,
+      "missing": []
+    }
+  ]
+}
