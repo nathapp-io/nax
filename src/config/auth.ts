@@ -21,7 +21,9 @@ export async function readGlobalAuthConfig(): Promise<AuthConfig> {
   }
 
   const auth =
-    typeof config === "object" && config !== null && "auth" in config ? (config as Record<string, unknown>).auth : {};
+    typeof config === "object" && config !== null && Object.hasOwn(config, "auth")
+      ? (config as Record<string, unknown>).auth
+      : {};
   const result = AuthConfigSchema.safeParse(auth);
   if (!result.success) {
     throw new NaxError(`Invalid global auth configuration: ${result.error.message}`, "AUTH_CONFIG_INVALID", {

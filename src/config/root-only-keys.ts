@@ -14,8 +14,10 @@ const ROOT_ONLY = new Set<string>(ROOT_ONLY_EXECUTION_KEYS);
 
 /** Typed form, for callers holding a parsed config (runtime/packages.ts). Silent. */
 export function pinRootOnlyKeys(merged: NaxConfig, root: NaxConfig): NaxConfig {
+  const { auth: _packageAuth, ...rootOnlyMerged } = merged;
   return {
-    ...merged,
+    ...rootOnlyMerged,
+    ...(root.auth === undefined ? {} : { auth: root.auth }),
     execution: {
       ...merged.execution,
       bashApproval: root.execution.bashApproval,
@@ -37,6 +39,7 @@ export function pinRootOnlyKeysRaw(
   packageDir: string,
   onIgnored: (msg: string) => void,
 ): Record<string, unknown> {
+  const { auth: _packageAuth, ...rawWithoutAuth } = raw;
   const execution = isRecord(raw.execution) ? raw.execution : {};
   const rootExecution: Record<string, unknown> = { ...root.execution };
   for (const key of ROOT_ONLY_EXECUTION_KEYS) {
@@ -48,8 +51,12 @@ export function pinRootOnlyKeysRaw(
   const pinned = Object.fromEntries(
     ROOT_ONLY_EXECUTION_KEYS.flatMap((k) => (rootExecution[k] === undefined ? [] : [[k, rootExecution[k]]])),
   );
-  if ("auth" in raw && !Bun.deepEquals(raw.auth, root.auth)) {
+  if (Object.hasOwn(raw, "auth") && !Bun.deepEquals(raw.auth, root.auth)) {
     onIgnored(`auth is root-only; the value set for package "${packageDir}" is ignored`);
   }
-  return { ...raw, auth: root.auth, execution: { ...rest, ...pinned } };
+  return {
+    ...rawWithoutAuth,
+    ...(root.auth === undefined ? {} : { auth: root.auth }),
+    execution: { ...rest, ...pinned },
+  };
 }
