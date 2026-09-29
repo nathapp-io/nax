@@ -94,9 +94,13 @@ export function scoreGuard(input: {
   // names the exemption even when a rule carries the flag.
   if (tempOnly) {
     const score = ruleScoreTempOnly(rules);
-    const category = firstHit(rules.hits, new Set<QuestionId>(["outside_project"]));
+    const flagged = score >= threshold;
+    // Per spec: category is present when a rule hit carries the flag.
+    // `outside_project` is exempt under the temp-only check, so it never
+    // names a temp-only decision.
+    const category = flagged ? firstHit(rules.hits, new Set<QuestionId>(["outside_project"])) : undefined;
     return {
-      flagged: score >= threshold,
+      flagged,
       score,
       threshold,
       basis: "temp-only",
@@ -107,9 +111,10 @@ export function scoreGuard(input: {
   // Classifier unreachable / oversized / rejected / unavailable: rules-only.
   if (model === undefined || model.status === "oversize" || model.status === "unavailable") {
     const score = ruleScore(rules);
-    const category = firstHit(rules.hits);
+    const flagged = score >= threshold;
+    const category = flagged ? firstHit(rules.hits) : undefined;
     return {
-      flagged: score >= threshold,
+      flagged,
       score,
       threshold,
       basis: "rules",
@@ -136,9 +141,13 @@ export function scoreGuard(input: {
   const { score: modelScore, category: modelCategory } = scoreFromAnswer(model);
   const rs = ruleScore(rules);
   const score = Math.max(rs, modelScore);
-  const category = rs === 1 ? firstHit(rules.hits) : modelCategory;
+  const flagged = score >= threshold;
+  // Rule hits always name the decision (first hit in QUESTION_IDS order);
+  // the harm top otherwise carries it — but the spec drops the category on
+  // any unflagged decision, so a benign answered row never names a harm.
+  const category = rs === 1 ? firstHit(rules.hits) : flagged ? modelCategory : undefined;
   return {
-    flagged: score >= threshold,
+    flagged,
     score,
     threshold,
     basis: "model",
@@ -150,10 +159,11 @@ export function scoreGuard(input: {
  * Build a `CommandGuard` from the shadow's rule scorer and the cached
  * classifier promise it shares with the shadow.
  *
- * The guard never throws: a classify that throws synchronously is caught
- * here and surfaced as an `unavailable` model so `scoreGuard` falls back to
- * the rules basis. The shadow classifies once per command; `assess` awaits
- * the cached promise rather than re-classifying.
+ * The guard never throws: every step of `assess` (rule scoring, the temp-
+ * only check, the cached classify, the decision table) is wrapped in a
+ * single try/catch that falls through to a no-rule / no-model rules-only
+ * decision with score 0. The shadow classifies once per command; `assess`
+ * awaits the cached promise rather than re-classifying.
  */
 export function createCommandGuard(opts: {
   readonly threshold: number;
@@ -164,21 +174,35 @@ export function createCommandGuard(opts: {
   const { threshold, scoreRules: rules, classifyCached } = opts;
 
   async function assess(input: GuardInput): Promise<GuardDecision> {
-    const scoredRules = rules(input.command, input.cwd);
-    const tempOnly = input.tempConfined && isTempOnly(input.command, input.cwd);
-    let model: ModelResult | undefined;
-    if (!tempOnly) {
-      try {
+    // Safe defaults for the catch path: no rule hit, no classifier consulted,
+    // so the rules-only branch scores 0 with no category. Anything that
+    // throws — an injected scoreRules that rejects, lexBashCommand on a
+    // non-string command, a malformed ModelResult passed directly — lands
+    // here without ever propagating a rejection to the caller.
+    const fallback: RuleResult = { version: 0, hits: emptyHits() };
+    try {
+      const scoredRules = rules(input.command, input.cwd);
+      const tempOnly = input.tempConfined && isTempOnly(input.command, input.cwd);
+      let model: ModelResult | undefined;
+      if (!tempOnly) {
+        // `classifyCached` is total by contract (a synchronous throw inside
+        // the shadow already maps to `unavailable/threw`); the try is the
+        // belt for a genuine rejection.
         model = await classifyCached(input.command);
-      } catch {
-        // Defensive: `classifyCached` is total by contract (a synchronous
-        // throw already mapped to `threw` inside the shadow). A genuine
-        // rejection still gets the rules-only fallback.
-        model = { status: "unavailable", error: "threw" } satisfies ModelResult;
       }
+      return scoreGuard({ rules: scoredRules, model, tempOnly, threshold });
+    } catch {
+      return scoreGuard({ rules: fallback, model: undefined, tempOnly: false, threshold });
     }
-    return scoreGuard({ rules: scoredRules, model, tempOnly, threshold });
   }
 
   return { threshold, assess };
+}
+
+/** Six `false` rule hits, kept here so the catch path never reaches for
+ *  partial state. `version` is `0` to mark the result as "did not score". */
+function emptyHits(): Readonly<Record<QuestionId, boolean>> {
+  return Object.freeze(Object.fromEntries(QUESTION_IDS.map((id) => [id, false]))) as Readonly<
+    Record<QuestionId, boolean>
+  >;
 }
