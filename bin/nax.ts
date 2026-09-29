@@ -67,7 +67,7 @@ import {
   runsShowCommand,
   specLintCommand,
 } from "../src/cli";
-import { configCommand } from "../src/cli/config";
+import { configCommand, configJsonCommand } from "../src/cli/config";
 import {
   profileCreateCommand,
   profileCurrentCommand,
@@ -766,7 +766,25 @@ const configCmd = program
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("--explain", "Show detailed field descriptions", false)
   .option("--diff", "Show only fields where project overrides global", false)
+  .option("--json", "Emit one machine-readable JSON document", false)
+  .option(
+    "--profile <name>",
+    "Profile(s) to overlay (comma-separated or repeated; later overrides earlier)",
+    collectProfile,
+    [],
+  )
   .action(async (options) => {
+    if (options.json) {
+      process.exit(
+        await configJsonCommand({
+          dir: options.dir,
+          profile: options.profile,
+          explain: options.explain,
+          diff: options.diff,
+        }),
+      );
+      return;
+    }
     let workdir: string;
     try {
       workdir = validateDirectory(options.dir);
@@ -776,8 +794,13 @@ const configCmd = program
       return;
     }
     try {
-      const config = await loadConfig(workdir);
-      await configCommand(config, { explain: options.explain, diff: options.diff });
+      const projectDir = findProjectDir(workdir);
+      const config = await loadConfig(projectDir ?? workdir, { profile: options.profile });
+      await configCommand(config, {
+        explain: options.explain,
+        diff: options.diff,
+        profile: options.profile,
+      });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);

@@ -24,6 +24,6 @@ export function buildConfigRequirements(config: NaxConfig): ConfigRequirements {
     transport,
     protocol: config.agent?.protocol ?? DEFAULT_AGENT_PROTOCOL,
     providers,
-    sandbox: transport === "native" && config.execution.sandbox?.enabled !== false,
+    sandbox: transport === "native" && config.execution?.sandbox?.enabled !== false,
   };
 }

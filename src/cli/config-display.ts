@@ -5,8 +5,8 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { findProjectDir, globalConfigPath } from "../config/loader";
+import { dirname, join, normalize } from "node:path";
+import { globalConfigPath } from "../config/loader";
 import type { NaxConfig } from "../config/schema";
 import { FIELD_DESCRIPTIONS } from "./config-descriptions";
 import { deepDiffConfigs } from "./config-diff";
@@ -31,15 +31,22 @@ export interface ConfigCommandOptions {
  * @param config - Loaded configuration
  * @param options - Command options
  */
+function rejectDiffProfileConflict(options: ConfigCommandOptions): void {
+  if (options.diff && (options.profile?.length ?? 0) > 0) {
+    console.error("Error: --diff cannot be combined with --profile");
+    process.exit(1);
+  }
+}
+
 export async function configCommand(config: NaxConfig, options: ConfigCommandOptions = {}): Promise<void> {
   const { explain = false, diff = false } = options;
+  rejectDiffProfileConflict(options);
 
   // Validate mutually exclusive flags
   if (explain && diff) {
     console.error("Error: --explain and --diff are mutually exclusive");
     process.exit(1);
   }
-
   // Determine sources
   const sources = determineConfigSources();
 
@@ -113,9 +120,22 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
  * @param _startDir - Directory to resolve the project config from (defaults to cwd)
  * @returns Paths to global and project config files (null if not found)
  */
-export function determineConfigSources(_startDir?: string): { global: string | null; project: string | null } {
+export function determineConfigSources(startDir?: string): { global: string | null; project: string | null } {
   const globalPath = globalConfigPath();
-  const projectDir = findProjectDir();
+  // Keep the caller's lexical path spelling (notably /var vs /private/var
+  // on macOS) in the report while walking up to the project config.
+  let projectDir: string | null = null;
+  let dir = normalize(startDir ?? process.cwd());
+  while (true) {
+    const candidate = join(dir, ".nax");
+    if (existsSync(join(candidate, "config.json"))) {
+      projectDir = candidate;
+      break;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
   const projectPath = projectDir ? join(projectDir, "config.json") : null;
 
   return {

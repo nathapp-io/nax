@@ -3,7 +3,7 @@
   "feature": "cli-json-output",
   "branchName": "feat/cli-json-output",
   "createdAt": "2026-06-01T00:00:00.000Z",
-  "updatedAt": "2026-09-29T17:27:28.943Z",
+  "updatedAt": "2026-09-29T18:18:25.821Z",
   "userStories": [
     {
       "id": "US-001",
@@ -273,8 +273,8 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

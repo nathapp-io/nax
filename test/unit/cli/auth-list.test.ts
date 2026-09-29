@@ -526,26 +526,19 @@ function lines(): string[] {
 }
 
 /**
- * The single line the command logged, parsed as JSON — `undefined` when that
- * line is not a JSON document at all. Every `--json` assertion goes through
- * here, so a run that logged text fails on an assertion rather than on a parse
- * error, and one that logged more than one line fails too.
+ * The single line the command logged, parsed into a JSON document. Every
+ * `--json` assertion goes through here, so a run that logged text, or more
+ * than one line, fails the test with a readable error rather than a bare
+ * parse error.
  */
-function parseDocument(): unknown {
-  expect(out).toHaveLength(1);
-  try {
-    return JSON.parse(out[0] ?? "");
-  } catch {
-    // Not JSON: the caller's assertion reports it.
-    return undefined;
-  }
-}
-
-/** The document printed in `--json` mode. */
 function jsonDocument<T>(): T {
-  const parsed = parseDocument();
-  expect(parsed).not.toBeUndefined();
-  return parsed as T;
+  expect(out).toHaveLength(1);
+  const line = out[0] ?? "";
+  try {
+    return JSON.parse(line);
+  } catch {
+    throw new Error(`expected one JSON document but logged: ${line}`);
+  }
 }
 
 describe("authListCommand in --json mode", () => {
