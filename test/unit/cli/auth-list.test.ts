@@ -12,15 +12,20 @@
  * without a shell. `NAX_GLOBAL_CONFIG_DIR` points at a fresh temp dir in every
  * test, and `_authDeps.ambientAuthAvailable` is stubbed in every test and
  * restored afterwards.
+ *
+ * This file also holds US-003's tests: `authListCommand` reads the report
+ * through `_cliAuthDeps.collectAuthList` and prints it as today's text lines or
+ * as one JSON document, and prints the error document when the listing aborts.
  */
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, type Mock, mock, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { StoredCredential } from "@nathapp/nax-ai";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _authDeps } from "@/agents/native/auth";
-import { _resetCredentialStore, naxCredentialStore } from "@/agents/native/credentials";
+import { _resetCredentialStore, credentialFilePath, naxCredentialStore } from "@/agents/native/credentials";
+import { _cliAuthDeps, authListCommand } from "@/cli/auth";
 import { type AuthListReport, collectAuthList } from "@/cli/auth-list";
 
 const DECLINE_REPLY = JSON.stringify({ version: 1, decline: true });
@@ -55,10 +60,19 @@ afterAll(() => {
 });
 
 let dir: string;
+let out: string[];
+let logSpy: Mock<(text: string) => void>;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 const realAmbient = _authDeps.ambientAuthAvailable;
+const realCliLog = _cliAuthDeps.log;
+const realCollectAuthList = _cliAuthDeps.collectAuthList;
 
 beforeEach(() => {
+  out = [];
+  logSpy = mock((text: string) => {
+    out.push(text);
+  });
+  _cliAuthDeps.log = logSpy;
   dir = makeTempDir("nax-auth-list-");
   process.env.NAX_GLOBAL_CONFIG_DIR = dir;
   _resetCredentialStore();
@@ -67,6 +81,8 @@ beforeEach(() => {
 
 afterEach(() => {
   _authDeps.ambientAuthAvailable = realAmbient;
+  _cliAuthDeps.log = realCliLog;
+  _cliAuthDeps.collectAuthList = realCollectAuthList;
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   _resetCredentialStore();
   cleanupTempDir(dir);
@@ -459,5 +475,253 @@ describe("collectAuthList under auth.source exec", () => {
     // report that carries provenance, not one that came back empty.
     expect(providerOf(report, "deepseek").exec?.status).toBe("served");
     expect(JSON.stringify(report)).not.toContain("sk-helper-secret");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003 — `nax auth list --json` and the text rendering it retains
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The document `authListCommand` prints when the listing aborts. */
+interface AuthListErrorDocument {
+  error: { code: string; message: string };
+}
+
+/** The report a stubbed collector resolves. */
+const FIXED_REPORT: AuthListReport = {
+  source: "file",
+  providers: [{ providerId: "mistral", stored: { kind: "api-key", expired: false }, ambient: false, available: true }],
+};
+
+/** An exec-source report: one helper-served provider, with its account label. */
+const EXEC_REPORT: AuthListReport = {
+  source: "exec",
+  helper: { command: ["cred", "--x"] },
+  providers: [
+    {
+      providerId: "openai",
+      stored: null,
+      exec: { status: "served", account: "team-a" },
+      ambient: false,
+      available: true,
+    },
+  ],
+};
+
+/** Stub the collector `authListCommand` reads its report from. */
+function stubCollector(report: AuthListReport) {
+  const stub = mock(async () => report);
+  _cliAuthDeps.collectAuthList = stub;
+  return stub;
+}
+
+function stripAnsi(value: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC is the point — this strips ANSI colour codes
+  return value.replace(/\x1B\[[0-9;]*m/g, "");
+}
+
+/** What the command logged, with colour codes removed. */
+function lines(): string[] {
+  return out.map(stripAnsi);
+}
+
+/**
+ * The single line the command logged, parsed as JSON — `undefined` when that
+ * line is not a JSON document at all. Every `--json` assertion goes through
+ * here, so a run that logged text fails on an assertion rather than on a parse
+ * error, and one that logged more than one line fails too.
+ */
+function parseDocument(): unknown {
+  expect(out).toHaveLength(1);
+  try {
+    return JSON.parse(out[0] ?? "");
+  } catch {
+    // Not JSON: the caller's assertion reports it.
+    return undefined;
+  }
+}
+
+/** The document printed in `--json` mode. */
+function jsonDocument<T>(): T {
+  const parsed = parseDocument();
+  expect(parsed).not.toBeUndefined();
+  return parsed as T;
+}
+
+describe("authListCommand in --json mode", () => {
+  test("US-003 AC1: calls the collector once with the provider ids it was given", async () => {
+    const stub = stubCollector(FIXED_REPORT);
+
+    await authListCommand(["mistral"], { json: true });
+
+    expect(stub).toHaveBeenCalledTimes(1);
+    expect(stub).toHaveBeenCalledWith(["mistral"]);
+  });
+
+  test("US-003 AC1: calls the collector with an empty list when no provider is named", async () => {
+    const stub = stubCollector(FIXED_REPORT);
+
+    await authListCommand([], { json: true });
+
+    expect(stub).toHaveBeenCalledWith([]);
+  });
+
+  test("US-003 AC2: prints one document that deep-equals the collector's report", async () => {
+    stubCollector(FIXED_REPORT);
+
+    await authListCommand(["mistral"], { json: true });
+
+    expect(jsonDocument<AuthListReport>()).toEqual(FIXED_REPORT);
+  });
+
+  test("US-003 AC3: logs exactly once", async () => {
+    stubCollector(FIXED_REPORT);
+
+    await authListCommand(["mistral"], { json: true });
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("US-003 AC4: returns 0", async () => {
+    stubCollector(FIXED_REPORT);
+
+    const code = await authListCommand(["mistral"], { json: true });
+
+    expect(code).toBe(0);
+  });
+
+  test("US-003 AC5: prints only the document when the report has no providers", async () => {
+    // A stored credential is what makes this document distinguishable from a
+    // listing that never consulted the stub: the real store holds a provider.
+    await storeFileCredential("openai", { kind: "api-key", key: "sk-stored-openai" });
+    stubCollector({ source: "file", providers: [] });
+
+    await authListCommand([], { json: true });
+
+    expect(jsonDocument<AuthListReport>().providers).toEqual([]);
+  });
+
+  test("US-003 AC6: with the real collector, a stored file credential is listed", async () => {
+    writeGlobalConfig({ source: "file" });
+    await storeFileCredential("openai", { kind: "api-key", key: "sk-stored-openai" });
+
+    await authListCommand([], { json: true });
+
+    expect(jsonDocument<AuthListReport>().providers[0]?.providerId).toBe("openai");
+  });
+
+  test("US-003 AC6: with the real collector and nothing stored, the document lists no provider", async () => {
+    writeGlobalConfig({ source: "file" });
+
+    await authListCommand([], { json: true });
+
+    expect(jsonDocument<AuthListReport>().providers).toEqual([]);
+  });
+
+  test("US-003 AC7: returns 0 when the helper fails for a stored provider", async () => {
+    writeGlobalConfig({ source: "file" });
+    await storeFileCredential("openai", { kind: "api-key", key: "sk-stored-openai" });
+    useExecHelper([helperScript], { exitCode: 1 });
+
+    const code = await authListCommand([], { json: true });
+
+    expect(code).toBe(0);
+  });
+
+  test("US-003 AC8: returns 1 when the auth config cannot be read", async () => {
+    writeGlobalConfig({ source: "exec" });
+
+    const code = await authListCommand([], { json: true });
+
+    expect(code).toBe(1);
+  });
+
+  test("US-003 AC9: the error document carries AUTH_CONFIG_INVALID", async () => {
+    writeGlobalConfig({ source: "exec" });
+
+    await authListCommand([], { json: true });
+
+    expect(jsonDocument<AuthListErrorDocument>().error.code).toBe("AUTH_CONFIG_INVALID");
+  });
+
+  test("US-003 AC10: the error document carries a non-empty message", async () => {
+    writeGlobalConfig({ source: "exec" });
+
+    await authListCommand([], { json: true });
+
+    const { message } = jsonDocument<AuthListErrorDocument>().error;
+
+    expect(typeof message).toBe("string");
+    expect(message.length).toBeGreaterThan(0);
+  });
+
+  test("US-003 AC11: an unreadable credentials file yields CREDENTIAL_FILE_UNREADABLE", async () => {
+    writeGlobalConfig({ source: "file" });
+    writeFileSync(credentialFilePath(), "{ not json");
+
+    const code = await authListCommand([], { json: true });
+
+    expect(code).toBe(1);
+    expect(jsonDocument<AuthListErrorDocument>().error.code).toBe("CREDENTIAL_FILE_UNREADABLE");
+  });
+
+  test("US-003 AC12: an unexpected collector failure yields AUTH_LIST_FAILED", async () => {
+    _cliAuthDeps.collectAuthList = mock(async () => {
+      throw new Error("boom");
+    });
+
+    const code = await authListCommand([], { json: true });
+
+    expect(code).toBe(1);
+    expect(jsonDocument<AuthListErrorDocument>().error.code).toBe("AUTH_LIST_FAILED");
+  });
+});
+
+describe("authListCommand text mode", () => {
+  test("US-003 AC13: the first line names the file credential source", async () => {
+    writeGlobalConfig({ source: "file" });
+    await storeFileCredential("openai", { kind: "api-key", key: "sk-stored-openai" });
+
+    await authListCommand([]);
+
+    expect(lines()[0]).toBe("Credential source: file");
+  });
+
+  test("US-003 AC14: the provider's row starts with two spaces then its id", async () => {
+    writeGlobalConfig({ source: "file" });
+    await storeFileCredential("openai", { kind: "api-key", key: "sk-stored-openai" });
+
+    await authListCommand([]);
+
+    expect(lines()[1]).toMatch(/^ {2}openai/);
+  });
+
+  test("US-003 AC15: the first line names the exec helper command", async () => {
+    stubCollector(EXEC_REPORT);
+
+    await authListCommand([]);
+
+    expect(lines()[0]).toBe("Credential source: exec (cred --x)");
+  });
+
+  test("US-003 AC16: the served provider's row carries the helper account", async () => {
+    stubCollector(EXEC_REPORT);
+
+    await authListCommand([]);
+
+    const row = lines().find((line) => line.includes("openai"));
+    expect(row).toBeDefined();
+    expect(row ?? "").toContain("exec (team-a)");
+  });
+
+  test("US-003 AC17: with no providers the hint is the second line", async () => {
+    // A stored credential proves the hint comes from the stubbed empty report,
+    // not from a fresh listing of the store.
+    await storeFileCredential("openai", { kind: "api-key", key: "sk-stored-openai" });
+    stubCollector({ source: "file", providers: [] });
+
+    await authListCommand([]);
+
+    expect(lines()[1]).toBe("No credentials stored. Add one with `nax auth login <provider>`.");
   });
 });
