@@ -3,7 +3,7 @@
   "feature": "rtk-bash-interception",
   "branchName": "feat/rtk-bash-interception",
   "createdAt": "2026-09-29T00:00:00.000Z",
-  "updatedAt": "2026-09-29T06:43:46.033Z",
+  "updatedAt": "2026-09-29T07:07:03.066Z",
   "userStories": [
     {
       "id": "US-001",
@@ -238,8 +238,8 @@
         "sandbox"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
