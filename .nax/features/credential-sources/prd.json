@@ -3,7 +3,7 @@
   "feature": "credential-sources",
   "branchName": "feat/credential-sources",
   "createdAt": "2026-09-29T00:00:00.000Z",
-  "updatedAt": "2026-09-29T09:35:31.244Z",
+  "updatedAt": "2026-09-29T10:57:24.960Z",
   "userStories": [
     {
       "id": "US-001",
@@ -170,8 +170,8 @@
         "process"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -242,7 +242,10 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Moves the only client credential inlet and coordinates async config with synchronous API and preflight/error behavior."
+        "reasoning": "Moves the only client credential inlet and coordinates async config with synchronous API and preflight/error behavior.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "src/agents/native/credentials.ts",
@@ -258,7 +261,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a60a4d03719bb69af67b70d1a2a562bb864f757b"
     },
     {
       "id": "US-005",

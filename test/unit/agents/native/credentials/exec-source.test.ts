@@ -560,3 +560,37 @@ describe("createExecCredentialSource", () => {
     });
   });
 });
+
+/**
+ * US-004 re-asserts two of the helper's guarantees at the assembly boundary,
+ * because the chained store and the run-start probe both reach them through the
+ * exec source. The redaction contract matters here: a helper's stderr is the one
+ * free-text channel a key can travel on.
+ */
+describe("createExecCredentialSource — US-004 acceptance", () => {
+  test("US-004 AC8: the CREDENTIAL_HELPER_FAILED message omits a secret the helper wrote to stderr", async () => {
+    helper.set({ exitCode: 1, stderr: "api_key=sk-secret123" });
+
+    const err = await readError(sourceFor());
+
+    expect(err.code).toBe("CREDENTIAL_HELPER_FAILED");
+    expect(err.message).not.toContain("sk-secret123");
+    // The redacted excerpt is also carried on the log entry and the error
+    // context, so a leak either way would still reach the run log.
+    expect(JSON.stringify(named("credential.helper_failed"))).not.toContain("sk-secret123");
+    expect(JSON.stringify(err.context ?? {})).not.toContain("sk-secret123");
+  });
+
+  test("US-004 AC9: delete(provider) throws NaxError code CREDENTIAL_MANAGED_BY_HELPER", async () => {
+    const source = sourceFor();
+
+    try {
+      await source.delete("anthropic");
+    } catch (err) {
+      assertNaxError(err, "delete rejection");
+      expect(err.code).toBe("CREDENTIAL_MANAGED_BY_HELPER");
+      return;
+    }
+    throw new Error("expected delete to reject");
+  });
+});

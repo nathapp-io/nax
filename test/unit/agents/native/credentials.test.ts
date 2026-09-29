@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
@@ -7,6 +7,7 @@ import {
   credentialFilePath,
   naxCredentialStore,
   readStoredEntries,
+  servedAuth,
 } from "@/agents/native/credentials";
 
 let dir: string;
@@ -70,5 +71,49 @@ describe("readStoredEntries", () => {
   test("throws the crafted message rather than a raw TypeError when credentials is null", async () => {
     writeFileSync(credentialFilePath(), JSON.stringify({ credentials: null }));
     await expect(readStoredEntries()).rejects.toThrow(/could not be parsed/);
+  });
+});
+
+/**
+ * US-004 — the assembled store and the module-level stamp.
+ *
+ * `naxCredentialStore()` now returns `guard(chained(exec?, file))`, and
+ * `servedAuth(providerId)` delegates to that memoised store. The assembly must
+ * pass a `describe` that reports `sourceOf`/`accountOf`, so a helper's account
+ * label reaches the stamp the cost row reads.
+ */
+describe("servedAuth (US-004)", () => {
+  function writeExecConfig(helper: string): void {
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ auth: { source: "exec", exec: { command: [helper] } } }));
+  }
+
+  function writeHelper(reply: string): string {
+    const script = join(dir, "helper.sh");
+    writeFileSync(script, `#!/bin/sh\ncat > /dev/null\nprintf '%s' '${reply}'\n`);
+    chmodSync(script, 0o755);
+    return script;
+  }
+
+  test('AC11: after a store read served by the helper, servedAuth reports source "exec" and the account', async () => {
+    const helper = writeHelper(JSON.stringify({ version: 1, kind: "api-key", key: "HELPER-KEY", account: "team-a" }));
+    writeExecConfig(helper);
+    _resetCredentialStore();
+
+    await naxCredentialStore().read("anthropic");
+
+    expect(servedAuth("anthropic")).toMatchObject({ source: "exec", account: "team-a" });
+  });
+
+  test("AC11 boundary: servedAuth is undefined for a provider the store never read", () => {
+    expect(servedAuth("anthropic")).toBeUndefined();
+  });
+
+  test('AC11 boundary: a file-served provider is stamped source "file" with no account', async () => {
+    await naxCredentialStore().modify("openrouter", async () => ({ kind: "api-key", key: "sk-file" }));
+
+    await naxCredentialStore().read("openrouter");
+
+    expect(servedAuth("openrouter")).toMatchObject({ source: "file" });
+    expect(servedAuth("openrouter")?.account).toBeUndefined();
   });
 });
