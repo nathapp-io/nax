@@ -1,10 +1,12 @@
 /**
  * Deterministic rule baseline (spec 6.3).
  *
- * A BASELINE to measure the model against, never a gate: nothing in the
- * policy reads it (single-gate rule, ADR-030). It does no lexing; it matches
- * ordered regex families over the raw command string. `outside_project` uses a
- * fixed list of home and system paths.
+ * A BASELINE to measure the model against. Nothing in the policy reads it
+ * for the rule-or-mean decision (ADR-030 single-gate rule); only the
+ * flag-for-review guard (US-003) consumes it, as one of two contributors to
+ * the score. It does no lexing; it matches ordered regex families over the
+ * raw command string. `outside_project` uses a fixed list of home and
+ * system paths.
  *
  * v2: when the caller passes the project root (the shadow passes the Bash
  * call's cwd, which is the policy root — the worktree for a worktree story),

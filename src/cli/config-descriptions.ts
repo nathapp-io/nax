@@ -129,13 +129,16 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Also grant the shared temp directories (os.tmpdir(), /tmp) to sandboxed commands. Off by default: temp writes stay inside this run's own temp root",
   "execution.sandbox.network": "Network policy for sandboxed commands",
   "execution.sandbox.network.allowedDomains": "Domains sandboxed commands may reach; absent means open",
-  "execution.commandSafety": "Shadow command classifier; observes every command, decides nothing. Root-only (ADR-031)",
+  "execution.commandSafety": "Command classifier: shadow rows, plus the optional flag-for-review guard",
   "execution.commandSafety.shadow": "Classifier endpoint settings; absent means off",
   "execution.commandSafety.shadow.url": "Classifier URL (loopback unless allowRemote)",
   "execution.commandSafety.shadow.timeoutMs": "Per-command classifier timeout in milliseconds",
   "execution.commandSafety.shadow.authEnv": "Name of the environment variable holding the classifier auth token",
   "execution.commandSafety.shadow.allowRemote":
     "Allow a non-loopback classifier URL. Sends every agent command verbatim off-host",
+  "execution.commandSafety.guard": "Opt-in flag-for-review guard; reuses the shadow's classifier",
+  "execution.commandSafety.guard.threshold":
+    "Rule-or-mean score cut at which the guard flags a command (0, 1]; 0.75 by default",
 
   // Quality
   quality: "Quality gate configuration",
