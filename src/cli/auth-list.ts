@@ -1,3 +1,4 @@
+import chalk from "chalk";
 import { ambientShadows, listStoredProviders, naxCredentialStore, type StoredEntry, servedAuth } from "@/agents/native";
 import { readGlobalAuthConfig } from "@/config";
 
@@ -89,6 +90,38 @@ async function readExecStatus(providerId: string): Promise<AuthListExecStatus> {
   } catch (error) {
     return { status: "error", code: errorCode(error, "CREDENTIAL_HELPER_FAILED") };
   }
+}
+
+function renderExecStatus(exec: AuthListExecStatus | undefined): string {
+  if (exec === undefined) return "";
+  if (exec.status === "served") return ` exec${exec.account === undefined ? "" : ` (${exec.account})`}`;
+  if (exec.status === "declined") return " file (declined)";
+  return ` error: ${exec.code}`;
+}
+
+function renderExpiry(stored: AuthListProvider["stored"]): string {
+  if (stored?.expires === undefined) return "";
+  return stored.expired ? chalk.red(" expired") : chalk.dim(` expires ${new Date(stored.expires).toISOString()}`);
+}
+
+function renderProviderRow(provider: AuthListProvider): string {
+  const stored = provider.stored;
+  const shadow = stored !== null && provider.ambient ? chalk.yellow(" shadows an environment variable") : "";
+  return `  ${provider.providerId.padEnd(20)} ${stored?.kind ?? ""}${renderExecStatus(provider.exec)}${renderExpiry(stored)}${shadow}`;
+}
+
+export function renderAuthListText(report: AuthListReport): string[] {
+  const sourceLabel = report.source === "exec" ? `exec (${report.helper?.command.join(" ") ?? ""})` : "file";
+  const lines = [`Credential source: ${sourceLabel}`];
+  if (report.providers.length === 0) {
+    lines.push("No credentials stored. Add one with `nax auth login <provider>`.");
+    return lines;
+  }
+  return lines.concat(report.providers.map(renderProviderRow));
+}
+
+export function renderAuthListJson(report: AuthListReport): string {
+  return JSON.stringify(report, null, 2);
 }
 
 export async function collectAuthList(providerIds: readonly string[]): Promise<AuthListReport> {

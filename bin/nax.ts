@@ -885,8 +885,9 @@ authCmd
 authCmd
   .command("list [provider...]")
   .description("List stored credentials and optional provider status")
-  .action(async (providerIds: string[] = []) => {
-    process.exit(await authListCommand(providerIds));
+  .option("--json", "Emit machine-readable JSON to stdout", false)
+  .action(async (providerIds: string[] = [], options: { json?: boolean }) => {
+    process.exit(await authListCommand(providerIds, { json: options.json }));
   });
 
 authCmd

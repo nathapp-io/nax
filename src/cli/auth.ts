@@ -20,20 +20,21 @@ import {
   naxCredentialStore,
   removeStoredProvider,
   runLogin,
-  type StoredEntry,
   servedAuth,
 } from "@/agents/native";
 import { readGlobalAuthConfig } from "@/config";
-import { errorCode, safeAccountLabel } from "./auth-list";
+import { type AuthListReport, collectAuthList, errorCode, renderAuthListJson, renderAuthListText } from "./auth-list";
 import { PromptCancelledError, promptForLine, promptForSecret, promptForSelect } from "./auth-prompt";
 import { openUrl } from "./open-url";
 
 export const _cliAuthDeps: {
   log: (text: string) => void;
   isTTY: () => boolean;
+  collectAuthList: typeof collectAuthList;
 } = {
   log: (text: string) => console.log(text),
   isTTY: () => process.stdin.isTTY === true,
+  collectAuthList,
 };
 
 /** The terminal's side of a login. Secrets go through the non-echoing prompt. */
@@ -172,69 +173,32 @@ export async function authImportCommand(options: { from?: string; force?: boolea
   }
 }
 
-async function helperRowStatus(providerId: string): Promise<string> {
+export async function authListCommand(
+  providerIds: readonly string[] = [],
+  options: { json?: boolean } = {},
+): Promise<number> {
   try {
-    await naxCredentialStore().read(providerId);
-    const provenance = servedAuth(providerId);
-    return provenance?.source === "exec"
-      ? ` exec${provenance.account === undefined ? "" : ` (${safeAccountLabel(provenance.account)})`}`
-      : " file (declined)";
-  } catch (error) {
-    return ` error: ${errorCode(error, "CREDENTIAL_HELPER_FAILED")}`;
-  }
-}
-
-function formatAuthListRow(
-  providerId: string,
-  entry: StoredEntry | undefined,
-  helperStatus: string,
-  isShadowed: boolean,
-): string {
-  const expiry =
-    entry?.expires === undefined
-      ? ""
-      : entry.expires <= Date.now()
-        ? chalk.red(" expired")
-        : chalk.dim(` expires ${new Date(entry.expires).toISOString()}`);
-  const shadow = isShadowed ? chalk.yellow(" shadows an environment variable") : "";
-  return `  ${providerId.padEnd(20)} ${entry?.kind ?? ""}${helperStatus}${expiry}${shadow}`;
-}
-
-export async function authListCommand(providerIds: readonly string[] = []): Promise<number> {
-  try {
-    const auth = await readGlobalAuthConfig();
-    const sourceLabel = auth.source === "exec" ? `exec (${auth.exec?.command.join(" ") ?? ""})` : "file";
-    _cliAuthDeps.log(`Credential source: ${sourceLabel}`);
-
-    const entries = await listStoredProviders();
-    const entriesByProvider = new Map(entries.map((entry) => [entry.providerId, entry]));
-    const requestedProviders = providerIds
-      .map((providerId) => providerId.trim())
-      .filter((providerId) => providerId.length > 0);
-    const providers = [...new Set([...entries.map((entry) => entry.providerId), ...requestedProviders])].sort();
-    if (providers.length === 0) {
-      _cliAuthDeps.log("No credentials stored. Add one with `nax auth login <provider>`.");
-      return 0;
-    }
-
-    const [shadowedProviders, helperStatuses] = await Promise.all([
-      ambientShadows(providers),
-      auth.source === "exec" ? Promise.all(providers.map(helperRowStatus)) : Promise.resolve(providers.map(() => "")),
-    ]);
-    const shadowed = new Set(shadowedProviders);
-    for (const [index, providerId] of providers.entries()) {
-      _cliAuthDeps.log(
-        formatAuthListRow(
-          providerId,
-          entriesByProvider.get(providerId),
-          helperStatuses[index] ?? "",
-          shadowed.has(providerId),
-        ),
-      );
+    const report: AuthListReport = await _cliAuthDeps.collectAuthList(providerIds);
+    const output = options.json ? renderAuthListJson(report) : renderAuthListText(report);
+    if (typeof output === "string") {
+      _cliAuthDeps.log(output);
+    } else {
+      for (const line of output) _cliAuthDeps.log(line);
     }
     return 0;
   } catch (error) {
-    _cliAuthDeps.log(chalk.red((error as Error).message));
+    if (options.json) {
+      _cliAuthDeps.log(
+        JSON.stringify({
+          error: {
+            code: errorCode(error, "AUTH_LIST_FAILED"),
+            message: error instanceof Error ? error.message : String(error),
+          },
+        }),
+      );
+    } else {
+      _cliAuthDeps.log(chalk.red((error as Error).message));
+    }
     return 1;
   }
 }
