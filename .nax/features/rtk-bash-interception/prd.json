@@ -1,0 +1,268 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "rtk-bash-interception",
+  "branchName": "feat/rtk-bash-interception",
+  "createdAt": "2026-09-29T00:00:00.000Z",
+  "updatedAt": "2026-09-29T04:52:29.705Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Validate shell interception without trusting provider stdout",
+      "description": "**Goal** — Introduce a generic, fail-open shell interception seam whose validator permits only safe rtk-prefix insertions.\n\n**Motivation** — The Bash tool's command is **model-authored** — no human owns that line — so the \"write it yourself\" argument does not apply.\n\n**Approach** — A candidate `C` for original `O` is accepted only when ALL of these hold; otherwise `validateShellRewrite` returns `{ kind: \"declined\", reason }` naming the first failed rule:\n\n1. **Byte-exact insertion.** Walking `O` and `C` together, every difference is `C` holding the four characters `rtk ` where `O` continues with its next character. Removing those insertions from `C` yields exactly `O`. Quoting, spacing and operators are therefore untouched — a candidate that re-spaces `&&` or re-quotes an argument is declined.\n2. **At least one insertion.** `C === O` is `unchanged`, not `rewritten`.\n3. **Both lex.** `lexBashCommand(O)` and `lexBashCommand(C)` both return `kind: \"ok\"` with the same number of segments. Given rule 1, this fires in practice when the ORIGINAL does not lex — a command substitution, `2>&1`, a subshell — which the gated policy already refuses but the `raw` approval mode can let through; such a command is never rewritten.\n4. **Each insertion is at a command word.** For every segment, the candidate's tokens either equal the original's, or equal the original's with one token `{ text: \"rtk\", opaque: false }` inserted at index `k`, where `k` is the count of leading `NAME=value` assignment tokens (`/^[A-Za-z_][A-Za-z0-9_]*=/`). The number of segments with an insertion equals the number of insertions found by rule 1.\n5. **Not already rtk.** A segment whose original token at `k` is already `rtk` gets no insertion.\n6. **Never inside a pipeline.** A segment whose own `separator` is `|` gets no insertion (its stdout feeds another program, not the model), and neither does a segment whose PREVIOUS segment's `separator` is `|` (it reads another program's output on stdin). In both cases compaction would change what a program reads.\n\nRules 1 and 4 together are the argv seam's \"exactly one leading token\" rule (`validateRewrite`, `index.ts:52`) applied per shell segment. Because the barrel re-exports `shell.ts`, `shell.ts` imports `CommandInterceptor` with `import type` only (keeps `check:import-cycles` at its current baseline) and value-imports `lexBashCommand` from `@/permissions`. Widen `Site` from `\"git\"` to `\"git\" | \"bash\"`, add optional `interceptShell` to `CommandInterceptor`, and widen `postProcess`'s request to `InterceptRequest | ShellInterceptRequest`. Rewrite the barrel header and Site comment, and rename the stale Git-only-site test without changing its assertions.\n\n**Scope** — In: shell request/result/outcome, validator, seam, barrel typing/export and stale test title. Out: provider implementation (US-002), Bash tool integration (US-003), AGENT overlay (US-004), changing Git argv validation. Accepting rtk rewrites that change the command word (`cat` -> `rtk read`, `npx tsc` -> `rtk tsc`), insert after a wrapper (`uv run rtk pytest`), or normalise whitespace; all are declined, and widening the validator is a separate change. Rewriting a segment that writes into or reads from a pipe. Rewriting a command the lexer refuses (command substitution, `2>&1`, subshells) under the `raw` approval mode; it runs unrewritten.\n\n**Interface** —\n```typescript\nexport interface ShellInterceptRequest {\n  readonly kind: \"shell\";\n  readonly command: string;\n  readonly cwd: string;\n  readonly site: \"bash\";\n}\n\nexport type ShellInterceptResult =\n  | { readonly kind: \"unchanged\" }\n  | { readonly kind: \"rewritten\"; readonly command: string; readonly provider: string }\n  | { readonly kind: \"declined\"; readonly reason: string };\n\nexport interface ShellInterceptOutcome {\n  /** What to execute: the original, or the validated rewrite. */\n  readonly command: string;\n  readonly provider?: string;\n  readonly rewritten: boolean;\n}\n\n/** Accepts a rewrite only if it is the original plus `rtk ` insertions at command words. */\nexport function validateShellRewrite(req: ShellInterceptRequest, result: ShellInterceptResult): ShellInterceptResult;\n\n/** The seam, one line at the call site. Fails open at rewrite time only (R3). */\nexport async function interceptShell(\n  command: string,\n  cwd: string,\n  interceptor: CommandInterceptor | undefined,\n): Promise<ShellInterceptOutcome>;\n```",
+      "acceptanceCriteria": [
+        "validateShellRewrite returns { kind: 'rewritten', command: 'rtk bun test a.test.ts', provider: 'rtk' } for original 'bun test a.test.ts' and that candidate.",
+        "validateShellRewrite returns a rewritten result for original 'FOO=1 bun test' and candidate 'FOO=1 rtk bun test', where the insertion follows the assignment token.",
+        "validateShellRewrite returns a rewritten result for original 'bun test; git status' and candidate 'rtk bun test; rtk git status', an insertion in each of two segments.",
+        "validateShellRewrite returns a rewritten result for original 'cd pkg && bun test' and candidate 'cd pkg && rtk bun test', where only the second segment is rewritten.",
+        "validateShellRewrite returns kind 'declined' for original 'cat src/a.ts' and candidate 'rtk read src/a.ts'.",
+        "validateShellRewrite returns kind 'declined' for original 'cd pkg&&bun test' and candidate 'cd pkg && rtk bun test', because spacing changed.",
+        "validateShellRewrite returns kind 'declined' for original 'uv run pytest -q' and candidate 'uv run rtk pytest -q', because the insertion is not at the command word.",
+        "validateShellRewrite returns kind 'declined' for original 'git log --oneline | head -5' and candidate 'rtk git log --oneline | head -5', because the rewritten segment feeds a pipe.",
+        "validateShellRewrite returns kind 'declined' for original \"bun test 'a b.ts'\" and candidate 'rtk bun test \"a b.ts\"', because quoting changed.",
+        "validateShellRewrite returns kind 'declined' for original 'rtk bun test' and candidate 'rtk rtk bun test'.",
+        "validateShellRewrite returns kind 'declined' for original 'bun test' and candidate 'rtk bun test; rm -rf .', when the candidate appends a segment.",
+        "validateShellRewrite returns kind 'declined' for original 'cat x | grep y' and candidate 'cat x | rtk grep y', because the rewritten segment reads a pipe.",
+        "validateShellRewrite returns kind 'declined' for original 'bun test $(id)' and candidate 'rtk bun test $(id)', when the original does not lex.",
+        "validateShellRewrite returns { kind: 'unchanged' } when the candidate equals the original.",
+        "validateShellRewrite returns an unchanged or declined result it is given without modification.",
+        "interceptShell('bun test', root, undefined) returns { command: 'bun test', rewritten: false }.",
+        "interceptShell returns the original command with rewritten: false when the interceptor has no interceptShell method.",
+        "interceptShell calls the interceptor's interceptShell once with { kind: 'shell', command, cwd, site: 'bash' }.",
+        "interceptShell returns { command: 'rtk bun test', provider: 'rtk', rewritten: true } when the interceptor answers rewritten with a candidate that passes validation.",
+        "interceptShell returns the original command with rewritten: false when the interceptor answers a candidate that fails validation.",
+        "interceptShell returns the original command with rewritten: false when the interceptor's interceptShell throws.",
+        "When importing from @/execution/command-interceptor, then interceptShell and validateShellRewrite resolve to the shell seam's exported functions."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "interception"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Novel shell-command validation at an access-control trust boundary; errors could execute provider-authored shell code."
+      },
+      "contextFiles": [
+        "src/execution/command-interceptor/index.ts",
+        "src/permissions/bash-lex.ts",
+        "test/unit/execution/command-interceptor.test.ts"
+      ],
+      "expectedFiles": [
+        "src/execution/command-interceptor/shell.ts",
+        "test/unit/execution/command-interceptor/shell.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/execution/command-interceptor.test.ts",
+          "reason": "the test titled \"the Git tool is the only interception site\" (line 109) keeps its assertions but its title becomes false once `Site` has two members; US-001 renames it to describe what it asserts. The replacing invariant: no test title claims Git is the only site."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Configure and provide rtk shell rewrites",
+      "description": "**Goal** — Add opt-in bash.enabled configuration and an rtk shell provider with a bounded, killable rewrite subprocess.\n\n**Motivation** — A native agent that runs `bun test`, `grep -rn`, `find` or `git status` through `Bash` pays full output size for every call.\n\n**Approach** — `RtkInterceptorOptions` gains OPTIONAL `bash?: boolean` (absent reads as `false`, so existing callers in `git-interception.test.ts` and `run-setup-command-interceptor.test.ts` compile unchanged); `RtkDeps` gains `rewrite(command: string, cwd: string): Promise<RtkRewriteResult>` where `RtkRewriteResult = { exitCode: number; stdout: string; timedOut: boolean }`; the returned interceptor implements `interceptShell`. `InterceptorState` becomes `{ enabled; version; verbs; bash }`, with `bash` always present (`false` when the option was absent). `defaultRecord` logs `bash` alongside the other three fields. `CommandInterceptorConfigSchema` adds `bash: { enabled: boolean }` defaulting to `{ enabled: false }`, still `.strict()`, with a refinement that rejects `bash.enabled: true` while `enabled` is `false` with the message `execution.commandInterceptor.bash.enabled requires execution.commandInterceptor.enabled`. The ExecutionConfigSchema.commandInterceptor default literal also carries `bash: { enabled: false }`; update CommandInterceptorConfig and FIELD_DESCRIPTIONS.\n\n`interceptShell(req)` on the interceptor returned by `createRtkInterceptor`:\n\n- mode `disabled` (`enabled: false`), or `bash: false` → `{ kind: \"unchanged\" }`;\n- mode `declined` (binary missing / probe threw) → `{ kind: \"declined\", reason }` — the same reason the Git site reports (`rtk binary not found on PATH`, or `rtk probe failed: <message>`);\n- otherwise calls `deps.rewrite(req.command, req.cwd)`. The default implementation spawns `[\"rtk\", \"rewrite\", command]` with `Bun.spawn` in `cwd`; if it has not exited after `RTK_REWRITE_TIMEOUT_MS` (`2000`, exported) it kills the child and resolves `{ exitCode: -1, stdout: \"\", timedOut: true }` (a `setTimeout` cancelled by `clearTimeout` on exit — the documented exception in `forbidden-patterns-source.md`). The answer, in order:\n  1. `timedOut: true` → `{ kind: \"declined\", reason: \"rtk rewrite timed out\" }`;\n  2. exit `0` or `3` with a trimmed, non-empty stdout that differs from `command` → `{ kind: \"rewritten\", command: <trimmed stdout>, provider: \"rtk\" }`;\n  3. exit `0` or `3` with an empty or identical stdout, or exit `1` → `{ kind: \"unchanged\" }`;\n  4. any other exit code, including `2` (a Claude deny rule) → `{ kind: \"declined\", reason: \"rtk rewrite exited <code>\" }`.\n  If `deps.rewrite` rejects (e.g. the spawn itself fails), the answer is `{ kind: \"declined\", reason: \"rtk rewrite failed: <message>\" }`.\n\nThe rewrite runs in the nax process on the host, never inside the sandbox. Expose the default rewrite implementation as a callable export so integration tests can observe its raw RtkRewriteResult, including exact exit code/stdout and whether the timed-out child is killed; provider interceptShell intentionally returns a different result shape. Update the three existing closed-world state/log expectations to include bash: false.\n\n**Scope** — In: configuration, provider shell method, record and timeout tests. Out: installation into Bash (US-003), AGENT overlay (US-004). Configuring `RTK_REWRITE_TIMEOUT_MS` through `NaxConfig`; it is an exported constant. A per-call cache of `rtk rewrite` results. Changing the existing Git site's verbs, validation or hint stripping.\n\n**Interface** —\n```typescript\ninterface RtkRewriteResult { exitCode: number; stdout: string; timedOut: boolean }\ninterface RtkDeps { rewrite(command: string, cwd: string): Promise<RtkRewriteResult> }\ninterface RtkInterceptorOptions { bash?: boolean }\nexport const RTK_REWRITE_TIMEOUT_MS = 2000;\nexport async function defaultRewrite(command: string, cwd: string): Promise<RtkRewriteResult>;\n```",
+      "acceptanceCriteria": [
+        "ExecutionConfigSchema parsed with no commandInterceptor yields commandInterceptor.bash.enabled === false.",
+        "DEFAULT_CONFIG.execution.commandInterceptor.bash.enabled is false.",
+        "ExecutionConfigSchema parses commandInterceptor: { enabled: true, bash: { enabled: true } } with bash.enabled === true.",
+        "ExecutionConfigSchema rejects commandInterceptor: { enabled: false, bash: { enabled: true } } with issue message 'execution.commandInterceptor.bash.enabled requires execution.commandInterceptor.enabled'.",
+        "ExecutionConfigSchema rejects an unknown key inside commandInterceptor.bash.",
+        "When reading FIELD_DESCRIPTIONS['execution.commandInterceptor.bash.enabled'], then its value is a non-empty string.",
+        "createRtkInterceptor({ enabled: true, verbs: [], bash: true, _deps }) interceptShell returns { kind: 'rewritten', command: 'rtk bun test', provider: 'rtk' } for bun test when rewrite returns { exitCode: 3, stdout: 'rtk bun test\\n', timedOut: false }.",
+        "createRtkInterceptor interceptShell returns a rewritten result when rewrite returns { exitCode: 0, stdout: 'rtk bun test', timedOut: false }.",
+        "createRtkInterceptor interceptShell returns { kind: 'unchanged' } when rewrite returns { exitCode: 1, stdout: '', timedOut: false }.",
+        "createRtkInterceptor interceptShell returns { kind: 'unchanged' } when rewrite returns { exitCode: 3, stdout: the original command, timedOut: false }.",
+        "createRtkInterceptor interceptShell returns { kind: 'unchanged' } when rewrite returns { exitCode: 3, stdout: '', timedOut: false }.",
+        "createRtkInterceptor interceptShell returns { kind: 'declined', reason: 'rtk rewrite exited 2' } when rewrite exits 2.",
+        "createRtkInterceptor interceptShell returns { kind: 'declined', reason: 'rtk rewrite exited 127' } when rewrite exits 127.",
+        "createRtkInterceptor interceptShell returns { kind: 'declined', reason: 'rtk rewrite timed out' } when rewrite returns { exitCode: -1, stdout: '', timedOut: true }.",
+        "createRtkInterceptor interceptShell returns { kind: 'declined', reason: 'rtk rewrite failed: spawn ENOENT' } when rewrite rejects with error message 'spawn ENOENT'.",
+        "When bash: false, then interceptShell returns { kind: 'unchanged' } and rewrite is never called.",
+        "When enabled: false, then interceptShell returns { kind: 'unchanged' } and rewrite is never called.",
+        "When enabled: true, bash: true and which returns null, then interceptShell returns { kind: 'declined', reason: 'rtk binary not found on PATH' } and rewrite is never called.",
+        "When enabled: true, bash: true and which throws 'boom', then interceptShell returns { kind: 'declined', reason: 'rtk probe failed: boom' }.",
+        "When createRtkInterceptor receives bash: true, then recorded InterceptorState carries bash: true.",
+        "When createRtkInterceptor is called without bash, then recorded InterceptorState carries bash: false.",
+        "When default rewrite invokes a fake PATH rtk executable that records its pid and sleeps, then it resolves with timedOut: true within RTK_REWRITE_TIMEOUT_MS plus one second.",
+        "When default rewrite times out after a fake rtk records its pid, then that pid is no longer a running process afterwards.",
+        "When default rewrite invokes a fake PATH rtk printing 'rtk bun test' and exiting 3 for rtk rewrite 'bun test', then it resolves { exitCode: 3, stdout: 'rtk bun test\\n', timedOut: false }."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "interception"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module configuration and provider subprocess integration with timeout and kill semantics; not itself a permission gate."
+      },
+      "contextFiles": [
+        "src/execution/interceptors/rtk/index.ts",
+        "src/config/schemas-execution.ts",
+        "src/config/runtime-types-execution.ts",
+        "src/cli/config-descriptions.ts",
+        "test/unit/execution/interceptors/rtk.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/execution/interceptors/rtk-shell.test.ts",
+        "test/integration/execution/interceptors/rtk-rewrite.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/execution/interceptors/rtk.test.ts",
+          "reason": "three closed-world expectations pin the recorded state to `{ enabled, version, verbs }`: the two state-record tests (lines 53 and 59) and the `defaultRecord` log-line test (line 160, `entries[0].data`). US-002 adds `bash` to `InterceptorState` and to the logged fields, always present and `false` when the option is absent, so each expectation gains `bash: false`. The replacing invariant: the record and the log line carry exactly `enabled`, `version`, `verbs`, `bash`."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Run validated rtk rewrites inside native Bash",
+      "description": "**Goal** — Install the one run-scoped interceptor into Git and Bash, and execute only validated Bash rewrites after permission checks.\n\n**Motivation** — The permission policy and the command-safety guard still judge the model's ORIGINAL command, because the rewrite happens inside the tool, after `callTool` has allowed the call.\n\n**Approach** — `setupRun` builds ONE interceptor with `{ enabled, verbs, bash: ci.bash.enabled }` and assigns it to both `_gitToolDeps.interceptor` and `_bashToolDeps.interceptor`. `_bashToolDeps` becomes `{ runArgv, interceptor: undefined as CommandInterceptor | undefined }`. After validating `command` and before launching, `createBashTool(opts).run(input, ctx)` calls `interceptShell(command, ctx.root, _bashToolDeps.interceptor)` and launches the returned `command`; when the command was rewritten, runs `_bashToolDeps.interceptor.postProcess(stdout, { kind: \"shell\", command: <the model's ORIGINAL command>, cwd: ctx.root, site: \"bash\" })` over stdout — the same request shape `interceptShell` sent, mirroring the Git site (`git.ts:412`), which passes the original argv. `run` is already about 75 lines, so the interception, overlay and post-processing live in one helper in `src/tools/bash.ts` that `run` calls, keeping `run` within its complexity budget; `bun run check:complexity` must pass. Preserve existing framing and executed audit even on nonzero exits, and use raw stdout if postProcess throws. Document the Bash site in docs/guides/mcp-and-interception.md (Part 2: configuration row, a Scope rewrite naming both sites and why Bash is not R10's case, the validator rules, and the decline table). Restore `_bashToolDeps.interceptor` alongside `_gitToolDeps.interceptor` in setup-run tests to prevent cross-file leakage.\n\n**Scope** — In: Bash tool interception, runtime policy ordering, run installation, post-processing and docs. Out: defining the shell validator (US-001), rtk provider/config (US-002), defining the AGENT marker rule and adding AGENT to Exec (US-004). Rewriting user-authored command strings: `quality.commands`, `acceptance.command` and every other config-supplied command stay unintercepted (R10 stands for them). Interception of `RunCommand` (Exec): it is argv-shaped and receives only the `AGENT=1` overlay in this spec. Changing the existing Git site's verbs, validation or hint stripping.\n\n**Interface** —\n```typescript\nexport const _bashToolDeps = { runArgv, interceptor: undefined as CommandInterceptor | undefined };\n// setupRun: the same createRtkInterceptor({ enabled: ci.enabled, verbs: ci.git.verbs, bash: ci.bash.enabled }) instance is assigned to both tool deps.\n```",
+      "acceptanceCriteria": [
+        "When createCodingToolRuntime(...).callTool('Bash', { command: 'bun test a.test.ts' }) is granted under gated policy for bun test* and the interceptor answers 'rtk bun test a.test.ts', then _bashToolDeps.runArgv receives argv ['/bin/sh', '-c', 'rtk bun test a.test.ts'].",
+        "When that granted call is rewritten, then the interceptor's interceptShell receives the model's original command 'bun test a.test.ts'.",
+        "When callTool('Bash', { command: 'rm -rf src' }) runs under a gated policy not granting rm, then the call is denied.",
+        "When callTool('Bash', { command: 'rm -rf src' }) is denied under that gated policy, then the interceptor's interceptShell is never called.",
+        "When that granted call is rewritten, then the tool result's audit.executed equals ['/bin/sh', '-c', 'rtk bun test a.test.ts'].",
+        "When the interceptor answers invalid candidate 'rtk read src/a.ts' for 'cat src/a.ts', then runArgv receives ['/bin/sh', '-c', 'cat src/a.ts'].",
+        "When _bashToolDeps.interceptor is undefined, then runArgv receives the original command.",
+        "When _bashToolDeps.interceptor is undefined, then audit.executed equals ['/bin/sh', '-c', the original command].",
+        "When a rewritten call uses createBashTool({ launcher }), then the launcher's request carries spec: { kind: 'shell', shell: '/bin/sh', command: 'rtk bun test a.test.ts' }.",
+        "When rewritten stdout ends with '\\n[full output: rtk recall 12]', then the tool result's content equals the framed output built from stdout with the hint line removed.",
+        "When a call is not rewritten and stdout ends with '\\n[full output: rtk recall 12]', then that hint line remains intact in the returned output.",
+        "When a call is rewritten, then postProcess receives { kind: 'shell', command: the model's original command, cwd: ctx.root, site: 'bash' }.",
+        "When postProcess throws for a rewritten call, then the tool result's content carries raw stdout.",
+        "When a rewritten command exits 1, then the result returns isError: true with audit.exitCode === 1.",
+        "When a rewritten command exits 1, then runArgv is called exactly once (the original is never re-run).",
+        "When a real setupRun uses commandInterceptor: { enabled: true, bash: { enabled: true } }, then _bashToolDeps.interceptor is the same object as _gitToolDeps.interceptor.",
+        "When a real setupRun uses commandInterceptor: { enabled: true, bash: { enabled: true } } with a log sink, then the 'rtk interceptor state' log entry's data carries bash: true.",
+        "When a real setupRun uses default config, then _bashToolDeps.interceptor.interceptShell returns { kind: 'unchanged' } for 'bun test'."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "tools",
+        "interception"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Integrates provider-generated shell strings with a permission-gated native tool and audit ledger; execution ordering is access-control critical."
+      },
+      "contextFiles": [
+        "src/tools/bash.ts",
+        "src/tools/git.ts",
+        "src/execution/lifecycle/run-setup.ts",
+        "test/unit/tools/runtime-sandbox-audit.test.ts",
+        "test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/tools/bash-intercept.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts",
+          "reason": "its `withDepsRestore` calls (line 34) restore only `_gitToolDeps.interceptor`; once `setupRun` also assigns `_bashToolDeps.interceptor`, that module-level value leaks into later test files. US-003 adds `withDepsRestore(_bashToolDeps, [\"interceptor\"])` and the new `setupRun` criteria to this file. The replacing invariant: every interceptor `setupRun` installs is restored after each test."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "Opt native Bash and Exec children into agent-friendly output",
+      "description": "**Goal** — Apply the existing marker-based AGENT=1 rule to native Bash and RunCommand Exec subprocesses, including sandboxed launches.\n\n**Motivation** — The verification executor already fixed that for nax's own test runs by adding `AGENT=1` (`src/verification/executor.ts:40-84`: a single-file run was 12x larger without it, a directory 241x). The agent-facing spawn sites never received the same treatment.\n\n**Approach** — New `src/utils/agent-output-env.ts` holds `AGENT_OUTPUT_MARKERS`, `withAgentOutputEnv` (both moved verbatim from `src/verification/executor.ts`), and:\n\n```typescript\n/** Where marker presence is read from; tests replace it. */\nexport const _agentOutputEnvDeps = { processEnv: (): Record<string, string | undefined> => process.env };\n\n/** `{ AGENT: \"1\" }`, or undefined when a marker is already inherited or AGENT is stripped. */\nexport function agentOutputOverlay(strippedVars: readonly string[]): Readonly<Record<string, string>> | undefined;\n```\n\n`Bash` passes `agentOutputOverlay(opts.stripEnvVars ?? [])` as `env` only when defined, and omits the `env` key otherwise. `runExecBranch` passes `{ ...(normalized.env ?? {}), ...(overlay ?? {}) }` when either is defined, and no `env` at all when both are undefined. The rule is the one quality and verification already follow: an inherited `CLAUDECODE`/`REPL_ID`/`AGENT` speaks for itself, and stripping `AGENT` keeps it stripped. `src/verification/executor.ts` re-exports both so `src/quality/runner.ts:16` keeps importing them unchanged. Update the sandbox launcher's TMPDIR comment: srt overrides `TMPDIR` itself (so that key rides a command prefix) while other `env` overlay keys reach the wrapped child, citing the real-sandbox test. Stub `_agentOutputEnvDeps.processEnv` for deterministic unit tests and the existing Yarn env assertion; use `createCommandLauncher` with a real available `createSrtBackend` for the overlay integration test, skipping only when probeSandbox reports unavailable.\n\n**Scope** — In: marker utility, verification re-export, Bash/Exec env on both spawn paths, srt comment and real-sandbox verification. Out: Bash rewrite logic (US-003), provider or config (US-002). ACP agents (Claude Code, Codex, OpenCode): their own shell tools are theirs to hook; nax does not add `AGENT` to `buildAllowedEnv` and does not rewrite their commands. Adding `AGENT=1` when a marker was inherited but is removed by `quality.stripEnvVars` (e.g. `CLAUDECODE` stripped); marker presence is read from the nax process environment, the same rule `withAgentOutputEnv` applies today. A config switch for the `AGENT=1` overlay on `Bash` and `RunCommand`; it is on for every run, like the quality and verification runners. Verifying the env-overlay behaviour of the srt sandbox on Linux; the probe covered macOS only.\n\n**Interface** —\n```typescript\n/** Where marker presence is read from; tests replace it. */\nexport const _agentOutputEnvDeps = { processEnv: (): Record<string, string | undefined> => process.env };\n\n/** `{ AGENT: \"1\" }`, or undefined when a marker is already inherited or AGENT is stripped. */\nexport function agentOutputOverlay(strippedVars: readonly string[]): Readonly<Record<string, string>> | undefined;\n```",
+      "acceptanceCriteria": [
+        "agentOutputOverlay([]) returns { AGENT: '1' } when _agentOutputEnvDeps.processEnv returns an environment with none of CLAUDECODE, REPL_ID, AGENT.",
+        "agentOutputOverlay([]) returns undefined when _agentOutputEnvDeps.processEnv returns an environment carrying CLAUDECODE.",
+        "agentOutputOverlay([]) returns undefined when _agentOutputEnvDeps.processEnv returns an environment carrying AGENT: '0'.",
+        "agentOutputOverlay(['AGENT']) returns undefined when no marker is inherited.",
+        "When importing withAgentOutputEnv and AGENT_OUTPUT_MARKERS from @/verification, then both are the same values as those imported from src/utils/agent-output-env.ts.",
+        "When createBashTool().run({ command: 'bun test' }, ctx) has no launcher and no inherited marker, then _bashToolDeps.runArgv receives env: { AGENT: '1' }.",
+        "When that Bash call inherits CLAUDECODE, then runArgv receives no env key.",
+        "When createBashTool({ stripEnvVars: ['AGENT'] }) runs with no inherited marker, then runArgv receives no env key.",
+        "When createBashTool({ launcher }) runs with no inherited marker, then the launcher receives env: { AGENT: '1' }.",
+        "When runExecBranch has no launcher, no Exec env and no inherited marker, then runArgv receives env: { AGENT: '1' }.",
+        "When runExecBranch has a launcher, Yarn no-scripts env and no inherited marker, then the launcher receives env: { YARN_ENABLE_SCRIPTS: 'false', AGENT: '1' }.",
+        "When runExecBranch inherits CLAUDECODE and has no Exec env, then its spawn receives no env key.",
+        "When an available real srt-backed createCommandLauncher runs createBashTool({ launcher }).run({ command: 'echo AGENT=$AGENT' }, ctx) with no inherited marker, then returned output carries 'AGENT=1' (skip only if probeSandbox reports srt unavailable).",
+        "When the quality runner spawns a configured command with no inherited marker, then its env carries AGENT: '1' (the moved helper keeps its behaviour)."
+      ],
+      "tags": [
+        "feature",
+        "environment",
+        "sandbox"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-cutting env behavior across two tools, verification compatibility and real sandbox transport; established marker rule but several integration paths."
+      },
+      "contextFiles": [
+        "src/verification/executor.ts",
+        "src/tools/bash.ts",
+        "src/tools/run-command-exec.ts",
+        "src/quality/runner.ts",
+        "test/unit/tools/run-command-exec-sandbox.test.ts"
+      ],
+      "expectedFiles": [
+        "src/utils/agent-output-env.ts",
+        "test/unit/utils/agent-output-env.test.ts",
+        "test/integration/sandbox/bash-agent-env.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/tools/run-command-exec-sandbox.test.ts",
+          "reason": "the \"Yarn no-scripts env overlay survives wrapping\" test (line 99) asserts the launcher's `env` equals exactly `{ YARN_ENABLE_SCRIPTS: \"false\" }`, and its result depends on whether the test process inherits `CLAUDECODE`/`AGENT`. US-004 merges the `AGENT=1` overlay into that env, so the test stubs `_agentOutputEnvDeps.processEnv` to an environment with no marker and asserts `{ YARN_ENABLE_SCRIPTS: \"false\", AGENT: \"1\" }`. The replacing invariant: the Yarn key survives wrapping alongside the agent-output key."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing TypeScript/Bun feature, not greenfield. The argv-only generic seam in src/execution/command-interceptor/index.ts:1-88 has Site='git', a CommandInterceptor with intercept/postProcess, and a fail-open interceptArgv/validateRewrite; add the shell seam in a separate type-only importing module and export it from this barrel, leaving Git's argv validation intact. src/permissions/bash-lex.ts:104-146 exposes a safe-by-refusal lexer, tokens with text/opaque, redirects, separators and segments; compare byte-exact insertions AND parsed segment tokens to avoid trusting rtk stdout as executable shell text. In particular reject both ends of a pipe, already-wrapped command words, changes to quotes/whitespace, and unlexable originals even in raw approval mode. src/execution/interceptors/rtk/index.ts:4-114 performs one synchronous PATH/version probe at construction, records state, filters Git verbs and strips only the existing RTK_HINT_LINE; add optional bash and injectable async rewrite, 2-second killable timeout, preserve existing Git callers and state logging expectations. src/config/schemas-execution.ts:221-232,320-325 uses strict zod and a default literal; src/config/schemas.ts:174-176 also derives its execution default via CommandInterceptorConfigSchema.parse({}), so extend the schema and the execution literal (not an independent hard-coded schemas.ts default); src/config/runtime-types-execution.ts:70-85 and src/cli/config-descriptions.ts:110-116 need the new field. src/execution/lifecycle/run-setup.ts:28-48,198-214 is the single rtk composition site: assign the same interceptor to Git and Bash; module-level dependency injection needs restoration between tests. src/tools/runtime.ts:310-330 checks permission before dispatch, so perform rewriting inside Bash.run, never before the gate; src/tools/bash.ts:76,238-315 has direct runArgv and launcher branches, audit.executed, framing and output cap: a helper should coordinate rewrite, AGENT overlay and post-processing before framing/truncation, retaining the actual executed command, raw output on postProcess failure, no retry after execution. src/tools/git.ts:380-435 mirrors original request in postProcess. src/tools/run-command-exec.ts:45-138 validates and normalizes argv and must receive only AGENT overlay, merged with normalized.env (not rtk). src/verification/executor.ts:40-84 has marker/withAgentOutputEnv implementation, src/quality/runner.ts:16,148 imports it through executor and must remain compatible; src/verification/index.ts:8 re-exports executor. src/sandbox/launcher.ts:103-145 already forwards env overlays on both wrapped and unwrapped paths, but its TMPDIR comment contradicts measured overlay propagation; correct it and verify against real srt, not only a stub. docs/guides/mcp-and-interception.md:156-231 currently documents Git-only scope and must explain Bash and decline rules. Existing regression tests: test/unit/execution/command-interceptor.test.ts:109 (misleading title, unchanged assertions), test/unit/execution/interceptors/rtk.test.ts (closed-world state/log checks), test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts:34 (restore both injected interceptors), test/unit/tools/runtime-sandbox-audit.test.ts (policy ordering), test/unit/tools/run-command-exec-sandbox.test.ts:85-101 (Yarn exact env expectation), plus quality runner and sandbox launcher tests. Migration: no config opt-in change for existing projects, absent bash defaults false and optional provider option leaves Git behavior unchanged; AGENT overlay is intentionally unconditional for native agent-issued Bash/Exec unless inherited marker or explicit AGENT strip. Risks: execution of untrusted provider stdout, privilege bypass if rewrite runs before policy, inadvertent pipeline semantics changes, accidental rerun of a failed rewritten command, timeout child leaks, test-environment marker contamination, sandbox overlays, cross-test module dependency leakage and import cycles. Validate via isolated unit, fake-PATH integration and srt-available integration tests; existing automatic type/complexity/import-cycle gates apply.",
+  "outOfScope": [
+    "Rewriting user-authored command strings: `quality.commands`, `acceptance.command` and every other config-supplied command stay unintercepted (R10 stands for them).",
+    "ACP agents (Claude Code, Codex, OpenCode): their own shell tools are theirs to hook; nax does not add `AGENT` to `buildAllowedEnv` and does not rewrite their commands.",
+    "A Codex-style prompt instruction telling the model to prefix `rtk` itself.",
+    "Accepting rtk rewrites that change the command word (`cat` -> `rtk read`, `npx tsc` -> `rtk tsc`), insert after a wrapper (`uv run rtk pytest`), or normalise whitespace; all are declined, and widening the validator is a separate change.",
+    "Rewriting a segment that writes into or reads from a pipe.",
+    "Adding `AGENT=1` when a marker was inherited but is removed by `quality.stripEnvVars` (e.g. `CLAUDECODE` stripped); marker presence is read from the nax process environment, the same rule `withAgentOutputEnv` applies today.",
+    "A config switch for the `AGENT=1` overlay on `Bash` and `RunCommand`; it is on for every run, like the quality and verification runners.",
+    "Stripping rtk's `[see remaining: tail ... rtk/tee/...]` hint; only the hints `RTK_HINT_LINE` already matches are stripped.",
+    "Configuring `RTK_REWRITE_TIMEOUT_MS` through `NaxConfig`; it is an exported constant.",
+    "A per-call cache of `rtk rewrite` results.",
+    "Interception of `RunCommand` (Exec): it is argv-shaped and receives only the `AGENT=1` overlay in this spec.",
+    "Changing the existing Git site's verbs, validation or hint stripping.",
+    "Verifying the env-overlay behaviour of the srt sandbox on Linux; the probe covered macOS only.",
+    "Rewriting a command the lexer refuses (command substitution, `2>&1`, subshells) under the `raw` approval mode; it runs unrewritten."
+  ],
+  "routingProfile": "native"
+}
