@@ -46,6 +46,17 @@ function isPathLike(token: string): boolean {
   return token.includes("/") || token === "." || token === ".." || token.startsWith("~");
 }
 
+/** True when `token` is a shell option flag the predicate must skip past to
+ * find a real target: starts with `-` but is not itself path-like and has no
+ * `--flag=value` to extract. `cd -P /tmp` has `-P` as the option and `/tmp`
+ * as the target. */
+function isOptionFlag(token: string): boolean {
+  if (!token.startsWith("-")) return false;
+  if (isPathLike(token)) return false;
+  if (flagValue(token) !== undefined) return false;
+  return true;
+}
+
 /** The judged value of a `--flag=value` token, or undefined when `token` is
  * not of that form. Anything else is judged as-is. */
 function flagValue(token: string): string | undefined {
@@ -134,10 +145,15 @@ function classify(token: PathToken, frame: string | undefined, cwd: string): Ver
 }
 
 /** The frame a `cd <target>` segment leaves behind. When the cd target is
- * not a literal, cwd-rooted, or $TMPDIR path the frame is lost. */
+ * not a literal, cwd-rooted, or $TMPDIR path the frame is lost. Any option
+ * flags the user wrote before the target (`-P`, `-L`, `--`) are skipped, so
+ * `cd -P $D` classifies `$D` (opaque, unresolvable) and clears the frame
+ * instead of joining a synthetic one from the option word. */
 function frameAfter(segment: BashSegment, frame: string | undefined, cwd: string): string | undefined {
-  const [command, target] = segment.tokens;
-  if (command?.text !== "cd" || target === undefined) return frame;
+  const [command, ...rest] = segment.tokens;
+  if (command?.text !== "cd") return frame;
+  const target = rest.find((token) => !isOptionFlag(token.text));
+  if (target === undefined) return frame;
   if (classify({ text: target.text, opaque: target.opaque }, frame, cwd) === "refuse") return undefined;
   if (target.text.startsWith("/")) return posix.normalize(target.text);
   return frame === undefined ? undefined : posix.normalize(posix.join(frame, target.text));
@@ -177,11 +193,12 @@ function classifySegment(
  * unjudgeable token (URL, attached short option, opaque non-`$TMPDIR`, or a
  * relative path after an unresolvable cd) returns false. */
 export function isTempOnly(command: string, cwd: string | undefined): boolean {
-  if (cwd === undefined) return false;
+  if (cwd === undefined || cwd === "") return false;
   const lexed = lexBashCommand(command);
   if (lexed.kind === "refused") return false;
 
   const normalizedCwd = posix.normalize(cwd);
+  if (normalizedCwd === "" || normalizedCwd === ".") return false;
   let frame: string | undefined = normalizedCwd;
   let hasTempPath = false;
 
