@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-29T16:24:15.721Z",
+  "acFingerprint": "sha256:4f27d38987a8bb3d5c152e1dc6f53d7191792be110b622146ffdc1570afb589b",
+  "layoutFingerprint": "sha256:efe56b04168df651bf36172f591ea89de2c0604877a03f9c1226a399543cf069",
+  "storyCount": 5,
+  "acCount": 85,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": ".nax/features/cli-json-output/.nax-acceptance.test.ts",
+      "expected": 85,
+      "found": 85,
+      "missing": []
+    }
+  ]
+}
