@@ -27,8 +27,8 @@ describe("detectTmpWrite", () => {
     expect(detectTmpWrite("cat /tmp/a.txt")).toBe(false);
   });
 
-  test("US-005 AC7: nax's own /tmp/nax-* run directory is not counted", () => {
-    expect(detectTmpWrite("echo x > /tmp/nax-r1/US-001-implementer/a.txt")).toBe(false);
+  test("US-005 AC7: nax's own /tmp/nax/<run> tree is not counted", () => {
+    expect(detectTmpWrite("echo x > /tmp/nax/r1/US-001-implementer/a.txt")).toBe(false);
   });
 
   test("US-005 AC8: a relative target resolved against a /tmp cwd is a write", () => {
@@ -81,4 +81,33 @@ describe("detectTmpWrite", () => {
     const command = "cd repo && cat > tsconfig.json <<'EOF'\n{}\nEOF";
     expect(detectTmpWrite(command)).toBe(false);
   });
+
+  // v3: only two nax temp trees are exempt — the shared parent `<tmp>/nax/…`
+  // and the per-user fallback `<tmp>/nax-<uid>`, whose segment must be ALL
+  // digits. Every other `<tmp>/nax-<name>` directory is a real write.
+  test("US-001 AC15: /tmp/nax-red-check is not the numeric fallback, so the write counts", () => {
+    expect(detectTmpWrite("echo x > /tmp/nax-red-check/a.txt")).toBe(true);
+  });
+
+  test("US-001 AC16: /private/tmp/nax-scratch is not the numeric fallback either", () => {
+    expect(detectTmpWrite("cp a.txt /private/tmp/nax-scratch/a.txt")).toBe(true);
+  });
+
+  test.each(["/tmp/nax-501/r1/a.txt", "/tmp/nax-0/a.txt", "/private/tmp/nax-501/r1/a.txt"])(
+    "US-001 AC17: an all-digit per-user fallback root stays exempt: %s",
+    (path) => {
+      expect(detectTmpWrite(`echo x > ${path}`)).toBe(false);
+    },
+  );
+
+  test("US-001 AC18: the shared /tmp/nax parent of every run root stays exempt", () => {
+    expect(detectTmpWrite("echo x > /tmp/nax/r1/a.txt")).toBe(false);
+  });
+
+  test.each(["/tmp/nax-501x/a.txt", "/tmp/nax-r1/US-001-implementer/a.txt"])(
+    "US-001 AC19: a fallback segment that is not all digits counts as a write: %s",
+    (path) => {
+      expect(detectTmpWrite(`echo x > ${path}`)).toBe(true);
+    },
+  );
 });
