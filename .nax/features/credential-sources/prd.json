@@ -3,7 +3,7 @@
   "feature": "credential-sources",
   "branchName": "feat/credential-sources",
   "createdAt": "2026-09-29T00:00:00.000Z",
-  "updatedAt": "2026-09-29T12:28:25.721Z",
+  "updatedAt": "2026-09-29T13:27:14.851Z",
   "userStories": [
     {
       "id": "US-001",
@@ -348,8 +348,8 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -423,7 +423,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Existing auth command output and one registration gain helper-aware branches using the assembled store; credential secrecy and managed-provider deletion still require security-isolated TDD."
+        "reasoning": "Existing auth command output and one registration gain helper-aware branches using the assembled store; credential secrecy and managed-provider deletion still require security-isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/auth.ts",
@@ -435,7 +438,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "faa8610e8e005a06a74016804386b6bd02c5e44c"
     }
   ],
   "analysis": "Existing TypeScript/Bun nax native agent uses @nathapp/nax-ai; this is an enhancement of live file credentials, not a new authentication subsystem. src/agents/native/credentials.ts:1-100 memoises createFileCredentialStore by global credential path, directly reads the file for listing and exports naxCredentialStore, credentialFilePath, readStoredEntries, _resetCredentialStore; move this module to credentials/index.ts rather than retaining both paths. src/agents/native/client.ts:78-90 supplies naxCredentialStore() as credentials to defaultProtocols, the one native client inlet; nax-ai/pi-ai read it per request. src/agents/native/auth.ts:105-128 passes it to login and src/agents/native/auth.ts:285-315 currently lists stored providers and swallows every list error before its 2s ambient timeout: replace with per-provider guarded reads before that timeout, swallowing only CREDENTIAL_FILE_UNREADABLE. src/agents/native/adapter.ts:183-191 currently probes file/ambient credentials; exec requires a no-helper-spawn true shortcut. src/agents/native/adapter.ts:203-259 parses provider from modelDef.model (not modelDef.provider), and src/agents/native/adapter.ts:280-538 performs the session turn and returns its result: stamp provenance only after request-time read. src/agents/native/errors.ts:14-95 maps protocol kinds, currently treating transport as fail-service-down; src/agents/native/session/turn-retry.ts:64-70 retries transport/overloaded/rate-limit; inspect causes before these policies. src/config/schemas.ts:70 and src/config/runtime-types.ts:498 own NaxConfig validation/types. src/config/loader.ts:116-147 merges global and project; src/config/loader.ts:392-401 and :460-475 read per-package overrides; src/config/profile.ts:80-110 is the global/project and per-package profile choke point. Reject auth at each non-global reader before merge. src/config/root-only-keys.ts:30-52 pins raw package root-only fields; src/config/schemas-command-safety.ts:66-78 demonstrates superRefine; src/config/paths.ts supplies globalConfigDir. Avoid loader -> global-only-keys -> loader runtime cycle and loader's 599/600-line lint gate; wrap existing destructure lines rather than adding lines. src/cli/config-descriptions.ts supplies config field explanations. src/logger/redact.ts supplies redactSecrets and a key-name filter that would hide a block named credentials, hence config key auth and event fields must not contain secrets. src/agents/manager-dispatch.ts:105-125,:135-218 constructs dispatch events, src/agents/manager.ts:530-542 forwards complete provenance, src/runtime/middleware/cost.ts:96,:100-180,:250,:280 records cost/error rows; types are src/agents/session-types.ts, src/agents/types.ts, src/runtime/dispatch-events.ts, src/runtime/cost-aggregator.ts. manager.ts and types.ts are 600 lines and cost-aggregator.ts 599 lines; replace existing spreads and shorten docs rather than growing file gates. src/cli/auth.ts:110-201 owns login/list/rm output via _cliAuthDeps.log; bin/nax.ts registers list; test/unit/agents/native/credentials.test.ts, auth-store-ops.test.ts, client.test.ts, errors.test.ts, test/unit/cli/auth.test.ts and test/unit/runtime/middleware/cost*.test.ts plus test/unit/runtime/in-flight-usage.test.ts anchor compatibility. Migrate only nax internals, preserving existing relative directory import resolution, synchronous store factory, live file reads, OAuth file locking/write-back, ambient auth, existing file-source output rows, ACP rows and lack of auth on cost error rows. Risks: secret leakage on helper stderr/stdout, file salt race/permissions, concurrent per-provider helper reads, expiring lease behavior, fail-open cause classification, cross-source writes, masked config, buildNativeClient caching and request-time attribution; isolate globals with NAX_GLOBAL_CONFIG_DIR and _resetCredentialStore in tests. Native client fake OpenAI-compatible server with transportRetries:0 tests guard/helper wire behavior; adapter tests accept nax-ai internal retries. Dependency order: config and exec independently, then fingerprint guard, store assembly/run start, then fault classification/cost/CLI in parallel. Cross-story typing: US-002 declares and exports AuthStamp from src/agents/session-types.ts; US-004 and US-006 import it and never redeclare it. US-002 and US-004 do not depend on US-006.",
