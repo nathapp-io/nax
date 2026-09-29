@@ -274,10 +274,13 @@ export function createExecCredentialSource(options: ExecCredentialSourceOptions)
 
   return {
     read,
-    async modify(providerId: ProviderId): Promise<StoredCredential | undefined> {
+    // Synchronous throws, not rejections: the helper owns the credential, so the
+    // refusal is the whole answer and no work is done — a caller holding only
+    // the returned promise would otherwise see an unhandled rejection.
+    modify(providerId: ProviderId): Promise<StoredCredential | undefined> {
       throw managedByHelper(providerId, "modify");
     },
-    async delete(providerId: ProviderId): Promise<void> {
+    delete(providerId: ProviderId): Promise<void> {
       throw managedByHelper(providerId, "delete");
     },
     accountOf: (providerId) => leases.get(providerId)?.account,

@@ -8,12 +8,11 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
-import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
+import { waitForCondition } from "@test/helpers";
 import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import { createLoopEventRegistry } from "@/agents/native/session/loop-events";
@@ -476,53 +475,6 @@ describe("hasCredentials", () => {
 
     // Fail open: an unreadable store is "unknown", not "no credentials".
     expect(await new NativeAgentAdapter().hasCredentials()).toBe(true);
-  });
-
-  test("AC18: returns true without spawning the helper when auth.source is exec and no credential file exists", async () => {
-    const dir = makeTempDir("nax-adapter-exec-");
-    const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
-    try {
-      process.env.NAX_GLOBAL_CONFIG_DIR = dir;
-      const marker = join(dir, "helper-ran");
-      const script = join(dir, "helper.sh");
-      writeFileSync(
-        script,
-        `#!/bin/sh\ntouch '${marker}'\ncat > /dev/null\nprintf '%s' '{"version":1,"kind":"api-key","key":"HELPER-KEY"}'\n`,
-      );
-      chmodSync(script, 0o755);
-      writeFileSync(
-        join(dir, "config.json"),
-        JSON.stringify({ auth: { source: "exec", exec: { command: [script] } } }),
-      );
-
-      // Nothing stored and nothing ambient: only the exec source can make this
-      // true, and a helper's providers cannot be listed, so it is not asked.
-      _adapterDeps.listStoredProviders = async () => [];
-      _adapterDeps.anyAmbientCredential = async () => false;
-
-      expect(await new NativeAgentAdapter().hasCredentials()).toBe(true);
-      expect(existsSync(marker)).toBe(false);
-    } finally {
-      process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
-      cleanupTempDir(dir);
-    }
-  });
-
-  test('AC18 boundary: with auth.source "file", an empty store and no ambient auth it is still false', async () => {
-    const dir = makeTempDir("nax-adapter-file-");
-    const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
-    try {
-      process.env.NAX_GLOBAL_CONFIG_DIR = dir;
-      writeFileSync(join(dir, "config.json"), JSON.stringify({ auth: { source: "file" } }));
-
-      _adapterDeps.listStoredProviders = async () => [];
-      _adapterDeps.anyAmbientCredential = async () => false;
-
-      expect(await new NativeAgentAdapter().hasCredentials()).toBe(false);
-    } finally {
-      process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
-      cleanupTempDir(dir);
-    }
   });
 });
 

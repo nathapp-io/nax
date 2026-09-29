@@ -209,7 +209,7 @@ describe("createChainedCredentialStore", () => {
   });
 
   describe("file-store failures", () => {
-    test("AC6: a file-store read failure is rethrown as NaxError code CREDENTIAL_FILE_UNREADABLE", async () => {
+    test("AC6: a file-store read failure is rethrown under NaxError code CREDENTIAL_FILE_UNREADABLE", async () => {
       const chained = createChainedCredentialStore({
         file: makeFile({
           read: async () => {

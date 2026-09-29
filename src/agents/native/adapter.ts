@@ -20,6 +20,7 @@ import { createTurnDeadline } from "../turn-deadline";
 import { SessionTurnError } from "../types";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
+import { authSourceIsExec } from "./credentials";
 import { toAdapterFailure } from "./errors";
 import {
   buildRateCard,
@@ -82,6 +83,12 @@ const DEFAULT_TIERS: readonly string[] = ["fast", "balanced", "powerful"];
 export const _adapterDeps = {
   listStoredProviders,
   anyAmbientCredential,
+  /**
+   * US-004: whether the global auth config points at an exec helper. Injectable
+   * so a test can pin the credential-source decision without writing
+   * `~/.nax/config.json`.
+   */
+  authSourceIsExec,
   /**
    * Injectable timer pair — lets the whole-turn deadline test (US-002 AC12)
    * drive the abort off a virtual clock instead of waiting the schema
@@ -177,11 +184,17 @@ export class NativeAgentAdapter implements AgentAdapter {
    * surfaces per request, through the typed mapping from ProtocolError.kind
    * "auth" to availability / fail-auth.
    *
+   * US-004: with `auth.source: "exec"` it answers true without asking anything.
+   * A helper's providers cannot be listed, so an empty credential file says
+   * nothing about whether this run can authenticate — and spawning the helper
+   * here would put a credential read before the run has any reason for one.
+   *
    * Errors resolve to true. Pruning an agent that would have worked kills a
    * run; the opposite costs one request-time error that is already handled.
    */
   async hasCredentials(): Promise<boolean> {
     try {
+      if (await _adapterDeps.authSourceIsExec()) return true;
       if ((await _adapterDeps.listStoredProviders()).length > 0) return true;
       return await _adapterDeps.anyAmbientCredential();
     } catch {
