@@ -106,7 +106,7 @@ function renderExpiry(stored: AuthListProvider["stored"]): string {
 
 function renderProviderRow(provider: AuthListProvider): string {
   const stored = provider.stored;
-  const shadow = stored !== null && provider.ambient ? chalk.yellow(" shadows an environment variable") : "";
+  const shadow = provider.ambient ? chalk.yellow(" shadows an environment variable") : "";
   return `  ${provider.providerId.padEnd(20)} ${stored?.kind ?? ""}${renderExecStatus(provider.exec)}${renderExpiry(stored)}${shadow}`;
 }
 

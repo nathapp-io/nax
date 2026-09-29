@@ -5,8 +5,8 @@
  */
 
 import { existsSync } from "node:fs";
-import { dirname, join, normalize } from "node:path";
-import { globalConfigPath } from "../config/loader";
+import { join } from "node:path";
+import { findProjectDir, globalConfigPath } from "../config/loader";
 import type { NaxConfig } from "../config/schema";
 import { FIELD_DESCRIPTIONS } from "./config-descriptions";
 import { deepDiffConfigs } from "./config-diff";
@@ -117,25 +117,12 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
 /**
  * Determine which config files are present.
  *
- * @param _startDir - Directory to resolve the project config from (defaults to cwd)
+ * @param startDir - Directory to resolve the project config from (defaults to cwd)
  * @returns Paths to global and project config files (null if not found)
  */
 export function determineConfigSources(startDir?: string): { global: string | null; project: string | null } {
   const globalPath = globalConfigPath();
-  // Keep the caller's lexical path spelling (notably /var vs /private/var
-  // on macOS) in the report while walking up to the project config.
-  let projectDir: string | null = null;
-  let dir = normalize(startDir ?? process.cwd());
-  while (true) {
-    const candidate = join(dir, ".nax");
-    if (existsSync(join(candidate, "config.json"))) {
-      projectDir = candidate;
-      break;
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
+  const projectDir = findProjectDir(startDir);
   const projectPath = projectDir ? join(projectDir, "config.json") : null;
 
   return {
