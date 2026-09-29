@@ -133,9 +133,9 @@ The existing `fail-auth` policy then applies: no same-agent retry, an immediate 
 
 ### Cost attribution
 
-A new `AuthStamp` type `{ fingerprint: string; source: "file" | "exec"; account?: string }`, declared in `src/agents/session-types.ts`. `NativeAgentAdapter` sets `auth` to `servedAuth(provider)` when defined, where `provider` is the value `parseNativeModel(modelDef.model)` returns: the same value passed to `client.model(provider, model)` (`adapter.ts:203` in `complete`, `:280` in `sendTurn`). **Never `modelDef.provider`**: the adapter deliberately ignores it, because `resolveModel()` infers it from the model name and it is `"unknown"` for non-Claude models. In `complete` the stamp joins the returned `CompleteResult` object. In `sendTurn` it is spread onto the `TurnResult` from `runNativeTurn` (`adapter.ts:357`) at the method's return (`:538`), after the loop, because the credential is only read during the loop. It is forwarded like `pricingSource`: `buildCompleteEvent` / `buildSessionTurnEvent` → `CompleteDispatchEvent` / `SessionTurnDispatchEvent` → `attachCostSubscriber` → `CostEvent.auth`. Absent (not `undefined`) when not set, so ACP rows are unchanged. `COST_ROW_SCHEMA_VERSION` goes from 7 to 8, with an `8 — adds auth` entry in its version list, per the rule in `src/runtime/middleware/cost.ts`. Error rows are stamped with `COST_ROW_SCHEMA_VERSION` too (`cost.ts:250`), so they also record `8`, without an `auth` field.
+The `AuthStamp` type `{ fingerprint: string; source: "file" | "exec"; account?: string }` is declared by US-002 in `src/agents/session-types.ts` (US-002's `servedAuth` returns it) and imported from there by every later story; no story declares a local copy. `NativeAgentAdapter` sets `auth` to `servedAuth(provider)` when defined, where `provider` is the value `parseNativeModel(modelDef.model)` returns: the same value passed to `client.model(provider, model)` (`adapter.ts:203` in `complete`, `:280` in `sendTurn`). **Never `modelDef.provider`**: the adapter deliberately ignores it, because `resolveModel()` infers it from the model name and it is `"unknown"` for non-Claude models. In `complete` the stamp joins the returned `CompleteResult` object. In `sendTurn` it is spread onto the `TurnResult` from `runNativeTurn` (`adapter.ts:357`) at the method's return (`:538`), after the loop, because the credential is only read during the loop. It is forwarded like `pricingSource`: `buildCompleteEvent` / `buildSessionTurnEvent` → `CompleteDispatchEvent` / `SessionTurnDispatchEvent` → `attachCostSubscriber` → `CostEvent.auth`. Absent (not `undefined`) when not set, so ACP rows are unchanged. `COST_ROW_SCHEMA_VERSION` goes from 7 to 8, with an `8 — adds auth` entry in its version list, per the rule in `src/runtime/middleware/cost.ts`. Error rows are stamped with `COST_ROW_SCHEMA_VERSION` too (`cost.ts:250`), so they also record `8`, without an `auth` field.
 
-**File-size budget.** Three files this story touches sit at the 600-line gate (`scripts/check-file-sizes.ts`, run by `bun run lint`) and none is baselined:
+**File-size budget.** Three files this story touches are at or one line under the 600-line gate (`scripts/check-file-sizes.ts`, run by `bun run lint`): two at 600 and one at 599. None is baselined:
 
 - `src/agents/manager.ts` (600): the complete path forwards provenance through a new `completeResultProvenance(result)` helper exported from `src/agents/manager-dispatch.ts`. It returns `{ pricingSource?, rates?, auth? }` with each key omitted when its value is `undefined`. `manager.ts` replaces its two existing spread lines for `pricingSource` and `rates` (`:539-540`) with one `...completeResultProvenance(outcome.result)` line.
 - `src/agents/types.ts` (600): `CompleteResult` gains `auth?: AuthStamp` with a one-line doc comment, and `AuthStamp` joins the existing `./session-types` type import. The story offsets the growth by shortening the seven-line `CompleteResult.sessionId` doc comment to four lines or fewer.
@@ -248,7 +248,7 @@ Patterns to mirror: `src/config/schemas-command-safety.ts` for a small schema fi
 ## Stories
 
 1. **US-001: `auth` config block and the global-only rule** — no dependencies. `AuthConfigSchema`, `AuthConfig`, `readGlobalAuthConfig()`, the `AUTH_CONFIG_NOT_GLOBAL` rejection at the project layer, in `loadProfile` (every profile chain) and at the per-package overlay, the `pinRootOnlyKeysRaw` extension, and `FIELD_DESCRIPTIONS` entries.
-2. **US-002: fingerprints and the change guard** — depends on US-001. `fingerprint.ts` (keyed hash, salt file) and `change-guard.ts` (identity comparison, `onChange`, `credential.*` events, `servedAuth`), tested against a stub inner store.
+2. **US-002: fingerprints and the change guard** — depends on US-001. `fingerprint.ts` (keyed hash, salt file), `change-guard.ts` (identity comparison, `onChange`, `credential.*` events, `servedAuth`), and the `AuthStamp` type exported from `src/agents/session-types.ts`, tested against a stub inner store.
 3. **US-003: the exec source** — no dependencies. `exec-source.ts`: the helper contract, reply validation, lease cache, single-flight, last good lease, stderr redaction, tested against fake helper scripts.
 4. **US-004: store assembly and run start** — depends on US-002 and US-003. `chained-store.ts`, the move to `credentials/index.ts`, `naxCredentialStore()` returning `guard(chained(exec?, file))`, `providersWithoutCredentials` reading through the store, and the `hasCredentials` exec short-circuit. Proven end to end through `buildNativeClient` against a fake server.
 5. **US-005: credential fault classification** — depends on US-004. `credentialFaultCode`, the `fail-auth` mapping in `toAdapterFailure`, and the non-retry rule in `isRetryableTransportFault`.
@@ -269,6 +269,7 @@ Patterns to mirror: `src/config/schemas-command-safety.ts` for a small schema fi
 - `src/logger/redact.ts` — `SECRET_KEY_PATTERN`, which event field names must not match
 - `src/config/global-only-keys.ts` — created by US-001, `readGlobalAuthConfig` supplies `onChange`
 - `test/unit/agents/native/credentials.test.ts` — temp global-dir isolation pattern
+- `src/agents/session-types.ts` — where US-002 declares and exports `AuthStamp` (359 lines, room)
 
 **US-003**
 - `src/agents/native/auth.ts` — `_authDeps` injection pattern
@@ -357,6 +358,7 @@ Fake helpers are small executable scripts written to a temp dir. "The fake serve
 - [unit] `loadConfig(projectDir)` throws `NaxError` code `AUTH_CONFIG_NOT_GLOBAL` when `<project>/.nax/config.json` contains an `auth` key.
 - [unit] The `AUTH_CONFIG_NOT_GLOBAL` error thrown for `<project>/.nax/config.json` has a message containing `project`.
 - [unit] `loadConfig(projectDir, { profile: "p" })` throws `AUTH_CONFIG_NOT_GLOBAL` when the global profile `~/.nax/profiles/p.json` contains an `auth` key.
+- [unit] The `AUTH_CONFIG_NOT_GLOBAL` error thrown by `loadProfile("p", projectRoot)` for a profile containing an `auth` key has a message containing `profile:p`.
 - [unit] `loadConfig(projectDir, { profile: "p" })` throws `AUTH_CONFIG_NOT_GLOBAL` when the project profile `<project>/.nax/profiles/p.json` contains an `auth` key.
 - [unit] `loadConfigForWorkdir(rootConfigPath, "packages/a")` throws `AUTH_CONFIG_NOT_GLOBAL` when `.nax/mono/packages/a/config.json` contains an `auth` key.
 - [unit] `loadPackageOverride(repoRoot, "packages/a")` throws `AUTH_CONFIG_NOT_GLOBAL` when `.nax/mono/packages/a/config.json` contains an `auth` key.
@@ -463,7 +465,7 @@ Fake helpers are small executable scripts written to a temp dir. "The fake serve
 - [integration] `NativeAgentAdapter.complete()` against the fake server returns `CompleteResult.auth.fingerprint` equal to `servedAuth(provider).fingerprint`, where `provider` is parsed from `options.modelDef.model` and `options.modelDef.provider` is set to `"unknown"`.
 - [integration] Given `auth.source: "exec"` and a fake helper replying with `account: "team-a"`, `NativeAgentAdapter.complete()` returns `CompleteResult.auth.account` equal to `"team-a"`.
 - [integration] `NativeAgentAdapter.sendTurn()` against the fake server, with `~/.nax/credentials` holding an api-key for the provider parsed from `handle.modelDef.model`, returns `TurnResult.auth.source` equal to `"file"`.
-- [integration] `NativeAgentAdapter.sendTurn()` against the fake server returns `TurnResult.auth.fingerprint` equal to `servedAuth(provider)` for the provider parsed from `handle.modelDef.model`.
+- [integration] `NativeAgentAdapter.sendTurn()` against the fake server returns `TurnResult.auth.fingerprint` equal to `servedAuth(provider).fingerprint` for the provider parsed from `handle.modelDef.model`.
 - [unit] `buildCompleteEvent` given `auth` returns an event whose `auth` equals the input.
 - [unit] `buildCompleteEvent` given no `auth` returns an event with no `auth` key.
 - [unit] `buildSessionTurnEvent` given a `TurnResult` carrying `auth` returns an event whose `auth` equals it.
