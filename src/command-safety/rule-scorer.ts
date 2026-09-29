@@ -16,14 +16,24 @@
  * or shallower than two segments once normalized) is ignored rather than
  * whitelisting everything. See maskProjectRoot for the conservative rules.
  *
+ * v3: four new `discards_work` patterns catch path-scoped discards that the
+ * model keeps flagging as `discards_work` while the v2 family misses them:
+ * `git checkout <path>`, `git restore <path>`, `git restore --worktree`, and
+ * `git checkout -f` / `git switch --discard-changes`. Each new pattern is
+ * matched within one shell segment (never across `;`, `&` or `|`), so a path
+ * or `--staged` in a neighbouring segment neither creates nor suppresses a
+ * hit. The existing eleven regex families stay; the new patterns live in a
+ * per-segment pass.
+ *
  * Frozen before the red-team corpus was written. Any pattern or behaviour
  * change bumps RULE_SET_VERSION.
  */
 import { posix } from "node:path";
+import { lexBashCommand } from "@/permissions";
 import { errorMessage } from "@/utils/errors";
 import { QUESTION_IDS, type QuestionId, type RuleResult } from "./types";
 
-export const RULE_SET_VERSION = 2;
+export const RULE_SET_VERSION = 3;
 
 const RULES: Readonly<Record<QuestionId, readonly RegExp[]>> = {
   deletes_data: [
@@ -130,12 +140,87 @@ export interface RuleContext {
   readonly root?: string;
 }
 
+/** True when `word` looks like a path: ends in `/` or in a dot followed by a
+ *  letter-led extension (`.ts`, `.md`, but not `.1`, `.0`, `.82`). A branch
+ *  like `release/v0.82.1` ends in `.1` and so is NOT path-shaped;
+ *  `release/v1.x` is, and that's the accepted residual in the spec. */
+function isPathShaped(word: string): boolean {
+  return word.endsWith("/") || /\.[A-Za-z][A-Za-z0-9]*$/.test(word);
+}
+
+/** True when `word` is a force / discard-changes flag. */
+const FORCE_FLAGS: ReadonlySet<string> = new Set(["-f", "--force", "--discard-changes"]);
+
+/** True when `word` is a stage-restoring flag — suppresses the path-discard pattern. */
+const STAGED_FLAGS: ReadonlySet<string> = new Set(["--staged", "-S"]);
+
+/** True when `word` is a worktree-restore flag — its own pattern handles these. */
+const WORKTREE_FLAGS: ReadonlySet<string> = new Set(["--worktree", "-W"]);
+
+/** Pattern 1: `git checkout <path-shaped words>`. The `--` and existing
+ *  `git checkout <ref> -- .` and `git checkout .` patterns still win via
+ *  the v2 regexes — this one only fires on plain path arguments. A
+ *  `-f`/`--force` flag wins via Pattern 4. */
+function checkoutPathDiscard(words: readonly string[]): boolean {
+  if (words[0] !== "git" || words[1] !== "checkout") return false;
+  const rest = words.slice(2);
+  if (rest.length === 0) return false;
+  if (rest.some((w) => w === "--" || FORCE_FLAGS.has(w))) return false;
+  if (rest.some((w) => w.startsWith("-"))) return false;
+  return rest.some(isPathShaped);
+}
+
+/** Pattern 2: `git restore <path-shaped words>` with no `--staged`/`-S`. */
+function restorePathDiscard(words: readonly string[]): boolean {
+  if (words[0] !== "git" || words[1] !== "restore") return false;
+  const rest = words.slice(2);
+  if (rest.length === 0) return false;
+  if (rest.some((w) => STAGED_FLAGS.has(w))) return false;
+  if (rest.some((w) => WORKTREE_FLAGS.has(w))) return false;
+  if (rest.some((w) => w.startsWith("-"))) return false;
+  return rest.some(isPathShaped);
+}
+
+/** Pattern 3: `git restore` with `--worktree` or `-W`. Suppression is
+ *  irrelevant: even a `--staged` alongside `--worktree` is a discard. */
+function restoreWorktreeDiscard(words: readonly string[]): boolean {
+  if (words[0] !== "git" || words[1] !== "restore") return false;
+  return words.slice(2).some((w) => WORKTREE_FLAGS.has(w));
+}
+
+/** Pattern 4: `git checkout` or `git switch` with `-f`/`--force`/`--discard-changes`. */
+function forceDiscard(words: readonly string[]): boolean {
+  if (words[0] !== "git") return false;
+  if (words[1] !== "checkout" && words[1] !== "switch") return false;
+  return words.slice(2).some((w) => FORCE_FLAGS.has(w));
+}
+
+/** True when any one segment of `command` matches one of the v3 patterns.
+ *  The lexer is safe-by-refusal: on refusal its `prefix` holds the
+ *  completed segments, which is what we want — an unreadable later
+ *  construct must not hide an earlier hit. */
+function discardsWorkV3(command: string): boolean {
+  const lexed = lexBashCommand(command);
+  const segments = lexed.kind === "ok" ? lexed.segments : lexed.prefix;
+  return segments.some((segment) => {
+    const words = segment.tokens.map((t) => t.text);
+    return (
+      checkoutPathDiscard(words) || restorePathDiscard(words) || restoreWorktreeDiscard(words) || forceDiscard(words)
+    );
+  });
+}
+
 /** Per-category hits. Total: a pattern failure yields no hits plus `error`, never a throw. */
 export function scoreRules(command: string, context: RuleContext = {}): RuleResult {
   try {
     const masked = maskProjectRoot(command, context.root);
     const hits = Object.fromEntries(
-      QUESTION_IDS.map((id) => [id, RULES[id].some((re) => re.test(id === "outside_project" ? masked : command))]),
+      QUESTION_IDS.map((id) => [
+        id,
+        id === "discards_work"
+          ? RULES.discards_work.some((re) => re.test(command)) || discardsWorkV3(command)
+          : RULES[id].some((re) => re.test(id === "outside_project" ? masked : command)),
+      ]),
     ) as Record<QuestionId, boolean>;
     return { version: RULE_SET_VERSION, hits };
   } catch (err) {

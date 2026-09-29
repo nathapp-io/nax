@@ -62,13 +62,21 @@ function resolveTarget(target: Target, frame: string | undefined): string | unde
   return frame === undefined ? undefined : posix.normalize(posix.join(frame, target.text));
 }
 
-/** True when `path` lies in nax's own temp tree under `root`, never counted. */
+/** True when `path` lies in nax's own temp tree under `root`, never counted.
+ *  Two trees are exempt: the shared parent `<root>/nax/` (parent of every run
+ *  root) and the per-user fallback `<root>/nax-<digits>` whose `<digits>` is
+ *  the WHOLE path segment after `nax-` (the literal UID in `/tmp/nax-<uid>`).
+ *  Anything else — `/tmp/nax-red-check`, `/tmp/nax-r1/...`, `/tmp/nax-501x`
+ *  — is a real write, because the confined sandbox denies writes to those
+ *  directories and they are user- or run-named, not nax-owned. */
 function isNaxTempTree(path: string, root: string): boolean {
-  // A path-boundary prefix, not a string prefix: `/tmp/naxfoo` is a different
-  // directory from `/tmp/nax` and stays counted. The shared parent is checked
-  // with its trailing separator because it is a directory of run roots; the
-  // fallback is a whole name prefix, `<uid>` and all.
-  return path.startsWith(`${root}/${NAX_PARENT_SEGMENT}/`) || path.startsWith(`${root}/${NAX_FALLBACK_SEGMENT}`);
+  if (path.startsWith(`${root}/${NAX_PARENT_SEGMENT}/`)) return true;
+  const fallbackPrefix = `${root}/${NAX_FALLBACK_SEGMENT}`;
+  if (!path.startsWith(fallbackPrefix)) return false;
+  const afterDash = path.slice(fallbackPrefix.length);
+  const firstSlash = afterDash.indexOf("/");
+  const segment = firstSlash === -1 ? afterDash : afterDash.slice(0, firstSlash);
+  return /^\d+$/.test(segment);
 }
 
 /** True when `path` is a temp root or lies under one, but not under nax's own subtree. */
