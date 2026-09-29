@@ -3,7 +3,7 @@
   "feature": "rtk-bash-interception",
   "branchName": "feat/rtk-bash-interception",
   "createdAt": "2026-09-29T00:00:00.000Z",
-  "updatedAt": "2026-09-29T06:11:13.024Z",
+  "updatedAt": "2026-09-29T06:43:46.033Z",
   "userStories": [
     {
       "id": "US-001",
@@ -178,8 +178,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -245,7 +245,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-cutting env behavior across two tools, verification compatibility and real sandbox transport; established marker rule but several integration paths."
+        "reasoning": "Cross-cutting env behavior across two tools, verification compatibility and real sandbox transport; established marker rule but several integration paths.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/verification/executor.ts",
@@ -268,7 +271,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "daa49d256b7725aa0f7bfd3792b7671ffca63182"
     }
   ],
   "analysis": "Existing TypeScript/Bun feature, not greenfield. The argv-only generic seam in src/execution/command-interceptor/index.ts:1-88 has Site='git', a CommandInterceptor with intercept/postProcess, and a fail-open interceptArgv/validateRewrite; add the shell seam in a separate type-only importing module and export it from this barrel, leaving Git's argv validation intact. src/permissions/bash-lex.ts:104-146 exposes a safe-by-refusal lexer, tokens with text/opaque, redirects, separators and segments; compare byte-exact insertions AND parsed segment tokens to avoid trusting rtk stdout as executable shell text. In particular reject both ends of a pipe, already-wrapped command words, changes to quotes/whitespace, and unlexable originals even in raw approval mode. src/execution/interceptors/rtk/index.ts:4-114 performs one synchronous PATH/version probe at construction, records state, filters Git verbs and strips only the existing RTK_HINT_LINE; add optional bash and injectable async rewrite, 2-second killable timeout, preserve existing Git callers and state logging expectations. src/config/schemas-execution.ts:221-232,320-325 uses strict zod and a default literal; src/config/schemas.ts:174-176 also derives its execution default via CommandInterceptorConfigSchema.parse({}), so extend the schema and the execution literal (not an independent hard-coded schemas.ts default); src/config/runtime-types-execution.ts:70-85 and src/cli/config-descriptions.ts:110-116 need the new field. src/execution/lifecycle/run-setup.ts:28-48,198-214 is the single rtk composition site: assign the same interceptor to Git and Bash; module-level dependency injection needs restoration between tests. src/tools/runtime.ts:310-330 checks permission before dispatch, so perform rewriting inside Bash.run, never before the gate; src/tools/bash.ts:76,238-315 has direct runArgv and launcher branches, audit.executed, framing and output cap: a helper should coordinate rewrite, AGENT overlay and post-processing before framing/truncation, retaining the actual executed command, raw output on postProcess failure, no retry after execution. src/tools/git.ts:380-435 mirrors original request in postProcess. src/tools/run-command-exec.ts:45-138 validates and normalizes argv and must receive only AGENT overlay, merged with normalized.env (not rtk). src/verification/executor.ts:40-84 has marker/withAgentOutputEnv implementation, src/quality/runner.ts:16,148 imports it through executor and must remain compatible; src/verification/index.ts:8 re-exports executor. src/sandbox/launcher.ts:103-145 already forwards env overlays on both wrapped and unwrapped paths, but its TMPDIR comment contradicts measured overlay propagation; correct it and verify against real srt, not only a stub. docs/guides/mcp-and-interception.md:156-231 currently documents Git-only scope and must explain Bash and decline rules. Existing regression tests: test/unit/execution/command-interceptor.test.ts:109 (misleading title, unchanged assertions), test/unit/execution/interceptors/rtk.test.ts (closed-world state/log checks), test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts:34 (restore both injected interceptors), test/unit/tools/runtime-sandbox-audit.test.ts (policy ordering), test/unit/tools/run-command-exec-sandbox.test.ts:85-101 (Yarn exact env expectation), plus quality runner and sandbox launcher tests. Migration: no config opt-in change for existing projects, absent bash defaults false and optional provider option leaves Git behavior unchanged; AGENT overlay is intentionally unconditional for native agent-issued Bash/Exec unless inherited marker or explicit AGENT strip. Risks: execution of untrusted provider stdout, privilege bypass if rewrite runs before policy, inadvertent pipeline semantics changes, accidental rerun of a failed rewritten command, timeout child leaks, test-environment marker contamination, sandbox overlays, cross-test module dependency leakage and import cycles. Validate via isolated unit, fake-PATH integration and srt-available integration tests; existing automatic type/complexity/import-cycle gates apply.",

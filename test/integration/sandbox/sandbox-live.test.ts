@@ -22,11 +22,14 @@ import { DEFAULT_SANDBOX_CONFIG } from "@/config/schemas-sandbox";
 import { type AskResolver, chainAskLinks } from "@/permissions";
 import {
   _resetSandboxRegistryForTests,
+  createCommandLauncher,
   probeSandboxOnce,
   resetSandboxBackend,
   runTmpRoot,
   sandboxBackendFor,
 } from "@/sandbox";
+import { createBashTool } from "@/tools";
+import { _agentOutputEnvDeps } from "@/utils/agent-output-env";
 
 const CONFIG = { ...DEFAULT_SANDBOX_CONFIG, enabled: true };
 const probe = await probeSandboxOnce(sandboxBackendFor(CONFIG));
@@ -384,6 +387,59 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
         if (existsSync(stray)) rmSync(stray, { force: true });
         cleanupTempDir(runRoot);
       }
+    }, 60_000);
+  });
+
+  /**
+   * US-004: the `AGENT=1` overlay has to survive the wrap. The launcher's
+   * TMPDIR comment claims srt overrides TMPDIR itself while the other `env`
+   * overlay keys reach the wrapped child — that claim is what this test
+   * actually runs. Real srt, through `createCommandLauncher` and the tool's own
+   * spawn path; nothing is stubbed but the marker lookup, which is scoped to
+   * this block.
+   */
+  describe("US-004 — the AGENT=1 overlay reaches a wrapped child", () => {
+    withDepsRestore(_agentOutputEnvDeps, ["processEnv"]);
+
+    const markers = ["CLAUDECODE", "REPL_ID", "AGENT"] as const;
+    let savedMarkers: Record<string, string | undefined>;
+
+    beforeEach(() => {
+      // The suite itself may run from an agent shell — nax sets AGENT=1 for its
+      // OWN test runs, which is exactly the behaviour under test here. Clear the
+      // markers so AGENT=1 inside the sandbox can only have come from the
+      // overlay, never from inheritance.
+      savedMarkers = Object.fromEntries(markers.map((m) => [m, process.env[m]]));
+      for (const m of markers) delete process.env[m];
+      _agentOutputEnvDeps.processEnv = () => ({ PATH: process.env.PATH });
+    });
+
+    afterEach(() => {
+      for (const m of markers) {
+        const value = savedMarkers[m];
+        if (value === undefined) delete process.env[m];
+        else process.env[m] = value;
+      }
+    });
+
+    test("US-004 AC13: an available srt-backed launcher runs the command with AGENT=1 in its env", async () => {
+      // The registry hands back the process's one createSrtBackend() instance —
+      // srt's SandboxManager is itself process-wide, so this file must not build
+      // a second backend beside the one the rest of the live suite uses.
+      const launcher = createCommandLauncher({
+        state: { kind: "available", backend: "srt", network: "open" },
+        backend: sandboxBackendFor(CONFIG),
+        policyFor: async (r) => ({ writeRoots: [r], denyWrite: [], denyRead: [], network: {} }),
+      });
+      const tool = createBashTool({ launcher });
+
+      const result = await tool.run(
+        { command: "echo AGENT=$AGENT" },
+        { root, resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_000_000 },
+      );
+
+      expect(result.isError).not.toBe(true);
+      expect(result.content).toContain("AGENT=1");
     }, 60_000);
   });
 });

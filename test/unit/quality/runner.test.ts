@@ -404,6 +404,29 @@ describe("runQualityCommand env stripping", () => {
     expect(lastEnv().AGENT).toBe("1");
   });
 
+  // US-004: `withAgentOutputEnv` moved to src/utils/agent-output-env.ts and
+  // src/verification/executor.ts re-exports it, so this spawn site — which
+  // imports it from @/verification — must be byte-for-byte unchanged.
+  test("US-004 AC14: a configured command still runs with AGENT=1 in its env", async () => {
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
+
+    await runQualityCommand({ commandName: "typecheck", command: "bun run typecheck", workdir: "/tmp" });
+
+    expect(lastEnv().AGENT).toBe("1");
+  });
+
+  test("US-004 AC14 boundary: an inherited marker still speaks for itself", async () => {
+    process.env.CLAUDECODE = "1";
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
+
+    await runQualityCommand({ commandName: "lint", command: "true", workdir: "/tmp" });
+
+    expect(lastEnv().CLAUDECODE).toBe("1");
+    expect(lastEnv().AGENT).toBeUndefined();
+  });
+
   test("an explicit strip of AGENT is not silently undone", async () => {
     const { spawn, lastEnv } = makeSpawn();
     _qualityRunnerDeps.spawn = spawn;
