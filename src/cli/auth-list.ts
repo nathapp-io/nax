@@ -71,7 +71,10 @@ function publicStoredEntry(entry: StoredEntry | undefined): AuthListProvider["st
     kind: entry.kind,
     expired: entry.expires === undefined ? false : entry.expires <= Date.now(),
   };
-  if (entry.expires !== undefined) stored.expires = new Date(entry.expires).toISOString();
+  if (entry.expires !== undefined) {
+    const expiry = new Date(entry.expires);
+    if (Number.isFinite(expiry.getTime())) stored.expires = expiry.toISOString();
+  }
   return stored;
 }
 
