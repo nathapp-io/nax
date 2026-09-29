@@ -45,9 +45,16 @@ export const _agentOutputEnvDeps = {
  * distinguishable from "an empty overlay": undefined means the caller passes
  * no `env` key at all and the child inherits `process.env` untouched.
  *
- * STUB (US-004): the marker rule lands with the implementation session.
+ * Marker presence is read from the nax process environment — the SAME source
+ * `withAgentOutputEnv` reads from — so an inherited CLAUDECODE/REPL_ID speaks
+ * for itself, and a stripped AGENT stays stripped. Reading from the child's
+ * already-built env would not work: by the time the spawn site runs, the
+ * inherited env is what nax itself was launched under, and there is no second
+ * "real" source of truth to consult.
  */
 export function agentOutputOverlay(strippedVars: readonly string[]): Readonly<Record<string, string>> | undefined {
-  void strippedVars;
-  return undefined;
+  if (strippedVars.includes("AGENT")) return undefined;
+  const env = _agentOutputEnvDeps.processEnv();
+  if (AGENT_OUTPUT_MARKERS.some((marker) => env[marker] !== undefined)) return undefined;
+  return { AGENT: "1" };
 }

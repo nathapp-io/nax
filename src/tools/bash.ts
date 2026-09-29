@@ -24,6 +24,7 @@ import type { CommandInterceptor, ShellInterceptRequest } from "../execution/com
 import { interceptShell } from "../execution/command-interceptor";
 import type { SandboxRecord } from "../sandbox";
 import { type CommandLauncher, rawBashRefusalReason, sandboxSentence, unsandboxedSentence } from "../sandbox";
+import { agentOutputOverlay } from "../utils/agent-output-env";
 import type { ArgvExecResult } from "../utils/argv-exec";
 import { runArgv } from "../utils/argv-exec";
 import type { CodingTool, ToolRunContext } from "./registry";
@@ -263,10 +264,19 @@ async function launchIntercepted({
   const interceptor = _bashToolDeps.interceptor;
   const intercepted = await interceptShell(command, ctx.root, interceptor);
   const executed = [shell, "-c", intercepted.command];
+  // US-004: opt the child into agent-friendly output. The same rule the
+  // quality and verification runners apply, just at the agent-facing spawn
+  // site. Marker presence is read from the nax process environment (via
+  // `_agentOutputEnvDeps.processEnv`), so an inherited CLAUDECODE/REPL_ID is
+  // left to speak for itself, and a stripped AGENT stays stripped. The overlay
+  // is a small record layered on top of `process.env` — undefined when there
+  // is nothing to add, so the child inherits its parent untouched.
+  const agentOverlay = agentOutputOverlay(opts.stripEnvVars ?? []);
   const common = {
     cwd: ctx.root,
     timeoutMs,
     stripEnvVars: [...(opts.stripEnvVars ?? [])],
+    ...(agentOverlay !== undefined ? { env: agentOverlay } : {}),
     ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
   };
   const launched: BashLaunch =
