@@ -6,6 +6,7 @@ import type {
   ShellInterceptResult,
 } from "@/execution/command-interceptor";
 import { getSafeLogger } from "@/logger";
+import { runArgv } from "@/utils/argv-exec";
 
 export interface InterceptorState {
   enabled: boolean;
@@ -41,42 +42,27 @@ export interface RtkInterceptorOptions {
 export const RTK_REWRITE_TIMEOUT_MS = 2000;
 
 /**
- * The default implementation of `RtkDeps.rewrite`. Spawns `["rtk", "rewrite",
- * command]` in `cwd` and resolves with the raw answer — exit code, stdout,
- * and a `timedOut` flag when the child was killed because
- * RTK_REWRITE_TIMEOUT_MS elapsed.
+ * The default implementation of `RtkDeps.rewrite`. Runs `["rtk", "rewrite",
+ * command]` in `cwd` through the shared argv executor (`runArgv`), which
+ * bounds the call with `RTK_REWRITE_TIMEOUT_MS`, SIGKILLs the whole process
+ * group on timeout — so a hung `rtk`, or a descendant that inherited the
+ * stdout pipe, cannot pin the caller past the bound — and drains
+ * stdout/stderr concurrently (MEM-4 / BUG-13).
  *
- * `setTimeout` is the documented exception in `forbidden-patterns-source.md`:
- * the timer handle must be cancellable so a fast-exiting child does not get
- * killed after the race. Reads stdout/stderr concurrently with `proc.exited`
- * per the Bun-native async pattern; sequential reads deadlock past 64KB.
- *
- * A spawn failure (e.g. ENOENT for `rtk`) rejects; the provider's
- * `interceptShell` maps that rejection to `rtk rewrite failed: <message>`.
+ * On timeout the answer is `{ exitCode: -1, stdout: "", timedOut: true }`: the
+ * raw exit code a signal-killed child reports is normalised away so the
+ * provider only branches on `timedOut`. A spawn failure (e.g. ENOENT for
+ * `rtk`) rejects; the provider's `interceptShell` maps that rejection to
+ * `rtk rewrite failed: <message>`.
  */
 export async function defaultRewrite(command: string, cwd: string): Promise<RtkRewriteResult> {
-  const proc = Bun.spawn(["rtk", "rewrite", command], { cwd, stdout: "pipe", stderr: "pipe" });
-  // setTimeout is required here so we can cancel on fast exit; Bun.sleep is uncancellable.
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    proc.kill();
-  }, RTK_REWRITE_TIMEOUT_MS);
-  try {
-    // Read stdout/stderr concurrently with proc.exited — sequential reads
-    // deadlock past 64KB on the Bun-native async pattern.
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-    // Drain stderr to avoid pipe back-pressure on noisy rejects; not part of
-    // the contract, but a leaked pipe blocks the parent on the next spawn.
-    void stderr;
-    return timedOut ? { exitCode: -1, stdout: "", timedOut: true } : { exitCode, stdout, timedOut: false };
-  } finally {
-    clearTimeout(timer);
-  }
+  const result = await runArgv({
+    argv: ["rtk", "rewrite", command],
+    cwd,
+    timeoutMs: RTK_REWRITE_TIMEOUT_MS,
+  });
+  if (result.timedOut) return { exitCode: -1, stdout: "", timedOut: true };
+  return { exitCode: result.exitCode, stdout: result.stdout, timedOut: false };
 }
 
 /** Resolve the provider binary via PATH. Exit code 0 + non-empty stdout is "found". */
