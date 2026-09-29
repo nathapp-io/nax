@@ -223,6 +223,11 @@ export const CommandInterceptorConfigSchema = z
     provider: z.string().min(1).default("rtk"),
     enabled: z.boolean().default(false),
     git: z.object({ verbs: z.array(z.string().min(1)).default(["log", "diff"]) }).default({ verbs: ["log", "diff"] }),
+    /**
+     * STUB (US-002): shape only. The implementation makes this object strict
+     * and refines it so `bash.enabled: true` requires `enabled: true`.
+     */
+    bash: z.object({ enabled: z.boolean() }).default({ enabled: false }),
   })
   .strict();
 
@@ -321,6 +326,7 @@ export const ExecutionConfigSchema = z.object({
     provider: "rtk",
     enabled: false,
     git: { verbs: ["log", "diff"] },
+    bash: { enabled: false },
   }),
 });
 

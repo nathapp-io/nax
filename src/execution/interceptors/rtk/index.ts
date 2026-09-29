@@ -1,22 +1,52 @@
-import type { CommandInterceptor, InterceptRequest, InterceptResult } from "@/execution/command-interceptor";
+import type {
+  CommandInterceptor,
+  InterceptRequest,
+  InterceptResult,
+  ShellInterceptResult,
+} from "@/execution/command-interceptor";
 import { getSafeLogger } from "@/logger";
 
 export interface InterceptorState {
   enabled: boolean;
   version: string | null;
   verbs: readonly string[];
+  /** Opt-in Bash-site interception (US-002). Always present; false when unset. */
+  bash: boolean;
+}
+
+/** The raw answer of one `rtk rewrite` call, before the interceptor interprets it. */
+export interface RtkRewriteResult {
+  exitCode: number;
+  stdout: string;
+  timedOut: boolean;
 }
 
 export interface RtkDeps {
   which(bin: string): string | null;
   version(): string | null;
   record(state: InterceptorState): void;
+  rewrite(command: string, cwd: string): Promise<RtkRewriteResult>;
 }
 
 export interface RtkInterceptorOptions {
   enabled: boolean;
   verbs: readonly string[];
+  /** Opt-in (R7): absent reads as false, so an argv-only caller is unchanged. */
+  bash?: boolean;
   _deps?: Partial<RtkDeps>;
+}
+
+/** How long one `rtk rewrite` subprocess may run before it is killed. */
+export const RTK_REWRITE_TIMEOUT_MS = 2000;
+
+/**
+ * STUB (US-002): the bounded `rtk rewrite` subprocess is not implemented yet.
+ * The implementation spawns `["rtk", "rewrite", command]` in `cwd`, kills the
+ * child once RTK_REWRITE_TIMEOUT_MS has passed, and resolves `exitCode: -1`
+ * with `timedOut: true` when that happens.
+ */
+export async function defaultRewrite(_command: string, _cwd: string): Promise<RtkRewriteResult> {
+  return { exitCode: -1, stdout: "", timedOut: false };
 }
 
 /** Resolve the provider binary via PATH. Exit code 0 + non-empty stdout is "found". */
@@ -69,11 +99,12 @@ type Mode =
   | { readonly kind: "declined"; readonly reason: string };
 
 export function createRtkInterceptor(opts: RtkInterceptorOptions): CommandInterceptor {
-  const { enabled, verbs } = opts;
+  const { enabled, verbs, bash } = opts;
   const deps: RtkDeps = {
     which: opts._deps?.which ?? defaultWhich,
     version: opts._deps?.version ?? defaultVersion,
     record: opts._deps?.record ?? defaultRecord,
+    rewrite: opts._deps?.rewrite ?? defaultRewrite,
   };
 
   let mode: Mode;
@@ -96,7 +127,7 @@ export function createRtkInterceptor(opts: RtkInterceptorOptions): CommandInterc
   } else {
     mode = { kind: "disabled" };
   }
-  deps.record({ enabled, version, verbs });
+  deps.record({ enabled, version, verbs, bash: bash ?? false });
 
   return {
     provider: "rtk",
@@ -106,6 +137,10 @@ export function createRtkInterceptor(opts: RtkInterceptorOptions): CommandInterc
       const verb = req.argv[1];
       if (verb === undefined || !verbs.includes(verb)) return { kind: "unchanged" };
       return { kind: "rewritten", argv: ["rtk", ...req.argv], provider: "rtk" };
+    },
+    /** STUB (US-002): the rewrite decision table is not implemented yet. */
+    async interceptShell(): Promise<ShellInterceptResult> {
+      return { kind: "declined", reason: "interceptShell not implemented" };
     },
     postProcess(output: string): { output: string } {
       return { output: output.replace(RTK_HINT_LINE, "") };
