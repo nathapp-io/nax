@@ -10,6 +10,12 @@
 import { describe, expect, test } from "bun:test";
 import type { CommandInterceptor, ShellInterceptRequest, ShellInterceptResult } from "@/execution/command-interceptor";
 import { interceptShell, validateShellRewrite } from "@/execution/command-interceptor";
+// The seam's own module, imported alongside the barrel so AC22 can prove the
+// barrel resolves to THESE functions rather than to something else of the same name.
+import {
+  interceptShell as shellModuleInterceptShell,
+  validateShellRewrite as shellModuleValidateShellRewrite,
+} from "@/execution/command-interceptor/shell";
 
 const ROOT = "/repo";
 
@@ -230,8 +236,13 @@ describe("interceptShell", () => {
 });
 
 describe("the command-interceptor barrel", () => {
-  test("US-001 AC22: exposes the shell seam's two functions", () => {
-    expect(typeof validateShellRewrite).toBe("function");
-    expect(typeof interceptShell).toBe("function");
+  test("US-001 AC22: resolves validateShellRewrite to the shell module's own function", () => {
+    // Identity, not shape: a barrel exporting a look-alike of the same name
+    // would satisfy a `typeof … === "function"` check and fail here.
+    expect(validateShellRewrite).toBe(shellModuleValidateShellRewrite);
+  });
+
+  test("US-001 AC22: resolves interceptShell to the shell module's own function", () => {
+    expect(interceptShell).toBe(shellModuleInterceptShell);
   });
 });
