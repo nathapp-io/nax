@@ -577,7 +577,7 @@ describe("attachCostSubscriber", () => {
     expect("effort" in recorded[0]).toBe(false);
   });
 
-  test("#1464 → US-003: rows carry schemaVersion 7 (bumped for the optional partial field)", () => {
+  test("#1464 → US-006: rows carry schemaVersion 8 (bumped for the successful-row auth stamp)", () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
@@ -585,8 +585,8 @@ describe("attachCostSubscriber", () => {
 
     bus.emitDispatch(makeSessionTurnEvent());
 
-    expect(recorded[0].schemaVersion).toBe(7);
-    expect(COST_ROW_SCHEMA_VERSION).toBe(7);
+    expect(recorded[0].schemaVersion).toBe(8);
+    expect(COST_ROW_SCHEMA_VERSION).toBe(8);
   });
 
   // ── US-004: producer-supplied pricingSource wins over the model-derived one ─
@@ -698,7 +698,7 @@ describe("attachCostSubscriber — turnId (tier 3)", () => {
 
     expect(recorded).toHaveLength(1);
     expect(recorded[0].turnId).toBe("turn-9");
-    expect(recorded[0].schemaVersion).toBe(7);
+    expect(recorded[0].schemaVersion).toBe(8);
   });
 
   test("an error row carries the flat turnId from the dispatch error event", () => {
@@ -711,7 +711,7 @@ describe("attachCostSubscriber — turnId (tier 3)", () => {
 
     expect(errors).toHaveLength(1);
     expect(errors[0].turnId).toBe("turn-9");
-    expect(errors[0].schemaVersion).toBe(7);
+    expect(errors[0].schemaVersion).toBe(8);
   });
 
   test("omits turnId on a row whose event carried none", () => {

@@ -3,7 +3,7 @@
   "feature": "credential-sources",
   "branchName": "feat/credential-sources",
   "createdAt": "2026-09-29T00:00:00.000Z",
-  "updatedAt": "2026-09-29T12:09:44.697Z",
+  "updatedAt": "2026-09-29T12:28:25.721Z",
   "userStories": [
     {
       "id": "US-001",
@@ -291,8 +291,8 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -355,7 +355,10 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Credential provenance crosses adapter, manager dispatch, middleware, versioned persisted rows and tight file-size gates."
+        "reasoning": "Credential provenance crosses adapter, manager dispatch, middleware, versioned persisted rows and tight file-size gates.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "src/agents/native/adapter.ts",
@@ -381,7 +384,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9fad71bd89361596d1b21628448d8fcb4f96bef7"
     },
     {
       "id": "US-007",

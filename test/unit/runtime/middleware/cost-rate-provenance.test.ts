@@ -5,7 +5,8 @@
  *
  * Covers acceptance criteria 1-8, 10-12:
  *
- *   - AC1: every successful dispatch records `schemaVersion: 7` (bumped for the optional `partial` field).
+ *   - AC1: every successful dispatch records `schemaVersion: 8` (bumped by US-006 for the
+ *     successful-row-only `auth` stamp; the optional `partial` field came at 7).
  *   - AC2: a session-turn event carrying `rates` copies them onto the row.
  *   - AC3: a session-turn event carrying BOTH `rates` and a wire-exact cost
  *     records `pricingSource: "wire"` and still carries `rates` — the wire
@@ -119,10 +120,10 @@ function makeRecordingAggregator(): ICostAggregator & {
   };
 }
 
-// ─── AC1: schemaVersion bumps from 4 to 7 ──────────────────────────────────
+// ─── AC1: schemaVersion bumps from 4 to 8 (7 added `partial`, 8 adds `auth`) ─
 
-describe("attachCostSubscriber — schemaVersion 7 (US-003 AC1)", () => {
-  test("AC1: a successful dispatch records schemaVersion 7", () => {
+describe("attachCostSubscriber — schemaVersion 8 (US-006 AC1)", () => {
+  test("AC1: a successful dispatch records schemaVersion 8", () => {
     const agg = makeRecordingAggregator();
     const bus = new DispatchEventBus();
     attachCostSubscriber(bus, agg, "r-001");
@@ -130,11 +131,11 @@ describe("attachCostSubscriber — schemaVersion 7 (US-003 AC1)", () => {
     bus.emitDispatch(makeSessionTurnEvent());
 
     expect(agg.recordedCost).toHaveLength(1);
-    expect(agg.recordedCost[0].schemaVersion).toBe(7);
-    expect(COST_ROW_SCHEMA_VERSION).toBe(7);
+    expect(agg.recordedCost[0].schemaVersion).toBe(8);
+    expect(COST_ROW_SCHEMA_VERSION).toBe(8);
   });
 
-  test("AC1: complete events also record schemaVersion 7", () => {
+  test("AC1: complete events also record schemaVersion 8", () => {
     const agg = makeRecordingAggregator();
     const bus = new DispatchEventBus();
     attachCostSubscriber(bus, agg, "r-001");
@@ -143,7 +144,7 @@ describe("attachCostSubscriber — schemaVersion 7 (US-003 AC1)", () => {
     bus.emitDispatch(makeCompleteEvent({ tokenUsage: { inputTokens: 100, outputTokens: 50 }, exactCostUsd: 0.003 }));
 
     expect(agg.recordedCost).toHaveLength(1);
-    expect(agg.recordedCost[0].schemaVersion).toBe(7);
+    expect(agg.recordedCost[0].schemaVersion).toBe(8);
   });
 });
 
@@ -467,7 +468,7 @@ describe("attachCostSubscriber — catalogVersion omitted when pin unreadable (U
 //   - AC11: a successful session-turn event with token usage omits
 //     `usageMissing`.
 //   - AC12-13: both successful session-turn and dispatch-error rows record
-//     `schemaVersion: 7`.
+//     `schemaVersion: 8`.
 
 // ─── AC1-3: roundTrips / roundTripUnit copied from session-turn to cost row ─
 
@@ -623,10 +624,10 @@ describe("attachCostSubscriber — session-turn with token usage omits usageMiss
   });
 });
 
-// ─── AC12-13: schemaVersion 7 for both event kinds ──────────────────────────
+// ─── AC12-13: schemaVersion 8 for both event kinds ──────────────────────────
 
-describe("attachCostSubscriber — schemaVersion 7 for session-turn and error rows (AC12-13)", () => {
-  test("AC12: a session-turn event records a cost row with schemaVersion 7", () => {
+describe("attachCostSubscriber — schemaVersion 8 for session-turn and error rows (AC12-13)", () => {
+  test("AC12: a session-turn event records a cost row with schemaVersion 8", () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
     const bus = new DispatchEventBus();
@@ -635,11 +636,11 @@ describe("attachCostSubscriber — schemaVersion 7 for session-turn and error ro
     bus.emitDispatch(makeSessionTurnEvent());
 
     expect(recorded).toHaveLength(1);
-    expect(recorded[0].schemaVersion).toBe(7);
-    expect(COST_ROW_SCHEMA_VERSION).toBe(7);
+    expect(recorded[0].schemaVersion).toBe(8);
+    expect(COST_ROW_SCHEMA_VERSION).toBe(8);
   });
 
-  test("AC13: a dispatch error event records an error row with schemaVersion 7", () => {
+  test("AC13: a dispatch error event records an error row with schemaVersion 8", () => {
     const errors: CostErrorEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), recordError: (e: CostErrorEvent) => errors.push(e) };
     const bus = new DispatchEventBus();
@@ -648,6 +649,6 @@ describe("attachCostSubscriber — schemaVersion 7 for session-turn and error ro
     bus.emitDispatchError(makeErrorEvent());
 
     expect(errors).toHaveLength(1);
-    expect(errors[0].schemaVersion).toBe(7);
+    expect(errors[0].schemaVersion).toBe(8);
   });
 });
