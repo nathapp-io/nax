@@ -89,6 +89,8 @@ export const _adapterDeps = {
    * `~/.nax/config.json`.
    */
   authSourceIsExec,
+  /** US-006: the identity the store observed for a provider — injectable like its siblings. */
+  servedAuth,
   /**
    * Injectable timer pair — lets the whole-turn deadline test (US-002 AC12)
    * drive the abort off a virtual clock instead of waiting the schema
@@ -116,17 +118,14 @@ function loopHandlerDeps(opts: SendTurnOpts): Pick<TurnDeps, "loopHandlers" | "l
 }
 
 /**
- * US-006: the credential identity the store observed for `provider`, as a
- * spreadable fragment — `{}` when it observed nothing, so the `auth` key stays
- * absent rather than being written as `undefined` on an unstamped result.
- *
- * A helper rather than an inline conditional because `sendTurn` sits on the
- * cognitive-complexity ratchet at its recorded ceiling and cannot carry a
- * third branch of its own. `provider` is always the value `parseNativeModel`
- * returned — never `modelDef.provider`, which the adapter deliberately ignores.
+ * US-006: `{ auth }` for the identity the credential store observed for
+ * `provider`, `{}` otherwise — so the key stays absent, never `undefined`. A
+ * helper because `sendTurn` cannot carry another branch on the complexity
+ * ratchet; it reads the `_adapterDeps` seam so a unit test can pin the stamp
+ * without assembling a real store.
  */
 function authFields(provider: string): { auth?: AuthStamp } {
-  const auth = servedAuth(provider);
+  const auth = _adapterDeps.servedAuth(provider);
   return auth === undefined ? {} : { auth };
 }
 
