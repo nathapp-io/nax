@@ -12,6 +12,7 @@ import {
   applyOutOfScopeFallback,
   demoteStoryScopedOutOfScope,
   extractSpecContextFiles,
+  findAcNumericReferences,
   findMissingOutOfScope,
   findSpecDriftViolations,
   getContextFiles,
@@ -181,13 +182,56 @@ export function warnOnDroppedContextFiles(prd: PRD, specContent: string, feature
  * cannot drift on which repairs they apply — the class of bug that let
  * `### Modifies` reach only some paths would otherwise recur per-field.
  *
- * `warnOnDroppedContextFiles` runs last — it is observability, not a repair,
- * so it inspects the fully-repaired PRD without changing what is returned.
+ * `warnOnDroppedContextFiles` and `warnOnAcCrossReferences` run last — both
+ * are observability, not repairs, so they inspect the fully-repaired PRD
+ * without changing what is returned.
  */
 export function applyPlanFidelity(prd: PRD, specContent: string, featureName: string): PRD {
   const scoped = backfillModifiedFiles(backfillOutOfScope(prd, specContent, featureName), specContent, featureName);
   warnOnDroppedContextFiles(scoped, specContent, featureName);
+  warnOnAcCrossReferences(scoped, featureName);
   return scoped;
+}
+
+/**
+ * US-002 — Warn when a PRD AC points at another AC by number.
+ *
+ * The plan prompt instructs the agent to write one assertion per AC. When it
+ * splits a compound criterion into two it renumbers the rest, so a number
+ * embedded in an AC can silently point at a different criterion in the PRD
+ * than the one the author named. We do not rewrite the PRD — that would
+ * silently change what an implementer reads — only warn, so the author can
+ * fix the wording on a re-plan or accept the cross-reference consciously.
+ *
+ * `findAcNumericReferences` strips inline code spans first, so a quoted
+ * `AC-1: a` (a test title in backticks, say) is data, not a pointer. The space
+ * form `AC 14` is normalised to `AC-14`. AC-ERROR / AC-HOOK have no digits
+ * and never match.
+ *
+ * The data shape is keyed on `storyId` first (per project-conventions.md) so
+ * parallel log entries stay attributable to one story.
+ */
+export function warnOnAcCrossReferences(prd: PRD, featureName: string): void {
+  const logger = getSafeLogger();
+  if (!logger) return;
+
+  for (const story of prd.userStories) {
+    const criteria = story.acceptanceCriteria ?? [];
+    criteria.forEach((ac, index) => {
+      const refs = findAcNumericReferences(ac);
+      if (refs.length === 0) return;
+      logger.warn(
+        "plan",
+        "PRD acceptance criterion refers to another criterion by number — AC numbering is not stable across plan runs",
+        {
+          storyId: story.id,
+          featureName,
+          acIndex: index + 1,
+          references: refs,
+        },
+      );
+    });
+  }
 }
 
 /**

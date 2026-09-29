@@ -154,6 +154,32 @@ describe("specLintCommand", () => {
     expect(result.reports[0].missing).toBe(true);
   });
 
+  test("US-002 AC-13: --strict exits 0 on a spec whose only ac-numeric-reference warn is not a blocking code", async () => {
+    const out: string[] = [];
+    const refSpec = `# SPEC: Reference
+
+## Acceptance Criteria
+
+### US-001 — Reference story
+
+1. \`[unit]\` foo() returns 1.
+2. \`[unit]\` In the AC-1 setup, foo() returns 2.
+`;
+    // The injected `readFile` returns the spec from an in-memory map keyed on
+    // path, so no real directory or file is needed — `dir` is just a frame
+    // passed through to specLintCommand.
+    const result = await specLintCommand(
+      { dir: "/repo", paths: ["/repo/ref.md"], strict: true },
+      depsFor({ "/repo/ref.md": refSpec }, out),
+    );
+    // The ac-numeric-reference finding is a warn, not an error, so --strict
+    // (which gates on `error`-level findings) still passes — the strict CLI
+    // and the plan gate agree that this is a non-blocking observation.
+    expect(result.exitCode).toBe(0);
+    expect(result.reports[0].findings.map((f) => f.code)).toContain("ac-numeric-reference");
+    expect(result.reports[0].blocking.map((f) => f.code)).not.toContain("ac-numeric-reference");
+  });
+
   test("exits 2 when neither a path nor a feature was given", async () => {
     const out: string[] = [];
     const result = await specLintCommand({ dir: "/repo" }, depsFor({}, out));

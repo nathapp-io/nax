@@ -38,6 +38,7 @@
 
 import { existsSync } from "node:fs";
 import { fencedLineIndices } from "../utils/markdown-fence";
+import { findAcNumericReferences } from "./ac-references";
 import { extractSpecContextFiles } from "./context-files-extract";
 import { extractSpecModifiedFiles, MAX_MODIFIED_FILES } from "./modifies-extract";
 import { extractSpecOutOfScope } from "./out-of-scope-extract";
@@ -388,9 +389,28 @@ function checkAcceptanceCriteria(lines: readonly string[], maxAcCount: number): 
         message: `${story ?? "?"} AC ${count} asserts on file contents rather than behaviour.`,
       });
     }
+    out.push(...checkAcNumericReference(line, story, count));
   }
   flush();
   return out;
+}
+
+/**
+ * US-002: warn when an AC bullet points at another criterion by number.
+ * `nax plan` splits compound ACs and renumbers the rest, so the number can
+ * point at a different criterion in the PRD. `findAcNumericReferences` strips
+ * inline code spans first, so a quoted `AC-1: a` is data, not a pointer.
+ */
+function checkAcNumericReference(line: string, story: string | null, count: number): SpecLintFinding[] {
+  const refs = findAcNumericReferences(line);
+  if (refs.length === 0) return [];
+  return [
+    {
+      level: "warn",
+      code: "ac-numeric-reference",
+      message: `${story ?? "?"} AC ${count} refers to another criterion by number (${refs.join(", ")}). nax plan splits compound ACs and renumbers the rest, so the number can point at a different criterion in the PRD — name the setup instead.`,
+    },
+  ];
 }
 
 /** Injectable seam: path existence, so the linter stays pure and testable. */

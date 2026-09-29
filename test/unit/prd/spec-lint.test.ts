@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { lintSpecContent } from "@/prd";
+import { BLOCKING_SPEC_LINT_CODES, lintSpecContent } from "@/prd";
 
 /**
  * The regression this gate exists for: a `### Modifies` entry written with the
@@ -319,5 +319,80 @@ None. No existing test pins a closed-world shape this feature changes.`;
       .filter((f) => f.level === "error")
       .map((f) => f.code);
     expect(codes).not.toContain("modifies-declared-but-empty");
+  });
+});
+
+/**
+ * US-002 — Numeric AC references.
+ *
+ * The plan prompt says "one assertion per AC", so the planner splits a
+ * compound bullet into two and renumbers the rest. The split text can still
+ * point at the old number, which then points at a different criterion in the
+ * PRD. The check is non-blocking — a bare `ac-numeric-reference` is a warning
+ * the author can act on, not a gate the plan refuses.
+ */
+
+/** The reference spec used in AC-7, AC-8, AC-10, AC-12, AC-13. */
+function referenceSpecWithAc(acBullets: string): string {
+  return `# SPEC: Reference
+
+## Acceptance Criteria
+
+### US-001 — Reference story
+
+${acBullets}
+`;
+}
+
+const REFERENCE_SPEC = referenceSpecWithAc(
+  ["1. `[unit]` foo() returns 1.", "2. `[unit]` In the AC-1 setup, foo() returns 2."].join("\n"),
+);
+
+const BACKTICK_ONLY_SPEC = referenceSpecWithAc("1. `[unit]` the test titled `AC-1: a` passes.");
+
+const DESIGN_PROSE_NO_BULLET_REFS = [
+  "# SPEC: Design prose",
+  "",
+  "## Design",
+  "",
+  "see AC-3 below for the rationale.",
+  "",
+  "## Acceptance Criteria",
+  "",
+  "### US-001 — Reference story",
+  "",
+  "1. `[unit]` foo() returns 1.",
+  "",
+].join("\n");
+
+describe("ac-numeric-reference (US-002)", () => {
+  test("AC-7: emits exactly one ac-numeric-reference warn for a spec whose AC bullet references AC-1 by number", () => {
+    const findings = lintText(REFERENCE_SPEC);
+    const numericRefs = findings.filter((f) => f.code === "ac-numeric-reference");
+    expect(numericRefs).toHaveLength(1);
+    expect(numericRefs[0].level).toBe("warn");
+  });
+
+  test("AC-8: the warn's message contains both the story/AC position and the referenced number", () => {
+    const findings = lintText(REFERENCE_SPEC);
+    const finding = findings.find((f) => f.code === "ac-numeric-reference");
+    expect(finding?.message).toContain("US-001 AC 2");
+    expect(finding?.message).toContain("AC-1");
+  });
+
+  test("AC-9: ac-numeric-reference is not a blocking lint code", () => {
+    expect(BLOCKING_SPEC_LINT_CODES.has("ac-numeric-reference")).toBe(false);
+  });
+
+  test("AC-10: an AC-1 token only inside backticks produces no ac-numeric-reference finding", () => {
+    const findings = lintText(BACKTICK_ONLY_SPEC);
+    const numericRefs = findings.filter((f) => f.code === "ac-numeric-reference");
+    expect(numericRefs).toEqual([]);
+  });
+
+  test("AC-11: a ## Design reference to AC-3 with AC bullets that carry no numeric reference produces no finding", () => {
+    const findings = lintText(DESIGN_PROSE_NO_BULLET_REFS);
+    const numericRefs = findings.filter((f) => f.code === "ac-numeric-reference");
+    expect(numericRefs).toEqual([]);
   });
 });

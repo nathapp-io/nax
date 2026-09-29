@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-28T16:59:43.169Z",
+  "acFingerprint": "sha256:14c8e5158c64165b88dbe50c4a70405c825df9d781b868ffe72c3404bfadf43d",
+  "layoutFingerprint": "sha256:074f331a6c89fa8c23c60336606acc453bc2a53962bcc949af3bd8cdcd90c00b",
+  "storyCount": 2,
+  "acCount": 36,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": ".nax/features/status-paths-ac-references/.nax-acceptance.test.ts",
+      "expected": 36,
+      "found": 36,
+      "missing": []
+    }
+  ]
+}
