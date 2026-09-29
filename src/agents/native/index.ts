@@ -46,3 +46,4 @@ export {
   MAX_RETAINED_TRANSCRIPTS,
   pruneRetainedTranscripts,
 } from "./session/transcript-store";
+export { type NativeTierConfig, nativeTierProviders } from "./tier-providers";
