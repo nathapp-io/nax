@@ -254,8 +254,8 @@ guardrail** (master plan D4a — a model is never an auto-approver). When it is 
 
 Nothing else changes. A policy denial, a policy ask, an allowed non-command tool (Read, Grep, …)
 and a `RunCommand` *verb* call are never assessed; `RunCommand`'s argv branch resolves to the
-`Exec` identity and **is**. The guard gates nothing else, and when `guard` is absent the runtime
-behaves exactly as it did before this layer existed.
+`Exec` identity and **is assessed**. The guard gates nothing else, and when `guard` is absent the
+runtime behaves exactly as it did before this layer existed.
 
 **Headless refusal.** A guard ask goes through the ordinary ask resolver, so it inherits the ask
 channel's behaviour unchanged: a successful flag on a run with no approval channel is refused
