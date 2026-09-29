@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
@@ -11,6 +11,7 @@ import {
   removeStoredProvider,
 } from "@/agents/native/auth";
 import { _resetCredentialStore, credentialFilePath, naxCredentialStore } from "@/agents/native/credentials";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 
 let dir: string;
 let piPath: string;
@@ -145,5 +146,97 @@ describe("providersWithoutCredentials", () => {
   test("de-duplicates the providers it reports", async () => {
     _authDeps.ambientAuthAvailable = mock(async () => false);
     expect(await providersWithoutCredentials(["anthropic", "anthropic"])).toEqual(["anthropic"]);
+  });
+});
+
+/**
+ * US-004 — the run-start probe reads through the assembled store.
+ *
+ * "Has a stored credential" is now decided by `naxCredentialStore().read()`
+ * per provider rather than by listing the file, so the probe records each
+ * provider's baseline (`credential.resolved`) and a helper or guard failure
+ * refuses the run instead of being read as "nothing missing".
+ */
+describe("providersWithoutCredentials — reading through the store (US-004)", () => {
+  function writeAuthConfig(auth: Record<string, unknown>): void {
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ auth }));
+  }
+
+  /** A one-shot helper script in the test's global dir. */
+  function writeHelper(body: string): string {
+    const script = join(dir, "helper.sh");
+    writeFileSync(script, `#!/bin/sh\ncat > /dev/null\n${body}\n`);
+    chmodSync(script, 0o755);
+    return script;
+  }
+
+  function execAuth(helper: string): void {
+    writeAuthConfig({ source: "exec", exec: { command: [helper] } });
+  }
+
+  test("AC12: returns [] when ~/.nax/credentials holds an anthropic api-key", async () => {
+    await naxCredentialStore().modify("anthropic", async () => ({ kind: "api-key", key: "sk-anthropic" }));
+    _authDeps.ambientAuthAvailable = mock(async () => false);
+
+    expect(await providersWithoutCredentials(["anthropic"])).toEqual([]);
+  });
+
+  test("AC13: logs credential.resolved for anthropic when ~/.nax/credentials holds an anthropic api-key", async () => {
+    const entries: LogEntry[] = [];
+    resetLogger();
+    initLogger({ level: "silent" });
+    const unsubscribe = addSink((entry) => entries.push(entry));
+    try {
+      await naxCredentialStore().modify("anthropic", async () => ({ kind: "api-key", key: "sk-anthropic" }));
+      _authDeps.ambientAuthAvailable = mock(async () => false);
+
+      await providersWithoutCredentials(["anthropic"]);
+
+      const resolved = entries.filter((entry) => entry.message === "credential.resolved");
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].data).toMatchObject({ providerId: "anthropic", source: "file" });
+    } finally {
+      unsubscribe();
+      resetLogger();
+    }
+  });
+
+  test("AC14: given auth.source exec and a helper that exits 1, it rejects with CREDENTIAL_HELPER_FAILED", async () => {
+    execAuth(writeHelper("exit 1"));
+    _authDeps.ambientAuthAvailable = mock(async () => false);
+
+    await expect(providersWithoutCredentials(["anthropic"])).rejects.toMatchObject({
+      code: "CREDENTIAL_HELPER_FAILED",
+    });
+  });
+
+  test("AC15: given auth.source exec and a helper that sleeps 3 seconds, it returns []", async () => {
+    const reply = JSON.stringify({ version: 1, kind: "api-key", key: "HELPER-KEY" });
+    execAuth(writeHelper(`sleep 3\nprintf '%s' '${reply}'`));
+    _authDeps.ambientAuthAvailable = mock(async () => false);
+
+    // Outside the 2000ms AMBIENT_PROBE_TIMEOUT_MS race, so a helper slower
+    // than that is still asked, and its answer is still "credentialed".
+    expect(await providersWithoutCredentials(["anthropic"])).toEqual([]);
+  });
+
+  test("AC16: invalid JSON in ~/.nax/credentials returns [] rather than CREDENTIAL_FILE_UNREADABLE", async () => {
+    writeFileSync(credentialFilePath(), "{ not json");
+    _resetCredentialStore();
+    _authDeps.ambientAuthAvailable = mock(async () => false);
+
+    await expect(providersWithoutCredentials(["anthropic"])).resolves.toEqual([]);
+  });
+
+  test("AC17: onChange refuse rejects with CREDENTIAL_CHANGED once the credential is rewritten", async () => {
+    writeAuthConfig({ onChange: "refuse" });
+    await naxCredentialStore().modify("anthropic", async () => ({ kind: "api-key", key: "KEY-A" }));
+    _authDeps.ambientAuthAvailable = mock(async () => false);
+    // First call records the guard's baseline from KEY-A.
+    expect(await providersWithoutCredentials(["anthropic"])).toEqual([]);
+
+    await naxCredentialStore().modify("anthropic", async () => ({ kind: "api-key", key: "KEY-B" }));
+
+    await expect(providersWithoutCredentials(["anthropic"])).rejects.toMatchObject({ code: "CREDENTIAL_CHANGED" });
   });
 });

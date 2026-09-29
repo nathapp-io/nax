@@ -1,6 +1,8 @@
 export { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, isBuiltInModelMap, NATIVE_AGENT_NAME } from "./agent-defaults";
+export { readGlobalAuthConfig } from "./auth";
 export type { BashApprovalMode } from "./bash-approval";
 export { resolveBashApproval } from "./bash-approval";
+export { rejectGlobalOnlyKeys } from "./global-only-keys";
 export { BASH_DECLARING_STAGES, findInertBashStages } from "./inert-bash-stages";
 export { findProjectDir, globalConfigPath, loadConfig, loadConfigForWorkdir, loadPackageOverride } from "./loader";
 export type { ConfigLoader } from "./loader-runtime";
@@ -33,6 +35,7 @@ export {
 export { getProjectKey } from "./project-key";
 export { pinRootOnlyKeys, pinRootOnlyKeysRaw, ROOT_ONLY_EXECUTION_KEYS } from "./root-only-keys";
 export type {
+  AuthConfig,
   AutoModeConfig,
   AutoRouteConfig,
   AutoRouteDowngradeConfig,

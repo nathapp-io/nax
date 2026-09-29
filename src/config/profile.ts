@@ -8,6 +8,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { NaxError } from "../errors";
 import { parseDotenv } from "./dotenv";
+import { rejectGlobalOnlyKeys } from "./global-only-keys";
 import { deepMergeConfig } from "./merger";
 import { globalConfigDir, projectConfigDir } from "./paths";
 
@@ -108,7 +109,7 @@ export async function loadProfile(profileName: string, projectRoot: string): Pro
     base = deepMergeConfig(base, projectData);
   }
 
-  return base;
+  return rejectGlobalOnlyKeys(base, `profile:${profileName}`);
 }
 
 /**

@@ -26,7 +26,7 @@ import { errorMessage } from "../utils/errors";
 import type { AgentCompleteOutcome, AgentFallbackRecord, LoggerLike, RunAsSessionOpts } from "./manager-types";
 import { parseModelSpec } from "./model-spec";
 import { NATIVE_AGENT } from "./native/models";
-import { SessionTurnError } from "./session-types";
+import { type AuthStamp, SessionTurnError } from "./session-types";
 import type { FallbackTarget } from "./swap-decision";
 import type {
   AgentAdapter,
@@ -121,6 +121,11 @@ export function buildSessionTurnEvent(input: {
     // TurnResult.rates. Same omission-not-undefined discipline as
     // `pricingSource` above.
     ...(result.rates !== undefined ? { rates: result.rates } : {}),
+    // US-006: forward the credential identity the producer stamped on
+    // TurnResult.auth — the adapter reads it off the credential store after
+    // the turn. Same omission-not-undefined discipline as `pricingSource`
+    // above, so an ACP turn's event is byte-identical to its pre-US-006 shape.
+    ...(result.auth !== undefined ? { auth: result.auth } : {}),
     // `internalRoundTrips` counts a complete delegated agent run on ACP and a
     // single model call on native — nax owns the conversation loop there. The
     // unit travels with the number so nothing downstream has to infer it from
@@ -179,6 +184,12 @@ export function buildCompleteEvent(input: {
    * "no report" from "explicitly unknown" by `in event`.
    */
   rates?: import("../agents/cost").ResolvedRates;
+  /**
+   * US-006: the credential identity the manager read off `CompleteResult.auth`
+   * via `completeResultProvenance`. Omitted (not undefined) when the adapter
+   * stamped none — every ACP one-shot — so the event keeps its pre-US-006 shape.
+   */
+  auth?: AuthStamp;
 }): CompleteDispatchEvent {
   const { options } = input;
   return {
@@ -206,8 +217,40 @@ export function buildCompleteEvent(input: {
     // CompleteResult.rates. Same omission-not-undefined discipline as
     // `pricingSource` above.
     ...(input.rates !== undefined ? { rates: input.rates } : {}),
+    // US-006: forward the credential identity the manager read off
+    // CompleteResult (see `completeResultProvenance`). Same
+    // omission-not-undefined discipline as `pricingSource` above.
+    ...(input.auth !== undefined ? { auth: input.auth } : {}),
     ...(options.callId !== undefined ? { callId: options.callId } : {}),
     ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
+  };
+}
+
+/**
+ * The provenance keys a `CompleteResult` contributes to a `CompleteDispatchEvent`:
+ * `pricingSource`, `rates` and `auth` (US-006). Each key is omitted — never
+ * written as `undefined` — when the result carries nothing for it, so an ACP
+ * result (which stamps none of the three) produces an event byte-identical to
+ * the pre-US-006 shape.
+ *
+ * Lives here because `manager.ts` sits at its 600-line hard ceiling and cannot
+ * hold the three conditional spreads inline.
+ *
+ * `adapterFailure` suppresses `auth` only: `completeWithFallback` attaches that
+ * marker to a still-billed result (empty output, or an exhausted ladder) whose
+ * dispatch is still emitted as `kind:"complete"`, so forwarding the stamp there
+ * would record a FAILED call as a success-shaped row naming a credential.
+ */
+export function completeResultProvenance(result: CompleteResult): {
+  pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
+  rates?: import("../agents/cost").ResolvedRates;
+  auth?: AuthStamp;
+} {
+  const failed = result.adapterFailure !== undefined;
+  return {
+    ...(result.pricingSource !== undefined ? { pricingSource: result.pricingSource } : {}),
+    ...(result.rates !== undefined ? { rates: result.rates } : {}),
+    ...(!failed && result.auth !== undefined ? { auth: result.auth } : {}),
   };
 }
 

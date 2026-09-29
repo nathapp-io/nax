@@ -29,6 +29,8 @@
  * the shape — a `protocolError.kind` string — is inspected, never the class.
  */
 
+import { credentialFaultCode } from "../errors";
+
 /** Total call attempts including the first (2 = one retry, 3 = two retries). */
 export interface TurnRetryConfig {
   readonly maxAttempts: number;
@@ -44,6 +46,7 @@ interface RetryableProtocolError {
     /** Seconds, when the provider signals one (nax-ai types.ts ProtocolError.retryAfter). */
     readonly retryAfter?: number;
     readonly status?: number;
+    readonly cause?: unknown;
   };
 }
 
@@ -64,8 +67,9 @@ const RETRYABLE_KINDS = new Set(["transport", "overloaded", "rate-limit"]);
 
 export function isRetryableTransportFault(err: unknown): err is RetryableProtocolError {
   if (typeof err !== "object" || err === null || !("protocolError" in err)) return false;
-  const { protocolError } = err as { protocolError?: { kind?: unknown } };
-  return typeof protocolError?.kind === "string" && RETRYABLE_KINDS.has(protocolError.kind);
+  const { protocolError } = err as { protocolError?: { kind?: unknown; cause?: unknown } };
+  if (typeof protocolError?.kind !== "string" || !RETRYABLE_KINDS.has(protocolError.kind)) return false;
+  return credentialFaultCode({ kind: protocolError.kind, cause: protocolError.cause }) === undefined;
 }
 
 /** Whether another attempt is allowed at all, independent of the error's kind. */

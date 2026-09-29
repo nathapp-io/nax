@@ -45,3 +45,19 @@ describe("pinRootOnlyKeysRaw", () => {
     expect(warnings).toHaveLength(0);
   });
 });
+
+describe("pinRootOnlyKeysRaw — auth is global-only (US-001)", () => {
+  const authRoot = makeNaxConfig({ auth: { source: "exec", exec: { command: ["koda-cred"] } } });
+
+  test("AC21: returns auth equal to root.auth when the raw per-package config declares a different auth block", () => {
+    const out = pinRootOnlyKeysRaw({ auth: { source: "file" } }, authRoot, "packages/a", () => {});
+
+    expect(out.auth).toEqual(authRoot.auth);
+  });
+
+  test("AC21: returns auth equal to root.auth when the raw per-package config omits auth", () => {
+    const out = pinRootOnlyKeysRaw({}, authRoot, "packages/a", () => {});
+
+    expect(out.auth).toEqual(authRoot.auth);
+  });
+});

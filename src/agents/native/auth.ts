@@ -273,23 +273,54 @@ export async function ambientShadows(providerIds: readonly string[]): Promise<st
  * whose only credential belongs to another provider fails before a billed call
  * rather than at the first request.
  *
- * What counts as "has a credential": a stored entry, or nax-ai's ambient probe
- * answering true. That probe swallows its own check/resolve errors and answers
- * false, so a provider whose resolution fails IS reported missing — the caller
- * must exclude providers it knows authenticate some other way (catalog
- * overrides). The two cases here that do not guess "no" are the ones this
- * function can see: an unreadable store, and a sweep that outlives
- * AMBIENT_PROBE_TIMEOUT_MS (pi's resolve() "may execute commands") — both
- * report nothing missing.
+ * What counts as "has a credential": a credential the assembled store serves
+ * for that provider, or nax-ai's ambient probe answering true. That probe
+ * swallows its own check/resolve errors and answers false, so a provider whose
+ * resolution fails IS reported missing — the caller must exclude providers it
+ * knows authenticate some other way (catalog overrides). The two cases here
+ * that do not guess "no" are the ones this function can see: an unreadable
+ * store, and a sweep that outlives AMBIENT_PROBE_TIMEOUT_MS (pi's resolve()
+ * "may execute commands") — both report nothing missing.
+ *
+ * US-004: "has a stored credential" is a read through `naxCredentialStore()`,
+ * per provider, rather than a listing of the file. With an exec helper
+ * configured only the store knows which source serves a provider, and a helper
+ * failure (CREDENTIAL_HELPER_FAILED, CREDENTIAL_HELPER_INVALID) or a refused
+ * change (CREDENTIAL_CHANGED) is a run-level fault, not a missing credential —
+ * it propagates and refuses the run. The reads also record each provider's
+ * baseline (`credential.resolved`) before any story starts, which is what the
+ * guard later compares against. They happen before, and outside, the ambient
+ * sweep's race below, so a helper slower than the sweep's timeout is still
+ * asked — and they are issued as one batch, so N helper-served providers cost
+ * the slowest helper rather than the sum of all of them.
  */
 export async function providersWithoutCredentials(providerIds: readonly string[]): Promise<string[]> {
   const unique = [...new Set(providerIds)];
-  let stored: ReadonlySet<string>;
-  try {
-    stored = new Set((await listStoredProviders()).map((entry) => entry.providerId));
-  } catch {
-    return [];
+
+  const store = naxCredentialStore();
+  const stored = new Set<string>();
+  // `allSettled`, not `all`: a rejection here is fatal for the run, and `all`
+  // would return the moment the first one failed while every sibling read kept
+  // going — leaving up to N-1 helper subprocesses alive for their own full
+  // timeout, still writing `credential.resolved` entries and guard baselines for
+  // a caller that has already thrown. Settling first costs nothing on the happy
+  // path (it is one batch either way) and makes the failure path clean.
+  // (These reads sit outside the ambient race below on purpose — a helper slower
+  // than AMBIENT_PROBE_TIMEOUT_MS is still asked.)
+  const served = await Promise.allSettled(
+    unique.map(async (providerId) => ({ providerId, credential: await store.read(providerId) })),
+  );
+  for (const outcome of served) {
+    if (outcome.status === "rejected") {
+      // A damaged credential file stays "unknown", which is the behaviour this
+      // check has always had: reporting the provider missing would look exactly
+      // like "you have no credentials" for a file that is merely unreadable.
+      if (outcome.reason instanceof NaxError && outcome.reason.code === "CREDENTIAL_FILE_UNREADABLE") return [];
+      throw outcome.reason;
+    }
+    if (outcome.value.credential !== undefined) stored.add(outcome.value.providerId);
   }
+
   const sweep = Promise.all(
     unique
       .filter((providerId) => !stored.has(providerId))

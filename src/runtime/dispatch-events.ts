@@ -81,6 +81,15 @@ export interface DispatchEventBase {
    * "no report" apart from "explicitly unknown".
    */
   readonly rates?: import("../agents/cost").ResolvedRates;
+  /**
+   * US-006: identity of the credential that served this dispatch, forwarded
+   * from the producer (`CompleteResult.auth` / `TurnResult.auth`). Present
+   * only when an adapter stamped one — native does, ACP does not — so the
+   * key is absent (not `undefined`) on every ACP dispatch and the cost row
+   * a subscriber records from one stays byte-identical to its pre-US-006
+   * shape.
+   */
+  readonly auth?: import("../agents/session-types").AuthStamp;
   /** Per-callOp invocation id, stamped by the operation layer. */
   readonly callId?: string;
   /** Caller-supplied region id forwarded from CallContext.scopeId. */

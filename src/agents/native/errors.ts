@@ -69,12 +69,33 @@ const FAILURES: Readonly<Record<string, AdapterFailure>> = Object.freeze({
 });
 
 const UNKNOWN: AdapterFailure = FAILURES.unknown as AdapterFailure;
+const CREDENTIAL_FAULT_CODES = new Set([
+  "CREDENTIAL_HELPER_FAILED",
+  "CREDENTIAL_HELPER_INVALID",
+  "CREDENTIAL_CHANGED",
+  "CREDENTIAL_FILE_UNREADABLE",
+]);
+const MAX_CREDENTIAL_CAUSE_LINKS = 8;
+
+/** Finds a known credential-store fault without following an unbounded cause chain. */
+export function credentialFaultCode(protocolError: NativeProtocolError): string | undefined {
+  let current: unknown = protocolError.cause;
+  const seen = new Set<object>();
+  for (let link = 0; link < MAX_CREDENTIAL_CAUSE_LINKS; link += 1) {
+    if (typeof current !== "object" || current === null || seen.has(current)) return undefined;
+    seen.add(current);
+    if (current instanceof NaxError && CREDENTIAL_FAULT_CODES.has(current.code)) return current.code;
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return undefined;
+}
 
 /** The shape this module reads off a nax-ai protocol fault. Structural, never the class. */
 export interface NativeProtocolError {
   readonly kind: string;
   /** Seconds, when the provider signalled one. */
   readonly retryAfter?: number;
+  readonly cause?: unknown;
 }
 
 /**
@@ -86,7 +107,11 @@ export interface NativeProtocolError {
  * frozen shared table, so the entry is copied rather than assigned onto.
  */
 export function toAdapterFailure(protocolError: NativeProtocolError): AdapterFailure {
-  const base = FAILURES[protocolError.kind] ?? UNKNOWN;
+  const credentialCode = credentialFaultCode(protocolError);
+  const base =
+    credentialCode === undefined
+      ? (FAILURES[protocolError.kind] ?? UNKNOWN)
+      : { ...FAILURES.auth, message: `Credential authentication failed: ${credentialCode}` };
   return protocolError.retryAfter === undefined ? base : { ...base, retryAfterSeconds: protocolError.retryAfter };
 }
 

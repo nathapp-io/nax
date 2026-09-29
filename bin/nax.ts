@@ -883,10 +883,10 @@ authCmd
   });
 
 authCmd
-  .command("list")
-  .description("List stored credentials. A stored credential takes precedence over an environment variable")
-  .action(async () => {
-    process.exit(await authListCommand());
+  .command("list [provider...]")
+  .description("List stored credentials and optional provider status")
+  .action(async (providerIds: string[] = []) => {
+    process.exit(await authListCommand(providerIds));
   });
 
 authCmd

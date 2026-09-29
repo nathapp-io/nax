@@ -10,7 +10,7 @@
 
 import { randomUUID } from "node:crypto";
 import { priceCall } from "@/agents/cost";
-import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
+import type { AuthStamp, OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 import { getSafeLogger } from "@/logger";
@@ -20,6 +20,7 @@ import { createTurnDeadline } from "../turn-deadline";
 import { SessionTurnError } from "../types";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
+import { authSourceIsExec, servedAuth } from "./credentials";
 import { toAdapterFailure } from "./errors";
 import {
   buildRateCard,
@@ -83,6 +84,14 @@ export const _adapterDeps = {
   listStoredProviders,
   anyAmbientCredential,
   /**
+   * US-004: whether the global auth config points at an exec helper. Injectable
+   * so a test can pin the credential-source decision without writing
+   * `~/.nax/config.json`.
+   */
+  authSourceIsExec,
+  /** US-006: the identity the store observed for a provider — injectable like its siblings. */
+  servedAuth,
+  /**
    * Injectable timer pair — lets the whole-turn deadline test (US-002 AC12)
    * drive the abort off a virtual clock instead of waiting the schema
    * minimum. Mirrors `_heartbeatDeps` / `_idleWatchdogDeps` / `_authDeps`.
@@ -106,6 +115,18 @@ function loopHandlerDeps(opts: SendTurnOpts): Pick<TurnDeps, "loopHandlers" | "l
     ...(opts.loopHandlers !== undefined ? { loopHandlers: opts.loopHandlers } : {}),
     ...(opts.loopHandlerContext !== undefined ? { loopHandlerContext: opts.loopHandlerContext } : {}),
   };
+}
+
+/**
+ * US-006: `{ auth }` for the identity the credential store observed for
+ * `provider`, `{}` otherwise — so the key stays absent, never `undefined`. A
+ * helper because `sendTurn` cannot carry another branch on the complexity
+ * ratchet; it reads the `_adapterDeps` seam so a unit test can pin the stamp
+ * without assembling a real store.
+ */
+function authFields(provider: string): { auth?: AuthStamp } {
+  const auth = _adapterDeps.servedAuth(provider);
+  return auth === undefined ? {} : { auth };
 }
 
 export class NativeAgentAdapter implements AgentAdapter {
@@ -177,11 +198,17 @@ export class NativeAgentAdapter implements AgentAdapter {
    * surfaces per request, through the typed mapping from ProtocolError.kind
    * "auth" to availability / fail-auth.
    *
+   * US-004: with `auth.source: "exec"` it answers true without asking anything.
+   * A helper's providers cannot be listed, so an empty credential file says
+   * nothing about whether this run can authenticate — and spawning the helper
+   * here would put a credential read before the run has any reason for one.
+   *
    * Errors resolve to true. Pruning an agent that would have worked kills a
    * run; the opposite costs one request-time error that is already handled.
    */
   async hasCredentials(): Promise<boolean> {
     try {
+      if (await _adapterDeps.authSourceIsExec()) return true;
       if ((await _adapterDeps.listStoredProviders()).length > 0) return true;
       return await _adapterDeps.anyAmbientCredential();
     } catch {
@@ -254,6 +281,9 @@ export class NativeAgentAdapter implements AgentAdapter {
         // US-002: the four per-1M rates that priced this call. See
         // CompleteResult.rates above.
         rates: resolvedRates,
+        // US-006: the credential identity the store observed while serving
+        // this call. Absent (not undefined) when it observed nothing.
+        ...authFields(provider),
       };
     } catch (err) {
       // Returned, not rethrown: rethrowing routes through
@@ -535,7 +565,9 @@ export class NativeAgentAdapter implements AgentAdapter {
       timestamp: Date.now(),
     });
     markNativeTurnOutcome(handle.id, false);
-    return result;
+    // US-006: the store only observes `provider` while a request is in flight,
+    // so the stamp is read here, after the loop.
+    return { ...result, ...authFields(provider) };
   }
 
   closeSession(handle: SessionHandle): Promise<void> {

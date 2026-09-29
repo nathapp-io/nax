@@ -28,6 +28,7 @@ import type {
   RoutingStrategyName,
   TddStrategy,
 } from "./schema-types";
+import type { AuthConfig } from "./schemas-auth";
 import type { CommandSafetyConfig } from "./schemas-command-safety";
 import type { AgentRoutingConfig } from "./schemas-infra";
 import type { SandboxConfig } from "./schemas-sandbox";
@@ -496,6 +497,8 @@ export type { McpConfig, McpServerConfig, McpStage } from "./runtime-types-mcp";
 export type { ProjectProfile } from "./runtime-types-project";
 /** Full nax configuration */
 export interface NaxConfig {
+  /** Global-only credential source configuration. */
+  auth?: AuthConfig;
   /** Project name — used as the default projectKey for output directory. Lowercase alphanumeric, hyphens, underscores. */
   name: string;
   /** Output directory override — absolute path or ~/path. If absent, defaults to ~/.nax/<projectKey> */

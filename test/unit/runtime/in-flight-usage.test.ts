@@ -5,7 +5,7 @@
  * A native turn still running at shutdown has no finished dispatch row although
  * its usage beats report spend. These tests pin the accumulator rules that turn
  * those unrecorded beats into `InFlightResidual`s, the reconciliation events
- * that clear an entry, and the schema-v7 partial `CostEvent` they map to.
+ * that clear an entry, and the schema-v8 partial `CostEvent` they map to.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -522,14 +522,14 @@ describe("attachInFlightUsageTracker — detaching (US-003 interface)", () => {
 });
 
 describe("toPartialCostEvent (US-003 AC17-18)", () => {
-  test("AC17: maps a residual onto a schema-v7 partial cost row", () => {
+  test("AC17: maps a residual onto a schema-v8 partial cost row", () => {
     const residual = makeResidual();
     const before = Date.now();
     const row = toPartialCostEvent(residual, "run-9", "proj");
     const after = Date.now();
 
     expect(row.partial).toBe(true);
-    expect(row.schemaVersion).toBe(7);
+    expect(row.schemaVersion).toBe(8);
     expect(row.runId).toBe("run-9");
     expect(row.projectKey).toBe("proj");
     expect(row.agentName).toBe("native");
@@ -569,9 +569,9 @@ describe("toPartialCostEvent (US-003 AC17-18)", () => {
   });
 });
 
-describe("cost-row schema v7 (US-003 AC19)", () => {
-  test("AC19: COST_ROW_SCHEMA_VERSION is 7", () => {
-    expect(COST_ROW_SCHEMA_VERSION).toBe(7);
+describe("cost-row schema v8 (US-006 AC19)", () => {
+  test("AC19: COST_ROW_SCHEMA_VERSION is 8", () => {
+    expect(COST_ROW_SCHEMA_VERSION).toBe(8);
   });
 
   test("AC19: a successful session-turn cost row carries no partial field", () => {
@@ -588,7 +588,7 @@ describe("cost-row schema v7 (US-003 AC19)", () => {
     );
 
     expect(recorded).toHaveLength(1);
-    expect(recorded[0].schemaVersion).toBe(7);
+    expect(recorded[0].schemaVersion).toBe(8);
     expect("partial" in recorded[0]).toBe(false);
   });
 });

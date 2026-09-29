@@ -159,3 +159,13 @@ describe("FIELD_DESCRIPTIONS.execution.commandSafety.guard (US-003)", () => {
     expect(FIELD_DESCRIPTIONS["execution.commandSafety"]).toContain("flag-for-review");
   });
 });
+
+describe("FIELD_DESCRIPTIONS.auth (US-001)", () => {
+  test.each(["auth", "auth.source", "auth.exec", "auth.exec.command", "auth.exec.timeoutMs", "auth.onChange"])(
+    "AC22: %s has a non-empty description",
+    (key) => {
+      expect(typeof FIELD_DESCRIPTIONS[key]).toBe("string");
+      expect(FIELD_DESCRIPTIONS[key].length).toBeGreaterThan(0);
+    },
+  );
+});

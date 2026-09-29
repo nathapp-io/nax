@@ -34,7 +34,7 @@ export type {
   AuthPrompt,
   AuthResult,
 } from "./auth-types";
-export { credentialFilePath, naxCredentialStore, type StoredEntry } from "./credentials";
+export { credentialFilePath, naxCredentialStore, type StoredEntry, servedAuth } from "./credentials";
 export { NativeSessionUnsupportedError } from "./errors";
 export {
   type ResolveResult,
