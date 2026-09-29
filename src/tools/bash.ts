@@ -255,7 +255,13 @@ async function launchIntercepted({
   ctx,
   timeoutMs,
 }: BashLaunchRequest): Promise<{ launched: BashLaunch; stdout: string }> {
-  const intercepted = await interceptShell(command, ctx.root, _bashToolDeps.interceptor);
+  // Read the seam ONCE. It is module-level mutable state that `setupRun`
+  // replaces per run, and the launch below can run for minutes, so a second
+  // read would let a different instance post-process output this one decided
+  // to rewrite — contradicting `postProcess`'s own contract ("consulted ONLY
+  // for output of a command this interceptor actually rewrote").
+  const interceptor = _bashToolDeps.interceptor;
+  const intercepted = await interceptShell(command, ctx.root, interceptor);
   const executed = [shell, "-c", intercepted.command];
   const common = {
     cwd: ctx.root,
@@ -278,7 +284,7 @@ async function launchIntercepted({
   // mirroring the Git site, which passes the original argv.
   const req: ShellInterceptRequest = { kind: "shell", command, cwd: ctx.root, site: "bash" };
   try {
-    const processed = _bashToolDeps.interceptor?.postProcess?.(launched.stdout, req)?.output;
+    const processed = interceptor?.postProcess?.(launched.stdout, req)?.output;
     return { launched, stdout: processed ?? launched.stdout };
   } catch {
     // Advisory, like the rewrite-time fail-open: a sick post-processor must not
