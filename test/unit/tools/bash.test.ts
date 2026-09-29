@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import type { CommandLauncher } from "@/sandbox";
+import { assertDefined, cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
+import type { CommandLauncher, LaunchRequest } from "@/sandbox";
 import { createCommandLauncher, DISABLED_SANDBOX_STATE } from "@/sandbox";
 import { _bashToolDeps, BASH_TIMEOUT_MS, createBashTool } from "@/tools";
+import { _agentOutputEnvDeps } from "@/utils/agent-output-env";
 
 const realRunArgv = _bashToolDeps.runArgv;
 
@@ -177,6 +178,87 @@ describe("createBashTool", () => {
 
   test("declares the command field so the policy uses the Bash branch", () => {
     expect(createBashTool().scope.commandField).toBe("command");
+  });
+});
+
+// US-004: the same AGENT=1 rule the quality and verification runners apply, at
+// the agent-facing spawn site. Marker presence is read from the nax process
+// environment (`_agentOutputEnvDeps.processEnv`), so these tests control it
+// rather than depending on whether the suite itself was launched from an agent
+// shell. `env` is passed only when the overlay exists — an inherited marker or a
+// stripped AGENT must leave the child's environment to Bun.spawn's own inherit.
+describe("US-004 — Bash opts its child into agent-friendly output", () => {
+  withDepsRestore(_agentOutputEnvDeps, ["processEnv"]);
+
+  const noMarker = (): Record<string, string | undefined> => ({ PATH: "/usr/bin" });
+
+  function recordingLauncher(requests: LaunchRequest[]): CommandLauncher {
+    return {
+      state: DISABLED_SANDBOX_STATE,
+      async run(req) {
+        requests.push(req);
+        return {
+          exitCode: 0,
+          stdout: "out",
+          stderr: "",
+          timedOut: false,
+          executed: ["/bin/sh", "-c", "bun test"],
+          sandbox: { backend: "none", wrapped: false },
+        };
+      },
+    };
+  }
+
+  test("AC6: with no launcher and no inherited marker, runArgv receives env { AGENT: '1' }", async () => {
+    _agentOutputEnvDeps.processEnv = noMarker;
+    stubRunArgv();
+
+    await createBashTool().run({ command: "bun test" }, ctx());
+
+    expect(calls[0]?.env).toEqual({ AGENT: "1" });
+  });
+
+  test("AC7: an inherited CLAUDECODE speaks for itself — runArgv receives no env key", async () => {
+    _agentOutputEnvDeps.processEnv = () => ({ PATH: "/usr/bin", CLAUDECODE: "1" });
+    stubRunArgv();
+
+    await createBashTool().run({ command: "bun test" }, ctx());
+
+    assertDefined(calls[0], "the runArgv call");
+    expect("env" in calls[0]).toBe(false);
+  });
+
+  test("AC8: a configured strip of AGENT is not silently undone — runArgv receives no env key", async () => {
+    _agentOutputEnvDeps.processEnv = noMarker;
+    stubRunArgv();
+
+    await createBashTool({ stripEnvVars: ["AGENT"] }).run({ command: "bun test" }, ctx());
+
+    assertDefined(calls[0], "the runArgv call");
+    expect("env" in calls[0]).toBe(false);
+    expect(calls[0].stripEnvVars).toEqual(["AGENT"]);
+  });
+
+  test("AC9: with a launcher, the launch request carries env { AGENT: '1' }", async () => {
+    _agentOutputEnvDeps.processEnv = noMarker;
+    const requests: LaunchRequest[] = [];
+
+    await createBashTool({ launcher: recordingLauncher(requests) }).run({ command: "bun test" }, ctx());
+
+    expect(requests[0]?.env).toEqual({ AGENT: "1" });
+  });
+
+  test("AC9 boundary: with a launcher and a stripped AGENT, the request carries no env key", async () => {
+    _agentOutputEnvDeps.processEnv = noMarker;
+    const requests: LaunchRequest[] = [];
+
+    await createBashTool({ stripEnvVars: ["AGENT"], launcher: recordingLauncher(requests) }).run(
+      { command: "bun test" },
+      ctx(),
+    );
+
+    assertDefined(requests[0], "the launch request");
+    expect("env" in requests[0]).toBe(false);
   });
 });
 

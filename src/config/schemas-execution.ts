@@ -223,8 +223,25 @@ export const CommandInterceptorConfigSchema = z
     provider: z.string().min(1).default("rtk"),
     enabled: z.boolean().default(false),
     git: z.object({ verbs: z.array(z.string().min(1)).default(["log", "diff"]) }).default({ verbs: ["log", "diff"] }),
+    /**
+     * Opt-in for the BASH site (US-002): the model-authored command string is
+     * routed through the provider's `rewrite` before it runs. Independent of
+     * the Git site — `enabled` is the master switch and this one requires it.
+     * `.strict()` rejects unknown keys (AC5); the `.superRefine` below rejects
+     * `bash.enabled: true` while `enabled` is `false` (AC4).
+     */
+    bash: z.object({ enabled: z.boolean() }).strict().default({ enabled: false }),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.bash.enabled && !value.enabled) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["bash", "enabled"],
+        message: "execution.commandInterceptor.bash.enabled requires execution.commandInterceptor.enabled",
+      });
+    }
+  });
 
 export const ExecutionConfigSchema = z.object({
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
@@ -321,6 +338,7 @@ export const ExecutionConfigSchema = z.object({
     provider: "rtk",
     enabled: false,
     git: { verbs: ["log", "diff"] },
+    bash: { enabled: false },
   }),
 });
 

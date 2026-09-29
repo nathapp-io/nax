@@ -5,6 +5,7 @@
  * Extracted from execution/verification.ts to eliminate duplication.
  */
 
+import { withAgentOutputEnv } from "../utils/agent-output-env";
 import { spawn } from "../utils/bun-deps";
 import { killProcessGroup } from "../utils/process-kill";
 import type { TestExecutionResult } from "./types";
@@ -34,10 +35,13 @@ export function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<
  * full code frame, diff and stack, and the summary line is preserved — only the
  * per-test pass/skip/todo roll call is dropped.
  *
- * Exported so the quality runner applies the identical rule at its own spawn
- * site; the two env paths must not drift.
+ * Re-exported from src/utils/agent-output-env.ts so the quality runner
+ * (`src/quality/runner.ts:16`) keeps importing it from `@/verification`
+ * unchanged. The marker list is the SSOT in the utils module — defining it
+ * here would let a copy drift the moment one of them is edited, and the spawn
+ * sites would silently stop agreeing on what counts as an inherited marker.
  */
-export const AGENT_OUTPUT_MARKERS = ["CLAUDECODE", "REPL_ID", "AGENT"] as const;
+export { AGENT_OUTPUT_MARKERS, withAgentOutputEnv } from "../utils/agent-output-env";
 
 /**
  * Nothing is stripped unless the caller asks. This used to default to
@@ -69,18 +73,6 @@ export function normalizeEnvironment(
   }
 
   return withAgentOutputEnv(normalized, varsToStrip);
-}
-
-/**
- * Add `AGENT=1` unless a marker is already present or the caller stripped it.
- */
-export function withAgentOutputEnv(
-  env: Record<string, string | undefined>,
-  strippedVars: readonly string[] = [],
-): Record<string, string | undefined> {
-  if (strippedVars.includes("AGENT")) return env;
-  if (AGENT_OUTPUT_MARKERS.some((marker) => env[marker] !== undefined)) return env;
-  return { ...env, AGENT: "1" };
 }
 
 /**

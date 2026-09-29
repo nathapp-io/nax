@@ -106,7 +106,7 @@ const MAY_IMPORT_RTK = new Set(["execution/lifecycle/run-setup.ts"]);
 const IMPORTS_RTK = /from\s+["'](?:@\/execution|\.{1,2}(?:\/\.\.)*)\/?.*interceptors\/rtk(?:\/index)?["']/;
 
 describe("R10 / R1: interception stays where it belongs", () => {
-  test("the Git tool is the only interception site", async () => {
+  test("no interceptor reaches the quality, verification or git-utils sites", async () => {
     for (const path of ["src/quality/runner.ts", "src/verification/executor.ts", "src/utils/git.ts"]) {
       const source = await Bun.file(path).text();
       expect(source).not.toContain("interceptArgv");

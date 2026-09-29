@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  assertDefined,
   makeMockAgentManager,
   makeMockRuntime,
   makeNaxConfig,
@@ -9,12 +10,16 @@ import {
   makeSpawn,
   makeTempDir,
   withDepsRestore,
+  withTempDir,
 } from "@test/helpers";
 import type { IAgentManager } from "@/agents";
 import type { NaxConfig } from "@/config";
 import type { RtkDeps } from "@/execution/interceptors/rtk";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
 import { _runSetupDeps, type RunSetupOptions, setupRun } from "@/execution/lifecycle/run-setup";
+import type { LogEntry } from "@/logger";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import { _bashToolDeps } from "@/tools";
 import { _gitToolDeps, gitTool } from "@/tools/git";
 import { _gitDeps } from "@/utils/git";
 
@@ -32,6 +37,10 @@ function installFromConfig(config: NaxConfig, deps: Partial<RtkDeps>): void {
 
 describe("setupRun → command interceptor composition (config → provider → Git tool)", () => {
   withDepsRestore(_gitToolDeps, ["interceptor"]);
+  // US-003: setupRun installs the SAME interceptor on the Bash tool, so this
+  // module-level value needs the same restore. Without it the interceptor built
+  // here leaks into every later test file in the process.
+  withDepsRestore(_bashToolDeps, ["interceptor"]);
   withDepsRestore(_gitDeps, ["spawn"]);
   withDepsRestore(_runSetupDeps);
 
@@ -167,6 +176,56 @@ describe("setupRun → command interceptor composition (config → provider → 
     } finally {
       rmSync(workdir, { recursive: true, force: true });
     }
+  });
+
+  test("US-003 AC16: a real setupRun installs ONE interceptor, on the Git tool and the Bash tool", async () => {
+    await withTempDir(async (workdir) => {
+      await driveSetupRun(
+        workdir,
+        makeNaxConfig({ execution: { commandInterceptor: { enabled: true, bash: { enabled: true } } } }),
+      );
+
+      expect(_bashToolDeps.interceptor).toBeDefined();
+      expect(_bashToolDeps.interceptor).toBe(_gitToolDeps.interceptor);
+    });
+  });
+
+  test("US-003 AC17: the 'rtk interceptor state' log entry carries the configured bash value", async () => {
+    const entries: LogEntry[] = [];
+    resetLogger();
+    initLogger({ level: "silent" });
+    const unsubscribe = addSink((entry) => void entries.push(entry));
+    try {
+      await withTempDir(async (workdir) => {
+        await driveSetupRun(
+          workdir,
+          makeNaxConfig({ execution: { commandInterceptor: { enabled: true, bash: { enabled: true } } } }),
+        );
+      });
+    } finally {
+      unsubscribe();
+      resetLogger();
+    }
+
+    const state = entries.find((entry) => entry.message === "rtk interceptor state");
+    expect(state?.data?.bash).toBe(true);
+  });
+
+  test("US-003 AC18: default config still installs the interceptor, which answers unchanged for bun test", async () => {
+    await withTempDir(async (workdir) => {
+      await driveSetupRun(workdir, makeNaxConfig());
+
+      expect(_bashToolDeps.interceptor).toBeDefined();
+      const interceptor = _bashToolDeps.interceptor;
+      assertDefined(interceptor, "_bashToolDeps.interceptor");
+      const interceptShell = interceptor.interceptShell;
+      assertDefined(interceptShell, "interceptor.interceptShell");
+      // Default config has commandInterceptor disabled, so the Bash site is a
+      // fail-safe no-op rather than an unconfigured hole.
+      expect(await interceptShell({ kind: "shell", command: "bun test", cwd: workdir, site: "bash" })).toEqual({
+        kind: "unchanged",
+      });
+    });
   });
 });
 

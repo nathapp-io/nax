@@ -1,14 +1,16 @@
 /**
  * Generic command-interception seam. rtk is a consumer, not a concept here (R1).
  *
- * Argv-only by construction: R10 drops both shell-string sites, so a `shell`
- * request variant would be unreachable code and would drag R9's shell-rewrite
- * validation in with it.
+ * Two request shapes, one per site: `argv` for the Git tool, validated by
+ * `validateRewrite` below, and `shell` for the model-authored Bash string,
+ * validated by `validateShellRewrite` in `./shell`. R10 keeps config-supplied
+ * command strings out of both.
  */
 import { GIT_ESCAPE_FLAGS } from "@/tools/git-flags";
+import type { ShellInterceptRequest, ShellInterceptResult } from "./shell";
 
-/** One member deliberately: adding a site should be a visible type change (R10). */
-export type Site = "git";
+/** Two members: the Git argv site and the Bash shell site (R10). */
+export type Site = "git" | "bash";
 
 export interface InterceptRequest {
   readonly kind: "argv";
@@ -25,8 +27,13 @@ export type InterceptResult =
 export interface CommandInterceptor {
   readonly provider: string;
   intercept(req: InterceptRequest): Promise<InterceptResult>;
+  /** The Bash site's entry point. Absent on an argv-only interceptor. */
+  interceptShell?(req: ShellInterceptRequest): Promise<ShellInterceptResult>;
   /** Consulted ONLY for output of a command this interceptor actually rewrote. */
-  postProcess?(output: string, req: InterceptRequest): { output: string; notes?: Record<string, string> };
+  postProcess?(
+    output: string,
+    req: InterceptRequest | ShellInterceptRequest,
+  ): { output: string; notes?: Record<string, string> };
 }
 
 export interface InterceptOutcome {
@@ -86,3 +93,5 @@ export async function interceptArgv(
   if (outcome.kind !== "rewritten") return { argv, rewritten: false };
   return { argv: outcome.argv, executed: outcome.argv, provider: outcome.provider, rewritten: true };
 }
+
+export * from "./shell";

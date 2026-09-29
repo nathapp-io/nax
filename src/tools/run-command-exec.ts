@@ -22,7 +22,11 @@
  * hardening and workspace scoping), then `runArgv`.
  */
 import { relative } from "node:path";
+import type { CommandLauncher, SandboxRecord } from "../sandbox";
+import { agentOutputOverlay } from "../utils/agent-output-env";
+import type { ArgvExecResult } from "../utils/argv-exec";
 import { runArgv } from "../utils/argv-exec";
+import { formatExecBody } from "../utils/exec-framing";
 import { deniedFlag, validateArgv } from "./exec-guard";
 import { normalizeExec } from "./package-managers";
 import type { ExecTarget } from "./package-managers-types";
@@ -41,6 +45,65 @@ import { cutToByteCap, READ_CEILING } from "./truncate";
  * project's own test/lint/typecheck command.
  */
 export const EXEC_TIMEOUT_MS = 300_000;
+
+/**
+ * Layer the AGENT=1 overlay onto an existing Exec env (or build a fresh env
+ * with just the overlay). Returns undefined when both inputs are undefined
+ * so the caller can omit the `env` key entirely and let `Bun.spawn` inherit
+ * the parent's environment on its own — the same shape `withAgentOutputEnv`
+ * applied via `normalizeEnvironment` in the verification runner, but here the
+ * inputs are partial: the Exec env is optional and the overlay may also be
+ * undefined when a marker is inherited or AGENT is stripped.
+ */
+function mergedExecEnv(
+  execEnv: Readonly<Record<string, string>> | undefined,
+  strippedVars: readonly string[],
+): Record<string, string> | undefined {
+  const agentOverlay = agentOutputOverlay(strippedVars);
+  if (agentOverlay === undefined) return execEnv !== undefined ? { ...execEnv } : undefined;
+  return { ...(execEnv ?? {}), ...agentOverlay };
+}
+
+/**
+ * Spawn the normalized argv through the launcher when one is configured and
+ * fall back to a direct `runArgv` call otherwise. The launcher branch carries
+ * the `stripEnvVars` as a shared array (Bun.spawn reads it once), while the
+ * direct branch spreads it so the deps seam sees the same shape every other
+ * `_argvExecDeps.spawn` test stubs.
+ */
+async function launchExec(req: {
+  argv: readonly string[];
+  root: string;
+  cwd: string;
+  launcher: CommandLauncher | undefined;
+  mergedEnv: Record<string, string> | undefined;
+  stripEnvVars: readonly string[];
+  signal: AbortSignal | undefined;
+}): Promise<ArgvExecResult & { sandbox?: SandboxRecord }> {
+  if (req.launcher !== undefined) {
+    return await req.launcher.run({
+      spec: { kind: "argv", argv: req.argv },
+      root: req.root,
+      cwd: req.cwd,
+      timeoutMs: EXEC_TIMEOUT_MS,
+      stripEnvVars: req.stripEnvVars,
+      ...(req.mergedEnv !== undefined ? { env: req.mergedEnv } : {}),
+      ...(req.signal !== undefined ? { signal: req.signal } : {}),
+    });
+  }
+  return {
+    ...(await runArgv({
+      argv: req.argv,
+      cwd: req.cwd,
+      timeoutMs: EXEC_TIMEOUT_MS,
+      stripEnvVars: [...req.stripEnvVars],
+      // Yarn 2+ carries its no-scripts mechanism here rather than in argv.
+      ...(req.mergedEnv !== undefined ? { env: req.mergedEnv } : {}),
+      ...(req.signal !== undefined ? { signal: req.signal } : {}),
+    })),
+    sandbox: undefined,
+  };
+}
 
 export async function runExecBranch(
   input: Record<string, unknown>,
@@ -75,48 +138,32 @@ export async function runExecBranch(
   });
   if ("error" in normalized) return { content: normalized.error, isError: true };
 
+  // US-004: opt the child into agent-friendly output. The Exec branch never
+  // rewrites the argv (that's the model's command), and the overlay is only
+  // `AGENT=1` — same rule the quality and verification runners apply. An
+  // inherited marker (`CLAUDECODE`/`REPL_ID`) speaks for itself, and a
+  // stripped AGENT stays stripped. The overlay is layered on top of any Exec
+  // env (the Yarn no-scripts key) so the latter survives wrapping alongside.
+  const mergedEnv = mergedExecEnv(normalized.env, opts.stripEnvVars ?? []);
+
   try {
-    const launched =
-      opts.exec.launcher !== undefined
-        ? await opts.exec.launcher.run({
-            spec: { kind: "argv", argv: normalized.argv },
-            root: ctx.root,
-            cwd: normalized.cwd,
-            timeoutMs: EXEC_TIMEOUT_MS,
-            stripEnvVars: opts.stripEnvVars ?? [],
-            ...(normalized.env !== undefined ? { env: normalized.env } : {}),
-            ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
-          })
-        : {
-            ...(await runArgv({
-              argv: normalized.argv,
-              cwd: normalized.cwd,
-              timeoutMs: EXEC_TIMEOUT_MS,
-              stripEnvVars: [...(opts.stripEnvVars ?? [])],
-              // Yarn 2+ carries its no-scripts mechanism here rather than in argv.
-              ...(normalized.env !== undefined ? { env: normalized.env } : {}),
-              ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
-            })),
-            sandbox: undefined,
-          };
+    const launched = await launchExec({
+      argv: normalized.argv,
+      root: ctx.root,
+      cwd: normalized.cwd,
+      launcher: opts.exec.launcher,
+      mergedEnv,
+      stripEnvVars: opts.stripEnvVars ?? [],
+      signal: ctx.signal,
+    });
+
     // US-001: match Bash's framing so an aborted Exec is rendered as an
     // error with the cancellation banner (AC14 mirror) and an orphansKilled
-    // Exec appends the same `[nax]` footer (AC15 mirror). Without this
-    // branch an aborted call would land in the `exit N` path with
-    // `exitCode === -1` and no indication that a turn cancel killed it.
-    let body: string;
-    if (launched.aborted === true) {
-      body = `Cancelled: the turn ended while this command was running.\nexit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
-    } else if (launched.orphansKilled === true) {
-      body = `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}\n[nax] background processes still holding the output were killed`;
-    } else if (launched.timedOut) {
-      body = `timed out after ${EXEC_TIMEOUT_MS}ms`;
-    } else {
-      body = `exit ${launched.exitCode}\n${launched.stdout}\n${launched.stderr}`;
-    }
+    // Exec appends the same `[nax]` footer (AC15 mirror).
+    const text = formatExecBody(launched, EXEC_TIMEOUT_MS);
 
     return {
-      content: cutToByteCap(body, ctx.readCeiling ?? READ_CEILING),
+      content: cutToByteCap(text, ctx.readCeiling ?? READ_CEILING),
       isError: launched.timedOut || launched.exitCode !== 0 || launched.aborted === true,
       // Task 7 reads this to write `executed` and `target` onto the ledger
       // row. Returning it here, rather than re-deriving it in the runtime,

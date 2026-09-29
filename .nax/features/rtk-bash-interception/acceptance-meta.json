@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-29T05:10:45.875Z",
+  "acFingerprint": "sha256:e82d0998954e4d926d13303369fe4ca483d64e07caa88dea4b14cd2880dfde0f",
+  "layoutFingerprint": "sha256:4072f5e4026f78f026c5c4da90a60fae603425c2e192734ed7c18013e2c6f1ef",
+  "storyCount": 4,
+  "acCount": 78,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": ".nax/features/rtk-bash-interception/.nax-acceptance.test.ts",
+      "expected": 78,
+      "found": 78,
+      "missing": []
+    }
+  ]
+}

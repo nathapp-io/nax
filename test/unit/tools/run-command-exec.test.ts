@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined, makeSpawn, withDepsRestore } from "@test/helpers";
 import type { CommandLauncher, LaunchRequest } from "@/sandbox";
 import { compileToolPolicy } from "@/tools/policy";
 import type { ToolRunContext } from "@/tools/registry";
 import { createRunCommandTool, type RunCommandExecOptions } from "@/tools/run-command";
-import { EXEC_TIMEOUT_MS } from "@/tools/run-command-exec";
+import { EXEC_TIMEOUT_MS, runExecBranch } from "@/tools/run-command-exec";
 import { createCodingToolRuntime } from "@/tools/runtime";
+import { _agentOutputEnvDeps } from "@/utils/agent-output-env";
+import { _argvExecDeps } from "@/utils/argv-exec";
 
 const ctx: ToolRunContext = { root: "/repo", resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_000_000 };
 const exec: RunCommandExecOptions = {
@@ -184,5 +187,48 @@ describe("RunCommand argv branch — order of operations (property 2)", () => {
     });
     expect(result.kind).toBe("error");
     expect(result.kind === "error" && result.content).toContain("--registry");
+  });
+});
+
+// US-004: the argv branch receives ONLY the AGENT=1 overlay — the command is
+// never rewritten (its argv is what the model wrote). Observed at the spawn
+// seam, which is where the child's environment actually takes shape: with no
+// overlay and no Exec env there must be no `env` key at all, so Bun.spawn
+// inherits the parent's environment on its own.
+describe("US-004 — the Exec branch opts its child into agent-friendly output", () => {
+  withDepsRestore(_agentOutputEnvDeps, ["processEnv"]);
+  withDepsRestore(_argvExecDeps, ["spawn"]);
+
+  const execOpts: RunCommandExecOptions = {
+    repoRoot: "/repo",
+    packageWorkdir: "/repo",
+    allowScripts: false,
+    patterns: ["bun *"],
+  };
+
+  test("AC10: with no launcher, no Exec env and no inherited marker, the spawn env carries AGENT=1", async () => {
+    _agentOutputEnvDeps.processEnv = () => ({ PATH: "/usr/bin" });
+    const stub = makeSpawn();
+    _argvExecDeps.spawn = stub.spawn;
+
+    await runExecBranch({ argv: ["bun", "add", "left-pad"], target: "repoRoot" }, ctx, { exec: execOpts });
+
+    assertDefined(stub.calls[0], "the spawn call");
+    expect("env" in stub.calls[0].opts).toBe(true);
+    expect(stub.lastEnv().AGENT).toBe("1");
+    // An overlay, not a replacement: the child still inherits the nax process
+    // environment (PATH included) with the marker layered on top.
+    expect(stub.lastEnv().PATH).toBe(process.env.PATH);
+  });
+
+  test("AC12: an inherited CLAUDECODE and no Exec env leave the spawn with no env key", async () => {
+    _agentOutputEnvDeps.processEnv = () => ({ PATH: "/usr/bin", CLAUDECODE: "1" });
+    const stub = makeSpawn();
+    _argvExecDeps.spawn = stub.spawn;
+
+    await runExecBranch({ argv: ["bun", "add", "left-pad"], target: "repoRoot" }, ctx, { exec: execOpts });
+
+    assertDefined(stub.calls[0], "the spawn call");
+    expect("env" in stub.calls[0].opts).toBe(false);
   });
 });

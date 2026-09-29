@@ -4,8 +4,9 @@ Two independent, opt-in features that change what tools the coding agent has and
 actually runs when it calls one:
 
 - **`mcp`** — attach external Model Context Protocol servers as extra tools.
-- **`execution.commandInterceptor`** — rewrite the `Git` tool's argv through a
-  token-reducing proxy (`rtk`).
+- **`execution.commandInterceptor`** — rewrite what the native agent's commands actually
+  execute through a token-reducing proxy (`rtk`). Two sites: the `Git` tool's argv and the
+  `Bash` tool's model-authored command string.
 
 They share no code and can be enabled independently.
 
@@ -167,7 +168,8 @@ be invoked once.
     "commandInterceptor": {
       "provider": "rtk",
       "enabled": true,
-      "git": { "verbs": ["log", "diff"] }
+      "git": { "verbs": ["log", "diff"] },
+      "bash": { "enabled": true }
     }
   }
 }
@@ -176,40 +178,82 @@ be invoked once.
 | Key | Default | Meaning |
 |:---|:---|:---|
 | `provider` | `"rtk"` | Interceptor implementation. |
-| `enabled` | `false` | **Off by default** — opt in per project. |
+| `enabled` | `false` | **Off by default** — opt in per project. The master switch for both sites. |
 | `git.verbs` | `["log", "diff"]` | Git subcommands eligible for rewriting. Anything else passes through untouched. |
+| `bash.enabled` | `false` | Opt in to the `Bash` site: the model-authored command string is offered to the provider before it runs. Requires `enabled: true`; the config is rejected otherwise. |
 
 Requires the `rtk` binary on `PATH` (`rtk --version`, `rtk gain` to confirm you have the
 right one — a different project also ships an `rtk`).
 
-### Scope: the Git site only
+### Scope: the Git argv and the model-authored Bash command
 
-Interception is deliberately confined to the `Git` tool's argv. nax does **not** wrap
-user-authored command strings — `quality.commands` and `acceptance.command` are never
-intercepted. That is a standing ruling (spec R10), not an oversight: there is no saving on
-the success path, and the failure path is shape-dependent (a Bun stack trace compresses
-~58%, Biome diagnostics 0%). Wrapping them would also move trust from your project config
-to a third-party binary.
+nax intercepts exactly two things, and neither is a string you wrote:
+
+- the `Git` tool's **argv**, which nax builds itself from the structured fields the model
+  supplied (never a shell string);
+- the `Bash` tool's **command string**, which the model authored.
+
+nax does **not** wrap user-authored command strings — `quality.commands`, `acceptance.command`
+and every other config-supplied command are never intercepted. That is a standing ruling
+(spec R10), not an oversight: there is no saving on the success path, and the failure path is
+shape-dependent (a Bun stack trace compresses ~58%, Biome diagnostics 0%). Wrapping them
+would also move trust from your project config to a third-party binary.
+
+R10 does not cover the `Bash` tool, and that is the whole reason the site exists: the
+"I can write `rtk` into the line I own" argument needs an owner, and no human owns the line
+the model writes. There is nothing to write `rtk` into. So `Bash` gets a provider rewrite
+instead — and because the provider's answer would otherwise be arbitrary text on its way to
+`/bin/sh -c`, nax validates it first (below). The permission policy and the command-safety
+guard still judge the model's **original** command: the rewrite happens inside the tool, after
+`callTool` has already reached its verdict.
+
+### The Bash site: what a provider rewrite must look like
+
+Interception happens inside `Bash.run`, so the order is fixed: policy verdict first,
+interception second. The provider (`rtk rewrite`) proposes; `validateShellRewrite` accepts a
+candidate only when it is the original plus literal `rtk ` insertions at command words, byte
+for byte. Everything else is declined and the original command runs.
+
+| Rule | What it refuses |
+|:---|:---|
+| Byte-exact insertion | The candidate's only difference from the original is `rtk ` where the original continues. Re-spaced `&&`, re-quoted arguments and normalised whitespace are all declined. |
+| At least one insertion | A candidate identical to the original is `unchanged`, not a rewrite. |
+| Both lex | A command the shell lexer refuses (command substitution, `2>&1`, a subshell) is never rewritten — under the `raw` approval mode such a command can reach the tool, and it runs unrewritten. |
+| Insertion sits at the command word | The insertion follows any leading `NAME=value` assignments and precedes the actual command. `uv run pytest -q` → `uv run rtk pytest -q` is declined: `rtk` is not the command word there. |
+| Never a segment already prefixed with `rtk` | `rtk bun test` → `rtk rtk bun test` is declined. |
+| Never inside a pipeline | A segment whose own separator is `\|` writes into a pipe, and one whose predecessor's is `\|` reads from it: compaction would change what the neighbouring program sees. |
+
+`rtk read src/a.ts`, `rtk tsc --noEmit` and every other rewrite that changes the command word
+are therefore declined — widening the validator is a separate change, not a config option.
+The rewrite runs in the nax process on the host, never inside the sandbox, and the provider
+gets at most `RTK_REWRITE_TIMEOUT_MS` (2000 ms, an exported constant) before the child is
+killed.
 
 ### What a rewrite looks like
 
-An eligible call has its argv prefixed, and the ledger records what actually ran:
+An eligible call has its argv (Git) or command string (Bash) prefixed — for `Bash`, `rtk ` is
+inserted at the command word of each rewritten segment — and the ledger records what actually
+ran:
 
 ```
-verb    executed
-diff    ['rtk','git','diff','--relative','1c008758..HEAD','--','.', ':!.nax/']
-log     ['rtk','git','log','--relative','--oneline','1c008758..HEAD','--','.']
-show    None      <- not in git.verbs, passed through
-status  None      <- not in git.verbs, passed through
+tool   verb   executed
+Git    diff   ['rtk','git','diff','--relative','1c008758..HEAD','--','.', ':!.nax/']
+Git    log    ['rtk','git','log','--relative','--oneline','1c008758..HEAD','--','.']
+Git    show   None      <- not in git.verbs, passed through
+Git    status None      <- not in git.verbs, passed through
+Bash   -      ['/bin/sh','-c','rtk bun test src/a.test.ts']
+Bash   -      ['/bin/sh','-c','cat src/a.ts']   <- candidate declined by the validator
 ```
 
 ### Output hint stripping
 
 rtk appends a trailing hint to its output, e.g.
 `[full diff: rtk git diff --no-compact]`, `[full output: rtk …]`, `[+12 hidden: rtk …]`.
-Those hints are instructions for a human at a shell, not something the `Git` tool can run,
+Those hints are instructions for a human at a shell, not something either tool can run,
 so they are stripped before the output reaches the model. Stripping is hint-shaped, not a trim: output with no trailing hint is
-returned byte-for-byte.
+returned byte-for-byte. A hint on a **non-rewritten** command's output is a different matter:
+the interceptor is consulted only for output of a command it actually rewrote, so an
+unintercepted `rtk` invocation the model wrote itself keeps its hint.
 
 ### Expected savings
 
@@ -225,16 +269,27 @@ Savings scale with output size — measured by replaying real run argv:
 Short logs gain nothing; large diffs gain the most. Set expectations against the size of
 diffs your reviews actually produce.
 
-### Fail-open behaviour
+### Fail-open and decline behaviour
 
-Interception never breaks a run:
+Interception never breaks a run, on either site:
 
 | Situation | Result |
 |:---|:---|
-| `enabled: false` | `unchanged` — every argv passes through. |
-| `rtk` not on PATH | `declined` with reason `rtk binary not found on PATH`; plain git runs. |
-| Probe throws | `declined` with the probe error; plain git runs. |
+| `enabled: false` | `unchanged` — every argv and every command string passes through. |
+| `bash.enabled: false` (the default) | `unchanged` for the `Bash` site; `rtk rewrite` is never spawned. |
+| `rtk` not on PATH | `declined` with reason `rtk binary not found on PATH`; the plain command runs. |
+| Probe throws | `declined` with the probe error; the plain command runs. |
 | Verb not in `git.verbs` | `unchanged`. |
+| `rtk rewrite` exits 1, or exits 0/3 with empty stdout or the command itself | `unchanged`; the original runs. |
+| `rtk rewrite` exits 2 (a Claude deny rule) or any other code | `declined` with `rtk rewrite exited <code>`; the original runs. |
+| `rtk rewrite` exceeds `RTK_REWRITE_TIMEOUT_MS` | the child is killed; `declined` with `rtk rewrite timed out`; the original runs. |
+| `rtk rewrite` cannot be spawned | `declined` with `rtk rewrite failed: <message>`; the original runs. |
+| The interceptor's `interceptShell` throws | caught at the seam; the original runs. |
+| The candidate fails any validator rule above | `declined` with that rule's reason; the original runs. |
+| A rewritten command runs and exits non-zero | its exit code and output are returned as-is — nax never re-runs the original. |
+| `postProcess` throws on a rewritten command's stdout | the raw stdout is used. |
+| No interceptor installed (an entry point that skips `setupRun`) | the original runs, unrewritten. |
+| `bash.enabled: true` while `enabled: false` | config validation fails: `execution.commandInterceptor.bash.enabled requires execution.commandInterceptor.enabled`. |
 
 The state line is emitted **once per run regardless**, so a run with interception off is
 distinguishable in its artifacts from a run that simply made no git calls.
@@ -244,16 +299,21 @@ distinguishable in its artifacts from a run that simply made no git calls.
 1. **State line**, in a `--verbose` run log:
 
    ```
-   execution rtk interceptor state  { "enabled": true, "version": "rtk 0.45.0", "verbs": ["log","diff"] }
+   execution rtk interceptor state  { "enabled": true, "version": "rtk 0.45.0", "verbs": ["log","diff"], "bash": true }
    ```
 
    `version: null` with `enabled: true` means the binary probe failed — check `declined`.
+   `bash` reports the configured value, so an arm with the Bash site on is distinguishable
+   after the fact.
 
 2. **The ledger**, which is the proof. In
    `~/.nax/<project>/tool-audit/<feature>/*.json`, an intercepted call carries
    `executed` starting with `rtk`; a passed-through call has `executed: null`.
    Seeing `log`/`diff` rewritten *and* `status`/`show` untouched confirms verb filtering
-   works rather than everything being blanket-wrapped.
+   works rather than everything being blanket-wrapped. A `Bash` row reads
+   `['/bin/sh','-c','rtk bun test src/a.test.ts']` when the command was rewritten, and
+   `['/bin/sh','-c','bun test src/a.test.ts']` when the provider's candidate was declined —
+   the command nax actually ran, never the model's original.
 
 ---
 
@@ -287,6 +347,7 @@ them by `runId` or timestamp before comparing.
 | `rtk interceptor state` shows `version: null` | Binary not found or probe failed | `which rtk`; confirm `rtk gain` works (name collision) |
 | No state line at all | Config block missing | Add `execution.commandInterceptor` |
 | `executed` is always `null` | Verb not in `git.verbs` | Add the verb, or accept that only `log`/`diff` are eligible |
+| `Bash` rows never show `rtk` | `bash.enabled` is false, the command is not one the validator accepts, or `rtk rewrite` declined it | Check the state line's `bash` value, then reproduce with `rtk rewrite '<command>'` — a rewrite that changes the command word (`cat` → `rtk read`) is declined by design |
 | `Project name collision` on run | The name is registered to another workdir whose git remote differs (a checkout or worktree of the same remote is accepted) | Rename `name` in config, `nax migrate --reclaim <name>`, or `nax migrate --merge <name>` |
 
 ---

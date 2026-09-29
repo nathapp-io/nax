@@ -5,6 +5,7 @@ import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore } 
 import { _launcherDeps, createCommandLauncher } from "@/sandbox";
 import { createRunCommandTool } from "@/tools";
 import { runExecBranch } from "@/tools/run-command-exec";
+import { _agentOutputEnvDeps } from "@/utils/agent-output-env";
 
 let root: string;
 beforeEach(() => {
@@ -81,8 +82,16 @@ describe("US-003 — RunCommand description names the confined temp root", () =>
 
 describe("Exec env overlay through the launcher", () => {
   withDepsRestore(_launcherDeps);
+  withDepsRestore(_agentOutputEnvDeps, ["processEnv"]);
 
-  test("Review Focus 5: the Yarn no-scripts env overlay survives wrapping", async () => {
+  // US-004 replaced this test's invariant: the launcher's env is no longer
+  // exactly the Yarn key. Marker presence is read from the nax process
+  // environment, so the overlay is stubbed marker-free here — otherwise the
+  // assertion would flip depending on whether the suite was launched from an
+  // agent shell. What must hold now: the Yarn no-scripts key survives wrapping
+  // alongside the agent-output key.
+  test("US-004 AC11: the Yarn no-scripts env overlay survives wrapping alongside AGENT=1", async () => {
+    _agentOutputEnvDeps.processEnv = () => ({ PATH: "/usr/bin" });
     const seen: { env?: Readonly<Record<string, string>> }[] = [];
     _launcherDeps.runArgv = async (o) => {
       seen.push(o);
@@ -96,6 +105,6 @@ describe("Exec env overlay through the launcher", () => {
     await runExecBranch({ argv: ["yarn", "add", "left-pad"], target: "repoRoot" }, ctx(), {
       exec: { repoRoot: root, packageWorkdir: root, allowScripts: false, patterns: ["yarn *"], launcher },
     });
-    expect(seen[0]?.env).toEqual({ YARN_ENABLE_SCRIPTS: "false" });
+    expect(seen[0]?.env).toEqual({ YARN_ENABLE_SCRIPTS: "false", AGENT: "1" });
   });
 });

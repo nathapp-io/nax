@@ -40,6 +40,21 @@ describe("appendForceExitFlag (VER-1)", () => {
   });
 });
 
+// US-004: the agent-output rule moved to src/utils/agent-output-env.ts, which
+// the agent-facing spawn sites (Bash, RunCommand Exec) import directly.
+// `@/verification` must keep re-exporting it — src/quality/runner.ts imports
+// `withAgentOutputEnv` from there — and re-exporting the SAME value, since two
+// copies of the marker list would drift the moment one of them is edited.
+describe("US-004 — the agent-output helpers are re-exported, not copied", () => {
+  test("AC5: @/verification exports the same AGENT_OUTPUT_MARKERS and withAgentOutputEnv as src/utils/agent-output-env.ts", async () => {
+    const fromVerification = await import("@/verification");
+    const fromUtils = await import("@/utils/agent-output-env");
+
+    expect(fromVerification.AGENT_OUTPUT_MARKERS).toBe(fromUtils.AGENT_OUTPUT_MARKERS);
+    expect(fromVerification.withAgentOutputEnv).toBe(fromUtils.withAgentOutputEnv);
+  });
+});
+
 describe("normalizeEnvironment", () => {
   // nax#agent-output: these three are how `bun test` (and other agent-aware
   // runners) are told to emit failures-only output. Stripping them made every

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import { DEFAULT_CONFIG } from "@/config";
 import { ExecutionConfigSchema } from "@/config/schemas-execution";
 
@@ -45,5 +46,71 @@ describe("execution.commandInterceptor", () => {
     // every run that relies on the default.
     expect(DEFAULT_CONFIG.execution.commandInterceptor).toBeDefined();
     expect(DEFAULT_CONFIG.execution.commandInterceptor.enabled).toBe(false);
+  });
+});
+
+/**
+ * US-002 — the Bash site's opt-in. Interception changes what the agent sees, so
+ * `bash` is a second, narrower switch: `enabled` is the master, `bash` only
+ * decides whether the model-authored Bash string is routed through the provider.
+ */
+describe("execution.commandInterceptor.bash (US-002)", () => {
+  test("US-002 AC1: no commandInterceptor at all yields bash.enabled === false", () => {
+    const parsed = ExecutionConfigSchema.parse(base);
+    // Asserted as the whole object first: an absent `bash` then fails here
+    // rather than throwing on a property read.
+    expect(parsed.commandInterceptor.bash).toEqual({ enabled: false });
+  });
+
+  test("US-002 AC3: bash.enabled === true parses under an enabled parent", () => {
+    const parsed = ExecutionConfigSchema.parse({
+      ...base,
+      commandInterceptor: { enabled: true, bash: { enabled: true } },
+    });
+    expect(parsed.commandInterceptor.bash).toEqual({ enabled: true });
+  });
+
+  test("US-002 AC4 (boundary): a DISABLED bash under a disabled parent is accepted", () => {
+    // Only the contradiction is a config error; `bash.enabled: false` alongside
+    // `enabled: false` must stay a valid, inert config.
+    const parsed = ExecutionConfigSchema.safeParse({
+      ...base,
+      commandInterceptor: { enabled: false, bash: { enabled: false } },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  test("US-002 AC4: rejects bash.enabled === true while the master switch is off", () => {
+    const parsed = ExecutionConfigSchema.safeParse({
+      ...base,
+      commandInterceptor: { enabled: false, bash: { enabled: true } },
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.map((i) => i.message)).toContain(
+        "execution.commandInterceptor.bash.enabled requires execution.commandInterceptor.enabled",
+      );
+    }
+  });
+
+  test("US-002 AC5: rejects an unknown key inside bash", () => {
+    const parsed = ExecutionConfigSchema.safeParse({
+      ...base,
+      commandInterceptor: { enabled: true, bash: { enabled: true, unexpected: true } },
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((i) => i.code === "unrecognized_keys")).toBe(true);
+    }
+  });
+
+  test("US-002 AC2: DEFAULT_CONFIG carries bash.enabled === false", () => {
+    expect(DEFAULT_CONFIG.execution.commandInterceptor.bash).toEqual({ enabled: false });
+  });
+
+  test("US-002 AC6: the field has a non-empty description", () => {
+    const description = FIELD_DESCRIPTIONS["execution.commandInterceptor.bash.enabled"];
+    expect(typeof description).toBe("string");
+    expect((description ?? "").trim().length).toBeGreaterThan(0);
   });
 });

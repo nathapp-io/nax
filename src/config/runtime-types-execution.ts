@@ -82,4 +82,12 @@ export interface CommandInterceptorConfig {
   git: {
     verbs: string[];
   };
+  /**
+   * Opt-in for the BASH site (US-002): the model-authored command string is
+   * routed through the provider's `rewrite` before it runs. Independent of the
+   * Git site — `enabled` is the master switch and this one requires it.
+   */
+  bash: {
+    enabled: boolean;
+  };
 }

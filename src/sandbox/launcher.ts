@@ -113,10 +113,13 @@ async function runWrapped(
   env: LaunchEnv,
 ): Promise<LaunchResult> {
   const rawCommand = req.spec.kind === "shell" ? req.spec.command : quoteArgvForShell(req.spec.argv);
-  // srt replaces the child environment, so the TMPDIR override cannot ride an
-  // `env` overlay — it has to be part of the shell command itself. `executed`
-  // below stays the unprefixed logical argv, so the ledger records what the
-  // agent wrote, not this shim.
+  // srt replaces the child environment wholesale, so a TMPDIR override cannot
+  // ride an `env` overlay — it has to be part of the shell command itself.
+  // Other overlay keys DO survive: the live suite proves it (`AGENT=1` reaches
+  // a wrapped child — see test/integration/sandbox/sandbox-live.test.ts
+  // "US-004 — the AGENT=1 overlay reaches a wrapped child"). `executed` below
+  // stays the unprefixed logical argv, so the ledger records what the agent
+  // wrote, not this shim.
   const command = env.tmpDir !== undefined ? `${tmpEnvPrefix(env.tmpDir)}${rawCommand}` : rawCommand;
   const shell = req.spec.kind === "shell" ? req.spec.shell : "/bin/sh";
   const commandId = _launcherDeps.newCommandId();
