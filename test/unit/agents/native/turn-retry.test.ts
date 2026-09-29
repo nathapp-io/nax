@@ -6,6 +6,7 @@ import {
   retryTransportFault,
   turnRetryDelayMs,
 } from "@/agents/native/session/turn-retry";
+import { NaxError } from "@/errors";
 
 /** Mirrors the fixture ProtocolStreamError used in turn-loop-compaction.test.ts. */
 class ProtocolStreamError extends Error {
@@ -40,6 +41,39 @@ describe("isRetryableTransportFault", () => {
   test("rejects non-object throws", () => {
     expect(isRetryableTransportFault("boom")).toBe(false);
     expect(isRetryableTransportFault(undefined)).toBe(false);
+  });
+
+  // US-005 AC10: a credential-store throw arrives as a status-less throw, which
+  // nax-ai files as kind "transport". Retrying it re-runs the failing helper
+  // instead of failing the request as an authentication fault.
+  test("US-005 AC10: rejects a transport fault whose cause chain holds CREDENTIAL_HELPER_INVALID", () => {
+    const fault = {
+      protocolError: {
+        kind: "transport",
+        message: "x",
+        cause: new Error("models error", {
+          cause: new NaxError("[credentials] malformed helper reply", "CREDENTIAL_HELPER_INVALID", {
+            stage: "credentials",
+          }),
+        }),
+      },
+    };
+    expect(isRetryableTransportFault(fault)).toBe(false);
+  });
+
+  test("US-005 AC11: accepts a transport fault with no credential fault in its cause chain", () => {
+    expect(isRetryableTransportFault(new ProtocolStreamError({ kind: "transport", message: "x" }))).toBe(true);
+  });
+
+  test("US-005 AC11: stays retryable when the cause chain holds a non-credential NaxError", () => {
+    const fault = {
+      protocolError: {
+        kind: "transport",
+        message: "x",
+        cause: new NaxError("agent missing", "AGENT_NOT_FOUND", { stage: "registry" }),
+      },
+    };
+    expect(isRetryableTransportFault(fault)).toBe(true);
   });
 });
 
