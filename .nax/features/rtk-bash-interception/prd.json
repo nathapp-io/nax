@@ -3,7 +3,7 @@
   "feature": "rtk-bash-interception",
   "branchName": "feat/rtk-bash-interception",
   "createdAt": "2026-09-29T00:00:00.000Z",
-  "updatedAt": "2026-09-29T05:34:20.811Z",
+  "updatedAt": "2026-09-29T06:11:13.024Z",
   "userStories": [
     {
       "id": "US-001",
@@ -110,8 +110,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -185,7 +185,10 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Integrates provider-generated shell strings with a permission-gated native tool and audit ledger; execution ordering is access-control critical."
+        "reasoning": "Integrates provider-generated shell strings with a permission-gated native tool and audit ledger; execution ordering is access-control critical.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "src/tools/bash.ts",
@@ -206,7 +209,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d5dddbb5e33954f81255b0a2b4b5f1a025867252"
     },
     {
       "id": "US-004",
