@@ -14,6 +14,23 @@ import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
 import type { TokenUsage } from "./cost";
 
+/**
+ * Identity of the credential that served a call (US-002).
+ *
+ * Deliberately carries no secret: `fingerprint` is the keyed digest, and
+ * `source` / `account` say where the credential came from without exposing it.
+ * Declared here — once — so every consumer imports one definition rather than
+ * re-spelling the shape.
+ */
+export interface AuthStamp {
+  /** Keyed credential digest (see `fingerprint.ts`). Not comparable across machines. */
+  fingerprint: string;
+  /** Where the credential was read from. */
+  source: "file" | "exec";
+  /** Account label the source reported, when it reports one. */
+  account?: string;
+}
+
 /** trackedSpawn hard deadlines (ms) — teardown vs startup, resolved from config.agent.acp (#1583). */
 export interface TrackedSpawnDeadlineOptions {
   trackedSpawnDeadlineMs?: number;
