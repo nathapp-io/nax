@@ -5,7 +5,12 @@
  * never awaited by the caller. settle() attaches the ledger outcome. A row is
  * written once both halves exist. Every method is total: what stops on a
  * failure is the row's model half (or the row), never the call.
+ *
+ * When `guard` is supplied, the shadow also exposes a `CommandGuard` that
+ * shares the classifier cache and the rule baseline (US-003). The guard
+ * never re-classifies and never rejects.
  */
+import { createCommandGuard } from "./guard";
 import { callIdentifiers } from "./identifiers";
 import { QUESTION_SET_VERSION } from "./questions";
 import { scoreRules } from "./rule-scorer";
@@ -29,6 +34,12 @@ export interface CommandShadowOptions {
   /** Bounds drain(); the same value as the client timeout. */
   readonly timeoutMs: number;
   readonly onWriteError?: (err: unknown) => void;
+  /**
+   * Opt-in flag-for-review guard (US-003). When set, `shadow.guard` exposes
+   * a `CommandGuard` whose `assess` reuses this shadow's classifier cache
+   * and rule baseline. Absent keeps `shadow.guard` undefined.
+   */
+  readonly guard?: { readonly threshold: number };
 }
 
 export const _commandShadowDeps = {
@@ -98,6 +109,15 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
     return { promise, cached: false };
   }
 
+  /**
+   * Public form used by the optional guard (US-003). Returns the SAME
+   * cached promise `observe` awaits, so the shadow classifies a command
+   * once even when both `observe` and `guard.assess` are called for it.
+   */
+  function classifyCachedForGuard(command: string): Promise<ModelResult> {
+    return classifyCached(command).promise;
+  }
+
   function flush(key: string, entry: Entry): void {
     if (entry.written || entry.model === undefined || entry.outcome === undefined) return;
     entry.written = true;
@@ -149,6 +169,18 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
     };
   }
 
+  // Build the guard once, only when requested. The closure captures the
+  // same `classifyCachedForGuard` and rule scorer `observe` uses, so the
+  // shadow and the guard agree on the cached model and the rule baseline.
+  const guard =
+    opts.guard === undefined
+      ? undefined
+      : createCommandGuard({
+          threshold: opts.guard.threshold,
+          scoreRules: (command, cwd) => scoreRules(command, cwd !== undefined ? { root: cwd } : {}),
+          classifyCached: classifyCachedForGuard,
+        });
+
   return {
     observe(key, obs) {
       try {
@@ -199,5 +231,7 @@ export function createCommandShadow(opts: CommandShadowOptions): CommandShadow {
         // drain() is awaited in the execution stage's finally; it must not throw.
       }
     },
+
+    ...(guard !== undefined ? { guard } : {}),
   };
 }

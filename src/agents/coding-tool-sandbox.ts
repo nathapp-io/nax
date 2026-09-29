@@ -173,6 +173,19 @@ export function rawRefusalFor(launcher: CommandLauncher | undefined): string | u
 }
 
 /**
+ * US-004: whether the session's sandbox confines temp writes to this run's own
+ * temp root.
+ *
+ * True exactly when the launcher is available AND says `sharedTmp: false` —
+ * the only state under which the command guard may skip the classifier for a
+ * temp-only command. An available launcher without `sharedTmp`, an unavailable
+ * or disabled one, and no launcher at all all read as NOT confined.
+ */
+export function isTempConfined(launcher: CommandLauncher | undefined): boolean {
+  return launcher?.state.kind === "available" && launcher.state.sharedTmp === false;
+}
+
+/**
  * US-002: the raw-screen options `compileToolPolicy` consumes, derived from the
  * launcher's state.
  *

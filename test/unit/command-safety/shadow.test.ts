@@ -451,3 +451,19 @@ describe("createCommandShadow: literal /tmp write signal (US-005)", () => {
     expect(rows[0]?.signals.tmpWrite).toBe(true);
   });
 });
+
+describe("createCommandShadow: the guard option (US-003)", () => {
+  test("AC22: the shadow exposes a guard only when it was created with one", () => {
+    const withoutGuard = createCommandShadow({ classify: async () => ANSWERED, write, runId: "r1", timeoutMs: 1000 });
+    const withGuard = createCommandShadow({
+      classify: async () => ANSWERED,
+      write,
+      runId: "r1",
+      timeoutMs: 1000,
+      guard: { threshold: 0.6 },
+    });
+
+    expect(withoutGuard.guard).toBeUndefined();
+    expect(withGuard.guard?.threshold).toBe(0.6);
+  });
+});

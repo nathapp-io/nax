@@ -2,8 +2,11 @@
  * P5 command-safety shadow: shared types.
  *
  * Spec: docs/superpowers/specs/2026-09-23-p5-command-safety-shadow-design.md.
- * Observational only. Nothing typed here can change a verdict, delay a call or
- * fail a call; the types exist so the row a later decision reads is exact.
+ * Observational only — except for the optional flag-for-review guard (US-003),
+ * which is also declared here: the shadow's row is a fact on disk, the
+ * guard's decision is a flag the caller routes. Nothing else typed here can
+ * change a verdict, delay a call or fail a call; the types exist so the row
+ * a later decision reads is exact.
  */
 
 import type { CallIdentifiers } from "./identifiers";
@@ -95,6 +98,52 @@ export interface CommandShadow {
   settle(key: string, outcome: FinalOutcome, run?: ExecRun): void;
   /** Resolves within one timeout; afterwards every pending row has been written. */
   drain(): Promise<void>;
+  /**
+   * Opt-in flag-for-review guard (US-003). When present, `assess` shares the
+   * shadow's rule baseline and classifier cache — the guard never
+   * re-classifies and never rejects, so absence is the safe default.
+   */
+  readonly guard?: CommandGuard;
+}
+
+/** The guard's total assessment input. Mirrors `Observation` minus the fields the guard does not need. */
+export interface GuardInput {
+  /** The policy identity's command string; Exec passes `argv.join(" ")`. */
+  readonly command: string;
+  /** The policy root, used to score the rules and judge the temp-only exemption. */
+  readonly cwd?: string;
+  /** The session's sandbox confines temp writes (#2285). */
+  readonly tempConfined: boolean;
+}
+
+/** A flagged command: what the guard wants reviewed, and why. */
+export interface GuardDecision {
+  readonly flagged: boolean;
+  /** 0..1, the composite score behind the flag. */
+  readonly score: number;
+  /** The threshold the guard was configured with. Carried on every decision. */
+  readonly threshold: number;
+  /** Which contributor named the verdict. */
+  readonly basis: "model" | "rules" | "temp-only";
+  /**
+   * The dominant category behind the flag, when one is known.
+   *
+   * Absent for an unflagged decision and for a `blocked` model with no rule
+   * hit. Under the temp-only exemption, `outside_project` is skipped even
+   * when the rules alone would have named it.
+   */
+  readonly category?: QuestionId;
+}
+
+/**
+ * The guard exposes only the total assessment the shadow shares. It never
+ * rejects: every method resolves; nothing here can stop a command on its
+ * own (master plan D4a).
+ */
+export interface CommandGuard {
+  readonly threshold: number;
+  /** Total: never rejects. */
+  assess(input: GuardInput): Promise<GuardDecision>;
 }
 
 export interface RuleResult {

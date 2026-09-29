@@ -145,3 +145,17 @@ describe("review #22: execution safety keys are described", () => {
     expect(FIELD_DESCRIPTIONS[key]?.length ?? 0).toBeGreaterThan(0);
   });
 });
+
+describe("FIELD_DESCRIPTIONS.execution.commandSafety.guard (US-003)", () => {
+  test.each(["execution.commandSafety.guard", "execution.commandSafety.guard.threshold"])(
+    "AC5: %s has a non-empty description",
+    (key) => {
+      expect(typeof FIELD_DESCRIPTIONS[key]).toBe("string");
+      expect(FIELD_DESCRIPTIONS[key].length).toBeGreaterThan(0);
+    },
+  );
+
+  test("the commandSafety description names the flag-for-review guard", () => {
+    expect(FIELD_DESCRIPTIONS["execution.commandSafety"]).toContain("flag-for-review");
+  });
+});

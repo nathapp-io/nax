@@ -4,10 +4,10 @@ import { RULE_SET_VERSION, scoreRules } from "@/command-safety";
 const hits = (command: string) => scoreRules(command).hits;
 
 describe("rule scorer", () => {
-  test("version is 2 and every category is reported", () => {
+  test("version is 3 and every category is reported", () => {
     const r = scoreRules("ls");
     expect(r.version).toBe(RULE_SET_VERSION);
-    expect(RULE_SET_VERSION).toBe(2);
+    expect(RULE_SET_VERSION).toBe(3);
     expect(Object.keys(r.hits).sort()).toEqual([
       "deletes_data",
       "discards_work",
@@ -197,5 +197,124 @@ describe("rule scorer — outside_project with the project root (v2)", () => {
     const root = "/Users/dev/my.repo+(1)";
     expect(outside(`cd ${root} && ls`, root)).toBe(false);
     expect(outside("cd /Users/dev/myXrepo+(1) && ls", root)).toBe(true);
+  });
+});
+
+/**
+ * v3: the discards_work family gains four path-scoped patterns — `git checkout`
+ * of a path, `git restore` of a path, `git restore --worktree`, and a forced
+ * `git checkout` / `git switch`. Each pattern is bounded to one shell segment,
+ * so a path in a neighbouring segment neither creates nor suppresses a hit.
+ */
+describe("rule scorer — path-scoped discards (v3)", () => {
+  test("US-001 AC14: RULE_SET_VERSION and scoreRules().version are both 3", () => {
+    expect(RULE_SET_VERSION).toBe(3);
+    expect(scoreRules("ls").version).toBe(3);
+  });
+
+  test("US-001 AC1: git checkout of a dot-extension file path is a discard", () => {
+    expect(hits("git checkout src/cli/approvals.ts").discards_work).toBe(true);
+  });
+
+  test("US-001 AC1 boundary: a bare git checkout names no path, so it is not a discard", () => {
+    expect(hits("git checkout").discards_work).toBe(false);
+  });
+
+  test("US-001 AC2: git checkout of a trailing-slash directory path is a discard", () => {
+    expect(hits("git checkout scripts/baselines/").discards_work).toBe(true);
+  });
+
+  test("US-001 AC2 boundary: a word with no trailing slash and no extension is not a path", () => {
+    expect(hits("git checkout scripts").discards_work).toBe(false);
+  });
+
+  test("US-001 AC3: git checkout of a ref plus a path is a discard", () => {
+    expect(hits("git checkout HEAD src/index.ts").discards_work).toBe(true);
+  });
+
+  test("US-001 AC3 boundary: a ref alone, with no path, is not a discard", () => {
+    expect(hits("git checkout HEAD").discards_work).toBe(false);
+  });
+
+  test("US-001 AC4: a path checkout in a later && segment is a discard", () => {
+    expect(hits("bun test && git checkout docs/guides/cli-reference.md").discards_work).toBe(true);
+  });
+
+  test("US-001 AC5: git restore of a path is a discard", () => {
+    expect(hits("git restore test/unit/config/schemas-review.test.ts").discards_work).toBe(true);
+  });
+
+  test("US-001 AC5 boundary: git restore with no path restores nothing, so it is not a discard", () => {
+    expect(hits("git restore").discards_work).toBe(false);
+  });
+
+  test("US-001 AC6: git restore with --staged and --worktree is a discard", () => {
+    expect(hits("git restore --staged --worktree src/a.ts").discards_work).toBe(true);
+  });
+
+  test("US-001 AC7: git restore --staged alone only unstages, so it is not a discard", () => {
+    expect(hits("git restore --staged src/a.ts").discards_work).toBe(false);
+  });
+
+  test("US-001 AC8: git restore -S alone only unstages, so it is not a discard", () => {
+    expect(hits("git restore -S src/a.ts").discards_work).toBe(false);
+  });
+
+  test("US-001 AC9: git checkout -f discards the working tree, branch name and all", () => {
+    expect(hits("git checkout -f main").discards_work).toBe(true);
+  });
+
+  test("US-001 AC9 boundary: git checkout --force is the long form of -f", () => {
+    expect(hits("git checkout --force main").discards_work).toBe(true);
+  });
+
+  test("US-001 AC10: git switch --discard-changes is a discard", () => {
+    expect(hits("git switch --discard-changes main").discards_work).toBe(true);
+  });
+
+  test("US-001 AC10 boundary: a plain git switch only moves branches, so it is not a discard", () => {
+    expect(hits("git switch main").discards_work).toBe(false);
+  });
+
+  test.each([
+    "git checkout main",
+    "git checkout feature/x",
+    "git checkout -b feature/new",
+    "git checkout release/v0.82.1",
+    "git checkout v0.83.0",
+  ])("US-001 AC11: a branch or tag checkout is not a discard: %s", (command) => {
+    expect(hits(command).discards_work).toBe(false);
+  });
+
+  test("US-001 AC12: a path in a later ';' segment does not make an earlier branch checkout a discard", () => {
+    expect(hits("git checkout main; ls src/").discards_work).toBe(false);
+  });
+
+  test("US-001 AC12 boundary: a path in a later '&&' segment does not either", () => {
+    expect(hits("git checkout main && ls src/").discards_work).toBe(false);
+  });
+
+  test("US-001 AC12 boundary: a path in a later '|' segment does not either", () => {
+    expect(hits("git checkout main | cat src/a.ts").discards_work).toBe(false);
+  });
+
+  test("US-001 AC13: --staged in a later segment does not suppress an earlier git restore", () => {
+    expect(hits("git restore src/a.ts; git diff --staged").discards_work).toBe(true);
+  });
+
+  test("US-001 AC13 boundary: --staged in the same segment still suppresses the restore", () => {
+    expect(hits("git restore --staged src/a.ts; git diff").discards_work).toBe(false);
+  });
+
+  test("a git word in another command's arguments does not trigger a v3 discard", () => {
+    expect(hits("echo git checkout src/a.ts").discards_work).toBe(false);
+    expect(hits("sudo echo git restore src/a.ts").discards_work).toBe(false);
+  });
+
+  test("git wrappers still trigger path-scoped discard rules", () => {
+    expect(hits("sudo -u root git checkout src/a.ts").discards_work).toBe(true);
+    expect(hits("sudo -h host git checkout src/a.ts").discards_work).toBe(true);
+    expect(hits("sudo -D /tmp git checkout src/a.ts").discards_work).toBe(true);
+    expect(hits("env MODE=safe git restore src/a.ts").discards_work).toBe(true);
   });
 });

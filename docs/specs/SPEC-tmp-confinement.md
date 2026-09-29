@@ -57,7 +57,9 @@ Symbols changed. The baseline locates the code only; implement the target.
 - `sessionTmpDir(runId, sessionName)` — same file. The target is `runTmpRoot(runId)/<sanitized sessionName>`, with sanitization unchanged.
 - `detectTmpWrite(command, cwd?)` — `src/command-safety/tmp-write.ts`.
   - Baseline: excludes paths under `<root>/nax-*`.
-  - Target: also excludes paths under `<root>/nax/`, for both `/tmp` and `/private/tmp`.
+  - Target: also excludes paths under `<root>/nax/`, for both `/tmp` and `/private/tmp`. The `<root>/nax-*`
+    exemption is restricted to paths whose `<root>/nax-` segment is the WHOLE name (digits only),
+    so `/tmp/nax-<uid>` is exempt but `/tmp/nax-r1`, `/tmp/nax-red-check`, `/tmp/nax-501x` are real writes.
 - `defaultTempRoots(): string[]` (`src/sandbox/policy-inputs.ts:70`). The target keeps the function as the shared-tmp roots and adds `runTempRoots(opts: { runTmpRoot: string; tmpdir: string }): string[]` next to it.
 - `_sessionSandboxDeps` / `resolveSessionSandbox(args)` — `src/agents/coding-tool-sandbox.ts:28-106`.
   - Baseline: `tempRoots: _sessionSandboxDeps.tempRoots()`.

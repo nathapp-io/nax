@@ -36,7 +36,7 @@ import { resolvePermissions } from "../config/permissions";
 import type { QualityCommandSpec } from "../quality";
 import { resolveBashSupport } from "./coding-tool-bash";
 import { buildDeclaredCommandTools } from "./coding-tool-extras";
-import { rawScreenOptionsFor } from "./coding-tool-sandbox";
+import { isTempConfined, rawScreenOptionsFor } from "./coding-tool-sandbox";
 import {
   buildLedgerHeader,
   declaredCommandsFrom,
@@ -142,7 +142,10 @@ export function buildCodingToolSupport(args: {
   bashApproval?: BashApprovalMode;
   /** Injectable ask resolver (Task 3); defaults to the headless deny resolver. */
   askResolver?: AskResolver;
-  /** P5 shadow classifier; observational only. */
+  /**
+   * P5 shadow classifier. Observational, except its optional `guard`
+   * (US-004): a flagged allowed `Bash`/`Exec` call becomes an ask.
+   */
   commandShadow?: CommandShadow;
   /** P4: resolved by resolveCodingToolSupport (async); data only here. */
   launcher?: CommandLauncher;
@@ -233,6 +236,10 @@ export function buildCodingToolSupport(args: {
     ...(args.abortSignal !== undefined ? { signal: args.abortSignal } : {}),
     ...(args.askResolver !== undefined ? { askResolver: args.askResolver } : {}),
     ...(args.commandShadow !== undefined ? { commandShadow: args.commandShadow } : {}),
+    // US-004: the sandbox's temp posture reaches the command guard's temp-only
+    // exemption. `isTempConfined` keeps the state read out of this function,
+    // which sits at its complexity baseline.
+    tempConfined: isTempConfined(args.launcher),
     ...(args.pipelineStage !== undefined ? { pipelineStage: args.pipelineStage } : {}),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     ...(args.callId !== undefined ? { callId: args.callId } : {}),

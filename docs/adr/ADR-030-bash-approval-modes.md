@@ -581,8 +581,12 @@ positives in the P5 labels.
 - A literal `/tmp/x` write in a sandboxed command now fails with "Operation not permitted" or
   "Read-only file system", and the denial hint tells the agent where to write instead. The
   instruction #2269 could only state is now enforced.
-- The command-safety `tmpWrite` signal recognises both `/tmp/nax/` and `/tmp/nax-` as nax's own,
-  so a compliant `$TMPDIR` write is not counted as a stray one.
+- The command-safety `tmpWrite` signal recognises the shared parent `/tmp/nax/`
+  and the all-digit per-user fallback `/tmp/nax-<uid>` as nax's own, so a
+  compliant `$TMPDIR` write is not counted as a stray one. Any other
+  `/tmp/nax-<name>` directory (`/tmp/nax-r1`, `/tmp/nax-red-check`, …) is a
+  real write — the confined sandbox denies writes there, so an agent that
+  lands in one is doing something the new layout was meant to forbid.
 - Unsandboxed sessions (sandbox disabled or unavailable, `gated`/`escalate` unwrapped) are
   unchanged: only the prompt text applies there.
 - A tool that writes to a hardcoded `/tmp` path without honouring `TMPDIR` fails in a sandboxed

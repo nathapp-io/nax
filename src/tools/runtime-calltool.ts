@@ -9,15 +9,15 @@
  * (`src/tools/index.ts`) re-exports it. This file imports `runtime.ts`
  * TYPE-ONLY — a runtime import would cycle back to the factory.
  *
- * One asymmetry is preserved on purpose: the denial-path breach warn below
- * calls the module-level `getSafeLogger` import directly, while the ledger
- * `log` in `runtime.ts` reads `_codingToolDeps.getLogger()`. Both behaved
- * that way before the extraction; the seam stub in the mirror suites has
- * never covered the warn.
+ * One asymmetry is preserved on purpose: the denial-path breach warn below and the
+ * rejected-guard warn (US-004) call the module-level `getSafeLogger` import
+ * directly, while the ledger `log` in `runtime.ts` reads
+ * `_codingToolDeps.getLogger()`. Both behaved that way before the extraction;
+ * the seam stub in the mirror suites has never covered either warn.
  */
 
 import { randomUUID } from "node:crypto";
-import { type CommandShadow, openShadowTap } from "@/command-safety";
+import { type CommandGuard, type CommandShadow, openShadowTap } from "@/command-safety";
 import { getSafeLogger } from "@/logger";
 import { ASK_CANCELLED_REASON, type AskControl, type AskResolver, type AskVerdict } from "@/permissions";
 import { errorMessage } from "@/utils/errors";
@@ -26,7 +26,7 @@ import { askDenyReason, askSummary } from "./ask-request";
 import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect";
 import type { CodingTool } from "./registry";
 import type { CodingToolOutcome, ToolCallContext } from "./runtime";
-import { EXEC_TOOL_NAME, type ToolPolicy } from "./types";
+import { BASH_TOOL_NAME, EXEC_TOOL_NAME, type ToolPolicy } from "./types";
 
 type PolicyVerdict = ReturnType<ToolPolicy["check"]>;
 
@@ -125,6 +125,82 @@ export function openCallShadowTap(p: {
     ...(p.context?.roundTrips !== undefined ? { roundTrips: p.context.roundTrips } : {}),
     ...(p.context?.toolCallId !== undefined ? { toolCallId: p.context.toolCallId } : {}),
   });
+}
+
+/**
+ * The command string the guard assesses, or undefined for an identity the
+ * guard does not cover. `Bash` reports its `command` field; `Exec` — the
+ * identity a `RunCommand` call carrying `argv` resolves to — reports the argv
+ * joined with single spaces, exactly the string the shadow observes and
+ * classifies. Any other identity (and a malformed command / argv) is not
+ * guarded; the policy has already refused that input.
+ */
+function guardCommand(p: {
+  identity: string;
+  tool: CodingTool;
+  input: Record<string, unknown>;
+  argvField: string | undefined;
+}): string | undefined {
+  if (p.identity === BASH_TOOL_NAME) {
+    const field = p.tool.scope.commandField;
+    const value = field === undefined ? undefined : p.input[field];
+    return typeof value === "string" ? value : undefined;
+  }
+  if (p.identity !== EXEC_TOOL_NAME || p.argvField === undefined) return undefined;
+  const argv = p.input[p.argvField];
+  if (!Array.isArray(argv) || !argv.every((a) => typeof a === "string")) return undefined;
+  return argv.join(" ");
+}
+
+/**
+ * US-004: the guard's flag-for-review route for an ALLOWED command.
+ *
+ * Returns the ask-shaped denial the flagged call routes through
+ * `resolveAskOutcome`, and undefined in every other case — no guard
+ * configured, an identity other than `Bash`/`Exec`, or an unflagged
+ * assessment — so the caller runs the tool exactly as it did before the guard
+ * existed. The guard is total by contract (US-003); a rejection, or a resolved
+ * decision the type does not actually hold, means that contract broke, so the
+ * call runs unguarded rather than being refused, and the failure is logged once
+ * per broken call.
+ */
+export async function resolveGuardDenial(p: {
+  identity: string;
+  tool: CodingTool;
+  input: Record<string, unknown>;
+  argvField: string | undefined;
+  guard: CommandGuard | undefined;
+  root: string;
+  tempConfined: boolean;
+  resolvedPaths: readonly string[];
+}): Promise<DeniedVerdict | undefined> {
+  const { guard } = p;
+  if (guard === undefined) return undefined;
+  const command = guardCommand(p);
+  if (command === undefined) return undefined;
+  // The whole decision — the assessment AND reading its fields — sits inside
+  // the fail-open try: the guard is total by contract, so anything that
+  // escapes here means the contract broke, including a resolved decision whose
+  // `score`/`threshold` is not the number the type promises. Both fail the
+  // same way: the call runs unguarded rather than erroring out of callTool.
+  try {
+    const decision = await guard.assess({ command, cwd: p.root, tempConfined: p.tempConfined });
+    if (!decision.flagged) return undefined;
+    const { category, score, threshold } = decision;
+    return {
+      allowed: false,
+      outcome: "ask",
+      breach: false,
+      rule: "command-safety",
+      reason: `flagged for review by command safety: ${category ?? "blocked"} (score ${score.toFixed(2)} >= ${threshold})`,
+      resolvedPaths: p.resolvedPaths,
+    };
+  } catch (err) {
+    getSafeLogger()?.warn("command-safety", "Command-safety guard failed; the call runs unguarded", {
+      error: errorMessage(err),
+    });
+    return undefined;
+  }
 }
 
 /**

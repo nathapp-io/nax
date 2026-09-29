@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-29T03:38:28.571Z",
+  "acFingerprint": "sha256:310fc5f7fd1a0d155f62f347401410b0d338e1b154fa141ac553ef26604f3bc9",
+  "layoutFingerprint": "sha256:54c3d12a076bf6655ec964fec3403fed4a6e7856cb641564cfa48567b69c5285",
+  "storyCount": 4,
+  "acCount": 78,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": ".nax/features/command-safety-guard/.nax-acceptance.test.ts",
+      "expected": 78,
+      "found": 78,
+      "missing": []
+    }
+  ]
+}
