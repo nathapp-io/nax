@@ -186,15 +186,71 @@ const GIT_KEY_VALUE_GLOBALS: ReadonlySet<string> = new Set([
   "--super-prefix=",
 ]);
 
-/** Locate `git` in `words` and advance past its global options. Returns the
+/** `sudo` options whose values occupy the next shell word. */
+const SUDO_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  "-u",
+  "-g",
+  "-h",
+  "-D",
+  "-C",
+  "-p",
+  "-r",
+  "-t",
+  "-U",
+  "--user",
+  "--group",
+  "--host",
+  "--chdir",
+  "--close-from",
+  "--prompt",
+  "--role",
+  "--type",
+  "--other-user",
+]);
+
+/** Skip a sudo/doas prefix, including options with a separate value. */
+function afterPrivilegeWrapper(words: readonly string[]): number {
+  if (words[0] !== "sudo" && words[0] !== "doas") return 0;
+  let i = 1;
+  while (words[i]?.startsWith("-")) {
+    const option = words[i++];
+    if (option === "--") break;
+    if (option !== undefined && SUDO_VALUE_OPTIONS.has(option)) i += 1;
+  }
+  return i;
+}
+
+/** Skip an env prefix and its assignments and options. */
+function afterEnvWrapper(words: readonly string[], start: number): number {
+  if (words[start] !== "env") return start;
+  let i = start + 1;
+  while (i < words.length) {
+    const word = words[i] as string;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word) || word === "-i" || word === "--ignore-environment") {
+      i += 1;
+    } else if (word === "-u" || word === "--unset") {
+      i += 2;
+    } else break;
+  }
+  return i;
+}
+
+/** Find `git` in the executable position after supported shell wrappers. */
+function gitExecutableIndex(words: readonly string[]): number | undefined {
+  let i = afterEnvWrapper(words, afterPrivilegeWrapper(words));
+  if (words[i] === "command" || words[i] === "exec") i += 1;
+  return words[i] === "git" ? i : undefined;
+}
+
+/** Locate executable `git` in `words` and advance past its global options. Returns the
    subcommand and the index of the first argument (or `undefined` when `git`
    isn't there or has no subcommand). Handles `sudo git`, `env VAR=x git`,
    `git --no-pager checkout`, etc. */
 function locateGit(
   words: readonly string[],
 ): { readonly subcommand: string; readonly args: readonly string[] } | undefined {
-  const gitIdx = words.indexOf("git");
-  if (gitIdx === -1) return undefined;
+  const gitIdx = gitExecutableIndex(words);
+  if (gitIdx === undefined) return undefined;
   let i = gitIdx + 1;
   while (i < words.length) {
     const w = words[i] as string;

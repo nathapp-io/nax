@@ -51,6 +51,7 @@ function isPathLike(token: string): boolean {
  * `--flag=value` to extract. `cd -P /tmp` has `-P` as the option and `/tmp`
  * as the target. */
 function isOptionFlag(token: string): boolean {
+  if (token === "-") return false;
   if (!token.startsWith("-")) return false;
   if (isPathLike(token)) return false;
   if (flagValue(token) !== undefined) return false;
@@ -154,6 +155,7 @@ function frameAfter(segment: BashSegment, frame: string | undefined, cwd: string
   if (command?.text !== "cd") return frame;
   const target = rest.find((token) => !isOptionFlag(token.text));
   if (target === undefined) return frame;
+  if (target.text === "-") return undefined;
   if (classify({ text: target.text, opaque: target.opaque }, frame, cwd) === "refuse") return undefined;
   if (target.text.startsWith("/")) return posix.normalize(target.text);
   return frame === undefined ? undefined : posix.normalize(posix.join(frame, target.text));

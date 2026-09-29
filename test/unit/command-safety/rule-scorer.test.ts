@@ -305,4 +305,16 @@ describe("rule scorer — path-scoped discards (v3)", () => {
   test("US-001 AC13 boundary: --staged in the same segment still suppresses the restore", () => {
     expect(hits("git restore --staged src/a.ts; git diff").discards_work).toBe(false);
   });
+
+  test("a git word in another command's arguments does not trigger a v3 discard", () => {
+    expect(hits("echo git checkout src/a.ts").discards_work).toBe(false);
+    expect(hits("sudo echo git restore src/a.ts").discards_work).toBe(false);
+  });
+
+  test("git wrappers still trigger path-scoped discard rules", () => {
+    expect(hits("sudo -u root git checkout src/a.ts").discards_work).toBe(true);
+    expect(hits("sudo -h host git checkout src/a.ts").discards_work).toBe(true);
+    expect(hits("sudo -D /tmp git checkout src/a.ts").discards_work).toBe(true);
+    expect(hits("env MODE=safe git restore src/a.ts").discards_work).toBe(true);
+  });
 });

@@ -275,4 +275,8 @@ describe("isTempOnly", () => {
   test("US-002 AC20 boundary: a . token is path-like, so an unknown frame refuses it", () => {
     expect(isTempOnly("cd $D && cp /tmp/x .", CWD)).toBe(false);
   });
+
+  test("cd - makes a later relative path unjudgeable", () => {
+    expect(isTempOnly("cd - && cat ./file > /tmp/out", CWD)).toBe(false);
+  });
 });
