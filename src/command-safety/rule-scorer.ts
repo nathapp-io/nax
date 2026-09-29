@@ -148,66 +148,197 @@ function isPathShaped(word: string): boolean {
   return word.endsWith("/") || /\.[A-Za-z][A-Za-z0-9]*$/.test(word);
 }
 
-/** True when `word` is a force / discard-changes flag. */
+/** True when `word` is one of the force / discard-changes flags as a standalone
+ *  token. Bundled short flags like `-fq` or `-fb` are checked separately via
+ *  `bundledIncludesF`. */
 const FORCE_FLAGS: ReadonlySet<string> = new Set(["-f", "--force", "--discard-changes"]);
 
-/** True when `word` is a stage-restoring flag — suppresses the path-discard pattern. */
+/** True when `word` is a stage-restoring flag — the only flag that suppresses
+ *  the path-discard pattern (per spec). */
 const STAGED_FLAGS: ReadonlySet<string> = new Set(["--staged", "-S"]);
 
 /** True when `word` is a worktree-restore flag — its own pattern handles these. */
 const WORKTREE_FLAGS: ReadonlySet<string> = new Set(["--worktree", "-W"]);
 
+/** `git`'s global options that take no value — pass-through, then look for
+ *  the subcommand. */
+const GIT_BOOLEAN_GLOBALS: ReadonlySet<string> = new Set([
+  "--no-pager",
+  "--no-replace-objects",
+  "--bare",
+  "--literal-pathspecs",
+  "--glob-pathspecs",
+  "--noglob-pathspecs",
+  "--icase-pathspecs",
+]);
+
+/** `git`'s global options that take a separate value (the next token). */
+const GIT_VALUE_GLOBALS: ReadonlySet<string> = new Set(["-c", "-C"]);
+
+/** `git`'s global long options that embed their value (`--key=value`). */
+const GIT_KEY_VALUE_GLOBALS: ReadonlySet<string> = new Set([
+  "--git-dir=",
+  "--exec-path=",
+  "--work-tree=",
+  "--namespace=",
+  "--super-prefix=",
+]);
+
+/** Locate `git` in `words` and advance past its global options. Returns the
+   subcommand and the index of the first argument (or `undefined` when `git`
+   isn't there or has no subcommand). Handles `sudo git`, `env VAR=x git`,
+   `git --no-pager checkout`, etc. */
+function locateGit(
+  words: readonly string[],
+): { readonly subcommand: string; readonly args: readonly string[] } | undefined {
+  const gitIdx = words.indexOf("git");
+  if (gitIdx === -1) return undefined;
+  let i = gitIdx + 1;
+  while (i < words.length) {
+    const w = words[i] as string;
+    if (GIT_BOOLEAN_GLOBALS.has(w)) {
+      i += 1;
+      continue;
+    }
+    if (GIT_VALUE_GLOBALS.has(w)) {
+      // The value is a separate token; skip it.
+      i += 2;
+      continue;
+    }
+    if ([...GIT_KEY_VALUE_GLOBALS].some((prefix) => w.startsWith(prefix))) {
+      i += 1;
+      continue;
+    }
+    break;
+  }
+  const subcommand = words[i];
+  if (subcommand === undefined) return undefined;
+  return { subcommand, args: words.slice(i + 1) };
+}
+
+/** True when `token` is a short-flag bundle that includes `f` (so `-f`,
+ *  `-fq`, `-fb`, `-fqH`, ...). Stops at `--` so a long flag like
+ *  `--force-something` is not misread as a bundle. */
+function bundledIncludesF(token: string): boolean {
+  if (token === "--" || token.startsWith("--") || !token.startsWith("-")) return false;
+  if (token === "-f") return true;
+  return token.length > 2 && token.slice(1).includes("f");
+}
+
+/** True when `args` contains a force / discard-changes flag, either standalone
+ *  or as a bundled short-flag character. */
+function hasForceFlag(args: readonly string[]): boolean {
+  for (const w of args) {
+    if (FORCE_FLAGS.has(w)) return true;
+    if (bundledIncludesF(w)) return true;
+  }
+  return false;
+}
+
+/** True when `args` has at least one token that is not a flag (does not start
+ *  with `-`). */
+function hasNonFlagWord(args: readonly string[]): boolean {
+  return args.some((w) => !w.startsWith("-"));
+}
+
+/** True when `args` has at least one path-shaped word. */
+function hasPathShapedWord(args: readonly string[]): boolean {
+  return args.some(isPathShaped);
+}
+
 /** Pattern 1: `git checkout <path-shaped words>`. The `--` and existing
  *  `git checkout <ref> -- .` and `git checkout .` patterns still win via
  *  the v2 regexes — this one only fires on plain path arguments. A
  *  `-f`/`--force` flag wins via Pattern 4. */
-function checkoutPathDiscard(words: readonly string[]): boolean {
-  if (words[0] !== "git" || words[1] !== "checkout") return false;
-  const rest = words.slice(2);
-  if (rest.length === 0) return false;
-  if (rest.some((w) => w === "--" || FORCE_FLAGS.has(w))) return false;
-  if (rest.some((w) => w.startsWith("-"))) return false;
-  return rest.some(isPathShaped);
+function checkoutPathDiscard(args: readonly string[]): boolean {
+  if (args.some((w) => w === "--")) return false;
+  if (hasForceFlag(args)) return false;
+  return hasPathShapedWord(args);
 }
 
-/** Pattern 2: `git restore <path-shaped words>` with no `--staged`/`-S`. */
-function restorePathDiscard(words: readonly string[]): boolean {
-  if (words[0] !== "git" || words[1] !== "restore") return false;
-  const rest = words.slice(2);
-  if (rest.length === 0) return false;
-  if (rest.some((w) => STAGED_FLAGS.has(w))) return false;
-  if (rest.some((w) => WORKTREE_FLAGS.has(w))) return false;
-  if (rest.some((w) => w.startsWith("-"))) return false;
-  return rest.some(isPathShaped);
+/** Pattern 2: `git restore` with at least one non-flag word and no
+ *  `--staged`/`-S` flag (per spec). Only those two flags suppress; every
+ *  other flag (`-p`, `--source=HEAD`, ...) keeps the rule live. */
+function restorePathDiscard(args: readonly string[]): boolean {
+  if (args.some((w) => STAGED_FLAGS.has(w))) return false;
+  if (args.some((w) => WORKTREE_FLAGS.has(w))) return false;
+  return hasNonFlagWord(args);
 }
 
 /** Pattern 3: `git restore` with `--worktree` or `-W`. Suppression is
  *  irrelevant: even a `--staged` alongside `--worktree` is a discard. */
-function restoreWorktreeDiscard(words: readonly string[]): boolean {
-  if (words[0] !== "git" || words[1] !== "restore") return false;
-  return words.slice(2).some((w) => WORKTREE_FLAGS.has(w));
+function restoreWorktreeDiscard(args: readonly string[]): boolean {
+  return args.some((w) => WORKTREE_FLAGS.has(w));
 }
 
 /** Pattern 4: `git checkout` or `git switch` with `-f`/`--force`/`--discard-changes`. */
-function forceDiscard(words: readonly string[]): boolean {
-  if (words[0] !== "git") return false;
-  if (words[1] !== "checkout" && words[1] !== "switch") return false;
-  return words.slice(2).some((w) => FORCE_FLAGS.has(w));
+function forceDiscard(args: readonly string[]): boolean {
+  return hasForceFlag(args);
+}
+
+/** v3 matchers applied to one segment, once `git` and its subcommand have been
+ *  located (so `sudo git`, `git --no-pager`, `git -c ...` are all handled). */
+function segmentMatchesV3(subcommand: string, args: readonly string[]): boolean {
+  if (subcommand === "checkout") return checkoutPathDiscard(args) || forceDiscard(args);
+  if (subcommand === "restore") return restorePathDiscard(args) || restoreWorktreeDiscard(args);
+  if (subcommand === "switch") return forceDiscard(args);
+  return false;
 }
 
 /** True when any one segment of `command` matches one of the v3 patterns.
- *  The lexer is safe-by-refusal: on refusal its `prefix` holds the
- *  completed segments, which is what we want — an unreadable later
- *  construct must not hide an earlier hit. */
+ *  On a successful lex, every segment is available. On refusal the lexer's
+ *  `prefix` holds the completed segments BEFORE the refusal — a discard
+ *  AFTER the refused construct is silently lost, so we also fall back to a
+ *  segment-bounded regex scan over the whole command. The regex pass is
+ *  deliberately looser than the per-segment logic (only runs on lex
+ *  refusal, which is rare). */
 function discardsWorkV3(command: string): boolean {
   const lexed = lexBashCommand(command);
   const segments = lexed.kind === "ok" ? lexed.segments : lexed.prefix;
-  return segments.some((segment) => {
-    const words = segment.tokens.map((t) => t.text);
-    return (
-      checkoutPathDiscard(words) || restorePathDiscard(words) || restoreWorktreeDiscard(words) || forceDiscard(words)
-    );
+  const fromLexer = segments.some((segment) => {
+    const located = locateGit(segment.tokens.map((t) => t.text));
+    if (located === undefined) return false;
+    return segmentMatchesV3(located.subcommand, located.args);
   });
+  if (fromLexer) return true;
+  // Refusal fallback — only reached when the lexer refused, which means
+  // the per-segment pass can't see the discarded command (it sits after
+  // a refused subshell, substitution, or here-doc).
+  if (lexed.kind === "refused") return discardsWorkV3RefusalFallback(command);
+  return false;
+}
+
+/** Regex-based fallback for `discardsWorkV3`, used only when the bash lexer
+ *  refused the command (so a per-segment pass is incomplete). Each pattern
+ *  is bounded to one shell segment via the same `[^;&|]*` boundary the v2
+ *  regex families use, so a `;` / `&` / `|` still separates them. The
+ *  path-shape alternative uses a positive lookahead to require the path
+ *  suffix to land at the END of its token — otherwise `feature/x` would
+ *  match the `feature/` substring and read as a discard. */
+function discardsWorkV3RefusalFallback(command: string): boolean {
+  // Pattern 1: `git checkout <path-shaped>` — skip `--`, force flags, and a bare `.`.
+  if (
+    /\bgit\s+checkout\b(?!.*--\s)(?!.*\s-[a-zA-Z]*f\b)(?!.*\s--force\b)(?!.*\s--discard-changes\b)[^;&|]*\b\S*(?:\/|\.[A-Za-z][A-Za-z0-9]*)(?=[\s;&|]|$)/.test(
+      command,
+    )
+  )
+    return true;
+  // Pattern 2: `git restore` with a non-flag word and no `--staged`/`-S`.
+  if (
+    /\bgit\s+restore\b(?!.*--staged\b)(?!.*\s-S\b)[^;&|]*\b[A-Za-z0-9_./-][^;&|\s-]/.test(command) &&
+    !/\bgit\s+restore\b[^;&|]*\b(?:--worktree|-W)\b/.test(command)
+  )
+    return true;
+  // Pattern 3: `git restore` with `--worktree` or `-W`.
+  if (/\bgit\s+restore\b[^;&|]*\b(?:--worktree|-W)\b/.test(command)) return true;
+  // Pattern 4: `git checkout` or `git switch` with `-f`/`--force`/`--discard-changes`,
+  // or a bundled short flag that includes `f` (`-fq`, `-fb`, ...).
+  if (
+    /\bgit\s+(?:checkout|switch)\b[^;&|]*\b(?:-f(?:[a-zA-Z][a-zA-Z]*)?|--force|--discard-changes)\b/.test(command) ||
+    /\bgit\s+(?:checkout|switch)\b[^;&|]*-(?!-)[a-zA-Z]*f/.test(command)
+  )
+    return true;
+  return false;
 }
 
 /** Per-category hits. Total: a pattern failure yields no hits plus `error`, never a throw. */
