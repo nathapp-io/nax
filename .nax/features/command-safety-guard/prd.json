@@ -3,7 +3,7 @@
   "feature": "command-safety-guard",
   "branchName": "feat/command-safety-guard",
   "createdAt": "2026-09-29T00:00:00Z",
-  "updatedAt": "2026-09-29T04:49:38.561Z",
+  "updatedAt": "2026-09-29T05:29:29.245Z",
   "userStories": [
     {
       "id": "US-001",
@@ -169,8 +169,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -237,7 +237,10 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-cutting access-control integration at tool execution with ask routing, sandbox state, audit and fail-open error handling."
+        "reasoning": "Cross-cutting access-control integration at tool execution with ask routing, sandbox state, audit and fail-open error handling.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "src/tools/runtime.ts",
@@ -253,7 +256,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7baddd4ab4bf0952ab2c170af5f10f991d569821"
     }
   ],
   "analysis": "This is an enhancement to existing TypeScript/Bun code. src/command-safety/rule-scorer.ts:26-62 defines version 2 and 11 discard rules; scoreRules at :134 masks the project root for outside_project only. New discard patterns must not cross shell separators; existing tests are test/unit/command-safety/rule-scorer.test.ts:5-112. src/command-safety/tmp-write.ts:66-73 mistakenly exempts all nax-* names and :89-105 uses lexed redirects, write targets and working-directory frames; update the obsolete nax-r1 assertion in test/unit/command-safety/tmp-write.test.ts:28-70. src/permissions/bash-lex.ts:22-61 defines token opacity, segments, redirects and refusal; lexBashCommand starts at :104. The new predicate should reuse its lexer, reject refused syntax, reject unjudgable paths and propagate unknown cwd after unresolvable cd. src/command-safety/types.ts:11-24 orders six QUESTION_IDS; :39-58 defines ModelResult; :89-99 defines CommandShadow; :130-138 documents tmpWrite. src/command-safety/shadow.ts:25-32 declares options, :68-98 caches classification by exact command and :151-203 implements total observe/settle/drain; guard assessment must reuse the cached promise without adding row fields. src/command-safety/build.ts:18-52 structurally types config without importing src/config and creates the classifier; src/config/schemas-command-safety.ts:46-50 contains the Zod config and src/cli/config-descriptions.ts:132-140 maps execution keys. src/interaction/dispatch-ask.ts:165-175 already forwards commandSafety whole to buildCommandShadow. Export new APIs in src/command-safety/index.ts:1-28. src/tools/runtime.ts:122-180 accepts runtime options and defaults to the headless resolver; :301-478 checks policy, opens shadow tap, resolves policy ask/deny then runs allowed tools. src/tools/runtime-calltool.ts:75-94 maps argv calls to Exec policy identity, :97-134 opens the shadow tap and :136-209 resolves asks and cancellation. New guard checks must occur only on allowed Bash/Exec calls after tap opening, preserving mechanical allow and logging denied:ask on refusal. src/agents/coding-tool-support.ts:178-184 treats Exec as a capability marker and :239-283 constructs the runtime; its frozen complexity baseline is 38. src/agents/coding-tool-sandbox.ts:177-197 provides launcher state helpers: confinement requires kind available and sharedTmp === false. Existing runtime and wiring tests include test/unit/tools/runtime-command-shadow.test.ts, test/unit/tools/runtime-calltool-edges.test.ts, test/unit/command-safety/shadow.test.ts, test/unit/config/command-safety-config.test.ts and the stub launcher in test/unit/agents/coding-tool-support-sandbox-wrapped.test.ts:25-64. docs/guides/sandbox-and-command-safety.md:1-20 incorrectly says the shadow decides nothing; update for optional guard. Migration is opt-in: no guard preserves all current policy behavior and shadow rows; guard requires shadow, defaults to threshold 0.75, uses the unchanged ask resolver, and never broadens a deny or ask. Rule-set v3 and numeric-only nax fallback change prior rule and tmp signal outputs; accepted branch-extension and no-URL remote-code residuals are explicit feature exclusions.",
