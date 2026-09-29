@@ -235,16 +235,22 @@ export function buildCompleteEvent(input: {
  *
  * Lives here because `manager.ts` sits at its 600-line hard ceiling and cannot
  * hold the three conditional spreads inline.
+ *
+ * `adapterFailure` suppresses `auth` only: `completeWithFallback` attaches that
+ * marker to a still-billed result (empty output, or an exhausted ladder) whose
+ * dispatch is still emitted as `kind:"complete"`, so forwarding the stamp there
+ * would record a FAILED call as a success-shaped row naming a credential.
  */
 export function completeResultProvenance(result: CompleteResult): {
   pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
   rates?: import("../agents/cost").ResolvedRates;
   auth?: AuthStamp;
 } {
+  const failed = result.adapterFailure !== undefined;
   return {
     ...(result.pricingSource !== undefined ? { pricingSource: result.pricingSource } : {}),
     ...(result.rates !== undefined ? { rates: result.rates } : {}),
-    ...(result.auth !== undefined ? { auth: result.auth } : {}),
+    ...(!failed && result.auth !== undefined ? { auth: result.auth } : {}),
   };
 }
 
