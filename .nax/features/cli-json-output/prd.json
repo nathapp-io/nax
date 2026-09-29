@@ -1,0 +1,282 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "cli-json-output",
+  "branchName": "feat/cli-json-output",
+  "createdAt": "2026-06-01T00:00:00.000Z",
+  "updatedAt": "2026-09-29T16:13:14.485Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Extract shared native tier-provider derivation",
+      "description": "**Goal** \u2014 Extract the native tier-provider map and reuse it in the existing credential precheck.\n\n**Motivation** \u2014 Which providers a config needs is decided by a private helper, `providerTiers()` in `src/precheck/checks-native-credentials.ts:49`. A caller outside nax would have to copy its rules (default agent must be `native`; walk `models.native`; provider is the id prefix before `/`; skip `agent.native.catalogOverrides` providers) and would drift whenever nax changes them.\n\n**Approach** \u2014 `nativeTierProviders(config)` is extracted from the precheck into `src/agents/native/tier-providers.ts`, exported from the `@/agents/native` barrel, and used by both `findMissingNativeCredentials` and `buildConfigRequirements`. This is the body of today's `providerTiers` and `providerOf`, moved verbatim. The parameter type is `Pick<PrecheckConfig, \"agent\" | \"models\">`, a slice type from the leaf `config/selectors` per `.nax/rules/config-patterns.md`; both `PrecheckConfig` and `NaxConfig` satisfy it.\n\n```ts\n// src/agents/native/tier-providers.ts\nimport type { PrecheckConfig } from \"../../config/selectors\";\nimport { NATIVE_AGENT } from \"./models\";\n\nexport type NativeTierConfig = Pick<PrecheckConfig, \"agent\" | \"models\">;\n\n/** The provider prefix of a native id, or undefined when it has none (never guessed). */\nfunction providerOf(id: string): string | undefined {\n  const slash = id.indexOf(\"/\");\n  return slash > 0 ? id.slice(0, slash) : undefined;\n}\n\n/** provider -> tiers, for the `models.native` map, skipping catalog-override providers. */\nexport function nativeTierProviders(config: NativeTierConfig): Map<string, string[]> {\n  const overridden = new Set((config.agent?.native?.catalogOverrides ?? []).map((o) => o.provider));\n  const byProvider = new Map<string, string[]>();\n  for (const [tier, entry] of Object.entries(config.models?.[NATIVE_AGENT] ?? {})) {\n    if (entry === undefined) continue;\n    const provider = providerOf(typeof entry === \"string\" ? entry : entry.model);\n    if (provider === undefined || overridden.has(provider)) continue;\n    byProvider.set(provider, [...(byProvider.get(provider) ?? []), tier]);\n  }\n  return byProvider;\n}\n```\n\n**Scope** \u2014 In: helper, barrel export, precheck dependency seam and preservation of its results. Out: requirements block implementation (US-004); Counting providers reached through model pins, fallback rungs or per-package overrides in `requirements.providers`; the scope stays the default agent's root `models.native` map, the same as the native-credentials precheck.\n\n**Interface** \u2014 `_nativeCredentialDeps = { providersWithoutCredentials, nativeTierProviders }`; `findMissingNativeCredentials(config: PrecheckConfig): Promise<MissingNativeCredential[]>` calls `_nativeCredentialDeps.nativeTierProviders(config)`. Remove the private `providerTiers` and `providerOf` from the precheck.\n\nVerification note: `providerTiers` and `providerOf` are deleted from `src/precheck/checks-native-credentials.ts`; verified by `bun run typecheck` and `bun run lint`, no AC.",
+      "acceptanceCriteria": [
+        "When nativeTierProviders is imported from @/agents/native and given models.native { fast: 'openai/gpt-a', balanced: 'deepseek/ds-b', powerful: 'openai/gpt-c' }, then its openai map entry equals ['fast', 'powerful'].",
+        "When nativeTierProviders is given that same models.native map, then its deepseek map entry equals ['balanced'].",
+        "When nativeTierProviders is given the object-form tier entry { fast: { provider: 'anthropic', model: 'anthropic/claude-x' } }, then its map contains the key 'anthropic'.",
+        "When nativeTierProviders is given { fast: 'gpt-a' } without a slash in the id, then it returns an empty map.",
+        "When nativeTierProviders is given models.native { fast: 'local/m' } and an agent.native.catalogOverrides entry with provider 'local', then it returns an empty map.",
+        "When nativeTierProviders is given a config with no models.native entry, then it returns an empty map.",
+        "Given _nativeCredentialDeps.nativeTierProviders stubbed to return new Map([['x-provider', ['fast']]]) and agent.default 'native', when findMissingNativeCredentials(config) runs, then _nativeCredentialDeps.providersWithoutCredentials is invoked once with ['x-provider'].",
+        "Given the same stubs and _nativeCredentialDeps.providersWithoutCredentials returning ['x-provider'], when findMissingNativeCredentials(config) runs, then it returns [{ provider: 'x-provider', tiers: ['fast'] }]."
+      ],
+      "tags": [
+        "feature",
+        "native",
+        "credentials"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module credential-precheck refactor and security-critical provider availability decision."
+      },
+      "contextFiles": [
+        "src/precheck/checks-native-credentials.ts",
+        "src/agents/native/index.ts",
+        "src/agents/native/models.ts",
+        "src/config/selectors.ts",
+        "test/unit/precheck/checks-native-credentials.test.ts"
+      ],
+      "expectedFiles": [
+        "src/agents/native/tier-providers.ts",
+        "test/unit/agents/native/tier-providers.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Collect credential-source auth list report",
+      "description": "**Goal** \u2014 Gather a secret-free, provider-by-provider auth availability report independently of display.\n\n**Motivation** \u2014 `nax auth list` prints coloured, human-formatted rows (`src/cli/auth.ts:230-280`). Since the credential-sources feature (#2295) a row can say `exec (<account>)`, `file (declined)` or `error: <CODE>`, and none of it is machine-readable.\n\n**Approach** \u2014 A new `collectAuthList(providerIds)` gathers an `AuthListReport`. `source` \u2014 `readGlobalAuthConfig().source`. `helper` \u2014 present only when `source` is `\"exec\"`; `command` is `auth.exec.command` verbatim. `providers` \u2014 every stored provider plus every non-blank argument, de-duplicated and sorted by `providerId` (the set and order the text view uses today). `stored` \u2014 the `listStoredProviders()` entry, or `null`. `expires` is present only when the entry has one, as `new Date(expires).toISOString()`; `expired` is `expires <= Date.now()` (`false` when there is no `expires`). `exec` \u2014 present only when `source` is `\"exec\"`. The collector calls `naxCredentialStore().read(providerId)`. If it throws: `{ \"status\": \"error\", \"code\": <the error's code, or \"CREDENTIAL_HELPER_FAILED\"> }`. If it resolves and `servedAuth(providerId)?.source` is `\"exec\"`: `{ \"status\": \"served\" }` plus `account` when the stamp carries one, cleaned by the existing `safeAccountLabel`. Otherwise `{ \"status\": \"declined\" }`. `ambient` \u2014 whether `_authDeps.ambientAuthAvailable(providerId)` reports a credential pi would resolve without nax's store (environment variables and pi's other ambient sources), via `ambientShadows`; a probe that throws counts as `false`. `available` \u2014 whether nax can authenticate this provider on this machine: `source` `\"file\"`: `stored !== null || ambient`; `source` `\"exec\"`: `exec.status === \"served\"`, or `exec.status === \"declined\"` and `(stored !== null || ambient)`. An `\"error\"` status is `false`: the chained store fails closed on a helper failure and never consults the file. The report never carries a key, fingerprint or salt. Move `safeAccountLabel`, `skipAnsiSequence` and `errorCode` from src/cli/auth.ts to src/cli/auth-list.ts; `src/cli/auth.ts` imports all three back, because `helperRowStatus`, `formatAuthListRow` and login still use them until US-003 replaces the row helpers.\n\n**Scope** \u2014 In: report types and collector, helper/account/ambient/stored status, safe error-code extraction. Out: renderers and command/CLI wiring (US-003); Asking the exec helper about providers under `auth.source: \"file\"`; the file source never spawns a helper.\n\n**Interface**\n```ts\nexport type AuthListExecStatus =\n  | { status: \"served\"; account?: string }\n  | { status: \"declined\" }\n  | { status: \"error\"; code: string };\n\nexport interface AuthListProvider {\n  providerId: string;\n  stored: { kind: \"api-key\" | \"oauth\"; expires?: string; expired: boolean } | null;\n  exec?: AuthListExecStatus;\n  ambient: boolean;\n  available: boolean;\n}\n\nexport interface AuthListReport {\n  source: \"file\" | \"exec\";\n  helper?: { command: string[] };\n  providers: AuthListProvider[];\n}\nexport async function collectAuthList(providerIds: readonly string[]): Promise<AuthListReport>;\n```\n\n**Test conventions** \u2014 `NAX_GLOBAL_CONFIG_DIR` points at a fresh temp dir in every test; fake exec helpers are small executable scripts in a temp dir, as in `test/unit/cli/auth-credential-source.test.ts`; `_authDeps.ambientAuthAvailable` is stubbed in every test and restored after.",
+      "acceptanceCriteria": [
+        "When collectAuthList([]) runs under auth.source 'file' with a stored api-key entry for openai, then report.source is 'file'.",
+        "When collectAuthList([]) runs under auth.source 'file' with a stored api-key entry for openai, then the report has no helper key.",
+        "When collectAuthList([]) runs under auth.source 'file' with a stored api-key entry for openai without expires, then its stored openai value equals { kind: 'api-key', expired: false }.",
+        "When collectAuthList([]) runs under auth.source 'file' with a stored api-key entry for openai, then the openai provider has no exec key.",
+        "Given auth.source 'file', stored openai and an ambient probe resolving false, when collectAuthList([]) runs, then openai.available is true.",
+        "When collectAuthList([]) sees a stored oauth entry with expires 1000, then stored.expires is '1970-01-01T00:00:01.000Z'.",
+        "When collectAuthList([]) sees a stored oauth entry with expires 1000, then stored.expired is true.",
+        "Given auth.source 'file' with nothing stored, when collectAuthList(['mistral']) runs, then mistral.stored is null.",
+        "Given auth.source 'file' with nothing stored and an ambient probe resolving false, when collectAuthList(['mistral']) runs, then mistral.available is false.",
+        "Given an ambient probe resolving true for mistral, when collectAuthList(['mistral']) runs, then mistral.ambient is true.",
+        "Given auth.source 'file' with nothing stored and an ambient probe resolving true for mistral, when collectAuthList(['mistral']) runs, then mistral.available is true.",
+        "Given an ambient probe throwing for mistral, when collectAuthList(['mistral']) runs, then mistral.ambient is false.",
+        "Given auth.source 'exec' with exec.command [<helperScript>, '--x'], when collectAuthList([]) runs, then helper.command equals [<helperScript>, '--x'].",
+        "Given an exec helper serving deepseek with account 'team-a', when collectAuthList(['deepseek']) runs, then deepseek.exec equals { status: 'served', account: 'team-a' }.",
+        "Given an exec helper serving deepseek with nothing stored, when collectAuthList(['deepseek']) runs, then deepseek.available is true.",
+        "Given an exec helper serving deepseek with account '\\u001b[31mteam-a\\u001b[0m' (actual ESC red and reset sequences), when collectAuthList(['deepseek']) runs, then deepseek.exec.account is 'team-a'.",
+        "Given an exec helper declining openai and a stored openai entry, when collectAuthList([]) runs, then openai.exec equals { status: 'declined' }.",
+        "Given an exec helper declining openai and a stored openai entry, when collectAuthList([]) runs, then openai.available is true.",
+        "Given an exec helper declining mistral, nothing stored and ambient probe false, when collectAuthList(['mistral']) runs, then mistral.available is false.",
+        "Given an exec helper exiting 1 and a stored openai entry, when collectAuthList([]) runs, then openai.exec equals { status: 'error', code: 'CREDENTIAL_HELPER_FAILED' }.",
+        "Given an exec helper exiting 1 and a stored openai entry, when collectAuthList([]) runs, then openai.available is false.",
+        "Given an exec helper serving key sk-helper-secret for deepseek, when collectAuthList(['deepseek']) runs, then serializing the report to JSON excludes 'sk-helper-secret'.",
+        "Given stored entries for openai and anthropic, when collectAuthList([]) runs, then the providers array lists anthropic before openai.",
+        "Given nothing stored and no arguments, when collectAuthList([]) runs, then report.providers equals []."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "credentials",
+        "cli"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New report abstraction integrating credential file, exec helper and ambient auth, with secret-safety and fail-closed semantics."
+      },
+      "contextFiles": [
+        "src/cli/auth.ts",
+        "src/agents/native/auth.ts",
+        "src/agents/native/credentials/index.ts",
+        "src/config/auth.ts",
+        "test/unit/cli/auth-credential-source.test.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/auth-list.ts",
+        "test/unit/cli/auth-list.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Render and register nax auth list --json",
+      "description": "**Goal** \u2014 Add machine-readable auth-list output while retaining existing successful text rows.\n\n**Motivation** \u2014 `nax auth list` prints coloured, human-formatted rows (`src/cli/auth.ts:230-280`). Since the credential-sources feature (#2295) a row can say `exec (<account>)`, `file (declined)` or `error: <CODE>`, and none of it is machine-readable.\n\n**Approach** \u2014 `nax auth list`: a new `collectAuthList(providerIds)` gathers an `AuthListReport`; `renderAuthListText(report)` produces today's lines and `renderAuthListJson(report)` produces the JSON document. `authListCommand` picks the renderer. JSON documents are printed with `JSON.stringify(value, null, 2)` as a single `log` call, and carry no ANSI colour codes. In JSON mode stdout carries only that document. Without `--json`: a successful listing prints exactly today's lines, and every existing `nax auth list` test keeps passing. One error path changes: when the credentials file is unreadable, today's header line `Credential source: \u2026` is no longer printed before the red error, because the collector fails before anything is rendered. With `--json`: prints one `AuthListReport` and exits 0, including when the helper fails for some provider (that provider's `exec.status` is `\"error\"`). With no stored provider and no argument it prints `\"providers\": []` rather than the text hint. On a failure that aborts the listing it prints `{\"error\":{\"code\":\"<CODE>\",\"message\":\"<message>\"}}` and exits 1. `authListCommand` calls `_cliAuthDeps.collectAuthList(providerIds)` and prints through `_cliAuthDeps.log` either each line of `renderAuthListText(report)` or the single string `renderAuthListJson(report)`. `_cliAuthDeps` gains `collectAuthList: typeof collectAuthList`. `helperRowStatus` and `formatAuthListRow` are replaced by the collector and `renderAuthListText`. `bin/nax.ts` registers `.option(\"--json\", \"Emit machine-readable JSON to stdout\", false)` on `auth list` and passes `{ json: options.json }`.\n\n**Scope** \u2014 In: text/JSON renderers, command dispatch and error documents, auth-list CLI registration. Out: implementing collector internals (US-002); A `--json` mode for any other `nax auth` or `nax config` subcommand (`auth login`, `auth rm`, `auth import`, `config profile *`, `config get`). Changing the text output of a successful `nax auth list` or of `nax config`; both stay as today. The only text change is the dropped header line on an unreadable credentials file (see CLI behaviour).\n\n**Interface**\n```ts\nexport async function collectAuthList(providerIds: readonly string[]): Promise<AuthListReport>; // US-002\nexport function renderAuthListText(report: AuthListReport): string[]; // US-003\nexport function renderAuthListJson(report: AuthListReport): string; // US-003\nexport async function authListCommand(providerIds: readonly string[] = [], options: { json?: boolean } = {}): Promise<number>;\n```\n\nTests go in `test/unit/cli/auth-list.test.ts` (created by US-002; one test file per source file); do not create a new test file.\n\n**Test conventions** \u2014 `NAX_GLOBAL_CONFIG_DIR` points at a fresh temp dir in every test; `_authDeps.ambientAuthAvailable` is stubbed in every test and restored after; output is captured by replacing `_cliAuthDeps.log`; \"the document\" means the single captured string parsed as JSON.\n\nVerification note: `helperRowStatus` and `formatAuthListRow` are deleted from `src/cli/auth.ts`, together with the imports they leave unused there (`StoredEntry`, `servedAuth`, `naxCredentialStore` if no other command uses it, and the `safeAccountLabel`/`skipAnsiSequence` imports); verified by `bun run typecheck` and `bun run lint`, no AC.",
+      "acceptanceCriteria": [
+        "Given _cliAuthDeps.collectAuthList stubbed to resolve a fixed AuthListReport, when authListCommand(['mistral'], { json: true }) runs, then the stub is called once with ['mistral'].",
+        "Given _cliAuthDeps.collectAuthList stubbed to resolve a fixed AuthListReport, when authListCommand(['mistral'], { json: true }) runs, then the parsed document deep-equals the fixed report.",
+        "Given _cliAuthDeps.collectAuthList stubbed to resolve a fixed AuthListReport, when authListCommand(['mistral'], { json: true }) runs, then _cliAuthDeps.log is called exactly once.",
+        "Given _cliAuthDeps.collectAuthList stubbed to resolve a fixed AuthListReport, when authListCommand(['mistral'], { json: true }) runs, then it returns 0.",
+        "Given _cliAuthDeps.collectAuthList stubbed to resolve { source: 'file', providers: [] }, when authListCommand([], { json: true }) runs, then the only logged line is a document whose providers is [].",
+        "Given the real collector, auth.source 'file' and a stored api-key for openai, when authListCommand([], { json: true }) runs, then the document's providers[0].providerId is 'openai'.",
+        "Given auth.source 'exec', a helper exiting 1 and stored openai, when authListCommand([], { json: true }) runs, then it returns 0.",
+        "Given global config.json containing auth: { source: 'exec' } without exec, when authListCommand([], { json: true }) runs, then it returns 1.",
+        "Given global config.json containing auth: { source: 'exec' } without exec, when authListCommand([], { json: true }) runs, then the document's error.code is 'AUTH_CONFIG_INVALID'.",
+        "Given global config.json containing auth: { source: 'exec' } without exec, when authListCommand([], { json: true }) runs, then the document's error.message is a non-empty string.",
+        "Given a credentials file holding invalid JSON, when authListCommand([], { json: true }) runs, then the document's error.code is 'CREDENTIAL_FILE_UNREADABLE'.",
+        "Given _cliAuthDeps.collectAuthList rejecting with plain Error('boom'), when authListCommand([], { json: true }) runs, then the document's error.code is 'AUTH_LIST_FAILED'.",
+        "Given a stored openai api-key under auth.source 'file', when authListCommand([]) runs, then its first logged line is 'Credential source: file'.",
+        "Given a stored openai api-key under auth.source 'file', when authListCommand([]) runs, then its second logged line after stripping ANSI starts with two spaces followed by 'openai'.",
+        "Given a stubbed exec report with helper.command ['cred', '--x'] and one served provider account 'team-a', when authListCommand([]) runs, then its first logged line is 'Credential source: exec (cred --x)'.",
+        "Given a stubbed exec report with one served provider account 'team-a', when authListCommand([]) runs, then that provider's logged line after stripping ANSI contains 'exec (team-a)'.",
+        "Given _cliAuthDeps.collectAuthList resolving { source: 'file', providers: [] }, when authListCommand([]) runs, then its second logged line is 'No credentials stored. Add one with `nax auth login <provider>`.'."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "credentials",
+        "cli",
+        "json"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Crosses credential-sensitive command rendering, failure isolation, test seams and CLI wiring while preserving text compatibility."
+      },
+      "contextFiles": [
+        "src/cli/auth.ts",
+        "src/cli/auth-list.ts",
+        "test/unit/cli/auth-list.test.ts",
+        "test/unit/cli/auth-credential-source.test.ts",
+        "bin/nax.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "Derive resolved config runtime requirements",
+      "description": "**Goal** \u2014 Build the default agent's transport, provider, protocol and sandbox requirements from resolved config.\n\n**Motivation** \u2014 Which providers a config needs is decided by a private helper, `providerTiers()` in `src/precheck/checks-native-credentials.ts:49`. A caller outside nax would have to copy its rules (default agent must be `native`; walk `models.native`; provider is the id prefix before `/`; skip `agent.native.catalogOverrides` providers) and would drift whenever nax changes them.\n\n**Approach** \u2014 A new `buildConfigRequirements(config)` (`src/cli/config-requirements.ts`) derives the `requirements` block. `agent` \u2014 `resolveDefaultAgent(config)`. `transport` \u2014 `\"native\"` when `agent === NATIVE_AGENT`, else `\"acp\"` (the agent registry's routing rule). `protocol` \u2014 `config.agent?.protocol ?? DEFAULT_AGENT_PROTOCOL` (the `acp | native | hybrid` gate, reported as configured). `providers` \u2014 when `transport` is `\"native\"`, the keys of `_configRequirementsDeps.nativeTierProviders(config)` sorted ascending; `[]` otherwise. `sandbox` \u2014 `transport === \"native\" && config.execution.sandbox?.enabled !== false`. Only the native agent runs Bash, and the schema default for `enabled` is `true`. `providers` has the same scope as the precheck: the default agent's root `models.native` map only. Pins, fallback rungs and per-package overrides are not counted.\n\n**Scope** \u2014 In: requirements builder, type, injected shared-provider seam. Out: loading/printing config reports (US-005); Counting providers reached through model pins, fallback rungs or per-package overrides in `requirements.providers`; the scope stays the default agent's root `models.native` map, the same as the native-credentials precheck. Probing whether the OS sandbox actually works on the machine; `requirements.sandbox` reports only whether the resolved config needs it. Counting fallback rungs that reach the native agent in `requirements.sandbox`; like `requirements.providers`, it reflects the default agent only.\n\n**Interface**\n```ts\nexport interface ConfigRequirements {\n  agent: string;\n  transport: \"native\" | \"acp\";\n  protocol: \"acp\" | \"native\" | \"hybrid\";\n  providers: string[];\n  sandbox: boolean;\n}\n// src/cli/config-requirements.ts\nexport const _configRequirementsDeps: { nativeTierProviders: typeof nativeTierProviders };\nexport function buildConfigRequirements(config: NaxConfig): ConfigRequirements;\n```",
+      "acceptanceCriteria": [
+        "Given agent.default 'claude', when buildConfigRequirements runs, then agent is 'claude'.",
+        "Given agent.default 'claude', when buildConfigRequirements runs, then transport is 'acp'.",
+        "Given agent.default 'native', when buildConfigRequirements runs, then transport is 'native'.",
+        "Given no agent.protocol, when buildConfigRequirements runs, then protocol is 'hybrid'.",
+        "Given agent.protocol 'native', when buildConfigRequirements runs, then protocol is 'native'.",
+        "Given agent.default 'native' and models.native { fast: 'openai/gpt-a', balanced: 'deepseek/ds-b', powerful: 'openai/gpt-c' }, when buildConfigRequirements runs, then providers equals ['deepseek', 'openai'].",
+        "Given agent.default 'claude' and models.native { fast: 'openai/gpt-a', balanced: 'deepseek/ds-b', powerful: 'openai/gpt-c' }, when buildConfigRequirements runs, then providers equals [].",
+        "Given agent.default 'native' and execution.sandbox at its default, when buildConfigRequirements runs, then sandbox is true.",
+        "Given agent.default 'native' and execution.sandbox.enabled false, when buildConfigRequirements runs, then sandbox is false.",
+        "Given agent.default 'claude', when buildConfigRequirements runs, then sandbox is false.",
+        "Given _configRequirementsDeps.nativeTierProviders stubbed to return new Map([['stub-provider', ['fast']]]) and agent.default 'native', when buildConfigRequirements runs, then providers equals ['stub-provider'].",
+        "Given _configRequirementsDeps.nativeTierProviders stubbed and agent.default 'native', when buildConfigRequirements(config) runs, then the stub is called once with that same config object."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "native"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small derived report and one injectable shared helper across a few modules; no new credential handling."
+      },
+      "contextFiles": [
+        "src/agents/native/tier-providers.ts",
+        "src/agents/utils.ts",
+        "src/config/agent-defaults.ts",
+        "src/config/schemas-sandbox.ts",
+        "src/agents/native/models.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/config-requirements.ts",
+        "test/unit/cli/config-requirements.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-005",
+      "title": "Resolve profile-chain config and emit JSON report",
+      "description": "**Goal** \u2014 Add profile-aware nax config text loading and a one-document JSON view of masked config and requirements.\n\n**Motivation** \u2014 An external orchestrator that dispatches `nax run --profile <chain>` onto several machines has to decide, before it dispatches, whether a machine can run that chain: does the machine hold a credential for every provider the chain's model tiers use, and does the chain need the sandbox. Today it cannot ask nax either question in a parseable form.\n\n**Approach** \u2014 A new `configJsonCommand(options)` (`src/cli/config-json.ts`) loads the config with the profile chain as a CLI override, from the project's `.nax` directory when `findProjectDir(dir)` finds one and from `dir` otherwise (`loadConfig(findProjectDir(dir) ?? dir, { profile: chain })`, the call shape `nax run` uses), builds a `ConfigJsonReport`, and prints it. JSON documents are printed with `JSON.stringify(value, null, 2)` as a single `log` call, and carry no ANSI colour codes. In JSON mode stdout carries only that document. `--profile <name>` is registered with the same `collectProfile` collector as `nax run` (repeatable, comma-separated, later overrides earlier). A non-empty chain is passed as `{ profile: chain }` to `loadConfig(findProjectDir(dir) ?? dir, \u2026)`; an empty chain leaves `loadConfig`'s own resolution (`NAX_PROFILE`, project, global) in charge. `--profile` applies to the default view, `--explain` and `--json`. `--diff` compares the raw global and project files and cannot take a chain: `configCommand` rejects `diff` together with a non-empty `profile` the same way it rejects `explain` with `diff` (`console.error` then `process.exit(1)`). `--json` prints one `ConfigJsonReport` and exits 0. It is mutually exclusive with `--explain` and `--diff`: the combination prints the error document with code `CONFIG_FLAGS_CONFLICT` and exits 1. In `--json` mode every failure (bad `-d`, missing or invalid profile, invalid config) prints the error document and exits 1. `configJsonCommand` validates `-d` itself with `validateDirectory`, so a bad directory is reported as JSON, not as red text. `bin/nax.ts` registers the options and, when `--json` is set, branches before its own `validateDirectory` call (so a bad `-d` is reported as JSON) and calls `process.exit(await configJsonCommand({ dir: options.dir, profile: options.profile, explain: options.explain, diff: options.diff }))`. Text path loads with the same call JSON uses and passes profile to configCommand. `profile` / `profileChain` \u2014 the values `loadConfig` force-sets on the resolved config (`\"default\"` and `[]` when no overlay applied). `sources` \u2014 `determineConfigSources(dir)`: the global config path when the file exists, and `<projectDir>/config.json` when `findProjectDir(dir)` finds a project and that file exists; `null` otherwise. `requirements` \u2014 `_configJsonDeps.buildConfigRequirements(config)`. `config` \u2014 `maskProfileValues(config)`, the masking the default text view already applies. `determineConfigSources(startDir?)` calls `findProjectDir(startDir)`; text views keep calling it with no argument. Re-export configJsonCommand and its report/options types through src/cli/config.ts, which src/cli/index.ts re-exports.\n\n**Scope** \u2014 In: config JSON handler, validation and error documents, source discovery, profile-aware text path, --diff conflict and CLI registration. Out: deriving provider rules (US-001/US-004); Resolving per-package (`.nax/mono/<pkg>/config.json`) overlays in `nax config --json`; it resolves the root config as `loadConfig(dir, \u2026)` does. A `--json` mode for any other `nax auth` or `nax config` subcommand (`auth login`, `auth rm`, `auth import`, `config profile *`, `config get`). Probing whether the OS sandbox actually works on the machine; `requirements.sandbox` reports only whether the resolved config needs it. Changing the text output of a successful `nax auth list` or of `nax config`; both stay as today. The only text change is the dropped header line on an unreadable credentials file (see CLI behaviour).\n\n**Interface**\n```ts\nexport interface ConfigJsonReport {\n  profile: string;\n  profileChain: string[];\n  sources: { global: string | null; project: string | null };\n  requirements: ConfigRequirements;\n  config: Record<string, unknown>;\n}\nexport interface ConfigJsonOptions {\n  dir: string;\n  profile?: string[];\n  explain?: boolean;\n  diff?: boolean;\n}\n// src/cli/config-json.ts\nexport const _configJsonDeps: {\n  log: (text: string) => void;\n  buildConfigRequirements: typeof buildConfigRequirements;\n};\nexport async function configJsonCommand(options: ConfigJsonOptions): Promise<number>;\n// in src/cli/config-display.ts (not config-json.ts)\nexport function determineConfigSources(startDir?: string): { global: string | null; project: string | null };\n// ConfigCommandOptions gains profile?: string[]; configCommand rejects diff with a non-empty profile.\n```\n\n**Test conventions** \u2014 `NAX_GLOBAL_CONFIG_DIR` points at a fresh temp dir in every test. A directory is a nax project only when it contains `.nax/config.json` (that is what `findProjectDir` looks for); unless an AC says otherwise, `dir` is a fresh temp project whose `.nax/config.json` holds `{}`. `NAX_PROFILE` is unset in every test so `profile: []` resolves no overlay. Output is captured by replacing `_configJsonDeps.log`; \"the document\" means the single captured string parsed as JSON.\n\nVerification note: the `--profile` and `--json` options on `nax config` in `bin/nax.ts` are registration and routing lines with no unit test (tests never spawn `nax`).",
+      "acceptanceCriteria": [
+        "Given global profile profiles/p.json holding {}, when configJsonCommand({ dir: <tempProject>, profile: ['p'] }) runs, then the document's profileChain is ['p'].",
+        "Given global profile profiles/p.json holding {}, when configJsonCommand({ dir: <tempProject>, profile: ['p'] }) runs, then it returns 0.",
+        "Given global profiles a and b, when configJsonCommand({ dir, profile: ['a', 'b'] }) runs, then the document's profile is 'a+b'.",
+        "Given global profiles a and b, when configJsonCommand({ dir, profile: ['a,b'] }) runs, then the document's profileChain is ['a', 'b'].",
+        "Given <tempProject>/.nax/config.json holding {}, project profile <tempProject>/.nax/profiles/proj.json and existing dir <tempProject>/src, when configJsonCommand({ dir, profile: ['proj'] }) runs, then profileChain is ['proj'].",
+        "Given <tempProject>/.nax/config.json holding {} and dir <tempProject>/src, when configJsonCommand({ dir, profile: [] }) runs, then sources.project is the absolute path of <tempProject>/.nax/config.json.",
+        "Given global profile p setting agent.default 'native' and models.native { fast: 'openai/gpt-a', balanced: 'openai/gpt-b', powerful: 'deepseek/ds-c' }, when configJsonCommand({ dir, profile: ['p'] }) runs, then requirements.providers equals ['deepseek', 'openai'].",
+        "Given _configJsonDeps.buildConfigRequirements stubbed to return a fixed ConfigRequirements, when configJsonCommand({ dir, profile: ['p'] }) runs, then document.requirements deep-equals the fixed value.",
+        "Given _configJsonDeps.buildConfigRequirements stubbed, when configJsonCommand({ dir, profile: ['p'] }) runs, then the stub is called once with a config whose profile is 'p'.",
+        "Given global profile p whose models.native.fast is { provider: 'openai', model: 'openai/gpt-a', env: { OPENAI_API_KEY: 'sk-profile-secret' } }, when configJsonCommand({ dir, profile: ['p'] }) runs, then its captured output excludes 'sk-profile-secret'.",
+        "Given <tempProject>/.nax/config.json present, when configJsonCommand({ dir: <tempProject>, profile: [] }) runs, then sources.project equals the absolute path of that file.",
+        "Given config.json present in the isolated global config dir, when configJsonCommand({ dir, profile: [] }) runs, then sources.global equals the absolute path of that file.",
+        "Given dir is a temp directory without .nax and global profile p exists, when configJsonCommand({ dir, profile: ['p'] }) runs, then it returns 0.",
+        "Given dir is a temp directory without .nax and global profile p exists, when configJsonCommand({ dir, profile: ['p'] }) runs, then sources.project is null.",
+        "When configJsonCommand({ dir, profile: ['missing'] }) runs, then it returns 1.",
+        "When configJsonCommand({ dir, profile: ['missing'] }) runs, then the document's error.code is 'PROFILE_NOT_FOUND'.",
+        "Given global profile p holding an auth key, when configJsonCommand({ dir, profile: ['p'] }) runs, then the document's error.code is 'AUTH_CONFIG_NOT_GLOBAL'.",
+        "Given dir is a nonexistent path, when configJsonCommand({ dir, profile: [] }) runs, then the document's error.code is 'PATH_DIRECTORY_NOT_FOUND'.",
+        "When configJsonCommand({ dir, profile: [], explain: true }) runs, then the document's error.code is 'CONFIG_FLAGS_CONFLICT'.",
+        "When configJsonCommand({ dir, profile: [], diff: true }) runs, then the document's error.code is 'CONFIG_FLAGS_CONFLICT'.",
+        "Given _configJsonDeps.buildConfigRequirements throws plain Error('boom'), when configJsonCommand({ dir, profile: [] }) runs, then the document's error.code is 'CONFIG_JSON_FAILED'.",
+        "When configJsonCommand({ dir, profile: ['missing'] }) runs, then _configJsonDeps.log is called exactly once.",
+        "Given console.error captured and process.exit replaced by a throwing spy, when configCommand(DEFAULT_CONFIG, { diff: true, profile: ['p'] }) runs, then console.error receives a message naming both '--diff' and '--profile' and the process.exit spy is called with 1.",
+        "Given <tempProject>/.nax/config.json exists, when determineConfigSources(<tempProject>) runs, then project equals <tempProject>/.nax/config.json."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "cli",
+        "json",
+        "profiles"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multiple CLI/config modules integrate profile resolution, secret masking, single-document error reporting and backward-compatible text paths."
+      },
+      "contextFiles": [
+        "src/cli/config-display.ts",
+        "src/config/loader.ts",
+        "src/cli/config-profile.ts",
+        "bin/nax.ts",
+        "src/cli/config-requirements.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/config-json.ts",
+        "test/unit/cli/config-json.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing Bun/TypeScript CLI enhancement, not greenfield. src/precheck/checks-native-credentials.ts:24-69 derives provider prefixes, skips catalogOverrides, guards on resolveDefaultAgent and queries providersWithoutCredentials; move the private providerOf/providerTiers algorithm into src/agents/native/tier-providers.ts and export through src/agents/native/index.ts:16-45, retaining the seam in _nativeCredentialDeps. src/config/selectors.ts:1-18 supplies leaf config selector types. Existing check tests at test/unit/precheck/checks-native-credentials.test.ts:1-86 assert the blocker, tiers, deduplication and override exclusions; extend seam tests and restore injected deps after each test. src/cli/auth.ts:13-31 owns terminal dependency seam and currently prints the source header before listing credentials at :247-280; helperRowStatus, formatAuthListRow, ANSI stripping and account sanitization live at :175-245. Move shared parsing/sanitization into auth-list.ts; keep login/rm references to naxCredentialStore, servedAuth, ambientShadows and errorCode (:112-146, :283-314) and preserve successful text rows, including expiry colouring and shadow warnings. readGlobalAuthConfig in src/config/auth.ts:7-36 validates global auth only; src/agents/native/auth.ts:228-264 lists stored entries and ambientShadows swallows per-provider probe errors; src/agents/native/credentials/index.ts:147-155 gives servedAuth and :170-215 rejects damaged credential files. An exec error must fail closed for that provider without aborting the report; failures from top-level auth config/file reads or unexpected collector errors abort with a one-document JSON error. No credential, fingerprint or salt may enter the report. test/unit/cli/auth-credential-source.test.ts:1-92 provides executable helper and isolated global-config harness; test/preload.ts:20-73 redirects global credentials and stubs precheck by default. Auth collector tests must stub and restore _authDeps.ambientAuthAvailable. bin/nax.ts:883-890 registers auth list and must forward --json. src/cli/config-display.ts:19-53 owns mutually exclusive text flags and :113-121 discovers sources from cwd; export determineConfigSources(startDir?) without altering default text calls, reject --diff with a nonempty chain, and use existing masking in config-profile.ts:166-186. src/config/loader.ts:305-381 accepts project root or .nax dir, resolves CLI > NAX_PROFILE > project > global profile chain, merges left-to-right, force-sets profile and profileChain; src/config/profile.ts:182-195 splits repeatable comma-separated chains; bin/nax.ts:125-133 already has collectProfile, while :764-790 currently validates dir then loads config without profiles. JSON branch must precede bin validation; JSON handler validates via src/config/path-security.ts:24-75 and reports its NaxError code. For both text and JSON, load from findProjectDir(validatedDir) ?? validatedDir and only supply { profile: chain } when nonempty. For JSON discover sources relative to the provided dir, call requirements seam once, mask resolved config and log one JSON document; make errors code-fallback CONFIG_JSON_FAILED. src/agents/utils.ts:6-10 resolves default agent; src/config/agent-defaults.ts:11-16 defines default protocol hybrid; native transport uses NATIVE_AGENT and only its root models.native providers; sandbox means configured need, not host capability. src/cli/config.ts:1-22 and src/cli/index.ts:18-28 supply re-exports. test/unit/cli/config-display.test.ts:1-56 covers existing masking; new tests should create .nax/config.json (findProjectDir criterion), unset NAX_PROFILE, isolate global dir, and restore injected output seams. Main risks are unchanged successful text formatting, auth confidentiality, per-provider helper exceptions vs fatal listing errors, profile resolution from project subdirs, mutually exclusive flags, and native provider/precheck parity; no data or file format migration is needed. Implement US-001 and US-002 independently, US-003 after US-002, US-004 after US-001, and US-005 after US-004.",
+  "outOfScope": [
+    "Counting providers reached through model pins, fallback rungs or per-package overrides in `requirements.providers`; the scope stays the default agent's root `models.native` map, the same as the native-credentials precheck.",
+    "Probing whether the OS sandbox actually works on the machine; `requirements.sandbox` reports only whether the resolved config needs it.",
+    "A `--json` mode for any other `nax auth` or `nax config` subcommand (`auth login`, `auth rm`, `auth import`, `config profile *`, `config get`).",
+    "Changing the text output of a successful `nax auth list` or of `nax config`; both stay as today. The only text change is the dropped header line on an unreadable credentials file (see CLI behaviour).",
+    "Counting fallback rungs that reach the native agent in `requirements.sandbox`; like `requirements.providers`, it reflects the default agent only.",
+    "Asking the exec helper about providers under `auth.source: \"file\"`; the file source never spawns a helper.",
+    "Resolving per-package (`.nax/mono/<pkg>/config.json`) overlays in `nax config --json`; it resolves the root config as `loadConfig(dir, \u2026)` does."
+  ],
+  "routingProfile": "native-codex-ds"
+}
