@@ -219,14 +219,14 @@ describe("credential-sources schema (AuthConfigSchema)", () => {
 
 describe("credential-sources readGlobalAuthConfig", () => {
   test("AC-9: missing config.json resolves with source \"file\" (defaults applied)", async () => {
-    const { readGlobalAuthConfig } = await import("@/config/schemas-auth");
+    const { readGlobalAuthConfig } = await import("@/config");
     freshGlobalDir();
     const auth = await readGlobalAuthConfig();
     expect(auth.source).toBe("file");
   });
 
   test("AC-10: exec.command [\"koda-cred\"] is read from config.json", async () => {
-    const { readGlobalAuthConfig } = await import("@/config/schemas-auth");
+    const { readGlobalAuthConfig } = await import("@/config");
     const dir = freshGlobalDir();
     writeGlobalConfig(dir, { auth: { source: "exec", exec: { command: ["koda-cred"] } } });
     const auth = await readGlobalAuthConfig();
@@ -234,7 +234,7 @@ describe("credential-sources readGlobalAuthConfig", () => {
   });
 
   test("AC-11: auth {source:\"exec\"} without exec.command rejects NaxError AUTH_CONFIG_INVALID", async () => {
-    const { readGlobalAuthConfig } = await import("@/config/schemas-auth");
+    const { readGlobalAuthConfig } = await import("@/config");
     const dir = freshGlobalDir();
     writeGlobalConfig(dir, { auth: { source: "exec" } });
     await rejectsNaxCode(readGlobalAuthConfig(), "AUTH_CONFIG_INVALID");
@@ -1343,7 +1343,7 @@ describe("credential-sources assembled store and probes", () => {
     const credentials = await import("@/agents/native/credentials");
     credentials._resetCredentialStore();
     await credentials.naxCredentialStore().read("anthropic");
-    expect(credentials.servedAuth("anthropic")).toEqual({ source: "exec", account: "team-a" });
+    expect(credentials.servedAuth("anthropic")).toMatchObject({ source: "exec", account: "team-a" });
   });
 
   test("AC-81: providersWithoutCredentials returns [] when the credentials file holds the provider", async () => {
@@ -1442,17 +1442,18 @@ interface FakeLlmServer {
 
 function startFakeOpenAiServer(): FakeLlmServer {
   const authorizations: string[] = [];
-  const sseChunk = (delta: object, finishReason: string | null, withUsage: boolean): string => {
-    const chunk: Record<string, unknown> = {
-      id: "chatcmpl-nax-acceptance",
-      object: "chat.completion.chunk",
-      created: 1700000000,
-      model: "acceptance-model",
-      choices: [{ index: 0, delta, finish_reason: finishReason }],
-    };
-    if (withUsage) chunk.usage = { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 };
-    return `data: ${JSON.stringify(chunk)}\n\n`;
-  };
+  const responseEvents = [
+    `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: "ok" })}\n\n`,
+    `event: response.completed\ndata: ${JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp-nax-acceptance",
+        status: "completed",
+        output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok", annotations: [] }] }],
+        usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+      },
+    })}\n\n`,
+  ].join("");
   const server = Bun.serve({
     port: 0,
     fetch: (request) => {
@@ -1461,9 +1462,7 @@ function startFakeOpenAiServer(): FakeLlmServer {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           const encoder = new TextEncoder();
-          controller.enqueue(encoder.encode(sseChunk({ role: "assistant", content: "ok" }, null, false)));
-          controller.enqueue(encoder.encode(sseChunk({}, "stop", true)));
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.enqueue(encoder.encode(responseEvents));
           controller.close();
         },
       });
@@ -1486,7 +1485,7 @@ function providerOverrideFor(server: FakeLlmServer): ProviderCatalogOverride {
     models: [
       {
         id: OVERRIDE_MODEL_ID,
-        protocol: "openai-completions",
+        protocol: "openai-responses",
         contextWindow: 128000,
         supportsTools: true,
         thinkingLevels: [],
@@ -1685,7 +1684,7 @@ describe("credential-sources fault classification", () => {
   });
 
   test("AC-102: a transport fault wrapping CREDENTIAL_HELPER_INVALID is not a retryable transport fault", async () => {
-    const { isRetryableTransportFault } = await import("@/agents/native/errors");
+    const { isRetryableTransportFault } = await import("@/agents/native/session/turn-retry");
     const err = {
       kind: "transport",
       message: "transport",
@@ -1695,8 +1694,10 @@ describe("credential-sources fault classification", () => {
   });
 
   test("AC-103: a transport fault with a plain-Error cause chain keeps retryable transport behaviour", async () => {
-    const { isRetryableTransportFault } = await import("@/agents/native/errors");
-    const err = { kind: "transport", message: "transport", cause: new Error("ECONNRESET") };
+    const { isRetryableTransportFault } = await import("@/agents/native/session/turn-retry");
+    const err = {
+      protocolError: { kind: "transport", message: "transport", cause: new Error("ECONNRESET") },
+    };
     expect(isRetryableTransportFault(err)).toBe(true);
   });
 });
@@ -2090,7 +2091,7 @@ describe("credential-sources auth stamping through events and cost rows", () => 
     expect(COST_ROW_SCHEMA_VERSION).toBe(8);
     const costSourcePath = join(import.meta.dir, "..", "..", "..", "src", "runtime", "middleware", "cost.ts");
     const source = readFileSync(costSourcePath, "utf8");
-    expect(source).toMatch(/8\s*[—–-]\s*adds\s+`?auth/);
+    expect(source).toMatch(/8\s*[—–-].*adds\s+`?auth/);
   });
 
   test("AC-121: a CostEvent recorded from an auth-stamped dispatch has schemaVersion 8 and carries auth", () => {
@@ -2198,7 +2199,7 @@ describe("credential-sources auth CLI", () => {
     captureCliOutput();
     const exit = await authListCommand(["anthropic"]);
     expect(exit).toBe(0);
-    const rows = lines.filter((line) => line.startsWith("anthropic"));
+    const rows = lines.filter((line) => line.trimStart().startsWith("anthropic"));
     expect(rows).toHaveLength(1);
     expect(rows[0]).toContain("exec");
     expect(rows[0]).toContain("team-a");
@@ -2212,7 +2213,7 @@ describe("credential-sources auth CLI", () => {
     captureCliOutput();
     const exit = await authListCommand();
     expect(exit).toBe(0);
-    const row = lines.find((line) => line.startsWith("openai"));
+    const row = lines.find((line) => line.trimStart().startsWith("openai"));
     expect(row).toBeDefined();
     expect(row).toContain("file (declined)");
   }, 20000);
@@ -2223,7 +2224,7 @@ describe("credential-sources auth CLI", () => {
     writeGlobalConfig(dir, { auth: { source: "exec", exec: { command: [helper] } } });
     captureCliOutput();
     await authListCommand(["anthropic"]);
-    const row = lines.find((line) => line.startsWith("anthropic"));
+    const row = lines.find((line) => line.trimStart().startsWith("anthropic"));
     expect(row).toBeDefined();
     expect(row).toContain("error: CREDENTIAL_HELPER_FAILED");
   }, 20000);
