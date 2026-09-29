@@ -349,6 +349,15 @@ describe("collectAuthList under auth.source exec", () => {
     expect(provider.available).toBe(true);
   });
 
+  test("US-002 AC15: a served provider without an account has no account key", async () => {
+    useExecHelper([helperScript], { replies: { deepseek: credentialReply("sk-helper") } });
+
+    const provider = providerOf(await collectAuthList(["deepseek"]), "deepseek");
+
+    expect(provider.exec).toEqual({ status: "served" });
+    expect(Object.hasOwn(provider.exec ?? {}, "account")).toBe(false);
+  });
+
   test("US-002 AC16: an account label carrying ANSI colour codes is cleaned to plain text", async () => {
     useExecHelper([helperScript], { replies: { deepseek: credentialReply("sk-helper", "\u001b[31mteam-a\u001b[0m") } });
 
@@ -387,6 +396,17 @@ describe("collectAuthList under auth.source exec", () => {
     expect(provider.available).toBe(false);
   });
 
+  test("US-002: a declining helper leaves an ambient provider available", async () => {
+    useExecHelper([helperScript]);
+    _authDeps.ambientAuthAvailable = mock(async (providerId: string) => providerId === "mistral");
+
+    const provider = providerOf(await collectAuthList(["mistral"]), "mistral");
+
+    expect(provider.exec).toEqual({ status: "declined" });
+    expect(provider.ambient).toBe(true);
+    expect(provider.available).toBe(true);
+  });
+
   test("US-002 AC20: a helper exiting 1 reports an error status with CREDENTIAL_HELPER_FAILED", async () => {
     writeGlobalConfig({ source: "file" });
     await storeFileCredential("openai", { kind: "api-key", key: "sk-stored-openai" });
@@ -395,6 +415,16 @@ describe("collectAuthList under auth.source exec", () => {
     const provider = providerOf(await collectAuthList([]), "openai");
 
     expect(provider.exec).toEqual({ status: "error", code: "CREDENTIAL_HELPER_FAILED" });
+  });
+
+  test("US-002: a malformed helper reply preserves CREDENTIAL_HELPER_INVALID", async () => {
+    writeGlobalConfig({ source: "file" });
+    await storeFileCredential("openai", { kind: "api-key", key: "sk-stored-openai" });
+    useExecHelper([helperScript], { replies: { openai: "not-json" } });
+
+    const provider = providerOf(await collectAuthList([]), "openai");
+
+    expect(provider.exec).toEqual({ status: "error", code: "CREDENTIAL_HELPER_INVALID" });
   });
 
   test("US-002 AC21: a provider whose helper failed is unavailable despite its stored entry", async () => {
