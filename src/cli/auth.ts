@@ -120,18 +120,21 @@ export async function authLoginCommand(providerId: string, method?: AuthMethod):
         chalk.dim(`(method: ${result.method}, credential: ${result.kind})`),
     );
 
-    const authConfig = await readGlobalAuthConfig();
-    if (authConfig.source === "exec") {
-      try {
+    try {
+      const authConfig = await readGlobalAuthConfig();
+      if (authConfig.source === "exec") {
         await naxCredentialStore().read(result.providerId);
         if (servedAuth(result.providerId)?.source === "exec") {
           _cliAuthDeps.log(
             `Note: the credential helper serves ${result.providerId}; this stored login is not used while it does.`,
           );
         }
-      } catch {
-        // The login succeeded; a helper status probe must not change its exit code.
       }
+    } catch (error) {
+      // The login succeeded; report the failed status check without changing its exit code.
+      _cliAuthDeps.log(
+        `Warning: credential helper status check failed: ${errorCode(error, "CREDENTIAL_HELPER_FAILED")}`,
+      );
     }
 
     if ((await ambientShadows([result.providerId])).length > 0) {
@@ -168,16 +171,60 @@ export async function authImportCommand(options: { from?: string; force?: boolea
   }
 }
 
+function errorCode(error: unknown, fallback: string): string {
+  if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") {
+    return error.code;
+  }
+  return fallback;
+}
+
+function skipAnsiSequence(value: string, start: number): number {
+  const next = value.charCodeAt(start + 1);
+  let index = start + 2;
+  if (next === 91) {
+    while (index < value.length) {
+      const code = value.charCodeAt(index);
+      if (code >= 64 && code <= 126) return index;
+      index++;
+    }
+    return value.length - 1;
+  }
+  if (next === 93) {
+    while (index < value.length) {
+      const code = value.charCodeAt(index);
+      if (code === 7) return index;
+      if (code === 27 && value.charCodeAt(index + 1) === 92) return index + 1;
+      index++;
+    }
+    return value.length - 1;
+  }
+  return Math.min(start + 1, value.length - 1);
+}
+
+function safeAccountLabel(account: string): string {
+  let clean = "";
+  for (let index = 0; index < account.length; index++) {
+    const code = account.charCodeAt(index);
+    if (code === 27) {
+      index = skipAnsiSequence(account, index);
+    } else if (code < 32 || (code >= 127 && code <= 159)) {
+      if (code === 9 || code === 10 || code === 13) clean += " ";
+    } else {
+      clean += account[index];
+    }
+  }
+  return clean.replace(/\s+/g, " ").trim();
+}
+
 async function helperRowStatus(providerId: string): Promise<string> {
   try {
     await naxCredentialStore().read(providerId);
     const provenance = servedAuth(providerId);
     return provenance?.source === "exec"
-      ? ` exec${provenance.account === undefined ? "" : ` (${provenance.account})`}`
+      ? ` exec${provenance.account === undefined ? "" : ` (${safeAccountLabel(provenance.account)})`}`
       : " file (declined)";
   } catch (error) {
-    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "UNKNOWN";
-    return ` error: ${code}`;
+    return ` error: ${errorCode(error, "CREDENTIAL_HELPER_FAILED")}`;
   }
 }
 
@@ -205,17 +252,28 @@ export async function authListCommand(providerIds: readonly string[] = []): Prom
 
     const entries = await listStoredProviders();
     const entriesByProvider = new Map(entries.map((entry) => [entry.providerId, entry]));
-    const providers = [...new Set([...entries.map((entry) => entry.providerId), ...providerIds])].sort();
+    const requestedProviders = providerIds
+      .map((providerId) => providerId.trim())
+      .filter((providerId) => providerId.length > 0);
+    const providers = [...new Set([...entries.map((entry) => entry.providerId), ...requestedProviders])].sort();
     if (providers.length === 0) {
       _cliAuthDeps.log("No credentials stored. Add one with `nax auth login <provider>`.");
       return 0;
     }
 
-    const shadowed = new Set(await ambientShadows(providers));
-    for (const providerId of providers) {
-      const helperStatus = auth.source === "exec" ? await helperRowStatus(providerId) : "";
+    const [shadowedProviders, helperStatuses] = await Promise.all([
+      ambientShadows(providers),
+      auth.source === "exec" ? Promise.all(providers.map(helperRowStatus)) : Promise.resolve(providers.map(() => "")),
+    ]);
+    const shadowed = new Set(shadowedProviders);
+    for (const [index, providerId] of providers.entries()) {
       _cliAuthDeps.log(
-        formatAuthListRow(providerId, entriesByProvider.get(providerId), helperStatus, shadowed.has(providerId)),
+        formatAuthListRow(
+          providerId,
+          entriesByProvider.get(providerId),
+          helperStatuses[index] ?? "",
+          shadowed.has(providerId),
+        ),
       );
     }
     return 0;
