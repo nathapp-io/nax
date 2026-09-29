@@ -14,6 +14,7 @@ import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
 import type { TokenUsage } from "./cost";
 import type {
+  AuthStamp,
   OpenSessionOpts,
   SendTurnOpts,
   SessionHandle,
@@ -446,11 +447,8 @@ export interface CompleteResult {
   /** Exact cost reported by wire protocol (when available). */
   exactCostUsd?: number;
   /**
-   * Backend session id the adapter assigned for this one-shot call. Set when
-   * the transport has a session identity to report — nax-ai's native client
-   * does, the legacy acpx/Claude one-shots did not (US-002). Same shape as
-   * `AgentResult.protocolIds.sessionId` so audit middleware can stamp it
-   * without knowing which path produced it.
+   * Backend session id the adapter assigned for this one-shot call; same shape
+   * as `AgentResult.protocolIds.sessionId` (US-002).
    */
   sessionId?: string;
   /**
@@ -474,6 +472,8 @@ export interface CompleteResult {
    * so "priced" and "did not price" stay distinguishable on the result.
    */
   rates?: import("./cost").ResolvedRates;
+  /** US-006: identity of the credential that served this call. Absent for ACP calls. */
+  auth?: AuthStamp;
   /** Set when complete() failed due to an availability error — consumed by completeWithFallback. */
   adapterFailure?: AdapterFailure;
   /**

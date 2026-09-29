@@ -130,6 +130,7 @@ export interface CostEvent {
    * "no report" apart from "explicitly unknown".
    */
   readonly rates?: import("../agents/cost").ResolvedRates;
+  readonly auth?: import("../agents/session-types").AuthStamp;
   /**
    * Version of the catalog package the row's `rates` came from (US-003).
    * Stamped only when the producer's reported `pricingSource` was

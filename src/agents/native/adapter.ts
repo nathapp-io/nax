@@ -10,7 +10,7 @@
 
 import { randomUUID } from "node:crypto";
 import { priceCall } from "@/agents/cost";
-import type { OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
+import type { AuthStamp, OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 import { getSafeLogger } from "@/logger";
@@ -20,7 +20,7 @@ import { createTurnDeadline } from "../turn-deadline";
 import { SessionTurnError } from "../types";
 import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
-import { authSourceIsExec } from "./credentials";
+import { authSourceIsExec, servedAuth } from "./credentials";
 import { toAdapterFailure } from "./errors";
 import {
   buildRateCard,
@@ -113,6 +113,21 @@ function loopHandlerDeps(opts: SendTurnOpts): Pick<TurnDeps, "loopHandlers" | "l
     ...(opts.loopHandlers !== undefined ? { loopHandlers: opts.loopHandlers } : {}),
     ...(opts.loopHandlerContext !== undefined ? { loopHandlerContext: opts.loopHandlerContext } : {}),
   };
+}
+
+/**
+ * US-006: the credential identity the store observed for `provider`, as a
+ * spreadable fragment — `{}` when it observed nothing, so the `auth` key stays
+ * absent rather than being written as `undefined` on an unstamped result.
+ *
+ * A helper rather than an inline conditional because `sendTurn` sits on the
+ * cognitive-complexity ratchet at its recorded ceiling and cannot carry a
+ * third branch of its own. `provider` is always the value `parseNativeModel`
+ * returned — never `modelDef.provider`, which the adapter deliberately ignores.
+ */
+function authFields(provider: string): { auth?: AuthStamp } {
+  const auth = servedAuth(provider);
+  return auth === undefined ? {} : { auth };
 }
 
 export class NativeAgentAdapter implements AgentAdapter {
@@ -267,6 +282,9 @@ export class NativeAgentAdapter implements AgentAdapter {
         // US-002: the four per-1M rates that priced this call. See
         // CompleteResult.rates above.
         rates: resolvedRates,
+        // US-006: the credential identity the store observed while serving
+        // this call. Absent (not undefined) when it observed nothing.
+        ...authFields(provider),
       };
     } catch (err) {
       // Returned, not rethrown: rethrowing routes through
@@ -548,7 +566,9 @@ export class NativeAgentAdapter implements AgentAdapter {
       timestamp: Date.now(),
     });
     markNativeTurnOutcome(handle.id, false);
-    return result;
+    // US-006: the store only observes `provider` while a request is in flight,
+    // so the stamp is read here, after the loop.
+    return { ...result, ...authFields(provider) };
   }
 
   closeSession(handle: SessionHandle): Promise<void> {

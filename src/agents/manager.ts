@@ -29,6 +29,7 @@ import {
   buildDispatchErrorEvent,
   buildFallbackRecord,
   buildSessionTurnEvent,
+  completeResultProvenance,
   dispatchCompleteHop,
   resolveFinalDispatch,
   resolveHopCompleteOptions,
@@ -536,8 +537,7 @@ export class AgentManager implements IAgentManager {
         profile: this._config.profile,
         startedAt: start,
         sessionId: outcome.result.sessionId,
-        ...(outcome.result.pricingSource !== undefined ? { pricingSource: outcome.result.pricingSource } : {}),
-        ...(outcome.result.rates !== undefined ? { rates: outcome.result.rates } : {}),
+        ...completeResultProvenance(outcome.result),
       });
       this._dispatchEvents.emitDispatch(event);
       return outcome;

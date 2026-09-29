@@ -237,6 +237,8 @@ export interface TurnResult {
    * accumulator so "priced" and "did not price" stay distinguishable.
    */
   rates?: import("./cost").ResolvedRates;
+  /** US-006: identity of the credential that served this turn. Absent for ACP turns. */
+  auth?: AuthStamp;
   /**
    * Mid-turn human-in-the-loop Q&A exchanges captured during the session turn
    * (issue #1226). Each entry pairs the agent's question with the operator's

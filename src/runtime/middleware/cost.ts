@@ -1,4 +1,5 @@
 import { resolvePricingSource } from "@/agents";
+import type { AuthStamp } from "@/agents/session-types";
 import { NAX_AI_VERSION } from "@/version";
 import type { CostErrorEvent, CostEvent, ICostAggregator, OperationSummaryEvent } from "../cost-aggregator";
 import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCompletedEvent } from "../dispatch-events";
@@ -90,10 +91,26 @@ export const _costSubscriberDeps = {
  *     spend beats were observed but whose dispatch event never recorded a row
  *     (`toPartialCostEvent`). Absent on every finished row.
  *
+ * 8 — (US-006) adds `auth` on SUCCESSFUL rows: the identity of the credential
+ *     that served the dispatch, forwarded from the dispatch event. Error rows
+ *     and partial rows are stamped with this same version but carry no `auth`
+ *     — a failed call's credential is not attributable, so absence there is
+ *     the documented shape rather than a missing field.
+ *
  * Bump this when adding or changing a field consumers key on, and extend the
  * list above — the constant is how a reader learns what a row guarantees.
  */
-export const COST_ROW_SCHEMA_VERSION = 7;
+export const COST_ROW_SCHEMA_VERSION = 8;
+
+/**
+ * US-006: `{ auth }` when the producer stamped a credential identity, `{}`
+ * otherwise — so the key is absent, never `undefined`, on a row recorded from
+ * an ACP dispatch. A helper rather than an inline conditional because the
+ * row-building listener's cognitive-complexity score is ratcheted.
+ */
+function authField(auth: AuthStamp | undefined): { auth?: AuthStamp } {
+  return auth === undefined ? {} : { auth };
+}
 
 export function attachCostSubscriber(
   bus: IDispatchEventBus,
@@ -208,6 +225,10 @@ export function attachCostSubscriber(
       // where the wire and estimate diverge is the interesting case. Omitted
       // (not undefined) when the producer did not stamp.
       ...(event.rates !== undefined ? { rates: event.rates } : {}),
+      // US-006: the credential identity that served this dispatch. Absent (not
+      // undefined) when the producer stamped none — every ACP dispatch — so
+      // the row a subscriber records from one stays byte-identical to before.
+      ...authField(event.auth),
       // US-003: catalogVersion stamps only when the producer's own reported
       // source was the catalog AND `rates` is actually present. The wire
       // branch above may have overwritten `pricingSource` to `"wire"` by
