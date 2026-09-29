@@ -7,14 +7,14 @@
  * a per-machine salt held in `<globalConfigDir>/auth-fingerprint-salt`.
  *
  * The salt is what makes the digest useless as a lookup key, and it is per
- * machine by design — a fingerprint cannot be compared across machines. Its
- * creation is an exclusive create at mode 0600, so a process that loses the
- * creation race reads the winner's file instead of overwriting it.
+ * machine by design — a fingerprint cannot be compared across machines. It is
+ * published atomically at mode 0600, so a writer that loses the creation race
+ * reads the winner's complete file instead of overwriting it.
  */
 
-import { createHmac, randomBytes } from "node:crypto";
-import { type FileHandle, open, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { StoredCredential } from "@nathapp/nax-ai";
 import { globalConfigDir } from "@/config";
 import { getSafeLogger } from "@/logger";
@@ -59,26 +59,39 @@ async function readSaltFile(path: string): Promise<Buffer | undefined> {
 }
 
 /**
- * Create the salt file, or read the winner's when another process beat us to it.
+ * Create the salt file with its bytes already in place, or read the winner's
+ * when another writer beat us to it.
  *
- * Bun has no exclusive-create API, so the `wx` open flag is the only way to make
- * first creation atomic; an `EEXIST` there is the race, not a failure.
+ * `open(path, "wx")` publishes the name before the payload lands, so a process
+ * that lost the creation race could read a 0-byte file, call it invalid and
+ * fingerprint with an in-memory salt nobody else on the machine shares. Staging
+ * the bytes and hard-linking them into place publishes the name only once the
+ * content exists: `link` fails with EEXIST when another writer got there first,
+ * and a hard link shares the inode, mode 0600 included.
+ *
+ * The staging name is unique per attempt, so two concurrent callers inside one
+ * process cannot overwrite each other's bytes.
  */
 async function createSaltFile(path: string): Promise<Buffer | undefined> {
+  // A fresh machine has no global config dir yet, and an exclusive create cannot
+  // make one: an absent parent surfaces as ENOENT, not EEXIST, so the first
+  // fingerprint would throw instead of creating the salt.
+  await mkdir(dirname(path), { recursive: true });
+
   const candidate = randomBytes(SALT_BYTES);
-  let handle: FileHandle;
+  const staged = `${path}.${randomUUID()}.staged`;
   try {
-    handle = await open(path, "wx", 0o600);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return readSaltFile(path);
-    throw error;
-  }
-  try {
-    await handle.writeFile(candidate);
+    await writeFile(staged, candidate, { mode: 0o600 });
+    try {
+      await link(staged, path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return readSaltFile(path);
+      throw error;
+    }
+    return candidate;
   } finally {
-    await handle.close();
+    await rm(staged, { force: true });
   }
-  return candidate;
 }
 
 /**
@@ -112,6 +125,22 @@ async function resolveSalt(): Promise<Buffer> {
 }
 
 /**
+ * The part of a credential that identifies it.
+ *
+ * Exhaustive over the union on purpose: a third `StoredCredential` kind must
+ * fail the build here, not silently hash whichever field the `else` branch
+ * happened to name.
+ */
+function identifyingSecret(credential: StoredCredential): string {
+  switch (credential.kind) {
+    case "api-key":
+      return credential.key;
+    case "oauth":
+      return credential.refresh;
+  }
+}
+
+/**
  * The first 12 lowercase hex characters of HMAC-SHA-256 over the credential's
  * identifying secret, keyed by the machine salt.
  *
@@ -122,6 +151,6 @@ async function resolveSalt(): Promise<Buffer> {
  */
 export async function fingerprintCredential(credential: StoredCredential): Promise<string> {
   const salt = await resolveSalt();
-  const secret = credential.kind === "api-key" ? credential.key : credential.refresh;
+  const secret = identifyingSecret(credential);
   return createHmac("sha256", salt).update(secret).digest("hex").slice(0, FINGERPRINT_CHARS);
 }

@@ -40,7 +40,11 @@ export interface ChangeGuardOptions {
 
 /** The credential store, with the identity of whatever it last served. */
 export interface GuardedCredentialStore extends CredentialStore {
-  /** The identity served for `providerId`, or `undefined` if it was never read. */
+  /**
+   * The last identity observed for `providerId`, or `undefined` if it was never
+   * read. Updated on every read, including one that logged nothing because the
+   * fingerprint was unchanged.
+   */
   servedAuth(providerId: ProviderId): AuthStamp | undefined;
 }
 
@@ -145,33 +149,33 @@ export function createChangeGuard(inner: CredentialStore, options: ChangeGuardOp
     }
 
     const verdict = classify(previous, identity);
-    if (verdict === "same") return credential;
-
     if (verdict === "renewed") {
       getSafeLogger()?.info("credentials", "credential.renewed", replacementData(providerId, identity, previous));
-      identities.set(providerId, identity);
-      return credential;
+    } else if (verdict === "changed") {
+      getSafeLogger()?.warn("credentials", "credential.changed", {
+        ...replacementData(providerId, identity, previous),
+        onChange: options.onChange,
+      });
+      if (options.onChange === "refuse") {
+        throw new NaxError(
+          `[credentials] Credential for ${providerId} changed from ${previous.fingerprint} to ${identity.fingerprint}`,
+          "CREDENTIAL_CHANGED",
+          {
+            stage: "credentials",
+            providerId,
+            kind: identity.kind,
+            source: identity.source,
+            fingerprint: identity.fingerprint,
+            previousFingerprint: previous.fingerprint,
+          },
+        );
+      }
     }
 
-    getSafeLogger()?.warn("credentials", "credential.changed", {
-      ...replacementData(providerId, identity, previous),
-      onChange: options.onChange,
-    });
-    if (options.onChange === "refuse") {
-      throw new NaxError(
-        `[credentials] Credential for ${providerId} changed from ${previous.fingerprint} to ${identity.fingerprint}`,
-        "CREDENTIAL_CHANGED",
-        {
-          stage: "credentials",
-          providerId,
-          kind: identity.kind,
-          source: identity.source,
-          fingerprint: identity.fingerprint,
-          previousFingerprint: previous.fingerprint,
-        },
-      );
-    }
-
+    // Adopt what this read observed even when nothing was logged: an identical
+    // fingerprint can still arrive from a different source or account label, and
+    // servedAuth promises the *last observed* identity, not the first. A refused
+    // change never reaches here, which is what keeps the provider refused.
     identities.set(providerId, identity);
     return credential;
   }
