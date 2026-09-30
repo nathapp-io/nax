@@ -141,6 +141,12 @@ export async function resolveSessionSandbox(args: {
       ...(approvalsFile !== undefined ? { approvalsFile } : {}),
       home: _sessionSandboxDeps.homedir(),
       tempRoots,
+      // #2301: the RESOLVED confinement, not `config.filesystem.allowSharedTmp`.
+      // A session confines only when that opt-out is off, a run root AND a
+      // session dir were both supplied, and the dir was actually created; the
+      // config flag is false in the fail-open and no-run-root cases too, so
+      // reading it here would deny a session that is running on the shared roots.
+      confined,
       platform: _sessionSandboxDeps.platform(),
       config,
     });
