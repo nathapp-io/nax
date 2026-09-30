@@ -223,17 +223,22 @@ export function rawScreenOptionsFor(launcher: CommandLauncher | undefined): {
 /**
  * The compile-time policy refusal for `raw` (Task 8), or undefined.
  *
- * Builds the policy the session confines with, i.e. the one every launch gets
- * while its `TMPDIR` override holds; the denial list it adds under a narrower
- * confinement (#2301) is two fixed literals that can never fail `literal()`.
+ * `resolvedConfinement` is the session's RESOLVE-time `confined`, not the
+ * per-launch `tmpDirInForce` this signature's second slot normally carries — a
+ * superset of it, since a launch can only narrow. That is deliberate: this probe
+ * exists to turn a glob refusal from `buildSandboxPolicy` into a session-level
+ * refusal, and the entries a narrower confinement differs by (#2301 — srt's
+ * `/tmp/claude` grant, present only when NOT confined) are fixed literals with no
+ * glob character. Passing the superset therefore exercises the strictest policy
+ * without risking a refusal a real launch would never hit.
  */
 async function literalPolicyError(
   policyFor: (root: string, tmpDirInForce: boolean) => Promise<unknown>,
   root: string,
-  tmpDirInForce: boolean,
+  resolvedConfinement: boolean,
 ): Promise<string | undefined> {
   try {
-    await policyFor(root, tmpDirInForce);
+    await policyFor(root, resolvedConfinement);
     return undefined;
   } catch (err) {
     if (err instanceof NaxError && err.code === "SANDBOX_POLICY_NOT_LITERAL") {

@@ -39,13 +39,27 @@ export interface SandboxPolicyInput {
   readonly home: string;
   readonly tempRoots: readonly string[];
   /**
-   * #2301: this session confines temp writes to its own run temp root — i.e. the
-   * `SessionTempRoots.confined` of `src/agents/coding-tool-sandbox.ts`, the same
-   * boolean the launcher advertises as `SandboxState.sharedTmp === false` and that
-   * `isTempConfined` reads; those two must stay in sync. Absent means it did NOT
-   * confine, so every construction outside `resolveSessionSandbox` stays on
-   * today's behaviour — the probe builds its own policy literal and never reaches
-   * here at all.
+   * #2301: whether THIS command's temp writes stay confined — the RESOLVE-time
+   * answer ANDed with the fact that this launch's `TMPDIR` override is in force.
+   *
+   * It governs srt's forced TMPDIR on BOTH sides, not only the deny. On darwin,
+   * `true` drops `/tmp/claude` from `writeRoots` and adds both of its spellings
+   * to `denyWrite`; `false` does the reverse, so a command that did not confine
+   * keeps `/tmp/claude` writable as a plain grant. `input.tempRoots` is passed
+   * through either way: the flag moves srt's `/tmp/claude` grant, never the
+   * session's own temp roots.
+   *
+   * Deliberately NOT the value behind `SandboxState.sharedTmp === false` or
+   * `isTempConfined`. Those are the resolve-time answer, fixed when the launcher
+   * is built, while this is re-decided on every launch by ANDing that answer with
+   * whether the session temp dir was re-created. The two are MEANT to disagree: a
+   * session whose dir fails to re-create keeps `sharedTmp: false` and
+   * `isTempConfined() === true` while this reads `false` for that one command. Do
+   * not reconcile them by making either one follow the other.
+   *
+   * Absent means it confined neither way, so every construction outside
+   * `resolveSessionSandbox` keeps today's behaviour; the only other builder in
+   * the tree, the probe, writes its policy as a literal and never reaches here.
    */
   readonly confined?: boolean;
   readonly platform: NodeJS.Platform;
