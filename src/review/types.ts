@@ -250,7 +250,10 @@ export interface AdversarialReviewConfig {
    * Optional — undefined means "derive from testFilePatterns + noise dirs". (ADR-009 §4.4)
    */
   excludePatterns?: string[];
-  /** When true, the orchestrator may run both review phases concurrently when both are scheduled. Default false. */
+  /**
+   * When true, both review phases run concurrently when scheduled together and
+   * `maxConcurrentSessions` is 2 or more; otherwise they run sequentially. Default false.
+   */
   parallel: boolean;
   /** Minimum available reviewer sessions required for concurrent semantic/adversarial review. Default 2. */
   maxConcurrentSessions: number;

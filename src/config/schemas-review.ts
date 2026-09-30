@@ -114,8 +114,9 @@ export const AdversarialReviewConfigSchema = z.object({
    */
   excludePatterns: z.array(z.string()).optional(),
   /**
-   * When true, the orchestrator may run semantic-review and adversarial-review concurrently
-   * when both phases are about to run and the session cap allows two sessions. Default false.
+   * When true, semantic-review and adversarial-review run concurrently when both phases are
+   * about to run and `maxConcurrentSessions` is 2 or more; otherwise they run sequentially.
+   * Default false.
    */
   parallel: z.boolean().default(false),
   /** Minimum available reviewer sessions required for concurrent semantic/adversarial review. Default 2. */
