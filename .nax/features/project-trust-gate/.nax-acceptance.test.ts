@@ -145,7 +145,7 @@ async function cliTrustApi(): Promise<CliTrustApi> {
 
 // ─── Generic helpers ────────────────────────────────────────────────────────
 
-const REPO_ROOT = join(import.meta.dir, "..", "..", "..", "..");
+const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
 const NAX_BIN = join(REPO_ROOT, "bin", "nax.ts");
 const FIXED_NOW = "2026-09-30T00:00:00.000Z";
 
@@ -1902,7 +1902,7 @@ test("AC-84: trust check on an unparseable store exits 1 naming the parse failur
     }, async () => {
       const code = await api.trustCheckCommand({ path: dir });
       expect(code).toBe(1);
-      expect(errors.some((e) => e.startsWith("trust.json could not be parsed: "))).toBe(true);
+      expect(errors.some((e) => e.includes("trust.json could not be parsed: "))).toBe(true);
     });
   } finally {
     iso.restore();

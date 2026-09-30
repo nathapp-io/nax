@@ -3,7 +3,7 @@
   "feature": "project-trust-gate",
   "branchName": "feat/project-trust-gate",
   "createdAt": "2026-09-30T00:00:00.000Z",
-  "updatedAt": "2026-09-30T07:55:11.178Z",
+  "updatedAt": "2026-09-30T09:58:59.170Z",
   "userStories": [
     {
       "id": "US-001",
@@ -32,7 +32,8 @@
         "With the store trusting <dir> only, removeTrustEntry(<dir>/child) returns { outcome: 'not-found', coveredBy } with coveredBy.path = <dir>, and store bytes are unchanged.",
         "With the store containing '{not json', removeTrustEntry(<dir>) rejects with TRUST_STORE_UNREADABLE.",
         "With NAX_GLOBAL_CONFIG_DIR pointing to a nonexistent directory, removeTrustEntry(<dir>) returns { outcome: 'not-found', coveredBy: null } and the directory still does not exist.",
-        "rejectGlobalOnlyKeys({ trust: {} }, 'project config') throws NaxError with code TRUST_CONFIG_NOT_GLOBAL and message 'trust is global-only and cannot be set in project config'."
+        "rejectGlobalOnlyKeys({ trust: {} }, 'project config') throws NaxError with code TRUST_CONFIG_NOT_GLOBAL and message 'trust is global-only and cannot be set in project config'.",
+        "rejectGlobalOnlyKeys({ auth: {} }, 'project config') still throws NaxError with code AUTH_CONFIG_NOT_GLOBAL."
       ],
       "tags": [
         "feature",
@@ -66,9 +67,6 @@
         "src/trust/index.ts",
         "test/unit/trust/match.test.ts",
         "test/unit/trust/store.test.ts"
-      ],
-      "suggestedCriteria": [
-        "rejectGlobalOnlyKeys({ auth: {} }, 'project config') still throws NaxError with code AUTH_CONFIG_NOT_GLOBAL."
       ],
       "modifiedFiles": [
         {
@@ -378,8 +376,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
