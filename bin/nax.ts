@@ -65,6 +65,7 @@ import {
   runRoutingCalibrateCli,
   runsListCommand,
   runsShowCommand,
+  runTrustGate,
   sandboxProbeCommand,
   specLintCommand,
 } from "../src/cli";
@@ -185,6 +186,9 @@ program
       console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
       process.exit(1);
     }
+    // US-003: setup analyzes the repository and writes .nax/config.json —
+    // gate before any of that runs.
+    await runTrustGate(workdir);
     const { setupCommand } = await import("../src/cli/setup");
     const exitCode = await setupCommand({
       dir: workdir,
@@ -264,6 +268,13 @@ program
       console.error(chalk.red("nax not initialized. Run: nax init"));
       process.exit(1);
     }
+
+    // US-003: refuse an untrusted project before the plan phase, hooks, TUI,
+    // project plugins or the deferred --schedule wait can run repository-
+    // controlled code. `workdir` is the resolved -d, so the gate checks the
+    // project this invocation would act on.
+    await runTrustGate(workdir);
+
     // Resolved project root (naxDir's parent) — plan strategies build their own
     // `.nax` path as `join(workdir, ".nax")` without walking up, so passing the
     // raw (possibly-subdirectory) `workdir` here lands prd.json in
@@ -675,6 +686,10 @@ program
       process.exit(1);
     }
 
+    // US-003: plan sends repository content to an LLM and writes into the
+    // project — gate immediately after the directory is validated.
+    await runTrustGate(workdir);
+
     const naxDir = findProjectDir(workdir);
     if (!naxDir) {
       console.error(chalk.red("nax not initialized. Run: nax init"));
@@ -939,6 +954,9 @@ mcpCmd
   .command("lock")
   .description("Refresh .nax/mcp-lock.json from what each configured server advertises")
   .action(async () => {
+    // US-003: locking connects to the project's configured MCP servers and
+    // writes the lock file — gate the working directory before either.
+    await runTrustGate(process.cwd());
     const { runMcpLockCommand } = await import("../src/cli/mcp");
     await runMcpLockCommand(process.cwd());
   });
@@ -1017,6 +1035,9 @@ program
   .option("--json", "Output machine-readable JSON", false)
   .option("--light", "Environment-only check — skips PRD validation (use before nax plan)", false)
   .action(async (options) => {
+    // US-003: precheck executes project-configured quality/test commands —
+    // gate before anything else in the action.
+    await runTrustGate(options.dir);
     try {
       await precheckCommand({
         feature: options.feature,
@@ -1280,6 +1301,10 @@ program
       }
       return;
     }
+
+    // US-003: regular prompts read the project's feature tree and config —
+    // gate them; --init and --export returned above and stay ungated.
+    await runTrustGate(workdir);
 
     // Handle regular prompts command (requires --feature)
     if (!options.feature) {
@@ -1614,6 +1639,10 @@ plugins
       console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
       process.exit(1);
     }
+
+    // US-003: listing loads project plugins — gate after the directory is
+    // validated and before any plugin is imported.
+    await runTrustGate(workdir);
 
     // Load config (or use default if outside project)
     let config = DEFAULT_CONFIG;

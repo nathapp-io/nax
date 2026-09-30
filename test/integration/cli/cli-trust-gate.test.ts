@@ -30,18 +30,20 @@ beforeEach(() => {
       branchName: "test",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
-      userStories: [{
-        id: "US-001",
-        title: "Test",
-        description: "Test description",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "pending",
-        passes: false,
-        escalations: [],
-        attempts: 0,
-      }],
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test",
+          description: "Test description",
+          acceptanceCriteria: [],
+          tags: [],
+          dependencies: [],
+          status: "pending",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+        },
+      ],
     }),
   );
 });
@@ -94,7 +96,10 @@ describe("CLI trust gate entry points", () => {
   test("US-003 AC7: refuses an untrusted run before importing project plugins", async () => {
     const pluginsDir = join(projectDir, ".nax", "plugins");
     mkdirSync(pluginsDir, { recursive: true });
-    writeFileSync(join(pluginsDir, "sentinel.ts"), `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(join(projectDir, "imported"))}, "imported"); export default {};`);
+    writeFileSync(
+      join(pluginsDir, "sentinel.ts"),
+      `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(join(projectDir, "imported"))}, "imported"); export default {};`,
+    );
 
     const { exitCode } = await runCli(["run", "-f", "demo", "-d", projectDir, "--headless"]);
 
