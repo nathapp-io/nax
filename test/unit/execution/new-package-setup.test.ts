@@ -5,7 +5,8 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeSpawn, type SpawnStub } from "@test/helpers";
+import { cleanupTempDir, makeSpawn, makeTempDir, type SpawnStub, useUntrustedRegistry } from "@test/helpers";
+import { realOrRaw } from "@/utils/realpath";
 import { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "@/execution";
 
 function spawnOk(exitCode = 0, capture?: { argv?: string[]; cwd?: string }): SpawnStub {
@@ -155,5 +156,37 @@ describe("maybeRunNewPackageSetup", () => {
     });
 
     expect(spawnMock.calls).toHaveLength(0);
+  });
+});
+
+describe("maybeRunNewPackageSetup — US-006 trust backstop", () => {
+  useUntrustedRegistry();
+  let project: string;
+  const originalSpawn = _newPackageSetupDeps.spawn;
+  afterEach(() => {
+    _newPackageSetupDeps.spawn = originalSpawn;
+    cleanupTempDir(project);
+  });
+
+  test("US-006 AC9: rejects setup for an untrusted newly-created package", async () => {
+    project = realOrRaw(makeTempDir("package-setup-untrusted-"));
+    const packageDir = `${project}/pkg`;
+    const runtime = {};
+    markNewPackageDirs(runtime, [packageDir]);
+    await expect(maybeRunNewPackageSetup({ runtime, storyId: "US-001", packageDir, setupCommand: "echo hi" })).rejects.toMatchObject({
+      code: "PROJECT_UNTRUSTED",
+      context: { surface: "package-setup" },
+    });
+  });
+
+  test("US-006 AC10: does not spawn setup for an untrusted package", async () => {
+    project = realOrRaw(makeTempDir("package-setup-untrusted-"));
+    const packageDir = `${project}/pkg`;
+    const runtime = {};
+    markNewPackageDirs(runtime, [packageDir]);
+    const spawn = makeSpawn();
+    _newPackageSetupDeps.spawn = spawn.spawn;
+    await maybeRunNewPackageSetup({ runtime, storyId: "US-001", packageDir, setupCommand: "echo hi" }).catch(() => undefined);
+    expect(spawn.calls).toHaveLength(0);
   });
 });

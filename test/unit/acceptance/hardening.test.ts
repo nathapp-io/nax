@@ -7,8 +7,12 @@ import {
   makeSessionManager,
   makeSpawn,
   makeStory,
+  cleanupTempDir,
+  makeTempDir,
+  useUntrustedRegistry,
 } from "@test/helpers";
 import { resolveSuggestedPackageFeatureTestPath } from "@/acceptance";
+import { realOrRaw } from "@/utils/realpath";
 import { _hardeningDeps, type HardeningContext, runHardeningPass } from "@/acceptance/hardening";
 import type { NaxConfig } from "@/config";
 
@@ -763,5 +767,60 @@ describe("runHardeningPass()", () => {
       undefined,
     );
     expect(spawnStub.calls[0]?.cmd).toEqual(["/bin/sh", "-c", `'bun' 'test' '${suggestedTestPath}' '--timeout=60000'`]);
+  });
+});
+
+describe("runHardeningPass — US-006 trust backstop", () => {
+  useUntrustedRegistry();
+
+  async function runUntrustedHardening(): Promise<{ result: Awaited<ReturnType<typeof runHardeningPass>>; callOpCount: number; spawnCount: number }> {
+    const project = realOrRaw(makeTempDir("hardening-untrusted-"));
+    const originalCallOp = _hardeningDeps.callOp;
+    const originalSavePRD = _hardeningDeps.savePRD;
+    const originalDetectLanguage = _hardeningDeps.detectLanguage;
+    const originalSpawn = _hardeningDeps.spawn;
+    let callOpCount = 0;
+    const responder = mockCallOp(
+      [{ original: "suggested criterion", refined: "suggested criterion", testable: true, storyId: "US-001" }],
+      { testCode: 'test("AC-1", () => {})' },
+    );
+    const callOp: typeof _hardeningDeps.callOp = (...args) => {
+      callOpCount += 1;
+      return responder(...args);
+    };
+    const savePRD = mock(async () => {});
+    const detectLanguage = mock(async () => undefined);
+    const spawn = makeSpawn();
+    try {
+      _hardeningDeps.callOp = callOp;
+      _hardeningDeps.savePRD = savePRD;
+      _hardeningDeps.detectLanguage = detectLanguage;
+      _hardeningDeps.spawn = spawn.spawn;
+      const story = makeStory({ suggestedCriteria: ["suggested criterion"] });
+      const ctx = makeCtx({ workdir: project, prd: makePRD({ userStories: [story] }) });
+      const result = await runHardeningPass(ctx);
+      return { result, callOpCount, spawnCount: spawn.calls.length };
+    } finally {
+      _hardeningDeps.callOp = originalCallOp;
+      _hardeningDeps.savePRD = originalSavePRD;
+      _hardeningDeps.detectLanguage = originalDetectLanguage;
+      _hardeningDeps.spawn = originalSpawn;
+      cleanupTempDir(project);
+    }
+  }
+
+  test("US-006 AC6: untrusted hardening returns an empty result", async () => {
+    const { result } = await runUntrustedHardening();
+    expect(result).toEqual({ promoted: [], discarded: [] });
+  });
+
+  test("US-006 AC7: untrusted hardening does not call the LLM operation", async () => {
+    const { callOpCount } = await runUntrustedHardening();
+    expect(callOpCount).toBe(0);
+  });
+
+  test("US-006 AC8: untrusted hardening does not spawn acceptance tests", async () => {
+    const { spawnCount } = await runUntrustedHardening();
+    expect(spawnCount).toBe(0);
   });
 });

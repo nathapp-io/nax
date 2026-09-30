@@ -3,7 +3,7 @@
   "feature": "project-trust-gate",
   "branchName": "feat/project-trust-gate",
   "createdAt": "2026-09-30T00:00:00.000Z",
-  "updatedAt": "2026-09-30T07:18:55.165Z",
+  "updatedAt": "2026-09-30T07:55:11.178Z",
   "userStories": [
     {
       "id": "US-001",
@@ -320,8 +320,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -385,7 +385,10 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Access-control assertions across five host spawn paths plus agent sandbox policy; error swallowing and ordering are security-sensitive."
+        "reasoning": "Access-control assertions across five host spawn paths plus agent sandbox policy; error swallowing and ordering are security-sensitive.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "src/quality/runner.ts",
@@ -406,7 +409,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6b3d9faf7411bfbc89820d61563311d0c98da683"
     }
   ],
   "analysis": "Existing Bun/TypeScript CLI and runtime, not greenfield. Store foundation: src/config/loader.ts:285 findProjectDir walks upward for .nax/config.json; src/config/paths/index.ts:61 globalConfigDir respects NAX_GLOBAL_CONFIG_DIR; src/utils/realpath.ts:31 realOrRaw resolves nearest existing ancestor and reattaches missing segments; src/utils/path-file-lock.ts:27 wraps the wx file lock; src/permissions/approvals-store.ts:1 provides missing/unparseable store and locked update patterns. src/config/global-only-keys.ts:6 currently rejects only own auth properties and needs the reserved trust rejection. src/errors.ts:9 NaxError accepts code and context; trust errors must include stage. Entry architecture: new src/trust/{types,match,store,registry,prompt,gate,index}. Store is fail-closed on malformed JSON/schema, mkdir before locking, atomic mode-0600 temp+rename, exact removal, longest segment-bounded ancestor coverage, normalized symlink-aware paths. Do not mistake global ~/.nax/config.json for a project config when resolving a home subfolder. Append-only in-process registry blocks un-gated imports/spawns, even if disk store trusts a folder; only ensureProjectTrusted marks it. Test isolation: test/preload.ts:26 creates an isolated global config directory; write root-trusting trust.json and markTrusted('/') there so existing direct-unit and subprocess tests retain behavior. test/helpers/index.ts re-exports useUntrustedRegistry to reset before and restore after isolated security tests. CLI: bin/nax.ts:244-337 run action loads config and plans/TUI/hooks and may wait for schedule, so gate after missing-naxDir check before plan/TUI/hook/schedule; bin/nax.ts:173 setup validates dir, :645 plan, :939 mcp lock, :1013 precheck, :1237 prompts (skip gate for init/export), :1605 plugins list; src/commands/resume.ts:139 resume action must gate before imports. src/cli/index.ts:1 barrel exports helpers; src/cli/approvals.ts:329 checks TTY before prompting; src/cli/confirm.ts:63 helper otherwise auto-confirms non-TTY, so explicit trust-add TTY refusal is essential. Register ungated trust group next to approvals at bin/nax.ts:934. Backstops: src/plugins/loader.ts:107 builtins/global plugins must remain exempt, project directory and enabled config entries assert outside import-catching code; src/context/engine/providers/plugin-loader.ts:159 assert ahead of allSettled; src/hooks/runner.ts:293 assert before project hook try and exempt _global; src/mcp/pool.ts:74 assert before retry catch so listTools/call propagate, not dead-server data. src/quality/runner.ts:278 asserts before empty-result early return; src/verification/executor.ts:91 use options.cwd or resolve('.'); src/acceptance/hardening.ts:70 assert first before LLM/write/spawn, outer runHardeningPass non-blocking catch logs; src/execution/new-package-setup.ts:74 assert after early returns, outside per-command catch; src/worktree/dependencies.ts:51 runArgv cwd is worktreeRoot, not resolvedCwd. src/sandbox/policy-builder.ts:37,115 accepts optional trustStoreFile alongside approvalsFile denyWrite; src/agents/coding-tool-sandbox.ts:96,134 passes trustStorePath(). Relevant existing tests include test/unit/config/global-only-keys.test.ts, test/unit/sandbox/policy-builder.test.ts, test/unit/agents/coding-tool-sandbox.test.ts and subprocess patterns test/integration/cli/cli-run-preflight.test.ts. Risks: this is a breaking opt-in for unattended runs and clone fleets; previously trusted repo code now exits 2 until explicit nax trust add \"$PWD\" --yes in CI. A missed site, swallowed rejection, premature CLI loading or overly broad ancestor matching bypasses consent; prompting/printing stdout in headless or auto-confirmation creates security regressions. No history-based migration or bypass: document explicit opt-in in README, CLI guide and BREAKING changelog. US-001 precedes US-002 and US-004; US-002 precedes CLI gate and backstop stories; maintain exact story boundaries.",

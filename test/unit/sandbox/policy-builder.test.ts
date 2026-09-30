@@ -187,6 +187,21 @@ describe("buildSandboxPolicy", () => {
     expect(new Set(policy.denyWrite).size).toBe(policy.denyWrite.length);
   });
 
+  test("US-006 AC13: the trust store is denied even when its parent is writable", () => {
+    const trustStoreFile = join(home, ".nax", "trust.json");
+    const config: SandboxConfig = {
+      ...DEFAULT_SANDBOX_CONFIG,
+      filesystem: { allowWrite: ["~/.nax"], denyRead: [], allowSharedTmp: false },
+    };
+    const policy = buildSandboxPolicy(input({ config, trustStoreFile }));
+    expect(policy.denyWrite).toContain(trustStoreFile);
+  });
+
+  test("US-006 AC14: no trust store input adds no undefined deny", () => {
+    const policy = buildSandboxPolicy(input());
+    expect(policy.denyWrite.some((path) => path === undefined)).toBe(false);
+  });
+
   test("finding 5: the approvals file is always denied, even inside a write root", () => {
     const approvalsFile = join(home, ".cache", "nax", "approvals.json");
     const policy = buildSandboxPolicy(input({ approvalsFile }));
