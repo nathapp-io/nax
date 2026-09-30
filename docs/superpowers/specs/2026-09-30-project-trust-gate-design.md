@@ -1,6 +1,6 @@
 # Project trust gate — design
 
-**Date:** 2026-09-30 · **Status:** designed; design review 2026-09-30 folded in (revision 2)
+**Date:** 2026-09-30 · **Status:** designed; design review and spec review 2026-09-30 folded in (revision 3)
 **Baseline:** `main` @ `af1e65de3` (v0.83.0). Citations below were read against it.
 **Issue:** #2293 ("Project-local plugins load without a trust gate"), scope widened by ruling R-1
 **Branch:** `feat/project-trust-gate` (off `main`)
@@ -187,3 +187,12 @@ There is no production bypass.
   inside a session of a run that passed the entry gate.
 - Fixing the bakeoff hooks path (`src/bakeoff/pipeline-adapter.ts:60` loads
   `<worktree>/hooks.json`, not `<worktree>/.nax/hooks.json`) — a separate issue.
+
+## 9. Spec review changes (revision 3)
+
+- `resolveTrustRoot` ignores a `.nax` directory that is the global config directory: `~/.nax/config.json` would otherwise make every project-less folder under home resolve to home.
+- Protected folders (`/`, home): the entry gate never prompts to trust them and never offers one as `[p]arent`; `nax trust add` refuses them without `--force`. `trust add` checks run as a pipeline: protected, already-covered, TTY/`--yes`, confirm, add.
+- Normalization reuses `realOrRaw` (`src/utils/realpath.ts:31`), so not-yet-created directories under symlinked parents still match.
+- `loadPluginProviders` asserts once before `Promise.allSettled` (which drops rejections); the hardening backstop is the first statement of `processPackageGroup` (before its LLM calls and file write); the new-package backstop sits after `claimSetup`, outside the per-command `try`; the MCP rejection propagates from `call` as well as `listTools`.
+- The executor falls back to `resolve(".")` when `cwd` is absent.
+- Test helper `useUntrustedRegistry()` (`test/helpers/trust.ts`) resets and restores the registry so one missed restore cannot leave the rest of a `bun test` process untrusted.
