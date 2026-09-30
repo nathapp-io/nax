@@ -257,7 +257,7 @@ export async function runCanonicalLoop(
     if (skippedPhaseIndexes.has(phaseIndex)) continue;
 
     const adversarial = phasesByKind.get("adversarial-review");
-    if (pairReviews && phase.kind === "semantic-review" && adversarial) {
+    if (pairReviews && phase.kind === "semantic-review" && adversarial && adversarial.index > phaseIndex) {
       pairedAdversarialIndex = adversarial.index;
       shortCircuitPhase = await runCanonicalReviewPair({
         plan,
@@ -267,6 +267,7 @@ export async function runCanonicalLoop(
         indices: [phaseIndex + 1, adversarial.index + 1],
         total: orderedPhases.length,
       });
+      if (shortCircuitPhase === "adversarial-review") break;
       continue;
     }
 
