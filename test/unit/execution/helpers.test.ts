@@ -362,6 +362,27 @@ describe("acquireLock and releaseLock", () => {
     await releaseLock(testDir);
   });
 
+  test("a reclaim already in progress makes a second reclaimer back off without touching the lock", async () => {
+    const stale = JSON.stringify({ pid: 999999, timestamp: Date.now() - 60000 });
+    await Bun.write(lockPath, stale);
+    await Bun.write(`${lockPath}.reclaim`, JSON.stringify({ pid: 1, timestamp: Date.now() }));
+
+    const result = await acquireLock(testDir);
+
+    expect(result.acquired).toBe(false);
+    expect(await Bun.file(lockPath).text()).toBe(stale);
+  });
+
+  test("a reclaim mutex abandoned by a crashed racer is cleared so a later attempt can proceed", async () => {
+    await Bun.write(lockPath, JSON.stringify({ pid: 999999, timestamp: Date.now() - 60000 }));
+    await Bun.write(`${lockPath}.reclaim`, JSON.stringify({ pid: 1, timestamp: Date.now() - 60000 }));
+
+    expect((await acquireLock(testDir)).acquired).toBe(false);
+    expect((await acquireLock(testDir)).acquired).toBe(true);
+
+    await releaseLock(testDir);
+  });
+
   describe("BUG-34: stolen-lock restore path (deterministic)", () => {
     // The real BUG-07 concurrency test above only exercises this branch when
     // real OS scheduling happens to interleave two racers a specific way —

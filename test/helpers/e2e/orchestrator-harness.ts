@@ -13,6 +13,7 @@ import { _fullSuiteGateDeps, _lintCheckDeps, _typecheckCheckDeps } from "@/opera
 import type { UserStory } from "@/prd/types";
 import type { QualityCommandResult } from "@/quality/runner";
 import type { NaxRuntime } from "@/runtime";
+import { _regressionRunnerDeps } from "@/verification/runners";
 import {
   cleanupTempDir,
   type DeepPartial,
@@ -192,6 +193,7 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
   const origLint = _lintCheckDeps.runQualityCommand;
   const origTc = _typecheckCheckDeps.runQualityCommand;
   const origRunTests = _fullSuiteGateDeps.runTests;
+  const origRegressionSleep = _regressionRunnerDeps.sleep;
 
   const phaseLog: string[] = [];
   const PHASE_NAMES = new Set([
@@ -246,6 +248,9 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
     nonBlockingFix = { ran: out.ran, kept: out.kept, restored: out.restored };
     return out;
   };
+
+  // verify-scoped ends with a fixed 2s agent-cleanup sleep — no agent process exists here.
+  _regressionRunnerDeps.sleep = async () => {};
 
   const lintAttempts = { n: 0 };
   const tcAttempts = { n: 0 };
@@ -365,6 +370,7 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
     _lintCheckDeps.runQualityCommand = origLint;
     _typecheckCheckDeps.runQualityCommand = origTc;
     _fullSuiteGateDeps.runTests = origRunTests;
+    _regressionRunnerDeps.sleep = origRegressionSleep;
     if (!opts.sharedRuntime) {
       await runtime.close();
     }

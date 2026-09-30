@@ -75,6 +75,8 @@ export interface ExecCredentialSourceOptions {
   readonly command: readonly string[];
   /** Hard deadline for one helper call. Defaults to the config schema's 10s. */
   readonly timeoutMs?: number;
+  /** Clock for lease expiry. Defaults to `Date.now`; tests inject one instead of waiting out a lease. */
+  readonly now?: () => number;
 }
 
 /**
@@ -150,6 +152,7 @@ function failureMessage(providerId: ProviderId, failure: HelperFailure): string 
 
 export function createExecCredentialSource(options: ExecCredentialSourceOptions): ExecCredentialSource {
   const timeoutMs = options.timeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS;
+  const now = options.now ?? Date.now;
 
   /** The lease in force: what a fresh read is served from. */
   const leases = new Map<ProviderId, Lease>();
@@ -186,7 +189,7 @@ export function createExecCredentialSource(options: ExecCredentialSourceOptions)
    * run log, and the streak resets on the next credential it serves.
    */
   function handleFailure(providerId: ProviderId, failure: HelperFailure): StoredCredential {
-    const fallback = servedLastGood(providerId, Date.now());
+    const fallback = servedLastGood(providerId, now());
     if (!failureLogged.has(providerId)) {
       failureLogged.add(providerId);
       getSafeLogger()?.warn("credentials", "credential.helper_failed", {
@@ -246,7 +249,7 @@ export function createExecCredentialSource(options: ExecCredentialSourceOptions)
     // 2. A fresh lease, without spawning. A lease with no expiry never goes
     //    stale, so the helper runs once per process for that provider.
     const lease = leases.get(providerId);
-    if (lease !== undefined && isFresh(lease, Date.now())) return credentialOf(lease);
+    if (lease !== undefined && isFresh(lease, now())) return credentialOf(lease);
 
     // 3. Single-flight: a second read for the same provider joins the call
     //    already running instead of spawning a second helper.
