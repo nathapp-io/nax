@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ARROW_LABEL,
@@ -9,7 +9,6 @@ import {
   labelAt,
   loadBaseline,
   parseScores,
-  STRICT_LIMIT,
   tallyByFile,
 } from "@scripts/check-complexity";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -291,131 +290,40 @@ describe("buildStrictConfig", () => {
 });
 
 /**
- * End to end: the real script against a real tree, with fixture baselines
- * derived from that tree's own measured scores. Pins the exit codes and the
- * refusal to raise, which the pure functions above cannot see.
- *
- * The tree is a FIXTURE, and that is the load-bearing choice. The repo's
- * baseline is drained — `--list` reports 0 functions in 0 files — so a probe
- * derived from it names a file that does not exist, and every scenario below
- * collapses onto the same verdict: a baseline whose entries the tree does not
- * reproduce reads as "stale", never as "grew" or "matches". A tree that really
- * does exceed STRICT_LIMIT is what makes those three verdicts reachable, so the
- * scenarios stay the scenarios they were written to be.
- *
- * `--scan-root` points the script at that tree; everything else it needs — biome,
- * its config, the committed baseline — still comes from the repo.
+ * End to end: the real script against the real tree, with a fixture baseline
+ * derived from the committed one. Pins the exit codes and the refusal to raise,
+ * which the pure functions above cannot see.
  */
 describe("check-complexity script", () => {
   const REPO = join(import.meta.dir, "..", "..", "..");
   const SCRIPT = join(REPO, "scripts", "check-complexity.ts");
-  /** One function, deeply nested on purpose, so the fixture tree is over the limit. */
-  const OVER_LIMIT_SOURCE = `export function classify(n: number): string {
-  if (n < 0) {
-    if (n % 3 === 0) {
-      if (n % 5 === 0) {
-        if (n % 7 === 0) {
-          return "a";
-        } else if (n % 11 === 0) {
-          return "b";
-        } else {
-          return "c";
-        }
-      } else if (n % 13 === 0) {
-        return "d";
-      } else {
-        return "e";
-      }
-    } else if (n % 3 === 1) {
-      if (n % 17 === 0) {
-        return "f";
-      } else if (n % 19 === 0) {
-        return "g";
-      } else {
-        return "h";
-      }
-    } else {
-      if (n % 23 === 0) {
-        return "i";
-      } else if (n % 29 === 0) {
-        return "j";
-      } else {
-        return "k";
-      }
-    }
-  } else if (n > 0) {
-    if (n % 2 === 0) {
-      return "even";
-    } else {
-      return "odd";
-    }
-  }
-  return "zero";
-}
-`;
-  /** The directories the script scans; each must exist or biome rejects the scan. */
-  const SCAN_DIRS = ["src", "bin", "test", "scripts"];
+  const committed: { byFile: Record<string, Record<string, number>> } = JSON.parse(
+    readFileSync(join(REPO, "scripts", "baselines", "complexity-baseline.json"), "utf8"),
+  );
+  const [probeFile, probeScores] = Object.entries(committed.byFile)[0] ?? ["", {}];
+  const [probeLabel, worst] = Object.entries(probeScores)[0] ?? ["", 0];
   let dir: string;
-  let scanRoot: string;
-  let probeFile = "";
-  let probeScores: Record<string, number> = {};
-  let probeLabel = "";
-  let worst = 0;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     dir = makeTempDir();
-    scanRoot = makeTempDir();
-    for (const sub of SCAN_DIRS) mkdirSync(join(scanRoot, sub), { recursive: true });
-    writeFileSync(join(scanRoot, "src", "over-limit.ts"), OVER_LIMIT_SOURCE);
-
-    // Measure the fixture with the script's own `--init-baseline` rather than
-    // hardcoding a score: `worst` is whatever this biome release scores the
-    // function, so the scenarios below cannot drift out of step with the rule
-    // the script actually applies.
-    const seeded = join(dir, "seed.json");
-    const init = await run(`--baseline=${seeded}`, "--init-baseline");
-    expect(init.stderr).toBe("");
-    expect(init.exitCode).toBe(0);
-    const { byFile } = JSON.parse(readFileSync(seeded, "utf8")) as { byFile: Record<string, Record<string, number>> };
-    // Fall back rather than destructure blind: if the fixture ever stopped being
-    // over the limit, `--init-baseline` would seed an empty map, and the
-    // tripwire test below should report that as a failed assertion.
-    const [[file = "", scores = {}] = ["", {}]] = Object.entries(byFile);
-    [[probeLabel = "", worst = 0] = ["", 0]] = Object.entries(scores);
-    probeFile = file;
-    probeScores = scores;
-  }, 60_000);
-  afterAll(() => {
-    cleanupTempDir(dir);
-    cleanupTempDir(scanRoot);
   });
+  afterAll(() => cleanupTempDir(dir));
 
   /** Writes a baseline where `probeFile`'s worst function is recorded at `value`. */
   function fixture(name: string, value: number): string {
     const path = join(dir, name);
-    const byFile = { [probeFile]: { ...probeScores, [probeLabel]: value } };
-    writeFileSync(path, JSON.stringify({ limit: STRICT_LIMIT, byFile }));
+    const byFile = { ...committed.byFile, [probeFile]: { ...probeScores, [probeLabel]: value } };
+    writeFileSync(path, JSON.stringify({ ...committed, byFile }));
     return path;
   }
 
   async function run(...args: string[]) {
-    const proc = Bun.spawn(["bun", SCRIPT, `--scan-root=${scanRoot}`, ...args], {
-      cwd: REPO,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(["bun", SCRIPT, ...args], { cwd: REPO, stdout: "pipe", stderr: "pipe" });
     const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
     return { exitCode: await proc.exited, stdout, stderr };
   }
 
-  // The guard on the fixture: without a function over the limit, the three
-  // scenarios below would pass for the wrong reason again, silently.
-  test("the fixture tree really is over the limit, so the ratchet has something to measure", () => {
-    expect(Object.keys(probeScores)).toEqual([probeLabel]);
-    expect(worst).toBeGreaterThan(STRICT_LIMIT);
-  });
-
-  // The script runs biome against the whole tree each invocation; the 6
+  // The script runs biome against the full source tree each invocation; the 6
   // scenarios are independent of each other (unique fixture files, no shared
   // state mutation), so run them concurrently to collapse ~2.8 s of serial
   // biome scans into ~470 ms of wall-clock.

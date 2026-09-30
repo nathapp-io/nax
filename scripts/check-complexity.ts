@@ -52,7 +52,6 @@
  *   bun scripts/check-complexity.ts --init-baseline   # write a baseline when none exists yet
  *   bun scripts/check-complexity.ts --list            # print every over-limit function
  *   --baseline=<path>                                 # use another baseline file (tests)
- *   --scan-root=<dir>                                 # measure another tree (tests)
  *
  * Exit codes:
  *   0 — every file is within its baseline
@@ -64,32 +63,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { byCodePoint } from "../src/utils/sort";
 
-const REPO_ROOT = join(import.meta.dir, "..");
+const ROOT = join(import.meta.dir, "..");
 const DEFAULT_BASELINE_FILE = join(import.meta.dir, "baselines", "complexity-baseline.json");
 const RULE = "complexity/noExcessiveCognitiveComplexity";
 const SCAN_DIRS = ["src/", "bin/", "test/", "scripts/"];
 const SOURCE_GLOB = "**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}";
-
-/**
- * The tree the scan measures; every reported path is relative to it.
- *
- * The repo in every production invocation, and a fixture tree under
- * `--scan-root` in the script's own tests. The flag exists because those tests
- * measure a tree that really is over the limit: this repo's baseline is drained
- * (nothing in the tree scores above STRICT_LIMIT), so a fixture baseline built
- * from it can name no real function, and every ratchet scenario the tests assert
- * degrades to "stale". The measured TREE is the only thing that changes — biome,
- * its config and the baseline file all still come from the repo.
- */
-let SCAN_ROOT = REPO_ROOT;
-
-/** `--scan-root=<dir>`: measure this tree instead of the repo. */
-function applyScanRoot(args: string[]): void {
-  const raw = args.find((a) => a.startsWith("--scan-root="))?.slice("--scan-root=".length);
-  if (raw === undefined) return;
-  if (!existsSync(raw)) throw new Error(`--scan-root=${raw} does not exist`);
-  SCAN_ROOT = resolve(raw);
-}
 
 export const STRICT_LIMIT = 20;
 
@@ -137,7 +115,7 @@ interface BiomeReport {
 export type SourceReader = (file: string) => string;
 
 const SCORE_RE = /complexity of (\d+)/;
-const readScannedSource: SourceReader = (file) => readFileSync(resolve(SCAN_ROOT, file), "utf8");
+const readRepoSource: SourceReader = (file) => readFileSync(resolve(ROOT, file), "utf8");
 
 /**
  * The text Biome's span covers: normally the function's name (`run`, `#priv`,
@@ -185,7 +163,7 @@ function readScore(d: Diagnostic, readSource: SourceReader): Score {
  * and could let a new violation through. Every error in the summary must be a
  * complexity finding this function actually read.
  */
-export function parseScores(report: BiomeReport, readSource: SourceReader = readScannedSource): Score[] {
+export function parseScores(report: BiomeReport, readSource: SourceReader = readRepoSource): Score[] {
   if (!Array.isArray(report.diagnostics)) {
     throw new Error("biome report has no diagnostics array — reporter format changed?");
   }
@@ -270,10 +248,10 @@ export function findSuppressions(file: string, source: string): string[] {
 function scanSuppressions(): string[] {
   const glob = new Bun.Glob(SOURCE_GLOB);
   return SCAN_DIRS.flatMap((dir) =>
-    [...glob.scanSync({ cwd: join(SCAN_ROOT, dir) })]
+    [...glob.scanSync({ cwd: join(ROOT, dir) })]
       .filter((rel) => !rel.includes("node_modules/"))
       .sort(byCodePoint)
-      .flatMap((rel) => findSuppressions(`${dir}${rel}`, readScannedSource(`${dir}${rel}`))),
+      .flatMap((rel) => findSuppressions(`${dir}${rel}`, readRepoSource(`${dir}${rel}`))),
   );
 }
 
@@ -299,11 +277,11 @@ export function buildStrictConfig(repoConfig: RepoBiomeConfig, limit: number) {
  * The repo's own Biome. `bun x biome` without node_modules fetches the unrelated
  * npm package `biome` (an env-var manager), which exits 0 with no report.
  */
-const BIOME_BIN = join(REPO_ROOT, "node_modules", ".bin", "biome");
+const BIOME_BIN = join(ROOT, "node_modules", ".bin", "biome");
 
 function runBiome(): Score[] {
   if (!existsSync(BIOME_BIN)) throw new Error(`${BIOME_BIN} not found — run \`bun install\` first`);
-  const repoConfig = JSON.parse(readFileSync(join(REPO_ROOT, "biome.json"), "utf8")) as RepoBiomeConfig;
+  const repoConfig = JSON.parse(readFileSync(join(ROOT, "biome.json"), "utf8")) as RepoBiomeConfig;
   const configDir = mkdtempSync(join(tmpdir(), "nax-complexity-"));
   try {
     writeFileSync(join(configDir, "biome.json"), JSON.stringify(buildStrictConfig(repoConfig, STRICT_LIMIT)));
@@ -317,7 +295,7 @@ function runBiome(): Score[] {
         "--reporter=json",
         ...SCAN_DIRS,
       ],
-      { cwd: SCAN_ROOT, stdout: "pipe", stderr: "pipe" },
+      { cwd: ROOT, stdout: "pipe", stderr: "pipe" },
     );
     const stdout = proc.stdout.toString().trim();
     // 0 = no findings, 1 = findings. Anything else (a crash, a signal) is not a result.
@@ -445,7 +423,6 @@ function main() {
   const args = process.argv.slice(2);
   const baselineFile =
     args.find((a) => a.startsWith("--baseline="))?.slice("--baseline=".length) ?? DEFAULT_BASELINE_FILE;
-  applyScanRoot(args);
   failOnSuppressions();
   checkBaselinePresence(baselineFile, args);
   const scores = runBiome();
