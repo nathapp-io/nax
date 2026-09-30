@@ -19,12 +19,10 @@
  * receives only the call context, the pair, the tracking records and the
  * session flag.
  *
- * Stub state (RED): both exported functions throw "not implemented", and their
- * parameters carry the project's `_` prefix for that reason alone. The
- * implementation uses the spec's names — `reviewConfig`, `phases`, `ctx`,
- * `pair`, `tracking`, `isThreeSession`, `progress`.
  */
+import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
+import { errorMessage } from "@/utils/errors";
 import type { PhaseTracking } from "./execution-plan-phases";
 import { runPhase } from "./run-phase";
 import type { InternalPhase } from "./types";
@@ -43,10 +41,17 @@ export const _reviewPairDeps: { runPhase: typeof runPhase } = { runPhase };
  * both phases. An unset cap resolves to the schema default of 2.
  */
 export function shouldRunReviewsConcurrently(
-  _reviewConfig: { adversarial?: { parallel?: boolean; maxConcurrentSessions?: number } } | undefined,
-  _phases: readonly InternalPhase[],
+  reviewConfig: { adversarial?: { parallel?: boolean; maxConcurrentSessions?: number } } | undefined,
+  phases: readonly InternalPhase[],
 ): boolean {
-  throw new Error("not implemented"); // nax-lint-allow: plain-error
+  const adversarial = reviewConfig?.adversarial;
+  const maxConcurrentSessions = adversarial?.maxConcurrentSessions ?? 2;
+  return (
+    adversarial?.parallel === true &&
+    maxConcurrentSessions >= 2 &&
+    phases.some((phase) => phase.kind === "semantic-review") &&
+    phases.some((phase) => phase.kind === "adversarial-review")
+  );
 }
 
 /**
@@ -56,11 +61,42 @@ export function shouldRunReviewsConcurrently(
  * `tracking.phaseOutputs` / `tracking.phaseCosts` via `runPhase`.
  */
 export async function runReviewPair(
-  _ctx: CallContext,
-  _pair: readonly [InternalPhase, InternalPhase],
-  _tracking: PhaseTracking,
-  _isThreeSession?: boolean,
-  _progress?: { indices: readonly [number, number]; total: number },
+  ctx: CallContext,
+  pair: readonly [InternalPhase, InternalPhase],
+  tracking: PhaseTracking,
+  isThreeSession = false,
+  progress?: { indices: readonly [number, number]; total: number },
 ): Promise<void> {
-  throw new Error("not implemented"); // nax-lint-allow: plain-error
+  getSafeLogger()?.info("story-orchestrator", "Running semantic-review and adversarial-review concurrently", {
+    storyId: ctx.storyId,
+  });
+
+  const outcomes = await Promise.allSettled(
+    pair.map((phase, index) =>
+      _reviewPairDeps.runPhase(
+        ctx,
+        phase.slot,
+        tracking.phaseCosts,
+        tracking.phaseOutputs,
+        isThreeSession,
+        progress
+          ? { index: index === 0 ? progress.indices[0] : progress.indices[1], total: progress.total }
+          : undefined,
+      ),
+    ),
+  );
+  const logger = getSafeLogger();
+  for (const [index, outcome] of outcomes.entries()) {
+    if (outcome.status === "rejected") {
+      logger?.error("story-orchestrator", "Phase threw unexpected error", {
+        storyId: ctx.storyId,
+        phase: index === 0 ? pair[0].kind : pair[1].kind,
+        error: errorMessage(outcome.reason),
+      });
+    }
+  }
+  const semanticOutcome = outcomes[0];
+  if (semanticOutcome?.status === "rejected") throw semanticOutcome.reason;
+  const adversarialOutcome = outcomes[1];
+  if (adversarialOutcome?.status === "rejected") throw adversarialOutcome.reason;
 }
