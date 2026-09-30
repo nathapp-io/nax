@@ -60,6 +60,7 @@ function makePluginRegistry(actions: IPostRunAction[] = [], reporters: unknown[]
 function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunCleanupOptions {
   return {
     runId: "run-001",
+    runtimeRunId: "run-001",
     startTime: Date.now() - 1000,
     totalCost: 0.05,
     storiesCompleted: 1,
@@ -591,6 +592,7 @@ describe("runner.ts — cleanupRun receives feature/prdPath/branch/version", () 
     // Build a full RunCleanupOptions — TypeScript will reject this if fields are missing
     const opts: RunCleanupOptions = {
       runId: "run-test",
+      runtimeRunId: "run-test",
       startTime: Date.now(),
       totalCost: 0,
       storiesCompleted: 0,

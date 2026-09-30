@@ -67,8 +67,9 @@ and every path in it is literal and realpath-resolved.
 
 | | Paths |
 |:--|:--|
-| **Writable** | the story root (repo or worktree); this run's temp root under `/tmp/nax/` (or `/tmp/nax-<uid>` when the shared parent is unusable), which is also where `$TMPDIR` points; the system temp dir and `/tmp` only with `filesystem.allowSharedTmp`; package-manager caches under `$HOME` (`.bun/install/cache`, `.npm`, `.cache`, `.cargo/registry`, `.cargo/git`, `go/pkg/mod`, `.gradle/caches`, `.m2/repository`, `.pnpm-store`; plus `Library/Caches` and `/tmp/claude` on macOS); `filesystem.allowWrite` |
+| **Writable** | the story root (repo or worktree); this run's temp root under `/tmp/nax/` (or `/tmp/nax-<uid>` when the shared parent is unusable), which is also where `$TMPDIR` points; the system temp dir and `/tmp` only with `filesystem.allowSharedTmp`; package-manager caches under `$HOME` (`.bun/install/cache`, `.npm`, `.cache`, `.cargo/registry`, `.cargo/git`, `go/pkg/mod`, `.gradle/caches`, `.m2/repository`, `.pnpm-store`; plus `Library/Caches` on macOS, and `/tmp/claude` on macOS unless this command carries its own `$TMPDIR` override); `filesystem.allowWrite` |
 | **Write-denied inside those** | every top-level `.nax/` entry except `.nax/scratchpad/` (whole: `features/`, `rules/`, `cache/`, ...), plus the entries nax loads as input even when absent (`config.json`, `mono/`, `rules/`, `context.md`, `hooks.json`, `plugins/`, `templates/`, `prompts/`); the root queue files (`.queue.txt`, `.queue.txt.processing`), the approvals file, and the git guards below |
+| **Write-denied on macOS, when confined** | `/tmp/claude` and `/private/tmp/claude`. srt always allows that directory, so the deny is the only thing that takes the write back; a confined session does not need it, because `$TMPDIR` already points inside the run's own root. Not denied when `filesystem.allowSharedTmp` is `true`. |
 | **Unreadable** | `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.docker/config.json`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/.config/gh`, nax's own `credentials*` files; `filesystem.denyRead` |
 | **Network** | unrestricted unless `network.allowedDomains` is set |
 
@@ -123,7 +124,7 @@ mistakes, not a boundary against hostile code (ADR-030, "Threat model unchanged"
 | `enabled` | `true` | Master switch. `false` restores unsandboxed raw bash explicitly. |
 | `backend` | `"srt"` | [`@anthropic-ai/sandbox-runtime`](https://www.npmjs.com/package/@anthropic-ai/sandbox-runtime); the only backend today. |
 | `filesystem.allowWrite` | `[]` | Extra write roots. `~` is expanded; relative paths resolve against the story root. Listing a top-level `.nax/` entry (e.g. `".nax/rules"`) also lets agents write it, through Bash and the file tools alike; `.nax/features`, `.nax/config.json` and `.nax/mono` can never be opened. |
-| `filesystem.allowSharedTmp` | `false` | By default the sandbox confines temp writes to this run's temp root (`/tmp/nax/<runId>/...`, where `$TMPDIR` points); set `true` to re-grant the system temp dir and `/tmp` for commands a tool hardcodes against. |
+| `filesystem.allowSharedTmp` | `false` | By default the sandbox confines temp writes to this run's temp root (`/tmp/nax/<runId>/...`, where `$TMPDIR` points), and on macOS denies `/tmp/claude` outright — `filesystem.allowWrite` cannot re-open it, because srt applies its deny rules after its allow rules; set `true` to re-grant the system temp dir, `/tmp` and `/tmp/claude` for commands a tool hardcodes against. |
 | `filesystem.denyRead` | `[]` | Extra read denies. `~` is expanded. |
 | `network.allowedDomains` | unset | Unset = unrestricted; `[]` = no network; a list = allow-list. |
 

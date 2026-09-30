@@ -418,6 +418,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
       logger?.debug("execution", "Runner finally — running cleanupRun");
       await _runnerDeps.cleanupRun({
         runId,
+        // #2300 — the id the session temp dirs were created under. NOT `runId`:
+        // `runtime.runId` is the `crypto.randomUUID()` that
+        // `resolveDispatchLauncher` passed to `runTmpRoot`, and wiping under
+        // `runId` removed a path that was never created.
+        runtimeRunId: runtime.runId,
         startTime,
         totalCost,
         storiesCompleted,
