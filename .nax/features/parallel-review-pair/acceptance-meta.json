@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-30T12:30:05.375Z",
+  "acFingerprint": "sha256:4705cabdb60aa9f35558e287d9f0596053586b48bbf35154b5c64cd0ede73128",
+  "layoutFingerprint": "sha256:d4d3c8ec0d433cbfb039e546831653621045d79b5a4d6f76718173e55fd6dcdf",
+  "storyCount": 3,
+  "acCount": 47,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": ".nax/features/parallel-review-pair/.nax-acceptance.test.ts",
+      "expected": 47,
+      "found": 47,
+      "missing": []
+    }
+  ]
+}
