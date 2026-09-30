@@ -10,8 +10,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
-import { readGlobalAuthConfig } from "@/config/global-only-keys";
-import type { NaxError } from "@/errors";
+import { readGlobalAuthConfig, rejectGlobalOnlyKeys } from "@/config/global-only-keys";
+import { NaxError } from "@/errors";
 
 let globalDir: string;
 let savedGlobalEnv: string | undefined;
@@ -74,5 +74,21 @@ describe("readGlobalAuthConfig", () => {
     const err = await catchNaxError(() => readGlobalAuthConfig());
 
     expect(err.code).toBe("AUTH_CONFIG_INVALID");
+  });
+});
+
+describe("rejectGlobalOnlyKeys", () => {
+  test("AC23: throws TRUST_CONFIG_NOT_GLOBAL when a non-global layer sets trust", () => {
+    let caught: unknown;
+    try {
+      rejectGlobalOnlyKeys({ trust: {} }, "project config");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(NaxError);
+    assertNaxError(caught, "rejectGlobalOnlyKeys rejection");
+    expect(caught.code).toBe("TRUST_CONFIG_NOT_GLOBAL");
+    expect(caught.message).toBe("trust is global-only and cannot be set in project config");
   });
 });
