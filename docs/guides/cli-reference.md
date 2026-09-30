@@ -787,3 +787,180 @@ nax curator gc --sweep-unattributed   # Also drop rows with no projectKey (machi
 ```
 
 Rewrites only the configured rollup JSONL file, keeping rows for the most recent run IDs. It does not delete per-run proposal files, observations, run logs, metrics, or canonical context/rules files.
+
+---
+
+### `nax trust`
+
+Inspect and edit the per-folder trust store. nax runs repository-controlled
+code — project plugins, context plugin providers, hooks, MCP servers and the
+quality / test / acceptance / setup commands — unsandboxed on this host, so a
+folder must be trusted before a gated command will act on it. The store lives
+at `<global config dir>/trust.json` (the global config dir is `~/.nax`, or
+`$NAX_GLOBAL_CONFIG_DIR` when set), is machine-global rather than per project,
+and holds one entry per trusted folder:
+
+```json
+{
+  "version": 1,
+  "folders": [
+    { "path": "/home/me/src/api", "addedAt": "2026-09-30T00:00:00.000Z", "via": "cli" }
+  ]
+}
+```
+
+`via` records how the entry was granted: `cli` for `nax trust add`, `prompt`
+for an answer given at the entry gate. Every `<path>` is stored absolute and
+realpath-normalized (trailing separators removed, symlinked parents resolved),
+and a relative argument on the command line resolves against the current
+working directory.
+
+**Trust is hierarchical.** An entry for `<dir>` covers `<dir>` and every folder
+beneath it, so trusting a parent covers clones and worktrees you create under
+it later — no re-granting per checkout. Trusting `/` or your home directory
+would therefore cover everything you own; both are refused unless you pass
+`--force`. The gate uses the same rule and the same store, and a gated command
+in an untrusted project exits 2 with `run: nax trust add <root>`.
+
+```bash
+nax trust list
+nax trust list --json
+
+nax trust add                 # trust the current directory (prompts)
+nax trust add /path/to/project
+nax trust add "$PWD" --yes    # unattended: no prompt, no TTY needed
+nax trust add / --force       # trust every folder on this machine
+
+nax trust rm /path/to/project
+
+nax trust check               # is the project containing the cwd trusted?
+nax trust check /path/to/project --json
+```
+
+**Flags:**
+
+| Flag | Command | Description |
+|:-----|:--------|:------------|
+| `--json` | `list`, `check` | Emit the result as a machine-readable JSON object |
+| `--yes` | `add` | Skip the confirmation prompt (required when stdin is not a TTY) |
+| `--force` | `add` | Allow a protected folder (`/` or your home directory) |
+
+---
+
+#### `nax trust list`
+
+Print one line per stored entry, in store order. The entry covering the current
+directory is marked with `* `; every other entry is indented by two spaces:
+
+```
+* /home/me/src/api  (via cli, added 2026-09-30T00:00:00.000Z)
+  /home/me/src/web  (via prompt, added 2026-09-29T11:02:14.000Z)
+```
+
+With no entries and no file, it prints `No trusted folders (<store path>)` and
+exits 0.
+
+`--json` prints one object on stdout — the whole output, so it stays
+parseable:
+
+```json
+{
+  "path": "/home/me/.nax/trust.json",
+  "folders": [
+    { "path": "/home/me/src/api", "addedAt": "2026-09-30T00:00:00.000Z", "via": "cli" }
+  ],
+  "coveringCwd": "/home/me/src/api"
+}
+```
+
+`coveringCwd` is the stored path that covers the current working directory, or
+`null`. A store whose bytes cannot be parsed prints
+`trust.json could not be parsed: <reason>` on stderr and exits 1 — an
+unreadable store is never reported as an empty one.
+
+---
+
+#### `nax trust add [path]`
+
+Trust `path` (default: the current directory) and everything beneath it.
+Decisions are taken in this order, and the first one that applies wins:
+
+1. **Protected folder.** `/` or your home directory is refused with
+   `Refusing to trust <path>: it covers every project under it. Pass --force to
+   trust it anyway.` on stderr, exit 1 — even when a stored entry already
+   covers it, and even noninteractively. `--force` skips this step and nothing
+   else.
+2. **Already covered.** If an entry already covers `path`, nothing is written
+   and `Already trusted: <path> is covered by <covering path>` goes to stdout,
+   exit 0. No prompt and no TTY are needed for this case, so a CI job that adds
+   a path on every run is a no-op after the first.
+3. **No TTY, no `--yes`.** `Refusing to trust <path> without confirmation:
+   stdin is not a TTY. Pass --yes.` on stderr, exit 1. `nax trust add` never
+   relies on a prompt that cannot be answered.
+4. **Declined prompt.** On a TTY without `--yes`, the command asks
+   `Trust <path> and run its repository-controlled code on this host?`; a `No`
+   answer prints `Not trusted.` on stdout and exits 1.
+5. **Grant.** The entry is written with `via: "cli"`, `Trusted <path>` is
+   printed on stdout and the exit code is 0.
+
+Nothing is written on any path that exits 1. A store that cannot be parsed
+reports `trust.json could not be parsed: <reason>` on stderr and exits 1
+without touching the file.
+
+---
+
+#### `nax trust rm <path>`
+
+Remove the entry whose path is exactly `<path>`; `Removed <path>` on stdout,
+exit 0. Only an exact entry is removed — a descendant of a trusted folder is
+not a way to revoke its parent:
+
+```
+No trust entry for /home/me/src/api/packages/lib
+/home/me/src/api/packages/lib is still trusted through /home/me/src/api
+```
+
+Both lines go to stderr and the exit code is 1. Remove the parent explicitly
+with `nax trust rm /home/me/src/api` if that is what you mean.
+
+---
+
+#### `nax trust check [path]`
+
+Report whether the project root that `path` (default: the current directory)
+belongs to is trusted. The root is the nearest ancestor holding a
+`.nax/config.json` — so a subdirectory answers for the project it is in, not
+for itself.
+
+```
+trusted: /home/me/src/api (covered by /home/me/src/api)
+untrusted: /home/me/src/api
+```
+
+Exit code 0 when trusted, 1 when not. `--json` prints one object on stdout
+instead:
+
+```json
+{
+  "root": "/home/me/src/api",
+  "trusted": true,
+  "coveredBy": "/home/me/src/api"
+}
+```
+
+`trusted` is a boolean, and `coveredBy` is the stored path that covers `root`
+or `null` — the exit code still reports 0/1 on a trusted/untrusted root, so a
+JSON consumer can read either. An unparseable store exits 1 with
+`trust.json could not be parsed: <reason>` on stderr.
+
+---
+
+#### CI recipe
+
+A fresh CI runner has no trust store, so every gated command would exit 2.
+Grant trust once at the start of the job — `--yes` removes the prompt, and the
+path is already trusted on a warmed cache, which is a no-op exit 0:
+
+```bash
+nax trust add "$PWD" --yes
+```

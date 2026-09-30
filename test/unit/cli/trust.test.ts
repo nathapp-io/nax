@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { trustStorePath, addTrustEntry } from "@/trust";
+import { addTrustEntry, trustStorePath } from "@/trust";
 
 const cli = await import("@/cli");
 const fallbackDeps: Record<string, unknown> = {};
@@ -20,7 +20,7 @@ let confirmation: boolean;
 let home: string;
 let cwd: string;
 
-function getExport(name: string): unknown {
+function getExport(name: string): (...args: unknown[]) => unknown {
   const value = Reflect.get(cli, name);
   expect(typeof value).toBe("function");
   if (typeof value !== "function") throw new Error(`Missing CLI export: ${name}`);
@@ -44,7 +44,7 @@ function replaceDep(name: string, value: unknown): void {
   Reflect.set(target, name, value);
 }
 
-function seedStore(paths: string[]): Promise<void[]> {
+function seedStore(paths: string[]): Promise<undefined[]> {
   return Promise.all(paths.map((path) => addTrustEntry(path, "cli").then(() => undefined)));
 }
 
@@ -272,7 +272,11 @@ async function runNax(args: string[], globalConfigDir: string): Promise<{ code: 
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [code, output] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  const [code, output] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
   return { code, stdout: output };
 }
 

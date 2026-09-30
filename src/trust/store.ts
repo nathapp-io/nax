@@ -58,6 +58,23 @@ export function trustStorePath(): string {
 }
 
 /**
+ * The single producer of `TRUST_STORE_UNREADABLE` — a store present on disk
+ * but not readable as the version-1 shape.
+ *
+ * Shared by the two readers that must fail closed on such a file
+ * (`readFoldersForWrite` here, `ensureProjectTrusted` in `gate.ts`) and by the
+ * CLI surfaces that report it (`nax trust add|rm|check`), so the message an
+ * operator sees is the same whichever path refused.
+ */
+export function trustStoreUnreadableError(storePath: string, reason: string): NaxError {
+  return new NaxError(`[trust] trust store at ${storePath} could not be parsed: ${reason}`, "TRUST_STORE_UNREADABLE", {
+    stage: "trust",
+    path: storePath,
+    reason,
+  });
+}
+
+/**
  * Classify the store. `missing` is the whole path resolving to no file (a
  * missing global config directory included); `unparseable` is a file present
  * but not readable as the version-1 shape; `ok` carries the parsed document.
@@ -138,15 +155,7 @@ async function removeFromStore(storePath: string, normalized: string): Promise<R
 async function readFoldersForWrite(storePath: string): Promise<TrustEntry[]> {
   const read = await readTrustStore();
   if (read.state === "unparseable") {
-    throw new NaxError(
-      `[trust] trust store at ${storePath} could not be parsed: ${read.reason}`,
-      "TRUST_STORE_UNREADABLE",
-      {
-        stage: "trust",
-        path: storePath,
-        reason: read.reason,
-      },
-    );
+    throw trustStoreUnreadableError(storePath, read.reason);
   }
   return read.state === "ok" ? read.file.folders : [];
 }

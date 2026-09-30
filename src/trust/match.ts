@@ -69,6 +69,23 @@ export function findCoveringEntry(folders: readonly TrustEntry[], normalizedPath
 }
 
 /**
+ * Is `normalizedPath` a folder that must never be granted implicitly: the
+ * filesystem root or the operator's home directory?
+ *
+ * Trusting either covers every project a user owns, so both the entry gate and
+ * `nax trust add` refuse them unless `--force` is passed. One definition, so
+ * the gate and the CLI cannot drift apart.
+ *
+ * `homeDir` is a parameter rather than an import so each surface keeps its own
+ * injected home seam (`_trustGateDeps.homedir` / `_cliTrustDeps.homedir`).
+ */
+export function isProtectedFolder(normalizedPath: string, homeDir: string): boolean {
+  // `dirname(path) === path` is the platform-neutral "is this a root" test.
+  if (dirname(normalizedPath) === normalizedPath) return true;
+  return normalizedPath === realOrRaw(homeDir);
+}
+
+/**
  * Does the (normalized) entry path `entryPath` cover `normalizedPath`?
  *
  * Exported because the process registry (`registry.ts`) applies the same rule

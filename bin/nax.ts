@@ -59,6 +59,7 @@ import {
   promptsCommand,
   promptsInitCommand,
   registerApprovalsCommand,
+  registerTrustCommand,
   rulesExportCommand,
   rulesLintCommand,
   rulesMigrateCommand,
@@ -947,6 +948,11 @@ sandboxCmd
 
 // ── approvals ─────────────────────────────────────────
 registerApprovalsCommand(program);
+
+// ── trust ─────────────────────────────────────────────
+// Not gated by `runTrustGate`: managing trust is what the operator runs when
+// the gate has already refused them.
+registerTrustCommand(program);
 
 const mcpCmd = program.command("mcp").description("Manage MCP servers the native agent may call tools on");
 

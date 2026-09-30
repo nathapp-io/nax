@@ -17,10 +17,10 @@
 import { homedir as osHomedir } from "node:os";
 import { dirname } from "node:path";
 import { NaxError } from "@/errors";
-import { findCoveringEntry, normalizeTrustPath } from "./match";
+import { findCoveringEntry, isProtectedFolder, normalizeTrustPath } from "./match";
 import { promptTrustChoice } from "./prompt";
 import { markTrusted } from "./registry";
-import { addTrustEntry, readTrustStore, trustStorePath } from "./store";
+import { addTrustEntry, readTrustStore, trustStorePath, trustStoreUnreadableError } from "./store";
 import type { TrustChoice } from "./types";
 
 /**
@@ -46,16 +46,16 @@ export const _trustGateDeps: {
 export async function ensureProjectTrusted(root: string, options: { interactive: boolean }): Promise<void> {
   const normalizedRoot = await normalizeTrustPath(root);
   const store = await readTrustStore();
-  if (store.state === "unparseable") throw unreadableStore(store.reason);
+  if (store.state === "unparseable") throw trustStoreUnreadableError(trustStorePath(), store.reason);
   if (store.state === "ok" && findCoveringEntry(store.file.folders, normalizedRoot) !== null) {
     markTrusted(normalizedRoot);
     return;
   }
-  if (await isProtectedFolder(normalizedRoot)) {
+  if (isProtectedFolder(normalizedRoot, _trustGateDeps.homedir())) {
     throw refusal(normalizedRoot, `run: nax trust add ${normalizedRoot} --force`);
   }
   if (options.interactive) {
-    const choice = await _trustGateDeps.prompt(normalizedRoot, await offeredParent(normalizedRoot));
+    const choice = await _trustGateDeps.prompt(normalizedRoot, offeredParent(normalizedRoot));
     if (choice !== "no") {
       // The operator may trust the parent instead; the root itself is what the
       // process records, so the decision covers the folder that was asked about.
@@ -76,28 +76,8 @@ function refusal(root: string, hint: string): NaxError {
   });
 }
 
-/**
- * `TRUST_STORE_UNREADABLE`. A store this build cannot parse is never rewritten
- * or treated as empty -- that would discard entries the operator wrote.
- */
-function unreadableStore(reason: string): NaxError {
-  const path = trustStorePath();
-  return new NaxError(`[trust] trust store at ${path} could not be parsed: ${reason}`, "TRUST_STORE_UNREADABLE", {
-    stage: "trust",
-    path,
-    reason,
-  });
-}
-
 /** The parent to offer as `[p]arent`, or `null` when it is a protected folder. */
-async function offeredParent(root: string): Promise<string | null> {
+function offeredParent(root: string): string | null {
   const parent = dirname(root);
-  return (await isProtectedFolder(parent)) ? null : parent;
-}
-
-/** Is `path` a folder this prompt must not grant: the filesystem root or home? */
-async function isProtectedFolder(path: string): Promise<boolean> {
-  // `dirname(path) === path` is the platform-neutral "is this a root" test.
-  if (dirname(path) === path) return true;
-  return path === (await normalizeTrustPath(_trustGateDeps.homedir()));
+  return isProtectedFolder(parent, _trustGateDeps.homedir()) ? null : parent;
 }

@@ -5,7 +5,7 @@
  */
 
 export { _trustGateDeps, ensureProjectTrusted } from "./gate";
-export { findCoveringEntry, normalizeTrustPath, resolveTrustRoot } from "./match";
+export { findCoveringEntry, isProtectedFolder, normalizeTrustPath, resolveTrustRoot } from "./match";
 export { _trustPromptDeps, promptTrustChoice } from "./prompt";
 export { assertTrusted, markTrusted, resetTrustRegistry } from "./registry";
 export {
@@ -15,6 +15,7 @@ export {
   removeTrustEntry,
   TrustStoreFileSchema,
   trustStorePath,
+  trustStoreUnreadableError,
 } from "./store";
 export type {
   AddTrustResult,
