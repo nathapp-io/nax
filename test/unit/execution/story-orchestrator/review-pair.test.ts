@@ -304,6 +304,22 @@ describe("runReviewPair (US-001)", () => {
     expect(rejection).toBe(semanticError);
   });
 
+  test("US-001 AC13 mirror: rejects with the adversarial-review error when only adversarial-review throws", async () => {
+    const { ctx, tracking, runPhase } = setup();
+    const adversarialError = new Error("adversarial-review exploded");
+
+    const pending = runReviewPair(ctx, PAIR, tracking);
+    await awaitDispatches(runPhase);
+    runPhase.resolve("semantic-review", { passed: true });
+    runPhase.reject("adversarial-review", adversarialError);
+
+    const rejection = await pending.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(rejection).toBe(adversarialError);
+  });
+
   test("US-001 AC14: rejects with the semantic-review error when both reviews throw", async () => {
     const { ctx, tracking, runPhase } = setup();
     const semanticError = new Error("semantic-review exploded");
