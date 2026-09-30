@@ -545,6 +545,83 @@ describe("acquireLock and releaseLock", () => {
     });
   });
 
+  describe("sync verify-and-claim production path (unmocked rename)", () => {
+    // The claim's pre-verify read and the rename itself are synchronous in
+    // production (readFileSync + renameSync, no await in between), so a
+    // same-process racer cannot interleave between them and the renamed file
+    // is provably the one whose content was just verified. The deterministic
+    // BUG-34 tests above mock `_lockDeps.rename`, which routes through the
+    // async fallback branch and bypasses that production path entirely —
+    // these tests pin its contracts with the real rename in place, forcing
+    // the race window via `_lockDeps.readLockText` (the one await still
+    // upstream of the synchronous pair).
+    let originalReadLockText: typeof _lockDeps.readLockText;
+
+    beforeEach(() => {
+      originalReadLockText = _lockDeps.readLockText;
+    });
+
+    afterEach(() => {
+      _lockDeps.readLockText = originalReadLockText;
+    });
+
+    test("refuses to steal a fresh live lock that replaced the stale one before the claim, naming its holder", async () => {
+      const staleLock = JSON.stringify({ pid: 999999, timestamp: Date.now() - 60000 });
+      await Bun.write(lockPath, staleLock);
+
+      // A racer legitimately created a fresh live lock at lockPath in the
+      // window between this racer's staleness read and the claim's
+      // synchronous pre-verify read.
+      const freshLock = JSON.stringify({ pid: process.pid, timestamp: Date.now() });
+      _lockDeps.readLockText = async () => {
+        await Bun.write(lockPath, freshLock);
+        // This racer still believes it observed the stale record.
+        return staleLock;
+      };
+
+      const acquired = await acquireLock(testDir);
+      expect(acquired.acquired).toBe(false);
+      if (acquired.acquired === false) {
+        // The refusal names the fresh live holder actually on disk, not the
+        // stale record this racer observed.
+        expect(acquired.holder.pid).toBe(process.pid);
+      }
+
+      // The fresh live lock survives untouched, and no tombstone was created.
+      const lockData = JSON.parse(await Bun.file(lockPath).text());
+      expect(lockData.pid).toBe(process.pid);
+      const { readdirSync } = await import("node:fs");
+      expect(readdirSync(testDir).some((e) => e.includes(".stale."))).toBe(false);
+    });
+
+    test("backs off without creating when the lock vanishes before the claim's read", async () => {
+      const stalePid = 999999;
+      const staleLock = JSON.stringify({ pid: stalePid, timestamp: Date.now() - 60000 });
+      await Bun.write(lockPath, staleLock);
+
+      _lockDeps.readLockText = async (observedPath: string) => {
+        // Another claimant won the rename-away in the window between this
+        // racer's staleness read and the claim's synchronous pre-verify read.
+        await unlink(observedPath).catch(() => {});
+        return staleLock;
+      };
+
+      const acquired = await acquireLock(testDir);
+      expect(acquired.acquired).toBe(false);
+      if (acquired.acquired === false) {
+        // The back-off names the holder this racer last observed — the
+        // vanished lock's own record — rather than fabricating pid 0.
+        expect(acquired.holder.pid).toBe(stalePid);
+      }
+
+      // The back-off must not create a lock at lockPath and must leave no
+      // tombstone behind.
+      expect(await Bun.file(lockPath).exists()).toBe(false);
+      const { readdirSync } = await import("node:fs");
+      expect(readdirSync(testDir).some((e) => e.includes(".stale."))).toBe(false);
+    });
+  });
+
   test("US-002 AC11: the lock record written by acquireLock carries host alongside pid and timestamp", async () => {
     const acquired = await acquireLock(testDir);
     expect(acquired.acquired).toBe(true);
