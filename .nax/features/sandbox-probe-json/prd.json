@@ -3,7 +3,7 @@
   "feature": "sandbox-probe-json",
   "branchName": "feat/sandbox-probe-json",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-30T01:52:47.330Z",
+  "updatedAt": "2026-09-30T02:01:11.925Z",
   "userStories": [
     {
       "id": "US-001",
@@ -48,7 +48,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive CLI handler plus barrel and Commander wiring follow existing auth patterns; the subprocess live check isolates srt's singleton, so there is no new abstraction or cross-module sandbox change and a single-session TDD pass suffices."
+        "reasoning": "Additive CLI handler plus barrel and Commander wiring follow existing auth patterns; the subprocess live check isolates srt's singleton, so there is no new abstraction or cross-module sandbox change and a single-session TDD pass suffices.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/sandbox/probe.ts",
@@ -67,7 +70,11 @@
           "reason": "gains the two live `nax sandbox probe` cases inside its existing `describe.skipIf(!probe.available)` block; no existing case or assertion in the file changes."
         }
       ],
-      "workdirSource": "defaulted"
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4e9a5d31ec2b49c9fe581beedf1126d98c22899c"
     }
   ],
   "analysis": "Existing TypeScript/Bun/Commander CLI; additive command, no migration or change to current sandbox behavior. src/sandbox/probe.ts:27-68 exports probeSandbox(backend), checking platform support before creating a temp directory, wrapping a command and verifying both an allowed-write marker and a denied-write marker; only runArgv is bounded by PROBE_TIMEOUT_MS=30_000 (line 19). Its unavailable reasons include unsupported platform (line 29), wrapping failure (line 48), inability to run (lines 56-59), and missing enforcement (line 62). src/sandbox/srt-backend.ts:51-112 exports createSrtBackend(network), with lazy srt module loading/initialization (lines 57-71) and reset (lines 105-110); constructing the backend itself does not load srt. src/sandbox/types.ts:13,22,34-45 defines SandboxBackendName ('srt'), ProbeResult discriminated union and SandboxBackend.name/reset; src/sandbox/index.ts:22,32,34-45 re-exports required symbols. src/config/schemas-sandbox.ts:21-49 defines SandboxConfigSchema, open network when allowedDomains is absent (lines 39-44), and DEFAULT_SANDBOX_CONFIG parsed from {} (line 50); src/config/index.ts:109-110 re-exports SandboxConfig and DEFAULT_SANDBOX_CONFIG. src/sandbox/registry.ts:26-46 caches its probe per process and uses the run logger; its rejected-probe wording is `sandbox probe failed: ${err instanceof Error ? err.message : String(err)}` (lines 38-41). Do not call the registry: a CLI probe must run afresh and use a private backend, resetting it after success or rejection while ignoring reset errors. src/cli/auth.ts:24-31 provides the mutable CLI log dependency seam; authListCommand at lines 176-206 demonstrates one-document JSON logging and exit-code-returning handler. src/cli/index.ts:1-25 is the barrel imported by bin/nax.ts:43-70; add the new handler and type exports there. bin/nax.ts:885-921 registers auth subcommands with Commander and process.exit(await ...); add sandbox probe adjacent to auth without dir/profile flags or config-loading calls. docs/guides/cli-reference.md:568-584 has the auth section and the insertion point before mcp. test/unit/cli/auth.test.ts:36-86 and test/unit/cli/auth-list.test.ts:62-92 illustrate saving/replacing/restoring mutable seams for Bun unit tests; new test/unit/cli/sandbox-probe.test.ts should stub all four command dependencies on every test, use a resolving reset spy by default, and avoid importing/loading the actual srt module. test/integration/sandbox/sandbox-live.test.ts:25-53 obtains the registry backend at module scope and gates its live cases with describe.skipIf(!probe.available); add two assertions using one subprocess spawn of `bun bin/nax.ts sandbox probe --json` from the repository root inside that block, each with 60_000ms timeout. Its process-wide srt manager is shared across Bun test files; never invoke the command handler in-process in this suite or reset the existing backend. Risks: stdout must have exactly one log call even on failure; JSON must be ANSI-free and omit reason when available; reset failure cannot override probe result; no reads of project/profile config; isolated subprocess avoids disrupting singleton; CLI barrel import cost is existing behavior. No data/schema migration or breaking interface is required; existing run-time registry and probe implementation remain unchanged.",
