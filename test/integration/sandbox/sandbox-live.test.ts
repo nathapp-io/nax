@@ -414,6 +414,68 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
         cleanupTempDir(runRoot);
       }
     }, 60_000);
+
+    // #2301. srt always allows `/tmp/claude` on macOS regardless of the policy
+    // (SANDBOX_OWN_WRITE_PATHS, sandbox-utils.js:477), and it renders its allow
+    // rules before its deny rules in a macOS profile
+    // (macos-sandbox-utils.js:636 then :654), where the later deny wins — so the
+    // deny is the only thing that takes the write back. This is the assertion
+    // that proves it: on the unit side we only see the policy nax built.
+    test.skipIf(process.platform !== "darwin")(
+      "#2301: a write straight into /tmp/claude is refused and leaves nothing behind",
+      async () => {
+        const { runRoot, sessionDir } = makeRun();
+        const stray = `/tmp/claude/nax-2301-${process.pid}-${Date.now()}.txt`;
+        try {
+          const launcher = await confinedLauncher(runRoot, sessionDir);
+
+          const result = await launcher.run(request(`echo x > ${stray}`));
+
+          expect(result.exitCode).not.toBe(0);
+          // The non-zero exit has to be the SANDBOX, not a shell typo or a
+          // missing parent directory — `echo x > <path>` also exits non-zero with
+          // ENOENT on a well-formed command whose target dir is absent, and that
+          // would satisfy the exit-code and existsSync assertions above while
+          // proving nothing about /tmp/claude. These are the two errnos a
+          // seatbelt write refusal raises (LIKELY_SANDBOX_DENIAL in
+          // src/sandbox/messages.ts names the same pair), so a match is what
+          // ties the refusal to the deny rather than to the command's spelling.
+          expect(result.stderr).toMatch(/Operation not permitted|Read-only file system/);
+          expect(existsSync(stray)).toBe(false);
+        } finally {
+          if (existsSync(stray)) rmSync(stray, { force: true });
+          cleanupTempDir(runRoot);
+        }
+      },
+      60_000,
+    );
+
+    test.skipIf(process.platform !== "darwin")(
+      "#2301 boundary: writing through $TMPDIR and a heredoc still work",
+      async () => {
+        // The deny is specific to srt's own TMPDIR. #2301 asks for a proof that
+        // "writes to $TMPDIR and heredocs still work" — the shell's internal temp
+        // files follow the same TMPDIR the launcher exports, so a deny broad
+        // enough to catch them would break ordinary commands too.
+        const { runRoot, sessionDir } = makeRun();
+        try {
+          const launcher = await confinedLauncher(runRoot, sessionDir);
+
+          const result = await launcher.run(request("cat <<'EOF' > \"$TMPDIR/heredoc.txt\"\nbody\nEOF\necho ok"));
+
+          expect(result.exitCode).toBe(0);
+          // Under the SESSION dir, not merely writable somewhere: the launcher's
+          // `export TMPDIR=…` prefix (tmpEnvPrefix) is what aims `$TMPDIR` at the
+          // session temp dir, and the file landing exactly there is what shows the
+          // deny left that path alone rather than blocking the write and letting
+          // the shell fall back to some other temp root.
+          expect(existsSync(join(sessionDir, "heredoc.txt"))).toBe(true);
+        } finally {
+          cleanupTempDir(runRoot);
+        }
+      },
+      60_000,
+    );
   });
 
   /**
