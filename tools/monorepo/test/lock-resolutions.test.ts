@@ -10,12 +10,13 @@ const LOCK = `{
     "zod": ["zod@4.1.0", "", {}, "sha512-x"],
     "@nathapp/nax-ai": ["@nathapp/nax-ai@workspace:packages/nax-ai"],
     "react": ["react@19.1.0", "", {}, "sha512-y"],
+    "@nathapp/nax/react-devtools-core": ["react-devtools-core@file:packages/nax/stubs/react-devtools-core", {}],
   }
 }
 `;
 
 describe("lock resolutions", () => {
-  test("extracts non-workspace name@version, sorted", () => {
+  test("extracts registry-resolved name@version, sorted, excluding workspace and file resolutions", () => {
     expect(externalResolutions(LOCK)).toEqual(["react@19.1.0", "zod@4.1.0"]);
   });
   test("diff reports added and removed", () => {
