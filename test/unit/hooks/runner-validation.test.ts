@@ -8,6 +8,7 @@ import { cleanupTempDir, makeTempDir, useUntrustedRegistry } from "@test/helpers
 import type { LoadedHooksConfig } from "@/hooks/runner";
 import { fireHook, validateHookCommand } from "@/hooks/runner";
 import type { HookContext } from "@/hooks/types";
+import { markTrusted } from "@/trust";
 
 describe("fireHook — US-005 trust backstop", () => {
   useUntrustedRegistry();
@@ -28,9 +29,41 @@ describe("fireHook — US-005 trust backstop", () => {
   test("US-005 AC10: does not execute an untrusted project hook", async () => {
     project = makeTempDir();
     const marker = join(project, "hook-ran");
-    const config: LoadedHooksConfig = { hooks: { "on-start": { command: "" } } };
+    // The command must write the marker when executed — otherwise the absence
+    // assertion below is vacuous (an empty command can never create the file,
+    // so it proves nothing about the trust backstop). Quoted so the argv parser
+    // keeps a space-containing temp path as one token.
+    const config: LoadedHooksConfig = { hooks: { "on-start": { command: `touch '${marker}'` } } };
     await expect(fireHook(config, "on-start", ctx, project)).rejects.toMatchObject({ code: "PROJECT_UNTRUSTED" });
     expect(await Bun.file(marker).exists()).toBe(false);
+  });
+
+  test("US-005 AC11: a global hook runs and writes its marker without project trust", async () => {
+    project = makeTempDir();
+    const marker = join(project, "global-hook-ran");
+    // Only a _global hook is configured — the project hooks map is empty, so
+    // the untrusted project never reaches the backstop. The global hook is
+    // operator-machine controlled (exempt from project trust) and must still
+    // execute: fireHook resolves and the sentinel marker exists.
+    const config: LoadedHooksConfig = {
+      hooks: {},
+      _global: { hooks: { "on-start": { command: `touch '${marker}'` } } },
+    };
+    await fireHook(config, "on-start", ctx, project);
+    expect(await Bun.file(marker).exists()).toBe(true);
+  });
+
+  test("US-005 AC10 control: the same sentinel command writes its marker once trusted", async () => {
+    // Positive control for AC10: proves the sentinel command really executes
+    // and creates the marker when the trust backstop allows it. Without this,
+    // a broken sentinel (unresolvable binary, wrong quoting) would make AC10's
+    // absence assertion pass vacuously — the exact failure mode under review.
+    project = makeTempDir();
+    const marker = join(project, "hook-ran");
+    markTrusted(project);
+    const config: LoadedHooksConfig = { hooks: { "on-start": { command: `touch '${marker}'` } } };
+    await fireHook(config, "on-start", ctx, project);
+    expect(await Bun.file(marker).exists()).toBe(true);
   });
 });
 
