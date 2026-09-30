@@ -14,6 +14,15 @@
  * `fs.rm` on the wipe side, `_runCleanupDeps.wipeRunTmp` left unstubbed, and the
  * only assertion that matters — the run's own directory is gone afterwards.
  *
+ * TWO SEPARATE MKDIR SEAMS EXIST, and the session temp dir on disk is NOT created
+ * by the one this suite stubs. `stubSessionSandboxDeps` replaces
+ * `_sessionSandboxDeps.mkdir` (coding-tool-sandbox.ts), which only has to succeed
+ * for the policy to be granted the confined roots. The directory actually
+ * appears because `createCommandLauncher.run()` calls `ensureTmpDir` →
+ * `_launcherDeps.mkdir` (sandbox/launcher.ts) — a DIFFERENT seam, left production
+ * here. So the session seam needs no "real mkdir" mode: it is not what puts the
+ * directory on disk, and adding one would widen a shared helper for nothing.
+ *
  * `/tmp/nax` is pinned absent through `_sessionTmpDeps`, so `runTmpRoot(id)` is
  * `<real /tmp>/nax/<id>` on any host. The run id carries the pid and a timestamp,
  * so the directory is unique to this test and a concurrent run is never touched.
@@ -35,8 +44,14 @@ import {
 } from "@test/helpers";
 import { _sessionSandboxDeps } from "@/agents/coding-tool-sandbox";
 import { resolveDispatchLauncher } from "@/agents/coding-tool-support-resolve";
-import { cleanupRun } from "@/execution/lifecycle/run-cleanup";
-import { _launcherDeps, _resetSandboxRegistryForTests, _sessionTmpDeps, runTmpRoot } from "@/sandbox";
+import { cleanupRun, type RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
+import {
+  _launcherDeps,
+  _resetSandboxRegistryForTests,
+  _sessionTmpDeps,
+  runTmpRoot,
+  sessionTmpDirUnder,
+} from "@/sandbox";
 
 /** Bash is what makes `resolveDispatchLauncher` ask for a launcher at all. */
 const DECLARED = ["Bash"] as const;
@@ -64,8 +79,7 @@ describe("#2300 — the run temp root dispatch creates is the root cleanupRun wi
     // The command itself is not the subject; the directory `ensureTmpDir` creates
     // before it is. runArgv is stubbed so nothing is spawned.
     _launcherDeps.runArgv = async () => ({ exitCode: 0, stdout: "", stderr: "", timedOut: false });
-    // `mkdir: "real"` — the create side must touch the real filesystem.
-    stubSessionSandboxDeps(_sessionSandboxDeps, { mkdir: "real" });
+    stubSessionSandboxDeps(_sessionSandboxDeps);
   });
 
   afterEach(() => {
@@ -74,8 +88,36 @@ describe("#2300 — the run temp root dispatch creates is the root cleanupRun wi
     _resetSandboxRegistryForTests();
   });
 
-  test("#2300: the directory a dispatched session creates is gone after cleanupRun", async () => {
-    // ── create side: the production dispatch path, sandbox confinement on ──
+  /** The cleanup options, with the two run ids deliberately DIFFERENT values. */
+  function cleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunCleanupOptions {
+    return {
+      runId: runnerRunId,
+      runtimeRunId,
+      startTime: Date.now() - 1000,
+      totalCost: 0,
+      storiesCompleted: 0,
+      prd: makePRD({ feature: "us-2300" }),
+      pluginRegistry: makePluginRegistry(),
+      workdir: root,
+      interactionChain: null,
+      feature: "us-2300",
+      prdPath: `${root}/.nax/features/us-2300/prd.json`,
+      branch: "feat/us-2300",
+      version: "1.0.0",
+      hooks: { hooks: {} },
+      runCompleted: false,
+      dryRun: false,
+      ...overrides,
+    };
+  }
+
+  /**
+   * Dispatch one command the way a real story does, so the run's own session
+   * temp dir is really created. Asserts the confined launcher as a precondition
+   * both tests rest on: an unconfined launcher would mean the create side never
+   * addressed this run's root at all.
+   */
+  async function dispatchSession(): Promise<void> {
     const launcher = await resolveDispatchLauncher(
       {
         codingToolRoot: root,
@@ -97,60 +139,37 @@ describe("#2300 — the run temp root dispatch creates is the root cleanupRun wi
       timeoutMs: 5000,
       stripEnvVars: [],
     });
+  }
+
+  test("#2300: the directory a dispatched session creates is gone after cleanupRun", async () => {
+    // ── create side: the production dispatch path, sandbox confinement on ──
+    await dispatchSession();
 
     // The run's own root, with a real session dir under it.
-    expect(existsSync(`${runRoot}/${SESSION_NAME}`)).toBe(true);
+    expect(existsSync(sessionTmpDirUnder(runRoot, SESSION_NAME))).toBe(true);
 
     // ── wipe side: the REAL wipeRunTmp, not the _runCleanupDeps stub ──
-    await cleanupRun({
-      runId: runnerRunId,
-      runtimeRunId,
-      startTime: Date.now() - 1000,
-      totalCost: 0,
-      storiesCompleted: 0,
-      prd: makePRD({ feature: "us-2300" }),
-      pluginRegistry: makePluginRegistry(),
-      workdir: root,
-      interactionChain: null,
-      feature: "us-2300",
-      prdPath: `${root}/.nax/features/us-2300/prd.json`,
-      branch: "feat/us-2300",
-      version: "1.0.0",
-      hooks: { hooks: {} },
-      runCompleted: false,
-      dryRun: false,
-    });
+    await cleanupRun(cleanupOptions());
 
     expect(existsSync(runRoot)).toBe(false);
   });
 
   test("#2300: a second run's root under the same parent survives the wipe", async () => {
     // The wipe is run-scoped. A sibling run's directory shares the `/tmp/nax`
-    // prefix, and a prefix sweep would take it with the run that ended.
-    const siblingId = `${runtimeRunId}-sibling`;
-    const siblingRoot = runTmpRoot(siblingId);
+    // prefix, and a sweep that reached past the run's own id would take it with
+    // the run that ended. It is created here through the same dispatch the first
+    // test uses, so the wipe has real work to do and this is a genuine
+    // sibling-beside-a-live-root case rather than a wipe that early-returned.
+    const siblingRoot = runTmpRoot(`${runtimeRunId}-sibling`);
     await mkdir(siblingRoot, { recursive: true });
 
     try {
-      await cleanupRun({
-        runId: runnerRunId,
-        runtimeRunId,
-        startTime: Date.now() - 1000,
-        totalCost: 0,
-        storiesCompleted: 0,
-        prd: makePRD({ feature: "us-2300" }),
-        pluginRegistry: makePluginRegistry(),
-        workdir: root,
-        interactionChain: null,
-        feature: "us-2300",
-        prdPath: `${root}/.nax/features/us-2300/prd.json`,
-        branch: "feat/us-2300",
-        version: "1.0.0",
-        hooks: { hooks: {} },
-        runCompleted: false,
-        dryRun: false,
-      });
+      await dispatchSession();
+      await cleanupRun(cleanupOptions());
 
+      // The run's own root went, and only that one: the sibling's id extends
+      // this run's id, so an over-reaching prefix match takes both.
+      expect(existsSync(runRoot)).toBe(false);
       expect(existsSync(siblingRoot)).toBe(true);
     } finally {
       cleanupTempDir(siblingRoot);
