@@ -21,6 +21,7 @@
 import { expect } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { assertDefined } from "./assert-defined";
 
 const TRUST_BARREL = join(import.meta.dir, "..", "..", "src", "trust", "index.ts");
 
@@ -48,5 +49,10 @@ export async function loadTrustModule(): Promise<Partial<TrustModule>> {
 export function trustFn<K extends keyof TrustModule>(mod: Partial<TrustModule>, name: K): TrustModule[K] {
   const value = mod[name];
   expect(typeof value).toBe("function");
-  return value as TrustModule[K];
+  // Narrows the optional indexed access for the type checker; `expect` does not
+  // narrow, and the cast this replaces is counted by `check:test-escape-hatches`.
+  // The `expect` above still throws first for a missing export, so a failure
+  // is reported the same way it was before this line existed.
+  assertDefined(value, `src/trust does not export "${String(name)}"`);
+  return value;
 }

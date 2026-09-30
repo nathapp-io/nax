@@ -68,7 +68,7 @@ function writeStore(folders: TrustStoreFile["folders"]): void {
 
 /** Read the store back as its parsed shape. */
 function readStore(): TrustStoreFile {
-  return JSON.parse(readFileSync(storePath(), "utf8")) as TrustStoreFile;
+  return JSON.parse(readFileSync(storePath(), "utf8"));
 }
 
 /** Freeze the store's clock at `iso` for the current test. */
