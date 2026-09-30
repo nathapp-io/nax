@@ -6,6 +6,10 @@
  * logged at warn and swallowed. A temp directory must never wedge a run, and a
  * failure to remove one is worth a record but not a failure verdict.
  *
+ * Since #2300 absence is *recorded* at debug rather than merely tolerated, which
+ * needs the `_runTmpWipeDeps.exists` seam: without it an absent target is
+ * indistinguishable from a target that was never looked at.
+ *
  * Only the run's OWN `runTmpRoot(runId)` is removed. US-001 moved that root
  * under the shared `/tmp/nax` parent, so the distinction now matters twice
  * over: removing the parent would take a concurrent run's live directories with
@@ -13,7 +17,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { stubSessionTmpDeps, withDepsRestore, withWarnSpy } from "@test/helpers";
+import { assertDefined, stubSessionTmpDeps, withDebugSpy, withDepsRestore, withWarnSpy } from "@test/helpers";
 import { _runTmpWipeDeps, wipeRunTmp } from "@/execution/lifecycle/run-tmp-wipe";
 import { _sessionTmpDeps, runTmpRoot } from "@/sandbox";
 
@@ -29,6 +33,7 @@ describe("wipeRunTmp (US-004)", () => {
   test("US-001 AC9: removes the run's temp root once, never the shared /tmp/nax parent", async () => {
     const remove = mock(async (_path: string) => {});
     _runTmpWipeDeps.remove = remove as typeof _runTmpWipeDeps.remove;
+    _runTmpWipeDeps.exists = () => true;
 
     await wipeRunTmp("r1");
 
@@ -44,6 +49,7 @@ describe("wipeRunTmp (US-004)", () => {
     _runTmpWipeDeps.remove = mock(async (path: string) => {
       removed.push(path);
     }) as typeof _runTmpWipeDeps.remove;
+    _runTmpWipeDeps.exists = () => true;
 
     await wipeRunTmp("r1");
 
@@ -54,6 +60,9 @@ describe("wipeRunTmp (US-004)", () => {
   test("US-004 AC15 boundary: a dry run removes nothing", async () => {
     const remove = mock(async (_path: string) => {});
     _runTmpWipeDeps.remove = remove as typeof _runTmpWipeDeps.remove;
+    // Pinned present so the pass rests on the `dryRun` guard alone, not on
+    // `/tmp/nax/r1` happening to be absent on this host.
+    _runTmpWipeDeps.exists = () => true;
 
     await wipeRunTmp("r1", { dryRun: true });
 
@@ -61,17 +70,41 @@ describe("wipeRunTmp (US-004)", () => {
   });
 
   test("US-004 AC15 boundary: wiping a run whose directory does not exist resolves", async () => {
-    // The production removal primitive stays in place: absence is the ordinary
-    // case for a run that never spawned a command.
+    // Absence is the ordinary case for a run that never spawned a command: the
+    // production `exists` seam reports it and the wipe returns without calling
+    // `remove` at all.
     expect(existsSync(runTmpRoot("us004-no-such-run"))).toBe(false);
 
     await expect(wipeRunTmp("us004-no-such-run")).resolves.toBeUndefined();
+  });
+
+  test("#2300: an absent target is recorded at debug and removed from nothing", async () => {
+    const remove = mock(async (_path: string) => {});
+    _runTmpWipeDeps.remove = remove as typeof _runTmpWipeDeps.remove;
+    _runTmpWipeDeps.exists = mock(() => false) as typeof _runTmpWipeDeps.exists;
+
+    await withDebugSpy(async (debugSpy) => {
+      await wipeRunTmp("r1");
+
+      // The record is the whole point of #2300: `rm(..., { force: true })`
+      // succeeds on a missing path, so before the guard an absent target left
+      // no trace at all and a wrong-id wipe was indistinguishable from a run
+      // that never dispatched a command.
+      const record = debugSpy.mock.calls.find((call) => call[0] === "sandbox");
+      assertDefined(record, "sandbox debug record");
+      expect(record[1]).toContain("/tmp/nax/r1");
+      expect(record[2]?.runId).toBe("r1");
+    });
+    expect(remove).not.toHaveBeenCalled();
   });
 
   test("US-004 AC16: a rejected removal is warned about and swallowed", async () => {
     _runTmpWipeDeps.remove = mock(async () => {
       throw new Error("EBUSY: resource busy or locked");
     }) as typeof _runTmpWipeDeps.remove;
+    // The rejection is the subject here, so the guard must not short-circuit
+    // ahead of it — pin the target present.
+    _runTmpWipeDeps.exists = () => true;
 
     await withWarnSpy(async (warnSpy) => {
       // Fail-open: the caller has no decision to make either way.

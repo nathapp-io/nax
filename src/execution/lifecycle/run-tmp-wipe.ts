@@ -11,10 +11,15 @@
  * find them to clear.
  *
  * Failure is tolerated by design: a temp directory must never wedge a run.
- * Absence is already a success (`rm` with `force: true` does not raise on a
- * missing path), and everything else is logged at warn and swallowed.
+ * Everything that is not absence is logged at warn and swallowed.
+ *
+ * #2300: `rm(..., { force: true })` does not raise on a missing path, so a wipe
+ * aimed at the WRONG run id removed nothing AND said nothing — every run's temp
+ * root survived the wipe that was supposed to remove it. The existence check
+ * below is what makes absence observable.
  */
 
+import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { getSafeLogger } from "@/logger";
 import { runTmpRoot } from "@/sandbox";
@@ -23,6 +28,11 @@ import { errorMessage } from "@/utils/errors";
 /** Injectable deps for the wipe (see docs/architecture/conventions.md §2). */
 export const _runTmpWipeDeps = {
   remove: (path: string): Promise<void> => rm(path, { recursive: true, force: true }),
+  /**
+   * #2300 — one synchronous stat, so a wipe aimed at an id nothing was created
+   * under is recorded instead of passing silently.
+   */
+  exists: (path: string): boolean => existsSync(path),
 };
 
 /** Options for {@link wipeRunTmp}. */
@@ -40,6 +50,10 @@ export interface WipeRunTmpOptions {
 export async function wipeRunTmp(runId: string, opts: WipeRunTmpOptions = {}): Promise<void> {
   if (opts.dryRun) return;
   const path = runTmpRoot(runId);
+  if (!_runTmpWipeDeps.exists(path)) {
+    getSafeLogger()?.debug("sandbox", `Run temp dir absent — nothing to wipe: ${path}`, { runId, path });
+    return;
+  }
   try {
     await _runTmpWipeDeps.remove(path);
   } catch (err) {
