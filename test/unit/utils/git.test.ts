@@ -275,6 +275,23 @@ describe("parsePorcelainForNaxPaths", () => {
     return result.map((r) => r.path);
   }
 
+  test("skips an added-then-deleted (AD) .nax/ path: it was never in HEAD (#2303)", () => {
+    // `AD` = staged-added in the index, deleted from the worktree. The path
+    // is not in HEAD, so `git checkout --` would resurrect a blob that was
+    // never committed and `git add -A` would then stage it.
+    const output = "AD test/integration/cli/tmp-precheck-cli/c/.nax/config.json\n";
+    expect(parsePorcelainForNaxPaths(output)).toEqual([]);
+  });
+
+  test("skips an added-then-modified (AM) .nax/ path (#2303)", () => {
+    expect(parsePorcelainForNaxPaths("AM .nax/features/f/prd.json\n")).toEqual([]);
+  });
+
+  test("keeps a real deletion when AD entries sit beside it (#2303)", () => {
+    const output = "AD tmp/.nax/config.json\n D .nax/features/f/prd.json\n";
+    expect(paths(parsePorcelainForNaxPaths(output))).toEqual([".nax/features/f/prd.json"]);
+  });
+
   test("returns a deleted .nax/ path as protected", () => {
     const output = " D apps/web/.nax/features/f/.nax-acceptance.test.tsx\n";
     expect(paths(parsePorcelainForNaxPaths(output))).toEqual(["apps/web/.nax/features/f/.nax-acceptance.test.tsx"]);
@@ -430,6 +447,10 @@ function captureSpawn(outputs: Array<{ output: string; exitCode?: number; stderr
     // The staged check before commit (#2210) always reports staged changes and
     // takes no slot, so the sequences below stay the ones the tests describe.
     if (cmd.includes("--cached")) return { stdout: "", stderr: "", exitCode: 1 };
+    // The HEAD-existence guard before a .nax/ restore (#2303) likewise takes no
+    // slot and answers "HEAD holds the path"; its own cases are in
+    // nax-path-restore.test.ts.
+    if (cmd[1] === "cat-file") return { stdout: "", stderr: "", exitCode: 0 };
     const spec = outputs[callIdx++] ?? { output: "", exitCode: 0 };
     return { stdout: spec.output, stderr: spec.stderr ?? "", exitCode: spec.exitCode ?? 0 };
   });

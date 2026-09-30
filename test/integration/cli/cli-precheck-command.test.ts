@@ -11,13 +11,49 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { assertDefined } from "@test/helpers";
+import { mkdirSync, realpathSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { precheckCommand } from "@/commands/precheck";
 import { EXIT_CODES } from "@/precheck";
+import { gitSpawnEnv } from "@/utils/git-env";
 
-const TEMP_DIR = join(import.meta.dir, "tmp-precheck-cli");
+// Fixtures live in the OS temp dir, never inside the nax working tree: a
+// fixture whose `git init` failed would otherwise resolve to nax's own repo and
+// stage its files into nax's index (#2304).
+let tempDir: string;
+
+/**
+ * Run git in a fixture, failing the test loudly on a non-zero exit.
+ * GIT_CEILING_DIRECTORIES stops git walking above the fixture's parent, so it
+ * can never resolve to an enclosing repo.
+ */
+function git(dir: string, args: string[]): string {
+  const proc = Bun.spawnSync(["git", ...args], {
+    cwd: dir,
+    env: gitSpawnEnv({ GIT_CEILING_DIRECTORIES: realpathSync(dirname(dir)) }),
+  });
+  if (proc.exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")} exited ${proc.exitCode}: ${new TextDecoder().decode(proc.stderr)}`);
+  }
+  return new TextDecoder().decode(proc.stdout);
+}
+
+/** `git init` plus an identity, then prove the repo root is `dir` itself. */
+function initRepo(dir: string): void {
+  git(dir, ["init", "-q"]);
+  git(dir, ["config", "user.name", "Test"]);
+  git(dir, ["config", "user.email", "test@example.com"]);
+  const toplevel = git(dir, ["rev-parse", "--show-toplevel"]).trim();
+  if (realpathSync(toplevel) !== realpathSync(dir)) {
+    throw new Error(`fixture repo root is ${toplevel}, expected ${dir}`);
+  }
+}
+
+function commitAll(dir: string): void {
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "init", "-q"]);
+}
 
 /**
  * Helper to create a test project structure
@@ -28,7 +64,7 @@ function setupTestProject(name: string): {
   featureDir: string;
   prdPath: string;
 } {
-  const projectDir = join(TEMP_DIR, name);
+  const projectDir = join(tempDir, name);
   const naxDir = join(projectDir, ".nax");
   const featureDir = join(naxDir, "features", "test-feature");
   const prdPath = join(featureDir, "prd.json");
@@ -48,9 +84,7 @@ function setupTestProject(name: string): {
     ),
   );
 
-  Bun.spawnSync(["git", "init", "-q"], { cwd: projectDir });
-  Bun.spawnSync(["git", "config", "user.name", "Test"], { cwd: projectDir });
-  Bun.spawnSync(["git", "config", "user.email", "test@example.com"], { cwd: projectDir });
+  initRepo(projectDir);
 
   mkdirSync(join(projectDir, "node_modules"), { recursive: true });
 
@@ -89,12 +123,11 @@ function createValidPRD() {
 
 describe("CLI precheck command", () => {
   beforeEach(() => {
-    rmSync(TEMP_DIR, { recursive: true, force: true });
-    mkdirSync(TEMP_DIR, { recursive: true });
+    tempDir = makeTempDir("nax-precheck-cli-");
   });
 
   afterEach(() => {
-    rmSync(TEMP_DIR, { recursive: true, force: true });
+    cleanupTempDir(tempDir);
   });
 
   test("should resolve project directory with -d flag", async () => {
@@ -102,8 +135,7 @@ describe("CLI precheck command", () => {
 
     await Bun.write(prdPath, JSON.stringify(createValidPRD()));
 
-    Bun.spawnSync(["git", "add", "."], { cwd: projectDir });
-    Bun.spawnSync(["git", "commit", "-m", "init", "-q"], { cwd: projectDir });
+    commitAll(projectDir);
 
     let exitCode: number | undefined;
     const originalExit = process.exit;
@@ -133,8 +165,7 @@ describe("CLI precheck command", () => {
 
     await Bun.write(prdPath, JSON.stringify(createValidPRD()));
 
-    Bun.spawnSync(["git", "add", "."], { cwd: projectDir });
-    Bun.spawnSync(["git", "commit", "-m", "init", "-q"], { cwd: projectDir });
+    commitAll(projectDir);
 
     let exitCode: number | undefined;
     const originalExit = process.exit;
@@ -162,8 +193,7 @@ describe("CLI precheck command", () => {
 
     await Bun.write(prdPath, JSON.stringify(createValidPRD()));
 
-    Bun.spawnSync(["git", "add", "."], { cwd: projectDir });
-    Bun.spawnSync(["git", "commit", "-m", "init", "-q"], { cwd: projectDir });
+    commitAll(projectDir);
 
     const logs: string[] = [];
     const originalLog = console.log;
@@ -215,8 +245,7 @@ describe("CLI precheck command", () => {
       }),
     );
 
-    Bun.spawnSync(["git", "add", "."], { cwd: projectDir });
-    Bun.spawnSync(["git", "commit", "-m", "init", "-q"], { cwd: projectDir });
+    commitAll(projectDir);
 
     let exitCode: number | undefined;
     const originalExit = process.exit;
@@ -323,8 +352,7 @@ describe("CLI precheck command", () => {
 
     await Bun.write(prdPath, JSON.stringify(createValidPRD()));
 
-    Bun.spawnSync(["git", "add", "."], { cwd: projectDir });
-    Bun.spawnSync(["git", "commit", "-m", "init", "-q"], { cwd: projectDir });
+    commitAll(projectDir);
 
     let exitCode: number | undefined;
     const originalExit = process.exit;

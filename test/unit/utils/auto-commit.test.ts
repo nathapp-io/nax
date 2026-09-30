@@ -4,9 +4,12 @@
  * Covers monorepo subdir guard: workdir = git root, workdir = subdir (monorepo), and unrelated dir.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger, makeSpawn, withDepsRestore } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { cleanupTempDir, makeLogger, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
+import { gitSpawnEnv } from "@/utils/git-env";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -152,5 +155,102 @@ describe("autoCommitIfDirty", () => {
     } finally {
       _gitDeps.getSafeLogger = origGetSafeLogger;
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Real git — never-committed .nax/ paths (#2303)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A path that was staged and then deleted from the worktree (`AD`) is not in
+// HEAD. The auto-commit used to `git checkout` it back as "agent-deleted nax
+// state", and `git add -A` then staged the resurrected file. The suites above
+// stub spawn, so none of them can see the resulting tree; this one runs git and
+// asserts on the tree.
+
+const decoder = new TextDecoder();
+const dirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) cleanupTempDir(dir);
+});
+
+function git(dir: string, args: string[]): string {
+  const proc = Bun.spawnSync(["git", ...args], { cwd: dir, env: gitSpawnEnv() });
+  if (proc.exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")} exited ${proc.exitCode}: ${decoder.decode(proc.stderr)}`);
+  }
+  return decoder.decode(proc.stdout);
+}
+
+function write(dir: string, rel: string, content: string): void {
+  mkdirSync(dirname(join(dir, rel)), { recursive: true });
+  writeFileSync(join(dir, rel), content);
+}
+
+/** A repo with one committed file (`.nax/committed.json`) and an identity. */
+function makeRepo(): string {
+  const dir = makeTempDir("nax-autocommit-ad-");
+  dirs.push(dir);
+  git(dir, ["init", "-q"]);
+  git(dir, ["config", "user.email", "nax-test@example.com"]);
+  git(dir, ["config", "user.name", "nax test"]);
+  git(dir, ["config", "commit.gpgsign", "false"]);
+  write(dir, "README.md", "# fixture\n");
+  write(dir, ".nax/committed.json", "{}\n");
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-qm", "init"]);
+  return dir;
+}
+
+/** Stage `rel`, then delete it from disk: porcelain shows `AD`. */
+function stageThenDelete(dir: string, rel: string): void {
+  write(dir, rel, "{}\n");
+  git(dir, ["add", "--", rel]);
+  rmSync(join(dir, rel));
+}
+
+describe("autoCommitIfDirty — never-committed .nax/ paths (real git)", () => {
+  test("does not resurrect an AD path, and the commit carries only the real change", async () => {
+    const repo = makeRepo();
+    const scratch = "test/tmp-fixture/case/.nax/config.json";
+    stageThenDelete(repo, scratch);
+    write(repo, "src/a.ts", "export const a = 1;\n");
+    expect(git(repo, ["status", "--porcelain"])).toContain(`AD ${scratch}`);
+
+    await autoCommitIfDirty(repo, "execution", "implementer", "US-001");
+
+    expect(existsSync(join(repo, scratch))).toBe(false);
+    expect(git(repo, ["ls-tree", "-r", "--name-only", "HEAD"]).split("\n")).toContain("src/a.ts");
+    expect(git(repo, ["ls-tree", "-r", "--name-only", "HEAD"])).not.toContain(scratch);
+    expect(git(repo, ["status", "--porcelain"])).toBe("");
+  });
+
+  test("still restores a genuine deletion of a committed .nax/ file", async () => {
+    // The guard must not swallow the case the restore exists for.
+    const repo = makeRepo();
+    rmSync(join(repo, ".nax/committed.json"));
+    write(repo, "src/a.ts", "export const a = 1;\n");
+
+    await autoCommitIfDirty(repo, "execution", "implementer", "US-001");
+
+    expect(existsSync(join(repo, ".nax/committed.json"))).toBe(true);
+    expect(git(repo, ["ls-tree", "-r", "--name-only", "HEAD"])).toContain(".nax/committed.json");
+    expect(git(repo, ["status", "--porcelain"])).toBe("");
+  });
+
+  test("restores the committed deletion and skips the AD path when both are present", async () => {
+    const repo = makeRepo();
+    const scratch = ".nax/features/x/prd.json";
+    rmSync(join(repo, ".nax/committed.json"));
+    stageThenDelete(repo, scratch);
+    write(repo, "src/a.ts", "export const a = 1;\n");
+
+    await autoCommitIfDirty(repo, "execution", "implementer", "US-001");
+
+    expect(existsSync(join(repo, ".nax/committed.json"))).toBe(true);
+    expect(existsSync(join(repo, scratch))).toBe(false);
+    expect(git(repo, ["ls-tree", "-r", "--name-only", "HEAD"])).not.toContain(scratch);
+    expect(git(repo, ["status", "--porcelain"])).toBe("");
   });
 });
