@@ -1,8 +1,10 @@
 /** US-004: operator-facing project trust management commands. */
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { Command } from "commander";
+import { registerTrustCommand } from "@/cli/trust";
 import { addTrustEntry, trustStorePath } from "@/trust";
 
 const cli = await import("@/cli");
@@ -292,5 +294,63 @@ describe("trust CLI process behavior", () => {
     const check = await runNax(["trust", "check", projectDir], globalDir);
     expect(add.code).toBe(0);
     expect(check.code).toBe(0);
+  });
+});
+
+describe("trust CLI registration and refusal branches", () => {
+  test.each([
+    ["trustListCommand", {}],
+    ["trustAddCommand", { path: "/unused", yes: true }],
+    ["trustRmCommand", { path: "/unused" }],
+  ])("%s refuses an unreadable store without writing", async (name, options) => {
+    await Bun.write(trustStorePath(), "{not json");
+    expect(await runCommand(name, options)).toBe(1);
+    expect(stderr.join("\n")).toContain("could not be parsed");
+    expect(stdout).toEqual([]);
+    expect(await Bun.file(trustStorePath()).text()).toBe("{not json");
+  });
+
+  test("list reports an empty store", async () => {
+    expect(await runCommand("trustListCommand", {})).toBe(0);
+    expect(stdout).toEqual([`No trusted folders (${trustStorePath()})`]);
+  });
+
+  test("check JSON reports no covering entry", async () => {
+    expect(await runCommand("trustCheckCommand", { json: true })).toBe(1);
+    expect(JSON.parse(stdout.join("\n"))).toEqual({ root: projectDir, trusted: false, coveredBy: null });
+  });
+
+  test("add reports concurrent coverage created during confirmation", async () => {
+    tty = true;
+    replaceDep("confirm", async () => {
+      await addTrustEntry(projectDir, "cli");
+      return true;
+    });
+    expect(await runCommand("trustAddCommand", { path: projectDir })).toBe(0);
+    expect(stdout).toEqual([`Already trusted: ${projectDir} is covered by ${projectDir}`]);
+  });
+
+  test.each([
+    ["list", ["trust", "list", "--json"], 0],
+    ["add", ["trust", "add", "--yes"], 0],
+    ["rm", ["trust", "rm", "/unused"], 1],
+    ["check", ["trust", "check", "--json"], 1],
+  ] as const)("registered %s action forwards flags and exit status", async (name, argv, code) => {
+    const sentinel = new Error("captured trust command exit");
+    const exit = spyOn(process, "exit").mockImplementation(() => {
+      throw sentinel;
+    });
+    try {
+      const program = new Command();
+      registerTrustCommand(program);
+      await expect(program.parseAsync([...argv], { from: "user" })).rejects.toBe(sentinel);
+      expect(exit).toHaveBeenCalledWith(code);
+      if (name === "list") expect(JSON.parse(stdout.join("\n"))).toMatchObject({ folders: [], coveringCwd: null });
+      if (name === "add") expect(stdout).toEqual([`Trusted ${projectDir}`]);
+      if (name === "rm") expect(stderr).toEqual(["No trust entry for /unused"]);
+      if (name === "check") expect(JSON.parse(stdout.join("\n"))).toMatchObject({ trusted: false });
+    } finally {
+      exit.mockRestore();
+    }
   });
 });

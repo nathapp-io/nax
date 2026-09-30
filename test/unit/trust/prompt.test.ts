@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { loadTrustModule } from "@test/helpers";
 
 const trust = await loadTrustModule();
@@ -70,5 +70,39 @@ describe("promptTrustChoice", () => {
     expect(asked).toBe(
       "Trust /home/u/p? nax will run this project's plugins, hooks, MCP servers and test commands. [y]es / [N]o ",
     );
+  });
+});
+
+describe("production trust prompt input", () => {
+  test.each([
+    ["CRLF answer", ["Y\r\n"], "yes"],
+    ["answer split across chunks", ["par", "ent\nignored"], "parent"],
+    ["answer without a newline", ["yes"], "yes"],
+    ["end of input", [], "no"],
+  ] as const)("reads %s and writes the question only to stderr", async (_name, chunks, choice) => {
+    const writes: string[] = [];
+    const input = spyOn(Bun.stdin, "stream").mockImplementation(
+      () =>
+        new ReadableStream({
+          start(controller) {
+            for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+            controller.close();
+          },
+        }),
+    );
+    const output = spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    try {
+      await expect(trust.promptTrustChoice("/r/p", "/r")).resolves.toBe(choice);
+      expect(writes).toEqual([
+        "Trust /r/p? nax will run this project's plugins, hooks, MCP servers and test commands. [y]es / [p]arent (/r) / [N]o ",
+      ]);
+      expect(input).toHaveBeenCalledTimes(1);
+    } finally {
+      input.mockRestore();
+      output.mockRestore();
+    }
   });
 });
