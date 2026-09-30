@@ -28,11 +28,38 @@ export interface NaxProtectedPath {
   staged: boolean;
 }
 
+/** How a porcelain status line changes a path that the auto-commit may need to restore. */
+type RestorableKind = "delete" | "rename";
+
+/**
+ * Classify the two-character `XY` status of a porcelain line: `"rename"` or
+ * `"delete"` when the path is one we may restore, `null` when it is not.
+ *
+ * - `??` (untracked) has no meaningful index/worktree status.
+ * - An index-column `A` means the path was added but never committed, so HEAD
+ *   has no nax state for it. `AD` in particular is a staged-then-removed
+ *   scratch file; restoring it would resurrect a blob that was never committed
+ *   and the following `git add -A` would stage it (#2303).
+ * - We only restore deletions and renames; modifications stay as the agent left
+ *   them. `D` in either column counts — `D ` is staged-delete (e.g. after
+ *   `git rm .nax/...`) and `git add -A` would otherwise keep it staged, losing
+ *   the path without a `git checkout` first. A line that is both a rename and
+ *   a deletion (`RD`) is a rename: its old path is the one HEAD holds.
+ */
+function restorableKind(xStatus: string, yStatus: string): RestorableKind | null {
+  if (xStatus === "?" && yStatus === "?") return null;
+  if (xStatus === "A") return null;
+  if (xStatus === "R" || yStatus === "R") return "rename";
+  if (xStatus === "D" || yStatus === "D") return "delete";
+  return null;
+}
+
 /**
  * Parse `git status --porcelain` output and return the set of deleted-or-renamed
  * paths whose path lies under a `.nax/` segment. Structural discriminator — any
  * deletion or rename touching a `.nax/` segment is treated as a stray-agent
- * mistake the auto-commit must restore before staging.
+ * mistake the auto-commit must restore before staging. Entries whose index
+ * column is `A` (`AD`, `AM`) are skipped: they were never in HEAD (#2303).
  *
  * Exported so tests can exercise the parser against real porcelain strings
  * rather than via a spawn mock. Pure — no I/O.
@@ -59,15 +86,9 @@ export function parsePorcelainForNaxPaths(porcelain: string): NaxProtectedPath[]
     if (rawLine.length < 4) continue;
     const xStatus = rawLine[0];
     const yStatus = rawLine[1];
-    // "?? untracked" has no meaningful index/worktree status — skip.
-    if (xStatus === "?" && yStatus === "?") continue;
-    // We only restore deletions and renames; modifications stay as the agent
-    // left them. `D` in either column counts — `D ` is staged-delete (e.g.
-    // after `git rm .nax/...`) and `git add -A` would otherwise keep it
-    // staged, losing the path without a `git checkout` first.
-    const isDeleted = xStatus === "D" || yStatus === "D";
-    const isRename = xStatus === "R" || yStatus === "R";
-    if (!isDeleted && !isRename) continue;
+    const kind = restorableKind(xStatus, yStatus);
+    if (kind === null) continue;
+    const isRename = kind === "rename";
 
     // The deletion/rename is "staged" when the index column carries the
     // status letter. That is the case where the index no longer has the old
