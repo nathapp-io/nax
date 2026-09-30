@@ -166,6 +166,54 @@ async function claimReclaimableLock(
   observedContent: string,
   lockData: { pid: number; host?: string } | null,
 ): Promise<ReclaimClaimOutcome> {
+  const mutexPath = `${lockPath}.reclaim`;
+  const holder = holderRefusal(lockData).holder;
+  // Only one racer at a time may run the check-and-discard below. Without this,
+  // a racer holding an old observation could rename a winner's freshly created
+  // LIVE lock away; in the gap before it is restored, lockPath is absent and a
+  // third racer wins its own create — two holders (CI two-winner race).
+  const owned = await tryExclusiveCreate(mutexPath, JSON.stringify({ pid: process.pid, timestamp: Date.now() }));
+  if (!owned) {
+    await dropAbandonedReclaimMutex(mutexPath);
+    return { action: "back-off", holder };
+  }
+  try {
+    const current = await Bun.file(lockPath)
+      .text()
+      .catch(() => null);
+    // Already reclaimed by an earlier mutex holder: nothing to discard, and the
+    // caller's exclusive create arbitrates the rest. A different record means a
+    // live lock replaced the one we observed — leave it strictly alone.
+    if (current === null) return { action: "discard" };
+    if (current !== observedContent) return { action: "back-off", holder };
+    return await discardObservedLock(lockPath, observedContent, lockData);
+  } finally {
+    await unlink(mutexPath).catch(() => {});
+  }
+}
+
+/** A reclaim mutex older than this was left by a crashed racer and is safe to remove. */
+const RECLAIM_MUTEX_STALE_MS = 10_000;
+
+async function dropAbandonedReclaimMutex(mutexPath: string): Promise<void> {
+  const raw = await Bun.file(mutexPath)
+    .text()
+    .catch(() => null);
+  try {
+    const { timestamp } = JSON.parse(raw ?? "") as { timestamp?: unknown };
+    if (typeof timestamp === "number" && Date.now() - timestamp > RECLAIM_MUTEX_STALE_MS) {
+      await unlink(mutexPath).catch(() => {});
+    }
+  } catch {
+    // Unreadable or mid-write mutex: leave it; the holder will remove it.
+  }
+}
+
+async function discardObservedLock(
+  lockPath: string,
+  observedContent: string,
+  lockData: { pid: number; host?: string } | null,
+): Promise<ReclaimClaimOutcome> {
   const tombstonePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
   try {
     await _lockDeps.rename(lockPath, tombstonePath);
