@@ -578,6 +578,37 @@ nax auth rm <provider>                 # Local removal only; does not revoke at 
 
 ---
 
+### `nax sandbox probe`
+
+Check whether the default `srt` OS sandbox can enforce its write deny on this machine. The command probes afresh and does not read project configuration.
+
+```bash
+nax sandbox probe
+nax sandbox probe --json
+```
+
+Text output is one line:
+
+```
+Sandbox (srt, darwin): available
+Sandbox (srt, linux): unavailable: <reason>
+```
+
+`--json` emits one document with `backend`, `platform`, and `available`; `reason` is present only when unavailable:
+
+```json
+{
+  "backend": "srt",
+  "platform": "linux",
+  "available": false,
+  "reason": "sandbox could not run a command: exit 1"
+}
+```
+
+Exit codes: `0` when available, `1` when unavailable.
+
+---
+
 ### `nax mcp lock`
 
 Refresh `.nax/mcp-lock.json` from what each configured MCP server (`mcp.servers`) advertises. Connects every enabled server once, at the project root.

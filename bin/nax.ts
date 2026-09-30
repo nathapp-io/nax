@@ -65,6 +65,7 @@ import {
   runRoutingCalibrateCli,
   runsListCommand,
   runsShowCommand,
+  sandboxProbeCommand,
   specLintCommand,
 } from "../src/cli";
 import { configCommand, configJsonCommand } from "../src/cli/config";
@@ -918,6 +919,15 @@ authCmd
   .description("Remove a stored credential locally. Does not revoke it at the provider")
   .action(async (provider: string) => {
     process.exit(await authRmCommand(provider));
+  });
+
+const sandboxCmd = program.command("sandbox").description("Inspect the OS sandbox for agent commands");
+sandboxCmd
+  .command("probe")
+  .description("Probe whether the OS sandbox is available")
+  .option("--json", "Emit machine-readable JSON to stdout", false)
+  .action(async (options: { json?: boolean }) => {
+    process.exit(await sandboxProbeCommand({ json: options.json }));
   });
 
 // ── approvals ─────────────────────────────────────────

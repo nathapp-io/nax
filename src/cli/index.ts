@@ -126,6 +126,12 @@ export {
   runsListCommand,
   runsShowCommand,
 } from "./runs";
+export {
+  _sandboxProbeCmdDeps,
+  type SandboxProbeOptions,
+  type SandboxProbeReport,
+  sandboxProbeCommand,
+} from "./sandbox-probe";
 export { type SetupOptions, setupCommand } from "./setup";
 export { _writeSetupDeps, type WriteSetupConfigResult, writeSetupConfig } from "./setup-write";
 export {
