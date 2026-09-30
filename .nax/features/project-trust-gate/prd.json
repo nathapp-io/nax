@@ -3,7 +3,7 @@
   "feature": "project-trust-gate",
   "branchName": "feat/project-trust-gate",
   "createdAt": "2026-09-30T00:00:00.000Z",
-  "updatedAt": "2026-09-30T05:19:44.453Z",
+  "updatedAt": "2026-09-30T05:54:48.551Z",
   "userStories": [
     {
       "id": "US-001",
@@ -118,8 +118,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -200,7 +200,10 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Security-critical entry authorization across eight CLI actions, with execution ordering and subprocess behavior risks."
+        "reasoning": "Security-critical entry authorization across eight CLI actions, with execution ordering and subprocess behavior risks.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "bin/nax.ts",
@@ -217,7 +220,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e521b3b6fecc12f5c0c42a0aa7e1048da51d8fcb"
     },
     {
       "id": "US-004",
