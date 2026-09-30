@@ -40,7 +40,7 @@ The decision is recorded in `docs/adr/ADR-030-bash-approval-modes.md`, amendment
 Symbols read (unchanged):
 
 - `ensureTmpDir` (`src/sandbox/launcher.ts:73-84`) creates `tmpDir` with `mkdir -p` before each run; `createCommandLauncher` (`src/sandbox/launcher.ts:157`) exports it via `tmpEnvPrefix` / `withTmpEnv`.
-- `buildSandboxPolicy(input: SandboxPolicyInput)` (`src/sandbox/policy-builder.ts:115`) — puts `input.tempRoots` into `writeRoots`, plus `SRT_MACOS_TMPDIR` (`/tmp/claude`) on darwin. Every path goes through `literal()` → `realOrRaw()` (`src/utils/realpath.ts`), so on macOS `/tmp/...` roots appear as `/private/tmp/...`; tests compare against `realOrRaw(...)`, as `test/unit/sandbox/policy-builder.test.ts:202` does.
+- `buildSandboxPolicy(input: SandboxPolicyInput)` (`src/sandbox/policy-builder.ts:115`) — puts `input.tempRoots` into `writeRoots`, plus `SRT_MACOS_TMPDIR` (`/tmp/claude`) on darwin. On darwin with `input.confined` true it does the reverse: that root is dropped and both its spellings are denied. The `input.confined` flag and the rule are the #2301 amendment below, which also supersedes US-002 AC 13. Every path goes through `literal()` → `realOrRaw()` (`src/utils/realpath.ts`), so on macOS `/tmp/...` roots appear as `/private/tmp/...`; tests compare against `realOrRaw(...)`, as `test/unit/sandbox/policy-builder.test.ts:202` does.
 - `denialHintLine(writeRoots)` is called by the launcher when a wrapped command fails with a likely sandbox denial (`src/sandbox/launcher.ts:140`).
 - `NAX_SCRATCHPAD_ENTRY` (`src/tools/nax-owned-writes.ts:23`) — the Write/Edit guard already exempts `.nax/scratchpad/` (`:286`).
 

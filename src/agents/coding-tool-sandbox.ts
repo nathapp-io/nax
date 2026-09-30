@@ -194,8 +194,21 @@ export function rawRefusalFor(launcher: CommandLauncher | undefined): string | u
  *
  * True exactly when the launcher is available AND says `sharedTmp: false` —
  * the only state under which the command guard may skip the classifier for a
- * temp-only command. An available launcher without `sharedTmp`, an unavailable
- * or disabled one, and no launcher at all all read as NOT confined.
+ * temp-only command (`src/agents/coding-tool-support.ts` → `tempConfined` →
+ * `src/command-safety/guard.ts:185`). An available launcher without
+ * `sharedTmp`, an unavailable or disabled one, and no launcher at all all read
+ * as NOT confined.
+ *
+ * That is the RESOLVE-time answer, fixed when the launcher is built, and it is
+ * deliberately NOT the answer the policy narrows on. `SandboxPolicyInput.confined`
+ * ANDs it with whether the per-command session-dir `mkdir` succeeded
+ * (`src/sandbox/launcher.ts:194`), because the `export TMPDIR=…` prefix rides on
+ * that same mkdir. So a session whose dir fails to re-create reports `true` here
+ * while the policy for that ONE command is the unconflined one, `/tmp/claude`
+ * included — which means the guard's temp-only exemption can be claimed for a
+ * command that is not in fact confined. Deliberate, and documented on
+ * `SandboxPolicyInput.confined` (`src/sandbox/policy-builder.ts:41-64`); do not
+ * reconcile the two by making either follow the other.
  */
 export function isTempConfined(launcher: CommandLauncher | undefined): boolean {
   return launcher?.state.kind === "available" && launcher.state.sharedTmp === false;
