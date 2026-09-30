@@ -956,6 +956,97 @@ git add src/agents/coding-tool-sandbox.ts test/unit/agents/coding-tool-sandbox.t
 git commit -m "fix(sandbox): pass the resolved confinement decision into the sandbox policy (#2301)"
 ```
 
+- [ ] **Step 7 (added by the Task 4 review ruling): a dropped `TMPDIR` override must stop the deny**
+
+Task 4's reviewer established that the deny this task wires up breaks a case the project's own spec forbids. `docs/specs/SPEC-tmp-confinement.md:132` and `src/agents/coding-tool-sandbox.ts:66-69` both state a session must never be left with a `TMPDIR` its sandbox cannot write.
+
+The mechanism: `createCommandLauncher.run()` computes the effective dir as
+
+```ts
+const tmpDir = env.tmpDir !== undefined && (await ensureTmpDir(env.tmpDir)) ? env.tmpDir : undefined;
+```
+
+(`src/sandbox/launcher.ts:179`). When that second `mkdir` fails, `runWrapped` omits the `export TMPDIR=…` prefix (`:123`) and srt's own `/tmp/claude` becomes the child's `TMPDIR` — which the Task 4 deny now blocks, so `mktemp` fails for that session while the agent's own hint (`src/sandbox/messages.ts:53`) tells it to use `$TMPDIR`.
+
+Fix: forward the **effective** confinement into `policyFor`, so a session that ended up without its own `TMPDIR` does not carry the deny.
+
+In `src/sandbox/types.ts`, widen the policy builder so it can be told whether the override is actually in force:
+
+```ts
+export interface CommandLauncherOptions {
+  readonly state: SandboxState;
+  readonly backend?: SandboxBackend;
+  /**
+   * Build the policy for one command. `confined` is the EFFECTIVE confinement as
+   * of this launch — false when the session's own `TMPDIR` override could not be
+   * created (#2301), because srt's forced `TMPDIR` then applies instead.
+   */
+  readonly policyFor?: (root: string, confined: boolean) => Promise<SandboxPolicy>;
+  ...
+}
+```
+
+In `src/sandbox/launcher.ts`, pass it at the call site in `run()` (`:190`):
+
+```ts
+        return await runWrapped(req, opts.backend, await opts.policyFor(req.root, env.tmpDir !== undefined && tmpDir !== undefined), { ...env, tmpDir });
+```
+
+In `src/agents/coding-tool-sandbox.ts`, accept it in the closure and use it instead of the captured `confined`:
+
+```ts
+  const policyFor = async (root: string, overrideInForce: boolean) =>
+    buildSandboxPolicy({
+      ...
+      // #2301: the RESOLVED confinement, narrowed by whether this command will
+      // actually get the session's `TMPDIR`. When `ensureTmpDir` failed, srt's own
+      // `/tmp/claude` becomes the child's TMPDIR, and denying it would leave the
+      // session with a TMPDIR its own sandbox refuses to write — the one posture
+      // SPEC-tmp-confinement.md:132 rules out.
+      confined: confined && overrideInForce,
+```
+
+Add a test to `test/unit/agents/coding-tool-sandbox.test.ts` for the launcher-level narrowing, using `_launcherDeps.mkdir` to reject:
+
+```ts
+  test("#2301: a command whose session dir cannot be re-created stops carrying the /tmp/claude deny", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps, { platform: "darwin" });
+    // The resolve-time mkdir succeeds (so the session IS confined), but the
+    // per-launch one fails, so no `export TMPDIR=` prefix is applied.
+    _launcherDeps.mkdir = async () => {
+      throw new Error("EROFS: read-only file system");
+    };
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    await launcher.run(launchRequest());
+
+    const policy = wrappedPolicy(seam);
+    expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
+    // The rest of the confinement is untouched: the run's own root is still the
+    // only temp write root.
+    expect(policy.writeRoots).toContain(realOrRaw(RUN_TMP_ROOT));
+  });
+```
+
+- [ ] **Step 8 (added by the Task 4 review ruling): run the full gate set**
+
+```bash
+AGENT=1 bun test test/unit/agents/ test/unit/sandbox/ --timeout=30000
+bun run typecheck
+AGENT=1 bun run check:all
+```
+
+Note that `test/unit/agents/coding-tool-sandbox.test.ts:357-373` (`US-002 AC20`) is **expected to fail** once `confined` is threaded — that test pins the behaviour #2301 reverses, and Step 1 of this task replaces it. If it still fails after Step 1, you missed a replacement.
+
+- [ ] **Step 9: Commit the ruling-A work separately**
+
+```bash
+git add src/sandbox/types.ts src/sandbox/launcher.ts src/agents/coding-tool-sandbox.ts test/unit/agents/coding-tool-sandbox.test.ts
+git commit -m "fix(sandbox): stop the /tmp/claude deny when the session TMPDIR override is not in force (#2301)"
+```
+
+This is a separate commit from Step 6 on purpose: it is a behaviour fix discovered during review, not part of the original wiring, and a reviewer may reasonably want to evaluate it on its own.
+
 ---
 
 ### Task 6: The live darwin proof
