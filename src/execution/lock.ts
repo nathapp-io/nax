@@ -6,15 +6,32 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { readFileSync, renameSync } from "node:fs";
 import { rename, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { isProcessAlive } from "@/utils/process-alive";
+import { realOrRaw } from "@/utils/realpath";
 import { getLogger } from "../logger";
 
-/** The unmodified production `rename`, so the claim can tell a test mock from the real seam. */
-const REAL_RENAME = rename;
+/** Serialize mutations of each lock within this process across asynchronous I/O. */
+const pendingLockOperations = new Map<string, Promise<void>>();
+
+async function serializeLockOperation<T>(workdir: string, operation: () => Promise<T>): Promise<T> {
+  const key = realOrRaw(path.resolve(workdir));
+  const previous = pendingLockOperations.get(key);
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  pendingLockOperations.set(key, current);
+  try {
+    await previous;
+    return await operation();
+  } finally {
+    release();
+    if (pendingLockOperations.get(key) === current) pendingLockOperations.delete(key);
+  }
+}
 
 /**
  * Injectable seam for the stale-lock rename step, so tests can deterministically
@@ -172,20 +189,12 @@ async function claimReclaimableLock(
 ): Promise<ReclaimClaimOutcome> {
   const tombstonePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
 
-  // Synchronous pre-verify + claim. Between acquireLock's content read and
-  // this rename, a racer can legitimately create a fresh live lock at
-  // lockPath (the vanished-read fall-through to create is contractual).
-  // Renaming on that stale observation would steal the live lock, and when
-  // the mismatch restore below then loses its own race against a third
-  // creator, the victim's record is destroyed — two racers both believe
-  // they hold the lock (reproduced ~3% of runs under load). JS is
-  // single-threaded: readFileSync + renameSync back-to-back leave no await
-  // point for another task to interleave, so the file renamed is provably
-  // the one whose content was just verified. Cross-process thieves are
-  // still caught by the tombstone content check below.
+  // The per-path operation queue prevents same-process acquire/release calls
+  // from replacing the lock between this asynchronous verification and rename.
+  // Cross-process replacements are caught by the tombstone check below.
   let currentContent: string | null;
   try {
-    currentContent = readFileSync(lockPath, "utf8");
+    currentContent = await Bun.file(lockPath).text();
   } catch (readError) {
     if ((readError as NodeJS.ErrnoException).code === "ENOENT") {
       // Another claimant already renamed the lock away — back off.
@@ -200,13 +209,7 @@ async function claimReclaimableLock(
   }
 
   try {
-    if (_lockDeps.rename === REAL_RENAME) {
-      // Production path: the synchronous rename keeps the verify-and-claim
-      // pair atomic against same-process racers (see above).
-      renameSync(lockPath, tombstonePath);
-    } else {
-      await _lockDeps.rename(lockPath, tombstonePath);
-    }
+    await _lockDeps.rename(lockPath, tombstonePath);
   } catch (renameError) {
     if ((renameError as NodeJS.ErrnoException).code === "ENOENT") {
       // Another process already claimed cleanup of this lock — let it
@@ -257,6 +260,10 @@ async function claimReclaimableLock(
  * - Re-acquires lock after removal
  */
 export async function acquireLock(workdir: string): Promise<LockAcquisitionResult> {
+  return serializeLockOperation(workdir, () => acquireLockExclusive(workdir));
+}
+
+async function acquireLockExclusive(workdir: string): Promise<LockAcquisitionResult> {
   const lockPath = path.join(workdir, "nax.lock");
   const lockFile = Bun.file(lockPath);
 
@@ -350,6 +357,10 @@ export async function acquireLock(workdir: string): Promise<LockAcquisitionResul
  * @param workdir - Working directory to unlock
  */
 export async function releaseLock(workdir: string): Promise<void> {
+  return serializeLockOperation(workdir, () => releaseLockExclusive(workdir));
+}
+
+async function releaseLockExclusive(workdir: string): Promise<void> {
   const lockPath = path.join(workdir, "nax.lock");
   try {
     await unlink(lockPath);

@@ -545,16 +545,10 @@ describe("acquireLock and releaseLock", () => {
     });
   });
 
-  describe("sync verify-and-claim production path (unmocked rename)", () => {
-    // The claim's pre-verify read and the rename itself are synchronous in
-    // production (readFileSync + renameSync, no await in between), so a
-    // same-process racer cannot interleave between them and the renamed file
-    // is provably the one whose content was just verified. The deterministic
-    // BUG-34 tests above mock `_lockDeps.rename`, which routes through the
-    // async fallback branch and bypasses that production path entirely —
-    // these tests pin its contracts with the real rename in place, forcing
-    // the race window via `_lockDeps.readLockText` (the one await still
-    // upstream of the synchronous pair).
+  describe("serialized verify-and-claim production path (unmocked rename)", () => {
+    // Same-path acquisition and release are serialized across asynchronous
+    // verification and rename. These cases exercise the real rename seam,
+    // forcing external replacement/removal through the initial-read seam.
     let originalReadLockText: typeof _lockDeps.readLockText;
 
     beforeEach(() => {
@@ -571,7 +565,7 @@ describe("acquireLock and releaseLock", () => {
 
       // A racer legitimately created a fresh live lock at lockPath in the
       // window between this racer's staleness read and the claim's
-      // synchronous pre-verify read.
+      // asynchronous pre-verify read.
       const freshLock = JSON.stringify({ pid: process.pid, timestamp: Date.now() });
       _lockDeps.readLockText = async () => {
         await Bun.write(lockPath, freshLock);

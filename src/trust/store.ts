@@ -20,7 +20,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { z } from "zod";
 // Leaf import, not the @/config barrel — see match.ts.
@@ -170,8 +170,13 @@ async function readFoldersForWrite(storePath: string): Promise<TrustEntry[]> {
  */
 async function writeTrustStore(storePath: string, file: TrustStoreFile): Promise<void> {
   const tempPath = `${storePath}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(tempPath, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
-  await rename(tempPath, storePath);
+  try {
+    await writeFile(tempPath, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+    await rename(tempPath, storePath);
+  } finally {
+    // Cleanup must not replace the original write/rename failure.
+    await unlink(tempPath).catch(() => {});
+  }
 }
 
 /** `true` iff `dir` exists and is a directory. Anything else means "no store". */
