@@ -11,7 +11,7 @@
  * and `prompt.test.ts` call `markTrusted`, `assertTrusted`,
  * `ensureProjectTrusted`, `promptTrustChoice` and the two `_deps` objects
  * directly, and `test/` compiles at zero type errors (`bun run typecheck` is a
- * hard gate in the pre-commit hook), so every one of those properties has to be
+ * hard gate in CI (`check:all`)), so every one of those properties has to be
  * non-optional.
  */
 
