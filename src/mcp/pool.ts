@@ -15,6 +15,7 @@
 
 import type { McpServerConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
+import { assertTrusted } from "@/trust";
 import { cancellableDelay } from "@/utils/bun-deps";
 import { connectMcpServer } from "./client";
 import type { McpCallResult, McpConnection, McpToolDescriptor } from "./types";
@@ -75,6 +76,13 @@ export function createMcpPool(opts: {
   async function open(serverId: string, workdir: string): Promise<Entry | undefined> {
     const server = opts.servers[serverId];
     if (server === undefined || !server.enabled) return undefined;
+
+    // Trust backstop (US-005): an MCP server entry is repository-controlled —
+    // merged config chooses the binary that gets spawned. Asserted before the
+    // retry loop and outside its try, so the refusal propagates from
+    // listTools/call as a rejection instead of degrading into connect-failed
+    // error-as-data.
+    await assertTrusted(workdir, "mcp");
 
     for (let attempt = 1; attempt <= retry.maxAttempts; attempt++) {
       // Declared above the try so the catch can tell "connect failed" — where

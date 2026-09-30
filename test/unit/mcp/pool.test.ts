@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeTempDir, useUntrustedRegistry, withTimerSpy } from "@test/helpers";
-import { markTrusted } from "@/trust";
 import type { McpServerConfig } from "@/config";
 import { _mcpClientDeps } from "@/mcp/client";
 import { createMcpPool } from "@/mcp/pool";
+import { markTrusted } from "@/trust";
 
 const original = { ..._mcpClientDeps };
 afterEach(() => Object.assign(_mcpClientDeps, original));

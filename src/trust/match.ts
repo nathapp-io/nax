@@ -44,6 +44,17 @@ export function resolveTrustRoot(workdir: string): string {
  * synchronous (`realOrRaw`, `src/utils/realpath.ts`).
  */
 export async function normalizeTrustPath(path: string): Promise<string> {
+  return normalizeTrustPathSync(path);
+}
+
+/**
+ * The synchronous core of `normalizeTrustPath`.
+ *
+ * Shared with the process registry (`markTrusted`), which writes synchronously:
+ * one normalization definition, so what the registry stores and what
+ * `assertTrusted` queries can never drift apart.
+ */
+export function normalizeTrustPathSync(path: string): string {
   const resolved = realOrRaw(path);
   if (resolved.length > 1 && resolved.endsWith("/")) return resolved.slice(0, -1);
   return resolved;

@@ -12,6 +12,7 @@ import * as path from "node:path";
 import type { ReportersConfig } from "../config/schemas-reporters";
 import { NaxError } from "../errors";
 import { getSafeLogger as _getSafeLoggerFromModule } from "../logger";
+import { assertTrusted } from "../trust";
 import { errorMessage } from "../utils/errors";
 import { validateModulePath } from "../utils/path-security";
 import { autoPrPlugin } from "./builtin/auto-pr";
@@ -241,6 +242,10 @@ export async function loadPlugins(
       logger?.info("plugins", `Skipping disabled plugin: '${pluginName}' (project directory)`);
       continue;
     }
+    // Trust backstop (US-005): a project-directory plugin is repository-controlled
+    // code. Asserted here — outside loadAndValidatePlugin, which swallows import
+    // errors — so an untrusted refusal propagates instead of becoming a skip.
+    await assertTrusted(effectiveProjectRoot, "plugins");
     const validated = await loadAndValidatePlugin(plugin.path, {}, [projectDir]);
     if (validated) {
       if (pluginNames.has(validated.name)) {
@@ -260,6 +265,11 @@ export async function loadPlugins(
       logger?.info("plugins", `Skipping disabled plugin: '${entry.module}'`);
       continue;
     }
+    // Trust backstop (US-005): a config plugin entry is repository-controlled too —
+    // project config, project profiles and per-package overrides all feed the merge.
+    // Asserted before resolving/importing, outside loadAndValidatePlugin's swallowed
+    // errors, so an untrusted refusal propagates.
+    await assertTrusted(effectiveProjectRoot, "plugins");
     // Resolve module path relative to effective project root for relative paths
     const resolvedModule = resolveModulePath(entry.module, effectiveProjectRoot);
     const validated = await loadAndValidatePlugin(

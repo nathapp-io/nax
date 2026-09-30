@@ -5,8 +5,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, useUntrustedRegistry } from "@test/helpers";
-import { fireHook, validateHookCommand } from "@/hooks/runner";
 import type { LoadedHooksConfig } from "@/hooks/runner";
+import { fireHook, validateHookCommand } from "@/hooks/runner";
 import type { HookContext } from "@/hooks/types";
 
 describe("fireHook — US-005 trust backstop", () => {

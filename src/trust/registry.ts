@@ -14,21 +14,24 @@
  */
 
 import { NaxError } from "@/errors";
-import { covers, normalizeTrustPath } from "./match";
+import { covers, normalizeTrustPath, normalizeTrustPathSync } from "./match";
 import type { TrustSurface } from "./types";
 
 /** Roots decided trusted in this process, normalized by `normalizeTrustPath`. */
 const trustedRoots = new Set<string>();
 
 /**
- * Record `normalizedRoot` as trusted for the rest of this process.
+ * Record `root` as trusted for the rest of this process.
  *
- * The caller normalizes (`ensureProjectTrusted` and the test preload both do);
- * storing the raw spelling would let `/a/b/` and `/a/b` mark two different
- * roots, and a symlinked spelling would mark a root no site ever asks about.
+ * Normalized HERE, with the same definition `assertTrusted` queries by, rather
+ * than trusted to the caller: a raw spelling would let `/a/b/` and `/a/b` mark
+ * two different roots, and a symlinked spelling (`/var/...` on macOS) would
+ * mark a root no site's normalized query ever covers. Callers that
+ * pre-normalize (`ensureProjectTrusted`, the test preload) are unaffected --
+ * normalization is idempotent.
  */
-export function markTrusted(normalizedRoot: string): void {
-  trustedRoots.add(normalizedRoot);
+export function markTrusted(root: string): void {
+  trustedRoots.add(normalizeTrustPathSync(root));
 }
 
 /**

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, useUntrustedRegistry } from "@test/helpers";
-import { markTrusted } from "@/trust";
 import { loadPlugins } from "@/plugins";
+import { markTrusted } from "@/trust";
 
 const pluginSource = (name: string, marker?: string): string =>
   `${marker ? `await Bun.write(${JSON.stringify(marker)}, "loaded");` : ""}\nexport default { name: ${JSON.stringify(name)}, version: "1.0.0", provides: ["router"], extensions: { router: { name: "test", route: async () => null } } };\n`;
