@@ -9,7 +9,7 @@
  * entry it should match.
  */
 
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { findProjectDir, globalConfigDir } from "@/config";
 import { realOrRaw } from "@/utils/realpath";
 import type { TrustEntry } from "./types";
@@ -52,10 +52,12 @@ export async function normalizeTrustPath(path: string): Promise<string> {
 /**
  * The stored entry that covers `normalizedPath`, or `null`.
  *
- * An entry covers a path when it equals it, is `/`, or is a prefix of it
- * followed by a separator -- `startsWith` alone would let `/a/foo` cover
- * `/a/foobar` (AC3). When several entries cover, the longest wins so the most
- * specific root is the one reported (`/a/b` over `/a` for `/a/b/c`).
+ * An entry covers a path when it equals it, is a root (`/`, or `C:\` on
+ * Windows: an entry that already ends with the platform separator), or is a
+ * prefix of it followed by that separator -- a bare `startsWith` would let
+ * `/a/foo` cover `/a/foobar` (AC3). When several entries cover, the longest
+ * wins so the most specific root is the one reported (`/a/b` over `/a` for
+ * `/a/b/c`).
  */
 export function findCoveringEntry(folders: readonly TrustEntry[], normalizedPath: string): TrustEntry | null {
   let best: TrustEntry | null = null;
@@ -68,6 +70,11 @@ export function findCoveringEntry(folders: readonly TrustEntry[], normalizedPath
 
 /** Does the (normalized) entry path `entryPath` cover `normalizedPath`? */
 function covers(entryPath: string, normalizedPath: string): boolean {
-  if (entryPath === "/") return true;
-  return normalizedPath === entryPath || normalizedPath.startsWith(`${entryPath}/`);
+  if (normalizedPath === entryPath) return true;
+  // An entry that ends with the separator is a root -- `/`, or `C:\` on
+  // Windows -- and already carries the boundary, so everything beneath it is
+  // covered. Every other entry needs the separator between it and a descendant,
+  // or `/a/foo` would cover `/a/foobar` (AC3).
+  if (entryPath.endsWith(sep)) return normalizedPath.startsWith(entryPath);
+  return normalizedPath.startsWith(`${entryPath}${sep}`);
 }
