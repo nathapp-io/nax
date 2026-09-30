@@ -1,27 +1,38 @@
 # S0 — Monorepo conversion (design)
 
 - **Arc:** nax-agent. This is sub-project S0 of 7 (S0-S6).
-- **Arc SSOT:** the nax-agent master plan kept in the maintainer's workspace, not in this repo. It holds the arc decisions (D1-D9) and all status. This spec holds S0's design only.
-- **Date:** 2026-10-01
-- **Base:** `main` @ `bcfcddb01` (v0.83.2)
+- **Arc SSOT:** the nax-agent master plan, kept in the maintainer's workspace (not in this repo). It holds the arc decisions (D1-D10) and all status. This spec holds S0's design only.
+- **Date:** 2026-10-01 (revised the same day after the final review).
+- **Base:** `main` @ `bcfcddb01` (v0.83.2).
+- **Working branch:** `refactor/nax-monorepo`.
 
 ## 1. Goal
 
-Turn this repository into a Bun-workspace monorepo holding `packages/nax` (the current package, moved) and `packages/nax-ai` (imported from `nathapp-io/nax-ai` with its history). Later sub-projects add `packages/nax-agent`.
+This repository becomes a Bun-workspace monorepo with two packages:
+- `packages/nax`: the current package, moved.
+- `packages/nax-ai`: imported from `nathapp-io/nax-ai` with its history.
 
-**No behaviour change.** Published packages keep their names, files and `bin`. A global install still resolves to `.../@nathapp/nax/dist/nax.js`. Every quality gate passes without touching a baseline.
+Later sub-projects add `packages/nax-agent`.
+
+**No behaviour change.**
+- Published packages keep their names, files, `bin` and dependency specs.
+- A global install still resolves to `.../@nathapp/nax/dist/nax.js`.
+- Every quality gate passes without a baseline change.
+- The full test suite passes from `packages/nax`.
 
 **Out of scope:** creating `nax-agent`; any `src/` behaviour change; Turborepo (arc D9); Changesets.
 
 ## 2. Delivery
 
-Three PRs, each merged to `main` on green. There is no long-lived branch (arc D6).
+There is one working branch, `refactor/nax-monorepo`, and three PRs merged to `main` in order. After each merge, the branch is rebased onto `main` before the next step, so it never stays apart from `main` for more than one PR (arc D6).
 
-| PR | Content | Merge style |
+| # | PR content | Merge style |
 |---|---|---|
-| **pre-S0** | Remove the pre-commit hook (§7) | squash |
-| **S0a** | Move nax into `packages/nax/`, add the workspace root, set up `.nax` as a monorepo, rewrite CI and release for the new layout | squash. The squash keeps pure renames, so `git log --follow` and rebases work across it |
-| **S0b** | Import nax-ai with history into `packages/nax-ai/`, then wire it into the workspace, CI and release | **merge commit.** A squash would flatten nax-ai's history. Merge commits are enabled on this repo, and it has no linear-history rule (checked 2026-10-01) |
+| 1 | This spec, the implementation plan, and **pre-S0**: remove the pre-commit hook (§7) | squash |
+| 2 | **S0a**: move nax into `packages/nax/`, add the workspace root, set up the `.nax` monorepo, rewrite CI and release | squash. Pure renames survive the squash, so `git log --follow` and rebases work |
+| 3 | **S0b**: import nax-ai with history into `packages/nax-ai/`, wire it into the workspace, CI and release | **merge commit**. A squash would flatten nax-ai's history. Merge commits are enabled and there is no linear-history rule (checked 2026-10-01) |
+
+Branch protection has no required status checks (`required_status_checks.contexts: []`, checked 2026-10-01), so renaming CI jobs cannot block a merge.
 
 ## 3. Layout
 
@@ -30,34 +41,88 @@ Three PRs, each merged to `main` on green. There is no long-lived branch (arc D6
 ```
 /                                   git root = workspace root
 ├── package.json                    NEW: private; "workspaces": ["packages/*"]; root scripts (§5.4)
-├── bun.lock                        stays (workspace lockfile)
-├── biome.json                      NEW: minimal root config {"root": true} (§5.3)
-├── .github/                        stays; workflows rewritten (§4)
+├── bunfig.toml                     NEW: [install] linker = "isolated" (§3.1)
+├── bun.lock                        stays; regenerated for the workspace (§3.2)
+├── biome.json                      NEW: root config (§5.3)
+├── .github/                        stays: workflows rewritten (§4); release.yml (changelog categories) unchanged
 ├── .gitignore  .git-blame-ignore-revs  .semgrepignore
-├── CONTRIBUTING.md  SECURITY.md  CODE_OF_CONDUCT.md  LICENSE
+├── CONTRIBUTING.md                 stays; commands updated to root scripts / `cd packages/nax`
+├── SECURITY.md  CODE_OF_CONDUCT.md  LICENSE
 ├── README.md                       NEW: short monorepo README pointing to the packages
 ├── docs/                           stays at root
+├── tools/monorepo/convert-s0a.ts   conversion script (§8.1); removed in S0b
 ├── .nax/                           stays; monorepo setup (§6)
 │   └── mono/packages/nax/{config.json, context.md}   NEW
 ├── .claude/                        stays; rules regenerated; settings.json hook repointed
-├── CLAUDE.md  AGENTS.md  GEMINI.md  codex.md          stay (regenerated by `nax generate`)
+├── CLAUDE.md  AGENTS.md  GEMINI.md  codex.md          stay; regenerated from the slim root context
 └── packages/nax/                   git mv of everything the package owns:
-    ├── package.json                unchanged apart from repository.directory and the removed `prepare`
-    ├── src/ bin/ test/ scripts/ stubs/ biome-plugins/ examples/
+    ├── package.json                unchanged apart from repository.directory
+    ├── src/ bin/ test/ scripts/ stubs/ biome-plugins/ examples/ .reports/
     ├── tsconfig.json  tsconfig.test.json  bunfig.toml  biome.json ("root": false)  .env.test  .naxignore
     ├── README.md  CHANGELOG.md  LICENSE (copied)       published files
-    ├── BRIEF.md  CODE_REVIEW_REPORT.md  opencode.json  docker-compose.test*.yml   unreferenced, moved as-is
-    └── .gitignore                  NEW: the rooted entries that belong to the package (e.g. test/tmp/)
+    ├── CLAUDE.md  AGENTS.md  GEMINI.md  codex.md       NEW: generated by `nax generate --all-packages`
+    ├── BRIEF.md  CODE_REVIEW_REPORT.md  opencode.json  moved as-is (unreferenced)
+    ├── docker-compose.test.yml  docker-compose.test-bail.yml   moved as-is; already stale (pin Bun 1.3.13); not fixed in S0
+    └── .gitignore                  NEW: the package-anchored entries (§3.3)
 ```
 
 **Rules:**
 - Nothing that nax's `src/`, `test/`, `scripts/` or `bin/` reaches through a relative path is separated from them.
-- Only git and GitHub plumbing, shared docs, and the project-level agent setup (`.nax/`, `.claude/`, generated agent files) stay at the root.
-- There is one `bun.lock` and one root `node_modules`.
+- Only git and GitHub plumbing, shared docs, the conversion tool and the project-level agent setup (`.nax/`, `.claude/`, root agent files) stay at the root.
+
+### 3.1 Install linker
+
+Pin `linker = "isolated"` in the root `bunfig.toml`. Bun 1.4.2 already picks the isolated linker for this repo's `bun.lock` (`configVersion: 1`); pinning makes the choice explicit.
+
+With it:
+- Root `node_modules/` holds only `.bun/`. Each package gets its own `packages/<pkg>/node_modules/` with symlinks.
+- `packages/nax/node_modules/.bin/biome` exists, so these keep working unchanged:
+  - `scripts/check-complexity.ts:296`
+  - the Biome plugin tests (`BIOME = join(REPO, "node_modules", ".bin", "biome")`)
+- `catalog:diff` keeps working when run from its package, because `process.cwd()/node_modules/@earendil-works/pi-ai` resolves there. **No change to `catalog:diff`.**
+
+**Known limitation, not addressed in S0:**
+- With `execution.storyIsolation: "worktree"`, a story checkout at `.nax-wt/<id>/packages/nax` has no `node_modules` of its own to walk up to (`src/cli/config-descriptions.ts:108`).
+- This repo's `.nax/config.json` does not set `storyIsolation`, so its default applies.
+- Revisit in S1 if worktree isolation is enabled here.
+
+### 3.2 `bun.lock`
+
+The lock's `workspaces[""]` entry describes today's nax package. After the move it must describe:
+- the private root, plus
+- a `packages/nax` workspace.
+
+Otherwise `bun install --frozen-lockfile` fails.
+
+The conversion script:
+1. runs `bun install` (not frozen);
+2. asserts that the resolved external packages (every `packages` entry that is not a `workspace:` resolution) have the same name@version set as before the move.
+
+S0b does the same after the import:
+- deletes the imported `packages/nax-ai/bun.lock`;
+- runs `bun install`;
+- asserts `@earendil-works/pi-ai` resolves to `0.87.1` and `proper-lockfile` to `4.1.2`;
+- asserts nax's previous resolutions are unchanged.
+
+### 3.3 `.gitignore` split
+
+Git anchors a pattern to the directory of its `.gitignore` when the pattern contains a `/` before the end. The script classifies every root entry:
+- **Stay at root:**
+  - entries without a slash (`node_modules`, `coverage`, `dist`, `build`, `.nax-pids`, `.worktrees`, `opencode.json`, …), which match at any depth;
+  - every `.nax/...` entry, because `.nax/` stays at the root;
+  - the `**/...` entries.
+- **Move to `packages/nax/.gitignore`:** `test/tmp/`, `test/integration/tmp/`, `tmp/.ci-test-output.txt`.
+
+The script prints this classification in its report.
 
 ### After S0b
 
-`packages/nax-ai/` is added with its history. It keeps its own `package.json`, `tsconfig*.json`, `vitest*.config.ts`, `biome.json` (now `"root": false`), `biome-plugins/` and `scripts/`. Its `.github/` is merged into the root. Its per-agent files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `codex.md`) are replaced by `.nax/mono/packages/nax-ai/context.md`. Its `.nax/` config moves into `.nax/mono/packages/nax-ai/`.
+`packages/nax-ai/` is added with its history.
+- **Kept inside the package:** `package.json`, `tsconfig*.json`, `vitest*.config.ts`, `biome.json` (now `"root": false`), `biome-plugins/`, `scripts/`.
+- **`.github/`:** its workflows are merged into the root workflows (§4). Its `.github/release.yml` (changelog categories) is dropped in favour of the root one.
+- **Agent files:** its per-agent files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `codex.md`) are removed. `nax generate --all-packages` regenerates package-level ones from `.nax/mono/packages/nax-ai/context.md`.
+- **`.nax/`:** its `.nax/` content moves into `.nax/mono/packages/nax-ai/`.
+- **Removed:** its `bun.lock` (§3.2) and `tools/monorepo/` (the S0a script has served its purpose).
 
 ## 4. CI and release
 
@@ -65,23 +130,24 @@ Three PRs, each merged to `main` on green. There is no long-lived branch (arc D6
 
 - **Triggers:** push and pull_request to `main` touching any of:
   - `packages/**`
-  - root `package.json`, `bun.lock`, `biome.json`
+  - root `package.json`, `bunfig.toml`, `bun.lock`, `biome.json`
   - `.github/workflows/**`
   - `.nax/**`
 
   The non-existent `flows/**` filter is dropped.
 - **Every package runs on every trigger.** There is no filtering by which package changed. This follows the standing "no changed-only CI test gates" rule, and nax depends on nax-ai anyway.
-- **S0a, job `nax`:** today's steps, unchanged, with `defaults.run.working-directory: packages/nax`.
+- **S0a, job `nax`:** the job is renamed from `test`, which is safe as §2 notes.
+  - It keeps today's steps unchanged, with `defaults.run.working-directory: packages/nax`.
   - `bun install --frozen-lockfile` runs at the root, and the cache key hashes the root `bun.lock`.
   - Bun is pinned at 1.4.0.
-  - bubblewrap, socat and ripgrep, plus the sysctl change that lifts AppArmor's user-namespace restriction, are unchanged.
+  - The bubblewrap, socat and ripgrep packages and the sysctl change that lifts AppArmor's user-namespace restriction are unchanged.
 - **S0b** adds nax-ai's four jobs as they are today, each with `working-directory: packages/nax-ai`:
   - `nax-ai-static` (lint + typecheck)
   - `nax-ai-test-node` (Node 22/24 matrix)
   - `nax-ai-smoke-bun`
-  - `nax-ai-pack` (tarball path fixed)
+  - `nax-ai-pack` (tarball path fixed to the package dir)
 
-  The `nax` job gains a step that runs `bun run --cwd packages/nax-ai build` before typecheck, because nax typechecks against nax-ai's `dist/*.d.ts`.
+  nax-ai's `dist/` is built by its `prepare` script during `bun install` (§5.6), so the `nax` job needs no extra build step.
 
 ### 4.2 Release (`.github/workflows/release.yml`)
 
@@ -90,139 +156,210 @@ Three PRs, each merged to `main` on green. There is no long-lived branch (arc D6
   - From S0b, `nax-ai-v*.*.*` publishes **nax-ai**.
   - Tag patterns match from the start of the tag, so `v*` never matches `nax-ai-v…`.
   - `workflow_dispatch` keeps its `tag` input and resolves it the same way.
-- **Resolve step:** maps the tag to `{dir, name, version, npm_tag, notify}`. Every later step runs in `dir`:
-  - version check against `<dir>/package.json`;
-  - that package's current pre-publish steps (nax: build; nax-ai: lint, typecheck, test, build);
-  - publish (§4.3);
-  - release notes from `<dir>/CHANGELOG.md`, falling back to auto-generated notes.
-
-  Telegram notification stays nax stable only.
+- **Resolve step:** maps the tag to `{dir, name, version, npm_tag, prerelease, notify}`.
+  - It reads the tag through `env:` (`TAG: ${{ github.event.inputs.tag || github.ref_name }}`), not inline `${{ }}` interpolation in the script. That is the injection-safe pattern nax-ai's workflow already uses.
+  - It keeps each package's existing semantics:
+    - **nax:** `-canary.` gives npm tag `canary`, prerelease, no notify; anything else gives `latest`, not prerelease, notify.
+    - **nax-ai:** canary gives `canary`; anything else gives `latest`. A 0.x version is marked a GitHub prerelease, as in its current workflow. No notify.
+- **Steps after resolve:** every later step runs in `dir`.
+  - Version check against `<dir>/package.json`.
+  - That package's current pre-publish steps: nax builds; nax-ai runs lint, typecheck, test and build.
+  - `npm publish --access public --tag <npm_tag> --provenance`, the same command as today, run in `dir`.
+  - Release notes from `<dir>/CHANGELOG.md`, falling back to auto-generated notes.
+  - Telegram notification stays nax stable only.
 - **Trusted publishing:**
-  - **nax:** unchanged, since the repo and the `release.yml` file name are the same.
-  - **nax-ai (S0b):** the npmjs.com trusted-publisher entry must be moved by the maintainer from `nathapp-io/nax-ai` to `nathapp-io/nax` + `release.yml`.
-- **`repository.directory`:** both `package.json` files get it (`packages/nax`, `packages/nax-ai`).
+  - **nax:** unchanged. The repo and the `release.yml` file name are the same.
+  - **nax-ai (S0b):** the maintainer must move the npmjs.com trusted-publisher entry from `nathapp-io/nax-ai` to `nathapp-io/nax` + `release.yml`.
+- **Repository metadata:**
+  - nax's `package.json` gets `repository.directory: "packages/nax"`.
+  - nax-ai's `package.json` gets:
+    - `repository.url: "git+https://github.com/nathapp-io/nax.git"`
+    - `repository.directory: "packages/nax-ai"`
+    - `homepage` and `bugs` pointed at `nathapp-io/nax`
 
-### 4.3 Publishing a workspace package
+  npm provenance checks `repository.url` against the publishing repo. A test asserts these fields (§9.2), so a wrong value fails in CI, not at publish time.
 
-`npm publish` does not rewrite Bun's `workspace:*` protocol. Published nax would declare a dependency npm cannot resolve.
+### 4.3 nax → nax-ai dependency: exact pin, not `workspace:*`
 
-**Resolved:** `bun pm pack` rewrites `workspace:*` to the exact version of the workspace package. This was verified on Bun 1.4.2 in a scratch workspace: `"@x/nax-ai": "workspace:*"` was packed as `"1.0.0"`.
+nax keeps `"@nathapp/nax-ai": "0.1.16"`, an exact version.
+- **Why not `workspace:*`:** `src/agents/catalog/index.ts:64-67` reads `dependencies["@nathapp/nax-ai"]` from nax's `package.json` and accepts only `^\d+\.\d+\.\d+$`.
+  - The value is inlined into the bundle as `NAX_AI_VERSION`, and it becomes the `catalogVersion` recorded on cost rows.
+  - `workspace:*` would make it `undefined` in the published bundle, and `test/unit/version.test.ts:22-37` would fail.
+  - A tarball-level rewrite (`bun pm pack`) does not help, because the bundle is built from source.
+- **Linking still works:** Bun links the workspace package when the exact pin equals the workspace package's version. Verified on Bun 1.4.2: the lock resolves `@x/nax-ai@workspace:packages/nax-ai`.
+- **Consequences:**
+  - A new check in S0b, `check:nax-ai-pin` (`packages/nax/scripts/check-nax-ai-pin.ts`, wired into `check:all`), fails when nax's pin differs from `packages/nax-ai/package.json` `version`.
+  - Bumping nax-ai means:
+    1. bump nax-ai's version and nax's pin in the same PR;
+    2. release nax-ai (`nax-ai-v…`) **before** releasing nax.
 
-The publish step becomes:
-1. `bun pm pack` in `dir`;
-2. assert the packed `package.json` contains no `workspace:` string;
-3. `npm publish <tarball> --access public --tag <npm_tag> --provenance`.
-
-This keeps today's exact-pin behaviour. The same pack-and-assert runs in CI, so a break shows up before a release. S0a already switches nax to this path, even though nax has no workspace dependency until S0b, so the path is exercised early.
+    The nax release job asserts that `npm view @nathapp/nax-ai@<pin> version` succeeds before publishing, so a nax release cannot ship a pin that is not on npm.
 
 ### 4.4 Release scripts
 
-Each package keeps its own script. They are not merged.
-- **`packages/nax/scripts/release.ts`:** unchanged.
-  - Its root is `import.meta.dir/..`, which is now `packages/nax`.
-  - `git add package.json` works from a subdirectory.
-  - It keeps the `main` branch check, `release/vX.Y.Z` branches, `vX.Y.Z` tags, and canary/promote.
-- **`packages/nax-ai/scripts/release.ts` (S0b):** the tag prefix becomes `nax-ai-v`, and release branches become `release/nax-ai-vX.Y.Z`. Nothing else changes.
-- **Root scripts:** `release:nax` and `release:nax-ai` point to the per-package scripts.
+Each package keeps its own script; they are not merged.
+- **`packages/nax/scripts/release.ts`:** unchanged. It finds its root through `import.meta.dir/..`, which is now `packages/nax`, and `chdir`s there. It keeps:
+  - the `main` branch check;
+  - `release/vX.Y.Z` branches;
+  - `vX.Y.Z` tags;
+  - canary and promote.
+- **`packages/nax-ai/scripts/release.ts` (S0b):**
+  - the tag prefix becomes `nax-ai-v`;
+  - release branches become `release/nax-ai-vX.Y.Z`;
+  - its `ROOT` + `chdir` already target the package dir.
+- **Root scripts:**
+  - `"release:nax": "bun run --cwd packages/nax release"`
+  - `"release:nax-ai": "bun run --cwd packages/nax-ai release"`
 
-## 5. Gates, scripts and tooling
+  They run the package's own `release` script with the package as the working directory. The scripts must not be invoked by path from the root.
+
+## 5. Gates, scripts, tests and tooling
 
 ### 5.1 Package-owned scripts (unchanged)
 
-About 50 of the 58 scripts under `packages/nax/scripts/` need no edit:
+Most of the 58 scripts under `packages/nax/scripts/` need no edit:
 - Scripts that find their root through `import.meta.dir/..` now land on `packages/nax`, which is correct. That includes the baselines in `scripts/baselines/`, whose paths (`src/...`) are relative to the package.
 - Scripts that use `process.cwd()` are always invoked through `bun run` inside the package: by CI, by root scripts, and by `.nax` quality commands.
 
-Also unaffected: `check-bundle-externals`, `run-tests.ts`, `src/version.ts` and `src/_pkg.ts` (both `import pkg from "../package.json"`), and the 26 tests that climb with `../../../..` to `src/`, `scripts/` and `bin/`.
+Also unaffected:
+- `check-bundle-externals`
+- `run-tests.ts`
+- `src/version.ts` and `src/_pkg.ts` (both `import pkg from "../package.json"`)
+- tests that climb with `../../../..` to `src/`, `scripts/` or `bin/`, since all of these move together
 
-### 5.2 Checks that become repo-wide
+### 5.2 Repo-root resources: checks and tests
 
-A small shared helper finds the repo root (walk up to `.git`). Three checks use it:
+A shared helper, `packages/nax/scripts/lib/repo-root.ts`, exports `findRepoRoot(start: string): string`. It walks up from `start` to the first directory containing `.git`, whether that is a directory or a file (worktrees use a file), and throws if none is found. Everything below uses it.
 
-| Check | Why | Change |
+| Site | Why it is repo-wide | Change |
 |---|---|---|
-| `check-rules-drift` | `.nax/rules` ↔ `.claude/rules` live at the root | `rulesExportCommand({dir})` takes the repo root |
-| `check-nax-artifacts-untracked` | runtime `.nax/` artifacts and the anchored `.gitignore` live at the root | run its `git ls-files` / `git check-ignore` from the repo root |
-| `check-gate-reachability` | parses `.github/workflows/ci.yml` | read it from the repo root, and understand `defaults.run.working-directory` |
+| `scripts/check-rules-drift.ts` | `.nax/rules` ↔ `.claude/rules` live at the root | `rulesExportCommand({ dir: findRepoRoot(import.meta.dir), … })` |
+| `scripts/check-nax-artifacts-untracked.ts` `main()` | runtime `.nax/` artifacts and the anchored `.gitignore` live at the root | `repoRoot = findRepoRoot(process.cwd())` |
+| `scripts/check-gate-reachability.ts` | parses `.github/workflows/ci.yml` | `findUnreachableCheckScriptsInRepo(packageRoot, repoRoot)`: `package.json` and `scripts/` from `packageRoot`, `ci.yml` from `repoRoot`. The textual parser needs no change. |
+| `test/unit/scripts/check-gate-reachability.test.ts:157` | calls the function above | pass both roots |
+| `test/unit/context/rules/rules-frontmatter.test.ts:608-658` | `loadCanonicalRules(process.cwd())` expects the real `.nax/rules` | `loadCanonicalRules(findRepoRoot(import.meta.dir))` |
+| `test/unit/context/rules/nax-rules-stage-scoping.test.ts:26,50` | climbs four levels to `.nax/rules` | use `findRepoRoot(import.meta.dir)` |
+| `test/unit/agents/retry/parse-retry.test.ts:393` | reads `docs/guides/retry-strategy.md` | `join(findRepoRoot(import.meta.dir), "docs/guides/retry-strategy.md")` |
+| `test/unit/scripts/biome-test-severity.test.ts` | copies `biome.json` to a temp dir and runs `biome lint --config-path=.`; a copy with `"root": false` is rejected ("not a root configuration") | delete `root` from the parsed copy before writing it |
 
 **Small fixes:**
 - `check-no-control-bytes` drops `flows` from `SCAN_ROOTS`.
-- `test/unit/agents/retry/parse-retry.test.ts:393` reads `docs/guides/retry-strategy.md` from the repo-root `docs/`.
 - `.claude/settings.json`'s PostToolUse hook becomes `cd packages/nax && bun x biome lint --write src/ bin/`.
 
-**Out of scope:** the stray `AGENT = 1` key in `bunfig.toml`'s `[test]` table. It is pre-existing and noted only.
+**Discovery rule:** the trial run (§9.1 item 1) runs the **full** nax suite from `packages/nax`, not just the three phases CI runs. Any failure that reads a root resource gets fixed the same way (repo-root helper) and added to this table in the spec.
+
+**Out of scope:** the stray `AGENT = 1` key in `packages/nax/bunfig.toml`'s `[test]` table. It is pre-existing and noted only.
 
 ### 5.3 Biome
 
-**Resolved by experiment (Biome 2.5.10, scratch workspace):**
-- With **no** root config and two independent package configs, `biome lint` works from inside each package. From the repo root it fails with `Found a nested root configuration, but there's already a root configuration`.
-- With a root `biome.json` of `{"root": true}` and each package config set to `"root": false`, lint works **both** from the root and from inside each package. Each package's own rules apply to its files. For example, a rule set to `error` in one package and `off` in the other gave 1 finding from the root and the correct result per package.
+**Resolved by experiment (Biome 2.5.10):**
+- With no root config and independent package configs, running from the repo root fails with `Found a nested root configuration`.
+- A root config with `"root": true`, plus package configs with `"root": false`, works both from the root and from inside each package. Each package's own rules apply to its files.
 
 **Design:**
-- Add a minimal root `biome.json` (`"root": true`, no rules).
-- Set `"root": false` in `packages/nax/biome.json`. S0b does the same for `packages/nax-ai/biome.json`.
-- The package configs are not otherwise merged or changed. Complexity caps differ (nax 60, nax-ai 176) and stay per package.
-- **Trial check:** each package's `plugins` paths (`./biome-plugins/*.grit`) resolve relative to its nested config.
+- The root `biome.json` is `"root": true` with no lint rules. It carries today's `files.includes` exclusions (the #1934 protection), so running Biome from the root (editor, hook, manual) never walks worktree copies or `.nax/` artifacts:
+
+  ```json
+  { "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json", "root": true,
+    "files": { "includes": ["packages/**", "!**/.worktrees/**", "!**/.claude/worktrees/**", "!**/.nax-wt/**", "!**/node_modules/**", "!**/dist/**"] } }
+  ```
+- `packages/nax/biome.json` gets `"root": false` and is otherwise unchanged. Its complexity cap of 60 stays per package. S0b does the same for nax-ai's config (cap 176).
+- **Trial checks:**
+  - Each package's `plugins` paths (`./biome-plugins/*.grit`) resolve relative to its nested config.
+  - `bun run lint:biome` output inside `packages/nax` is unchanged: same file count, same zero findings.
 
 ### 5.4 Root scripts
 
-**Resolved by experiment (Bun 1.4.2):** `bun run --filter '*' <script>` runs workspace packages in dependency order. A dependent package whose name sorts first (`@x/nax` → `@x/nax-ai`) still ran after its dependency, whose build took 2 s.
+**Resolved by experiment (Bun 1.4.2):** `bun run --filter '*' <script>` runs workspace packages in dependency order. A dependent package whose name sorts first still ran after its dependency's 2 s build.
 
-Root `package.json` scripts delegate with `bun run --filter '*' <script>` for:
-- `build`
-- `typecheck`
-- `lint`
-- `check:all`
-- `test`
+Root `package.json`:
 
-Packages that lack a script are skipped. The root adds `release:nax` / `release:nax-ai` (§4.4).
+```json
+{
+  "name": "nax-monorepo",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "bun run --filter '*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "bun run --filter '*' lint",
+    "check:all": "bun run --filter '*' check:all",
+    "test": "bun run --filter '*' test",
+    "release:nax": "bun run --cwd packages/nax release",
+    "release:nax-ai": "bun run --cwd packages/nax-ai release"
+  }
+}
+```
 
-**Trial check:** the same order on CI's pinned Bun 1.4.0. If it differs, root scripts list the packages explicitly (nax-ai before nax).
+Packages that lack a script are skipped.
+
+**Trial check:** the same order holds on CI's Bun 1.4.0. If it does not, the root scripts list the packages explicitly, nax-ai before nax.
 
 ### 5.5 Coverage
 
 **Resolved by experiment:** `bun test --coverage` run inside a package writes `SF:` paths relative to that package, e.g. `SF:src/f.ts`. `check-coverage.ts` reads `ROOT/coverage/lcov.info` and scopes by the `src/` prefix, so its baseline stays valid.
 
+### 5.6 nax-ai `dist/` on fresh checkouts (S0b)
+
+nax resolves `@nathapp/nax-ai` through its `main`/`types` in `dist/`, which is gitignored. Without a build, nax's `typecheck` and `test` fail on:
+- a fresh clone;
+- a new worktree;
+- a `nax run` story's quality commands.
+
+**Design:** nax-ai gets `"prepare": "bun run build"`.
+- `bun install` runs it for workspace packages. Verified on Bun 1.4.2: a workspace package's `prepare` produced its `dist/` during `bun install`.
+- npm also runs `prepare` before `pack`/`publish`, so publishing already builds as it does today.
+
+**Stale `dist/`** after editing nax-ai source: the `.nax/mono/packages/nax/config.json` `typecheck` and `test` commands are prefixed with `bun run --cwd ../nax-ai build &&`, so a nax story always typechecks against current nax-ai. The build is a `tsc` over ~29 files.
+
+**Clean-checkout check:** §9.2 item 7.
+
 ## 6. `.nax` monorepo setup
 
-nax detects a monorepo from `workspaces` in the root `package.json` (`src/project/detector.ts:70`), and reads per-package overrides from `.nax/mono/<pkg>/config.json` (`src/runtime/packages.ts`). The layout follows the maintainer's other nax-managed monorepos.
+nax detects a monorepo from `workspaces` in the root `package.json` (`src/project/detector.ts:70`).
+- `discoverPackages` finds `.nax/mono/packages/<pkg>/context.md`.
+- `loadPackageOverride` reads `.nax/mono/packages/<pkg>/config.json` (`src/runtime/packages.ts`).
+
+The layout follows the maintainer's other nax-managed monorepos.
 
 | Item | After S0a |
 |---|---|
 | `.nax/config.json` | Root. `name: "nax"` is kept, so artifacts stay in `~/.nax/nax/`. Execution, review, context, command interceptor and mutation settings are unchanged. |
 | Root `quality.commands` | The root scripts (§5.4). They run every package in dependency order. |
-| `.nax/mono/packages/nax/config.json` | Today's `quality.commands` verbatim: both `tsc` typechecks, `lint:biome` + `check:all-without-biome`, `testScoped` (`CI=1 AGENT=1 bun test --timeout=60000 {{files}}`), coverage, build, lintFix/formatFix. These run with the story's working directory set to `packages/nax`. |
+| `.nax/mono/packages/nax/config.json` | Today's `quality.commands` verbatim: both `tsc` typechecks, `lint:biome` + `check:all-without-biome`, `testScoped` (`CI=1 AGENT=1 bun test --timeout=60000 {{files}}`), coverage, build, lintFix/formatFix. The story's working directory is `packages/nax`. S0b adds the nax-ai build prefix of §5.6 to `typecheck` and `test`. |
 | `.nax/mono/packages/nax-ai/config.json` | S0b: vitest `test`/`testScoped`, `tsc` typecheck, lint plus its two checks. |
-| `.nax/context.md` | Root, slimmed down to repo-wide content: layout, package dependency direction, Bun pin, releasing by tag prefix, the repo test-command rules. |
+| `.nax/context.md` | Root, slimmed to repo-wide content: layout, package dependency direction, Bun pin, isolated linker, release by tag prefix and nax-ai-before-nax ordering, the repo test-command rules. |
 | `.nax/mono/packages/nax/context.md` | NEW. The nax-specific body of today's `context.md`. |
 | `.nax/profiles/`, `constitution.md`, `mcp-lock.json` | Root, unchanged. |
-| `.nax/features/` (407 tracked files) | Root, unchanged. They are historical PRDs; their `src/...` paths are a record and are not rewritten. |
-| Generated agent files | Root files come from the root context. Package files come from `nax generate --all-packages`. |
+| `.nax/features/` (407 tracked files) | Root, unchanged. These are historical PRDs; their `src/...` paths are a record and are not rewritten. |
+| Generated agent files | Root files come from the root context. `packages/nax/{CLAUDE,AGENTS,GEMINI,codex}.md` come from `nax generate --all-packages`. |
 
 ### 6.1 Rules frontmatter
 
 **The problem (verified in source):**
-- **`appliesTo` would leak to other packages.** `appliesTo` globs are suffix-anchored, `(?:^|/)…$` (`src/context/engine/scope-path-match.ts`). After the move, `src/**/*.ts` would also match `packages/nax-ai/src/…`.
+- **`appliesTo` would leak.** Its globs are suffix-anchored, `(?:^|/)…$` (`src/context/engine/scope-path-match.ts`). After the move, `src/**/*.ts` would also match `packages/nax-ai/src/…`.
 - **An empty scope fails open.** A story with empty `scopeFiles` admits every `appliesTo` rule (`src/context/engine/providers/static-rules.ts:135`).
-- **Claude Code would stop loading the rules.** The `.claude/rules` mirror emits `appliesTo` as Claude `paths:` (`src/cli/rules.ts:160-181`), and Claude matches those from the repo root. Unprefixed globs would match nothing under `packages/nax/`.
+- **Claude Code would stop loading the rules.** The `.claude/rules` mirror emits `appliesTo` as Claude `paths:` (`src/cli/rules.ts:160-181`), and Claude matches those from the repo root, so unprefixed globs would match nothing under `packages/nax/`.
 
-**Classification:** all 13 rules in `.nax/rules/` carry `appliesTo` globs over nax's own `src/`, `bin/` or `test/`. **All 13 are nax-only.** None is repo-wide today.
+**Classification:** all 13 rules carry `appliesTo` entries over nax's own `src/`, `bin/` or `test/`, so **all 13 are nax-only**. `retry-strategy.md` also has two literal entries (`src/config/schemas-review.ts`, `src/session/session-keeper.ts`).
 
 **Design (applied by the S0a script):**
-1. **Prefix every `appliesTo` entry** with `packages/nax/`, e.g. `packages/nax/src/**/*.ts`. `frameAppliesTo` leaves globs as written, and scope files are repo-rooted, so the prefixed globs match exactly nax's files.
-2. **Add a package filter** `paths: ["packages/nax/*"]` to all 13 rules (the pattern the maintainer's other monorepos use). This closes the empty-scope fail-open for stories in other packages.
+1. **Prefix every `appliesTo` entry, globs and literals alike, with `packages/nax/`.**
+   - `frameAppliesTo` leaves globs as written and re-frames literals through `toRepoFrame`.
+   - `toRepoFrame` is idempotent on an already-prefixed path (`src/utils/path-frame.ts:90-96`).
+   - Scope files are repo-rooted, so prefixed entries match exactly nax's files.
+2. **Add `paths: ["packages/nax/*"]` to all 13 rules.** It matches story workdir `packages/nax` through `ruleMatchesPackage`. This closes the empty-scope fail-open for stories in **other** packages. Stories whose workdir is the repo root (`.`) ignore `paths:`, so for them the fail-open is unchanged from today.
 3. **Regenerate the mirror** with `nax rules export --agent=claude`.
-   - The Claude export keeps the file globs and drops the package scope, logging one `rules-export` warning per rule (`src/cli/rules.ts:171`). That warning is accepted and expected.
-   - `check-rules-drift` must pass.
-4. **Leave the rule bodies alone.** References like "see `src/…`" are relative to the package and stay as they are. `docs/…` references still resolve, because `docs/` stays at the root.
+   - The export keeps the file globs and drops the package scope, logging one `rules-export` warning per rule (`src/cli/rules.ts:171`).
+   - `check-rules-drift` does not fail on warnings, since `check: true` only compares output.
+4. **Rule bodies are not rewritten.** References like "see `src/…`" are relative to the package. `docs/…` references still resolve, because `docs/` stays at the root.
 
-### 6.2 Scoped test paths
+### 6.2 Scoped test paths and acceptance
 
-`resolveQualityTestCommands` runs per-package commands with the working directory set to the resolved package directory (`src/quality/command-resolver.ts`). The maintainer's other nax-managed monorepos already run per-package `{{files}}` templates this way.
+- **Scoped tests:** `resolveQualityTestCommands` (`src/quality/command-resolver.ts`) resolves the command templates. The **callers** run them with the working directory set to the story's package directory. The maintainer's other nax monorepos already run per-package `{{files}}` templates this way. The `nax run` smoke (§9.1 item 9) re-verifies it here.
+- **Acceptance:** `src/prompts/builders/acceptance-builder.ts:269` anchors generated acceptance tests at a repo root three `../` above `__dirname` and uses `src/...` paths. The smoke therefore **runs through the acceptance stage**, and must show that the generated test's imports resolve for a story in `packages/nax`. If they do not, S0a stops, and the fix is specified before merging. It is not patched ad hoc.
 
-This is **resolved by precedent**, and re-verified by the `nax run` smoke (§9.1 item 9).
-
-## 7. Pre-S0 PR: remove the pre-commit hook
+## 7. Pre-S0: remove the pre-commit hook
 
 - **Why:**
   - Since #1520, every quality gate runs in CI, and `check-gate-reachability` enforces that. The hook only re-runs `typecheck` and `check:all`.
@@ -230,32 +367,38 @@ This is **resolved by precedent**, and re-verified by the `nax run` smoke (§9.1
   - A monorepo version would need a loop over packages.
 - **Change:**
   - Delete `.githooks/`.
-  - Remove the `prepare` script.
+  - Remove the `prepare` script from `package.json`.
   - Update the two comments that describe the hook as a gate: `test/unit/agents/native/session/loop-events/index.test.ts:39` and `test/helpers/trust-module.ts:14`.
   - The CHANGELOG entry and older docs stay as history.
 - **Existing clones** keep `core.hooksPath=.githooks`. With the directory gone, git finds no hooks, so nothing breaks. `git config --unset core.hooksPath` is optional.
+- **S0a's script asserts that `prepare` is already absent.** It does not remove it.
 
 ## 8. Migration procedure
 
 ### 8.1 S0a
 
-1. **Script:** `tools/monorepo/convert-s0a.ts` at the repo root, committed as the PR's first commit. It is re-runnable from a clean `origin/main`. In order, it:
-   1. runs `git mv` on the package files (§3);
-   2. writes the root `package.json`, `biome.json` and `README.md`, and removes `prepare` from the package;
-   3. rewrites CI and release (§4);
-   4. applies the gate and tooling edits (§5.2, §5.3);
-   5. splits `.nax` into root and `mono/packages/nax` (§6);
-   6. rewrites rule frontmatter and regenerates `.claude/rules` (§6.1);
-   7. moves the rooted `.gitignore` entries into `packages/nax/.gitignore`.
+1. **Script:** `tools/monorepo/convert-s0a.ts`. It is committed as one commit on the branch; call it the *script commit*. Run from a clean tree, it:
+   1. asserts preconditions: clean tree, on the working branch, no `prepare` script, no `packages/` dir yet;
+   2. runs `git mv` on the package files (§3);
+   3. writes the root `package.json`, `bunfig.toml`, `biome.json` and `README.md`, and sets `repository.directory`;
+   4. regenerates `bun.lock` and asserts the resolutions are unchanged (§3.2);
+   5. rewrites CI (§4.1) and release (§4.2 for nax only);
+   6. applies the gate, test and tooling edits (§5.2, §5.3), and updates `CONTRIBUTING.md` commands;
+   7. splits `.nax` into root and `mono/packages/nax` (§6);
+   8. rewrites the rule frontmatter and regenerates `.claude/rules` (§6.1);
+   9. splits `.gitignore` (§3.3);
+   10. runs `nax generate` for the root and `--all-packages`, using the **local** build (`bun packages/nax/bin/nax.ts`).
 
-   It prints a report of files moved, files edited and the rule classification. **Its output is the PR's second commit, with no hand edits.** Fixes go into the script, which is then re-run.
-2. **Trial:** run it on branch `chore/monorepo-s0a` and complete §9.1. Open the PR as a draft so CI runs.
+   It prints a report: files moved, files edited, `.gitignore` classification, rule edits. **Its output is committed as the next commit with no hand edits.** Fixes go into the script, and the output is regenerated.
+2. **Trial:** complete §9.1 on the branch, then open the PR as a draft so CI runs.
 3. **Quiet window:** agreed with the maintainer. During it there are no merges to `main` and no `nax run` against this repo, because nax runs commit to their branch. In the window:
-   - reset the branch to the latest `origin/main`;
-   - re-run the script and force-push;
-   - merge the same day once CI is green.
+   1. `git checkout -B refactor/nax-monorepo origin/main`;
+   2. `git cherry-pick <script commit>`;
+   3. run the script and commit its output;
+   4. force-push and wait for CI;
+   5. merge (squash) the same day. The script stays on `main` until S0b removes it.
 4. **After merge:**
-   - Open branches and worktrees rebase onto `main`. Pure renames are detected, and `-X find-renames` is available if needed.
+   - Open branches and worktrees rebase onto `main`. Pure renames are detected, and `-X find-renames` is available.
    - Local clones run `bun install` at the root.
    - The code-graph index is rebuilt.
    - `~/.nax/nax/` artifacts and existing global installs are unaffected.
@@ -263,30 +406,34 @@ This is **resolved by precedent**, and re-verified by the `nax run` smoke (§9.1
 
 ### 8.2 S0b
 
-1. **Rewrite nax-ai's history** on a fresh clone of `nathapp-io/nax-ai`:
+1. **Rewrite nax-ai's history** on a fresh clone of `nathapp-io/nax-ai`, outside this repo:
    `git filter-repo --to-subdirectory-filter packages/nax-ai --tag-rename v:nax-ai-v`
-   This moves the history under `packages/nax-ai/` and renames tags to `nax-ai-v0.1.1` … `nax-ai-v0.1.16`.
-2. **Merge it** on branch `chore/monorepo-s0b` with `git merge --allow-unrelated-histories`.
-3. **One follow-up commit:**
-   - switch nax's dependency to `"@nathapp/nax-ai": "workspace:*"`;
-   - add the nax-ai CI jobs and the build-before-typecheck step;
-   - add the `nax-ai-v*` release mapping;
-   - change the nax-ai release script's tag prefix;
-   - add `repository.directory`;
+2. **Merge it** on `refactor/nax-monorepo`, rebased on `main` after S0a merged:
+   `git fetch <rewritten-clone> main --tags` then `git merge --allow-unrelated-histories FETCH_HEAD`.
+   The imported commit messages carry `#N` references to nax-ai issues and PRs, which now point at nax numbers. Accepted, and noted in the PR description.
+3. **Follow-up commit(s):**
+   - delete `packages/nax-ai/bun.lock`, run `bun install`, assert resolutions (§3.2);
+   - add `"prepare": "bun run build"` to nax-ai (§5.6);
+   - rewrite nax-ai's `repository`, `homepage` and `bugs` (§4.2);
    - set nax-ai's `biome.json` to `"root": false`;
-   - replace the per-agent files with `.nax/mono/packages/nax-ai/{config.json,context.md}`;
-   - fix `catalog:diff`, which today looks up `process.cwd()/node_modules/@earendil-works/pi-ai`, to resolve pi-ai from the workspace root.
+   - change its release script's tag and branch prefix (§4.4);
+   - add the nax-ai CI jobs (§4.1) and the `nax-ai-v*` release mapping (§4.2);
+   - add `check:nax-ai-pin` and the release-time `npm view` assertion (§4.3);
+   - add the nax-ai build prefix to nax's mono `typecheck`/`test` commands (§5.6);
+   - move nax-ai's `.nax/` into `.nax/mono/packages/nax-ai/` and remove its per-agent files;
+   - run `nax generate --all-packages`;
+   - remove `tools/monorepo/`.
 4. **Push the renamed tags.** This is safe: they point at nax-ai commits with no root `.github/workflows/`, so no release workflow triggers.
 5. **Maintainer steps:**
-   - Move the npm trusted publisher for `@nathapp/nax-ai`.
-   - Archive `nathapp-io/nax-ai` after a README pointer is added. The old repo is only touched with the maintainer's confirmation.
-6. The first nax-ai release from the monorepo happens only when the maintainer asks for one.
+   - move the npm trusted publisher for `@nathapp/nax-ai`;
+   - archive `nathapp-io/nax-ai` after a README pointer is added. The old repo is only touched with the maintainer's confirmation.
+6. **No release.** The first nax-ai release from the monorepo happens only when the maintainer asks for one.
 
 ### 8.3 Rollback
 
+- **PR 1:** revert its squash commit.
 - **S0a:** revert its squash commit.
 - **S0b:** revert its merge commit with `-m 1`.
-- **pre-S0:** revert its commit.
 
 Nothing is published during S0, so npm is never in an inconsistent state.
 
@@ -294,42 +441,50 @@ Nothing is published during S0, so npm is never in an inconsistent state.
 
 ### 9.1 S0a (trial checklist; all must pass before the quiet-window re-run)
 
-1. **Full CI green on the draft PR.** That covers typecheck, `check:all`, build, and the unit, integration (sandbox required), ui and e2e tests, plus coverage. The same checks also pass locally from `packages/nax`.
+1. **Full suite from `packages/nax`.** Every test file under `test/` passes when run from `packages/nax`:
+   - `bun run test`;
+   - plus `bun run test:e2e`;
+   - plus `bun run test:full` (`FULL=1 NAX_PRECHECK=1 bun test test/`), so files outside CI's three phases are covered too.
+
+   Also `bun run typecheck`, `bun run check:all`, `bun run build` and `bun run test:coverage`. Then CI is green on the draft PR.
 2. **No baseline changed.** Every ratcheted gate passes without `--update-baseline`: file-size, complexity, import-cycles, coverage, logger-storyid, nax-error, test-as-unknown-as, test-escape-hatches, op-tool-capability, test-satellites.
-3. **Same bundle.** `dist/nax.js` before and after is byte-identical once the `GIT_COMMIT` string is normalised.
-4. **Same package contents.**
-   - The `bun pm pack` file list is the same as today's `npm pack --dry-run` list.
-   - The packed `package.json` differs only in `repository.directory` and the removed `prepare`.
-   - It contains no `workspace:`.
-5. **Global install still works.** Install the tarball into a scratch Bun global prefix. `nax --version` and `nax config` run, and the binary path ends in `@nathapp/nax/dist/nax.js`.
-6. **Rules:**
+3. **Same bundle.** `dist/nax.js` is compared against a baseline built from `main` after PR 1 merged. The expected difference is the inlined `package.json` object (`src/_pkg.ts`), which now carries `repository.directory`, plus the `GIT_COMMIT` string. The comparison normalises those two and requires the rest to be byte-identical.
+4. **Same package contents.** The `npm pack --dry-run --json` file list is identical before and after. The packed `package.json` differs only in `repository.directory`.
+5. **Global install.** Install the tarball into a scratch Bun global prefix. `nax --version` and `nax config` run, and the binary path ends in `@nathapp/nax/dist/nax.js`.
+6. **Rules.**
    - `check-rules-drift` is green.
-   - A rule-selection dry-run gives today's rule set for `packages/nax/src/agents/x.ts`, and none of the 13 rules for a stand-in `packages/nax-ai/src/x.ts`.
+   - A rule-selection dry-run, a small script calling the static-rules provider with a stub request, gives today's rule set for `packages/nax/src/agents/x.ts` and none of the 13 rules for `packages/nax-ai/src/x.ts`.
+   - `retry-strategy`'s two literals match `packages/nax/src/config/schemas-review.ts` and `packages/nax/src/session/session-keeper.ts`.
    - Every `.claude/rules` `paths:` entry starts with `packages/nax/`.
-7. **Tooling checks from §5:**
-   - Biome plugin paths resolve inside nested configs.
+7. **Tooling (§5):**
+   - Biome plugin paths resolve inside nested configs, and `lint:biome` output is unchanged.
+   - Running Biome from the repo root on `packages/nax/src` works.
    - `bun run --filter` keeps dependency order on Bun 1.4.0.
-8. **Rebase across the move.** A real open branch (for example the `feat/p6-plugin-loop-handlers` worktree) or a synthetic branch cut from pre-move `main` rebases onto the converted branch with no conflicts on moved files.
-9. **One billed `nax run` smoke, which needs the maintainer's approval at launch.** It runs on a copy of the converted repo, with a one-story feature inside `packages/nax`, and checks that:
+   - `bun install --frozen-lockfile` succeeds on a fresh clone of the branch.
+8. **Rebase across the move.** A synthetic branch cut from pre-move `main`, with edits to three moved files, rebases onto the converted branch with no conflicts.
+9. **One billed `nax run` smoke, which needs the maintainer's approval at launch.** It runs on a copy of the converted repo, using the local build, with a one-story feature inside `packages/nax` and acceptance enabled. Expected:
    - a monorepo is detected;
-   - the story's working directory is `packages/nax`;
+   - story workdir is `packages/nax`;
    - quality commands come from `.nax/mono/packages/nax/config.json`;
    - the rule set matches item 6;
    - `testScoped` receives paths relative to the package;
-   - auto-commit touches only `packages/nax/…`.
+   - the generated acceptance test's imports resolve (§6.2);
+   - auto-commit touches only `packages/nax/…` and `.nax/features/<feature>/…`.
 
 ### 9.2 S0b
 
-1. **CI green:** the `nax` job (with nax-ai built first) and all four nax-ai jobs.
-2. **History imported:** `git log --follow packages/nax-ai/src/index.ts` shows nax-ai's history, and tags `nax-ai-v0.1.1` … `nax-ai-v0.1.16` exist.
-3. **nax-ai package unchanged:** its `bun pm pack` file list matches the registry's `0.1.16` tarball, apart from `repository.directory`.
-4. **nax package pins exactly:** the packed nax `package.json` has `"@nathapp/nax-ai": "<exact version>"` and no `workspace:`.
-5. **`catalog:diff`** finds the installed pi-ai from the monorepo.
-6. **nax bundle unchanged:** `check-bundle-externals` passes (nax-ai stays external), and `dist/nax.js` is unchanged apart from `GIT_COMMIT`.
+1. **CI green:** the `nax` job and all four nax-ai jobs.
+2. **History imported.** `git log --follow packages/nax-ai/src/index.ts` shows nax-ai's history, and tags `nax-ai-v0.1.1` … `nax-ai-v0.1.16` exist.
+3. **nax-ai package unchanged.** Its `npm pack --dry-run` file list matches the registry's `0.1.16` tarball. A unit test asserts `repository.url`, `repository.directory`, `homepage` and `bugs` point at `nathapp-io/nax`.
+4. **Exact pin kept.** nax's `package.json` still has `"@nathapp/nax-ai": "0.1.16"`, and `check:nax-ai-pin` is green. `bun.lock` resolves `@nathapp/nax-ai@workspace:packages/nax-ai`.
+5. **`catalogVersion` intact.** `test/unit/version.test.ts` passes, and the built bundle's `NAX_AI_VERSION` equals `0.1.16`.
+6. **nax bundle unchanged.** `check-bundle-externals` passes (nax-ai stays external). `dist/nax.js` matches the S0a bundle apart from `GIT_COMMIT`.
+7. **Clean checkout.** On a fresh clone of the branch, `bun install && bun run typecheck && bun run --cwd packages/nax test:unit` passes with no manual build step, which exercises §5.6.
+8. **`catalog:diff`** runs from `packages/nax-ai` and finds the installed pi-ai. The run fetches the npm registry; no provider is called.
 
 ### 9.3 Only verifiable at the first real publish
 
-- npm provenance with the new `repository.directory`.
+- npm provenance with the new `repository.directory`;
 - nax-ai's moved trusted publisher.
 
 If either is wrong, `npm publish` fails before anything goes live, and a corrected re-tag publishes normally. The first release of each package after S0 should be one the maintainer is watching.
@@ -338,16 +493,18 @@ If either is wrong, `npm publish` fails before anything goes live, and a correct
 
 | Question | Resolution | Evidence |
 |---|---|---|
-| Where `.nax` lives | Root, as a monorepo with `mono/packages/<pkg>` | maintainer ruling; same pattern as the maintainer's other monorepos |
+| Where `.nax` lives | Root, as a monorepo with `mono/packages/<pkg>` | maintainer ruling |
 | Tag scheme | nax keeps `vX.Y.Z`; `nax-ai-vX.Y.Z` (later `nax-agent-vX.Y.Z`) | maintainer ruling |
-| PR slicing | pre-S0, S0a, S0b | maintainer ruling |
-| Move method | scripted `git mv`. History rewrite rejected (changes every SHA and invalidates recorded `naxCommit` values). Keeping nax at the root rejected (a lopsided layout for good). | maintainer ruling |
-| Pre-commit hook | Removed before S0 | maintainer ruling; #1520 |
-| Bun `--filter` order | Respects dependency order | experiment, Bun 1.4.2; re-checked on 1.4.0 in the trial |
-| Biome with nested configs | Root `{"root": true}` + packages `"root": false` | experiment, Biome 2.5.10 |
-| lcov path frame | Relative to the package; coverage baseline stays valid | experiment |
-| `workspace:*` on publish | `bun pm pack` rewrites it to the exact version; publish the tarball with npm | experiment |
-| S0b merge commit allowed | Yes; merge commits enabled, no linear-history rule | GitHub repo settings, 2026-10-01 |
-| Rule classification | All 13 nax-only; prefix `appliesTo` + add `paths` filter | source reading (§6.1) |
-| Scoped test paths | Per-package working directory | source + precedent in the maintainer's other monorepos; smoke re-verifies |
-| Provenance / trusted publisher | First real publish only | §9.3 |
+| PR slicing | PR 1 (docs + pre-S0), S0a, S0b, all from `refactor/nax-monorepo` | maintainer ruling |
+| Move method | Scripted `git mv`. History rewrite rejected: it changes every SHA and invalidates recorded `naxCommit` values. Keeping nax at the root rejected: it leaves a lopsided layout for good. | maintainer ruling |
+| Pre-commit hook | Removed in PR 1 | maintainer ruling; #1520 |
+| Install linker | `isolated`, pinned in root `bunfig.toml` | Bun 1.4.2 picks it for this lock; package-local `.bin` keeps check-complexity and plugin tests working |
+| nax → nax-ai dependency spec | Exact pin; workspace linked by matching version; `check:nax-ai-pin`; nax-ai released before nax | `catalog/index.ts:64-67` rejects `workspace:*`; linking verified on Bun 1.4.2 |
+| nax-ai `dist/` on fresh checkouts | `prepare: bun run build`, plus a build prefix on nax's mono typecheck/test | verified: `bun install` runs workspace `prepare` |
+| Bun `--filter` order | Respects dependency order | experiment on 1.4.2; re-checked on 1.4.0 in the trial |
+| Biome with nested configs | Root `{"root": true}` with the worktree exclusions, plus packages `"root": false` | experiment on Biome 2.5.10 |
+| lcov path frame | Relative to the package; baseline valid | experiment |
+| S0b merge commit | Allowed; no required status checks | GitHub repo settings, 2026-10-01 |
+| Rule classification | All 13 nax-only; prefix `appliesTo` (incl. literals) and add `paths` | source reading (§6.1) |
+| Root-resource tests | The four in §5.2 fixed with `findRepoRoot`; the full suite runs from the package in the trial | final review, 2026-10-01 |
+| Provenance / trusted publisher | Verifiable only at the first real publish; `repository.url` asserted statically | §9.3, §9.2 item 3 |
