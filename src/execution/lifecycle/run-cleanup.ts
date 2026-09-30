@@ -71,6 +71,15 @@ export const _runCleanupDeps = {
 
 export interface RunCleanupOptions {
   runId: string;
+  /**
+   * US-004 / #2300 — `NaxRuntime.runId`, the `crypto.randomUUID()` that
+   * `createRuntime` mints and the `AgentManager` forwards as
+   * `AgentRunOptions.runId`. It is NOT `runId`: that one is
+   * `buildRunId(workdir, …)`, which addresses status.json, the log file name and
+   * the feature lock. Only this id addresses the tree `runTmpRoot` created, so
+   * only this id may be handed to `wipeRunTmp`.
+   */
+  runtimeRunId: string;
   startTime: number;
   totalCost: number;
   storiesCompleted: number;
@@ -377,10 +386,14 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
   // at warn and the run's verdict is unaffected — this is the finally block.
   if (!options.dryRun) {
     try {
-      await _runCleanupDeps.wipeRunTmp(runId);
+      // #2300 — `runtimeRunId`, NEVER `runId`. The session temp dirs were
+      // created under `runTmpRoot(runtime.runId)`; `rm(..., { force: true })` on
+      // the path `runId` resolves to never raised, so every run's temp tree
+      // survived the wipe that was meant to remove it.
+      await _runCleanupDeps.wipeRunTmp(options.runtimeRunId);
     } catch (err) {
       logger?.warn("cleanup", "End-of-run run-temp wipe failed — continuing", {
-        runId,
+        runtimeRunId: options.runtimeRunId,
         error: errorMessage(err),
       });
     }
