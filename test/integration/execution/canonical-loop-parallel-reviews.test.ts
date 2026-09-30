@@ -173,11 +173,14 @@ function startPairLoop(options: {
 
   const finish = async (): Promise<PairOutcome> => {
     let result: { shortCircuitPhase: string | undefined } | undefined;
+    let rejection: unknown;
     const runPromise = runCanonicalLoop(plan, tracking, orderedPhases).then(
       (value) => {
         result = value;
       },
-      () => undefined,
+      (error: unknown) => {
+        rejection = error;
+      },
     );
     // Both reviews dispatched while both are still parked ⇒ the pair.
     const concurrent = await waitForCondition(() => REVIEW_OPS.every((name) => (counts[name] ?? 0) === 1), 300).then(
@@ -185,10 +188,7 @@ function startPairLoop(options: {
       () => false,
     );
     releaseAll();
-    const rejection = await withTimeout(runPromise, 5_000, "runCanonicalLoop").then(
-      () => undefined,
-      (error: unknown) => error,
-    );
+    await withTimeout(runPromise, 5_000, "runCanonicalLoop");
     return { concurrent, shortCircuitPhase: result?.shortCircuitPhase, rejection };
   };
 
