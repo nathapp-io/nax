@@ -267,3 +267,47 @@ None. `sharedTmp` is optional and omitted unless the session is confined, so the
 6. `[unit]` `buildScratchpadSection()` contains `Use the scratchpad as your temp folder.` exactly once.
 7. `[unit]` `buildScratchpadSection()` contains `Never write to \`/tmp\` directly` and `$TMPDIR`.
 8. `[unit]` `buildScratchpadSection()` returns text without the retired sentence beginning `Put temporary files there`.
+
+## Amendment — 2026-09-30: post-implementation defects (#2300, #2301)
+
+Two defects shipped with this feature. Both are recorded here rather than folded
+into the body above, because the body is the design that was approved.
+
+### #2300 — the end-of-run wipe never fired
+
+This spec's US-001 kept the wipe run-scoped, and US-004 added
+`wipeRunTmp(runId)` to `cleanupRun`. The id it was handed was the runner's
+`buildRunId(workdir, …)`; the directories it was meant to remove were created under
+`runtime.runId` (`crypto.randomUUID()`), because `resolveDispatchLauncher` threads
+`AgentRunOptions.runId` — which is the runtime's — into `runTmpRoot`. `rm(…, { force:
+true })` on the resulting missing path does not raise, so every run's temp root
+survived its own wipe and no log line recorded it.
+
+The fix adds a second, separately-named option, `RunCleanupOptions.runtimeRunId`, and
+wipes under that. The two ids are NOT unified: doing so would rename every
+`cost/<runId>.jsonl`, `usage/<runId>.jsonl`, `prompt-audit/<feature>/<runId>.jsonl` and
+log line from a uuid to `run-<hash>-<iso>`, which is an observability-format change
+across the whole pipeline and needs its own decision. `wipeRunTmp` now checks for the
+target's existence so an absent one is recorded at debug.
+
+### #2301 — a confined macOS session could still write `/tmp/claude`
+
+This spec's Approach says: *"The darwin `/tmp/claude` root that srt needs stays,
+because `buildSandboxPolicy` adds it independently of `tempRoots`."* That was right
+about `buildSandboxPolicy` and wrong about srt: `SANDBOX_OWN_WRITE_PATHS` always
+contains `/tmp/claude` and `/private/tmp/claude`, `getDefaultWritePaths` never drops
+them, and srt writes macOS deny rules after the allow rules.
+
+A confined session does not need the directory — the launcher's
+`export TMPDIR=<session dir> TMP=… TEMP=…` prefix replaces srt's value before the
+agent's command runs — so for `platform: "darwin"` with the RESOLVED confinement the
+write root is dropped and both spellings are added to `denyWrite`. `allowSharedTmp:
+true` keeps today's behaviour. darwin only; srt's Linux backend needs its own check
+before a deny is added there. `SandboxPolicyInput` gains `confined?: boolean`, absent
+meaning not confined, so the probe's own policy and every other construction are
+unchanged.
+
+Supersedes US-002 acceptance criterion 13, which asserted the opposite
+(*"the policy passed to `wrap` has `writeRoots` including `realOrRaw("/tmp/claude")`"*
+on darwin). That criterion was correct against srt's behaviour at the time and is
+wrong against confinement's goal now.
