@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "@/config/schemas-sandbox";
 import { buildSandboxPolicy, type SandboxPolicyInput } from "@/sandbox";
+import { SRT_MACOS_TMPDIR_DENIES } from "@/sandbox/defaults";
 import { realOrRaw } from "@/utils/realpath";
 
 const GLOB = /[*?[\]{}]/;
@@ -194,7 +195,7 @@ describe("buildSandboxPolicy", () => {
     expect(policy.denyWrite).toContain(approvalsFile);
   });
 
-  test("write roots: root, temp roots, built-in caches; macOS adds /tmp/claude and ~/Library/Caches", () => {
+  test("write roots: root, temp roots, built-in caches; a SHARED macOS session adds /tmp/claude and ~/Library/Caches", () => {
     const linux = buildSandboxPolicy(input());
     expect(linux.writeRoots).toContain(root);
     expect(linux.writeRoots).toContain(join(base, "tmp"));
@@ -203,6 +204,45 @@ describe("buildSandboxPolicy", () => {
     const mac = buildSandboxPolicy(input({ platform: "darwin" }));
     expect(mac.writeRoots).toContain(join(home, "Library", "Caches"));
     expect(mac.writeRoots).toContain(realOrRaw("/tmp/claude"));
+  });
+
+  test("#2301: the deny list offers both the /tmp and the /private/tmp spelling", () => {
+    // Measured 2026-09-30 on macOS with the project's srt 0.0.77: with
+    // `/tmp/claude` existing, EITHER spelling alone denies the write, because srt
+    // normalises a path that already exists. The pair is still what we emit,
+    // because a not-yet-created directory keeps the spelling it was given — and
+    // `literal()` collapses the pair to a single entry when they do resolve to
+    // the same directory, so listing both costs nothing.
+    expect(SRT_MACOS_TMPDIR_DENIES).toEqual(["/tmp/claude", "/private/tmp/claude"]);
+  });
+
+  test("#2301: a confined darwin session denies both spellings of srt's forced TMPDIR", () => {
+    const policy = buildSandboxPolicy(input({ platform: "darwin", confined: true }));
+    for (const spelling of ["/tmp/claude", "/private/tmp/claude"])
+      expect(policy.denyWrite).toContain(realOrRaw(spelling));
+  });
+
+  test("#2301: a confined darwin session drops /tmp/claude from its write roots", () => {
+    const policy = buildSandboxPolicy(input({ platform: "darwin", confined: true }));
+    expect(policy.writeRoots).not.toContain(realOrRaw("/tmp/claude"));
+    // The other macOS-only root is unrelated to TMPDIR and stays.
+    expect(policy.writeRoots).toContain(join(home, "Library", "Caches"));
+  });
+
+  test("#2301: a shared-temp darwin session keeps today's behaviour", () => {
+    // `confined` absent = shared roots = the opt-out posture. No deny, and the
+    // write root is still granted: `defaultTempRoots` already allows `/tmp`, so
+    // `/tmp/claude` sits inside an allowed root and denying it would contradict
+    // the session's own denial hint.
+    const policy = buildSandboxPolicy(input({ platform: "darwin" }));
+    expect(policy.writeRoots).toContain(realOrRaw("/tmp/claude"));
+    expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
+  });
+
+  test("#2301: a confined linux session is untouched — bwrap needs its own check", () => {
+    const policy = buildSandboxPolicy(input({ platform: "linux", confined: true }));
+    expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
+    expect(policy.denyWrite).not.toContain(realOrRaw("/private/tmp/claude"));
   });
 
   test("credential read denies: built-ins under home plus the listed nax credential files", () => {

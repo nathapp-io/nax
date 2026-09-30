@@ -22,6 +22,23 @@ export const MACOS_CACHE_WRITE_ROOT = "Library/Caches";
 /** srt forces TMPDIR to this inside the macOS sandbox and does not create it (spec F3). */
 export const SRT_MACOS_TMPDIR = "/tmp/claude";
 
+/**
+ * #2301 — the same directory through macOS's `/tmp` -> `/private/tmp` symlink.
+ * A write against either spelling reaches the same inode, so a deny that carries
+ * only one of them is a spelling the kernel may never match.
+ */
+export const SRT_MACOS_TMPDIR_PRIVATE_SPELLING = "/private/tmp/claude";
+
+/**
+ * #2301 — both spellings of srt's forced TMPDIR, as a deny list.
+ *
+ * srt always includes `/tmp/claude` and `/private/tmp/claude` in
+ * `SANDBOX_OWN_WRITE_PATHS` and `getDefaultWritePaths` never drops them, so the
+ * only way to take the write back is an explicit `denyWrite` — srt writes its deny
+ * rules after the allow rules on macOS, and a later deny wins.
+ */
+export const SRT_MACOS_TMPDIR_DENIES: readonly string[] = [SRT_MACOS_TMPDIR, SRT_MACOS_TMPDIR_PRIVATE_SPELLING];
+
 /** Credential stores the agent's commands may not read, relative to $HOME. nax's own credential files are listed separately (they live under globalConfigDir()). */
 export const BUILTIN_CREDENTIAL_READ_DENIES: readonly string[] = [
   ".ssh",

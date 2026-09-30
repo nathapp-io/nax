@@ -21,6 +21,7 @@ import {
   BUILTIN_CREDENTIAL_READ_DENIES,
   MACOS_CACHE_WRITE_ROOT,
   SRT_MACOS_TMPDIR,
+  SRT_MACOS_TMPDIR_DENIES,
 } from "./defaults";
 import { WORKTREE_COMMON_WRITE_DIRS, WORKTREE_CONFIG_FILE } from "./git-guards";
 import type { GitLayout } from "./policy-inputs";
@@ -37,6 +38,13 @@ export interface SandboxPolicyInput {
   readonly approvalsFile?: string;
   readonly home: string;
   readonly tempRoots: readonly string[];
+  /**
+   * #2301: this session confines temp writes to its own run temp root
+   * (`SandboxState.sharedTmp === false`). Absent means it did NOT confine, which
+   * keeps every construction outside `resolveSessionSandbox` — and the probe's
+   * own hand-built policy — on today's behaviour.
+   */
+  readonly confined?: boolean;
   readonly platform: NodeJS.Platform;
   readonly config: SandboxConfig;
 }
@@ -114,11 +122,29 @@ function naxDenies(root: string, entries: readonly string[], allowWrite: readonl
 
 export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
   const { root, home, config } = input;
+  const darwin = input.platform === "darwin";
+  // #2301: a CONFINED session does not need srt's forced TMPDIR. srt always
+  // allows `/tmp/claude` (and always points `TMPDIR` at it) on macOS, and its
+  // deny rules are written AFTER the allow rules, so the only way to take the
+  // write back is an explicit deny — which is what a confined session gets, on
+  // both spellings. Both, because srt normalises a path that already exists: on a
+  // host where `/tmp/claude` exists either spelling alone denies (measured
+  // 2026-09-30 on macOS + srt 0.0.77), but a not-yet-created directory keeps the
+  // spelling it was given, and `literal()` collapses the pair to one entry when
+  // they do resolve to the same directory, so the list is free either way.
+  // Nothing needs the root instead: a session is confined only when it HAS a
+  // temp dir, and `createCommandLauncher` prefixes every wrapped command with
+  // `export TMPDIR=<that dir> TMP=… TEMP=…` (src/sandbox/launcher.ts:62), which
+  // replaces srt's value before the agent's command runs. A session that did not
+  // confine keeps the grant: `defaultTempRoots` grants `/tmp` outright, so
+  // `/tmp/claude` is inside an allowed root either way and denying it would
+  // contradict the session's own stated posture (see denialHintLine).
+  const confined = input.confined === true;
   const writeRoots = literal([
     root,
     ...worktreeGitWriteRoots(input.git),
     ...input.tempRoots,
-    ...(input.platform === "darwin" ? [SRT_MACOS_TMPDIR, join(home, MACOS_CACHE_WRITE_ROOT)] : []),
+    ...(darwin ? [...(confined ? [] : [SRT_MACOS_TMPDIR]), join(home, MACOS_CACHE_WRITE_ROOT)] : []),
     ...BUILTIN_CACHE_WRITE_ROOTS.map((rel) => join(home, rel)),
     ...config.filesystem.allowWrite.map((p) => {
       const expanded = expandHome(p, home);
@@ -131,6 +157,7 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     ...gitDenies(root, input.git),
     ...input.gitGuardFiles,
     ...(input.approvalsFile !== undefined ? [input.approvalsFile] : []),
+    ...(darwin && confined ? SRT_MACOS_TMPDIR_DENIES : []),
   ]);
   const denyRead = literal([
     ...BUILTIN_CREDENTIAL_READ_DENIES.map((rel) => join(home, rel)),
