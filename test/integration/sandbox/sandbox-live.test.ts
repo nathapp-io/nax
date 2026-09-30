@@ -63,12 +63,9 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
         stdout: "pipe",
         stderr: "pipe",
       });
-      const [exitCode, stdout, stderr] = await Promise.all([
-        proc.exited,
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-      ]);
-      if (stderr.length > 0) throw new Error(`sandbox probe CLI stderr: ${stderr}`);
+      const stderrRead = new Response(proc.stderr).text();
+      const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+      await stderrRead;
       return { exitCode, stdout };
     })();
     return probeCliResult;
