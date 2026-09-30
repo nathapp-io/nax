@@ -1172,18 +1172,29 @@ AFTER the allow rules, so a deny is the only thing that takes the write back.
    `literal()` collapses the pair to a single entry when they resolve alike.
    `/tmp` is a symlink to `/private/tmp` on macOS; the policy always carries the
    spelling the kernel sees.
-2. **The write root is dropped for the same sessions.** Nothing needs it: the launcher
-   prefixes every wrapped command with `export TMPDIR=<session dir> TMP=… TEMP=…`,
-   which replaces srt's value before the agent's command runs.
-3. **`allowSharedTmp: true` keeps the grant and takes no deny.** There srt's TMPDIR is
-   still the directory the agent is told to use, so removing it would break the
-   opt-out's whole purpose.
+2. **The write root is dropped for the same sessions.** Nothing needs it: for a
+   confined session the launcher prefixes the wrapped command with
+   `export TMPDIR=<session dir> TMP=… TEMP=…`, which replaces srt's value before
+   the agent's command runs.
+3. **`allowSharedTmp: true` keeps the grant and takes no deny.** There
+   `defaultTempRoots` grants all of `/tmp` outright, so `/tmp/claude` is inside
+   an allowed root either way and denying it would contradict the session's own
+   advertised posture (it is not told "not /tmp").
 4. **The decision is the RESOLVED confinement, not the config flag.**
    `config.filesystem.allowSharedTmp` is `false` in the fail-open and no-run-root
    cases too; those sessions run on the shared roots and must not be denied.
-5. **darwin only.** srt's Linux (bwrap) backend handles `/tmp/claude` differently and
-   needs its own check before a deny is added there. Out of scope, recorded.
-6. **The host-side `mkdir /tmp/claude` stays.** `sandboxBackendFor` builds one
+5. **It is narrowed per launch by whether the session's `TMPDIR` is in force.**
+   `createCommandLauncher.run()` re-creates the session dir before every command
+   and, if that `mkdir` fails, omits the `export TMPDIR=…` prefix entirely — so
+   srt's `/tmp/claude` becomes the child's `TMPDIR`. A confined session in that
+   state does not carry the deny, because a session must never be left with a
+   `TMPDIR` its own sandbox refuses to write (the rule this amendment's parent
+   already states).
+6. **darwin only.** srt's Linux (bwrap) backend handles `/tmp/claude` differently and
+   needs its own check before a deny is added there. `SANDBOX_OWN_WRITE_PATHS` is
+   platform-independent, so a confined LINUX session still has `/tmp/claude`
+   writable. Out of scope, recorded.
+7. **The host-side `mkdir /tmp/claude` stays.** `sandboxBackendFor` builds one
    process-wide backend from `network` alone (`src/sandbox/registry.ts:21`); it cannot
    see a per-session decision, and a shared-temp session still needs the directory.
 
@@ -1193,9 +1204,18 @@ AFTER the allow rules, so a deny is the only thing that takes the write back.
   outside its own run root. It was shared by every run and never wiped.
 - The denial hint drops `/tmp/claude` on its own: it lists `policy.writeRoots`
   (`src/sandbox/messages.ts:52`), which no longer contains it.
-- A confined macOS session whose tooling genuinely depends on `/tmp/claude` now fails
-  with "Operation not permitted". The escape hatches are unchanged and still work:
-  `allowSharedTmp: true`, or a specific `filesystem.allowWrite` entry.
+- **A confined macOS session whose tooling genuinely depends on `/tmp/claude` now
+  fails with "Operation not permitted", and `filesystem.allowWrite` will NOT get it
+  back.** srt writes its macOS allow rules before its deny rules
+  (`macos-sandbox-utils.js:636` then `:654`), so a deny wins over any allow no matter
+  where the path was granted. This is the same precedence that makes `.nax/features`
+  un-openable. The only way out is `allowSharedTmp: true`, which is the documented
+  opt-out for exactly this class of tool.
+- A confined macOS session whose per-command session-dir `mkdir` fails keeps srt's
+  `/tmp/claude` as its `TMPDIR` and therefore keeps the write, so `mktemp` still works
+  there. That is deliberate: a session must never be handed a `TMPDIR` its own sandbox
+  denies.
+
 
 ### Related
 
@@ -1221,7 +1241,7 @@ Add a row to the same table, immediately after **Write-denied inside those**:
 Then update the `filesystem.allowSharedTmp` row at line 126:
 
 ```markdown
-| `filesystem.allowSharedTmp` | `false` | By default the sandbox confines temp writes to this run's temp root (`/tmp/nax/<runId>/...`, where `$TMPDIR` points), and on macOS denies `/tmp/claude` outright; set `true` to re-grant the system temp dir, `/tmp` and `/tmp/claude` for commands a tool hardcodes against. |
+| `filesystem.allowSharedTmp` | `false` | By default the sandbox confines temp writes to this run's temp root (`/tmp/nax/<runId>/...`, where `$TMPDIR` points), and on macOS denies `/tmp/claude` outright — `filesystem.allowWrite` cannot re-open it, because srt applies its deny rules after its allow rules; set `true` to re-grant the system temp dir, `/tmp` and `/tmp/claude` for commands a tool hardcodes against. |
 ```
 
 - [ ] **Step 3: Append the spec amendment**
