@@ -22,7 +22,7 @@
  */
 
 import { resolveDefaultAgent } from "../agents";
-import { NATIVE_AGENT, providersWithoutCredentials } from "../agents/native";
+import { NATIVE_AGENT, nativeTierProviders, providersWithoutCredentials } from "../agents/native";
 import type { PrecheckConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import type { Check } from "./types";
@@ -30,7 +30,7 @@ import type { Check } from "./types";
 const CHECK_NAME = "native-credentials";
 
 /** Test seam. */
-export const _nativeCredentialDeps = { providersWithoutCredentials };
+export const _nativeCredentialDeps = { providersWithoutCredentials, nativeTierProviders };
 
 /** A provider with no credential, and the `models.native` tiers that use it. */
 export interface MissingNativeCredential {
@@ -38,29 +38,10 @@ export interface MissingNativeCredential {
   readonly tiers: readonly string[];
 }
 
-/** The provider prefix of a native id, or undefined when it has none (never guessed). */
-function providerOf(id: string): string | undefined {
-  const slash = id.indexOf("/");
-  return slash > 0 ? id.slice(0, slash) : undefined;
-}
-
-/** provider -> tiers, for the default agent's `models.native` map. */
-function providerTiers(config: PrecheckConfig): Map<string, string[]> {
-  const overridden = new Set((config.agent?.native?.catalogOverrides ?? []).map((override) => override.provider));
-  const byProvider = new Map<string, string[]>();
-  for (const [tier, entry] of Object.entries(config.models?.[NATIVE_AGENT] ?? {})) {
-    if (entry === undefined) continue;
-    const provider = providerOf(typeof entry === "string" ? entry : entry.model);
-    if (provider === undefined || overridden.has(provider)) continue;
-    byProvider.set(provider, [...(byProvider.get(provider) ?? []), tier]);
-  }
-  return byProvider;
-}
-
 /** Empty when the default agent is not native or every provider has a credential. */
 export async function findMissingNativeCredentials(config: PrecheckConfig): Promise<MissingNativeCredential[]> {
   if (resolveDefaultAgent(config) !== NATIVE_AGENT) return [];
-  const byProvider = providerTiers(config);
+  const byProvider = _nativeCredentialDeps.nativeTierProviders(config);
   if (byProvider.size === 0) return [];
   const missing = await _nativeCredentialDeps.providersWithoutCredentials([...byProvider.keys()]);
   return missing.map((provider) => ({ provider, tiers: byProvider.get(provider) ?? [] }));

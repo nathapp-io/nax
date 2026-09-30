@@ -21,6 +21,8 @@ export interface ConfigCommandOptions {
   explain?: boolean;
   /** Show only fields where project overrides global */
   diff?: boolean;
+  /** Profile chain, used only to reject `--diff` (the caller overlays it before calling) */
+  profile?: string[];
 }
 
 /**
@@ -29,15 +31,22 @@ export interface ConfigCommandOptions {
  * @param config - Loaded configuration
  * @param options - Command options
  */
+function rejectDiffProfileConflict(options: ConfigCommandOptions): void {
+  if (options.diff && (options.profile?.length ?? 0) > 0) {
+    console.error("Error: --diff cannot be combined with --profile");
+    process.exit(1);
+  }
+}
+
 export async function configCommand(config: NaxConfig, options: ConfigCommandOptions = {}): Promise<void> {
   const { explain = false, diff = false } = options;
+  rejectDiffProfileConflict(options);
 
   // Validate mutually exclusive flags
   if (explain && diff) {
     console.error("Error: --explain and --diff are mutually exclusive");
     process.exit(1);
   }
-
   // Determine sources
   const sources = determineConfigSources();
 
@@ -108,11 +117,12 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
 /**
  * Determine which config files are present.
  *
+ * @param startDir - Directory to resolve the project config from (defaults to cwd)
  * @returns Paths to global and project config files (null if not found)
  */
-function determineConfigSources(): { global: string | null; project: string | null } {
+export function determineConfigSources(startDir?: string): { global: string | null; project: string | null } {
   const globalPath = globalConfigPath();
-  const projectDir = findProjectDir();
+  const projectDir = findProjectDir(startDir);
   const projectPath = projectDir ? join(projectDir, "config.json") : null;
 
   return {

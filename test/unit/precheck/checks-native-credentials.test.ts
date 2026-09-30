@@ -5,8 +5,8 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
-import { _nativeCredentialDeps, checkNativeCredentials } from "@/precheck/checks";
+import { makeNaxConfig, withDepsRestore } from "@test/helpers";
+import { _nativeCredentialDeps, checkNativeCredentials, findMissingNativeCredentials } from "@/precheck/checks";
 
 const originalDeps = { ..._nativeCredentialDeps };
 
@@ -113,5 +113,36 @@ describe("checkNativeCredentials", () => {
     const check = await checkNativeCredentials(makeNaxConfig({ agent: { default: "claude" } }));
     expect(check.passed).toBe(true);
     expect(probe).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * US-001: the provider map comes from the shared derivation through the
+ * `_nativeCredentialDeps.nativeTierProviders` seam, so the precheck no longer
+ * owns the rule and a caller outside nax can reuse it.
+ */
+describe("findMissingNativeCredentials", () => {
+  withDepsRestore(_nativeCredentialDeps);
+
+  test("AC7: asks the credential probe once, with the providers the shared derivation returns", async () => {
+    const asked: string[][] = [];
+    _nativeCredentialDeps.nativeTierProviders = mock(() => new Map([["x-provider", ["fast"]]]));
+    _nativeCredentialDeps.providersWithoutCredentials = mock(async (ids: readonly string[]) => {
+      asked.push([...ids]);
+      return [];
+    });
+
+    await findMissingNativeCredentials(makeNaxConfig({ agent: { default: "native" } }));
+
+    expect(asked).toEqual([["x-provider"]]);
+  });
+
+  test("AC8: reports each missing provider with the tiers the shared derivation gave it", async () => {
+    _nativeCredentialDeps.nativeTierProviders = mock(() => new Map([["x-provider", ["fast"]]]));
+    _nativeCredentialDeps.providersWithoutCredentials = mock(async () => ["x-provider"]);
+
+    const missing = await findMissingNativeCredentials(makeNaxConfig({ agent: { default: "native" } }));
+
+    expect(missing).toEqual([{ provider: "x-provider", tiers: ["fast"] }]);
   });
 });
