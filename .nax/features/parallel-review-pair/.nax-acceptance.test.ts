@@ -419,7 +419,7 @@ describe("parallel-review-pair US-001 — shouldRunReviewsConcurrently", () => {
     const { shouldRunReviewsConcurrently } = await loadReviewPair();
     const result = shouldRunReviewsConcurrently(
       { adversarial: { parallel: true, maxConcurrentSessions: 2 } },
-      ["semantic-review", "adversarial-review"],
+      reviewPairPhases(),
     );
     expect(result).toBe(true);
   });
@@ -465,7 +465,7 @@ describe("parallel-review-pair US-001 — shouldRunReviewsConcurrently", () => {
     const { shouldRunReviewsConcurrently } = await loadReviewPair();
     const result = shouldRunReviewsConcurrently(
       { adversarial: { parallel: true } },
-      ["semantic-review", "adversarial-review"],
+      reviewPairPhases(),
     );
     expect(result).toBe(true);
   });
@@ -503,7 +503,7 @@ describe("parallel-review-pair US-001 — runReviewPair", () => {
       stubCalls.push(phaseNameOf(args[1]));
       return makeDeferred<unknown>().promise; // never settles
     }, async (runReviewPair) => {
-      void runReviewPair(ctx, ["semantic-review", "adversarial-review"], tracking);
+      void runReviewPair(ctx, reviewPairPhases(), tracking);
       await flushTurns(3);
 
       // Asserted while BOTH stub promises are still pending.
@@ -526,7 +526,7 @@ describe("parallel-review-pair US-001 — runReviewPair", () => {
       tracking.phaseOutputs[name] = sentinels[name];
       return sentinels[name];
     }, async (runReviewPair) => {
-      await runReviewPair(ctx, ["semantic-review", "adversarial-review"], tracking);
+      await runReviewPair(ctx, reviewPairPhases(), tracking);
     });
 
     expect(tracking.phaseOutputs["semantic-review"]).toBeDefined();
@@ -545,7 +545,7 @@ describe("parallel-review-pair US-001 — runReviewPair", () => {
       tracking.phaseCosts[name] = costs[name];
       return { ...PASS_REVIEW };
     }, async (runReviewPair) => {
-      await runReviewPair(ctx, ["semantic-review", "adversarial-review"], tracking);
+      await runReviewPair(ctx, reviewPairPhases(), tracking);
     });
 
     expect(tracking.phaseCosts["semantic-review"]).toBe(0.5);
@@ -564,7 +564,7 @@ describe("parallel-review-pair US-001 — runReviewPair", () => {
       return phaseNameOf(args[1]) === "semantic-review" ? semanticDeferred.promise : adversarialDeferred.promise;
     }, async (runReviewPair) => {
       let settledState: string | null = null;
-      const resultPromise = runReviewPair(ctx, ["semantic-review", "adversarial-review"], tracking);
+      const resultPromise = runReviewPair(ctx, reviewPairPhases(), tracking);
       // Spy on the returned promise's settlement (both handlers → no unhandled rejection).
       void resultPromise.then(
         () => {
@@ -597,7 +597,7 @@ describe("parallel-review-pair US-001 — runReviewPair", () => {
     }, async (runReviewPair) => {
       let caught: unknown = "unset";
       try {
-        await runReviewPair(ctx, ["semantic-review", "adversarial-review"], tracking);
+        await runReviewPair(ctx, reviewPairPhases(), tracking);
       } catch (err) {
         caught = err;
       }
@@ -617,7 +617,7 @@ describe("parallel-review-pair US-001 — runReviewPair", () => {
     }, async (runReviewPair) => {
       let caught: unknown = "unset";
       try {
-        await runReviewPair(ctx, ["semantic-review", "adversarial-review"], tracking);
+        await runReviewPair(ctx, reviewPairPhases(), tracking);
       } catch (err) {
         caught = err;
       }
@@ -634,7 +634,7 @@ describe("parallel-review-pair US-001 — runReviewPair", () => {
       await withPairRunPhaseStub(
         (...args: unknown[]) => Promise.reject(new Error(`boom: ${phaseNameOf(args[1])}`)),
         async (runReviewPair) => {
-          await runReviewPair(ctx, ["semantic-review", "adversarial-review"], tracking).catch(() => {});
+          await runReviewPair(ctx, reviewPairPhases(), tracking).catch(() => {});
         },
       );
 
@@ -1348,8 +1348,8 @@ describe("parallel-review-pair US-003 — dispatchRevalidationPhase", () => {
     _storyOrchestratorDeps.callOp = tracker.callOp;
 
     const tracking: PhaseTracking = { phaseCosts: {}, phaseOutputs: {} };
-    const phases = ["semantic-review", "adversarial-review"];
-    const dispatched = await dispatchRevalidationPhase(ctx, "semantic-review", phases, tracking);
+    const phases = reviewPairPhases();
+    const dispatched = await dispatchRevalidationPhase(ctx, phases[0]!, phases, tracking);
 
     expect(dispatched).toHaveLength(2);
     expect(dispatched).toEqual(["semantic-review", "adversarial-review"]);
@@ -1361,12 +1361,24 @@ describe("parallel-review-pair US-003 — dispatchRevalidationPhase", () => {
     const tracker = makeTrackedCallOp({});
     _storyOrchestratorDeps.callOp = tracker.callOp;
 
-    const sweepPhases = ["semantic-review", "adversarial-review", "lint-check", "full-suite-gate"];
+    const sweepPhases: InternalPhase[] = ["semantic-review", "adversarial-review", "lint-check", "full-suite-gate"].map(
+      (name) => ({
+        kind: name as InternalPhase["kind"],
+        slot: {
+          op: makeOrchestratorOp(
+            name,
+            name.endsWith("review") ? "review" : "verify",
+            name === "semantic-review" ? "reviewer-semantic" : name === "adversarial-review" ? "reviewer-adversarial" : "verifier",
+          ),
+          input: { story: "sweep" },
+        },
+      }),
+    );
     for (const phase of sweepPhases) {
       const tracking: PhaseTracking = { phaseCosts: {}, phaseOutputs: {} };
       const dispatched = await dispatchRevalidationPhase(ctx, phase, sweepPhases, tracking);
       expect(dispatched).toHaveLength(1);
-      expect(dispatched).toEqual([phase]);
+      expect(dispatched).toEqual([phase.kind]);
     }
     // No adversarial-review kind was ever added on top of a sampled phase.
     expect(countCalls(tracker.calls, "adversarial-review")).toBe(1);
