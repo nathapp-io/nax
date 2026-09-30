@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "v*.*.*-canary.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to re-publish (e.g. v0.51.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write # needed for GitHub Release creation
+  id-token: write # needed for npm OIDC trusted publishing
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # full history for changelog extraction
+
+      - name: Resolve package
+        id: pkg
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          case "$TAG" in
+            v*) echo "dir=packages/nax" >> "$GITHUB_OUTPUT"; echo "name=@nathapp/nax" >> "$GITHUB_OUTPUT"; echo "version=${TAG#v}" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Unrecognised tag $TAG"; exit 1 ;;
+          esac
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+        working-directory: ${{ steps.pkg.outputs.dir }}
+
+      # Validate tag matches package.json version
+      - name: Validate version
+        run: |
+          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG_VERSION" ]; then
+            echo "❌ Tag $TAG does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+          echo "✅ Version match: $TAG"
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+      # Determine tag and release type
+      - name: Set release info
+        id: info
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          VERSION="${{ steps.pkg.outputs.version }}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if [[ "$TAG" == *"-canary."* ]]; then
+            echo "npm_tag=canary" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "notify=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "notify=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Publish to npm (trusted publishing via OIDC — no token needed)
+      - name: Publish to npm
+        run: npm publish --access public --tag ${{ steps.info.outputs.npm_tag }} --provenance
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+
+      # Extract release notes from CHANGELOG.md (optional — falls back to GitHub auto-generate)
+      - name: Extract release notes
+        id: notes
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: |
+          VERSION="${{ steps.info.outputs.version }}"
+          # Extract section between ## [$VERSION] and next ## [
+          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md 2>/dev/null || true)
+
+          if [ -n "$NOTES" ]; then
+            echo "$NOTES" > /tmp/release-notes.md
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Create GitHub Release
+      # When CHANGELOG has an entry: use it as the body.
+      # When no entry: omit body_path so generate_release_notes auto-builds from PR titles.
+      - name: Create GitHub Release (with changelog notes)
+        if: steps.notes.outputs.has_notes == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.info.outputs.tag }}
+          name: ${{ steps.info.outputs.tag }}
+          body_path: /tmp/release-notes.md
+          prerelease: ${{ steps.info.outputs.prerelease }}
+
+      - name: Create GitHub Release (auto-generated notes)
+        if: steps.notes.outputs.has_notes != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.info.outputs.tag }}
+          name: ${{ steps.info.outputs.tag }}
+          prerelease: ${{ steps.info.outputs.prerelease }}
+          generate_release_notes: true
+
+      # Telegram notification (stable only)
+      - name: Notify Telegram
+        if: steps.info.outputs.notify == 'true' && vars.TELEGRAM_CHAT_ID != ''
+        run: |
+          NOTES=$(cat /tmp/release-notes.md | head -20)
+          MSG="🚀 *nax ${{ steps.info.outputs.tag }} released*
+
+          \`\`\`
+          npm install -g @nathapp/nax
+          \`\`\`
+
+          ${NOTES}"
+
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ vars.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="$MSG" || true

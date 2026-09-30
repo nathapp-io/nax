@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'package.json'
+      - 'bunfig.toml'
+      - 'bun.lock'
+      - 'biome.json'
+      - '.github/workflows/**'
+      - '.nax/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'package.json'
+      - 'bunfig.toml'
+      - 'bun.lock'
+      - 'biome.json'
+      - '.github/workflows/**'
+      - '.nax/**'
+
+jobs:
+  nax:
+    name: nax
+    runs-on: ubuntu-latest
+    # 15, not 10: this job absorbed the `typecheck` + `check:all` matrix (#1534),
+    # which used to run in parallel under its own 5-minute budget. The work grew
+    # while the budget did not, and a timeout here reads like a test failure.
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/nax
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: .
+
+      # P4: the live sandbox suite needs a working bubblewrap. Ubuntu 24.04
+      # restricts unprivileged user namespaces through AppArmor, which makes
+      # bwrap fail every command; the sysctl lifts that for this job only.
+      # NAX_SANDBOX_REQUIRED (below) turns an unavailable sandbox into a test
+      # FAILURE, so the suite cannot pass here by skipping.
+      - name: Enable the OS sandbox (bubblewrap)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap socat ripgrep
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      # Runs first since it's ~1-2s — fail fast before the slower steps below.
+      - name: Typecheck
+        run: bun run typecheck
+
+      # `check:all` is the single aggregator for every static gate (lint
+      # included). Adding a gate to package.json is enough to make CI run it —
+      # `check:gate-reachability`, inside `check:all`, fails if one is orphaned.
+      - name: Check all
+        run: bun run check:all
+
+      # The release workflow is the only other place `bun run build` runs, and it
+      # runs after a tag is already pushed. A bundler resolution failure therefore
+      # used to be undiscoverable until the release job died with the tag live
+      # (nax#1976 -> v0.82.0-canary.8). `check:bundle-externals` guards the two
+      # flags we know about; this step guards the class. It takes ~1s.
+      - name: Build
+        run: bun run build
+
+      - name: Test (unit)
+        run: bun test test/unit/ --timeout=60000 --bail
+
+      - name: Test (integration)
+        run: bun test test/integration/ --timeout=60000 --bail
+        env:
+          NAX_SANDBOX_REQUIRED: "1"
+
+      - name: Test (ui)
+        run: bun test test/ui/ --timeout=60000 --bail
+
+      # Excluded from `bun run test` by design (scripts/run-tests.ts PHASES) — but the
+      # scripted-agent e2e suite is the only end-to-end cover for the story orchestrator,
+      # so CI runs it explicitly. ~30s.
+      - name: Test (e2e)
+        run: bun run test:e2e
+
+      # Enforces the documented 80% floor over `src/`, aggregate and per file. Bun's
+      # own coverageThreshold only exits non-zero with the `text` reporter enabled,
+      # and has no per-file ratchet, so scripts/check-coverage.ts parses lcov instead.
+      # Re-runs unit + integration + ui in ONE invocation (~55s) — Bun writes a
+      # single merged report per invocation and cannot merge across them, so the
+      # three steps above cannot be reused for this.
+      - name: Coverage floor
+        run: bun run test:coverage
