@@ -1633,18 +1633,31 @@ describe("US-004 per-session TMPDIR under /tmp/nax-<runId>/", () => {
     expect(result.stdout.trim()).toBe(tmpDir);
   });
 
-  test("AC-64: wipeRunTmp('r1') removes /tmp/nax-r1 once", async () => {
+  test("AC-64: wipeRunTmp('r1') removes the run's own root once", async () => {
     const { wipeRunTmp, deps } = await loadRunTmpWipe();
     const calls: string[] = [];
     patchDeps(deps, {
       remove: async (path: string) => {
         calls.push(path);
       },
+      // The #2300 guard reads this before removing, and the real one answers
+      // "absent" for whatever `/tmp/nax/r1` is on this host at this moment.
+      exists: () => true,
+    });
+    // US-001 moved the root under the shared `/tmp/nax` parent, so the removal
+    // path is only `/tmp/nax/r1` when that parent resolves to the shared one.
+    // Pin it: an absent `/tmp/nax` is the documented usable case (the launcher
+    // creates it), which makes the expected path host-independent.
+    patchDeps(sandboxModule._sessionTmpDeps as AnyRecord, {
+      lstat: () => {
+        throw Object.assign(new Error("ENOENT: no such file or directory"), { code: "ENOENT" });
+      },
+      uid: () => 501,
     });
 
     await wipeRunTmp("r1");
 
-    expect(calls).toEqual(["/tmp/nax-r1"]);
+    expect(calls).toEqual(["/tmp/nax/r1"]);
   });
 
   test("AC-65: wipeRunTmp resolves and warns when removal rejects", async () => {
@@ -1653,6 +1666,9 @@ describe("US-004 per-session TMPDIR under /tmp/nax-<runId>/", () => {
       remove: async () => {
         throw new Error("boom");
       },
+      // Same as AC-64: the rejection is the subject, so the guard must not
+      // short-circuit ahead of it.
+      exists: () => true,
     });
 
     await withLogSpies(async ({ warn }) => {
@@ -1665,7 +1681,11 @@ describe("US-004 per-session TMPDIR under /tmp/nax-<runId>/", () => {
     const wipeCalls: string[] = [];
     stubCleanupDeps(wipeCalls);
 
-    await cleanupRun(cleanupOptions({ runId: "r1", runCompleted: false, dryRun: undefined }) as never);
+    // #2300: the wipe is handed `runtimeRunId`, never the runner's `runId` —
+    // only that id addresses the tree `runTmpRoot` created.
+    await cleanupRun(
+      cleanupOptions({ runId: "r1", runtimeRunId: "r1", runCompleted: false, dryRun: undefined }) as never,
+    );
 
     expect(wipeCalls).toEqual(["r1"]);
   });

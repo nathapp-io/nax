@@ -609,6 +609,89 @@ a path it does not own by accident, not to defeat an attacker who controls `/tmp
 
 ---
 
+## Amendment — 2026-09-30: a confined macOS session loses `/tmp/claude` (#2301)
+
+**Supersedes:** the 2026-09-28 amendment's decision 2 clause *"srt's own `/tmp/claude` on
+macOS is unaffected"*; its decision 3, whose "`filesystem.allowWrite` can still add a
+specific path" no longer reaches `/tmp/claude`; and that amendment's Consequences bullet
+offering `allowWrite` as a way out for a tool hardcoding `/tmp`. `allowSharedTmp: true` is
+the only route back now.
+
+### What changed
+
+Decision 2 of the 2026-09-28 amendment ended: *"srt's own `/tmp/claude` on macOS is
+unaffected."* That is no longer true for a confined session.
+
+`@anthropic-ai/sandbox-runtime` (0.0.77) always includes `/tmp/claude` and
+`/private/tmp/claude` in `SANDBOX_OWN_WRITE_PATHS`; `getDefaultWritePaths` never
+drops them whatever the policy says. On macOS srt writes its `denyWrite` rules
+AFTER the allow rules, so a deny is the only thing that takes the write back.
+
+### Decision
+
+1. **A CONFINED session on darwin denies both spellings of srt's forced TMPDIR, and
+   loses it as a write root.** Measured 2026-09-30 on macOS with the project's
+   srt 0.0.77: with `/tmp/claude` existing, either spelling alone denies the write,
+   because srt normalises a path that already exists — but a not-yet-created
+   directory keeps the spelling it was given, so the list carries both and
+   `literal()` collapses the pair to a single entry when they resolve alike.
+   `/tmp` is a symlink to `/private/tmp` on macOS; the policy always carries the
+   spelling the kernel sees.
+2. **The write root is dropped for the same sessions.** Nothing needs it: for a
+   confined session the launcher prefixes the wrapped command with
+   `export TMPDIR=<session dir> TMP=… TEMP=…`, which replaces srt's value before
+   the agent's command runs.
+3. **`allowSharedTmp: true` keeps the grant and takes no deny.** There
+   `defaultTempRoots` grants all of `/tmp` outright, so `/tmp/claude` is inside
+   an allowed root either way and denying it would contradict the session's own
+   advertised posture (it is not told "not /tmp").
+4. **The decision is the RESOLVED confinement, not the config flag.**
+   `config.filesystem.allowSharedTmp` is `false` in the fail-open and no-run-root
+   cases too; those sessions run on the shared roots and must not be denied.
+5. **It is narrowed per launch by whether the session's `TMPDIR` is in force.**
+   `createCommandLauncher.run()` re-creates the session dir before every command
+   and, if that `mkdir` fails, omits the `export TMPDIR=…` prefix entirely — so
+   srt's `/tmp/claude` becomes the child's `TMPDIR`. A confined session in that
+   state does not carry the deny, because a session must never be left with a
+   `TMPDIR` its own sandbox refuses to write (the rule this amendment's parent
+   already states).
+6. **darwin only.** srt's Linux (bwrap) backend handles `/tmp/claude` differently and
+   needs its own check before a deny is added there. `SANDBOX_OWN_WRITE_PATHS` is
+   platform-independent, so a confined LINUX session still has `/tmp/claude`
+   writable. Out of scope, recorded.
+7. **The host-side `mkdir /tmp/claude` stays.** `sandboxBackendFor` builds one
+   process-wide backend from `network` alone (`src/sandbox/registry.ts:21`); it cannot
+   see a per-session decision, and a shared-temp session still needs the directory.
+
+### Consequences
+
+- `/tmp/claude` is no longer the one temp location a confined macOS session can write
+  outside its own run root. It was shared by every run and never wiped.
+- The denial hint drops `/tmp/claude` on its own: it lists `policy.writeRoots`
+  (`src/sandbox/messages.ts:52`), which no longer contains it. That holds for a project
+  that has not listed the path in `filesystem.allowWrite`; such an entry puts it back into
+  the advertised roots (`src/sandbox/policy-builder.ts:182-185`) while the deny still
+  blocks the write, so the hint would then name a path the session cannot use.
+- **A confined macOS session whose tooling genuinely depends on `/tmp/claude` now
+  fails with "Operation not permitted", and `filesystem.allowWrite` will NOT get it
+  back.** srt writes its macOS allow rules before its deny rules
+  (`node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js:636`,
+  then `:654`), so a deny wins over any allow no matter where the path was granted. This
+  is the same precedence that makes `.nax/features` un-openable. The only way out is
+  `allowSharedTmp: true`, which is the documented opt-out for exactly this class of tool.
+- A confined macOS session whose per-command session-dir `mkdir` fails keeps srt's
+  `/tmp/claude` as its `TMPDIR` and therefore keeps the write, so `mktemp` still works
+  there. That is deliberate: a session must never be handed a `TMPDIR` its own sandbox
+  denies.
+
+### Related
+
+#2301. The end-of-run wipe bug this amendment's sibling fixed is #2300: the wipe used
+the runner's `buildRunId(...)` while the session dirs were created under
+`runtime.runId`, so it removed a path nothing had created.
+
+---
+
 ## See also
 
 - ADR-031: the bash approval mode, approval timeout, sandbox and command-safety keys are root-scoped.

@@ -6,6 +6,7 @@ import { getSafeLogger } from "../logger";
 import { spawn } from "./bun-deps";
 import { gitlinkSafeAdd, hasStagedChanges } from "./git-add";
 import { hardenedGitArgv, hardenedGitEnv } from "./git-env";
+import { restoreDeletedNaxPaths } from "./nax-path-restore";
 import { realOrRaw } from "./realpath";
 
 /**
@@ -403,47 +404,15 @@ export async function autoCommitIfDirty(
       dirtyFiles: statusOutput.trim().split("\n").length,
     });
 
-    // Best-effort restore of deleted/renamed .nax/ paths before staging.
-    // The snapshot auto-commit swept an acceptance artifact deletion onto the
-    // branch after an agent treated it as a stray test file — restore any path
-    // under a `.nax/` segment so the auto-commit does not lose nax state.
-    // A non-zero exit on restore is logged but does NOT block the commit; the
-    // restore is best-effort and the agent's edits still need to land.
-    //
-    // For staged deletions/renames (status letter in the index column), the
-    // index no longer holds the old path — only HEAD does. `git checkout --`
-    // restores from the index and would fail; `git checkout HEAD --` restores
-    // from the commit and brings the file back into both the index and the
-    // worktree.
-    const naxPaths = parsePorcelainForNaxPaths(statusOutput);
-    for (const { path: protectedPath, staged } of naxPaths) {
-      // AC-17: this log is intentionally `error`-level even on a successful
-      // restore — the deletion it is repairing indicates an agent mistake
-      // worth surfacing loudly, not routine operation. A failed restore logs
-      // again below with the exit code and stderr.
-      logger?.error(stage, "Restoring deleted .nax/ path before auto-commit", {
-        storyId,
-        role,
-        path: protectedPath,
-        staged,
-      });
-      const checkoutArgs = staged ? ["checkout", "HEAD", "--", protectedPath] : ["checkout", "--", protectedPath];
-      // Porcelain paths are repo-root-relative regardless of the cwd `git status`
-      // ran from, so the restore must spawn from realGitRoot too — matching the
-      // `git add -A` staging call below. Spawning from `workdir` (a monorepo
-      // package subdir) makes the pathspec resolve against the wrong root and
-      // the restore silently no-ops.
-      const { exitCode: checkoutExit, stderr: checkoutStderr } = await gitWithTimeout(checkoutArgs, realGitRoot);
-      if (checkoutExit !== 0) {
-        logger?.error(stage, "Failed to restore .nax/ path before auto-commit", {
-          storyId,
-          role,
-          path: protectedPath,
-          exitCode: checkoutExit,
-          stderr: checkoutStderr.trim(),
-        });
-      }
-    }
+    // Repair agent-deleted .nax/ state before staging; see nax-path-restore.ts.
+    await restoreDeletedNaxPaths(statusOutput, {
+      gitRoot: realGitRoot,
+      run: gitWithTimeout,
+      logger,
+      stage,
+      role,
+      storyId,
+    });
 
     // Always stage from gitRoot with -A so that agent changes outside packageDir
     // (e.g. monorepo root package.json after `bun add`) are captured. Using

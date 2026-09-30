@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import {
   ARROW_LABEL,
   buildStrictConfig,
@@ -9,9 +9,11 @@ import {
   labelAt,
   loadBaseline,
   parseScores,
+  runBiome,
   tallyByFile,
 } from "@scripts/check-complexity";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { deriveStoryWorktreeId, storyWorktreePath } from "@/worktree";
 
 /** Each fake file holds one function per line, named after the line: `function f1() {}`, `function f2() {}`, … */
 const readFake = (_file: string) => Array.from({ length: 9 }, (_, i) => `function f${i + 1}() {}`).join("\n");
@@ -33,7 +35,10 @@ const score = (file: string, value: number, label: string, line = 1) => ({
 });
 
 describe("parseScores", () => {
-  const report = (diagnostics: object[], errors = diagnostics.length) => ({ summary: { errors }, diagnostics });
+  const report = (diagnostics: object[], errors = diagnostics.length) => ({
+    summary: { errors, unchanged: 1 },
+    diagnostics,
+  });
 
   test("extracts one labelled score per complexity diagnostic", () => {
     expect(parseScores(report([diag("src/a.ts", 42), diag("src/b.ts", 21, 2)]), readFake)).toEqual([
@@ -95,6 +100,18 @@ describe("parseScores", () => {
 
   test("throws when the summary counts more errors than the diagnostics it printed", () => {
     expect(() => parseScores(report([diag("src/a.ts", 42)], 3), readFake)).toThrow(/3 errors/);
+  });
+
+  // An exclusion that matches the whole tree yields a clean, empty report —
+  // indistinguishable from "no violations" unless the file count is checked (#2306).
+  test("throws when biome scanned no files, instead of scoring an empty tree as clean", () => {
+    const empty = { summary: { errors: 0, changed: 0, unchanged: 0 }, diagnostics: [] };
+
+    expect(() => parseScores(empty, readFake)).toThrow(/scanned no files/);
+  });
+
+  test("throws when the summary carries no file counts to confirm anything was scanned", () => {
+    expect(() => parseScores({ summary: { errors: 0 }, diagnostics: [] }, readFake)).toThrow(/scanned no files/);
   });
 });
 
@@ -271,22 +288,97 @@ describe("loadBaseline", () => {
 });
 
 describe("buildStrictConfig", () => {
-  test("keeps only the complexity rule, at the strict limit, and preserves the file includes", () => {
+  test("keeps only the complexity rule, at the strict limit", () => {
     const repoConfig = {
-      files: { includes: ["**", "!**/.worktrees/**"] },
+      files: { includes: ["**"] },
       plugins: ["./biome-plugins/no-as-never.grit"],
       linter: { rules: { complexity: { noExcessiveCognitiveComplexity: { level: "error" } } } },
     };
 
     const config = buildStrictConfig(repoConfig, 20);
 
-    expect(config.files).toEqual(repoConfig.files);
     expect(config).not.toHaveProperty("plugins");
     expect(config.linter.rules).toEqual({
       recommended: false,
       complexity: { noExcessiveCognitiveComplexity: { level: "error", options: { maxAllowedComplexity: 20 } } },
     });
   });
+
+  // From a --config-path outside the repo, Biome matches `!` patterns against
+  // the absolute path, so a worktree exclusion drops every file of a checkout
+  // that itself lives in a worktree directory (#2306).
+  test("drops the repo's path exclusions and keeps its includes", () => {
+    const repoConfig = { files: { includes: ["**", "!**/.worktrees/**", "!**/.nax-wt/**", "src/**"] } };
+
+    expect(buildStrictConfig(repoConfig, 20).files).toEqual({ includes: ["**", "src/**"] });
+  });
+
+  test("includes everything when the repo config declares no includes", () => {
+    expect(buildStrictConfig({}, 20).files).toEqual({ includes: ["**"] });
+  });
+});
+
+describe("biome.json", () => {
+  const REPO = join(import.meta.dir, "..", "..", "..");
+  const includes: string[] = JSON.parse(readFileSync(join(REPO, "biome.json"), "utf8")).files.includes;
+
+  // A story worktree carries its own copy of biome.json; unexcluded, Biome finds
+  // it as a nested root config and aborts `lint` in the main checkout (#1934).
+  test("excludes nax's own story worktrees", () => {
+    const worktree = storyWorktreePath(REPO, deriveStoryWorktreeId("feature", "US-001"));
+    const worktreeDir = relative(REPO, worktree).split(sep)[0];
+
+    expect(includes).toContain(`!**/${worktreeDir}/**`);
+  });
+});
+
+/**
+ * The real repo config, scanned from a checkout that lives inside each kind of
+ * worktree directory the repo excludes. Every one must still be measured.
+ */
+describe("runBiome from a checkout inside a worktree directory", () => {
+  /** Seven nested ifs: cognitive complexity 1+2+…+7 = 28, over STRICT_LIMIT. */
+  const DEEP = `export function deep(a: number): number {
+  if (a > 0) {
+    if (a > 1) {
+      if (a > 2) {
+        if (a > 3) {
+          if (a > 4) {
+            if (a > 5) {
+              if (a > 6) return 7;
+            }
+          }
+        }
+      }
+    }
+  }
+  return a;
+}
+`;
+  let dir: string;
+
+  beforeAll(() => {
+    dir = makeTempDir();
+  });
+  afterAll(() => cleanupTempDir(dir));
+
+  test.each([
+    [".worktrees", ["fix-x"]],
+    [".claude/worktrees", ["fix-x"]],
+    [".nax-wt", ["story-feature-US-001"]],
+  ])(
+    "scores an over-limit function in a checkout under %s/",
+    (worktreeDir, [name]) => {
+      const root = join(dir, worktreeDir, name ?? "");
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(join(root, "src", "deep.ts"), DEEP);
+
+      const scores = runBiome(root, ["src/"]);
+
+      expect(scores).toEqual([{ file: "src/deep.ts", score: 28, label: "deep", line: 1, column: 17 }]);
+    },
+    30_000,
+  );
 });
 
 /**

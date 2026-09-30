@@ -38,7 +38,22 @@ export const _launcherDeps = {
 export interface CommandLauncherOptions {
   readonly state: SandboxState;
   readonly backend?: SandboxBackend;
-  readonly policyFor?: (root: string) => Promise<SandboxPolicy>;
+  /**
+   * Build the policy for one command.
+   *
+   * `tmpDirInForce` says whether THIS command gets the session's own `TMPDIR`
+   * override: the launcher declared a `tmpDir` and the per-run `ensureTmpDir`
+   * recreated it, so `runWrapped` will apply the `export TMPDIR=…` prefix. It is
+   * false when the override is dropped, and srt's own forced `TMPDIR` applies
+   * instead — a builder that denies that directory would then hand the session a
+   * `TMPDIR` its own sandbox refuses to write (#2301, SPEC-tmp-confinement.md:132).
+   *
+   * Reported separately from `state` on purpose: `state.sharedTmp === false` is
+   * the construction-time answer (did the session RESOLVE as confined) and never
+   * changes, while this is re-decided on every run. A session dir that recreates
+   * for one run and not the next is confined by the first and not the second.
+   */
+  readonly policyFor?: (root: string, tmpDirInForce: boolean) => Promise<SandboxPolicy>;
   /** Runs after every wrapped command, before control returns to nax (e.g. a git tripwire, #2198). */
   readonly afterWrapped?: () => Promise<void>;
   /**
@@ -187,7 +202,13 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
         });
       }
       try {
-        return await runWrapped(req, opts.backend, await opts.policyFor(req.root), { ...env, tmpDir });
+        // `runWrapped` is handed this same `tmpDir` and applies the
+        // `export TMPDIR=…` prefix only when it is defined, so `tmpDir !== undefined`
+        // is exactly the "the override is in force for this command" fact.
+        return await runWrapped(req, opts.backend, await opts.policyFor(req.root, tmpDir !== undefined), {
+          ...env,
+          tmpDir,
+        });
       } finally {
         await opts.afterWrapped?.();
       }

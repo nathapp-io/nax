@@ -370,21 +370,71 @@ describe("resolveSessionSandbox — US-002 confined run temp roots", () => {
     });
   });
 
-  test("US-002 AC20: on darwin the srt /tmp/claude root is still granted", async () => {
+  test("#2301: a confined darwin session denies both spellings and drops the write root", async () => {
     const seam = stubSessionSandboxDeps(_sessionSandboxDeps, { platform: "darwin" });
     const launcher = await resolveSessionSandbox(confinedArgs());
 
     await launcher.run(launchRequest());
 
-    expect(wrappedPolicy(seam).writeRoots).toContain(realOrRaw("/tmp/claude"));
+    const policy = wrappedPolicy(seam);
+    for (const spelling of ["/tmp/claude", "/private/tmp/claude"])
+      expect(policy.denyWrite).toContain(realOrRaw(spelling));
+    expect(policy.writeRoots).not.toContain(realOrRaw("/tmp/claude"));
   });
 
-  test("US-002 AC20 boundary: /tmp/claude stays macOS-only", async () => {
+  test("#2301 boundary: a confined linux session denies neither spelling", async () => {
     const seam = stubSessionSandboxDeps(_sessionSandboxDeps, { platform: "linux" });
     const launcher = await resolveSessionSandbox(confinedArgs());
 
     await launcher.run(launchRequest());
 
-    expect(wrappedPolicy(seam).writeRoots).not.toContain(realOrRaw("/tmp/claude"));
+    const policy = wrappedPolicy(seam);
+    expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
+    expect(policy.denyWrite).not.toContain(realOrRaw("/private/tmp/claude"));
+  });
+
+  test("#2301 boundary: a SHARED darwin session still gets the /tmp/claude write root", async () => {
+    // No run root, no session dir: the session runs on the shared roots, srt's
+    // TMPDIR is still the directory it advertises, and the deny must not fire.
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps, { platform: "darwin" });
+    const launcher = await resolveSessionSandbox(sharedArgs());
+
+    await launcher.run(launchRequest());
+
+    const policy = wrappedPolicy(seam);
+    expect(policy.writeRoots).toContain(realOrRaw("/tmp/claude"));
+    expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
+  });
+
+  test("#2301 boundary: a FAILED mkdir leaves the shared roots and denies nothing", async () => {
+    // `allowSharedTmp` is false here too, so a policy that read the config flag
+    // instead of the resolved decision would deny a session that is not confined.
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps, { platform: "darwin", mkdir: "fails" });
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    await launcher.run(launchRequest());
+
+    const policy = wrappedPolicy(seam);
+    expect(policy.writeRoots).toContain(realOrRaw("/tmp"));
+    expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
+  });
+
+  test("#2301: a command whose session dir cannot be re-created stops carrying the /tmp/claude deny", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps, { platform: "darwin" });
+    // The resolve-time mkdir succeeds (so the session IS confined), but the
+    // per-launch one fails, so no `export TMPDIR=` prefix is applied.
+    _launcherDeps.mkdir = async () => {
+      throw new Error("EROFS: read-only file system");
+    };
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    await launcher.run(launchRequest());
+
+    const policy = wrappedPolicy(seam);
+    expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
+    // The rest of the confinement is untouched: the run's own temp root is
+    // still granted, and the shared /tmp still is not.
+    expect(policy.writeRoots).toContain(realOrRaw(RUN_TMP_ROOT));
+    expect(policy.writeRoots).not.toContain(realOrRaw("/tmp"));
   });
 });

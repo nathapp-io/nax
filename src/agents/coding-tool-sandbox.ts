@@ -131,7 +131,7 @@ export async function resolveSessionSandbox(args: {
     runTmpRoot: args.runTmpRoot,
     tmpDir: args.tmpDir,
   });
-  const policyFor = async (root: string) =>
+  const policyFor = async (root: string, tmpDirInForce: boolean) =>
     buildSandboxPolicy({
       root,
       git,
@@ -145,6 +145,22 @@ export async function resolveSessionSandbox(args: {
       trustStoreFile: trustStorePath(),
       home: _sessionSandboxDeps.homedir(),
       tempRoots,
+      // #2301: the RESOLVED confinement, not `config.filesystem.allowSharedTmp`.
+      // A session confines only when that opt-out is off, a run root AND a
+      // session dir were both supplied, and the dir was actually created.
+      // `allowSharedTmp: false` is therefore no evidence of confinement — it also
+      // holds when the session dir could not be created and when no run root was
+      // supplied, and reading the flag would deny a darwin session that is
+      // running on the shared roots.
+      //
+      // Narrowed by whether THIS command will actually get the session's
+      // `TMPDIR`. `createCommandLauncher` recreates the session dir before every
+      // run and drops the `export TMPDIR=…` prefix when that creation fails
+      // (src/sandbox/launcher.ts), and then srt's own forced `TMPDIR`
+      // (`/tmp/claude`, sandbox-utils.js:630) is what the child gets — denying it
+      // would leave the session with a TMPDIR its own sandbox refuses to write,
+      // the one posture SPEC-tmp-confinement.md:132 rules out.
+      confined: confined && tmpDirInForce,
       platform: _sessionSandboxDeps.platform(),
       config,
     });
@@ -153,7 +169,7 @@ export async function resolveSessionSandbox(args: {
   // and then failed every command. Build the policy once here instead.
   // The old residual (a glob-named feature dir created mid-run failing every
   // command) is gone: listNaxEntries skips glob-named `.nax` entries (nax#2260).
-  const policyError = await literalPolicyError(policyFor, args.root);
+  const policyError = await literalPolicyError(policyFor, args.root, confined);
   if (policyError !== undefined) {
     warnSandboxUnavailableOnce(policyError, args.storyId);
     return createCommandLauncher({ state: { kind: "unavailable", backend: backend.name, reason: policyError } });
@@ -182,8 +198,21 @@ export function rawRefusalFor(launcher: CommandLauncher | undefined): string | u
  *
  * True exactly when the launcher is available AND says `sharedTmp: false` —
  * the only state under which the command guard may skip the classifier for a
- * temp-only command. An available launcher without `sharedTmp`, an unavailable
- * or disabled one, and no launcher at all all read as NOT confined.
+ * temp-only command (`src/agents/coding-tool-support.ts` → `tempConfined` →
+ * `src/command-safety/guard.ts:185`). An available launcher without
+ * `sharedTmp`, an unavailable or disabled one, and no launcher at all all read
+ * as NOT confined.
+ *
+ * That is the RESOLVE-time answer, fixed when the launcher is built, and it is
+ * deliberately NOT the answer the policy narrows on. `SandboxPolicyInput.confined`
+ * ANDs it with whether the per-command session-dir `mkdir` succeeded
+ * (`src/sandbox/launcher.ts:194`), because the `export TMPDIR=…` prefix rides on
+ * that same mkdir. So a session whose dir fails to re-create reports `true` here
+ * while the policy for that ONE command is the unconflined one, `/tmp/claude`
+ * included — which means the guard's temp-only exemption can be claimed for a
+ * command that is not in fact confined. Deliberate, and documented on
+ * `SandboxPolicyInput.confined` (`src/sandbox/policy-builder.ts:41-64`); do not
+ * reconcile the two by making either follow the other.
  */
 export function isTempConfined(launcher: CommandLauncher | undefined): boolean {
   return launcher?.state.kind === "available" && launcher.state.sharedTmp === false;
@@ -208,12 +237,25 @@ export function rawScreenOptionsFor(launcher: CommandLauncher | undefined): {
   return rawBashRefusal !== undefined ? { rawBashRefusal } : {};
 }
 
+/**
+ * The compile-time policy refusal for `raw` (Task 8), or undefined.
+ *
+ * `resolvedConfinement` is the session's RESOLVE-time `confined`, not the
+ * per-launch `tmpDirInForce` this signature's second slot normally carries — a
+ * superset of it, since a launch can only narrow. That is deliberate: this probe
+ * exists to turn a glob refusal from `buildSandboxPolicy` into a session-level
+ * refusal, and the entries a narrower confinement differs by (#2301 — srt's
+ * `/tmp/claude` grant, present only when NOT confined) are fixed literals with no
+ * glob character. Passing the superset therefore exercises the strictest policy
+ * without risking a refusal a real launch would never hit.
+ */
 async function literalPolicyError(
-  policyFor: (root: string) => Promise<unknown>,
+  policyFor: (root: string, tmpDirInForce: boolean) => Promise<unknown>,
   root: string,
+  resolvedConfinement: boolean,
 ): Promise<string | undefined> {
   try {
-    await policyFor(root);
+    await policyFor(root, resolvedConfinement);
     return undefined;
   } catch (err) {
     if (err instanceof NaxError && err.code === "SANDBOX_POLICY_NOT_LITERAL") {

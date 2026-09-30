@@ -15,6 +15,7 @@ import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
 function options(): RunCleanupOptions {
   return {
     runId: "run-p4",
+    runtimeRunId: "run-p4",
     startTime: Date.now() - 1000,
     totalCost: 0,
     storiesCompleted: 0,

@@ -34,6 +34,7 @@ function makeCleanupOptions(overrides: Partial<CleanupOptionsWithSeal>): Cleanup
   tempDirs.push(workdir);
   return {
     runId: "run-seal-cleanup",
+    runtimeRunId: "run-seal-cleanup",
     startTime: Date.now() - 1000,
     totalCost: 0,
     storiesCompleted: 0,

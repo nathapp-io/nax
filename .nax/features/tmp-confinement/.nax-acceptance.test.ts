@@ -238,9 +238,14 @@ describe("tmp-confinement — run temp root (runTmpRoot / sessionTmpDir / wipeRu
   test("AC-9: wipeRunTmp removes exactly the run's own root, never the /tmp/nax parent", async () => {
     const removed: string[] = [];
     const savedRemove = _runTmpWipeDeps.remove;
+    const savedExists = _runTmpWipeDeps.exists;
     _runTmpWipeDeps.remove = async (path: string) => {
       removed.push(path);
     };
+    // The #2300 guard reads this before removing anything, and the real one
+    // answers "absent" for whatever `/tmp/nax/r1` is on this host right now —
+    // which would make this pass without the removal ever being attempted.
+    _runTmpWipeDeps.exists = () => true;
     try {
       await withSessionTmpDeps({ lstat: lstatEnoent, uid: uid501 }, () => wipeRunTmp("r1"));
       expect(removed).toHaveLength(1);
@@ -248,6 +253,7 @@ describe("tmp-confinement — run temp root (runTmpRoot / sessionTmpDir / wipeRu
       expect(removed).not.toContain("/tmp/nax");
     } finally {
       _runTmpWipeDeps.remove = savedRemove;
+      _runTmpWipeDeps.exists = savedExists;
     }
   });
 });

@@ -210,9 +210,9 @@ describe("providersWithoutCredentials — reading through the store (US-004)", (
     });
   });
 
-  test("AC15: given auth.source exec and a helper that sleeps 3 seconds, it returns []", async () => {
+  test("AC15: given auth.source exec and a helper that sleeps 2.5 seconds, it returns []", async () => {
     const reply = JSON.stringify({ version: 1, kind: "api-key", key: "HELPER-KEY" });
-    execAuth(writeHelper(`sleep 3\nprintf '%s' '${reply}'`));
+    execAuth(writeHelper(`sleep 2.5\nprintf '%s' '${reply}'`));
     _authDeps.ambientAuthAvailable = mock(async () => false);
 
     // Outside the 2000ms AMBIENT_PROBE_TIMEOUT_MS race, so a helper slower
