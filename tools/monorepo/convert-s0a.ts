@@ -48,8 +48,16 @@ async function main(): Promise<void> {
   report.push(`moved (${move.length}): ${move.join(", ")}`, `kept at root: ${keep.join(", ")}`);
 
   step("root files");
-  for (const f of ["package.json", "bunfig.toml", "biome.json", "README.md"]) {
-    copyFileSync(join(TPL, f), join(ROOT, f));
+  // Template filenames need not match their targets: the biome template is
+  // named biome.root.json so Biome cannot auto-discover it inside tools/
+  // before the conversion runs (a discovered second root config is an error).
+  for (const [tpl, target] of [
+    ["package.json", "package.json"],
+    ["bunfig.toml", "bunfig.toml"],
+    ["biome.root.json", "biome.json"],
+    ["README.md", "README.md"],
+  ] as const) {
+    copyFileSync(join(TPL, tpl), join(ROOT, target));
   }
   write(`${PKG_DIR}/package.json`, editNaxPackageJson(await read(`${PKG_DIR}/package.json`)));
   write(`${PKG_DIR}/biome.json`, markBiomeNested(await read(`${PKG_DIR}/biome.json`)));

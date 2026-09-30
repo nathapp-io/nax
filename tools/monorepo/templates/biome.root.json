@@ -3,5 +3,11 @@
   "root": true,
   "files": {
     "includes": ["packages/**", "!**/.worktrees/**", "!**/.claude/worktrees/**", "!**/.nax-wt/**", "!**/node_modules/**", "!**/dist/**"]
+  },
+  "linter": {
+    "domains": {
+      "test": "recommended",
+      "types": "recommended"
+    }
   }
 }
