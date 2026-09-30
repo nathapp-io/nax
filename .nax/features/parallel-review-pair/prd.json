@@ -3,7 +3,7 @@
   "feature": "parallel-review-pair",
   "branchName": "feat/parallel-review-pair",
   "createdAt": "2026-07-01T00:00:00.000Z",
-  "updatedAt": "2026-09-30T12:50:35.308Z",
+  "updatedAt": "2026-09-30T13:24:17.261Z",
   "userStories": [
     {
       "id": "US-001",
@@ -94,8 +94,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -157,7 +157,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Adds a sweep-dispatch abstraction to a nearly full source file and integrates all-settled reviews with existing finding extraction and short-circuit behavior."
+        "reasoning": "Adds a sweep-dispatch abstraction to a nearly full source file and integrates all-settled reviews with existing finding extraction and short-circuit behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/story-orchestrator/rectification.ts",
@@ -172,7 +175,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f3ccdbc3eadc42596b50f0632c7688f94b3d5c78"
     }
   ],
   "analysis": "Existing TypeScript builder-phase story orchestration; no migration or public config-shape change. src/config/schemas-review.ts:113-118 already declares adversarial.parallel false and maxConcurrentSessions default 2, int range 1–4, but its comments describe Promise.all and a vague cap; src/review/types.ts:245-248 duplicates these declarations in the hand-written interface; the key-drift guard at src/review/types.ts:350-421 must continue to agree with the schema. Per-story effective review config uses ctx.config?.review ?? ctx.packageView.config.review at src/execution/story-orchestrator/nbf-deps.ts:40-43. src/execution/story-orchestrator/types.ts:83-97 and :160-201 define PhaseKind, InternalPhase and CANONICAL_ORDER (semantic immediately before adversarial); :220-259 maps autofix-implementer to both reviews, autofix-test-writer to adversarial only, and full-suite-rectify to both. src/execution/story-orchestrator/phase-state.ts:22-43 assembles configured phases in canonical order. src/execution/story-orchestrator/execution-plan.ts:45-89 wires hydration, canonical loop, rectification and the distinct post-rectification resume. src/execution/story-orchestrator/execution-plan-phases.ts:31-40 defines PlanParams/PhaseTracking, :110-138 implements recordGreenCheckpoint, and :186-252 runs the canonical loop with resume skip guard, sequential runPhase dispatch, #1666 semantic-failure continuation, error logging and green checkpointing. Under concurrent dispatch, compute runnable phases before the pair, dispatch each review once, evaluate in canonical order after both settle, keep shortCircuitPhase semantics (both failures -> adversarial), and checkpoint passing siblings even when the other throws without double-logging. Keep runPostRectificationResume at :268-339 and mechanical-only resume at :351-391 sequential. src/execution/story-orchestrator/run-phase.ts:186-202 has the unchanged runPhase signature; :286-287 stores the callOp result in phaseOutputs keyed by opName, and :386 accumulates phaseCosts keyed by opName in finally. The existing mutable callOp seam is at :39-82; a new _reviewPairDeps.runPhase seam can isolate pair unit tests. Use all-settled semantics rather than rejecting immediately so the sibling finishes, log each thrown phase once through getSafeLogger with storyId first, and prefer the semantic rejection when both reject. Concurrent reviewers have distinct output/cost keys and iteration maps, but reviewer read-only behavior is only a prompt-level assumption; no permission enforcement is introduced. src/execution/story-orchestrator/rectification.ts:215-242 filters review phases for NBF and guards an already-aborted signal; :361-485 is the validate closure, checking abortion before selecting phases via phasesToRevalidate, adding extra phases, moving full-suite-gate last in lite mode, and currently dispatching one runPhase then extracting/filtering findings and short-circuiting on failure. The new sibling revalidation-reviews.ts should own only dispatch selection, with the loop tracking dispatched kinds; collect findings for both dispatched review outputs before deciding the short-circuit, without changing gate carve-out, NBF triage/quarantine, postValidate or gatherRectificationFindings at rectification.ts:64-81. rectification.ts is already 597 lines, so extraction must leave it at or under the 600-line source limit. src/execution/story-orchestrator/phase-eval.ts:20-49 defines phasePassed, :70-96 extracts only failure findings, and :298-331 selects/arranges revalidation phases; src/execution/non-blocking-fix.ts:41-55 excludes both reviews from the NBF sweep. Test fixtures and seams: test/unit/execution/story-orchestrator-revalidation.test.ts:1-148 captures FixCycle via _storyOrchestratorDeps.runFixCycle and calls validate while replacing callOp; test/unit/execution/story-orchestrator-resume-integration.test.ts:1-29 and :135-175 exercise resume and recordGreen; test/unit/execution/story-orchestrator.test.ts:1-42 covers builder dispatch and thrown errors. Use deferred callOp promises in integration tests to prove overlap without real reviewer sessions. Risk: default false and cap 1 must preserve sequential ordering/cost, semantic failure must still allow adversarial on the canonical path but not on the sequential sweep, early gate failure/abort must prevent review dispatch, and progress logs may interleave without renumbering. No data migration: existing config keys/defaults/ranges and runPhase interface stay intact; enable behavior solely by opt-in parallel true with both phases eligible and cap >= 2.",
