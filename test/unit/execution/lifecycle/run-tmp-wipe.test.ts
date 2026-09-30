@@ -8,16 +8,28 @@
  *
  * Since #2300 absence is *recorded* at debug rather than merely tolerated, which
  * needs the `_runTmpWipeDeps.exists` seam: without it an absent target is
- * indistinguishable from a target that was never looked at.
+ * indistinguishable from a target that was never looked at. The seam reports
+ * absence ONLY for ENOENT — every other errno throws, because `rm`'s `force`
+ * ignores ENOENT and nothing else, so a check failure has to keep reaching the
+ * removal and keep being reported at warn.
  *
  * Only the run's OWN `runTmpRoot(runId)` is removed. US-001 moved that root
  * under the shared `/tmp/nax` parent, so the distinction now matters twice
  * over: removing the parent would take a concurrent run's live directories with
  * it, and it would also take the directory the next run is about to use.
  */
-import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { assertDefined, stubSessionTmpDeps, withDebugSpy, withDepsRestore, withWarnSpy } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  assertDefined,
+  cleanupTempDir,
+  makeTempDir,
+  stubSessionTmpDeps,
+  withDebugSpy,
+  withDepsRestore,
+  withWarnSpy,
+} from "@test/helpers";
 import { _runTmpWipeDeps, wipeRunTmp } from "@/execution/lifecycle/run-tmp-wipe";
 import { _sessionTmpDeps, runTmpRoot } from "@/sandbox";
 
@@ -111,5 +123,79 @@ describe("wipeRunTmp (US-004)", () => {
       await expect(wipeRunTmp("r1")).resolves.toBeUndefined();
       expect(warnSpy.mock.calls.length).toBeGreaterThan(0);
     });
+  });
+
+  // The guard has to be exactly as sure as `rm`: `rm(..., { force: true })`
+  // swallows ENOENT and only ENOENT, so anything else is a failure to inspect,
+  // not proof of absence. `existsSync` called both "absent" and recorded the
+  // case at debug, so a run whose temp root could not be inspected said nothing
+  // a reader would act on.
+  test("#2300: a presence check that fails is NOT absence — remove is still tried and the failure warned", async () => {
+    const remove = mock(async (_path: string) => {});
+    _runTmpWipeDeps.remove = remove as typeof _runTmpWipeDeps.remove;
+    _runTmpWipeDeps.exists = (): boolean => {
+      throw Object.assign(new Error("EACCES: permission denied, lstat '/tmp/nax/r1'"), { code: "EACCES" });
+    };
+
+    await withWarnSpy(async (warnSpy) => {
+      await expect(wipeRunTmp("r1")).resolves.toBeUndefined();
+
+      // `remove` being reached is the load-bearing half: had the unreadable
+      // path read as absent, the removal would be skipped and this warn — the
+      // only record the case would leave — would never be written. The debug
+      // level is deliberately not spied alongside: `withWarnSpy` resets the
+      // logger, so the two cannot nest, and an absent target is already pinned
+      // to debug by the test above.
+      const record = warnSpy.mock.calls.find((call) => call[0] === "sandbox");
+      assertDefined(record, "sandbox warn record");
+      expect(record[1]).toContain("/tmp/nax/r1");
+      expect(record[2]?.error).toContain("EACCES");
+    });
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove.mock.calls.map((call) => call[0])).toEqual(["/tmp/nax/r1"]);
+  });
+});
+
+/**
+ * The production presence check itself, on a real filesystem case. Covered here
+ * rather than through the stub because the errno split and the link handling are
+ * the whole point of the check, and a stub cannot reach either.
+ */
+describe("_runTmpWipeDeps.exists (production)", () => {
+  // Captured before any hook runs, so this is the implementation and not another
+  // test's stub.
+  const productionExists = _runTmpWipeDeps.exists;
+  let dir: string;
+
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => cleanupTempDir(dir));
+
+  test("reports a real directory as present and a missing one as absent", () => {
+    mkdirSync(join(dir, "run-1"));
+
+    expect(productionExists(join(dir, "run-1"))).toBe(true);
+    expect(productionExists(join(dir, "run-none"))).toBe(false);
+  });
+
+  // `existsSync` follows the link, so a symlink to a removed target read as
+  // absent and was skipped — while `rm` unlinks the link itself. A leaked entry
+  // at the path is exactly what the wipe exists to prevent.
+  test("a dangling symlink counts as present, because rm unlinks it", () => {
+    const link = join(dir, "dangling");
+    symlinkSync(join(dir, "target-never-created"), link);
+
+    expect(existsSync(link)).toBe(false);
+    expect(productionExists(link)).toBe(true);
+  });
+
+  // The errno that must NOT read as absence: an ancestor that is a file makes
+  // every lstat of the path below it fail with ENOTDIR, and the path is there.
+  test("a path under a non-directory ancestor is not absence — it throws, so the caller reports it", () => {
+    const file = join(dir, "not-a-dir");
+    writeFileSync(file, "x");
+
+    expect(() => productionExists(join(file, "run-1"))).toThrow();
   });
 });
