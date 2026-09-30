@@ -25,11 +25,11 @@
  *   0 — every generated rule directory matches .nax/rules/
  *   1 — drift found (run the export command it names to regenerate)
  */
-import { join } from "node:path";
 import { rulesExportCommand } from "../src/cli";
 import { initLogger } from "../src/logger";
+import { findRepoRoot } from "./lib/repo-root";
 
-const ROOT = join(import.meta.dir, "..");
+const ROOT = findRepoRoot(import.meta.dir);
 
 /** Agents whose generated rule directory is committed and must stay in sync. */
 const GATED_AGENTS = ["claude"] as const;

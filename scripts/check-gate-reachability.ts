@@ -11,8 +11,8 @@
  * Reachability is resolved from two entry-point sources:
  *   1. `bun run check:all` in package.json, expanded transitively through
  *      other package scripts (so a gate inside `lint` counts).
- *   2. `.github/workflows/ci.yml` — every `run:` step, plus the `check:` build
- *      matrix, expanded the same way.
+ *   2. `.github/workflows/ci.yml` at the repo root — every `run:` step, plus
+ *      the `check:` build matrix, expanded the same way.
  *
  * Usage:
  *   bun scripts/check-gate-reachability.ts
@@ -24,6 +24,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { byCodePoint } from "../src/utils/sort";
+import { findRepoRoot } from "./lib/repo-root";
 
 const CI_WORKFLOW = join(".github", "workflows", "ci.yml");
 
@@ -109,20 +110,21 @@ export function findUnreachableCheckScripts(inputs: UnreachableInputs): string[]
   return inputs.checkScripts.filter((name) => !reachable.has(name)).sort(byCodePoint);
 }
 
-/** Resolves every input from the repo on disk, then applies the rule. */
-export function findUnreachableCheckScriptsInRepo(root: string): string[] {
-  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+/** Resolves every input from the repo on disk, then applies the rule.
+ *  `packageRoot` owns package.json + scripts/; `repoRoot` owns .github/. */
+export function findUnreachableCheckScriptsInRepo(packageRoot: string, repoRoot: string): string[] {
+  const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
     scripts?: Record<string, string>;
   };
   const packageScripts = pkg.scripts ?? {};
 
-  const ciPath = join(root, CI_WORKFLOW);
+  const ciPath = join(repoRoot, CI_WORKFLOW);
   const ci = existsSync(ciPath)
     ? parseCiEntryPoints(readFileSync(ciPath, "utf8"))
     : { scriptNames: [], scriptFiles: [] };
 
   return findUnreachableCheckScripts({
-    checkScripts: discoverCheckScripts(root),
+    checkScripts: discoverCheckScripts(packageRoot),
     entryScriptNames: ci.scriptNames,
     entryScriptFiles: ci.scriptFiles,
     packageScripts,
@@ -130,8 +132,8 @@ export function findUnreachableCheckScriptsInRepo(root: string): string[] {
 }
 
 function main() {
-  const root = join(import.meta.dir, "..");
-  const unreachable = findUnreachableCheckScriptsInRepo(root);
+  const packageRoot = join(import.meta.dir, "..");
+  const unreachable = findUnreachableCheckScriptsInRepo(packageRoot, findRepoRoot(packageRoot));
 
   if (unreachable.length > 0) {
     console.error(`[FAIL] ${unreachable.length} check script(s) run in no pipeline:`);
@@ -140,7 +142,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`OK: all ${discoverCheckScripts(root).length} check scripts are reachable from CI`);
+  console.log(`OK: all ${discoverCheckScripts(packageRoot).length} check scripts are reachable from CI`);
 }
 
 if (import.meta.main) {

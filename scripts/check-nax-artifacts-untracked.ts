@@ -26,6 +26,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { NAX_GITIGNORE_ENTRIES } from "../src/utils/gitignore";
 import { byCodePoint } from "../src/utils/sort";
+import { findRepoRoot } from "./lib/repo-root";
 
 /**
  * Tracked files under `repoRoot` that match `NAX_GITIGNORE_ENTRIES`.
@@ -160,7 +161,7 @@ export function formatTrackedNaxArtifactsReport(
 }
 
 export async function main(): Promise<void> {
-  const repoRoot = process.cwd();
+  const repoRoot = findRepoRoot(process.cwd());
   let violations: string[];
   try {
     violations = findTrackedNaxArtifacts(repoRoot);

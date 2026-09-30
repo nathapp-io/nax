@@ -151,11 +151,34 @@ describe("findUnreachableCheckScripts", () => {
   });
 });
 
+describe("findUnreachableCheckScriptsInRepo — package root vs repo root", () => {
+  let dir: string | undefined;
+  afterEach(() => {
+    if (dir) cleanupTempDir(dir);
+    dir = undefined;
+  });
+
+  test("reads package.json + scripts/ from the package and ci.yml from the repo root", async () => {
+    const { findUnreachableCheckScriptsInRepo } = await import("@scripts/check-gate-reachability");
+    dir = makeTempDir("nax-gate-two-roots-");
+    const pkg = join(dir, "packages", "nax");
+    mkdirSync(join(pkg, "scripts"), { recursive: true });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(pkg, "scripts", "check-a.ts"), "");
+    writeFileSync(join(pkg, "scripts", "check-b.ts"), "");
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ scripts: { "check:a": "bun run scripts/check-a.ts" } }));
+    writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "      - run: bun run check:a\n");
+
+    expect(findUnreachableCheckScriptsInRepo(pkg, dir)).toEqual(["check-b.ts"]);
+  });
+});
+
 describe("the nax repo itself", () => {
   test("every scripts/check-* gate is reachable from CI", async () => {
     const { findUnreachableCheckScriptsInRepo } = await import("@scripts/check-gate-reachability");
-    const root = join(import.meta.dir, "..", "..", "..");
+    const { findRepoRoot } = await import("@scripts/lib/repo-root");
+    const packageRoot = join(import.meta.dir, "..", "..", "..");
 
-    expect(findUnreachableCheckScriptsInRepo(root)).toEqual([]);
+    expect(findUnreachableCheckScriptsInRepo(packageRoot, findRepoRoot(packageRoot))).toEqual([]);
   });
 });
