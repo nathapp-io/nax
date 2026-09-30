@@ -1,17 +1,27 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { assertNaxError, cleanupTempDir, loadTrustModule, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, loadTrustModule, makeTempDir, useUntrustedRegistry } from "@test/helpers";
 import type { NaxError } from "@/errors";
 
 const trust = await loadTrustModule();
 const ADDED_AT = "2026-09-30T00:00:00.000Z";
 
+// Every test here asserts against an *empty* registry -- "nothing marked" is the
+// premise of AC1 -- while `test/preload.ts` has marked the filesystem root
+// trusted for the whole `bun test` process. `useUntrustedRegistry` owns both
+// halves: its `beforeEach` clears the registry, its `afterEach` puts the
+// preload's root back. Clearing the registry without restoring it (what this
+// file used to do) leaves every later test file in the same process untrusted,
+// so a file that relies on the preload's root fails only when this one happens
+// to run before it. It is called inside each `describe` because the linter
+// reads a `use*` call at module scope as a broken React hook.
+
 let globalDir: string;
 let workdir: string;
 let savedGlobalEnv: string | undefined;
-let savedPrompt: typeof trust._trustGateDeps.prompt | undefined;
-let savedHomedir: typeof trust._trustGateDeps.homedir | undefined;
+let savedPrompt = trust._trustGateDeps.prompt;
+let savedHomedir = trust._trustGateDeps.homedir;
 
 beforeEach(() => {
   globalDir = realpathSync(makeTempDir("nax-trust-gate-global-"));
@@ -20,17 +30,13 @@ beforeEach(() => {
   process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
   expect(typeof trust.resetTrustRegistry).toBe("function");
   expect(typeof trust._trustGateDeps).toBe("object");
-  if (typeof trust.resetTrustRegistry === "function") trust.resetTrustRegistry();
-  if (trust._trustGateDeps) {
-    savedPrompt = trust._trustGateDeps.prompt;
-    savedHomedir = trust._trustGateDeps.homedir;
-  }
+  savedPrompt = trust._trustGateDeps.prompt;
+  savedHomedir = trust._trustGateDeps.homedir;
 });
 
 afterEach(() => {
-  if (savedPrompt && trust._trustGateDeps) trust._trustGateDeps.prompt = savedPrompt;
-  if (savedHomedir && trust._trustGateDeps) trust._trustGateDeps.homedir = savedHomedir;
-  if (typeof trust.resetTrustRegistry === "function") trust.resetTrustRegistry();
+  trust._trustGateDeps.prompt = savedPrompt;
+  trust._trustGateDeps.homedir = savedHomedir;
   cleanupTempDir(globalDir);
   cleanupTempDir(workdir);
   if (savedGlobalEnv === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
@@ -57,6 +63,8 @@ async function expectProjectUntrusted(action: Promise<unknown>): Promise<NaxErro
 }
 
 describe("trust registry", () => {
+  useUntrustedRegistry();
+
   test("US-002 AC1: rejects an unmarked root with the execution surface in error context", async () => {
     const error = await expectProjectUntrusted(trust.assertTrusted(workdir, "hooks"));
 
@@ -84,6 +92,8 @@ describe("trust registry", () => {
 });
 
 describe("ensureProjectTrusted", () => {
+  useUntrustedRegistry();
+
   test("US-002 AC5: accepts a root covered by the persistent store and registers it", async () => {
     writeStore(workdir);
 
@@ -206,5 +216,22 @@ describe("ensureProjectTrusted", () => {
     expect(error.context?.hint).toBe(`run: nax trust add ${home} --force`);
     expect(promptCalls).toBe(0);
     cleanupTempDir(home);
+  });
+});
+
+// Runs last (Bun executes suites in declaration order) and asserts the state the
+// suites above left behind, which is what a later test file in the same process
+// inherits. It deliberately does not call `useUntrustedRegistry()` itself: if the
+// restore above is ever dropped, this fails here as a PROJECT_UNTRUSTED refusal
+// instead of surfacing as a phantom failure in an unrelated file that happens to
+// run after this one.
+describe("registry isolation", () => {
+  test("US-002 isolation: leaves the preload's trusted root marked for the rest of the process", async () => {
+    const dir = realpathSync(makeTempDir("nax-trust-gate-isolation-"));
+    try {
+      await expect(trust.assertTrusted(dir, "hooks")).resolves.toBeUndefined();
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 });
