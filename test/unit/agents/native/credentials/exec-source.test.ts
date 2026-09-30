@@ -14,7 +14,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertNaxError, cleanupTempDir, makeTempDir, waitForCondition, withTimerSpy } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeTempDir, withTimerSpy } from "@test/helpers";
 import {
   AUTH_HELPER_STDERR_MAX_BYTES,
   AUTH_HELPER_STDOUT_MAX_BYTES,
@@ -140,10 +140,12 @@ afterEach(() => {
   cleanupTempDir(dir);
 });
 
-function sourceFor(target: FakeHelper = helper, timeoutMs?: number): ExecSource {
-  return createExecCredentialSource(
-    timeoutMs === undefined ? { command: target.command } : { command: target.command, timeoutMs },
-  );
+function sourceFor(target: FakeHelper = helper, timeoutMs?: number, now?: () => number): ExecSource {
+  return createExecCredentialSource({
+    command: target.command,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(now === undefined ? {} : { now }),
+  });
 }
 
 /** `read` is expected to reject; returns the caught error, narrowed for assertions. */
@@ -310,11 +312,12 @@ describe("createExecCredentialSource", () => {
     });
 
     test("AC23: with an expired lease, a decline reply makes read throw CREDENTIAL_HELPER_INVALID", async () => {
-      const expiry = Date.now() + 1_000;
+      const clock = { t: Date.now() };
+      const expiry = clock.t + 1_000;
       helper.set({ stdout: credentialReply("SHORT-KEY", { expiresAt: expiry }) });
-      const source = sourceFor();
+      const source = sourceFor(helper, undefined, () => clock.t);
       await source.read("anthropic");
-      await waitForCondition(() => Date.now() > expiry, 3_000);
+      clock.t = expiry + 1;
       helper.set({ stdout: DECLINE_REPLY });
 
       const err = await readError(source);
@@ -546,11 +549,12 @@ describe("createExecCredentialSource", () => {
     });
 
     test("AC21: with a last good lease that has expired, a helper exiting 1 makes read throw CREDENTIAL_HELPER_FAILED", async () => {
-      const expiry = Date.now() + 1_000;
+      const clock = { t: Date.now() };
+      const expiry = clock.t + 1_000;
       helper.set({ stdout: credentialReply("SHORT-KEY", { expiresAt: expiry }) });
-      const source = sourceFor();
+      const source = sourceFor(helper, undefined, () => clock.t);
       await source.read("anthropic");
-      await waitForCondition(() => Date.now() > expiry, 3_000);
+      clock.t = expiry + 1;
       helper.set({ exitCode: 1 });
 
       const err = await readError(source);
