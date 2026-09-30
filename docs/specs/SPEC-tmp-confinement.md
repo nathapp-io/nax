@@ -275,13 +275,14 @@ into the body above, because the body is the design that was approved.
 
 ### #2300 — the end-of-run wipe never fired
 
-This spec's US-001 kept the wipe run-scoped, and US-004 added
-`wipeRunTmp(runId)` to `cleanupRun`. The id it was handed was the runner's
-`buildRunId(workdir, …)`; the directories it was meant to remove were created under
-`runtime.runId` (`crypto.randomUUID()`), because `resolveDispatchLauncher` threads
-`AgentRunOptions.runId` — which is the runtime's — into `runTmpRoot`. `rm(…, { force:
-true })` on the resulting missing path does not raise, so every run's temp root
-survived its own wipe and no log line recorded it.
+This spec's US-001 is the wipe's story: it keeps the wipe run-scoped, and its acceptance
+criterion 8 is the criterion that pins it. (`US-004` names #2269's `$TMPDIR` story, under
+Motivation above — a different story, and not one of this spec's.) The id the wipe was
+handed was the runner's `buildRunId(workdir, …)`; the directories it was meant to remove
+were created under `runtime.runId` (`crypto.randomUUID()`), because
+`resolveDispatchLauncher` threads `AgentRunOptions.runId` — which is the runtime's — into
+`runTmpRoot`. `rm(…, { force: true })` on the resulting missing path does not raise, so
+every run's temp root survived its own wipe and no log line recorded it.
 
 The fix adds a second, separately-named option, `RunCleanupOptions.runtimeRunId`, and
 wipes under that. The two ids are NOT unified: doing so would rename every

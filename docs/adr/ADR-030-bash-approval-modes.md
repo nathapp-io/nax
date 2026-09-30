@@ -611,6 +611,12 @@ a path it does not own by accident, not to defeat an attacker who controls `/tmp
 
 ## Amendment — 2026-09-30: a confined macOS session loses `/tmp/claude` (#2301)
 
+**Supersedes:** the 2026-09-28 amendment's decision 2 clause *"srt's own `/tmp/claude` on
+macOS is unaffected"*; its decision 3, whose "`filesystem.allowWrite` can still add a
+specific path" no longer reaches `/tmp/claude`; and that amendment's Consequences bullet
+offering `allowWrite` as a way out for a tool hardcoding `/tmp`. `allowSharedTmp: true` is
+the only route back now.
+
 ### What changed
 
 Decision 2 of the 2026-09-28 amendment ended: *"srt's own `/tmp/claude` on macOS is
@@ -662,19 +668,21 @@ AFTER the allow rules, so a deny is the only thing that takes the write back.
 - `/tmp/claude` is no longer the one temp location a confined macOS session can write
   outside its own run root. It was shared by every run and never wiped.
 - The denial hint drops `/tmp/claude` on its own: it lists `policy.writeRoots`
-  (`src/sandbox/messages.ts:52`), which no longer contains it.
+  (`src/sandbox/messages.ts:52`), which no longer contains it. That holds for a project
+  that has not listed the path in `filesystem.allowWrite`; such an entry puts it back into
+  the advertised roots (`src/sandbox/policy-builder.ts:182-185`) while the deny still
+  blocks the write, so the hint would then name a path the session cannot use.
 - **A confined macOS session whose tooling genuinely depends on `/tmp/claude` now
   fails with "Operation not permitted", and `filesystem.allowWrite` will NOT get it
   back.** srt writes its macOS allow rules before its deny rules
-  (`macos-sandbox-utils.js:636` then `:654`), so a deny wins over any allow no matter
-  where the path was granted. This is the same precedence that makes `.nax/features`
-  un-openable. The only way out is `allowSharedTmp: true`, which is the documented
-  opt-out for exactly this class of tool.
+  (`node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js:636`,
+  then `:654`), so a deny wins over any allow no matter where the path was granted. This
+  is the same precedence that makes `.nax/features` un-openable. The only way out is
+  `allowSharedTmp: true`, which is the documented opt-out for exactly this class of tool.
 - A confined macOS session whose per-command session-dir `mkdir` fails keeps srt's
   `/tmp/claude` as its `TMPDIR` and therefore keeps the write, so `mktemp` still works
   there. That is deliberate: a session must never be handed a `TMPDIR` its own sandbox
   denies.
-
 
 ### Related
 
