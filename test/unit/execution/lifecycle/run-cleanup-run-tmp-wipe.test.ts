@@ -2,10 +2,12 @@
  * run-cleanup.ts — US-004: the end-of-run temp-directory wipe.
  *
  * `cleanupRun` is the finally block of `runner.run()`. The run's temp root
- * (`/tmp/nax-<runId>`) must go away at the end of EVERY real run — completed
- * or failed — because a failed run's `/tmp` files are not kept for inspection:
- * no later run can find them to clear. That is the one gate that differs from
- * the scratchpad wipe, which retains a failed run's scratchpad for inspection.
+ * (`runTmpRoot(runtimeRunId)` — `<parent>/<runId>` under the shared `/tmp/nax`,
+ * or the per-user `/tmp/nax-<uid>` fallback) must go away at the end of EVERY
+ * real run — completed or failed — because a failed run's `/tmp` files are not
+ * kept for inspection: no later run can find them to clear. That is the one gate
+ * that differs from the scratchpad wipe, which retains a failed run's
+ * scratchpad for inspection.
  *
  * A dry run is a preview, not a mutation, so it is skipped outright.
  *
@@ -95,6 +97,10 @@ describe("cleanupRun — US-004: end-of-run temp-directory wipe", () => {
   // #2300: the regression. The runner's `runId` is `buildRunId(workdir, …)`; the
   // session temp dirs were created under `runTmpRoot(runtime.runId)`. Handing the
   // wipe the first one removed `/tmp/nax/run-8a1b05ad-…`, which nothing creates.
+  //
+  // The `toEqual` is the whole assertion: a bare `not.toContain` would also pass on
+  // an empty list, so a `cleanupRun` that stopped wiping entirely — the exact
+  // failure mode this criterion exists to catch — would read as a pass.
   test("#2300: the wipe never sees the runner's run id", async () => {
     stubWipe();
 
@@ -102,5 +108,6 @@ describe("cleanupRun — US-004: end-of-run temp-directory wipe", () => {
 
     const ids = wipeCalls.map((call) => call.runId);
     expect(ids).not.toContain("run-8a1b05ad-2026-09-29T07-32-15.243");
+    expect(ids).toEqual(["0f9c1d2e-3a4b-4c5d-8e6f-0708090a0b0c"]);
   });
 });
