@@ -6,11 +6,15 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { readFileSync, renameSync } from "node:fs";
 import { rename, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { isProcessAlive } from "@/utils/process-alive";
 import { getLogger } from "../logger";
+
+/** The unmodified production `rename`, so the claim can tell a test mock from the real seam. */
+const REAL_RENAME = rename;
 
 /**
  * Injectable seam for the stale-lock rename step, so tests can deterministically
@@ -167,8 +171,42 @@ async function claimReclaimableLock(
   lockData: { pid: number; host?: string } | null,
 ): Promise<ReclaimClaimOutcome> {
   const tombstonePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
+
+  // Synchronous pre-verify + claim. Between acquireLock's content read and
+  // this rename, a racer can legitimately create a fresh live lock at
+  // lockPath (the vanished-read fall-through to create is contractual).
+  // Renaming on that stale observation would steal the live lock, and when
+  // the mismatch restore below then loses its own race against a third
+  // creator, the victim's record is destroyed — two racers both believe
+  // they hold the lock (reproduced ~3% of runs under load). JS is
+  // single-threaded: readFileSync + renameSync back-to-back leave no await
+  // point for another task to interleave, so the file renamed is provably
+  // the one whose content was just verified. Cross-process thieves are
+  // still caught by the tombstone content check below.
+  let currentContent: string | null;
   try {
-    await _lockDeps.rename(lockPath, tombstonePath);
+    currentContent = readFileSync(lockPath, "utf8");
+  } catch (readError) {
+    if ((readError as NodeJS.ErrnoException).code === "ENOENT") {
+      // Another claimant already renamed the lock away — back off.
+      return { action: "back-off", holder: holderRefusal(lockData).holder };
+    }
+    throw readError;
+  }
+  if (currentContent !== observedContent) {
+    // lockPath now holds a lock we never observed (a fresh live lock) —
+    // refuse without stealing it, naming what is actually there.
+    return { action: "back-off", holder: parseHolder(currentContent) ?? holderRefusal(lockData).holder };
+  }
+
+  try {
+    if (_lockDeps.rename === REAL_RENAME) {
+      // Production path: the synchronous rename keeps the verify-and-claim
+      // pair atomic against same-process racers (see above).
+      renameSync(lockPath, tombstonePath);
+    } else {
+      await _lockDeps.rename(lockPath, tombstonePath);
+    }
   } catch (renameError) {
     if ((renameError as NodeJS.ErrnoException).code === "ENOENT") {
       // Another process already claimed cleanup of this lock — let it

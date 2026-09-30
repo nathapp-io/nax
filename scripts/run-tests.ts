@@ -46,7 +46,12 @@ type Phase = {
 };
 
 const PHASES: Phase[] = [
-  { name: "unit", dir: "test/unit/", testTimeoutMs: 5_000, phaseTimeoutMs: 120_000 },
+  // 240s, not 120s: the unit suite is ~21.7k tests across ~1.4k files, and a
+  // fully-passing run was observed at 123.7s wall on a loaded runner — killed
+  // by the old 120s budget with zero failing tests. The budget exists to bound
+  // hangs (per-test timeout stays 5s; the group reap still fires on overrun),
+  // so it must not sit at the suite's legitimate steady-state cost.
+  { name: "unit", dir: "test/unit/", testTimeoutMs: 5_000, phaseTimeoutMs: 240_000 },
   { name: "integration", dir: "test/integration/", testTimeoutMs: 5_000, phaseTimeoutMs: 120_000 },
   { name: "ui", dir: "test/ui/", testTimeoutMs: 5_000, phaseTimeoutMs: 30_000 },
 ];
