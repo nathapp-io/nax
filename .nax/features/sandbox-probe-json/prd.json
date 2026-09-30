@@ -1,0 +1,84 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "sandbox-probe-json",
+  "branchName": "feat/sandbox-probe-json",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-09-30T01:52:47.330Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Expose the OS sandbox availability probe as a CLI command",
+      "description": "**Goal** — Add `nax sandbox probe [--json]` with one-line/one-document output, 0/1 exit status, unit tests, a subprocess live check and CLI reference documentation.\n\n**Motivation** — An external orchestrator that dispatches `nax run --profile <chain>` onto several machines must know, before it dispatches, whether a machine can run a chain that needs the sandbox.\n\n**Approach** — A new handler `sandboxProbeCommand(options)` in `src/cli/sandbox-probe.ts`, following the `auth list` pattern: the handler returns an exit code, and `bin/nax.ts` passes it to `process.exit`.\n\n1. `backend = _sandboxProbeCmdDeps.createBackend(DEFAULT_SANDBOX_CONFIG.network)`.\n2. `result = await _sandboxProbeCmdDeps.probe(backend)`. A rejection becomes `{ available: false, reason: \"sandbox probe failed: <message>\" }`, the same wording the registry uses today.\n3. `await backend.reset()` in a `finally`. A rejection from `reset()` is ignored: the probe verdict is already decided and the process exits next.\n4. Build a `SandboxProbeReport` and print it through `_sandboxProbeCmdDeps.log`, as one JSON string or one text line.\n5. Return `0` when `available` is `true`, `1` otherwise.\n\nThe handler deliberately does not use the registry (`probeSandboxOnce` / `sandboxBackendFor` / `resetSandboxBackend`). The registry caches one probe per process and writes to the run logger, and neither applies to a one-shot command.\n\n**CLI behaviour** — `nax sandbox probe [--json]`\n\n- `bin/nax.ts` registers a `sandbox` command group (`program.command(\"sandbox\").description(\"Inspect the OS sandbox for agent commands\")`) with one subcommand, `probe`, carrying `.option(\"--json\", \"Emit machine-readable JSON to stdout\", false)`, and calls `process.exit(await sandboxProbeCommand({ json: options.json }))`.\n- It takes no `-d` and no `--profile`, and loads no config file.\n- stdout carries exactly one `log` call: the JSON document in `--json` mode, the text line otherwise.\n- Exit code: `0` when available, `1` when unavailable (JSON or text is printed in both cases).\n- Text line, available: `Sandbox (srt, darwin): available`.\n- Text line, unavailable: `Sandbox (srt, linux): unavailable: <reason>`.\n- The probe's 30-second timeout (`PROBE_TIMEOUT_MS` in `src/sandbox/probe.ts`) bounds only the wrapped command. srt's platform check, `initialize()` and `reset()` have no timeout of their own, and the command adds none.\n\n**Output format: `SandboxProbeReport`** — `backend` is the probed backend's `name` (`\"srt\"`, the only `SandboxBackendName`); `platform` is `_sandboxProbeCmdDeps.platform()`, which is `process.platform` in production; `available` is `ProbeResult.available`; `reason` is present only when `available` is `false` and is `ProbeResult.reason` verbatim. No timestamp: the consumer stamps its own probe time. The document is `JSON.stringify(report, null, 2)` with no ANSI codes. Example:\n```json\n{\n  \"backend\": \"srt\",\n  \"platform\": \"linux\",\n  \"available\": false,\n  \"reason\": \"sandbox could not run a command: bwrap: No permissions to create new namespace\"\n}\n```\n\n**Interface** —\n```ts\n// src/cli/sandbox-probe.ts\nexport interface SandboxProbeReport {\n  backend: SandboxBackendName;\n  platform: string;\n  available: boolean;\n  reason?: string;\n}\n\nexport interface SandboxProbeOptions {\n  json?: boolean;\n}\n\nexport const _sandboxProbeCmdDeps: {\n  log: (text: string) => void;\n  platform: () => string;\n  createBackend: (network: SandboxConfig[\"network\"]) => SandboxBackend;\n  probe: (backend: SandboxBackend) => Promise<ProbeResult>;\n};\n\nexport async function sandboxProbeCommand(options?: SandboxProbeOptions): Promise<number>;\n```\nProduction values: `log: (text) => console.log(text)` (the same CLI-output seam `_cliAuthDeps.log` uses), `platform: () => process.platform`, `createBackend: createSrtBackend`, `probe: probeSandbox`. Export `sandboxProbeCommand`, `SandboxProbeReport` and `SandboxProbeOptions` from `src/cli/index.ts`. `docs/guides/cli-reference.md` gains a `### `nax sandbox probe`` section after `### `nax auth``, giving the JSON shape, both text lines and the 0/1 exit codes.\n\n**Failure handling** — Unsupported platforms, commands that fail to run, and commands that run without enforcing write deny all preserve `probeSandbox`'s unavailable reason and return 1. A rejected probe is unavailable with `sandbox probe failed: <message>`; a non-Error rejection uses `String(value)`. A rejecting `backend.reset()` is ignored and cannot change the probe's verdict.\n\n**Testing** — In every unit test `_sandboxProbeCmdDeps.log`, `platform`, `createBackend` and `probe` are replaced and restored after; the stub backend has name `srt` and a reset spy that resolves; unit tests never load srt. Place both live cases inside the existing `describe.skipIf(!probe.available)` block in `test/integration/sandbox/sandbox-live.test.ts`; they may share one subprocess spawn from repo root and each needs an explicit 60_000 ms timeout because cold Bun plus srt exceeds 5 seconds. The subprocess protects the existing suite's process-wide SandboxManager/backend.\n\n**Scope** — In: `src/cli/sandbox-probe.ts`, `src/cli/index.ts`, `bin/nax.ts`, `docs/guides/cli-reference.md`, `test/unit/cli/sandbox-probe.test.ts`, and the two live cases in `test/integration/sandbox/sandbox-live.test.ts` without changing existing cases or assertions. Out: A `--profile`, `-d` or config-driven probe: the command never reads `execution.sandbox` (including `enabled` and `network.allowedDomains`) from any config file, and always probes the default open-network srt backend. Probing whether srt's network proxy starts under a restricted `network.allowedDomains` list. Caching the probe result on disk or across invocations; every invocation probes afresh. A timeout around srt's platform check, `initialize()` or `reset()`; only the wrapped probe command is bounded, by `PROBE_TIMEOUT_MS`. Any change to `probeSandbox`, `probeSandboxOnce`, the sandbox registry or `createSrtBackend`. A timestamp field in the report; the consumer records when it probed. Any other `nax sandbox` subcommand.",
+      "acceptanceCriteria": [
+        "When `probe` resolves `{ available: true }` and `platform` returns `darwin`, then the document logged by `sandboxProbeCommand({ json: true })` deep-equals `{ backend: 'srt', platform: 'darwin', available: true }`.",
+        "When `probe` resolves `{ available: true }`, then `sandboxProbeCommand({ json: true })` returns `0`.",
+        "When `probe` resolves `{ available: false, reason: 'sandbox ran a command but did not enforce a write deny' }` and `platform` returns `linux`, then the document logged by `sandboxProbeCommand({ json: true })` deep-equals `{ backend: 'srt', platform: 'linux', available: false, reason: 'sandbox ran a command but did not enforce a write deny' }`.",
+        "When `probe` resolves `{ available: false, reason: 'x' }`, then `sandboxProbeCommand({ json: true })` returns `1`.",
+        "When `probe` rejects with `new Error('module not found')`, then the document logged by `sandboxProbeCommand({ json: true })` has `available: false` and `reason: 'sandbox probe failed: module not found'`.",
+        "When `probe` rejects with `new Error('module not found')`, then `sandboxProbeCommand({ json: true })` returns `1`.",
+        "When `probe` rejects with the string `boom`, then the document logged by `sandboxProbeCommand({ json: true })` has `reason: 'sandbox probe failed: boom'`.",
+        "When `sandboxProbeCommand({ json: true })` runs, then `_sandboxProbeCmdDeps.createBackend` is called exactly once with an argument deep-equal to `DEFAULT_SANDBOX_CONFIG.network`.",
+        "When `sandboxProbeCommand({ json: true })` runs, then `_sandboxProbeCmdDeps.probe` is called exactly once with the backend object `createBackend` returned.",
+        "When `probe` resolves `{ available: true }`, then `sandboxProbeCommand({ json: true })` calls the backend's `reset` exactly once.",
+        "When `probe` rejects, then `sandboxProbeCommand({ json: true })` calls the backend's `reset` exactly once.",
+        "When `probe` resolves `{ available: true }` and the backend's `reset` rejects with `new Error('reset failed')`, then `sandboxProbeCommand({ json: true })` returns `0`.",
+        "When `probe` resolves `{ available: true }` and the backend's `reset` rejects with `new Error('reset failed')`, then the document logged by `sandboxProbeCommand({ json: true })` has `available: true`.",
+        "When `probe` resolves `{ available: false, reason: 'x' }`, then `sandboxProbeCommand({ json: true })` calls `_sandboxProbeCmdDeps.log` exactly once.",
+        "When `probe` resolves `{ available: false, reason: 'x' }`, then the string `sandboxProbeCommand({ json: true })` logs contains no ESC (`\\u001b`) character.",
+        "When `probe` resolves `{ available: true }` and `platform` returns `darwin`, then `sandboxProbeCommand({})` logs exactly `Sandbox (srt, darwin): available`.",
+        "When `probe` resolves `{ available: false, reason: 'no bwrap' }` and `platform` returns `linux`, then `sandboxProbeCommand({})` logs exactly `Sandbox (srt, linux): unavailable: no bwrap`.",
+        "When `probe` resolves `{ available: false, reason: 'no bwrap' }`, then `sandboxProbeCommand({})` returns `1`.",
+        "When `probe` resolves `{ available: false, reason: 'no bwrap' }`, then `sandboxProbeCommand({})` calls `_sandboxProbeCmdDeps.log` exactly once.",
+        "When `sandboxProbeCommand` is imported from `@/cli` and `probe` resolves `{ available: true }`, then calling it with no argument returns `0`.",
+        "Given the live sandbox suite's own probe reports the sandbox available, when `bun bin/nax.ts sandbox probe --json` is spawned from the repository root, then it exits with code `0`.",
+        "Given the live sandbox suite's own probe reports the sandbox available, when `bun bin/nax.ts sandbox probe --json` is spawned from the repository root, then its stdout parses as JSON with `available: true` and `backend: 'srt'`.",
+        "When `probe` resolves `{ available: false, reason: 'platform linux is not supported by the srt sandbox' }` for an unsupported platform, then the document logged by `sandboxProbeCommand({ json: true })` has `reason: 'platform linux is not supported by the srt sandbox'`.",
+        "When `probe` resolves `{ available: false, reason: 'sandbox could not run a command: exit 1' }` for a command that cannot run, then the document logged by `sandboxProbeCommand({ json: true })` has `reason: 'sandbox could not run a command: exit 1'`."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "sandbox"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive CLI handler plus barrel and Commander wiring follow existing auth patterns; the subprocess live check isolates srt's singleton, so there is no new abstraction or cross-module sandbox change and a single-session TDD pass suffices."
+      },
+      "contextFiles": [
+        "src/sandbox/probe.ts",
+        "src/sandbox/srt-backend.ts",
+        "src/sandbox/registry.ts",
+        "src/cli/auth.ts",
+        "test/integration/sandbox/sandbox-live.test.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/sandbox-probe.ts",
+        "test/unit/cli/sandbox-probe.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/integration/sandbox/sandbox-live.test.ts",
+          "reason": "gains the two live `nax sandbox probe` cases inside its existing `describe.skipIf(!probe.available)` block; no existing case or assertion in the file changes."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing TypeScript/Bun/Commander CLI; additive command, no migration or change to current sandbox behavior. src/sandbox/probe.ts:27-68 exports probeSandbox(backend), checking platform support before creating a temp directory, wrapping a command and verifying both an allowed-write marker and a denied-write marker; only runArgv is bounded by PROBE_TIMEOUT_MS=30_000 (line 19). Its unavailable reasons include unsupported platform (line 29), wrapping failure (line 48), inability to run (lines 56-59), and missing enforcement (line 62). src/sandbox/srt-backend.ts:51-112 exports createSrtBackend(network), with lazy srt module loading/initialization (lines 57-71) and reset (lines 105-110); constructing the backend itself does not load srt. src/sandbox/types.ts:13,22,34-45 defines SandboxBackendName ('srt'), ProbeResult discriminated union and SandboxBackend.name/reset; src/sandbox/index.ts:22,32,34-45 re-exports required symbols. src/config/schemas-sandbox.ts:21-49 defines SandboxConfigSchema, open network when allowedDomains is absent (lines 39-44), and DEFAULT_SANDBOX_CONFIG parsed from {} (line 50); src/config/index.ts:109-110 re-exports SandboxConfig and DEFAULT_SANDBOX_CONFIG. src/sandbox/registry.ts:26-46 caches its probe per process and uses the run logger; its rejected-probe wording is `sandbox probe failed: ${err instanceof Error ? err.message : String(err)}` (lines 38-41). Do not call the registry: a CLI probe must run afresh and use a private backend, resetting it after success or rejection while ignoring reset errors. src/cli/auth.ts:24-31 provides the mutable CLI log dependency seam; authListCommand at lines 176-206 demonstrates one-document JSON logging and exit-code-returning handler. src/cli/index.ts:1-25 is the barrel imported by bin/nax.ts:43-70; add the new handler and type exports there. bin/nax.ts:885-921 registers auth subcommands with Commander and process.exit(await ...); add sandbox probe adjacent to auth without dir/profile flags or config-loading calls. docs/guides/cli-reference.md:568-584 has the auth section and the insertion point before mcp. test/unit/cli/auth.test.ts:36-86 and test/unit/cli/auth-list.test.ts:62-92 illustrate saving/replacing/restoring mutable seams for Bun unit tests; new test/unit/cli/sandbox-probe.test.ts should stub all four command dependencies on every test, use a resolving reset spy by default, and avoid importing/loading the actual srt module. test/integration/sandbox/sandbox-live.test.ts:25-53 obtains the registry backend at module scope and gates its live cases with describe.skipIf(!probe.available); add two assertions using one subprocess spawn of `bun bin/nax.ts sandbox probe --json` from the repository root inside that block, each with 60_000ms timeout. Its process-wide srt manager is shared across Bun test files; never invoke the command handler in-process in this suite or reset the existing backend. Risks: stdout must have exactly one log call even on failure; JSON must be ANSI-free and omit reason when available; reset failure cannot override probe result; no reads of project/profile config; isolated subprocess avoids disrupting singleton; CLI barrel import cost is existing behavior. No data/schema migration or breaking interface is required; existing run-time registry and probe implementation remain unchanged.",
+  "outOfScope": [
+    "A `--profile`, `-d` or config-driven probe: the command never reads `execution.sandbox` (including `enabled` and `network.allowedDomains`) from any config file, and always probes the default open-network srt backend.",
+    "Probing whether srt's network proxy starts under a restricted `network.allowedDomains` list.",
+    "Caching the probe result on disk or across invocations; every invocation probes afresh.",
+    "A timeout around srt's platform check, `initialize()` or `reset()`; only the wrapped probe command is bounded, by `PROBE_TIMEOUT_MS`.",
+    "Any change to `probeSandbox`, `probeSandboxOnce`, the sandbox registry or `createSrtBackend`.",
+    "A timestamp field in the report; the consumer records when it probed.",
+    "Any other `nax sandbox` subcommand."
+  ],
+  "routingProfile": "native-codex-ds"
+}
