@@ -245,6 +245,10 @@ Symbols this feature changes. Each baseline exists only to locate the code; it i
 
 **`docs/guides/cli-reference.md`**, **`README.md`**, **`CHANGELOG.md`** (US-004) — a `nax trust` reference section; a "Project trust" README section stating that trusting a parent folder covers every project cloned under it later; a **BREAKING** changelog entry with the CI recipe `nax trust add "$PWD" --yes`.
 
+### Test conventions
+
+Every story's tests follow these conventions (they also head the Acceptance Criteria section): `NAX_GLOBAL_CONFIG_DIR` points at a fresh temp directory per test; temp project directories are referred to by their `realpath`; `_deps` objects are replaced and restored after each test; "rejects with `CODE`" means a `NaxError` whose `code` is `CODE`; untrusted-path tests call `useUntrustedRegistry()`. US-003's subprocess tests use a temp project whose `.nax/config.json` is `{}` (without it `run` exits 1 with "nax not initialized" before the gate), an empty `NAX_GLOBAL_CONFIG_DIR`, stdin `"ignore"`, the absolute path of `bin/nax.ts`, and a 60_000 ms timeout.
+
 ### Failure Handling
 
 | # | Failure | Behaviour |

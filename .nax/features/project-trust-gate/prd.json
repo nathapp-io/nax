@@ -1,0 +1,390 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "project-trust-gate",
+  "branchName": "feat/project-trust-gate",
+  "createdAt": "2026-09-30T00:00:00.000Z",
+  "updatedAt": "2026-09-30T03:50:57.630Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Trust store and path matching",
+      "description": "**Goal** \u2014 Add a persistent, locked, fail-closed per-folder trust store and reject project-level trust configuration.\n\n**Motivation** \u2014 nax runs code the repository controls, outside the agent sandbox, with the user's privileges and read access to `~/.nax/credentials`, with no consent step (#2293).\n\n**Approach** \u2014 Store and matching (`src/trust/types.ts`, `match.ts`, `store.ts`). Pure path matching over realpath-normalized absolute paths, and a JSON store read and written under a file lock. Project root \u2014 `resolveTrustRoot(workdir)`: `dirname(findProjectDir(workdir))` when `findProjectDir` finds a `.nax/config.json` walking up from `workdir` **and** that `.nax` directory is not the global config directory (`realOrRaw(naxDir) !== realOrRaw(globalConfigDir())`); otherwise `resolve(workdir)`. Without the exclusion, every project-less folder under the home directory resolves to the home directory, because `~/.nax/config.json` is itself a `.nax/config.json`. The gate normalizes the result with `normalizeTrustPath`. Normalization \u2014 `normalizeTrustPath(path)` is `realOrRaw(path)`: the realpath of the nearest existing ancestor with the missing segments re-appended, so a not-yet-created directory under a symlinked parent (macOS `/var` -> `/private/var`) still matches a realpath-normalized entry. A trailing `/` is removed except on `/` itself. Coverage \u2014 `findCoveringEntry(folders, normalizedPath)` returns the entry whose `path` equals `normalizedPath`, or is `/`, or is a prefix of `normalizedPath` followed by `/`. When several entries cover, the one with the longest `path` wins. `/a/foo` never covers `/a/foobar`. File path: `trustStorePath()` = `join(globalConfigDir(), \"trust.json\")`; `globalConfigDir()` honours `NAX_GLOBAL_CONFIG_DIR`. Format: `{ \"version\": 1, \"folders\": [{ \"path\": \"/absolute/normalized\", \"addedAt\": \"2026-09-30T00:00:00.000Z\", \"via\": \"prompt\" }] }`. `TrustStoreFileSchema` is zod in `src/trust/store.ts`; invalid JSON or any shape mismatch (other `version`, `folders` not an array, a non-absolute or non-string `path`, `via` outside the two values) reads as `unparseable`. Writes: `addTrustEntry` first runs `mkdir(dirname(trustStorePath()), { recursive: true })` before taking the lock because the wx lock rethrows ENOENT; under `withPathFileLock(trustStorePath(), ...)`, write a sibling temp file with mode `0o600` and rename over `trust.json`. `removeTrustEntry` skips the lock when the global config directory does not exist. `addTrustEntry` normalizes path; an existing covering entry yields `already-covered` with no write; otherwise append, retaining descendants. `removeTrustEntry` normalizes path and removes only an exact entry; otherwise `not-found` with covering entry and no write. Invalid stores cause `TRUST_STORE_UNREADABLE`, without overwriting. Extend `rejectGlobalOnlyKeys`: own property `trust` throws `NaxError` code `TRUST_CONFIG_NOT_GLOBAL`, message `trust is global-only and cannot be set in <layerName>`, context `{ stage: \"config\", layerName }`; `auth` handling is unchanged.\n\n**Interface** \u2014 `export interface TrustEntry { path: string; addedAt: string; via: \"prompt\" | \"cli\" }` `export interface TrustStoreFile { version: 1; folders: TrustEntry[] }` `export type TrustStoreRead = { state: \"missing\" } | { state: \"ok\"; file: TrustStoreFile } | { state: \"unparseable\"; reason: string };` `export type AddTrustResult = { outcome: \"added\"; entry: TrustEntry } | { outcome: \"already-covered\"; coveredBy: TrustEntry };` `export type RemoveTrustResult = { outcome: \"removed\"; entry: TrustEntry } | { outcome: \"not-found\"; coveredBy: TrustEntry | null };` `export type TrustSurface = \"plugins\" | \"context-plugin-providers\" | \"hooks\" | \"mcp\" | \"quality-command\" | \"test-command\" | \"acceptance-command\" | \"package-setup\" | \"worktree-setup\";` `export type TrustChoice = \"yes\" | \"parent\" | \"no\";` `export function resolveTrustRoot(workdir: string): string; export async function normalizeTrustPath(path: string): Promise<string>; export function findCoveringEntry(folders: readonly TrustEntry[], normalizedPath: string): TrustEntry | null; export const _trustStoreDeps: { now: () => Date }; export function trustStorePath(): string; export async function readTrustStore(): Promise<TrustStoreRead>; export async function addTrustEntry(path: string, via: TrustEntry[\"via\"]): Promise<AddTrustResult>; export async function removeTrustEntry(path: string): Promise<RemoveTrustResult>;` Export API from `src/trust/index.ts`.\n\n**Scope** \u2014 In: matching, store, config-layer rejection and their unit tests. Out: process registry/prompt (US-002), CLI (US-003/004), execution-site backstops (US-005/006). Concurrent readers during a store write beyond the atomic rename; readers are not locked. An acceptance criterion observing temp-file-plus-rename atomicity of the store write; the write uses it, but no test simulates an interrupted write.\n\nTest conventions (from the spec's Acceptance Criteria section): NAX_GLOBAL_CONFIG_DIR points at a fresh temp directory per test and \"the store\" is trust.json in it; temp project directories are created under the OS temp dir and referred to by their realpath (macOS temp dirs sit under a symlinked /var, and every root/path string the ACs compare is normalized); _deps objects are replaced and restored after each test; \"rejects with CODE\" means the promise rejects with a NaxError whose code is CODE.",
+      "acceptanceCriteria": [
+        "findCoveringEntry([{ path: '/a/foo', ... }], '/a/foo') returns that entry.",
+        "findCoveringEntry([{ path: '/a/foo', ... }], '/a/foo/bar/baz') returns that entry.",
+        "findCoveringEntry([{ path: '/a/foo', ... }], '/a/foobar') returns null.",
+        "findCoveringEntry([{ path: '/', ... }], '/x/y') returns the '/' entry.",
+        "findCoveringEntry with entries '/a' and '/a/b' for '/a/b/c' returns the '/a/b' entry.",
+        "normalizeTrustPath(<symlink to a temp directory>/not-yet/created) returns the temp directory's realpath followed by '/not-yet/created'.",
+        "resolveTrustRoot(<project>/src/deep) returns <project> when <project>/.nax/config.json exists.",
+        "resolveTrustRoot(<dir>) returns resolve(<dir>) when neither it nor any ancestor has .nax/config.json.",
+        "With NAX_GLOBAL_CONFIG_DIR set to <home>/.nax and <home>/.nax/config.json present, resolveTrustRoot(<home>/x) returns resolve(<home>/x) when <home>/x has no project config.",
+        "readTrustStore() returns { state: 'missing' } when trust.json is absent.",
+        "readTrustStore() returns state 'unparseable' when trust.json contains '{not json'.",
+        "readTrustStore() returns state 'unparseable' when trust.json contains {\"version\":2,\"folders\":[]}.",
+        "With no store and _trustStoreDeps.now returning 2026-09-30T00:00:00.000Z, addTrustEntry(<dir>, 'cli') writes { version: 1, folders: [{ path: <realpath dir>, addedAt: '2026-09-30T00:00:00.000Z', via: 'cli' }] }.",
+        "After addTrustEntry(<dir>, 'cli'), the store file's permission bits are 0o600.",
+        "With NAX_GLOBAL_CONFIG_DIR pointing to a nonexistent directory, addTrustEntry(<dir>, 'cli') returns outcome 'added' and trust.json exists afterwards.",
+        "With the store trusting <dir>, addTrustEntry(<dir>/child, 'cli') returns { outcome: 'already-covered', coveredBy } with coveredBy.path = <dir>, and the store bytes are unchanged.",
+        "With the store containing '{not json', addTrustEntry(<dir>, 'cli') rejects with TRUST_STORE_UNREADABLE and the store bytes are unchanged.",
+        "After two concurrent calls addTrustEntry(<dirA>, 'cli') and addTrustEntry(<dirB>, 'cli'), both return outcome 'added' and the store lists both paths.",
+        "With the store trusting <dir>, removeTrustEntry(<dir>) returns outcome 'removed' and the store afterwards has no entry for <dir>.",
+        "With the store trusting <dir> only, removeTrustEntry(<dir>/child) returns { outcome: 'not-found', coveredBy } with coveredBy.path = <dir>, and store bytes are unchanged.",
+        "With the store containing '{not json', removeTrustEntry(<dir>) rejects with TRUST_STORE_UNREADABLE.",
+        "With NAX_GLOBAL_CONFIG_DIR pointing to a nonexistent directory, removeTrustEntry(<dir>) returns { outcome: 'not-found', coveredBy: null } and the directory still does not exist.",
+        "rejectGlobalOnlyKeys({ trust: {} }, 'project config') throws NaxError with code TRUST_CONFIG_NOT_GLOBAL and message 'trust is global-only and cannot be set in project config'."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "store"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Security-critical trust authority with path normalization, schema validation and concurrent locked updates."
+      },
+      "contextFiles": [
+        "src/permissions/approvals-store.ts",
+        "src/utils/realpath.ts",
+        "src/config/global-only-keys.ts",
+        "src/config/loader.ts",
+        "src/utils/path-file-lock.ts"
+      ],
+      "expectedFiles": [
+        "src/trust/types.ts",
+        "src/trust/match.ts",
+        "src/trust/store.ts",
+        "src/trust/index.ts",
+        "test/unit/trust/match.test.ts",
+        "test/unit/trust/store.test.ts"
+      ],
+      "suggestedCriteria": [
+        "rejectGlobalOnlyKeys({ auth: {} }, 'project config') still throws NaxError with code AUTH_CONFIG_NOT_GLOBAL."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/config/global-only-keys.test.ts",
+          "reason": "gains the `trust` rejection case; no existing assertion changes, because `auth` handling is unchanged."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-002",
+      "title": "Trust registry and entry gate",
+      "description": "**Goal** \u2014 Require a persistent operator decision before marking a project root trusted in the process, with a fail-closed execution assertion.\n\n**Motivation** \u2014 Plugins are one of several paths that run repository code unsandboxed; the gate is per repository, not per plugin.\n\n**Approach** \u2014 Registry and entry gate (`src/trust/registry.ts`, `gate.ts`, `prompt.ts`). `ensureProjectTrusted` is the only code that prompts or persists from a gated command; on success it calls `markTrusted(root)`. Every execution site uses an append-only process-scoped registry, not a value threaded through the runtime. `assertTrusted` normalizes path and passes when a marked root covers it using the segment-bounded `findCoveringEntry` rule; otherwise throws `PROJECT_UNTRUSTED` with `surface`. Protected folders \u2014 `/` and the home directory (`_trustGateDeps.homedir()` in production `os.homedir()`, compared after `normalizeTrustPath`). Neither the prompt nor `nax trust add` without `--force` grants them. `promptTrustChoice` writes the question through `_trustPromptDeps.ask` and maps trimmed lower-case answer: `y` or `yes` -> `yes`; `p` or `parent` -> `parent` only when parent is not null; anything else, including empty line, null (end of input), and `p` with null parent -> `no`. With a parent question exactly `Trust <root>? nax will run this project's plugins, hooks, MCP servers and test commands. [y]es / [p]arent (<parent>) / [N]o `; without parent exactly `Trust <root>? nax will run this project's plugins, hooks, MCP servers and test commands. [y]es / [N]o `. Production ask writes question to stderr and reads one line from stdin; no stdout. `ensureProjectTrusted(root, { interactive })`, with root normalized: (1) `readTrustStore()`; unparseable -> `TRUST_STORE_UNREADABLE`; (2) covering entry -> `markTrusted(root)` and return; (3) protected root -> `PROJECT_UNTRUSTED` with hint `run: nax trust add <root> --force` without prompt; (4) interactive -> `_trustGateDeps.prompt(root, parent)` where parent is dirname(root), or null when protected. `yes` persists root via prompt, `parent` persists dirname(root) via prompt; either way markTrusted(root) and return. (5) `no` or noninteractive -> `PROJECT_UNTRUSTED` with hint `run: nax trust add <root>`. Tests: `test/preload.ts` writes a trust.json trusting `/` into the isolated global config dir and calls markTrusted('/'); `test/helpers/trust.ts` exports `useUntrustedRegistry()`, which registers beforeEach resetTrustRegistry and afterEach markTrusted('/'), re-export from `test/helpers/index.ts`. This preserves existing direct-call and subprocess test behavior while isolating denial tests.\n\n**Interface** \u2014 `export function markTrusted(normalizedRoot: string): void; export async function assertTrusted(path: string, surface: TrustSurface): Promise<void>; export function resetTrustRegistry(): void; export const _trustPromptDeps: { ask: (question: string) => Promise<string | null> }; export async function promptTrustChoice(root: string, parent: string | null): Promise<TrustChoice>; export const _trustGateDeps: { prompt: (root: string, parent: string | null) => Promise<TrustChoice>; homedir: () => string }; export async function ensureProjectTrusted(root: string, options: { interactive: boolean }): Promise<void>;` Export from `src/trust/index.ts`.\n\n**Scope** \u2014 In: registry, prompt, gate and test isolation. Out: CLI exit-code mapping (US-003), trust CLI protected-folder enforcement (US-004), backstop site wiring (US-005/006). A per-invocation bypass (`--trust` flag or environment variable) and any automatic migration that infers trust from run history. A `[p]arent` choice when the parent is a protected folder, and a prompt for a root that is itself a protected folder; both are refused rather than offered.\n\nTest conventions (from the spec's Acceptance Criteria section): NAX_GLOBAL_CONFIG_DIR points at a fresh temp directory per test and \"the store\" is trust.json in it; temp project directories are created under the OS temp dir and referred to by their realpath (macOS temp dirs sit under a symlinked /var, and every root/path string the ACs compare is normalized); _deps objects are replaced and restored after each test; \"rejects with CODE\" means the promise rejects with a NaxError whose code is CODE. Tests of the untrusted path call useUntrustedRegistry() (test/helpers), so each starts with an empty registry and the preload's trusted state (markTrusted(\"/\")) is restored after it. Verification note: the test/preload.ts change and useUntrustedRegistry have no AC; the full suite passing under `bun run test` after US-005 and US-006 land is their check.",
+      "acceptanceCriteria": [
+        "With nothing marked, assertTrusted(<dir>, 'hooks') rejects with PROJECT_UNTRUSTED whose context.surface is 'hooks'.",
+        "After markTrusted(<dir>), assertTrusted(<dir>/sub, 'plugins') resolves.",
+        "After markTrusted('/a/foo'), assertTrusted('/a/foobar', 'plugins') rejects with PROJECT_UNTRUSTED.",
+        "After markTrusted(<dir>) then resetTrustRegistry(), assertTrusted(<dir>, 'plugins') rejects with PROJECT_UNTRUSTED.",
+        "With the store trusting <dir>, ensureProjectTrusted(<dir>, { interactive: false }) resolves and assertTrusted(<dir>/x, 'mcp') then resolves.",
+        "With no store, ensureProjectTrusted(<dir>, { interactive: false }) rejects with PROJECT_UNTRUSTED whose context.root is <dir> and context.hint is 'run: nax trust add <dir>'.",
+        "With no store, ensureProjectTrusted(<dir>, { interactive: false }) never calls _trustGateDeps.prompt.",
+        "With no store and interactive: true, ensureProjectTrusted(<dir>, ...) calls _trustGateDeps.prompt once with (<dir>, dirname(<dir>)).",
+        "With no store and a prompt returning 'yes', ensureProjectTrusted(<dir>, { interactive: true }) leaves a store entry for <dir> with via 'prompt'.",
+        "With no store and a prompt returning 'yes', after ensureProjectTrusted(<dir>, { interactive: true }) resolves, assertTrusted(<dir>, 'hooks') resolves.",
+        "With no store and a prompt returning 'parent', ensureProjectTrusted(<dir>, { interactive: true }) leaves a store entry for dirname(<dir>) with via 'prompt'.",
+        "With no store and a prompt returning 'no', ensureProjectTrusted(<dir>, { interactive: true }) rejects with PROJECT_UNTRUSTED and no store file exists afterwards.",
+        "With trust.json containing '{not json', ensureProjectTrusted(<dir>, { interactive: true }) rejects with TRUST_STORE_UNREADABLE without calling _trustGateDeps.prompt.",
+        "With _trustPromptDeps.ask resolving 'Y', promptTrustChoice('/r/p', '/r') returns 'yes'.",
+        "With _trustPromptDeps.ask resolving ' parent ', promptTrustChoice('/r/p', '/r') returns 'parent'.",
+        "With _trustPromptDeps.ask resolving '', promptTrustChoice('/r/p', '/r') returns 'no'.",
+        "With _trustPromptDeps.ask resolving null, promptTrustChoice('/r/p', '/r') returns 'no'.",
+        "promptTrustChoice('/r/p', '/r') calls _trustPromptDeps.ask with exactly 'Trust /r/p? nax will run this project's plugins, hooks, MCP servers and test commands. [y]es / [p]arent (/r) / [N]o '.",
+        "With _trustPromptDeps.ask resolving 'p', promptTrustChoice('/r/p', null) returns 'no'.",
+        "promptTrustChoice('/home/u/p', null) calls _trustPromptDeps.ask with exactly 'Trust /home/u/p? nax will run this project's plugins, hooks, MCP servers and test commands. [y]es / [N]o '.",
+        "With no store, homedir returning <home> and interactive: true, ensureProjectTrusted(<home>/p, ...) calls _trustGateDeps.prompt with (<home>/p, null).",
+        "With no store, homedir returning <home> and interactive: true, ensureProjectTrusted(<home>, ...) rejects with PROJECT_UNTRUSTED whose context.hint is 'run: nax trust add <home> --force', without calling _trustGateDeps.prompt."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "access-control"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Security-critical access-control boundary and process-wide registry with test isolation."
+      },
+      "contextFiles": [
+        "src/trust/store.ts",
+        "src/trust/match.ts",
+        "src/cli/confirm.ts",
+        "test/preload.ts",
+        "src/utils/realpath.ts"
+      ],
+      "expectedFiles": [
+        "src/trust/registry.ts",
+        "src/trust/prompt.ts",
+        "src/trust/gate.ts",
+        "test/helpers/trust.ts",
+        "test/unit/trust/registry.test.ts",
+        "test/unit/trust/gate.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/preload.ts",
+          "reason": "after it sets NAX_GLOBAL_CONFIG_DIR (line 29), it writes a trust.json into that directory with one entry trusting the filesystem root (path \"/\", via \"cli\") and marks the filesystem root trusted in the registry. Replacing invariant: every existing test, including subprocess CLI tests that inherit NAX_GLOBAL_CONFIG_DIR, runs as trusted; tests of the untrusted path reset the registry or point NAX_GLOBAL_CONFIG_DIR at an empty directory, and restore the state after."
+        },
+        {
+          "path": "test/helpers/index.ts",
+          "reason": "gains a re-export of useUntrustedRegistry from the new trust helper module; no existing export changes."
+        }
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-003",
+      "title": "Gate CLI execution entry points",
+      "description": "**Goal** \u2014 Refuse untrusted projects at every specified CLI entry point before repository-controlled code can execute.\n\n**Motivation** \u2014 Fleet orchestrators clone repositories and run `nax run` in them unattended; a missing consent step is urgent.\n\n**Approach** \u2014 CLI gate helper (`src/cli/trust-gate.ts`, exported from `src/cli/index.ts`): `runTrustGate` computes `root = await normalizeTrustPath(resolveTrustRoot(workdir))` and calls `ensureProjectTrusted(root, { interactive: _trustGateCliDeps.isInteractive() })`. For `NaxError` code `PROJECT_UNTRUSTED`, call `error('Project not trusted: <root>')`, then `error(hint)`, then `exit(2)`; for `TRUST_STORE_UNREADABLE` call `error(error.message)`, then `exit(2)`; propagate anything else. `isInteractive`: stdin.isTTY === true && stdout.isTTY === true. The gate writes nothing to stdout. Gated actions: `run` (including `--compare`), resolved `-d`, after naxDir check but before maybeRunPlanPhase, TUI, loadHooksConfig and --schedule wait; `resume`, `-d`, first statement of action in registerResumeCommand; `plan`, `-d`, first statement after directory validation; `plugins list`, `-d`, after validateDirectory; `setup`, `-d`, after validateDirectory; `precheck`, `-d`, first statement of action; regular `prompts`, `-d`, after validateDirectory and only when neither --init nor --export is given; `mcp lock`, process.cwd(), first statement of action. All other commands are ungated, including config, status, auth, sandbox probe, approvals, trust, generate, init, detect, accept, spec lint, rules, curator, context, logs, runs, prompts --init and prompts --export. Keep failures before any sentinel project plugin imports or deferred schedule wait. Subprocess tests use a fresh empty NAX_GLOBAL_CONFIG_DIR and 60_000ms explicit per-case timeout; the preload's seeded trust store keeps existing subprocess tests trusted.\n\n**Interface** \u2014 `export const _trustGateCliDeps: { isInteractive: () => boolean; error: (text: string) => void; exit: (code: number) => never }; export async function runTrustGate(workdir: string): Promise<void>;`\n\n**Scope** \u2014 In: CLI helper and specified gate call placements with unit/integration tests. Out: trust management command (US-004), site backstops (US-005/006), extra gates on deliberately ungated commands. A backstop in `checkAgentCLI` (`src/precheck/checks-cli.ts:67`), which takes no workdir; its callers (`nax precheck`, run precheck) are gated. Fixing the bakeoff hooks path (`src/bakeoff/pipeline-adapter.ts:60` reads `<worktree>/hooks.json`).\n\nTest conventions (from the spec's Acceptance Criteria section): NAX_GLOBAL_CONFIG_DIR points at a fresh temp directory per test and \"the store\" is trust.json in it; temp project directories are created under the OS temp dir and referred to by their realpath (macOS temp dirs sit under a symlinked /var, and every root/path string the ACs compare is normalized); _deps objects are replaced and restored after each test; \"rejects with CODE\" means the promise rejects with a NaxError whose code is CODE. Unit ACs call runTrustGate with _trustGateCliDeps.isInteractive, error and exit replaced; exit records its argument and throws a sentinel so the call stops. Every integration AC spawns `bun <absolute path of bin/nax.ts> ...` with NAX_GLOBAL_CONFIG_DIR set to an empty temp directory (unless the AC gives it a store), stdin \"ignore\", the repository root as working directory unless the AC names another, and a temp project <dir> whose .nax/config.json is `{}` (required: `run` checks for an initialized project before the gate, and without the config it exits 1 with \"nax not initialized\", not 2). Each subprocess case passes an explicit test timeout of 60_000 ms.",
+      "acceptanceCriteria": [
+        "With no store and isInteractive false, runTrustGate(<dir>) calls exit(2).",
+        "With no store and isInteractive false, runTrustGate(<dir>) calls error('Project not trusted: <dir>') then error('run: nax trust add <dir>').",
+        "With trust.json containing '{not json', runTrustGate(<dir>) calls exit(2).",
+        "With the store trusting <dir> and <dir>/.nax/config.json present, runTrustGate(<dir>/src) returns without calling exit.",
+        "When `run -f demo -d <dir> --headless` is spawned with empty trust store, it exits 2.",
+        "When `run -f demo -d <dir> --headless` is spawned with empty trust store, stderr contains 'run: nax trust add <dir>'.",
+        "When an untrusted <dir> has .nax/plugins/sentinel.ts writing <dir>/imported on import, `run -f demo -d <dir> --headless` exits 2 and <dir>/imported does not exist afterwards.",
+        "When `run -f demo -d <dir> --headless --schedule 1h` is spawned untrusted, it exits 2 within 30 seconds.",
+        "When `resume -f demo -d <dir>` is spawned untrusted, it exits 2.",
+        "When `plan -f demo --from <dir>/spec.md -d <dir>` is spawned untrusted with spec.md present, it exits 2.",
+        "When `plugins list -d <dir>` is spawned untrusted, it exits 2.",
+        "When `setup -d <dir> --dry-run` is spawned untrusted, it exits 2.",
+        "When `precheck -f demo -d <dir>` is spawned untrusted, it exits 2.",
+        "When `prompts -f demo -d <dir>` is spawned untrusted, it exits 2.",
+        "When `prompts --export implementer -d <dir>` is spawned untrusted, it exits 0.",
+        "When `mcp lock` is spawned untrusted with cwd <dir>, it exits 2.",
+        "With NAX_GLOBAL_CONFIG_DIR containing a store trusting <dir>, `plugins list -d <dir>` exits 0.",
+        "When `config --json` is spawned untrusted with cwd <dir>, it exits 0."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "cli"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Security-critical entry authorization across eight CLI actions, with execution ordering and subprocess behavior risks."
+      },
+      "contextFiles": [
+        "bin/nax.ts",
+        "src/commands/resume.ts",
+        "src/trust/gate.ts",
+        "test/integration/cli/cli-run-preflight.test.ts",
+        "src/cli/index.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/trust-gate.ts",
+        "test/unit/cli/trust-gate.test.ts",
+        "test/integration/cli/cli-trust-gate.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-004",
+      "title": "Manage project trust from CLI",
+      "description": "**Goal** \u2014 Add operator-facing `nax trust list|add|rm|check` with explicit noninteractive and protected-root safeguards, plus migration documentation.\n\n**Motivation** \u2014 nax runs repository-controlled code unsandboxed without consent; users and unattended CI need an explicit way to establish folder trust.\n\n**Approach** \u2014 Handlers in `src/cli/trust.ts`, exported from `src/cli/index.ts`, each return an exit code passed to `process.exit` by `bin/nax.ts`; register trust group next to approvals. Relative paths resolve against `_cliTrustDeps.cwd()`. `trust list`: one line per entry `* <path>  (via <via>, added <addedAt>)` for entry covering cwd, same line with two-space prefix for others; no entries `No trusted folders (<trustStorePath()>)`; `--json`: `{ \"path\": <trustStorePath()>, \"folders\": [...entries], \"coveringCwd\": <path> | null }`. Unparseable list: stderr `trust.json could not be parsed: <reason>`, exit 1. Add first-match ordered pipeline: (1) normalized path is `/` or normalized home and !force -> stderr `Refusing to trust <path>: it covers every project under it. Pass --force to trust it anyway.`, exit 1; (2) existing covering entry -> stdout `Already trusted: <normalized path> is covered by <coveredBy.path>`, exit 0; (3) !yes && !isTTY -> stderr `Refusing to trust <path> without confirmation: stdin is not a TTY. Pass --yes.`, exit 1; (4) !yes -> confirm and if false stdout `Not trusted.`, exit 1; (5) addTrustEntry(path, 'cli'), stdout `Trusted <normalized path>`, exit 0. `trust rm <path>` removes exact entry, stdout `Removed <normalized path>`, exit 0, else stderr `No trust entry for <normalized path>` plus `<normalized path> is still trusted through <coveredBy.path>` when covered, exit 1. `trust check [path]` computes `root = normalizeTrustPath(resolveTrustRoot(path ?? cwd))`; stdout `trusted: <root> (covered by <coveredBy.path>)` or `untrusted: <root>`; --json `{ \"root\": <root>, \"trusted\": <boolean>, \"coveredBy\": <path> | null }`; exit 0 trusted/1 untrusted. `TRUST_STORE_UNREADABLE` from add/rm/check prints its message to stderr and exits 1. JSON is `JSON.stringify(value, null, 2)`. `_cliTrustDeps.confirm` uses promptForConfirmation but only after explicit TTY check (helper auto-confirms non-TTY). Add a `nax trust` reference section to docs/guides/cli-reference.md, README Project trust noting parent covers future clones, and BREAKING changelog with CI recipe `nax trust add \"$PWD\" --yes`.\n\n**Interface** \u2014 `export const _cliTrustDeps: { log: (text: string) => void; error: (text: string) => void; isTTY: () => boolean; confirm: (question: string) => Promise<boolean>; homedir: () => string; cwd: () => string }; export async function trustListCommand(options: { json?: boolean }): Promise<number>; export async function trustAddCommand(options: { path?: string; yes?: boolean; force?: boolean }): Promise<number>; export async function trustRmCommand(options: { path: string }): Promise<number>; export async function trustCheckCommand(options: { path?: string; json?: boolean }): Promise<number>;`\n\n**Scope** \u2014 In: management handlers, registration, documentation and tests. Out: gated command entry helper (US-003), registry consent prompt (US-002). A per-invocation bypass (`--trust` flag or environment variable) and any automatic migration that infers trust from run history.\n\nTest conventions (from the spec's Acceptance Criteria section): NAX_GLOBAL_CONFIG_DIR points at a fresh temp directory per test and \"the store\" is trust.json in it; temp project directories are created under the OS temp dir and referred to by their realpath (macOS temp dirs sit under a symlinked /var, and every root/path string the ACs compare is normalized); _deps objects are replaced and restored after each test; \"rejects with CODE\" means the promise rejects with a NaxError whose code is CODE. Unit ACs replace _cliTrustDeps.log, error, isTTY, confirm, homedir and cwd; \"stdout\"/\"stderr\" mean the captured log and error calls. Verification note: the docs/guides/cli-reference.md, README.md and CHANGELOG.md entries are documentation with no test.",
+      "acceptanceCriteria": [
+        "With store trusting <a> and <b> and cwd <a>/x, trustListCommand({}) logs <a>'s line starting '* ' and <b>'s line starting two spaces.",
+        "With store trusting <a> and cwd <a>, trustListCommand({ json: true }) emits JSON parsing to { path: trustStorePath(), folders: [<the a entry>], coveringCwd: <a> }.",
+        "With no store, trustAddCommand({ path: <dir>, yes: true }) returns 0 and the store lists <dir> with via 'cli'.",
+        "With no store and cwd <dir>, trustAddCommand({ yes: true }) adds <dir>.",
+        "With store trusting <dir>, trustAddCommand({ path: <dir>/c, yes: true }) returns 0 and logs 'Already trusted: <dir>/c is covered by <dir>'.",
+        "trustAddCommand({ path: '/', yes: true }) returns 1, writes stderr containing 'Pass --force', and leaves no store file.",
+        "With homedir returning <home>, trustAddCommand({ path: <home>, yes: true }) returns 1 and leaves no store file.",
+        "trustAddCommand({ path: '/', yes: true, force: true }) returns 0 and the store lists '/'.",
+        "With store trusting '/', trustAddCommand({ path: '/', yes: true }) returns 1 (protected-folder check runs before already-covered check).",
+        "With homedir returning <home> and isTTY false, trustAddCommand({ path: <home> }) writes stderr containing 'Pass --force' and no line containing 'stdin is not a TTY'.",
+        "With store trusting <dir> and isTTY false, trustAddCommand({ path: <dir>/c }) returns 0 (already-covered check runs before TTY check).",
+        "With isTTY false, trustAddCommand({ path: <dir> }) returns 1, never calls confirm, and leaves no store file.",
+        "With isTTY true and confirm resolving false, trustAddCommand({ path: <dir> }) returns 1, logs 'Not trusted.', and leaves no store file.",
+        "With isTTY true and confirm resolving true, trustAddCommand({ path: <dir> }) returns 0 and the store lists <dir>.",
+        "With store trusting <dir>, trustRmCommand({ path: <dir> }) returns 0, logs 'Removed <dir>', and the store no longer lists <dir>.",
+        "With no store, trustRmCommand({ path: <dir> }) returns 1 and writes 'No trust entry for <dir>' to stderr.",
+        "With store trusting <dir> only, trustRmCommand({ path: <dir>/c }) writes '<dir>/c is still trusted through <dir>' to stderr.",
+        "With store trusting <dir>, trustCheckCommand({ path: <dir> }) returns 0.",
+        "With no store, trustCheckCommand({ path: <dir> }) returns 1 and logs 'untrusted: <dir>'.",
+        "With store trusting <dir> and <dir>/.nax/config.json present, trustCheckCommand({ path: <dir>/src, json: true }) emits JSON parsing to { root: <dir>, trusted: true, coveredBy: <dir> }.",
+        "With trust.json containing '{not json', trustCheckCommand({ path: <dir> }) returns 1.",
+        "When `bun bin/nax.ts trust check <dir> --json` is spawned with empty NAX_GLOBAL_CONFIG_DIR, it exits 1 and stdout parses to an object with trusted false.",
+        "After `bun bin/nax.ts trust add <dir> --yes` with the same NAX_GLOBAL_CONFIG_DIR, `bun bin/nax.ts trust check <dir>` exits 0."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "cli",
+        "documentation"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The grant/revoke handlers and Commander registration mirror existing approvals patterns across a few code files, but security-critical consent requires isolated three-session TDD."
+      },
+      "contextFiles": [
+        "src/cli/approvals.ts",
+        "src/cli/approvals-format.ts",
+        "src/trust/store.ts",
+        "src/trust/match.ts",
+        "bin/nax.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/trust.ts",
+        "test/unit/cli/trust.test.ts",
+        "test/integration/cli/cli-trust.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-005",
+      "title": "Backstop repository-controlled imports, hooks and MCP",
+      "description": "**Goal** \u2014 Assert process trust immediately before plugin/provider imports, project hook execution and MCP connection.\n\n**Motivation** \u2014 A plugins-only gate would leave the same capability open through other paths, so the gate is per repository, not per plugin.\n\n**Approach** \u2014 Every merged config entry (plugins, MCP servers, pluginProviders, commands) is treated as repository-controlled and needs trust, because project config, project profiles (`<project>/.nax/profiles/`) and per-package `.nax/mono/<pkg>/config.json` all feed the merge and no per-entry provenance exists. Only structurally separate global sources are exempt: the global plugin directory and built-in plugins in `loadPlugins`, and global hooks (`LoadedHooksConfig._global`) in `fireHook`. Each execution site calls `await assertTrusted(<cwd of the import/spawn>, <surface>)` immediately before it imports or spawns. `loadPlugins` retains its signature; before loadAndValidatePlugin for every discovered project-directory plugin and before resolving each enabled configPlugins entry, await `assertTrusted(effectiveProjectRoot, 'plugins')`, with no assertion for builtins/global-directory plugins; place assertion outside swallowed import errors. `loadPluginProviders`: after enabled.length === 0 early return, before Promise.allSettled, await `assertTrusted(workdir, 'context-plugin-providers')` once; not inside loadSingleProvider, where allSettled converts rejection into skip. `fireHook`: when enabled project hook exists, await `assertTrusted(workdir, 'hooks')` before project hook try block; no assert for global hook branch. MCP pool `open(serverId, workdir)`: after missing/disabled server early return and before connection retry loop, await `assertTrusted(workdir, 'mcp')`; rejection propagates from listTools and call rather than becoming connect-failed error-as-data. Use production functions and mocked import/transport/spawn seams in tests, `useUntrustedRegistry()` to reset and restore preload trust.\n\n**Interface** \u2014 Unchanged signatures: `loadPlugins(globalDir, projectDir, configPlugins, projectRoot?, disabledPlugins?, isTestFileFn?, reporters?): Promise<PluginRegistry>`; `loadPluginProviders(configs: ContextPluginProviderConfig[], workdir: string): Promise<IContextProvider[]>`; `fireHook(config: LoadedHooksConfig, event: HookEvent, ctx: HookContext, workdir: string): Promise<void>`; `createMcpPool(opts: { servers: Readonly<Record<string, McpServerConfig>>; pidRegistry?: PidRegistryLike; retry?: { maxAttempts: number; baseDelayMs: number }; storyId?: string }): McpPool`. Trust API: `export async function assertTrusted(path: string, surface: TrustSurface): Promise<void>;`.\n\n**Scope** \u2014 In: four specified execution sites and backstop tests. Out: command-spawn backstops (US-006), CLI gate (US-003). Changing how global-directory or built-in plugins, or global hooks, load. Tracking which config layer (global, project, profile, package) each merged `plugins[]`, `mcp.servers`, `context.v2.pluginProviders` or command entry came from; every merged entry needs trust.\n\nTest conventions (from the spec's Acceptance Criteria section): NAX_GLOBAL_CONFIG_DIR points at a fresh temp directory per test and \"the store\" is trust.json in it; temp project directories are created under the OS temp dir and referred to by their realpath (macOS temp dirs sit under a symlinked /var, and every root/path string the ACs compare is normalized); _deps objects are replaced and restored after each test; \"rejects with CODE\" means the promise rejects with a NaxError whose code is CODE. Tests of the untrusted path call useUntrustedRegistry() (test/helpers), so each starts with an empty registry and the preload's trusted state (markTrusted(\"/\")) is restored after it. \"Sentinel\" fixtures write a marker file when imported or executed.",
+      "acceptanceCriteria": [
+        "loadPlugins(<emptyGlobalDir>, <projectPluginsDir with a sentinel plugin>, [], <project>) rejects with PROJECT_UNTRUSTED whose context.surface is 'plugins'.",
+        "After untrusted loadPlugins(<emptyGlobalDir>, <projectPluginsDir with a sentinel plugin>, [], <project>) rejects, the sentinel marker file does not exist.",
+        "loadPlugins(<globalDir with one valid plugin>, <emptyProjectDir>, [], <project>) returns a registry whose plugins include the global plugin.",
+        "loadPlugins(<emptyGlobalDir>, <emptyProjectDir>, [{ module: './p.ts' }], <project>) rejects with PROJECT_UNTRUSTED.",
+        "After markTrusted(<project>), loadPlugins(<emptyGlobalDir>, <projectPluginsDir with a valid plugin>, [], <project>) returns a registry whose plugins include it.",
+        "loadPluginProviders([{ module: './prov.ts' }], <project>) rejects with PROJECT_UNTRUSTED whose context.surface is 'context-plugin-providers'.",
+        "After untrusted loadPluginProviders([{ module: './prov.ts' }], <project>) rejects, _pluginLoaderDeps.dynamicImport has not been called.",
+        "loadPluginProviders([{ module: './prov.ts', enabled: false }], <project>) returns [].",
+        "fireHook with a project hooks['on-start'] sentinel command rejects with PROJECT_UNTRUSTED whose context.surface is 'hooks'.",
+        "After that untrusted fireHook call rejects, the project hook's sentinel marker file does not exist.",
+        "fireHook with only a _global 'on-start' sentinel hook resolves and the global hook's sentinel marker file exists afterwards.",
+        "With _mcpClientDeps.createTransport replaced by a spy, createMcpPool({ servers: { s: <enabled stdio server> } }).listTools('s', <project>) rejects with PROJECT_UNTRUSTED whose context.surface is 'mcp'.",
+        "After that untrusted listTools call rejects, _mcpClientDeps.createTransport has not been called.",
+        "With _mcpClientDeps.createTransport replaced by a spy, createMcpPool({ servers: { s: <enabled stdio server> } }).call('s', <project>, 't', {}, { timeoutMs: 1000, maxBytes: 1000 }) rejects with PROJECT_UNTRUSTED.",
+        "After markTrusted(<project>), with _mcpClientDeps.createTransport and createClient replaced by fakes, createMcpPool({ servers: { s: <enabled stdio server> } }).listTools('s', <project>) calls createTransport once."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "backstop"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-cutting execution authorization with catch/allSettled propagation hazards and exempt global sources."
+      },
+      "contextFiles": [
+        "src/plugins/loader.ts",
+        "src/context/engine/providers/plugin-loader.ts",
+        "src/hooks/runner.ts",
+        "src/mcp/pool.ts",
+        "src/mcp/client.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/trust/backstops-imports.test.ts"
+      ],
+      "workdirSource": "defaulted"
+    },
+    {
+      "id": "US-006",
+      "title": "Backstop host commands and deny sandbox writes to trust store",
+      "description": "**Goal** \u2014 Assert project trust before unsandboxed quality, verification, acceptance and setup commands, and deny agent sandbox writes to trust.json.\n\n**Motivation** \u2014 Quality, test, acceptance, new-package setup and worktree setup commands from config (or auto-detected package.json scripts) are spawned unsandboxed.\n\n**Approach** \u2014 Every execution site calls `await assertTrusted(<cwd of the import/spawn>, <surface>)` immediately before it imports or spawns; all merged command config needs trust regardless of source. `runQualityCommand`: as first statement before any early return, await `assertTrusted(opts.workdir, 'quality-command')`. `executeWithTimeout`: before spawning, await `assertTrusted(options?.cwd ?? resolve('.'), 'test-command')`; resolve('.') is Bun.spawn's default cwd. Acceptance `processPackageGroup` (reached from runHardeningPass): as its first statement, before packages.resolve, LLM calls, test-file write and spawn, await `assertTrusted(packageDir, 'acceptance-command')`; retain runHardeningPass's non-blocking outer catch logging a hardening failure. `maybeRunNewPackageSetup`: after !runtime || !setupCommand and claimSetup early returns, before command loop and outside the per-command catch, await `assertTrusted(packageDir, 'package-setup')`. `prepareWorktreeDependencies`: in the setupCommand provisioning path await `assertTrusted(<runArgv cwd>, 'worktree-setup')` before runArgv; the cwd is worktreeRoot, not story resolvedCwd. `SandboxPolicyInput` gains `readonly trustStoreFile?: string`; when present `buildSandboxPolicy` adds it to denyWrite just like approvalsFile. `resolveSessionSandbox` passes `trustStoreFile: trustStorePath()` to buildSandboxPolicy, and literal() normalizes denies via realOrRaw. Existing tests with no trustStoreFile keep exact denyWrite behavior. Use site production functions with spawn/LLM spies and `useUntrustedRegistry()` to prove no unsafe side effect occurs before rejection.\n\n**Interface** \u2014 Existing execution function signatures remain unchanged: `runQualityCommand(opts: QualityCommandOptions): Promise<QualityCommandResult>`; `executeWithTimeout(command: string, timeoutSeconds: number, env?: Record<string, string | undefined>, options?: { shell?: string; gracePeriodMs?: number; drainTimeoutMs?: number; cwd?: string }): Promise<TestExecutionResult>`; `maybeRunNewPackageSetup(opts: { runtime: object | undefined; storyId: string; packageDir: string; setupCommand: QualityCommandSpec | undefined }): Promise<void>`; `prepareWorktreeDependencies(options: PrepareWorktreeDependenciesOptions): Promise<WorktreeDependencyContext>`; `SandboxPolicyInput` gains `readonly trustStoreFile?: string`.\n\n**Scope** \u2014 In: five host command surfaces, sandbox policy input and launcher wiring, focused tests. Out: imports/hooks/MCP backstops (US-005). Sandboxing host-side commands (hooks, MCP servers, quality, test, acceptance and setup commands); the gate decides whether repository code runs and never confines code once it runs. Protecting `trust.json` from host-side commands of an already-trusted project, or from agent commands when a trusted project sets `execution.sandbox.enabled: false`. Backstops on the agent's own tool commands (`src/tools/bash.ts`, the argv path of `src/tools/run-command.ts`); they run only inside a session of a gated run.\n\nTest conventions (from the spec's Acceptance Criteria section): NAX_GLOBAL_CONFIG_DIR points at a fresh temp directory per test and \"the store\" is trust.json in it; temp project directories are created under the OS temp dir and referred to by their realpath (macOS temp dirs sit under a symlinked /var, and every root/path string the ACs compare is normalized); _deps objects are replaced and restored after each test; \"rejects with CODE\" means the promise rejects with a NaxError whose code is CODE. Tests of the untrusted path call useUntrustedRegistry() (test/helpers), so each starts with an empty registry and the preload's trusted state (markTrusted(\"/\")) is restored after it. Each spawn seam (_qualityRunnerDeps.spawn, _executorDeps.spawn, _hardeningDeps.spawn, _newPackageSetupDeps.spawn, the _worktreeDependencyDeps spawn) is replaced by a spy.",
+      "acceptanceCriteria": [
+        "runQualityCommand({ commandName: 'test', command: 'echo hi', workdir: <project> }) rejects with PROJECT_UNTRUSTED whose context.surface is 'quality-command'.",
+        "After that untrusted runQualityCommand call rejects, _qualityRunnerDeps.spawn has not been called.",
+        "executeWithTimeout('echo hi', 5, undefined, { cwd: <project> }) rejects with PROJECT_UNTRUSTED whose context.surface is 'test-command'.",
+        "After that untrusted executeWithTimeout call rejects, _executorDeps.spawn has not been called.",
+        "executeWithTimeout('echo hi', 5) with no cwd rejects with PROJECT_UNTRUSTED.",
+        "With _hardeningDeps.callOp, savePRD, detectLanguage and spawn replaced by spies, runHardeningPass for a PRD with one story with one suggested criterion resolves to { promoted: [], discarded: [] } when untrusted.",
+        "After that untrusted runHardeningPass call, _hardeningDeps.callOp has not been called.",
+        "After that untrusted runHardeningPass call, _hardeningDeps.spawn has not been called.",
+        "With runtime = {} and markNewPackageDirs(runtime, [<project>/pkg]) called first, maybeRunNewPackageSetup({ runtime, storyId: 'US-001', packageDir: <project>/pkg, setupCommand: 'echo hi' }) rejects with PROJECT_UNTRUSTED whose context.surface is 'package-setup'.",
+        "After that untrusted maybeRunNewPackageSetup call rejects, _newPackageSetupDeps.spawn has not been called.",
+        "When config.execution.worktreeDependencies has mode 'provision' and setupCommand 'echo hi' and <project>/.nax-wt/w1 exists, prepareWorktreeDependencies({ projectRoot: <project>, worktreeRoot: <project>/.nax-wt/w1, storyId: 'US-001', config }) rejects with PROJECT_UNTRUSTED whose context.surface is 'worktree-setup'.",
+        "After that untrusted prepareWorktreeDependencies call rejects, the _worktreeDependencyDeps spawn has not been called.",
+        "buildSandboxPolicy with trustStoreFile <home>/.nax/trust.json and config.filesystem.allowWrite ['~/.nax'] returns policy.denyWrite containing <home>/.nax/trust.json.",
+        "buildSandboxPolicy without trustStoreFile returns policy.denyWrite with no undefined entry.",
+        "With sandbox enabled and fake backend available, a command run through launcher resolveSessionSandbox({ config: enabled, root, needsLauncher: true }) reaches the backend with policy.denyWrite containing realOrRaw(trustStorePath())."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "backstop",
+        "sandbox"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Access-control assertions across five host spawn paths plus agent sandbox policy; error swallowing and ordering are security-sensitive."
+      },
+      "contextFiles": [
+        "src/quality/runner.ts",
+        "src/verification/executor.ts",
+        "src/acceptance/hardening.ts",
+        "src/sandbox/policy-builder.ts",
+        "test/unit/agents/coding-tool-sandbox.test.ts"
+      ],
+      "expectedFiles": [
+        "test/unit/trust/backstops-commands.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "test/unit/sandbox/policy-builder.test.ts",
+          "reason": "any test asserting the exact `denyWrite` array of a policy built without `trustStoreFile` still holds (the field is optional); a new case covers the field. No existing assertion changes."
+        }
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Existing Bun/TypeScript CLI and runtime, not greenfield. Store foundation: src/config/loader.ts:285 findProjectDir walks upward for .nax/config.json; src/config/paths/index.ts:61 globalConfigDir respects NAX_GLOBAL_CONFIG_DIR; src/utils/realpath.ts:31 realOrRaw resolves nearest existing ancestor and reattaches missing segments; src/utils/path-file-lock.ts:27 wraps the wx file lock; src/permissions/approvals-store.ts:1 provides missing/unparseable store and locked update patterns. src/config/global-only-keys.ts:6 currently rejects only own auth properties and needs the reserved trust rejection. src/errors.ts:9 NaxError accepts code and context; trust errors must include stage. Entry architecture: new src/trust/{types,match,store,registry,prompt,gate,index}. Store is fail-closed on malformed JSON/schema, mkdir before locking, atomic mode-0600 temp+rename, exact removal, longest segment-bounded ancestor coverage, normalized symlink-aware paths. Do not mistake global ~/.nax/config.json for a project config when resolving a home subfolder. Append-only in-process registry blocks un-gated imports/spawns, even if disk store trusts a folder; only ensureProjectTrusted marks it. Test isolation: test/preload.ts:26 creates an isolated global config directory; write root-trusting trust.json and markTrusted('/') there so existing direct-unit and subprocess tests retain behavior. test/helpers/index.ts re-exports useUntrustedRegistry to reset before and restore after isolated security tests. CLI: bin/nax.ts:244-337 run action loads config and plans/TUI/hooks and may wait for schedule, so gate after missing-naxDir check before plan/TUI/hook/schedule; bin/nax.ts:173 setup validates dir, :645 plan, :939 mcp lock, :1013 precheck, :1237 prompts (skip gate for init/export), :1605 plugins list; src/commands/resume.ts:139 resume action must gate before imports. src/cli/index.ts:1 barrel exports helpers; src/cli/approvals.ts:329 checks TTY before prompting; src/cli/confirm.ts:63 helper otherwise auto-confirms non-TTY, so explicit trust-add TTY refusal is essential. Register ungated trust group next to approvals at bin/nax.ts:934. Backstops: src/plugins/loader.ts:107 builtins/global plugins must remain exempt, project directory and enabled config entries assert outside import-catching code; src/context/engine/providers/plugin-loader.ts:159 assert ahead of allSettled; src/hooks/runner.ts:293 assert before project hook try and exempt _global; src/mcp/pool.ts:74 assert before retry catch so listTools/call propagate, not dead-server data. src/quality/runner.ts:278 asserts before empty-result early return; src/verification/executor.ts:91 use options.cwd or resolve('.'); src/acceptance/hardening.ts:70 assert first before LLM/write/spawn, outer runHardeningPass non-blocking catch logs; src/execution/new-package-setup.ts:74 assert after early returns, outside per-command catch; src/worktree/dependencies.ts:51 runArgv cwd is worktreeRoot, not resolvedCwd. src/sandbox/policy-builder.ts:37,115 accepts optional trustStoreFile alongside approvalsFile denyWrite; src/agents/coding-tool-sandbox.ts:96,134 passes trustStorePath(). Relevant existing tests include test/unit/config/global-only-keys.test.ts, test/unit/sandbox/policy-builder.test.ts, test/unit/agents/coding-tool-sandbox.test.ts and subprocess patterns test/integration/cli/cli-run-preflight.test.ts. Risks: this is a breaking opt-in for unattended runs and clone fleets; previously trusted repo code now exits 2 until explicit nax trust add \"$PWD\" --yes in CI. A missed site, swallowed rejection, premature CLI loading or overly broad ancestor matching bypasses consent; prompting/printing stdout in headless or auto-confirmation creates security regressions. No history-based migration or bypass: document explicit opt-in in README, CLI guide and BREAKING changelog. US-001 precedes US-002 and US-004; US-002 precedes CLI gate and backstop stories; maintain exact story boundaries.",
+  "outOfScope": [
+    "Sandboxing host-side commands (hooks, MCP servers, quality, test, acceptance and setup commands); the gate decides whether repository code runs and never confines code once it runs.",
+    "Per-plugin or per-command trust decisions, and content hashes of repository files.",
+    "A per-invocation bypass (`--trust` flag or environment variable) and any automatic migration that infers trust from run history.",
+    "Tracking which config layer (global, project, profile, package) each merged `plugins[]`, `mcp.servers`, `context.v2.pluginProviders` or command entry came from; every merged entry needs trust.",
+    "A backstop in `checkAgentCLI` (`src/precheck/checks-cli.ts:67`), which takes no workdir; its callers (`nax precheck`, run precheck) are gated.",
+    "Backstops on the agent's own tool commands (`src/tools/bash.ts`, the argv path of `src/tools/run-command.ts`); they run only inside a session of a gated run.",
+    "Fixing the bakeoff hooks path (`src/bakeoff/pipeline-adapter.ts:60` reads `<worktree>/hooks.json`).",
+    "Changing how global-directory or built-in plugins, or global hooks, load.",
+    "Concurrent readers during a store write beyond the atomic rename; readers are not locked.",
+    "An acceptance criterion observing temp-file-plus-rename atomicity of the store write; the write uses it, but no test simulates an interrupted write.",
+    "A `[p]arent` choice when the parent is a protected folder, and a prompt for a root that is itself a protected folder; both are refused rather than offered.",
+    "Protecting `trust.json` from host-side commands of an already-trusted project, or from agent commands when a trusted project sets `execution.sandbox.enabled: false`."
+  ],
+  "routingProfile": "native-codex-ds-glm"
+}
