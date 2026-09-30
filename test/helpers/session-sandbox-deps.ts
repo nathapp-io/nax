@@ -63,8 +63,13 @@ export interface ConfinedSessionOptions {
   readonly tempRoots?: readonly string[];
   /** What `tmpdir()` returns. Defaults to a temp dir outside `/tmp`. */
   readonly tmpdir?: string;
-  /** `"fails"` makes `mkdir()` reject, the way an unwritable temp root does. */
-  readonly mkdir?: "ok" | "fails";
+  /**
+   * `"ok"` records the call and succeeds, `"fails"` rejects the way an unwritable
+   * temp root does, and `"real"` records the call AND delegates to the production
+   * `mkdir` — the mode a filesystem-level assertion needs, where the directory
+   * under test must actually appear on disk.
+   */
+  readonly mkdir?: "ok" | "fails" | "real";
   /** What `homedir()` returns. Defaults to a path that exists nowhere. */
   readonly homedir?: string;
   /** What `platform()` returns. Defaults to `"linux"`, so a test never depends on the host OS. */
@@ -126,10 +131,14 @@ export function stubSessionSandboxDeps(
   deps.platform = () => options.platform ?? "linux";
   deps.tempRoots = () => [...tempRoots];
   deps.tmpdir = () => tmpdir;
+  // Captured before the overwrite, so `mkdir: "real"` still reaches the
+  // production recursive mkdir the seam ships with.
+  const realMkdir = deps.mkdir;
   deps.mkdir = async (path: string): Promise<void> => {
     events.push(`mkdir:${path}`);
     mkdirCalls.push(path);
     if (options.mkdir === "fails") throw new Error("EXDEV: cross-device link");
+    if (options.mkdir === "real") await realMkdir(path);
   };
   deps.runTempRoots = (opts) => {
     events.push(`runTempRoots:${opts.runTmpRoot}`);
