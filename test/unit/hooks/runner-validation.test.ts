@@ -2,8 +2,37 @@
  * Hook validation test — ensure ReDoS vulnerability is fixed
  */
 
-import { describe, expect, test } from "bun:test";
-import { validateHookCommand } from "@/hooks/runner";
+import { afterEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { cleanupTempDir, makeTempDir, useUntrustedRegistry } from "@test/helpers";
+import { fireHook, validateHookCommand } from "@/hooks/runner";
+import type { LoadedHooksConfig } from "@/hooks/runner";
+import type { HookContext } from "@/hooks/types";
+
+describe("fireHook — US-005 trust backstop", () => {
+  useUntrustedRegistry();
+  let project = "";
+  afterEach(() => cleanupTempDir(project));
+
+  const ctx: HookContext = { event: "on-start", feature: "trust-test" };
+
+  test("US-005 AC9: rejects an untrusted project hook with PROJECT_UNTRUSTED and hooks surface", async () => {
+    project = makeTempDir();
+    const config: LoadedHooksConfig = { hooks: { "on-start": { command: "" } } };
+    await expect(fireHook(config, "on-start", ctx, project)).rejects.toMatchObject({
+      code: "PROJECT_UNTRUSTED",
+      context: { surface: "hooks" },
+    });
+  });
+
+  test("US-005 AC10: does not execute an untrusted project hook", async () => {
+    project = makeTempDir();
+    const marker = join(project, "hook-ran");
+    const config: LoadedHooksConfig = { hooks: { "on-start": { command: "" } } };
+    await expect(fireHook(config, "on-start", ctx, project)).rejects.toMatchObject({ code: "PROJECT_UNTRUSTED" });
+    expect(await Bun.file(marker).exists()).toBe(false);
+  });
+});
 
 describe("validateHookCommand - ReDoS Protection", () => {
   test("rejects command substitution $(..)", () => {

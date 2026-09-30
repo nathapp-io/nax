@@ -3,7 +3,7 @@
   "feature": "project-trust-gate",
   "branchName": "feat/project-trust-gate",
   "createdAt": "2026-09-30T00:00:00.000Z",
-  "updatedAt": "2026-09-30T06:26:02.440Z",
+  "updatedAt": "2026-09-30T07:18:55.165Z",
   "userStories": [
     {
       "id": "US-001",
@@ -261,8 +261,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -327,7 +327,10 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-cutting execution authorization with catch/allSettled propagation hazards and exempt global sources."
+        "reasoning": "Cross-cutting execution authorization with catch/allSettled propagation hazards and exempt global sources.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "src/plugins/loader.ts",
@@ -342,7 +345,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c6e20db9bd8b9c3f6ec43542188f194b15cb67c2"
     },
     {
       "id": "US-006",
