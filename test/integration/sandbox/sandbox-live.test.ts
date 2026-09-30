@@ -54,6 +54,32 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
   let root: string;
   let outside: string;
   let home: string;
+  let probeCliResult: Promise<{ exitCode: number; stdout: string }> | undefined;
+
+  function runProbeCli(): Promise<{ exitCode: number; stdout: string }> {
+    probeCliResult ??= (async () => {
+      const proc = Bun.spawn([process.execPath, "bin/nax.ts", "sandbox", "probe", "--json"], {
+        cwd: process.cwd(),
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const stderrRead = new Response(proc.stderr).text();
+      const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+      await stderrRead;
+      return { exitCode, stdout };
+    })();
+    return probeCliResult;
+  }
+
+  test("US-001 AC21: the CLI subprocess exits successfully when the sandbox is available", async () => {
+    const result = await runProbeCli();
+    expect(result.exitCode).toBe(0);
+  }, 60_000);
+
+  test("US-001 AC22: the CLI subprocess emits an available srt JSON report", async () => {
+    const result = await runProbeCli();
+    expect(JSON.parse(result.stdout)).toMatchObject({ available: true, backend: "srt" });
+  }, 60_000);
 
   beforeEach(() => {
     // Under os.tmpdir(): on macOS that is /var/folders -> /private/var, so a
