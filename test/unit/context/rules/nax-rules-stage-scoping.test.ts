@@ -17,13 +17,11 @@
  * test IS this repo's frontmatter, so a mocked loader would assert nothing.
  */
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
-
+import { findRepoRoot } from "@scripts/lib/repo-root";
 import type { CanonicalRule } from "@/context";
 import { loadCanonicalRules } from "@/context";
 
-// test/unit/context/rules/<this file> -> repo root is four levels up.
-const REPO_ROOT = join(import.meta.dir, "..", "..", "..", "..");
+const REPO_ROOT = findRepoRoot(import.meta.dir);
 
 /** The fresh TDD implementer session's stage. Rectification turns use `rectify`. */
 const IMPLEMENTER_STAGE = "tdd-implementer";

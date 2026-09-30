@@ -44,12 +44,16 @@ async function lintUnderRepoConfig(
   const dir = makeTempDir("nax-biome-severity-");
   try {
     const config = (await Bun.file(join(REPO, "biome.json")).json()) as {
+      root?: boolean;
       assist?: unknown;
       plugins?: string[];
       overrides?: Array<{ plugins?: string[] }>;
     };
     // Assist actions are not lint diagnostics and would add import-sort noise.
     config.assist = { actions: { source: { organizeImports: "off" } } };
+    // The package config is nested under a root biome.json after the monorepo move
+    // (`"root": false`); a standalone copy must be a root config or biome rejects it.
+    delete config.root;
     // Plugin paths resolve against the config's directory. Miss one and biome
     // exits with a config error and an EMPTY stdout, which parses as a JSON
     // failure rather than as "no findings" — never as a green run.

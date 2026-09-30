@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { findRepoRoot } from "@scripts/lib/repo-root";
 import { assertCaughtInstanceOf, makeLogger } from "@test/helpers";
 import { _canonicalLoaderDeps, loadCanonicalRules } from "@/context/rules/canonical-loader";
 import {
@@ -605,7 +606,7 @@ describe("loadCanonicalRules — HTML-comment displaced-frontmatter warning prop
 
 describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", () => {
   test("[US-006 AC 1] returns test-writing.md with stages that exclude plan", async () => {
-    const rules = await loadCanonicalRules(process.cwd());
+    const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
     const rule = rules.find((r) => r.path === "test-writing.md" || r.fileName === "test-writing.md");
     expect(rule).toBeDefined();
     expect(rule?.stages).toBeDefined();
@@ -613,7 +614,7 @@ describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", ()
   });
 
   test("[US-006 AC 1] returns test-architecture.md with stages that exclude plan", async () => {
-    const rules = await loadCanonicalRules(process.cwd());
+    const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
     const rule = rules.find((r) => r.path === "test-architecture.md" || r.fileName === "test-architecture.md");
     expect(rule).toBeDefined();
     expect(rule?.stages).toBeDefined();
@@ -621,7 +622,7 @@ describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", ()
   });
 
   test("[US-006 AC 1] returns test-helpers.md with stages that exclude plan", async () => {
-    const rules = await loadCanonicalRules(process.cwd());
+    const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
     const rule = rules.find((r) => r.path === "test-helpers.md" || r.fileName === "test-helpers.md");
     expect(rule).toBeDefined();
     expect(rule?.stages).toBeDefined();
@@ -629,7 +630,7 @@ describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", ()
   });
 
   test("[US-006 AC 1] returns testing-commands.md with stages that exclude plan", async () => {
-    const rules = await loadCanonicalRules(process.cwd());
+    const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
     const rule = rules.find((r) => r.path === "testing-commands.md" || r.fileName === "testing-commands.md");
     expect(rule).toBeDefined();
     expect(rule?.stages).toBeDefined();
@@ -645,7 +646,7 @@ describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", ()
   // reaching no agent at all.
   for (const fileName of ["forbidden-patterns-source.md", "forbidden-patterns-tests.md", "project-conventions.md"]) {
     test(`[US-006 AC 2] returns ${fileName} with stages that exclude plan`, async () => {
-      const rules = await loadCanonicalRules(process.cwd());
+      const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
       const rule = rules.find((r) => r.path === fileName || r.fileName === fileName);
       expect(rule).toBeDefined();
       expect(rule?.stages).toBeDefined();
@@ -655,7 +656,7 @@ describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", ()
   }
 
   test("[US-006 AC 6] every CanonicalRule has an empty warnings list under the real .nax/rules store", async () => {
-    const rules = await loadCanonicalRules(process.cwd());
+    const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
     expect(rules.length).toBeGreaterThan(0);
     for (const rule of rules) {
       expect(rule.warnings ?? []).toEqual([]);

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { findRepoRoot } from "@scripts/lib/repo-root";
 import { assertDefined } from "@test/helpers";
 import { makeParseRetryStrategy } from "@/agents/retry/parse-retry";
 import type { RetryContext } from "@/agents/retry/types";
@@ -390,7 +391,7 @@ describe("makeParseRetryStrategy", () => {
   // The example moved out of .nax/rules/retry-strategy.md into the guide when the rule
   // was trimmed to prohibitions; the guard follows the artifact it guards.
   describe("AC-12: retry-strategy guide example uses correct makeParseRetryStrategy API", () => {
-    const ruleFilePath = join(__dirname, "../../../../docs/guides/retry-strategy.md");
+    const ruleFilePath = join(findRepoRoot(import.meta.dir), "docs", "guides", "retry-strategy.md");
 
     async function extractMakeParseRetryExample(): Promise<string> {
       const content = await Bun.file(ruleFilePath).text();
