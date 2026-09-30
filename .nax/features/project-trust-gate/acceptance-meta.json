@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-30T04:42:40.914Z",
+  "acFingerprint": "sha256:b110b5d9b47986d3d07ce9ef8be0bedf473c7734ba76a9ada6e46a8c16f42ed2",
+  "layoutFingerprint": "sha256:e48a942966f5d6e14d2b62ea4c3ca3822a1ee19bf597de3dce93872837da0aff",
+  "storyCount": 6,
+  "acCount": 116,
+  "generator": "nax",
+  "coverage": [
+    {
+      "testPath": ".nax/features/project-trust-gate/.nax-acceptance.test.ts",
+      "expected": 116,
+      "found": 116,
+      "missing": []
+    }
+  ]
+}
