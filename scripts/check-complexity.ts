@@ -390,11 +390,21 @@ function listScores(scores: Score[], fileCount: number) {
   console.log(`\nTotal over ${STRICT_LIMIT}: ${scores.length} functions in ${fileCount} files`);
 }
 
-function initBaseline(baselineFile: string, current: ScoresByFile, count: number) {
-  if (existsSync(baselineFile)) {
+/** Baseline-file preconditions that need no scan — checked first so a doomed run skips the slow biome pass. */
+function checkBaselinePresence(baselineFile: string, args: string[]) {
+  if (args.includes("--list")) return;
+  const exists = existsSync(baselineFile);
+  if (args.includes("--init-baseline") && exists) {
     console.error(`ERROR: ${baselineFile} already exists; --init-baseline never overwrites a baseline.`);
     process.exit(1);
   }
+  if (!args.includes("--init-baseline") && !exists) {
+    console.error(`ERROR: ${baselineFile} missing. Create one with --init-baseline.`);
+    process.exit(1);
+  }
+}
+
+function initBaseline(baselineFile: string, current: ScoresByFile, count: number) {
   saveBaseline(baselineFile, current);
   console.log(`OK: baseline initialised with ${count} functions in ${Object.keys(current).length} files.`);
 }
@@ -414,6 +424,7 @@ function main() {
   const baselineFile =
     args.find((a) => a.startsWith("--baseline="))?.slice("--baseline=".length) ?? DEFAULT_BASELINE_FILE;
   failOnSuppressions();
+  checkBaselinePresence(baselineFile, args);
   const scores = runBiome();
   const current = tallyByFile(scores);
 
