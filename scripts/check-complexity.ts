@@ -108,7 +108,7 @@ interface Diagnostic {
 }
 
 interface BiomeReport {
-  summary?: { errors?: number };
+  summary?: { errors?: number; changed?: number; unchanged?: number };
   diagnostics?: Diagnostic[];
 }
 
@@ -161,7 +161,8 @@ function readScore(d: Diagnostic, readSource: SourceReader): Score {
  * A file biome fails to parse or read produces an error of another category and
  * no complexity findings, so trusting only the complexity rows would under-count
  * and could let a new violation through. Every error in the summary must be a
- * complexity finding this function actually read.
+ * complexity finding this function actually read. And a report that scanned
+ * no files is not a clean tree: an exclusion matched all of it (#2306).
  */
 export function parseScores(report: BiomeReport, readSource: SourceReader = readRepoSource): Score[] {
   if (!Array.isArray(report.diagnostics)) {
@@ -169,6 +170,9 @@ export function parseScores(report: BiomeReport, readSource: SourceReader = read
   }
   if (typeof report.summary?.errors !== "number") {
     throw new Error("biome report has no summary error count to confirm the run");
+  }
+  if ((report.summary.changed ?? 0) + (report.summary.unchanged ?? 0) === 0) {
+    throw new Error("biome scanned no files — does a files.includes exclusion match the whole checkout?");
   }
   const errors = report.diagnostics.filter((d) => d.severity === "error");
   const foreign = errors.filter((d) => d.category !== `lint/${RULE}`);
@@ -259,10 +263,22 @@ interface RepoBiomeConfig {
   files?: unknown;
 }
 
-/** A config that runs only the complexity rule at `limit`, over the same files as the repo config. */
+/**
+ * The repo's includes without its `!` exclusions. From a --config-path outside
+ * the repo, Biome matches those against the absolute path, so `!**\/.nax-wt/**`
+ * would drop every file of a checkout that itself lives under `.nax-wt/` (#2306).
+ * SCAN_DIRS already bounds the scan, and no worktree sits inside it.
+ */
+function withoutExclusions(files: unknown): string[] {
+  const includes = typeof files === "object" && files !== null ? (files as { includes?: unknown }).includes : undefined;
+  const patterns = Array.isArray(includes) ? includes.filter((p): p is string => typeof p === "string") : ["**"];
+  return patterns.filter((p) => !p.startsWith("!"));
+}
+
+/** A config that runs only the complexity rule at `limit`, over the repo config's includes. */
 export function buildStrictConfig(repoConfig: RepoBiomeConfig, limit: number) {
   return {
-    files: repoConfig.files,
+    files: { includes: withoutExclusions(repoConfig.files) },
     linter: {
       enabled: true,
       rules: {
@@ -279,7 +295,8 @@ export function buildStrictConfig(repoConfig: RepoBiomeConfig, limit: number) {
  */
 const BIOME_BIN = join(ROOT, "node_modules", ".bin", "biome");
 
-function runBiome(): Score[] {
+/** Scores `dirs` under `root` with the repo's strict config. `root` is a parameter for tests. */
+export function runBiome(root = ROOT, dirs = SCAN_DIRS): Score[] {
   if (!existsSync(BIOME_BIN)) throw new Error(`${BIOME_BIN} not found — run \`bun install\` first`);
   const repoConfig = JSON.parse(readFileSync(join(ROOT, "biome.json"), "utf8")) as RepoBiomeConfig;
   const configDir = mkdtempSync(join(tmpdir(), "nax-complexity-"));
@@ -293,16 +310,16 @@ function runBiome(): Score[] {
         `--only=${RULE}`,
         "--max-diagnostics=none",
         "--reporter=json",
-        ...SCAN_DIRS,
+        ...dirs,
       ],
-      { cwd: ROOT, stdout: "pipe", stderr: "pipe" },
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
     );
     const stdout = proc.stdout.toString().trim();
     // 0 = no findings, 1 = findings. Anything else (a crash, a signal) is not a result.
     if ((proc.exitCode !== 0 && proc.exitCode !== 1) || !stdout.startsWith("{")) {
       throw new Error(`biome produced no JSON report (exit ${proc.exitCode}): ${proc.stderr.toString().trim()}`);
     }
-    return parseScores(JSON.parse(stdout));
+    return parseScores(JSON.parse(stdout), (file) => readFileSync(resolve(root, file), "utf8"));
   } finally {
     rmSync(configDir, { recursive: true, force: true });
   }
