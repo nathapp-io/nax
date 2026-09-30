@@ -402,4 +402,22 @@ describe("resolveSessionSandbox — US-002 confined run temp roots", () => {
     expect(policy.writeRoots).toContain(realOrRaw("/tmp"));
     expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
   });
+
+  test("#2301: a command whose session dir cannot be re-created stops carrying the /tmp/claude deny", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps, { platform: "darwin" });
+    // The resolve-time mkdir succeeds (so the session IS confined), but the
+    // per-launch one fails, so no `export TMPDIR=` prefix is applied.
+    _launcherDeps.mkdir = async () => {
+      throw new Error("EROFS: read-only file system");
+    };
+    const launcher = await resolveSessionSandbox(confinedArgs());
+
+    await launcher.run(launchRequest());
+
+    const policy = wrappedPolicy(seam);
+    expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
+    // The rest of the confinement is untouched: the run's own root is still the
+    // only temp write root.
+    expect(policy.writeRoots).toContain(realOrRaw(RUN_TMP_ROOT));
+  });
 });

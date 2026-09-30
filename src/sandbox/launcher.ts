@@ -38,7 +38,19 @@ export const _launcherDeps = {
 export interface CommandLauncherOptions {
   readonly state: SandboxState;
   readonly backend?: SandboxBackend;
-  readonly policyFor?: (root: string) => Promise<SandboxPolicy>;
+  /**
+   * Build the policy for one command.
+   *
+   * `tmpDirInForce` is whether THIS command gets the session's own `TMPDIR`
+   * override: the launcher declared a `tmpDir` and the per-run `ensureTmpDir`
+   * recreated it, so `runWrapped` applied the `export TMPDIR=…` prefix. It is
+   * false when the override was dropped, and srt's own forced `TMPDIR` applies
+   * instead — a builder that denies that directory would then hand the session a
+   * `TMPDIR` its own sandbox refuses to write (#2301, SPEC-tmp-confinement.md:132).
+   * The launcher cannot know whether the session is confined; it only reports
+   * the override, and the builder narrows that with what it does know.
+   */
+  readonly policyFor?: (root: string, tmpDirInForce: boolean) => Promise<SandboxPolicy>;
   /** Runs after every wrapped command, before control returns to nax (e.g. a git tripwire, #2198). */
   readonly afterWrapped?: () => Promise<void>;
   /**
@@ -187,7 +199,11 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
         });
       }
       try {
-        return await runWrapped(req, opts.backend, await opts.policyFor(req.root), { ...env, tmpDir });
+        // `tmpDir` is the EFFECTIVE dir for this run (undefined when the per-run
+        // mkdir failed), so `env.tmpDir !== undefined && tmpDir !== undefined`
+        // is exactly "runWrapped is about to apply the export TMPDIR prefix".
+        const tmpDirInForce = env.tmpDir !== undefined && tmpDir !== undefined;
+        return await runWrapped(req, opts.backend, await opts.policyFor(req.root, tmpDirInForce), { ...env, tmpDir });
       } finally {
         await opts.afterWrapped?.();
       }

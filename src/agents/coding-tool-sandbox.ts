@@ -130,7 +130,7 @@ export async function resolveSessionSandbox(args: {
     runTmpRoot: args.runTmpRoot,
     tmpDir: args.tmpDir,
   });
-  const policyFor = async (root: string) =>
+  const policyFor = async (root: string, tmpDirInForce: boolean) =>
     buildSandboxPolicy({
       root,
       git,
@@ -146,7 +146,15 @@ export async function resolveSessionSandbox(args: {
       // session dir were both supplied, and the dir was actually created; the
       // config flag is false in the fail-open and no-run-root cases too, so
       // reading it here would deny a session that is running on the shared roots.
-      confined,
+      //
+      // Narrowed by whether THIS command will actually get the session's
+      // `TMPDIR`. `createCommandLauncher` recreates the session dir before every
+      // run and drops the `export TMPDIR=…` prefix when that creation fails
+      // (src/sandbox/launcher.ts), and then srt's own `/tmp/claude` is the
+      // child's TMPDIR — denying it would leave the session with a TMPDIR its
+      // own sandbox refuses to write, the one posture
+      // SPEC-tmp-confinement.md:132 rules out.
+      confined: confined && tmpDirInForce,
       platform: _sessionSandboxDeps.platform(),
       config,
     });
@@ -155,7 +163,7 @@ export async function resolveSessionSandbox(args: {
   // and then failed every command. Build the policy once here instead.
   // The old residual (a glob-named feature dir created mid-run failing every
   // command) is gone: listNaxEntries skips glob-named `.nax` entries (nax#2260).
-  const policyError = await literalPolicyError(policyFor, args.root);
+  const policyError = await literalPolicyError(policyFor, args.root, confined);
   if (policyError !== undefined) {
     warnSandboxUnavailableOnce(policyError, args.storyId);
     return createCommandLauncher({ state: { kind: "unavailable", backend: backend.name, reason: policyError } });
@@ -210,12 +218,20 @@ export function rawScreenOptionsFor(launcher: CommandLauncher | undefined): {
   return rawBashRefusal !== undefined ? { rawBashRefusal } : {};
 }
 
+/**
+ * The compile-time policy refusal for `raw` (Task 8), or undefined.
+ *
+ * Builds the policy the session confines with, i.e. the one every launch gets
+ * while its `TMPDIR` override holds; the denial list it adds under a narrower
+ * confinement (#2301) is two fixed literals that can never fail `literal()`.
+ */
 async function literalPolicyError(
-  policyFor: (root: string) => Promise<unknown>,
+  policyFor: (root: string, tmpDirInForce: boolean) => Promise<unknown>,
   root: string,
+  tmpDirInForce: boolean,
 ): Promise<string | undefined> {
   try {
-    await policyFor(root);
+    await policyFor(root, tmpDirInForce);
     return undefined;
   } catch (err) {
     if (err instanceof NaxError && err.code === "SANDBOX_POLICY_NOT_LITERAL") {
