@@ -3,7 +3,7 @@
   "feature": "project-trust-gate",
   "branchName": "feat/project-trust-gate",
   "createdAt": "2026-09-30T00:00:00.000Z",
-  "updatedAt": "2026-09-30T05:54:48.551Z",
+  "updatedAt": "2026-09-30T06:26:02.440Z",
   "userStories": [
     {
       "id": "US-001",
@@ -193,8 +193,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -268,7 +268,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The grant/revoke handlers and Commander registration mirror existing approvals patterns across a few code files, but security-critical consent requires isolated three-session TDD."
+        "reasoning": "The grant/revoke handlers and Commander registration mirror existing approvals patterns across a few code files, but security-critical consent requires isolated three-session TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/approvals.ts",
@@ -285,7 +288,8 @@
       "workdirSource": "defaulted",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4e97c558da14e968d86b02cf8b809795126342bc"
     },
     {
       "id": "US-005",
