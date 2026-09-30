@@ -1,4 +1,3 @@
-<!-- spec-writing: completed-through-phase-5 -->
 # SPEC: Project trust gate
 
 ## Summary
@@ -33,7 +32,7 @@ Every merged config entry (plugins, MCP servers, pluginProviders, commands) is t
 
 - **Project root** — `resolveTrustRoot(workdir)`: `dirname(findProjectDir(workdir))` when `findProjectDir` (`src/config/loader.ts:285`) finds a `.nax/config.json` walking up from `workdir` **and** that `.nax` directory is not the global config directory (`realOrRaw(naxDir) !== realOrRaw(globalConfigDir())`); otherwise `resolve(workdir)`. Without the exclusion, every project-less folder under the home directory resolves to the home directory, because `~/.nax/config.json` is itself a `.nax/config.json`. The gate normalizes the result with `normalizeTrustPath`.
 - **Normalization** — `normalizeTrustPath(path)` is `realOrRaw(path)` (`src/utils/realpath.ts:31`): the realpath of the nearest existing ancestor with the missing segments re-appended, so a not-yet-created directory under a symlinked parent (macOS `/var` -> `/private/var`) still matches a realpath-normalized entry. A trailing `/` is removed except on `/` itself.
-- **Protected folders** — `/` and the home directory (`_trustGateDeps.homedir()` / `_cliTrustDeps.homedir()`, both `os.homedir()` in production). Neither the prompt nor `nax trust add` without `--force` grants them.
+- **Protected folders** — `/` and the home directory (`_trustGateDeps.homedir()` / `_cliTrustDeps.homedir()`, both `os.homedir()` in production, compared after `normalizeTrustPath`). Neither the prompt nor `nax trust add` without `--force` grants them.
 - **Coverage** — `findCoveringEntry(folders, normalizedPath)` returns the entry whose `path` equals `normalizedPath`, or is `/`, or is a prefix of `normalizedPath` followed by `/`. When several entries cover, the one with the longest `path` wins. `/a/foo` never covers `/a/foobar`.
 
 ### File format: `trust.json`
@@ -55,7 +54,8 @@ Path: `trustStorePath()` = `join(globalConfigDir(), "trust.json")` (`globalConfi
 - `folders[].addedAt` — ISO-8601 timestamp from `_trustStoreDeps.now()`.
 - `folders[].via` — `"prompt"` (entry gate) or `"cli"` (`nax trust add`).
 - The file is validated by a zod schema `TrustStoreFileSchema`; invalid JSON or any shape mismatch (other `version`, `folders` not an array, a non-absolute or non-string `path`, `via` outside the two values) reads as `unparseable`.
-- Writes: under `withPathFileLock(trustStorePath(), ...)` (`src/utils/path-file-lock.ts:27`), write a sibling temp file with mode `0o600`, then `rename` it over `trust.json`. The global config directory is created when missing.
+- Writes: `addTrustEntry` first runs `mkdir(dirname(trustStorePath()), { recursive: true })` — before taking the lock, because `withPathFileLock` creates `trust.json.lock` with the `wx` flag and rethrows `ENOENT` (`src/utils/file-lock.ts:111-121`) — then, under `withPathFileLock(trustStorePath(), ...)` (`src/utils/path-file-lock.ts:27`), writes a sibling temp file with mode `0o600` and `rename`s it over `trust.json`. `removeTrustEntry` skips the lock when the global config directory does not exist (there is nothing to remove), mirroring `removeApprovals` (`src/permissions/approvals-store.ts:314-320`).
+- The zod schema `TrustStoreFileSchema` lives in `src/trust/store.ts`.
 
 ### Module API (`src/trust/`, exported from `src/trust/index.ts`)
 
@@ -110,7 +110,7 @@ export async function ensureProjectTrusted(root: string, options: { interactive:
 - `addTrustEntry` normalizes `path`; when an existing entry covers it, it returns `already-covered` without writing. Otherwise it appends the entry and keeps any existing entries (including descendants).
 - `removeTrustEntry` normalizes `path`; it removes only an entry whose `path` equals it. Otherwise it returns `not-found` with the covering entry, if any, and does not write.
 - `assertTrusted` normalizes `path` and passes when a marked root covers it (same coverage rule as `findCoveringEntry`); otherwise it throws `PROJECT_UNTRUSTED` with `surface`.
-- `promptTrustChoice` writes the question through `_trustPromptDeps.ask` and maps the trimmed, lower-cased answer: `y` or `yes` -> `"yes"`; `p` or `parent` -> `"parent"` when `parent` is not `null`; anything else, including an empty line, `null` (end of input), and `p` when `parent` is `null` -> `"no"`. With a parent the question is exactly `Trust <root>? nax will run this project's plugins, hooks, MCP servers and test commands. [y]es / [p]arent (<parent>) / [N]o `; with `parent` `null` it is exactly `Trust <root>? nax will run this project's plugins, hooks, MCP servers and test commands. [y]es / [N]o `. The production `ask` reads one line from stdin.
+- `promptTrustChoice` writes the question through `_trustPromptDeps.ask` and maps the trimmed, lower-cased answer: `y` or `yes` -> `"yes"`; `p` or `parent` -> `"parent"` when `parent` is not `null`; anything else, including an empty line, `null` (end of input), and `p` when `parent` is `null` -> `"no"`. With a parent the question is exactly `Trust <root>? nax will run this project's plugins, hooks, MCP servers and test commands. [y]es / [p]arent (<parent>) / [N]o `; with `parent` `null` it is exactly `Trust <root>? nax will run this project's plugins, hooks, MCP servers and test commands. [y]es / [N]o `. The production `ask` writes the question to stderr (the gate writes nothing to stdout) and reads one line from stdin.
 - `ensureProjectTrusted(root, { interactive })`, with `root` normalized:
   1. `readTrustStore()`; `unparseable` -> throw `TRUST_STORE_UNREADABLE`.
   2. A covering entry -> `markTrusted(root)`, return.
@@ -206,7 +206,7 @@ Symbols this feature changes. Each baseline exists only to locate the code; it i
 
 **`rejectGlobalOnlyKeys`** — `src/config/global-only-keys.ts:6-12` (US-001)
 - Baseline: throws `AUTH_CONFIG_NOT_GLOBAL` when the layer has `auth`.
-- Target: also throws `NaxError` code `TRUST_CONFIG_NOT_GLOBAL`, message `trust is global-only and cannot be set in <layerName>`, context `{ stage: "config", layerName }`, when the layer has own property `trust`.
+- Target: also throws `NaxError` code `TRUST_CONFIG_NOT_GLOBAL`, message `trust is global-only and cannot be set in <layerName>`, context `{ stage: "config", layerName }`, when the layer has own property `trust`. `trust` is a reserved key: no config consumer reads it; the rejection keeps any layer from appearing to grant trust.
 
 **`loadPlugins`** — `src/plugins/loader.ts:107` (US-005)
 - Target: same signature. Before `loadAndValidatePlugin` for each discovered project-directory plugin, and before resolving each `configPlugins` entry whose `enabled` is not `false`, it awaits `assertTrusted(effectiveProjectRoot, "plugins")`. Built-ins and the global-directory loop do not assert.
@@ -221,7 +221,7 @@ Symbols this feature changes. Each baseline exists only to locate the code; it i
 - Target: same signature. After the `server === undefined || !server.enabled` early return and before the connect retry loop, `open` awaits `assertTrusted(workdir, "mcp")`. The rejection propagates out of both `listTools` and `call`: a backstop firing means a gated command skipped its entry gate, which is a defect to surface, not a dead server to report as error-as-data.
 
 **`runQualityCommand`** — `src/quality/runner.ts:278`, spawn at `:154` (US-006)
-- Target: same signature; awaits `assertTrusted(opts.workdir, "quality-command")` before the first spawn.
+- Target: same signature; awaits `assertTrusted(opts.workdir, "quality-command")` as the function's first statement, before any early return.
 
 **`executeWithTimeout`** — `src/verification/executor.ts:91`, spawn at `:107` (US-006)
 - Target: same signature; awaits `assertTrusted(options?.cwd ?? resolve("."), "test-command")` before spawning. `resolve(".")` names the directory `Bun.spawn` itself uses when `cwd` is absent; it is not a config-scope read, so the `process.cwd()` ban in `.nax/rules/project-conventions.md` does not apply.
@@ -281,7 +281,7 @@ Symbols this feature changes. Each baseline exists only to locate the code; it i
 2. **US-002: Trust registry and entry gate** — depends on US-001. `src/trust/registry.ts`, `prompt.ts`, `gate.ts`: `markTrusted`, `assertTrusted`, `resetTrustRegistry`, `promptTrustChoice`, `ensureProjectTrusted`; `test/preload.ts` writes a `trust.json` trusting `/` into the isolated global config dir and calls `markTrusted("/")`; `test/helpers/trust.ts` exports `useUntrustedRegistry()`, which registers a `beforeEach` calling `resetTrustRegistry()` and an `afterEach` calling `markTrusted("/")`, re-exported from `test/helpers/index.ts`.
 3. **US-003: Gate the CLI commands** — depends on US-002. `src/cli/trust-gate.ts`: `runTrustGate` and `_trustGateCliDeps`, exported from `src/cli/index.ts`; `runTrustGate` calls in the `run`, `resume`, `plan`, `plugins list`, `setup`, `precheck`, `prompts` and `mcp lock` actions per the gated-commands table.
 4. **US-004: `nax trust` command** — depends on US-001. `src/cli/trust.ts` handlers and `_cliTrustDeps`; the `trust` group in `bin/nax.ts`; `docs/guides/cli-reference.md`, `README.md`, `CHANGELOG.md` entries.
-5. **US-005: Backstops for imports, hooks and MCP** — depends on US-002. `assertTrusted` in `loadPlugins`, `loadSingleProvider`, `fireHook` and the MCP pool's `open`.
+5. **US-005: Backstops for imports, hooks and MCP** — depends on US-002. `assertTrusted` in `loadPlugins`, `loadPluginProviders` (before `Promise.allSettled`), `fireHook` and the MCP pool's `open`.
 6. **US-006: Backstops for command spawns and the sandbox deny** — depends on US-002. `assertTrusted` in `runQualityCommand`, `executeWithTimeout`, the hardening spawn, `maybeRunNewPackageSetup` and `prepareWorktreeDependencies`; `trustStoreFile` in `SandboxPolicyInput`, `buildSandboxPolicy` and `resolveSessionSandbox`.
 
 ### Context Files
@@ -404,8 +404,6 @@ Unless an AC says otherwise: `NAX_GLOBAL_CONFIG_DIR` points at a fresh temp dire
 - [unit] `findCoveringEntry([{ path: "/a/foo", ... }], "/a/foobar")` returns `null`.
 - [unit] `findCoveringEntry([{ path: "/", ... }], "/x/y")` returns the `/` entry.
 - [unit] `findCoveringEntry` with entries `/a` and `/a/b` for the path `/a/b/c` returns the `/a/b` entry.
-- [unit] `normalizeTrustPath` of a symlink pointing at a temp directory returns the directory's `realpath`.
-- [unit] `normalizeTrustPath` of an existing directory given with a trailing `/` returns the same string as for the path without it.
 - [unit] `normalizeTrustPath(<symlink to a temp directory>/not-yet/created)` returns the `realpath` of the temp directory followed by `/not-yet/created`.
 - [unit] `resolveTrustRoot(<project>/src/deep)`, where `<project>/.nax/config.json` exists, returns `<project>`.
 - [unit] `resolveTrustRoot(<dir>)`, where no `.nax/config.json` exists in `<dir>` or any ancestor, returns `resolve(<dir>)`.
@@ -415,12 +413,14 @@ Unless an AC says otherwise: `NAX_GLOBAL_CONFIG_DIR` points at a fresh temp dire
 - [unit] `readTrustStore()` with a store containing `{"version":2,"folders":[]}` returns an object whose `state` is `"unparseable"`.
 - [unit] With no store file and `_trustStoreDeps.now` returning `new Date("2026-09-30T00:00:00.000Z")`, `addTrustEntry(<dir>, "cli")` leaves a store that parses to `{ version: 1, folders: [{ path: <realpath dir>, addedAt: "2026-09-30T00:00:00.000Z", via: "cli" }] }`.
 - [unit] After `addTrustEntry(<dir>, "cli")`, the store file's permission bits are `0o600`.
+- [unit] With `NAX_GLOBAL_CONFIG_DIR` set to a path that does not exist yet, `addTrustEntry(<dir>, "cli")` resolves with outcome `"added"` and the store file exists afterwards.
 - [unit] With the store trusting `<dir>`, `addTrustEntry(<dir>/child, "cli")` returns `{ outcome: "already-covered", coveredBy }` with `coveredBy.path` equal to `<dir>`, and the store file's bytes are unchanged.
 - [unit] With a store containing `{not json`, `addTrustEntry(<dir>, "cli")` rejects with `TRUST_STORE_UNREADABLE` and the store file's bytes are unchanged.
 - [unit] Two concurrent calls `addTrustEntry(<dirA>, "cli")` and `addTrustEntry(<dirB>, "cli")` both resolve with outcome `"added"`, and the store afterwards lists both paths.
 - [unit] With the store trusting `<dir>`, `removeTrustEntry(<dir>)` returns outcome `"removed"` and the store afterwards has no entry for `<dir>`.
 - [unit] With the store trusting `<dir>` only, `removeTrustEntry(<dir>/child)` returns `{ outcome: "not-found", coveredBy }` with `coveredBy.path` equal to `<dir>`, and the store file's bytes are unchanged.
 - [unit] With a store containing `{not json`, `removeTrustEntry(<dir>)` rejects with `TRUST_STORE_UNREADABLE`.
+- [unit] With `NAX_GLOBAL_CONFIG_DIR` set to a path that does not exist yet, `removeTrustEntry(<dir>)` resolves to `{ outcome: "not-found", coveredBy: null }` and the path still does not exist afterwards.
 - [unit] `rejectGlobalOnlyKeys({ trust: {} }, "project config")` throws a `NaxError` with code `TRUST_CONFIG_NOT_GLOBAL` and message `trust is global-only and cannot be set in project config`.
 
 ### US-002: Trust registry and entry gate
