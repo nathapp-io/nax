@@ -17,6 +17,7 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { findRepoRoot } from "@scripts/lib/repo-root";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _clearRootConfigCache, loadConfig } from "@/config/loader";
 import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine";
@@ -27,6 +28,10 @@ import type { Logger } from "@/logger";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
 import type { ResolvedTestPatterns } from "@/test-runners/resolver";
 import { resolveTestFilePatterns } from "@/test-runners/resolver";
+
+// The real .nax/rules store is repo-rooted, not cwd-rooted: after the monorepo
+// move the test cwd is packages/nax while the store stays at the repo root.
+const REPO_ROOT = findRepoRoot(import.meta.dir);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep save/restore
@@ -589,8 +594,8 @@ describe("StaticRulesProvider — authoring-stage appliesTo scoping guard condit
 describe("StaticRulesProvider — US-006 real .nax/rules store stage scoping", () => {
   const REAL_REPO_REQUEST: ContextRequest = {
     storyId: "US-006",
-    repoRoot: process.cwd(),
-    packageDir: process.cwd(),
+    repoRoot: REPO_ROOT,
+    packageDir: REPO_ROOT,
     stage: "execution",
     role: "implementer",
     budgetTokens: 8000,

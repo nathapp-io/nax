@@ -8,11 +8,33 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join, relative } from "node:path";
+import { findRepoRoot } from "@scripts/lib/repo-root";
 import { assertNaxError } from "@test/helpers";
 import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine/providers/static-rules";
 import type { ContextRequest } from "@/context/engine/types";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
 import { NeutralityLintError } from "@/context/rules/canonical-loader";
+
+// The real .nax/rules and .claude/rules stores are repo-rooted, not cwd-rooted:
+// after the monorepo move the test process cwd is packages/nax while the stores
+// stay at the repo root. Resolve both from the git root via findRepoRoot.
+const REPO_ROOT = findRepoRoot(import.meta.dir);
+
+/**
+ * Repo-rooted prefix of this package: "" before the monorepo move, "packages/nax"
+ * after it. Derived from this file's location under the package's `test/` dir
+ * (not a fixed climb count — the package nests one level deeper post-move).
+ * Rules' appliesTo globs are rewritten with the same prefix by the conversion,
+ * so prefixing scope files keeps the matching geometry identical in both
+ * layouts — the assertions below pass pre- and post-move unchanged.
+ */
+const PKG_PREFIX = (() => {
+  const relDir = relative(REPO_ROOT, import.meta.dir);
+  const testMarker = relDir.indexOf("/test/");
+  return testMarker === -1 ? "" : relDir.slice(0, testMarker);
+})();
+const pkgPath = (p: string): string => (PKG_PREFIX ? `${PKG_PREFIX}/${p}` : p);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep injection helpers
@@ -485,10 +507,12 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
 describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)", () => {
   // A large explicit budget isolates the scoping behavior under test from
   // priority-ordered budget trimming, which is a separate, out-of-scope concern.
+  // repoRoot === packageDir keeps the single-package fast path (the rules'
+  // `paths:` package filter short-circuits), matching the pre-move geometry.
   const REAL_REPO_REQUEST: ContextRequest = {
     storyId: "US-004",
-    repoRoot: process.cwd(),
-    packageDir: process.cwd(),
+    repoRoot: REPO_ROOT,
+    packageDir: REPO_ROOT,
     stage: "execution",
     role: "implementer",
     budgetTokens: 8000,
@@ -502,7 +526,7 @@ describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({
       ...REAL_REPO_REQUEST,
-      scopeFiles: ["src/context/rules/canonical-loader.ts"],
+      scopeFiles: [pkgPath("src/context/rules/canonical-loader.ts")],
     });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(false);
   });
@@ -511,7 +535,7 @@ describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({
       ...REAL_REPO_REQUEST,
-      scopeFiles: ["test/unit/context/rules/canonical-loader.test.ts"],
+      scopeFiles: [pkgPath("test/unit/context/rules/canonical-loader.test.ts")],
     });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(true);
   });
@@ -523,19 +547,22 @@ describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)
   // this test then codified the narrowed scope as intended behaviour.
   test("[US-004 AC 8] emits no static-rules:adapter-wiring: chunk for a path outside every declared glob", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: ["src/config/loader.ts"] });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: [pkgPath("src/config/loader.ts")] });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:adapter-wiring:"))).toBe(false);
   });
 
   test("[US-004 AC 8] emits a static-rules:adapter-wiring: chunk for src/pipeline, which the rule declares", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: ["src/pipeline/stages/verify.ts"] });
+    const result = await provider.fetch({
+      ...REAL_REPO_REQUEST,
+      scopeFiles: [pkgPath("src/pipeline/stages/verify.ts")],
+    });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:adapter-wiring:"))).toBe(true);
   });
 
   test("emits a static-rules:retry-strategy: chunk for src/operations, which the rule declares", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: ["src/operations/call.ts"] });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: [pkgPath("src/operations/call.ts")] });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:retry-strategy:"))).toBe(true);
   });
 
@@ -543,7 +570,7 @@ describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({
       ...REAL_REPO_REQUEST,
-      scopeFiles: ["test/unit/context/engine/packing.test.ts"],
+      scopeFiles: [pkgPath("test/unit/context/engine/packing.test.ts")],
     });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-helpers:"))).toBe(true);
   });
@@ -554,13 +581,13 @@ describe("StaticRulesProvider — real .nax/rules store scope filtering (US-004)
   // and they fail on the exact regression this change repairs.
   test("emits no static-rules:retry-strategy: chunk for a path outside its declared globs", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: ["src/config/loader.ts"] });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: [pkgPath("src/config/loader.ts")] });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:retry-strategy:"))).toBe(false);
   });
 
   test("emits no static-rules:test-helpers: chunk for a non-test source path", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
-    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: ["src/agents/manager.ts"] });
+    const result = await provider.fetch({ ...REAL_REPO_REQUEST, scopeFiles: [pkgPath("src/agents/manager.ts")] });
     expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-helpers:"))).toBe(false);
   });
 });
@@ -604,11 +631,17 @@ describe("rule scoping parity — .nax/rules vs .claude/rules", () => {
     const mismatches: string[] = [];
     let compared = 0;
     let scopedPairs = 0;
-    for (const name of [...new Bun.Glob("*.md").scanSync({ cwd: ".nax/rules", absolute: false })].sort()) {
-      const claudePath = `.claude/rules/${name}`;
+    // Both stores are read from the SAME repo root (findRepoRoot above): they
+    // are repo-level directories, so cwd-relative reads break once the test
+    // cwd is packages/nax. The conversion prefixes both stores' globs with the
+    // package path in lockstep, so comparing like-for-like stays valid.
+    const naxRulesDir = join(REPO_ROOT, ".nax/rules");
+    const claudeRulesDir = join(REPO_ROOT, ".claude/rules");
+    for (const name of [...new Bun.Glob("*.md").scanSync({ cwd: naxRulesDir, absolute: false })].sort()) {
+      const claudePath = join(claudeRulesDir, name);
       if (!(await Bun.file(claudePath).exists())) continue;
       compared++;
-      const nax = fileGlobs(await Bun.file(`.nax/rules/${name}`).text(), "appliesTo");
+      const nax = fileGlobs(await Bun.file(join(naxRulesDir, name)).text(), "appliesTo");
       const claude = fileGlobs(await Bun.file(claudePath).text(), "paths");
       if (nax.length > 0 || claude.length > 0) scopedPairs++;
       if (JSON.stringify(nax) !== JSON.stringify(claude)) {
@@ -761,8 +794,8 @@ describe("StaticRulesProvider — US-003 real .nax/rules store under default con
   // (not just the mocked one). The default budget is 8192.
   const REAL_REPO_REQUEST: ContextRequest = {
     storyId: "US-003",
-    repoRoot: process.cwd(),
-    packageDir: process.cwd(),
+    repoRoot: REPO_ROOT,
+    packageDir: REPO_ROOT,
     stage: "execution",
     role: "implementer",
     budgetTokens: 8000,
@@ -772,7 +805,8 @@ describe("StaticRulesProvider — US-003 real .nax/rules store under default con
     _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
     const provider = new StaticRulesProvider({ budgetTokens: 100_000_000 });
     const result = await provider.fetch({ ...REAL_REPO_REQUEST, budgetTokens: 100_000_000 });
-    const ruleCount = [...new Bun.Glob("*.md").scanSync({ cwd: ".nax/rules", absolute: false })].length;
+    const ruleCount = [...new Bun.Glob("*.md").scanSync({ cwd: join(REPO_ROOT, ".nax/rules"), absolute: false })]
+      .length;
     expect(ruleCount).toBeGreaterThan(0);
     // Section-level chunking: one chunk per section, which is ≥ rule count
     expect(result.chunks.length).toBeGreaterThanOrEqual(ruleCount);
