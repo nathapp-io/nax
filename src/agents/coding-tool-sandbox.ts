@@ -28,6 +28,7 @@ import {
   strayCommonDirTripwire,
   warnSandboxUnavailableOnce,
 } from "@/sandbox";
+import { trustStorePath } from "@/trust";
 import { errorMessage } from "@/utils/errors";
 
 export const _sessionSandboxDeps = {
@@ -139,6 +140,9 @@ export async function resolveSessionSandbox(args: {
       naxEntries: await _sessionSandboxDeps.naxEntries(root),
       credentialFiles,
       ...(approvalsFile !== undefined ? { approvalsFile } : {}),
+      // US-006: a command inside the sandbox must not be able to rewrite the
+      // trust store that decides whether repository code runs.
+      trustStoreFile: trustStorePath(),
       home: _sessionSandboxDeps.homedir(),
       tempRoots,
       platform: _sessionSandboxDeps.platform(),

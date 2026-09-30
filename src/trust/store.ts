@@ -23,7 +23,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { z } from "zod";
-import { globalConfigDir } from "@/config";
+// Leaf import, not the @/config barrel — see match.ts.
+import { globalConfigDir } from "@/config/paths";
 import { NaxError } from "@/errors";
 import { errorMessage } from "@/utils/errors";
 import { withPathFileLock } from "@/utils/path-file-lock";

@@ -7,7 +7,7 @@
 export { _trustGateDeps, ensureProjectTrusted } from "./gate";
 export { findCoveringEntry, isProtectedFolder, normalizeTrustPath, resolveTrustRoot } from "./match";
 export { _trustPromptDeps, promptTrustChoice } from "./prompt";
-export { assertTrusted, markTrusted, resetTrustRegistry } from "./registry";
+export { assertTrusted, assertTrustedSync, markTrusted, resetTrustRegistry } from "./registry";
 export {
   _trustStoreDeps,
   addTrustEntry,

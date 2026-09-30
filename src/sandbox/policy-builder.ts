@@ -35,6 +35,8 @@ export interface SandboxPolicyInput {
   readonly naxEntries: readonly string[];
   readonly credentialFiles: readonly string[];
   readonly approvalsFile?: string;
+  /** US-006 — the trust store (`trustStorePath()`), denied so a command cannot rewrite its own trust. */
+  readonly trustStoreFile?: string;
   readonly home: string;
   readonly tempRoots: readonly string[];
   readonly platform: NodeJS.Platform;
@@ -131,6 +133,7 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     ...gitDenies(root, input.git),
     ...input.gitGuardFiles,
     ...(input.approvalsFile !== undefined ? [input.approvalsFile] : []),
+    ...(input.trustStoreFile !== undefined ? [input.trustStoreFile] : []),
   ]);
   const denyRead = literal([
     ...BUILTIN_CREDENTIAL_READ_DENIES.map((rel) => join(home, rel)),

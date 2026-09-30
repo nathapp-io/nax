@@ -10,7 +10,10 @@
  */
 
 import { dirname, resolve, sep } from "node:path";
-import { findProjectDir, globalConfigDir } from "@/config";
+// Leaf import, not the @/config barrel: the barrel reaches src/tools (inert-bash-stages),
+// and a trust module reachable from src/quality/runner (US-006 backstops) would close a
+// runtime import cycle through it.
+import { findProjectDir, globalConfigDir } from "@/config/paths";
 import { realOrRaw } from "@/utils/realpath";
 import type { TrustEntry } from "./types";
 

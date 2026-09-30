@@ -6,8 +6,8 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeSpawn, makeTempDir, type SpawnStub, useUntrustedRegistry } from "@test/helpers";
-import { realOrRaw } from "@/utils/realpath";
 import { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "@/execution";
+import { realOrRaw } from "@/utils/realpath";
 
 function spawnOk(exitCode = 0, capture?: { argv?: string[]; cwd?: string }): SpawnStub {
   return makeSpawn(({ cmd, opts }) => {
@@ -173,7 +173,9 @@ describe("maybeRunNewPackageSetup — US-006 trust backstop", () => {
     const packageDir = `${project}/pkg`;
     const runtime = {};
     markNewPackageDirs(runtime, [packageDir]);
-    await expect(maybeRunNewPackageSetup({ runtime, storyId: "US-001", packageDir, setupCommand: "echo hi" })).rejects.toMatchObject({
+    await expect(
+      maybeRunNewPackageSetup({ runtime, storyId: "US-001", packageDir, setupCommand: "echo hi" }),
+    ).rejects.toMatchObject({
       code: "PROJECT_UNTRUSTED",
       context: { surface: "package-setup" },
     });
@@ -186,7 +188,9 @@ describe("maybeRunNewPackageSetup — US-006 trust backstop", () => {
     markNewPackageDirs(runtime, [packageDir]);
     const spawn = makeSpawn();
     _newPackageSetupDeps.spawn = spawn.spawn;
-    await maybeRunNewPackageSetup({ runtime, storyId: "US-001", packageDir, setupCommand: "echo hi" }).catch(() => undefined);
+    await maybeRunNewPackageSetup({ runtime, storyId: "US-001", packageDir, setupCommand: "echo hi" }).catch(
+      () => undefined,
+    );
     expect(spawn.calls).toHaveLength(0);
   });
 });

@@ -13,9 +13,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanupTempDir, makeSpawn, makeSpawnResult, makeTempDir, useUntrustedRegistry, withDebugSpy, withInfoSpy } from "@test/helpers";
-import { realOrRaw } from "@/utils/realpath";
+import {
+  cleanupTempDir,
+  makeSpawn,
+  makeSpawnResult,
+  makeTempDir,
+  useUntrustedRegistry,
+  withDebugSpy,
+  withInfoSpy,
+} from "@test/helpers";
 import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
+import { realOrRaw } from "@/utils/realpath";
 
 // ---------------------------------------------------------------------------
 // Mock helpers
@@ -604,7 +612,9 @@ describe("runQualityCommand — US-006 trust backstop", () => {
   test("US-006 AC1: rejects an untrusted project with the quality-command surface", async () => {
     const spawn = makeSpawn();
     _qualityRunnerDeps.spawn = spawn.spawn;
-    await expect(runQualityCommand({ commandName: "test", command: "echo hi", workdir: project })).rejects.toMatchObject({
+    await expect(
+      runQualityCommand({ commandName: "test", command: "echo hi", workdir: project }),
+    ).rejects.toMatchObject({
       code: "PROJECT_UNTRUSTED",
       context: { surface: "quality-command" },
     });

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { assertTrustedSync } from "../trust";
 import { _argvExecDeps, runArgv } from "../utils/argv-exec";
 import { parseCommandToArgv } from "../utils/command-argv";
 import type { PrepareWorktreeDependenciesOptions, WorktreeDependencyContext } from "./types";
@@ -59,6 +60,14 @@ async function provisionDependencies(
   }
 
   const timeoutMs = config.execution.worktreeDependencies.timeoutSeconds * 1000;
+
+  // US-006: the setup command is repository-controlled and runs unsandboxed
+  // from the worktree root — refuse before runArgv unless a trust decision
+  // covers the worktree. The SYNC form, deliberately: runArgv arms its timeout
+  // timer synchronously before its first await (the BUG-13 test sweeps that
+  // timer off a virtual clock on a fixed microtask schedule), so an awaited
+  // check here would land after the sweep and let a hung install run unsandboxed.
+  assertTrustedSync(worktreeRoot, "worktree-setup");
 
   const result = await runArgv({
     argv,

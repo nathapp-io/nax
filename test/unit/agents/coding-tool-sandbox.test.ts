@@ -17,8 +17,8 @@ import {
 import { _sessionSandboxDeps, rawRefusalFor, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
 import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "@/config/schemas-sandbox";
 import { _launcherDeps, _resetSandboxRegistryForTests, type LaunchRequest, type SandboxPolicy } from "@/sandbox";
-import { realOrRaw } from "@/utils/realpath";
 import { trustStorePath } from "@/trust";
+import { realOrRaw } from "@/utils/realpath";
 
 let root: string;
 beforeEach(() => {

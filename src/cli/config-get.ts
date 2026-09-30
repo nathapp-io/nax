@@ -7,8 +7,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "../config/defaults";
-import { findProjectDir, globalConfigPath } from "../config/loader";
+import { globalConfigPath } from "../config/loader";
 import { deepMergeConfig } from "../config/merger";
+import { findProjectDir } from "../config/paths";
 
 /**
  * Load and parse a JSON config file.
@@ -47,7 +48,7 @@ export async function loadGlobalConfig(): Promise<Record<string, unknown>> {
  * @returns Project config object or null if not found
  */
 export async function loadProjectConfig(): Promise<Record<string, unknown> | null> {
-  const projectDir = findProjectDir();
+  const projectDir = findProjectDir(process.cwd());
   if (!projectDir) return null;
 
   const projectPath = join(projectDir, "config.json");

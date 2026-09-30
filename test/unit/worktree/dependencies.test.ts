@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeFakeClock, makeNaxConfig, makeSpawn, makeSpawnResult, makeTempDir, useUntrustedRegistry } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeFakeClock,
+  makeNaxConfig,
+  makeSpawn,
+  makeSpawnResult,
+  makeTempDir,
+  useUntrustedRegistry,
+} from "@test/helpers";
 import { realOrRaw } from "@/utils/realpath";
 import {
   _worktreeDependencyDeps,
@@ -153,7 +161,9 @@ describe("prepareWorktreeDependencies — US-006 trust backstop", () => {
     const config = makeNaxConfig({
       execution: { worktreeDependencies: { mode: "provision", setupCommand: "echo hi" } },
     });
-    await expect(prepareWorktreeDependencies({ projectRoot: project, worktreeRoot, storyId: "US-001", config })).rejects.toMatchObject({
+    await expect(
+      prepareWorktreeDependencies({ projectRoot: project, worktreeRoot, storyId: "US-001", config }),
+    ).rejects.toMatchObject({
       code: "PROJECT_UNTRUSTED",
       context: { surface: "worktree-setup" },
     });

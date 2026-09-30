@@ -9,7 +9,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanupTempDir, makeSpawn, makeSpawnResult, makeTempDir, useUntrustedRegistry, withTimerSpy } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeSpawn,
+  makeSpawnResult,
+  makeTempDir,
+  useUntrustedRegistry,
+  withTimerSpy,
+} from "@test/helpers";
 import { realOrRaw } from "@/utils/realpath";
 import { _executorDeps, appendForceExitFlag, executeWithTimeout, normalizeEnvironment } from "@/verification";
 

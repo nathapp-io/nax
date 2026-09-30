@@ -42,7 +42,24 @@ export function markTrusted(root: string): void {
  * instead of running repository code.
  */
 export async function assertTrusted(path: string, surface: TrustSurface): Promise<void> {
-  const normalized = await normalizeTrustPath(path);
+  refuseUnlessTrusted(await normalizeTrustPath(path), surface);
+}
+
+/**
+ * The synchronous form of {@link assertTrusted}: same normalization, same
+ * coverage rule, same refusal, but with no microtask boundary between the
+ * check and the code that follows it. For spawn sites whose flow depends on
+ * staying synchronous — the worktree provisioner arms its kill timer inside
+ * `runArgv` before its first await, and the BUG-13 test drives that timer off
+ * a virtual clock swept on a fixed microtask schedule; one `await` in between
+ * and the check would land after the sweep.
+ */
+export function assertTrustedSync(path: string, surface: TrustSurface): void {
+  refuseUnlessTrusted(normalizeTrustPathSync(path), surface);
+}
+
+/** Shared refusal body of `assertTrusted` / `assertTrustedSync`. */
+function refuseUnlessTrusted(normalized: string, surface: TrustSurface): void {
   for (const root of trustedRoots) {
     if (covers(root, normalized)) return;
   }

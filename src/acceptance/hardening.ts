@@ -16,6 +16,7 @@ import type { PRD, UserStory } from "../prd/types";
 import { detectLanguage as _detectLanguage } from "../project/detector";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { parseTestFailures } from "../test-runners/ac-parser";
+import { assertTrusted } from "../trust";
 import { storyWorkdir } from "../utils/path-frame";
 import { killProcessGroup } from "../utils/process-kill";
 import { buildAcceptanceRunCommand, generateSkeletonTests } from "./generator";
@@ -74,6 +75,12 @@ async function processPackageGroup(
   language: string | undefined,
   result: HardeningResult,
 ): Promise<void> {
+  // US-006: the LLM-refined acceptance command and the LLM-generated test file
+  // it runs are repository-controlled and spawned unsandboxed — refuse before
+  // packages.resolve, any LLM call, the test-file write or the spawn. The
+  // throw reaches runHardeningPass's non-blocking outer catch, which logs the
+  // hardening failure and leaves the pass result empty.
+  await assertTrusted(packageDir, "acceptance-command");
   const logger = getSafeLogger();
 
   // Refine suggested criteria for this group
