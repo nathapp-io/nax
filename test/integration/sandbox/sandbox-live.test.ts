@@ -23,6 +23,7 @@ import { type AskResolver, chainAskLinks } from "@/permissions";
 import {
   _resetSandboxRegistryForTests,
   createCommandLauncher,
+  LIKELY_SANDBOX_DENIAL,
   probeSandboxOnce,
   resetSandboxBackend,
   runTmpRoot,
@@ -434,13 +435,16 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
           expect(result.exitCode).not.toBe(0);
           // The non-zero exit has to be the SANDBOX, not a shell typo or a
           // missing parent directory — `echo x > <path>` also exits non-zero with
-          // ENOENT on a well-formed command whose target dir is absent, and that
-          // would satisfy the exit-code and existsSync assertions above while
-          // proving nothing about /tmp/claude. These are the two errnos a
-          // seatbelt write refusal raises (LIKELY_SANDBOX_DENIAL in
-          // src/sandbox/messages.ts names the same pair), so a match is what
-          // ties the refusal to the deny rather than to the command's spelling.
-          expect(result.stderr).toMatch(/Operation not permitted|Read-only file system/);
+          // ENOENT on a well-formed command whose target dir is absent, and the
+          // exit code on its own cannot tell the two apart. LIKELY_SANDBOX_DENIAL
+          // is the errno pair nax itself matches to call a failure a sandbox
+          // denial (launcher.ts:161 computes `denied` from it), so a match is
+          // what ties the refusal to the deny rather than to the command's
+          // spelling.
+          expect(result.stderr).toMatch(LIKELY_SANDBOX_DENIAL);
+          // …and on THIS path. Without it, an EPERM raised for some other write
+          // would satisfy the line above just as well.
+          expect(result.stderr).toContain(stray);
           expect(existsSync(stray)).toBe(false);
         } finally {
           if (existsSync(stray)) rmSync(stray, { force: true });
@@ -461,7 +465,12 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
         try {
           const launcher = await confinedLauncher(runRoot, sessionDir);
 
-          const result = await launcher.run(request("cat <<'EOF' > \"$TMPDIR/heredoc.txt\"\nbody\nEOF\necho ok"));
+          // The heredoc write is LAST on purpose. A shell script's exit status is
+          // its LAST statement's, so with `echo ok` last the status would be
+          // echo's and would stay 0 even when the denied write failed — the exit
+          // code would assert nothing. Written this way, exit 0 means the write
+          // itself succeeded.
+          const result = await launcher.run(request("echo ok\ncat <<'EOF' > \"$TMPDIR/heredoc.txt\"\nbody\nEOF"));
 
           expect(result.exitCode).toBe(0);
           // Under the SESSION dir, not merely writable somewhere: the launcher's

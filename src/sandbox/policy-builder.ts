@@ -156,9 +156,9 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
   //
   // Nothing needs the grant instead: a session is confined only when it HAS a temp
   // dir, and `runWrapped` prefixes the command with
-  // `export TMPDIR=<that dir> TMP=… TEMP=…` (src/sandbox/launcher.ts:123),
+  // `export TMPDIR=<that dir> TMP=… TEMP=…` (src/sandbox/launcher.ts:138),
   // replacing srt's value before the agent's command runs. That prefix rides on
-  // `createCommandLauncher`'s per-run mkdir (src/sandbox/launcher.ts:179), so it is
+  // `createCommandLauncher`'s per-run mkdir (src/sandbox/launcher.ts:194), so it is
   // conditional — when the mkdir fails the override is dropped and the agent's
   // `TMPDIR` is srt's `/tmp/claude` again, which is why that case needs deciding
   // before a deny can be relied on.
