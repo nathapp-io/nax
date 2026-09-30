@@ -10,7 +10,28 @@ import { rename, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { isProcessAlive } from "@/utils/process-alive";
+import { realOrRaw } from "@/utils/realpath";
 import { getLogger } from "../logger";
+
+/** Serialize mutations of each lock within this process across asynchronous I/O. */
+const pendingLockOperations = new Map<string, Promise<void>>();
+
+async function serializeLockOperation<T>(workdir: string, operation: () => Promise<T>): Promise<T> {
+  const key = realOrRaw(path.resolve(workdir));
+  const previous = pendingLockOperations.get(key);
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  pendingLockOperations.set(key, current);
+  try {
+    await previous;
+    return await operation();
+  } finally {
+    release();
+    if (pendingLockOperations.get(key) === current) pendingLockOperations.delete(key);
+  }
+}
 
 /**
  * Injectable seam for the stale-lock rename step, so tests can deterministically
@@ -181,11 +202,10 @@ async function claimReclaimableLock(
     const current = await Bun.file(lockPath)
       .text()
       .catch(() => null);
-    // Already reclaimed by an earlier mutex holder: nothing to discard, and the
-    // caller's exclusive create arbitrates the rest. A different record means a
-    // live lock replaced the one we observed — leave it strictly alone.
-    if (current === null) return { action: "discard" };
-    if (current !== observedContent) return { action: "back-off", holder };
+    // A vanished record was already claimed; back off rather than creating
+    // from a stale observation. Name the actual holder if the record changed.
+    if (current === null) return { action: "back-off", holder };
+    if (current !== observedContent) return { action: "back-off", holder: parseHolder(current) ?? holder };
     return await discardObservedLock(lockPath, observedContent, lockData);
   } finally {
     await unlink(mutexPath).catch(() => {});
@@ -215,6 +235,26 @@ async function discardObservedLock(
   lockData: { pid: number; host?: string } | null,
 ): Promise<ReclaimClaimOutcome> {
   const tombstonePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
+
+  // The per-path operation queue prevents same-process acquire/release calls
+  // from replacing the lock between this asynchronous verification and rename.
+  // Cross-process replacements are caught by the tombstone check below.
+  let currentContent: string | null;
+  try {
+    currentContent = await Bun.file(lockPath).text();
+  } catch (readError) {
+    if ((readError as NodeJS.ErrnoException).code === "ENOENT") {
+      // Another claimant already renamed the lock away — back off.
+      return { action: "back-off", holder: holderRefusal(lockData).holder };
+    }
+    throw readError;
+  }
+  if (currentContent !== observedContent) {
+    // lockPath now holds a lock we never observed (a fresh live lock) —
+    // refuse without stealing it, naming what is actually there.
+    return { action: "back-off", holder: parseHolder(currentContent) ?? holderRefusal(lockData).holder };
+  }
+
   try {
     await _lockDeps.rename(lockPath, tombstonePath);
   } catch (renameError) {
@@ -267,6 +307,10 @@ async function discardObservedLock(
  * - Re-acquires lock after removal
  */
 export async function acquireLock(workdir: string): Promise<LockAcquisitionResult> {
+  return serializeLockOperation(workdir, () => acquireLockExclusive(workdir));
+}
+
+async function acquireLockExclusive(workdir: string): Promise<LockAcquisitionResult> {
   const lockPath = path.join(workdir, "nax.lock");
   const lockFile = Bun.file(lockPath);
 
@@ -360,6 +404,10 @@ export async function acquireLock(workdir: string): Promise<LockAcquisitionResul
  * @param workdir - Working directory to unlock
  */
 export async function releaseLock(workdir: string): Promise<void> {
+  return serializeLockOperation(workdir, () => releaseLockExclusive(workdir));
+}
+
+async function releaseLockExclusive(workdir: string): Promise<void> {
   const lockPath = path.join(workdir, "nax.lock");
   try {
     await unlink(lockPath);

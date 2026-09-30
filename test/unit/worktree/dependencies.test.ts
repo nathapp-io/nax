@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeFakeClock, makeNaxConfig, makeSpawn, makeSpawnResult } from "@test/helpers";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import {
+  cleanupTempDir,
+  makeFakeClock,
+  makeNaxConfig,
+  makeSpawn,
+  makeSpawnResult,
+  makeTempDir,
+  useUntrustedRegistry,
+} from "@test/helpers";
+import { realOrRaw } from "@/utils/realpath";
 import {
   _worktreeDependencyDeps,
   prepareWorktreeDependencies,
@@ -132,5 +143,44 @@ describe("prepareWorktreeDependencies", () => {
     expect(killedSignal).toBe("SIGKILL");
     // The finally block cleared the timer; nothing left armed.
     expect(clock.pending()).toBe(0);
+  });
+});
+
+describe("prepareWorktreeDependencies — US-006 trust backstop", () => {
+  useUntrustedRegistry();
+  let project: string;
+  afterEach(() => {
+    _worktreeDependencyDeps.spawn = originalSpawn;
+    cleanupTempDir(project);
+  });
+
+  test("US-006 AC11: rejects an untrusted worktree setup command", async () => {
+    project = realOrRaw(makeTempDir("worktree-setup-untrusted-"));
+    const worktreeRoot = join(project, ".nax-wt", "w1");
+    mkdirSync(worktreeRoot, { recursive: true });
+    const config = makeNaxConfig({
+      execution: { worktreeDependencies: { mode: "provision", setupCommand: "echo hi" } },
+    });
+    await expect(
+      prepareWorktreeDependencies({ projectRoot: project, worktreeRoot, storyId: "US-001", config }),
+    ).rejects.toMatchObject({
+      code: "PROJECT_UNTRUSTED",
+      context: { surface: "worktree-setup" },
+    });
+  });
+
+  test("US-006 AC12: does not spawn setup for an untrusted worktree", async () => {
+    project = realOrRaw(makeTempDir("worktree-setup-untrusted-"));
+    const worktreeRoot = join(project, ".nax-wt", "w1");
+    mkdirSync(worktreeRoot, { recursive: true });
+    const spawn = makeSpawn();
+    _worktreeDependencyDeps.spawn = spawn.spawn;
+    await prepareWorktreeDependencies({
+      projectRoot: project,
+      worktreeRoot,
+      storyId: "US-001",
+      config: makeNaxConfig({ execution: { worktreeDependencies: { mode: "provision", setupCommand: "echo hi" } } }),
+    }).catch(() => undefined);
+    expect(spawn.calls).toHaveLength(0);
   });
 });

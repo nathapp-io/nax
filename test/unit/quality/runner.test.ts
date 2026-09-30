@@ -13,8 +13,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeSpawn, makeSpawnResult, withDebugSpy, withInfoSpy } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeSpawn,
+  makeSpawnResult,
+  makeTempDir,
+  useUntrustedRegistry,
+  withDebugSpy,
+  withInfoSpy,
+} from "@test/helpers";
 import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
+import { realOrRaw } from "@/utils/realpath";
 
 // ---------------------------------------------------------------------------
 // Mock helpers
@@ -583,6 +592,39 @@ describe("runQualityCommand with a list", () => {
     expect(stub.calls).toHaveLength(0);
     expect(result.success).toBe(false);
     expect(result.output).toContain("empty command");
+  });
+});
+
+describe("runQualityCommand — US-006 trust backstop", () => {
+  useUntrustedRegistry();
+  let project: string;
+  let originalSpawn: typeof _qualityRunnerDeps.spawn;
+
+  beforeEach(() => {
+    project = realOrRaw(makeTempDir("quality-untrusted-"));
+    originalSpawn = _qualityRunnerDeps.spawn;
+  });
+  afterEach(() => {
+    _qualityRunnerDeps.spawn = originalSpawn;
+    cleanupTempDir(project);
+  });
+
+  test("US-006 AC1: rejects an untrusted project with the quality-command surface", async () => {
+    const spawn = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn.spawn;
+    await expect(
+      runQualityCommand({ commandName: "test", command: "echo hi", workdir: project }),
+    ).rejects.toMatchObject({
+      code: "PROJECT_UNTRUSTED",
+      context: { surface: "quality-command" },
+    });
+  });
+
+  test("US-006 AC2: does not spawn a command for an untrusted project", async () => {
+    const spawn = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn.spawn;
+    await runQualityCommand({ commandName: "test", command: "echo hi", workdir: project }).catch(() => undefined);
+    expect(spawn.calls).toHaveLength(0);
   });
 });
 

@@ -117,6 +117,8 @@ export { cleanupTempDir, makeTempDir, withTempDir } from "./temp";
 export { waitForCondition, withTimeout } from "./timeout";
 export type { TimerSpyResult } from "./timer-spy";
 export { withTimerSpy } from "./timer-spy";
+export { useUntrustedRegistry } from "./trust";
+export { loadTrustModule, type TrustModule, trustFn } from "./trust-module";
 export { makeTurnResult } from "./turn-result";
 export { withDebugSpy, withInfoSpy, withWarnSpy } from "./warn-spy";
 export { type MockWorktreeManager, makeWorktreeManager } from "./worktree-manager";

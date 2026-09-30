@@ -4,7 +4,6 @@
  * Merges global + project config with defaults.
  */
 
-import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
@@ -29,8 +28,7 @@ import { rejectGlobalOnlyKeys } from "./global-only-keys";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { packageConfigCache } from "./package-config-cache";
-import { MAX_DIRECTORY_DEPTH } from "./path-security";
-import { globalConfigDir, PROJECT_NAX_DIR } from "./paths";
+import { findProjectDir, globalConfigDir, PROJECT_NAX_DIR } from "./paths";
 import {
   loadProfile,
   loadProfileEnv,
@@ -91,7 +89,7 @@ function resolveProjectPaths(startDir: string | undefined): { projDir: string | 
     ? basename(startDir) === PROJECT_NAX_DIR
       ? startDir
       : findProjectDir(startDir)
-    : findProjectDir();
+    : findProjectDir(process.cwd());
 
   const projectRoot = startDir
     ? basename(startDir) === PROJECT_NAX_DIR
@@ -279,25 +277,6 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
   }
 
   return result.data as NaxConfig;
-}
-
-/** Find project nax directory (walks up from cwd) */
-export function findProjectDir(startDir: string = process.cwd()): string | null {
-  let dir = resolve(startDir);
-  let depth = 0;
-
-  while (depth < MAX_DIRECTORY_DEPTH) {
-    const candidate = join(dir, PROJECT_NAX_DIR);
-    if (existsSync(join(candidate, "config.json"))) {
-      return candidate;
-    }
-    const parent = join(dir, "..");
-    if (parent === dir) break; // Root reached
-    dir = parent;
-    depth++;
-  }
-
-  return null;
 }
 
 /**

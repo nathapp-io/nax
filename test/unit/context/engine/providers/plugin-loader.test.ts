@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { cleanupTempDir, makeTempDir, useUntrustedRegistry } from "@test/helpers";
 import type { ContextPluginProviderConfig } from "@/config/runtime-types";
 import type { ContextProviderResult, IContextProvider } from "@/context/engine";
 import {
@@ -46,6 +47,38 @@ beforeEach(() => {
 });
 afterEach(() => {
   _pluginLoaderDeps.dynamicImport = origDynamicImport;
+});
+
+describe("loadPluginProviders — US-005 trust backstop", () => {
+  useUntrustedRegistry();
+  let project = "";
+  beforeEach(() => {
+    project = makeTempDir();
+  });
+  afterEach(() => cleanupTempDir(project));
+
+  test("US-005 AC6: rejects an enabled project provider with PROJECT_UNTRUSTED and its surface", async () => {
+    await expect(loadPluginProviders([makeConfig("./prov.ts")], project)).rejects.toMatchObject({
+      code: "PROJECT_UNTRUSTED",
+      context: { surface: "context-plugin-providers" },
+    });
+  });
+
+  test("US-005 AC7: refuses before importing an enabled project provider", async () => {
+    let imported = false;
+    _pluginLoaderDeps.dynamicImport = async () => {
+      imported = true;
+      return { default: makeProvider("provider") };
+    };
+    await expect(loadPluginProviders([makeConfig("./prov.ts")], project)).rejects.toMatchObject({
+      code: "PROJECT_UNTRUSTED",
+    });
+    expect(imported).toBe(false);
+  });
+
+  test("US-005 AC8: returns an empty list without trust when all providers are disabled", async () => {
+    expect(await loadPluginProviders([makeConfig("./prov.ts", { enabled: false })], project)).toEqual([]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

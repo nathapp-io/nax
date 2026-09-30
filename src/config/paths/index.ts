@@ -4,9 +4,11 @@
  * Provides path resolution for global and project-level config directories.
  */
 
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { NaxError } from "@/errors";
+import { MAX_DIRECTORY_DEPTH } from "../path-security";
 
 const GLOBAL_CONFIG_DIR_ENV = "NAX_GLOBAL_CONFIG_DIR";
 
@@ -153,4 +155,29 @@ export function toolAuditDir(anchor: ToolAuditAnchor, featureId?: string): strin
   const outputDir = anchor.outputDir?.trim();
   const base = outputDir ? join(outputDir, "tool-audit") : join(anchor.root, PROJECT_NAX_DIR, "tool-audit");
   return featureId ? join(base, featureId) : base;
+}
+
+/**
+ * Find the project `.nax/` directory by walking up from `startDir`.
+ *
+ * Takes no cwd default on purpose: `process.cwd()` is a CLI-boundary bootstrap
+ * value, and this module is imported from everywhere. Callers at that boundary
+ * (`loadConfig`, the CLI commands) pass `process.cwd()` themselves.
+ */
+export function findProjectDir(startDir: string): string | null {
+  let dir = resolve(startDir);
+  let depth = 0;
+
+  while (depth < MAX_DIRECTORY_DEPTH) {
+    const candidate = join(dir, PROJECT_NAX_DIR);
+    if (existsSync(join(candidate, "config.json"))) {
+      return candidate;
+    }
+    const parent = join(dir, "..");
+    if (parent === dir) break; // Root reached
+    dir = parent;
+    depth++;
+  }
+
+  return null;
 }

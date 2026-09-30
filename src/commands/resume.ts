@@ -141,6 +141,11 @@ export function registerResumeCommand(program: Command): void {
     .requiredOption("-f, --feature <name>", "Feature name")
     .option("-d, --dir <path>", "Working directory", process.cwd())
     .action(async (cmdOpts: { feature: string; dir: string }) => {
+      // US-003: refuse an untrusted project before anything in this action
+      // reads it — first statement, ahead of every dynamic import below.
+      const { runTrustGate } = await import("../cli");
+      await runTrustGate(cmdOpts.dir);
+
       const { findProjectDir, validateDirectory } = await import("../config");
       const { run } = await import("../execution");
       const { applyResumeModeDeps } = await import("../execution/checkpoint");

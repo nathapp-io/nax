@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { buildAllowedEnv } from "../agents/shared/env";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
+import { assertTrusted } from "../trust";
 import { parseCommandToArgv } from "../utils/command-argv";
 import { loadJsonFile } from "../utils/json-file";
 import { killProcessGroup } from "../utils/process-kill";
@@ -316,6 +317,11 @@ export async function fireHook(
   // Fire project hook (independent of global hook result)
   const projectHookDef = config.hooks?.[event];
   if (projectHookDef && projectHookDef.enabled !== false) {
+    // Trust backstop (US-005): a project hook is repository-controlled code.
+    // Asserted outside the try below — executeHook failures are logged and
+    // swallowed, and a trust refusal must propagate to the caller. The global
+    // hook branch above is exempt (operator-machine controlled, not the repo).
+    await assertTrusted(workdir, "hooks");
     try {
       const result = await executeHook(projectHookDef, { ...ctx, event }, workdir);
       if (!result.success) {

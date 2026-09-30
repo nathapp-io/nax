@@ -102,6 +102,7 @@ See [docs/](docs/) for full guides on configuration, test strategies, monorepo s
 | [`nax agents`](docs/guides/cli-reference.md#nax-agents) | List available coding agents |
 | `nax auth` | Manage provider credentials for the native agent (`login`, `import`, `list`, `rm`) |
 | [`nax approvals`](docs/guides/cli-reference.md#nax-approvals-list) | List or revoke remembered command approvals (`list`, `rm`) |
+| [`nax trust`](docs/guides/cli-reference.md#nax-trust) | Trust or untrust project folders (`list`, `add`, `rm`, `check`) |
 | `nax mcp lock` | Pin configured MCP servers' tool surface to `.nax/mcp-lock.json` |
 | [`nax config`](docs/guides/cli-reference.md#nax-config) | Display the effective merged config (`--explain`, `--diff`); `nax config profile` manages config profiles |
 | [`nax curator`](docs/guides/cli-reference.md#nax-curator-status) | Inspect, commit, or garbage-collect curator proposals |
@@ -183,6 +184,20 @@ See [Sandbox & Command Safety](docs/guides/sandbox-and-command-safety.md), [Appr
 ---
 
 ## Key Concepts
+
+### Project trust
+
+nax runs repository-controlled code — project plugins, context plugin providers, hooks, MCP servers and the quality / test / acceptance / setup commands — unsandboxed on the host. Before a gated command (`nax run`, `nax plan`, `nax mcp lock`, …) acts on a project, that project's folder must be trusted, and a refusal exits 2 with `run: nax trust add <root>`.
+
+```bash
+nax trust add "$PWD"          # trust this checkout (asks for confirmation)
+nax trust list                # what is trusted, and which entry covers the cwd
+nax trust check --json        # machine-readable answer for a script
+```
+
+Trust is hierarchical and stored once per machine (`~/.nax/trust.json`): an entry for a folder covers that folder and **every folder beneath it**, so trusting a parent covers the clones, worktrees and new projects you create under it later — you do not re-grant trust per checkout. Trusting `/` or your home directory would cover everything you own and is refused unless you pass `--force`. In CI, grant trust once at the top of the job with `nax trust add "$PWD" --yes`, which is a no-op (exit 0) on a cache that already covers the path.
+
+See [`nax trust`](docs/guides/cli-reference.md#nax-trust) for the full surface.
 
 ### Test Strategies
 

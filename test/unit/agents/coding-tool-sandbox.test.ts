@@ -17,6 +17,7 @@ import {
 import { _sessionSandboxDeps, rawRefusalFor, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
 import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "@/config/schemas-sandbox";
 import { _launcherDeps, _resetSandboxRegistryForTests, type LaunchRequest, type SandboxPolicy } from "@/sandbox";
+import { trustStorePath } from "@/trust";
 import { realOrRaw } from "@/utils/realpath";
 
 let root: string;
@@ -140,6 +141,21 @@ describe("resolveSessionSandbox", () => {
     await l.run(req);
     expect(backend.calls[0]?.policy.denyWrite).toContain(realOrRaw(sibling));
     expect(tripped).toBe(2);
+  });
+
+  test("US-006 AC15: the enabled session launcher denies the trust store in its backend policy", async () => {
+    const backend = makeFakeSandboxBackend();
+    _sessionSandboxDeps.backendFor = () => backend;
+    _sessionSandboxDeps.probe = async () => ({ available: true });
+    const launcher = await resolveSessionSandbox({ config: enabled, root, needsLauncher: true });
+    await launcher.run({
+      spec: { kind: "shell", shell: "/bin/sh", command: "echo hi" },
+      root,
+      cwd: root,
+      timeoutMs: 5000,
+      stripEnvVars: [],
+    });
+    expect(backend.calls[0]?.policy.denyWrite).toContain(realOrRaw(trustStorePath()));
   });
 
   test("enabled + unavailable: unavailable launcher and a raw refusal", async () => {

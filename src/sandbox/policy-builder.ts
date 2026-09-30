@@ -36,6 +36,8 @@ export interface SandboxPolicyInput {
   readonly naxEntries: readonly string[];
   readonly credentialFiles: readonly string[];
   readonly approvalsFile?: string;
+  /** US-006 — the trust store (`trustStorePath()`), denied so a command cannot rewrite its own trust. */
+  readonly trustStoreFile?: string;
   readonly home: string;
   readonly tempRoots: readonly string[];
   /**
@@ -190,6 +192,7 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     ...gitDenies(root, input.git),
     ...input.gitGuardFiles,
     ...(input.approvalsFile !== undefined ? [input.approvalsFile] : []),
+    ...(input.trustStoreFile !== undefined ? [input.trustStoreFile] : []),
     ...(darwin && confined ? SRT_MACOS_TMPDIR_DENIES : []),
   ]);
   const denyRead = literal([

@@ -6,7 +6,8 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { findProjectDir, globalConfigPath } from "../config/loader";
+import { globalConfigPath } from "../config/loader";
+import { findProjectDir } from "../config/paths";
 import type { NaxConfig } from "../config/schema";
 import { FIELD_DESCRIPTIONS } from "./config-descriptions";
 import { deepDiffConfigs } from "./config-diff";
@@ -122,7 +123,7 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
  */
 export function determineConfigSources(startDir?: string): { global: string | null; project: string | null } {
   const globalPath = globalConfigPath();
-  const projectDir = findProjectDir(startDir);
+  const projectDir = findProjectDir(startDir ?? process.cwd());
   const projectPath = projectDir ? join(projectDir, "config.json") : null;
 
   return {

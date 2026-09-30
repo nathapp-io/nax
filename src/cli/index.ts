@@ -161,3 +161,12 @@ export {
   type StatusViewDeps,
   type StatusViewOptions,
 } from "./status-dispatch";
+export {
+  _cliTrustDeps,
+  registerTrustCommand,
+  trustAddCommand,
+  trustCheckCommand,
+  trustListCommand,
+  trustRmCommand,
+} from "./trust";
+export { _trustGateCliDeps, runTrustGate } from "./trust-gate";

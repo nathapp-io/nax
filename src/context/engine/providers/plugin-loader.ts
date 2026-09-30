@@ -22,6 +22,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import type { ContextPluginProviderConfig } from "@/config/runtime-types";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
+import { assertTrusted } from "@/trust";
 import type { IContextProvider } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,6 +165,12 @@ export async function loadPluginProviders(
   const enabled = configs.filter((c) => c.enabled !== false);
 
   if (enabled.length === 0) return [];
+
+  // Trust backstop (US-005): every merged provider entry is repository-controlled
+  // (project config, profiles and per-package overrides all feed the merge). One
+  // assertion for the whole batch, before any import — inside loadSingleProvider
+  // the allSettled below would convert the refusal into a silent skip.
+  await assertTrusted(workdir, "context-plugin-providers");
 
   const results = await Promise.allSettled(enabled.map((entry) => loadSingleProvider(entry, workdir, logger)));
 

@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, win32 } from "node:path";
 import { makeTempDir } from "@test/helpers";
-import { findProjectDir } from "@/config/loader";
 import {
   _pathSecurityDeps,
   isWithinDirectory,
@@ -10,6 +9,7 @@ import {
   validateDirectory,
   validateFilePath,
 } from "@/config/path-security";
+import { findProjectDir } from "@/config/paths";
 import { NaxError } from "@/errors";
 
 // Create a temporary test directory

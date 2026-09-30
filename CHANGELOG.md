@@ -12,6 +12,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **nax now requires explicit folder trust before it runs repository-controlled code.** A gated command
+  (`nax run`, `nax plan`, `nax mcp lock`, …) in an untrusted project exits 2 with
+  `Project not trusted: <root>` / `run: nax trust add <root>` instead of proceeding. nax loads project
+  plugins, context plugin providers, hooks, MCP servers and the quality / test / acceptance / setup
+  commands from the repository and runs them unsandboxed on your machine; nothing recorded trust before,
+  so an upgrade refuses everything until you grant it. Existing projects need one command:
+  `nax trust add "$PWD"`, which prompts on a terminal and writes
+  `~/.nax/trust.json` (or `$NAX_GLOBAL_CONFIG_DIR/trust.json`). Trust is hierarchical — an entry for a
+  folder covers every folder beneath it, so trusting a parent also covers the clones, worktrees and new
+  projects you create under it later. `/` and your home directory are refused unless you pass `--force`.
+  Manage the store with `nax trust list`, `nax trust add`, `nax trust rm` and `nax trust check`
+  (`--json` on `list`/`check`); see the [CLI reference](docs/guides/cli-reference.md#nax-trust).
+  **In CI**, grant trust once at the start of the job — `--yes` skips the prompt and requires no TTY, and
+  the same command is a no-op (exit 0) on a cache that already covers the path:
+
+  ```bash
+  nax trust add "$PWD" --yes
+  ```
+
 - `autoMode.defaultAgent`, `autoMode.fallbackOrder`, and `context.v2.fallback` config fields removed. Use `agent.default` and `agent.fallback.map` instead (ADR-012 Phase 6). Loading a config containing any of these keys throws `NaxError CONFIG_LEGACY_AGENT_KEYS` with a per-key migration pointer.
 - **BREAKING (custom permission profiles only):** the agent's file-tool containment root moved from the
   story's package directory to the repo root (single-frame redesign). A custom `scoped` permission

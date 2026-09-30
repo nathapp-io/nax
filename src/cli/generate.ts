@@ -8,7 +8,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import chalk from "chalk";
-import { findProjectDir, loadConfig } from "../config/loader";
+import { loadConfig } from "../config/loader";
+import { findProjectDir } from "../config/paths";
 import type { GenerateOptions, GenerationResult, PackageGenerationResult } from "../context/generator";
 import { discoverPackages, generateAll, generateFor, generateForPackage } from "../context/generator";
 import type { AgentType } from "../context/types";

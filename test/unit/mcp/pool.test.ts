@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { withTimerSpy } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, useUntrustedRegistry, withTimerSpy } from "@test/helpers";
 import type { McpServerConfig } from "@/config";
 import { _mcpClientDeps } from "@/mcp/client";
 import { createMcpPool } from "@/mcp/pool";
+import { markTrusted } from "@/trust";
 
 const original = { ..._mcpClientDeps };
 afterEach(() => Object.assign(_mcpClientDeps, original));
@@ -47,6 +48,55 @@ function fakeSdk(opts: { failFirst?: number; gate?: Promise<void>; listToolsFail
 const servers: Record<string, McpServerConfig> = {
   memory: { command: "fake", args: [], env: {}, stages: ["*"], timeoutMs: 1000, enabled: true },
 };
+
+describe("createMcpPool — US-005 trust backstop", () => {
+  useUntrustedRegistry();
+  let project = "";
+  afterEach(() => cleanupTempDir(project));
+
+  test("US-005 AC12: listTools rejects untrusted MCP with surface mcp", async () => {
+    project = makeTempDir();
+    fakeSdk();
+    const pool = createMcpPool({ servers });
+    await expect(pool.listTools("memory", project)).rejects.toMatchObject({
+      code: "PROJECT_UNTRUSTED",
+      context: { surface: "mcp" },
+    });
+  });
+
+  test("US-005 AC13: listTools refuses before creating a transport", async () => {
+    project = makeTempDir();
+    let transports = 0;
+    Object.assign(_mcpClientDeps, {
+      createTransport: () => {
+        transports++;
+        return { pid: 1, close: async () => {} };
+      },
+    });
+    const pool = createMcpPool({ servers });
+    await expect(pool.listTools("memory", project)).rejects.toMatchObject({ code: "PROJECT_UNTRUSTED" });
+    expect(transports).toBe(0);
+  });
+
+  test("US-005 AC14: call rejects when the project is untrusted", async () => {
+    project = makeTempDir();
+    fakeSdk();
+    const pool = createMcpPool({ servers });
+    await expect(pool.call("memory", project, "t", {}, { timeoutMs: 1000, maxBytes: 1000 })).rejects.toMatchObject({
+      code: "PROJECT_UNTRUSTED",
+    });
+  });
+
+  test("US-005 AC15: trusted listTools creates one transport", async () => {
+    project = makeTempDir();
+    markTrusted(project);
+    const sdk = fakeSdk();
+    const pool = createMcpPool({ servers });
+    await pool.listTools("memory", project);
+    expect(sdk.spawns).toHaveLength(1);
+    await pool.close();
+  });
+});
 
 describe("createMcpPool", () => {
   test("two workdirs against one server id produce two connections", async () => {

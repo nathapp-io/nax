@@ -5,6 +5,8 @@
  * Extracted from execution/verification.ts to eliminate duplication.
  */
 
+import { resolve } from "node:path";
+import { assertTrusted } from "../trust";
 import { withAgentOutputEnv } from "../utils/agent-output-env";
 import { spawn } from "../utils/bun-deps";
 import { killProcessGroup } from "../utils/process-kill";
@@ -99,6 +101,11 @@ export async function executeWithTimeout(
     cwd?: string;
   },
 ): Promise<TestExecutionResult> {
+  // US-006: the test command comes from config and runs unsandboxed — refuse
+  // before spawning unless a trust decision covers the cwd. resolve(".") is
+  // Bun.spawn's own default cwd, so this is the directory that would host the
+  // process either way.
+  await assertTrusted(options?.cwd ?? resolve("."), "test-command");
   const shell = options?.shell ?? "/bin/sh";
   const gracePeriodMs = options?.gracePeriodMs ?? 5000;
   const drainTimeoutMs = options?.drainTimeoutMs ?? 2000;

@@ -11,6 +11,7 @@
 
 import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
+import { assertTrusted } from "../trust";
 import { errorMessage } from "../utils/errors";
 import { killProcessGroup } from "../utils/process-kill";
 import { withAgentOutputEnv } from "../verification/executor";
@@ -276,6 +277,10 @@ async function runSingleCommand(
  * rest.
  */
 export async function runQualityCommand(opts: QualityCommandOptions): Promise<QualityCommandResult> {
+  // US-006: the command comes from merged config (or an auto-detected script)
+  // and runs unsandboxed — refuse before any early return unless a trust
+  // decision covers the workdir.
+  await assertTrusted(opts.workdir, "quality-command");
   const { command } = opts;
   if (typeof command === "string") {
     return await runSingleCommand({ ...opts, command });

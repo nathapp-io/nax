@@ -22,6 +22,7 @@
 import path from "node:path";
 import { getSafeLogger } from "../logger";
 import { normalizeCommandSpec, type QualityCommandSpec } from "../quality/command-spec";
+import { assertTrusted } from "../trust";
 import { spawn } from "../utils/bun-deps";
 import { parseCommandToArgv } from "../utils/command-argv";
 
@@ -80,6 +81,12 @@ export async function maybeRunNewPackageSetup(opts: {
   const { runtime, storyId, packageDir, setupCommand } = opts;
   if (!runtime || !setupCommand) return;
   if (!claimSetup(runtime, packageDir)) return;
+
+  // US-006: the setup command comes from merged quality config and runs
+  // unsandboxed — refuse before the command loop and outside the per-command
+  // catch, so an untrusted package fails the gate instead of being swallowed
+  // as one failed setup entry.
+  await assertTrusted(packageDir, "package-setup");
 
   const logger = getSafeLogger();
   for (const command of normalizeCommandSpec(setupCommand)) {

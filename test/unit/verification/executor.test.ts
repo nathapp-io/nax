@@ -9,7 +9,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeSpawn, makeSpawnResult, withTimerSpy } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeSpawn,
+  makeSpawnResult,
+  makeTempDir,
+  useUntrustedRegistry,
+  withTimerSpy,
+} from "@test/helpers";
+import { realOrRaw } from "@/utils/realpath";
 import { _executorDeps, appendForceExitFlag, executeWithTimeout, normalizeEnvironment } from "@/verification";
 
 describe("appendForceExitFlag (VER-1)", () => {
@@ -88,6 +96,39 @@ describe("normalizeEnvironment", () => {
     const out = normalizeEnvironment({ FOO: "1", AGENT: "1" }, ["FOO"]);
     expect(out.FOO).toBeUndefined();
     expect(out.AGENT).toBe("1");
+  });
+});
+
+describe("executeWithTimeout — US-006 trust backstop", () => {
+  useUntrustedRegistry();
+  let project: string;
+  let originalSpawn: typeof _executorDeps.spawn;
+
+  beforeEach(() => {
+    project = realOrRaw(makeTempDir("executor-untrusted-"));
+    originalSpawn = _executorDeps.spawn;
+  });
+  afterEach(() => {
+    _executorDeps.spawn = originalSpawn;
+    cleanupTempDir(project);
+  });
+
+  test("US-006 AC3: rejects an untrusted cwd with the test-command surface", async () => {
+    await expect(executeWithTimeout("echo hi", 5, undefined, { cwd: project })).rejects.toMatchObject({
+      code: "PROJECT_UNTRUSTED",
+      context: { surface: "test-command" },
+    });
+  });
+
+  test("US-006 AC4: does not spawn for an untrusted cwd", async () => {
+    const spawn = makeSpawn();
+    _executorDeps.spawn = spawn.spawn;
+    await executeWithTimeout("echo hi", 5, undefined, { cwd: project }).catch(() => undefined);
+    expect(spawn.calls).toHaveLength(0);
+  });
+
+  test("US-006 AC5: checks the default cwd when cwd is omitted", async () => {
+    await expect(executeWithTimeout("echo hi", 5)).rejects.toMatchObject({ code: "PROJECT_UNTRUSTED" });
   });
 });
 

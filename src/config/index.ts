@@ -4,7 +4,7 @@ export type { BashApprovalMode } from "./bash-approval";
 export { resolveBashApproval } from "./bash-approval";
 export { rejectGlobalOnlyKeys } from "./global-only-keys";
 export { BASH_DECLARING_STAGES, findInertBashStages } from "./inert-bash-stages";
-export { findProjectDir, globalConfigPath, loadConfig, loadConfigForWorkdir, loadPackageOverride } from "./loader";
+export { globalConfigPath, loadConfig, loadConfigForWorkdir, loadPackageOverride } from "./loader";
 export type { ConfigLoader } from "./loader-runtime";
 export { createConfigLoader } from "./loader-runtime";
 export { mergePackageConfig } from "./merge";
@@ -15,6 +15,7 @@ export { isWithinDirectory, MAX_DIRECTORY_DEPTH, validateDirectory, validateFile
 export {
   featureDir,
   featuresDir,
+  findProjectDir,
   globalConfigDir,
   PROJECT_FEATURES_DIR,
   PROJECT_NAX_DIR,
