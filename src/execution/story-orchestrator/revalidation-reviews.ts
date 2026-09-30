@@ -1,26 +1,16 @@
 /**
- * US-003 — the revalidation sweep's per-phase dispatch step.
- *
- * The rectification validate sweep used to dispatch each selected phase through
- * `runPhase` one at a time. `rectification.ts` is already at 597 of its 600
- * allowed source lines, so the dispatch step lives here instead: it dispatches
- * `phase` through `runPhase` — or, when `phase` is `semantic-review` and
- * `shouldRunReviewsConcurrently` is true for the whole sweep, dispatches the
- * review pair through `runReviewPair` — and reports the kinds this call
- * dispatched so the caller can skip them when the sweep reaches them again.
- *
- * Review config is resolved as `ctx.config?.review ?? ctx.packageView.config.review`,
- * the same expression `nbf-deps.ts` and the canonical loop use.
+ * Dispatch one phase in rectification's validation sweep, pairing the two
+ * reviews only when the complete selected sweep permits concurrent sessions.
  */
+import type { Finding } from "@/findings";
 import type { CallContext } from "@/operations";
 import type { PhaseTracking } from "./execution-plan-phases";
+import { extractPhaseFindings, phasePassed } from "./phase-eval";
+import { runReviewPair, shouldRunReviewsConcurrently } from "./review-pair";
+import { runPhase } from "./run-phase";
 import type { InternalPhase, PhaseKind } from "./types";
 
-/**
- * Dispatch one phase of the revalidation sweep and return the kinds this call
- * dispatched: just `phase.kind` for the ordinary single-phase dispatch, or both
- * review kinds when the pair ran.
- */
+/** Dispatch `phase` and return every phase kind dispatched by this call. */
 export async function dispatchRevalidationPhase(
   ctx: CallContext,
   phase: InternalPhase,
@@ -28,12 +18,50 @@ export async function dispatchRevalidationPhase(
   tracking: PhaseTracking,
   isThreeSession?: boolean,
 ): Promise<readonly PhaseKind[]> {
-  // STUB — the implementer replaces this body with the real dispatch. The
-  // parameters are named and referenced to keep the signature verbatim.
-  void ctx;
-  void phase;
-  void phases;
-  void tracking;
-  void isThreeSession;
-  return [];
+  const reviewConfig = ctx.config?.review ?? ctx.packageView.config.review;
+  if (phase.kind === "semantic-review" && shouldRunReviewsConcurrently(reviewConfig, phases)) {
+    const semantic = phase;
+    const adversarial = phases.find((candidate) => candidate.kind === "adversarial-review");
+    if (adversarial) {
+      await runReviewPair(ctx, [semantic, adversarial], tracking, isThreeSession);
+      return ["semantic-review", "adversarial-review"];
+    }
+  }
+  await runPhase(ctx, phase.slot, tracking.phaseCosts, tracking.phaseOutputs, isThreeSession);
+  return [phase.kind];
+}
+
+export function phasesForRevalidation(ctx: CallContext, phases: readonly InternalPhase[]): readonly InternalPhase[] {
+  const reviewConfig = ctx.config?.review ?? ctx.packageView.config.review;
+  return shouldRunReviewsConcurrently(reviewConfig, phases)
+    ? phases.filter((phase) => phase.kind !== "adversarial-review")
+    : phases;
+}
+
+export function collectPairedReviewFindings(options: {
+  dispatched: readonly PhaseKind[];
+  phases: readonly InternalPhase[];
+  phaseOutputs: Record<string, unknown>;
+  findings: Finding[];
+  storyId: string | undefined;
+}): boolean {
+  if (options.dispatched.length < 2) return false;
+  const phase = options.phases.find((item) => item.kind === "adversarial-review");
+  if (!phase) return false;
+  const output = options.phaseOutputs[phase.slot.op.name];
+  options.findings.push(...extractPhaseFindings(output));
+  return !phasePassed(phase.slot.op.name, output, options.storyId);
+}
+
+export function isRevalidationFailure(options: {
+  phase: InternalPhase;
+  output: unknown;
+  storyId: string | undefined;
+  quarantinedOnly: boolean;
+  pairedReviewFailed: boolean;
+}): boolean {
+  return (
+    (!phasePassed(options.phase.slot.op.name, options.output, options.storyId) && !options.quarantinedOnly) ||
+    options.pairedReviewFailed
+  );
 }
