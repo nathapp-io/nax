@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-30T07:35:09.737Z",
+  "updatedAt": "2026-09-30T13:53:10.478Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -94,7 +94,7 @@
     "src/execution/runner-completion.ts": { "runCompletionPhase": 48 },
     "src/execution/story-orchestrator/fix-review-strategy.ts": { "=>": 23 },
     "src/execution/story-orchestrator/phase-state.ts": { "=>": 36 },
-    "src/execution/story-orchestrator/rectification.ts": { "runRectification": 49, "=>": 33 },
+    "src/execution/story-orchestrator/rectification.ts": { "runRectification": 49, "=>": 32 },
     "src/execution/story-orchestrator/review-decision.ts": {
       "toReviewDecisionPayload": 23,
       "logUnifiedReviewPhaseResult": 21

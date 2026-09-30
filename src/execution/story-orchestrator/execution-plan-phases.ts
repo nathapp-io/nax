@@ -31,6 +31,7 @@ import type { GateRegressionDetail } from "./phase-eval";
 import { describeGateRegression, phasePassed } from "./phase-eval";
 import { collectOrderedPhases } from "./phase-state";
 import { runRectification } from "./rectification";
+import { runReviewPair, shouldRunReviewsConcurrently } from "./review-pair";
 import { _storyOrchestratorDeps, runPhase } from "./run-phase";
 import type { InternalBuildState, InternalPhase, RectificationResult } from "./types";
 
@@ -136,6 +137,53 @@ async function recordGreenCheckpoint(plan: PlanParams, phaseName: string): Promi
   }
 }
 
+async function runCanonicalReviewPair(options: {
+  plan: PlanParams;
+  tracking: PhaseTracking;
+  semantic: InternalPhase;
+  adversarial: InternalPhase;
+  indices: readonly [number, number];
+  total: number;
+}): Promise<string | undefined> {
+  const { plan, tracking, semantic, adversarial, indices, total } = options;
+  const { ctx, isThreeSession } = plan;
+  const reviews = [semantic, adversarial] as const;
+  try {
+    await runReviewPair(ctx, reviews, tracking, isThreeSession, { indices, total });
+  } catch (error) {
+    for (const review of reviews) {
+      const name = review.slot.op.name;
+      if (name in tracking.phaseOutputs && phasePassed(name, tracking.phaseOutputs[name], ctx.storyId)) {
+        await recordGreenCheckpoint(plan, name);
+      }
+    }
+    throw error;
+  }
+
+  let shortCircuitPhase: string | undefined;
+  for (const review of reviews) {
+    const name = review.slot.op.name;
+    if (phasePassed(name, tracking.phaseOutputs[name], ctx.storyId)) {
+      await recordGreenCheckpoint(plan, name);
+    } else {
+      shortCircuitPhase = name;
+      if (name !== "semantic-review") {
+        getSafeLogger()?.warn("story-orchestrator", "Short-circuiting on phase failure", {
+          storyId: ctx.storyId,
+          phase: name,
+        });
+        break;
+      }
+      getSafeLogger()?.warn(
+        "story-orchestrator",
+        "semantic-review failed — continuing to adversarial-review for a second opinion",
+        { storyId: ctx.storyId, phase: name },
+      );
+    }
+  }
+  return shortCircuitPhase;
+}
+
 /**
  * TDD RED → GREEN → handover contract: a gate failure halts the canonical
  * sequence unconditionally. Verifier and downstream review phases run only on
@@ -188,14 +236,38 @@ export async function runCanonicalLoop(
   const { phaseCosts, phaseOutputs } = tracking;
   const logger = getSafeLogger();
   let shortCircuitPhase: string | undefined;
+  const skippedPhaseIndexes = new Set<number>();
+  const runnablePhases = orderedPhases.filter((phase, index) => {
+    const name = phase.slot.op.name;
+    const alreadyPassed = name in phaseOutputs && phasePassed(name, phaseOutputs[name], ctx.storyId);
+    if (alreadyPassed) skippedPhaseIndexes.add(index);
+    return !alreadyPassed;
+  });
+  const reviewConfig = ctx.config?.review ?? ctx.packageView.config.review;
+  const pairReviews = shouldRunReviewsConcurrently(reviewConfig, runnablePhases);
+  const phasesByKind = new Map(orderedPhases.map((phase, index) => [phase.kind, { phase, index }]));
 
+  let pairedAdversarialIndex: number | undefined;
   for (const [phaseIndex, phase] of orderedPhases.entries()) {
     const name = phase.slot.op.name;
+    if (phaseIndex === pairedAdversarialIndex) continue;
 
-    // Resume skip guard: phases seeded from a prior checkpoint (via
-    // hydrateFromResumePlan) are already green — skip them. Cheap gates are
-    // never seeded, so they always re-execute even on resume.
-    if (name in phaseOutputs && phasePassed(name, phaseOutputs[name], ctx.storyId)) {
+    // Resume skip guard was read once above, before any review dispatch.
+    // Cheap gates are never seeded, so they always re-execute even on resume.
+    if (skippedPhaseIndexes.has(phaseIndex)) continue;
+
+    const adversarial = phasesByKind.get("adversarial-review");
+    if (pairReviews && phase.kind === "semantic-review" && adversarial && adversarial.index > phaseIndex) {
+      pairedAdversarialIndex = adversarial.index;
+      shortCircuitPhase = await runCanonicalReviewPair({
+        plan,
+        tracking,
+        semantic: phase,
+        adversarial: adversarial.phase,
+        indices: [phaseIndex + 1, adversarial.index + 1],
+        total: orderedPhases.length,
+      });
+      if (shortCircuitPhase === "adversarial-review") break;
       continue;
     }
 

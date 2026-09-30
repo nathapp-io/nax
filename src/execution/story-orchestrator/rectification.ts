@@ -10,11 +10,16 @@ import {
   isQuarantinedFlake,
   orderGateLast,
   phaseExplicitlyPassed,
-  phasePassed,
   phasesToRevalidate,
   selectRegressedGateFindings,
 } from "./phase-eval";
 import { deriveRepoScopedFixes } from "./repo-scoped-fix-record";
+import {
+  collectPairedReviewFindings,
+  dispatchRevalidationPhase,
+  isRevalidationFailure,
+  phasesForRevalidation,
+} from "./revalidation-reviews";
 import { _storyOrchestratorDeps, runPhase, withIncreasingFailuresBail } from "./run-phase";
 import type { AnySlot, InternalBuildState, InternalPhase, RectificationOverrides, RectificationResult } from "./types";
 import { EXHAUSTED_EXIT_REASONS } from "./types";
@@ -296,8 +301,6 @@ export async function runRectification(
   // the decline-ledger backing from the run-scoped store so repeated main and
   // resume passes for one (storyId, tier) pair consume a common budget.
   //
-  // Excluded from the nbf (non-blocking-fix) path: it retains its own
-  // independent per-cycle budget (out-of-scope item).
   const storyFixBudgetEnabled =
     !nbfPath && ctx.runtime.configLoader.current().execution?.rectification?.storyScopedFixBudget === true;
   const store = ctx.runtime.storyFixHistory;
@@ -394,6 +397,7 @@ export async function runRectification(
       // pre-rectification, and nbf discards its own tree on gate red regardless — see
       // `SkipPhaseForRectificationInput.nbfPath`.
       const phases = lite ? orderGateLast(selectedWithExtra) : selectedWithExtra;
+      const dispatchPhases = phasesForRevalidation(ctx, phases);
       getSafeLogger()?.debug("story-orchestrator", "rectification validate scope", {
         storyId: ctx.storyId,
         mode: opts?.mode ?? "full",
@@ -402,22 +406,16 @@ export async function runRectification(
       });
       const findings: Finding[] = [];
       let shortCircuited = false;
-      for (const phase of phases) {
-        // isThreeSession forwarded from RectificationOverrides (the plan's session
-        // model) so a three-session run's revalidation `verifier` maps to
-        // `tdd-verifier` (nax#1737 Phase B follow-up). inRectification is NOT set
-        // here — this is the revalidation sweep, not the fix-op dispatch.
-        await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs, overrides?.isThreeSession);
+      for (const phase of dispatchPhases) {
+        const dispatched = await dispatchRevalidationPhase(
+          ctx,
+          phase,
+          phases,
+          { phaseCosts, phaseOutputs },
+          overrides?.isThreeSession,
+        );
         if (shouldSkipPhaseForRectification({ phase, state, phaseOutputs, nbfPath })) {
-          // Carve-out fired: the verifier explicitly passed, so this story is not failed
-          // by the gate here. It still must not swallow a regression rectification just
-          // introduced — that set is precisely what the staleness guard in
-          // `ExecutionPlan.run` will fail the story on, so hand it to the cycle instead of
-          // discarding it and failing later with no repair attempted (#1452).
-          //
-          // Findings only: the short-circuit below stays skipped, preserving the carve-out's
-          // other half — downstream phases still run, since a verifier-passed story should
-          // not have its reviews withheld over a gate the verifier already judged.
+          // Preserve regressed gate findings without short-circuiting the verifier carve-out.
           const carvedOutFindings = selectRegressedGateFindings(
             extractPhaseFindings(phaseOutputs[phase.slot.op.name]),
             overrides?.gateBaselineKeys ?? new Set<string>(),
@@ -444,17 +442,6 @@ export async function runRectification(
             triage: _storyOrchestratorDeps.triage,
           });
         }
-        // #1383 parity. `describeGateRegression` — the predicate that actually decides
-        // keep-vs-discard for this pass — excludes failures the run already quarantined as
-        // flakes. Until #1401 the carve-out hid the whole gate output from the nbf sweep, so
-        // the cycle never had to agree with it; now it does. Without this filter a known
-        // flake firing inside the revalidation window would buy an agent session to "fix" it
-        // (via `full-suite-rectify`, which edits TEST code) and then discard a pass the
-        // keep-decision would have kept — silently walking back #1383.
-        //
-        // nbf-scoped: the main path reaches the same place differently (triage runs there and
-        // relabels quarantined failures to `flaky-test`, which `gatherRectificationFindings`
-        // already drops), so widening this would be an unrelated behaviour change.
         const phaseFindings = extractPhaseFindings(output);
         const blockingFindings = nbfPath
           ? phaseFindings.filter(
@@ -462,12 +449,15 @@ export async function runRectification(
             )
           : phaseFindings;
         findings.push(...blockingFindings);
-        // Mirror the main loop's halt-on-failure contract (spec §2C, PR #1127):
-        // verifier and reviews must never judge broken-gate code, even inside the
-        // rectification revalidation sweep. Findings collected so far feed the next
-        // fix iteration; downstream phases are skipped to avoid stale-verdict pollution.
+        const pairedReviewFailed = collectPairedReviewFindings({
+          dispatched,
+          phases,
+          phaseOutputs,
+          findings,
+          storyId: ctx.storyId,
+        });
         const quarantinedOnly = nbfPath && isQuarantinedOnlyGateFailure(phase, phaseFindings, blockingFindings);
-        if (!phasePassed(phase.slot.op.name, output, ctx.storyId) && !quarantinedOnly) {
+        if (isRevalidationFailure({ phase, output, storyId: ctx.storyId, quarantinedOnly, pairedReviewFailed })) {
           getSafeLogger()?.warn("story-orchestrator", "Short-circuiting revalidation on phase failure", {
             storyId: ctx.storyId,
             phase: phase.slot.op.name,

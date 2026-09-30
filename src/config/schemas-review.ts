@@ -114,11 +114,12 @@ export const AdversarialReviewConfigSchema = z.object({
    */
   excludePatterns: z.array(z.string()).optional(),
   /**
-   * When true, run semantic and adversarial reviewers concurrently via Promise.all.
-   * Default false (conservative rollout). Only activates when session count is within cap.
+   * When true, semantic-review and adversarial-review run concurrently when both phases are
+   * about to run and `maxConcurrentSessions` is 2 or more; otherwise they run sequentially.
+   * Default false.
    */
   parallel: z.boolean().default(false),
-  /** Maximum combined reviewer sessions before falling back to sequential. Default 2. */
+  /** Minimum available reviewer sessions required for concurrent semantic/adversarial review. Default 2. */
   maxConcurrentSessions: z.number().int().min(1).max(4).default(2),
   /**
    * When true (default), after the first adversarial pass, if all blocking findings
