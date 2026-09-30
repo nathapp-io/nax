@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, realpathSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { assertNaxError, cleanupTempDir, loadTrustModule, makeTempDir } from "@test/helpers";
-import { NaxError } from "@/errors";
+import type { NaxError } from "@/errors";
 
 const trust = await loadTrustModule();
 const ADDED_AT = "2026-09-30T00:00:00.000Z";
@@ -47,7 +47,10 @@ function writeStore(path: string): void {
 }
 
 async function expectProjectUntrusted(action: Promise<unknown>): Promise<NaxError> {
-  const caught = await action.then(() => null, (err: unknown) => err);
+  const caught = await action.then(
+    () => null,
+    (err: unknown) => err,
+  );
   assertNaxError(caught, "trust gate rejection");
   expect(caught.code).toBe("PROJECT_UNTRUSTED");
   return caught;
@@ -57,7 +60,7 @@ describe("trust registry", () => {
   test("US-002 AC1: rejects an unmarked root with the execution surface in error context", async () => {
     const error = await expectProjectUntrusted(trust.assertTrusted(workdir, "hooks"));
 
-    expect(error.context.surface).toBe("hooks");
+    expect(error.context?.surface).toBe("hooks");
   });
 
   test("US-002 AC2: allows a descendant of a marked root", async () => {
@@ -92,8 +95,8 @@ describe("ensureProjectTrusted", () => {
   test("US-002 AC6: rejects noninteractive access with the root and CLI hint", async () => {
     const error = await expectProjectUntrusted(trust.ensureProjectTrusted(workdir, { interactive: false }));
 
-    expect(error.context.root).toBe(workdir);
-    expect(error.context.hint).toBe(`run: nax trust add ${workdir}`);
+    expect(error.context?.root).toBe(workdir);
+    expect(error.context?.hint).toBe(`run: nax trust add ${workdir}`);
   });
 
   test("US-002 AC7: does not prompt when the invocation is noninteractive", async () => {
@@ -200,7 +203,7 @@ describe("ensureProjectTrusted", () => {
 
     const error = await expectProjectUntrusted(trust.ensureProjectTrusted(home, { interactive: true }));
 
-    expect(error.context.hint).toBe(`run: nax trust add ${home} --force`);
+    expect(error.context?.hint).toBe(`run: nax trust add ${home} --force`);
     expect(promptCalls).toBe(0);
     cleanupTempDir(home);
   });

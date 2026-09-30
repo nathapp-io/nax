@@ -1,40 +1,28 @@
 /**
- * Loader for the `src/trust` barrel (US-001).
+ * Loader for the `src/trust` barrel.
  *
- * `src/trust` does not exist until the implementation lands, and a static
- * `import { findCoveringEntry } from "@/trust"` in a test file is a LINK error:
- * the whole file fails to load and every test in it reports a module-resolution
- * error rather than the behaviour that is missing.
+ * US-001's test-writer wrote its tests while `src/trust` did not exist yet, so
+ * this loader answered an empty stub (a static `import { x } from "@/trust"`
+ * would have been a LINK error, failing the whole file) and `trustFn` named the
+ * export that was missing instead. It promised to become "a plain re-export of
+ * the barrel" once the module landed, and that is what it is now.
  *
- * Loading the barrel lazily keeps the RED state honest. Before the module
- * exists, `loadTrustModule()` answers an empty stub, so each test fails at its
- * own first assertion -- `trustFn` names the export it could not find -- and
- * the failure says which behaviour is absent. Afterwards the loader is a plain
- * re-export of the barrel and the tests exercise the real thing.
- *
- * The existence probe is deliberate rather than a `try/catch` around the
- * import: a `src/trust` that exists but fails to load (a syntax error, a broken
- * transitive import) must surface that error, not be mistaken for "not written
- * yet" and reported as a missing function.
+ * The `Partial<TrustModule>` the stub needed is not: `test/unit/trust/gate.test.ts`
+ * and `prompt.test.ts` call `markTrusted`, `assertTrusted`,
+ * `ensureProjectTrusted`, `promptTrustChoice` and the two `_deps` objects
+ * directly, and `test/` compiles at zero type errors (`bun run typecheck` is a
+ * hard gate in the pre-commit hook), so every one of those properties has to be
+ * non-optional.
  */
 
 import { expect } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { assertDefined } from "./assert-defined";
-
-const TRUST_BARREL = join(import.meta.dir, "..", "..", "src", "trust", "index.ts");
 
 /** The public surface of `src/trust`. */
 export type TrustModule = typeof import("@/trust");
 
-/**
- * The `src/trust` barrel, or an empty stub while it does not exist yet.
- *
- * Call once per test file and thread the result through {@link trustFn}.
- */
-export async function loadTrustModule(): Promise<Partial<TrustModule>> {
-  if (!existsSync(TRUST_BARREL)) return {};
+/** The `src/trust` barrel. */
+export async function loadTrustModule(): Promise<TrustModule> {
   return import("@/trust");
 }
 

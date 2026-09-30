@@ -16,18 +16,34 @@
  * Fail fast here instead.
  */
 
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _acpAdapterDeps } from "../src/agents/acp/adapter";
 import { _clientDeps } from "../src/agents/native/client";
 import { _notifyDeps } from "../src/finish/notify";
 import { _nativeCredentialDeps } from "../src/precheck/checks-native-credentials";
+import { markTrusted } from "../src/trust";
 
 const isolatedGlobalDir = mkdtempSync(join(tmpdir(), "nax-test-global-"));
 
 process.env.NAX_GLOBAL_CONFIG_DIR = isolatedGlobalDir;
 delete process.env.NAX_RUNS_DIR;
+
+// ─── Trust gate ───────────────────────────────────────────────────────────────
+// The project trust gate refuses repository-controlled code -- plugins, hooks,
+// MCP servers, quality/test/acceptance commands -- in a directory no operator
+// decision covers, and every test would otherwise have to trust its own temp
+// project at each call site. Trusting the filesystem root covers every temp
+// directory, and the subprocess CLI tests inherit NAX_GLOBAL_CONFIG_DIR, so the
+// same entry in the store makes them trusted too. Tests of the untrusted path
+// clear the registry (useUntrustedRegistry) or point NAX_GLOBAL_CONFIG_DIR at
+// an empty directory.
+writeFileSync(
+  join(isolatedGlobalDir, "trust.json"),
+  `${JSON.stringify({ version: 1, folders: [{ path: "/", addedAt: new Date().toISOString(), via: "cli" }] }, null, 2)}\n`,
+);
+markTrusted("/");
 
 // ─── Outbound-notification isolation ──────────────────────────────────────────
 // telegramCreds() falls back to these ambient env vars when config carries no

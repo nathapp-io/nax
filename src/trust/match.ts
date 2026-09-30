@@ -68,8 +68,14 @@ export function findCoveringEntry(folders: readonly TrustEntry[], normalizedPath
   return best;
 }
 
-/** Does the (normalized) entry path `entryPath` cover `normalizedPath`? */
-function covers(entryPath: string, normalizedPath: string): boolean {
+/**
+ * Does the (normalized) entry path `entryPath` cover `normalizedPath`?
+ *
+ * Exported because the process registry (`registry.ts`) applies the same rule
+ * to the roots it holds: one definition of "covered", whatever list of paths
+ * the caller is testing.
+ */
+export function covers(entryPath: string, normalizedPath: string): boolean {
   if (normalizedPath === entryPath) return true;
   // An entry that ends with the separator is a root -- `/`, or `C:\` on
   // Windows -- and already carries the boundary, so everything beneath it is
