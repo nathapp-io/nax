@@ -416,8 +416,9 @@ describe("resolveSessionSandbox — US-002 confined run temp roots", () => {
 
     const policy = wrappedPolicy(seam);
     expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
-    // The rest of the confinement is untouched: the run's own root is still the
-    // only temp write root.
+    // The rest of the confinement is untouched: the run's own temp root is
+    // still granted, and the shared /tmp still is not.
     expect(policy.writeRoots).toContain(realOrRaw(RUN_TMP_ROOT));
+    expect(policy.writeRoots).not.toContain(realOrRaw("/tmp"));
   });
 });

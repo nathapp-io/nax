@@ -41,14 +41,17 @@ export interface CommandLauncherOptions {
   /**
    * Build the policy for one command.
    *
-   * `tmpDirInForce` is whether THIS command gets the session's own `TMPDIR`
+   * `tmpDirInForce` says whether THIS command gets the session's own `TMPDIR`
    * override: the launcher declared a `tmpDir` and the per-run `ensureTmpDir`
-   * recreated it, so `runWrapped` applied the `export TMPDIR=…` prefix. It is
-   * false when the override was dropped, and srt's own forced `TMPDIR` applies
+   * recreated it, so `runWrapped` will apply the `export TMPDIR=…` prefix. It is
+   * false when the override is dropped, and srt's own forced `TMPDIR` applies
    * instead — a builder that denies that directory would then hand the session a
    * `TMPDIR` its own sandbox refuses to write (#2301, SPEC-tmp-confinement.md:132).
-   * The launcher cannot know whether the session is confined; it only reports
-   * the override, and the builder narrows that with what it does know.
+   *
+   * Reported separately from `state` on purpose: `state.sharedTmp === false` is
+   * the construction-time answer (did the session RESOLVE as confined) and never
+   * changes, while this is re-decided on every run. A session dir that recreates
+   * for one run and not the next is confined by the first and not the second.
    */
   readonly policyFor?: (root: string, tmpDirInForce: boolean) => Promise<SandboxPolicy>;
   /** Runs after every wrapped command, before control returns to nax (e.g. a git tripwire, #2198). */
@@ -199,11 +202,13 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
         });
       }
       try {
-        // `tmpDir` is the EFFECTIVE dir for this run (undefined when the per-run
-        // mkdir failed), so `env.tmpDir !== undefined && tmpDir !== undefined`
-        // is exactly "runWrapped is about to apply the export TMPDIR prefix".
-        const tmpDirInForce = env.tmpDir !== undefined && tmpDir !== undefined;
-        return await runWrapped(req, opts.backend, await opts.policyFor(req.root, tmpDirInForce), { ...env, tmpDir });
+        // `runWrapped` is handed this same `tmpDir` and applies the
+        // `export TMPDIR=…` prefix only when it is defined, so `tmpDir !== undefined`
+        // is exactly the "the override is in force for this command" fact.
+        return await runWrapped(req, opts.backend, await opts.policyFor(req.root, tmpDir !== undefined), {
+          ...env,
+          tmpDir,
+        });
       } finally {
         await opts.afterWrapped?.();
       }

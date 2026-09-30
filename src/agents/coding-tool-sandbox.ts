@@ -143,17 +143,19 @@ export async function resolveSessionSandbox(args: {
       tempRoots,
       // #2301: the RESOLVED confinement, not `config.filesystem.allowSharedTmp`.
       // A session confines only when that opt-out is off, a run root AND a
-      // session dir were both supplied, and the dir was actually created; the
-      // config flag is false in the fail-open and no-run-root cases too, so
-      // reading it here would deny a session that is running on the shared roots.
+      // session dir were both supplied, and the dir was actually created.
+      // `allowSharedTmp: false` is therefore no evidence of confinement — it also
+      // holds when the session dir could not be created and when no run root was
+      // supplied, and reading the flag would deny a darwin session that is
+      // running on the shared roots.
       //
       // Narrowed by whether THIS command will actually get the session's
       // `TMPDIR`. `createCommandLauncher` recreates the session dir before every
       // run and drops the `export TMPDIR=…` prefix when that creation fails
-      // (src/sandbox/launcher.ts), and then srt's own `/tmp/claude` is the
-      // child's TMPDIR — denying it would leave the session with a TMPDIR its
-      // own sandbox refuses to write, the one posture
-      // SPEC-tmp-confinement.md:132 rules out.
+      // (src/sandbox/launcher.ts), and then srt's own forced `TMPDIR`
+      // (`/tmp/claude`, sandbox-utils.js:630) is what the child gets — denying it
+      // would leave the session with a TMPDIR its own sandbox refuses to write,
+      // the one posture SPEC-tmp-confinement.md:132 rules out.
       confined: confined && tmpDirInForce,
       platform: _sessionSandboxDeps.platform(),
       config,
