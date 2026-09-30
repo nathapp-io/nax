@@ -20,6 +20,7 @@ import { join, resolve } from "node:path";
 import { assertDefined, assertNaxError, cleanupTempDir, loadTrustModule, makeTempDir, trustFn } from "@test/helpers";
 import { NaxError } from "@/errors";
 import type { TrustEntry, TrustStoreFile } from "@/trust";
+import { byCodePoint } from "@/utils/sort";
 
 const trust = await loadTrustModule();
 
@@ -223,8 +224,8 @@ describe("addTrustEntry", () => {
     expect(
       readStore()
         .folders.map((folder: TrustEntry) => folder.path)
-        .sort(),
-    ).toEqual([dirA, dirB].sort());
+        .sort(byCodePoint),
+    ).toEqual([dirA, dirB].sort(byCodePoint));
   });
 });
 
