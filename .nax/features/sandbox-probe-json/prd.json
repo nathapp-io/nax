@@ -3,7 +3,7 @@
   "feature": "sandbox-probe-json",
   "branchName": "feat/sandbox-probe-json",
   "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-09-30T02:01:11.925Z",
+  "updatedAt": "2026-09-30T02:16:05.762Z",
   "userStories": [
     {
       "id": "US-001",
@@ -41,8 +41,8 @@
         "sandbox"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
