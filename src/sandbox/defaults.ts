@@ -23,9 +23,9 @@ export const MACOS_CACHE_WRITE_ROOT = "Library/Caches";
 export const SRT_MACOS_TMPDIR = "/tmp/claude";
 
 /**
- * #2301 — the same directory through macOS's `/tmp` -> `/private/tmp` symlink.
- * A write against either spelling reaches the same inode, so a deny that carries
- * only one of them is a spelling the kernel may never match.
+ * #2301 — the same directory as `SRT_MACOS_TMPDIR`, named through macOS's
+ * `/tmp` -> `/private/tmp` symlink. srt force-allows both spellings, and which of
+ * them survives nax's own `realOrRaw` depends on the host, so a deny names both.
  */
 export const SRT_MACOS_TMPDIR_PRIVATE_SPELLING = "/private/tmp/claude";
 
@@ -34,8 +34,8 @@ export const SRT_MACOS_TMPDIR_PRIVATE_SPELLING = "/private/tmp/claude";
  *
  * srt always includes `/tmp/claude` and `/private/tmp/claude` in
  * `SANDBOX_OWN_WRITE_PATHS` and `getDefaultWritePaths` never drops them, so the
- * only way to take the write back is an explicit `denyWrite` — srt writes its deny
- * rules after the allow rules on macOS, and a later deny wins.
+ * only way to take the write back is an explicit `denyWrite` — srt renders its
+ * allow rules before its deny rules in a macOS profile, where the later deny wins.
  */
 export const SRT_MACOS_TMPDIR_DENIES: readonly string[] = [SRT_MACOS_TMPDIR, SRT_MACOS_TMPDIR_PRIVATE_SPELLING];
 

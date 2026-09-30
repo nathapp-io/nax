@@ -39,10 +39,13 @@ export interface SandboxPolicyInput {
   readonly home: string;
   readonly tempRoots: readonly string[];
   /**
-   * #2301: this session confines temp writes to its own run temp root
-   * (`SandboxState.sharedTmp === false`). Absent means it did NOT confine, which
-   * keeps every construction outside `resolveSessionSandbox` — and the probe's
-   * own hand-built policy — on today's behaviour.
+   * #2301: this session confines temp writes to its own run temp root — i.e. the
+   * `SessionTempRoots.confined` of `src/agents/coding-tool-sandbox.ts`, the same
+   * boolean the launcher advertises as `SandboxState.sharedTmp === false` and that
+   * `isTempConfined` reads; those two must stay in sync. Absent means it did NOT
+   * confine, so every construction outside `resolveSessionSandbox` stays on
+   * today's behaviour — the probe builds its own policy literal and never reaches
+   * here at all.
    */
   readonly confined?: boolean;
   readonly platform: NodeJS.Platform;
@@ -124,21 +127,37 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
   const { root, home, config } = input;
   const darwin = input.platform === "darwin";
   // #2301: a CONFINED session does not need srt's forced TMPDIR. srt always
-  // allows `/tmp/claude` (and always points `TMPDIR` at it) on macOS, and its
-  // deny rules are written AFTER the allow rules, so the only way to take the
-  // write back is an explicit deny — which is what a confined session gets, on
-  // both spellings. Both, because srt normalises a path that already exists: on a
-  // host where `/tmp/claude` exists either spelling alone denies (measured
-  // 2026-09-30 on macOS + srt 0.0.77), but a not-yet-created directory keeps the
-  // spelling it was given, and `literal()` collapses the pair to one entry when
-  // they do resolve to the same directory, so the list is free either way.
-  // Nothing needs the root instead: a session is confined only when it HAS a
-  // temp dir, and `createCommandLauncher` prefixes every wrapped command with
-  // `export TMPDIR=<that dir> TMP=… TEMP=…` (src/sandbox/launcher.ts:62), which
-  // replaces srt's value before the agent's command runs. A session that did not
-  // confine keeps the grant: `defaultTempRoots` grants `/tmp` outright, so
-  // `/tmp/claude` is inside an allowed root either way and denying it would
-  // contradict the session's own stated posture (see denialHintLine).
+  // allows `/tmp/claude` (`SANDBOX_OWN_WRITE_PATHS`) and hands the child a
+  // `TMPDIR` of `/tmp/claude` (sandbox-utils.js:630), and in a macOS Seatbelt
+  // profile it renders the allow rules before the deny rules, where the later deny
+  // wins — so the only way to take the write back is an explicit deny, which is
+  // what a confined session gets.
+  //
+  // Both spellings, because `realOrRaw` resolves the nearest EXISTING ancestor and
+  // `/tmp` exists: on a stock macOS host `/tmp` is a symlink to `/private/tmp`, so
+  // `literal()` collapses the pair to one entry and it costs nothing there. The
+  // pair still matters on a host where `/tmp` is a real directory, or a symlink
+  // somewhere other than `/private/tmp`: there the two resolve apart and a single
+  // spelling would leave srt's other one writable.
+  //
+  // Nothing needs the grant instead: a session is confined only when it HAS a temp
+  // dir, and `runWrapped` prefixes the command with
+  // `export TMPDIR=<that dir> TMP=… TEMP=…` (src/sandbox/launcher.ts:123),
+  // replacing srt's value before the agent's command runs. That prefix rides on
+  // `createCommandLauncher`'s per-run mkdir (src/sandbox/launcher.ts:179), so it is
+  // conditional — when the mkdir fails the override is dropped and the agent's
+  // `TMPDIR` is srt's `/tmp/claude` again, which is why that case needs deciding
+  // before a deny can be relied on.
+  //
+  // A session that did NOT confine keeps the grant: its temp roots are
+  // `defaultTempRoots`, which allows `/tmp` outright, so `/tmp/claude` is inside an
+  // allowed root anyway and a deny would contradict the session's own denial hint
+  // (`denialHintLine`).
+  //
+  // darwin only, deliberately: srt's `SANDBOX_OWN_WRITE_PATHS` is
+  // platform-independent, so a confined LINUX session still gets `/tmp/claude`.
+  // Left open on purpose — on bwrap a literal deny becomes a bind mount, a
+  // different mechanism that needs its own check before a deny is added there.
   const confined = input.confined === true;
   const writeRoots = literal([
     root,

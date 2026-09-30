@@ -208,11 +208,11 @@ describe("buildSandboxPolicy", () => {
 
   test("#2301: the deny list offers both the /tmp and the /private/tmp spelling", () => {
     // Measured 2026-09-30 on macOS with the project's srt 0.0.77: with
-    // `/tmp/claude` existing, EITHER spelling alone denies the write, because srt
-    // normalises a path that already exists. The pair is still what we emit,
-    // because a not-yet-created directory keeps the spelling it was given — and
-    // `literal()` collapses the pair to a single entry when they do resolve to
-    // the same directory, so listing both costs nothing.
+    // `/tmp/claude` present, EITHER spelling alone denies the write — srt
+    // normalises a path that already exists. We emit the pair anyway because the
+    // two collapse into one entry only by way of `realOrRaw`, and that depends on
+    // the host: where `/tmp` is a real directory rather than a symlink to
+    // `/private/tmp`, each spelling stands on its own.
     expect(SRT_MACOS_TMPDIR_DENIES).toEqual(["/tmp/claude", "/private/tmp/claude"]);
   });
 
@@ -229,13 +229,12 @@ describe("buildSandboxPolicy", () => {
     expect(policy.writeRoots).toContain(join(home, "Library", "Caches"));
   });
 
-  test("#2301: a shared-temp darwin session keeps today's behaviour", () => {
-    // `confined` absent = shared roots = the opt-out posture. No deny, and the
-    // write root is still granted: `defaultTempRoots` already allows `/tmp`, so
-    // `/tmp/claude` sits inside an allowed root and denying it would contradict
-    // the session's own denial hint.
+  test("#2301: a shared-temp darwin session gets no /tmp/claude deny", () => {
+    // `confined` absent = shared roots = the opt-out posture; the write root is
+    // still granted (the write-roots inventory test above covers that). No deny:
+    // `defaultTempRoots` allows `/tmp` outright, so `/tmp/claude` sits inside an
+    // allowed root and denying it would contradict the session's own denial hint.
     const policy = buildSandboxPolicy(input({ platform: "darwin" }));
-    expect(policy.writeRoots).toContain(realOrRaw("/tmp/claude"));
     expect(policy.denyWrite).not.toContain(realOrRaw("/tmp/claude"));
   });
 
