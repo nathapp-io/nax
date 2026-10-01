@@ -50,7 +50,7 @@ Above the threshold the whole request reprices — `gpt-5.6-terra` doubles input
 
 ### How the rates reach cost today
 
-`src/agents/native/adapter.ts` prices every call through `buildRateCard` (`src/agents/native/models.ts`):
+Both native call sites price through `buildRateCard` (`src/agents/native/models.ts`) — the one-shot `nativeComplete()` (`src/agents/native/complete.ts`) and the session turn `NativeSessionAdapter.sendTurn()` (`src/agents/native/session-adapter.ts`). The session half reads:
 
 ```ts
 const catalog = client.pricing(resolved);
@@ -58,7 +58,7 @@ const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?
 const { costUsd, resolvedRates } = priceCall(usage, rates);
 ```
 
-With no config override, `buildRateCard` returns the catalog's nax-ai `Pricing` (`input` / `output` / `cacheRead` / `cacheWrite` and every tier, per 1M) and stamps `pricingSource: "catalog-rates"`. A `ModelDef.pricing` override replaces the card wholesale (`"config-override"`): `toPricing` maps the `ConfigPricing` onto nax-ai's `Pricing` shape and fills an omitted cache rate from the input rate of the same level. `src/agents/catalog/` returns the catalog's `Pricing` directly for the acpx side. The resolved per-1M rates travel on the result as `rates`, so a recorded cost can be reproduced from its row.
+With no config override, `buildRateCard` returns the catalog's nax-ai `Pricing` (`input` / `output` / `cacheRead` / `cacheWrite` and every tier, per 1M) and stamps `pricingSource: "catalog-rates"`. A `ModelDef.pricing` override replaces the card wholesale (`"config-override"`): it is converted on the way in — `toSessionModel` (`src/agents/session-model-mapping.ts`) runs `toPricing` once, filling an omitted cache rate from the input rate of the same level — and arrives as a standard `SessionModel.pricing` on both paths. `src/agents/catalog/` returns the catalog's `Pricing` directly for the acpx side. The resolved per-1M rates travel on the result as `rates`, so a recorded cost can be reproduced from its row.
 
 ## Context window
 

@@ -9,7 +9,7 @@
  */
 
 import type { ConversationMessage } from "@nathapp/nax-ai";
-import type { AdapterInteractionResponse } from "@/agents";
+import type { AdapterInteractionResponse } from "@/agents/interaction-handler";
 
 /**
  * The transcript message nax stores: nax-ai's ConversationMessage widened with

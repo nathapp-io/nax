@@ -15,7 +15,7 @@
  */
 
 import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-ai";
-import type { PricingRates, TokenUsage } from "@/agents/cost";
+import type { PricingRates, TokenUsage } from "@/agents/cost/standard-types";
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import type { SpinBreaker } from "@/runtime/spin-breaker";
 import type { TranscriptMessage as NativeTranscriptMessage, ResolvedCompaction } from "./compaction";
@@ -38,7 +38,7 @@ export interface NativeTurnResponse {
    * by hand keep compiling; the adapter's `complete` closure always sets
    * it because native prices unconditionally.
    */
-  readonly rates?: import("../../cost").PricingRates;
+  readonly rates?: PricingRates;
 }
 
 /** What one summarization call returns. Usage and cost are surfaced, not swallowed. */
@@ -149,9 +149,9 @@ export interface TurnDeps {
  * N silently drops everything spent on round trips 1..N-1.
  *
  * Recorded against the thrown error's own identity (a WeakMap), never by
- * mutating the error itself: adapter.ts's `isProtocolStreamError` guard and
- * its "propagate a non-protocol error untouched" rule both depend on the
- * error's own shape staying exactly what was thrown.
+ * mutating the error itself: session-adapter.ts's `isProtocolStreamError`
+ * guard and its "propagate a non-protocol error untouched" rule both depend
+ * on the error's own shape staying exactly what was thrown.
  */
 export interface NativeTurnFailureUsage {
   readonly tokenUsage: TokenUsage;

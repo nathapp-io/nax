@@ -17,6 +17,9 @@ import { byCodePoint } from "@/utils/sort";
 import { naxCredentialStore } from "./credentials";
 import { toProviderOverrides } from "./models";
 
+/** The catalog overrides a native client is built with (`agent.native.catalogOverrides`). */
+export type NativeCatalogOverrides = readonly ProviderCatalogOverride[];
+
 /**
  * How nax names itself to a provider that reports on the calling application.
  *
@@ -180,7 +183,7 @@ let cachedOverrides: readonly ProviderCatalogOverride[] | undefined;
 /** Serialised override set the cached build was created for. */
 let cachedOverridesKey: string | undefined;
 
-export async function getNativeClient(catalogOverrides: readonly ProviderCatalogOverride[] = []): Promise<Client> {
+export async function getNativeClient(catalogOverrides: NativeCatalogOverrides = []): Promise<Client> {
   const overridesKey = canonicalOverrideKey(catalogOverrides);
   if (cached !== undefined && overridesKey !== cachedOverridesKey) {
     // The client is a constant of the process (catalog load is ~50ms / ~650KB),

@@ -16,7 +16,6 @@
 import { resolveModel, trackedSpawnDeadlines } from "@/config";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { type PipelineStage, type ResolvedPermissions, resolvePermissions } from "../config/permissions";
-import type { ModelDef, ModelTier } from "../config/schema";
 import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../runtime/dispatch-events";
@@ -60,7 +59,7 @@ import type {
  * row, or the cost ledger would silently disagree across the success/fail
  * boundary.
  */
-export function modelAttribution(src: { modelDef?: ModelDef; modelTier?: ModelTier }): {
+export function modelAttribution(src: { modelDef?: { readonly model: string }; modelTier?: string }): {
   model?: string;
   effort?: string;
   modelTier?: string;
@@ -278,8 +277,8 @@ export function buildDispatchErrorEvent(input: {
    * `modelDef` would record different rows — the cost ledger silently
    * disagreeing across the success/fail boundary.
    */
-  modelDef?: ModelDef;
-  modelTier?: ModelTier;
+  modelDef?: { readonly model: string };
+  modelTier?: string;
   /**
    * US-001: per-call id, role, and model attribution, bundled so callers
    * can pass the existing options object rather than spelling out each
@@ -300,8 +299,8 @@ export function buildDispatchErrorEvent(input: {
     callId?: string;
     scopeId?: string;
     sessionRole?: string;
-    modelDef?: ModelDef;
-    modelTier?: ModelTier;
+    modelDef?: { readonly model: string };
+    modelTier?: string;
   };
 }): DispatchErrorEvent {
   const dispatchOpts = input.dispatchOptions;

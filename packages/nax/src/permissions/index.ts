@@ -16,4 +16,4 @@ export type { BashLexResult, BashRedirect, BashSegment, BashSegmentSeparator, Ba
 export { lexBashCommand } from "./bash-lex";
 export { parseRuleList, parseToolExpression } from "./grammar";
 export * from "./secret-spans";
-export type { AskRequest } from "./types";
+export type { AskRequest, ResolvedPermissions } from "./types";

@@ -118,11 +118,11 @@ export class NativeAgentAdapter implements AgentAdapter { ... } // in-process ov
 `adapter.run` / `plan` / `decompose` were deleted in ADR-019 — `run` is now `SessionManager.runInSession` (composes the three session primitives), and `plan`/`decompose` are Operations dispatched via `callOp` (`planInteractiveOp` / `planRefineOp` are `kind:"run"`, `decomposeOp` is `kind:"complete"`) (§37, `.claude/rules/adapter-wiring.md`).
 
 **Rules:**
-- Interface in `types.ts`, implementations in `src/agents/acp/adapter.ts` and `src/agents/native/adapter.ts`
+- Interface in `types.ts` (process description + `complete()`), session half in `session-types.ts`; implementations in `src/agents/acp/adapter.ts` and the native adapter (`src/agents/native-agent/index.ts` composed with `src/agents/native/session-adapter.ts`)
 - Implementations are classes (stateful — may hold config, PID registries, etc.)
 - Capabilities declared as data, not methods — enables routing decisions without instantiation
 
-**Reference:** `src/agents/types.ts`, `src/agents/acp/adapter.ts`, `src/agents/native/adapter.ts`, [agent-adapters.md §16](agent-adapters.md#16-agent-adapter-conventions)
+**Reference:** `src/agents/types.ts`, `src/agents/session-types.ts`, `src/agents/acp/adapter.ts`, `src/agents/native-agent/index.ts`, [agent-adapters.md §16](agent-adapters.md#16-agent-adapter-conventions)
 
 #### Agent Protocol
 

@@ -29,8 +29,8 @@ import { realSleep, retryTransportFault } from "./turn-retry";
 import type { NativeTurnResponse, TurnDeps } from "./turn-types";
 
 /**
- * Structural, matching adapter.ts's guard: nax-ai's error class is not importable
- * here and the kind is what matters.
+ * Structural, matching adapter-deps.ts's guard: nax-ai's error class is not
+ * importable here and the kind is what matters.
  */
 function isContextOverflow(err: unknown): boolean {
   if (typeof err !== "object" || err === null || !("protocolError" in err)) return false;

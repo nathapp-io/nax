@@ -1,4 +1,4 @@
-import type { PricingRates, TokenUsage } from "@/agents/cost";
+import type { PricingRates, TokenUsage } from "@/agents/cost/standard-types";
 
 interface RateTotals {
   inputTokens: number;

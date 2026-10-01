@@ -7,7 +7,7 @@
  */
 
 import type { ToolDefinition } from "@nathapp/nax-ai";
-import type { ToolDescriptor } from "@/context/engine";
+import type { ToolDescriptor } from "@/agents/tool-descriptor";
 import type { CodingTool } from "@/tools";
 
 export function toToolDefinitions(descriptors: readonly ToolDescriptor[]): ToolDefinition[] {

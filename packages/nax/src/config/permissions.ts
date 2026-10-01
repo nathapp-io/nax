@@ -9,11 +9,14 @@
  */
 
 import { getSafeLogger } from "@/logger";
+import type { ResolvedPermissions } from "@/permissions";
 import { parseRuleList } from "@/permissions";
 import type { CodingToolName, ToolGrant } from "@/tools";
 import { EXEC_TOOL_NAME } from "@/tools";
 import { type BashApprovalMode, resolveBashApproval } from "./bash-approval";
 import type { AgentManagerConfig } from "./selectors";
+
+export type { ResolvedPermissions };
 
 export type PermissionProfile = "unrestricted" | "safe" | "scoped";
 
@@ -27,46 +30,6 @@ export type PipelineStage =
   | "regression"
   | "acceptance"
   | "complete";
-
-export interface ResolvedPermissions {
-  /**
-   * ACP permission mode string — the only resolved value anything consumes
-   * (`agents/acp/adapter.ts`, `runtime/middleware/audit.ts`).
-   */
-  mode: "approve-all" | "approve-reads" | "default";
-  /**
-   * Declarative grants — data, never matchers. Compiled into an enforceable
-   * policy by src/tools/, which keeps glob and filesystem semantics out of the
-   * config layer while the decision stays here, in the gated SSOT.
-   */
-  toolGrants?: readonly ToolGrant[];
-  /**
-   * Deny rules for the stage (spec R6: deny > ask > allow). Same {tool, patterns}
-   * shape as `toolGrants`; compiled and enforced by src/tools/.
-   */
-  denyRules?: readonly ToolGrant[];
-  /** Ask rules for the stage; resolved by an AskResolver at call time (spec R1). */
-  askRules?: readonly ToolGrant[];
-  /**
-   * How far provider (MCP) tools reach for this stage (spec R7).
-   *
-   * `all` — every attached provider, as `unrestricted` has always had it.
-   * `rules` — only what the stage's `Mcp(...)` rules admit (`scoped`).
-   * `none` — no provider tools at all (`safe`, and the fail-closed arm).
-   *
-   * Decided here rather than by the consumer because `scoped` and `safe` both
-   * resolve to the same MODE, so no consumer can tell them apart — and this is
-   * a permission decision, which lives in this file by rule.
-   */
-  providerScope?: "all" | "rules" | "none";
-  /**
-   * How a model-authored bash command string is adjudicated for this stage
-   * (ADR-030). Always present: the global default is `raw`, and a per-stage
-   * `permissions.<stage>.bashApproval` overrides it. Compiled into the policy
-   * by src/tools/, like the rule lists above — the DECISION stays here.
-   */
-  bashApproval: BashApprovalMode;
-}
 
 /**
  * Disposition for an **unset** `permissionProfile` — ruled 2026-08-30 (ENH-45).

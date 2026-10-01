@@ -31,9 +31,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
+import { _adapterDeps } from "@/agents/native/adapter-deps";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import { _resetCredentialStore, naxCredentialStore, servedAuth } from "@/agents/native/credentials";
+import { NativeAgentAdapter } from "@/agents/native-agent";
+import { toSessionModel } from "@/agents/session-model-mapping";
 import type { AuthStamp } from "@/agents/session-types";
 import type { ResolvedCompleteOptions } from "@/agents/types";
 import type { ResolvedPermissions } from "@/config/permissions";
@@ -92,7 +94,7 @@ async function openTurnSession(name: string) {
     agentName: "native",
     workdir: dir,
     resolvedPermissions: PERMS,
-    modelDef: MODEL_DEF,
+    modelDef: toSessionModel(MODEL_DEF),
     timeoutSeconds: 60,
     transcriptDir: dir,
   });

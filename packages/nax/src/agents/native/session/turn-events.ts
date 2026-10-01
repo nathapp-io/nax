@@ -15,7 +15,7 @@
  * iteration and `toolCallOnlyIdleTimeout` could never fire (nax#2013).
  */
 
-import type { AgentStreamEvent } from "@/runtime/agent-stream-events";
+import type { AgentStreamEvent } from "@/agents/agent-stream-event-types";
 
 export type NativeTurnActivity =
   | { kind: "message"; bytes: number }

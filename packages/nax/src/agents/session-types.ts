@@ -7,12 +7,11 @@
  * import site keeps working unchanged — types.ts re-exports all of it.
  */
 
-import type { ResolvedPermissions } from "../config/permissions";
-import type { ModelDef, ModelTier } from "../config/schema";
-import type { AdapterFailure, ToolDescriptor } from "../context/engine";
+import type { ResolvedPermissions } from "@/permissions";
 import type { ProtocolIds } from "../runtime/protocol-types";
-import type { SessionRole } from "../runtime/session-role";
-import type { TokenUsage } from "./cost";
+import type { AdapterFailure } from "./adapter-failure";
+import type { Pricing, PricingRates, TokenUsage } from "./cost/standard-types";
+import type { ToolDescriptor } from "./tool-descriptor";
 
 /**
  * Identity of the credential that served a call (US-002).
@@ -31,6 +30,23 @@ export interface AuthStamp {
   account?: string;
 }
 
+/**
+ * The model a session runs on, in the contract's own vocabulary (S1 spec section
+ * 4.2, port 2). nax builds it from its config `ModelDef` with `toSessionModel`
+ * (`src/agents/session-model-mapping.ts`); `pricing` is already converted to the
+ * standard rate card, so the session never sees config field names.
+ */
+export interface SessionModel {
+  readonly provider: string;
+  readonly model: string;
+  /** Explicit rate override; absent means "price from the catalog". */
+  readonly pricing?: Pricing;
+  /** Overrides the catalog context window for compaction maths only (nax#1848). */
+  readonly contextWindow?: number;
+  /** Extra environment for transports that spawn a process (ACP). */
+  readonly env?: Record<string, string>;
+}
+
 /** trackedSpawn hard deadlines (ms) — teardown vs startup, resolved from config.agent.acp (#1583). */
 export interface TrackedSpawnDeadlineOptions {
   trackedSpawnDeadlineMs?: number;
@@ -47,8 +63,11 @@ export interface SessionHandle {
   readonly id: string;
   /** Agent name this session was opened for. */
   readonly agentName: string;
-  /** Session role — populated when the caller knows the role at open time. */
-  readonly role?: SessionRole;
+  /**
+   * Session role, opaque to the adapter. nax writes a canonical role; read it
+   * through `knownSessionRole`.
+   */
+  readonly role?: string;
   /** Protocol-specific IDs for SessionManager correlation. */
   readonly protocolIds?: ProtocolIds;
   /**
@@ -59,9 +78,9 @@ export interface SessionHandle {
    * the same session name may serve this handle, and the native adapter's
    * `sendTurn` dispatches from it. Do not branch on it for anything else.
    */
-  readonly modelDef?: ModelDef;
+  readonly modelDef?: SessionModel;
   /** Tier `modelDef` resolved from, when it came from one. Attribution only. */
-  readonly modelTier?: ModelTier;
+  readonly modelTier?: string;
 }
 
 /** Options for openSession() — protocol-agnostic surface + ACP-specific pass-throughs. */
@@ -70,10 +89,10 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
   workdir: string;
   /** Pre-resolved permissions from AgentManager. */
   resolvedPermissions: ResolvedPermissions;
-  /** ACP: resolved model definition (required for client cmdStr + cost). */
-  modelDef: ModelDef;
+  /** The model to open with. nax builds it with `toSessionModel`. */
+  modelDef: SessionModel;
   /** Tier the model resolved from, when applicable. Attribution only (#1433). */
-  modelTier?: ModelTier;
+  modelTier?: string;
   /** ACP: maximum session duration in seconds. */
   timeoutSeconds: number;
   /** ACP: acpx --prompt-retries value (default 0 — opt-in). */
@@ -110,7 +129,7 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * (call_started, message_update, call_ended, etc.) are emitted on the runtime
    * bus. Required for the idle watchdog to track calls.
    */
-  onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
+  onStreamActivity?: (event: import("./agent-stream-event-types").AgentStreamEvent) => void;
   /**
    * Native: directory the session's transcript file lives in. Supplied by
    * SessionManager because the adapter cannot derive it — openSession runs
@@ -193,7 +212,6 @@ export interface SendTurnOpts {
   turnId?: string;
 }
 
-/** Result returned by sendTurn(). */
 /**
  * A single mid-turn interactive Q&A exchange between the agent and a human
  * operator (routed via the interaction plugin), captured for the prompt-audit
@@ -236,7 +254,7 @@ export interface TurnResult {
    * present only when nonzero usage let pricing run; absent on a zeroed
    * accumulator so "priced" and "did not price" stay distinguishable.
    */
-  rates?: import("./cost").PricingRates;
+  rates?: PricingRates;
   /** US-006: identity of the credential that served this turn. Absent for ACP turns. */
   auth?: AuthStamp;
   /**
@@ -375,4 +393,53 @@ export class SessionTurnError extends Error {
     super(message);
     this.name = "SessionTurnError";
   }
+}
+
+/**
+ * The session half of an agent adapter: the surface a session runtime needs
+ * (S1 spec section 4.2, port 2). nax's `AgentAdapter` extends it with the
+ * process-description members and one-shot `complete()`.
+ */
+export interface AgentSessionAdapter {
+  /**
+   * Probe whether the agent has usable credentials (env var, ping, etc.).
+   * Optional — adapters that do not implement it are treated as always credentialed.
+   * Used by AgentManager.validateCredentials() at run start.
+   */
+  hasCredentials?(): Promise<boolean>;
+
+  /**
+   * Open a new (or resume an existing) physical agent session.
+   * Returns an opaque SessionHandle carrying all state needed for subsequent
+   * sendTurn() and closeSession() calls.
+   */
+  openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle>;
+
+  /**
+   * Send one or more turns to an open session and return the accumulated result.
+   * Handles context-tool and question interactions via opts.interactionHandler.
+   */
+  sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult>;
+
+  /** Close the physical session and its underlying transport client. Best-effort — errors are swallowed. */
+  closeSession(handle: SessionHandle): Promise<void>;
+
+  /**
+   * Close a session the process no longer holds a live handle for, addressing it by
+   * id and workdir rather than by SessionHandle. Distinct from closeSession(): that
+   * one closes an open in-process session, this one reconnects to the agent to close
+   * a session left behind — the path run teardown takes
+   * (src/execution/session-manager-runtime.ts).
+   *
+   * Optional because out-of-process teardown is not something every adapter can offer;
+   * callers treat its absence as "nothing to close" and must invoke it best-effort.
+   * Declared here rather than reached through a cast: it was undeclared until #1702,
+   * so teardown had to assert its way to it and the two methods' handle types
+   * (SessionHandle vs id string) disagreed invisibly.
+   */
+  closePhysicalSession?(
+    handle: string,
+    workdir: string,
+    options?: { force?: boolean; signal?: AbortSignal },
+  ): Promise<void>;
 }

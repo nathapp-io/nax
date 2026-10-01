@@ -15,7 +15,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
+import { _adapterDeps } from "@/agents/native/adapter-deps";
+import { NativeSessionAdapter } from "@/agents/native/session-adapter";
 
 const REAL_LIST = _adapterDeps.listStoredProviders;
 const REAL_SWEEP = _adapterDeps.anyAmbientCredential;
@@ -48,7 +49,7 @@ describe("hasCredentials — exec credential source (US-004)", () => {
       _adapterDeps.listStoredProviders = async () => [];
       _adapterDeps.anyAmbientCredential = async () => false;
 
-      expect(await new NativeAgentAdapter().hasCredentials()).toBe(true);
+      expect(await new NativeSessionAdapter().hasCredentials()).toBe(true);
       expect(existsSync(marker)).toBe(false);
     } finally {
       process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
@@ -66,7 +67,7 @@ describe("hasCredentials — exec credential source (US-004)", () => {
       _adapterDeps.listStoredProviders = async () => [];
       _adapterDeps.anyAmbientCredential = async () => false;
 
-      expect(await new NativeAgentAdapter().hasCredentials()).toBe(false);
+      expect(await new NativeSessionAdapter().hasCredentials()).toBe(false);
     } finally {
       process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
       cleanupTempDir(dir);

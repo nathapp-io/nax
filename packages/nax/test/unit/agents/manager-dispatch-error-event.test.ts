@@ -2,11 +2,13 @@ import { describe, expect, mock, test } from "bun:test";
 import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 import { SessionTurnError } from "@/agents";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
-import { buildDispatchErrorEvent } from "@/agents/manager-dispatch";
+import { buildDispatchErrorEvent, modelAttribution } from "@/agents/manager-dispatch";
+import type { SessionModel } from "@/agents/session-types";
 import type { CompleteOptions, SessionHandle } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 import type { ResolvedPermissions } from "@/config/permissions";
 import { resolvePermissions } from "@/config/permissions";
+import type { ModelDef } from "@/config/schema-types";
 import type { DispatchErrorEvent } from "@/runtime/dispatch-events";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
 
@@ -199,6 +201,21 @@ describe("buildDispatchErrorEvent dispatchOptions plumbing (AC6-7)", () => {
 
     expect(event.sessionRole).toBeUndefined();
     expect(event.storyId).toBe("US-001");
+  });
+});
+
+describe("modelAttribution with a session handle's SessionModel", () => {
+  test("attributes the same model and effort as a config ModelDef", () => {
+    const configDef: ModelDef = { provider: "openai", model: "openai/gpt-5.4-mini[high]" };
+    const sessionDef: SessionModel = {
+      provider: "openai",
+      model: "openai/gpt-5.4-mini[high]",
+      pricing: { input: 1, output: 2, cacheRead: 1, cacheWrite: 1 },
+    };
+    const fromConfig = modelAttribution({ modelDef: configDef });
+    const fromSession = modelAttribution({ modelDef: sessionDef });
+    expect(fromSession).toEqual({ model: "openai/gpt-5.4-mini", effort: "high" });
+    expect(fromSession).toEqual(fromConfig);
   });
 });
 

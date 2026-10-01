@@ -12,7 +12,7 @@
  * differed — which is why the defect looked transport-specific in the field.
  */
 
-import type { SessionHandle } from "../agents/session-types";
+import type { SessionHandle, SessionModel } from "../agents/session-types";
 import type { ModelDef } from "../config/schema-types";
 import type { SessionDescriptor } from "./types";
 
@@ -30,7 +30,7 @@ export type ReuseDecision =
  * legitimately differ on. An absent `modelDef` never matches a present one: an
  * unrecorded endpoint is unknown, not equal.
  */
-export function sameEndpoint(a: ModelDef | undefined, b: ModelDef | undefined): boolean {
+export function sameEndpoint(a: ModelDef | SessionModel | undefined, b: ModelDef | SessionModel | undefined): boolean {
   if (a === undefined || b === undefined) return false;
   return a.provider === b.provider && a.model === b.model;
 }

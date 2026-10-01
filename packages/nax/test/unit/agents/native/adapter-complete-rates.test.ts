@@ -26,13 +26,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Client, ClientRequest, Pricing, ResolvedModel } from "@nathapp/nax-ai";
 import { makeNaxConfig } from "@test/helpers";
-import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
+import { _adapterDeps } from "@/agents/native/adapter-deps";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import type { ResolvedCompaction } from "@/agents/native/session/compaction";
 import * as sessionState from "@/agents/native/session/session";
 import { openNativeSession } from "@/agents/native/session/session";
 import * as transcriptStore from "@/agents/native/session/transcript-store";
 import { saveTranscript } from "@/agents/native/session/transcript-store";
+import { NativeAgentAdapter } from "@/agents/native-agent";
+import { toSessionModel } from "@/agents/session-model-mapping";
 import type { OpenSessionOpts } from "@/agents/session-types";
 import type { ResolvedCompleteOptions } from "@/agents/types";
 import { SessionFailureError, SessionTurnError } from "@/agents/types";
@@ -413,7 +415,7 @@ async function openSessionWithModelDef(
     agentName: "native",
     workdir: process.cwd(),
     resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-    modelDef,
+    modelDef: toSessionModel(modelDef),
     timeoutSeconds: 60,
     transcriptDir: dir,
     compaction: COMPACTION_CFG,
@@ -494,6 +496,34 @@ describe("NativeAgentAdapter.sendTurn contextWindow override", () => {
     // Equal to the real window behaves exactly like no override: the small
     // oversized transcript does not cross it.
     expect(completeCalls()).toBe(1);
+  });
+});
+
+describe("NativeAgentAdapter.sendTurn config pricing override", () => {
+  // The whole chain the branch moved, end to end: selectModel's converted
+  // `SessionModel` -> `OpenSessionOpts` -> openNativeSession's verbatim copy
+  // (`session/session.ts`) -> `buildRateCard` in `sendTurn`. Each link has its
+  // own test; this is the one that fails if the composition does.
+  test("an override on the opened model reaches buildRateCard, so the turn reports config-override", async () => {
+    const model = catalogModel();
+    const { client } = countingClient(model);
+    _clientDeps.build = async () => client;
+    // No cache rates on purpose: `toPricing` fills an omitted cache rate from
+    // the override's own input rate, so a cacheRead of 7 can only come from the
+    // override having reached the rate card. The catalog's cacheRead is 0, so
+    // a dropped override reads as 0 rather than as 7.
+    const { adapter, handle } = await openSessionWithModelDef("pricing-override", {
+      provider: "unknown",
+      model: "openai/gpt-5.4-mini",
+      pricing: { inputPer1M: 7, outputPer1M: 9 },
+    });
+    const turn = await adapter.sendTurn(handle, "next", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+    });
+    expect(turn.pricingSource).toBe("config-override");
+    expect(turn.rates?.input).toBe(7);
+    expect(turn.rates?.output).toBe(9);
+    expect(turn.rates?.cacheRead).toBe(7);
   });
 });
 

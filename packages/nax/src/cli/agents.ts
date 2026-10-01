@@ -6,7 +6,8 @@
 
 import { resolveDefaultAgent } from "../agents";
 import { ACP_ADAPTER_NAMES, AcpAgentAdapter } from "../agents/acp";
-import { NATIVE_AGENT, NativeAgentAdapter } from "../agents/native";
+import { NATIVE_AGENT } from "../agents/native";
+import { NativeAgentAdapter } from "../agents/native-agent";
 import { getAgentVersion } from "../agents/shared/version-detection";
 import { DEFAULT_AGENT_PROTOCOL } from "../config";
 import type { NaxConfig } from "../config/schema";
