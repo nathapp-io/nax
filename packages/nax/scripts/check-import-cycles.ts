@@ -173,7 +173,7 @@ export function stripComments(source: string): string {
   return out;
 }
 
-function* walk(dir: string): Generator<string> {
+export function* walk(dir: string): Generator<string> {
   let entries: string[];
   try {
     entries = readdirSync(dir);
