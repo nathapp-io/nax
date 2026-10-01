@@ -1,0 +1,4 @@
+# Moved from the repo root by the monorepo conversion (package-anchored)
+test/tmp/
+test/integration/tmp/
+tmp/.ci-test-output.txt

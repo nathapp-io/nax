@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun x biome lint --write src/ bin/"
+            "command": "cd packages/nax && bun x biome lint --write src/ bin/"
           }
         ]
       }

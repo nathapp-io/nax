@@ -26,6 +26,16 @@ jobs:
         with:
           fetch-depth: 0 # full history for changelog extraction
 
+      - name: Resolve package
+        id: pkg
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          case "$TAG" in
+            v*) echo "dir=packages/nax" >> "$GITHUB_OUTPUT"; echo "name=@nathapp/nax" >> "$GITHUB_OUTPUT"; echo "version=${TAG#v}" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Unrecognised tag $TAG"; exit 1 ;;
+          esac
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.0"
@@ -40,26 +50,30 @@ jobs:
 
       - name: Build
         run: bun run build
+        working-directory: ${{ steps.pkg.outputs.dir }}
 
       # Validate tag matches package.json version
       - name: Validate version
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           PKG_VERSION="v$(node -p "require('./package.json').version")"
           if [ "$TAG" != "$PKG_VERSION" ]; then
             echo "❌ Tag $TAG does not match package.json version $PKG_VERSION"
             exit 1
           fi
           echo "✅ Version match: $TAG"
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
       # Determine tag and release type
       - name: Set release info
         id: info
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-          VERSION="${TAG#v}"
+          VERSION="${{ steps.pkg.outputs.version }}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
           if [[ "$TAG" == *"-canary."* ]]; then
@@ -75,12 +89,14 @@ jobs:
       # Publish to npm (trusted publishing via OIDC — no token needed)
       - name: Publish to npm
         run: npm publish --access public --tag ${{ steps.info.outputs.npm_tag }} --provenance
+        working-directory: ${{ steps.pkg.outputs.dir }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
 
       # Extract release notes from CHANGELOG.md (optional — falls back to GitHub auto-generate)
       - name: Extract release notes
         id: notes
+        working-directory: ${{ steps.pkg.outputs.dir }}
         run: |
           VERSION="${{ steps.info.outputs.version }}"
           # Extract section between ## [$VERSION] and next ## [

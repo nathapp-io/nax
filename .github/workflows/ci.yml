@@ -4,38 +4,35 @@ on:
   push:
     branches: [main]
     paths:
-      - 'src/**'
-      - 'test/**'
-      - 'bin/**'
-      - 'flows/**'
-      - 'scripts/**'
-      - 'stubs/**'
-      - 'bun.lock'
+      - 'packages/**'
       - 'package.json'
-      - 'tsconfig*.json'
+      - 'bunfig.toml'
+      - 'bun.lock'
+      - 'biome.json'
       - '.github/workflows/**'
+      - '.nax/**'
   pull_request:
     branches: [main]
     paths:
-      - 'src/**'
-      - 'test/**'
-      - 'bin/**'
-      - 'flows/**'
-      - 'scripts/**'
-      - 'stubs/**'
-      - 'bun.lock'
+      - 'packages/**'
       - 'package.json'
-      - 'tsconfig*.json'
+      - 'bunfig.toml'
+      - 'bun.lock'
+      - 'biome.json'
       - '.github/workflows/**'
+      - '.nax/**'
 
 jobs:
-  test:
-    name: test
+  nax:
+    name: nax
     runs-on: ubuntu-latest
     # 15, not 10: this job absorbed the `typecheck` + `check:all` matrix (#1534),
     # which used to run in parallel under its own 5-minute budget. The work grew
     # while the budget did not, and a timeout here reads like a test failure.
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/nax
     steps:
       - uses: actions/checkout@v5
 
@@ -53,6 +50,7 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        working-directory: .
 
       # P4: the live sandbox suite needs a working bubblewrap. Ubuntu 24.04
       # restricts unprivileged user namespaces through AppArmor, which makes
