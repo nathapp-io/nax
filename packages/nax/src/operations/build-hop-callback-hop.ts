@@ -22,7 +22,7 @@
  */
 
 import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
-import { resolveCodingToolSupport } from "../agents/coding-tool-support";
+import { resolveCodingToolSupport } from "../agents/coding-tool-support-resolve";
 import type { HopKind } from "../agents/manager-types";
 import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions, SessionHandle, TurnResult } from "../agents/types";

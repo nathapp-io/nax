@@ -14,7 +14,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { _resetSandboxRegistryForTests } from "@/sandbox";

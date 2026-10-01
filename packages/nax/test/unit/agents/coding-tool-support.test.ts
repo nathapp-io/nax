@@ -4,7 +4,8 @@ import { readFile, realpath as realpathAsync } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { _codingToolSupportDeps, buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { buildCodingToolSupport } from "@/agents/coding-tool-support";
+import { _codingToolSupportDeps, resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import { loadConfigForPackage, packageConfigCache } from "@/config";
 import { _clearRootConfigCache } from "@/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
@@ -17,9 +18,7 @@ import { _codingToolDeps } from "@/tools";
 import { gitWithTimeout } from "@/utils/git";
 
 afterEach(() => _resetSandboxRegistryForTests()); // sandbox on by default: drop the cached backend
-
 let root: string;
-
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), "nax-support-"));
   // The deny/ask tests read a granted file to prove only the matching rule
@@ -153,7 +152,6 @@ describe("resolveCodingToolSupport — ledger location", () => {
     }
   });
 });
-
 describe("resolveCodingToolSupport — denyPaths (nax#1972)", () => {
   test("config.execution.denyPaths reaches Delete through resolveCodingToolSupport", async () => {
     const root = makeTempDir("nax-denypaths-");

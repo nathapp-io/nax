@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import type { CommandShadow } from "@/command-safety";
 import { _resetSandboxRegistryForTests } from "@/sandbox";
 
