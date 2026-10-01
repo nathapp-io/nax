@@ -1,18 +1,20 @@
 ---
 priority: 35
+paths:
+  - "packages/nax/*"
 appliesTo:
-  - "src/agents/**/*.ts"
-  - "src/operations/**/*.ts"
-  - "src/pipeline/**/*.ts"
-  - "src/execution/**/*.ts"
-  - "src/tdd/**/*.ts"
-  - "src/acceptance/**/*.ts"
-  - "src/review/**/*.ts"
-  - "src/routing/**/*.ts"
-  - "src/cli/**/*.ts"
-  - "src/verification/**/*.ts"
-  - "src/runtime/**/*.ts"
-  - "src/session/**/*.ts"
+  - "packages/nax/src/agents/**/*.ts"
+  - "packages/nax/src/operations/**/*.ts"
+  - "packages/nax/src/pipeline/**/*.ts"
+  - "packages/nax/src/execution/**/*.ts"
+  - "packages/nax/src/tdd/**/*.ts"
+  - "packages/nax/src/acceptance/**/*.ts"
+  - "packages/nax/src/review/**/*.ts"
+  - "packages/nax/src/routing/**/*.ts"
+  - "packages/nax/src/cli/**/*.ts"
+  - "packages/nax/src/verification/**/*.ts"
+  - "packages/nax/src/runtime/**/*.ts"
+  - "packages/nax/src/session/**/*.ts"
 stages:
   - "context"
   - "execution"

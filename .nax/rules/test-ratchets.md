@@ -1,7 +1,9 @@
 ---
 priority: 30
+paths:
+  - "packages/nax/*"
 appliesTo:
-  - "test/**/*.ts"
+  - "packages/nax/test/**/*.ts"
 stages:
   - "tdd-test-writer"
   - "rectify"

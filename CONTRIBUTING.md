@@ -4,6 +4,8 @@ Thanks for your interest in contributing to nax! This guide will help you get st
 
 ## Development Setup
 
+> Package commands below run from `packages/nax/` (`cd packages/nax`). From the repo root, `bun run build|typecheck|lint|check:all|test` run every package in dependency order.
+
 ### Prerequisites
 
 - [Bun](https://bun.sh/) v1.3.7 or later
@@ -95,7 +97,7 @@ test/
 
 1. Fork the repo and create your branch from `main`
 2. Write tests for any new functionality
-3. Ensure the full test suite passes: `bun test`
+3. Ensure the full test suite passes: `bun run test`
 4. Run type checking: `bun run typecheck`
 5. Run linting: `bun run lint`
 6. Use [conventional commits](https://www.conventionalcommits.org/) for your commit messages

@@ -1,10 +1,12 @@
 ---
 priority: 45
+paths:
+  - "packages/nax/*"
 appliesTo:
-  - "src/agents/**/*.ts"
-  - "src/operations/**/*.ts"
-  - "src/config/schemas-review.ts"
-  - "src/session/session-keeper.ts"
+  - "packages/nax/src/agents/**/*.ts"
+  - "packages/nax/src/operations/**/*.ts"
+  - "packages/nax/src/config/schemas-review.ts"
+  - "packages/nax/src/session/session-keeper.ts"
 stages:
   - "execution"
   - "tdd-implementer"

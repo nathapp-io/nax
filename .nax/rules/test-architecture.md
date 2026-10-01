@@ -1,7 +1,9 @@
 ---
 priority: 30
+paths:
+  - "packages/nax/*"
 appliesTo:
-  - "test/**/*.test.ts"
+  - "packages/nax/test/**/*.test.ts"
 stages:
   - "context"
   - "execution"
