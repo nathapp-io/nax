@@ -18,7 +18,9 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runQualityCommand } from "@/quality";
 import { compileToolPolicy, createCodingToolRuntime, createRunCommandTool, createToolAuditSink } from "@/tools";
+import { markTrusted } from "@/trust";
 import { gitWithTimeout } from "@/utils/git";
 import { naxProtectedPaths } from "../src/agents/nax-protected-paths";
 
@@ -33,6 +35,9 @@ const repo = join(base, "repo");
 const auditDir = join(base, "audit");
 mkdirSync(repo, { recursive: true });
 writeFileSync(join(repo, "app.ts"), "export const answer = 42;\n");
+// Production marks the project trusted at its entry gate; this scratch repo has
+// no gate, so record it here before the declared runner's trust check can run.
+markTrusted(repo);
 
 const failures: string[] = [];
 
@@ -61,7 +66,11 @@ const runtime = createCodingToolRuntime({
   ),
   // RunCommand is per-session, so it arrives through the extraTools layer
   // rather than the process-global builtin registry.
-  extraTools: [createRunCommandTool(new Map([["test", "echo {{files}} or run declared"]]))],
+  extraTools: [
+    createRunCommandTool(new Map([["test", "echo {{files}} or run declared"]]), {
+      runDeclaredCommand: runQualityCommand,
+    }),
+  ],
   sink,
   protectedPaths: naxProtectedPaths(),
 });

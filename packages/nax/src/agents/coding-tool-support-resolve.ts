@@ -441,8 +441,9 @@ export const _codingToolSupportDeps: {
  * Exists so the two real hops (`operations/build-hop-callback.ts`,
  * `runtime/session-run-hop.ts`) resolve support identically and cannot drift:
  * a tool wired into one hop and not the other is invisible until an operation
- * happens to dispatch through the other. Call this, never the raw producer
- * above — it takes no `auditDir`, so it yields a non-recording ledger sink.
+ * happens to dispatch through the other. Call this, never the raw producer in
+ * `coding-tool-support.ts` — it takes no `auditDir`, so it yields a
+ * non-recording ledger sink.
  */
 export async function resolveCodingToolSupport(
   options: ResolveCodingToolSupportOptions,

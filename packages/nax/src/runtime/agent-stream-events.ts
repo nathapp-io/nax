@@ -37,7 +37,7 @@ function hasNaxStage(event: AgentStreamEvent): event is NaxAgentStreamEvent {
 export function narrowStreamStage(event: AgentStreamEvent): NaxAgentStreamEvent {
   if (hasNaxStage(event)) return event;
   getSafeLogger()?.debug("agent-stream-bus", "dropped an unknown stage label", {
-    storyId: event.storyId,
+    callId: event.callId,
     stage: event.stage,
   });
   return { ...event, stage: undefined };
