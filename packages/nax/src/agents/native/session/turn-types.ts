@@ -149,9 +149,9 @@ export interface TurnDeps {
  * N silently drops everything spent on round trips 1..N-1.
  *
  * Recorded against the thrown error's own identity (a WeakMap), never by
- * mutating the error itself: adapter.ts's `isProtocolStreamError` guard and
- * its "propagate a non-protocol error untouched" rule both depend on the
- * error's own shape staying exactly what was thrown.
+ * mutating the error itself: session-adapter.ts's `isProtocolStreamError`
+ * guard and its "propagate a non-protocol error untouched" rule both depend
+ * on the error's own shape staying exactly what was thrown.
  */
 export interface NativeTurnFailureUsage {
   readonly tokenUsage: TokenUsage;

@@ -212,7 +212,6 @@ export interface SendTurnOpts {
   turnId?: string;
 }
 
-/** Result returned by sendTurn(). */
 /**
  * A single mid-turn interactive Q&A exchange between the agent and a human
  * operator (routed via the interaction plugin), captured for the prompt-audit

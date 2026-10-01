@@ -24,7 +24,7 @@
  * native has no such process, so nax is the harness that must.
  *
  * Detection is structural, matching turn-loop.ts's `isContextOverflow` and
- * adapter.ts's `isProtocolStreamError`: nax-ai's error class is not
+ * adapter-deps.ts's `isProtocolStreamError`: nax-ai's error class is not
  * importable outside src/agents/native/ (check-nax-ai-imports.ts), so only
  * the shape — a `protocolError.kind` string — is inspected, never the class.
  */
@@ -103,8 +103,8 @@ function backoffMs(retryIndex: number, baseDelayMs: number, random: () => number
  * window far longer than the turn has left, and sleeping it out would spend
  * wall clock the budget has already declared gone — the attempt after it
  * aborts immediately anyway, because TurnDeadline.remainingMs() clamps to 0
- * and adapter.ts arms the call's AbortController with it. Absent means the
- * turn is unbounded (TurnDeadline's UNBOUNDED), so nothing caps the wait.
+ * and session-adapter.ts arms the call's AbortController with it. Absent means
+ * the turn is unbounded (TurnDeadline's UNBOUNDED), so nothing caps the wait.
  */
 export function turnRetryDelayMs(
   err: RetryableProtocolError,
@@ -188,7 +188,7 @@ export interface TurnRetryDeps<T> {
  * Exhaustion, a non-retryable error, an expired deadline or an aborted
  * signal all rethrow the triggering error EXACTLY as thrown — never wrapped
  * or mutated. `runNativeTurn` records failure usage against the error's own
- * identity in a WeakMap (`readNativeTurnFailureUsage`), and adapter.ts's
+ * identity in a WeakMap (`readNativeTurnFailureUsage`), and adapter-deps.ts's
  * `isProtocolStreamError` guard depends on the error keeping its own shape;
  * both would silently break if this function rethrew a new object.
  */

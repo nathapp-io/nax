@@ -1,6 +1,12 @@
 /**
  * Failure descriptor returned (or synthesized) by an agent adapter. Part of the
  * session contract (S1 spec section 4.2, port 2); `context/engine` re-exports it.
+ *
+ * The runner uses this to decide between escalation (quality) and agent
+ * fallback (availability), and passes it to `rebuildForAgent()` so the new
+ * bundle carries a failure-note chunk.
+ *
+ * See: docs/specs/SPEC-context-engine-v2.md §Availability fallback
  */
 
 export interface AdapterFailure {

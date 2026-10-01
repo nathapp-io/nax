@@ -100,7 +100,7 @@ export async function nativeComplete(
       // chosen on, reported rather than re-derived by the cost subscriber.
       pricingSource,
       // US-002: the four per-1M rates that priced this call. See
-      // CompleteResult.rates above.
+      // NativeCompleteResult.rates above.
       rates: resolvedRates,
       // US-006: the credential identity the store observed while serving
       // this call. Absent (not undefined) when it observed nothing.

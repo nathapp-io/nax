@@ -8,7 +8,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import { NativeAgentAdapter } from "@/agents/native-agent";
-import type { AgentSessionAdapter, OpenSessionOpts, SessionHandle, TurnResult } from "@/agents/session-types";
+import type {
+  AgentSessionAdapter,
+  OpenSessionOpts,
+  SendTurnOpts,
+  SessionHandle,
+  TurnResult,
+} from "@/agents/session-types";
 import type { ResolvedCompleteOptions } from "@/agents/types";
 
 const REAL_BUILD = _clientDeps.build;
@@ -31,13 +37,17 @@ const OPEN_OPTS: OpenSessionOpts = {
   modelDef: { provider: "p", model: "p/m" },
   timeoutSeconds: 1,
 };
+const SEND_OPTS: SendTurnOpts = { interactionHandler: { onInteraction: async () => null } };
 
 function recordingSessions(): { calls: Array<[string, unknown[]]>; sessions: Required<AgentSessionAdapter> } {
   const calls: Array<[string, unknown[]]> = [];
   const sessions: Required<AgentSessionAdapter> = {
+    // `true`, not `false`: a shell that hardcoded the answer and never called
+    // the session adapter would satisfy a `false` expectation, so the one
+    // forward whose VALUE is asserted is the one a hardcoded answer cannot pass.
     hasCredentials: async (...a) => {
       calls.push(["hasCredentials", a]);
-      return false;
+      return true;
     },
     openSession: async (...a) => {
       calls.push(["openSession", a]);
@@ -62,9 +72,9 @@ describe("NativeAgentAdapter shell", () => {
     const { calls, sessions } = recordingSessions();
     const adapter = new NativeAgentAdapter(undefined, [], sessions);
     const handle = HANDLE;
-    expect(await adapter.hasCredentials()).toBe(false);
+    expect(await adapter.hasCredentials()).toBe(true);
     expect(await adapter.openSession("s", OPEN_OPTS)).toBe(HANDLE);
-    expect(await adapter.sendTurn(handle, "p", { interactionHandler: { onInteraction: async () => null } })).toBe(TURN);
+    expect(await adapter.sendTurn(handle, "p", SEND_OPTS)).toBe(TURN);
     await adapter.closeSession(handle);
     await adapter.closePhysicalSession("s", "/w", { force: true });
     expect(calls.map(([m]) => m)).toEqual([
@@ -74,7 +84,11 @@ describe("NativeAgentAdapter shell", () => {
       "closeSession",
       "closePhysicalSession",
     ]);
+    // Every forward's arguments, not just its name and position: an argument
+    // dropped from a call still typechecks and still records the call.
     expect(calls[1]?.[1]).toEqual(["s", OPEN_OPTS]);
+    expect(calls[2]?.[1]).toEqual([HANDLE, "p", SEND_OPTS]);
+    expect(calls[3]?.[1]).toEqual([HANDLE]);
     expect(calls[4]?.[1]).toEqual(["s", "/w", { force: true }]);
   });
 

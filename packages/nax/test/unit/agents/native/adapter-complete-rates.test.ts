@@ -499,6 +499,34 @@ describe("NativeAgentAdapter.sendTurn contextWindow override", () => {
   });
 });
 
+describe("NativeAgentAdapter.sendTurn config pricing override", () => {
+  // The whole chain the branch moved, end to end: selectModel's converted
+  // `SessionModel` -> `OpenSessionOpts` -> openNativeSession's verbatim copy
+  // (`session/session.ts`) -> `buildRateCard` in `sendTurn`. Each link has its
+  // own test; this is the one that fails if the composition does.
+  test("an override on the opened model reaches buildRateCard, so the turn reports config-override", async () => {
+    const model = catalogModel();
+    const { client } = countingClient(model);
+    _clientDeps.build = async () => client;
+    // No cache rates on purpose: `toPricing` fills an omitted cache rate from
+    // the override's own input rate, so a cacheRead of 7 can only come from the
+    // override having reached the rate card. The catalog's cacheRead is 0, so
+    // a dropped override reads as 0 rather than as 7.
+    const { adapter, handle } = await openSessionWithModelDef("pricing-override", {
+      provider: "unknown",
+      model: "openai/gpt-5.4-mini",
+      pricing: { inputPer1M: 7, outputPer1M: 9 },
+    });
+    const turn = await adapter.sendTurn(handle, "next", {
+      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+    });
+    expect(turn.pricingSource).toBe("config-override");
+    expect(turn.rates?.input).toBe(7);
+    expect(turn.rates?.output).toBe(9);
+    expect(turn.rates?.cacheRead).toBe(7);
+  });
+});
+
 const costRatesModel = {
   id: "gpt-5.4-mini",
   provider: "openai",

@@ -4,6 +4,11 @@
  * (descriptor, handle, runOptions, completeOptions, DispatchEvent) shares
  * the same type. Free-form sessionRole strings are banned outside this
  * file; misspellings/legacy values become compile errors at the call site.
+ *
+ * One exception, by construction: the session contract carries the role on
+ * `SessionHandle.role` as an opaque `string` (S1 spec section 4.2, port 2), so
+ * the contract file permits exactly one free-form string. `knownSessionRole`
+ * below is what narrows it back to this registry on the way in.
  */
 
 export type CanonicalSessionRole =

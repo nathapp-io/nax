@@ -14,7 +14,8 @@ import { parseModelSpec } from "../model-spec";
 
 /** The one agent name that routes to this transport. Defined once in the config
  *  leaf (config validates against it); re-exported here, not in the barrel, so
- *  adapter.ts can import it without an index -> adapter -> index cycle. */
+ *  session-adapter.ts can import it without an index -> session-adapter -> index
+ *  cycle. */
 export { NATIVE_AGENT_NAME as NATIVE_AGENT } from "@/config";
 export { parseModelSpec };
 
@@ -157,9 +158,10 @@ export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[
  */
 /**
  * Turn nax-ai's catalog `Pricing` into the rate object `priceCall` prices from
- * (nax#1843, nax#1847). Both `adapter.ts` call sites (`complete()` and
- * `sendTurn()`) build the rate object this way so the fix cannot drift
- * between them.
+ * (nax#1843, nax#1847). Both call sites -- `nativeComplete()` (complete.ts)
+ * and `NativeSessionAdapter.sendTurn()` (session-adapter.ts) -- build the rate
+ * object this way, and both receive the override already converted by
+ * `toSessionModel`, so the fix cannot drift between them.
  *
  * An explicit `modelDef.pricing` override wins WHOLESALE: the caller converts
  * the config override with `toPricing` (via `toSessionModel`), which fills

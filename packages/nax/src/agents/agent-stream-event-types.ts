@@ -7,8 +7,8 @@
 export interface AgentStreamEventBase {
   /**
    * Stream-local UUID minted per turn by the emitting adapter
-   * (`adapter.ts` `randomUUID()`, mirrored by ACP per prompt). It is the
-   * watchdog's and `onActiveCall`'s handle and is NOT a durable join key.
+   * (`native/session-adapter.ts` `randomUUID()`, mirrored by ACP per prompt).
+   * It is the watchdog's and `onActiveCall`'s handle and is NOT a durable join key.
    */
   readonly callId: string;
   readonly runId: string;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fail if any file under src/agents/{acp,native}/ reads NaxConfig or CompleteConfig from complete() options,
+# Fail if any file under src/agents/{acp,native,native-agent}/ reads NaxConfig or CompleteConfig from complete() options,
 # or imports NaxConfig / DEFAULT_CONFIG / config loader directly.
 # This enforces the adapter boundary: adapters receive a resolved ModelDef, not raw NaxConfig.
 #
