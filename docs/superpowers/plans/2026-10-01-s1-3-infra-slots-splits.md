@@ -21,6 +21,7 @@
 - Source files stay at or under 600 lines and test files at or under 800 (`check:file-sizes`). `src/utils/git.ts` (567) shrinks in this PR. `src/logger/logger.ts` (485) grows by a few lines. Re-check with `wc -l` after editing either.
 - Code blocks show content, not final formatting. Before every commit, run `bun x biome check --write <files you touched>`, then `bun run lint`.
 - **Import rules** (`check:alias-internals`). In `src/`, a **value** import of `@/<dir>/<internal>` is forbidden when `src/<dir>/index.ts` exists. Use the exact barrel instead (`@/agents/infra`, `@/agents/cost/core`). `src/utils/` has no barrel, so `@/utils/git-exec` and `@/utils/redact` are legal. A **type-only** import may target a leaf. Relative imports may climb one level (`../x`); `../../` is banned by biome `noRestrictedImports`.
+- **Test ratchets** (`check:all` from the root): new tests must not add `as unknown as` casts or any `as <Capital>` (the loose-cast counter matches import aliases such as `import { X as Y }` too). `// test-ratchet-allow` does not help; its count is baselined as well. The test snippets below are written to stay at zero; keep them that way.
 - `check:import-cycles` must stay green. `src/agents/infra/` imports nothing from nax, so importing it cannot close a cycle.
 - The ratchet (`check:agent-boundary`) may only fall. Every task that lowers it ends with `bun run check:agent-boundary:update`, and the baseline is committed.
 - Commit locally as the steps say. **Push and open the PR only after the user approves.**
@@ -77,7 +78,7 @@ S1-2 left three move-set files importing the `@/agents/cost` barrel, and `estima
 
 **Files:**
 - Create: `src/agents/cost/usage-math.ts`, `src/agents/cost/core/index.ts`, `test/unit/agents/cost/cost-core-barrel.test.ts`
-- Modify: `src/agents/cost/calculate.ts:1-13,54-81,105-119`, `src/agents/cost/estimate.ts:19,27`
+- Modify: `src/agents/cost/calculate.ts:1-13,46-79,106-119`, `src/agents/cost/estimate.ts:19,27`
 - Modify (retarget imports): `src/agents/native/complete.ts:7`, `src/agents/native/session-adapter.ts:10`, `src/agents/native/session/turn-loop-round-trip.ts:36`
 - Modify: `scripts/s1-move-manifest.json`, `scripts/baselines/agent-boundary-baseline.json`
 
@@ -116,7 +117,7 @@ Expected: FAIL. `@/agents/cost/core` cannot be resolved.
 
 - [ ] **Step 3: Create `usage-math.ts` and move the two functions**
 
-Create `src/agents/cost/usage-math.ts`. Its header says it holds the pure usage arithmetic shared by the pricing core and nax's reporting helpers. **Cut** (not copy) from `calculate.ts` the private `toFiniteTokenCount` helper and the exported `addTokenUsage` and `inputClassTokens`, with their doc comments, verbatim. Its only import is `import type { TokenUsage } from "./standard-types";`.
+Create `src/agents/cost/usage-math.ts`. Its header says it holds the pure usage arithmetic shared by the pricing core and nax's reporting helpers. **Cut** (not copy) from `calculate.ts` the private `toFiniteTokenCount` helper and the exported `addTokenUsage` (lines 46-79, doc comments included) and `inputClassTokens` (lines 106-119, doc comment included), verbatim. Its only import is `import type { TokenUsage } from "./standard-types";`.
 
 In `calculate.ts`, add `export { addTokenUsage, inputClassTokens } from "./usage-math";`, drop the `TokenUsage` import if nothing else uses it, and update the header comment's helper list. In `estimate.ts:19`, change the import to `import { inputClassTokens } from "./usage-math";` (the re-export on line 27 stays).
 
@@ -183,8 +184,10 @@ git commit -m "refactor: split the cost core into a move-set barrel"
 
 ```ts
 import { describe, expect, test } from "bun:test";
-import { NaxError as InfraNaxError } from "@/agents/infra";
+import * as infra from "@/agents/infra";
 import { LockAcquisitionError, NaxError } from "@/errors";
+
+const InfraNaxError = infra.NaxError;
 
 describe("NaxError in the move set", () => {
   test("@/errors re-exports the same class object", () => {
@@ -273,6 +276,7 @@ git commit -m "refactor: move NaxError into the nax-agent move set"
 - Create: `src/agents/infra/agent-logger.ts`, `test/unit/agents/infra/agent-logger.test.ts`, `test/unit/logger/agent-logger-wiring.test.ts`
 - Modify: `src/agents/infra/index.ts`, `src/logger/logger.ts:7,414-424,480-485`, `src/logger/index.ts:11-12`
 - Move: `git mv src/logger/redact.ts src/utils/redact.ts`; modify `test/unit/logger/redact.test.ts:2` (subject moved)
+- Modify (port cut, step 7): `test/unit/interaction/dispatch-ask.test.ts` (the AC6 test near line 672)
 - Modify (retarget imports, 32 files): every line of `bun scripts/check-agent-boundary.ts --list | grep ' -> src/logger/index.ts'`. Seven use a relative `../logger` specifier: `permissions/approvals-{link,taint}.ts`, `sandbox/{git-guards,launcher,registry}.ts`. `src/agents/native/credentials/helper-process.ts:12` and `src/permissions/secret-spans.ts:14` also import from redact.
 - Modify: `scripts/s1-move-manifest.json` (redact entry), `scripts/baselines/agent-boundary-baseline.json`
 
@@ -458,7 +462,11 @@ Do not touch `src/utils/git.ts` here; Task 4 handles it.
 - [ ] **Step 7: Check for tests that spied on nax's logger module to observe move-set code**
 
 Run: `bun run test`.
-If a test fails because it used `spyOn(loggerModule, "getSafeLogger")` (where `loggerModule` is `@/logger`) and the code under test is now a move-set file, the subject's port was cut. Change that test to install a capturing logger with `setAgentLogger(...)` and restore it with `setAgentLogger(null)` in `afterEach`. Record each such file in the PR body. A test that observes nax-side code through `@/logger` is unaffected, and must not be edited.
+Expected: exactly one failure (verified in final review: 21887 pass, 1 fail), `test/unit/interaction/dispatch-ask.test.ts:672` ("US-002 AC6: a seal that cannot write the store resolves and logs the failed-taint warning"), with `expect(warnings).toHaveLength(1)` receiving 0. It spies `spyOn(loggerModule, "getSafeLogger")` on `@/logger`, but the warning comes from `src/permissions/approvals-taint.ts`, which now reads the slot. Its port was cut, so fix the test:
+- Replace the spy with `setAgentLogger(logger)` before the `try`, and `setAgentLogger(null)` in the `finally` (where the spy was restored). Import `setAgentLogger` from `@/agents/infra`.
+- Delete `import * as loggerModule from "@/logger"`, and remove `spyOn` from the `bun:test` import if nothing else in the file uses it. `bun run lint` runs biome with `--error-on-warnings`, so an unused import fails it.
+
+Re-run: `bun test test/unit/interaction/dispatch-ask.test.ts --timeout=60000`. Expected: 32/32 pass. Then `bun run test` is green. Record the file in the PR body. If any other test fails, apply the same rule: a test whose code under test is now a move-set file gets the slot; a test that observes nax-side code through `@/logger` is unaffected and must not be edited.
 
 - [ ] **Step 8: Verify**
 
@@ -483,6 +491,7 @@ git commit -m "refactor: route move-set logging through an agent logger slot"
 **Files:**
 - Create: `src/utils/git-exec.ts`, `test/unit/utils/git-exec.test.ts`
 - Modify: `src/utils/git.ts:1-152` (the exec half leaves; `getGitRoot` leaves)
+- Modify: `src/utils/nax-path-restore.ts` (`ctx.logger` type: `Logger` -> `AgentLogger`)
 - Modify (retarget imports): `src/sandbox/policy-inputs.ts:10`, `src/tools/delete.ts:59`, `src/tools/git-commit.ts:16`, `src/tools/git.ts:20`
 - Modify: `scripts/s1-move-manifest.json`, `scripts/baselines/agent-boundary-baseline.json`
 
@@ -496,6 +505,7 @@ git commit -m "refactor: route move-set logging through an agent logger slot"
 
 ```ts
 import { afterEach, describe, expect, test } from "bun:test";
+import { makeSpawn } from "@test/helpers";
 import * as gitModule from "@/utils/git";
 import * as gitExec from "@/utils/git-exec";
 
@@ -514,15 +524,10 @@ describe("utils/git-exec", () => {
 
   test("a spawn patched through @/utils/git intercepts gitWithTimeout from @/utils/git-exec", async () => {
     const seen: string[][] = [];
-    gitModule._gitDeps.spawn = ((argv: string[]) => {
-      seen.push(argv);
-      return {
-        stdout: new Response("abc\n").body,
-        stderr: new Response("").body,
-        exited: Promise.resolve(0),
-        kill: () => {},
-      };
-    }) as unknown as typeof gitModule._gitDeps.spawn;
+    gitModule._gitDeps.spawn = makeSpawn(({ cmd }) => {
+      seen.push(cmd);
+      return "abc\n";
+    }).spawn;
 
     const result = await gitExec.gitWithTimeout(["rev-parse", "HEAD"], "/tmp");
     expect(result).toEqual({ stdout: "abc\n", stderr: "", exitCode: 0 });
@@ -562,6 +567,8 @@ export { _gitDeps, GIT_TIMEOUT_MS, getGitRoot, gitWithTimeout } from "./git-exec
 
 `AUTO_COMMIT_GIT_TIMEOUT_MS` stays in `git.ts` (only `autoCommitIfDirty` uses it). `autoCommitIfDirty` keeps calling `_gitDeps.getSafeLogger()`.
 
+`_gitDeps.getSafeLogger` now returns `AgentLogger | null`, and `autoCommitIfDirty` passes it to `restoreDeletedNaxPaths`, whose `ctx.logger` is typed as nax's `Logger`. Without the next change typecheck fails with `src/utils/git.ts(291,7): error TS2322: Type 'AgentLogger | null' is not assignable to type 'Logger | null'`. In `src/utils/nax-path-restore.ts`, replace `import type { Logger } from "../logger";` with `import type { AgentLogger } from "@/agents/infra";`, and change `logger: Logger | null;` to `logger: AgentLogger | null;`. It only calls the four `AgentLogger` methods.
+
 - [ ] **Step 4: Retarget the four move-set importers**
 
 In `policy-inputs.ts:10` (relative `../utils/git`), `delete.ts:59`, `git-commit.ts:16` and `tools/git.ts:20`, use `import { gitWithTimeout } from "@/utils/git-exec";`.
@@ -582,7 +589,7 @@ Run: `wc -l src/utils/git.ts src/utils/git-exec.ts`. Both must be at or under 60
 
 ```bash
 bun run check:agent-boundary:update
-bun x biome check --write src/utils/git.ts src/utils/git-exec.ts src/sandbox/policy-inputs.ts src/tools/delete.ts src/tools/git-commit.ts src/tools/git.ts test/unit/utils/git-exec.test.ts
+bun x biome check --write src/utils/git.ts src/utils/git-exec.ts src/utils/nax-path-restore.ts src/sandbox/policy-inputs.ts src/tools/delete.ts src/tools/git-commit.ts src/tools/git.ts test/unit/utils/git-exec.test.ts
 bun run lint
 git add -A src test/unit/utils scripts/s1-move-manifest.json scripts/baselines/agent-boundary-baseline.json
 git commit -m "refactor: split generic git exec out of utils/git"
@@ -648,7 +655,7 @@ describe("credentials slot", () => {
       caught = err;
     }
     expect(caught).toBeInstanceOf(NaxError);
-    expect((caught as NaxError).code).toBe("CREDENTIALS_NOT_CONFIGURED");
+    expect(caught).toMatchObject({ code: "CREDENTIALS_NOT_CONFIGURED" });
   });
 
   test("serves the configured functions", async () => {
@@ -729,8 +736,10 @@ describe("bin/nax.ts configures credentials before dispatch", () => {
     const entrypoint = join(process.cwd(), "bin", "nax.ts");
     const proc = Bun.spawn(["bun", entrypoint, "auth", "list"], {
       cwd: globalDir,
+      stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
+      signal: AbortSignal.timeout(10_000),
       env: { ...process.env, NAX_GLOBAL_CONFIG_DIR: globalDir },
     });
     const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
@@ -844,14 +853,14 @@ The assignment is the compile-time check that nax's `AuthConfig` satisfies `Cred
 
 - `bin/nax.ts`: import `configureNaxCredentials` from `"../src/config"` (bin already imports from `../src/...`), and call `configureNaxCredentials();` immediately before the `try { await program.parseAsync(process.argv); }` block, with the comment `// Port 8: nax-agent reads credentials through a slot; set it before any command runs.`
 - `test/preload.ts`: after the line that sets `process.env.NAX_GLOBAL_CONFIG_DIR` (line 30), import and call `configureNaxCredentials()` (Decision 4).
-- `scripts/probe-c2-story-loop.ts`, `scripts/probe-native-coding-tools.ts`, `scripts/probe-native-tool-round-trip.ts`: call `configureNaxCredentials()` at the top of the script body. Before editing, check each one with `grep -n -E 'naxCredentialStore|createNativeClient|NativeSessionAdapter|nativeComplete|NativeAgentAdapter' <file>`; skip any that never reaches the credential store, and list the skipped ones in the PR body. **Do not run the probes**: they make billed calls.
+- `scripts/probe-c2-story-loop.ts`, `scripts/probe-native-coding-tools.ts`, `scripts/probe-native-tool-round-trip.ts`: call `configureNaxCredentials()` at the top of the script body. Before editing, check each one with `grep -n -E 'naxCredentialStore|getNativeClient|createNativeClient|NativeSessionAdapter|nativeComplete|NativeAgentAdapter' <file>`. Skip any that never reaches the credential store, and list the skipped ones in the PR body. Final review found that only `probe-native-tool-round-trip.ts` reaches it, through `getNativeClient`; `probe-c2-story-loop.ts` and `probe-native-coding-tools.ts` do not. **Do not run the probes**: they make billed calls.
 - Then sweep for any other process entry that reaches the credential store: `grep -rln -E 'naxCredentialStore|readStoredEntries|authSourceIsExec|credentialFilePath' src bin scripts`. Every non-test hit must be reachable only from `bin/nax.ts` or a script you just configured. Report anything else and stop.
 
 - [ ] **Step 7: Verify**
 
 Run: `bun test test/unit/agents/infra test/unit/config/configure-nax-credentials.test.ts test/unit/agents/native/credentials test/unit/cli/auth.test.ts --timeout=60000`. Expected: PASS.
 Run: `bun test test/integration/cli/cli-credentials-bootstrap.test.ts --timeout=60000`. Expected: PASS.
-Mutation check 1: comment out the `configureNaxCredentials();` call in `bin/nax.ts`. The integration test must fail with `CREDENTIALS_NOT_CONFIGURED` in the output. Revert. If it does not fail, `auth list` swallowed the error without printing its code. Switch the test to a subcommand whose failure surfaces the code (check `src/cli/auth-list.ts` `errorCode`) before going on.
+Mutation check 1: comment out the `configureNaxCredentials();` call in `bin/nax.ts`. The integration test must fail on the `"Credentials are not configured"` assertion. `auth list` prints only the message, not the code, so that assertion does the work and the code assertion is a backstop. Revert.
 Mutation check 2: in `configureNaxCredentials`, replace `globalConfigDir` with a captured value (`const dir = globalConfigDir(); ... configDir: () => dir`). `follows NAX_GLOBAL_CONFIG_DIR live` must fail. Revert.
 Run: `bun run typecheck && bun run check:agent-boundary -- --list | tail -1`. Expected: `20 boundary edge(s)`, and no `src/agents/native/credentials/*` line remains.
 
@@ -902,7 +911,7 @@ If any other line appears, it was introduced by this PR. Fix it before going on.
 
 - [ ] **Step 2: Full suite and gates**
 
-From `packages/nax`: `bun run typecheck`, `bun run lint`, `bun run test`, `bun run test:coverage`. From the repo root: `bun run check:all`. All must be green. Record the unit and integration pass counts for the PR body.
+From `packages/nax`: `bun run typecheck`, `bun run lint`, `bun run test`, `bun run test:coverage`. From the repo root: `bun run check:all`. All must be green. Record the unit and integration pass counts for the PR body. `bun run test` prints little under `AGENT=1`; get counts from a per-phase run if needed. A `check-test-satellites` note saying the "baseline can be lowered (1 fixed since)" predates this PR; leave it.
 
 - [ ] **Step 3: Behaviour-neutrality spot checks**
 
