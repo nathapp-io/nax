@@ -104,8 +104,9 @@ Cost attribution belongs to **orchestration layers** that wire `costAggregator.o
 
 ## Native path
 
-Two directories may import `@nathapp/nax-ai`, and no others: `src/agents/native/`
-and `src/agents/catalog/`. Enforced by `bun run check:nax-ai-imports`.
+nax-ai imports live in `src/agents/native/`, `src/agents/catalog/`, and the
+staging re-export `src/agents/cost/standard-types.ts`, and nowhere else. Enforced
+by `bun run check:nax-ai-imports`.
 
 `src/agents/catalog/` exists because the model catalog now has two consumers —
 the native path prices from it, and the ACP cost layer resolves rates through it
