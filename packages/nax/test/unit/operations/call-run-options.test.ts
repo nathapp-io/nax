@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 import type { CommandShadow } from "@/command-safety";
+import type { CommandInterceptor } from "@/execution/command-interceptor";
 import { buildRunDispatchOptions } from "@/operations/call-run-options";
 import type { CallContext } from "@/operations/types";
 import type { AskResolver } from "@/permissions";
@@ -213,5 +214,57 @@ describe("buildRunDispatchOptions — commandShadow (P5 threading)", () => {
 
   test("omits commandShadow when the caller supplies none", () => {
     expect("commandShadow" in build()).toBe(false);
+  });
+});
+
+describe("buildRunDispatchOptions — the run's command interceptor (S1 spec port 7)", () => {
+  const interceptor: CommandInterceptor = { provider: "probe", intercept: async () => ({ kind: "unchanged" }) };
+
+  test("buildRunDispatchOptions carries the runtime's interceptor", () => {
+    const config = makeNaxConfig();
+    const runtime = makeTestRuntime({ config, workdir: "/repo", commandInterceptor: interceptor });
+    createdRuntimes.push(runtime);
+    const ctx: CallContext = {
+      runtime,
+      packageView: runtime.packages.resolve("packages/api"),
+      packageDir: "packages/api",
+      config,
+      agentName: "claude",
+    };
+    const result = buildRunDispatchOptions(ctx, {
+      prompt: "hi",
+      effectiveTier: "balanced",
+      dispatchModelDef: { provider: "claude", model: "sonnet" },
+      config,
+      callId: "call-1",
+      pipelineStage: "run",
+      declaredTools: ["Read"],
+      keepOpen: false,
+    });
+    expect(result.commandInterceptor).toBe(interceptor);
+  });
+
+  test("a runtime without an interceptor adds no commandInterceptor key", () => {
+    const config = makeNaxConfig();
+    const runtime = makeTestRuntime({ config, workdir: "/repo" });
+    createdRuntimes.push(runtime);
+    const ctx: CallContext = {
+      runtime,
+      packageView: runtime.packages.resolve("packages/api"),
+      packageDir: "packages/api",
+      config,
+      agentName: "claude",
+    };
+    const result = buildRunDispatchOptions(ctx, {
+      prompt: "hi",
+      effectiveTier: "balanced",
+      dispatchModelDef: { provider: "claude", model: "sonnet" },
+      config,
+      callId: "call-1",
+      pipelineStage: "run",
+      declaredTools: ["Read"],
+      keepOpen: false,
+    });
+    expect(Object.keys(result)).not.toContain("commandInterceptor");
   });
 });

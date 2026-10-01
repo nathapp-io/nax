@@ -14,21 +14,22 @@ import {
 } from "@test/helpers";
 import type { IAgentManager } from "@/agents";
 import type { NaxConfig } from "@/config";
+import type { CommandInterceptor } from "@/execution/command-interceptor";
 import type { RtkDeps } from "@/execution/interceptors/rtk";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
 import { _runSetupDeps, type RunSetupOptions, setupRun } from "@/execution/lifecycle/run-setup";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
-import { _bashToolDeps } from "@/tools";
-import { _gitToolDeps, gitTool } from "@/tools/git";
+import type { CreateRuntimeOptions, NaxRuntime } from "@/runtime";
+import { gitTool } from "@/tools/git";
 import { _gitDeps } from "@/utils/git";
 
 const ctx = () => ({ root: "/repo", resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 });
 
-/** The exact install setupRun performs (run-setup.ts), with `_deps` injected so no real rtk binary is consulted. */
-function installFromConfig(config: NaxConfig, deps: Partial<RtkDeps>): void {
+/** The exact composition setupRun performs (run-setup.ts), with `_deps` injected so no real rtk binary is consulted. */
+function installFromConfig(config: NaxConfig, deps: Partial<RtkDeps>): CommandInterceptor {
   const ci = config.execution.commandInterceptor;
-  _gitToolDeps.interceptor = createRtkInterceptor({
+  return createRtkInterceptor({
     enabled: ci.enabled,
     verbs: ci.git.verbs,
     _deps: deps,
@@ -36,11 +37,6 @@ function installFromConfig(config: NaxConfig, deps: Partial<RtkDeps>): void {
 }
 
 describe("setupRun → command interceptor composition (config → provider → Git tool)", () => {
-  withDepsRestore(_gitToolDeps, ["interceptor"]);
-  // US-003: setupRun installs the SAME interceptor on the Bash tool, so this
-  // module-level value needs the same restore. Without it the interceptor built
-  // here leaks into every later test file in the process.
-  withDepsRestore(_bashToolDeps, ["interceptor"]);
   withDepsRestore(_gitDeps, ["spawn"]);
   withDepsRestore(_runSetupDeps);
 
@@ -50,15 +46,23 @@ describe("setupRun → command interceptor composition (config → provider → 
     createdRuntimes.length = 0;
   });
 
+  /** The interceptor `setupRun` last handed the runtime factory (port 7). */
+  let captured: CommandInterceptor | undefined;
+
+  /** Captures the runtime options `setupRun` builds, then returns a mock runtime. */
+  function captureCreateRuntime(_config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
+    captured = opts?.commandInterceptor;
+    const rt = makeMockRuntime({ workdir });
+    createdRuntimes.push(rt);
+    return rt;
+  }
+
   /** Drive the REAL setupRun, mirroring run-setup.test.ts's sweep fixture. */
   async function driveSetupRun(workdir: string, config: NaxConfig): Promise<void> {
     const prdPath = join(workdir, "prd.json");
     writeFileSync(prdPath, JSON.stringify(makePRD({ feature: "ci-drive", userStories: [] }), null, 2), "utf8");
-    _runSetupDeps.createRuntime = (() => {
-      const rt = makeMockRuntime({ workdir });
-      createdRuntimes.push(rt);
-      return rt;
-    }) as typeof _runSetupDeps.createRuntime;
+    captured = undefined;
+    _runSetupDeps.createRuntime = captureCreateRuntime;
     _runSetupDeps.installCrashHandlers = (() => () => {}) as typeof _runSetupDeps.installCrashHandlers;
     _runSetupDeps.detectProjectProfile = (async () => ({})) as typeof _runSetupDeps.detectProjectProfile;
 
@@ -94,13 +98,13 @@ describe("setupRun → command interceptor composition (config → provider → 
       return "out";
     }).spawn;
 
-    installFromConfig(makeNaxConfig({ execution: { commandInterceptor: { enabled: false } } }), {
+    const interceptor = installFromConfig(makeNaxConfig({ execution: { commandInterceptor: { enabled: false } } }), {
       which: () => "/usr/bin/rtk",
       version: () => "0.45.0",
       record: () => {},
     });
 
-    const result = await gitTool.run({ subcommand: "log" }, ctx());
+    const result = await gitTool.run({ subcommand: "log" }, { ...ctx(), interceptor });
 
     expect(result.isError).toBeFalsy();
     expect(calls[0]?.[0]).toBe("git");
@@ -114,7 +118,7 @@ describe("setupRun → command interceptor composition (config → provider → 
       return "out";
     }).spawn;
 
-    installFromConfig(makeNaxConfig({ execution: { commandInterceptor: { enabled: true } } }), {
+    const interceptor = installFromConfig(makeNaxConfig({ execution: { commandInterceptor: { enabled: true } } }), {
       which: () => null,
       version: () => null,
       record: () => {},
@@ -122,16 +126,16 @@ describe("setupRun → command interceptor composition (config → provider → 
 
     // The provider really is installed, and the configured verbs match — the
     // interceptor declines only because the preflight probe found no binary.
-    expect(_gitToolDeps.interceptor?.provider).toBe("rtk");
-    const outcome = await _gitToolDeps.interceptor?.intercept({
+    expect(interceptor.provider).toBe("rtk");
+    const outcome = await interceptor.intercept({
       kind: "argv",
       argv: ["git", "diff"],
       cwd: "/repo",
       site: "git",
     });
-    expect(outcome?.kind).toBe("declined");
+    expect(outcome.kind).toBe("declined");
 
-    const result = await gitTool.run({ subcommand: "diff" }, ctx());
+    const result = await gitTool.run({ subcommand: "diff" }, { ...ctx(), interceptor });
 
     expect(result.isError).toBeFalsy();
     expect(result.content).toContain("out");
@@ -144,8 +148,8 @@ describe("setupRun → command interceptor composition (config → provider → 
     try {
       await driveSetupRun(workdir, makeNaxConfig({ execution: { commandInterceptor: { enabled: false } } }));
 
-      expect(_gitToolDeps.interceptor?.provider).toBe("rtk");
-      const outcome = await _gitToolDeps.interceptor?.intercept({
+      expect(captured?.provider).toBe("rtk");
+      const outcome = await captured?.intercept({
         kind: "argv",
         argv: ["git", "log"],
         cwd: workdir,
@@ -162,11 +166,11 @@ describe("setupRun → command interceptor composition (config → provider → 
     try {
       await driveSetupRun(workdir, makeNaxConfig({ execution: { commandInterceptor: { enabled: true } } }));
 
-      expect(_gitToolDeps.interceptor?.provider).toBe("rtk");
+      expect(captured?.provider).toBe("rtk");
       // enabled: true probes the real binary at construction; rtk may or may
       // not be installed on this machine, so a configured verb resolves to
       // rewritten (present) or declined (absent) — never unchanged.
-      const outcome = await _gitToolDeps.interceptor?.intercept({
+      const outcome = await captured?.intercept({
         kind: "argv",
         argv: ["git", "log"],
         cwd: workdir,
@@ -178,15 +182,16 @@ describe("setupRun → command interceptor composition (config → provider → 
     }
   });
 
-  test("US-003 AC16: a real setupRun installs ONE interceptor, on the Git tool and the Bash tool", async () => {
+  test("US-003 AC16: a real setupRun installs ONE interceptor exposing both sites", async () => {
     await withTempDir(async (workdir) => {
       await driveSetupRun(
         workdir,
         makeNaxConfig({ execution: { commandInterceptor: { enabled: true, bash: { enabled: true } } } }),
       );
 
-      expect(_bashToolDeps.interceptor).toBeDefined();
-      expect(_bashToolDeps.interceptor).toBe(_gitToolDeps.interceptor);
+      expect(captured?.provider).toBe("rtk");
+      expect(typeof captured?.intercept).toBe("function");
+      expect(typeof captured?.interceptShell).toBe("function");
     });
   });
 
@@ -215,10 +220,9 @@ describe("setupRun → command interceptor composition (config → provider → 
     await withTempDir(async (workdir) => {
       await driveSetupRun(workdir, makeNaxConfig());
 
-      expect(_bashToolDeps.interceptor).toBeDefined();
-      const interceptor = _bashToolDeps.interceptor;
-      assertDefined(interceptor, "_bashToolDeps.interceptor");
-      const interceptShell = interceptor.interceptShell;
+      expect(captured).toBeDefined();
+      assertDefined(captured, "captured command interceptor");
+      const interceptShell = captured.interceptShell;
       assertDefined(interceptShell, "interceptor.interceptShell");
       // Default config has commandInterceptor disabled, so the Bash site is a
       // fail-safe no-op rather than an unconfigured hole.

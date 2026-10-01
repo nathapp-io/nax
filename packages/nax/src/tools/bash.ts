@@ -20,7 +20,7 @@
  * an OS sandbox when enabled -- never WHETHER.
  */
 import type { BashApprovalMode } from "../config/bash-approval";
-import type { CommandInterceptor, ShellInterceptRequest } from "../execution/command-interceptor";
+import type { ShellInterceptRequest } from "../execution/command-interceptor";
 import { interceptShell } from "../execution/command-interceptor";
 import type { SandboxRecord } from "../sandbox";
 import { type CommandLauncher, rawBashRefusalReason, sandboxSentence, unsandboxedSentence } from "../sandbox";
@@ -78,17 +78,9 @@ export interface BashToolOptions {
   readonly launcher?: CommandLauncher;
 }
 
-/**
- * Injectable seam, mirroring `_argvExecDeps` / `_gitToolDeps`.
- *
- * `interceptor` is the run-scoped instance `setupRun` installs (US-003) — the
- * SAME object the Git tool holds, so both sites share one binary probe and one
- * mode. Undefined for entry points that skip `setupRun`; interception then
- * simply does not apply, the fail-safe both sites state.
- */
+/** Injectable spawn seam, mirroring `_argvExecDeps`. */
 export const _bashToolDeps = {
   runArgv,
-  interceptor: undefined as CommandInterceptor | undefined,
 };
 
 function describeGrants(patterns: readonly string[] | undefined): string {
@@ -257,12 +249,9 @@ async function launchIntercepted({
   ctx,
   timeoutMs,
 }: BashLaunchRequest): Promise<{ launched: BashLaunch; stdout: string }> {
-  // Read the seam ONCE. It is module-level mutable state that `setupRun`
-  // replaces per run, and the launch below can run for minutes, so a second
-  // read would let a different instance post-process output this one decided
-  // to rewrite — contradicting `postProcess`'s own contract ("consulted ONLY
-  // for output of a command this interceptor actually rewrote").
-  const interceptor = _bashToolDeps.interceptor;
+  // The run's interceptor arrives on the context (S1 spec port 7), immutable
+  // for this call, so the launch below and `postProcess` see the same object.
+  const interceptor = ctx.interceptor;
   const intercepted = await interceptShell(command, ctx.root, interceptor);
   const executed = [shell, "-c", intercepted.command];
   // US-004: opt the child into agent-friendly output. The same rule the

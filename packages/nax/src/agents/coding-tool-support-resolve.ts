@@ -44,6 +44,7 @@ export type ResolveCodingToolSupportOptions = Pick<
   AgentRunOptions,
   | "declaredTools"
   | "providers"
+  | "commandInterceptor"
   | "toolPatterns"
   | "codingToolRoot"
   | "codingToolFileOutput"
@@ -498,6 +499,7 @@ export async function resolveCodingToolSupport(
     providerIdByTool: providerResult.providerIdByTool,
     declaredCommands,
     runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
+    interceptor: options.commandInterceptor,
     stripEnvVars: fields.stripEnvVars,
     sessionName,
     header,

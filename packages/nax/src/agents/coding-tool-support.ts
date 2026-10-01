@@ -12,6 +12,7 @@
 import { getSafeLogger, NaxError } from "@/agents/infra";
 import type { CommandShadow } from "@/command-safety";
 import type { BashApprovalMode } from "@/config/bash-approval";
+import type { CommandInterceptor } from "@/execution/command-interceptor";
 import type { AskResolver } from "@/permissions";
 import type { QualityCommandSpec } from "@/quality/command-spec";
 import type { CommandLauncher } from "@/sandbox";
@@ -88,6 +89,8 @@ export function buildCodingToolSupport(args: {
   declaredCommands?: ReadonlyMap<string, QualityCommandSpec>;
   /** Port 7, forwarded to RunCommand. Supplied by `resolveCodingToolSupport`. */
   runDeclaredCommand?: DeclaredCommandRunner;
+  /** Port 7: the run's interceptor, placed on every tool context. */
+  interceptor?: CommandInterceptor;
   stripEnvVars?: readonly string[];
   /** `quality.shell` — the shell the Bash tool spawns. Defaults to /bin/sh. */
   shell?: string;
@@ -216,6 +219,7 @@ export function buildCodingToolSupport(args: {
       ...(args.naxAllowWrite !== undefined ? { naxAllowWrite: args.naxAllowWrite } : {}),
     }),
     declaredCommands: new Set(declaredCommands.keys()),
+    interceptor: args.interceptor,
     ...(args.abortSignal !== undefined ? { signal: args.abortSignal } : {}),
     ...(args.askResolver !== undefined ? { askResolver: args.askResolver } : {}),
     ...(args.commandShadow !== undefined ? { commandShadow: args.commandShadow } : {}),

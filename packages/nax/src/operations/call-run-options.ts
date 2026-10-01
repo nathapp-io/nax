@@ -34,6 +34,19 @@ export interface RunDispatchOptionsParams {
 }
 
 /**
+ * The run-scoped objects every dispatch takes from the runtime: MCP providers
+ * and the command interceptor. Both hops resolve tool support from these
+ * options, so injecting once here cannot leave the two paths with different
+ * tools or a different interceptor.
+ */
+function runtimeDispatchFields(runtime: CallContext["runtime"]) {
+  return {
+    ...(runtime.toolProviders.length > 0 ? { providers: runtime.toolProviders } : {}),
+    ...(runtime.commandInterceptor !== undefined ? { commandInterceptor: runtime.commandInterceptor } : {}),
+  };
+}
+
+/**
  * @param ctx - The dispatching CallContext; supplies packageView/runtime/story fields.
  * @param params - Call-site-local values callOp already resolved for this dispatch.
  */
@@ -68,11 +81,7 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     storyId: ctx.storyId,
     callId,
     declaredTools,
-    // Both hops resolve providers from this one object (build-hop-callback and
-    // session-run-hop each take their options from here), so injecting once
-    // cannot leave the two paths advertising different tool sets — the drift
-    // both hops' comments warn about.
-    ...(ctx.runtime.toolProviders.length > 0 ? { providers: ctx.runtime.toolProviders } : {}),
+    ...runtimeDispatchFields(ctx.runtime),
     ...(toolPatterns !== undefined ? { toolPatterns } : {}),
     codingToolRoot: storyExecRoot(ctx.packageView),
     ...(fileOutputPath !== undefined ? { codingToolFileOutput: fileOutputPath } : {}),

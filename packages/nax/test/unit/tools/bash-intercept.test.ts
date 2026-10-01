@@ -8,9 +8,10 @@
  * it has to happen inside it, after the verdict, and everything below is
  * asserted at one of two seams:
  *
- *   - `_bashToolDeps.interceptor` — the run-scoped interceptor `setupRun`
- *     installs on the Bash tool as well as the Git tool (the install itself is
- *     pinned in test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts);
+ *   - `ToolRunContext.interceptor` — the run-scoped interceptor the runtime
+ *     places on every tool context, for the Bash tool as well as the Git tool
+ *     (the wiring itself is pinned in
+ *     test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts);
  *   - `_bashToolDeps.runArgv` / the launcher — where the rewritten argv, and
  *     therefore "did the rewrite actually run?", become observable.
  *
@@ -48,6 +49,7 @@ const realRunArgv = _bashToolDeps.runArgv;
 
 let root: string;
 let calls: Parameters<typeof realRunArgv>[0][];
+let interceptor: CommandInterceptor | undefined;
 
 /** Replace the spawn seam, recording every call. */
 function stubRunArgv(result: Partial<Awaited<ReturnType<typeof realRunArgv>>> = {}): void {
@@ -140,6 +142,7 @@ function runtimeFor(patterns: readonly string[] = ["bun test *"]) {
     policy: compileToolPolicy([{ tool: "Bash", patterns }], root),
     sink: { record: (entry) => void records.push(entry), flush: async () => {} },
     extraTools: [createBashTool()],
+    ...(interceptor !== undefined ? { interceptor } : {}),
   });
   return { runtime, records };
 }
@@ -166,14 +169,21 @@ function capturingLauncher(): { launcher: CommandLauncher; requests: LaunchReque
   };
 }
 
-const ctx = () => ({ root, resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_000_000 });
+const ctx = () => ({
+  root,
+  resolvedPaths: [],
+  maxBytes: 40_000,
+  maxFileBytes: 2_000_000,
+  ...(interceptor !== undefined ? { interceptor } : {}),
+});
 
 describe("US-003 Bash interception", () => {
-  // Module-level state is per-process: an interceptor left installed here would
-  // reach every later test file.
-  withDepsRestore(_bashToolDeps, ["runArgv", "interceptor"]);
+  // Module-level state is per-process: the spawn seam must not leak into a
+  // later test file.
+  withDepsRestore(_bashToolDeps, ["runArgv"]);
 
   beforeEach(() => {
+    interceptor = undefined;
     // `compileToolPolicy` realpaths its root (`realOrRaw`), so the root the
     // runtime hands the tool is the resolved one: macOS resolves /tmp ->
     // /private/tmp. Compare like with like — on Linux realpath is a no-op.
@@ -188,7 +198,7 @@ describe("US-003 Bash interception", () => {
 
   describe("the granted call, through createCodingToolRuntime (AC1-AC8)", () => {
     test("US-003 AC1: the validated rewrite is the command that runs", async () => {
-      _bashToolDeps.interceptor = rtkRewritingTo(REWRITTEN);
+      interceptor = rtkRewritingTo(REWRITTEN);
       stubRunArgv();
 
       await runtimeFor().runtime.callTool("Bash", { command: ORIGINAL });
@@ -198,7 +208,7 @@ describe("US-003 Bash interception", () => {
 
     test("US-003 AC2: interceptShell receives the model's ORIGINAL command", async () => {
       const stub = recordingStub({ kind: "rewritten", command: REWRITTEN, provider: "rtk" });
-      _bashToolDeps.interceptor = stub.interceptor;
+      interceptor = stub.interceptor;
       stubRunArgv();
 
       await runtimeFor().runtime.callTool("Bash", { command: ORIGINAL });
@@ -216,7 +226,7 @@ describe("US-003 Bash interception", () => {
 
     test("US-003 AC4: a denied call never reaches interceptShell", async () => {
       const stub = recordingStub({ kind: "rewritten", command: REWRITTEN, provider: "rtk" });
-      _bashToolDeps.interceptor = stub.interceptor;
+      interceptor = stub.interceptor;
       stubRunArgv();
 
       const outcome = await runtimeFor().runtime.callTool("Bash", { command: "rm -rf src" });
@@ -228,7 +238,7 @@ describe("US-003 Bash interception", () => {
     });
 
     test("US-003 AC5: the granted call's audit records the rewritten argv as executed", async () => {
-      _bashToolDeps.interceptor = rtkRewritingTo(REWRITTEN);
+      interceptor = rtkRewritingTo(REWRITTEN);
       stubRunArgv();
 
       const { runtime, records } = runtimeFor();
@@ -243,7 +253,7 @@ describe("US-003 Bash interception", () => {
       // rtk's own answer for `cat src/a.ts` is `rtk read src/a.ts` — a rewrite
       // that changes the command word, which validateShellRewrite refuses.
       const stub = recordingAround(rtkRewritingTo("rtk read src/a.ts"));
-      _bashToolDeps.interceptor = stub.interceptor;
+      interceptor = stub.interceptor;
       stubRunArgv();
 
       await runtimeFor(["cat *"]).runtime.callTool("Bash", { command: "cat src/a.ts" });
@@ -255,7 +265,7 @@ describe("US-003 Bash interception", () => {
     });
 
     test("US-003 AC7: with no interceptor installed the original command runs", async () => {
-      _bashToolDeps.interceptor = undefined;
+      interceptor = undefined;
       stubRunArgv();
 
       await runtimeFor().runtime.callTool("Bash", { command: ORIGINAL });
@@ -264,7 +274,7 @@ describe("US-003 Bash interception", () => {
     });
 
     test("US-003 AC8: with no interceptor installed the audit records the original argv", async () => {
-      _bashToolDeps.interceptor = undefined;
+      interceptor = undefined;
       stubRunArgv();
 
       const { runtime, records } = runtimeFor();
@@ -276,7 +286,7 @@ describe("US-003 Bash interception", () => {
 
   describe("launcher, post-processing and framing (AC9-AC13)", () => {
     test("US-003 AC9: the launcher is handed the rewritten command as a shell spec", async () => {
-      _bashToolDeps.interceptor = rtkRewritingTo(REWRITTEN);
+      interceptor = rtkRewritingTo(REWRITTEN);
       const { launcher, requests } = capturingLauncher();
 
       await createBashTool({ launcher }).run({ command: ORIGINAL }, ctx());
@@ -285,7 +295,7 @@ describe("US-003 Bash interception", () => {
     });
 
     test("US-003 AC10: a rewritten call's output has the rtk hint line stripped", async () => {
-      _bashToolDeps.interceptor = rtkRewritingTo(REWRITTEN);
+      interceptor = rtkRewritingTo(REWRITTEN);
       stubRunArgv({ stdout: HINTED_STDOUT });
 
       const result = await createBashTool().run({ command: ORIGINAL }, ctx());
@@ -302,7 +312,7 @@ describe("US-003 Bash interception", () => {
       const stub = recordingStub({ kind: "unchanged" }, (output) =>
         output.replace("\n[full output: rtk recall 12]", ""),
       );
-      _bashToolDeps.interceptor = stub.interceptor;
+      interceptor = stub.interceptor;
       stubRunArgv({ stdout: HINTED_STDOUT });
 
       const result = await createBashTool().run({ command: ORIGINAL }, ctx());
@@ -314,7 +324,7 @@ describe("US-003 Bash interception", () => {
 
     test("US-003 AC12: postProcess receives the model's original command, the root and the bash site", async () => {
       const stub = recordingStub({ kind: "rewritten", command: REWRITTEN, provider: "rtk" });
-      _bashToolDeps.interceptor = stub.interceptor;
+      interceptor = stub.interceptor;
       stubRunArgv({ stdout: "out" });
 
       await createBashTool().run({ command: ORIGINAL }, ctx());
@@ -326,7 +336,7 @@ describe("US-003 Bash interception", () => {
       const stub = recordingStub({ kind: "rewritten", command: REWRITTEN, provider: "rtk" }, () => {
         throw new Error("postProcess exploded");
       });
-      _bashToolDeps.interceptor = stub.interceptor;
+      interceptor = stub.interceptor;
       stubRunArgv({ stdout: "raw stdout" });
 
       const result = await createBashTool().run({ command: ORIGINAL }, ctx());
@@ -340,7 +350,7 @@ describe("US-003 Bash interception", () => {
 
   describe("a rewritten command that fails (AC14-AC15)", () => {
     test("US-003 AC14: a rewritten command exiting 1 is an error carrying the exit code", async () => {
-      _bashToolDeps.interceptor = rtkRewritingTo(REWRITTEN);
+      interceptor = rtkRewritingTo(REWRITTEN);
       // Only the REWRITTEN argv fails, so "a rewritten command exits 1" is a
       // property of the call rather than an incidental result the original
       // command could also have produced.
@@ -362,7 +372,7 @@ describe("US-003 Bash interception", () => {
     });
 
     test("US-003 AC15: the failed rewrite is never re-run as the original", async () => {
-      _bashToolDeps.interceptor = rtkRewritingTo(REWRITTEN);
+      interceptor = rtkRewritingTo(REWRITTEN);
       stubRunArgv({ exitCode: 1, stdout: "", stderr: "" });
 
       await createBashTool().run({ command: ORIGINAL }, ctx());

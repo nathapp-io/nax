@@ -274,6 +274,12 @@ export interface NaxRuntime {
    * `config.mcp`; empty when no server is configured or all are disabled.
    */
   readonly toolProviders: readonly import("@/tools").ToolProvider[];
+  /**
+   * The run's command interceptor (US-003; S1 spec port 7). Installed by
+   * `setupRun`; absent for entry points that never run it (plan, prompts,
+   * setup), where interception does not apply.
+   */
+  readonly commandInterceptor?: import("@/execution/command-interceptor").CommandInterceptor;
   close(): Promise<void>;
 }
 
@@ -304,6 +310,8 @@ export interface CreateRuntimeOptions {
    * creating a new one. Callers must not close or replace the bus mid-run.
    */
   agentStreamEvents?: IAgentStreamEventBus;
+  /** See NaxRuntime.commandInterceptor. */
+  commandInterceptor?: import("@/execution/command-interceptor").CommandInterceptor;
 }
 
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
@@ -475,6 +483,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     pidRegistry,
     mcpPool,
     toolProviders,
+    commandInterceptor: opts?.commandInterceptor,
     logger,
     quarantineMemo,
     adversarialIterations,

@@ -3,9 +3,11 @@ import { makeSpawn, withDepsRestore } from "@test/helpers";
 import type { CommandInterceptor, InterceptResult } from "@/execution/command-interceptor";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
 import { buildGitArgv, DEFAULT_LOG_MAX_COUNT, GIT_ESCAPE_FLAGS } from "@/tools";
-import { _gitToolDeps, gitTool } from "@/tools/git";
+import { gitTool } from "@/tools/git";
 import { compileToolPolicy } from "@/tools/policy";
 import { _gitDeps } from "@/utils/git";
+
+let interceptor: CommandInterceptor | undefined;
 
 function fake(result: InterceptResult): CommandInterceptor {
   return { provider: "rtk", intercept: async () => result };
@@ -31,9 +33,9 @@ describe("Git tool interception", () => {
   const calls: string[][] = [];
 
   withDepsRestore(_gitDeps, ["spawn"]);
-  withDepsRestore(_gitToolDeps, ["interceptor"]);
   beforeEach(() => {
     calls.length = 0;
+    interceptor = undefined;
     _gitDeps.spawn = makeSpawn(({ cmd }) => {
       calls.push([...cmd]);
       return "out";
@@ -42,10 +44,15 @@ describe("Git tool interception", () => {
 
   // ToolRunContext requires all four (src/tools/registry.ts:35-55). This shape is
   // lifted from test/unit/tools/git-commit.test.ts:23 — reuse it, do not invent one.
-  const ctx = () => ({ root: "/repo", resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 });
+  const ctx = () => ({
+    root: "/repo",
+    resolvedPaths: [],
+    maxBytes: 4096,
+    maxFileBytes: 1024,
+    ...(interceptor !== undefined ? { interceptor } : {}),
+  });
 
   test("spawns the original argv when no interceptor is installed", async () => {
-    _gitToolDeps.interceptor = undefined;
     await gitTool.run({ subcommand: "log" }, ctx());
     expect(calls[0]?.[0]).toBe("git");
   });
@@ -54,14 +61,14 @@ describe("Git tool interception", () => {
     // The fake MUST derive argv from the request. A hardcoded literal fails
     // validateRewrite's length check, silently degrades to "declined", and the
     // test then passes for the wrong reason.
-    _gitToolDeps.interceptor = prefixer();
+    interceptor = prefixer();
     const result = await gitTool.run({ subcommand: "log" }, ctx());
     expect(calls[0]?.[0]).toBe("rtk");
     expect(result.audit?.executed?.[0]).toBe("rtk");
   });
 
   test("spawns the original argv when the interceptor declines", async () => {
-    _gitToolDeps.interceptor = fake({ kind: "declined", reason: "no binary" });
+    interceptor = fake({ kind: "declined", reason: "no binary" });
     const result = await gitTool.run({ subcommand: "log" }, ctx());
     expect(calls[0]?.[0]).toBe("git");
     expect(result.audit).toBeUndefined();
@@ -73,7 +80,7 @@ describe("Git tool interception", () => {
       calls.push([...cmd]);
       return { stdout: "", stderr: "fatal: bad revision", exitCode: 128 };
     }).spawn;
-    _gitToolDeps.interceptor = prefixer();
+    interceptor = prefixer();
 
     const result = await gitTool.run({ subcommand: "log" }, ctx());
 
@@ -90,7 +97,7 @@ describe("Git tool interception", () => {
     // Non-zero exit with non-empty stdout does not hit the isError branch, but
     // the rewritten argv must still reach the ledger.
     _gitDeps.spawn = makeSpawn(() => ({ stdout: "some log output", stderr: "warning", exitCode: 128 })).spawn;
-    _gitToolDeps.interceptor = prefixer();
+    interceptor = prefixer();
 
     const result = await gitTool.run({ subcommand: "log" }, ctx());
 
@@ -99,10 +106,9 @@ describe("Git tool interception", () => {
   });
 
   test("an internal gitWithTimeout caller is NEVER intercepted", async () => {
-    // The guard on this task's whole reason for existing. Internal callers
-    // machine-parse their stdout; compacting it breaks them silently.
-    _gitToolDeps.interceptor = fake({ kind: "rewritten", argv: ["rtk", "git", "log"], provider: "rtk" });
-
+    // Internal callers machine-parse their stdout; compacting it breaks them
+    // silently. Port 7 keeps the interceptor on `ToolRunContext`, which
+    // `gitWithTimeout` never receives, so an internal caller cannot reach one.
     const { gitWithTimeout } = await import("@/utils/git");
     await gitWithTimeout(["diff", "--name-only"], "/repo");
 
@@ -111,7 +117,7 @@ describe("Git tool interception", () => {
 
   test("a throwing postProcess degrades to the raw output", async () => {
     _gitDeps.spawn = makeSpawn(() => "body\n[full diff: rtk git diff --no-compact]").spawn;
-    _gitToolDeps.interceptor = {
+    interceptor = {
       provider: "rtk",
       intercept: async (r) => ({ kind: "rewritten", argv: ["rtk", ...r.argv], provider: "rtk" }),
       postProcess: () => {
@@ -128,7 +134,7 @@ describe("Git tool interception", () => {
   test("postProcess is never consulted for a command that was not rewritten", async () => {
     let called = false;
     _gitDeps.spawn = makeSpawn(() => "body").spawn;
-    _gitToolDeps.interceptor = {
+    interceptor = {
       provider: "rtk",
       intercept: async () => ({ kind: "unchanged" }),
       postProcess: () => {
@@ -147,7 +153,7 @@ describe("Git tool interception", () => {
     // even when the hint is not the final characters — the trailing whitespace
     // after it is exactly what trimEnd would otherwise remove.
     _gitDeps.spawn = makeSpawn(() => "body\n[full diff: rtk git diff --no-compact]\n   ").spawn;
-    _gitToolDeps.interceptor = createRtkInterceptor({
+    interceptor = createRtkInterceptor({
       enabled: true,
       verbs: ["log"],
       _deps: { which: () => "/usr/bin/rtk", version: () => "0.45.0", record: () => {} },

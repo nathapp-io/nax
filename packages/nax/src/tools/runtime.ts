@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { getSafeLogger } from "@/agents/infra";
 import type { CommandShadow } from "@/command-safety";
+import type { CommandInterceptor } from "@/execution/command-interceptor";
 import { type AskResolver, headlessAskResolver } from "@/permissions";
 import type { SandboxRecord } from "../sandbox";
 import { deleteTool } from "./delete";
@@ -21,7 +22,7 @@ import { gitCommitTool } from "./git-commit";
 import { globTool } from "./glob";
 import { grepTool } from "./grep";
 import { readTool } from "./read";
-import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry";
+import { type CodingTool, getCodingTool, registerBuiltinTool, type ToolRunContext } from "./registry";
 import { requestCapabilityTool } from "./request-capability";
 import {
   openCallShadowTap,
@@ -125,6 +126,15 @@ export function _resetBuiltinsForTest(): void {
   builtinsRegistered = false;
 }
 
+/**
+ * The run-scoped ports every ToolRunContext carries, present-field only.
+ * Built once per runtime and kept out of `runTool`, which sits at its
+ * complexity baseline.
+ */
+function contextPorts(opts: { readonly interceptor?: CommandInterceptor }): Pick<ToolRunContext, "interceptor"> {
+  return opts.interceptor !== undefined ? { interceptor: opts.interceptor } : {};
+}
+
 export function createCodingToolRuntime(opts: {
   policy: ToolPolicy;
   maxBytes?: number;
@@ -190,6 +200,8 @@ export function createCodingToolRuntime(opts: {
    * has. Derived from `isTempConfined(launcher)` in coding-tool-support.
    */
   tempConfined?: boolean;
+  /** Port 7: placed on every ToolRunContext this runtime builds. */
+  interceptor?: CommandInterceptor;
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its
@@ -197,6 +209,7 @@ export function createCodingToolRuntime(opts: {
   const extra = new Map((opts.extraTools ?? []).map((t) => [t.name, t]));
   const lookup = (name: string): CodingTool | undefined => extra.get(name) ?? getCodingTool(name);
   const sink = opts.sink ?? createNoOpToolAuditSink();
+  const ports = contextPorts(opts);
   const maxBytes = opts.maxBytes ?? DEFAULT_TOOL_MAX_BYTES;
   const maxFileBytes = opts.maxFileBytes ?? DEFAULT_TOOL_MAX_FILE_BYTES;
   const readCeiling = opts.readCeiling ?? READ_CEILING;
@@ -414,6 +427,7 @@ export function createCodingToolRuntime(opts: {
             maxFileBytes,
             readCeiling,
             ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
+            ...ports,
             ...(callSignal !== undefined ? { signal: callSignal } : {}),
           });
           const kind = result.isError === true ? "error" : "ok";

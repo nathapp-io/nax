@@ -2,7 +2,6 @@ export { _bashToolDeps, BASH_TIMEOUT_MS, createBashTool, DEFAULT_BASH_SHELL } fr
 export { deleteTool } from "./delete";
 export { _editDeps, editTool } from "./edit";
 export {
-  _gitToolDeps,
   buildGitArgv,
   DEFAULT_LOG_FORMAT,
   DEFAULT_LOG_MAX_COUNT,
