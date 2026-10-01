@@ -14,10 +14,10 @@ import type { MiddlewareContext } from "../runtime/agent-middleware";
 // Leaf import to avoid barrel cycle:
 // src/runtime/index.ts → internal/agent-manager-factory → agents/factory → agents/manager → runtime/index.ts
 import { MiddlewareChain } from "../runtime/agent-middleware";
-import type { IDispatchEventBus } from "../runtime/dispatch-events";
-import { DispatchEventBus } from "../runtime/dispatch-events";
+import { DispatchEventBus, type IDispatchEventBus } from "../runtime/dispatch-events";
 // Nested-barrel alias, not the parent barrel — the parent closes a runtime import cycle (check:import-cycles).
 import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog";
+import { knownSessionRole } from "../runtime/session-role";
 import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
@@ -467,7 +467,7 @@ export class AgentManager implements IAgentManager {
     const stage = opts.pipelineStage ?? "run";
     // SEC-3: per-package permissionProfile (monorepo). Per plan §3.3 Note: needs full NaxConfig.
     const resolvedPermissions = resolvePermissions(opts.config ?? this._config, stage);
-    const sessionRole = handle.role ?? opts.sessionRole ?? "main";
+    const sessionRole = knownSessionRole(handle.role) ?? opts.sessionRole ?? "main";
     const start = Date.now();
     const turnId = newCorrelationId();
     try {

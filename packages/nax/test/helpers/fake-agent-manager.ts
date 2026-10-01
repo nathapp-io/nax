@@ -1,6 +1,7 @@
 import { buildContextToolPreamble, buildRunInteractionHandler } from "@/agents/acp/adapter";
 import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import type { IAgentManager } from "@/agents/manager-types";
+import { toSessionModel } from "@/agents/session-model-mapping";
 import type { AgentAdapter, AgentResult, CompleteOptions, ResolvedCompleteOptions } from "@/agents/types";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
@@ -85,7 +86,7 @@ export function fakeAgentManager(
           agentName: adapter.name,
           workdir: opts.workdir,
           resolvedPermissions,
-          modelDef: opts.modelDef,
+          modelDef: toSessionModel(opts.modelDef),
           timeoutSeconds: opts.timeoutSeconds,
           onSessionEstablished: opts.onSessionEstablished,
           signal: opts.abortSignal,

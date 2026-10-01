@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import type { RateCard } from "@/agents/cost";
 import { resolveRateCard as defaultResolveRateCard } from "@/agents/cost";
-import type { ModelDef, ModelTier } from "@/config/schema";
+import type { SessionModel } from "@/agents/session-types";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { ProtocolIds } from "@/runtime/protocol-types";
@@ -305,8 +305,8 @@ export class AcpSessionHandleImpl implements SessionHandle {
    * so `AgentManager` can stamp the model onto each turn's dispatch event
    * without reaching past the adapter boundary.
    */
-  readonly modelDef: ModelDef;
-  readonly modelTier?: ModelTier;
+  readonly modelDef: SessionModel;
+  readonly modelTier?: string;
 
   // ACP-internal fields — opaque to callers above the adapter boundary.
   readonly _client: AcpClient;
@@ -322,7 +322,7 @@ export class AcpSessionHandleImpl implements SessionHandle {
   readonly _sessionName: string;
   readonly _resumed: boolean;
   readonly _timeoutSeconds: number;
-  readonly _modelDef: ModelDef;
+  readonly _modelDef: SessionModel;
   /**
    * Rate card resolved once at `openSession` (US-002) and reused by every
    * `sendTurn` on this handle — the "resolve once, reuse per turn" pattern the
@@ -341,8 +341,8 @@ export class AcpSessionHandleImpl implements SessionHandle {
     sessionName: string;
     resumed: boolean;
     timeoutSeconds: number;
-    modelDef: ModelDef;
-    modelTier?: ModelTier;
+    modelDef: SessionModel;
+    modelTier?: string;
     rateCard: RateCard;
     permissionMode: string;
   }) {

@@ -11,7 +11,7 @@
  * would either drop that field or fabricate it for the summaries.
  */
 
-import type { PricingRates, TokenUsage } from "@/agents/cost";
+import type { PricingRates, TokenUsage } from "@/agents/cost/standard-types";
 import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance";
 import type { NativeTurnActivity } from "./turn-events";
 import { cacheUsageFields } from "./turn-types";

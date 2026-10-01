@@ -14,6 +14,11 @@ import type { AuthStamp, OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResul
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 import { getSafeLogger } from "@/logger";
+// Temporary (Task 5 removes it): the one-shot path's `options.modelDef` is
+// still a config `ModelDef`, so the override is converted here rather than in
+// `buildRateCard`. Relative, not `@/`-aliased — a sibling value import through
+// the alias fails check:alias-internals.
+import { toSessionModel } from "../session-model-mapping";
 import { createTurnDeadline } from "../turn-deadline";
 // Value import via the sibling path, matching acp/adapter.ts: the parent barrel
 // would close an import cycle (agents/index -> registry -> native/index -> here).
@@ -243,7 +248,7 @@ export class NativeAgentAdapter implements AgentAdapter {
 
       const tokenUsage = result.usage;
       const catalog = client.pricing(resolved);
-      const { rates, source: pricingSource } = buildRateCard(catalog, options.modelDef.pricing);
+      const { rates, source: pricingSource } = buildRateCard(catalog, toSessionModel(options.modelDef).pricing);
       // US-002: stamp the effective `priceCall`-resolved rates so the cost
       // subscriber can record the same numbers whose arithmetic reproduces
       // `estimatedCostUsd`. The native path prices unconditionally — even

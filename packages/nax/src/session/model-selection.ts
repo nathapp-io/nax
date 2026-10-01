@@ -6,6 +6,8 @@
  * injectable-dependency facade.
  */
 
+import { toSessionModel } from "../agents/session-model-mapping";
+import type { SessionModel } from "../agents/session-types";
 import type { ModelDef, ModelTier } from "../config/schema";
 
 export interface ModelSelection {
@@ -20,7 +22,10 @@ export interface ModelSelection {
  * explicit `{ agent, model }` pin bypasses tier resolution, so reporting a tier
  * there would claim one that never selected the model. Cost rows read this to
  * attribute spend to a tier (#1433).
+ *
+ * The `ModelDef` becomes the contract's `SessionModel` here; this is where
+ * config pricing is converted for session opens.
  */
-export function selectModel(opts: ModelSelection): ModelSelection {
-  return { modelDef: opts.modelDef, ...(opts.modelTier ? { modelTier: opts.modelTier } : {}) };
+export function selectModel(opts: ModelSelection): { modelDef: SessionModel; modelTier?: string } {
+  return { modelDef: toSessionModel(opts.modelDef), ...(opts.modelTier ? { modelTier: opts.modelTier } : {}) };
 }

@@ -15,7 +15,7 @@
  */
 
 import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-ai";
-import type { PricingRates, TokenUsage } from "@/agents/cost";
+import type { PricingRates, TokenUsage } from "@/agents/cost/standard-types";
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import type { SpinBreaker } from "@/runtime/spin-breaker";
 import type { TranscriptMessage as NativeTranscriptMessage, ResolvedCompaction } from "./compaction";
@@ -38,7 +38,7 @@ export interface NativeTurnResponse {
    * by hand keep compiling; the adapter's `complete` closure always sets
    * it because native prices unconditionally.
    */
-  readonly rates?: import("../../cost").PricingRates;
+  readonly rates?: PricingRates;
 }
 
 /** What one summarization call returns. Usage and cost are surfaced, not swallowed. */

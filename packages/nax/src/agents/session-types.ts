@@ -8,12 +8,9 @@
  */
 
 import type { ResolvedPermissions } from "@/permissions";
-import type { ModelDef, ModelTier } from "../config/schema";
 import type { ProtocolIds } from "../runtime/protocol-types";
-import type { SessionRole } from "../runtime/session-role";
 import type { AdapterFailure } from "./adapter-failure";
-import type { TokenUsage } from "./cost";
-import type { Pricing } from "./cost/standard-types";
+import type { Pricing, PricingRates, TokenUsage } from "./cost/standard-types";
 import type { ToolDescriptor } from "./tool-descriptor";
 
 /**
@@ -66,8 +63,11 @@ export interface SessionHandle {
   readonly id: string;
   /** Agent name this session was opened for. */
   readonly agentName: string;
-  /** Session role — populated when the caller knows the role at open time. */
-  readonly role?: SessionRole;
+  /**
+   * Session role, opaque to the adapter. nax writes a canonical role; read it
+   * through `knownSessionRole`.
+   */
+  readonly role?: string;
   /** Protocol-specific IDs for SessionManager correlation. */
   readonly protocolIds?: ProtocolIds;
   /**
@@ -78,9 +78,9 @@ export interface SessionHandle {
    * the same session name may serve this handle, and the native adapter's
    * `sendTurn` dispatches from it. Do not branch on it for anything else.
    */
-  readonly modelDef?: ModelDef;
+  readonly modelDef?: SessionModel;
   /** Tier `modelDef` resolved from, when it came from one. Attribution only. */
-  readonly modelTier?: ModelTier;
+  readonly modelTier?: string;
 }
 
 /** Options for openSession() — protocol-agnostic surface + ACP-specific pass-throughs. */
@@ -89,10 +89,10 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
   workdir: string;
   /** Pre-resolved permissions from AgentManager. */
   resolvedPermissions: ResolvedPermissions;
-  /** ACP: resolved model definition (required for client cmdStr + cost). */
-  modelDef: ModelDef;
+  /** The model to open with. nax builds it with `toSessionModel`. */
+  modelDef: SessionModel;
   /** Tier the model resolved from, when applicable. Attribution only (#1433). */
-  modelTier?: ModelTier;
+  modelTier?: string;
   /** ACP: maximum session duration in seconds. */
   timeoutSeconds: number;
   /** ACP: acpx --prompt-retries value (default 0 — opt-in). */
@@ -255,7 +255,7 @@ export interface TurnResult {
    * present only when nonzero usage let pricing run; absent on a zeroed
    * accumulator so "priced" and "did not price" stay distinguishable.
    */
-  rates?: import("./cost").PricingRates;
+  rates?: PricingRates;
   /** US-006: identity of the credential that served this turn. Absent for ACP turns. */
   auth?: AuthStamp;
   /**

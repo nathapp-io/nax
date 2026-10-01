@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionHandle } from "@/agents/session-types";
-import type { ModelDef } from "@/config/schema-types";
+import type { SessionHandle, SessionModel } from "@/agents/session-types";
 import { decideReuse, sameEndpoint } from "@/session/endpoint-identity";
 import type { SessionDescriptor } from "@/session/types";
 
-const model = (id: string, provider = "p"): ModelDef => ({ provider, model: id });
+const model = (id: string, provider = "p") => ({ provider, model: id });
 
-const handle = (agentName: string, modelDef: ModelDef): SessionHandle => ({ id: "nax-x", agentName, modelDef });
+const handle = (agentName: string, modelDef: SessionModel): SessionHandle => ({ id: "nax-x", agentName, modelDef });
 
 const desc = (state: SessionDescriptor["state"]): SessionDescriptor => ({
   id: "sess-1",

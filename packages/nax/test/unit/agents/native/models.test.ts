@@ -244,7 +244,7 @@ describe("buildRateCard", () => {
   test("US-003 AC2: explicit override returns config-override source and the override object wholesale", () => {
     const catalog = { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 };
     const override: ConfigPricing = { inputPer1M: 99, outputPer1M: 199 };
-    const { rates, source } = buildRateCard(catalog, override);
+    const { rates, source } = buildRateCard(catalog, toPricing(override));
     expect(source).toBe("config-override");
     expect(rates).toEqual(toPricing(override));
     expect(rates.cacheRead).toBe(99);

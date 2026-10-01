@@ -33,6 +33,7 @@ import * as sessionState from "@/agents/native/session/session";
 import { openNativeSession } from "@/agents/native/session/session";
 import * as transcriptStore from "@/agents/native/session/transcript-store";
 import { saveTranscript } from "@/agents/native/session/transcript-store";
+import { toSessionModel } from "@/agents/session-model-mapping";
 import type { OpenSessionOpts } from "@/agents/session-types";
 import type { ResolvedCompleteOptions } from "@/agents/types";
 import { SessionFailureError, SessionTurnError } from "@/agents/types";
@@ -413,7 +414,7 @@ async function openSessionWithModelDef(
     agentName: "native",
     workdir: process.cwd(),
     resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-    modelDef,
+    modelDef: toSessionModel(modelDef),
     timeoutSeconds: 60,
     transcriptDir: dir,
     compaction: COMPACTION_CFG,

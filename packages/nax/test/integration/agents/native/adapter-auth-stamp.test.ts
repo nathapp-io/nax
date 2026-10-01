@@ -23,6 +23,7 @@ import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient, buildNativeClient } from "@/agents/native/client";
 import { _resetCredentialStore, naxCredentialStore, servedAuth } from "@/agents/native/credentials";
+import { toSessionModel } from "@/agents/session-model-mapping";
 import type { SessionHandle, TurnResult } from "@/agents/session-types";
 import type { ResolvedPermissions } from "@/config/permissions";
 import type { ModelDef, ProviderCatalogOverride } from "@/config/schema-types";
@@ -141,7 +142,7 @@ async function openTurnSession(name: string): Promise<SessionHandle> {
     agentName: "native",
     workdir: dir,
     resolvedPermissions: PERMS,
-    modelDef: MODEL_DEF,
+    modelDef: toSessionModel(MODEL_DEF),
     timeoutSeconds: 60,
     transcriptDir: dir,
   });
@@ -224,7 +225,7 @@ describe("NativeAgentAdapter.sendTurn() — auth stamp (US-006)", () => {
       agentName: "native",
       workdir: dir,
       resolvedPermissions: PERMS,
-      modelDef: MODEL_DEF,
+      modelDef: toSessionModel(MODEL_DEF),
       timeoutSeconds: 60,
       transcriptDir: dir,
     });
