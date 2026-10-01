@@ -18,7 +18,7 @@
 - Run package commands from `packages/nax`. Never run bare `bun test` (no path); single files run as `bun test <path> --timeout=60000`. Never `bun run nax`.
 - Full verification: `bun run test`, `bun run typecheck` (it also typechecks `test/` through `tsconfig.test.json`), `bun run lint`, and `bun run check:all` from the repo root.
 - No test is edited to pass unless its subject moved or its port was cut. In this PR the cut ports are: the config leaf types (Task 1), `resolveCodingToolSupport`'s home (Task 2), the declared-command runner (Task 3), the interceptor slots (Task 4), the protected paths (Task 5) and the stream bus's `stage` type (Task 6). Every test edit in this PR must be traceable to one of them.
-- Source files stay at or under 600 lines and test files at or under 800 (`check:file-sizes`). **`test/unit/tools/run-command.test.ts` is at exactly 800 lines**: it may not grow by a single line (Task 3 says how to handle it). `src/agents/coding-tool-support-resolve.ts` (419) grows to about 510 in Task 2; `src/agents/types.ts` (553) and `src/runtime/index.ts` (552) grow by a few lines. Re-check with `wc -l` after editing any of them.
+- Source files stay at or under 600 lines and test files at or under 800 (`check:file-sizes`). **`test/unit/tools/run-command.test.ts` and `test/unit/agents/coding-tool-support.test.ts` are both at exactly 800 lines**: neither may grow by a single line (Tasks 2 and 3 say how to handle them). `src/agents/coding-tool-support-resolve.ts` (419) grows to about 510 in Task 2; `src/agents/types.ts` (553) and `src/runtime/index.ts` (552) grow by a few lines. Re-check with `wc -l` after editing any of them.
 - **Complexity ratchet** (`check:complexity`, strict limit 20; baselined functions may not grow). Touched functions at or near their ceiling: `run-command.ts` `run` 56, `coding-tool-support.ts` `buildCodingToolSupport` 38, `coding-tool-extras.ts` `buildDeclaredCommandTools` 24, `runtime/index.ts` `createRuntime` 28, `tools/runtime.ts` `runTool` 24, `tools/git-commit.ts` `run` 22, `tools/git.ts` `buildGitArgv` 47. **Add no `if`, ternary, `??`, `||` or `&&` inside any of them.** The code below passes new values unconditionally (`interceptor: args.interceptor`) or moves the conditional into a small new helper. Run `bun run check:complexity` after every task.
 - Code blocks show content, not final formatting. Before every commit, run `bun x biome check --write <files you touched>`, then `bun run lint`.
 - **Import rules** (`check:alias-internals`). In `src/`, a **value** import of `@/<dir>/<internal>` is forbidden when `src/<dir>/index.ts` exists; an exact nested barrel (`@/config/native-agent`, `@/quality/command-spec`, `@/config/paths`) is legal. A **type-only** import may target a leaf (`@/config/catalog-overrides`). Relative imports may climb one level (`../x`); `../../` is banned by biome `noRestrictedImports`.
@@ -40,7 +40,7 @@
 7. **Spec correction (port 6): `ProtectedPathsPolicy` carries data, not predicates.** The spec sketches `{ isProtected(path), reason(path), extraDenyRoots, gitExcludePathspecs, gitIgnorePatterns }`. The import edges that exist need exactly five values, so that is the shape: `gitExcludePathspecs` (Git tool default view), `gitIgnorePatterns` (GitCommit filter), `projectStateDir` (`.nax`, whose top-level entries the sandbox lists), `credentialDir` (the global config dir, whose `credentials*` files the sandbox denies) and `trustStoreFile`. nax builds it per dispatch in `naxProtectedPaths()` (`src/agents/nax-protected-paths.ts`, stays in nax). In the tools, an absent policy means no exclusions; in the sandbox, it is required, so there is no silent default there.
 8. **Deferral (port 6, ruled by the maintainer 2026-10-01: deferred to S3): `tools/nax-owned-writes.ts` keeps its `.nax` knowledge.** It hardcodes the `.nax/` entries the write policy refuses (`config.json`, `mono`, `features`, `rules`, `hooks.json`, ...). It has **no import edge**: its only import is `@/utils/realpath`, already in the move set. So the ratchet cannot see it and S1-5 does not need it. Moving that knowledge out would rework a 293-line, security-sensitive policy consulted by `tools/policy.ts` and the sandbox policy builder, inside a PR that claims behaviour neutrality. Ruled: carried to S3 as an embedder-contract item (an embedder like koda has no `.nax/`, so the policy becomes injectable there). The PR body records it under "Not in this PR".
 9. **Evaluation timing of the trust store path.** Today `trustStorePath()` is evaluated inside `policyFor`, so on every policy build (once per command). After Task 5 it is evaluated once per dispatch, in `naxProtectedPaths()`, together with the credential dir, which today is already read once per session. The two differ only if `NAX_GLOBAL_CONFIG_DIR` changes between commands of one session, which happens only in tests that set it between their own calls. The sandbox's `resolveDispatchLauncher` reads `_codingToolSupportDeps.protectedPaths()` itself rather than taking it as a fourth parameter, so its two existing direct test callers keep their signature.
-10. **`stage` re-narrowing (carried from S1-2) happens at the bus entry.** `runtime/agent-stream-events.ts` gains `NaxAgentStreamEvent` (`AgentStreamEvent & { stage?: PipelineStage }`), the bus's emit and listener types use it, and `narrowStreamStage()` sits on the one emit site (`runtime/index.ts:395`). A known stage passes through untouched (same object), and so does an absent one. An unknown label is dropped and logged at debug. No producer emits one today: native sets no stage, and ACP's `SpawnAcpClientSession.stage` is already typed `PipelineStage`. So this is behaviour-neutral, and a future mistyped producer now fails typecheck or loses the label visibly rather than leaking it.
+10. **`stage` re-narrowing (carried from S1-2) happens inside the bus.** `runtime/agent-stream-events.ts` gains `NaxAgentStreamEvent` (`AgentStreamEvent & { stage?: PipelineStage }`). Listeners are typed on it. `emitAgentStream` keeps accepting the contract's `AgentStreamEvent` and calls `narrowStreamStage()` before it notifies listeners. (Final review: typing `emitAgentStream` itself on the narrowed type broke 207 test call sites across 10 files that emit plain contract events; narrowing inside the bus gives listeners the same guarantee with no test churn.) A known stage passes through untouched (same object), and so does an absent one. An unknown label is dropped and logged at debug. No producer emits one today: native sets no stage, and ACP's `SpawnAcpClientSession.stage` is already typed `PipelineStage`. So this is behaviour-neutral, and a future mistyped producer now fails typecheck or loses the label visibly rather than leaking it.
 
 ## Review Focus
 
@@ -70,7 +70,7 @@
 | `src/tools/protected-paths.ts` | 5 | `ProtectedPathsPolicy`, `gitExcludePathspecsOf`, `gitIgnorePatternsOf` |
 | `src/agents/nax-protected-paths.ts` | 5 | `naxProtectedPaths()` — nax's knowledge, stays in nax |
 | `src/tools/git-commit.ts`, `src/tdd/red-commit.ts`, `src/sandbox/policy-inputs.ts`, `src/agents/coding-tool-sandbox.ts`, `scripts/analyze-rtk-savings.ts` | 5 | take the paths as data |
-| `src/config/permissions.ts`, `src/runtime/agent-stream-events.ts` | 6 | `isPipelineStage`, `NaxAgentStreamEvent`, `narrowStreamStage` |
+| `src/config/permissions.ts`, `src/runtime/agent-stream-events.ts` | 6 | `isPipelineStage`, `NaxAgentStreamEvent`, `narrowStreamStage` (called inside the bus) |
 | `test/unit/agents/coding-tool-support-ports.test.ts` | 3-5 | production-wiring tests for the three ports |
 | `scripts/s1-move-manifest.json`, `scripts/baselines/agent-boundary-baseline.json` | 1, 2, 3, 5 | manifest entries; ratchet baseline |
 
@@ -152,7 +152,7 @@ export { NATIVE_AGENT_NAME } from "./native-agent";
 
 The import is relative, so `agent-defaults.ts` stays free of `@/` imports as its header requires. If anything inside `agent-defaults.ts` itself uses `NATIVE_AGENT_NAME` (at `e6d42e890` nothing does; confirm with `grep -n NATIVE_AGENT_NAME src/config/agent-defaults.ts`), also add `import { NATIVE_AGENT_NAME } from "./native-agent";`.
 
-Create `src/config/catalog-overrides.ts`. **Cut** (not copy) from `src/config/schema-types.ts` the block that starts at the doc comment above `export type ThinkingLevel` (line 117) and ends with the closing brace of `export interface ProviderCatalogOverride` (line 209), verbatim with every doc comment. Give the new file this header and nothing else above the moved block:
+Create `src/config/catalog-overrides.ts`. **Cut** (not copy) from `src/config/schema-types.ts` the block that starts at the doc comment above `export type ThinkingLevel` (line 118; line 117 is blank) and ends with the closing brace of `export interface ProviderCatalogOverride` (line 209), verbatim with every doc comment. Give the new file this header and nothing else above the moved block:
 
 ```ts
 /**
@@ -198,7 +198,7 @@ export interface NativeTierConfig {
 }
 ```
 
-- `src/agents/native/session/session.ts:59`: `onStreamActivity?: (event: import("@/agents/agent-stream-event-types").AgentStreamEvent) => void;`
+- `src/agents/native/session/session.ts`: add `import type { AgentStreamEvent } from "@/agents/agent-stream-event-types";` at the top (as `turn-events.ts` already does), and line 59 becomes `onStreamActivity?: (event: AgentStreamEvent) => void;`. Do not use an inline `import("@/agents/agent-stream-event-types")`: `check:alias-internals` counts the inline form as a value import of an internal and fails.
 - `src/agents/native/session/turn-events.ts:52`: `readonly stage?: string;`, with the comment `/** Pipeline stage label; the contract does not know nax's stage union (S1 spec port 4). */`.
 - `src/tools/provider-types.ts`: delete the `PipelineStage` import; line 32 becomes `readonly stages: readonly string[];` with the doc comment `/** Stage names this provider attaches to, or "*" for every stage. */`; line 53's parameter becomes `stage: string`.
 - `src/tools/provider-advertise.ts`: delete the `PipelineStage` import; line 37's parameter becomes `stage: string`.
@@ -242,7 +242,7 @@ git commit -m "refactor: move native config leaf types into the nax-agent move s
 **Files:**
 - Modify: `src/agents/coding-tool-support.ts:12-54,288-397`, `src/agents/coding-tool-support-resolve.ts` (header, imports, append)
 - Modify (callers): `src/runtime/session-run-hop.ts:2`, `src/operations/build-hop-callback-hop.ts:25`
-- Modify (test imports whose subject moved): the 13 test files that import `resolveCodingToolSupport` or `_codingToolSupportDeps` from `@/agents/coding-tool-support` (list: `grep -rln "resolveCodingToolSupport\|_codingToolSupportDeps" test`)
+- Modify (test imports whose subject moved): the 10 test files that import `resolveCodingToolSupport` or `_codingToolSupportDeps` from `@/agents/coding-tool-support` (list: `grep -rln "resolveCodingToolSupport\|_codingToolSupportDeps" test`)
 - Test: `test/unit/agents/coding-tool-support-resolve.test.ts` (append a describe)
 - Modify: `scripts/baselines/agent-boundary-baseline.json`
 
@@ -298,7 +298,7 @@ In `coding-tool-support.ts`, delete:
 - the whole `./coding-tool-support-resolve` import (lines 39-54),
 - `expandMcpRuleGrants` from the `@/tools` import (used only by the resolver; confirm with `grep -n expandMcpRuleGrants src/agents/coding-tool-support.ts`).
 
-Update the file header (lines 7-9): "Callers reach it through `resolveCodingToolSupport` (`coding-tool-support-resolve.ts`, nax side), the single entry point both dispatch hops use."
+Update the file header: the sentences at lines 7-9 ("This is the seam that makes coding tools reachable at all. Callers reach it through resolveCodingToolSupport() below, ...", wrapped across lines, so edit by hand rather than find-and-replace) become: "Callers reach it through `resolveCodingToolSupport` (`coding-tool-support-resolve.ts`, nax side), the single entry point both dispatch hops use."
 
 In `coding-tool-support-resolve.ts`:
 - change `import type { loadConfigForPackage, NaxConfig } from "../config";` to `import { loadConfigForPackage, type NaxConfig } from "../config";`
@@ -306,7 +306,7 @@ In `coding-tool-support-resolve.ts`:
 - replace `import type { buildCodingToolSupport } from "./coding-tool-support";` with `import { buildCodingToolSupport, buildLedgerSessionName, type CodingToolSupport } from "./coding-tool-support";`
 - add `expandMcpRuleGrants` to the existing `@/tools` import.
 
-Replace the header's "Import direction" paragraph (lines 11-16) with:
+Replace the header's "Import direction" paragraph (lines 8-13 at `e6d42e890`; it starts with `Import direction:`) with:
 
 ```ts
  * Import direction: this file is nax's side of the coding-tool seam (S1 spec
@@ -316,15 +316,17 @@ Replace the header's "Import direction" paragraph (lines 11-16) with:
  * imports this file.
 ```
 
-and lines 5-9 ("coding-tool-support.ts sat at the 600-line source cap ... `resolveCodingToolSupport` itself stays in coding-tool-support.ts as the sequencer ...") with: "`resolveCodingToolSupport` is the sequencer, defined last in this file: guard clauses first, then the support-args assembly."
+and the paragraph above it ("coding-tool-support.ts sat at the 600-line source cap ... `resolveCodingToolSupport` itself stays in coding-tool-support.ts as the sequencer ...") with: "`resolveCodingToolSupport` is the sequencer, defined last in this file: guard clauses first, then the support-args assembly."
 
 Run: `wc -l src/agents/coding-tool-support.ts src/agents/coding-tool-support-resolve.ts`
-Expected: about 300 and about 510.
+Expected: about 280 and about 513.
 
 - [ ] **Step 4: Retarget the callers and the tests whose subject moved**
 
 - `src/runtime/session-run-hop.ts:2` and `src/operations/build-hop-callback-hop.ts:25`: `import { resolveCodingToolSupport } from "../agents/coding-tool-support-resolve";`
-- Every test file from `grep -rln "resolveCodingToolSupport\|_codingToolSupportDeps" test`: import `resolveCodingToolSupport` and `_codingToolSupportDeps` from `@/agents/coding-tool-support-resolve`, and keep importing `buildCodingToolSupport`, `buildLedgerSessionName` and `type CodingToolSupport` from `@/agents/coding-tool-support`. Change import lines only; no test body changes.
+- Every test file from `grep -rln "resolveCodingToolSupport\|_codingToolSupportDeps" test`: import `resolveCodingToolSupport` and `_codingToolSupportDeps` from `@/agents/coding-tool-support-resolve`, and keep importing `buildCodingToolSupport`, `buildLedgerSessionName` and `type CodingToolSupport` from `@/agents/coding-tool-support`. Change import lines only; no test body changes. (Two more files mention the names only in comments; leave them.)
+
+**`test/unit/agents/coding-tool-support.test.ts` is at exactly 800 lines**, and splitting its import adds a line (Task 3 adds one more). Make room by deleting blank lines: the one between `afterEach(() => _resetSandboxRegistryForTests());` and `let root: string;`, the one between `let root: string;` and `beforeAll(`, and one more blank line between two top-level `describe` blocks. Biome keeps all three deletions. Run `wc -l` on it after this task and again after Task 3; it must read 800 or less.
 
 - [ ] **Step 5: Verify**
 
@@ -550,14 +552,17 @@ Export the three types from `src/tools/index.ts` next to `createRunCommandTool`.
 and in the `buildDeclaredCommandTools({ ... })` call, add `runDeclaredCommand: args.runDeclaredCommand,` after `declaredCommands,`. It is unconditional: no new branch in `buildCodingToolSupport` (complexity 38).
 
 `src/agents/coding-tool-support-resolve.ts`:
-- add `import { runQualityCommand } from "../quality";` (merge with the existing `../quality` type import),
-- `_codingToolSupportDeps` becomes:
+- add `import { runQualityCommand } from "../quality";` (merge with the existing `../quality` type import) and `type DeclaredCommandRunner` to the `@/tools` import,
+- `_codingToolSupportDeps` becomes, **with an explicit type** (inferred from `runQualityCommand`, the property would be typed `(opts: QualityCommandOptions) => ...`, and the port test's stub would fail typecheck with TS2322):
 
 ```ts
 /** Injectable deps for testability — mirrors the _agentManagerDeps pattern. Each nax-owned port has its default here. */
-export const _codingToolSupportDeps = {
-  loadConfigForPackage,
+export const _codingToolSupportDeps: {
+  loadConfigForPackage: typeof loadConfigForPackage;
   /** Port 7: the declared-command runner RunCommand calls. */
+  runDeclaredCommand: DeclaredCommandRunner;
+} = {
+  loadConfigForPackage,
   runDeclaredCommand: runQualityCommand,
 };
 ```
@@ -568,11 +573,32 @@ If `bun run typecheck` reports that `runQualityCommand` is not assignable to `De
 
 - [ ] **Step 6: Update the tests whose RunCommand lost its built-in runner**
 
-Run: `bun run test 2>&1 | grep -B5 "no declared-command runner"`
+Run the phases separately: `bun run test` stops after the unit phase fails, which hides integration failures.
 
-Every failure is a test that builds RunCommand **outside** `resolveCodingToolSupport` (directly via `createRunCommandTool`, or via `buildCodingToolSupport` with `declaredCommands`) and then executes a declared command. Candidates at `e6d42e890`: `grep -rln "createRunCommandTool" test` (7 files) and `grep -rln declaredCommands test | xargs grep -ln buildCodingToolSupport` (5 files). For each failing test, pass the real runner, which is what production wires: add `runDeclaredCommand: runQualityCommand` to the options object (import `runQualityCommand` from `@/quality`).
+```bash
+bun run test:unit 2>&1 | grep -B5 "no declared-command runner"
+bun run test:integration 2>&1 | grep -B5 "no declared-command runner"
+```
 
-`test/unit/tools/run-command.test.ts` is at **800 lines** and may not grow. If it needs edits, first move its leading `substituteCommand` describe blocks (the pure-substitution tests, which never build a tool) **verbatim** into `test/unit/tools/run-command-substitute.test.ts`, with the imports they use. That is a split by concern (`.nax/rules/test-architecture.md`). Then edit the rest. Run `wc -l` on both files afterwards.
+Every failure is a test that builds RunCommand **outside** `resolveCodingToolSupport` (directly via `createRunCommandTool`, or via `buildCodingToolSupport` with `declaredCommands`) and then executes a declared command. The final review found exactly four files at `e6d42e890`. Pass the real runner in each, which is what production wires:
+
+- `test/unit/tools/run-command.test.ts` (18 failures). It is at **800 lines** and may not grow. First move its `substituteCommand` describe (the pure-substitution tests at lines 11-100, which never build a tool) **verbatim** into `test/unit/tools/run-command-substitute.test.ts`, with the imports they use. That is a split by concern (`.nax/rules/test-architecture.md`), and it leaves about 709 lines. Then, rather than editing about 40 call sites, import the factory under a lower-case alias and shadow it with a local wrapper that supplies the production runner to **every** call, including calls that do not fail today:
+
+  ```ts
+  import { createRunCommandTool as createBareRunCommandTool, substituteCommand } from "@/tools/run-command";
+  import { runQualityCommand } from "@/quality";
+
+  /** Production wires nax's quality runner (S1 spec port 7); every tool here gets it. */
+  const createRunCommandTool = (...[declared, opts]: Parameters<typeof createBareRunCommandTool>) =>
+    createBareRunCommandTool(declared, { runDeclaredCommand: runQualityCommand, ...opts });
+  ```
+
+  (`as createBareRunCommandTool` starts lower-case, so the loose-cast counter does not match it.) Supplying it everywhere matters: "strips configured secrets from agent-invoked commands" still passes without a runner, because its `not.toContain` is satisfied by the refusal text, but then it no longer tests env stripping.
+- `test/unit/tools/run-command-exec.test.ts` (1 failure: "declared branch still works"): add `runDeclaredCommand: runQualityCommand` to its options.
+- `test/unit/agents/coding-tool-support.test.ts` (1 failure: "commandCwd reaches RunCommand"): add `runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,` to its `buildCodingToolSupport` args. The file already imports `_codingToolSupportDeps` after Task 2, so this needs no new import line; the file is at its 800-line cap (Task 2, Step 4).
+- `test/integration/permissions/sandbox-wiring.test.ts` (1 failure, D14): add `runDeclaredCommand: runQualityCommand`.
+
+Run `wc -l` on every edited test file afterwards.
 
 - [ ] **Step 7: Verify**
 
@@ -805,7 +831,7 @@ Drop the now-unused `CommandInterceptor` type import if nothing else uses it.
 
 `src/agents/coding-tool-support-resolve.ts`: add `| "commandInterceptor"` to the `ResolveCodingToolSupportOptions` Pick. In `resolveCodingToolSupport`'s `buildCodingToolSupport({ ... })` call, add `interceptor: options.commandInterceptor,`.
 
-`src/agents/coding-tool-support.ts`: add to `buildCodingToolSupport`'s args `interceptor?: CommandInterceptor;` (doc: `/** Port 7: the run's interceptor, placed on every tool context. */`; `import type { CommandInterceptor } from "@/execution/command-interceptor";`) and pass `interceptor: args.interceptor,` in the `createCodingToolRuntime({ ... })` literal. It is unconditional, so `buildCodingToolSupport` stays at 38.
+`src/agents/coding-tool-support.ts`: add to `buildCodingToolSupport`'s args `interceptor?: CommandInterceptor;` (doc: `/** Port 7: the run's interceptor, placed on every tool context. */`; `import type { CommandInterceptor } from "@/execution/command-interceptor";`) and **pass `interceptor: args.interceptor,` in the `createCodingToolRuntime({ ... })` literal**. That is two edits, the arg type and the pass-through; the final review missed the second on a first pass and only the wiring test caught it (no type error; `sites` stayed `[]`). It is unconditional, so `buildCodingToolSupport` stays at 38.
 
 `src/runtime/index.ts`: add to `NaxRuntime` (next to `toolProviders`):
 
@@ -845,8 +871,9 @@ and replace line 75 (`...(ctx.runtime.toolProviders.length > 0 ? { providers: ct
 
 - `test/unit/tools/git-interception.test.ts`: remove the `_gitToolDeps` import and `withDepsRestore(_gitToolDeps, ["interceptor"])`; every `_gitToolDeps.interceptor = X; ... gitTool.run(input, ctx())` becomes `gitTool.run(input, { ...ctx(), interceptor: X })`, and the "no interceptor installed" test passes `ctx()` unchanged.
 - `test/unit/tools/bash-intercept.test.ts`: the same transformation for `_bashToolDeps.interceptor`. Where the test drives a runtime (`createCodingToolRuntime({ ... })`), pass `interceptor: X` in the runtime options instead. Update the header comment that names `_bashToolDeps.interceptor`.
-- `test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts`: replace `installFromConfig` (which wrote the slot) with a capture of the options `setupRun` hands the runtime factory: `_runSetupDeps.createRuntime = (cfg, wd, opts) => { captured = opts?.commandInterceptor; ... }`. Assert on `captured` where the old tests read `_gitToolDeps.interceptor` / `_bashToolDeps.interceptor`. A test that then ran `gitTool.run` passes `{ ...ctx(), interceptor: captured }`. Delete the two `withDepsRestore` lines for the deleted slots.
-- `grep -rn "_gitToolDeps\|\.interceptor" test` must then print nothing about the slots.
+- `test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts`: capture the options `setupRun` hands the runtime factory: `_runSetupDeps.createRuntime = (cfg, wd, opts) => { captured = opts?.commandInterceptor; ... }`, and assert on `captured` where the old tests read `_gitToolDeps.interceptor` / `_bashToolDeps.interceptor`. `installFromConfig` never called `setupRun` (it re-did the slot install by hand); turn it into a function that **returns** the interceptor it builds, and pass that in the tool context. A test that then ran `gitTool.run` passes `{ ...ctx(), interceptor: captured }`. The test asserting "one interceptor on Git and Bash" (AC16) loses its subject with the slots; rewrite it to assert that the captured interceptor exposes both `intercept` and `interceptShell`. Delete the two `withDepsRestore` lines for the deleted slots.
+- Either call-site form is fine for the two tool tests. A module-level `let interceptor: CommandInterceptor | undefined`, reset in `beforeEach` and merged into `ctx()` / the runtime-builder helper, is less churn than rewriting each call site.
+- `grep -rn "_gitToolDeps\|_bashToolDeps.interceptor" test` must then print nothing. (Do not grep bare `.interceptor`; fields such as `stub.interceptor` legitimately match.)
 
 - [ ] **Step 7: Verify**
 
@@ -880,7 +907,7 @@ The last four edges: `tools/git.ts -> utils/nax-owned-paths`, `tools/git-commit.
 - Modify: `src/tools/git.ts:21,199,315,375`, `src/tools/git-commit.ts:18,86-95,160`, `src/tdd/red-commit.ts:20,47,77`, `scripts/analyze-rtk-savings.ts:14,54,61`
 - Modify: `src/sandbox/policy-inputs.ts:9,49-67`, `src/agents/coding-tool-sandbox.ts:30,33-50,96-165`
 - Modify: `src/agents/coding-tool-support.ts` (args + runtime call), `src/agents/coding-tool-support-resolve.ts` (`_codingToolSupportDeps`, `resolveDispatchLauncher`, the support call)
-- Modify (port cut): `test/unit/tools/git.test.ts`, `test/unit/tools/git-commit.test.ts`, `test/unit/sandbox/policy-inputs.test.ts`, `test/unit/agents/coding-tool-sandbox.test.ts`, `test/helpers/session-sandbox-deps.ts`, and any other caller the steps name
+- Modify (port cut): `test/unit/tools/git.test.ts`, `test/unit/tools/git-commit.test.ts`, `test/unit/sandbox/policy-inputs.test.ts`, `test/unit/agents/coding-tool-sandbox.test.ts`, `test/helpers/session-sandbox-deps.ts`, `test/integration/sandbox/sandbox-live.test.ts`, `scripts/probe-c2-story-loop.ts` (Step 7 lists each)
 - Test: `test/unit/agents/coding-tool-support-ports.test.ts` (append), `test/unit/agents/coding-tool-support-resolve.test.ts` (append)
 - Modify: `scripts/baselines/agent-boundary-baseline.json`
 
@@ -974,8 +1001,15 @@ describe("port 6: protected paths", () => {
     expect(spawned[0]).toContain(":(exclude).nax");
     expect(spawned[0]).toContain(":(glob,exclude)**/.nax/**");
   });
+
+  test("a tool context without a policy excludes and filters nothing extra", () => {
+    expect(gitExcludePathspecsOf({})).toEqual([]);
+    expect(gitIgnorePatternsOf({})).toEqual([]);
+  });
 });
 ```
+
+(import `gitExcludePathspecsOf` and `gitIgnorePatternsOf` from `@/tools`.)
 
 Append to `test/unit/agents/coding-tool-support-resolve.test.ts`, **inside** the existing `describe("resolveDispatchLauncher — US-002 ...")` block, so it reuses `runDispatched()` and its stubs. Also add `withDepsRestore(_codingToolSupportDeps, ["protectedPaths"]);` next to the block's other `withDepsRestore` lines, and import `join` from `node:path`:
 
@@ -1139,7 +1173,7 @@ export function naxProtectedPaths(): ProtectedPathsPolicy {
 
 `src/agents/coding-tool-support-resolve.ts`:
 - import `naxProtectedPaths` from `./nax-protected-paths`,
-- add `protectedPaths: naxProtectedPaths,` to `_codingToolSupportDeps` (doc: `/** Port 6: the host-owned paths the tools and the sandbox protect. */`),
+- add `protectedPaths: naxProtectedPaths,` to `_codingToolSupportDeps`'s value, and `/** Port 6: the host-owned paths the tools and the sandbox protect. */ protectedPaths: () => ProtectedPathsPolicy;` to its explicit type (Task 3, Step 5). Import `type ProtectedPathsPolicy` from `@/tools`.
 - in `resolveDispatchLauncher`'s `resolveSessionSandbox({ ... })` call, add `protectedPaths: _codingToolSupportDeps.protectedPaths(),` (Decision 9: the resolver reads the dep itself; its signature is unchanged),
 - in `resolveCodingToolSupport`'s `buildCodingToolSupport({ ... })` call, add `protectedPaths: _codingToolSupportDeps.protectedPaths(),`.
 
@@ -1147,12 +1181,15 @@ export function naxProtectedPaths(): ProtectedPathsPolicy {
 
 - [ ] **Step 7: Update the tests whose port was cut**
 
-Run `bun run typecheck` and `bun run test`, then fix exactly these classes of failure:
-- `test/unit/tools/git.test.ts`: tests asserting the nax#2007 excludes on `buildGitArgv(input)` pass the excludes explicitly, `buildGitArgv(input, NAX_OWNED_GIT_EXCLUDE_PATHSPECS)`. Tests asserting the absence of excludes on `blame` or on explicit paths keep calling it without them.
-- `test/unit/tools/git-commit.test.ts`: tests that rely on nax-owned paths being skipped pass `protectedPaths: naxProtectedPaths()` in the tool context (`{ ...ctx(), protectedPaths: naxProtectedPaths() }`), or `NAX_GITIGNORE_ENTRIES` as `partitionNaxOwnedPaths`' third argument.
+Run `bun run typecheck`, `bun run test:unit` and `bun run test:integration` (separately, so a unit failure does not hide integration ones), then fix exactly these classes of failure. The final review found every one of these:
+- `test/unit/tools/git.test.ts`: change its shared `argvOf()` helper to call `buildGitArgv(input, NAX_OWNED_GIT_EXCLUDE_PATHSPECS)`. The `blame` and explicit-path tests stay meaningful, because skipping the excludes there is the builder's own rule. Its "default view hides nested and root .nax" describe (2 tests, 6 `createCodingToolRuntime({ policy })` calls) passes `protectedPaths: naxProtectedPaths()` in each runtime's options.
+- `test/unit/tools/git-commit.test.ts`: add `protectedPaths: naxProtectedPaths()` to its `toolContext()` helper.
 - `test/unit/sandbox/policy-inputs.test.ts`: `listNaxEntries(base)` becomes `listNaxEntries(base, ".nax")`, and `listCredentialFiles()` becomes `listCredentialFiles(globalConfigDir())`, read at the same moment the test reads it today.
 - `test/helpers/session-sandbox-deps.ts`: the deps interface's `naxEntries(root: string)` becomes `naxEntries(root: string, stateDir: string)`, and `credentialFiles()` becomes `credentialFiles(dir: string)`. The stub bodies ignore the new parameters.
-- `test/unit/agents/coding-tool-sandbox.test.ts` and the other direct `resolveSessionSandbox(` caller (`grep -rln "resolveSessionSandbox(" test`): pass `protectedPaths: naxProtectedPaths()`. The existing trust-store assertion (`denyWrite` contains `realOrRaw(trustStorePath())`) stays and still passes.
+- `test/unit/agents/coding-tool-sandbox.test.ts`: about 30 `resolveSessionSandbox` calls, most built through its `confinedArgs()` and `sharedArgs()` helpers. Put `protectedPaths: naxProtectedPaths()` inside both helpers and in the remaining inline literals. A call site written `{ protectedPaths, ...confinedArgs() }` then trips TS2783 (property specified twice); drop the duplicate. The existing trust-store assertion (`denyWrite` contains `realOrRaw(trustStorePath())`) stays and still passes.
+- `test/integration/sandbox/sandbox-live.test.ts` (2 `resolveSessionSandbox` calls): pass `protectedPaths: naxProtectedPaths()`.
+- `test/integration/execution/lifecycle/run-tmp-wipe.test.ts`: typechecks again once the `session-sandbox-deps.ts` helper type above is updated; no edit of its own.
+- `scripts/probe-c2-story-loop.ts` (a dev probe, not production): it builds `createCodingToolRuntime` with `Git` granted, so pass `protectedPaths: naxProtectedPaths()` to keep its default Git view unchanged.
 
 - [ ] **Step 8: Verify**
 
@@ -1177,14 +1214,15 @@ git commit -m "refactor: supply nax's protected paths to the tools and sandbox a
 
 ---
 
-### Task 6: Re-narrow `stage` at the stream-bus entry (carried from S1-2)
+### Task 6: Re-narrow `stage` inside the stream bus (carried from S1-2)
 
 **Files:**
-- Modify: `src/config/permissions.ts:23-32` (add the guard after the union), `src/runtime/agent-stream-events.ts`, `src/runtime/index.ts:395`
+- Modify: `src/config/permissions.ts:23-32` (add the guard after the union), `src/config/index.ts`, `src/runtime/agent-stream-events.ts`, `src/runtime/index.ts` (barrel re-exports only)
+- Modify (port cut): `test/ui/useAgentStreamEvents.test.tsx:37,150`
 - Test: `test/unit/runtime/agent-stream-events.test.ts` (append)
 
 **Interfaces:**
-- Produces: `isPipelineStage(value: string): value is PipelineStage` (`@/config`'s permissions module, exported through the barrel next to `PipelineStage`); `type NaxAgentStreamEvent = AgentStreamEvent & { readonly stage?: PipelineStage }`; `narrowStreamStage(event: AgentStreamEvent): NaxAgentStreamEvent`; `AgentStreamListener` and `IAgentStreamEventBus.emitAgentStream` take `NaxAgentStreamEvent`.
+- Produces: `isPipelineStage(value: string): value is PipelineStage` (exported through `@/config` next to `PipelineStage`); `type NaxAgentStreamEvent = AgentStreamEvent & { readonly stage?: PipelineStage }`; `narrowStreamStage(event: AgentStreamEvent): NaxAgentStreamEvent`. `AgentStreamListener` takes `NaxAgentStreamEvent`. **`emitAgentStream` keeps its `AgentStreamEvent` parameter** in both `IAgentStreamEventBus` and `AgentStreamEventBus` (Decision 10).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1204,23 +1242,32 @@ describe("narrowStreamStage — nax re-narrows the contract's plain-string stage
   };
 
   test("an event without a stage passes through as the same object", () => {
-    expect(narrowStreamStage(base)).toBe(base);
+    expect<AgentStreamEvent>(narrowStreamStage(base)).toBe(base);
   });
 
   test("a known pipeline stage passes through as the same object", () => {
     const event: AgentStreamEvent = { ...base, stage: "run" };
-    expect(narrowStreamStage(event)).toBe(event);
+    expect<AgentStreamEvent>(narrowStreamStage(event)).toBe(event);
   });
 
-  test("an unknown stage label is dropped, never passed to the bus", () => {
+  test("an unknown stage label is dropped, never passed on", () => {
     const narrowed = narrowStreamStage({ ...base, stage: "native-session" });
     expect(narrowed.stage).toBeUndefined();
     expect(narrowed.callId).toBe("c1");
   });
+
+  test("the bus hands listeners the narrowed event", () => {
+    const bus = new AgentStreamEventBus();
+    const seen: (string | undefined)[] = [];
+    bus.onAgentStream((event) => seen.push(event.stage));
+    bus.emitAgentStream({ ...base, stage: "native-session" });
+    bus.emitAgentStream({ ...base, stage: "review" });
+    expect(seen).toEqual([undefined, "review"]);
+  });
 });
 ```
 
-`base` is an `AgentCallStartedEvent` (discriminant `kind`; `model` and `timeoutSeconds` are its required fields at `e6d42e890`, `agent-stream-event-types.ts:36-40`).
+`base` is an `AgentCallStartedEvent` (discriminant `kind`; `model` and `timeoutSeconds` are its required fields at `e6d42e890`, `agent-stream-event-types.ts:36-40`). The explicit `expect<AgentStreamEvent>(...)` is required: bun types `toBe`'s argument as the received type, and a plain `expect(narrowStreamStage(base)).toBe(base)` fails typecheck (TS2769). Import `AgentStreamEventBus` from `@/runtime/agent-stream-events` if the file does not already.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -1252,15 +1299,15 @@ export function isPipelineStage(value: string): value is PipelineStage {
 
 Export `isPipelineStage` from `src/config/index.ts` next to the existing permissions exports.
 
-- [ ] **Step 4: The narrowed bus type and the entry guard**
+- [ ] **Step 4: The narrowed listener type and the narrowing inside the bus**
 
 `src/runtime/agent-stream-events.ts`: add `import { isPipelineStage, type PipelineStage } from "@/config";` (if that closes an import cycle, use `../config/permissions` for both; `check:import-cycles` decides). Then:
 
 ```ts
 /**
- * A stream event as nax's bus carries it: the session contract types `stage`
- * as a plain string (S1 spec port 4); nax re-narrows it to its own union here,
- * at the one point events enter the bus.
+ * A stream event as nax's listeners receive it: the session contract types
+ * `stage` as a plain string (S1 spec port 4); the bus re-narrows it to nax's
+ * own union before any listener sees it.
  */
 export type NaxAgentStreamEvent = AgentStreamEvent & { readonly stage?: PipelineStage };
 
@@ -1271,9 +1318,9 @@ function hasNaxStage(event: AgentStreamEvent): event is NaxAgentStreamEvent {
 }
 
 /**
- * Re-narrows `stage` at the bus entry. A known or absent stage passes through
- * as the same object; an unknown label (no producer emits one today) is
- * dropped and logged rather than passed to listeners typed on nax's union.
+ * Re-narrows `stage`. A known or absent stage passes through as the same
+ * object; an unknown label (no producer emits one today) is dropped and logged
+ * rather than handed to listeners typed on nax's union.
  */
 export function narrowStreamStage(event: AgentStreamEvent): NaxAgentStreamEvent {
   if (hasNaxStage(event)) return event;
@@ -1285,32 +1332,29 @@ export function narrowStreamStage(event: AgentStreamEvent): NaxAgentStreamEvent 
 }
 ```
 
-`IAgentStreamEventBus.emitAgentStream` and `AgentStreamEventBus.emitAgentStream` take `event: NaxAgentStreamEvent`. Export `NaxAgentStreamEvent` and `narrowStreamStage` from `src/runtime/index.ts` next to the other stream exports, if that barrel lists them explicitly.
+`IAgentStreamEventBus.emitAgentStream(event: AgentStreamEvent)` is **unchanged**. In `AgentStreamEventBus.emitAgentStream`, add `const narrowed = narrowStreamStage(event);` before the loop and call `listener(narrowed)` instead of `listener(event)`. The final review confirmed `{ ...event, stage: undefined }` typechecks for the union.
 
-`src/runtime/index.ts:395`:
+`src/runtime/index.ts`: add `NaxAgentStreamEvent` (type) and `narrowStreamStage` to its re-exports from `./agent-stream-events`. The `onStreamActivity` emit site is **not** changed; the bus narrows on entry.
 
-```ts
-      onStreamActivity: (event) =>
-        agentStreamEvents.emitAgentStream(narrowStreamStage(event.runId ? event : { ...event, runId })),
-```
+- [ ] **Step 5: Fix the one fixture with an invented stage**
 
-If `bun run typecheck` rejects `{ ...event, stage: undefined }` for the union, write the drop branch per member with `switch (event.kind)`. A cast is not acceptable. Report which form landed in the PR body.
+`test/ui/useAgentStreamEvents.test.tsx` emits `stage: "execution"`, which is not a `PipelineStage`. The fixture is typed as `AgentStreamEvent`, so it compiles, but the bus now drops the label at runtime (`Expected "stage:execution", Received "stage:none"`). Change the fixture (line 37) to `stage: "run"` and the matching assertion (line 150) to `"stage:run"`. The label was invented, and no producer emits `"execution"` on the stream bus. Name the change in the PR body.
 
-- [ ] **Step 5: Verify**
+- [ ] **Step 6: Verify**
 
-Run: `bun test test/unit/runtime/ test/unit/tui/ --timeout=60000`
+Run: `bun test test/unit/runtime/ test/unit/tui/ test/ui/ --timeout=60000`
 Expected: PASS.
 
 Run: `bun run typecheck && bun run check:complexity && bun run check:import-cycles`
-Expected: green. Test fakes that implement `IAgentStreamEventBus` keep compiling (method parameters are bivariant). A test that emits a stage outside the union through the typed bus fails typecheck, and that is the point of this task. Change such a literal only if it was never a real stage (an invented label in a fixture), and name it in the PR body.
+Expected: green. Test call sites that emit plain `AgentStreamEvent`s keep compiling, because `emitAgentStream` still accepts the contract type.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-bun x biome check --write src/config/permissions.ts src/config/index.ts src/runtime/agent-stream-events.ts src/runtime/index.ts test/unit/runtime/agent-stream-events.test.ts
+bun x biome check --write src/config/permissions.ts src/config/index.ts src/runtime/agent-stream-events.ts src/runtime/index.ts test/unit/runtime/agent-stream-events.test.ts test/ui/useAgentStreamEvents.test.tsx
 bun run lint
-git add -A src/config/permissions.ts src/config/index.ts src/runtime test/unit/runtime/agent-stream-events.test.ts
-git commit -m "refactor: re-narrow stream event stage at nax's bus entry"
+git add -A src/config/permissions.ts src/config/index.ts src/runtime test/unit/runtime/agent-stream-events.test.ts test/ui/useAgentStreamEvents.test.tsx
+git commit -m "refactor: re-narrow stream event stage inside nax's bus"
 ```
 
 ---
@@ -1354,7 +1398,7 @@ Put the PR body in the final report (not in the repo), following #2321's shape:
 - **Spec corrections**: Decisions 6 and 7, each with its reason.
 - **Not in this PR**: Decision 8 (`nax-owned-writes.ts` `.nax` knowledge), deferred to S3 by the maintainer's ruling.
 - **Tests re-pointed because their subject moved or port was cut**: list each file from Tasks 2-6 with one line on why.
-- **Behaviour notes**: Decision 9 (trust-store path evaluated per dispatch), and Decision 10 (unknown stage labels dropped; none produced today).
+- **Behaviour notes**: Decision 9 (trust-store path evaluated per dispatch; `resolveDispatchLauncher` now computes `naxProtectedPaths()` even when the sandbox is disabled and returns early, which is pure path computation with no output change), Decision 10 (unknown stage labels dropped inside the bus; none produced today; the one invented fixture label `"execution"` in `test/ui/useAgentStreamEvents.test.tsx` changed to `"run"`), and the old process-global interceptor surviving across runtimes in one process, which no longer happens.
 - **Next**: S1-5 (the scripted move) may start; the ratchet reads 0.
 
 - [ ] **Step 5: Stop**
