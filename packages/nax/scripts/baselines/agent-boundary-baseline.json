@@ -1,6 +1,6 @@
 {
-  "count": 27,
-  "updatedAt": "2026-10-01T13:19:09.656Z",
+  "count": 23,
+  "updatedAt": "2026-10-01T13:29:00.893Z",
   "edges": [
     "src/agents/coding-tool-extras.ts -> src/quality/index.ts",
     "src/agents/coding-tool-sandbox.ts -> src/trust/index.ts",
@@ -19,11 +19,7 @@
     "src/agents/native/session/turn-events.ts -> src/config/index.ts",
     "src/agents/native/tier-providers.ts -> src/config/selectors.ts",
     "src/sandbox/policy-inputs.ts -> src/config/paths/index.ts",
-    "src/sandbox/policy-inputs.ts -> src/utils/git.ts",
-    "src/tools/delete.ts -> src/utils/git.ts",
-    "src/tools/git-commit.ts -> src/utils/git.ts",
     "src/tools/git-commit.ts -> src/utils/gitignore.ts",
-    "src/tools/git.ts -> src/utils/git.ts",
     "src/tools/git.ts -> src/utils/nax-owned-paths.ts",
     "src/tools/provider-advertise.ts -> src/config/permissions.ts",
     "src/tools/provider-types.ts -> src/config/permissions.ts",

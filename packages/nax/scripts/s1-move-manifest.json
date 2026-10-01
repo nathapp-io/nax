@@ -41,6 +41,7 @@
     { "from": "src/utils/process-alive.ts", "to": "internal/process-alive.ts" },
     { "from": "src/utils/strip-control-chars.ts", "to": "internal/strip-control-chars.ts" },
     { "from": "src/utils/git-add.ts", "to": "internal/git-add.ts" },
+    { "from": "src/utils/git-exec.ts", "to": "internal/git-exec.ts" },
     { "from": "src/utils/git-env.ts", "to": "internal/git-env.ts" },
     { "from": "src/utils/thenable.ts", "to": "internal/thenable.ts" },
     { "from": "src/utils/agent-output-env.ts", "to": "internal/agent-output-env.ts" },
