@@ -13,6 +13,7 @@ import { getSafeLogger, NaxError } from "@/agents/infra";
 import type { CommandShadow } from "@/command-safety";
 import type { BashApprovalMode } from "@/config/bash-approval";
 import type { AskResolver } from "@/permissions";
+import type { QualityCommandSpec } from "@/quality/command-spec";
 import type { CommandLauncher } from "@/sandbox";
 import {
   advertisedSchemaBytes,
@@ -24,12 +25,12 @@ import {
   createCodingToolRuntime,
   createNoOpToolAuditSink,
   createToolAuditSink,
+  type DeclaredCommandRunner,
   EXEC_TOOL_NAME,
   type ToolAuditSink,
   type ToolGrant,
   type ToolPatternNarrowing,
 } from "@/tools";
-import type { QualityCommandSpec } from "../quality";
 import { resolveBashSupport } from "./coding-tool-bash";
 import { buildDeclaredCommandTools } from "./coding-tool-extras";
 import { isTempConfined, rawScreenOptionsFor } from "./coding-tool-sandbox";
@@ -85,6 +86,8 @@ export function buildCodingToolSupport(args: {
   providerIdByTool?: ReadonlyMap<string, string>;
   storyId?: string;
   declaredCommands?: ReadonlyMap<string, QualityCommandSpec>;
+  /** Port 7, forwarded to RunCommand. Supplied by `resolveCodingToolSupport`. */
+  runDeclaredCommand?: DeclaredCommandRunner;
   stripEnvVars?: readonly string[];
   /** `quality.shell` — the shell the Bash tool spawns. Defaults to /bin/sh. */
   shell?: string;
@@ -230,6 +233,7 @@ export function buildCodingToolSupport(args: {
       ...(args.extraTools ?? []),
       ...buildDeclaredCommandTools({
         declaredCommands,
+        runDeclaredCommand: args.runDeclaredCommand,
         allowExec,
         execGrant,
         allowBash,

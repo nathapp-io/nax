@@ -7,9 +7,15 @@
  * explains a field below travelled with it.
  */
 import type { BashApprovalMode } from "@/config/bash-approval";
+import type { QualityCommandSpec } from "@/quality/command-spec";
 import type { CommandLauncher } from "@/sandbox";
-import { type CodingTool, createBashTool, createRunCommandTool, type ToolGrant } from "@/tools";
-import type { QualityCommandSpec } from "../quality";
+import {
+  type CodingTool,
+  createBashTool,
+  createRunCommandTool,
+  type DeclaredCommandRunner,
+  type ToolGrant,
+} from "@/tools";
 
 export interface DeclaredCommandToolsArgs {
   readonly declaredCommands: ReadonlyMap<string, QualityCommandSpec>;
@@ -28,6 +34,8 @@ export interface DeclaredCommandToolsArgs {
   readonly packageName?: string;
   readonly stripEnvVars?: readonly string[];
   readonly shell?: string;
+  /** Port 7: runs declared commands; nax supplies `runQualityCommand`. */
+  readonly runDeclaredCommand?: DeclaredCommandRunner;
   /** P4: how Bash and Exec-branch commands run; absent = direct spawn (tests). */
   readonly launcher?: CommandLauncher;
 }
@@ -39,6 +47,7 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
           createRunCommandTool(args.declaredCommands, {
             stripEnvVars: args.stripEnvVars,
             commandCwd: args.commandCwd ?? args.root,
+            runDeclaredCommand: args.runDeclaredCommand,
             ...(args.allowExec
               ? {
                   exec: {

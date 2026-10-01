@@ -1,7 +1,8 @@
 /**
  * Runs a command the PROJECT declared, never one the model wrote.
  *
- * This reaches a shell, deliberately: src/quality/runner.ts executes every
+ * This reaches a shell, deliberately: nax's quality runner
+ * (`src/quality/runner.ts`, supplied as `runDeclaredCommand`) executes every
  * configured command through one to preserve their quoting semantics, and a
  * declared command like "CI=1 bun test {{files}}" has no argv form -- CI=1 is a
  * shell assignment, not a binary. Building a second execution path would mean
@@ -15,7 +16,6 @@
  */
 import { statSync } from "node:fs";
 import type { QualityCommandSpec } from "../quality/command-spec";
-import { runQualityCommand } from "../quality/runner";
 import { type CommandLauncher, sandboxSentence, unsandboxedSentence } from "../sandbox";
 import { describeValuesType } from "../utils/describe-value-type";
 import { shellQuoteArg } from "../verification/shell-quote";
@@ -55,6 +55,25 @@ export interface RunCommandExecOptions {
   readonly launcher?: CommandLauncher;
 }
 
+/** What RunCommand hands the runner for one declared command. */
+export interface DeclaredCommandRequest {
+  readonly commandName: string;
+  readonly command: QualityCommandSpec;
+  readonly workdir: string;
+  readonly stripEnvVars: string[];
+  readonly origin: "agent-tool";
+}
+
+/** What RunCommand reads back. */
+export interface DeclaredCommandResult {
+  readonly success: boolean;
+  readonly exitCode: number;
+  readonly output: string;
+}
+
+/** Runs one declared command; nax supplies `runQualityCommand` (S1 spec port 7). */
+export type DeclaredCommandRunner = (request: DeclaredCommandRequest) => Promise<DeclaredCommandResult>;
+
 export interface RunCommandToolOptions {
   /** Secret environment variables excluded from agent-triggered commands. */
   readonly stripEnvVars?: readonly string[];
@@ -75,6 +94,12 @@ export interface RunCommandToolOptions {
    * `commandCwd` arg).
    */
   readonly commandCwd?: string;
+  /**
+   * Runs a DECLARED (non-Exec) command (S1 spec section 4.2, port 7). nax
+   * supplies `runQualityCommand` through `resolveCodingToolSupport`; absent,
+   * the tool answers `exit 1` and spawns nothing.
+   */
+  readonly runDeclaredCommand?: DeclaredCommandRunner;
 }
 
 function quoteAt(template: string, end: number): "single" | "double" | undefined {
@@ -266,6 +291,18 @@ function execSandboxNote(launcher: CommandLauncher | undefined): string {
   return "";
 }
 
+const MISSING_RUNNER_OUTPUT = "no declared-command runner is configured for this session";
+
+/** The runner a tool built without one uses: refuses, spawns nothing. */
+async function refuseWithoutRunner(): Promise<DeclaredCommandResult> {
+  return { success: false, exitCode: 1, output: MISSING_RUNNER_OUTPUT };
+}
+
+/** Kept out of `run`, which sits at its complexity baseline. */
+function declaredCommandRunner(opts: RunCommandToolOptions): DeclaredCommandRunner {
+  return opts.runDeclaredCommand ?? refuseWithoutRunner;
+}
+
 export function createRunCommandTool(
   declared: ReadonlyMap<string, QualityCommandSpec>,
   opts: RunCommandToolOptions = {},
@@ -274,6 +311,7 @@ export function createRunCommandTool(
   const exec = opts.exec;
   const hasExec = exec !== undefined;
   const commandDescriptions = describeDeclaredCommands(declared);
+  const runDeclared = declaredCommandRunner(opts);
   return {
     name: "RunCommand",
     // A non-zero exit here is the agent's red/green loop, not a fault.
@@ -439,7 +477,7 @@ export function createRunCommandTool(
       const command = substituteCommandSpec(template, values);
       if (typeof command !== "string" && !Array.isArray(command)) return { content: command.error, isError: true };
 
-      const result = await runQualityCommand({
+      const result = await runDeclared({
         commandName: key,
         command,
         // Post-PR2 `ctx.root` is the repo root (not the package dir), so an

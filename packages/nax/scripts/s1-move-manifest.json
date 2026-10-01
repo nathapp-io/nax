@@ -32,6 +32,7 @@
     { "from": "src/config/native-agent/", "to": "config/native-agent/" },
     { "from": "src/utils/redact.ts", "to": "internal/redact.ts" },
     { "from": "src/verification/shell-quote.ts", "to": "internal/shell-quote.ts" },
+    { "from": "src/quality/command-spec/", "to": "internal/command-spec/" },
     { "from": "src/utils/errors.ts", "to": "infra/errors.ts" },
     { "from": "src/utils/bounded-io.ts", "to": "internal/bounded-io.ts" },
     { "from": "src/utils/exec-framing.ts", "to": "internal/exec-framing.ts" },

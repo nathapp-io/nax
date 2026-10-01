@@ -17,6 +17,7 @@ import { type CommandLauncher, runTmpRoot, sessionTmpDirUnder } from "@/sandbox"
 import {
   BASH_TOOL_NAME,
   type CodingToolName,
+  type DeclaredCommandRunner,
   EXEC_TOOL_NAME,
   expandMcpRuleGrants,
   mcpRuleAdmits,
@@ -29,7 +30,7 @@ import type { ToolAuditHeader } from "@/tools/tool-audit";
 import { loadConfigForPackage, type NaxConfig } from "../config";
 import { toolAuditDir } from "../config/paths";
 import { type ResolvedPermissions, resolvePermissions } from "../config/permissions";
-import type { QualityCommandSpec } from "../quality";
+import { type QualityCommandSpec, runQualityCommand } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { errorMessage } from "../utils/errors";
 import { resolveSessionSandbox } from "./coding-tool-sandbox";
@@ -414,9 +415,14 @@ export function resolvedDispatchArgs(inputs: ResolvedDispatchInputs): Partial<Re
   };
 }
 
-/** Injectable deps for testability — mirrors the _agentManagerDeps pattern. */
-export const _codingToolSupportDeps = {
+/** Injectable deps for testability — mirrors the _agentManagerDeps pattern. Each nax-owned port has its default here. */
+export const _codingToolSupportDeps: {
+  loadConfigForPackage: typeof loadConfigForPackage;
+  /** Port 7: the declared-command runner RunCommand calls. */
+  runDeclaredCommand: DeclaredCommandRunner;
+} = {
   loadConfigForPackage,
+  runDeclaredCommand: runQualityCommand,
 };
 
 /**
@@ -491,6 +497,7 @@ export async function resolveCodingToolSupport(
     extraTools: providerResult.tools,
     providerIdByTool: providerResult.providerIdByTool,
     declaredCommands,
+    runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
     stripEnvVars: fields.stripEnvVars,
     sessionName,
     header,

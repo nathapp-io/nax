@@ -291,6 +291,7 @@ describe("buildCodingToolSupport — commandCwd reaches RunCommand (PR1)", () =>
         grants: runCommandGrants,
         declared: ["RunCommand"],
         declaredCommands: new Map([["where", "pwd"]]),
+        runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
       });
       const result = await support?.runtime.callTool("RunCommand", { command: "where" });
       expect(result?.kind).toBe("ok");

@@ -35,6 +35,7 @@ export {
   registerCodingTool,
 } from "./registry";
 export { requestCapabilityTool } from "./request-capability";
+export type { DeclaredCommandRequest, DeclaredCommandResult, DeclaredCommandRunner } from "./run-command";
 export { createRunCommandTool, substituteCommand, substituteCommandSpec } from "./run-command";
 export type { CodingToolOutcome, CodingToolRuntime, ToolCallContext } from "./runtime";
 export {
