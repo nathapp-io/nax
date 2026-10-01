@@ -1,10 +1,11 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
+import { setAgentLogger } from "../agents/infra";
 import { NaxError } from "../errors.js";
 import { type FormatterOptions, formatLogEntry, type VerbosityMode } from "../log-format/index.js";
+import { redactEntry } from "../utils/redact.js";
 import { stripControlChars } from "../utils/strip-control-chars.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
-import { redactEntry } from "./redact.js";
 import { SinkRegistry } from "./sink-registry.js";
 import type { LogEntry, LoggerOptions, LogLevel, LogSink, StoryLogger } from "./types.js";
 
@@ -420,6 +421,7 @@ export function initLogger(options: LoggerOptions = { level: "silent" }): Logger
     );
   }
   instance = new Logger(options);
+  setAgentLogger(instance);
   // MED-05 — catch-all for every process.exit() call site in the CLI: a
   // synchronous exit-time drain of whatever's still buffered, since none of
   // those call sites can be relied on to individually await flush() first.
@@ -482,4 +484,5 @@ export function resetLogger(): void {
     instance.close();
   }
   instance = null;
+  setAgentLogger(null);
 }

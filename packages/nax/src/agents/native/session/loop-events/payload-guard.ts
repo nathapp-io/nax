@@ -11,7 +11,7 @@
  * `messages` after a follow-up; freezing a clone would break the reference
  * identity checkPrefixStable relies on.
  */
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 
 interface ArrayRecord {
   readonly field: string;

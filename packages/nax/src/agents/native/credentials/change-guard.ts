@@ -12,10 +12,9 @@
  */
 
 import type { CredentialStore, ProviderId, StoredCredential } from "@nathapp/nax-ai";
-import { NaxError } from "@/agents/infra";
+import { getSafeLogger, NaxError } from "@/agents/infra";
 import type { AuthStamp } from "@/agents/session-types";
 import type { AuthConfig } from "@/config";
-import { getSafeLogger } from "@/logger";
 import { fingerprintCredential } from "./fingerprint";
 
 /**

@@ -41,7 +41,7 @@
  * this sits inside the posture ADR-030 already discloses; the sandbox, which
  * always write-denies this file, is the real boundary.
  */
-import { getSafeLogger } from "../logger";
+import { getSafeLogger } from "../agents/infra";
 import { withPathFileLock } from "../utils/path-file-lock";
 import { type ApprovalsTaint, readApprovalsFile, writeApprovalsFile } from "./approvals-store";
 

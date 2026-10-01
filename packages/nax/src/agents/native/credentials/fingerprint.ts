@@ -16,8 +16,8 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { StoredCredential } from "@nathapp/nax-ai";
+import { getSafeLogger } from "@/agents/infra";
 import { globalConfigDir } from "@/config";
-import { getSafeLogger } from "@/logger";
 import { errorMessage } from "@/utils/errors";
 
 /** Exactly one HMAC key's worth. Anything shorter is a damaged file, not a salt. */

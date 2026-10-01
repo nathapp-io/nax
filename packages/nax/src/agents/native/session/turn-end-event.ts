@@ -5,7 +5,7 @@
  * plugin handler is timed by its wrapper (`wrapExternalHandler`, US-002),
  * and a built-in handler is not timed at all.
  */
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import type { LoopEventRegistry } from "./loop-events";
 import type { BeforeTurnEndPayload } from "./loop-events/types";
 

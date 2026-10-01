@@ -7,9 +7,8 @@
  */
 
 import type { Pricing, ProviderOverride, ThinkingLevel } from "@nathapp/nax-ai";
-import { NaxError } from "@/agents/infra";
+import { getSafeLogger, NaxError } from "@/agents/infra";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
-import { getSafeLogger } from "@/logger";
 import { parseModelSpec } from "../model-spec";
 
 /** The one agent name that routes to this transport. Defined once in the config

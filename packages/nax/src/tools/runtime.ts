@@ -10,8 +10,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { getSafeLogger } from "@/agents/infra";
 import type { CommandShadow } from "@/command-safety";
-import { getSafeLogger } from "@/logger";
 import { type AskResolver, headlessAskResolver } from "@/permissions";
 import type { SandboxRecord } from "../sandbox";
 import { deleteTool } from "./delete";

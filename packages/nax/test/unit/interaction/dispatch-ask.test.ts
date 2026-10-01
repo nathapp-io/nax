@@ -4,9 +4,10 @@
  * command shadow, plus the dispose that tears both down.
  */
 
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { setAgentLogger } from "@/agents/infra";
 import type { CommandShadow } from "@/command-safety";
 import type { NaxConfig } from "@/config";
 import type { AskChannel, AskChannelResponse, DispatchAskDeps, DispatchAskOptions } from "@/interaction";
@@ -17,7 +18,6 @@ import {
   buildRunDispatchAskWiring,
   collectEffectiveRunStageModes,
 } from "@/interaction";
-import * as loggerModule from "@/logger";
 import {
   type ApprovalEntry,
   type AskControl,
@@ -653,7 +653,7 @@ describe("buildApprovalsSeal — US-002 end-of-run seal", () => {
     await Bun.write(filePath, "x");
 
     const logger = makeLogger();
-    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
+    setAgentLogger(logger);
     try {
       const build = await requireSealBuilder();
       const seal = await build({
@@ -671,7 +671,7 @@ describe("buildApprovalsSeal — US-002 end-of-run seal", () => {
       );
       expect(warnings).toHaveLength(1);
     } finally {
-      loggerSpy.mockRestore();
+      setAgentLogger(null);
     }
   });
 });

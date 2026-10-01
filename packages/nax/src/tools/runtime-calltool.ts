@@ -17,8 +17,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { getSafeLogger } from "@/agents/infra";
 import { type CommandGuard, type CommandShadow, openShadowTap } from "@/command-safety";
-import { getSafeLogger } from "@/logger";
 import { ASK_CANCELLED_REASON, type AskControl, type AskResolver, type AskVerdict } from "@/permissions";
 import { errorMessage } from "@/utils/errors";
 import type { SandboxRecord } from "../sandbox";

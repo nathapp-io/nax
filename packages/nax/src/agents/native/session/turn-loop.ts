@@ -19,9 +19,8 @@
  * those two phases, and handles the error/completion tail.
  */
 
-import { NaxError } from "@/agents/infra";
+import { getSafeLogger, NaxError } from "@/agents/infra";
 import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
-import { getSafeLogger } from "@/logger";
 import { askHumanToolDefinition } from "./ask-human";
 import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
 import { createInvalidCallBudget } from "./handle-invalid-tool-call";

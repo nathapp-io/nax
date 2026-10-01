@@ -33,7 +33,7 @@
  *     enforces it mechanically.
  */
 
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import { errorMessage } from "@/utils/errors";
 import { isThenable } from "@/utils/thenable";
 import { restoreMutated, snapshotArrays } from "./payload-guard";

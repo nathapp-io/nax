@@ -22,8 +22,8 @@
  */
 import { lstat, readdir, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { getSafeLogger } from "../agents/infra";
 import { SANDBOX_GLOB_CHARS } from "../config/schemas-sandbox";
-import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { realOrRaw } from "../utils/realpath";
 import type { GitLayout } from "./policy-inputs";

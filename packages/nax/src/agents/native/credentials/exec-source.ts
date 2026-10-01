@@ -25,8 +25,7 @@
  */
 
 import type { CredentialStore, ProviderId, StoredCredential } from "@nathapp/nax-ai";
-import { NaxError } from "@/agents/infra";
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger, NaxError } from "@/agents/infra";
 import type { HelperProcessResult } from "./helper-process";
 import { runHelper } from "./helper-process";
 import { parseReply } from "./helper-protocol";

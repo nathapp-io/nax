@@ -3,8 +3,9 @@
  * probe result, and the once-per-process log lines (spec 5.7). One nax process
  * serves one project, so one network config per process holds.
  */
+
+import { getSafeLogger } from "../agents/infra";
 import type { SandboxConfig } from "../config/schemas-sandbox";
-import { getSafeLogger } from "../logger";
 import { probeSandbox } from "./probe";
 import { createSrtBackend } from "./srt-backend";
 import type { ProbeResult, SandboxBackend } from "./types";
