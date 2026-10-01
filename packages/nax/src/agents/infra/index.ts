@@ -4,4 +4,11 @@
  */
 
 export { type AgentLogger, getLogger, getSafeLogger, setAgentLogger } from "./agent-logger";
+export {
+  _resetCredentialsConfig,
+  type CredentialAuthConfig,
+  type CredentialsConfig,
+  configureCredentials,
+  credentialsConfig,
+} from "./credentials-config";
 export { NaxError } from "./nax-error";

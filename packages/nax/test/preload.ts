@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _acpAdapterDeps } from "../src/agents/acp/adapter";
 import { _clientDeps } from "../src/agents/native/client";
+import { configureNaxCredentials } from "../src/config";
 import { _notifyDeps } from "../src/finish/notify";
 import { _nativeCredentialDeps } from "../src/precheck/checks-native-credentials";
 import { markTrusted } from "../src/trust";
@@ -28,6 +29,7 @@ import { markTrusted } from "../src/trust";
 const isolatedGlobalDir = mkdtempSync(join(tmpdir(), "nax-test-global-"));
 
 process.env.NAX_GLOBAL_CONFIG_DIR = isolatedGlobalDir;
+configureNaxCredentials();
 delete process.env.NAX_RUNS_DIR;
 
 // ─── Trust gate ───────────────────────────────────────────────────────────────

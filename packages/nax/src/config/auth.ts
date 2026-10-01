@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { configureCredentials } from "../agents/infra";
 import { NaxError } from "../errors";
 import { globalConfigDir } from "./paths";
 import { type AuthConfig, AuthConfigSchema } from "./schemas-auth";
@@ -33,4 +34,9 @@ export async function readGlobalAuthConfig(): Promise<AuthConfig> {
     });
   }
   return result.data;
+}
+
+/** Configure the native credential store to read nax's live global config. */
+export function configureNaxCredentials(): void {
+  configureCredentials({ configDir: globalConfigDir, readAuthConfig: readGlobalAuthConfig });
 }

@@ -27,6 +27,9 @@
  */
 
 import { getNativeClient } from "../src/agents/native/client";
+import { configureNaxCredentials } from "../src/config";
+
+configureNaxCredentials();
 
 async function main(): Promise<void> {
   const client = await getNativeClient();

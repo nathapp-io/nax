@@ -1,6 +1,6 @@
 {
-  "count": 23,
-  "updatedAt": "2026-10-01T13:29:00.893Z",
+  "count": 20,
+  "updatedAt": "2026-10-01T13:39:02.877Z",
   "edges": [
     "src/agents/coding-tool-extras.ts -> src/quality/index.ts",
     "src/agents/coding-tool-sandbox.ts -> src/trust/index.ts",
@@ -9,9 +9,6 @@
     "src/agents/coding-tool-support.ts -> src/config/permissions.ts",
     "src/agents/coding-tool-support.ts -> src/quality/index.ts",
     "src/agents/native/client.ts -> src/config/schema-types.ts",
-    "src/agents/native/credentials/change-guard.ts -> src/config/index.ts",
-    "src/agents/native/credentials/fingerprint.ts -> src/config/index.ts",
-    "src/agents/native/credentials/index.ts -> src/config/index.ts",
     "src/agents/native/model-resolver.ts -> src/config/schema-types.ts",
     "src/agents/native/models.ts -> src/config/index.ts",
     "src/agents/native/models.ts -> src/config/schema-types.ts",

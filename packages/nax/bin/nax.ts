@@ -88,7 +88,7 @@ import { registerReplayCommand } from "../src/commands/replay";
 import { registerResumeCommand } from "../src/commands/resume";
 import { runsCommand } from "../src/commands/runs";
 import { unlockCommand } from "../src/commands/unlock";
-import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
+import { configureNaxCredentials, DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
 import { loadHooksConfig } from "../src/hooks";
 import { getSafeLogger, initLogger, resetLogger } from "../src/logger";
 import { countStories, loadPRD } from "../src/prd";
@@ -1670,6 +1670,8 @@ plugins
 // becomes an unhandled rejection with a raw stack trace. parseAsync observes
 // them; the catch below is the safety net for anything that still escapes
 // (most actions exit themselves with a house-style error).
+// Port 8: nax-agent reads credentials through a slot; set it before any command runs.
+configureNaxCredentials();
 try {
   await program.parseAsync(process.argv);
 } catch (err) {
