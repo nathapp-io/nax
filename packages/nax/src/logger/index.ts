@@ -7,7 +7,7 @@
  */
 
 export type { SecretValuePattern } from "../utils/redact.js";
-export { redactEntry, redactSecrets, SECRET_VALUE_PATTERNS } from "../utils/redact.js";
+export { redactSecrets, SECRET_VALUE_PATTERNS } from "../utils/redact.js";
 export { formatConsole, formatJsonl } from "./formatters.js";
 export { addSink, getLogger, getSafeLogger, initLogger, Logger, resetLogger } from "./logger.js";
 export type {
