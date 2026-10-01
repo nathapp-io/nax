@@ -49,7 +49,8 @@ export interface NativeStreamEventBase {
   readonly agentName: string;
   readonly sessionName: string;
   readonly storyId?: string;
-  readonly stage?: import("@/config").PipelineStage;
+  /** Pipeline stage label; the contract does not know nax's stage union (S1 spec port 4). */
+  readonly stage?: string;
   /**
    * The transcript/ledger join key (`transcript.owner` = `ledger.scopeId`),
    * forwarded from the native session's owner map. Absent when the session was

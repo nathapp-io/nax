@@ -72,4 +72,12 @@ describe("nativeTierProviders", () => {
 
     expect(nativeTierProviders(config).size).toBe(0);
   });
+
+  test("reads a plain object carrying only the two fields it declares (no NaxConfig)", () => {
+    const byProvider = nativeTierProviders({
+      agent: { native: { catalogOverrides: [{ provider: "proxy" }] } },
+      models: { native: { fast: "anthropic/claude-haiku-4-5", balanced: { model: "proxy/x" } } },
+    });
+    expect([...byProvider.entries()]).toEqual([["anthropic", ["fast"]]]);
+  });
 });

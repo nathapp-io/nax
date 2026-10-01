@@ -5,7 +5,6 @@
  * must never wedge a run. The failure is logged by the caller, which owns the
  * logger; this module stays pure so it can be tested without one.
  */
-import type { PipelineStage } from "@/config/permissions";
 import { adaptProviderTool } from "./provider-adapt";
 import { expandProviderGrants, type ProviderGrantEntry } from "./provider-grants";
 import { sanitizeProviderTools } from "./provider-sanitize";
@@ -34,7 +33,7 @@ export interface ResolvedProviderTools {
 
 export async function resolveProviderTools(
   providers: readonly ToolProvider[],
-  stage: PipelineStage,
+  stage: string,
   workdir: string,
   options?: {
     /**

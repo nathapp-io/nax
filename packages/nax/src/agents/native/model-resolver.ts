@@ -19,7 +19,7 @@
  * adversarial-review parse error the story exists to fix.
  */
 
-import type { ProviderCatalogOverride } from "@/config/schema-types";
+import type { ProviderCatalogOverride } from "@/config/catalog-overrides";
 import { getNativeClient } from "./client";
 
 export type ResolveStatus = "resolved" | "unresolved" | "error";

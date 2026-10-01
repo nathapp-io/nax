@@ -8,14 +8,14 @@
 
 import type { Pricing, ProviderOverride, ThinkingLevel } from "@nathapp/nax-ai";
 import { getSafeLogger, NaxError } from "@/agents/infra";
-import type { ProviderCatalogOverride } from "@/config/schema-types";
+import type { ProviderCatalogOverride } from "@/config/catalog-overrides";
 import { parseModelSpec } from "../model-spec";
 
-/** The one agent name that routes to this transport. Defined once in the config
- *  leaf (config validates against it); re-exported here, not in the barrel, so
- *  session-adapter.ts can import it without an index -> session-adapter -> index
- *  cycle. */
-export { NATIVE_AGENT_NAME as NATIVE_AGENT } from "@/config";
+/** The one agent name that routes to this transport. Defined once in the
+ *  `@/config/native-agent` leaf (config validates against it); re-exported
+ *  here, not in the barrel, so session-adapter.ts can import it without an
+ *  index -> session-adapter -> index cycle. */
+export { NATIVE_AGENT_NAME as NATIVE_AGENT } from "@/config/native-agent";
 export { parseModelSpec };
 
 export interface NativeModelRef {

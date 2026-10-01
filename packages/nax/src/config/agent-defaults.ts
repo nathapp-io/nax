@@ -15,8 +15,8 @@ export const DEFAULT_AGENT_PROTOCOL: AgentProtocol = "hybrid";
 
 export const DEFAULT_AGENT_NAME = "native";
 
-/** The agent name that routes to the in-process native adapter. */
-export const NATIVE_AGENT_NAME = "native";
+/** The agent name that routes to the in-process native adapter (defined in the move set). */
+export { NATIVE_AGENT_NAME } from "./native-agent";
 
 /**
  * Built-in tier maps. The loader deep-merges every user config over these, so
