@@ -60,7 +60,7 @@ function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {})
     origin: "runAsSession",
     durationMs: 200,
     timestamp: 1000,
-    tokenUsage: { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10, cacheCreationInputTokens: 5 },
+    tokenUsage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 10, cacheWriteTokens: 5 },
     exactCostUsd: 0.006,
     ...overrides,
   };
@@ -101,7 +101,8 @@ function makeErrorEvent(overrides: Partial<DispatchErrorEvent> = {}): DispatchEr
   };
 }
 
-const RATES_4 = { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 3, cacheCreationPer1M: 3 };
+const RATES_STD = { input: 3, output: 15, cacheRead: 3, cacheWrite: 3 };
+const RATES_ROW = { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 3, cacheCreationPer1M: 3 };
 
 /** Recording aggregator — captures both record and recordError calls. */
 function makeRecordingAggregator(): ICostAggregator & {
@@ -161,13 +162,13 @@ describe("attachCostSubscriber — rates on row (US-003 AC2)", () => {
         exactCostUsd: undefined,
         estimatedCostUsd: 0.018,
         pricingSource: "catalog-rates",
-        rates: RATES_4,
+        rates: RATES_STD,
       }),
     );
 
     expect(agg.recordedCost).toHaveLength(1);
     const row = agg.recordedCost[0];
-    expect(row.rates).toEqual(RATES_4);
+    expect(row.rates).toEqual(RATES_ROW);
   });
 
   test("AC2: complete event carrying rates records them on the row", () => {
@@ -179,12 +180,12 @@ describe("attachCostSubscriber — rates on row (US-003 AC2)", () => {
       makeCompleteEvent({
         tokenUsage: { inputTokens: 100, outputTokens: 50 },
         exactCostUsd: 0.003,
-        rates: RATES_4,
+        rates: RATES_STD,
       }),
     );
 
     expect(agg.recordedCost).toHaveLength(1);
-    expect(agg.recordedCost[0].rates).toEqual(RATES_4);
+    expect(agg.recordedCost[0].rates).toEqual(RATES_ROW);
   });
 });
 
@@ -202,14 +203,14 @@ describe("attachCostSubscriber — wire wins, rates survive (US-003 AC3)", () =>
       makeSessionTurnEvent({
         exactCostUsd: 0.012,
         pricingSource: "catalog-rates",
-        rates: RATES_4,
+        rates: RATES_STD,
       }),
     );
 
     expect(agg.recordedCost).toHaveLength(1);
     const row = agg.recordedCost[0];
     expect(row.pricingSource).toBe("wire");
-    expect(row.rates).toEqual(RATES_4);
+    expect(row.rates).toEqual(RATES_ROW);
   });
 });
 
@@ -260,7 +261,7 @@ describe("attachCostSubscriber — catalogVersion stamping (US-003 AC5/AC6/AC7)"
         exactCostUsd: undefined,
         estimatedCostUsd: 0.018,
         pricingSource: "catalog-rates",
-        rates: RATES_4,
+        rates: RATES_STD,
       }),
     );
 
@@ -278,7 +279,7 @@ describe("attachCostSubscriber — catalogVersion stamping (US-003 AC5/AC6/AC7)"
         exactCostUsd: undefined,
         estimatedCostUsd: 0.018,
         pricingSource: "config-override",
-        rates: RATES_4,
+        rates: RATES_STD,
       }),
     );
 
@@ -302,7 +303,7 @@ describe("attachCostSubscriber — catalogVersion stamping (US-003 AC5/AC6/AC7)"
         exactCostUsd: undefined,
         estimatedCostUsd: 0.018,
         pricingSource: "fallback-rates",
-        rates: RATES_4,
+        rates: RATES_STD,
       }),
     );
 
@@ -319,7 +320,7 @@ describe("attachCostSubscriber — catalogVersion stamping (US-003 AC5/AC6/AC7)"
       makeSessionTurnEvent({
         exactCostUsd: 0.012,
         pricingSource: "catalog-rates",
-        rates: RATES_4,
+        rates: RATES_STD,
       }),
     );
 
@@ -435,7 +436,7 @@ describe("attachCostSubscriber — catalogVersion omitted when pin unreadable (U
           exactCostUsd: undefined,
           estimatedCostUsd: 0.018,
           pricingSource: "catalog-rates",
-          rates: RATES_4,
+          rates: RATES_STD,
         }),
       );
 
@@ -650,5 +651,31 @@ describe("attachCostSubscriber — schemaVersion 8 for session-turn and error ro
 
     expect(errors).toHaveLength(1);
     expect(errors[0].schemaVersion).toBe(8);
+  });
+});
+
+describe("attachCostSubscriber — persisted key names (S1-1)", () => {
+  test("standard-vocabulary usage and rates serialize to the schema-8 row keys", () => {
+    const agg = makeRecordingAggregator();
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(
+      makeSessionTurnEvent({
+        exactCostUsd: undefined,
+        estimatedCostUsd: 0.018,
+        pricingSource: "catalog-rates",
+        tokenUsage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 10, cacheWriteTokens: 5 },
+        rates: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+      }),
+    );
+
+    const row = agg.recordedCost[0];
+    expect(JSON.stringify(row.tokens)).toBe('{"input":100,"output":50,"cacheRead":10,"cacheWrite":5}');
+    expect(JSON.stringify(row.rates)).toBe(
+      '{"inputPer1M":3,"outputPer1M":15,"cacheReadPer1M":0.3,"cacheCreationPer1M":3.75}',
+    );
+    expect(row.schemaVersion).toBe(COST_ROW_SCHEMA_VERSION);
+    expect(COST_ROW_SCHEMA_VERSION).toBe(8);
   });
 });

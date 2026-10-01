@@ -78,6 +78,7 @@ export {
   resolveModel,
   resolveModelForAgent,
   resolveTierMembership,
+  toPricing,
 } from "./schema";
 export type { CommandSafetyConfig } from "./schemas-command-safety";
 export { CommandSafetyConfigSchema } from "./schemas-command-safety";

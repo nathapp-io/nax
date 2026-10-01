@@ -200,18 +200,18 @@ describe("proactive compaction", () => {
         text: "summary",
         usage: { inputTokens: 1_000_000, outputTokens: 0 },
         costUsd: 2,
-        rates: { inputPer1M: 2, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 },
+        rates: { input: 2, output: 10, cacheRead: 1, cacheWrite: 1 },
       }),
       complete: async () => ({
         text: "done",
         usage: { inputTokens: 1_000_000, outputTokens: 0 },
         costUsd: 4,
-        rates: { inputPer1M: 4, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 },
+        rates: { input: 4, output: 10, cacheRead: 1, cacheWrite: 1 },
       }),
     });
 
     expect(result.estimatedCostUsd).toBe(6);
-    expect(result.rates).toEqual({ inputPer1M: 3, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 });
+    expect(result.rates).toEqual({ input: 3, output: 10, cacheRead: 1, cacheWrite: 1 });
   });
 
   test("emits a usage activity for the summary, so the idle watchdog sees it", async () => {
@@ -366,7 +366,7 @@ describe("proactive compaction", () => {
           return {
             text: "working",
             toolCalls: [{ id: "c1", name: "t", input: {} }],
-            usage: { inputTokens: 16, outputTokens: 5, cacheReadInputTokens: 71_755 },
+            usage: { inputTokens: 16, outputTokens: 5, cacheReadTokens: 71_755 },
             costUsd: 0,
           };
         }
@@ -479,7 +479,7 @@ describe("reactive backstop", () => {
       onActivity: (beat) => activity.push(beat),
       summarize: async () => ({
         text: "summary",
-        usage: { inputTokens: 1, outputTokens: 1, cacheReadInputTokens: 100, cacheCreationInputTokens: 20 },
+        usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 100, cacheWriteTokens: 20 },
         costUsd: 0,
       }),
       complete: async () => {

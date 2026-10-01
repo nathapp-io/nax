@@ -129,7 +129,7 @@ export interface CostEvent {
    * (not undefined) when the producer did not stamp, so a reader can tell
    * "no report" apart from "explicitly unknown".
    */
-  readonly rates?: import("../agents/cost").ResolvedRates;
+  readonly rates?: import("./cost-row-rates").CostRowRates;
   readonly auth?: import("../agents/session-types").AuthStamp;
   /**
    * Version of the catalog package the row's `rates` came from (US-003).

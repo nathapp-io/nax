@@ -27,19 +27,19 @@ export function sumTddTokenUsage(sessions: TddSessionResult[]): TokenUsage | und
   const total = {
     inputTokens: 0,
     outputTokens: 0,
-    cacheReadInputTokens: 0,
-    cacheCreationInputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
   };
   for (const u of usages) {
     total.inputTokens += u.inputTokens ?? 0;
     total.outputTokens += u.outputTokens ?? 0;
-    total.cacheReadInputTokens += u.cacheReadInputTokens ?? 0;
-    total.cacheCreationInputTokens += u.cacheCreationInputTokens ?? 0;
+    total.cacheReadTokens += u.cacheReadTokens ?? 0;
+    total.cacheWriteTokens += u.cacheWriteTokens ?? 0;
   }
   return {
     inputTokens: total.inputTokens,
     outputTokens: total.outputTokens,
-    ...(total.cacheReadInputTokens > 0 && { cacheReadInputTokens: total.cacheReadInputTokens }),
-    ...(total.cacheCreationInputTokens > 0 && { cacheCreationInputTokens: total.cacheCreationInputTokens }),
+    ...(total.cacheReadTokens > 0 && { cacheReadTokens: total.cacheReadTokens }),
+    ...(total.cacheWriteTokens > 0 && { cacheWriteTokens: total.cacheWriteTokens }),
   };
 }

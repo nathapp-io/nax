@@ -11,7 +11,7 @@
  * would either drop that field or fabricate it for the summaries.
  */
 
-import type { ResolvedRates, TokenUsage } from "@/agents/cost";
+import type { PricingRates, TokenUsage } from "@/agents/cost";
 import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance";
 import type { NativeTurnActivity } from "./turn-events";
 import { cacheUsageFields } from "./turn-types";
@@ -28,26 +28,26 @@ export interface TurnTokenTotals {
   /**
    * Undefined until something reports cache data, then a running sum. Staying
    * undefined when nothing ever reports it preserves the absent/zero
-   * distinction `toNaxTokenUsage` establishes: "no cache data" and "zero cache
-   * tokens" must stay distinguishable downstream (nax#2045).
+   * distinction nax-ai's `toTokenUsage` establishes: "no cache data" and "zero
+   * cache tokens" must stay distinguishable downstream (nax#2045).
    */
-  readonly cacheReadInputTokens?: number;
-  readonly cacheCreationInputTokens?: number;
+  readonly cacheReadTokens?: number;
+  readonly cacheWriteTokens?: number;
 }
 
 export interface TurnAccumulator {
-  add(usage: TokenUsage, costUsd: number, rates?: ResolvedRates): void;
+  add(usage: TokenUsage, costUsd: number, rates?: PricingRates): void;
   tokens(): TurnTokenTotals;
   costUsd(): number;
   /** Aggregated rate provenance, or undefined when nothing priced. */
-  rates(): ResolvedRates | undefined;
+  rates(): PricingRates | undefined;
 }
 
 export function createTurnAccumulator(): TurnAccumulator {
   let inputTokens = 0;
   let outputTokens = 0;
-  let cacheReadInputTokens: number | undefined;
-  let cacheCreationInputTokens: number | undefined;
+  let cacheReadTokens: number | undefined;
+  let cacheWriteTokens: number | undefined;
   let costUsd = 0;
   const rateTotals = createRateTotals();
 
@@ -55,11 +55,11 @@ export function createTurnAccumulator(): TurnAccumulator {
     add(usage, addedCostUsd, rates) {
       inputTokens += usage.inputTokens;
       outputTokens += usage.outputTokens;
-      if (usage.cacheReadInputTokens !== undefined) {
-        cacheReadInputTokens = (cacheReadInputTokens ?? 0) + usage.cacheReadInputTokens;
+      if (usage.cacheReadTokens !== undefined) {
+        cacheReadTokens = (cacheReadTokens ?? 0) + usage.cacheReadTokens;
       }
-      if (usage.cacheCreationInputTokens !== undefined) {
-        cacheCreationInputTokens = (cacheCreationInputTokens ?? 0) + usage.cacheCreationInputTokens;
+      if (usage.cacheWriteTokens !== undefined) {
+        cacheWriteTokens = (cacheWriteTokens ?? 0) + usage.cacheWriteTokens;
       }
       costUsd += addedCostUsd;
       addRateTotals(rateTotals, usage, rates);
@@ -69,8 +69,8 @@ export function createTurnAccumulator(): TurnAccumulator {
       return {
         inputTokens,
         outputTokens,
-        ...(cacheReadInputTokens !== undefined ? { cacheReadInputTokens } : {}),
-        ...(cacheCreationInputTokens !== undefined ? { cacheCreationInputTokens } : {}),
+        ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+        ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
       };
     },
 
@@ -94,7 +94,7 @@ export function usageBeat(usage: TokenUsage, costUsd: number, roundTrip?: number
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     costUsd,
-    // Absent stays absent (never 0): `cacheReadInputTokens` stays
+    // Absent stays absent (never 0): `cacheReadTokens` stays
     // `number | undefined` so "no cache data" and "zero cache tokens"
     // remain distinguishable downstream (nax#2045).
     ...cacheUsageFields(usage),

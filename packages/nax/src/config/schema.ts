@@ -32,6 +32,8 @@ export type {
   AutoRouteUpgradeConfig,
   Complexity,
   ComplexityRung,
+  ConfigPricing,
+  ConfigPricingTier,
   ConfiguredModel,
   ConfiguredModelObject,
   ConstitutionConfig,
@@ -73,7 +75,6 @@ export type {
   TestCoverageConfig,
   TestStrategy,
   TierConfig,
-  TokenPricing,
 } from "./types";
 export {
   isBuiltinModelTier,
@@ -83,4 +84,5 @@ export {
   resolveModel,
   resolveModelForAgent,
   resolveTierMembership,
+  toPricing,
 } from "./types";

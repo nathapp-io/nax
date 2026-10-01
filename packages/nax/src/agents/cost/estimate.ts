@@ -16,62 +16,32 @@
  * `@/agents/cost` get the helper without reaching into `./calculate`.
  */
 
-import type { TokenPricing } from "@/config/schema-types";
 import { inputClassTokens } from "./calculate";
-import type { TokenUsage } from "./types";
+import type { Pricing, PricingRates, TokenUsage } from "./standard-types";
 
+/**
+ * `inputClassTokens` is re-exported from here so callers using
+ * `estimateCostUsd` can size the prompt with the same definition tier
+ * selection uses.
+ */
 export { inputClassTokens };
 
 /**
- * The per-1M rates picked by `selectRates`. Same shape as a `TokenPricingTier`
- * minus `inputTokensAbove`, which only the threshold-typed tier carries; the
- * caller doesn't need it.
+ * One rate level after tier selection. Cache rates stay optional here: the
+ * types say a catalog level always carries them, but the pre-S1-1 code
+ * defended against a level without them and priced those tokens at the same
+ * level's input rate. Keeping the fallback keeps that behaviour.
  */
 interface EffectiveRates {
-  inputPer1M: number;
-  outputPer1M: number;
-  cacheReadPer1M?: number;
-  cacheCreationPer1M?: number;
+  readonly input: number;
+  readonly output: number;
+  readonly cacheRead?: number;
+  readonly cacheWrite?: number;
 }
 
-/**
- * The post-selection, post-fallback rates `priceCall` returns. Distinct from
- * the internal `EffectiveRates` shape above because its cache fields are
- * *required*: any undefined `cacheReadPer1M` / `cacheCreationPer1M` on the
- * winning row was substituted by `inputPer1M` during selection, so a reader
- * of `ResolvedRates` can multiply token counts by these numbers and get back
- * the recorded cost without re-running tier selection. This is what makes a
- * cost row's arithmetic verifiable (nax#1847 follow-up, US-001 AC8).
- */
-export interface ResolvedRates {
-  inputPer1M: number;
-  outputPer1M: number;
-  cacheReadPer1M: number;
-  cacheCreationPer1M: number;
-}
-
-/**
- * Pick the rate row to apply to the whole request.
- *
- * `rates.tiers` is an ordered list of overrides (nax#1847); the largest
- * `inputTokensAbove` whose threshold is strictly less than the input-class
- * usage wins. Strictly less matches nax-ai's own `> inputTokensAbove`
- * semantics ("Applies when total input usage EXCEEDS this token count"):
- * a request landing exactly on the threshold does not cross it, so the base
- * rates win.
- *
- * Selecting the *highest* matching threshold — not overwriting on every
- * match — keeps the contract order-independent. The catalog passes tiers
- * through verbatim, so an upstream that emits them out of declaration
- * order still applies the largest one that fires.
- */
-function selectRates(rates: TokenPricing, totalInputClassTokens: number): EffectiveRates {
-  let winner: EffectiveRates = {
-    inputPer1M: rates.inputPer1M,
-    outputPer1M: rates.outputPer1M,
-    cacheReadPer1M: rates.cacheReadPer1M,
-    cacheCreationPer1M: rates.cacheCreationPer1M,
-  };
+/** The greatest `inputTokensAbove` the request's input-class total exceeds wins, for the whole request. */
+function selectRates(rates: Pricing, totalInputClassTokens: number): EffectiveRates {
+  let winner: EffectiveRates = rates;
   if (rates.tiers !== undefined) {
     let bestThreshold = Number.NEGATIVE_INFINITY;
     for (const tier of rates.tiers) {
@@ -84,60 +54,34 @@ function selectRates(rates: TokenPricing, totalInputClassTokens: number): Effect
   return winner;
 }
 
-/**
- * Resolve the per-1M rates that priced the call, with cache fields
- * substituted by `inputPer1M` where the rate card did not define them.
- *
- * Substituting here, rather than at multiplication time, is what makes the
- * recorded numbers arithmetic-verifiable: the downstream reader does not
- * need to know about the fallback rule.
- */
-function resolveRates(rates: TokenPricing, totalInputClassTokens: number): ResolvedRates {
+function resolveRates(rates: Pricing, totalInputClassTokens: number): PricingRates {
   const effective = selectRates(rates, totalInputClassTokens);
   return {
-    inputPer1M: effective.inputPer1M,
-    outputPer1M: effective.outputPer1M,
-    cacheReadPer1M: effective.cacheReadPer1M ?? effective.inputPer1M,
-    cacheCreationPer1M: effective.cacheCreationPer1M ?? effective.inputPer1M,
+    input: effective.input,
+    output: effective.output,
+    cacheRead: effective.cacheRead ?? effective.input,
+    cacheWrite: effective.cacheWrite ?? effective.input,
   };
 }
 
 /**
- * Price a request given token usage and a rate card.
- *
- * Returns the USD cost together with the exact per-1M rates that priced it —
- * tier selection applied, cache-rate fallback resolved. A downstream cost
- * row can stamp `resolvedRates` and the row's arithmetic stays verifiable
- * without re-running tier selection.
- *
- * Cache classes that the rate card does not price (`cacheReadPer1M` or
- * `cacheCreationPer1M` undefined) fall back to `inputPer1M`. The whole
- * request re-prices under any tier whose threshold the input-class usage
- * crosses — output tokens and both cache classes alike.
+ * Price one call. `costUsd` and `resolvedRates` come from one tier selection,
+ * so recorded rates always reproduce the recorded cost.
  */
-export function priceCall(usage: TokenUsage, rates: TokenPricing): { costUsd: number; resolvedRates: ResolvedRates } {
-  const totalInputClassTokens = inputClassTokens(usage);
-  const resolvedRates = resolveRates(rates, totalInputClassTokens);
+export function priceCall(usage: TokenUsage, rates: Pricing): { costUsd: number; resolvedRates: PricingRates } {
+  const resolvedRates = resolveRates(rates, inputClassTokens(usage));
 
-  const inputCost = (usage.inputTokens / 1_000_000) * resolvedRates.inputPer1M;
-  const outputCost = (usage.outputTokens / 1_000_000) * resolvedRates.outputPer1M;
-  const cacheReadCost = ((usage.cacheReadInputTokens ?? 0) / 1_000_000) * resolvedRates.cacheReadPer1M;
-  const cacheCreationCost = ((usage.cacheCreationInputTokens ?? 0) / 1_000_000) * resolvedRates.cacheCreationPer1M;
+  const inputCost = (usage.inputTokens / 1_000_000) * resolvedRates.input;
+  const outputCost = (usage.outputTokens / 1_000_000) * resolvedRates.output;
+  const cacheReadCost = ((usage.cacheReadTokens ?? 0) / 1_000_000) * resolvedRates.cacheRead;
+  const cacheWriteCost = ((usage.cacheWriteTokens ?? 0) / 1_000_000) * resolvedRates.cacheWrite;
 
   return {
-    costUsd: inputCost + outputCost + cacheReadCost + cacheCreationCost,
+    costUsd: inputCost + outputCost + cacheReadCost + cacheWriteCost,
     resolvedRates,
   };
 }
 
-/**
- * Compute USD cost for a request given token usage and a rate card.
- *
- * Thin wrapper over `priceCall`; returns its cost component so every
- * existing caller keeps its current contract. Cache-rate fallback, tier
- * selection, and the input-class token threshold are all owned by
- * `priceCall`.
- */
-export function estimateCostUsd(usage: TokenUsage, rates: TokenPricing): number {
+export function estimateCostUsd(usage: TokenUsage, rates: Pricing): number {
   return priceCall(usage, rates).costUsd;
 }

@@ -8,7 +8,7 @@ import {
 } from "@test/helpers";
 import type { AgentResult, AgentRunOptions, AgentRunOutcome, AgentRunRequest, HopKind } from "@/agents";
 import { _acpAdapterDeps } from "@/agents/acp/adapter";
-import type { ResolvedRates } from "@/agents/cost";
+import type { PricingRates } from "@/agents/cost";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { buildCompleteEvent, buildSessionTurnEvent } from "@/agents/manager-dispatch";
 import type { AgentRegistry } from "@/agents/registry";
@@ -487,11 +487,11 @@ describe("buildCompleteEvent — rates passenger (US-002 AC9, AC10)", () => {
   // AC9 (success): when the CompleteResult carries `rates`, the event
   // exposes the same four rate values.
   test("AC9: CompleteResult.rates (4 fields) reaches the DispatchEvent.rates", () => {
-    const rates: ResolvedRates = {
-      inputPer1M: 2,
-      outputPer1M: 10,
-      cacheReadPer1M: 0.2,
-      cacheCreationPer1M: 2.5,
+    const rates: PricingRates = {
+      input: 2,
+      output: 10,
+      cacheRead: 0.2,
+      cacheWrite: 2.5,
     };
     const options = makeOptions();
     options.sessionName = "nax-ac9";
@@ -510,10 +510,10 @@ describe("buildCompleteEvent — rates passenger (US-002 AC9, AC10)", () => {
     });
 
     expect(event.rates).toEqual(rates);
-    expect(event.rates?.inputPer1M).toBe(2);
-    expect(event.rates?.outputPer1M).toBe(10);
-    expect(event.rates?.cacheReadPer1M).toBe(0.2);
-    expect(event.rates?.cacheCreationPer1M).toBe(2.5);
+    expect(event.rates?.input).toBe(2);
+    expect(event.rates?.output).toBe(10);
+    expect(event.rates?.cacheRead).toBe(0.2);
+    expect(event.rates?.cacheWrite).toBe(2.5);
   });
 
   // AC10 (boundary): when the CompleteResult has NO `rates` (e.g. native path
@@ -548,11 +548,11 @@ describe("buildSessionTurnEvent — rates passenger (US-002 AC9, AC10)", () => {
   // AC9 (success, sendTurn path): TurnResult.rates propagates onto the
   // session-turn event's `rates`.
   test("AC9: TurnResult.rates (4 fields) reaches the DispatchEvent.rates", () => {
-    const rates: ResolvedRates = {
-      inputPer1M: 3,
-      outputPer1M: 15,
-      cacheReadPer1M: 3,
-      cacheCreationPer1M: 3,
+    const rates: PricingRates = {
+      input: 3,
+      output: 15,
+      cacheRead: 3,
+      cacheWrite: 3,
     };
     const handle: SessionHandle = {
       id: "nax-ac9-handle",
@@ -579,8 +579,8 @@ describe("buildSessionTurnEvent — rates passenger (US-002 AC9, AC10)", () => {
     });
 
     expect(event.rates).toEqual(rates);
-    expect(event.rates?.inputPer1M).toBe(3);
-    expect(event.rates?.outputPer1M).toBe(15);
+    expect(event.rates?.input).toBe(3);
+    expect(event.rates?.output).toBe(15);
   });
 
   // AC10 (boundary, sendTurn path): when TurnResult has no `rates`, the

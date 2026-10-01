@@ -30,8 +30,8 @@ export class AcpTokenUsageMapper implements ITokenUsageMapper<SessionTokenUsage>
       // previously only input/output_tokens were validated, leaving the same
       // string-concatenation/NaN corruption BUG-10 was meant to prevent
       // reachable via cache_read_input_tokens / cache_creation_input_tokens.
-      cacheReadInputTokens: toFiniteOrUndefined(wire.cache_read_input_tokens),
-      cacheCreationInputTokens: toFiniteOrUndefined(wire.cache_creation_input_tokens),
+      cacheReadTokens: toFiniteOrUndefined(wire.cache_read_input_tokens),
+      cacheWriteTokens: toFiniteOrUndefined(wire.cache_creation_input_tokens),
     };
   }
 }

@@ -32,6 +32,7 @@ import type { RateCard } from "@/agents/cost";
 import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import type { OpenSessionOpts } from "@/agents/session-types";
 import { resolvePermissions } from "@/config/permissions";
+import { toPricing } from "@/config/schema-types";
 import type { AcpSessionResponse } from "./adapter.test";
 import { makeClient, makeSession } from "./adapter.test";
 
@@ -108,9 +109,9 @@ describe("AcpAgentAdapter.complete() — CompleteResult.rates propagation (US-00
 
   // AC2 (success): a priced call returns the four-field ResolvedRates
   // whose values equal the effective rates that priced it.
-  test("AC2: complete() returns rates.inputPer1M and rates.outputPer1M equal to the catalog rates", async () => {
+  test("AC2: complete() returns rates.input and rates.output equal to the catalog rates", async () => {
     const card: RateCard = {
-      rates: { inputPer1M: 2, outputPer1M: 10 },
+      rates: toPricing({ inputPer1M: 2, outputPer1M: 10 }),
       source: "catalog-rates",
     };
     const stub = stubResolveRateCard(card);
@@ -122,16 +123,16 @@ describe("AcpAgentAdapter.complete() — CompleteResult.rates propagation (US-00
     const result = await new AcpAgentAdapter("claude").complete("hi", makeCompleteOptions());
 
     expect(result.rates).toBeDefined();
-    expect(result.rates?.inputPer1M).toBe(2);
-    expect(result.rates?.outputPer1M).toBe(10);
+    expect(result.rates?.input).toBe(2);
+    expect(result.rates?.output).toBe(10);
   });
 
   // AC2 boundary: the cache legs are included too (substituted with
-  // inputPer1M when the card does not declare them). Pinning the field
+  // input when the card does not declare them). Pinning the field
   // count keeps an implementer from dropping one of the four fields.
-  test("AC2 boundary: rates carries cacheReadPer1M and cacheCreationPer1M (substituted with inputPer1M when undefined)", async () => {
+  test("AC2 boundary: rates carries cacheRead and cacheWrite (substituted with input when undefined)", async () => {
     const card: RateCard = {
-      rates: { inputPer1M: 3, outputPer1M: 15 },
+      rates: toPricing({ inputPer1M: 3, outputPer1M: 15 }),
       source: "catalog-rates",
     };
     const stub = stubResolveRateCard(card);
@@ -142,14 +143,9 @@ describe("AcpAgentAdapter.complete() — CompleteResult.rates propagation (US-00
 
     const result = await new AcpAgentAdapter("claude").complete("hi", makeCompleteOptions());
 
-    expect(result.rates?.cacheReadPer1M).toBe(3);
-    expect(result.rates?.cacheCreationPer1M).toBe(3);
-    expect(Object.keys(result.rates ?? {}).sort()).toEqual([
-      "cacheCreationPer1M",
-      "cacheReadPer1M",
-      "inputPer1M",
-      "outputPer1M",
-    ]);
+    expect(result.rates?.cacheRead).toBe(3);
+    expect(result.rates?.cacheWrite).toBe(3);
+    expect(Object.keys(result.rates ?? {}).sort()).toEqual(["cacheRead", "cacheWrite", "input", "output"]);
   });
 
   // AC5 (success): with a tiered card and nonzero usage crossing the
@@ -157,11 +153,11 @@ describe("AcpAgentAdapter.complete() — CompleteResult.rates propagation (US-00
   // and not the card's base rates.
   test("AC5: complete() with a tiered card and nonzero usage crossing the threshold returns the winning tier's rates", async () => {
     const card: RateCard = {
-      rates: {
+      rates: toPricing({
         inputPer1M: 1,
         outputPer1M: 5,
         tiers: [{ inputPer1M: 4, outputPer1M: 20, inputTokensAbove: 100_000 }],
-      },
+      }),
       source: "catalog-rates",
     };
     const stub = stubResolveRateCard(card);
@@ -178,8 +174,8 @@ describe("AcpAgentAdapter.complete() — CompleteResult.rates propagation (US-00
 
     const result = await new AcpAgentAdapter("claude").complete("hi", makeCompleteOptions());
 
-    expect(result.rates?.inputPer1M).toBe(4);
-    expect(result.rates?.outputPer1M).toBe(20);
+    expect(result.rates?.input).toBe(4);
+    expect(result.rates?.output).toBe(20);
   });
 
   // AC7 (failure / boundary): the nonzero-usage guard skips pricing entirely
@@ -188,7 +184,7 @@ describe("AcpAgentAdapter.complete() — CompleteResult.rates propagation (US-00
   // on the result object.
   test("AC7: complete() with zero input and zero output tokens omits the rates field (nonzero-usage guard skips pricing)", async () => {
     const card: RateCard = {
-      rates: { inputPer1M: 2, outputPer1M: 10 },
+      rates: toPricing({ inputPer1M: 2, outputPer1M: 10 }),
       source: "catalog-rates",
     };
     const stub = stubResolveRateCard(card);
@@ -215,7 +211,7 @@ describe("AcpAgentAdapter.complete() — CompleteResult.rates propagation (US-00
   // "cumulative_token_usage is undefined".
   test("AC7 boundary: zero input AND zero output tokens present in cumulative_token_usage still omits rates", async () => {
     const card: RateCard = {
-      rates: { inputPer1M: 2, outputPer1M: 10 },
+      rates: toPricing({ inputPer1M: 2, outputPer1M: 10 }),
       source: "catalog-rates",
     };
     const stub = stubResolveRateCard(card);
@@ -261,9 +257,9 @@ describe("AcpAgentAdapter.sendTurn() — TurnResult.rates propagation (US-002)",
   // AC3 (success): a priced turn (nonzero totalTokenUsage) returns the
   // four-field ResolvedRates whose values equal the effective rates that
   // priced the turn.
-  test("AC3: sendTurn() returns rates.inputPer1M and rates.outputPer1M equal to the catalog rates for a priced turn", async () => {
+  test("AC3: sendTurn() returns rates.input and rates.output equal to the catalog rates for a priced turn", async () => {
     const card: RateCard = {
-      rates: { inputPer1M: 2, outputPer1M: 10 },
+      rates: toPricing({ inputPer1M: 2, outputPer1M: 10 }),
       source: "catalog-rates",
     };
     const stub = stubResolveRateCard(card);
@@ -279,14 +275,14 @@ describe("AcpAgentAdapter.sendTurn() — TurnResult.rates propagation (US-002)",
     });
 
     expect(result.rates).toBeDefined();
-    expect(result.rates?.inputPer1M).toBe(2);
-    expect(result.rates?.outputPer1M).toBe(10);
+    expect(result.rates?.input).toBe(2);
+    expect(result.rates?.output).toBe(10);
   });
 
-  // AC3 boundary: cache legs are included (substituted with inputPer1M).
-  test("AC3 boundary: rates carries cacheReadPer1M and cacheCreationPer1M (substituted when undefined)", async () => {
+  // AC3 boundary: cache legs are included (substituted with input).
+  test("AC3 boundary: rates carries cacheRead and cacheWrite (substituted when undefined)", async () => {
     const card: RateCard = {
-      rates: { inputPer1M: 3, outputPer1M: 15 },
+      rates: toPricing({ inputPer1M: 3, outputPer1M: 15 }),
       source: "catalog-rates",
     };
     const stub = stubResolveRateCard(card);
@@ -301,25 +297,20 @@ describe("AcpAgentAdapter.sendTurn() — TurnResult.rates propagation (US-002)",
       interactionHandler: NO_OP_INTERACTION_HANDLER,
     });
 
-    expect(result.rates?.cacheReadPer1M).toBe(3);
-    expect(result.rates?.cacheCreationPer1M).toBe(3);
-    expect(Object.keys(result.rates ?? {}).sort()).toEqual([
-      "cacheCreationPer1M",
-      "cacheReadPer1M",
-      "inputPer1M",
-      "outputPer1M",
-    ]);
+    expect(result.rates?.cacheRead).toBe(3);
+    expect(result.rates?.cacheWrite).toBe(3);
+    expect(Object.keys(result.rates ?? {}).sort()).toEqual(["cacheRead", "cacheWrite", "input", "output"]);
   });
 
   // AC5 sendTurn path: with a tiered card and nonzero usage crossing the
   // threshold, the TurnResult's `rates` equals the winning tier's rates.
   test("AC5: sendTurn() with a tiered card and nonzero usage crossing the threshold returns the winning tier's rates", async () => {
     const card: RateCard = {
-      rates: {
+      rates: toPricing({
         inputPer1M: 1,
         outputPer1M: 5,
         tiers: [{ inputPer1M: 4, outputPer1M: 20, inputTokensAbove: 100_000 }],
-      },
+      }),
       source: "catalog-rates",
     };
     const stub = stubResolveRateCard(card);
@@ -339,15 +330,15 @@ describe("AcpAgentAdapter.sendTurn() — TurnResult.rates propagation (US-002)",
       interactionHandler: NO_OP_INTERACTION_HANDLER,
     });
 
-    expect(result.rates?.inputPer1M).toBe(4);
-    expect(result.rates?.outputPer1M).toBe(20);
+    expect(result.rates?.input).toBe(4);
+    expect(result.rates?.output).toBe(20);
   });
 
   // AC8 (failure / boundary): when accumulated tokens are zero, the
   // nonzero-usage guard skips pricing entirely. `rates` is absent.
   test("AC8: sendTurn() with zero accumulated token usage omits the rates field", async () => {
     const card: RateCard = {
-      rates: { inputPer1M: 2, outputPer1M: 10 },
+      rates: toPricing({ inputPer1M: 2, outputPer1M: 10 }),
       source: "catalog-rates",
     };
     const stub = stubResolveRateCard(card);
@@ -377,7 +368,7 @@ describe("AcpAgentAdapter.sendTurn() — TurnResult.rates propagation (US-002)",
  * US-002 — `buildTurnResult.rateCard` replaces `modelDef` (the field this
  * story removes). buildTurnResult must price from `rateCard.rates` and stamp
  * `rateCard.source` onto `pricingSource` on the returned `TurnResult`.
- * AC5: inputPer1M=2 outputPer1M=10 with 1M+1M tokens → estimatedCostUsd 12.
+ * AC5: input=2 output=10 with 1M+1M tokens → estimatedCostUsd 12.
  * AC6: totalExactCostUsd passthrough to exactCostUsd; AC8: timedOut → output=''.
  * (From adapter-output-rate-card.test.ts; cards are inline per test.)
  */
@@ -386,9 +377,9 @@ describe("buildTurnResult — rateCard field", () => {
   // output tokens is exactly $12. The stub returns `estimatedCostUsd: 0`,
   // so this assertion fails until `buildTurnResult` actually reads the
   // card's rates.
-  test("AC5: rateCard inputPer1M=2 outputPer1M=10 with 1M+1M tokens returns estimatedCostUsd=12", () => {
+  test("AC5: rateCard input=2 output=10 with 1M+1M tokens returns estimatedCostUsd=12", () => {
     const card: RateCard = {
-      rates: { inputPer1M: 2, outputPer1M: 10 },
+      rates: toPricing({ inputPer1M: 2, outputPer1M: 10 }),
       source: "catalog-rates",
     };
     const result = buildTurnResult({
@@ -409,7 +400,7 @@ describe("buildTurnResult — rateCard field", () => {
   // `totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0`).
   test("AC5 boundary: zero tokens with rateCard returns estimatedCostUsd=0", () => {
     const card: RateCard = {
-      rates: { inputPer1M: 2, outputPer1M: 10 },
+      rates: toPricing({ inputPer1M: 2, outputPer1M: 10 }),
       source: "catalog-rates",
     };
     const result = buildTurnResult({
@@ -431,7 +422,7 @@ describe("buildTurnResult — rateCard field", () => {
   // overwrite it.
   test("AC6: totalExactCostUsd=0.42 returns exactCostUsd=0.42 unchanged", () => {
     const card: RateCard = {
-      rates: { inputPer1M: 3, outputPer1M: 15 },
+      rates: toPricing({ inputPer1M: 3, outputPer1M: 15 }),
       source: "catalog-rates",
     };
     const result = buildTurnResult({
@@ -451,7 +442,7 @@ describe("buildTurnResult — rateCard field", () => {
   // pass-through.
   test("AC6 boundary: exactCostUsd is preserved when the card is fallback-rates", () => {
     const card: RateCard = {
-      rates: { inputPer1M: 3, outputPer1M: 15 },
+      rates: toPricing({ inputPer1M: 3, outputPer1M: 15 }),
       source: "fallback-rates",
     };
     const result = buildTurnResult({
@@ -471,7 +462,7 @@ describe("buildTurnResult — rateCard field", () => {
   // from "wire reported zero".
   test("AC6 boundary: undefined totalExactCostUsd leaves exactCostUsd undefined", () => {
     const card: RateCard = {
-      rates: { inputPer1M: 3, outputPer1M: 15 },
+      rates: toPricing({ inputPer1M: 3, outputPer1M: 15 }),
       source: "catalog-rates",
     };
     const result = buildTurnResult({
@@ -492,7 +483,7 @@ describe("buildTurnResult — rateCard field", () => {
   // timeout transport fact.
   test("AC8: timedOut=true returns output='' even when lastResponse carries content", () => {
     const card: RateCard = {
-      rates: { inputPer1M: 3, outputPer1M: 15 },
+      rates: toPricing({ inputPer1M: 3, outputPer1M: 15 }),
       source: "catalog-rates",
     };
     const result = buildTurnResult({
@@ -516,7 +507,7 @@ describe("buildTurnResult — rateCard field", () => {
   // regression.
   test("AC8 boundary: timedOut=false preserves extracted assistant content", () => {
     const card: RateCard = {
-      rates: { inputPer1M: 3, outputPer1M: 15 },
+      rates: toPricing({ inputPer1M: 3, outputPer1M: 15 }),
       source: "catalog-rates",
     };
     const result = buildTurnResult({

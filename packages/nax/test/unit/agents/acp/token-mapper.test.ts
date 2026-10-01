@@ -25,8 +25,8 @@ describe("AcpTokenUsageMapper", () => {
 
     expect(internal.inputTokens).toBe(100);
     expect(internal.outputTokens).toBe(50);
-    expect(internal.cacheReadInputTokens).toBe(10);
-    expect(internal.cacheCreationInputTokens).toBe(5);
+    expect(internal.cacheReadTokens).toBe(10);
+    expect(internal.cacheWriteTokens).toBe(5);
   });
 
   test("undefined cache fields remain undefined", () => {
@@ -39,8 +39,8 @@ describe("AcpTokenUsageMapper", () => {
 
     expect(internal.inputTokens).toBe(100);
     expect(internal.outputTokens).toBe(50);
-    expect(internal.cacheReadInputTokens).toBeUndefined();
-    expect(internal.cacheCreationInputTokens).toBeUndefined();
+    expect(internal.cacheReadTokens).toBeUndefined();
+    expect(internal.cacheWriteTokens).toBeUndefined();
   });
 
   test("zero values are preserved (not coerced to undefined)", () => {
@@ -55,8 +55,8 @@ describe("AcpTokenUsageMapper", () => {
 
     expect(internal.inputTokens).toBe(0);
     expect(internal.outputTokens).toBe(0);
-    expect(internal.cacheReadInputTokens).toBe(0);
-    expect(internal.cacheCreationInputTokens).toBe(0);
+    expect(internal.cacheReadTokens).toBe(0);
+    expect(internal.cacheWriteTokens).toBe(0);
   });
 
   test("defaultAcpTokenUsageMapper is a singleton instance", () => {
@@ -115,8 +115,8 @@ describe("BUG-10 — malformed wire token values do not pass through as non-numb
     } as unknown as SessionTokenUsage; // test-ratchet-allow: as-unknown-as
     const internal = new AcpTokenUsageMapper().toInternal(wire);
 
-    expect(internal.cacheReadInputTokens).toBe(0);
-    expect(typeof internal.cacheReadInputTokens).toBe("number");
+    expect(internal.cacheReadTokens).toBe(0);
+    expect(typeof internal.cacheReadTokens).toBe("number");
   });
 
   test("a string cache_creation_input_tokens is coerced to 0, not kept as a string", () => {
@@ -127,8 +127,8 @@ describe("BUG-10 — malformed wire token values do not pass through as non-numb
     } as unknown as SessionTokenUsage; // test-ratchet-allow: as-unknown-as
     const internal = new AcpTokenUsageMapper().toInternal(wire);
 
-    expect(internal.cacheCreationInputTokens).toBe(0);
-    expect(typeof internal.cacheCreationInputTokens).toBe("number");
+    expect(internal.cacheWriteTokens).toBe(0);
+    expect(typeof internal.cacheWriteTokens).toBe("number");
   });
 
   test("a non-finite cache_read_input_tokens (NaN) is coerced to 0", () => {
@@ -139,14 +139,14 @@ describe("BUG-10 — malformed wire token values do not pass through as non-numb
     };
     const internal = new AcpTokenUsageMapper().toInternal(wire);
 
-    expect(internal.cacheReadInputTokens).toBe(0);
+    expect(internal.cacheReadTokens).toBe(0);
   });
 
   test("cache fields still stay undefined when absent (unaffected by the guard)", () => {
     const wire: SessionTokenUsage = { input_tokens: 10, output_tokens: 5 };
     const internal = new AcpTokenUsageMapper().toInternal(wire);
 
-    expect(internal.cacheReadInputTokens).toBeUndefined();
-    expect(internal.cacheCreationInputTokens).toBeUndefined();
+    expect(internal.cacheReadTokens).toBeUndefined();
+    expect(internal.cacheWriteTokens).toBeUndefined();
   });
 });

@@ -12,14 +12,6 @@ export interface ModelCostRates {
   outputPer1M: number;
 }
 
-/** Token usage data (camelCase — nax-internal representation) */
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadInputTokens?: number;
-  cacheCreationInputTokens?: number;
-}
-
 /** Cost estimate with confidence indicator */
 export interface CostEstimate {
   cost: number;

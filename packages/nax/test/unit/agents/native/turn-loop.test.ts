@@ -191,18 +191,18 @@ describe("native turn loop", () => {
               toolCalls: [{ id: "c1", name: "t", input: {} }],
               usage: { inputTokens: 1_000_000, outputTokens: 0 },
               costUsd: 2,
-              rates: { inputPer1M: 2, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 },
+              rates: { input: 2, output: 10, cacheRead: 1, cacheWrite: 1 },
             })
           : reply({
               usage: { inputTokens: 1_000_000, outputTokens: 0 },
               costUsd: 4,
-              rates: { inputPer1M: 4, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 },
+              rates: { input: 4, output: 10, cacheRead: 1, cacheWrite: 1 },
             });
       },
     });
 
     expect(result.estimatedCostUsd).toBe(6);
-    expect(result.rates).toEqual({ inputPer1M: 3, outputPer1M: 10, cacheReadPer1M: 1, cacheCreationPer1M: 1 });
+    expect(result.rates).toEqual({ input: 3, output: 10, cacheRead: 1, cacheWrite: 1 });
   });
 
   test("a tool failure comes back as an error result and the turn continues", async () => {
@@ -516,21 +516,21 @@ describe("native turn loop — what the model is told exists", () => {
         return round === 1
           ? reply({
               toolCalls: [{ id: "c1", name: "t", input: {} }],
-              usage: { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 100, cacheCreationInputTokens: 20 },
+              usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 20 },
             })
           : reply({
-              usage: { inputTokens: 3, outputTokens: 2, cacheReadInputTokens: 40, cacheCreationInputTokens: 8 },
+              usage: { inputTokens: 3, outputTokens: 2, cacheReadTokens: 40, cacheWriteTokens: 8 },
             });
       },
     });
-    expect(result.tokenUsage.cacheReadInputTokens).toBe(140);
-    expect(result.tokenUsage.cacheCreationInputTokens).toBe(28);
+    expect(result.tokenUsage.cacheReadTokens).toBe(140);
+    expect(result.tokenUsage.cacheWriteTokens).toBe(28);
   });
 
   test("omits cache fields entirely when no round trip reported cache data", async () => {
     const result = await runNativeTurn(handle, "hi", opts(), { complete: async () => reply() });
-    expect("cacheReadInputTokens" in result.tokenUsage).toBe(false);
-    expect("cacheCreationInputTokens" in result.tokenUsage).toBe(false);
+    expect("cacheReadTokens" in result.tokenUsage).toBe(false);
+    expect("cacheWriteTokens" in result.tokenUsage).toBe(false);
   });
 
   test("sums cache tokens across a mix of round trips that do and do not report them", async () => {
@@ -541,7 +541,7 @@ describe("native turn loop — what the model is told exists", () => {
         if (round === 1) {
           return reply({
             toolCalls: [{ id: "c1", name: "t", input: {} }],
-            usage: { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 100, cacheCreationInputTokens: 20 },
+            usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 20 },
           });
         }
         // Second round trip reports no cache data at all — must count as 0, not
@@ -549,8 +549,8 @@ describe("native turn loop — what the model is told exists", () => {
         return reply({ usage: { inputTokens: 3, outputTokens: 2 } });
       },
     });
-    expect(result.tokenUsage.cacheReadInputTokens).toBe(100);
-    expect(result.tokenUsage.cacheCreationInputTokens).toBe(20);
+    expect(result.tokenUsage.cacheReadTokens).toBe(100);
+    expect(result.tokenUsage.cacheWriteTokens).toBe(20);
   });
 
   test("routes an ask_human call to the interaction handler and records the exchange", async () => {

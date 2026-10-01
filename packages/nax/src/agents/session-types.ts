@@ -236,7 +236,7 @@ export interface TurnResult {
    * present only when nonzero usage let pricing run; absent on a zeroed
    * accumulator so "priced" and "did not price" stay distinguishable.
    */
-  rates?: import("./cost").ResolvedRates;
+  rates?: import("./cost").PricingRates;
   /** US-006: identity of the credential that served this turn. Absent for ACP turns. */
   auth?: AuthStamp;
   /**

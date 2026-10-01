@@ -6,6 +6,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
+import type { TokenUsage } from "../agents/cost";
 import type { AgentFallbackRecord } from "../agents/manager-types";
 import type { AgentResult } from "../agents/types";
 import type { ContextBundle } from "../context/engine";
@@ -29,12 +30,7 @@ export interface StoryRunOutcome {
   /** Sum of estimatedCostUsd across all sessions run. */
   totalCost: number;
   /** Sum of tokenUsage across all sessions run (undefined if nothing reported). */
-  totalTokenUsage?: {
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadInputTokens?: number;
-    cacheCreationInputTokens?: number;
-  };
+  totalTokenUsage?: TokenUsage;
   /** Agent swap history when the runner delegates to AgentManager. Empty for direct-adapter runners. */
   fallbacks: AgentFallbackRecord[];
   /** Final context bundle (may differ from ctx.bundle after a rebuild-on-swap). */

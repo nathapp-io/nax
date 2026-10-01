@@ -1,4 +1,4 @@
-import type { ResolvedRates, TokenUsage } from "@/agents/cost";
+import type { PricingRates, TokenUsage } from "@/agents/cost";
 
 interface RateTotals {
   inputTokens: number;
@@ -9,7 +9,7 @@ interface RateTotals {
   outputCostPerMillionTokens: number;
   cacheReadCostPerMillionTokens: number;
   cacheCreationCostPerMillionTokens: number;
-  latestRates?: ResolvedRates;
+  latestRates?: PricingRates;
   complete: boolean;
 }
 
@@ -27,38 +27,34 @@ export function createRateTotals(): RateTotals {
   };
 }
 
-export function addRateTotals(totals: RateTotals, usage: TokenUsage, rates: ResolvedRates | undefined): void {
+export function addRateTotals(totals: RateTotals, usage: TokenUsage, rates: PricingRates | undefined): void {
   if (rates === undefined) {
     totals.complete = false;
     return;
   }
   totals.inputTokens += usage.inputTokens;
   totals.outputTokens += usage.outputTokens;
-  totals.cacheReadTokens += usage.cacheReadInputTokens ?? 0;
-  totals.cacheCreationTokens += usage.cacheCreationInputTokens ?? 0;
-  totals.inputCostPerMillionTokens += usage.inputTokens * rates.inputPer1M;
-  totals.outputCostPerMillionTokens += usage.outputTokens * rates.outputPer1M;
-  totals.cacheReadCostPerMillionTokens += (usage.cacheReadInputTokens ?? 0) * rates.cacheReadPer1M;
-  totals.cacheCreationCostPerMillionTokens += (usage.cacheCreationInputTokens ?? 0) * rates.cacheCreationPer1M;
+  totals.cacheReadTokens += usage.cacheReadTokens ?? 0;
+  totals.cacheCreationTokens += usage.cacheWriteTokens ?? 0;
+  totals.inputCostPerMillionTokens += usage.inputTokens * rates.input;
+  totals.outputCostPerMillionTokens += usage.outputTokens * rates.output;
+  totals.cacheReadCostPerMillionTokens += (usage.cacheReadTokens ?? 0) * rates.cacheRead;
+  totals.cacheCreationCostPerMillionTokens += (usage.cacheWriteTokens ?? 0) * rates.cacheWrite;
   totals.latestRates = rates;
 }
 
-export function aggregateRates(totals: RateTotals): ResolvedRates | undefined {
+export function aggregateRates(totals: RateTotals): PricingRates | undefined {
   if (!totals.complete || totals.latestRates === undefined) return undefined;
   const weightedRate = (tokens: number, rateTotal: number, fallback: number) =>
     tokens === 0 ? fallback : rateTotal / tokens;
   return {
-    inputPer1M: weightedRate(totals.inputTokens, totals.inputCostPerMillionTokens, totals.latestRates.inputPer1M),
-    outputPer1M: weightedRate(totals.outputTokens, totals.outputCostPerMillionTokens, totals.latestRates.outputPer1M),
-    cacheReadPer1M: weightedRate(
-      totals.cacheReadTokens,
-      totals.cacheReadCostPerMillionTokens,
-      totals.latestRates.cacheReadPer1M,
-    ),
-    cacheCreationPer1M: weightedRate(
+    input: weightedRate(totals.inputTokens, totals.inputCostPerMillionTokens, totals.latestRates.input),
+    output: weightedRate(totals.outputTokens, totals.outputCostPerMillionTokens, totals.latestRates.output),
+    cacheRead: weightedRate(totals.cacheReadTokens, totals.cacheReadCostPerMillionTokens, totals.latestRates.cacheRead),
+    cacheWrite: weightedRate(
       totals.cacheCreationTokens,
       totals.cacheCreationCostPerMillionTokens,
-      totals.latestRates.cacheCreationPer1M,
+      totals.latestRates.cacheWrite,
     ),
   };
 }

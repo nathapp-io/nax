@@ -22,14 +22,7 @@ import { anyAmbientCredential, listStoredProviders } from "./auth";
 import { getNativeClient } from "./client";
 import { authSourceIsExec, servedAuth } from "./credentials";
 import { toAdapterFailure } from "./errors";
-import {
-  buildRateCard,
-  NATIVE_AGENT,
-  parseNativeModel,
-  resolveContextWindow,
-  toNaxTokenUsage,
-  toThinkingLevel,
-} from "./models";
+import { buildRateCard, NATIVE_AGENT, parseNativeModel, resolveContextWindow, toThinkingLevel } from "./models";
 import {
   closeNativeSession,
   markNativeTurnOutcome,
@@ -248,7 +241,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         ...(thinking !== undefined ? { thinking } : {}),
       });
 
-      const tokenUsage = toNaxTokenUsage(result.usage);
+      const tokenUsage = result.usage;
       const catalog = client.pricing(resolved);
       const { rates, source: pricingSource } = buildRateCard(catalog, options.modelDef.pricing);
       // US-002: stamp the effective `priceCall`-resolved rates so the cost
@@ -440,7 +433,7 @@ export class NativeAgentAdapter implements AgentAdapter {
               sessionId,
               signal,
             });
-            const summaryUsage = toNaxTokenUsage(res.usage);
+            const summaryUsage = res.usage;
             const { costUsd, resolvedRates } = priceCall(summaryUsage, rates);
             return { text: res.text, usage: summaryUsage, costUsd, rates: resolvedRates };
           } finally {
@@ -489,7 +482,7 @@ export class NativeAgentAdapter implements AgentAdapter {
               // saves.
               cacheRetention: "short",
             });
-            const usage = toNaxTokenUsage(res.usage);
+            const usage = res.usage;
             // Single `priceCall` invocation: `costUsd` and `resolvedRates`
             // come from the same call so they cannot diverge — the
             // verifiability property the story names ("recorded rates

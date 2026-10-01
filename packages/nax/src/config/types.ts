@@ -52,6 +52,8 @@ export type { AutoRouteConfig, AutoRouteDowngradeConfig, AutoRouteUpgradeConfig 
 export type {
   Complexity,
   ComplexityRung,
+  ConfigPricing,
+  ConfigPricingTier,
   ConfiguredModel,
   ConfiguredModelObject,
   LlmRoutingMode,
@@ -65,7 +67,6 @@ export type {
   TddStrategy,
   TestStrategy,
   TierConfig,
-  TokenPricing,
 } from "./schema-types";
 export {
   isBuiltinModelTier,
@@ -75,6 +76,7 @@ export {
   resolveModel,
   resolveModelForAgent,
   resolveTierMembership,
+  toPricing,
 } from "./schema-types";
 // Runtime types
 export type { AuthConfig } from "./schemas-auth";
