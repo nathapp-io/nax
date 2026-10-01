@@ -40,7 +40,13 @@ function* srcFiles(dir: string): Generator<string> {
     const full = join(dir, entry);
     const st = statSync(full);
     if (st.isDirectory()) yield* srcFiles(full);
-    else if (entry.endsWith(".ts") && !entry.endsWith(".test.ts") && !entry.endsWith(".d.ts")) yield full;
+    else if (
+      (entry.endsWith(".ts") || entry.endsWith(".tsx")) &&
+      !entry.endsWith(".test.ts") &&
+      !entry.endsWith(".test.tsx") &&
+      !entry.endsWith(".d.ts")
+    )
+      yield full;
   }
 }
 

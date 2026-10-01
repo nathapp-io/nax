@@ -61,4 +61,11 @@ describe("check-usage-vocabulary", () => {
     write("packages/nax/test/unit/x.test.ts", "interface TokenUsage { inputTokens: number }\n");
     expect(findVocabularyViolations(root)).toEqual([]);
   });
+
+  test("tsx declarations are scanned but tsx test files are not", () => {
+    root = makeTempDir("usage-vocab-");
+    write("packages/nax/src/tui/CostRow.tsx", "export interface TokenUsage { inputTokens: number }\n");
+    write("packages/nax/src/tui/CostRow.test.tsx", "interface Pricing { input: number }\n");
+    expect(findVocabularyViolations(root)).toEqual(["packages/nax/src/tui/CostRow.tsx:1  interface TokenUsage"]);
+  });
 });
