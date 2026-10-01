@@ -887,7 +887,7 @@ interface TokenUsage {
 ### Cost System
 
 `src/agents/cost/`:
-- `rate-card.ts` — `resolveRateCard()` maps a configured model id to a `TokenPricing` card: alias file (`model-aliases.json`) → nax-ai model catalog (`src/agents/catalog/`, `catalog-rates`) → `FALLBACK_RATES` (`fallback-rates`, with a warning)
+- `rate-card.ts` — `resolveRateCard()` maps a configured model id to a `Pricing` card: alias file (`model-aliases.json`) → nax-ai model catalog (`src/agents/catalog/`, `catalog-rates`) → `FALLBACK_RATES` (`fallback-rates`, with a warning)
 - `estimate.ts` — `priceCall()` / `estimateCostUsd()`, tier-aware (cache read/creation fall back to input price)
 - `calculate.ts` — `addTokenUsage()`, `inputClassTokens()`, `formatCostWithConfidence()`, `resolvePricingSource()`
 - `token-mapper.ts` — maps adapter usage payloads onto `TokenUsage`
@@ -1931,7 +1931,8 @@ Other files (`gitignore.ts`, `diff-files.ts`, `feature-name.ts`, `command-argv.t
 The in-process transport for the `native` agent (ADR-027), the built-in default
 (`agent.default: "native"` under `agent.protocol: "hybrid"`). Decision records:
 ADR-028 (native sessions and the tool loop), ADR-029 (Phase C coding-agent scope).
-`@nathapp/nax-ai` may be imported only from `src/agents/native/` and `src/agents/catalog/`
+`@nathapp/nax-ai` may be imported only from `src/agents/native/`, `src/agents/catalog/`
+and the `src/agents/cost/standard-types.ts` staging re-export
 (`bun run check:nax-ai-imports`).
 
 - `adapter.ts` — the native `AgentAdapter`. `complete()` is a one-shot nax-ai call;

@@ -1,7 +1,7 @@
 /**
  * ModelMapSchema — models.<agent>.<tier>.pricing.tiers (nax#1847)
  *
- * TokenPricing carries an optional `tiers` array so a config override can
+ * Pricing carries an optional `tiers` array so a config override can
  * express threshold pricing the same way nax-ai's catalog does. Zod objects
  * strip unknown keys rather than rejecting them, so a `tiers` array missing
  * from the schema would be dropped at config load with no error and no

@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 
 /**
- * Fails if @nathapp/nax-ai is imported anywhere but src/agents/native/.
+ * Fails if @nathapp/nax-ai is imported outside the allow-listed sites:
+ * src/agents/native/, src/agents/catalog/ and the S1-1 staging re-export
+ * src/agents/cost/standard-types.ts.
  *
  * The package is swappable only while its surface has one consumer. Mirrors
  * scripts/check-adapter-no-config-import.sh, and nax-ai's own

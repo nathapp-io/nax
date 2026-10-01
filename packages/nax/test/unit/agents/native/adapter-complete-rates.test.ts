@@ -91,7 +91,7 @@ function stubClient(pricing: Pricing, usage: { inputTokens: number; outputTokens
 }
 
 describe("NativeAgentAdapter.complete() — CompleteResult.rates propagation (US-002)", () => {
-  // AC1 (success): a priced call returns the four-field ResolvedRates whose
+  // AC1 (success): a priced call returns the four-field PricingRates whose
   // values match the effective rates that priced it (no tier crossing ->
   // the base catalog rates, with cacheRead/cacheCreation defined).
   test("AC1: complete() returns rates.input = catalog input rate and rates.output = catalog output rate", async () => {

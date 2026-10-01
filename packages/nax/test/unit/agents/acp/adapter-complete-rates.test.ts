@@ -107,7 +107,7 @@ describe("AcpAgentAdapter.complete() — CompleteResult.rates propagation (US-00
     mock.restore();
   });
 
-  // AC2 (success): a priced call returns the four-field ResolvedRates
+  // AC2 (success): a priced call returns the four-field PricingRates
   // whose values equal the effective rates that priced it.
   test("AC2: complete() returns rates.input and rates.output equal to the catalog rates", async () => {
     const card: RateCard = {
@@ -255,7 +255,7 @@ describe("AcpAgentAdapter.sendTurn() — TurnResult.rates propagation (US-002)",
   });
 
   // AC3 (success): a priced turn (nonzero totalTokenUsage) returns the
-  // four-field ResolvedRates whose values equal the effective rates that
+  // four-field PricingRates whose values equal the effective rates that
   // priced the turn.
   test("AC3: sendTurn() returns rates.input and rates.output equal to the catalog rates for a priced turn", async () => {
     const card: RateCard = {
