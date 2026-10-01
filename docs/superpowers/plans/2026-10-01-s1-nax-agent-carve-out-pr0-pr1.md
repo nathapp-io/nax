@@ -18,7 +18,10 @@
 - Run package commands from `packages/nax`. Never run bare `bun test` (no path); single files run as `bun test <path> --timeout=60000`. Never `bun run nax`.
 - Full verification per PR: `bun run test`, `bun run typecheck`, `bun run lint`, and from the repo root `bun run check:all`.
 - No test is edited to pass unless its subject was renamed or reshaped by this plan.
-- Source files stay at or under 600 lines (`scripts/check-file-sizes.ts`); `src/agents/types.ts` (600) and `src/agents/native/adapter.ts` (599) must not grow.
+- Source files stay at or under 600 lines (`scripts/check-file-sizes.ts`; tests 800). Files at the limit at `fff826752` that must not grow: `src/agents/types.ts` (600), `src/runtime/cost-aggregator.ts` (600), `src/agents/native/adapter.ts` (599), `src/agents/manager-dispatch.ts` (599), `src/metrics/tracker.ts` (599). Re-check with `wc -l` after editing any of them.
+- Code blocks in this plan show content, not final formatting. Before every commit run `bun x biome check --write <files you touched>` (formats and orders imports), then `bun run lint`. A file-size or import-order failure found three tasks late is expensive.
+- Commit locally as the steps say. **Push and open a PR only after the user approves**; the push steps below are gated on that.
+- The working tree must be clean before the first rebase: if this plan file shows as modified, commit it (`docs: ...`) first.
 - Cost rows keep `COST_ROW_SCHEMA_VERSION = 8` and their exact keys: `tokens {input, output, cacheRead, cacheWrite}`, `rates {inputPer1M, outputPer1M, cacheReadPer1M, cacheCreationPer1M}`.
 - `metrics.json` keeps `cacheReadInputTokens` / `cacheCreationInputTokens` and omits zero values.
 - User config `models.*.pricing` keeps the `inputPer1M` / `outputPer1M` / `cacheReadPer1M?` / `cacheCreationPer1M?` / `tiers?` shape.
@@ -59,7 +62,7 @@
 
 # PR S1-0 — Manifest and ratchet
 
-Branch: `feat/s1-0-agent-boundary-ratchet` from the latest `main`. Cherry-pick or rebase the spec commit and this plan onto it, so the spec and plan land with S1-0 (spec §6).
+Branch: `feat/s1-nax-agent-carve-out`. It already carries the spec and this plan; rebase it onto the latest `main` before Task 1, so the spec and plan land with S1-0 (spec §6).
 
 ### Task 1: Move manifest and its loader
 
@@ -212,7 +215,7 @@ export function parseMoveManifest(raw: unknown): MoveManifest {
   if (typeof raw !== "object" || raw === null || !Array.isArray((raw as { entries?: unknown }).entries)) {
     fail('expected { "entries": [...] }');
   }
-  const entries = ((raw as { entries: unknown[] }).entries).map(parseEntry);
+  const entries = (raw as { entries: unknown[] }).entries.map(parseEntry);
   const seen = new Set<string>();
   for (const e of entries) {
     if (seen.has(e.from)) fail(`duplicate source "${e.from}"`);
@@ -339,6 +342,7 @@ import { join } from "node:path";
 import { findBoundaryEdges, formatEdge, specifiersOf } from "@scripts/check-agent-boundary";
 import { parseMoveManifest } from "@scripts/lib/agent-move-manifest";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { byCodePoint } from "@/utils/sort";
 
 let root = "";
 afterEach(() => {
@@ -368,7 +372,7 @@ describe("specifiersOf", () => {
       'import "./side";',
       'type D = import("./d").D;',
     ].join("\n");
-    expect(specifiersOf(src).sort()).toEqual(["../c", "./a", "./d", "./side", "@/b"]);
+    expect(specifiersOf(src).sort(byCodePoint)).toEqual(["../c", "./a", "./d", "./side", "@/b"]);
   });
 
   test("ignores specifiers inside comments", () => {
@@ -602,16 +606,15 @@ Expected: all green.
 ```bash
 git add packages/nax/scripts/check-agent-boundary.ts packages/nax/scripts/baselines/agent-boundary-baseline.json packages/nax/scripts/check-import-cycles.ts packages/nax/package.json packages/nax/test/unit/scripts/check-agent-boundary.test.ts
 git commit -m "chore: add S1 agent-boundary ratchet"
-git push -u origin feat/s1-0-agent-boundary-ratchet
 ```
 
-Open the PR with title `chore: S1-0 nax-agent move manifest and boundary ratchet`. The body links the spec and this plan and states the baseline count. Run a code review before pushing; merge on green.
+After the user approves: `git push -u origin feat/s1-nax-agent-carve-out`, then open the PR with title `chore: S1-0 nax-agent move manifest and boundary ratchet`. The body links the spec and this plan and states the baseline count. Run a code review before pushing; merge on green.
 
 ---
 
 # PR S1-1 — One usage and pricing vocabulary
 
-Branch: `refactor/s1-1-usage-pricing-standard` from `main` after S1-0 merged.
+Branch: `feat/s1-1-usage-pricing-standard` from `main` after S1-0 merged.
 
 Rename map used throughout S1-1 (apply to source AND test files):
 
@@ -627,7 +630,7 @@ Rename map used throughout S1-1 (apply to source AND test files):
 | `TokenPricing` / `TokenPricingTier` in user config (`ModelDef.pricing`) | `ConfigPricing` / `ConfigPricingTier` (shape unchanged) |
 | `TokenUsage` in `metrics/` | `StoryTokenUsage` (shape unchanged) |
 
-Persisted and user-facing shapes are NOT renamed (Global Constraints).
+Persisted and user-facing shapes are NOT renamed (Global Constraints). In tests this means: **do not** apply the map to config `pricing` fixtures (`inputPer1M`... under `models.*`, e.g. `test/unit/config/model-pricing-tiers-schema.test.ts`, `test/unit/precheck/precheck-model-resolution-checks.test.ts:294,327`, `test/unit/agents/native/adapter.test.ts:189`), to `metrics.json` fixtures (`test/unit/metrics/{tracker,save-run-metrics,types}.test.ts`, `test/unit/plugins/builtin/curator-collector.test.ts:305`), or to cost-row `tokens`/`rates` expectations. Convert only usage and rate objects that feed in-memory APIs (`TokenUsage`, dispatch events, turn results).
 
 ### Task 3: Staging re-export and nax-ai import gate
 
@@ -708,7 +711,7 @@ and change the failure message to
 export type { Pricing, PricingRates, PricingTier, TokenUsage } from "@nathapp/nax-ai";
 ```
 
-Add to `packages/nax/scripts/s1-move-manifest.json` `entries`:
+Insert into `packages/nax/scripts/s1-move-manifest.json`, directly after the `src/agents/cost/estimate.ts` entry:
 
 ```json
     { "from": "src/agents/cost/standard-types.ts", "to": "cost/standard-types.ts" },
@@ -903,15 +906,15 @@ function toPricingTier(tier: ConfigPricingTier): PricingTier {
 }
 ```
 
-Inside the same file, replace every remaining `TokenPricing` reference (the `ModelDef.pricing` field type) with `ConfigPricing`. In `config/schema.ts:76` and `config/types.ts:68`, replace the re-exported `TokenPricing` with `ConfigPricing, ConfigPricingTier`. In `config/schemas-model.ts`, rename the zod constants `TokenPricingTierSchema`→`ConfigPricingTierSchema` and `TokenPricingSchema`→`ConfigPricingSchema` (both are module-local; update their two uses).
+Inside the same file, replace every remaining `TokenPricing` reference (the `ModelDef.pricing` field type) with `ConfigPricing`. In `config/schema.ts:76` and `config/types.ts:68`, replace the re-exported `TokenPricing` with `ConfigPricing, ConfigPricingTier`. Also add `toPricing` to the value re-export lists (the `export { ..., resolveTierMembership } from "./schema-types"` style blocks) in `src/config/types.ts`, `src/config/schema.ts` (around line 86) and `src/config/index.ts` (around line 80), so value code can import it from the `@/config` barrel; `check:alias-internals` rejects value imports of `@/config/schema-types`. In `config/schemas-model.ts`, rename the zod constants `TokenPricingTierSchema`→`ConfigPricingTierSchema` and `TokenPricingSchema`→`ConfigPricingSchema` (both are module-local; update their two uses).
 
 - [ ] **Step 4: Rewrite `estimate.ts` over the standard types**
 
 Replace the body of `packages/nax/src/agents/cost/estimate.ts` below its file doc comment (keep the comment, replace `ResolvedRates`/`TokenPricing` wording with `PricingRates`/`Pricing`):
 
 ```ts
-import type { Pricing, PricingRates, TokenUsage } from "./standard-types";
 import { inputClassTokens } from "./calculate";
+import type { Pricing, PricingRates, TokenUsage } from "./standard-types";
 
 /**
  * `inputClassTokens` is re-exported from here so callers using
@@ -991,6 +994,7 @@ Task 5 updates `calculate.ts` (`inputClassTokens`) in the same commit series; un
 - Modify: `packages/nax/src/agents/cost/index.ts` (re-exports)
 - Modify: `packages/nax/src/agents/cost/rate-card.ts` (`FALLBACK_RATES`, `LookupPricing`, `RateCard`)
 - Modify: `packages/nax/src/agents/catalog/index.ts` (delete `toTokenPricing`)
+- Modify: `packages/nax/src/agents/cost/token-mapper.ts:1` (import `TokenUsage` from `./standard-types`; `./types` no longer declares it)
 - Test: `packages/nax/test/unit/agents/cost/{calculate,price-call,estimate,rate-card}.test.ts`
 
 **Interfaces:**
@@ -1013,7 +1017,7 @@ Append to `packages/nax/test/unit/agents/cost/price-call.test.ts`:
 describe("priceCall defensive cache fallback (S1-1)", () => {
   test("a level whose cache rates are missing at runtime prices cache tokens at that level's input rate", () => {
     // A catalog Pricing that, despite its type, arrived without cache rates.
-    // JSON.parse keeps the fixture untyped without an `as unknown as` cast.
+    // JSON.parse keeps the fixture untyped without a double cast.
     const rates: import("@/agents/cost/standard-types").Pricing = JSON.parse('{"input":2,"output":8}');
     const { costUsd, resolvedRates } = priceCall(
       { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000 },
@@ -1045,7 +1049,7 @@ The existing `price-call.test.ts` passes `rates` in the old `TokenPricing` shape
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `bun test test/unit/agents/cost/ --timeout=60000`
-Expected: FAIL (type errors and mismatched field names).
+Expected: FAIL (`bun test` does not typecheck; the failures are runtime mismatches between old and new field names).
 
 - [ ] **Step 3: Update `calculate.ts`**
 
@@ -1135,7 +1139,7 @@ Keep the doc comments, updating `TokenPricing` mentions to `Pricing`.
 - [ ] **Step 6: Run the cost tests**
 
 Run: `bun test test/unit/agents/cost/ --timeout=60000`
-Expected: PASS once `rate-card.test.ts` and `estimate.test.ts` literals use the rename map (they are subjects of this task). `typecheck` for the whole package is still red until Task 6.
+Expected: PASS once the literals in `calculate.test.ts` (about 33 old-name uses), `price-call.test.ts` (about 75 old-shape rates), `rate-card.test.ts` and `estimate.test.ts` use the rename map; they are subjects of this task. Expected cost numbers never change. `typecheck` for the whole package is still red until Task 6.
 
 ### Task 6: Consumers and serializers
 
@@ -1143,10 +1147,11 @@ Expected: PASS once `rate-card.test.ts` and `estimate.test.ts` literals use the 
 - Native: `src/agents/native/models.ts` (delete `NativeUsage`, `toNaxTokenUsage`; `buildRateCard`), `src/agents/native/adapter.ts` (3 call sites, net line count must not grow), `src/agents/native/session/{turn-accumulator,rate-provenance,turn-types,turn-loop-round-trip,loop-events/types}.ts`
 - Contract: `src/agents/{session-types,types,index}.ts`
 - ACP: `src/agents/acp/{token-mapper,adapter-output,adapter-send-turn}.ts`
-- Runtime: `src/runtime/{cost-aggregator,dispatch-events}.ts`, `src/runtime/middleware/{cost,usage-audit}.ts`
+- Runtime: create `src/runtime/cost-row-rates.ts`; modify `src/runtime/{cost-aggregator,dispatch-events}.ts`, `src/runtime/middleware/{cost,usage-audit}.ts`
 - Other: `src/agents/manager-dispatch.ts`, `src/execution/{types,post-run}.ts`, `src/execution/lifecycle/post-run-scratch-entries.ts`, `src/pipeline/stages/execution.ts`, `src/tdd/types.ts`, `src/session/session-runner.ts`
 - NOT modified: `src/plugins/builtin/curator/collect.ts` (it reads persisted `metrics.json`, whose names do not change)
-- Tests: every test file `bun run typecheck` flags after the rename, plus the new tests below.
+- Create tests: `test/unit/agents/native/session/turn-accumulator.test.ts`, `test/unit/agents/native/session/rate-provenance.test.ts` (neither exists today)
+- Tests to convert (in-memory fixtures): every test file `bun run typecheck` flags, plus files with untyped fixtures tsc cannot see: `test/unit/agents/native/turn-loop-usage.test.ts:61,94,131`, `test/unit/agents/native/turn-loop-compaction.test.ts:369,482`, `test/unit/agents/native/turn-loop.test.ts`, `test/unit/agents/manager-dispatch-error-event.test.ts:26-27`
 
 **Interfaces:**
 - Consumes: Tasks 3-5.
@@ -1154,17 +1159,19 @@ Expected: PASS once `rate-card.test.ts` and `estimate.test.ts` literals use the 
   ```ts
   // native/models.ts
   export function buildRateCard(catalog: Pricing, override: ConfigPricing | undefined): { rates: Pricing; source: "config-override" | "catalog-rates" };
-  // runtime/cost-aggregator.ts — persisted row shape, unchanged keys
-  export interface CostRowRates { inputPer1M: number; outputPer1M: number; cacheReadPer1M: number; cacheCreationPer1M: number }
-  // runtime/middleware/cost.ts
+  // runtime/cost-row-rates.ts (new; cost-aggregator.ts is at the 600-line limit)
+  export interface CostRowRates { readonly inputPer1M: number; readonly outputPer1M: number; readonly cacheReadPer1M: number; readonly cacheCreationPer1M: number }
   export function toCostRowRates(rates: PricingRates): CostRowRates;
   ```
 
 - [ ] **Step 1: Write the zero-versus-absent accumulator test**
 
-Append to the existing turn-accumulator test file (find it with `ls test/unit/agents/native/session/ | grep accumulator`):
+Create `packages/nax/test/unit/agents/native/session/turn-accumulator.test.ts` (no test file exists for this module today):
 
 ```ts
+import { describe, expect, test } from "bun:test";
+import { createTurnAccumulator } from "@/agents/native/session/turn-accumulator";
+
 describe("createTurnAccumulator cache presence (S1-1)", () => {
   test("absent cache fields stay absent; a reported zero stays zero", () => {
     const absent = createTurnAccumulator();
@@ -1219,9 +1226,12 @@ const RATES_ROW = { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3, cacheCr
 
 - [ ] **Step 3: Write the aggregated-rates row test**
 
-Append to the rate-provenance test file (`ls test/unit/agents/native/session/ | grep rate-provenance`):
+Create `packages/nax/test/unit/agents/native/session/rate-provenance.test.ts` (no test file exists for this module today):
 
 ```ts
+import { describe, expect, test } from "bun:test";
+import { addRateTotals, aggregateRates, createRateTotals } from "@/agents/native/session/rate-provenance";
+
 describe("aggregateRates key order (S1-1)", () => {
   test("weighted rates come back in input/output/cacheRead/cacheWrite order", () => {
     const totals = createRateTotals();
@@ -1256,7 +1266,7 @@ export function buildRateCard(
 }
 ```
 
-  Import `toPricing` and `type ConfigPricing` from `@/config/schema-types` (the file already imports from there, so the ratchet edge count is unchanged). Keep the doc comment and update it: the override still wins wholesale, and `toPricing` fills its missing cache rates.
+  Import with `import { toPricing } from "@/config";` and `import type { ConfigPricing, ProviderCatalogOverride } from "@/config/schema-types";` (type-only deep imports are exempt from `check:alias-internals`). `models.ts` already value-imports `@/config`, so the ratchet edge count is unchanged. Keep the doc comment and update it: the override still wins wholesale, and `toPricing` fills its missing cache rates.
 
 `src/agents/native/adapter.ts`: replace `const tokenUsage = toNaxTokenUsage(result.usage);` with `const tokenUsage = result.usage;` (and the same at the other `toNaxTokenUsage` call sites); drop the import. Check the file stays at or under 599 lines: `wc -l src/agents/native/adapter.ts`.
 
@@ -1266,7 +1276,7 @@ export function buildRateCard(
 
 `src/agents/native/session/turn-types.ts`: `ResolvedRates`→`PricingRates` (both the import and the inline `import("../../cost").ResolvedRates`); in `cacheUsageFields` read `usage.cacheReadTokens` / `usage.cacheWriteTokens`.
 
-`src/agents/native/session/{turn-loop-round-trip,loop-events/types}.ts`: type renames only.
+`src/agents/native/session/loop-events/types.ts`: type rename only.
 
 - [ ] **Step 6: Contract, ACP and orchestrator renames**
 
@@ -1281,28 +1291,23 @@ Apply the rename map, type renames only unless noted:
 
 - [ ] **Step 7: Serializers keep the persisted names**
 
-`src/runtime/cost-aggregator.ts`: add the row DTO and use it for the row's `rates` field (the field at line ~132 currently typed `import("../agents/cost").ResolvedRates`):
+Create `src/runtime/cost-row-rates.ts` (`cost-aggregator.ts` is at the 600-line limit, so the DTO cannot live there):
 
 ```ts
 /**
  * Rates as persisted on a cost row (schema 8). The keys predate the S1-1
  * vocabulary change and stay as they are; `toCostRowRates` maps the standard
- * `PricingRates` onto them.
+ * `PricingRates` onto them, in their historical key order.
  */
+import type { PricingRates } from "@/agents/cost";
+
 export interface CostRowRates {
   readonly inputPer1M: number;
   readonly outputPer1M: number;
   readonly cacheReadPer1M: number;
   readonly cacheCreationPer1M: number;
 }
-```
 
-If `DispatchEvent.rates` and the row's `rates` share one declaration today, split them: the event carries `PricingRates`, the row carries `CostRowRates`.
-
-`src/runtime/middleware/cost.ts`: add
-
-```ts
-/** Map the standard rates onto the persisted schema-8 row keys, in their historical order. */
 export function toCostRowRates(rates: PricingRates): CostRowRates {
   return {
     inputPer1M: rates.input,
@@ -1313,21 +1318,28 @@ export function toCostRowRates(rates: PricingRates): CostRowRates {
 }
 ```
 
-and change line ~227 to `...(event.rates !== undefined ? { rates: toCostRowRates(event.rates) } : {}),`. In both `tokens` blocks (lines ~198 and ~293) read `tu.cacheReadTokens` and `tu.cacheWriteTokens`.
+In `src/runtime/cost-aggregator.ts`, change only the row's inline type (around line 132) from `import("../agents/cost").ResolvedRates` to `import("./cost-row-rates").CostRowRates`; the line count must not change. If `DispatchEvent.rates` and the row's `rates` share one declaration, the event carries `PricingRates` and the row carries `CostRowRates`.
+
+In `src/runtime/middleware/cost.ts`, add `import { toCostRowRates } from "../cost-row-rates";`, change line ~227 to `...(event.rates !== undefined ? { rates: toCostRowRates(event.rates) } : {}),`, and in both `tokens` blocks (lines ~198 and ~293) read `tu.cacheReadTokens` and `tu.cacheWriteTokens`.
 
 `src/runtime/middleware/usage-audit.ts:52-53`: read `tu?.cacheReadTokens` and `tu?.cacheWriteTokens`.
 
 - [ ] **Step 8: Fix the remaining type errors, tests included**
 
 Run: `bun run typecheck`
-For every error: if it is a rename of this task's subject (usage fields, rate fields, type names), apply the rename map. If it is anything else, stop and report it; it means the inventory missed a consumer.
+For every error: if it is a rename of this task's subject (usage fields, rate fields, type names), apply the rename map, respecting the do-not-rename list in the rename-map header. If it is anything else, stop and report it; it means the inventory missed a consumer.
+
+Then run `grep -rnE "cacheReadInputTokens|cacheCreationInputTokens" test` and convert only usage objects that feed in-memory APIs (the four turn-loop/dispatch files in this task's file list are known); leave `metrics.json` and cost-row fixtures alone.
 
 - [ ] **Step 9: Run the suite**
 
 Run: `bun run test`
-Expected: PASS. Pay attention to `test/unit/runtime/middleware/{cost,cost-rate-provenance,usage-audit}.test.ts`, `test/unit/metrics/`, and the native adapter tests: their expected JSON must not change. If an expected persisted value changed, the serializer mapping is wrong; fix the code, not the expectation.
+Expected: PASS. Pay attention to `test/unit/runtime/middleware/{cost,cost-rate-provenance,usage-audit}.test.ts`, `test/unit/metrics/`, and the native adapter tests: their expected JSON must not change. If a cost-row or `metrics.json` expectation changed, the serializer mapping is wrong: fix the code. If an in-memory fixture still uses old names, update the fixture.
 
-- [ ] **Step 10: Commit Tasks 4-6**
+- [ ] **Step 10: Lint, then commit Tasks 4-6**
+
+Run: `bun x biome check --write src test && bun run lint && bun run typecheck`
+Expected: green (file sizes, import order, alias-internals, test-as-unknown-as included).
 
 ```bash
 git add -A packages/nax/src packages/nax/test
@@ -1342,7 +1354,7 @@ git commit -m "refactor: price and account usage in nax-ai's vocabulary"
 
 - [ ] **Step 1: Write the persisted-shape test**
 
-Add to the metrics types test file (`ls test/unit/metrics/ | grep -i types`; create `test/unit/metrics/story-token-usage.test.ts` if none fits):
+Create `packages/nax/test/unit/metrics/story-token-usage.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test";
@@ -1364,9 +1376,11 @@ Expected: FAIL, `StoryTokenUsage` not exported.
 
 - [ ] **Step 3: Rename**
 
-In `metrics/types.ts` rename the `TokenUsage` interface and class to `StoryTokenUsage` (both declarations, the `biome-ignore` comment text, and the `tokens?: TokenUsage` field at line 187). Field names and `toJSON` stay byte-for-byte. Update `metrics/tracker.ts` (`import { StoryTokenUsage } from "./types"`, both `new TokenUsage(` sites, the `tokensFromSnapshot` return type) and the re-export in `metrics/index.ts`.
+In `metrics/types.ts` rename the `TokenUsage` interface and class to `StoryTokenUsage` (both declarations, the `biome-ignore` comment text, and `tokens?: TokenUsage` at line 187 and `totalTokens?: TokenUsage` at line 326). Field names and `toJSON` stay byte-for-byte. Update `metrics/tracker.ts` (`import { StoryTokenUsage } from "./types"`, both `new TokenUsage(` sites, the `tokensFromSnapshot` return type) and the re-export in `metrics/index.ts`.
 
 - [ ] **Step 4: Run tests**
+
+Also rename the `TokenUsage` import and `new TokenUsage(` calls (names only, never field names) in `test/unit/metrics/report.test.ts:20`, `test/unit/metrics/save-run-metrics.test.ts:25` and `test/unit/metrics/types.test.ts:13`.
 
 Run: `bun run typecheck && bun test test/unit/metrics/ --timeout=60000`
 Expected: PASS.
@@ -1561,21 +1575,33 @@ Expected: at most 600 and 599.
 - [ ] **Step 3: Confirm no old names remain in source**
 
 Run: `grep -rnE "\b(ResolvedRates|TokenPricing|TokenPricingTier|NativeUsage|toNaxTokenUsage|toTokenPricing)\b" src`
-Expected: no output.
+Expected: no output. Comment mentions count too (known: `native/session/turn-accumulator.ts`, `native/models.ts`, `catalog/index.ts`, `acp/adapter-output.ts`); update them.
 
 Run: `grep -rnE "cacheReadInputTokens|cacheCreationInputTokens" src`
 Expected: matches only in `src/metrics/` and `src/plugins/builtin/curator/collect.ts` (persisted `metrics.json` names).
 
-- [ ] **Step 4: Code review, then push and open the PR**
+- [ ] **Step 4: Update agent guidance that describes the old mapping**
+
+`.nax/rules/adapter-wiring.md:113` and `.claude/rules/adapter-wiring.md:102` (kept in sync by `check:rules-drift`) and `.nax/mono/packages/nax/context.md` (source of `packages/nax/CLAUDE.md:99`) say the catalog maps `Pricing` onto `TokenPricing` and exports no nax-ai type. Rewrite those sentences: nax uses nax-ai's `Pricing`/`TokenUsage` through `src/agents/cost/standard-types.ts`. Then regenerate every agent file with the local build from the repo root (generation is not a billed LLM call; never regenerate one package only): `bun packages/nax/bin/nax.ts generate` and `bun packages/nax/bin/nax.ts generate --all-packages`. Run `bun run check:rules-drift` in `packages/nax`.
+
+```bash
+git add -u   # generated CLAUDE.md/AGENTS.md files are tracked; -u stages every regenerated one
+git add .nax .claude
+git commit -m "docs: describe the single usage and pricing vocabulary in agent rules"
+```
+
+- [ ] **Step 5: Code review, then push and open the PR**
 
 Run a code review of the branch diff against `main` before pushing. Then:
 
+After the user approves:
+
 ```bash
-git push -u origin refactor/s1-1-usage-pricing-standard
+git push -u origin feat/s1-1-usage-pricing-standard
 ```
 
 PR title: `refactor: S1-1 one usage and pricing vocabulary (nax-ai's)`. The body lists the persisted shapes kept (cost row `tokens`/`rates`, `metrics.json`, user config `pricing`), the golden test, and the ratchet count before and after. Merge on green.
 
-- [ ] **Step 5: Record status**
+- [ ] **Step 6: Record status**
 
 After merge, the maintainer records the S1-0 and S1-1 PR numbers and merge commits in the arc SSOT (master plan §5). Then write the S1-2 plan against the new `main`.
