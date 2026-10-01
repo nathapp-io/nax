@@ -17,6 +17,8 @@ export type { ExecTarget, NormalizeInput, NormalizeResult } from "./package-mana
 export { classifyExec, isKnownManager, normalizeExec, normalizeManagerBinary } from "./package-managers";
 export type { ToolPolicyOptions } from "./policy";
 export { compileToolPolicy, resolveWithin } from "./policy";
+export type { ProtectedPathsPolicy } from "./protected-paths";
+export { gitExcludePathspecsOf, gitIgnorePatternsOf } from "./protected-paths";
 export * from "./provider-adapt";
 export * from "./provider-advertise";
 export * from "./provider-grants";

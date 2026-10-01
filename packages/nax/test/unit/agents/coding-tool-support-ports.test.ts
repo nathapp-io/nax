@@ -10,7 +10,7 @@ import { _codingToolSupportDeps, resolveCodingToolSupport } from "@/agents/codin
 import type { CommandInterceptor } from "@/execution/command-interceptor";
 import { runQualityCommand } from "@/quality";
 import { _launcherDeps } from "@/sandbox";
-import type { DeclaredCommandRequest } from "@/tools";
+import { type DeclaredCommandRequest, gitExcludePathspecsOf, gitIgnorePatternsOf } from "@/tools";
 import { _gitDeps } from "@/utils/git";
 
 let root: string;
@@ -94,5 +94,31 @@ describe("port 7: command interceptor", () => {
     });
     const outcome = await support?.runtime.callTool("Git", { subcommand: "log" });
     expect(outcome?.kind).toBe("ok");
+  });
+});
+
+describe("port 6: protected paths", () => {
+  withDepsRestore(_gitDeps, ["spawn"]);
+
+  test("the Git tool's default view still excludes .nax through the production entry", async () => {
+    const spawned: string[][] = [];
+    _gitDeps.spawn = makeSpawn(({ cmd }) => {
+      spawned.push([...cmd]);
+      return "out";
+    }).spawn;
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["Git"],
+      codingToolRoot: root,
+      pipelineStage: "run",
+      config: makeNaxConfig({ execution: { sandbox: { enabled: false } } }),
+    });
+    await support?.runtime.callTool("Git", { subcommand: "status" });
+    expect(spawned[0]).toContain(":(exclude).nax");
+    expect(spawned[0]).toContain(":(glob,exclude)**/.nax/**");
+  });
+
+  test("a tool context without a policy excludes and filters nothing extra", () => {
+    expect(gitExcludePathspecsOf({})).toEqual([]);
+    expect(gitIgnorePatternsOf({})).toEqual([]);
   });
 });

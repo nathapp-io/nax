@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeSpawn, makeSpawnResult } from "@test/helpers";
+import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 import { DEFAULT_CODING_TOOLS } from "@/config/permissions";
 import { GIT_ESCAPE_FLAGS } from "@/tools/git";
 import { buildCommitArgvs, gitCommitTool } from "@/tools/git-commit";
@@ -21,7 +22,13 @@ async function makeRepo(): Promise<string> {
   return repo;
 }
 
-const toolContext = (root: string) => ({ root, resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 });
+const toolContext = (root: string) => ({
+  root,
+  resolvedPaths: [],
+  maxBytes: 4096,
+  maxFileBytes: 1024,
+  protectedPaths: naxProtectedPaths(),
+});
 
 describe("buildCommitArgvs", () => {
   test("stages the named paths and commits with the message", () => {

@@ -21,6 +21,7 @@ import {
   EXEC_TOOL_NAME,
   expandMcpRuleGrants,
   mcpRuleAdmits,
+  type ProtectedPathsPolicy,
   partitionMcpRules,
   type ResolvedProviderTools,
   resolveProviderTools,
@@ -36,6 +37,7 @@ import { errorMessage } from "../utils/errors";
 import { resolveSessionSandbox } from "./coding-tool-sandbox";
 import { buildCodingToolSupport, buildLedgerSessionName, type CodingToolSupport } from "./coding-tool-support";
 import { resolvePackageName } from "./exec-package-name";
+import { naxProtectedPaths } from "./nax-protected-paths";
 import type { AgentRunOptions } from "./types";
 import { UNIVERSAL_CODING_TOOLS } from "./universal-coding-tools";
 
@@ -377,6 +379,7 @@ export async function resolveDispatchLauncher(
     needsLauncher: declared.includes(BASH_TOOL_NAME) || declared.includes(EXEC_TOOL_NAME),
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     ...(runRoot !== undefined ? { tmpDir: sessionTmpDirUnder(runRoot, sessionName), runTmpRoot: runRoot } : {}),
+    protectedPaths: _codingToolSupportDeps.protectedPaths(),
   });
 }
 
@@ -421,9 +424,12 @@ export const _codingToolSupportDeps: {
   loadConfigForPackage: typeof loadConfigForPackage;
   /** Port 7: the declared-command runner RunCommand calls. */
   runDeclaredCommand: DeclaredCommandRunner;
+  /** Port 6: the host-owned paths the tools and the sandbox protect. */
+  protectedPaths: () => ProtectedPathsPolicy;
 } = {
   loadConfigForPackage,
   runDeclaredCommand: runQualityCommand,
+  protectedPaths: naxProtectedPaths,
 };
 
 /**
@@ -500,6 +506,7 @@ export async function resolveCodingToolSupport(
     declaredCommands,
     runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
     interceptor: options.commandInterceptor,
+    protectedPaths: _codingToolSupportDeps.protectedPaths(),
     stripEnvVars: fields.stripEnvVars,
     sessionName,
     header,

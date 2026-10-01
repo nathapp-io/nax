@@ -15,6 +15,7 @@
  * `_sessionTmpDeps`, so `runTmpRoot("r1")` is `/tmp/nax/r1` on any host.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import {
   assertDefined,
   type ConfinedSessionSeam,
@@ -55,6 +56,7 @@ describe("resolveDispatchLauncher — US-002 the run's own temp root", () => {
   withSessionSandboxSeam(_sessionSandboxDeps);
   withDepsRestore(_sessionTmpDeps);
   withDepsRestore(_launcherDeps);
+  withDepsRestore(_codingToolSupportDeps, ["protectedPaths"]);
 
   let root: string;
   beforeEach(() => {
@@ -108,6 +110,20 @@ describe("resolveDispatchLauncher — US-002 the run's own temp root", () => {
     const { policy } = await runDispatched();
 
     expect(policy.writeRoots).not.toContain(realOrRaw("/tmp"));
+  });
+
+  test("port 6: the sandbox denies writes to the trust store the protected-paths policy names", async () => {
+    const trustStoreFile = join(root, "trust.json");
+    _codingToolSupportDeps.protectedPaths = () => ({
+      gitExcludePathspecs: [],
+      gitIgnorePatterns: [],
+      projectStateDir: ".nax",
+      credentialDir: root,
+      trustStoreFile,
+    });
+    const { policy } = await runDispatched();
+
+    expect(policy.denyWrite).toContain(realOrRaw(trustStoreFile));
   });
 });
 

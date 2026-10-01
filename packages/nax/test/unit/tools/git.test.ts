@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 import {
   buildGitArgv,
   compileToolPolicy,
@@ -22,7 +23,7 @@ function contentOf(result: { kind: string; content?: string }): string {
 }
 
 function argvOf(input: Record<string, unknown>): string[] {
-  const built = buildGitArgv(input);
+  const built = buildGitArgv(input, NAX_OWNED_GIT_EXCLUDE_PATHSPECS);
   if ("error" in built) throw new Error(`expected argv, got error: ${built.error}`);
   return built;
 }
@@ -190,7 +191,10 @@ describe("gitTool — the default view hides nested and root .nax run state", ()
 
   test("status reports the dirtied src/a.ts but neither .nax path", async () => {
     const repo = await makeRepo();
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const content = contentOf(await rt.callTool("Git", { subcommand: "status" }));
 
@@ -201,7 +205,10 @@ describe("gitTool — the default view hides nested and root .nax run state", ()
 
   test("diff reports the dirtied src/a.ts but neither .nax path", async () => {
     const repo = await makeRepo();
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const content = contentOf(await rt.callTool("Git", { subcommand: "diff" }));
 
@@ -402,7 +409,10 @@ describe("gitTool — the permitted root bounds the repository view", () => {
 
   test("a colon-less ref cannot address a path outside the root", async () => {
     const { root } = await makeRepo();
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const result = await rt.callTool("Git", { subcommand: "show", refs: ["../../outside/secret.txt"] });
 
@@ -412,7 +422,10 @@ describe("gitTool — the permitted root bounds the repository view", () => {
 
   test("a whole-commit ref does not leak content from outside the root", async () => {
     const { root } = await makeRepo();
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const result = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD"] });
 
@@ -421,7 +434,10 @@ describe("gitTool — the permitted root bounds the repository view", () => {
 
   test("still returns in-root content, so the boundary has not just broken Git", async () => {
     const { root } = await makeRepo();
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const result = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD"] });
 
@@ -457,7 +473,10 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
 
   test("diff headers keep the repo-rooted package path rather than reframing onto the package", async () => {
     const { root } = await makeRepoWithFileInPackage();
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
 
@@ -468,7 +487,10 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
 
   test("show <ref> diff headers keep the repo-rooted package path", async () => {
     const { root } = await makeRepoWithFileInPackage();
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const result = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD"] });
 
@@ -487,7 +509,10 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
     await run(["add", "-A"]).exited;
     await run(["commit", "-q", "-m", "seed"]).exited;
     writeFileSync(join(repo, "f.txt"), "two\n");
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
 
@@ -501,7 +526,10 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
   // reframing it onto the package.
   test("diff headers with a non-ASCII path are passed through repo-rooted", async () => {
     const { root } = await makeRepoWithFileInPackage({ fileName: "café.txt" });
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
 
@@ -513,7 +541,10 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
   // lines; the tool passes it through repo-rooted.
   test("diff headers with a space in the path are passed through repo-rooted", async () => {
     const { root } = await makeRepoWithFileInPackage({ fileName: "with space.txt" });
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
 
@@ -660,7 +691,10 @@ describe("gitTool — log renders the compact format and keeps --name-only group
 
   test("a default log renders one compact line per commit (short hash + short date + subject)", async () => {
     const repo = await makeRepoWithCommits();
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const content = contentOf(await rt.callTool("Git", { subcommand: "log" }));
 
@@ -677,7 +711,10 @@ describe("gitTool — log renders the compact format and keeps --name-only group
 
   test("a default log with --name-only keeps each file list grouped with its commit", async () => {
     const repo = await makeRepoWithCommits();
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const content = contentOf(await rt.callTool("Git", { subcommand: "log", nameOnly: true, paths: ["src"] }));
 
@@ -697,7 +734,10 @@ describe("gitTool — log renders the compact format and keeps --name-only group
 
   test("fullMessage: true restores git's medium commit body on log", async () => {
     const repo = await makeRepoWithCommits();
-    const rt = createCodingToolRuntime({ policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo) });
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
+      protectedPaths: naxProtectedPaths(),
+    });
 
     const content = contentOf(await rt.callTool("Git", { subcommand: "log", fullMessage: true }));
 

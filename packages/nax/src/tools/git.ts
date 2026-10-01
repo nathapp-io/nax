@@ -18,7 +18,7 @@
 import type { InterceptRequest } from "@/execution/command-interceptor";
 import { interceptArgv } from "@/execution/command-interceptor";
 import { gitWithTimeout } from "@/utils/git-exec";
-import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
+import { gitExcludePathspecsOf } from "./protected-paths";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 import { cutToByteCap, READ_CEILING } from "./truncate";
 
@@ -187,7 +187,14 @@ function looksLikeFlag(value: string): boolean {
   return value.startsWith("-");
 }
 
-export function buildGitArgv(input: Record<string, unknown>): string[] | { error: string } {
+/**
+ * `defaultExcludes`: pathspecs appended to an unscoped call (the host's own
+ * state, nax#2007); none by default.
+ */
+export function buildGitArgv(
+  input: Record<string, unknown>,
+  defaultExcludes: readonly string[] = [],
+): string[] | { error: string } {
   const subcommand = input.subcommand;
   if (typeof subcommand !== "string" || !GIT_READ_VERBS.includes(subcommand)) {
     return { error: `subcommand must be one of: ${GIT_READ_VERBS.join(", ")}` };
@@ -296,14 +303,14 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
     // the command's own scope was. `.` is resolved by git against the cwd,
     // which gitWithTimeout sets to the permitted root.
     argv.push(".");
-    // nax's own run state under .nax/ is git-tracked during a run, so an
+    // The host's own run state under .nax/ is git-tracked during a run, so an
     // unscoped call reported it back as the agent's diff (#2007). Excluded only
     // on this DEFAULT branch: a caller that names a path under .nax/ gets it --
     // the tool is read-only, and silently returning nothing for an explicitly
     // requested path would be a worse failure than the one being fixed.
     // `blame` is exempt because git rejects exclude pathspecs on it and exits
     // 128; do not "unify" it back in.
-    if (subcommand !== "blame") argv.push(...NAX_OWNED_GIT_EXCLUDE_PATHSPECS);
+    if (subcommand !== "blame") argv.push(...defaultExcludes);
     return argv;
   }
 
@@ -363,7 +370,7 @@ export const gitTool: CodingTool = {
   },
 
   async run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult> {
-    const built = buildGitArgv(input);
+    const built = buildGitArgv(input, gitExcludePathspecsOf(ctx));
     if ("error" in built) return { content: built.error, isError: true };
     const interceptor = ctx.interceptor;
 

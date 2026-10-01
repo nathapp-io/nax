@@ -14,6 +14,7 @@ import { NaxError } from "@/agents/infra";
 import type { JSONSchema } from "@/agents/tool-descriptor";
 import type { CommandInterceptor } from "@/execution/command-interceptor";
 import type { SandboxRecord } from "../sandbox";
+import type { ProtectedPathsPolicy } from "./protected-paths";
 import type { CodingToolName, ToolScope } from "./types";
 
 export interface ToolResult {
@@ -97,6 +98,8 @@ export interface ToolRunContext {
    * then does not apply, the fail-safe both sites state.
    */
   readonly interceptor?: CommandInterceptor;
+  /** Host-owned paths (S1 spec port 6). Absent: the Git tools exclude and skip nothing extra. */
+  readonly protectedPaths?: ProtectedPathsPolicy;
 }
 
 export interface CodingTool {

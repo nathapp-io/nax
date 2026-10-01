@@ -28,6 +28,7 @@ import {
   createToolAuditSink,
   type DeclaredCommandRunner,
   EXEC_TOOL_NAME,
+  type ProtectedPathsPolicy,
   type ToolAuditSink,
   type ToolGrant,
   type ToolPatternNarrowing,
@@ -91,6 +92,8 @@ export function buildCodingToolSupport(args: {
   runDeclaredCommand?: DeclaredCommandRunner;
   /** Port 7: the run's interceptor, placed on every tool context. */
   interceptor?: CommandInterceptor;
+  /** Port 6: host-owned paths, placed on every tool context. */
+  protectedPaths?: ProtectedPathsPolicy;
   stripEnvVars?: readonly string[];
   /** `quality.shell` — the shell the Bash tool spawns. Defaults to /bin/sh. */
   shell?: string;
@@ -220,6 +223,7 @@ export function buildCodingToolSupport(args: {
     }),
     declaredCommands: new Set(declaredCommands.keys()),
     interceptor: args.interceptor,
+    protectedPaths: args.protectedPaths,
     ...(args.abortSignal !== undefined ? { signal: args.abortSignal } : {}),
     ...(args.askResolver !== undefined ? { askResolver: args.askResolver } : {}),
     ...(args.commandShadow !== undefined ? { commandShadow: args.commandShadow } : {}),

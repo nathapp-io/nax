@@ -33,9 +33,9 @@ export interface SessionSandboxDepsLike {
   backendFor(config: SandboxConfig): SandboxBackend;
   probe(backend: SandboxBackend, storyId?: string): Promise<ProbeResult>;
   gitLayout(root: string): Promise<GitLayout>;
-  naxEntries(root: string): Promise<string[]>;
+  naxEntries(root: string, stateDir: string): Promise<string[]>;
   gitGuardFiles(git: GitLayout): Promise<string[]>;
-  credentialFiles(): Promise<string[]>;
+  credentialFiles(dir: string): Promise<string[]>;
   tempRoots(): string[];
   homedir(): string;
   platform(): NodeJS.Platform;

@@ -48,7 +48,7 @@ describe("listNaxEntries", () => {
     mkdirSync(join(base, ".nax", "features", "a"), { recursive: true });
     mkdirSync(join(base, ".nax", "rules"), { recursive: true });
     writeFileSync(join(base, ".nax", "config.json"), "{}");
-    const names = (await listNaxEntries(base)).sort((a, b) => a.localeCompare(b));
+    const names = (await listNaxEntries(base, ".nax")).sort((a, b) => a.localeCompare(b));
     expect(names).toEqual(["config.json", "features", "rules"]);
   });
 
@@ -56,11 +56,11 @@ describe("listNaxEntries", () => {
     mkdirSync(join(base, ".nax", "ok"), { recursive: true });
     mkdirSync(join(base, ".nax", "x*"), { recursive: true });
     mkdirSync(join(base, ".nax", "a[1]"), { recursive: true });
-    expect(await listNaxEntries(base)).toEqual(["ok"]);
+    expect(await listNaxEntries(base, ".nax")).toEqual(["ok"]);
   });
 
   test("no .nax directory -> empty", async () => {
-    expect(await listNaxEntries(base)).toEqual([]);
+    expect(await listNaxEntries(base, ".nax")).toEqual([]);
   });
 });
 
@@ -71,7 +71,7 @@ describe("listCredentialFiles", () => {
     const made = ["credentials", "credentials-bak-2", "config.json"].map((n) => join(dir, n));
     try {
       for (const f of made) writeFileSync(f, "{}");
-      const files = await listCredentialFiles();
+      const files = await listCredentialFiles(globalConfigDir());
       expect(files).toContain(join(dir, "credentials"));
       expect(files).toContain(join(dir, "credentials-bak-2"));
       expect(files).not.toContain(join(dir, "config.json"));

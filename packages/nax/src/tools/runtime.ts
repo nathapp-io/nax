@@ -21,6 +21,7 @@ import { gitTool } from "./git";
 import { gitCommitTool } from "./git-commit";
 import { globTool } from "./glob";
 import { grepTool } from "./grep";
+import type { ProtectedPathsPolicy } from "./protected-paths";
 import { readTool } from "./read";
 import { type CodingTool, getCodingTool, registerBuiltinTool, type ToolRunContext } from "./registry";
 import { requestCapabilityTool } from "./request-capability";
@@ -131,8 +132,14 @@ export function _resetBuiltinsForTest(): void {
  * Built once per runtime and kept out of `runTool`, which sits at its
  * complexity baseline.
  */
-function contextPorts(opts: { readonly interceptor?: CommandInterceptor }): Pick<ToolRunContext, "interceptor"> {
-  return opts.interceptor !== undefined ? { interceptor: opts.interceptor } : {};
+function contextPorts(opts: {
+  readonly interceptor?: CommandInterceptor;
+  readonly protectedPaths?: ProtectedPathsPolicy;
+}): Pick<ToolRunContext, "interceptor" | "protectedPaths"> {
+  return {
+    ...(opts.interceptor !== undefined ? { interceptor: opts.interceptor } : {}),
+    ...(opts.protectedPaths !== undefined ? { protectedPaths: opts.protectedPaths } : {}),
+  };
 }
 
 export function createCodingToolRuntime(opts: {
@@ -202,6 +209,8 @@ export function createCodingToolRuntime(opts: {
   tempConfined?: boolean;
   /** Port 7: placed on every ToolRunContext this runtime builds. */
   interceptor?: CommandInterceptor;
+  /** Port 6: placed on every ToolRunContext this runtime builds. */
+  protectedPaths?: ProtectedPathsPolicy;
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its

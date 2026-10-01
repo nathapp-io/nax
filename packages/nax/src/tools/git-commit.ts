@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitlinkSafeAdd, hasStagedChanges } from "@/utils/git-add";
 import { gitWithTimeout } from "@/utils/git-exec";
-import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
+import { gitIgnorePatternsOf } from "./protected-paths";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
 export function buildCommitArgvs(
@@ -44,9 +44,10 @@ export interface UnknownPathResult {
 }
 
 /**
- * Split `paths` into ones GitCommit may stage and ones it must refuse, per
- * `NAX_GITIGNORE_ENTRIES` -- the same SSOT `nax init`, `WorktreeManager`, and
- * `scripts/check-nax-artifacts-untracked.ts` all enforce.
+ * Split `paths` into ones GitCommit may stage and ones it must refuse, per the
+ * caller-supplied `ignorePatterns` (nax passes `NAX_GITIGNORE_ENTRIES` -- the
+ * same SSOT `nax init`, `WorktreeManager`, and
+ * `scripts/check-nax-artifacts-untracked.ts` all enforce).
  *
  * A real run staged its own `.nax/scratchpad/*.md` files through this exact
  * tool (no filter existed at all): the ignore-file reconcile in
@@ -54,7 +55,7 @@ export interface UnknownPathResult {
  * and human adds, but is per-clone -- a fresh clone or CI has no local
  * `.git/info/exclude` yet, so this tool needs its own, independent check.
  *
- * `NAX_GITIGNORE_ENTRIES` are gitignore PATTERNS (`**\/.nax/scratchpad/`), not
+ * The `ignorePatterns` are gitignore PATTERNS (`**\/.nax/scratchpad/`), not
  * literal paths -- hand-rolled substring/glob matching has bitten this repo
  * before (see the comment in `src/worktree/manager.ts` on `/foo/runs/` wrongly
  * "containing" `runs/`). Delegate to `git check-ignore` itself, exactly as
@@ -86,13 +87,14 @@ export interface UnknownPathResult {
 export async function partitionNaxOwnedPaths(
   root: string,
   paths: string[],
+  ignorePatterns: readonly string[],
 ): Promise<{ kept: string[]; skipped: string[]; unknown: UnknownPathResult[] }> {
   if (paths.length === 0) return { kept: [], skipped: [], unknown: [] };
 
   const excludeDir = mkdtempSync(join(tmpdir(), "nax-commit-filter-"));
   const excludeFile = join(excludeDir, "exclude");
   try {
-    writeFileSync(excludeFile, `${NAX_GITIGNORE_ENTRIES.join("\n")}\n`, "utf8");
+    writeFileSync(excludeFile, `${ignorePatterns.join("\n")}\n`, "utf8");
     const results = await Promise.all(
       paths.map(async (path) => {
         // `check-ignore` has no `--exclude-from` of its own (unlike `ls-files`,
@@ -157,7 +159,7 @@ export const gitCommitTool: CodingTool = {
     let skipped: string[] = [];
     let unknown: UnknownPathResult[] = [];
     if (rawPaths.length > 0 && rawPaths.every((path) => typeof path === "string")) {
-      const partition = await partitionNaxOwnedPaths(ctx.root, rawPaths as string[]);
+      const partition = await partitionNaxOwnedPaths(ctx.root, rawPaths as string[], gitIgnorePatternsOf(ctx));
       skipped = partition.skipped;
       unknown = partition.unknown;
       // Fail CLOSED: an unresolved path is refused, exactly like a nax-owned

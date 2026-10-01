@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compileToolPolicy, createCodingToolRuntime, createRunCommandTool, createToolAuditSink } from "@/tools";
 import { gitWithTimeout } from "@/utils/git";
+import { naxProtectedPaths } from "../src/agents/nax-protected-paths";
 
 interface LedgerRecord {
   readonly tool: string;
@@ -62,6 +63,7 @@ const runtime = createCodingToolRuntime({
   // rather than the process-global builtin registry.
   extraTools: [createRunCommandTool(new Map([["test", "echo {{files}} or run declared"]]))],
   sink,
+  protectedPaths: naxProtectedPaths(),
 });
 
 const run = await runtime.callTool("RunCommand", { command: "test", values: { files: "app.test.ts" } });

@@ -27,7 +27,7 @@ import {
   strayCommonDirTripwire,
   warnSandboxUnavailableOnce,
 } from "@/sandbox";
-import { trustStorePath } from "@/trust";
+import type { ProtectedPathsPolicy } from "@/tools";
 import { errorMessage } from "@/utils/errors";
 
 export const _sessionSandboxDeps = {
@@ -103,6 +103,8 @@ export async function resolveSessionSandbox(args: {
   readonly tmpDir?: string;
   /** US-002 — the run's own temp root, present whenever `tmpDir` is (dispatch-supplied). */
   readonly runTmpRoot?: string;
+  /** Host-owned paths the policy denies (S1 spec port 6); nax passes `naxProtectedPaths()`. */
+  readonly protectedPaths: ProtectedPathsPolicy;
 }): Promise<CommandLauncher> {
   const config = args.config;
   if (config === undefined || !config.enabled || !args.needsLauncher) {
@@ -121,7 +123,7 @@ export async function resolveSessionSandbox(args: {
     });
   }
   const git = await _sessionSandboxDeps.gitLayout(args.root);
-  const credentialFiles = await _sessionSandboxDeps.credentialFiles();
+  const credentialFiles = await _sessionSandboxDeps.credentialFiles(args.protectedPaths.credentialDir);
   const approvalsFile = args.outputDir !== undefined ? approvalsPath(args.outputDir) : undefined;
   // Before the policy: the confined roots include the session temp dir itself.
   const { tempRoots, confined } = await sessionTempRoots({
@@ -136,12 +138,12 @@ export async function resolveSessionSandbox(args: {
       git,
       // Per build, like the .nax entries: a worktree added mid-run gets its denies too.
       gitGuardFiles: await _sessionSandboxDeps.gitGuardFiles(git),
-      naxEntries: await _sessionSandboxDeps.naxEntries(root),
+      naxEntries: await _sessionSandboxDeps.naxEntries(root, args.protectedPaths.projectStateDir),
       credentialFiles,
       ...(approvalsFile !== undefined ? { approvalsFile } : {}),
       // US-006: a command inside the sandbox must not be able to rewrite the
       // trust store that decides whether repository code runs.
-      trustStoreFile: trustStorePath(),
+      trustStoreFile: args.protectedPaths.trustStoreFile,
       home: _sessionSandboxDeps.homedir(),
       tempRoots,
       // #2301: the RESOLVED confinement, not `config.filesystem.allowSharedTmp`.
