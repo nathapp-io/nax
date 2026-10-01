@@ -13,8 +13,9 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
-import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
+import { _adapterDeps } from "@/agents/native/adapter-deps";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
+import { NativeAgentAdapter } from "@/agents/native-agent";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 import type { AgentStreamEvent } from "@/runtime/agent-stream-events";
 

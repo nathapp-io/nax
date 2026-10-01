@@ -1,5 +1,5 @@
 /**
- * US-003 — `NativeAgentAdapter.sendTurn` carries `opts.loopHandlers` into the turn.
+ * US-003 — `NativeSessionAdapter.sendTurn` carries `opts.loopHandlers` into the turn.
  *
  * The adapter is where a caller-supplied plugin set first meets the native
  * loop: `opts.loopHandlers` / `opts.loopHandlerContext` are forwarded into the
@@ -23,11 +23,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Client, ConversationMessage, ResolvedModel, ToolCall } from "@nathapp/nax-ai";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
-import { NativeAgentAdapter } from "@/agents/native/adapter";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import type { LoopHandlerContext, LoopHandlerEntry, LoopHandlerSet } from "@/agents/native/session/loop-events/types";
 import { clearNativeSessionState } from "@/agents/native/session/session";
 import { loadTranscript } from "@/agents/native/session/transcript-store";
+import { NativeSessionAdapter } from "@/agents/native/session-adapter";
 import type { SendTurnOpts } from "@/agents/session-types";
 import type { CodingTool } from "@/tools";
 
@@ -135,7 +135,7 @@ async function driveTurn(args: {
   const capture: Capture = { requests: [], invokedTools: [], roundTrips: 0 };
   _clientDeps.build = async () => scriptedClient(args.script, capture);
 
-  const adapter = new NativeAgentAdapter();
+  const adapter = new NativeSessionAdapter();
   const sessionName = `sess-adapter-loop-handlers-${++sessionSeq}`;
   const handle = await adapter.openSession(sessionName, {
     agentName: "native",
@@ -194,7 +194,7 @@ const SEED: ConversationMessage = { role: "user", content: "SEED-NOTE" };
 // AC9 — a before_turn seed reaches the model
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("US-003 — NativeAgentAdapter.sendTurn: before_turn seeds", () => {
+describe("US-003 — NativeSessionAdapter.sendTurn: before_turn seeds", () => {
   test("AC9: a seed returned by a before_turn entry is part of the first model request", async () => {
     const fixture = await driveTurn({
       script: () => ({ text: "done" }),
@@ -220,7 +220,7 @@ describe("US-003 — NativeAgentAdapter.sendTurn: before_turn seeds", () => {
 // AC10 — a plugin block stops the tool call
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("US-003 — NativeAgentAdapter.sendTurn: a plugin before_tool block", () => {
+describe("US-003 — NativeSessionAdapter.sendTurn: a plugin before_tool block", () => {
   test("AC10: a block for a Bash call leaves the command unexecuted and records its content as the tool result", async () => {
     const fixture = await driveTurn({
       script: (roundTrip) =>
@@ -271,7 +271,7 @@ describe("US-003 — NativeAgentAdapter.sendTurn: a plugin before_tool block", (
 // AC11 — a throwing plugin before_tool handler blocks the call
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("US-003 — NativeAgentAdapter.sendTurn: a throwing plugin before_tool handler", () => {
+describe("US-003 — NativeSessionAdapter.sendTurn: a throwing plugin before_tool handler", () => {
   test("AC11: records a tool result whose content starts with the plugin-attributed block", async () => {
     const fixture = await driveTurn({
       script: (roundTrip) =>
@@ -322,7 +322,7 @@ describe("US-003 — NativeAgentAdapter.sendTurn: a throwing plugin before_tool 
 // AC12 — a before_turn_end followUp buys one extra round trip
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("US-003 — NativeAgentAdapter.sendTurn: a before_turn_end followUp", () => {
+describe("US-003 — NativeSessionAdapter.sendTurn: a before_turn_end followUp", () => {
   test("AC12: a followUp returned once sends exactly one extra user message and one extra model request", async () => {
     let followUpCalls = 0;
     const fixture = await driveTurn({
@@ -375,7 +375,7 @@ describe("US-003 — NativeAgentAdapter.sendTurn: a before_turn_end followUp", (
 // AC13 — the caller's context object reaches every plugin handler
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("US-003 — NativeAgentAdapter.sendTurn: opts.loopHandlerContext", () => {
+describe("US-003 — NativeSessionAdapter.sendTurn: opts.loopHandlerContext", () => {
   test("AC13: every plugin handler is handed the object passed as opts.loopHandlerContext", async () => {
     const seen: LoopHandlerContext[] = [];
     const context: LoopHandlerContext = { sessionName: "ctx-object", role: "implementer", storyId: "US-003" };

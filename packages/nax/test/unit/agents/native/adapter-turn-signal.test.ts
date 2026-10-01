@@ -9,7 +9,7 @@
  * of that chain (batch → request, handler → context, context → run tool) are
  * pinned in `turn-loop-cancel.test.ts`, `run-interaction-handler.test.ts` and
  * `runtime.test.ts`; this file drives the whole path through the real
- * `NativeAgentAdapter` with a fake client and a real coding-tool runtime.
+ * `NativeSessionAdapter` with a fake client and a real coding-tool runtime.
  *
  * AC10  — onActiveCall cancel during a coding tool's execution aborts the
  *         signal that tool received in its ToolRunContext.
@@ -27,9 +27,10 @@ import { join } from "node:path";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { makeFakeClock, waitForCondition } from "@test/helpers";
 import type { InteractionHandler } from "@/agents/interaction-handler";
-import { _adapterDeps, NativeAgentAdapter } from "@/agents/native/adapter";
+import { _adapterDeps } from "@/agents/native/adapter-deps";
 import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import { clearNativeSessionState } from "@/agents/native/session/session";
+import { NativeSessionAdapter } from "@/agents/native/session-adapter";
 import type { CodingTool } from "@/tools";
 import { compileToolPolicy, createCodingToolRuntime } from "@/tools";
 
@@ -128,7 +129,7 @@ function toolInteractionHandler(runtime: ReturnType<typeof createCodingToolRunti
   };
 }
 
-describe("NativeAgentAdapter — turn signal following an in-flight call (US-002)", () => {
+describe("NativeSessionAdapter — turn signal following an in-flight call (US-002)", () => {
   test("AC10: onActiveCall cancel during a coding tool's execution aborts the signal that tool received", async () => {
     const root = await mkdtemp(join(tmpdir(), "nax-turn-signal-root-"));
     const captured: { signal?: AbortSignal } = {};
@@ -143,7 +144,7 @@ describe("NativeAgentAdapter — turn signal following an in-flight call (US-002
     });
     let cancel: (() => Promise<void>) | undefined;
     _clientDeps.build = async () => toolTurnClient();
-    const adapter = new NativeAgentAdapter();
+    const adapter = new NativeSessionAdapter();
     const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-turn-signal-"));
     const handle = await adapter.openSession("sess-turn-signal-10", {
       agentName: "native",
@@ -190,7 +191,7 @@ describe("NativeAgentAdapter — turn signal following an in-flight call (US-002
     });
     const callerController = new AbortController();
     _clientDeps.build = async () => toolTurnClient();
-    const adapter = new NativeAgentAdapter();
+    const adapter = new NativeSessionAdapter();
     const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-turn-signal-"));
     const handle = await adapter.openSession("sess-turn-signal-11", {
       agentName: "native",
@@ -241,7 +242,7 @@ describe("NativeAgentAdapter — turn signal following an in-flight call (US-002
       extraTools: [blockingTool],
     });
     _clientDeps.build = async () => toolTurnClient();
-    const adapter = new NativeAgentAdapter();
+    const adapter = new NativeSessionAdapter();
     const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-turn-signal-"));
     const handle = await adapter.openSession("sess-turn-signal-12", {
       agentName: "native",
@@ -292,7 +293,7 @@ describe("NativeAgentAdapter — turn signal following an in-flight call (US-002
         },
       });
     let cancel: (() => Promise<void>) | undefined;
-    const adapter = new NativeAgentAdapter();
+    const adapter = new NativeSessionAdapter();
     const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-turn-signal-"));
     const handle = await adapter.openSession("sess-turn-signal-13", {
       agentName: "native",

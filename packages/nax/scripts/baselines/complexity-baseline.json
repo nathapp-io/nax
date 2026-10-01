@@ -25,7 +25,7 @@
     "src/agents/coding-tool-support.ts": { "buildCodingToolSupport": 38 },
     "src/agents/manager-run-fallback.ts": { "runWithFallback": 54 },
     "src/agents/manager.ts": { "completeWithFallback": 40 },
-    "src/agents/native/adapter.ts": { "sendTurn": 21 },
+    "src/agents/native/session-adapter.ts": { "sendTurn": 21 },
     "src/agents/native/session/tool-input-validation.ts": { "validateToolInput": 26 },
     "src/agents/native/session/turn-tool-batch.ts": { "runToolBatch": 59 },
     "src/agents/retry/hop-retry-policy.ts": { "trySameAgentRetry": 45 },

@@ -71,7 +71,7 @@ describe("committed manifest", () => {
     const m = loadMoveManifest(join(pkgRoot, "scripts/s1-move-manifest.json"));
     const missing = m.entries.map((e) => e.from).filter((from) => !existsSync(join(pkgRoot, from)));
     expect(missing).toEqual([]);
-    expect(isInMoveSet(m, "src/agents/native/adapter.ts")).toBe(true);
+    expect(isInMoveSet(m, "src/agents/native/session-adapter.ts")).toBe(true);
     expect(isInMoveSet(m, "src/agents/tool-preamble.ts")).toBe(false);
   });
 });

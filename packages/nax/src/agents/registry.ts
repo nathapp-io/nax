@@ -10,7 +10,8 @@ import { DEFAULT_AGENT_PROTOCOL } from "@/config";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { getLogger } from "../logger";
 import { AcpAgentAdapter } from "./acp/adapter";
-import { NATIVE_AGENT, NativeAgentAdapter } from "./native";
+import { NATIVE_AGENT } from "./native";
+import { NativeAgentAdapter } from "./native-agent";
 import type { AgentAdapter } from "./types";
 
 /** Known agent names (used for name validation and health checks) */

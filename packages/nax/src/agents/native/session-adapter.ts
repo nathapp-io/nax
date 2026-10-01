@@ -1,31 +1,25 @@
 /**
- * The native AgentAdapter: one-shot completions over nax-ai, no subprocess.
- *
- * Members that describe a process are answered honestly rather than faked:
- * there is no binary, no command and no pid. openSession/closeSession are
- * transcript-file bookkeeping, and sendTurn maps the native turn loop
- * (session/turn-loop.ts) over complete() — nax owns the conversation because
- * nax-ai's client is stateless (ADR-027 section 10, ADR-028).
+ * The native session adapter: openSession / sendTurn / closeSession over
+ * nax-ai, no subprocess. openSession/closeSession are transcript-file
+ * bookkeeping, and sendTurn maps the native turn loop (session/turn-loop.ts)
+ * over complete() — nax owns the conversation because nax-ai's client is
+ * stateless (ADR-027 section 10, ADR-028).
  */
 
 import { randomUUID } from "node:crypto";
 import { priceCall } from "@/agents/cost";
-import type { AuthStamp, OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
-import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "@/agents/types";
-import type { ProviderCatalogOverride } from "@/config/schema-types";
 import { getSafeLogger } from "@/logger";
-// Temporary (Task 5 removes it): the one-shot path's `options.modelDef` is
-// still a config `ModelDef`, so the override is converted here rather than in
-// `buildRateCard`. Relative, not `@/`-aliased — a sibling value import through
-// the alias fails check:alias-internals.
-import { toSessionModel } from "../session-model-mapping";
+import {
+  type AgentSessionAdapter,
+  type OpenSessionOpts,
+  type SendTurnOpts,
+  type SessionHandle,
+  SessionTurnError,
+  type TurnResult,
+} from "../session-types";
 import { createTurnDeadline } from "../turn-deadline";
-// Value import via the sibling path, matching acp/adapter.ts: the parent barrel
-// would close an import cycle (agents/index -> registry -> native/index -> here).
-import { SessionTurnError } from "../types";
-import { anyAmbientCredential, listStoredProviders } from "./auth";
-import { getNativeClient } from "./client";
-import { authSourceIsExec, servedAuth } from "./credentials";
+import { _adapterDeps, authFields, isProtocolStreamError } from "./adapter-deps";
+import { getNativeClient, type NativeCatalogOverrides } from "./client";
 import { toAdapterFailure } from "./errors";
 import { buildRateCard, NATIVE_AGENT, parseNativeModel, resolveContextWindow, toThinkingLevel } from "./models";
 import {
@@ -42,10 +36,7 @@ import {
 import { buildNativeStreamEvent } from "./session/turn-events";
 import { runNativeTurn } from "./session/turn-loop";
 import { readNativeTurnFailureUsage, type TurnDeps } from "./session/turn-types";
-import { nativeSessionId, newSessionKey } from "./session-affinity";
-
-/** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */
-const CONSERVATIVE_CONTEXT_TOKENS = 128_000;
+import { nativeSessionId } from "./session-affinity";
 
 /**
  * Fallback whole-turn budget when a session's timeout entry is missing.
@@ -56,10 +47,6 @@ const CONSERVATIVE_CONTEXT_TOKENS = 128_000;
  * apply. Bounded-and-logged beats unbounded-and-quiet.
  */
 const FALLBACK_TURN_TIMEOUT_SECONDS = 3600;
-
-function isProtocolStreamError(err: unknown): err is { protocolError: { kind: string; message: string } } {
-  return typeof err === "object" && err !== null && "protocolError" in err;
-}
 
 function summaryPrompt(previousSummary?: string): string {
   const base =
@@ -73,32 +60,6 @@ function summaryPrompt(previousSummary?: string): string {
     `rather than repeating or discarding it:\n\n${previousSummary}`
   );
 }
-
-/** The builtin names, used when the adapter is built without config. */
-const DEFAULT_TIERS: readonly string[] = ["fast", "balanced", "powerful"];
-
-/** Test seam, following the _clientDeps precedent. */
-export const _adapterDeps = {
-  listStoredProviders,
-  anyAmbientCredential,
-  /**
-   * US-004: whether the global auth config points at an exec helper. Injectable
-   * so a test can pin the credential-source decision without writing
-   * `~/.nax/config.json`.
-   */
-  authSourceIsExec,
-  /** US-006: the identity the store observed for a provider — injectable like its siblings. */
-  servedAuth,
-  /**
-   * Injectable timer pair — lets the whole-turn deadline test (US-002 AC12)
-   * drive the abort off a virtual clock instead of waiting the schema
-   * minimum. Mirrors `_heartbeatDeps` / `_idleWatchdogDeps` / `_authDeps`.
-   *
-   * @internal
-   */
-  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
-  clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
-};
 
 /**
  * US-003: the plugin-contributed loop handlers a turn carries, in the shape
@@ -115,70 +76,8 @@ function loopHandlerDeps(opts: SendTurnOpts): Pick<TurnDeps, "loopHandlers" | "l
   };
 }
 
-/**
- * US-006: `{ auth }` for the identity the credential store observed for
- * `provider`, `{}` otherwise — so the key stays absent, never `undefined`. A
- * helper because `sendTurn` cannot carry another branch on the complexity
- * ratchet; it reads the `_adapterDeps` seam so a unit test can pin the stamp
- * without assembling a real store.
- */
-function authFields(provider: string): { auth?: AuthStamp } {
-  const auth = _adapterDeps.servedAuth(provider);
-  return auth === undefined ? {} : { auth };
-}
-
-export class NativeAgentAdapter implements AgentAdapter {
-  readonly name = NATIVE_AGENT;
-  readonly displayName = "Native (nax-ai)";
-  /** Nothing to spawn. Not a placeholder — the absence is the fact. */
-  readonly binary = "";
-  readonly capabilities: AgentCapabilities;
-
-  /**
-   * `supportedTiers` comes from config because native's tiers are whatever
-   * `models.native` names — arbitrary strings, not the three builtins
-   * (ADR-027 section 5). An empty array would be actively wrong: the execution
-   * stage clamps an unsupported tier to `supportedTiers[0]`, and with none it
-   * logs a tier mismatch on every story. The config-less listing path passes
-   * nothing and gets the builtins, matching the approximation the ADR already
-   * documents for `getAllAgents`.
-   */
-  /**
-   * Session key for the sessionless `complete()` path, per adapter instance.
-   *
-   * The agent registry caches one adapter per agent name for its own
-   * lifetime, and a registry is built once per runtime — so this key's grain is
-   * a run, which is the right one: a run's one-shots share a backend and keep a
-   * cache warm, while two concurrent runs stay distinct.
-   */
-  private readonly oneShotKey = newSessionKey();
-
-  constructor(
-    supportedTiers: readonly string[] = DEFAULT_TIERS,
-    private readonly catalogOverrides: readonly ProviderCatalogOverride[] = [],
-  ) {
-    this.capabilities = {
-      supportedTiers: supportedTiers.length > 0 ? supportedTiers : DEFAULT_TIERS,
-      maxContextTokens: CONSERVATIVE_CONTEXT_TOKENS,
-      // Explicitly typed, like AcpAgentAdapter does, rather than relying on
-      // inference from a literal array.
-      features: new Set<"tdd" | "review" | "refactor" | "batch">(["review"]),
-    };
-  }
-
-  /**
-   * Always true: the native agent runs in-process. There is no binary, so
-   * there is nothing to install, and "not installed" would be a false
-   * answer to a question about presence.
-   *
-   * Deliberately NOT delegating to hasCredentials(). Whether a credential
-   * exists is a different question, and AgentManager.validateCredentials()
-   * is the place that asks it. Conflating them made checkAgentHealth()
-   * report "not installed" for something that is always present.
-   */
-  async isInstalled(): Promise<boolean> {
-    return true;
-  }
+export class NativeSessionAdapter implements AgentSessionAdapter {
+  constructor(private readonly catalogOverrides: NativeCatalogOverrides = []) {}
 
   /**
    * Can this agent authenticate to at least one provider?
@@ -211,93 +110,6 @@ export class NativeAgentAdapter implements AgentAdapter {
       return await _adapterDeps.anyAmbientCredential();
     } catch {
       return true;
-    }
-  }
-
-  /** Dry-run display shows no process, because there is none. */
-  buildCommand(): string[] {
-    return [];
-  }
-
-  async complete(prompt: string, options: ResolvedCompleteOptions): Promise<CompleteResult> {
-    // modelDef.provider is deliberately ignored. resolveModel() INFERS it from
-    // the model name for string entries ("claude..." -> anthropic, else
-    // "unknown"), so it is a guess rather than configuration — and routing a
-    // billed call on a guess is what the protocol gate exists to prevent. The
-    // string is the only source of truth.
-    const { provider, model, effort } = parseNativeModel(options.modelDef.model);
-    const thinking = toThinkingLevel(effort);
-    const client = await getNativeClient(this.catalogOverrides);
-    const resolved = await client.model(provider, model);
-
-    const controller = new AbortController();
-    const timer =
-      options.timeoutMs !== undefined
-        ? _adapterDeps.setTimeout(() => controller.abort(), options.timeoutMs)
-        : undefined;
-
-    try {
-      const sessionId = nativeSessionId(this.oneShotKey);
-      const result = await client.complete(resolved, {
-        messages: [{ role: "user", content: prompt }],
-        ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
-        sessionId,
-        signal: controller.signal,
-        ...(thinking !== undefined ? { thinking } : {}),
-      });
-
-      const tokenUsage = result.usage;
-      const catalog = client.pricing(resolved);
-      const { rates, source: pricingSource } = buildRateCard(catalog, toSessionModel(options.modelDef).pricing);
-      // US-002: stamp the effective `priceCall`-resolved rates so the cost
-      // subscriber can record the same numbers whose arithmetic reproduces
-      // `estimatedCostUsd`. The native path prices unconditionally — even
-      // a zero-token call carries `rates`, so a downstream cost row never
-      // has to guess what priced a no-spend dispatch.
-      //
-      // Single `priceCall` invocation: `costUsd` and `resolvedRates` come
-      // from the same call so they cannot diverge — the verifiability
-      // property the story names ("recorded rates reproduce recorded cost")
-      // would silently break if tier selection ever grew a side channel.
-      const { costUsd: estimatedCostUsd, resolvedRates } = priceCall(tokenUsage, rates);
-
-      return {
-        output: result.text,
-        tokenUsage,
-        estimatedCostUsd,
-        // exactCostUsd is deliberately unset: nax-ai supplies rates and
-        // computes no cost, so nothing here is exact.
-        // sessionId echoes the one we sent — US-002 lets downstream wiring
-        // (audit, dispatch) stamp it on artifacts without reaching into a
-        // private field.
-        sessionId,
-        // US-003: stamp the branch buildRateCard took so cost rows can tell a
-        // catalog-priced call from a config-overridden one. Single source of
-        // truth — the same override !== undefined predicate the rate card was
-        // chosen on, reported rather than re-derived by the cost subscriber.
-        pricingSource,
-        // US-002: the four per-1M rates that priced this call. See
-        // CompleteResult.rates above.
-        rates: resolvedRates,
-        // US-006: the credential identity the store observed while serving
-        // this call. Absent (not undefined) when it observed nothing.
-        ...authFields(provider),
-      };
-    } catch (err) {
-      // Returned, not rethrown: rethrowing routes through
-      // classifyCompleteException -> parseAgentError, which parses ACP strings
-      // and would discard the typed kind nax-ai just gave us.
-      if (isProtocolStreamError(err)) {
-        return {
-          output: "",
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: 0,
-          adapterFailure: toAdapterFailure(err.protocolError),
-        };
-      }
-      throw err;
-    } finally {
-      if (timer !== undefined) _adapterDeps.clearTimeout(timer);
     }
   }
 

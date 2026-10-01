@@ -7,7 +7,7 @@
 # only NaxConfig, CompleteConfig, defaults, and loader are banned.
 set -euo pipefail
 
-scan_dirs="src/agents/acp/ src/agents/native/"
+scan_dirs="src/agents/acp/ src/agents/native/ src/agents/native-agent/"
 
 # Block direct NaxConfig / CompleteConfig / DEFAULT_CONFIG imports (structural config reads)
 banned_imports=$(grep -r "import.*\(NaxConfig\|CompleteConfig\|DEFAULT_CONFIG\)" $scan_dirs --include="*.ts" 2>/dev/null || true)
