@@ -187,7 +187,7 @@ async function tagRelease() {
   console.log(`\nTag ${tagName} pushed - GitHub Actions will publish to npm.`);
   console.log(`   Install: npm install @nathapp/nax-ai@${distTagsFor(version)[0]}`);
   if (npmTags === "canary") console.log("   Promote: bun run release promote");
-  console.log("   Watch:   https://github.com/nathapp-io/nax-ai/actions");
+  console.log("   Watch:   https://github.com/nathapp-io/nax/actions");
 }
 
 async function bumpRelease() {
