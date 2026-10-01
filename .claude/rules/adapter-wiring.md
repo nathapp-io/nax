@@ -99,10 +99,12 @@ and `src/agents/catalog/`. Enforced by `bun run check:nax-ai-imports`.
 `src/agents/catalog/` exists because the model catalog now has two consumers —
 the native path prices from it, and the ACP cost layer resolves rates through it
 rather than from a hand-maintained table. It owns the nax-ai boundary for that
-shared use: it maps nax-ai's `Pricing` onto nax's own `TokenPricing` and exports
-no nax-ai type. It must not import from `src/agents/cost/` or
-`src/agents/native/` — both already depend on it, and the reverse edge would
-close a runtime import cycle that `bun run check:import-cycles` rejects.
+shared use: it returns nax-ai's `Pricing` unchanged (bar a defensive cache-rate
+fill). nax uses nax-ai's `Pricing`/`TokenUsage` through
+`src/agents/cost/standard-types.ts`, so there is no separate nax type. It must
+not import from `src/agents/cost/` or `src/agents/native/` — both already depend
+on it, and the reverse edge would close a runtime import cycle that
+`bun run check:import-cycles` rejects.
 
 The native adapter answers `complete()` only — `openSession`/`sendTurn`/`closeSession`
 throw `NativeSessionUnsupportedError` until Phase B. Model entries under

@@ -96,7 +96,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/metrics/` | StoryMetrics, aggregator, tracker |
 | `src/config/` | Config schema + layered loader (global → project) + permissions |
 | `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` (one of two transports; see ADR-027) |
-| `src/agents/catalog/` | nax-ai model-catalog boundary — maps `Pricing` onto `TokenPricing`, powers catalog-backed rate cards |
+| `src/agents/catalog/` | nax-ai model-catalog boundary — returns nax-ai's `Pricing`; other code uses its `Pricing`/`TokenUsage` via `src/agents/cost/standard-types.ts` |
 | `src/agents/cost/` | Centralized cost calculation (pricing, token parsing) |
 | `src/agents/native/` | Native in-process LLM path over `@nathapp/nax-ai` (one-shot `complete()`; sessions are Phase B) |
 | `src/agents/shared/` | Cross-adapter utilities (decompose, env, model-resolution, validation) |
