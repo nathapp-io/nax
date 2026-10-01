@@ -13,22 +13,17 @@ import type { AdapterFailure, ToolDescriptor } from "../context/engine";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
 import type { TokenUsage } from "./cost";
-import type {
-  AuthStamp,
-  OpenSessionOpts,
-  SendTurnOpts,
-  SessionHandle,
-  TrackedSpawnDeadlineOptions,
-  TurnResult,
-} from "./session-types";
+import type { AgentSessionAdapter, AuthStamp, TrackedSpawnDeadlineOptions } from "./session-types";
 
 // Session-protocol types live in ./session-types (file-size ratchet, #1702).
 // Re-exported here so every existing "@/agents/types" import keeps working.
 export type {
+  AgentSessionAdapter,
   InteractionExchange,
   OpenSessionOpts,
   SendTurnOpts,
   SessionHandle,
+  SessionModel,
   TrackedSpawnDeadlineOptions,
   TurnResult,
 } from "./session-types";
@@ -534,7 +529,7 @@ export interface AgentError {
  * Provides uniform interface for checking installation, running agents,
  * and building CLI commands across different coding agent tools.
  */
-export interface AgentAdapter {
+export interface AgentAdapter extends AgentSessionAdapter {
   /** Unique agent name (e.g., "claude", "codex", "opencode") */
   readonly name: string;
   /** Human-readable display name */
@@ -547,13 +542,6 @@ export interface AgentAdapter {
   /** Check if the agent binary is available on this machine. */
   isInstalled(): Promise<boolean>;
 
-  /**
-   * Probe whether the agent has usable credentials (env var, ping, etc.).
-   * Optional — adapters that do not implement it are treated as always credentialed.
-   * Used by AgentManager.validateCredentials() at run start.
-   */
-  hasCredentials?(): Promise<boolean>;
-
   /** Build the CLI command for a given run (for dry-run display). */
   buildCommand(options: AgentRunOptions): string[];
 
@@ -562,39 +550,4 @@ export interface AgentAdapter {
    * Uses claude -p CLI for non-interactive completions.
    */
   complete(prompt: string, options: ResolvedCompleteOptions): Promise<CompleteResult>;
-
-  /**
-   * Open a new (or resume an existing) physical agent session.
-   * Returns an opaque SessionHandle carrying all state needed for subsequent
-   * sendTurn() and closeSession() calls.
-   */
-  openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle>;
-
-  /**
-   * Send one or more turns to an open session and return the accumulated result.
-   * Handles context-tool and question interactions via opts.interactionHandler.
-   */
-  sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult>;
-
-  /** Close the physical session and its underlying transport client. Best-effort — errors are swallowed. */
-  closeSession(handle: SessionHandle): Promise<void>;
-
-  /**
-   * Close a session the process no longer holds a live handle for, addressing it by
-   * id and workdir rather than by SessionHandle. Distinct from closeSession(): that
-   * one closes an open in-process session, this one reconnects to the agent to close
-   * a session left behind — the path run teardown takes
-   * (src/execution/session-manager-runtime.ts).
-   *
-   * Optional because out-of-process teardown is not something every adapter can offer;
-   * callers treat its absence as "nothing to close" and must invoke it best-effort.
-   * Declared here rather than reached through a cast: it was undeclared until #1702,
-   * so teardown had to assert its way to it and the two methods' handle types
-   * (SessionHandle vs id string) disagreed invisibly.
-   */
-  closePhysicalSession?(
-    handle: string,
-    workdir: string,
-    options?: { force?: boolean; signal?: AbortSignal },
-  ): Promise<void>;
 }
