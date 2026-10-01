@@ -4,7 +4,7 @@
  * standard vocabulary, and the per-adapter one-shot session key.
  */
 
-import { priceCall } from "@/agents/cost";
+import { priceCall } from "@/agents/cost/core";
 import type { AdapterFailure } from "../adapter-failure";
 import type { PricingRates, TokenUsage } from "../cost/standard-types";
 import type { AuthStamp, SessionModel } from "../session-types";

@@ -22,6 +22,8 @@
     { "from": "src/agents/turn-deadline.ts", "to": "session/turn-deadline.ts" },
     { "from": "src/agents/model-spec.ts", "to": "cost/model-spec.ts" },
     { "from": "src/agents/cost/estimate.ts", "to": "cost/estimate.ts" },
+    { "from": "src/agents/cost/usage-math.ts", "to": "cost/usage-math.ts" },
+    { "from": "src/agents/cost/core/", "to": "cost/core/" },
     { "from": "src/agents/cost/standard-types.ts", "to": "cost/standard-types.ts" },
     { "from": "src/config/bash-approval.ts", "to": "config/bash-approval.ts" },
     { "from": "src/config/schemas-sandbox.ts", "to": "config/schemas-sandbox.ts" },

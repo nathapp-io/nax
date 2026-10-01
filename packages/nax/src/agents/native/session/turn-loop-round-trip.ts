@@ -33,7 +33,7 @@
  */
 
 import type { ToolCall, ToolDefinition } from "@nathapp/nax-ai";
-import { inputClassTokens } from "@/agents/cost";
+import { inputClassTokens } from "@/agents/cost/core";
 import type { InteractionExchange, SendTurnOpts, SessionHandle } from "@/agents/session-types";
 import { getSafeLogger } from "@/logger";
 import type { SpinBreaker } from "@/runtime/spin-breaker";
