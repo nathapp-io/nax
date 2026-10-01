@@ -106,3 +106,133 @@ jobs:
       # three steps above cannot be reused for this.
       - name: Coverage floor
         run: bun run test:coverage
+
+  # The four jobs below are nax-ai's former standalone ci.yml, moved into the
+  # monorepo unchanged apart from the job ids/names, a package-scoped
+  # working-directory default, and workspace installs at the repo root.
+
+  # Gates that are runtime-independent. Split from the matrix so a lint or type
+  # failure reports once rather than twice.
+  nax-ai-static:
+    name: "nax-ai: lint + typecheck"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/nax-ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: bun run lint
+      # Vitest transpiles via esbuild and does not type-check, so this is the
+      # only step that proves the package compiles.
+      - run: bun run typecheck
+
+  # The declared compatibility target. This is the leg that catches Bun-only
+  # code and imports Node cannot resolve, so it must run the real suite rather
+  # than a smoke check.
+  nax-ai-test-node:
+    name: "nax-ai: test (node ${{ matrix.node }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    defaults:
+      run:
+        working-directory: packages/nax-ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: node --version
+      - run: bun x vitest --run
+
+  # The primary consumer's runtime. Builds, then imports the built artifact the
+  # way an installed consumer would — this is what would catch a broken exports
+  # map or files array, which the source-level suite cannot see.
+  nax-ai-smoke-bun:
+    name: "nax-ai: smoke (bun)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/nax-ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: bun run build
+      - name: import built package
+        run: |
+          bun --eval '
+            import { createClient, PERMITTED_OAUTH_FLOWS } from "./dist/index.js";
+
+            if (PERMITTED_OAUTH_FLOWS.includes("anthropic")) {
+              throw new Error("anthropic must never be a permitted OAuth flow");
+            }
+
+            const client = createClient({
+              providers: [{
+                id: "fake", baseUrl: "https://example.invalid",
+                auth: { kind: "api-key", env: "NONE" },
+                defaultProtocol: "p",
+                models: [{ id: "m", pricing: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+                           contextWindow: 1, supportsTools: false, thinkingLevels: [] }],
+              }],
+              protocols: { p: { pi: async () => ({
+                name: "p",
+                async *stream() {
+                  yield { type: "text-delta", text: "ok" };
+                  yield { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } };
+                  yield { type: "done", stopReason: "stop" };
+                },
+              }) } },
+            });
+
+            const model = await client.model("fake", "m");
+            const result = await client.complete(model, { messages: [{ role: "user", content: "hi" }] });
+            if (result.text !== "ok") throw new Error(`unexpected result: ${result.text}`);
+            console.log("smoke ok");
+          '
+
+  # Proves the tarball a consumer installs contains what the exports map
+  # promises. A files/exports mistake is invisible until publish otherwise.
+  nax-ai-pack:
+    name: "nax-ai: pack + install"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/nax-ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: bun run build
+      - run: npm pack
+      - name: install the tarball into a clean project and import it
+        run: |
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE"/packages/nax-ai/nathapp-nax-ai-*.tgz
+          node --input-type=module -e '
+            import { PERMITTED_OAUTH_FLOWS } from "@nathapp/nax-ai";
+            console.log("resolved from registry-shaped install:", PERMITTED_OAUTH_FLOWS.join(", "));
+          '
