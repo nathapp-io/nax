@@ -1,50 +1,50 @@
 /**
- * TokenUsage and Metrics Extensions — US-001
+ * StoryTokenUsage and Metrics Extensions — US-001
  *
- * AC-1: TokenUsage class with inputTokens, outputTokens, cacheReadInputTokens?, cacheCreationInputTokens?
- * AC-2: StoryMetrics has optional tokens?: TokenUsage
- * AC-3: RunMetrics has optional totalTokens?: TokenUsage
- * AC-4: TokenUsage re-exported from src/metrics/index.ts barrel
- * AC-6: When cache fields are 0 or undefined, they are omitted from TokenUsage instances
+ * AC-1: StoryTokenUsage class with inputTokens, outputTokens, cacheReadInputTokens?, cacheCreationInputTokens?
+ * AC-2: StoryMetrics has optional tokens?: StoryTokenUsage
+ * AC-3: RunMetrics has optional totalTokens?: StoryTokenUsage
+ * AC-4: StoryTokenUsage re-exported from src/metrics/index.ts barrel
+ * AC-6: When cache fields are 0 or undefined, they are omitted from StoryTokenUsage instances
  */
 
 import { describe, expect, test } from "bun:test";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
-import { TokenUsage } from "@/metrics/types";
+import { StoryTokenUsage } from "@/metrics/types";
 
 // ---------------------------------------------------------------------------
-// AC-1: TokenUsage class structure
+// AC-1: StoryTokenUsage class structure
 // ---------------------------------------------------------------------------
 
-describe("TokenUsage class", () => {
+describe("StoryTokenUsage class", () => {
   test("has required inputTokens and outputTokens fields", () => {
-    const usage = new TokenUsage({ inputTokens: 1000, outputTokens: 500 });
+    const usage = new StoryTokenUsage({ inputTokens: 1000, outputTokens: 500 });
 
     expect(usage.inputTokens).toBe(1000);
     expect(usage.outputTokens).toBe(500);
   });
 
   test("has optional cacheReadInputTokens field", () => {
-    const usage = new TokenUsage({ inputTokens: 1000, outputTokens: 500, cacheReadInputTokens: 300 });
+    const usage = new StoryTokenUsage({ inputTokens: 1000, outputTokens: 500, cacheReadInputTokens: 300 });
 
     expect(usage.cacheReadInputTokens).toBe(300);
   });
 
   test("has optional cacheCreationInputTokens field", () => {
-    const usage = new TokenUsage({ inputTokens: 1000, outputTokens: 500, cacheCreationInputTokens: 150 });
+    const usage = new StoryTokenUsage({ inputTokens: 1000, outputTokens: 500, cacheCreationInputTokens: 150 });
 
     expect(usage.cacheCreationInputTokens).toBe(150);
   });
 
   test("cache fields are optional and may be omitted", () => {
-    const usage = new TokenUsage({ inputTokens: 1000, outputTokens: 500 });
+    const usage = new StoryTokenUsage({ inputTokens: 1000, outputTokens: 500 });
 
     expect(usage.cacheReadInputTokens).toBeUndefined();
     expect(usage.cacheCreationInputTokens).toBeUndefined();
   });
 
   test("cache fields can be set to numbers including 0", () => {
-    const usage = new TokenUsage({
+    const usage = new StoryTokenUsage({
       inputTokens: 1000,
       outputTokens: 500,
       cacheReadInputTokens: 0,
@@ -80,7 +80,7 @@ describe("StoryMetrics - tokens field", () => {
     expect("tokens" in metrics).toBe(false);
   });
 
-  test("tokens field can be set with TokenUsage", () => {
+  test("tokens field can be set with StoryTokenUsage", () => {
     const metrics: StoryMetrics = {
       storyId: "US-001",
       complexity: "medium",
@@ -94,7 +94,7 @@ describe("StoryMetrics - tokens field", () => {
       firstPassSuccess: true,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      tokens: new TokenUsage({ inputTokens: 2000, outputTokens: 1000, cacheReadInputTokens: 500 }),
+      tokens: new StoryTokenUsage({ inputTokens: 2000, outputTokens: 1000, cacheReadInputTokens: 500 }),
     };
 
     expect(metrics.tokens).toBeDefined();
@@ -126,7 +126,7 @@ describe("RunMetrics - totalTokens field", () => {
     expect("totalTokens" in metrics).toBe(false);
   });
 
-  test("totalTokens field can be set with TokenUsage", () => {
+  test("totalTokens field can be set with StoryTokenUsage", () => {
     const metrics: RunMetrics = {
       runId: "run-001",
       feature: "test-feature",
@@ -138,7 +138,7 @@ describe("RunMetrics - totalTokens field", () => {
       storiesFailed: 1,
       totalDurationMs: 30000,
       stories: [],
-      totalTokens: new TokenUsage({ inputTokens: 5000, outputTokens: 2500, cacheCreationInputTokens: 1000 }),
+      totalTokens: new StoryTokenUsage({ inputTokens: 5000, outputTokens: 2500, cacheCreationInputTokens: 1000 }),
     };
 
     expect(metrics.totalTokens).toBeDefined();

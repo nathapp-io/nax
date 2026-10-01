@@ -29,5 +29,5 @@ export type {
   RunFallbackAggregate,
   RunMetrics,
   StoryMetrics,
-  TokenUsage,
 } from "./types";
+export { StoryTokenUsage } from "./types";

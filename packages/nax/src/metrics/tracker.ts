@@ -19,11 +19,11 @@ import { errorMessage } from "../utils/errors";
 import { loadJsonFile, loadJsonFileStrict, saveJsonFile } from "../utils/json-file";
 import { withPathFileLock } from "../utils/path-file-lock";
 import type { AgentFallbackHop, ContextProviderMetrics, FloorOverageMetrics, RunMetrics, StoryMetrics } from "./types";
-import { TokenUsage } from "./types";
+import { StoryTokenUsage } from "./types";
 
-function tokensFromSnapshot(snapshot: CostSnapshot | undefined, divisor = 1): TokenUsage | undefined {
+function tokensFromSnapshot(snapshot: CostSnapshot | undefined, divisor = 1): StoryTokenUsage | undefined {
   if (!snapshot || snapshot.tokenUsageCount !== snapshot.callCount) return undefined;
-  return new TokenUsage({
+  return new StoryTokenUsage({
     inputTokens: snapshot.totalInputTokens / divisor,
     outputTokens: snapshot.totalOutputTokens / divisor,
     cacheReadInputTokens: (snapshot.totalCacheReadTokens ?? 0) / divisor,
@@ -524,7 +524,7 @@ export async function saveRunMetrics(outputDir: string, runMetrics: RunMetrics):
   const finalMetrics: RunMetrics = hasTokenData
     ? {
         ...runMetrics,
-        totalTokens: new TokenUsage({
+        totalTokens: new StoryTokenUsage({
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
           cacheReadInputTokens: totalCacheReadInputTokens,
