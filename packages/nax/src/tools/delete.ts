@@ -56,7 +56,7 @@
 
 import { lstat, unlink } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
-import { gitWithTimeout } from "@/utils/git";
+import { gitWithTimeout } from "@/utils/git-exec";
 import { matchesDenyPaths } from "./deny-paths";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 

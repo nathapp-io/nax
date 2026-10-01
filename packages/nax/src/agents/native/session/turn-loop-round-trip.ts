@@ -33,9 +33,9 @@
  */
 
 import type { ToolCall, ToolDefinition } from "@nathapp/nax-ai";
-import { inputClassTokens } from "@/agents/cost";
+import { inputClassTokens } from "@/agents/cost/core";
+import { getSafeLogger } from "@/agents/infra";
 import type { InteractionExchange, SendTurnOpts, SessionHandle } from "@/agents/session-types";
-import { getSafeLogger } from "@/logger";
 import type { SpinBreaker } from "@/runtime/spin-breaker";
 import { estimateContextTokens, type TranscriptMessage as NativeTranscriptMessage, shouldCompact } from "./compaction";
 import type { InvalidCallBudget } from "./handle-invalid-tool-call";

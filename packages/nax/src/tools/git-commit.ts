@@ -13,8 +13,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gitWithTimeout } from "@/utils/git";
 import { gitlinkSafeAdd, hasStagedChanges } from "@/utils/git-add";
+import { gitWithTimeout } from "@/utils/git-exec";
 import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 

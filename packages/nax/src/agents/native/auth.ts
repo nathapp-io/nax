@@ -17,7 +17,7 @@ import {
   type LoginPrompt,
   login,
 } from "@nathapp/nax-ai";
-import { NaxError } from "@/errors";
+import { NaxError } from "@/agents/infra";
 import type { AuthEvent, AuthInteraction, AuthMethod, AuthPrompt, AuthResult } from "./auth-types";
 import { naxCredentialStore, readStoredEntries, type StoredEntry } from "./credentials";
 

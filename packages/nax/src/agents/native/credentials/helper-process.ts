@@ -9,8 +9,9 @@
  * fragment the redaction patterns no longer recognise.
  */
 
-import { getSafeLogger, redactSecrets } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import { errorMessage } from "@/utils/errors";
+import { redactSecrets } from "@/utils/redact";
 import { HELPER_SUBCOMMAND, requestLine } from "./helper-protocol";
 
 /**

@@ -14,7 +14,7 @@
  * rather than semantic — see each branch below.
  */
 
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import type { CodingToolName, ToolGrant } from "./types";
 
 /** Per-tool path globs an operation asks to be held to. */

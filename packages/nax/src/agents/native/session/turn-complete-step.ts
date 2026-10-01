@@ -19,7 +19,7 @@
  * which recovery a thrown round trip gets.
  */
 
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
 import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events";
 import { applyHistoryPatch } from "./loop-events/cache-boundary";

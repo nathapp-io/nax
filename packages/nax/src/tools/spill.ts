@@ -27,7 +27,7 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import { errorMessage } from "@/utils/errors";
 import { SCRATCHPAD_DIR } from "./scratchpad";
 import {

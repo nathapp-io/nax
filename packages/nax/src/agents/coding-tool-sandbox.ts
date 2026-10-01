@@ -7,9 +7,8 @@
  */
 import { mkdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
+import { getSafeLogger, NaxError } from "@/agents/infra";
 import type { SandboxConfig } from "@/config/schemas-sandbox";
-import { NaxError } from "@/errors";
-import { getSafeLogger } from "@/logger";
 import { approvalsPath } from "@/permissions";
 import {
   buildSandboxPolicy,

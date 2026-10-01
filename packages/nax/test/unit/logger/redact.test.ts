@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { redactEntry, redactSecrets } from "@/logger/redact";
+import { redactEntry, redactSecrets } from "@/utils/redact";
 
 describe("redactSecrets", () => {
   test("masks values of known secret keys", () => {

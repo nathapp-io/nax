@@ -8,7 +8,7 @@
  * tests drive it with a fake instead of a spawn mock.
  */
 
-import type { Logger } from "../logger";
+import type { AgentLogger } from "@/agents/infra";
 import { parsePorcelainForNaxPaths } from "./porcelain";
 
 /** Runs `git <args>` from `cwd`. `gitWithTimeout` satisfies this. */
@@ -18,7 +18,7 @@ export interface NaxRestoreContext {
   /** Repo root — porcelain paths are root-relative, so every git call runs from here. */
   gitRoot: string;
   run: GitRunner;
-  logger: Logger | null;
+  logger: AgentLogger | null;
   stage: string;
   role: string;
   storyId: string;

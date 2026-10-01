@@ -1,5 +1,5 @@
 export { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, isBuiltInModelMap, NATIVE_AGENT_NAME } from "./agent-defaults";
-export { readGlobalAuthConfig } from "./auth";
+export { configureNaxCredentials, readGlobalAuthConfig } from "./auth";
 export type { BashApprovalMode } from "./bash-approval";
 export { resolveBashApproval } from "./bash-approval";
 export { rejectGlobalOnlyKeys } from "./global-only-keys";

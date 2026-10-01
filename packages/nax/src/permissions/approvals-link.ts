@@ -24,7 +24,7 @@
  * failure costs prompts rather than safety.
  */
 import { relative, resolve } from "node:path";
-import { getSafeLogger } from "../logger";
+import { getSafeLogger } from "../agents/infra";
 import { findApproval, readApprovalsFile } from "./approvals-store";
 import { isForgeCapable } from "./approvals-taint";
 import type { AskLink, AskLinkOutcome } from "./ask-chain";

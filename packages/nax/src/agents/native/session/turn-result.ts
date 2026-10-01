@@ -8,8 +8,8 @@
  * flow rather than in a result builder.
  */
 
+import { getSafeLogger } from "@/agents/infra";
 import type { InteractionExchange, InvalidToolCallDetail, TurnResult } from "@/agents/session-types";
-import { getSafeLogger } from "@/logger";
 import type { CodingTool } from "@/tools";
 import type { TurnAccumulator } from "./turn-accumulator";
 import type { TurnDeps } from "./turn-types";

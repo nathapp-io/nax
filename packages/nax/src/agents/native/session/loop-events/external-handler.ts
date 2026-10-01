@@ -16,7 +16,7 @@
  * anything at all.
  */
 
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import { errorMessage } from "@/utils/errors";
 import { isCompleteBeforeToolOutcome } from "./registry";
 import type { HandlerOf, LoopEvent, LoopHandlerContext, LoopHandlerEntry, PatchOf, PayloadOf } from "./types";

@@ -5,7 +5,7 @@
  * name contain `__` without escaping, and it is why the ledger carries an
  * explicit `provider` field rather than expecting a consumer to string-split.
  */
-import { NaxError } from "@/errors";
+import { NaxError } from "@/agents/infra";
 import type { ProviderTool } from "./provider-types";
 import { validateProviderId } from "./provider-types";
 import type { CodingTool } from "./registry";

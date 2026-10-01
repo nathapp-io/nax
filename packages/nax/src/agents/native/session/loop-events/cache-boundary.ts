@@ -1,4 +1,4 @@
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 
 export function checkPrefixStable(
   before: readonly unknown[],

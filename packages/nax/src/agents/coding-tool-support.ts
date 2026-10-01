@@ -9,10 +9,9 @@
  * both dispatch hops use — see its comment for why that matters.
  */
 
+import { getSafeLogger, NaxError } from "@/agents/infra";
 import type { CommandShadow } from "@/command-safety";
 import type { BashApprovalMode } from "@/config/bash-approval";
-import { NaxError } from "@/errors";
-import { getSafeLogger } from "@/logger";
 import type { AskResolver } from "@/permissions";
 import type { CommandLauncher } from "@/sandbox";
 import {

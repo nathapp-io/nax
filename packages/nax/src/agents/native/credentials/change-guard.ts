@@ -12,10 +12,9 @@
  */
 
 import type { CredentialStore, ProviderId, StoredCredential } from "@nathapp/nax-ai";
+import type { CredentialAuthConfig } from "@/agents/infra";
+import { getSafeLogger, NaxError } from "@/agents/infra";
 import type { AuthStamp } from "@/agents/session-types";
-import type { AuthConfig } from "@/config";
-import { NaxError } from "@/errors";
-import { getSafeLogger } from "@/logger";
 import { fingerprintCredential } from "./fingerprint";
 
 /**
@@ -29,7 +28,7 @@ export interface CredentialOrigin {
 
 export interface ChangeGuardOptions {
   /** `warn` adopts the new identity and serves it; `refuse` throws instead. */
-  onChange: AuthConfig["onChange"];
+  onChange: CredentialAuthConfig["onChange"];
   /**
    * Where the credential read from `inner` came from. Called immediately after
    * each successful read, because the credential itself carries no provenance.

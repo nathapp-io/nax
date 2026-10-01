@@ -11,8 +11,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import { NaxError } from "../errors";
-import { getSafeLogger } from "../logger";
+import { getSafeLogger, NaxError } from "@/agents/infra";
 import { runArgv } from "../utils/argv-exec";
 import { errorMessage } from "../utils/errors";
 import { quoteArgvForShell } from "./argv-quote";

@@ -11,7 +11,7 @@
  *    Accepted residual: secret characters after a shell-active character stay
  *    visible in the row.
  */
-import { SECRET_VALUE_PATTERNS } from "@/logger";
+import { SECRET_VALUE_PATTERNS } from "@/utils/redact";
 
 export interface SecretSpan {
   readonly start: number;

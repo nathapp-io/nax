@@ -17,7 +17,7 @@
 
 import type { CommandInterceptor, InterceptRequest } from "@/execution/command-interceptor";
 import { interceptArgv } from "@/execution/command-interceptor";
-import { gitWithTimeout } from "@/utils/git";
+import { gitWithTimeout } from "@/utils/git-exec";
 import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 import { cutToByteCap, READ_CEILING } from "./truncate";

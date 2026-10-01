@@ -4,7 +4,7 @@
  * A fingerprint lets a run report "the credential this call was billed to has
  * changed" without ever logging the credential: the first 12 lowercase hex
  * characters of HMAC-SHA-256 over the credential's identifying secret, keyed by
- * a per-machine salt held in `<globalConfigDir>/auth-fingerprint-salt`.
+ * a per-machine salt held in `<configDir>/auth-fingerprint-salt`.
  *
  * The salt is what makes the digest useless as a lookup key, and it is per
  * machine by design — a fingerprint cannot be compared across machines. It is
@@ -16,8 +16,7 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { StoredCredential } from "@nathapp/nax-ai";
-import { globalConfigDir } from "@/config";
-import { getSafeLogger } from "@/logger";
+import { credentialsConfig, getSafeLogger } from "@/agents/infra";
 import { errorMessage } from "@/utils/errors";
 
 /** Exactly one HMAC key's worth. Anything shorter is a damaged file, not a salt. */
@@ -46,7 +45,7 @@ export function _resetFingerprintSalt(): void {
 
 /** Absolute path of the per-machine salt file. */
 function saltFilePath(): string {
-  return join(globalConfigDir(), SALT_FILENAME);
+  return join(credentialsConfig().configDir(), SALT_FILENAME);
 }
 
 /** Read the salt file. `undefined` when it does not exist. */

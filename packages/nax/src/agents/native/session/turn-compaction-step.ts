@@ -21,7 +21,7 @@
  * stay with the callers on purpose — see each function's catch.
  */
 
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import {
   applyCompaction,
   type CompactionPlan,

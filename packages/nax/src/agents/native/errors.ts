@@ -11,7 +11,7 @@
  */
 
 import type { AdapterFailure } from "@/agents/adapter-failure";
-import { NaxError } from "@/errors";
+import { NaxError } from "@/agents/infra";
 
 const FAILURES: Readonly<Record<string, AdapterFailure>> = Object.freeze({
   "rate-limit": {

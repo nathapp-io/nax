@@ -12,16 +12,15 @@
  * around the chained store (exec helper first, file second) — and exports
  * `servedAuth` so a cost row can name the account a call was billed to. Its
  * callers (client.ts:84, auth.ts:121/:204/:238) are synchronous and
- * `readGlobalAuthConfig()` is not, so the chain is built on the first
+ * the configured auth reader is async, so the chain is built on the first
  * read/modify/delete and reused for the rest of the process.
  */
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createFileCredentialStore, type ProviderId } from "@nathapp/nax-ai";
+import { credentialsConfig, NaxError } from "@/agents/infra";
 import type { AuthStamp } from "@/agents/session-types";
-import { globalConfigDir, readGlobalAuthConfig } from "@/config";
-import { NaxError } from "@/errors";
 import { createChainedCredentialStore } from "./chained-store";
 import { createChangeGuard, type GuardedCredentialStore } from "./change-guard";
 import { createExecCredentialSource } from "./exec-source";
@@ -37,7 +36,7 @@ export interface StoredEntry {
 }
 
 export function credentialFilePath(): string {
-  return join(globalConfigDir(), "credentials");
+  return join(credentialsConfig().configDir(), "credentials");
 }
 
 /**
@@ -52,7 +51,7 @@ export function credentialFilePath(): string {
  */
 async function assembleStore(): Promise<GuardedCredentialStore> {
   const file = createFileCredentialStore({ path: credentialFilePath() });
-  const auth = await readGlobalAuthConfig();
+  const auth = await credentialsConfig().readAuthConfig();
   const exec =
     auth.source === "exec" && auth.exec !== undefined
       ? createExecCredentialSource({ command: auth.exec.command, timeoutMs: auth.exec.timeoutMs })
@@ -119,7 +118,8 @@ function lazyStore(): GuardedCredentialStore {
 let memo: { key: string; store: GuardedCredentialStore } | undefined;
 
 function storeKey(): string {
-  return `${credentialFilePath()}\u0000${join(globalConfigDir(), "config.json")}`;
+  const dir = credentialsConfig().configDir();
+  return `${join(dir, "credentials")}\u0000${join(dir, "config.json")}`;
 }
 
 export function naxCredentialStore(): GuardedCredentialStore {
@@ -159,7 +159,7 @@ export function servedAuth(providerId: ProviderId): AuthStamp | undefined {
  * read.
  */
 export async function authSourceIsExec(): Promise<boolean> {
-  return (await readGlobalAuthConfig()).source === "exec";
+  return (await credentialsConfig().readAuthConfig()).source === "exec";
 }
 
 /**

@@ -10,9 +10,10 @@
  * context cost. Sanitisation and pinning attach to the KIND, so a trusted
  * provider never inherits ceremony it does not need.
  */
+
+import { NaxError } from "@/agents/infra";
 import type { JSONSchema } from "@/agents/tool-descriptor";
 import type { PipelineStage } from "@/config/permissions";
-import { NaxError } from "@/errors";
 import type { ToolResult, ToolRunContext } from "./registry";
 
 export type ProviderKind = "static" | "discovered";

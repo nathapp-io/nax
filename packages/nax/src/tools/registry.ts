@@ -10,8 +10,8 @@
  * extension point, not a plugin download path.
  */
 
+import { NaxError } from "@/agents/infra";
 import type { JSONSchema } from "@/agents/tool-descriptor";
-import { NaxError } from "@/errors";
 import type { SandboxRecord } from "../sandbox";
 import type { CodingToolName, ToolScope } from "./types";
 

@@ -17,7 +17,7 @@
  * (check:adapter-no-config-import).
  */
 
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import { byCodePoint } from "@/utils/sort";
 import { stripControlChars } from "@/utils/strip-control-chars";
 

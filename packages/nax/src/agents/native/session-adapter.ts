@@ -7,8 +7,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { priceCall } from "@/agents/cost";
-import { getSafeLogger } from "@/logger";
+import { priceCall } from "@/agents/cost/core";
+import { getSafeLogger } from "@/agents/infra";
 import {
   type AgentSessionAdapter,
   type OpenSessionOpts,

@@ -11,7 +11,7 @@
  * default that no shipped profile opts into.
  */
 import { join } from "node:path";
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import { errorMessage } from "@/utils/errors";
 import { appendCommandSafetyRow } from "./row";
 import { createCommandShadow } from "./shadow";

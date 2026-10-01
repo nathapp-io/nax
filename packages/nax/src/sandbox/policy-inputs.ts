@@ -5,9 +5,9 @@
 import { readdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { gitWithTimeout } from "@/utils/git-exec";
 import { globalConfigDir, PROJECT_NAX_DIR } from "../config/paths";
 import { SANDBOX_GLOB_CHARS } from "../config/schemas-sandbox";
-import { gitWithTimeout } from "../utils/git";
 import { realOrRaw } from "../utils/realpath";
 
 export type GitLayout =

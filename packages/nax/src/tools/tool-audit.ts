@@ -16,7 +16,7 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger } from "@/agents/infra";
 import { redactRowStrings } from "@/permissions";
 import { errorMessage } from "@/utils/errors";
 import type { SandboxRecord } from "../sandbox";
