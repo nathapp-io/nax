@@ -21,6 +21,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepare": "bun run build",
     "release": "bun scripts/release.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
@@ -39,7 +40,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
-    "@types/node": "22.19.19",
+    "@types/node": "25.2.3",
     "@types/proper-lockfile": "4.1.4",
     "typescript": "7.0.2",
     "vitest": "4.1.9"
@@ -56,11 +57,12 @@
   "author": "William Khoo",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nathapp-io/nax-ai.git"
+    "url": "git+https://github.com/nathapp-io/nax.git",
+    "directory": "packages/nax-ai"
   },
-  "homepage": "https://github.com/nathapp-io/nax-ai",
+  "homepage": "https://github.com/nathapp-io/nax/tree/main/packages/nax-ai",
   "bugs": {
-    "url": "https://github.com/nathapp-io/nax-ai/issues"
+    "url": "https://github.com/nathapp-io/nax/issues"
   },
   "publishConfig": {
     "access": "public",

@@ -25,9 +25,11 @@
  * that stance.
  *
  * The dist-tag is NEVER chosen here. It is derived from the version by
- * .github/workflows/release.yml, so which tag a release lands on is a property
- * of the pipeline rather than something a releaser has to remember. See that
- * file for the mapping.
+ * the monorepo's release workflow (.github/workflows/release.yml at the repo
+ * root), so which tag a release lands on is a property of the pipeline rather
+ * than something a releaser has to remember. Tags are prefixed `nax-ai-v`
+ * because the package lives in the nax monorepo, whose own releases tag
+ * `v<version>`. See that file for the mapping.
  */
 
 import { execFileSync } from "node:child_process";
@@ -155,7 +157,7 @@ async function tagRelease() {
   }
 
   const version = await readPkgVersion();
-  const tagName = `v${version}`;
+  const tagName = `nax-ai-v${version}`;
   const npmTags = distTagsFor(version).join(" + ");
 
   try {
@@ -206,7 +208,7 @@ async function bumpRelease() {
 
   const currentVersion = await readPkgVersion();
   const nextVersion = bumpVersion(currentVersion, releaseType);
-  const tagName = `v${nextVersion}`;
+  const tagName = `nax-ai-v${nextVersion}`;
   const branchName = `release/${tagName}`;
 
   console.log("\nnax-ai release");

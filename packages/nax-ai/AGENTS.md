@@ -17,7 +17,7 @@ These instructions apply to all AI coding agents in this project.
 
 **Key dependencies:** typescript, vitest
 
-**Commands:** test: `bun run test` | lint: `bun run lint` | typecheck: `bun run typecheck`
+**Commands:** test: `bun run test` | lint: `bun run check:all` | typecheck: `bun run typecheck`
 
 ---
 # nax-ai — a replaceable seam for talking to LLM providers

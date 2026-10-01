@@ -8,6 +8,7 @@ This repository is a Bun-workspace monorepo. Package-specific context lives in
 | Path | Package | Notes |
 |:-----|:--------|:------|
 | `packages/nax` | `@nathapp/nax` | CLI orchestrator (Bun bundle, `dist/nax.js`) |
+| `packages/nax-ai` | `@nathapp/nax-ai` | Provider-agnostic LLM client (Node target, ESM-only, vitest) |
 
 Dependency direction: `nax-ai` → `nax-agent` → `nax` (a package never imports one to its right).
 
@@ -22,3 +23,4 @@ Dependency direction: `nax-ai` → `nax-agent` → `nax` (a package never import
 
 Tag-driven, one `release.yml`: `vX.Y.Z` publishes `@nathapp/nax`; `nax-ai-vX.Y.Z` publishes `@nathapp/nax-ai`.
 Releases are maintainer-initiated only.
+Bumping nax-ai: bump its version and nax's exact pin in one PR; release `nax-ai-vX.Y.Z` before releasing nax.
