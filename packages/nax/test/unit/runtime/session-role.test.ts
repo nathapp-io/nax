@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { SessionRole } from "@/runtime/session-role";
-import { isSessionRole, KNOWN_SESSION_ROLES } from "@/runtime/session-role";
+import { isSessionRole, KNOWN_SESSION_ROLES, knownSessionRole } from "@/runtime/session-role";
 
 describe("SessionRole", () => {
   describe("KNOWN_SESSION_ROLES", () => {
@@ -111,5 +111,19 @@ describe("KNOWN_SESSION_ROLES — reviewer-fix registration (US-001)", () => {
 
   test("US-001 AC10 boundary: a near-miss role is still rejected", () => {
     expect(isSessionRole("reviewer-fix-scoped")).toBe(false);
+  });
+});
+
+describe("knownSessionRole", () => {
+  test("returns a known role unchanged", () => {
+    expect(knownSessionRole("implementer")).toBe("implementer");
+  });
+
+  test("reads an unknown role as absent", () => {
+    expect(knownSessionRole("plugin-private-role")).toBeUndefined();
+  });
+
+  test("reads an absent role as absent", () => {
+    expect(knownSessionRole(undefined)).toBeUndefined();
   });
 });

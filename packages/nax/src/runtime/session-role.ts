@@ -63,3 +63,12 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
 export function isSessionRole(s: string): s is SessionRole {
   return (KNOWN_SESSION_ROLES as readonly string[]).includes(s);
 }
+
+/**
+ * A handle's role narrowed to a role nax knows. The session contract carries
+ * the role as an opaque string (S1 spec section 4.2, port 2); an unknown or
+ * absent string reads as absent, so callers fall back to their own role.
+ */
+export function knownSessionRole(role: string | undefined): SessionRole | undefined {
+  return role !== undefined && isSessionRole(role) ? role : undefined;
+}

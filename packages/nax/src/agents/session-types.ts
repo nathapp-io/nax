@@ -13,6 +13,7 @@ import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
 import type { AdapterFailure } from "./adapter-failure";
 import type { TokenUsage } from "./cost";
+import type { Pricing } from "./cost/standard-types";
 import type { ToolDescriptor } from "./tool-descriptor";
 
 /**
@@ -30,6 +31,23 @@ export interface AuthStamp {
   source: "file" | "exec";
   /** Account label the source reported, when it reports one. */
   account?: string;
+}
+
+/**
+ * The model a session runs on, in the contract's own vocabulary (S1 spec section
+ * 4.2, port 2). nax builds it from its config `ModelDef` with `toSessionModel`
+ * (`src/agents/session-model-mapping.ts`); `pricing` is already converted to the
+ * standard rate card, so the session never sees config field names.
+ */
+export interface SessionModel {
+  readonly provider: string;
+  readonly model: string;
+  /** Explicit rate override; absent means "price from the catalog". */
+  readonly pricing?: Pricing;
+  /** Overrides the catalog context window for compaction maths only (nax#1848). */
+  readonly contextWindow?: number;
+  /** Extra environment for transports that spawn a process (ACP). */
+  readonly env?: Record<string, string>;
 }
 
 /** trackedSpawn hard deadlines (ms) — teardown vs startup, resolved from config.agent.acp (#1583). */
