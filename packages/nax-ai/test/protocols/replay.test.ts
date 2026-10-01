@@ -1,0 +1,72 @@
+import { describe, expect, it } from "vitest";
+import { sequenceViolations } from "../support/conformance.ts";
+import { fixtureNames, loadFixture } from "../support/load-fixture.ts";
+import { drainFixture } from "../support/replay.ts";
+
+// `example-bad-*` fixtures exist to prove the loader rejects them, so they are
+// not replayable by construction. Excluding them by prefix rather than by name
+// means a new negative fixture does not also have to be added here.
+const REPLAYABLE = fixtureNames().filter((n) => !n.startsWith("example-bad-"));
+
+describe("recorded fixtures", () => {
+  it("has at least one fixture per protocol", () => {
+    const protocols = new Set(REPLAYABLE.map((n) => loadFixture(n).meta.protocol));
+    expect([...protocols].sort()).toEqual(
+      ["anthropic-messages", "openai-codex-responses", "openai-completions", "openai-responses"].sort(),
+    );
+  });
+
+  for (const name of REPLAYABLE) {
+    describe(name, () => {
+      it("satisfies the protocol sequence contract", async () => {
+        const fixture = loadFixture(name);
+        const events = await drainFixture(fixture);
+
+        // An error fixture legitimately ends in an error rather than done.
+        if (fixture.response.status >= 400) {
+          expect(events.at(-1)?.type).toBe("error");
+          return;
+        }
+
+        // sequenceViolations always reports "emitted no text delta", because
+        // it was written for the text case. A turn that only calls a tool has
+        // no prose and is not in violation of anything, so that one line is
+        // excused when a tool call is present. Excusing it structurally rather
+        // than by fixture name keeps the rule true if fixtures are renamed.
+        const hasToolCall = events.some((e) => e.type === "tool-call");
+        const excused = hasToolCall ? new Set(["emitted no text delta"]) : new Set<string>();
+        expect(sequenceViolations(events).filter((v) => !excused.has(v))).toEqual([]);
+      });
+
+      it("carries a note saying what it is evidence of", () => {
+        expect(loadFixture(name).meta.note.length).toBeGreaterThan(20);
+      });
+
+      /**
+       * Real evidence, not a script: every non-example fixture in this
+       * directory was recorded off a live provider and its `done` event
+       * carries the provider's own response id (a `resp_…` for the OpenAI
+       * shapes, a bare hex id for anthropic-messages, a `router-…` for the
+       * opencode-go aggregator). Asserting equality with what the fixture
+       * recorded — including the absent case — is what proves the mapper
+       * forwards the value rather than inventing one.
+       */
+      it("forwards the provider's own response id from the recorded done event", async () => {
+        const fixture = loadFixture(name);
+        if (fixture.response.status >= 400) return;
+
+        const recorded = fixture.events.find((e) => e.type === "done");
+        const expected = recorded?.type === "done" ? recorded.message.responseId : undefined;
+
+        const events = await drainFixture(fixture);
+        const done = events.find((e) => e.type === "done");
+        expect(done?.type).toBe("done");
+        if (expected === undefined) {
+          expect(done === undefined || "responseId" in done).toBe(false);
+          return;
+        }
+        expect(done).toMatchObject({ responseId: expected });
+      });
+    });
+  }
+});

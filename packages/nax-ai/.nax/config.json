@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "nax-ai",
+  "quality": {
+    "commands": {
+      "test": "bun run test",
+      "typecheck": "bun run typecheck",
+      "lint": "bun run lint",
+      "lintFix": "bun run lint:fix"
+    },
+    "lintOutput": { "format": "text" },
+    "typecheckOutput": { "format": "auto" }
+  },
+  "review": {
+    "checks": ["typecheck", "lint", "build"],
+    "commands": {
+      "build": "bun run build"
+    }
+  },
+  "execution": {
+    "smartTestRunner": {
+      "enabled": true,
+      "testFilePatterns": ["test/**/*.test.ts"]
+    }
+  }
+}

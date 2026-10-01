@@ -1,0 +1,49 @@
+language js
+
+// An *undocumented* empty `catch` — the shape STATUS §6 names: a swallow that
+// "outlives the refactors that invalidate it, precisely because it cannot fail".
+//
+// Why a plugin and not biome's `suspicious/noEmptyBlockStatements`: that rule
+// has the right semantics but cannot be narrowed to catch clauses. Measured on
+// this repo (2026-08-28) it reports 1087 sites, of which **1077 are no-op mock
+// stubs** (`markUnavailable: () => {}`, `async close() {}`) — the very factory
+// idiom `.claude/rules/test-helpers.md` mandates. Only 10 were empty catches.
+// Enabling it repo-wide would mean a 1087-site drain that fights the repo's own
+// conventions to reach 10 real sites. This pattern reaches exactly those 10.
+//
+// One of them was live coverage loss: `prompts-export.test.ts` had
+// `expect(true).toBe(false)` INSIDE the try, so the empty catch swallowed that
+// assertion's own failure and the "it must throw" half could never fail.
+//
+// **A comment in the body satisfies it**, deliberately — that is what biome's
+// own rule allows, and 204 of this repo's 214 empty catches already carry a
+// reason (`catch { // process may have already exited }`). Demanding a statement
+// instead would have meant 204 edits that make the code worse. Comments are
+// trivia in biome's CST, so the structural pattern alone cannot see them; the
+// regex on the matched node's source text is what restores the distinction.
+// Keep the group non-capturing: GritQL reads a capture group as a variable
+// binding and the plugin then fails as `p1 errored: regex pattern matched 1
+// variables` — reported at **info** severity with exit 0, i.e. silently doing
+// nothing. Same family as STATUS §8.15's empty-stdout plugin-path trap.
+//
+// Ways out, in order of preference:
+//   1. Give the catch a reason — a comment saying why nothing can be done, or a
+//      real log. This is the intended route.
+//   2. `// biome-ignore lint/plugin: <reason>` on the line above the `try`
+//      (above `try`, not above `catch` — the diagnostic spans the try statement).
+// For a promise you simply do not care about, `await p.catch(() => {})` says so
+// in one line and needs neither.
+//
+// Wired at biome.json's ROOT, so it covers src/, bin/ and test/ alike. Nothing
+// else watches this shape, so the wiring is pinned behind
+// test/unit/scripts/biome-no-empty-catch-plugin.test.ts.
+or {
+  `try { $body } catch { }`,
+  `try { $body } catch ($err) { }`
+} as $stmt where {
+  $stmt <: r"(?s).*catch\s*(?:\([^)]*\))?\s*\{\s*\}\s*",
+  register_diagnostic(
+    span = $stmt,
+    message = "Empty `catch` with no reason — the error disappears with no trace and this block can never fail. Add a comment saying why nothing can be done, log it, or use `await p.catch(() => {})` — see .nax/rules/test-ratchets.md."
+  )
+}

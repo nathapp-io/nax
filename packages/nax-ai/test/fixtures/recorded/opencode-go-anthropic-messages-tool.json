@@ -1,0 +1,1454 @@
+{
+  "meta": {
+    "provider": "opencode-go",
+    "protocol": "anthropic-messages",
+    "model": "minimax-m3",
+    "api": "anthropic-messages",
+    "note": "Recorded from opencode-go. Evidence of anthropic-messages event shape only.",
+    "recordedAt": "2026-08-31"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    }
+  },
+  "events": [
+    {
+      "type": "start",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_start",
+      "contentIndex": 0,
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "I",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " don't have",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " a",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " \"",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "read\" tool available",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " in my current tool",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "set. The only",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " tool",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " I have access",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " to is listed",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " at",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " the top of my",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " instructions",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": ", and",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " \"",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "read\" is not",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " among",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " them.\n\nIf",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " you'd",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " like to",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " share",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " the contents of `",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "a.ts`, you",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " can paste the code",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " directly into our",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " conversation, and I'll",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " be happy to help",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " you",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " with it. Alternatively",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": ", if there's",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " another",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " task",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " I",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " can assist you with",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": ", please",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": " let me know!",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_end",
+      "contentIndex": 0,
+      "content": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "done",
+      "reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I don't have a \"read\" tool available in my current toolset. The only tool I have access to is listed at the top of my instructions, and \"read\" is not among them.\n\nIf you'd like to share the contents of `a.ts`, you can paste the code directly into our conversation, and I'll be happy to help you with it. Alternatively, if there's another task I can assist you with, please let me know!"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 385,
+          "output": 90,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 475,
+          "cost": {
+            "input": 0.00011549999999999999,
+            "output": 0.000108,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00022349999999999998
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195270431,
+        "responseId": "06e4e4c7a335bbe980f5a24315b80c09",
+        "rawStopReason": "end_turn"
+      }
+    }
+  ]
+}

@@ -1,0 +1,199 @@
+{
+  "meta": {
+    "provider": "opencode-go",
+    "protocol": "openai-responses",
+    "model": "gpt-5.6-luna",
+    "api": "openai-responses",
+    "note": "Recorded from opencode-go. Evidence of openai-responses event shape only.",
+    "recordedAt": "2026-08-31"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    }
+  },
+  "events": [
+    {
+      "type": "start",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok",
+            "textSignature": "{\"v\":1,\"id\":\"msg_0d9291ee0bbebe70016a95b1d0911c87d29718811d7af3bdf5\",\"phase\":\"final_answer\"}"
+          }
+        ],
+        "api": "openai-responses",
+        "provider": "opencode-go",
+        "model": "gpt-5.6-luna",
+        "usage": {
+          "input": 13,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 18,
+          "cost": {
+            "input": 0.0000026,
+            "output": 0.000006,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0000086
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277958,
+        "responseId": "resp_0d9291ee0bbebe70016a95b1cfa41487d2a474e333e1a175f6",
+        "rawStopReason": "completed"
+      }
+    },
+    {
+      "type": "text_start",
+      "contentIndex": 0,
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok",
+            "textSignature": "{\"v\":1,\"id\":\"msg_0d9291ee0bbebe70016a95b1d0911c87d29718811d7af3bdf5\",\"phase\":\"final_answer\"}"
+          }
+        ],
+        "api": "openai-responses",
+        "provider": "opencode-go",
+        "model": "gpt-5.6-luna",
+        "usage": {
+          "input": 13,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 18,
+          "cost": {
+            "input": 0.0000026,
+            "output": 0.000006,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0000086
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277958,
+        "responseId": "resp_0d9291ee0bbebe70016a95b1cfa41487d2a474e333e1a175f6",
+        "rawStopReason": "completed"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "ok",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok",
+            "textSignature": "{\"v\":1,\"id\":\"msg_0d9291ee0bbebe70016a95b1d0911c87d29718811d7af3bdf5\",\"phase\":\"final_answer\"}"
+          }
+        ],
+        "api": "openai-responses",
+        "provider": "opencode-go",
+        "model": "gpt-5.6-luna",
+        "usage": {
+          "input": 13,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 18,
+          "cost": {
+            "input": 0.0000026,
+            "output": 0.000006,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0000086
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277958,
+        "responseId": "resp_0d9291ee0bbebe70016a95b1cfa41487d2a474e333e1a175f6",
+        "rawStopReason": "completed"
+      }
+    },
+    {
+      "type": "text_end",
+      "contentIndex": 0,
+      "content": "ok",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok",
+            "textSignature": "{\"v\":1,\"id\":\"msg_0d9291ee0bbebe70016a95b1d0911c87d29718811d7af3bdf5\",\"phase\":\"final_answer\"}"
+          }
+        ],
+        "api": "openai-responses",
+        "provider": "opencode-go",
+        "model": "gpt-5.6-luna",
+        "usage": {
+          "input": 13,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 18,
+          "cost": {
+            "input": 0.0000026,
+            "output": 0.000006,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0000086
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277958,
+        "responseId": "resp_0d9291ee0bbebe70016a95b1cfa41487d2a474e333e1a175f6",
+        "rawStopReason": "completed"
+      }
+    },
+    {
+      "type": "done",
+      "reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok",
+            "textSignature": "{\"v\":1,\"id\":\"msg_0d9291ee0bbebe70016a95b1d0911c87d29718811d7af3bdf5\",\"phase\":\"final_answer\"}"
+          }
+        ],
+        "api": "openai-responses",
+        "provider": "opencode-go",
+        "model": "gpt-5.6-luna",
+        "usage": {
+          "input": 13,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 18,
+          "cost": {
+            "input": 0.0000026,
+            "output": 0.000006,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0000086
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277958,
+        "responseId": "resp_0d9291ee0bbebe70016a95b1cfa41487d2a474e333e1a175f6",
+        "rawStopReason": "completed"
+      }
+    }
+  ]
+}

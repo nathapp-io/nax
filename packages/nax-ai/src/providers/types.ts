@@ -1,0 +1,176 @@
+/**
+ * Provider and model vocabulary.
+ *
+ * These are nax-ai's own types, deliberately not pi-ai's. A future hand-written
+ * protocol backend needs baseUrl, auth and headers, and must be able to obtain
+ * them without importing pi-ai — which is only true if the catalog is
+ * normalised into this shape at the boundary.
+ */
+
+import type { ThinkingLevel } from "../protocols/types.ts";
+
+/** Rates per 1M tokens. nax-ai supplies rates; the consumer computes cost. */
+export interface PricingRates {
+  readonly input: number;
+  readonly output: number;
+  readonly cacheRead: number;
+  readonly cacheWrite: number;
+}
+
+/**
+ * A request-wide pricing tier. The highest matching threshold applies to the
+ * whole request.
+ *
+ * Extends the rates rather than `Pricing` so a tier cannot carry its own tiers.
+ */
+export interface PricingTier extends PricingRates {
+  /** Applies when total input usage exceeds this token count. */
+  readonly inputTokensAbove: number;
+}
+
+export interface Pricing extends PricingRates {
+  /**
+   * Present for the 22 upstream models that price in tiers. A consumer that
+   * ignores this bills the base rates and will under-report a long-context
+   * request; one that honours it is correct. nax-ai still computes no cost.
+   */
+  readonly tiers?: readonly PricingTier[];
+}
+
+export type ProviderAuth =
+  /**
+   * `env` is descriptive only and is often absent: the upstream catalog does
+   * not expose variable names in a form that can be read without consulting
+   * the ambient environment. Auth resolution never reads this field.
+   */
+  { readonly kind: "api-key"; readonly env?: string } | { readonly kind: "oauth"; readonly flow: string };
+
+/**
+ * OpenRouter-compatible provider routing preferences, sent verbatim as the
+ * request's `provider` field.
+ *
+ * Named after the vendor on purpose. Unlike `protocols/types.ts`, which keeps
+ * one provider's shape out of the wire vocabulary, this is catalog declaration
+ * data about a specific aggregator's behaviour, and a neutral name
+ * (`routing`) would imply a portability that does not exist: pi sends this
+ * field from `openai-completions` only, and only an OpenRouter-compatible
+ * endpoint reads it.
+ *
+ * Keys stay snake_case because they are the wire field names and pass through
+ * unmapped — a camelCase mirror would be a translation layer with nothing to
+ * gain and a rename to get wrong.
+ *
+ * Why this is declaration data rather than a behaviour override: it lives on
+ * pi's `Model`, beside `cost` and `contextWindow`, exactly as `maxTokens` and
+ * `thinkingLevelMap` do. So carrying it on `ProviderOverride.models` does not
+ * cross the "declaration only" line in `ProviderOverride`'s docstring below.
+ *
+ * Narrower than pi's own type: `max_price`, `preferred_min_throughput`,
+ * `preferred_max_latency` and `enforce_distillable_text` are omitted because
+ * nothing needs them yet and every field here is tested. Widening later is
+ * source-compatible; narrowing is not.
+ */
+export interface OpenRouterRouting {
+  /** Whether backup providers may serve the request. Upstream default: true. */
+  readonly allow_fallbacks?: boolean;
+  /** Restrict to providers supporting every parameter in the request. */
+  readonly require_parameters?: boolean;
+  /** `"deny"` keeps the request off endpoints that may store or train on it. */
+  readonly data_collection?: "deny" | "allow";
+  /** Restrict to Zero Data Retention endpoints. */
+  readonly zdr?: boolean;
+  /** Ordered provider slugs to try in sequence. */
+  readonly order?: readonly string[];
+  /** The only provider slugs allowed to serve this request. */
+  readonly only?: readonly string[];
+  /** Provider slugs to skip. */
+  readonly ignore?: readonly string[];
+  /**
+   * Quantization levels to filter endpoints by, e.g. `["fp8"]`. This is the
+   * reproducibility lever: one model id can otherwise be served fp4 on one
+   * call and fp8 on the next, which confounds any A/B across models.
+   */
+  readonly quantizations?: readonly string[];
+  /** Routing strategy. Omitted means OpenRouter's own default ordering. */
+  readonly sort?: "price" | "throughput" | "latency";
+}
+
+export interface ResolvedProvider {
+  readonly id: string;
+  readonly baseUrl: string;
+  readonly auth: ProviderAuth;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly defaultProtocol: string;
+}
+
+export interface ResolvedModel {
+  readonly id: string;
+  readonly provider: string;
+  /** May differ from the provider default: one provider can span several. */
+  readonly protocol: string;
+  readonly pricing: Pricing;
+  readonly contextWindow: number;
+  /**
+   * The output ceiling this model declares, when one is known. Absent for a
+   * hand-built catalog that does not state it; every model from
+   * `defaultProviders()` carries pi-ai's value. A consumer can size requests
+   * against it, and an override that declares one is no longer clamped to a
+   * templated sibling's smaller value at the wire.
+   */
+  readonly maxTokens?: number;
+  readonly supportsTools: boolean;
+  /**
+   * Explicit per-model support for strict JSON Schema tool-argument sampling.
+   * This is not structured-output support and does not imply a tool call can
+   * be required. Absent means unknown, not unsupported.
+   *
+   * Absent is not a uniform signal, so do not filter models on it. Whether a
+   * missing declaration behaves as supported is a property of the protocol,
+   * and pi-ai 0.85.1 defaults the two opposite ways: `anthropic-messages`
+   * treats an undeclared model as unsupported, while `openai-completions`
+   * falls back to endpoint detection that accepts most endpoints. Treating
+   * absent as "do not use strict" is therefore correct for the first and
+   * needlessly discards working models for the second.
+   *
+   * What this answers is "did the catalog declare a value", not "will
+   * `strict: "require"` succeed". Only `true` is a positive statement, and
+   * only pi-ai enforces the request, applying adapter defaults and endpoint
+   * detection this field deliberately does not reproduce.
+   */
+  readonly supportsStrictToolSampling?: boolean;
+  /** Empty means the model has no thinking support. */
+  readonly thinkingLevels: readonly ThinkingLevel[];
+  /**
+   * Maps this model's own thinking levels to the provider's wire values, when
+   * known. Absent for a hand-built catalog that does not state it; every
+   * model from `defaultProviders()` carries pi-ai's map. Analogous to
+   * `maxTokens` (issue #39): an override that declares this is no longer
+   * synthesised against a templated sibling's translation, which — for a
+   * sibling picked only by context/output size — can silently mark a
+   * declared level unsupported or misroute it on the wire (issue #47). A
+   * `null` value marks a level unsupported; a missing key defers to whatever
+   * `synthesiseModel` derives.
+   */
+  readonly thinkingLevelMap?: Readonly<Partial<Record<ThinkingLevel, string | null>>>;
+  /**
+   * Endpoint routing for an OpenRouter-compatible aggregator, when this model
+   * pins one. Reaches the wire only through `ProviderOverride.models` and only
+   * on `protocol: "openai-completions"`; declaring it elsewhere is rejected at
+   * construction rather than silently ignored (issue #43).
+   */
+  readonly openRouterRouting?: OpenRouterRouting;
+}
+
+/**
+ * Declaration-data overrides only.
+ *
+ * Behaviour changes are a wrapping protocol backend, not an override. Keeping
+ * that line sharp stops this growing into a second, weaker extension mechanism
+ * competing with the registry.
+ */
+export interface ProviderOverride {
+  readonly provider: string;
+  readonly baseUrl?: string;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly models?: readonly ResolvedModel[];
+}
