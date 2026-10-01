@@ -1,4 +1,4 @@
-import type { NaxConfig, PipelineStage } from "@/config";
+import type { NaxConfig } from "@/config";
 import { DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG } from "@/config";
 import { getSafeLogger } from "@/logger";
 import type { AgentStreamEvent, IAgentStreamEventBus } from "@/runtime";
@@ -44,7 +44,7 @@ export interface WatchdogState {
   readonly agentName: string;
   readonly sessionName: string;
   readonly storyId?: string;
-  readonly stage?: PipelineStage;
+  readonly stage?: string;
   readonly pid?: number;
   startedAt: number;
   lastActivityAt: number;

@@ -10,7 +10,7 @@
  * not automatically terminal for the op — `decideSwap` consults the policy table.
  */
 
-import type { AdapterFailure } from "@/context/engine";
+import type { AdapterFailure } from "@/agents/adapter-failure";
 import { NaxError } from "@/errors";
 
 const FAILURES: Readonly<Record<string, AdapterFailure>> = Object.freeze({

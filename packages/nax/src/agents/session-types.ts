@@ -7,12 +7,13 @@
  * import site keeps working unchanged — types.ts re-exports all of it.
  */
 
-import type { ResolvedPermissions } from "../config/permissions";
+import type { ResolvedPermissions } from "@/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
-import type { AdapterFailure, ToolDescriptor } from "../context/engine";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
+import type { AdapterFailure } from "./adapter-failure";
 import type { TokenUsage } from "./cost";
+import type { ToolDescriptor } from "./tool-descriptor";
 
 /**
  * Identity of the credential that served a call (US-002).
@@ -110,7 +111,7 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * (call_started, message_update, call_ended, etc.) are emitted on the runtime
    * bus. Required for the idle watchdog to track calls.
    */
-  onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
+  onStreamActivity?: (event: import("./agent-stream-event-types").AgentStreamEvent) => void;
   /**
    * Native: directory the session's transcript file lives in. Supplied by
    * SessionManager because the adapter cannot derive it — openSession runs
