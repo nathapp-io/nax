@@ -31,6 +31,23 @@ export type PipelineStage =
   | "acceptance"
   | "complete";
 
+/** Every PipelineStage, as an exhaustive record so a new stage cannot be forgotten here. */
+const PIPELINE_STAGES: Record<PipelineStage, true> = {
+  plan: true,
+  run: true,
+  setup: true,
+  verify: true,
+  review: true,
+  rectification: true,
+  regression: true,
+  acceptance: true,
+  complete: true,
+};
+
+export function isPipelineStage(value: string): value is PipelineStage {
+  return Object.hasOwn(PIPELINE_STAGES, value);
+}
+
 /**
  * Disposition for an **unset** `permissionProfile` — ruled 2026-08-30 (ENH-45).
  *

@@ -20,8 +20,9 @@ export type {
   AgentToolCallUpdateEvent,
   AgentUsageUpdateEvent,
   IAgentStreamEventBus,
+  NaxAgentStreamEvent,
 } from "./agent-stream-events";
-export { AgentStreamEventBus } from "./agent-stream-events";
+export { AgentStreamEventBus, narrowStreamStage } from "./agent-stream-events";
 export type {
   CostErrorEvent,
   CostEvent,

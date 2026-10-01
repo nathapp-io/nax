@@ -4,6 +4,7 @@ import {
   type AgentCallStartedEvent,
   type AgentStreamEvent,
   AgentStreamEventBus,
+  narrowStreamStage,
 } from "@/runtime/agent-stream-events";
 
 function makeCallStartedEvent(overrides: Partial<AgentCallStartedEvent> = {}): AgentCallStartedEvent {
@@ -172,5 +173,42 @@ describe("AgentStreamEventBus", () => {
       bus.onAgentStream((e) => received.push(e));
       expect(received).toHaveLength(0);
     });
+  });
+});
+
+describe("narrowStreamStage — nax re-narrows the contract's plain-string stage (S1-2 carried item)", () => {
+  const base: AgentStreamEvent = {
+    kind: "agent.call_started",
+    callId: "c1",
+    runId: "r1",
+    agentName: "native",
+    sessionName: "s1",
+    timestamp: 1,
+    model: "anthropic/claude-haiku-4-5",
+    timeoutSeconds: 60,
+  };
+
+  test("an event without a stage passes through as the same object", () => {
+    expect<AgentStreamEvent>(narrowStreamStage(base)).toBe(base);
+  });
+
+  test("a known pipeline stage passes through as the same object", () => {
+    const event: AgentStreamEvent = { ...base, stage: "run" };
+    expect<AgentStreamEvent>(narrowStreamStage(event)).toBe(event);
+  });
+
+  test("an unknown stage label is dropped, never passed on", () => {
+    const narrowed = narrowStreamStage({ ...base, stage: "native-session" });
+    expect(narrowed.stage).toBeUndefined();
+    expect(narrowed.callId).toBe("c1");
+  });
+
+  test("the bus hands listeners the narrowed event", () => {
+    const bus = new AgentStreamEventBus();
+    const seen: (string | undefined)[] = [];
+    bus.onAgentStream((event) => seen.push(event.stage));
+    bus.emitAgentStream({ ...base, stage: "native-session" });
+    bus.emitAgentStream({ ...base, stage: "review" });
+    expect(seen).toEqual([undefined, "review"]);
   });
 });
