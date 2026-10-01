@@ -10,5 +10,8 @@
     "test": "bun run --filter '*' test",
     "release:nax": "bun run --cwd packages/nax release",
     "release:nax-ai": "bun run --cwd packages/nax-ai release"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
   }
 }

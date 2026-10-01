@@ -8,6 +8,9 @@
       "lintFix": "bun run lint:fix",
       "formatFix": "bun run lint:fix",
       "build": "bun run build"
+    },
+    "lintOutput": {
+      "format": "text"
     }
   }
 }

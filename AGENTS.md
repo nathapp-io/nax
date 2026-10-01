@@ -13,7 +13,9 @@ These instructions apply to all AI coding agents in this project.
 
 **Project:** `nax-monorepo`
 
-**Language:** JavaScript
+**Language:** TypeScript
+
+**Key dependencies:** typescript
 
 **Commands:** test: `bun run test` | lint: `bun run check:all` | typecheck: `bun run typecheck`
 

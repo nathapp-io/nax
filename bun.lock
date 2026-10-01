@@ -3,7 +3,10 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "ngent",
+      "name": "nax-monorepo",
+      "devDependencies": {
+        "typescript": "7.0.2",
+      },
     },
     "packages/nax": {
       "name": "@nathapp/nax",
