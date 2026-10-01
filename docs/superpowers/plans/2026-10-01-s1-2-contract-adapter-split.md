@@ -75,7 +75,7 @@ The contract's leaf types move into files listed in the manifest. Their old home
 
 **Files:**
 - Create: `src/agents/adapter-failure.ts`, `src/agents/tool-descriptor.ts`, `src/agents/agent-stream-event-types.ts`
-- Modify: `src/context/engine/types.ts:10-112`, `src/runtime/agent-stream-events.ts:1-118`, `src/runtime/middleware/idle-watchdog/index.ts:47`, `src/config/permissions.ts:31-69`, `src/permissions/types.ts`, `src/permissions/index.ts`, `src/agents/session-types.ts:10-13,121`
+- Modify: `src/context/engine/types.ts:10-109`, `src/runtime/agent-stream-events.ts:1-118`, `src/runtime/middleware/idle-watchdog/index.ts:47`, `src/config/permissions.ts:31-69`, `src/permissions/types.ts`, `src/permissions/index.ts`, `src/agents/session-types.ts:10-14,113`
 - Modify (retarget imports): `src/agents/native/errors.ts:13`, `src/agents/native/session/tool-mapping.ts:10`, `src/tools/provider-types.ts:14`, `src/tools/registry.ts:13`, `src/agents/native/session/turn-events.ts:18`, `src/agents/native/session/compaction.ts:12`
 - Modify: `scripts/s1-move-manifest.json`, `scripts/baselines/agent-boundary-baseline.json`
 
@@ -108,7 +108,7 @@ This task is type-only. Its "failing test" is this list plus `typecheck`, which 
 
 - [ ] **Step 2: Move `AdapterFailure`, `JSONSchema` and `ToolDescriptor`**
 
-Create `src/agents/adapter-failure.ts`. Its body is `src/context/engine/types.ts` lines 14-81 verbatim (the doc comment and `export interface AdapterFailure { ... }`), with this header:
+Create `src/agents/adapter-failure.ts`. Its body is `src/context/engine/types.ts` lines 14-84 verbatim (the doc comment through the interface's closing `}` on line 84), with this header:
 
 ```ts
 /**
@@ -123,7 +123,7 @@ Inside the moved interface, change the `invalidToolCall` line to point at the si
   invalidToolCall?: import("./session-types").InvalidToolCallDetail;
 ```
 
-Create `src/agents/tool-descriptor.ts` with `src/context/engine/types.ts` lines 90-112 verbatim (`JSONSchema` and `ToolDescriptor` with their doc comments) under:
+Create `src/agents/tool-descriptor.ts` with `src/context/engine/types.ts` lines 90-109 verbatim (`JSONSchema` and `ToolDescriptor` with their doc comments) under:
 
 ```ts
 /**
@@ -132,11 +132,11 @@ Create `src/agents/tool-descriptor.ts` with `src/context/engine/types.ts` lines 
  */
 ```
 
-In `src/context/engine/types.ts`, delete lines 14-81 and 90-112 and put this where the `AdapterFailure` section header was (line 10). The local import is needed because the file still uses both types (e.g. `ToolDescriptor` at the old lines 137 and 464):
+In `src/context/engine/types.ts`, delete lines 14-84 and 90-109 and put this where the `AdapterFailure` section header was (line 10). The local import is needed because the file still uses both types (e.g. at the old lines 171 and 545). Use the `@/` alias: biome's `noRestrictedImports` bans `../../` paths.
 
 ```ts
-import type { AdapterFailure } from "../../agents/adapter-failure";
-import type { JSONSchema, ToolDescriptor } from "../../agents/tool-descriptor";
+import type { AdapterFailure } from "@/agents/adapter-failure";
+import type { JSONSchema, ToolDescriptor } from "@/agents/tool-descriptor";
 
 export type { AdapterFailure, JSONSchema, ToolDescriptor };
 ```
@@ -215,6 +215,12 @@ import type { ResolvedPermissions } from "@/permissions";
 export type { ResolvedPermissions };
 ```
 
+Then append the allow marker to the moved `mode:` line in `src/permissions/types.ts`, because `check:permission-mode-ssot` (run by root `check:all`, not by `lint`) flags the permission-mode literals anywhere outside `src/config/permissions.ts`:
+
+```ts
+  mode: "approve-all" | "approve-reads" | "default"; // nax-permission-mode-allow: type of the resolved value, moved with ResolvedPermissions
+```
+
 Every existing `import type { ResolvedPermissions } from "../config/permissions"` keeps working. If `BashApprovalMode` is no longer used as a type in `config/permissions.ts`, drop it from the `./bash-approval` import there and keep `resolveBashApproval`.
 
 - [ ] **Step 5: Retarget move-set imports**
@@ -228,7 +234,7 @@ Every existing `import type { ResolvedPermissions } from "../config/permissions"
 | `src/agents/native/session/turn-events.ts:18` | `import type { AgentStreamEvent } from "@/runtime/agent-stream-events";` | `import type { AgentStreamEvent } from "@/agents/agent-stream-event-types";` |
 | `src/agents/native/session/compaction.ts:12` | `import type { AdapterInteractionResponse } from "@/agents";` | `import type { AdapterInteractionResponse } from "@/agents/interaction-handler";` |
 
-In `src/agents/session-types.ts`, replace lines 10-13 and the type at line 121:
+In `src/agents/session-types.ts`, replace lines 10-14 with the block below (keep line 15, `import type { TokenUsage } from "./cost";`), and change the inline import in `onStreamActivity` at line 113:
 
 ```ts
 import type { ResolvedPermissions } from "@/permissions";
@@ -268,6 +274,9 @@ Expected: a count below 101.
 
 Run: `bun scripts/check-agent-boundary.ts --list | grep -cE "(native/errors|tool-mapping|provider-types|tools/registry)\.ts -> src/context/engine|compaction\.ts -> src/agents/index|turn-events\.ts -> src/runtime/agent-stream|session-types\.ts -> src/(config/permissions|context/engine|runtime/agent-stream|runtime/protocol-types)"`
 Expected: `0`. A remaining `turn-events.ts -> src/config/index.ts` is expected (port 4).
+
+Run: `bun run check:permission-mode-ssot`
+Expected: exit 0.
 
 Run: `bun test test/unit/scripts/ test/unit/context/ test/unit/runtime/ --timeout=60000`
 Expected: PASS.
@@ -393,7 +402,7 @@ Expected: FAIL. The module `@/agents/session-model-mapping` is not found, and `k
 
 - [ ] **Step 3: Implement**
 
-In `src/agents/session-types.ts`, add the import and the type after `AuthStamp`:
+In `src/agents/session-types.ts`, add this import to the top import block (after the `./cost` import), and add the type after `AuthStamp`:
 
 ```ts
 import type { Pricing } from "./cost/standard-types";
@@ -484,8 +493,8 @@ git commit -m "feat: add SessionModel with its nax mapping and knownSessionRole"
 
 **Files:**
 - Modify: `src/agents/session-types.ts`
-- Modify: `src/session/model-selection.ts`, `src/session/endpoint-identity.ts:15-49`, `src/agents/manager-dispatch.ts:63,281-282,303-304`, `src/agents/manager.ts:17-18,470`, `src/agents/acp/adapter-lifecycle.ts:9,308-309,325,344-345`, `src/agents/native/models.ts:10-11,176-182`, `src/agents/native/adapter.ts:246`
-- Modify (type-only retargets): `src/agents/native/session/loop-events/types.ts:16`, `src/agents/native/session/rate-provenance.ts:1`, `src/agents/native/session/turn-accumulator.ts:14`, `src/agents/native/session/turn-types.ts:18`
+- Modify: `src/session/model-selection.ts`, `src/session/endpoint-identity.ts:15-49`, `src/agents/manager-dispatch.ts:63,281-282,303-304`, `src/agents/manager.ts:17-18,470`, `src/agents/acp/adapter-lifecycle.ts:9,308-309,325,344-345`, `src/agents/native/models.ts:10-11,176-182`, `src/agents/native/adapter.ts:247`
+- Modify (type-only retargets): `src/agents/native/session/loop-events/types.ts:16`, `src/agents/native/session/rate-provenance.ts:1`, `src/agents/native/session/turn-accumulator.ts:14`, `src/agents/native/session/turn-types.ts:18,41`
 - Test: `test/unit/session/model-selection.test.ts` (new), `test/unit/agents/manager-dispatch-error-event.test.ts` (extend)
 - Test (follow the type change): `test/helpers/fake-agent-manager.ts:88`, `test/integration/agents/native/adapter-auth-stamp.test.ts:144,227`, `test/unit/agents/native/adapter-auth-stamp-seam.test.ts:95`, `test/unit/agents/native/adapter-complete-rates.test.ts:416`, `test/unit/agents/native/models.test.ts:244-247`, `test/unit/session/endpoint-identity.test.ts:7-9`
 
@@ -525,19 +534,19 @@ describe("selectModel", () => {
 });
 ```
 
-Add to `test/unit/agents/manager-dispatch-error-event.test.ts` (import `modelAttribution` from `@/agents/manager-dispatch` if the file does not already):
+Add to `test/unit/agents/manager-dispatch-error-event.test.ts`. That file imports only `buildDispatchErrorEvent` today: change that line to `import { buildDispatchErrorEvent, modelAttribution } from "@/agents/manager-dispatch";` and add `import type { SessionModel } from "@/agents/session-types";` and `import type { ModelDef } from "@/config/schema-types";`. The models are typed variables, not inline literals: once the parameter is `{ readonly model: string }`, an inline literal with `provider` or `pricing` fails TypeScript's excess-property check.
 
 ```ts
 describe("modelAttribution with a session handle's SessionModel", () => {
   test("attributes the same model and effort as a config ModelDef", () => {
-    const fromConfig = modelAttribution({ modelDef: { provider: "openai", model: "openai/gpt-5.4-mini[high]" } });
-    const fromSession = modelAttribution({
-      modelDef: {
-        provider: "openai",
-        model: "openai/gpt-5.4-mini[high]",
-        pricing: { input: 1, output: 2, cacheRead: 1, cacheWrite: 1 },
-      },
-    });
+    const configDef: ModelDef = { provider: "openai", model: "openai/gpt-5.4-mini[high]" };
+    const sessionDef: SessionModel = {
+      provider: "openai",
+      model: "openai/gpt-5.4-mini[high]",
+      pricing: { input: 1, output: 2, cacheRead: 1, cacheWrite: 1 },
+    };
+    const fromConfig = modelAttribution({ modelDef: configDef });
+    const fromSession = modelAttribution({ modelDef: sessionDef });
     expect(fromSession).toEqual({ model: "openai/gpt-5.4-mini", effort: "high" });
     expect(fromSession).toEqual(fromConfig);
   });
@@ -552,7 +561,7 @@ Run: `bun test test/unit/session/model-selection.test.ts --timeout=60000`
 Expected: FAIL. `selectModel` returns the `ModelDef` unconverted (`pricing` has `inputPer1M`).
 
 Run: `bun run typecheck`
-Expected: FAIL in `manager-dispatch-error-event.test.ts`, because the object literal has a `Pricing`-shaped `pricing` that `ModelDef` rejects.
+Expected: FAIL in `manager-dispatch-error-event.test.ts`, because `modelAttribution` still takes `ModelDef`, which a `SessionModel` (with `Pricing`-shaped `pricing`) does not satisfy.
 
 - [ ] **Step 3: Flip the contract types**
 
@@ -626,13 +635,13 @@ Then fix each site:
 
    Delete `import { toPricing } from "@/config";` and drop `ConfigPricing` from the `@/config/schema-types` import. In the doc comment above `buildRateCard`, change "`toPricing` fills" to "the caller converts the config override with `toPricing` (via `toSessionModel`), which fills".
 
-7. `src/agents/native/adapter.ts:246` (the one-shot path, still a `ModelDef` until Task 5):
+7. `src/agents/native/adapter.ts:247` (the one-shot path, still a `ModelDef` until Task 5):
 
    ```ts
          const { rates, source: pricingSource } = buildRateCard(catalog, toSessionModel(options.modelDef).pricing);
    ```
 
-   and add `import { toSessionModel } from "@/agents/session-model-mapping";`. This temporary nax import goes away in Task 5. `sendTurn` (line 309) already passes `handle.modelDef?.pricing`, which is now `Pricing`.
+   and add `import { toSessionModel } from "../session-model-mapping";`. It must be relative: a value import of `@/agents/session-model-mapping` from `src/` fails `check:alias-internals`, and one `../` level is allowed by biome. This temporary nax import goes away in Task 5. `sendTurn` (line 309) already passes `handle.modelDef?.pricing`, which is now `Pricing`.
 
 8. `src/runtime/middleware/idle-watchdog/index.ts` was widened in Task 1. If `tsc` reports anything else there, widen the receiving field to `string` the same way.
 
@@ -644,6 +653,7 @@ Then fix each site:
    | `src/agents/native/session/rate-provenance.ts:1` | `import type { PricingRates, TokenUsage } from "@/agents/cost/standard-types";` |
    | `src/agents/native/session/turn-accumulator.ts:14` | `import type { PricingRates, TokenUsage } from "@/agents/cost/standard-types";` |
    | `src/agents/native/session/turn-types.ts:18` | `import type { PricingRates, TokenUsage } from "@/agents/cost/standard-types";` |
+   | `src/agents/native/session/turn-types.ts:41` | inline `import("../../cost").PricingRates` becomes `readonly rates?: PricingRates;` (otherwise the `turn-types.ts -> src/agents/cost/index.ts` edge survives) |
 
    Leave `turn-loop-round-trip.ts` (`inputClassTokens` is a value import; out of scope, Decision 7).
 
@@ -655,7 +665,7 @@ Test sites (their subject, the contract type, changed):
 | `test/integration/agents/native/adapter-auth-stamp.test.ts:144,227` | `modelDef: toSessionModel(MODEL_DEF),` (same import) |
 | `test/unit/agents/native/adapter-auth-stamp-seam.test.ts:95` | `modelDef: toSessionModel(MODEL_DEF),` |
 | `test/unit/agents/native/adapter-complete-rates.test.ts:416` | `modelDef: toSessionModel(modelDef),` (the helper keeps taking a config `ModelDef`, so these tests still exercise the conversion) |
-| `test/unit/agents/native/models.test.ts:246` | `const { rates, source } = buildRateCard(catalog, toPricing(override));` (the expectations are unchanged) |
+| `test/unit/agents/native/models.test.ts:247` | `const { rates, source } = buildRateCard(catalog, toPricing(override));` (the expectations are unchanged) |
 | `test/unit/session/endpoint-identity.test.ts:7-9` | `const model = (id: string, provider = "p") => ({ provider, model: id });` and `const handle = (agentName: string, modelDef: SessionModel): SessionHandle => ({ id: "nax-x", agentName, modelDef });` with `import type { SessionHandle, SessionModel } from "@/agents/session-types";`; drop the unused `ModelDef` import |
 
 - [ ] **Step 4: Verify**
@@ -666,17 +676,17 @@ Expected: exit 0. Any error not covered above is a site the prototype missed. Fi
 Run: `bun test test/unit/session/ test/unit/agents/ test/unit/runtime/ test/integration/agents/ --timeout=60000`
 Expected: PASS, including both new tests.
 
-Run: `bun scripts/check-agent-boundary.ts --list | grep -E "session-types.ts|rate-provenance|turn-accumulator|turn-types|loop-events/types|native/models.ts -> src/config/index"`
-Expected: no `session-types.ts` line, and none of the four retargeted files paired with `src/agents/cost/index.ts`. `native/models.ts -> src/config/index.ts` is gone if `toPricing` was its only `@/config` import.
+Run: `bun scripts/check-agent-boundary.ts --list | grep -E "session-types.ts|rate-provenance|turn-accumulator|turn-types|loop-events/types"`
+Expected: no `session-types.ts` line, and none of the four retargeted files paired with `src/agents/cost/index.ts`. (`native/models.ts -> src/config/index.ts` stays: `models.ts:18` re-exports `NATIVE_AGENT_NAME` from `@/config`, port 4.)
 
 Run: `wc -l src/agents/manager.ts src/agents/manager-dispatch.ts`
-Expected: 600 and at most 599.
+Expected: `manager.ts` 600, `manager-dispatch.ts` 598 (both must not exceed their start sizes, 600 and 599).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 bun run check:agent-boundary:update
-bun x biome check --write $(git diff --name-only --relative -- src test scripts) && bun run lint
+bun x biome check --write $(git diff --name-only --relative -- src test scripts) test/unit/session/model-selection.test.ts && bun run lint
 git add -A src test scripts/baselines/agent-boundary-baseline.json
 git commit -m "refactor: session contract carries SessionModel and opaque role and tier"
 ```
@@ -721,12 +731,12 @@ Inside it, put `src/agents/types.ts` lines 550-555 (`hasCredentials?`) and 566-5
 In `src/agents/types.ts`:
 - Add `AgentSessionAdapter` and `SessionModel` to the `./session-types` re-export block at lines 27-34, and `AgentSessionAdapter` to the type import at lines 16-23.
 - Change line 537 to `export interface AgentAdapter extends AgentSessionAdapter {` and delete the moved members (lines 550-555 and 566-599). `name`, `displayName`, `binary`, `capabilities`, `isInstalled`, `buildCommand` and `complete` stay.
-- Drop `OpenSessionOpts`, `SendTurnOpts` and `SessionHandle` from the lines 16-23 type import if they become unused (their re-exports stay).
+- Drop `OpenSessionOpts`, `SendTurnOpts`, `SessionHandle` and `TurnResult` from the lines 16-23 type import (biome `noUnusedImports` fails lint otherwise). The result is `import type { AgentSessionAdapter, AuthStamp, TrackedSpawnDeadlineOptions } from "./session-types";`. The re-exports stay.
 
 - [ ] **Step 2: Verify**
 
 Run: `bun run typecheck && wc -l src/agents/types.ts src/agents/session-types.ts`
-Expected: typecheck exit 0; `types.ts` well under 600 (about 560); `session-types.ts` under 600.
+Expected: typecheck exit 0; `types.ts` about 553 lines; `session-types.ts` about 434.
 
 Run: `bun test test/unit/agents/ --timeout=60000`
 Expected: PASS.
@@ -749,8 +759,8 @@ git commit -m "refactor: split the session subset of AgentAdapter into AgentSess
 - Create: `src/agents/native/adapter-deps.ts`, `src/agents/native/complete.ts`, `src/agents/native-agent/index.ts`
 - Rename: `src/agents/native/adapter.ts` → `src/agents/native/session-adapter.ts` (`git mv`)
 - Modify: `src/agents/native/client.ts` (export `NativeCatalogOverrides`), `src/agents/native/index.ts`, `src/agents/registry.ts:13`, `src/cli/agents.ts:9`, `scripts/check-adapter-no-config-import.sh:10`, `scripts/baselines/complexity-baseline.json:28`
-- Test: `test/unit/agents/native/complete.test.ts` (new), `test/unit/agents/native-agent/adapter.test.ts` (new)
-- Test (retarget; their subject moved): the 12 files in step 6
+- Test: `test/unit/agents/native/complete.test.ts` (new), `test/unit/agents/native-agent/index.test.ts` (new)
+- Test (retarget; their subject moved): the 11 files in step 5
 
 **Interfaces:**
 - Consumes: `AgentSessionAdapter` (Task 4), `SessionModel`, `toSessionModel` (Task 2).
@@ -859,7 +869,7 @@ describe("nativeComplete", () => {
 
 (`toAdapterFailure` maps kind `"auth"` to `fail-auth`, `src/agents/native/errors.ts:23-26`.)
 
-Create `test/unit/agents/native-agent/adapter.test.ts`:
+Create `test/unit/agents/native-agent/index.test.ts`:
 
 ```ts
 /**
@@ -988,10 +998,12 @@ describe("NativeAgentAdapter shell", () => {
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `bun test test/unit/agents/native/complete.test.ts test/unit/agents/native-agent/adapter.test.ts --timeout=60000`
+Run: `bun test test/unit/agents/native/complete.test.ts test/unit/agents/native-agent/index.test.ts --timeout=60000`
 Expected: FAIL. `@/agents/native/complete` and `@/agents/native-agent` are not found.
 
 - [ ] **Step 3: Split the file**
+
+**Line numbers.** Every "old lines" reference in this step points at the base blob. Read it with `git show 0a590ad9c:packages/nax/src/agents/native/adapter.ts`, and copy from that output. Task 3 added one import line to the working copy, so the working-copy numbers are one higher from line 17 on.
 
 ```bash
 git mv src/agents/native/adapter.ts src/agents/native/session-adapter.ts
@@ -1080,7 +1092,17 @@ export async function nativeComplete(
 ```
 
 (d) Edit `src/agents/native/session-adapter.ts` (the renamed file):
-- New header: "The native session adapter: openSession / sendTurn / closeSession over nax-ai, no subprocess." plus the old header's sentences about transcript bookkeeping and the turn loop (old lines 5-8).
+- New header (replace old lines 1-9 entirely; old lines 5-8 start mid-sentence and the "no binary" part belongs to the shell):
+
+  ```ts
+  /**
+   * The native session adapter: openSession / sendTurn / closeSession over
+   * nax-ai, no subprocess. openSession/closeSession are transcript-file
+   * bookkeeping, and sendTurn maps the native turn loop (session/turn-loop.ts)
+   * over complete() — nax owns the conversation because nax-ai's client is
+   * stateless (ADR-027 section 10, ADR-028).
+   */
+  ```
 - Delete what moved: `CONSERVATIVE_CONTEXT_TOKENS` and `DEFAULT_TIERS` (to the shell), `isProtocolStreamError`, `_adapterDeps` and `authFields` (to `adapter-deps.ts`), `complete()` (to `complete.ts`), `isInstalled`, `buildCommand`, the constructor's capabilities block and `oneShotKey` (to the shell).
 - Keep `FALLBACK_TURN_TIMEOUT_SECONDS`, `summaryPrompt`, `loopHandlerDeps`, `hasCredentials`, `openSession`, `sendTurn`, `closeSession` and `closePhysicalSession` verbatim.
 - Class header:
@@ -1090,7 +1112,7 @@ export async function nativeComplete(
     constructor(private readonly catalogOverrides: NativeCatalogOverrides = []) {}
   ```
 
-- Imports: drop `@/agents/types`, `@/config/schema-types`, `@/agents/session-model-mapping`, `./auth`, `./credentials`. Import `SessionTurnError` and the contract types from `../session-types`:
+- Imports: keep `randomUUID`, `priceCall` from `@/agents/cost`, `getSafeLogger`, `createTurnDeadline`, `toAdapterFailure`, `NATIVE_AGENT`, `buildRateCard`, `parseNativeModel`, `resolveContextWindow`, `toThinkingLevel`, `nativeSessionId` and the `./session/*` imports (`closePhysicalSession` needs `NATIVE_AGENT`). Drop `@/agents/types`, `@/config/schema-types`, `../session-model-mapping`, `./auth`, `./credentials` and `newSessionKey`. Import `SessionTurnError` and the contract types from `../session-types`:
 
   ```ts
   import {
@@ -1239,7 +1261,7 @@ Do not name the field `adapter` or `agent`. `test/integration/cli/adapter-bounda
 
 - [ ] **Step 4: Run the new tests**
 
-Run: `bun test test/unit/agents/native/complete.test.ts test/unit/agents/native-agent/adapter.test.ts --timeout=60000`
+Run: `bun test test/unit/agents/native/complete.test.ts test/unit/agents/native-agent/index.test.ts --timeout=60000`
 Expected: PASS.
 
 - [ ] **Step 5: Retarget the tests whose subject moved**
@@ -1248,7 +1270,6 @@ Session-only files (they never call `complete()` or the process-description memb
 - `test/unit/agents/native/adapter-has-credentials.test.ts` (`_adapterDeps` now from `@/agents/native/adapter-deps`)
 - `test/unit/agents/native/adapter-turn-signal.test.ts` (same)
 - `test/unit/agents/native/adapter-loop-handlers.test.ts`
-- `test/integration/plugins/loop-handler-delivery.test.ts`
 
 Files that call `complete()` keep the nax shell, so they stay nax wiring tests. Import `NativeAgentAdapter` from `@/agents/native-agent` and `_adapterDeps` from `@/agents/native/adapter-deps`. Constructor calls are unchanged.
 - `test/unit/agents/native/adapter.test.ts` (796 lines: the import split must not take it past 800)
@@ -1258,11 +1279,14 @@ Files that call `complete()` keep the nax shell, so they stay nax wiring tests. 
 - `test/integration/agents/native/adapter-auth-stamp.test.ts`
 - `test/integration/agents/native/credential-fault-classification.test.ts`
 - `test/unit/agents/registry-native.test.ts` (`import { NativeAgentAdapter } from "@/agents/native-agent";`)
+- `test/integration/plugins/loop-handler-delivery.test.ts` (it hands the adapter to `new SessionManager({ getAdapter })`, which needs a full `AgentAdapter`, so it stays on the shell even though it only opens sessions)
 
 Leave `test/unit/scripts/check-nax-ai-imports.test.ts:37` alone. Its `"./native"` string is fixture text, not an import.
 
-Run: `grep -rn "agents/native/adapter\"" src test scripts`
-Expected: no output.
+Update the stale doc pointer at `src/config/schemas-protocol-gate.ts:108`: `src/agents/native/adapter.ts` becomes `src/agents/native/complete.ts`. In `test/unit/scripts/agent-move-manifest.test.ts:74`, change the sample path `"src/agents/native/adapter.ts"` to `"src/agents/native/session-adapter.ts"` (it still passes on a prefix match, but would name a file that no longer exists).
+
+Run: `grep -rnE "agents/native/adapter(\"|\.ts|')" src test scripts`
+Expected: only the two baseline JSON files, which step 7 regenerates (`agent-boundary`) or step 3(i) re-keys (`complexity`).
 
 - [ ] **Step 6: Verify the task**
 
@@ -1308,7 +1332,7 @@ Expected: exit 0.
 
 - [ ] **Step 2: Confirm the shape**
 
-Run: `cd packages/nax && wc -l src/agents/types.ts && bun scripts/check-agent-boundary.ts --list | tail -1 && git diff --stat main...HEAD | tail -1`
+Run: `cd packages/nax && wc -l src/agents/types.ts && bun scripts/check-agent-boundary.ts --list | tail -1 && git fetch -q origin main && git diff --stat origin/main...HEAD | tail -1`
 Expected: `types.ts` below 600 and no `native/adapter.ts` left. Record the final edge count (it started at 101).
 
 Run: `cd packages/nax && bun scripts/check-agent-boundary.ts --list | grep "src/agents/session-types.ts"`
@@ -1316,7 +1340,7 @@ Expected: no output. The contract file has no edge into nax.
 
 - [ ] **Step 3: Ask the user before pushing**
 
-Show the user: the commit list (`git log --oneline main..HEAD`), the final ratchet count, the test count, and Decision 7's unassigned cost-barrel edges. **Stop and wait for approval.**
+Show the user: the commit list (`git log --oneline origin/main..HEAD`), the final ratchet count, the test count, and Decision 7's unassigned cost-barrel edges. **Stop and wait for approval.**
 
 - [ ] **Step 4: Push and open the PR (only after approval)**
 
@@ -1324,7 +1348,7 @@ Show the user: the commit list (`git log --oneline main..HEAD`), the final ratch
 git push -u origin feat/s1-2-contract-adapter-split
 gh pr create --title "refactor: S1-2 session contract and native adapter split" --body "$(cat <<'EOF'
 ## Summary
-- Session contract (`session-types.ts`) no longer imports nax types: `AdapterFailure`, `ToolDescriptor`/`JSONSchema`, the agent stream events, `ProtocolIds` and `ResolvedPermissions` moved into the nax-agent move set; old homes re-export them.
+- Session contract (`session-types.ts`) no longer imports nax types: `AdapterFailure`, `ToolDescriptor`/`JSONSchema`, the agent stream events and `ResolvedPermissions` moved into the nax-agent move set (old homes re-export them); `ProtocolIds` joined the move set in place.
 - `SessionModel` replaces `ModelDef` in the contract (field name `modelDef` kept); `toSessionModel` is nax's one mapping, called at session open and the native one-shot. Role and tier are opaque strings.
 - `AgentSessionAdapter` split out of `AgentAdapter`.
 - The native adapter split into `NativeSessionAdapter` + `nativeComplete()` (move set) and a thin nax `NativeAgentAdapter` shell at `src/agents/native-agent/`.
