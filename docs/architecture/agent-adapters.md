@@ -286,7 +286,7 @@ Two transports, selected by agent **name** (ADR-027): `createAgentRegistry` (`sr
 | ACP protocol (every CLI agent, via acpx) | `acp/` | adapter (+ `adapter-lifecycle`, `adapter-output`, `adapter-complete-flow`, `adapter-close-physical`, `adapter-session-types`), spawn-client (+ `-process`, `-session`, `-deps`), parser, stdout-line-reader, interaction-bridge, parse-agent-error, token-mapper, reasoning-effort, session-ids, agent-entries, wire-types, types, index |
 | Native in-process path over `@nathapp/nax-ai` | `native/` | adapter, client (memoised nax-ai client), models (rate card, context window, catalog overrides), model-resolver, auth / credentials, errors, session-affinity, index |
 | Native session + tool loop (ADR-028/029) | `native/session/` | `turn-loop` (plus `turn-*` steps: tool batch, compaction, retry, ask-human, completion), `loop-events/` (before/after-tool event registry), `tool-result` (the single tool-result constructor), `transcript-store` (persisted conversation; a transcript written by another model or op invocation reads as a new conversation), compaction, nudge, truncation-handler |
-| nax-ai catalog boundary (non-native side) | `catalog/` | `lookupPricing()` — maps nax-ai `Pricing` onto `TokenPricing` |
+| nax-ai catalog boundary (non-native side) | `catalog/` | `lookupPricing()` — returns nax-ai's `Pricing` |
 | Centralized cost | `cost/` | calculate, estimate (`priceCall`, tier selection), rate-card (`resolveRateCard`, `FALLBACK_RATES`), model-aliases.json, token-mapper, types, index |
 | Retry policy | `retry/` | `RetryStrategy`, default strategy, hop retry policy, presets |
 | Cross-adapter helpers | `shared/` | see below |
@@ -299,7 +299,7 @@ The `src/agents/` root holds the transport-neutral layer: `AgentManager` (`manag
 2. **Each multi-file adapter needs `index.ts`** — re-exports everything external callers need; internal modules import directly without going through the barrel
 3. **Cross-adapter code goes in `shared/`** — if two different adapters import the same module, that module belongs in `shared/`, not inside either adapter's folder
 4. **Cost is centralized** — rate cards and pricing live in `src/agents/cost/` (`resolveRateCard` on the ACP side, `buildRateCard` in `native/models.ts` on the native side, both priced by `priceCall`). Adapters stamp `pricingSource` and `rates` on their results; recording flows through the cost middleware (`DispatchEvent` → `CostAggregator`), per `.claude/rules/adapter-wiring.md`
-5. **nax-ai stays behind two folders** — `@nathapp/nax-ai` may be imported only from `native/` and `catalog/` (`bun run check:nax-ai-imports`); `acp/` may not import `NaxConfig` (`check:adapter-no-config-import`)
+5. **nax-ai stays behind the allow-listed sites** — `@nathapp/nax-ai` may be imported only from `native/`, `catalog/` and the `cost/standard-types.ts` staging re-export (`bun run check:nax-ai-imports`); `acp/` may not import `NaxConfig` (`check:adapter-no-config-import`)
 
 ### `shared/` Contents
 
@@ -349,7 +349,7 @@ This is why neither one is a `RetryStrategy`: the op/manager tiers govern nax's 
 
 ### Cost Recording
 
-Both adapters price a call the same way: a `TokenPricing` rate card → `priceCall(usage, rates)` (`src/agents/cost/estimate.ts`), which selects a threshold tier (`tiers[].inputTokensAbove`, the whole request reprices) and falls back to `inputPer1M` for cache rates the card does not publish. The result carries `estimatedCostUsd`, `pricingSource` and the resolved per-1M `rates` (omitted when usage is zero, so "did not price" stays distinguishable from "priced at zero").
+Both adapters price a call the same way: a `Pricing` rate card → `priceCall(usage, rates)` (`src/agents/cost/estimate.ts`), which selects a threshold tier (`tiers[].inputTokensAbove`, the whole request reprices) and falls back to `input` for cache rates the card does not publish. The result carries `estimatedCostUsd`, `pricingSource` and the resolved per-1M `rates` (omitted when usage is zero, so "did not price" stays distinguishable from "priced at zero").
 
 | Path | Rate card | `pricingSource` |
 |:-----|:----------|:----------------|

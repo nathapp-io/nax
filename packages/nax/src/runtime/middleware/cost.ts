@@ -2,6 +2,7 @@ import { resolvePricingSource } from "@/agents";
 import type { AuthStamp } from "@/agents/session-types";
 import { NAX_AI_VERSION } from "@/version";
 import type { CostErrorEvent, CostEvent, ICostAggregator, OperationSummaryEvent } from "../cost-aggregator";
+import { toCostRowRates } from "../cost-row-rates";
 import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCompletedEvent } from "../dispatch-events";
 
 /**
@@ -195,8 +196,8 @@ export function attachCostSubscriber(
             tokens: {
               input: tu.inputTokens ?? 0,
               output: tu.outputTokens ?? 0,
-              cacheRead: tu.cacheReadInputTokens,
-              cacheWrite: tu.cacheCreationInputTokens,
+              cacheRead: tu.cacheReadTokens,
+              cacheWrite: tu.cacheWriteTokens,
             },
           }
         : {}),
@@ -224,7 +225,7 @@ export function attachCostSubscriber(
       // may have overwritten pricingSource above, but rates survives — a row
       // where the wire and estimate diverge is the interesting case. Omitted
       // (not undefined) when the producer did not stamp.
-      ...(event.rates !== undefined ? { rates: event.rates } : {}),
+      ...(event.rates !== undefined ? { rates: toCostRowRates(event.rates) } : {}),
       // US-006: the credential identity that served this dispatch. Absent (not
       // undefined) when the producer stamped none — every ACP dispatch — so
       // the row a subscriber records from one stays byte-identical to before.
@@ -290,8 +291,8 @@ export function attachCostSubscriber(
             tokens: {
               input: tu.inputTokens ?? 0,
               output: tu.outputTokens ?? 0,
-              cacheRead: tu.cacheReadInputTokens,
-              cacheWrite: tu.cacheCreationInputTokens,
+              cacheRead: tu.cacheReadTokens,
+              cacheWrite: tu.cacheWriteTokens,
             },
           }
         : {}),

@@ -7,26 +7,17 @@
  */
 
 import type { Pricing, ProviderOverride, ThinkingLevel } from "@nathapp/nax-ai";
-import type { TokenUsage } from "@/agents/cost";
-import type { ProviderCatalogOverride, TokenPricing } from "@/config/schema-types";
+import { toPricing } from "@/config";
+import type { ConfigPricing, ProviderCatalogOverride } from "@/config/schema-types";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { parseModelSpec } from "../model-spec";
-
-export { parseModelSpec };
-
-/** nax-ai's usage shape. Declared locally: this file must not import nax-ai types into nax's surface. */
-export interface NativeUsage {
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly cacheReadTokens?: number;
-  readonly cacheWriteTokens?: number;
-}
 
 /** The one agent name that routes to this transport. Defined once in the config
  *  leaf (config validates against it); re-exported here, not in the barrel, so
  *  adapter.ts can import it without an index -> adapter -> index cycle. */
 export { NATIVE_AGENT_NAME as NATIVE_AGENT } from "@/config";
+export { parseModelSpec };
 
 export interface NativeModelRef {
   readonly provider: string;
@@ -116,20 +107,6 @@ export function toThinkingLevel(effort: string | undefined): ThinkingLevel | und
 }
 
 /**
- * The two sides name the cache fields differently. An absent field stays
- * absent rather than becoming 0, so "no cache data" and "zero cache tokens"
- * stay distinguishable downstream.
- */
-export function toNaxTokenUsage(usage: NativeUsage): TokenUsage {
-  return {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    ...(usage.cacheReadTokens !== undefined ? { cacheReadInputTokens: usage.cacheReadTokens } : {}),
-    ...(usage.cacheWriteTokens !== undefined ? { cacheCreationInputTokens: usage.cacheWriteTokens } : {}),
-  };
-}
-
-/**
  * Translate nax's config-side catalog overrides (agent.native.catalogOverrides,
  * nax#1982) into nax-ai's declaration-data `ProviderOverride` records.
  *
@@ -180,17 +157,15 @@ export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[
  * one implementation. Native callers now import it from `@/agents/cost`.
  */
 /**
- * Turn nax-ai's catalog `Pricing` into nax's own `TokenPricing` shape,
- * carrying `cacheRead` / `cacheWrite` / `tiers` through instead of
- * discarding them (nax#1843, nax#1847). Both `adapter.ts` call sites
- * (`complete()` and `sendTurn()`) build the rate object this way so the fix
- * cannot drift between them.
+ * Turn nax-ai's catalog `Pricing` into the rate object `priceCall` prices from
+ * (nax#1843, nax#1847). Both `adapter.ts` call sites (`complete()` and
+ * `sendTurn()`) build the rate object this way so the fix cannot drift
+ * between them.
  *
- * An explicit `modelDef.pricing` override wins WHOLESALE: a user who
- * configured only `inputPer1M` / `outputPer1M` still gets
- * `estimateCostUsd`'s own `?? inputPer1M` fallback for cache classes, but
- * catalog values are never merged into an override -- that would silently
- * rewrite rates the user configured on purpose.
+ * An explicit `modelDef.pricing` override wins WHOLESALE: `toPricing` fills
+ * the override's own missing cache rates from its input rate, but catalog
+ * values are never merged into an override -- that would silently rewrite
+ * rates the user configured on purpose.
  *
  * US-003 (#1817): reports which branch it took alongside the card, so the
  * adapter can stamp `pricingSource` on the result without re-deriving the
@@ -200,29 +175,10 @@ export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[
  */
 export function buildRateCard(
   catalog: Pricing,
-  override: TokenPricing | undefined,
-): { rates: TokenPricing; source: "config-override" | "catalog-rates" } {
-  if (override !== undefined) return { rates: override, source: "config-override" };
-  return {
-    rates: {
-      inputPer1M: catalog.input,
-      outputPer1M: catalog.output,
-      cacheReadPer1M: catalog.cacheRead,
-      cacheCreationPer1M: catalog.cacheWrite,
-      ...(catalog.tiers !== undefined
-        ? {
-            tiers: catalog.tiers.map((tier) => ({
-              inputPer1M: tier.input,
-              outputPer1M: tier.output,
-              cacheReadPer1M: tier.cacheRead,
-              cacheCreationPer1M: tier.cacheWrite,
-              inputTokensAbove: tier.inputTokensAbove,
-            })),
-          }
-        : {}),
-    },
-    source: "catalog-rates",
-  };
+  override: ConfigPricing | undefined,
+): { rates: Pricing; source: "config-override" | "catalog-rates" } {
+  if (override !== undefined) return { rates: toPricing(override), source: "config-override" };
+  return { rates: catalog, source: "catalog-rates" };
 }
 
 /**

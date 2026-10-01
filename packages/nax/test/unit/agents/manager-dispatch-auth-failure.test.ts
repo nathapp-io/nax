@@ -58,7 +58,7 @@ describe("completeResultProvenance — failed results (US-006)", () => {
   // through. The test above cannot show that: its result carries no `pricingSource`
   // or `rates`, so "siblings survive" and "everything suppressed" look identical.
   test("still forwards pricingSource and rates on a failed result that carries them", () => {
-    const rates = { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3, cacheCreationPer1M: 3.75 };
+    const rates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
     const provenance = completeResultProvenance(
       result({ output: "", auth: STAMP, adapterFailure: FAILURE, pricingSource: "catalog-rates", rates }),
     );

@@ -1,5 +1,5 @@
 /**
- * Rate-card resolver. Maps a configured model id to a `TokenPricing` card and
+ * Rate-card resolver. Maps a configured model id to a `Pricing` card and
  * stamps which branch produced it.
  *
  * The counterpart to `native/models.ts:buildRateCard` — one source of truth on
@@ -22,16 +22,16 @@
  */
 
 import { catalogLoadFailed, lookupPricing as defaultLookupPricing } from "@/agents/catalog";
-import type { TokenPricing } from "@/config/schema-types";
 import { getSafeLogger } from "@/logger";
 import { parseModelSpec } from "../model-spec";
 import modelAliases from "./model-aliases.json";
+import type { Pricing } from "./standard-types";
 
 /** The discriminated stamp the adapter writes on `pricingSource`. */
 export type RateCardSource = "catalog-rates" | "fallback-rates";
 
 export interface RateCard {
-  readonly rates: TokenPricing;
+  readonly rates: Pricing;
   readonly source: RateCardSource;
 }
 
@@ -46,15 +46,16 @@ interface AliasEntry {
 
 /**
  * The generic fallback card used when neither the alias file nor the catalog
- * resolves a model. Stamped `fallback-rates`, never `catalog-rates`.
+ * resolves a model. Stamped `fallback-rates`, never `catalog-rates`. Cache rates
+ * equal the input rate, which is what pricing resolved them to before S1-1.
  */
-export const FALLBACK_RATES: TokenPricing = Object.freeze({ inputPer1M: 3, outputPer1M: 15 });
+export const FALLBACK_RATES: Pricing = Object.freeze({ input: 3, output: 15, cacheRead: 3, cacheWrite: 3 });
 
 /**
  * Lookup seam. The signature matches `@/agents/catalog:lookupPricing` so a
  * direct reference can be passed in, and tests can pass a stub.
  */
-export type LookupPricing = (provider: string, model: string) => Promise<TokenPricing | undefined>;
+export type LookupPricing = (provider: string, model: string) => Promise<Pricing | undefined>;
 
 /** One-line form for tests and consumers that just want the bare alias table. */
 export const MODEL_ALIASES: Readonly<Record<string, AliasEntry>> = modelAliases;
@@ -132,7 +133,7 @@ export async function resolveRateCard(
     return { rates: FALLBACK_RATES, source: "fallback-rates" };
   }
 
-  let rates: TokenPricing | undefined;
+  let rates: Pricing | undefined;
   try {
     rates = await lookupPricing(coords.provider, coords.model);
   } catch (err) {

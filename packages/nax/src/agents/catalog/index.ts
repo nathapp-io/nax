@@ -2,9 +2,9 @@
  * Catalog-backed pricing lookup. Owns the @nathapp/nax-ai boundary for the
  * non-native side of nax; see `scripts/check-nax-ai-imports.ts`.
  *
- * `lookupPricing(provider, model)` reads nax-ai's normalised catalog, maps
- * its `Pricing` shape onto nax's own `TokenPricing`, and returns `undefined`
- * when either lookup misses. The catalog is loaded exactly once per
+ * `lookupPricing(provider, model)` reads nax-ai's normalised catalog, returns
+ * its `Pricing` shape unchanged (bar a defensive cache-rate fill), and returns
+ * `undefined` when either lookup misses. The catalog is loaded exactly once per
  * `_catalogDeps.loadProviders` reference — a successful load short-circuits
  * later calls under the same reference; failures are fail-open.
  *
@@ -12,9 +12,8 @@
  * without leaking cached state from earlier runs: each new mock gets its
  * own cache slot the first time `lookupPricing` resolves under it.
  *
- * This module exports nax's own `TokenPricing` so callers do not import
- * nax-ai types. It depends on neither `cost/` nor `native/`, so adding it
- * as a third nax-ai importer does not close any cycle.
+ * It depends on neither `cost/` nor `native/`, so adding it as a third
+ * nax-ai importer does not close any cycle.
  *
  * `CATALOG_VERSION` is computed locally from nax's own `package.json`,
  * not the catalog's manifest (the catalog's `exports` map declares only
@@ -27,12 +26,9 @@
  * (`../../*` and `../../**`) does not flag it.
  */
 
-import type { Catalog, RawProvider } from "@nathapp/nax-ai";
+import type { Catalog, Pricing, RawProvider } from "@nathapp/nax-ai";
 import { defaultProviders, normaliseCatalog } from "@nathapp/nax-ai";
 import pkg from "@/_pkg";
-import type { TokenPricing } from "@/config/schema-types";
-
-export type { TokenPricing };
 
 /**
  * Version of the pinned `@nathapp/nax-ai` catalog package, read at build
@@ -119,52 +115,27 @@ function loadCatalog(loader: CatalogDeps["loadProviders"]): Promise<Catalog | nu
 }
 
 /**
- * Translate nax-ai's `Pricing` shape onto nax's own `TokenPricing`. Both share
- * the same numeric semantics (per-1M rates) and tier structure
- * (`inputTokensAbove` is preserved); only the field names change.
- */
-function toTokenPricing(pricing: import("@nathapp/nax-ai").Pricing): TokenPricing {
-  return {
-    inputPer1M: pricing.input,
-    outputPer1M: pricing.output,
-    cacheReadPer1M: pricing.cacheRead,
-    cacheCreationPer1M: pricing.cacheWrite,
-    ...(pricing.tiers !== undefined
-      ? {
-          tiers: pricing.tiers.map((tier) => ({
-            inputPer1M: tier.input,
-            outputPer1M: tier.output,
-            cacheReadPer1M: tier.cacheRead,
-            cacheCreationPer1M: tier.cacheWrite,
-            inputTokensAbove: tier.inputTokensAbove,
-          })),
-        }
-      : {}),
-  };
-}
-
-/**
  * Look up a model's rate card by `(provider, model)`.
  *
  * - Returns `undefined` on catalog miss, load failure, or any thrown error
- *   from `catalog.model()` / the pricing-to-`TokenPricing` mapping (the
- *   "no path throws" fail-open policy from US-001 AC2/AC6).
+ *   from `catalog.model()` / the pricing mapping (the "no path throws"
+ *   fail-open policy from US-001 AC2/AC6).
  * - Cache reads and writes that the catalog did not publish fall back to
- *   `inputPer1M` (the conservative rate-card default).
+ *   `input` (the conservative rate-card default).
  * - The catalog is loaded exactly once per `_catalogDeps.loadProviders`
  *   reference — a successful load short-circuits every subsequent call
  *   under the same reference (US-001 AC5).
  */
-export async function lookupPricing(provider: string, model: string): Promise<TokenPricing | undefined> {
+export async function lookupPricing(provider: string, model: string): Promise<Pricing | undefined> {
   const catalog = await loadCatalog(_catalogDeps.loadProviders);
   if (catalog === null) return undefined;
   try {
     const resolved = catalog.model(provider, model);
     if (resolved === undefined) return undefined;
-    const pricing = toTokenPricing(resolved.pricing);
-    if (pricing.cacheReadPer1M === undefined) pricing.cacheReadPer1M = pricing.inputPer1M;
-    if (pricing.cacheCreationPer1M === undefined) pricing.cacheCreationPer1M = pricing.inputPer1M;
-    return pricing;
+    const p = resolved.pricing;
+    // Fail-open fill kept from the pre-S1-1 mapping: a level the catalog shipped
+    // without cache rates prices cache tokens at its input rate.
+    return { ...p, cacheRead: p.cacheRead ?? p.input, cacheWrite: p.cacheWrite ?? p.input };
   } catch {
     // Fail-open per AC6: a misbehaving `catalog.model()` or an unexpected
     // Pricing shape should not propagate. Callers (resolveRateCard) treat

@@ -266,7 +266,7 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
     // watchdog tick, so this needs to settle instantly on a microtask.
     _acpAdapterDeps.resolveRateCard = (() => {
       const fallback = {
-        rates: { inputPer1M: 1, outputPer1M: 2 },
+        rates: { input: 1, output: 2, cacheRead: 1, cacheWrite: 1 },
         source: "catalog-rates" as const,
       };
       return Promise.resolve(fallback);

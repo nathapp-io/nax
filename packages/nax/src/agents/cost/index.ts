@@ -4,7 +4,6 @@ export {
   inputClassTokens,
   resolvePricingSource,
 } from "./calculate";
-export type { ResolvedRates } from "./estimate";
 export { estimateCostUsd, priceCall } from "./estimate";
 export {
   _resetRateCardWarnings,
@@ -14,5 +13,6 @@ export {
   type RateCardSource,
   resolveRateCard,
 } from "./rate-card";
+export type { Pricing, PricingRates, PricingTier, TokenUsage } from "./standard-types";
 export type { ITokenUsageMapper } from "./token-mapper";
-export type { CostEstimate, ModelCostRates, TokenUsage, TokenUsageWithConfidence } from "./types";
+export type { CostEstimate, ModelCostRates, TokenUsageWithConfidence } from "./types";

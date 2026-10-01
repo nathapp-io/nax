@@ -22,7 +22,7 @@ import {
   saveRunMetrics,
 } from "@/metrics/tracker";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
-import { TokenUsage } from "@/metrics/types";
+import { StoryTokenUsage } from "@/metrics/types";
 import { byCodePoint } from "@/utils/sort";
 
 // OUTPUT_DIR plays the role of outputDir (e.g. ~/.nax/<projectKey>): metrics are written
@@ -67,7 +67,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       firstPassSuccess: true,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      tokens: new TokenUsage({ inputTokens: 1000, outputTokens: 500 }),
+      tokens: new StoryTokenUsage({ inputTokens: 1000, outputTokens: 500 }),
     };
 
     const story2: StoryMetrics = {
@@ -83,7 +83,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       firstPassSuccess: true,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      tokens: new TokenUsage({ inputTokens: 2000, outputTokens: 800 }),
+      tokens: new StoryTokenUsage({ inputTokens: 2000, outputTokens: 800 }),
     };
 
     const runMetrics: RunMetrics = {
@@ -122,7 +122,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       firstPassSuccess: true,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      tokens: new TokenUsage({
+      tokens: new StoryTokenUsage({
         inputTokens: 1000,
         outputTokens: 500,
         cacheReadInputTokens: 100,
@@ -142,7 +142,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       firstPassSuccess: true,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      tokens: new TokenUsage({
+      tokens: new StoryTokenUsage({
         inputTokens: 2000,
         outputTokens: 800,
         cacheCreationInputTokens: 50,
@@ -185,7 +185,7 @@ describe("saveRunMetrics - totalTokens aggregation", () => {
       firstPassSuccess: true,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      tokens: new TokenUsage({ inputTokens: 0, outputTokens: 0 }),
+      tokens: new StoryTokenUsage({ inputTokens: 0, outputTokens: 0 }),
     };
 
     const story2: StoryMetrics = {

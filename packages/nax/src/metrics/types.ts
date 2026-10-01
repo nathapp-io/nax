@@ -9,7 +9,7 @@ import type { ProviderBudgetPressure } from "../context/engine/manifest-types";
 /**
  * Token usage metrics for LLM calls
  */
-export interface TokenUsage {
+export interface StoryTokenUsage {
   /** Number of input tokens consumed */
   inputTokens: number;
   /** Number of output tokens generated */
@@ -20,8 +20,8 @@ export interface TokenUsage {
   cacheCreationInputTokens?: number;
 }
 
-// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: TokenUsage must be both an interface (for type checking) and a class (for runtime construction with toJSON)
-export class TokenUsage {
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: StoryTokenUsage must be both an interface (for type checking) and a class (for runtime construction with toJSON)
+export class StoryTokenUsage {
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens?: number;
@@ -184,7 +184,7 @@ export interface StoryMetrics {
   /** Cost incurred only during rectification (only set when source === 'rectification') */
   rectificationCost?: number;
   /** Token usage for this story */
-  tokens?: TokenUsage;
+  tokens?: StoryTokenUsage;
   /** Whether token usage was measured directly or allocated from a shared batch. */
   tokenAttribution?: "direct" | "even-split";
   /** When verifyScopedOp falls back to full suite due to threshold (issue #1116) */
@@ -323,7 +323,7 @@ export interface RunMetrics {
   /** Per-story metrics */
   stories: StoryMetrics[];
   /** Total token usage for the run */
-  totalTokens?: TokenUsage;
+  totalTokens?: StoryTokenUsage;
   /**
    * Run-level agent-swap aggregates (ADR-012).
    * Absent when no swaps occurred in this run.

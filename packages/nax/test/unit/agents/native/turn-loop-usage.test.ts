@@ -58,7 +58,7 @@ describe("native turn loop — usage activities (nax#2045)", () => {
       onActivity: (a) => activity.push(a),
       complete: async () =>
         reply({
-          usage: { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 100, cacheCreationInputTokens: 20 },
+          usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 20 },
         }),
     });
 
@@ -91,7 +91,7 @@ describe("native turn loop — usage activities (nax#2045)", () => {
     const activity: NativeTurnActivity[] = [];
     await runNativeTurn(handle, "hi", opts(), {
       onActivity: (a) => activity.push(a),
-      complete: async () => reply({ usage: { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 0 } }),
+      complete: async () => reply({ usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0 } }),
     });
 
     expect(usageBeats(activity)[0]).toHaveProperty("cacheRead", 0);
@@ -128,7 +128,7 @@ describe("native turn loop — usage activities (nax#2045)", () => {
       onActivity: (a) => activity.push(a),
       summarize: async () => ({
         text: "summary",
-        usage: { inputTokens: 1, outputTokens: 1, cacheReadInputTokens: 100, cacheCreationInputTokens: 20 },
+        usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 100, cacheWriteTokens: 20 },
         costUsd: 0.01,
       }),
       complete: async () => reply(),

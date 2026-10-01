@@ -91,39 +91,34 @@ function stubClient(pricing: Pricing, usage: { inputTokens: number; outputTokens
 }
 
 describe("NativeAgentAdapter.complete() — CompleteResult.rates propagation (US-002)", () => {
-  // AC1 (success): a priced call returns the four-field ResolvedRates whose
+  // AC1 (success): a priced call returns the four-field PricingRates whose
   // values match the effective rates that priced it (no tier crossing ->
   // the base catalog rates, with cacheRead/cacheCreation defined).
-  test("AC1: complete() returns rates.inputPer1M = catalog input rate and rates.outputPer1M = catalog output rate", async () => {
+  test("AC1: complete() returns rates.input = catalog input rate and rates.output = catalog output rate", async () => {
     _clientDeps.build = stubClient(
       { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
       { inputTokens: 1_000_000, outputTokens: 1_000_000 },
     );
     const result = await new NativeAgentAdapter().complete("hi", makeOptions());
-    // The catalog rates' inputPer1M and outputPer1M show up on the result
+    // The catalog rates' input and output show up on the result
     // verbatim (no tier crossing -> the catalog's base rates win).
     expect(result.rates).toBeDefined();
-    expect(result.rates?.inputPer1M).toBe(2);
-    expect(result.rates?.outputPer1M).toBe(10);
+    expect(result.rates?.input).toBe(2);
+    expect(result.rates?.output).toBe(10);
   });
 
   // AC1 boundary: cacheRead/cacheCreation from the catalog are forwarded on
   // the result too. The story names "four fields" explicitly — pinning the
   // count keeps an implementer from dropping the cache legs.
-  test("AC1 boundary: rates carries cacheReadPer1M and cacheCreationPer1M from the catalog", async () => {
+  test("AC1 boundary: rates carries cacheRead and cacheWrite from the catalog", async () => {
     _clientDeps.build = stubClient(
       { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
       { inputTokens: 100, outputTokens: 100 },
     );
     const result = await new NativeAgentAdapter().complete("hi", makeOptions());
-    expect(result.rates?.cacheReadPer1M).toBe(0.2);
-    expect(result.rates?.cacheCreationPer1M).toBe(2.5);
-    expect(Object.keys(result.rates ?? {}).sort()).toEqual([
-      "cacheCreationPer1M",
-      "cacheReadPer1M",
-      "inputPer1M",
-      "outputPer1M",
-    ]);
+    expect(result.rates?.cacheRead).toBe(0.2);
+    expect(result.rates?.cacheWrite).toBe(2.5);
+    expect(Object.keys(result.rates ?? {}).sort()).toEqual(["cacheRead", "cacheWrite", "input", "output"]);
   });
 
   // AC4 (success): with a tier above the threshold, the winning tier's rates
@@ -132,7 +127,7 @@ describe("NativeAgentAdapter.complete() — CompleteResult.rates propagation (US
   // up here as the wrong numbers.
   test("AC4: complete() with a tiered card and usage crossing the threshold returns the winning tier's rates", async () => {
     // Tier applies above 100_000 input-class tokens. The adapter receives a
-    // Pricing whose TIER inputPer1M=4, outputPer1M=20 — the upper values
+    // Pricing whose TIER input=4, output=20 — the upper values
     // the winner should expose.
     const pricing: Pricing = {
       input: 1,
@@ -152,14 +147,14 @@ describe("NativeAgentAdapter.complete() — CompleteResult.rates propagation (US
     _clientDeps.build = stubClient(pricing, { inputTokens: 200_000, outputTokens: 0 });
     const result = await new NativeAgentAdapter().complete("hi", makeOptions());
     // 200_000 strictly exceeds 100_000, so the tier wins (the WHOLE request
-    // re-prices on it). The base inputPer1M=1, outputPer1M=5 must NOT appear
+    // re-prices on it). The base input=1, output=5 must NOT appear
     // on `rates`.
-    expect(result.rates?.inputPer1M).toBe(4);
-    expect(result.rates?.outputPer1M).toBe(20);
+    expect(result.rates?.input).toBe(4);
+    expect(result.rates?.output).toBe(20);
     // The tier declared its own cache rates; the winning row takes them
     // through (not the base rates' cacheRead/cacheCreation).
-    expect(result.rates?.cacheReadPer1M).toBe(0.4);
-    expect(result.rates?.cacheCreationPer1M).toBe(4.0);
+    expect(result.rates?.cacheRead).toBe(0.4);
+    expect(result.rates?.cacheWrite).toBe(4.0);
   });
 
   // AC4 boundary: when usage lands EXACTLY on the threshold (not strictly
@@ -184,8 +179,8 @@ describe("NativeAgentAdapter.complete() — CompleteResult.rates propagation (US
     };
     _clientDeps.build = stubClient(pricing, { inputTokens: 100_000, outputTokens: 0 });
     const result = await new NativeAgentAdapter().complete("hi", makeOptions());
-    expect(result.rates?.inputPer1M).toBe(1);
-    expect(result.rates?.outputPer1M).toBe(5);
+    expect(result.rates?.input).toBe(1);
+    expect(result.rates?.output).toBe(5);
   });
 
   // AC6 (success): the native path prices unconditionally — zero input and
@@ -200,10 +195,10 @@ describe("NativeAgentAdapter.complete() — CompleteResult.rates propagation (US
     );
     const result = await new NativeAgentAdapter().complete("hi", makeOptions());
     expect(result.rates).toBeDefined();
-    expect(result.rates?.inputPer1M).toBe(3);
-    expect(result.rates?.outputPer1M).toBe(15);
-    expect(result.rates?.cacheReadPer1M).toBe(0.3);
-    expect(result.rates?.cacheCreationPer1M).toBe(1.5);
+    expect(result.rates?.input).toBe(3);
+    expect(result.rates?.output).toBe(15);
+    expect(result.rates?.cacheRead).toBe(0.3);
+    expect(result.rates?.cacheWrite).toBe(1.5);
   });
 
   // AC1 verdict identity (cross-cut): the rates reported on `CompleteResult`
@@ -219,7 +214,7 @@ describe("NativeAgentAdapter.complete() — CompleteResult.rates propagation (US
     const rates = result.rates;
     if (rates === undefined) throw new Error("expected rates on CompleteResult");
     // No cache tokens reported — the cache legs contribute zero.
-    const expected = (100 / 1_000_000) * rates.inputPer1M + (50 / 1_000_000) * rates.outputPer1M;
+    const expected = (100 / 1_000_000) * rates.input + (50 / 1_000_000) * rates.output;
     expect(result.estimatedCostUsd).toBeCloseTo(expected, 10);
   });
 });

@@ -10,7 +10,7 @@ import { z } from "zod";
  * `PricingTier`. It carries no `tiers` of its own: nax-ai's `PricingTier`
  * extends `PricingRates` rather than `Pricing`, so tiers do not nest.
  */
-const TokenPricingTierSchema = z.object({
+const ConfigPricingTierSchema = z.object({
   inputPer1M: z.number().min(0),
   outputPer1M: z.number().min(0),
   cacheReadPer1M: z.number().min(0).optional(),
@@ -18,7 +18,7 @@ const TokenPricingTierSchema = z.object({
   inputTokensAbove: z.number().int().min(0),
 });
 
-const TokenPricingSchema = z.object({
+const ConfigPricingSchema = z.object({
   inputPer1M: z.number().min(0),
   outputPer1M: z.number().min(0),
   cacheReadPer1M: z.number().min(0).optional(),
@@ -26,7 +26,7 @@ const TokenPricingSchema = z.object({
   // Without this the field is not merely unvalidated -- Zod strips unknown
   // keys, so a configured `tiers` array would be dropped at load with no
   // error, and the run would silently bill at base rates.
-  tiers: z.array(TokenPricingTierSchema).optional(),
+  tiers: z.array(ConfigPricingTierSchema).optional(),
 });
 
 /**
@@ -185,7 +185,7 @@ export const ProviderCatalogOverrideSchema = z
 const ModelDefSchema = z.object({
   provider: z.string().min(1, "Provider must be non-empty"),
   model: z.string().min(1, "Model must be non-empty"),
-  pricing: TokenPricingSchema.optional(),
+  pricing: ConfigPricingSchema.optional(),
   // nax#1848: overrides nax-ai's ResolvedModel.contextWindow. Without this
   // field Zod strips it silently at config load (the exact failure mode
   // #1847 shipped for pricing.tiers), and the override never reaches

@@ -28,44 +28,44 @@ describe("addTokenUsage", () => {
     const b: TokenUsage = { inputTokens: 200, outputTokens: 75 };
     const result = addTokenUsage(a, b);
 
-    expect(result.cacheReadInputTokens).toBeUndefined();
-    expect(result.cacheCreationInputTokens).toBeUndefined();
+    expect(result.cacheReadTokens).toBeUndefined();
+    expect(result.cacheWriteTokens).toBeUndefined();
   });
 
   test("includes cache fields when one operand has them defined", () => {
-    const a: TokenUsage = { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10 };
+    const a: TokenUsage = { inputTokens: 100, outputTokens: 50, cacheReadTokens: 10 };
     const b: TokenUsage = { inputTokens: 200, outputTokens: 75 };
     const result = addTokenUsage(a, b);
 
-    expect(result.cacheReadInputTokens).toBe(10);
-    expect(result.cacheCreationInputTokens).toBeUndefined();
+    expect(result.cacheReadTokens).toBe(10);
+    expect(result.cacheWriteTokens).toBeUndefined();
   });
 
   test("sums cache fields when both operands have them defined", () => {
     const a: TokenUsage = {
       inputTokens: 100,
       outputTokens: 50,
-      cacheReadInputTokens: 10,
-      cacheCreationInputTokens: 5,
+      cacheReadTokens: 10,
+      cacheWriteTokens: 5,
     };
     const b: TokenUsage = {
       inputTokens: 200,
       outputTokens: 75,
-      cacheReadInputTokens: 20,
-      cacheCreationInputTokens: 15,
+      cacheReadTokens: 20,
+      cacheWriteTokens: 15,
     };
     const result = addTokenUsage(a, b);
 
-    expect(result.cacheReadInputTokens).toBe(30);
-    expect(result.cacheCreationInputTokens).toBe(20);
+    expect(result.cacheReadTokens).toBe(30);
+    expect(result.cacheWriteTokens).toBe(20);
   });
 
   test("preserves defined zero values in output", () => {
-    const a: TokenUsage = { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 0 };
+    const a: TokenUsage = { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0 };
     const b: TokenUsage = { inputTokens: 200, outputTokens: 75 };
     const result = addTokenUsage(a, b);
 
-    expect(result.cacheReadInputTokens).toBe(0);
+    expect(result.cacheReadTokens).toBe(0);
   });
 
   test("returns zero totals when both operands are zero", () => {
@@ -75,8 +75,8 @@ describe("addTokenUsage", () => {
 
     expect(result.inputTokens).toBe(0);
     expect(result.outputTokens).toBe(0);
-    expect(result.cacheReadInputTokens).toBeUndefined();
-    expect(result.cacheCreationInputTokens).toBeUndefined();
+    expect(result.cacheReadTokens).toBeUndefined();
+    expect(result.cacheWriteTokens).toBeUndefined();
   });
 });
 
@@ -118,35 +118,35 @@ describe("addTokenUsage — BUG-10 malformed operand guard", () => {
     expect(result.inputTokens).toBe(100);
   });
 
-  // BUG-58: cacheReadInputTokens/cacheCreationInputTokens must get the same
+  // BUG-58: cacheReadTokens/cacheWriteTokens must get the same
   // malformed-operand guard as inputTokens/outputTokens — previously they were
   // summed with a bare `+`, reachable to the exact string-concat/NaN corruption
   // this whole describe block exists to prevent.
-  test("a string cacheReadInputTokens does not trigger string concatenation", () => {
-    const a = { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: "123" } as unknown as TokenUsage; // test-ratchet-allow: as-unknown-as
-    const b: TokenUsage = { inputTokens: 5, outputTokens: 2, cacheReadInputTokens: 10 };
+  test("a string cacheReadTokens does not trigger string concatenation", () => {
+    const a = { inputTokens: 10, outputTokens: 5, cacheReadTokens: "123" } as unknown as TokenUsage; // test-ratchet-allow: as-unknown-as
+    const b: TokenUsage = { inputTokens: 5, outputTokens: 2, cacheReadTokens: 10 };
     const result = addTokenUsage(a, b);
 
-    expect(result.cacheReadInputTokens).toBe(10);
-    expect(typeof result.cacheReadInputTokens).toBe("number");
+    expect(result.cacheReadTokens).toBe(10);
+    expect(typeof result.cacheReadTokens).toBe("number");
   });
 
-  test("a string cacheCreationInputTokens does not trigger string concatenation", () => {
-    const a: TokenUsage = { inputTokens: 10, outputTokens: 5, cacheCreationInputTokens: 7 };
-    const b = { inputTokens: 5, outputTokens: 2, cacheCreationInputTokens: "50" } as unknown as TokenUsage; // test-ratchet-allow: as-unknown-as
+  test("a string cacheWriteTokens does not trigger string concatenation", () => {
+    const a: TokenUsage = { inputTokens: 10, outputTokens: 5, cacheWriteTokens: 7 };
+    const b = { inputTokens: 5, outputTokens: 2, cacheWriteTokens: "50" } as unknown as TokenUsage; // test-ratchet-allow: as-unknown-as
     const result = addTokenUsage(a, b);
 
-    expect(result.cacheCreationInputTokens).toBe(7);
-    expect(typeof result.cacheCreationInputTokens).toBe("number");
+    expect(result.cacheWriteTokens).toBe(7);
+    expect(typeof result.cacheWriteTokens).toBe("number");
   });
 
-  test("a non-finite cacheReadInputTokens (NaN) does not propagate NaN into the total", () => {
-    const a: TokenUsage = { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: Number.NaN };
-    const b: TokenUsage = { inputTokens: 5, outputTokens: 2, cacheReadInputTokens: 20 };
+  test("a non-finite cacheReadTokens (NaN) does not propagate NaN into the total", () => {
+    const a: TokenUsage = { inputTokens: 10, outputTokens: 5, cacheReadTokens: Number.NaN };
+    const b: TokenUsage = { inputTokens: 5, outputTokens: 2, cacheReadTokens: 20 };
     const result = addTokenUsage(a, b);
 
-    expect(Number.isFinite(result.cacheReadInputTokens)).toBe(true);
-    expect(result.cacheReadInputTokens).toBe(20);
+    expect(Number.isFinite(result.cacheReadTokens)).toBe(true);
+    expect(result.cacheReadTokens).toBe(20);
   });
 });
 
@@ -229,8 +229,8 @@ describe("inputClassTokens", () => {
       inputClassTokens({
         inputTokens: 16,
         outputTokens: 900,
-        cacheReadInputTokens: 71_755,
-        cacheCreationInputTokens: 12_368,
+        cacheReadTokens: 71_755,
+        cacheWriteTokens: 12_368,
       }),
     ).toBe(84_139);
   });
@@ -271,5 +271,21 @@ describe("formatCostWithConfidence", () => {
   test("formats large costs correctly", () => {
     const estimate: CostEstimate = { cost: 12.345, confidence: "estimated" };
     expect(formatCostWithConfidence(estimate)).toBe("~$12.35");
+  });
+});
+
+describe("addTokenUsage key presence (S1-1)", () => {
+  test("keeps absent cache fields absent and present zeroes present, in input/output/cacheRead/cacheWrite order", () => {
+    expect(
+      JSON.stringify(addTokenUsage({ inputTokens: 1, outputTokens: 2 }, { inputTokens: 3, outputTokens: 4 })),
+    ).toBe('{"inputTokens":4,"outputTokens":6}');
+    expect(
+      JSON.stringify(
+        addTokenUsage(
+          { inputTokens: 1, outputTokens: 2, cacheReadTokens: 0 },
+          { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 5 },
+        ),
+      ),
+    ).toBe('{"inputTokens":1,"outputTokens":2,"cacheReadTokens":0,"cacheWriteTokens":5}');
   });
 });

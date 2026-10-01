@@ -5,6 +5,7 @@
  * including model tier definitions and basic enumerations.
  */
 
+import type { Pricing, PricingTier } from "../agents/cost/standard-types";
 import { getSafeLogger } from "../logger";
 
 export type Complexity = "simple" | "medium" | "complex" | "expert";
@@ -17,7 +18,7 @@ export type ModelTier = "fast" | "balanced" | "powerful" | (string & {});
 /** A complexityRouting entry: a bare tier on the default agent, or a rung object naming an agent. */
 export type ComplexityRung = ModelTier | { tier: ModelTier; agent?: string };
 
-export interface TokenPricing {
+export interface ConfigPricing {
   inputPer1M: number;
   outputPer1M: number;
   /**
@@ -35,12 +36,12 @@ export interface TokenPricing {
   /**
    * Threshold-based rate overrides (nax#1847), mirroring nax-ai's
    * `Pricing.tiers?: readonly PricingTier[]`. 22 of 1290 catalogued native
-   * models price this way. `TokenPricingTier` cannot itself carry a `tiers`
+   * models price this way. `ConfigPricingTier` cannot itself carry a `tiers`
    * field (nax-ai's `PricingTier extends PricingRates`, not `Pricing` —
    * tiers do not nest), and this array lets a config override express the
    * same shape the catalog does.
    */
-  tiers?: TokenPricingTier[];
+  tiers?: ConfigPricingTier[];
 }
 
 /**
@@ -49,7 +50,7 @@ export interface TokenPricing {
  * not just the tokens above the threshold. See `estimateCostUsd` in
  * `src/agents/native/models.ts` for the selection rule.
  */
-export interface TokenPricingTier {
+export interface ConfigPricingTier {
   inputPer1M: number;
   outputPer1M: number;
   cacheReadPer1M?: number;
@@ -58,13 +59,39 @@ export interface TokenPricingTier {
   inputTokensAbove: number;
 }
 
+/**
+ * Convert the user-config rate card (per-1M field names, optional cache rates)
+ * to the standard `Pricing` (S1 spec section 5.1). An absent cache rate takes the
+ * input rate of the same level: base from base, each tier from its own input
+ * rate. That is exactly the fallback the pre-S1-1 `priceCall` applied.
+ */
+export function toPricing(config: ConfigPricing): Pricing {
+  return {
+    input: config.inputPer1M,
+    output: config.outputPer1M,
+    cacheRead: config.cacheReadPer1M ?? config.inputPer1M,
+    cacheWrite: config.cacheCreationPer1M ?? config.inputPer1M,
+    ...(config.tiers !== undefined ? { tiers: config.tiers.map(toPricingTier) } : {}),
+  };
+}
+
+function toPricingTier(tier: ConfigPricingTier): PricingTier {
+  return {
+    input: tier.inputPer1M,
+    output: tier.outputPer1M,
+    cacheRead: tier.cacheReadPer1M ?? tier.inputPer1M,
+    cacheWrite: tier.cacheCreationPer1M ?? tier.inputPer1M,
+    inputTokensAbove: tier.inputTokensAbove,
+  };
+}
+
 export interface ModelDef {
   provider: string;
   model: string;
   /**
    * Per-1M rate override applied wholesale when this `ModelDef` is the
    * resolved model for a call. The override is treated as time-invariant:
-   * every dispatch resolves to the same `TokenPricing`, and a `costUsd`
+   * every dispatch resolves to the same `ConfigPricing`, and a `costUsd`
    * computed from it stays valid for the row's lifetime. A provider whose
    * real rate card varies by time of day, weekday, or any other predicate
    * (peak/off-peak, etc.) cannot be expressed here — that work is out of
@@ -72,7 +99,7 @@ export interface ModelDef {
    * time-varying rate must reconstruct the post-hoc spend from the
    * recorded token totals rather than rely on `costUsd`.
    */
-  pricing?: TokenPricing;
+  pricing?: ConfigPricing;
   /**
    * Overrides nax-ai's `ResolvedModel.contextWindow` (nax#1848). Never sent
    * to the provider -- it feeds only the native path's own
@@ -101,7 +128,7 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 
 /**
  * Rates for a catalog override, in the CATALOG's vocabulary (`input`,
- * `output`, `cacheRead`, `cacheWrite`, per 1M tokens) — not `TokenPricing`'s
+ * `output`, `cacheRead`, `cacheWrite`, per 1M tokens) — not `ConfigPricing`'s
  * `*Per1M` names. This block describes the simulated catalog entry, so it
  * speaks the catalog's language; `ModelDef.pricing` remains the cost-math
  * override in nax's own vocabulary.

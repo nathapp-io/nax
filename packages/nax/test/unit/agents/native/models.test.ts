@@ -6,18 +6,19 @@
  */
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import type { Pricing } from "@/agents/cost";
 import { estimateCostUsd } from "@/agents/cost";
 import {
   buildRateCard,
   parseNativeModel,
   resolveContextWindow,
   THINKING_LEVELS,
-  toNaxTokenUsage,
   toProviderOverrides,
   toThinkingLevel,
 } from "@/agents/native/models";
 import { ThinkingLevelSchema } from "@/config";
-import type { ProviderCatalogOverride, TokenPricing } from "@/config/schema-types";
+import type { ConfigPricing, ProviderCatalogOverride } from "@/config/schema-types";
+import { toPricing } from "@/config/schema-types";
 import { NaxError } from "@/errors";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 
@@ -102,33 +103,19 @@ describe("toThinkingLevel", () => {
   });
 });
 
-describe("toNaxTokenUsage", () => {
-  test("renames the cache fields to nax's names", () => {
-    expect(toNaxTokenUsage({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 3, cacheWriteTokens: 2 })).toEqual({
-      inputTokens: 10,
-      outputTokens: 5,
-      cacheReadInputTokens: 3,
-      cacheCreationInputTokens: 2,
-    });
-  });
-
-  test("leaves absent cache fields absent rather than zero", () => {
-    const mapped = toNaxTokenUsage({ inputTokens: 10, outputTokens: 5 });
-    expect(mapped).toEqual({ inputTokens: 10, outputTokens: 5 });
-    expect("cacheReadInputTokens" in mapped).toBe(false);
-  });
-});
-
 describe("estimateCostUsd", () => {
   test("bills input and output at rates per 1M tokens", () => {
-    const cost = estimateCostUsd({ inputTokens: 1_000_000, outputTokens: 500_000 }, { inputPer1M: 3, outputPer1M: 15 });
+    const cost = estimateCostUsd(
+      { inputTokens: 1_000_000, outputTokens: 500_000 },
+      toPricing({ inputPer1M: 3, outputPer1M: 15 }),
+    );
     expect(cost).toBeCloseTo(3 + 7.5, 6);
   });
 
   test("falls back to the input rate for cache tokens when no cache rate is configured", () => {
     const cost = estimateCostUsd(
-      { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 1_000_000, cacheCreationInputTokens: 1_000_000 },
-      { inputPer1M: 3, outputPer1M: 15 },
+      { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000 },
+      toPricing({ inputPer1M: 3, outputPer1M: 15 }),
     );
     // Both cache classes fall back to inputPer1M (3): 1M read + 1M write = $6.
     expect(cost).toBeCloseTo(6, 6);
@@ -136,8 +123,8 @@ describe("estimateCostUsd", () => {
 
   test("bills cache reads at cacheReadPer1M when the rate card supplies one", () => {
     const cost = estimateCostUsd(
-      { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 1_000_000 },
-      { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3 },
+      { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 },
+      toPricing({ inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3 }),
     );
     // The over-report this fixes: at the old behaviour this would have been $3.
     expect(cost).toBeCloseTo(0.3, 6);
@@ -145,8 +132,8 @@ describe("estimateCostUsd", () => {
 
   test("bills cache writes at cacheCreationPer1M when the rate card supplies one", () => {
     const cost = estimateCostUsd(
-      { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 1_000_000 },
-      { inputPer1M: 3, outputPer1M: 15, cacheCreationPer1M: 3.75 },
+      { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1_000_000 },
+      toPricing({ inputPer1M: 3, outputPer1M: 15, cacheCreationPer1M: 3.75 }),
     );
     // The under-report this fixes: at the old behaviour this would have been $3
     // even though a cache write costs MORE than plain input, not the same.
@@ -158,10 +145,10 @@ describe("estimateCostUsd", () => {
       {
         inputTokens: 1_000_000,
         outputTokens: 1_000_000,
-        cacheReadInputTokens: 1_000_000,
-        cacheCreationInputTokens: 1_000_000,
+        cacheReadTokens: 1_000_000,
+        cacheWriteTokens: 1_000_000,
       },
-      { inputPer1M: 3, outputPer1M: 15, cacheReadPer1M: 0.3, cacheCreationPer1M: 3.75 },
+      { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
     );
     expect(cost).toBeCloseTo(3 + 15 + 0.3 + 3.75, 6);
   });
@@ -173,12 +160,12 @@ describe("estimateCostUsd", () => {
 // cacheWrite:2.5}, tier above 272000 total input-class tokens {input:4,
 // output:18, cacheRead:0.4, cacheWrite:5}.
 describe("estimateCostUsd with pricing tiers", () => {
-  const TIERED_RATES: TokenPricing = {
-    inputPer1M: 2,
-    outputPer1M: 12,
-    cacheReadPer1M: 0.2,
-    cacheCreationPer1M: 2.5,
-    tiers: [{ inputPer1M: 4, outputPer1M: 18, cacheReadPer1M: 0.4, cacheCreationPer1M: 5, inputTokensAbove: 272_000 }],
+  const TIERED_RATES: Pricing = {
+    input: 2,
+    output: 12,
+    cacheRead: 0.2,
+    cacheWrite: 2.5,
+    tiers: [{ input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5, inputTokensAbove: 272_000 }],
   };
 
   test("below the threshold bills at base rates", () => {
@@ -193,8 +180,8 @@ describe("estimateCostUsd with pricing tiers", () => {
     const usage = {
       inputTokens: 300_000,
       outputTokens: 1_000_000,
-      cacheReadInputTokens: 100_000,
-      cacheCreationInputTokens: 50_000,
+      cacheReadTokens: 100_000,
+      cacheWriteTokens: 50_000,
     };
     // total input-class usage = 300_000 + 100_000 + 50_000 = 450_000, which
     // exceeds the 272_000 threshold.
@@ -208,7 +195,7 @@ describe("estimateCostUsd with pricing tiers", () => {
   // input -- otherwise a heavily-cached long-context request would never
   // cross it.
   test("cache-read and cache-creation tokens count toward the threshold, not just fresh input", () => {
-    const usage = { inputTokens: 100_000, outputTokens: 0, cacheReadInputTokens: 172_001 };
+    const usage = { inputTokens: 100_000, outputTokens: 0, cacheReadTokens: 172_001 };
     // 100_000 + 172_001 = 272_001, one token over.
     const cost = estimateCostUsd(usage, TIERED_RATES);
     const expected = (100_000 / 1_000_000) * 4 + (172_001 / 1_000_000) * 0.4;
@@ -230,7 +217,10 @@ describe("estimateCostUsd with pricing tiers", () => {
   });
 
   test("a rate card with no tiers is unaffected", () => {
-    const cost = estimateCostUsd({ inputTokens: 1_000_000, outputTokens: 0 }, { inputPer1M: 3, outputPer1M: 15 });
+    const cost = estimateCostUsd(
+      { inputTokens: 1_000_000, outputTokens: 0 },
+      toPricing({ inputPer1M: 3, outputPer1M: 15 }),
+    );
     expect(cost).toBeCloseTo(3, 6);
   });
 });
@@ -244,20 +234,20 @@ describe("buildRateCard", () => {
     const { rates, source } = buildRateCard(catalog, undefined);
     expect(source).toBe("catalog-rates");
     expect(rates).toEqual({
-      inputPer1M: 2,
-      outputPer1M: 10,
-      cacheReadPer1M: 0.2,
-      cacheCreationPer1M: 2.5,
+      input: 2,
+      output: 10,
+      cacheRead: 0.2,
+      cacheWrite: 2.5,
     });
   });
 
   test("US-003 AC2: explicit override returns config-override source and the override object wholesale", () => {
     const catalog = { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 };
-    const override: TokenPricing = { inputPer1M: 99, outputPer1M: 199 };
+    const override: ConfigPricing = { inputPer1M: 99, outputPer1M: 199 };
     const { rates, source } = buildRateCard(catalog, override);
     expect(source).toBe("config-override");
-    expect(rates).toBe(override);
-    expect(rates.cacheReadPer1M).toBeUndefined();
+    expect(rates).toEqual(toPricing(override));
+    expect(rates.cacheRead).toBe(99);
   });
 
   test("US-003 AC3: catalog with tiers returns catalog-rates source and tiers translated to nax's field names", () => {
@@ -270,9 +260,7 @@ describe("buildRateCard", () => {
     };
     const { rates, source } = buildRateCard(catalog, undefined);
     expect(source).toBe("catalog-rates");
-    expect(rates.tiers).toEqual([
-      { inputPer1M: 4, outputPer1M: 18, cacheReadPer1M: 0.4, cacheCreationPer1M: 5, inputTokensAbove: 272_000 },
-    ]);
+    expect(rates.tiers).toEqual([{ input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5, inputTokensAbove: 272_000 }]);
   });
 });
 

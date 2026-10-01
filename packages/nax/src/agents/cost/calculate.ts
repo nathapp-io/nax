@@ -9,7 +9,8 @@
  * `resolvePricingSource`.
  */
 
-import type { CostEstimate, TokenUsage } from "./types";
+import type { TokenUsage } from "./standard-types";
+import type { CostEstimate } from "./types";
 
 /**
  * Format cost estimate with confidence indicator for display.
@@ -54,28 +55,26 @@ function toFiniteTokenCount(value: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-/** Sum two internal TokenUsage values. Pure.
- * Optional cache fields are only included when at least one operand has a defined value,
- * preserving the zero-omit serialization semantics from the original adapter code. */
+/** Sum two TokenUsage values. Pure.
+ * A cache field is present on the result when either operand carries it or the
+ * sum is positive, preserving the zero-versus-absent distinction producers set. */
 export function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
-  const result: TokenUsage = {
-    inputTokens: toFiniteTokenCount(a.inputTokens) + toFiniteTokenCount(b.inputTokens),
-    outputTokens: toFiniteTokenCount(a.outputTokens) + toFiniteTokenCount(b.outputTokens),
-  };
   // BUG-58: apply the same finite-number guard to the cache fields as
   // inputTokens/outputTokens above — `?? 0` alone only guards undefined/null,
   // not a malformed non-numeric operand (e.g. a stringified number), which
   // would otherwise hit `+`'s string-concatenation behavior here too.
-  const cacheRead = toFiniteTokenCount(a.cacheReadInputTokens ?? 0) + toFiniteTokenCount(b.cacheReadInputTokens ?? 0);
-  const cacheCreation =
-    toFiniteTokenCount(a.cacheCreationInputTokens ?? 0) + toFiniteTokenCount(b.cacheCreationInputTokens ?? 0);
-  if (cacheRead > 0 || a.cacheReadInputTokens !== undefined || b.cacheReadInputTokens !== undefined) {
-    result.cacheReadInputTokens = cacheRead;
-  }
-  if (cacheCreation > 0 || a.cacheCreationInputTokens !== undefined || b.cacheCreationInputTokens !== undefined) {
-    result.cacheCreationInputTokens = cacheCreation;
-  }
-  return result;
+  const cacheRead = toFiniteTokenCount(a.cacheReadTokens ?? 0) + toFiniteTokenCount(b.cacheReadTokens ?? 0);
+  const cacheWrite = toFiniteTokenCount(a.cacheWriteTokens ?? 0) + toFiniteTokenCount(b.cacheWriteTokens ?? 0);
+  return {
+    inputTokens: toFiniteTokenCount(a.inputTokens) + toFiniteTokenCount(b.inputTokens),
+    outputTokens: toFiniteTokenCount(a.outputTokens) + toFiniteTokenCount(b.outputTokens),
+    ...(cacheRead > 0 || a.cacheReadTokens !== undefined || b.cacheReadTokens !== undefined
+      ? { cacheReadTokens: cacheRead }
+      : {}),
+    ...(cacheWrite > 0 || a.cacheWriteTokens !== undefined || b.cacheWriteTokens !== undefined
+      ? { cacheWriteTokens: cacheWrite }
+      : {}),
+  };
 }
 
 /**
@@ -116,5 +115,5 @@ export function resolvePricingSource(
  * Output is deliberately excluded: this measures the prompt, not the call.
  */
 export function inputClassTokens(usage: TokenUsage): number {
-  return usage.inputTokens + (usage.cacheReadInputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0);
+  return usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
 }

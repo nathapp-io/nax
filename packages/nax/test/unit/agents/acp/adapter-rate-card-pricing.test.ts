@@ -35,6 +35,7 @@ import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import { buildCompleteEvent, buildSessionTurnEvent } from "@/agents/manager-dispatch";
 import type { InteractionExchange, OpenSessionOpts } from "@/agents/session-types";
 import { resolvePermissions } from "@/config/permissions";
+import { toPricing } from "@/config/schema-types";
 import { type CostEvent, createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachCostSubscriber } from "@/runtime/middleware/cost";
@@ -44,19 +45,19 @@ import { makeClient, makeSession } from "./adapter.test";
 const ACP_WORKDIR = "/tmp/nax-rate-card-pricing";
 
 const CATALOG_CARD: RateCard = {
-  rates: { inputPer1M: 2, outputPer1M: 10 },
+  rates: toPricing({ inputPer1M: 2, outputPer1M: 10 }),
   source: "catalog-rates",
 };
 
 const FALLBACK_CARD: RateCard = {
-  rates: { inputPer1M: 3, outputPer1M: 15 },
+  rates: toPricing({ inputPer1M: 3, outputPer1M: 15 }),
   source: "fallback-rates",
 };
 
 // From adapter-output-timedout.test.ts — a catalog-rates card at 3/15,
 // distinct from CATALOG_CARD (2/10) above, so both are kept.
 const TIMED_OUT_CARD: RateCard = {
-  rates: { inputPer1M: 3, outputPer1M: 15 },
+  rates: toPricing({ inputPer1M: 3, outputPer1M: 15 }),
   source: "catalog-rates",
 };
 

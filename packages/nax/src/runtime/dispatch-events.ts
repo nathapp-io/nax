@@ -80,7 +80,7 @@ export interface DispatchEventBase {
    * the producer did not stamp, so a downstream subscriber can tell
    * "no report" apart from "explicitly unknown".
    */
-  readonly rates?: import("../agents/cost").ResolvedRates;
+  readonly rates?: import("../agents/cost").PricingRates;
   /**
    * US-006: identity of the credential that served this dispatch, forwarded
    * from the producer (`CompleteResult.auth` / `TurnResult.auth`). Present

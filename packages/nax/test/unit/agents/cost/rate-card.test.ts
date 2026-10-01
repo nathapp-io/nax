@@ -14,6 +14,7 @@ import { withWarnSpy } from "@test/helpers";
 import { _catalogDeps, lookupPricing } from "@/agents/catalog";
 import { _resetRateCardWarnings, type LookupPricing, resolveRateCard } from "@/agents/cost";
 import modelAliases from "@/agents/cost/model-aliases.json";
+import { toPricing } from "@/config/schema-types";
 
 /** A stub `lookupPricing` that records its calls and returns a preset table. */
 function makeLookup(
@@ -45,18 +46,18 @@ describe("resolveRateCard", () => {
   // AC7: success path — a bare shorthand that the alias file maps to a
   // catalog hit returns a "catalog-rates" card.
   test("AC7: 'sonnet' resolves via the alias file and returns a catalog-rates card", async () => {
-    const lookup = makeLookup(new Map([["anthropic/claude-sonnet-5", { inputPer1M: 2, outputPer1M: 10 }]]));
+    const lookup = makeLookup(new Map([["anthropic/claude-sonnet-5", toPricing({ inputPer1M: 2, outputPer1M: 10 })]]));
     const card = await resolveRateCard("sonnet", lookup);
     expect(card.source).toBe("catalog-rates");
-    expect(card.rates.inputPer1M).toBe(2);
-    expect(card.rates.outputPer1M).toBe(10);
+    expect(card.rates.input).toBe(2);
+    expect(card.rates.output).toBe(10);
   });
 
   // AC8: success path — a provider-qualified id that maps in the catalog
   // returns a catalog-rates card. Specifically: the alias file must NOT have
   // been consulted (no entry for "minimax/MiniMax-M2.7").
   test("AC8: 'minimax/MiniMax-M2.7' resolves via the catalog split, not the alias file", async () => {
-    const lookup = makeLookup(new Map([["minimax/MiniMax-M2.7", { inputPer1M: 0.3, outputPer1M: 1.2 }]]));
+    const lookup = makeLookup(new Map([["minimax/MiniMax-M2.7", toPricing({ inputPer1M: 0.3, outputPer1M: 1.2 })]]));
     const card = await resolveRateCard("minimax/MiniMax-M2.7", lookup);
     expect(card.source).toBe("catalog-rates");
     // The split went straight to (provider="minimax", model="MiniMax-M2.7"),
@@ -68,7 +69,9 @@ describe("resolveRateCard", () => {
   // 'huggingface/MiniMaxAI/MiniMax-M2.7' splits on the FIRST slash, so the
   // catalog is queried with provider="huggingface" and model="MiniMaxAI/MiniMax-M2.7".
   test("AC9: 'huggingface/MiniMaxAI/MiniMax-M2.7' splits on the first slash", async () => {
-    const lookup = makeLookup(new Map([["huggingface/MiniMaxAI/MiniMax-M2.7", { inputPer1M: 0.3, outputPer1M: 1.2 }]]));
+    const lookup = makeLookup(
+      new Map([["huggingface/MiniMaxAI/MiniMax-M2.7", toPricing({ inputPer1M: 0.3, outputPer1M: 1.2 })]]),
+    );
     const card = await resolveRateCard("huggingface/MiniMaxAI/MiniMax-M2.7", lookup);
     expect(card.source).toBe("catalog-rates");
     expect(lookup.calls).toEqual([{ provider: "huggingface", model: "MiniMaxAI/MiniMax-M2.7" }]);
@@ -77,7 +80,7 @@ describe("resolveRateCard", () => {
   // AC10: success path — a [effort] suffix is stripped before the catalog
   // lookup, so 'gpt-5.6-luna[high]' queries the bare id 'gpt-5.6-luna'.
   test("AC10: 'gpt-5.6-luna[high]' strips the effort suffix before querying", async () => {
-    const lookup = makeLookup(new Map([["openai/gpt-5.6-luna", { inputPer1M: 0.2, outputPer1M: 1.2 }]]));
+    const lookup = makeLookup(new Map([["openai/gpt-5.6-luna", toPricing({ inputPer1M: 0.2, outputPer1M: 1.2 })]]));
     const card = await resolveRateCard("gpt-5.6-luna[high]", lookup);
     expect(card.source).toBe("catalog-rates");
     expect(lookup.calls).toEqual([{ provider: "openai", model: "gpt-5.6-luna" }]);
@@ -89,10 +92,10 @@ describe("resolveRateCard", () => {
     const lookup = makeLookup(new Map()); // empty -> every lookup misses
     const card = await resolveRateCard("no-such-model-anywhere", lookup);
     expect(card.source).toBe("fallback-rates");
-    expect(Number.isFinite(card.rates.inputPer1M)).toBe(true);
-    expect(Number.isFinite(card.rates.outputPer1M)).toBe(true);
-    expect(card.rates.inputPer1M).toBeGreaterThan(0);
-    expect(card.rates.outputPer1M).toBeGreaterThan(0);
+    expect(Number.isFinite(card.rates.input)).toBe(true);
+    expect(Number.isFinite(card.rates.output)).toBe(true);
+    expect(card.rates.input).toBeGreaterThan(0);
+    expect(card.rates.output).toBeGreaterThan(0);
   });
 
   // AC12: failure path — two lookups of the same unresolved id produce
@@ -123,7 +126,7 @@ describe("resolveRateCard", () => {
   // (provider, model), lookupPricing is called exactly once with those
   // coordinates.
   test("AC14: 'sonnet' invokes lookupPricing once with (anthropic, claude-sonnet-5)", async () => {
-    const lookup = makeLookup(new Map([["anthropic/claude-sonnet-5", { inputPer1M: 2, outputPer1M: 10 }]]));
+    const lookup = makeLookup(new Map([["anthropic/claude-sonnet-5", toPricing({ inputPer1M: 2, outputPer1M: 10 })]]));
     await resolveRateCard("sonnet", lookup);
     expect(lookup.calls).toEqual([{ provider: "anthropic", model: "claude-sonnet-5" }]);
   });
@@ -198,8 +201,8 @@ describe("resolveRateCard", () => {
         const rates = await lookupPricing(coords.provider, coords.model);
         expect(rates).toBeDefined();
         if (rates === undefined) throw new Error(`lookupPricing returned undefined for alias "${id}"`);
-        expect(Number.isFinite(rates.inputPer1M)).toBe(true);
-        expect(Number.isFinite(rates.outputPer1M)).toBe(true);
+        expect(Number.isFinite(rates.input)).toBe(true);
+        expect(Number.isFinite(rates.output)).toBe(true);
       }
     } finally {
       _catalogDeps.loadProviders = originalLoadProviders;

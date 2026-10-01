@@ -1,6 +1,6 @@
 /**
  * AC1-AC6: `lookupPricing(provider, model)` maps nax-ai's catalog onto
- * nax's `TokenPricing`, fail-open on miss and on load failure, with the
+ * nax's `Pricing`, fail-open on miss and on load failure, with the
  * catalog loaded exactly once across calls.
  *
  * Tests inject `_catalogDeps.loadProviders` and `_catalogDeps.normalise` so
@@ -88,16 +88,16 @@ describe("lookupPricing", () => {
     mock.restore();
   });
 
-  // AC1: success path — known provider/model returns a defined TokenPricing
-  // whose inputPer1M and outputPer1M are positive finite numbers.
+  // AC1: success path — known provider/model returns a defined Pricing
+  // whose input and output are positive finite numbers.
   test("AC1: returns a defined value with positive finite rates for a known provider/model", async () => {
     const rates = await lookupPricing("anthropic", "claude-sonnet-5");
     expect(rates).toBeDefined();
     assertDefined(rates, "rates");
-    expect(Number.isFinite(rates.inputPer1M)).toBe(true);
-    expect(Number.isFinite(rates.outputPer1M)).toBe(true);
-    expect(rates.inputPer1M).toBeGreaterThan(0);
-    expect(rates.outputPer1M).toBeGreaterThan(0);
+    expect(Number.isFinite(rates.input)).toBe(true);
+    expect(Number.isFinite(rates.output)).toBe(true);
+    expect(rates.input).toBeGreaterThan(0);
+    expect(rates.output).toBeGreaterThan(0);
   });
 
   // AC2: boundary path — unknown provider/model returns undefined.
@@ -107,19 +107,19 @@ describe("lookupPricing", () => {
   });
 
   // AC3: success path — catalog cache rates are mapped onto nax's field names
-  // (input/output/cacheRead/cacheWrite -> inputPer1M/outputPer1M/cacheReadPer1M/cacheCreationPer1M).
-  test("AC3: maps the catalog's input/output/cacheRead/cacheWrite onto TokenPricing fields", async () => {
+  // (input/output/cacheRead/cacheWrite -> input/output/cacheRead/cacheWrite).
+  test("AC3: maps the catalog's input/output/cacheRead/cacheWrite onto Pricing fields", async () => {
     const rates = await lookupPricing("anthropic", "claude-sonnet-5");
     expect(rates).toBeDefined();
     assertDefined(rates, "rates");
-    expect(rates.inputPer1M).toBe(3);
-    expect(rates.outputPer1M).toBe(15);
-    expect(rates.cacheReadPer1M).toBe(0.3);
-    expect(rates.cacheCreationPer1M).toBe(3.75);
+    expect(rates.input).toBe(3);
+    expect(rates.output).toBe(15);
+    expect(rates.cacheRead).toBe(0.3);
+    expect(rates.cacheWrite).toBe(3.75);
   });
 
   // AC4: success path — tiers carry through the mapping with inputTokensAbove preserved.
-  test("AC4: maps the catalog's tiers onto TokenPricingTier with inputTokensAbove preserved", async () => {
+  test("AC4: maps the catalog's tiers onto PricingTier with inputTokensAbove preserved", async () => {
     _catalogDeps.loadProviders = mock(async () => [
       rawProvider("anthropic", "claude-sonnet-5", {
         ...SAMPLE_PRICING,

@@ -15,8 +15,8 @@ src/
 │   └── templates/    # Test templates (unit, component, e2e, CLI, snapshot)
 ├── agents/           # Agent adapters — two transports: ACP (named CLI agents) and native (ADR-027)
 │   ├── acp/          # ACP adapter over acpx (adapter, adapter-lifecycle/-output/-complete-flow, spawn-client*, parser, interaction-bridge, parse-agent-error, token-mapper)
-│   ├── catalog/      # nax-ai model-catalog boundary — maps `Pricing` onto `TokenPricing`
-│   ├── cost/         # Centralized cost calculation (calculate, estimate, rate-card, token-mapper, types)
+│   ├── catalog/      # nax-ai model-catalog boundary — returns nax-ai's `Pricing`; other code gets `Pricing`/`TokenUsage` via `cost/standard-types.ts`
+│   ├── cost/         # Centralized cost calculation (calculate, estimate, rate-card, token-mapper, types, standard-types)
 │   ├── native/       # In-process native agent over @nathapp/nax-ai (adapter, client, auth, models)
 │   │   └── session/  # Native session + turn loop (turn-loop, loop-events, tool-result, transcript-store, compaction)
 │   ├── retry/        # Retry strategy SSOT (default-strategy, presets, parse-retry, compose, hop-retry-policy)

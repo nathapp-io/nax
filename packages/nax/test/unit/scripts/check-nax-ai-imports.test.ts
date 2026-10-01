@@ -85,4 +85,22 @@ describe("check-nax-ai-imports", () => {
     rmSync(root, { recursive: true, force: true });
     expect(code).toBe(0);
   });
+
+  test("passes for the S1-1 staging re-export file", () => {
+    const root = tree({
+      "src/agents/cost/standard-types.ts": 'export type { TokenUsage } from "@nathapp/nax-ai";\n',
+    });
+    const { code } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).toBe(0);
+  });
+
+  test("still fails for a sibling of the staging file", () => {
+    const root = tree({
+      "src/agents/cost/estimate.ts": 'import type { Pricing } from "@nathapp/nax-ai";\n',
+    });
+    const { code } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).not.toBe(0);
+  });
 });

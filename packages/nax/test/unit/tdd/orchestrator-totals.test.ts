@@ -129,7 +129,7 @@ describe("buildPlanForStrategy — cost + duration aggregation", () => {
   test("totalCostUsd is accumulated across all three phases", async () => {
     const agent = agentReturning([
       { inputTokens: 100, outputTokens: 50 },
-      { inputTokens: 200, outputTokens: 100, cacheReadInputTokens: 10 },
+      { inputTokens: 200, outputTokens: 100, cacheReadTokens: 10 },
       { inputTokens: 50, outputTokens: 25 },
     ]);
     const config = makeConfig();

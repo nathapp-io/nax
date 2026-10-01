@@ -23,8 +23,8 @@ function makeSessionTurnErrorWithUsage(
     tokenUsage?: {
       inputTokens: number;
       outputTokens: number;
-      cacheReadInputTokens?: number;
-      cacheCreationInputTokens?: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
     };
     estimatedCostUsd?: number;
     exactCostUsd?: number;

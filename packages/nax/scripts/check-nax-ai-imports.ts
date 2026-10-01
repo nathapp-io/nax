@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 
 /**
- * Fails if @nathapp/nax-ai is imported anywhere but src/agents/native/.
+ * Fails if @nathapp/nax-ai is imported outside the allow-listed sites:
+ * src/agents/native/, src/agents/catalog/ and the S1-1 staging re-export
+ * src/agents/cost/standard-types.ts.
  *
  * The package is swappable only while its surface has one consumer. Mirrors
  * scripts/check-adapter-no-config-import.sh, and nax-ai's own
@@ -17,6 +19,9 @@ import { join, relative, sep } from "node:path";
 const ROOT = process.argv[2] ?? process.cwd();
 const SCAN = join(ROOT, "src");
 const ALLOWED_PREFIXES = [join("src", "agents", "native") + sep, join("src", "agents", "catalog") + sep];
+// S1-1 staging re-export of nax-ai's usage and rate types (S1 spec section 5.2).
+// Removed in S1-5, when the re-export moves into packages/nax-agent.
+const ALLOWED_FILES = [join("src", "agents", "cost", "standard-types.ts")];
 const IMPORT = /@nathapp\/nax-ai/;
 
 async function* walk(dir: string): AsyncGenerator<string> {
@@ -37,7 +42,7 @@ const violations: { file: string; line: number; text: string }[] = [];
 
 for await (const file of walk(SCAN)) {
   const rel = relative(ROOT, file);
-  if (ALLOWED_PREFIXES.some((prefix) => rel.startsWith(prefix))) continue;
+  if (ALLOWED_PREFIXES.some((prefix) => rel.startsWith(prefix)) || ALLOWED_FILES.includes(rel)) continue;
 
   const source = await readFile(file, "utf8");
   source.split("\n").forEach((text, index) => {
@@ -48,7 +53,9 @@ for await (const file of walk(SCAN)) {
 }
 
 if (violations.length > 0) {
-  console.error("@nathapp/nax-ai may only be imported from src/agents/native/ or src/agents/catalog/:");
+  console.error(
+    "@nathapp/nax-ai may only be imported from src/agents/native/, src/agents/catalog/ or src/agents/cost/standard-types.ts:",
+  );
   for (const v of violations) console.error(`  ${v.file}:${v.line}  ${v.text}`);
   process.exit(1);
 }

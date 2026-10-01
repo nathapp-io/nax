@@ -15,7 +15,7 @@
  */
 
 import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-ai";
-import type { ResolvedRates, TokenUsage } from "@/agents/cost";
+import type { PricingRates, TokenUsage } from "@/agents/cost";
 import type { TurnDeadline } from "@/agents/turn-deadline";
 import type { SpinBreaker } from "@/runtime/spin-breaker";
 import type { TranscriptMessage as NativeTranscriptMessage, ResolvedCompaction } from "./compaction";
@@ -38,7 +38,7 @@ export interface NativeTurnResponse {
    * by hand keep compiling; the adapter's `complete` closure always sets
    * it because native prices unconditionally.
    */
-  readonly rates?: import("../../cost").ResolvedRates;
+  readonly rates?: import("../../cost").PricingRates;
 }
 
 /** What one summarization call returns. Usage and cost are surfaced, not swallowed. */
@@ -47,7 +47,7 @@ export interface NativeSummaryResponse {
   readonly usage: TokenUsage;
   readonly costUsd: number;
   /** Per-1M rates that priced this summary call, when known. */
-  readonly rates?: ResolvedRates;
+  readonly rates?: PricingRates;
 }
 
 export interface TurnDeps {
@@ -178,7 +178,7 @@ export function readNativeTurnFailureUsage(err: unknown): NativeTurnFailureUsage
  */
 export function cacheUsageFields(usage: TokenUsage): { cacheRead?: number; cacheWrite?: number } {
   return {
-    ...(usage.cacheReadInputTokens !== undefined ? { cacheRead: usage.cacheReadInputTokens } : {}),
-    ...(usage.cacheCreationInputTokens !== undefined ? { cacheWrite: usage.cacheCreationInputTokens } : {}),
+    ...(usage.cacheReadTokens !== undefined ? { cacheRead: usage.cacheReadTokens } : {}),
+    ...(usage.cacheWriteTokens !== undefined ? { cacheWrite: usage.cacheWriteTokens } : {}),
   };
 }

@@ -25,13 +25,14 @@ import { _acpAdapterDeps, AcpAgentAdapter } from "@/agents/acp/adapter";
 import type { RateCard } from "@/agents/cost";
 import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import type { OpenSessionOpts } from "@/agents/types";
+import { toPricing } from "@/config/schema-types";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { makeClient, makeSession } from "./adapter.test";
 
 const ACP_WORKDIR = "/tmp/nax-sendturn-edges-test";
 
 const FALLBACK_CARD: RateCard = {
-  rates: { inputPer1M: 3, outputPer1M: 15 },
+  rates: toPricing({ inputPer1M: 3, outputPer1M: 15 }),
   source: "fallback-rates",
 };
 

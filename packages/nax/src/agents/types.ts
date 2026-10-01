@@ -471,7 +471,7 @@ export interface CompleteResult {
    * nonzero-usage guard omits the field on a zeroed `cumulative_token_usage`
    * so "priced" and "did not price" stay distinguishable on the result.
    */
-  rates?: import("./cost").ResolvedRates;
+  rates?: import("./cost").PricingRates;
   /** US-006: identity of the credential that served this call. Absent for ACP calls. */
   auth?: AuthStamp;
   /** Set when complete() failed due to an availability error — consumed by completeWithFallback. */

@@ -193,8 +193,8 @@ describe("attachUsageAuditSubscriber", () => {
         tokenUsage: {
           inputTokens: 100,
           outputTokens: 20,
-          cacheReadInputTokens: 5,
-          cacheCreationInputTokens: 1,
+          cacheReadTokens: 5,
+          cacheWriteTokens: 1,
         },
         exactCostUsd: 0.01,
       }),

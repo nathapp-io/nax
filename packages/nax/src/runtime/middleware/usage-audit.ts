@@ -49,8 +49,8 @@ function toOneShotEntry(event: DispatchEvent, runId: string): UsageAuditEntry | 
     cadence: "one-shot",
     input: tu?.inputTokens,
     output: tu?.outputTokens,
-    cacheRead: tu?.cacheReadInputTokens,
-    cacheWrite: tu?.cacheCreationInputTokens,
+    cacheRead: tu?.cacheReadTokens,
+    cacheWrite: tu?.cacheWriteTokens,
     costUsd,
   };
 }

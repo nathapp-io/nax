@@ -65,7 +65,7 @@ describe("attachCostSubscriber — DispatchErrorEvent → CostErrorEvent (AC8)",
 
     bus.emitDispatchError(
       makeDispatchErrorEvent({
-        tokenUsage: { inputTokens: 123, outputTokens: 45, cacheReadInputTokens: 7, cacheCreationInputTokens: 3 },
+        tokenUsage: { inputTokens: 123, outputTokens: 45, cacheReadTokens: 7, cacheWriteTokens: 3 },
         estimatedCostUsd: 0.005,
         exactCostUsd: 0.007,
         sessionRole: "implementer",

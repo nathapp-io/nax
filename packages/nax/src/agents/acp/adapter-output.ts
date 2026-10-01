@@ -224,7 +224,7 @@ export interface BuildTurnResultInput {
  * string, so both paths bill on the card `complete()` resolved once.
  *
  * US-002: also stamps `rates` (the post-tier, post-fallback
- * `ResolvedRates`) onto the returned shape whenever nonzero usage let
+ * `PricingRates`) onto the returned shape whenever nonzero usage let
  * `priceCall` run. Zero usage skips pricing entirely — the field is
  * omitted (not set to undefined, not zeroed) so the nonzero-usage guard
  * stays visible to the downstream cost subscriber.
@@ -271,7 +271,7 @@ export function deriveTokenUsage(
  * the card — a wire-reported cost passes through unchanged, and the cost
  * middleware is what decides "wire" wins over the card's source.
  *
- * US-002: `rates` is the post-tier, post-fallback `ResolvedRates` returned
+ * US-002: `rates` is the post-tier, post-fallback `PricingRates` returned
  * by `priceCall`. The field is OMITTED (not undefined, not zeroed) when
  * the accumulated tokens are zero, so the nonzero-usage guard stays visible
  * to the cost subscriber — "did not price" and "priced at zero" stay

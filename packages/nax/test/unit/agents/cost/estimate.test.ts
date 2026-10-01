@@ -10,15 +10,15 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { TokenUsage } from "@/agents/cost";
+import type { Pricing, TokenUsage } from "@/agents/cost";
 import { estimateCostUsd } from "@/agents/cost";
-import type { TokenPricing, TokenPricingTier } from "@/config/schema-types";
+import { toPricing } from "@/config/schema-types";
 
 describe("estimateCostUsd (relocated to @/agents/cost)", () => {
   // AC16: success path — the simplest baseline.
   test("AC16: 1M input + 1M output at 2/10 per 1M returns 12", () => {
     const usage: TokenUsage = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
-    const rates: TokenPricing = { inputPer1M: 2, outputPer1M: 10 };
+    const rates: Pricing = toPricing({ inputPer1M: 2, outputPer1M: 10 });
     expect(estimateCostUsd(usage, rates)).toBeCloseTo(12, 6);
   });
 
@@ -29,9 +29,9 @@ describe("estimateCostUsd (relocated to @/agents/cost)", () => {
     const usage: TokenUsage = {
       inputTokens: 0,
       outputTokens: 0,
-      cacheReadInputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
     };
-    const rates: TokenPricing = { inputPer1M: 2, outputPer1M: 10 };
+    const rates: Pricing = toPricing({ inputPer1M: 2, outputPer1M: 10 });
     // 1M cache-read * $2 = $2
     expect(estimateCostUsd(usage, rates)).toBeCloseTo(2, 6);
   });
@@ -39,16 +39,11 @@ describe("estimateCostUsd (relocated to @/agents/cost)", () => {
   // AC18: success path — above the threshold, the tier's inputPer1M wins
   // even for fresh input tokens.
   test("AC18: applies the tier inputPer1M when input-class usage exceeds the threshold", () => {
-    const tier: TokenPricingTier = {
-      inputPer1M: 4,
-      outputPer1M: 18,
-      inputTokensAbove: 200_000,
-    };
-    const rates: TokenPricing = {
+    const rates: Pricing = toPricing({
       inputPer1M: 2,
       outputPer1M: 12,
-      tiers: [tier],
-    };
+      tiers: [{ inputPer1M: 4, outputPer1M: 18, inputTokensAbove: 200_000 }],
+    });
     // 250_000 input-class tokens strictly exceeds 200_000, so the tier wins
     // for the WHOLE request — even the fresh 250_000 input tokens.
     const usage: TokenUsage = { inputTokens: 250_000, outputTokens: 0 };
@@ -57,7 +52,7 @@ describe("estimateCostUsd (relocated to @/agents/cost)", () => {
 
   // AC19: boundary path — below the threshold, the base inputPer1M wins.
   test("AC19: applies the base inputPer1M when input-class usage does not exceed the threshold", () => {
-    const rates: TokenPricing = {
+    const rates: Pricing = toPricing({
       inputPer1M: 2,
       outputPer1M: 12,
       tiers: [
@@ -67,7 +62,7 @@ describe("estimateCostUsd (relocated to @/agents/cost)", () => {
           inputTokensAbove: 200_000,
         },
       ],
-    };
+    });
     // 100_000 input tokens < 200_000 threshold, so the base rate wins.
     const usage: TokenUsage = { inputTokens: 100_000, outputTokens: 0 };
     expect(estimateCostUsd(usage, rates)).toBeCloseTo((100_000 / 1_000_000) * 2, 6);

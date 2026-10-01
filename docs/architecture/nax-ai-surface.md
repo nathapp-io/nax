@@ -37,7 +37,7 @@ anthropic/claude-sonnet-5  window=1000000   {input:2, output:10, cacheRead:0.2, 
 
 ### Tiers are real, and nax honours them
 
-Exactly **24 of 1354** catalogued models price in tiers (count from the last probe; re-derive per release). nax-ai's own doc comment is explicit: *"A consumer that ignores this bills the base rates and will under-report a long-context request; one that honours it is correct."* nax honours them since nax#1847: `TokenPricing.tiers` (`src/config/schema-types.ts`) mirrors `PricingTier`, and `priceCall` in `src/agents/cost/estimate.ts` applies the tier with the greatest `inputTokensAbove` strictly below the request's input-class usage to the **whole** request, matching nax-ai's `> inputTokensAbove`.
+Exactly **24 of 1354** catalogued models price in tiers (count from the last probe; re-derive per release). nax-ai's own doc comment is explicit: *"A consumer that ignores this bills the base rates and will under-report a long-context request; one that honours it is correct."* nax honours them since nax#1847: `Pricing.tiers` (`src/agents/cost/standard-types.ts`) mirrors `PricingTier`, and `priceCall` in `src/agents/cost/estimate.ts` applies the tier with the greatest `inputTokensAbove` strictly below the request's input-class usage to the **whole** request, matching nax-ai's `> inputTokensAbove`.
 
 Every tiered model, with its threshold:
 
@@ -58,7 +58,7 @@ const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?
 const { costUsd, resolvedRates } = priceCall(usage, rates);
 ```
 
-With no config override, `buildRateCard` maps the catalog's `input` / `output` / `cacheRead` / `cacheWrite` and every tier onto `TokenPricing` (`inputPer1M`, `outputPer1M`, `cacheReadPer1M`, `cacheCreationPer1M`) and stamps `pricingSource: "catalog-rates"`. A `ModelDef.pricing` override replaces the card wholesale (`"config-override"`); an override that omits a cache rate falls back to `inputPer1M` for that token class. `src/agents/catalog/` performs the same field mapping for the acpx side. The resolved per-1M rates travel on the result as `rates`, so a recorded cost can be reproduced from its row.
+With no config override, `buildRateCard` returns the catalog's nax-ai `Pricing` (`input` / `output` / `cacheRead` / `cacheWrite` and every tier, per 1M) and stamps `pricingSource: "catalog-rates"`. A `ModelDef.pricing` override replaces the card wholesale (`"config-override"`): `toPricing` maps the `ConfigPricing` onto nax-ai's `Pricing` shape and fills an omitted cache rate from the input rate of the same level. `src/agents/catalog/` returns the catalog's `Pricing` directly for the acpx side. The resolved per-1M rates travel on the result as `rates`, so a recorded cost can be reproduced from its row.
 
 ## Context window
 

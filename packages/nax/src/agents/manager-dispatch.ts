@@ -183,7 +183,7 @@ export function buildCompleteEvent(input: {
    * producer did not stamp them, so a downstream subscriber can distinguish
    * "no report" from "explicitly unknown" by `in event`.
    */
-  rates?: import("../agents/cost").ResolvedRates;
+  rates?: import("../agents/cost").PricingRates;
   /**
    * US-006: the credential identity the manager read off `CompleteResult.auth`
    * via `completeResultProvenance`. Omitted (not undefined) when the adapter
@@ -243,7 +243,7 @@ export function buildCompleteEvent(input: {
  */
 export function completeResultProvenance(result: CompleteResult): {
   pricingSource?: "catalog-rates" | "config-override" | "fallback-rates";
-  rates?: import("../agents/cost").ResolvedRates;
+  rates?: import("../agents/cost").PricingRates;
   auth?: AuthStamp;
 } {
   const failed = result.adapterFailure !== undefined;

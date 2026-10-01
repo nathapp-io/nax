@@ -25,7 +25,7 @@ function makeSessionTurnEvent(overrides: Partial<SessionTurnDispatchEvent> = {})
     origin: "runAsSession",
     durationMs: 200,
     timestamp: 1000,
-    tokenUsage: { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10, cacheCreationInputTokens: 5 },
+    tokenUsage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 10, cacheWriteTokens: 5 },
     exactCostUsd: 0.006,
     ...overrides,
   };
