@@ -1,11 +1,7 @@
 /**
- * Base error class for nax and nax-agent. Lives in the move set (spec R2);
+ * Base error class for all nax errors. Lives in the move set (spec R2);
  * `src/errors.ts` re-exports it so every `instanceof NaxError` check matches
  * one class.
- */
-
-/**
- * Base error class for all nax errors.
  */
 export class NaxError extends Error {
   constructor(

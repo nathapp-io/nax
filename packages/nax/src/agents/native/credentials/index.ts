@@ -118,7 +118,8 @@ function lazyStore(): GuardedCredentialStore {
 let memo: { key: string; store: GuardedCredentialStore } | undefined;
 
 function storeKey(): string {
-  return `${credentialFilePath()}\u0000${join(credentialsConfig().configDir(), "config.json")}`;
+  const dir = credentialsConfig().configDir();
+  return `${join(dir, "credentials")}\u0000${join(dir, "config.json")}`;
 }
 
 export function naxCredentialStore(): GuardedCredentialStore {

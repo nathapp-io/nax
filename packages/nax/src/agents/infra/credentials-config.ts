@@ -32,7 +32,7 @@ export function credentialsConfig(): CredentialsConfig {
   return configured;
 }
 
-/** Clears the slot. Tests only. */
+/** Clears the slot. Tests only. @internal */
 export function _resetCredentialsConfig(): void {
   configured = undefined;
 }
