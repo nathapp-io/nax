@@ -19,9 +19,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createFileCredentialStore, type ProviderId } from "@nathapp/nax-ai";
+import { NaxError } from "@/agents/infra";
 import type { AuthStamp } from "@/agents/session-types";
 import { globalConfigDir, readGlobalAuthConfig } from "@/config";
-import { NaxError } from "@/errors";
 import { createChainedCredentialStore } from "./chained-store";
 import { createChangeGuard, type GuardedCredentialStore } from "./change-guard";
 import { createExecCredentialSource } from "./exec-source";

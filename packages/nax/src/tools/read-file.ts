@@ -7,7 +7,7 @@
  */
 
 import { open } from "node:fs/promises";
-import { NaxError } from "@/errors";
+import { NaxError } from "@/agents/infra";
 import { cutBufferToByteCap, READ_CEILING } from "./truncate";
 
 export interface ReadFileSliceOptions {

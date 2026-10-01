@@ -14,7 +14,7 @@
  */
 
 import type { CredentialStore, ProviderId, StoredCredential } from "@nathapp/nax-ai";
-import { NaxError } from "@/errors";
+import { NaxError } from "@/agents/infra";
 import type { ExecCredentialSource } from "./exec-source";
 
 /** The store the run is assembled around: a chain, plus where each provider came from. */

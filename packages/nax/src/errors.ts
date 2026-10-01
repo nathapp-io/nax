@@ -4,21 +4,9 @@
  * Replaces process.exit(1) patterns with structured errors that can be caught
  * and handled by the CLI layer or tests.
  */
+import { NaxError } from "./agents/infra";
 
-/**
- * Base error class for all nax errors.
- */
-export class NaxError extends Error {
-  constructor(
-    message: string,
-    public readonly code: string,
-    public readonly context?: Record<string, unknown>,
-  ) {
-    super(message);
-    this.name = "NaxError";
-    Error.captureStackTrace(this, this.constructor);
-  }
-}
+export { NaxError };
 
 /**
  * Agent not found or not installed.

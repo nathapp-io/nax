@@ -10,7 +10,7 @@
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ConversationMessage } from "@nathapp/nax-ai";
-import { NaxError } from "@/errors";
+import { NaxError } from "@/agents/infra";
 import { getLogger } from "@/logger";
 import { parseModelSpec } from "../models";
 

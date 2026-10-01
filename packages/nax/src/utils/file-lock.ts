@@ -64,7 +64,7 @@
  */
 
 import { readFile, stat, unlink, writeFile } from "node:fs/promises";
-import { NaxError } from "../errors";
+import { NaxError } from "@/agents/infra";
 import { isProcessAlive } from "./process-alive";
 
 const DEFAULT_RETRY_MS = 10;

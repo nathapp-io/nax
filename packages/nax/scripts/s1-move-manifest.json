@@ -7,6 +7,7 @@
     { "from": "src/command-safety/", "to": "command-safety/" },
     { "from": "src/execution/command-interceptor/", "to": "command-interceptor/" },
     { "from": "src/runtime/spin-breaker/", "to": "infra/spin-breaker/" },
+    { "from": "src/agents/infra/", "to": "infra/" },
     { "from": "src/agents/coding-tool-bash.ts", "to": "coding-tools/coding-tool-bash.ts" },
     { "from": "src/agents/coding-tool-extras.ts", "to": "coding-tools/coding-tool-extras.ts" },
     { "from": "src/agents/coding-tool-sandbox.ts", "to": "coding-tools/coding-tool-sandbox.ts" },

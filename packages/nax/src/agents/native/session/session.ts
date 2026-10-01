@@ -7,8 +7,8 @@
  * either no-ops or transcript-file handles".
  */
 
+import { NaxError } from "@/agents/infra";
 import type { OpenSessionOpts, SessionHandle } from "@/agents/session-types";
-import { NaxError } from "@/errors";
 import { createSpinBreaker, type SpinBreaker } from "@/runtime/spin-breaker";
 import { NATIVE_AGENT } from "../models";
 import { nativeSessionId } from "../session-affinity";

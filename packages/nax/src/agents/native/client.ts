@@ -10,9 +10,8 @@
  */
 
 import { type Client, createClient, defaultProtocols, defaultProviders } from "@nathapp/nax-ai";
-
+import { NaxError } from "@/agents/infra";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
-import { NaxError } from "@/errors";
 import { byCodePoint } from "@/utils/sort";
 import { naxCredentialStore } from "./credentials";
 import { toProviderOverrides } from "./models";

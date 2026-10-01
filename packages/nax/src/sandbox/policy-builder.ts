@@ -7,8 +7,8 @@
  * would otherwise keep a spelling the kernel never sees (spec 12, finding 3).
  */
 import { isAbsolute, join, resolve } from "node:path";
+import { NaxError } from "@/agents/infra";
 import { SANDBOX_GLOB_CHARS, type SandboxConfig } from "../config/schemas-sandbox";
-import { NaxError } from "../errors";
 import {
   NAX_ALWAYS_DENIED_ENTRIES,
   NAX_SCRATCHPAD_ENTRY,

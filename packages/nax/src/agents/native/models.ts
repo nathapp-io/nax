@@ -7,8 +7,8 @@
  */
 
 import type { Pricing, ProviderOverride, ThinkingLevel } from "@nathapp/nax-ai";
+import { NaxError } from "@/agents/infra";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
-import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { parseModelSpec } from "../model-spec";
 
