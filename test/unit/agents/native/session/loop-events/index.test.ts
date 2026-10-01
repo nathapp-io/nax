@@ -36,7 +36,7 @@ import type {
  * The barrel's public surface, read BY NAME off the namespace object.
  *
  * A named import of a symbol the barrel does not carry yet is a link-time
- * failure, and `test/` is a hard typecheck gate (its own pre-commit hook runs
+ * failure, and `test/` is a hard typecheck gate (the CI `typecheck` step runs
  * it), so a missing re-export has to surface as a failing assertion rather than
  * as a build break. `Reflect.get` returns the export itself — same binding, no
  * copy, no wrapper — and each read is typed as the finished barrel declares it.
