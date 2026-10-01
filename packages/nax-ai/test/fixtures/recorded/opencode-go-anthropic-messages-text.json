@@ -1,0 +1,194 @@
+{
+  "meta": {
+    "provider": "opencode-go",
+    "protocol": "anthropic-messages",
+    "model": "minimax-m3",
+    "api": "anthropic-messages",
+    "note": "Recorded from opencode-go. Evidence of anthropic-messages event shape only.",
+    "recordedAt": "2026-08-31"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    }
+  },
+  "events": [
+    {
+      "type": "start",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 42,
+          "output": 2,
+          "cacheRead": 128,
+          "cacheWrite": 0,
+          "totalTokens": 172,
+          "cost": {
+            "input": 0.0000126,
+            "output": 0.0000024,
+            "cacheRead": 0.00000768,
+            "cacheWrite": 0,
+            "total": 0.00002268
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195269367,
+        "responseId": "06e4e4c6a124795d256aad12227a05f2",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_start",
+      "contentIndex": 0,
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 42,
+          "output": 2,
+          "cacheRead": 128,
+          "cacheWrite": 0,
+          "totalTokens": 172,
+          "cost": {
+            "input": 0.0000126,
+            "output": 0.0000024,
+            "cacheRead": 0.00000768,
+            "cacheWrite": 0,
+            "total": 0.00002268
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195269367,
+        "responseId": "06e4e4c6a124795d256aad12227a05f2",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "ok",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 42,
+          "output": 2,
+          "cacheRead": 128,
+          "cacheWrite": 0,
+          "totalTokens": 172,
+          "cost": {
+            "input": 0.0000126,
+            "output": 0.0000024,
+            "cacheRead": 0.00000768,
+            "cacheWrite": 0,
+            "total": 0.00002268
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195269367,
+        "responseId": "06e4e4c6a124795d256aad12227a05f2",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "text_end",
+      "contentIndex": 0,
+      "content": "ok",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 42,
+          "output": 2,
+          "cacheRead": 128,
+          "cacheWrite": 0,
+          "totalTokens": 172,
+          "cost": {
+            "input": 0.0000126,
+            "output": 0.0000024,
+            "cacheRead": 0.00000768,
+            "cacheWrite": 0,
+            "total": 0.00002268
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195269367,
+        "responseId": "06e4e4c6a124795d256aad12227a05f2",
+        "rawStopReason": "end_turn"
+      }
+    },
+    {
+      "type": "done",
+      "reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "model": "minimax-m3",
+        "usage": {
+          "input": 42,
+          "output": 2,
+          "cacheRead": 128,
+          "cacheWrite": 0,
+          "totalTokens": 172,
+          "cost": {
+            "input": 0.0000126,
+            "output": 0.0000024,
+            "cacheRead": 0.00000768,
+            "cacheWrite": 0,
+            "total": 0.00002268
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195269367,
+        "responseId": "06e4e4c6a124795d256aad12227a05f2",
+        "rawStopReason": "end_turn"
+      }
+    }
+  ]
+}

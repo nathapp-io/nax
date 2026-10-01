@@ -1,0 +1,899 @@
+/**
+ * The pi-ai-backed protocol.
+ *
+ * This file and the two other files on the ALLOWED list in
+ * scripts/check-pi-ai-imports.ts are the only places pi-ai may be imported.
+ * Nothing exported here may expose a pi-ai type in a shape a consumer sees.
+ *
+ * One implementation serves all four protocols. They differ only in where a
+ * system prompt sits in the wire request, and pi-ai's Context carries it in a
+ * dedicated field, so on this path the difference does not exist. The protocol
+ * name is still a parameter because a per-api quirk would branch on it.
+ */
+
+import type {
+  Api,
+  AssistantMessageEvent,
+  Context,
+  JsonObject,
+  Model,
+  MutableModels,
+  Message as PiMessage,
+  Provider as PiProvider,
+  Tool as PiTool,
+  Usage as PiUsage,
+  SimpleStreamOptions,
+} from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
+import type { AuthResolver } from "../auth/resolver.ts";
+import { assertOverrideModelProvider, assertOverrideModelRouting } from "../providers/override-model.ts";
+import type { OpenRouterRouting, Pricing, ProviderOverride, ResolvedModel } from "../providers/types.ts";
+import type { CredentialStore, StopReason } from "../types.ts";
+import { toTokenUsage, totalTokens } from "../usage.ts";
+import { vendorAppHeaders } from "./client-app.ts";
+import { classifyProviderError, classifyThrown, parseRetryAfter } from "./errors.ts";
+import type { PiProtocolOptions } from "./pi-protocols.ts";
+import { assertValidHeaders, assertValidSessionId, mergeRequestHeaders, withoutEmpty } from "./request-headers.ts";
+import { vendorSessionHeaders } from "./session-id.ts";
+import { createToolArgAccumulator, parseToolArgs } from "./tool-args.ts";
+import type {
+  ConversationMessage,
+  Protocol,
+  ProtocolEvent,
+  ProtocolRequest,
+  ThinkingBlock,
+  ThinkingLevel,
+  Transport,
+} from "./types.ts";
+import { THINKING_LEVELS } from "./types.ts";
+
+export interface PiResponse {
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+}
+
+export type PiStreamFn = (
+  model: Model<Api>,
+  context: Context,
+  options: SimpleStreamOptions,
+  /**
+   * Called once, before the body is consumed. pi-ai's error event carries no
+   * status and no retry-after, so without this the classifier would return
+   * "unknown" for every failure and the consumer's retry policy — which M1
+   * section 10.1 deliberately assigns to the consumer — would be blind.
+   */
+  onResponse: (response: PiResponse) => void,
+) => AsyncIterable<AssistantMessageEvent>;
+
+export interface PiDeps {
+  readonly resolveModel: (modelId: string, provider?: string) => Promise<Model<Api>>;
+  readonly stream: PiStreamFn;
+}
+
+/**
+ * pi-ai's Message requires a timestamp, but no wire module under its api/
+ * directory reads one. A constant keeps translation deterministic; Date.now()
+ * would make tests flap over a field that is never sent.
+ */
+const NO_TIMESTAMP = 0;
+
+/** Placeholder accounting for a replayed assistant turn. Never sent upstream. */
+const NO_USAGE: PiUsage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+export function toPiTool(tool: ProtocolRequest["tools"] extends readonly (infer T)[] | undefined ? T : never): PiTool {
+  return {
+    name: tool.name,
+    description: tool.description,
+    // pi-ai types this as a TypeBox TSchema, which is a JSON Schema object at
+    // runtime. nax-ai does not validate schemas; it forwards what it was given.
+    parameters: tool.inputSchema as PiTool["parameters"],
+    ...(tool.constrainedSampling !== undefined ? { constrainedSampling: tool.constrainedSampling } : {}),
+  };
+}
+
+/**
+ * pi's ThinkingContent, from our ThinkingBlock. `thinkingSignature` is left
+ * unset rather than "" when absent, because pi's own request-side handling
+ * (dist/api/anthropic-messages.js:923-957) treats "no signature" and "empty
+ * signature" differently — a synthesised "" would pick the wrong branch.
+ */
+function toPiThinking(block: ThinkingBlock): {
+  type: "thinking";
+  thinking: string;
+  thinkingSignature?: string;
+  redacted?: boolean;
+} {
+  return {
+    type: "thinking",
+    thinking: block.text,
+    ...(block.signature !== undefined ? { thinkingSignature: block.signature } : {}),
+    ...(block.redacted !== undefined ? { redacted: block.redacted } : {}),
+  };
+}
+
+function toPiMessages(messages: readonly ConversationMessage[], model: Model<Api>): PiMessage[] {
+  const toolNames = new Map<string, string>();
+  const out: PiMessage[] = [];
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      out.push({ role: "user", content: message.content, timestamp: NO_TIMESTAMP });
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      for (const call of message.toolCalls ?? []) toolNames.set(call.id, call.name);
+      out.push({
+        role: "assistant",
+        content: [
+          // Anthropic requires thinking blocks to lead the assistant
+          // message when present — this is a wire ordering requirement, not
+          // a style choice, so it goes first unconditionally.
+          ...(message.thinking ?? []).map(toPiThinking),
+          ...(message.content === "" ? [] : [{ type: "text" as const, text: message.content }]),
+          ...(message.toolCalls ?? []).map((call) => ({
+            type: "toolCall" as const,
+            id: call.id,
+            name: call.name,
+            // pi-ai 0.86.0 narrowed ToolCall.arguments from Record<string,
+            // unknown> to its own JsonObject. nax-ai does not validate tool
+            // arguments — it forwards what the consumer was given, the same
+            // way toPiTool forwards an unvalidated schema — so this asserts
+            // the shape rather than proving it.
+            arguments: (call.input ?? {}) as JsonObject,
+          })),
+        ],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: NO_USAGE,
+        stopReason: "stop",
+        timestamp: NO_TIMESTAMP,
+      });
+      continue;
+    }
+
+    // toolName is not on our ConversationMessage but is read on the wire by
+    // several providers, so it is recovered from the call that produced this
+    // result. No match means the caller assembled an impossible conversation.
+    const toolName = toolNames.get(message.toolCallId);
+    if (toolName === undefined) {
+      throw new Error(
+        `Tool result references tool call "${message.toolCallId}", which no earlier assistant message made.`,
+      );
+    }
+
+    out.push({
+      role: "toolResult",
+      toolCallId: message.toolCallId,
+      toolName,
+      content: [{ type: "text", text: message.content }],
+      isError: message.isError ?? false,
+      timestamp: NO_TIMESTAMP,
+    });
+  }
+
+  return out;
+}
+
+export function toPiContext(req: ProtocolRequest, model: Model<Api>): Context {
+  return {
+    ...(req.system !== undefined ? { systemPrompt: req.system } : {}),
+    messages: toPiMessages(req.messages, model),
+    ...(req.tools !== undefined ? { tools: req.tools.map(toPiTool) } : {}),
+  };
+}
+
+export function toPiOptions(req: ProtocolRequest): SimpleStreamOptions {
+  return {
+    ...(req.toolChoice !== undefined ? { toolChoice: req.toolChoice } : {}),
+    ...(req.maxTokens !== undefined ? { maxTokens: req.maxTokens } : {}),
+    ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+    ...(req.cacheRetention !== undefined ? { cacheRetention: req.cacheRetention } : {}),
+    ...(req.signal !== undefined ? { signal: req.signal } : {}),
+    ...(req.headers !== undefined ? { headers: { ...req.headers } } : {}),
+    // Empty is treated as absent, matching vendorSessionHeaders: an id that
+    // cannot identify anything should not reach pi as though it could.
+    ...(req.sessionId !== undefined && req.sessionId !== "" ? { sessionId: req.sessionId } : {}),
+    // pi-ai's scale has no "off": the absence of the field is how thinking is
+    // disabled, so mapping "off" to a value would silently enable it.
+    ...(req.thinking !== undefined && req.thinking !== "off" ? { reasoning: req.thinking } : {}),
+  };
+}
+
+/**
+ * pi-ai's terminal reasons, narrowed to ours.
+ *
+ * "deferred" is absent by design: we never request a deferred response, so
+ * receiving one means an assumption broke and it must surface rather than be
+ * folded into "stop". "content_filter" has no pi-ai equivalent and is
+ * unreachable here; it exists for a hand-written backend.
+ */
+const STOP_REASONS: Readonly<Record<string, StopReason>> = {
+  stop: "stop",
+  length: "length",
+  toolUse: "tool_use",
+};
+
+/** The in-progress tool call at a content index, when there is one. */
+function toolCallAt(partial: { content: readonly unknown[] }, index: number): { id: string; name: string } | undefined {
+  const block = partial.content[index];
+  if (typeof block !== "object" || block === null) return undefined;
+  const candidate = block as { type?: unknown; id?: unknown; name?: unknown };
+  if (candidate.type !== "toolCall" || typeof candidate.id !== "string" || typeof candidate.name !== "string") {
+    return undefined;
+  }
+  return { id: candidate.id, name: candidate.name };
+}
+
+/**
+ * The signature and redacted flag for the thinking block at a content index,
+ * when the block at that index has that shape. `thinking_end`'s own event
+ * carries no signature — pi accumulates it onto the block in `partial`
+ * during the stream (signature_delta, dist/api/anthropic-messages.js:501-502)
+ * so by the time the block ends it is complete there. Same trap as
+ * `toolCallAt` above: the terminal event is missing fields only the partial
+ * carries.
+ */
+function thinkingBlockAt(
+  partial: { content: readonly unknown[] },
+  index: number,
+): { signature?: string; redacted?: boolean } {
+  const block = partial.content[index];
+  if (typeof block !== "object" || block === null) return {};
+  const candidate = block as { type?: unknown; thinkingSignature?: unknown; redacted?: unknown };
+  if (candidate.type !== "thinking") return {};
+  return {
+    ...(typeof candidate.thinkingSignature === "string" ? { signature: candidate.thinkingSignature } : {}),
+    ...(typeof candidate.redacted === "boolean" ? { redacted: candidate.redacted } : {}),
+  };
+}
+
+export function createPiProtocol(name: string, deps: PiDeps): Protocol {
+  return {
+    name,
+
+    async *stream(req: ProtocolRequest): AsyncIterable<ProtocolEvent> {
+      const model = await deps.resolveModel(req.model, req.provider);
+      let observed: PiResponse | undefined;
+      const events = deps.stream(model, toPiContext(req, model), toPiOptions(req), (response) => {
+        observed = response;
+      });
+      const toolArgs = createToolArgAccumulator();
+
+      try {
+        for await (const event of events) {
+          switch (event.type) {
+            case "text_delta":
+              yield { type: "text-delta", text: event.delta };
+              break;
+
+            case "thinking_delta":
+              yield { type: "thinking-delta", text: event.delta };
+              break;
+
+            case "thinking_end": {
+              // Losing thinking text is worse than losing a signature: even
+              // when the block at this content index is not the shape we
+              // expect, still emit the text `thinking_end` itself carries.
+              const { signature, redacted } = thinkingBlockAt(event.partial, event.contentIndex);
+              yield {
+                type: "thinking",
+                block: {
+                  text: event.content,
+                  ...(signature !== undefined ? { signature } : {}),
+                  ...(redacted !== undefined ? { redacted } : {}),
+                },
+              };
+              break;
+            }
+
+            case "toolcall_delta": {
+              // The delta carries neither id nor name; both are only on the
+              // in-progress call block that partial.content holds at this index.
+              const call = toolCallAt(event.partial, event.contentIndex);
+              if (call === undefined) break;
+              const rawInput = toolArgs.append(call.id, call.name, event.delta);
+              yield { type: "tool-call-partial", id: call.id, name: call.name, rawInput };
+              break;
+            }
+
+            case "toolcall_end": {
+              const pending = toolArgs.take(event.toolCall.id);
+              let input: unknown;
+              try {
+                input = parseToolArgs(pending?.raw ?? "");
+              } catch (cause) {
+                // An error event, not a throw: text and usage already yielded
+                // must survive.
+                yield {
+                  type: "error",
+                  error: {
+                    kind: "bad-request",
+                    message: `Tool "${event.toolCall.name}" returned unparseable arguments.`,
+                    cause,
+                  },
+                };
+                return;
+              }
+              yield { type: "tool-call", call: { id: event.toolCall.id, name: event.toolCall.name, input } };
+              break;
+            }
+
+            case "done": {
+              const stopReason = STOP_REASONS[event.reason];
+              yield { type: "usage", usage: toTokenUsage(event.message.usage) };
+              if (stopReason === undefined) {
+                yield {
+                  type: "error",
+                  error: {
+                    kind: "unknown",
+                    message: `Upstream reported stop reason "${event.reason}", which nax-ai never requests.`,
+                  },
+                };
+                return;
+              }
+              // pi holds both on the terminal message and nax-ai used to drop
+              // them. Conditional spreads because `exactOptionalPropertyTypes`
+              // is on and "the provider reported nothing" must stay
+              // distinguishable from "reported an empty string".
+              const { responseId, responseModel } = event.message;
+              yield {
+                type: "done",
+                stopReason,
+                ...(responseId !== undefined ? { responseId } : {}),
+                ...(responseModel !== undefined ? { responseModel } : {}),
+              };
+              return;
+            }
+
+            case "error": {
+              const status = observed?.status;
+              const retryAfter = parseRetryAfter(observed?.headers);
+              const usage = toTokenUsage(event.error.usage);
+              // A failed request that consumed tokens still bills for them.
+              if (totalTokens(usage) > 0) yield { type: "usage", usage };
+              const upstreamMessage = event.error.errorMessage;
+              yield {
+                type: "error",
+                error: {
+                  // The status alone cannot separate an overflow from a
+                  // malformed request; the upstream message can, and it is
+                  // already here.
+                  kind: classifyProviderError(status, upstreamMessage),
+                  message: upstreamMessage ?? `Upstream stream ended: ${event.reason}.`,
+                  ...(status !== undefined ? { status } : {}),
+                  ...(retryAfter !== undefined ? { retryAfter } : {}),
+                },
+              };
+              return;
+            }
+
+            default:
+              // start, text_start, text_end, thinking_start and toolcall_start
+              // carry nothing our vocabulary expresses: content is already
+              // delivered by the deltas (and, for thinking, by "thinking_end"
+              // above).
+              break;
+          }
+        }
+      } catch (cause) {
+        // A stream failure with no HTTP response (connection reset, DNS
+        // failure, an immediate socket error) propagates as a raw throw
+        // rather than pi-ai's own "error" event — there was never a response
+        // to build one from, which is why classifyHttpError(undefined) would
+        // otherwise return "unknown" here. The caller's own abort must not be
+        // relabelled as a transport fault: retryTransportFaults, and any
+        // consumer-level abort handling, both need to see abort as abort.
+        if (req.signal?.aborted) throw cause;
+        yield { type: "error", error: classifyThrown(cause) };
+      }
+    },
+  };
+}
+
+let shared: MutableModels | undefined;
+
+/**
+ * The credential-backed twin of `shared`, keyed by the store itself. Each of
+ * the four protocol entries resolves lazily through `createPiDeps`, so without
+ * this memo a consumer with credentials would construct one Models per entry
+ * instead of the single instance pi-protocols.ts promises.
+ */
+const credentialed = new WeakMap<CredentialStore, MutableModels>();
+
+/** Stands in for "no credential store" as the outer key of `overridden`. */
+const AMBIENT_CREDENTIALS: object = {};
+
+/**
+ * Catalogs carrying provider overrides, keyed by credential store (or the
+ * ambient sentinel) and then by the IDENTITY of the overrides array.
+ *
+ * Neither `shared` nor `credentialed` may ever be patched: both are process
+ * globals, so one client's override would make a phantom model visible to
+ * every other client in the process — a subtler bug than the one being fixed.
+ * An override therefore always gets its own `builtinModels()` instance.
+ *
+ * Array identity is the key, rather than the array's contents, for two
+ * reasons. `defaultProtocols` hands one options object to all four lazy
+ * protocol factories, so keying on identity still yields exactly one Models
+ * instance for the four — which is what pi-protocols.ts's header comment
+ * promises. And a content key means stringifying externally-supplied data on
+ * every construction, which is both slower and wrong the moment an override
+ * carries a value JSON does not round-trip. Two separately-constructed but
+ * equal arrays getting two catalogs costs memory only; cross-client bleed
+ * costs correctness.
+ */
+const overridden = new WeakMap<object, WeakMap<readonly ProviderOverride[], MutableModels>>();
+
+function toPiCost(pricing: Pricing): Model<Api>["cost"] {
+  return {
+    input: pricing.input,
+    output: pricing.output,
+    cacheRead: pricing.cacheRead,
+    cacheWrite: pricing.cacheWrite,
+    ...(pricing.tiers !== undefined
+      ? {
+          tiers: pricing.tiers.map((tier) => ({
+            inputTokensAbove: tier.inputTokensAbove,
+            input: tier.input,
+            output: tier.output,
+            cacheRead: tier.cacheRead,
+            cacheWrite: tier.cacheWrite,
+          })),
+        }
+      : {}),
+  };
+}
+
+/**
+ * The bundled sibling an override model is templated from.
+ *
+ * The size rule (contextWindow, then maxTokens, then id) is deliberate rather
+ * than positional. Taking the first model on the api meant the choice was an
+ * artefact of the snapshot's array order: a pi-ai bump that reordered or
+ * inserted models silently changed which `input`, `compat` and
+ * `thinkingLevelMap` an existing override inherited. Largest `contextWindow`
+ * is the closest data-driven proxy for "the model this override is a sibling
+ * of"; larger `maxTokens` breaks a context tie, and id is the final key so the
+ * pick is a total order that cannot move when the catalog is merely
+ * reordered. The id key is a stability measure, not a quality ranking.
+ *
+ * Issue #47: sizing alone can pick a sibling whose thinking support does not
+ * cover the override's declared levels — a smaller-context sibling that
+ * supports "high" is a better template for an override declaring "high" than
+ * a larger one that maps it to `null`, because `synthesiseModel` inherits
+ * `thinkingLevelMap` (and `compat.thinkingFormat`) from whichever template is
+ * picked. So when `thinkingLevels` is given, candidates are first restricted
+ * to those pi's own `getSupportedThinkingLevels` says cover every declared
+ * level ("off" is excluded from the coverage check: every model accepts not
+ * thinking, so it says nothing about which sibling to prefer). The size rule
+ * remains the tie-break among compatible candidates, and the whole rule when
+ * no candidate is compatible — so the pick stays a total order that cannot
+ * move when the catalog is merely reordered, compatible or not.
+ *
+ * This can change which sibling an *existing* override inherits its other
+ * unstated fields from, not just `thinkingLevelMap` — `synthesiseModel`
+ * spreads the whole template, `input` (text/image support) included. On
+ * `opencode-go`, for example, `kimi-k3` (the size winner) accepts images
+ * while `deepseek-v4-flash` (a thinking-compatible but smaller winner) does
+ * not, so an override whose declared levels flip the pick this way loses
+ * vision support it previously inherited incidentally. That is accepted:
+ * getting the declared thinking levels translated correctly is the override's
+ * one explicit contract, while `input` was always an inherited accident of
+ * whichever sibling sizing happened to prefer — never something an override
+ * declares or can rely on. A consumer that needs a specific `input` should
+ * not depend on template inheritance for it.
+ */
+export function pickTemplate(
+  models: readonly Model<Api>[],
+  protocol: string,
+  thinkingLevels?: readonly ThinkingLevel[],
+): Model<Api> | undefined {
+  const candidates = models.filter((candidate) => candidate.api === protocol);
+  if (candidates.length === 0) return undefined;
+
+  const required = (thinkingLevels ?? []).filter((level) => level !== "off");
+  if (required.length > 0) {
+    const compatible = candidates.filter((candidate) => isThinkingCompatible(candidate, required));
+    if (compatible.length > 0) return bestBySize(compatible);
+  }
+
+  return bestBySize(candidates);
+}
+
+/** Whether every one of `required` (already stripped of "off") is pi-supported on `candidate`. */
+function isThinkingCompatible(candidate: Model<Api>, required: readonly ThinkingLevel[]): boolean {
+  const supported = new Set(getSupportedThinkingLevels(candidate));
+  return required.every((level) => supported.has(level));
+}
+
+function bestBySize(candidates: readonly Model<Api>[]): Model<Api> {
+  let best = candidates[0] as Model<Api>;
+  for (const candidate of candidates.slice(1)) {
+    if (isBetterTemplate(candidate, best)) best = candidate;
+  }
+  return best;
+}
+
+function isBetterTemplate(candidate: Model<Api>, best: Model<Api>): boolean {
+  if (candidate.contextWindow !== best.contextWindow) return candidate.contextWindow > best.contextWindow;
+  if (candidate.maxTokens !== best.maxTokens) return candidate.maxTokens > best.maxTokens;
+  return candidate.id < best.id;
+}
+
+/**
+ * A pi `Model` for an override entry, templated off a sibling.
+ *
+ * `ResolvedModel` is deliberately narrower than pi's `Model`: it carries no
+ * `name`, `baseUrl`, `input` or `compat`, and those are not optional on the
+ * wire side. Inventing values for them would be guessing at provider behaviour,
+ * so instead every field the override does not speak about is inherited from a
+ * bundled model of the same provider on the same api — the closest thing to
+ * "what this provider's models look like" that exists. `maxTokens` is not in
+ * that list: `ResolvedModel` carries it, so an override that declares one has
+ * it sent (`model.maxTokens ?? template.maxTokens`) rather than clamped to the
+ * template's.
+ *
+ * When the base catalog already carries this id on this api, that entry is the
+ * template and none of the selection rules below apply: an amendment inherits
+ * from the model it amends.
+ *
+ * `thinkingLevelMap` (and the `compat.thinkingFormat` bundled inside
+ * `compat`) is inherited from the template `pickTemplate` selects, which is
+ * now itself thinking-aware (issue #47) — so an inherited map is expected to
+ * cover the override's declared levels whenever a compatible sibling exists.
+ * Three cases, in priority order:
+ *
+ * 1. `model.thinkingLevelMap` is explicit: it always wins, over both the
+ *    template's map and anything this function would derive.
+ * 2. Otherwise, when the picked template covers every declared level
+ *    (excluding "off"), its map is inherited as-is via `...template` below —
+ *    it already translates each declared level correctly.
+ * 3. Otherwise (no compatible sibling exists on this provider/api, so the
+ *    template is the best available by size alone), a map is derived from
+ *    the override's own `thinkingLevels` rather than a size-picked stranger's
+ *    — see `deriveThinkingLevelMap`.
+ */
+function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
+  // An override may amend a model the base catalog already carries — correcting
+  // stale pricing is the usual reason, pinning routing (issue #43) the new one.
+  // For that id the honest template is that model itself: `pickTemplate` answers
+  // "what does a model of this provider on this api look like", which for an id
+  // the catalog already has would hand it a size-picked stranger's `maxTokens`
+  // and `input`. The api must match too, since `compat` is api-typed and an
+  // override is free to re-declare the protocol.
+  const own = base.getModels().find((candidate) => candidate.id === model.id && candidate.api === model.protocol);
+  const template = own ?? pickTemplate(base.getModels(), model.protocol, model.thinkingLevels);
+  if (template === undefined) {
+    throw new Error(
+      `Provider "${base.id}" has no model on api "${model.protocol}" to template override model "${model.id}" from.`,
+    );
+  }
+
+  const requiredLevels = model.thinkingLevels.filter((level) => level !== "off");
+  const thinkingLevelMap =
+    model.thinkingLevelMap ??
+    (isThinkingCompatible(template, requiredLevels) ? undefined : deriveThinkingLevelMap(model, template));
+
+  return {
+    ...template,
+    id: model.id,
+    // ResolvedModel has no display name and pi's is required. The id is the
+    // only honest value: a template's name would name a different model.
+    name: model.id,
+    api: model.protocol as Api,
+    provider: model.provider,
+    contextWindow: model.contextWindow,
+    // The override's own ceiling wins; the template's is only a fallback for
+    // an override that states none. pi clamps to `model.maxTokens` in
+    // buildBaseOptions whenever a request omits its own cap, and anthropic's
+    // thinking adjustment clamps to it even when a caller supplies one, so
+    // inheriting a smaller sibling's value is a silent truncation.
+    maxTokens: model.maxTokens ?? template.maxTokens,
+    cost: toPiCost(model.pricing),
+    // pi's `reasoning` is the boolean form of our level list. "off" alone is
+    // no thinking support, which is exactly what `false` means here.
+    reasoning: model.thinkingLevels.some((level) => level !== "off"),
+    // Merged onto the template's compat, never replacing it: `thinkingFormat`
+    // and the rest of the provider's detected settings live in the same object
+    // and are what translate a thinking level on the wire.
+    ...(model.openRouterRouting !== undefined
+      ? { compat: { ...template.compat, openRouterRouting: toPiOpenRouterRouting(model.openRouterRouting) } }
+      : {}),
+    ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
+  };
+}
+
+/**
+ * Our routing declaration, in the shape pi's `compat` wants.
+ *
+ * A copy rather than a pass-through for one reason: our arrays are `readonly`
+ * and pi's are not, so spreading each present one is what makes the object
+ * assignable without a cast. Conditional spreads keep an undeclared preference
+ * out of the request entirely — `exactOptionalPropertyTypes`, and an
+ * `undefined`-valued key would be serialised as a stated non-preference.
+ */
+function toPiOpenRouterRouting(routing: OpenRouterRouting) {
+  return {
+    ...(routing.allow_fallbacks !== undefined ? { allow_fallbacks: routing.allow_fallbacks } : {}),
+    ...(routing.require_parameters !== undefined ? { require_parameters: routing.require_parameters } : {}),
+    ...(routing.data_collection !== undefined ? { data_collection: routing.data_collection } : {}),
+    ...(routing.zdr !== undefined ? { zdr: routing.zdr } : {}),
+    ...(routing.order !== undefined ? { order: [...routing.order] } : {}),
+    ...(routing.only !== undefined ? { only: [...routing.only] } : {}),
+    ...(routing.ignore !== undefined ? { ignore: [...routing.ignore] } : {}),
+    ...(routing.quantizations !== undefined ? { quantizations: [...routing.quantizations] } : {}),
+    ...(routing.sort !== undefined ? { sort: routing.sort } : {}),
+  };
+}
+
+/**
+ * Builds a `thinkingLevelMap` from the override's own declared levels,
+ * instead of inheriting a size-picked template's — used only when no
+ * level-compatible template exists and the override states no map of its
+ * own (case 3 above).
+ *
+ * A declared level maps to the template's value when that value is a string
+ * (keeps the provider's own wire vocabulary for a level the template does
+ * happen to translate), otherwise to the level's own name — identity, which
+ * is what pi's `?? effort` fallback already does on an absent mapping, and is
+ * required for "xhigh"/"max" to count as pi-supported at all (a `undefined`
+ * entry there is read as unsupported). An undeclared level maps to `null`.
+ *
+ * "off" is never derived this way — an invented identity value ("off") would
+ * reach the wire as a real `reasoning_effort`/`reasoning`/`thinking` string on
+ * every non-thinking request, which several of pi's `thinkingFormat` branches
+ * (`deepseek`, `openrouter`, `string-thinking`) would send as-is. Instead
+ * `off` preserves the template's own three states exactly, because those same
+ * branches distinguish two of them: a missing key (`undefined`) sends the
+ * disable-thinking signal (`model.thinkingLevelMap?.off !== null` reads true),
+ * an explicit `null` suppresses it (the check reads false), and a string
+ * overrides it with that value. Collapsing "missing" and `null` into one
+ * `null` — as an earlier version of this function did — silently stopped
+ * sending the disable signal for every template that simply never stated an
+ * "off" entry, which is the same silent-extra-reasoning-cost defect issue #47
+ * exists to close, just relocated to the "off" side. So: template value is a
+ * string → that string; `null` → `null`; key absent → leave the key unset on
+ * the derived map too (`Model.thinkingLevelMap.off` stays `undefined`),
+ * matching what case 2's `...template` inherit-as-is already does correctly.
+ */
+function deriveThinkingLevelMap(
+  model: ResolvedModel,
+  template: Model<Api>,
+): Readonly<Partial<Record<ThinkingLevel, string | null>>> {
+  const templateMap = template.thinkingLevelMap;
+  const map: Partial<Record<ThinkingLevel, string | null>> = {};
+
+  const templateOff = templateMap?.off;
+  if (templateOff === null) {
+    map.off = null;
+  } else if (typeof templateOff === "string") {
+    map.off = templateOff;
+  }
+  // else: the template has no "off" key at all — leave it unset rather than
+  // inventing either a string or a `null`.
+
+  for (const level of THINKING_LEVELS) {
+    if (level === "off") continue;
+    if (!model.thinkingLevels.includes(level)) {
+      map[level] = null;
+      continue;
+    }
+    const templateValue = templateMap?.[level];
+    map[level] = typeof templateValue === "string" ? templateValue : level;
+  }
+  return map;
+}
+
+/**
+ * Applies overrides to a catalog by wrapping each affected provider.
+ *
+ * A pi `Provider` is behaviour-bearing — `getModels()`, `stream()`,
+ * `streamSimple()`, `auth` — not a data record with a `.models` array, and
+ * `setProvider` upserts by id. So the provider is read, wrapped and written
+ * back: rebuilding one from the override alone would leave it with no `stream`
+ * implementation at all.
+ *
+ * Mutates only the dedicated instance its caller just constructed.
+ */
+function applyOverrides(models: MutableModels, overrides: readonly ProviderOverride[]): void {
+  for (const override of overrides) {
+    const base = models.getProvider(override.provider);
+    if (base === undefined) {
+      throw new Error(
+        `Cannot apply a provider override for "${override.provider}": the backend catalog does not know that ` +
+          `provider, so there is no stream implementation to inherit. Overrides amend a provider; they cannot ` +
+          `introduce one.`,
+      );
+    }
+
+    // Keyed by id, last-wins, because normaliseCatalog stores override models
+    // into a Map and so keeps the last of a repeated id. Mapping to an array
+    // here instead would keep the first at the wire (resolveModel takes the
+    // first match) while the client kept the last — the two catalogs would
+    // disagree about which model an id names, which is the whole class of bug
+    // this seam exists to close.
+    const byId = new Map<string, Model<Api>>();
+    for (const model of override.models ?? []) {
+      // Rejected before synthesis, so the two catalogs refuse the same config
+      // with the same message rather than one of them building a model whose
+      // provider field would then pick the wrong credentials at the wire.
+      assertOverrideModelProvider(override.provider, model);
+      assertOverrideModelRouting(model);
+      byId.set(model.id, synthesiseModel(base, model));
+    }
+    const synthesised = [...byId.values()];
+    const overriddenIds = new Set(byId.keys());
+    // The override wins on an id collision and every other bundled model
+    // survives — the same semantics normaliseCatalog applies on the client
+    // side, so the two catalogs cannot disagree about which model an id names.
+    const merged = [...base.getModels().filter((model) => !overriddenIds.has(model.id)), ...synthesised].map(
+      (model) => ({
+        ...model,
+        // baseUrl and headers are provider-level and replace rather than
+        // merge, mirroring catalog.ts. They are applied to every model of the
+        // provider, bundled ones included, because pi dispatches against
+        // Model.baseUrl / Model.headers, not against the provider's.
+        ...(override.baseUrl !== undefined ? { baseUrl: override.baseUrl } : {}),
+        ...(override.headers !== undefined ? { headers: { ...override.headers } } : {}),
+      }),
+    );
+
+    models.setProvider({
+      ...base,
+      ...(override.baseUrl !== undefined ? { baseUrl: override.baseUrl } : {}),
+      ...(override.headers !== undefined ? { headers: { ...override.headers } } : {}),
+      getModels: () => merged,
+    });
+  }
+}
+
+/**
+ * The pi catalog for these options: the process-wide instance when there is
+ * nothing to override, and a dedicated one when there is.
+ */
+function catalogFor(options: PiProtocolOptions): MutableModels {
+  const store = options.credentials;
+  const overrides = options.providerOverrides;
+  const build = (): MutableModels =>
+    store === undefined ? builtinModels() : builtinModels({ credentials: toPiCredentialStore(store) });
+
+  // An empty array is "no overrides": the shared instances stay in play, so
+  // this path is byte-for-byte what it was before overrides existed.
+  if (overrides === undefined || overrides.length === 0) {
+    if (store === undefined) {
+      shared ??= builtinModels();
+      return shared;
+    }
+    const existing = credentialed.get(store);
+    if (existing !== undefined) return existing;
+    const created = build();
+    credentialed.set(store, created);
+    return created;
+  }
+
+  const key = store ?? AMBIENT_CREDENTIALS;
+  let byOverrides = overridden.get(key);
+  if (byOverrides === undefined) {
+    byOverrides = new WeakMap<readonly ProviderOverride[], MutableModels>();
+    overridden.set(key, byOverrides);
+  }
+  const cached = byOverrides.get(overrides);
+  if (cached !== undefined) return cached;
+
+  const created = build();
+  applyOverrides(created, overrides);
+  byOverrides.set(overrides, created);
+  return created;
+}
+
+/**
+ * See PiProtocolOptions.transport for why this is not pi-ai's own "auto".
+ */
+const DEFAULT_TRANSPORT: Transport = "sse";
+
+/**
+ * pi-ai's stream entry point, injectable so tests need no network.
+ *
+ * Narrowed to what this file uses — an async iterable — rather than reusing
+ * MutableModels["streamSimple"], whose return type is a concrete class a test
+ * double would have to reimplement to satisfy.
+ */
+type StreamSimple = (
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+) => AsyncIterable<AssistantMessageEvent>;
+
+export function createPiDeps(
+  options: PiProtocolOptions = {},
+  streamSimple?: StreamSimple,
+  /**
+   * Test seam, following `streamSimple`. Without it `auth.headers` is
+   * `undefined` for every provider unless a credential store is configured, so
+   * a test cannot reach the auth/request header merge at all — which is how the
+   * merge shipped with a regression test that passed against the bug.
+   */
+  authResolver?: AuthResolver,
+): PiDeps {
+  const models = catalogFor(options);
+
+  const resolver = authResolver ?? createPiAuthResolver(models);
+
+  return {
+    resolveModel: async (modelId, provider) => {
+      // pi-ai serves one model id from many providers (e.g. gpt-5.4 under
+      // azure-openai-responses, openai and openai-codex), so when the client
+      // supplies the owning provider the search is scoped to it. Without a
+      // provider — protocol-direct callers and existing tests — the global
+      // catalog's first match stays as the documented fallback.
+      const found =
+        provider !== undefined
+          ? models.getModels(provider).find((candidate) => candidate.id === modelId)
+          : models.getModels().find((candidate) => candidate.id === modelId);
+      if (found === undefined) {
+        if (provider !== undefined) {
+          throw new Error(`Unknown model "${modelId}" for provider "${provider}" in the pi-ai catalog.`);
+        }
+        throw new Error(`Unknown model "${modelId}" in the pi-ai catalog.`);
+      }
+      return found;
+    },
+
+    stream: async function* (model, context, options_, onResponse) {
+      // Resolve through nax-ai's own port, not through Models' internal path,
+      // so the seam a native backend will use is exercised in production
+      // rather than merely exported.
+      const auth = await resolver.resolve({ provider: model.provider, model: model.id });
+      // The vendor header goes under the caller's own headers, so an explicit
+      // one still wins; auth stays last and wins over both. Left undefined when
+      // there is nothing on the request side, so mergeRequestHeaders can return
+      // undefined and the option stays absent rather than being set to `{}`.
+      const requestHeaders = withoutEmpty({
+        // Both vendor maps sit beneath the caller's own headers, so an explicit
+        // spelling still wins. They cannot collide with each other: one names a
+        // session, the other an application.
+        ...vendorAppHeaders(model.provider, options.clientApp),
+        ...vendorSessionHeaders(model.provider, options_?.sessionId),
+        ...options_?.headers,
+      });
+      // Validated here rather than only at the client boundary: this is where
+      // headers reach the wire, and a protocol-direct caller never passes
+      // through the client. The vendor header is included because it is added
+      // after that earlier check.
+      assertValidHeaders(requestHeaders);
+      // Separately, and not covered by the line above: the header check only
+      // sees the id once vendorSessionHeaders has embedded it, which happens
+      // for opencode alone. Every other provider carries it in options.sessionId
+      // and pi-ai turns it into x-session-id / session_id / x-client-request-id
+      // / x-session-affinity — so without this the id is unchecked precisely
+      // where it does the most work.
+      assertValidSessionId(options_?.sessionId);
+      const mergedHeaders = mergeRequestHeaders(requestHeaders, auth.headers);
+      const stream = streamSimple ?? models.streamSimple.bind(models);
+      yield* stream(model, context, {
+        // Construction-time first, so a per-request option could still override
+        // it later without this line having to move.
+        transport: options.transport ?? DEFAULT_TRANSPORT,
+        ...options_,
+        ...(auth.apiKey !== undefined ? { apiKey: auth.apiKey } : {}),
+        // Merged, not overwritten. Spreading auth.headers alone discarded any
+        // per-request headers wholesale, so a request header would have been
+        // silently dropped for every credentialed provider — which is every
+        // provider that actually needs one.
+        ...(mergedHeaders !== undefined ? { headers: mergedHeaders } : {}),
+        onResponse: (response) => onResponse({ status: response.status, headers: response.headers }),
+      });
+    },
+  };
+}

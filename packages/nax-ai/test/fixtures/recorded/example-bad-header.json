@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "provider": "example",
+    "protocol": "openai-completions",
+    "model": "example-model",
+    "api": "openai-completions",
+    "recordedAt": "2026-08-31",
+    "note": "SYNTHETIC. Hand-written to exercise the loader and replay harness. Not evidence of any provider's behaviour."
+  },
+  "response": { "status": 200, "headers": { "set-cookie": "session=abc" } },
+  "events": [
+    {
+      "type": "text_start",
+      "contentIndex": 0,
+      "partial": {
+        "role": "assistant",
+        "content": [],
+        "api": "openai-completions",
+        "provider": "example",
+        "model": "example-model",
+        "usage": { "input": 3, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+        "stopReason": "stop",
+        "timestamp": 0
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "ok",
+      "partial": {
+        "role": "assistant",
+        "content": [{ "type": "text", "text": "ok" }],
+        "api": "openai-completions",
+        "provider": "example",
+        "model": "example-model",
+        "usage": { "input": 3, "output": 1, "cacheRead": 0, "cacheWrite": 0 },
+        "stopReason": "stop",
+        "timestamp": 0
+      }
+    },
+    {
+      "type": "done",
+      "reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": [{ "type": "text", "text": "ok" }],
+        "api": "openai-completions",
+        "provider": "example",
+        "model": "example-model",
+        "usage": { "input": 3, "output": 1, "cacheRead": 0, "cacheWrite": 0 },
+        "stopReason": "stop",
+        "timestamp": 0
+      }
+    }
+  ]
+}

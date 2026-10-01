@@ -1,3 +1,0 @@
-# Workspace install settings. Package test settings live in packages/<pkg>/bunfig.toml.
-[install]
-linker = "isolated"

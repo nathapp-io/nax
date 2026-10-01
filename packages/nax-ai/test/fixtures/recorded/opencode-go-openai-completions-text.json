@@ -1,0 +1,546 @@
+{
+  "meta": {
+    "provider": "opencode-go",
+    "protocol": "openai-completions",
+    "model": "deepseek-v4-flash",
+    "api": "openai-completions",
+    "note": "Recorded from opencode-go. Evidence of openai-completions event shape only.",
+    "recordedAt": "2026-08-31"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    }
+  },
+  "events": [
+    {
+      "type": "start",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "thinking_start",
+      "contentIndex": 0,
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "We",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " need to reply",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " with single",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " word \"ok\". No other",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " text",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": ".",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "text_start",
+      "contentIndex": 1,
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": "ok",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "thinking_end",
+      "contentIndex": 0,
+      "content": "We need to reply with single word \"ok\". No other text.",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "text_end",
+      "contentIndex": 1,
+      "content": "ok",
+      "partial": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    },
+    {
+      "type": "done",
+      "reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "We need to reply with single word \"ok\". No other text.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "opencode-go",
+        "model": "deepseek-v4-flash",
+        "usage": {
+          "input": 90,
+          "output": 17,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 107,
+          "cost": {
+            "input": 0.0000198,
+            "output": 0.000011220000000000001,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.00003102
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1788195277018,
+        "responseId": "router-2b30bb3235d1f4f5bd558778e7dc18df",
+        "rawStopReason": "stop"
+      }
+    }
+  ]
+}

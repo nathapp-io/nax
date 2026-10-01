@@ -1,0 +1,120 @@
+/**
+ * @nathapp/nax-ai — provider-agnostic LLM client.
+ *
+ * Status: pre-1.0, API unstable. Published under the `next` dist-tag.
+ *
+ * Scope boundary: this package speaks a generic LLM vocabulary — models,
+ * messages, tool calls, usage, credentials, and the opaque session id
+ * providers route and cache by. It deliberately knows nothing about any
+ * consumer's domain concepts (stories, operations, permission policy, or what
+ * a session consists of). Consumers map onto their own types at their
+ * boundary.
+ *
+ * "Sessions" was once listed among those exclusions. The distinction that
+ * replaced it: carrying an id a provider recognises is wire knowledge, and
+ * belongs here alongside the per-model affinity and prompt-cache mapping it
+ * drives; deciding what a session *is* remains the consumer's.
+ * Keeping that direction one-way is what allows the implementation beneath
+ * this surface to be replaced — provider by provider — without consumers
+ * noticing.
+ */
+
+export { login } from "./auth/login.ts";
+export {
+  AuthMethodUnavailableError,
+  LoginCancelledError,
+  LoginFailedError,
+} from "./auth/login-errors.ts";
+export type {
+  LoginEvent,
+  LoginInteraction,
+  LoginLink,
+  LoginMethod,
+  LoginOption,
+  LoginOptions,
+  LoginPrompt,
+  LoginResult,
+} from "./auth/login-types.ts";
+export {
+  assertOAuthFlowPermitted,
+  isOAuthFlowPermitted,
+  OAuthFlowProhibitedError,
+  PERMITTED_OAUTH_FLOWS,
+  PROHIBITED_OAUTH_FLOWS,
+} from "./auth/oauth-policy.ts";
+export { ambientAuthAvailable, registerBundledOAuthFlows } from "./auth/pi-auth.ts";
+export type { AuthResolver, ResolvedAuth } from "./auth/resolver.ts";
+export {
+  type Client,
+  type ClientOptions,
+  type ClientRequest,
+  createClient,
+  type ProtocolFactory,
+} from "./client.ts";
+export {
+  createFileCredentialStore,
+  type FileCredentialStoreOptions,
+} from "./credentials/file-store.ts";
+export { createMemoryCredentialStore } from "./credentials/memory-store.ts";
+export type { ClientApp } from "./protocols/client-app.ts";
+export { collectStream, ProtocolStreamError } from "./protocols/collect.ts";
+export {
+  DEFAULT_PROTOCOL_NAMES,
+  defaultProtocols,
+  PI_PROTOCOL_NAMES,
+  type PiProtocolName,
+  type PiProtocolOptions,
+  type ProtocolName,
+  type ProtocolOptions,
+  piProtocols,
+} from "./protocols/pi-protocols.ts";
+export {
+  type BackendId,
+  type BackendSelection,
+  createRegistry,
+  type ProtocolBackends,
+  type ProtocolEntries,
+  UnknownProtocolError,
+  UnregisteredBackendError,
+} from "./protocols/registry.ts";
+export { clampThinkingLevel } from "./protocols/thinking.ts";
+export type {
+  CacheRetention,
+  ConstrainedSampling,
+  ConversationMessage,
+  JsonSchema,
+  Protocol,
+  ProtocolError,
+  ProtocolEvent,
+  ProtocolRequest,
+  ThinkingBlock,
+  ThinkingLevel,
+  ToolCall,
+  ToolDefinition,
+  Transport,
+} from "./protocols/types.ts";
+export { type Catalog, normaliseCatalog, type RawModel, type RawProvider } from "./providers/catalog.ts";
+export { defaultProviders, piProviders } from "./providers/pi-catalog.ts";
+export type {
+  OpenRouterRouting,
+  Pricing,
+  PricingRates,
+  PricingTier,
+  ProviderAuth,
+  ProviderOverride,
+  ResolvedModel,
+  ResolvedProvider,
+} from "./providers/types.ts";
+export type {
+  CompleteOptions,
+  CompleteResult,
+  CredentialStore,
+  Message,
+  MessageRole,
+  ModelRef,
+  ProviderId,
+  StopReason,
+  StoredCredential,
+  TokenUsage,
+} from "./types.ts";
+export { toTokenUsage, totalTokens, type UpstreamUsage } from "./usage.ts";
