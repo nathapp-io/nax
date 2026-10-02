@@ -3,7 +3,10 @@
  *
  * Used by check-package-boundaries (and, until it ran, the S1-5 move script).
  * Matches run on comment-stripped text (stripComments keeps every offset), so a
- * specifier inside a comment is never reported or rewritten.
+ * specifier inside a comment is never reported or rewritten. A match that
+ * STARTS inside a string literal is dropped too: fixture text such as
+ * `'await import("@scope/pkg");'` is data, not an import, while a real
+ * `await import("@scope/pkg")` starts at `import`, which is code.
  *
  * Covered forms: `import ... from "x"` and `export ... from "x"` (type-only and
  * multi-line included), side-effect `import "x"`, dynamic `import("x")`, inline
@@ -30,13 +33,63 @@ export interface SpecifierSite {
   readonly prelude: string;
 }
 
+/**
+ * [start, end) spans of string literals in `text` (the comment-stripped source),
+ * tracking backslash escapes. A single/double-quoted string cannot span a raw
+ * newline, so an unmatched quote — for example one inside a regex literal — is
+ * not a span; that keeps the scan from swallowing real imports that follow it.
+ */
+function stringSpans(text: string): Array<readonly [number, number]> {
+  const spans: Array<readonly [number, number]> = [];
+  let i = 0;
+  while (i < text.length) {
+    const open = text[i];
+    if (open !== '"' && open !== "'" && open !== "`") {
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    let closed = false;
+    while (j < text.length) {
+      const c = text[j];
+      if (c === "\\") {
+        j += 2;
+        continue;
+      }
+      if (c === open) {
+        j++;
+        closed = true;
+        break;
+      }
+      if (c === "\n" && open !== "`") break;
+      j++;
+    }
+    if (closed) {
+      spans.push([i, j]);
+      i = j;
+    } else {
+      i++;
+    }
+  }
+  return spans;
+}
+
+function startsInsideString(spans: ReadonlyArray<readonly [number, number]>, offset: number): boolean {
+  return spans.some(([start, end]) => offset >= start && offset < end);
+}
+
 export function specifierSites(source: string): SpecifierSite[] {
   const text = stripComments(source);
+  const strings = stringSpans(text);
   const sites: SpecifierSite[] = [];
   const add = (re: RegExp, kind: SpecifierSite["kind"]) => {
     for (const m of text.matchAll(re)) {
       const spec = m[1];
       if (spec === undefined || m.index === undefined) continue;
+      // A match that starts inside a string is fixture text, not code. A real
+      // import's match starts at `import` / `export` / `require` (code), even
+      // though its specifier sits between quotes.
+      if (startsInsideString(strings, m.index)) continue;
       const at = m[0].lastIndexOf(spec);
       sites.push({ spec, start: m.index + at, kind, prelude: kind === "dynamic" ? "" : m[0].slice(0, at - 1) });
     }

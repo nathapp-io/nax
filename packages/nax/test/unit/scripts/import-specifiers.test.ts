@@ -44,6 +44,11 @@ describe("specifierSites", () => {
   test("ignores specifiers inside comments", () => {
     expect(specifierSites('// import { x } from "./x";\n/* import("./y") */\n')).toEqual([]);
   });
+
+  test("ignores import-like text inside a string, but still finds a real dynamic import", () => {
+    const src = 'const src = \'await import("@scope/pkg");\';\nconst f = await import("@scope/pkg");\n';
+    expect(specifierSites(src).map((s) => [s.spec, s.kind])).toEqual([["@scope/pkg", "dynamic"]]);
+  });
 });
 
 describe("rewriteSpecifiers", () => {
