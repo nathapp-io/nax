@@ -1,7 +1,24 @@
-/** Barrel for nax-agent's test helpers (moved from packages/nax/test/helpers by S1-5). */
+/** Barrel for nax-agent's test helpers: the generic ones live in @nathapp/nax-test-kit/bun (S2-0). */
 
-export { absentValue, nullValue } from "./absent";
-export { assertDefined, firstCall } from "./assert-defined";
+export { absentValue, nullValue } from "@nathapp/nax-test-kit/bun/absent";
+export { assertDefined, firstCall } from "@nathapp/nax-test-kit/bun/assert-defined";
+export { withDepsRestore } from "@nathapp/nax-test-kit/bun/deps";
+export type { FakeClock } from "@nathapp/nax-test-kit/bun/fake-clock";
+export { makeFakeClock } from "@nathapp/nax-test-kit/bun/fake-clock";
+export { waitForFile } from "@nathapp/nax-test-kit/bun/fs";
+export { mockFetch } from "@nathapp/nax-test-kit/bun/mock-fetch";
+export {
+  type NaxParentFailure,
+  type NaxParentKind,
+  type NaxParentStat,
+  type SessionTmpDepsLike,
+  type SessionTmpHostFacts,
+  stubSessionTmpDeps,
+} from "@nathapp/nax-test-kit/bun/session-tmp-deps";
+export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "@nathapp/nax-test-kit/bun/spawn";
+export { makeSpawn, makeSpawnResult } from "@nathapp/nax-test-kit/bun/spawn";
+export { cleanupTempDir, makeTempDir, withTempDir } from "@nathapp/nax-test-kit/bun/temp";
+export { waitForCondition, withTimeout } from "@nathapp/nax-test-kit/bun/timeout";
 export {
   GUARD_HIGH_ANSWER,
   GUARD_LOW_ANSWER,
@@ -16,23 +33,6 @@ export {
   observedOnly,
   requireGuard,
 } from "./command-safety";
-export { withDepsRestore } from "./deps";
-export type { FakeClock } from "./fake-clock";
-export { makeFakeClock } from "./fake-clock";
-export { waitForFile } from "./fs";
-export { mockFetch } from "./mock-fetch";
 export { type FakeSandboxMode, makeFakeSandboxBackend } from "./sandbox";
-export {
-  type NaxParentFailure,
-  type NaxParentKind,
-  type NaxParentStat,
-  type SessionTmpDepsLike,
-  type SessionTmpHostFacts,
-  stubSessionTmpDeps,
-} from "./session-tmp-deps";
-export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
-export { makeSpawn, makeSpawnResult } from "./spawn";
 export type { StubMode } from "./systemone-stub";
 export { startSystemOneStub, stubAnswerBody } from "./systemone-stub";
-export { cleanupTempDir, makeTempDir, withTempDir } from "./temp";
-export { waitForCondition, withTimeout } from "./timeout";

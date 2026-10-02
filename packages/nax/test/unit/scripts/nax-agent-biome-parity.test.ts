@@ -21,21 +21,23 @@ async function config(pkg: string): Promise<BiomeConfig> {
   return parsed;
 }
 
-describe("nax-agent biome config", () => {
-  test("has nax's linter and formatter settings", async () => {
-    const [nax, agent] = await Promise.all([config("nax"), config("nax-agent")]);
-    expect(agent.linter).toEqual(nax.linter);
-    expect(agent.formatter).toEqual(nax.formatter);
-  });
+for (const pkg of ["nax-agent", "test-kit"]) {
+  describe(`${pkg} biome config`, () => {
+    test("has nax's linter and formatter settings", async () => {
+      const [nax, copy] = await Promise.all([config("nax"), config(pkg)]);
+      expect(copy.linter).toEqual(nax.linter);
+      expect(copy.formatter).toEqual(nax.formatter);
+    });
 
-  test("runs nax's root plugins from nax's biome-plugins directory", async () => {
-    const [nax, agent] = await Promise.all([config("nax"), config("nax-agent")]);
-    expect(agent.plugins).toEqual(nax.plugins?.map((p) => p.replace("./biome-plugins/", "../nax/biome-plugins/")));
-  });
+    test("runs nax's root plugins from nax's biome-plugins directory", async () => {
+      const [nax, copy] = await Promise.all([config("nax"), config(pkg)]);
+      expect(copy.plugins).toEqual(nax.plugins?.map((p) => p.replace("./biome-plugins/", "../nax/biome-plugins/")));
+    });
 
-  test("keeps nax's test/** override", async () => {
-    const [nax, agent] = await Promise.all([config("nax"), config("nax-agent")]);
-    const testOverride = (c: BiomeConfig) => c.overrides?.find((o) => o.includes?.includes("**/test/**"));
-    expect(testOverride(agent)?.linter).toEqual(testOverride(nax)?.linter);
+    test("keeps nax's test/** override", async () => {
+      const [nax, copy] = await Promise.all([config("nax"), config(pkg)]);
+      const testOverride = (c: BiomeConfig) => c.overrides?.find((o) => o.includes?.includes("**/test/**"));
+      expect(testOverride(copy)?.linter).toEqual(testOverride(nax)?.linter);
+    });
   });
-});
+}

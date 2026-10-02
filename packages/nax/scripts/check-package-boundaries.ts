@@ -9,8 +9,13 @@
  *   package, and itself. Never `@nathapp/nax`, never a tsconfig alias (`@/`).
  * - packages/nax-ai imports neither @nathapp/nax nor @nathapp/nax-agent.
  * - packages/nax reaches nax-agent only through `@nathapp/nax-agent` or
- *   `@nathapp/nax-agent/internal`, plus `@nathapp/nax-agent/test/helpers/*`
- *   from its own tests. Never a relative path into another package.
+ *   `@nathapp/nax-agent/internal`, plus three named helper subpaths
+ *   (`@nathapp/nax-agent/test/helpers/{command-safety,sandbox,systemone-stub}`)
+ *   from its own tests until S2-2. It may import test-kit only from test/ and
+ *   repo-tooling only from scripts/ and test/. Never a relative path into
+ *   another package.
+ * - packages/test-kit and packages/repo-tooling (private tooling) import no nax
+ *   package; repo-tooling may use test-kit from its tests (a devDependency).
  *
  * Scans src/, test/, bin/ and scripts/ of every package.
  *
@@ -48,7 +53,16 @@ const CODE = /\.(?:ts|tsx|mts|cts)$/;
 const SCAN_DIRS = ["src", "test", "bin", "scripts"];
 const AGENT = "@nathapp/nax-agent";
 const NAX_ALLOWED_AGENT_SPECS = new Set([AGENT, `${AGENT}/internal`]);
-const NAX_TEST_HELPERS = `${AGENT}/test/helpers/`;
+const NAX_AGENT_HELPERS = new Set(
+  ["command-safety", "sandbox", "systemone-stub"].map((name) => `${AGENT}/test/helpers/${name}`),
+);
+const TEST_KIT = "@nathapp/nax-test-kit";
+const REPO_TOOLING = "@nathapp/nax-repo-tooling";
+const NAX_PACKAGES = new Set(["@nathapp/nax", AGENT, "@nathapp/nax-ai", TEST_KIT, REPO_TOOLING]);
+
+function inDir(pkg: PackageInfo, file: string, dir: string): boolean {
+  return relative(pkg.dir, file).startsWith(`${dir}${sep}`);
+}
 
 function packageName(spec: string): string {
   const parts = spec.split("/");
@@ -96,7 +110,7 @@ function agentViolation(pkg: PackageInfo, file: string, spec: string): string | 
   const name = packageName(spec);
   if (name === "@nathapp/nax") return "imports nax";
   if (name === AGENT || pkg.deps.has(name)) return null;
-  const inTests = relative(pkg.dir, file).startsWith(`test${sep}`);
+  const inTests = inDir(pkg, file, "test");
   if (pkg.devDeps.has(name)) return inTests ? null : `devDependency ${name} imported outside test/`;
   return `undeclared dependency ${name}`;
 }
@@ -108,10 +122,28 @@ function naxAiViolation(_pkg: PackageInfo, _file: string, spec: string): string 
 
 function naxViolation(pkg: PackageInfo, file: string, spec: string): string | null {
   if (leavesPackage(pkg, file, spec)) return "relative import leaves the package";
-  if (packageName(spec) !== AGENT || NAX_ALLOWED_AGENT_SPECS.has(spec)) return null;
-  const inTests = relative(pkg.dir, file).startsWith(`test${sep}`);
-  if (inTests && spec.startsWith(NAX_TEST_HELPERS)) return null;
-  return `only ${[...NAX_ALLOWED_AGENT_SPECS].join(" or ")} (and ${NAX_TEST_HELPERS}* from test/)`;
+  const name = packageName(spec);
+  if (name === TEST_KIT) return inDir(pkg, file, "test") ? null : `${TEST_KIT} imported outside test/`;
+  if (name === REPO_TOOLING) {
+    return inDir(pkg, file, "test") || inDir(pkg, file, "scripts")
+      ? null
+      : `${REPO_TOOLING} imported outside scripts/ and test/`;
+  }
+  if (name !== AGENT || NAX_ALLOWED_AGENT_SPECS.has(spec)) return null;
+  if (inDir(pkg, file, "test") && NAX_AGENT_HELPERS.has(spec)) return null;
+  return `only ${[...NAX_ALLOWED_AGENT_SPECS].join(" or ")} (and ${[...NAX_AGENT_HELPERS].join(", ")} from test/)`;
+}
+
+/** test-kit and repo-tooling: leaf packages that import no nax package (repo-tooling's tests may use test-kit). */
+function toolingViolation(pkg: PackageInfo, file: string, spec: string): string | null {
+  if (isBuiltin(spec) || spec.startsWith("#")) return null;
+  if (spec.startsWith(".")) return leavesPackage(pkg, file, spec) ? "relative import leaves the package" : null;
+  const name = packageName(spec);
+  if (name === pkg.name) return null;
+  if (pkg.devDeps.has(name)) return inDir(pkg, file, "test") ? null : `devDependency ${name} imported outside test/`;
+  if (NAX_PACKAGES.has(name)) return `${pkg.name} imports ${name}`;
+  if (pkg.deps.has(name)) return null;
+  return `undeclared dependency ${name}`;
 }
 
 type Rule = (pkg: PackageInfo, file: string, spec: string) => string | null;
@@ -120,6 +152,8 @@ const RULES: Readonly<Record<string, Rule>> = {
   "@nathapp/nax-agent": agentViolation,
   "@nathapp/nax-ai": naxAiViolation,
   "@nathapp/nax": naxViolation,
+  [TEST_KIT]: toolingViolation,
+  [REPO_TOOLING]: toolingViolation,
 };
 
 /**

@@ -7,7 +7,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./internal": "./src/internal.ts",
-    "./test/helpers/*": "./test/helpers/*.ts"
+    "./test/helpers/command-safety": "./test/helpers/command-safety.ts",
+    "./test/helpers/sandbox": "./test/helpers/sandbox.ts",
+    "./test/helpers/systemone-stub": "./test/helpers/systemone-stub.ts"
   },
   "imports": {
     "#src/*": "./src/*.ts",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
+    "@nathapp/nax-test-kit": "workspace:*",
     "@types/bun": "^1.3.8",
     "bun-types": "^1.3.9",
     "typescript": "^7.0.2"

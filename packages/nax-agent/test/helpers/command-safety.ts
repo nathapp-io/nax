@@ -8,6 +8,7 @@
  * key is present" assertions cannot silently miss one.
  */
 import { expect } from "bun:test";
+import { assertDefined } from "@nathapp/nax-test-kit/bun/assert-defined";
 import type { CallIdentifiers } from "#src/command-safety/identifiers";
 import {
   type Classify,
@@ -18,7 +19,6 @@ import {
   type ModelResult,
   type Observation,
 } from "#src/command-safety/index";
-import { assertDefined } from "./assert-defined";
 
 export const IDENTIFIER_KEYS = ["callId", "scopeId", "turnId", "roundTrips", "toolCallId"] as const;
 
