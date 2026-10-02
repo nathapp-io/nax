@@ -6,6 +6,12 @@
  * module (P4 spec 5.1 / master plan D8: src/sandbox/ is part of the would-be
  * nax-coding package and must stay extractable).
  *
+ * The orchestrator rule matches every specifier shape a sandbox module uses to
+ * reach a peer: nax's `@/` alias, its `../../` relatives, and nax-agent's
+ * `#src/` subpath import (the sandbox moved with the agent in S1-5). Without
+ * the third shape the rule is vacuous there — a `#src/operations/...` import
+ * would pass unnoticed.
+ *
  * Takes an optional root so the gate can be tested against a fixture tree.
  */
 
@@ -18,7 +24,7 @@ const SCAN = join(ROOT, "src");
 const ALLOWED_FILE = join("src", "sandbox", "srt-backend.ts");
 const SANDBOX_DIR = join("src", "sandbox") + sep;
 const SRT = /@anthropic-ai\/sandbox-runtime/;
-const ORCHESTRATOR = /from\s+["'](?:@\/|(?:\.\.\/)+)(pipeline|execution|operations|prd|runtime)(?:\/|["'])/;
+const ORCHESTRATOR = /from\s+["'](?:@\/|#src\/|(?:\.\.\/)+)(pipeline|execution|operations|prd|runtime)(?:\/|["'])/;
 
 async function* walk(dir: string): AsyncGenerator<string> {
   let entries: Dirent[];
