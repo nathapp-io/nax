@@ -8,10 +8,10 @@
  * there is no binary, no command and no pid.
  */
 
+import type { AgentSessionAdapter, OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@nathapp/nax-agent";
+import { NATIVE_AGENT, NativeSessionAdapter, nativeComplete, newSessionKey } from "@nathapp/nax-agent";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
-import { NATIVE_AGENT, NativeSessionAdapter, nativeComplete, newSessionKey } from "../native";
 import { toSessionModel } from "../session-model-mapping";
-import type { AgentSessionAdapter, OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "../session-types";
 import type { AgentAdapter, AgentCapabilities, CompleteResult, ResolvedCompleteOptions } from "../types";
 
 /** Conservative until capabilities become model-derived (ADR-027 Open Question 3). */

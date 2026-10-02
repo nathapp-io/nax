@@ -17,11 +17,11 @@
  * caller keeps the plan-time input unchanged on any error.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ContextBundle } from "@/context/engine";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { TddPromptBuilder } from "@/prompts";
-import { errorMessage } from "@/utils/errors";
 
 export const _renderPhaseBundleDeps = {
   buildForRole: TddPromptBuilder.buildForRole,

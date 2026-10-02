@@ -1,3 +1,4 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "@/config";
 import { contextStageForOp } from "@/context/engine";
 import type { Finding, FindingSeverity, FixStrategy, Iteration } from "@/findings";
@@ -18,7 +19,6 @@ import {
 } from "@/review";
 import { totalSpendUsd } from "@/runtime";
 import { cleanupVerdict, commitRedState, type RedCommitResult } from "@/tdd";
-import { errorMessage } from "@/utils/errors";
 import { _gitDeps, captureGitRef } from "@/utils/git";
 import { captureTreeState as realCaptureTreeState } from "../checkpoint/resume-hydrate";
 import type { ResumePlan } from "../checkpoint/resume-plan";

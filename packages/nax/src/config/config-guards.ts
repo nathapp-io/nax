@@ -10,11 +10,11 @@
  * are one concern (reject-with-migration-hint) and change together.
  */
 
-import { MCP_RULE_TOOL, RESERVED_TOOL_NAMES } from "@/tools";
-import { NaxError } from "../errors";
+import { MCP_RULE_TOOL, RESERVED_TOOL_NAMES } from "@nathapp/nax-agent";
 // Leaf import — see config-warnings.ts's own header comment for why this must
 // not route through the `@/quality` barrel (config -> quality -> config cycle).
-import type { QualityCommandSpec } from "../quality/command-spec";
+import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
+import { NaxError } from "../errors";
 import { collectCommandChainWarnings } from "./config-warnings";
 import { MCP_SERVER_ID_RE } from "./schemas-mcp";
 

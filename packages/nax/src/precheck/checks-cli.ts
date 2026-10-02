@@ -2,10 +2,10 @@
  * CLI availability precheck implementations
  */
 
+import { NATIVE_AGENT } from "@nathapp/nax-agent";
+import { spawn } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "../agents";
-import { NATIVE_AGENT } from "../agents/native";
 import type { PrecheckConfig } from "../config/selectors";
-import { spawn } from "../utils/bun-deps";
 import type { Check } from "./types";
 
 /** Dependency injection for testability */

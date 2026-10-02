@@ -1,6 +1,6 @@
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
-import { toToolDefinitions } from "@/agents/native/session/tool-mapping";
+import { toToolDefinitions } from "@nathapp/nax-agent/internal";
 import type { ToolDescriptor } from "@/context/engine";
 
 const descriptor: ToolDescriptor = {

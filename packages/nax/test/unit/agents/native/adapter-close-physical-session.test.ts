@@ -11,16 +11,18 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { OpenSessionOpts } from "@nathapp/nax-agent";
+import {
+  byCodePoint,
+  DEFAULT_SPIN_BREAKER_SETTINGS,
+  openNativeSession,
+  sessionModule as sessionState,
+  transcriptStoreModule as transcriptStore,
+} from "@nathapp/nax-agent/internal";
 import { makeNaxConfig } from "@test/helpers";
-import * as sessionState from "@/agents/native/session/session";
-import { openNativeSession } from "@/agents/native/session/session";
-import * as transcriptStore from "@/agents/native/session/transcript-store";
 import { NativeAgentAdapter } from "@/agents/native-agent";
-import type { OpenSessionOpts } from "@/agents/session-types";
 import { closeStorySessions } from "@/execution/session-manager-runtime";
-import { DEFAULT_SPIN_BREAKER_SETTINGS } from "@/runtime/spin-breaker";
 import { SessionManager } from "@/session/manager";
-import { byCodePoint } from "@/utils/sort";
 
 // RE-ARCH: keep
 let closeDir: string;

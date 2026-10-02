@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_SANDBOX_CONFIG, SandboxConfigSchema } from "@nathapp/nax-agent/internal";
 import { NaxConfigSchema } from "@/config/schemas";
-import { DEFAULT_SANDBOX_CONFIG, SandboxConfigSchema } from "@/config/schemas-sandbox";
 
 describe("execution.sandbox", () => {
   test("defaults: on, srt, no extra roots, open network", () => {

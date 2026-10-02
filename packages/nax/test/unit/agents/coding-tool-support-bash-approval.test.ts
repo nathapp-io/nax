@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { chainAskLinks } from "@nathapp/nax-agent";
+import { _resetSandboxRegistryForTests } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
-import { chainAskLinks } from "@/permissions";
-import { _resetSandboxRegistryForTests } from "@/sandbox";
 
 // The sandbox is on by default, so these tests build a real backend; the registry
 // caches it per process, and it would leak into later files (e.g.

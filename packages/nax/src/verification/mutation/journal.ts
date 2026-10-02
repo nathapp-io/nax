@@ -17,7 +17,7 @@
 import { join } from "node:path";
 // Shared with `mutation-check`, which compares the same git-realpath'd anchors
 // against the same caller-supplied paths and needs an identical answer.
-import { isInside } from "@/utils/realpath";
+import { isInside } from "@nathapp/nax-agent/internal";
 import { revertMutant } from "./apply";
 import type { Mutant } from "./types";
 

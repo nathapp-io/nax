@@ -6,6 +6,7 @@
  */
 
 import path from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { groupStoriesByPackage } from "@/acceptance";
 import { loadConfigForPackage, type NaxConfig } from "@/config";
 import type { FinishPhaseContext, FinishResult } from "@/finish";
@@ -21,7 +22,6 @@ import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD } from "@/prd";
 import { countStories, isComplete } from "@/prd";
 import type { DispatchContext } from "@/runtime/dispatch-context";
-import { errorMessage } from "@/utils/errors";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import { storyPackageDir } from "@/utils/path-frame";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";

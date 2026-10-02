@@ -24,6 +24,8 @@
  * closure substitutes each turn prompt it is handed.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { CodingToolName } from "@nathapp/nax-agent";
+import { _codingToolDeps } from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
   makeContextBundle,
@@ -42,8 +44,6 @@ import type { BuildHopCallbackContext } from "@/operations";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
 import { wrapDiffAccess } from "@/prompts/sections/diff-access";
 import { PROTOCOL_REGION_MARKER_PREFIX } from "@/prompts/sections/protocol-region";
-import type { CodingToolName } from "@/tools";
-import { _codingToolDeps } from "@/tools";
 
 const WORKDIR = "/repo";
 const PROMPT = `review US-001\n${wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}end`;

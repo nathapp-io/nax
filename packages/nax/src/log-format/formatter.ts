@@ -5,9 +5,9 @@
  * and supports multiple verbosity modes: quiet, normal, verbose, json
  */
 
+import { stripControlChars } from "@nathapp/nax-agent/internal";
 import chalk from "chalk";
 import type { LogEntry } from "../logger/types.js";
-import { stripControlChars } from "../utils/strip-control-chars.js";
 import { type ChalkLike, createNoopChalk } from "./chalk-like.js";
 import { EMOJI, type FormatterOptions } from "./types.js";
 

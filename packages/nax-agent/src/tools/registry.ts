@@ -1,0 +1,191 @@
+/**
+ * Name-to-tool registry, mirroring PULL_TOOL_REGISTRY in the context engine.
+ *
+ * Open to third-party registration, with two rules that make that safe:
+ * built-in names are reserved (a registered "Write" would shadow the gated
+ * implementation), and a verb-gated tool must declare the verbs it permits so
+ * the policy can never be granted a subcommand the tool itself disallows.
+ *
+ * Registration is in-process — another nax module or plugin. This is an
+ * extension point, not a plugin download path.
+ */
+
+import type { CommandInterceptor } from "#src/command-interceptor/index";
+import { NaxError } from "#src/infra/index";
+import type { JSONSchema } from "#src/session/tool-descriptor";
+import type { SandboxRecord } from "../sandbox";
+import type { ProtectedPathsPolicy } from "./protected-paths";
+import type { CodingToolName, ToolScope } from "./types";
+
+export interface ToolResult {
+  readonly content: string;
+  readonly isError?: boolean;
+  /**
+   * Set only by RunCommand's argv branch (`Exec`), which is the one call
+   * shape whose executed argv can differ from what the model requested
+   * (normalization scopes it to a workspace member and may append a
+   * no-scripts mechanism). Returned here rather than re-derived by the
+   * runtime so the ledger records the argv that actually ran. Task 7 reads
+   * this to write `executed`/`target` onto the ledger row; this task only
+   * defines and returns it.
+   *
+   * The `Git` tool also sets `audit` when a command interceptor rewrote its
+   * argv — there `target` is absent, because the repoRoot/package distinction
+   * does not apply to a git read.
+   */
+  readonly audit?: {
+    readonly executed: readonly string[];
+    readonly target?: "repoRoot" | "package";
+    /** Exec only: the directory the argv ran in. Read by the command-safety shadow, not the ledger. */
+    readonly cwd?: string;
+    /** P4: how an agent-authored Bash/Exec command ran; absent for every other tool. */
+    readonly sandbox?: SandboxRecord;
+    /**
+     * Bash only: the shell's exit code, present when nax did NOT kill the
+     * process group -- absent under `timedOut` (deadline kill) and `aborted`
+     * (turn cancellation), present under `orphansKilled` (the shell exited by
+     * itself; only background processes were reaped). What N means depends on
+     * the command in `executed` (exit 1 is "no match" for grep, "failures" for
+     * a test runner), and N >= 128 may still be a signal nax did not send.
+     */
+    readonly exitCode?: number;
+  };
+  /**
+   * Result size in bytes BEFORE the tool truncated to `ctx.maxBytes`. Set by
+   * tools whose payload is unbounded by nature — an MCP graph query can return
+   * megabytes. `resultBytes` on the ledger is measured after the slice, so
+   * without this a 2 MB result and a 40 KB one are indistinguishable and "how
+   * much did we discard" is unanswerable.
+   */
+  readonly resultBytesPreTruncation?: number;
+}
+
+export interface ToolRunContext {
+  /** Absolute, symlink-resolved permitted root. */
+  readonly root: string;
+  /** Paths the policy already resolved and approved, in pathFields order. */
+  readonly resolvedPaths: readonly string[];
+  /** Output ceiling in bytes; the tool truncates rather than the caller. */
+  readonly maxBytes: number;
+  /**
+   * Largest file this tool may read whole or write. Bounds the work, where
+   * maxBytes bounds only what the model is told -- see src/tools/bounded.ts.
+   */
+  readonly maxFileBytes: number;
+  /**
+   * Tool-layer I/O bound. Optional so existing `ToolRunContext` literals
+   * compile unchanged; resolves to `READ_CEILING` when absent. Distinct
+   * from `maxFileBytes` (whole-file Edit/Write cap) and `maxBytes` (the
+   * model-facing ceiling owned by `after_tool`).
+   */
+  readonly readCeiling?: number;
+  /**
+   * Repo-configurable glob denylist (nax#1972, `execution.denyPaths` in
+   * config), narrowing what a tool may act on beyond containment and grants.
+   * Currently consumed by Delete only -- see src/tools/deny-paths.ts. Absent
+   * or empty means no additional narrowing.
+   */
+  readonly denyPaths?: readonly string[];
+  /**
+   * Aborts the turn's process execution; Bash and Exec forward it to the
+   * launcher and runArgv, which SIGKILL the process group. US-001.
+   */
+  readonly signal?: AbortSignal;
+  /**
+   * The run's command interceptor (US-003; S1 spec section 4.2, port 7). The
+   * same object for every tool of a run, so the Git and Bash sites share one
+   * binary probe and one mode. Absent when the run installed none: interception
+   * then does not apply, the fail-safe both sites state.
+   */
+  readonly interceptor?: CommandInterceptor;
+  /** Host-owned paths (S1 spec port 6). Absent: the Git tools exclude and skip nothing extra. */
+  readonly protectedPaths?: ProtectedPathsPolicy;
+}
+
+export interface CodingTool {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: JSONSchema;
+  readonly scope: ToolScope;
+  /**
+   * True when an `isError` result is a routine part of using this tool rather
+   * than a fault worth an operator's attention. Only `RunCommand` sets it: a
+   * non-zero exit from a project command is the agent's own red/green loop, and
+   * on the acpx transport that loop runs inside the spawned agent where nax
+   * never observes it. Such calls are recorded at debug — the JSONL and the
+   * audit sink still get them, the console does not. Everything else defaults
+   * to false, so a malformed Read or a failed GitCommit stays visible.
+   */
+  readonly routineErrors?: boolean;
+  run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>;
+}
+
+/** Built-in names may never be re-registered. */
+export const RESERVED_TOOL_NAMES: readonly CodingToolName[] = [
+  "Read",
+  "Glob",
+  "Grep",
+  "Write",
+  "Edit",
+  "Delete",
+  "Git",
+  "GitCommit",
+  "RunCommand",
+  "RequestCapability",
+  "Exec",
+  "Bash",
+  "ScratchpadWrite",
+  "ScratchpadRead",
+  "ScratchpadList",
+];
+
+const registry = new Map<string, CodingTool>();
+
+export function registerCodingTool(tool: CodingTool): void {
+  if ((RESERVED_TOOL_NAMES as readonly string[]).includes(tool.name) && !internalRegistration) {
+    throw new NaxError(
+      `Tool name "${tool.name}" is reserved for a nax built-in and cannot be re-registered.`,
+      "TOOL_NAME_RESERVED",
+      { stage: "tools", tool: tool.name },
+    );
+  }
+  if (registry.has(tool.name)) {
+    throw new NaxError(`Tool "${tool.name}" is already registered.`, "TOOL_ALREADY_REGISTERED", {
+      stage: "tools",
+      tool: tool.name,
+    });
+  }
+  if (tool.scope.verbField !== undefined && tool.scope.allowedVerbs === undefined) {
+    throw new NaxError(
+      `Tool "${tool.name}" declares verbField but no allowedVerbs; the policy would have no bound to enforce.`,
+      "TOOL_SCOPE_INCOMPLETE",
+      { stage: "tools", tool: tool.name },
+    );
+  }
+  registry.set(tool.name, tool);
+}
+
+let internalRegistration = false;
+
+/** Register a nax built-in, bypassing the reserved-name check by design. */
+export function registerBuiltinTool(tool: CodingTool): void {
+  internalRegistration = true;
+  try {
+    registerCodingTool(tool);
+  } finally {
+    internalRegistration = false;
+  }
+}
+
+export function getCodingTool(name: string): CodingTool | undefined {
+  return registry.get(name);
+}
+
+export function listCodingTools(): readonly CodingTool[] {
+  return [...registry.values()];
+}
+
+/** @internal Test-only: clears registrations between cases. */
+export function _resetRegistryForTest(): void {
+  registry.clear();
+}

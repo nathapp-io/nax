@@ -7,6 +7,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { gitSpawnEnv, spawn } from "@nathapp/nax-agent/internal";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
@@ -21,9 +22,7 @@ import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
 import { storySpendUsd } from "../runtime";
 import type { DispatchContext } from "../runtime/dispatch-context";
-import { spawn } from "../utils/bun-deps";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
-import { gitSpawnEnv } from "../utils/git-env";
 import { storyPackageDir } from "../utils/path-frame";
 import {
   deriveStoryWorktreeId,

@@ -13,7 +13,7 @@
  * narrow boundary keeps test doubles cast-free. `InteractionChain` satisfies it
  * structurally.
  */
-import { type AskControl, type AskLink, type AskLinkOutcome, type AskRequest, maskForPrompt } from "@/permissions";
+import { type AskControl, type AskLink, type AskLinkOutcome, type AskRequest, maskForPrompt } from "@nathapp/nax-agent";
 import { getSafeLogger } from "../logger";
 import type { PromptView, Session, Waiter } from "./ask-link-session";
 import {

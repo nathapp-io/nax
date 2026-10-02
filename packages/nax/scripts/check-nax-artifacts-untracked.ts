@@ -24,8 +24,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { NAX_GITIGNORE_ENTRIES } from "../src/utils/gitignore";
-import { byCodePoint } from "../src/utils/sort";
 import { findRepoRoot } from "./lib/repo-root";
 
 /**

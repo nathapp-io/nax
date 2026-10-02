@@ -13,6 +13,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, withDepsRestore, withTempDir } from "@test/helpers";
 import {
   _manifestStoreDeps,
@@ -25,7 +26,6 @@ import {
   writeRebuildManifest,
 } from "@/context/engine/manifest-store";
 import type { ContextManifest } from "@/context/engine/types";
-import { byCodePoint } from "@/utils/sort";
 
 withDepsRestore(_manifestStoreDeps);
 

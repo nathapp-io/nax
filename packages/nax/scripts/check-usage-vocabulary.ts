@@ -12,7 +12,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { byCodePoint } from "../src/utils/sort";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { findRepoRoot } from "./lib/repo-root";
 
 const NAMES = [

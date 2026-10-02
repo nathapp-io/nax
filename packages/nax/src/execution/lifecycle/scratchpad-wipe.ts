@@ -24,9 +24,9 @@
 
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import { SCRATCHPAD_DIR } from "@nathapp/nax-agent";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { SCRATCHPAD_DIR } from "@/tools";
-import { errorMessage } from "@/utils/errors";
 
 /** Injectable deps for the wipe (see docs/architecture/conventions.md §2). */
 export const _scratchpadWipeDeps = {

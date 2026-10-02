@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { cancellableDelay } from "@nathapp/nax-agent/internal";
 import { assertCaughtInstanceOf } from "@test/helpers";
-import { cancellableDelay } from "@/utils/bun-deps";
 
 describe("cancellableDelay", () => {
   test("without a signal — resolves after the requested delay", async () => {

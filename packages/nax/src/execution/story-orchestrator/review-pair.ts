@@ -20,9 +20,10 @@
  * session flag.
  *
  */
+
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
-import { errorMessage } from "@/utils/errors";
 import type { PhaseTracking } from "./execution-plan-phases";
 import { runPhase } from "./run-phase";
 import type { InternalPhase } from "./types";

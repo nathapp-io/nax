@@ -2,15 +2,18 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nativeTranscriptDirs } from "@/agents/native/session/session";
-import { loadTranscript } from "@/agents/native/session/transcript-store";
-import { runNativeTurn } from "@/agents/native/session/turn-loop";
-import type { TurnDeps } from "@/agents/native/session/turn-types";
-import type { SendTurnOpts } from "@/agents/session-types";
-import { createTurnDeadline } from "@/agents/turn-deadline";
+import type { SendTurnOpts } from "@nathapp/nax-agent";
+import { createTurnDeadline } from "@nathapp/nax-agent";
+import type { TurnDeps } from "@nathapp/nax-agent/internal";
+import {
+  createSpinBreaker,
+  DEFAULT_SPIN_BREAKER_SETTINGS,
+  loadTranscript,
+  nativeTranscriptDirs,
+  runNativeTurn,
+} from "@nathapp/nax-agent/internal";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
-import { createSpinBreaker, DEFAULT_SPIN_BREAKER_SETTINGS } from "@/runtime/spin-breaker";
 
 let dir: string;
 const handle = { id: "sess-retry", agentName: "native" } as const;

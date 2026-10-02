@@ -28,6 +28,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { AGENT_PROFILES, ContextOrchestrator, FLOOR_KINDS } from "@/context/engine";
 import type {
   AdapterFailure,
@@ -38,7 +39,6 @@ import type {
   ContextRequest,
   IContextProvider,
 } from "@/context/engine/types";
-import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

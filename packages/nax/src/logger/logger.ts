@@ -1,10 +1,8 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
-import { setAgentLogger } from "../agents/infra";
+import { redactEntry, setAgentLogger, stripControlChars } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors.js";
 import { type FormatterOptions, formatLogEntry, type VerbosityMode } from "../log-format/index.js";
-import { redactEntry } from "../utils/redact.js";
-import { stripControlChars } from "../utils/strip-control-chars.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import { SinkRegistry } from "./sink-registry.js";
 import type { LogEntry, LoggerOptions, LogLevel, LogSink, StoryLogger } from "./types.js";

@@ -11,9 +11,9 @@
  * classification is hard-filtered here. Everything else stays generic.
  */
 import { join, relative } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS, extractTestDirs } from "../test-runners/conventions";
-import { errorMessage } from "../utils/errors";
 import { getGitRoot, gitWithTimeout } from "../utils/git";
 import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 

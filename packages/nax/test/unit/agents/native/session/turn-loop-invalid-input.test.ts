@@ -24,15 +24,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AdapterInteraction } from "@/agents/interaction-handler";
-import { nativeTranscriptDirs } from "@/agents/native/session/session";
-import { loadTranscript } from "@/agents/native/session/transcript-store";
-import { runNativeTurn } from "@/agents/native/session/turn-loop";
-import type { TurnDeps } from "@/agents/native/session/turn-types";
-import type { SendTurnOpts } from "@/agents/session-types";
+import type { AdapterInteraction, CodingTool, SendTurnOpts } from "@nathapp/nax-agent";
+import type { TurnDeps } from "@nathapp/nax-agent/internal";
+import { loadTranscript, nativeTranscriptDirs, runNativeTurn } from "@nathapp/nax-agent/internal";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
-import type { CodingTool } from "@/tools";
 
 // Schema shape copied from src/tools/run-command.ts:270-292 — the live defect
 // was values expected object, model returned values:"". We do not depend on

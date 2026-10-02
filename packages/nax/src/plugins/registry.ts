@@ -4,18 +4,11 @@
  * Central registry for all loaded plugins with typed getters.
  */
 
-import { LOOP_EVENTS } from "../agents/native/session/loop-events";
-import type {
-  ExternalHandlerOf,
-  LoopEvent,
-  LoopHandlerEntry,
-  LoopHandlerSet,
-} from "../agents/native/session/loop-events/types";
+import type { ExternalHandlerOf, LoopEvent, LoopHandlerEntry, LoopHandlerSet } from "@nathapp/nax-agent/internal";
+import { errorMessage, isThenable, LOOP_EVENTS } from "@nathapp/nax-agent/internal";
 import type { AgentAdapter } from "../agents/types";
 import { getSafeLogger } from "../logger";
 import type { RoutingStrategy } from "../routing/router";
-import { errorMessage } from "../utils/errors";
-import { isThenable } from "../utils/thenable";
 import type { LoadedPlugin, PluginSource } from "./loader";
 import type {
   IContextProvider,

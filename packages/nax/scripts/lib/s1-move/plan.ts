@@ -14,7 +14,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { byCodePoint } from "@/utils/sort";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { destinationOf, isInMoveSet, type MoveManifest } from "../agent-move-manifest";
 import { isLocalSpecifier, markersOf, resolveInPackage, strippedText } from "./resolve";
 

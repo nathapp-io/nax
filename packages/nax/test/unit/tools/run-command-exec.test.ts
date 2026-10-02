@@ -1,14 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import type { CommandLauncher, LaunchRequest } from "@nathapp/nax-agent";
+import type { ToolRunContext } from "@nathapp/nax-agent/internal";
+import {
+  _agentOutputEnvDeps,
+  _argvExecDeps,
+  compileToolPolicy,
+  createCodingToolRuntime,
+  createRunCommandTool,
+  EXEC_TIMEOUT_MS,
+  type RunCommandExecOptions,
+  runExecBranch,
+} from "@nathapp/nax-agent/internal";
 import { assertDefined, makeSpawn, withDepsRestore } from "@test/helpers";
 import { runQualityCommand } from "@/quality";
-import type { CommandLauncher, LaunchRequest } from "@/sandbox";
-import { compileToolPolicy } from "@/tools/policy";
-import type { ToolRunContext } from "@/tools/registry";
-import { createRunCommandTool, type RunCommandExecOptions } from "@/tools/run-command";
-import { EXEC_TIMEOUT_MS, runExecBranch } from "@/tools/run-command-exec";
-import { createCodingToolRuntime } from "@/tools/runtime";
-import { _agentOutputEnvDeps } from "@/utils/agent-output-env";
-import { _argvExecDeps } from "@/utils/argv-exec";
 
 const ctx: ToolRunContext = { root: "/repo", resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_000_000 };
 const exec: RunCommandExecOptions = {

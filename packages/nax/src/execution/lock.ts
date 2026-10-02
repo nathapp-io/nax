@@ -9,8 +9,7 @@ import { randomUUID } from "node:crypto";
 import { rename, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
-import { isProcessAlive } from "@/utils/process-alive";
-import { realOrRaw } from "@/utils/realpath";
+import { isProcessAlive, realOrRaw } from "@nathapp/nax-agent/internal";
 import { getLogger } from "../logger";
 
 /** Serialize mutations of each lock within this process across asynchronous I/O. */

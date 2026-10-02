@@ -4,7 +4,7 @@
  * Defines interfaces for specific plugin extensions that can be provided.
  */
 
-import type { ExternalHandlerOf, LoopEvent } from "@/agents/native/session/loop-events/types";
+import type { ExternalHandlerOf, LoopEvent } from "@nathapp/nax-agent/internal";
 import type { TestStrategy } from "../config";
 import type { RegressionGateConfig } from "../config/runtime-types";
 import type { FindingSeverity, FixTarget } from "../findings/types";

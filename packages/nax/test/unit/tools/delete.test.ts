@@ -2,10 +2,15 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  compileToolPolicy,
+  createCodingToolRuntime,
+  DEFAULT_TOOL_MAX_FILE_BYTES,
+  deleteTool,
+} from "@nathapp/nax-agent";
 import { makeNaxConfig } from "@test/helpers";
 import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 import { resolvePermissions } from "@/config/permissions";
-import { compileToolPolicy, createCodingToolRuntime, DEFAULT_TOOL_MAX_FILE_BYTES, deleteTool } from "@/tools";
 import { gitWithTimeout } from "@/utils/git";
 
 let root: string;

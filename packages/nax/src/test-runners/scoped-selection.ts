@@ -11,9 +11,9 @@
  * Scope: package-scoped (operates on `workdir` + the story's git ref).
  */
 
+import { normalizeCommandSpec, type QualityCommandSpec, replaceInCommandSpec } from "@nathapp/nax-agent/internal";
 import { getLogger } from "@/logger";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
-import { normalizeCommandSpec, type QualityCommandSpec, replaceInCommandSpec } from "../quality/command-spec";
 import { _smartRunnerDeps, MAX_GREP_TEST_FILES } from "../verification/smart-runner";
 import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "./conventions";
 import type { ResolvedTestPatterns } from "./resolver";

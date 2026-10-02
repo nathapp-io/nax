@@ -21,6 +21,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { SCRATCHPAD_DIR } from "@nathapp/nax-agent";
 import {
   cleanupTempDir,
   makeMockRuntime,
@@ -33,7 +34,6 @@ import {
 import { _runSetupDeps, type RunSetupOptions, setupRun } from "@/execution/lifecycle/run-setup";
 import { _scratchpadWipeDeps } from "@/execution/lifecycle/scratchpad-wipe";
 import type { NaxRuntime } from "@/runtime";
-import { SCRATCHPAD_DIR } from "@/tools";
 
 // Both seams are restored after every test: the wipe's removal primitive is
 // injected per-test, and the run-container deps are stubbed so setupRun never

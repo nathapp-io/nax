@@ -7,6 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { profileOverrideFromConfig } from "../config";
 import { loadConfigForWorkdir } from "../config/loader";
 import { getLogger } from "../logger";
@@ -15,7 +16,6 @@ import { runPipeline } from "../pipeline/runner";
 import type { PipelineContext } from "../pipeline/types";
 import { markStoryFailed, savePRD } from "../prd";
 import type { PRD } from "../prd/types";
-import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import { storyAbsWorkdir, storyPackageDir } from "../utils/path-frame";
 import { deriveStoryWorktreeId, storyWorktreePath } from "../worktree";

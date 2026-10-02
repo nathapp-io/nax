@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import {
   findAliasInternalViolations,
   formatAliasViolationReport,
@@ -9,7 +10,6 @@ import {
   scanFileForAliasInternals,
 } from "@scripts/check-alias-internals";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { byCodePoint } from "@/utils/sort";
 
 function setupRepo(root: string) {
   mkdirSync(join(root, "src", "routing"), { recursive: true });

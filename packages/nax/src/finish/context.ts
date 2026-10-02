@@ -15,11 +15,11 @@
  * `load_ctx`'s header comment exists to state.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AcceptanceGroupResult, AcceptanceResolutionStatus } from "@/cli";
 import { resolveFeatureSpec } from "@/cli";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import { viewArgv } from "@/forge";
-import { errorMessage } from "@/utils/errors";
 import { gitWithTimeout } from "@/utils/git";
 import { readLedger } from "./audit";
 

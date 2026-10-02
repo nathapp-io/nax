@@ -13,9 +13,9 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import type { SendTurnOpts, SessionHandle, TurnResult } from "@nathapp/nax-agent";
+import type { LoopHandlerEntry, LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import { assertDefined, makeAgentAdapter, withInfoSpy } from "@test/helpers";
-import type { LoopHandlerEntry, LoopHandlerSet } from "@/agents/native/session/loop-events/types";
-import type { SendTurnOpts, SessionHandle, TurnResult } from "@/agents/session-types";
 import { NATIVE_AGENT_NAME } from "@/config";
 import { SessionManager } from "@/session/manager";
 import type { OpenSessionRequest } from "@/session/types";

@@ -1,6 +1,6 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
-import { errorMessage } from "../utils/errors";
 
 export interface PostRunNotification {
   readonly idPrefix: string;

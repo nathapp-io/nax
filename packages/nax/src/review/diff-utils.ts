@@ -5,11 +5,11 @@
  * BUG-114 ref fallback chain lives here as resolveEffectiveRef().
  */
 
+import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
 import { isTestFile } from "../test-runners";
 import { GIT_TIMEOUT_MS, getMergeBase, isGitRefValid } from "../utils/git";
-import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
 import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "../utils/nax-owned-paths";
 import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 

@@ -22,14 +22,13 @@
  * Backwards-compat alias: PromptBuilder re-exported from src/prompts/index.ts
  */
 
+import { commandSpecIncludes, errorMessage, renderCommandSpec } from "@nathapp/nax-agent/internal";
 import type { PromptLoaderConfig } from "@/config/selectors";
 import type { NaxConfig } from "@/config/types";
 import { filterContextByRole, truncateToContextBudget } from "@/context";
 import { getSafeLogger } from "@/logger";
 import type { UserStory } from "@/prd";
-import { commandSpecIncludes, renderCommandSpec } from "@/quality/command-spec";
 import type { SelfVerificationPromptInput } from "@/quality/self-verification";
-import { errorMessage } from "@/utils/errors";
 import { resolveStoryBaseline, type StoryExecutionMode, type TestBaseline } from "@/verification";
 import type { PromptOptions, PromptRole, PromptSection } from "../core";
 import { SectionAccumulator, universalConstitutionSection, universalContextSection } from "../core";

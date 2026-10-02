@@ -11,9 +11,9 @@
 
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getLogger } from "../logger";
 import type { StoryStatus } from "../prd";
-import { errorMessage } from "../utils/errors";
 
 /** Safely get logger instance, returns null if not initialized */
 function getSafeLogger() {

@@ -21,7 +21,7 @@
 
 import { readdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { byCodePoint } from "../src/utils/sort";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 
 interface Options {
   dir: string;

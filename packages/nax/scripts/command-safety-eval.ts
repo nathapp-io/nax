@@ -21,7 +21,7 @@
  */
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { type Classify, createSystemOneClient, scoreRules } from "../src/command-safety";
+import { type Classify, createSystemOneClient, scoreRules } from "@nathapp/nax-agent";
 
 export type ScorerName =
   | "rule"

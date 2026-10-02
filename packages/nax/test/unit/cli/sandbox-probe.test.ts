@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { ProbeResult, SandboxBackend } from "@nathapp/nax-agent";
 import { sandboxProbeCommand as barrelCommand } from "@/cli";
 import { _sandboxProbeCmdDeps, sandboxProbeCommand } from "@/cli/sandbox-probe";
 import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "@/config";
-import type { ProbeResult, SandboxBackend } from "@/sandbox";
 
 describe("sandboxProbeCommand", () => {
   const backend: SandboxBackend = {

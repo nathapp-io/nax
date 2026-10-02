@@ -12,7 +12,7 @@
  * differed — which is why the defect looked transport-specific in the field.
  */
 
-import type { SessionHandle, SessionModel } from "../agents/session-types";
+import type { SessionHandle, SessionModel } from "@nathapp/nax-agent";
 import type { ModelDef } from "../config/schema-types";
 import type { SessionDescriptor } from "./types";
 

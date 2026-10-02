@@ -104,7 +104,8 @@
     "@types/react": "^19.2.14",
     "ink-testing-library": "^4.0.0",
     "react-devtools-core": "file:./stubs/react-devtools-core",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "@nathapp/nax-agent": "workspace:*"
   },
   "license": "MIT",
   "author": "William Khoo",

@@ -23,10 +23,10 @@
 
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ProjectProfile } from "@/config";
 import { getLogger } from "@/logger";
 import { detectProjectProfile as _detectProjectProfile } from "@/project";
-import { errorMessage } from "@/utils/errors";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────

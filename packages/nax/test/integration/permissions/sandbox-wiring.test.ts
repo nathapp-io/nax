@@ -6,12 +6,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { type CommandLauncher, createCommandLauncher, rawBashRefusalReason } from "@nathapp/nax-agent";
+import type { BashApprovalMode } from "@nathapp/nax-agent/internal";
+import { buildCodingToolSupport, realOrRaw } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir } from "@test/helpers";
-import { buildCodingToolSupport } from "@/agents/coding-tool-support";
-import type { BashApprovalMode } from "@/config/bash-approval";
 import { runQualityCommand } from "@/quality";
-import { type CommandLauncher, createCommandLauncher, rawBashRefusalReason } from "@/sandbox";
-import { realOrRaw } from "@/utils/realpath";
 
 let root: string;
 beforeEach(() => {

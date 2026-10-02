@@ -17,9 +17,9 @@
  * drift, and a third would otherwise be written without the guard.
  */
 
+import { NATIVE_AGENT } from "@nathapp/nax-agent/internal";
 import { applyProtocolRegions, buildAgentScopeSection } from "../prompts/sections";
 import { buildContextToolPreamble } from "./acp/adapter-output";
-import { NATIVE_AGENT } from "./native/models";
 import type { AgentRunOptions } from "./types";
 
 /**

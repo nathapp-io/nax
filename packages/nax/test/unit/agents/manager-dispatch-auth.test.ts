@@ -14,9 +14,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { AuthStamp, SessionHandle } from "@nathapp/nax-agent";
 import { makeTurnResult } from "@test/helpers";
 import { buildCompleteEvent, buildSessionTurnEvent } from "@/agents/manager-dispatch";
-import type { AuthStamp, SessionHandle } from "@/agents/session-types";
 import type { TurnResult } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 import { resolvePermissions } from "@/config/permissions";

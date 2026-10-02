@@ -18,12 +18,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { assertDefined, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import type { NaxConfig } from "@/config/types";
 import { _featureContextV2Deps, FeatureContextProviderV2 } from "@/context/engine";
 import type { ContextRequest, RawChunk } from "@/context/engine/types";
 import type { PRD, UserStory } from "@/prd";
-import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture builders

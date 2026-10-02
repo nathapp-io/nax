@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { NATIVE_AGENT } from "@nathapp/nax-agent/internal";
 import { assertDefined } from "@test/helpers";
-import { NATIVE_AGENT } from "@/agents/native/models";
 import { AGENT_PROFILES, CONSERVATIVE_DEFAULT_PROFILE, getAgentProfile } from "@/context/engine/agent-profiles";
 
 // ─────────────────────────────────────────────────────────────────────────────

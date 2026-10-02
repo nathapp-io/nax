@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { configureCredentials } from "../agents/infra";
+import { configureCredentials } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { globalConfigDir } from "./paths";
 import { type AuthConfig, AuthConfigSchema } from "./schemas-auth";

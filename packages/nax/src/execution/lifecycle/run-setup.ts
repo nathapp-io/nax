@@ -24,6 +24,7 @@
  */
 
 import path from "node:path";
+import { errorMessage, gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "@/config";
 import { LockAcquisitionError, NaxError } from "@/errors";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
@@ -40,8 +41,6 @@ import { detectProjectProfile } from "@/project";
 import { createRuntime, type NaxRuntime } from "@/runtime";
 import { SessionManager, sweepFeatureTranscripts } from "@/session";
 import { discoverWorkspacePackages } from "@/test-runners";
-import { errorMessage } from "@/utils/errors";
-import { gitSpawnEnv } from "@/utils/git-env";
 import { storyPackageDir } from "@/utils/path-frame";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireFeatureLock, type FeatureLockResult, releaseFeatureLock } from "../feature-lock";

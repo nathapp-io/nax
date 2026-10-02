@@ -23,9 +23,6 @@
  */
 
 import { basename } from "node:path";
-import type { Command } from "commander";
-import { loadConfig } from "@/config";
-import { NaxError } from "@/errors";
 import {
   _approvalsTaintDeps,
   type ApprovalsFileRead,
@@ -34,7 +31,10 @@ import {
   type RemovalDecision,
   readApprovalsFileDetailed,
   removeApprovals,
-} from "@/permissions";
+} from "@nathapp/nax-agent/internal";
+import type { Command } from "commander";
+import { loadConfig } from "@/config";
+import { NaxError } from "@/errors";
 import { projectOutputDir } from "@/runtime";
 import { formatEntryBlock, formatRemovedLine, formatTrustLine, toListJson } from "./approvals-format";
 import { promptForConfirmation } from "./confirm";

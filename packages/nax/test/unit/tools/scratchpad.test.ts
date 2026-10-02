@@ -25,8 +25,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
-import type { CodingTool, ToolRunContext } from "@/tools";
+import type { CodingTool, ToolRunContext } from "@nathapp/nax-agent";
 import {
   _resetBuiltinsForTest,
   _resetRegistryForTest,
@@ -42,7 +41,8 @@ import {
   scratchpadListTool,
   scratchpadReadTool,
   scratchpadWriteTool,
-} from "@/tools";
+} from "@nathapp/nax-agent/internal";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 
 let root: string;
 

@@ -1,9 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
+import type { SessionModel } from "@nathapp/nax-agent";
 import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 import { SessionTurnError } from "@/agents";
 import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { buildDispatchErrorEvent, modelAttribution } from "@/agents/manager-dispatch";
-import type { SessionModel } from "@/agents/session-types";
 import type { CompleteOptions, SessionHandle } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 import type { ResolvedPermissions } from "@/config/permissions";

@@ -2,8 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 import {
   buildGitArgv,
   compileToolPolicy,
@@ -12,8 +10,10 @@ import {
   GIT_ESCAPE_FLAGS,
   GIT_READ_VERBS,
   gitTool,
-} from "@/tools";
-import { GIT_DIFF_FILTERS } from "@/tools/git";
+} from "@nathapp/nax-agent";
+import { GIT_DIFF_FILTERS } from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 import { _gitDeps } from "@/utils/git";
 import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 
@@ -648,7 +648,7 @@ describe("US-002 — buildGitArgv compact log default", () => {
   });
 
   test("DEFAULT_LOG_FORMAT is the value the builder emits, not a second copy of the literal", async () => {
-    const { DEFAULT_LOG_FORMAT } = await import("@/tools");
+    const { DEFAULT_LOG_FORMAT } = await import("@nathapp/nax-agent");
     expect(DEFAULT_LOG_FORMAT).toBe("format:%h %ad %s");
     const argv = argvOf({ subcommand: "log" });
     expect(argv).toContain(`--format=${DEFAULT_LOG_FORMAT}`);

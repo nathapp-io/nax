@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { NormalizeInput } from "@nathapp/nax-agent/internal";
+import { classifyExec, isKnownManager, normalizeExec } from "@nathapp/nax-agent/internal";
 import { storyExecRoot } from "@/runtime/packages";
-import type { NormalizeInput } from "@/tools/package-managers";
-import { classifyExec, isKnownManager, normalizeExec } from "@/tools/package-managers";
 
 const base: Omit<NormalizeInput, "argv" | "target"> = {
   repoRoot: "/repo",

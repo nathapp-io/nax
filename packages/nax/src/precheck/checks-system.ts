@@ -3,9 +3,9 @@
  */
 
 import { existsSync, statSync } from "node:fs";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { PrecheckConfig } from "../config/selectors";
 import { loadCanonicalRules, NeutralityLintError } from "../context/rules/canonical-loader";
-import { errorMessage } from "../utils/errors";
 import type { Check } from "./types";
 
 function discoverCanonicalRuleRoots(workdir: string): string[] {

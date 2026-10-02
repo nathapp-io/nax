@@ -3,11 +3,10 @@
  * Extracted from schemas.ts to stay within the 600-line file limit.
  */
 
+import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE, SandboxConfigSchema } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
-import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
 import { CommandSafetyConfigSchema } from "./schemas-command-safety";
 import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
-import { SandboxConfigSchema } from "./schemas-sandbox";
 
 const ComplexityRungSchema = z.union([
   ModelTierSchema,

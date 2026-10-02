@@ -14,9 +14,10 @@
  * commit; a round that did not (`passed` / `escalated` / `incomplete`) is
  * recorded at the point routing decided that. Each is recorded exactly once.
  */
+
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { errorMessage } from "../utils/errors";
 import { type AuditTarget, recordRound, type WriteResultOptions, writeResult } from "./audit";
 import { buildCommitRound, commitFixes, filesInCommit, headSha } from "./commit";
 import { buildFixCommitMessage } from "./commit-message";

@@ -1,9 +1,9 @@
 import { existsSync, symlinkSync } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_GITIGNORE_ENTRIES, NAX_RETIRED_GITIGNORE_ENTRIES } from "../utils/gitignore";
 import { naxOrphanRefName } from "./nax-orphan-ref";
@@ -104,7 +104,7 @@ export class WorktreeManager {
       // so the lock file can land in `.git/info/`.
       await mkdir(infoDir, { recursive: true });
 
-      const { withPathFileLock } = await import("../utils/path-file-lock");
+      const { withPathFileLock } = await import("@nathapp/nax-agent/internal");
       await withPathFileLock(excludePath, async () => {
         let existing = "";
         if (existsSync(excludePath)) {

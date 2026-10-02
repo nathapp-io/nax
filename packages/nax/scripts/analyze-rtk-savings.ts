@@ -10,8 +10,9 @@
  * which guarantees verb coverage and reproduces the `--` / `.` shape that
  * defeats rtk's compact paths.
  */
+
+import { buildGitArgv } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../src/errors";
-import { buildGitArgv } from "../src/tools/git";
 import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "../src/utils/nax-owned-paths";
 
 export interface CorpusEntry {

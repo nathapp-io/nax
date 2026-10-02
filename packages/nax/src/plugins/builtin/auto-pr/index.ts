@@ -14,6 +14,7 @@
  */
 
 import * as path from "node:path";
+import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import {
   forgeFromRemoteUrl as _detectForge,
   findPrTemplate as _findPrTemplate,
@@ -21,7 +22,6 @@ import {
   openPr as _openDraft,
 } from "@/forge";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
-import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
 import { buildBody, buildTitle, type PrBodyContext } from "./pr-body";
 import type { AutoPrConfig, AutoPrDeps } from "./types";
 

@@ -11,8 +11,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { type ApprovalEntry, type ApprovalsTaint, approvalId } from "@nathapp/nax-agent";
 import { formatEntryBlock, formatTrustLine } from "@/cli/approvals-format";
-import { type ApprovalEntry, type ApprovalsTaint, approvalId } from "@/permissions";
 
 /** The entry line, the root line and the first command line all start at 10. */
 const ENTRY_INDENT = " ".repeat(10);

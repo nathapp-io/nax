@@ -6,6 +6,7 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { isProcessAlive as isPidAlive } from "@nathapp/nax-agent/internal";
 import chalk from "chalk";
 import { resolveProject } from "../commands/common";
 import { findProjectDir, loadConfig } from "../config";
@@ -14,7 +15,6 @@ import { NaxError } from "../errors";
 import type { NaxStatusFile } from "../execution/status-file";
 import { countStories, loadPRD } from "../prd";
 import { projectOutputDir } from "../runtime";
-import { isProcessAlive as isPidAlive } from "../utils/process-alive";
 import {
   displayLastRunSection,
   displayNoPrdNotice,

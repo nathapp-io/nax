@@ -16,12 +16,12 @@
  * context are passed in by the caller, avoiding a runtime import cycle.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
 import { getSafeLogger } from "@/logger";
 import { testWriterOp, verifierOp } from "@/operations";
 import type { PipelineContext } from "@/pipeline";
 import { appendScratchEntry } from "@/session";
-import { errorMessage } from "@/utils/errors";
 
 /** Subset of the post-run InspectionOptions the scratch writes actually read. */
 export interface ScratchEntryOptions {

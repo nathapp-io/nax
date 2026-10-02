@@ -18,7 +18,7 @@
  * `EMPTY_LOCK_EVICT_AGE_MS`, which proves creator death.
  */
 
-import { withFileLock } from "./file-lock";
+import { withFileLock } from "@nathapp/nax-agent/internal";
 
 export async function withQueueFileLock<T>(queuePath: string, operation: () => Promise<T>): Promise<T> {
   return withFileLock(`${queuePath}.lock`, operation, {

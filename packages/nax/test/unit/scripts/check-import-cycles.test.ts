@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import {
   buildImportGraph,
   findCyclicModules,
@@ -9,7 +10,6 @@ import {
   stripComments,
 } from "@scripts/check-import-cycles";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { byCodePoint } from "@/utils/sort";
 
 function write(root: string, rel: string, content: string): void {
   const full = join(root, rel);

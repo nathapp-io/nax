@@ -12,7 +12,7 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { HARM_OPTIONS, scoreRules } from "../src/command-safety";
+import { HARM_OPTIONS, scoreRules } from "@nathapp/nax-agent";
 import {
   allScores,
   type ModelScores,

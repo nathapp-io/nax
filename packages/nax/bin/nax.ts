@@ -36,11 +36,10 @@
 import { existsSync, mkdirSync, symlinkSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { AuthMethod } from "@nathapp/nax-agent";
+import { DEFAULT_PI_AUTH_PATH } from "@nathapp/nax-agent";
 import chalk from "chalk";
 import { Command, Option } from "commander";
-
-import type { AuthMethod } from "../src/agents/native";
-import { DEFAULT_PI_AUTH_PATH } from "../src/agents/native";
 import {
   acceptCommand,
   agentsListCommand,

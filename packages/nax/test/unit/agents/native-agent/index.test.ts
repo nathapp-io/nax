@@ -5,16 +5,10 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import type { AgentSessionAdapter, OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@nathapp/nax-agent";
+import { _clientDeps, _resetNativeClient } from "@nathapp/nax-agent/internal";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
-import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import { NativeAgentAdapter } from "@/agents/native-agent";
-import type {
-  AgentSessionAdapter,
-  OpenSessionOpts,
-  SendTurnOpts,
-  SessionHandle,
-  TurnResult,
-} from "@/agents/session-types";
 import type { ResolvedCompleteOptions } from "@/agents/types";
 
 const REAL_BUILD = _clientDeps.build;

@@ -11,16 +11,20 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { CodingTool } from "@nathapp/nax-agent";
+import {
+  _adapterDeps,
+  _clientDeps,
+  _resetNativeClient,
+  createLoopEventRegistry,
+  loadTranscript,
+  nativeSessionId,
+  saveTranscript,
+} from "@nathapp/nax-agent/internal";
 import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
 import { waitForCondition } from "@test/helpers";
-import { _adapterDeps } from "@/agents/native/adapter-deps";
-import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
-import { createLoopEventRegistry } from "@/agents/native/session/loop-events";
-import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
-import { nativeSessionId } from "@/agents/native/session-affinity";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import type { ResolvedCompleteOptions } from "@/agents/types";
-import type { CodingTool } from "@/tools";
 
 const REAL_BUILD = _clientDeps.build;
 const REAL_LIST = _adapterDeps.listStoredProviders;

@@ -6,14 +6,13 @@
  * collect results from them uniformly.
  */
 
+import type { AgentSessionAdapter, AuthStamp, ProtocolIds, TrackedSpawnDeadlineOptions } from "@nathapp/nax-agent";
 import type { AgentManagerConfig } from "@/config/selectors";
 import type { ResolvedPermissions } from "../config/permissions";
 import type { ModelDef, ModelTier } from "../config/schema";
 import type { AdapterFailure, ToolDescriptor } from "../context/engine";
-import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
 import type { TokenUsage } from "./cost";
-import type { AgentSessionAdapter, AuthStamp, TrackedSpawnDeadlineOptions } from "./session-types";
 
 // Session-protocol types live in ./session-types (file-size ratchet, #1702).
 // Re-exported here so every existing "@/agents/types" import keeps working.
@@ -26,8 +25,8 @@ export type {
   SessionModel,
   TrackedSpawnDeadlineOptions,
   TurnResult,
-} from "./session-types";
-export { SessionTurnError } from "./session-types";
+} from "@nathapp/nax-agent";
+export { SessionTurnError } from "@nathapp/nax-agent";
 // Re-export extended types for backward compatibility
 export type {
   DecomposedStory,
@@ -118,8 +117,8 @@ export interface AgentRunOptions {
     onQuestionDetected: (text: string) => Promise<string>;
   };
   /** Answers an `ask` verdict (P2); built at the execution stage. */
-  askResolver?: import("@/permissions").AskResolver;
-  commandShadow?: import("@/command-safety").CommandShadow; // P5 shadow; built + drained at the execution stage
+  askResolver?: import("@nathapp/nax-agent").AskResolver;
+  commandShadow?: import("@nathapp/nax-agent").CommandShadow; // P5 shadow; built + drained at the execution stage
   /**
    * Explicit ACP session handle override. When set, the adapter uses this
    * name instead of auto-deriving from featureName/storyId/sessionRole.
@@ -164,18 +163,18 @@ export interface AgentRunOptions {
     callTool(name: string, input: unknown): Promise<string>;
   };
   /** Executes nax's own coding tools; absent means the op declared none. */
-  codingToolRuntime?: import("@/tools").CodingToolRuntime;
+  codingToolRuntime?: import("@nathapp/nax-agent").CodingToolRuntime;
   /** Tools this operation declared; resolveDeclaredTools() has already applied the default. */
-  declaredTools?: readonly import("@/tools").CodingToolName[];
+  declaredTools?: readonly import("@nathapp/nax-agent").CodingToolName[];
   /** Provider-supplied tools to advertise for this dispatch, resolved per hop. */
-  providers?: readonly import("@/tools").ToolProvider[];
+  providers?: readonly import("@nathapp/nax-agent").ToolProvider[];
   /**
    * The run's command interceptor (S1 spec port 7), copied from the runtime by
    * `buildRunDispatchOptions` so both dispatch hops resolve the same one.
    */
-  commandInterceptor?: import("@/execution/command-interceptor").CommandInterceptor;
+  commandInterceptor?: import("@nathapp/nax-agent/internal").CommandInterceptor;
   /** Per-tool narrowing from the op's `toolPatterns`; applied to the resolved grants. */
-  toolPatterns?: import("@/tools").ToolPatternNarrowing;
+  toolPatterns?: import("@nathapp/nax-agent").ToolPatternNarrowing;
   /**
    * Permitted root for coding tools — the dispatch's single containment root.
    *
@@ -246,7 +245,7 @@ export interface AgentRunOptions {
    */
   outputDir?: string;
   /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */
-  codingTools?: readonly import("@/tools").CodingTool[];
+  codingTools?: readonly import("@nathapp/nax-agent").CodingTool[];
   /**
    * Session descriptor from SessionManager (Phase 1 plumbing — optional for backward compat).
    * When provided, the adapter MAY use descriptor.id/role/handle for audit correlation.

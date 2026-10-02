@@ -4,6 +4,7 @@
  * Post-implementation quality verification
  */
 
+import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
 import type { z } from "zod";
 import type {
   AdversarialReviewConfigSchema,
@@ -11,7 +12,6 @@ import type {
   SemanticReviewConfigSchema,
 } from "../config/schemas-review";
 import type { Finding } from "../findings";
-import type { QualityCommandSpec } from "../quality/command-spec";
 
 /** Review check name */
 export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic" | "adversarial" | "git-clean";

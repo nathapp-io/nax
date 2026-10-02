@@ -16,6 +16,8 @@
  * 7. Tests fail but parser found 0 structured records → status: "execution-failed", findings: []
  */
 
+import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
+import { errorMessage, renderCommandSpec } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "../config";
 import { rectificationGateConfigSelector } from "../config/selectors";
 import { NaxError } from "../errors";
@@ -26,10 +28,7 @@ import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
-import type { QualityCommandSpec } from "../quality/command-spec";
-import { renderCommandSpec } from "../quality/command-spec";
 import type { TestSummary } from "../test-runners";
-import { errorMessage } from "../utils/errors";
 import { storyPackageDir } from "../utils/path-frame";
 import {
   applyBaselineDispositions,

@@ -20,8 +20,8 @@
  * independently of the dep-injected command bodies.
  */
 
-import { type ApprovalEntry, type ApprovalsFileRead, type ApprovalsTaint, approvalId } from "@/permissions";
-import { stripControlChars } from "@/utils/strip-control-chars";
+import { type ApprovalEntry, type ApprovalsFileRead, type ApprovalsTaint, approvalId } from "@nathapp/nax-agent";
+import { stripControlChars } from "@nathapp/nax-agent/internal";
 
 /** Indent of the entry / root / `$ <cmd>` lines. */
 const ENTRY_INDENT = " ".repeat(10);

@@ -8,11 +8,11 @@
  * or error-handling semantics.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "../config";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { resolveTestFilePatterns } from "../test-runners";
-import { errorMessage } from "../utils/errors";
 import { getMergeBase, gitWithTimeout } from "../utils/git";
 import type { FlakeTriageDiff } from "./flake-triage";
 import { getChangedNonTestFiles, getChangedTestFiles, mapSourceToTests } from "./smart-runner";

@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { _adapterDeps } from "@/agents/native/adapter-deps";
+import { _adapterDeps } from "@nathapp/nax-agent/internal";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 
 const REAL_LIST = _adapterDeps.listStoredProviders;

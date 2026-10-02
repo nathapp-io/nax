@@ -13,6 +13,7 @@
  */
 
 import { join } from "node:path";
+import { errorMessage, gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { annotateManifestEffectiveness } from "@/context/engine";
 import { renderFragmentBody, writeFragment } from "@/context/fragments";
@@ -22,9 +23,7 @@ import { getLogger } from "@/logger";
 import { collectBatchMetrics, collectStoryMetrics } from "@/metrics";
 import { countStories, markStoryPassed, savePRD } from "@/prd";
 import { storySpendUsd } from "@/runtime";
-import { errorMessage } from "@/utils/errors";
 import { GIT_TIMEOUT_MS } from "@/utils/git";
-import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
 import { NAX_OWNED_TOP_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
 import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
 import { pipelineEventBus } from "../event-bus";

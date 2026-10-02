@@ -11,7 +11,7 @@
 
 import type { CostEstimate } from "./types";
 
-export { addTokenUsage, inputClassTokens } from "./usage-math";
+export { addTokenUsage, inputClassTokens } from "@nathapp/nax-agent";
 
 /**
  * Format cost estimate with confidence indicator for display.

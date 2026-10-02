@@ -1,6 +1,7 @@
 /** AgentManager owns agent lifecycle and fallback policy (ADR-012). */
 
 import { EventEmitter } from "node:events";
+import { cancellableDelay } from "@nathapp/nax-agent/internal";
 import { DEFAULT_AGENT_NAME } from "@/config";
 import type { ModelsConfig } from "@/config/schema-types";
 import type { AgentManagerConfig } from "@/config/selectors";
@@ -18,7 +19,6 @@ import { DispatchEventBus, type IDispatchEventBus } from "../runtime/dispatch-ev
 // Nested-barrel alias, not the parent barrel — the parent closes a runtime import cycle (check:import-cycles).
 import { resolveIdleWatchdogSettings } from "../runtime/middleware/idle-watchdog";
 import { knownSessionRole } from "../runtime/session-role";
-import { cancellableDelay } from "../utils/bun-deps";
 import { classifyCompleteException } from "./complete-exception-classifier";
 import { CooldownStore } from "./cooldown-store";
 import { StoryHopBudget } from "./hop-budget";

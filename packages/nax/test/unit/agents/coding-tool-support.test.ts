@@ -3,18 +3,16 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { readFile, realpath as realpathAsync } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AskResolver } from "@nathapp/nax-agent";
+import { _codingToolDeps, _resetSandboxRegistryForTests, buildCodingToolSupport } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import { _codingToolSupportDeps, resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import { loadConfigForPackage, packageConfigCache } from "@/config";
 import { _clearRootConfigCache } from "@/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { verifierOp } from "@/operations";
-import type { AskResolver } from "@/permissions";
-import { _resetSandboxRegistryForTests } from "@/sandbox";
 import { VERDICT_FILE } from "@/tdd";
-import { _codingToolDeps } from "@/tools";
 import { gitWithTimeout } from "@/utils/git";
 
 afterEach(() => _resetSandboxRegistryForTests()); // sandbox on by default: drop the cached backend

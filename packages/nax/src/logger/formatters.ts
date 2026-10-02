@@ -1,5 +1,5 @@
+import { stripControlChars } from "@nathapp/nax-agent/internal";
 import chalk from "chalk";
-import { stripControlChars } from "../utils/strip-control-chars.js";
 import type { LogEntry } from "./types.js";
 
 /**

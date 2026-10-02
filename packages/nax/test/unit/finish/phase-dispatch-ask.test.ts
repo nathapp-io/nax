@@ -5,14 +5,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { CommandShadow } from "@nathapp/nax-agent";
+import { headlessAskResolver } from "@nathapp/nax-agent";
 import { makeTestRuntime } from "@test/helpers";
-import type { CommandShadow } from "@/command-safety";
 import type { FinishContext, FinishOps, FinishPhaseContext } from "@/finish";
 import { _finishPhaseDeps, runFinishPhase } from "@/finish";
 import type { DispatchAskWiring, RunDispatchAskOptions } from "@/interaction";
 import { InteractionChain } from "@/interaction";
 import type { CallContext } from "@/operations";
-import { headlessAskResolver } from "@/permissions";
 
 function fakeWiring(): { wiring: DispatchAskWiring; disposed: () => number } {
   let disposed = 0;

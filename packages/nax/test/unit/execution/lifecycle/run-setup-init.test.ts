@@ -16,6 +16,7 @@
 import { afterEach, describe, expect, type Mock, mock, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import {
   assertDefined,
   cleanupTempDir,
@@ -27,7 +28,6 @@ import {
   makeStory,
   makeTempDir,
 } from "@test/helpers";
-import type { LoopHandlerSet } from "@/agents/native/session/loop-events/types";
 import type { InitializeAfterLockDeps, InitializeAfterLockResult } from "@/execution/lifecycle/run-setup-init";
 import { initializeAfterLock } from "@/execution/lifecycle/run-setup-init";
 

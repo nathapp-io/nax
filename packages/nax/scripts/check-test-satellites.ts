@@ -37,7 +37,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { byCodePoint } from "../src/utils/sort";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { mirrorsSrcModule, SCAN_DIRS, TICKET_RE, walk } from "./report-test-consolidation";
 
 const BASELINE_FILE = join(import.meta.dir, "baselines", "test-satellites-baseline.json");

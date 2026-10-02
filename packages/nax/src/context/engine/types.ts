@@ -7,8 +7,7 @@
  * See: docs/specs/SPEC-context-engine-v2.md
  */
 
-import type { AdapterFailure } from "@/agents/adapter-failure";
-import type { JSONSchema, ToolDescriptor } from "@/agents/tool-descriptor";
+import type { AdapterFailure, JSONSchema, ToolDescriptor } from "@nathapp/nax-agent";
 
 export type { AdapterFailure, JSONSchema, ToolDescriptor };
 

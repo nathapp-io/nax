@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { AuthStamp } from "@/agents/session-types";
+import type { AuthStamp } from "@nathapp/nax-agent";
 import type { CostErrorEvent, CostEvent, ICostAggregator } from "@/runtime/cost-aggregator";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "@/runtime/dispatch-events";

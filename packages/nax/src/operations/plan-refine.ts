@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { makeParseRetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import { planConfigSelector } from "../config";
@@ -13,7 +14,6 @@ import type { ContextFileEntry, PRD, UserStory } from "../prd/types";
 import type { PackageSummary } from "../prompts";
 import { PlanPromptBuilder } from "../prompts";
 import type { SessionRole } from "../session/types";
-import { errorMessage } from "../utils/errors";
 import { applyPlanFidelity, warnOnSpecDrift } from "./plan-fidelity";
 import { specStructureSelfHealStep } from "./plan-structure-heal";
 import { makeSelfHealStep, runSelfHealChain, type SelfHealStep } from "./self-heal";

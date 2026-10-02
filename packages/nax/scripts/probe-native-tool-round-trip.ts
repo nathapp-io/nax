@@ -26,7 +26,7 @@
  * every later native-sessions task builds on. It is not run in CI.
  */
 
-import { getNativeClient } from "../src/agents/native/client";
+import { getNativeClient } from "@nathapp/nax-agent/internal";
 import { configureNaxCredentials } from "../src/config";
 
 configureNaxCredentials();

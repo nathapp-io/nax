@@ -53,9 +53,9 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { BASH_TOOL_NAME } from "@nathapp/nax-agent";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { resolveDeclaredTools } from "../src/operations/types";
-import { BASH_TOOL_NAME } from "../src/tools";
-import { byCodePoint } from "../src/utils/sort";
 
 const ROOT = join(import.meta.dir, "..");
 const SCAN_DIR = "src";

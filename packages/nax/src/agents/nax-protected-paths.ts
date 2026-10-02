@@ -12,8 +12,9 @@
  * inputs twice. Memoizing it would break `NAX_GLOBAL_CONFIG_DIR` being followed
  * live, which a test pins.
  */
+
+import type { ProtectedPathsPolicy } from "@nathapp/nax-agent";
 import { globalConfigDir, PROJECT_NAX_DIR } from "@/config";
-import type { ProtectedPathsPolicy } from "@/tools";
 import { trustStorePath } from "@/trust";
 import { NAX_GITIGNORE_ENTRIES } from "@/utils/gitignore";
 import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";

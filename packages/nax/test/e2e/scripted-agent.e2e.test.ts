@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { NO_OP_INTERACTION_HANDLER } from "@nathapp/nax-agent";
 import { makeScriptedAgent } from "@test/helpers";
 import type { SendTurnOpts, SessionHandle } from "@/agents/types";
-import { NO_OP_INTERACTION_HANDLER } from "@/runtime/no-op-interaction-handler";
 import type { SessionRole } from "@/runtime/session-role";
 
 function fakeHandle(role: SessionRole): SessionHandle {

@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { findBoundaryEdges, formatEdge, specifiersOf } from "@scripts/check-agent-boundary";
 import { parseMoveManifest } from "@scripts/lib/agent-move-manifest";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { byCodePoint } from "@/utils/sort";
 
 let root = "";
 afterEach(() => {

@@ -4,7 +4,7 @@
 // rejects. command-spec.ts has zero imports, so the leaf is safe, and a
 // relative path is not an `@/` alias so `check:alias-internals` does not fire.
 // Do not "tidy" this into a barrel import.
-import { containsShellChain, type QualityCommandSpec } from "../quality/command-spec";
+import { containsShellChain, type QualityCommandSpec } from "@nathapp/nax-agent/internal";
 
 /**
  * Warn about `&&`-chained quality commands. A chain short-circuits, so every

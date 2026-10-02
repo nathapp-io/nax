@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { realOrRaw } from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
   makeSpawn,
@@ -17,7 +18,6 @@ import {
   useUntrustedRegistry,
   withTimerSpy,
 } from "@test/helpers";
-import { realOrRaw } from "@/utils/realpath";
 import { _executorDeps, appendForceExitFlag, executeWithTimeout, normalizeEnvironment } from "@/verification";
 
 describe("appendForceExitFlag (VER-1)", () => {
@@ -56,7 +56,7 @@ describe("appendForceExitFlag (VER-1)", () => {
 describe("US-004 — the agent-output helpers are re-exported, not copied", () => {
   test("AC5: @/verification exports the same AGENT_OUTPUT_MARKERS and withAgentOutputEnv as src/utils/agent-output-env.ts", async () => {
     const fromVerification = await import("@/verification");
-    const fromUtils = await import("@/utils/agent-output-env");
+    const fromUtils = await import("@nathapp/nax-agent/internal");
 
     expect(fromVerification.AGENT_OUTPUT_MARKERS).toBe(fromUtils.AGENT_OUTPUT_MARKERS);
     expect(fromVerification.withAgentOutputEnv).toBe(fromUtils.withAgentOutputEnv);

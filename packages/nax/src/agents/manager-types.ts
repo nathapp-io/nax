@@ -184,7 +184,7 @@ export interface RunAsSessionOpts {
   sessionRole?: SessionRole;
   signal?: AbortSignal;
   /** Mid-turn interaction callback (context-tool calls, agent questions). */
-  interactionHandler?: import("./interaction-handler").InteractionHandler;
+  interactionHandler?: import("@nathapp/nax-agent").InteractionHandler;
   /** Max interaction round-trips per turn (default: 10). */
   maxInteractions?: number;
   /** Context-engine pull tools to expose during this turn. */
@@ -192,7 +192,7 @@ export interface RunAsSessionOpts {
   /** Server-side runtime for resolving context-engine pull tool calls. */
   contextToolRuntime?: { callTool(name: string, input: unknown): Promise<string> };
   /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */
-  codingTools?: readonly import("@/tools").CodingTool[];
+  codingTools?: readonly import("@nathapp/nax-agent").CodingTool[];
   /** Per-callOp invocation id forwarded to dispatch events. */
   readonly callId?: string;
   /** Caller-supplied region id forwarded to dispatch events. */

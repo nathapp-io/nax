@@ -11,7 +11,7 @@
  * by naming its module, which beats `export *`.
  */
 import { basename, dirname } from "node:path";
-import { byCodePoint } from "@/utils/sort";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 
 const PUBLIC_FILES: ReadonlySet<string> = new Set([
   "src/native/index.ts",

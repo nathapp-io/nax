@@ -14,7 +14,7 @@
  * compile time.
  */
 
-import type { AskLinkOutcome, AskRequest } from "@/permissions";
+import type { AskLinkOutcome, AskRequest } from "@nathapp/nax-agent";
 import { getSafeLogger } from "../logger";
 import type { AskChannelResponse } from "./ask-link";
 import type { InteractionRequest, InteractionStage } from "./types";

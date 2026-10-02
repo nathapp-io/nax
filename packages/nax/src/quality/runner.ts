@@ -9,14 +9,17 @@
  * runQualityCommand() instead. (#135)
  */
 
+import {
+  errorMessage,
+  killProcessGroup,
+  normalizeCommandSpec,
+  type QualityCommandSpec,
+} from "@nathapp/nax-agent/internal";
 import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
 import { assertTrusted } from "../trust";
-import { errorMessage } from "../utils/errors";
-import { killProcessGroup } from "../utils/process-kill";
 import { withAgentOutputEnv } from "../verification/executor";
 import { aggregateResults } from "./aggregate";
-import { normalizeCommandSpec, type QualityCommandSpec } from "./command-spec";
 
 /** Default timeout for quality commands — matches legacy REVIEW_CHECK_TIMEOUT_MS. */
 const DEFAULT_TIMEOUT_MS = 120_000;

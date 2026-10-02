@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import * as agentInfra from "@/agents/infra";
+import { infraModule as agentInfra } from "@nathapp/nax-agent/internal";
 import { initLogger, resetLogger } from "@/logger";
 
 describe("initLogger fills the agent logger slot", () => {

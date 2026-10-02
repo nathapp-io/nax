@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { compileToolPolicy } from "@nathapp/nax-agent";
 // NEVER a double cast through `unknown` — the check:test-as-unknown-as ratchet
 // fails CI on any new occurrence. Mirror test/unit/config/scoped-permissions.test.ts:6-9's
 // sanctioned idiom: makeNaxConfig(...) from @test/helpers takes a DeepPartial.
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolvePermissions } from "@/config/permissions";
-import { compileToolPolicy } from "@/tools";
 
 const cfg = (execution: Record<string, unknown>) => makeNaxConfig({ execution });
 

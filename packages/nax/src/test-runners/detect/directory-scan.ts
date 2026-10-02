@@ -7,8 +7,7 @@
  * This tier runs last — only when Tiers 1–3 produce no results.
  */
 
-import { gitSpawnEnv } from "@/utils/git-env";
-import { killProcessGroup } from "@/utils/process-kill";
+import { gitSpawnEnv, killProcessGroup } from "@nathapp/nax-agent/internal";
 import type { DetectionSource } from "./types";
 
 /**

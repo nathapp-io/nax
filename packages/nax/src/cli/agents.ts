@@ -4,9 +4,9 @@
  * Lists available agents with their binary paths, versions, and health status.
  */
 
+import { NATIVE_AGENT } from "@nathapp/nax-agent";
 import { resolveDefaultAgent } from "../agents";
 import { ACP_ADAPTER_NAMES, AcpAgentAdapter } from "../agents/acp";
-import { NATIVE_AGENT } from "../agents/native";
 import { NativeAgentAdapter } from "../agents/native-agent";
 import { getAgentVersion } from "../agents/shared/version-detection";
 import { DEFAULT_AGENT_PROTOCOL } from "../config";

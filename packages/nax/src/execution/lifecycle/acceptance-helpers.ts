@@ -7,13 +7,13 @@
  */
 
 import path from "node:path";
+import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import { isStubTestContent, substituteAcceptanceTestPath } from "@/acceptance";
 import type { NaxConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
 import { commandSpecIncludes, normalizeCommandSpec, type QualityCommandSpec, renderCommandSpec } from "@/quality";
-import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
 import { filterNaxInternalPaths, resolveNaxIgnorePatterns } from "@/utils/path-filters";
 import { storyPackageDir } from "@/utils/path-frame";
 import type { AcceptanceLoopResult, AcceptanceTestPathEntry } from "./acceptance-loop";

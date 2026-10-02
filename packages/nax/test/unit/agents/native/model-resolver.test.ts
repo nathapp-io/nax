@@ -16,9 +16,8 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { _clientDeps, _resetNativeClient, resolveNativeId } from "@nathapp/nax-agent/internal";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
-import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
-import { resolveNativeId } from "@/agents/native/model-resolver";
 import type { CatalogModelOverride, ProviderCatalogOverride } from "@/config/schema-types";
 
 // ─────────────────────────────────────────────────────────────────────────────

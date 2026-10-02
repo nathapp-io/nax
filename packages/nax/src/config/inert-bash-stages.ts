@@ -28,7 +28,7 @@
  * so "grantable per stage" here implies "reachable at every call site".
  */
 
-import { BASH_TOOL_NAME } from "@/tools";
+import { BASH_TOOL_NAME } from "@nathapp/nax-agent";
 import type { PipelineStage } from "./permissions";
 import { resolvePermissions } from "./permissions";
 import type { NaxConfig } from "./runtime-types";

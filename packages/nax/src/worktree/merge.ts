@@ -1,6 +1,6 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
 import type { WorktreeManager } from "./manager";
 import type { WorktreeId } from "./worktree-id";

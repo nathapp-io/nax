@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { makePRD, makeStory, withDepsRestore } from "@test/helpers";
 import {
   _contextFragmentsDeps,
@@ -24,7 +25,6 @@ import {
 } from "@/cli";
 import { _fragmentStoreDeps, listFragmentStoryIds, readFragment } from "@/context";
 import type { PRD, UserStory } from "@/prd";
-import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

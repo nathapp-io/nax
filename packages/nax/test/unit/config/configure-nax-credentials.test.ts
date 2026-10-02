@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { credentialsConfig } from "@/agents/infra";
-import { credentialFilePath } from "@/agents/native";
+import { credentialFilePath } from "@nathapp/nax-agent";
+import { credentialsConfig } from "@nathapp/nax-agent/internal";
 import { configureNaxCredentials } from "@/config";
 
 describe("configureNaxCredentials", () => {

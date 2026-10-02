@@ -9,11 +9,11 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "../config";
 // Leaf, not `@/quality`: the barrel re-exports self-verification.ts, which
 // imports ../config, and routing this through it would close an import cycle.
 // command-spec.ts imports nothing, so the leaf is safe. Do not "tidy" this.
-import { renderCommandSpec } from "../quality/command-spec";
+import { renderCommandSpec } from "@nathapp/nax-agent/internal";
+import type { NaxConfig } from "../config";
 import type { ProjectMetadata } from "./types";
 
 /** Notable Node.js dependency keywords */

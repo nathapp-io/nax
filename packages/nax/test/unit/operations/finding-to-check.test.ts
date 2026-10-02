@@ -3,10 +3,10 @@
  */
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { assertDefined } from "@test/helpers";
 import type { Finding } from "@/findings/types";
 import { findingsToFailedChecks } from "@/operations";
-import { byCodePoint } from "@/utils/sort";
 
 const SEMANTIC_FINDING: Finding = {
   source: "semantic-review",

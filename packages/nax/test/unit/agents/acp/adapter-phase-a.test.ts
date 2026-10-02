@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { AdapterInteraction } from "@nathapp/nax-agent";
+import { NO_OP_INTERACTION_HANDLER } from "@nathapp/nax-agent";
 import { assertDefined } from "@test/helpers";
 import { SessionTurnError } from "@/agents";
 import { _acpAdapterDeps, AcpAgentAdapter, type AcpSessionHandleImpl } from "@/agents/acp/adapter";
-import type { AdapterInteraction } from "@/agents/interaction-handler";
-import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
 import type { OpenSessionOpts } from "@/agents/types";
 import { makeClient, makeSession } from "./adapter.test";
 

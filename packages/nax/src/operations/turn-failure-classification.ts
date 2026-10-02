@@ -21,7 +21,7 @@
  * legacy `!output?.trim()` check in `sendWithFileOutput` (callOp:316).
  */
 
-import type { InvalidToolCallDetail } from "../agents/session-types";
+import type { InvalidToolCallDetail } from "@nathapp/nax-agent";
 import type { TurnResult } from "../agents/types";
 import type { AdapterFailure } from "../context/engine";
 import { tryParseLLMJson } from "../utils/llm-json";

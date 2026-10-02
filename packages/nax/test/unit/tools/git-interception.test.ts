@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { buildGitArgv, DEFAULT_LOG_MAX_COUNT, GIT_ESCAPE_FLAGS } from "@nathapp/nax-agent";
+import type { CommandInterceptor, InterceptResult } from "@nathapp/nax-agent/internal";
+import { compileToolPolicy, gitTool } from "@nathapp/nax-agent/internal";
 import { makeSpawn, withDepsRestore } from "@test/helpers";
-import type { CommandInterceptor, InterceptResult } from "@/execution/command-interceptor";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
-import { buildGitArgv, DEFAULT_LOG_MAX_COUNT, GIT_ESCAPE_FLAGS } from "@/tools";
-import { gitTool } from "@/tools/git";
-import { compileToolPolicy } from "@/tools/policy";
 import { _gitDeps } from "@/utils/git";
 
 let interceptor: CommandInterceptor | undefined;

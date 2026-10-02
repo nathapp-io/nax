@@ -9,11 +9,11 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ReportersConfig } from "../config/schemas-reporters";
 import { NaxError } from "../errors";
 import { getSafeLogger as _getSafeLoggerFromModule } from "../logger";
 import { assertTrusted } from "../trust";
-import { errorMessage } from "../utils/errors";
 import { validateModulePath } from "../utils/path-security";
 import { autoPrPlugin } from "./builtin/auto-pr";
 import { autoRoutePlugin } from "./builtin/auto-route";

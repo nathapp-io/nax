@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import {
@@ -23,7 +24,6 @@ import {
 } from "@/metrics/tracker";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
 import { StoryTokenUsage } from "@/metrics/types";
-import { byCodePoint } from "@/utils/sort";
 
 // OUTPUT_DIR plays the role of outputDir (e.g. ~/.nax/<projectKey>): metrics are written
 // directly to OUTPUT_DIR/metrics.json, no .nax/ subdirectory.

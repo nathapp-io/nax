@@ -1,5 +1,11 @@
+import {
+  ambientShadows,
+  listStoredProviders,
+  naxCredentialStore,
+  type StoredEntry,
+  servedAuth,
+} from "@nathapp/nax-agent";
 import chalk from "chalk";
-import { ambientShadows, listStoredProviders, naxCredentialStore, type StoredEntry, servedAuth } from "@/agents/native";
 import { readGlobalAuthConfig } from "@/config";
 
 export type AuthListExecStatus =

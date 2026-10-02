@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, useUntrustedRegistry } from "@test/helpers";
 import type { ContextPluginProviderConfig } from "@/config/runtime-types";
 import type { ContextProviderResult, IContextProvider } from "@/context/engine";
@@ -19,7 +20,6 @@ import {
   loadPluginProviders,
   resolveModuleSpecifier,
 } from "@/context/engine/providers/plugin-loader";
-import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

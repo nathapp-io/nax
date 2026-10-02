@@ -5,8 +5,8 @@
  * old implementation at main fff826752.
  */
 import { describe, expect, test } from "bun:test";
+import type { TokenUsage } from "@nathapp/nax-agent";
 import { priceCall } from "@/agents/cost";
-import type { TokenUsage } from "@/agents/cost/standard-types";
 import { type ConfigPricing, toPricing } from "@/config/schema-types";
 
 interface GoldenCase {

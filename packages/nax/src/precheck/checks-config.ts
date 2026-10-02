@@ -3,8 +3,8 @@
  */
 
 import { existsSync, statSync } from "node:fs";
+import { isProcessAlive } from "@nathapp/nax-agent/internal";
 import { type FeatureLockRecord, featureLockPath, isLockSuspect } from "@/execution";
-import { isProcessAlive } from "@/utils/process-alive";
 import type { PRD } from "../prd/types";
 import type { Check } from "./types";
 

@@ -8,12 +8,10 @@
  * Phase 2: per-stage scoped allowlists (stub below).
  */
 
+import type { CodingToolName, ResolvedPermissions, ToolGrant } from "@nathapp/nax-agent";
+import { EXEC_TOOL_NAME, parseRuleList } from "@nathapp/nax-agent";
+import { type BashApprovalMode, resolveBashApproval } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import type { ResolvedPermissions } from "@/permissions";
-import { parseRuleList } from "@/permissions";
-import type { CodingToolName, ToolGrant } from "@/tools";
-import { EXEC_TOOL_NAME } from "@/tools";
-import { type BashApprovalMode, resolveBashApproval } from "./bash-approval";
 import type { AgentManagerConfig } from "./selectors";
 
 export type { ResolvedPermissions };

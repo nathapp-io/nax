@@ -21,11 +21,11 @@
  * `bun build`; `resolveJsonModule` is enabled.
  */
 
+import type { Pricing } from "@nathapp/nax-agent";
+import { parseModelSpec } from "@nathapp/nax-agent";
 import { catalogLoadFailed, lookupPricing as defaultLookupPricing } from "@/agents/catalog";
 import { getSafeLogger } from "@/logger";
-import { parseModelSpec } from "../model-spec";
 import modelAliases from "./model-aliases.json";
-import type { Pricing } from "./standard-types";
 
 /** The discriminated stamp the adapter writes on `pricingSource`. */
 export type RateCardSource = "catalog-rates" | "fallback-rates";

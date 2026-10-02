@@ -32,10 +32,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { firstCall, withTempDir } from "@test/helpers";
-import { Command } from "commander";
-import { _approvalsCliDeps, approvalsRmCommand, registerApprovalsCommand, resolveApprovalsFile } from "@/cli/approvals";
-import { NaxError } from "@/errors";
 import {
   type ApprovalEntry,
   type ApprovalsFileRead,
@@ -43,7 +39,11 @@ import {
   type RemovalDecision,
   type RemovalResult,
   readApprovals,
-} from "@/permissions";
+} from "@nathapp/nax-agent";
+import { firstCall, withTempDir } from "@test/helpers";
+import { Command } from "commander";
+import { _approvalsCliDeps, approvalsRmCommand, registerApprovalsCommand, resolveApprovalsFile } from "@/cli/approvals";
+import { NaxError } from "@/errors";
 
 type CliDeps = typeof _approvalsCliDeps;
 

@@ -7,7 +7,6 @@
  * 650-line split target and the story forbids growing it.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 import {
   type CommandSafetyRow,
   type CommandShadow,
@@ -15,9 +14,15 @@ import {
   type ExecRun,
   type FinalOutcome,
   type Observation,
-} from "@/command-safety";
-import { _codingToolDeps, type CodingTool, compileToolPolicy, createCodingToolRuntime } from "@/tools";
-import type { ToolCallRecord } from "@/tools/tool-audit";
+} from "@nathapp/nax-agent";
+import type { ToolCallRecord } from "@nathapp/nax-agent/internal";
+import {
+  _codingToolDeps,
+  type CodingTool,
+  compileToolPolicy,
+  createCodingToolRuntime,
+} from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 
 let root: string;
 let rows: CommandSafetyRow[];

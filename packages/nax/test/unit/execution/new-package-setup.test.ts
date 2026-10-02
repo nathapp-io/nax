@@ -5,9 +5,9 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { realOrRaw } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeSpawn, makeTempDir, type SpawnStub, useUntrustedRegistry } from "@test/helpers";
 import { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "@/execution";
-import { realOrRaw } from "@/utils/realpath";
 
 function spawnOk(exitCode = 0, capture?: { argv?: string[]; cwd?: string }): SpawnStub {
   return makeSpawn(({ cmd, opts }) => {

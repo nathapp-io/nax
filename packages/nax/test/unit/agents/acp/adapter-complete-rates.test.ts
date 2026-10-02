@@ -26,11 +26,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { OpenSessionOpts } from "@nathapp/nax-agent";
+import { NO_OP_INTERACTION_HANDLER } from "@nathapp/nax-agent";
 import { buildTurnResult } from "@/agents";
 import { _acpAdapterDeps, AcpAgentAdapter } from "@/agents/acp/adapter";
 import type { RateCard } from "@/agents/cost";
-import { NO_OP_INTERACTION_HANDLER } from "@/agents/interaction-handler";
-import type { OpenSessionOpts } from "@/agents/session-types";
 import { resolvePermissions } from "@/config/permissions";
 import { toPricing } from "@/config/schema-types";
 import type { AcpSessionResponse } from "./adapter.test";

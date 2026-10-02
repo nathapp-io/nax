@@ -7,14 +7,14 @@
  */
 
 import { describe, expect, type Mock, test } from "bun:test";
-import { assertDefined, withWarnSpy } from "@test/helpers";
 import {
   type ExternalHandlerOf,
   LOOP_EVENTS,
   type LoopHandlerContext,
   type LoopHandlerEntry,
   type LoopHandlerSet,
-} from "@/agents/native/session/loop-events";
+} from "@nathapp/nax-agent/internal";
+import { assertDefined, withWarnSpy } from "@test/helpers";
 import type { Logger } from "@/logger";
 import {
   type ILoopHandlerProvider,

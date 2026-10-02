@@ -18,10 +18,10 @@
  * separate parameters at every call site.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
-import { errorMessage } from "@/utils/errors";
 import type { QuarantineMemo } from "@/verification";
 import { hydrateFromResumePlan } from "../checkpoint/resume-hydrate";
 import { nonBlockingExcludePhases, nonBlockingExtraPhases } from "../non-blocking-fix";

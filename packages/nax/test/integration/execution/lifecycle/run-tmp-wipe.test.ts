@@ -31,6 +31,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import {
+  _launcherDeps,
+  _resetSandboxRegistryForTests,
+  _sessionSandboxDeps,
+  _sessionTmpDeps,
+  runTmpRoot,
+  sessionTmpDirUnder,
+} from "@nathapp/nax-agent/internal";
+import {
   assertDefined,
   cleanupTempDir,
   makeNaxConfig,
@@ -42,16 +50,8 @@ import {
   withDepsRestore,
   withSessionSandboxSeam,
 } from "@test/helpers";
-import { _sessionSandboxDeps } from "@/agents/coding-tool-sandbox";
 import { resolveDispatchLauncher } from "@/agents/coding-tool-support-resolve";
 import { cleanupRun, type RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
-import {
-  _launcherDeps,
-  _resetSandboxRegistryForTests,
-  _sessionTmpDeps,
-  runTmpRoot,
-  sessionTmpDirUnder,
-} from "@/sandbox";
 
 /** Bash is what makes `resolveDispatchLauncher` ask for a launcher at all. */
 const DECLARED = ["Bash"] as const;

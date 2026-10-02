@@ -4,7 +4,7 @@
  * Replaces process.exit(1) patterns with structured errors that can be caught
  * and handled by the CLI layer or tests.
  */
-import { NaxError } from "./agents/infra";
+import { NaxError } from "@nathapp/nax-agent/internal";
 
 export { NaxError };
 

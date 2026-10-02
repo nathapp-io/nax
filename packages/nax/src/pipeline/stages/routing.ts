@@ -11,6 +11,7 @@
  * - `continue`: Routing determined, proceed to next stage
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { isGreenfieldStory } from "@/context";
 import { getLogger } from "@/logger";
 import { savePRD } from "@/prd";
@@ -22,7 +23,6 @@ import {
   resolveRouting,
 } from "@/routing";
 import { resolveTestFilePatterns } from "@/test-runners";
-import { errorMessage } from "@/utils/errors";
 import { packageDirRelative } from "@/utils/paths";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
 

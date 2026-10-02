@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { listCredentialFiles, listNaxEntries, resolveGitLayout } from "@nathapp/nax-agent";
+import { policyInputsModule as policyInputs, realOrRaw } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { globalConfigDir } from "@/config/paths";
-import { listCredentialFiles, listNaxEntries, resolveGitLayout } from "@/sandbox";
-import * as policyInputs from "@/sandbox/policy-inputs";
-import { realOrRaw } from "@/utils/realpath";
 
 let base: string;
 beforeEach(() => {

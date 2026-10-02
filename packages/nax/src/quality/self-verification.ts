@@ -1,6 +1,6 @@
+import { renderCommandSpec } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "../config";
 import { detectLanguage } from "../project";
-import { renderCommandSpec } from "./command-spec";
 
 export type SelfVerificationTool = "lint" | "typecheck";
 export type SelfVerificationStatus = "pass" | "skip" | "pre_existing" | "fail";

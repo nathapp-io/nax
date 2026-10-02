@@ -23,7 +23,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
-import { byCodePoint } from "../src/utils/sort";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { resolveSpecifier, walk } from "./check-import-cycles";
 import { isInMoveSet, loadMoveManifest, type MoveManifest } from "./lib/agent-move-manifest";
 import { specifiersOf } from "./lib/import-specifiers";

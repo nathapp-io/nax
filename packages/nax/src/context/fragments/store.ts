@@ -19,11 +19,11 @@
 
 import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
 import { estimateTokens } from "@/optimizer";
 import { atomicWriteText } from "@/utils/json-file";
-import { byCodePoint } from "@/utils/sort";
 
 /** Injectable file I/O — tests override to use in-memory stores. */
 export const _fragmentStoreDeps = {

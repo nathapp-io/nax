@@ -9,9 +9,9 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { featureDir, featuresDir } from "@/config";
 import { saveJsonFile } from "@/utils/json-file";
-import { byCodePoint } from "@/utils/sort";
 import type { ContextManifest } from "./types";
 
 export const _manifestStoreDeps = {

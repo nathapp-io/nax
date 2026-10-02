@@ -24,9 +24,6 @@
  */
 
 import { join } from "node:path";
-import { buildCommandShadow, type CommandShadow } from "@/command-safety";
-import { type BashApprovalMode, loadConfigForPackage, type NaxConfig, resolveBashApproval } from "@/config";
-import { getSafeLogger } from "@/logger";
 import {
   type AskControl,
   type AskRequest,
@@ -34,11 +31,15 @@ import {
   appendApproval,
   appendApprovalAudit,
   approvalsPath,
+  buildCommandShadow,
+  type CommandShadow,
   chainAskLinks,
   createApprovalsLink,
   isForgeCapable,
   prepareApprovalsStore,
-} from "@/permissions";
+} from "@nathapp/nax-agent";
+import { type BashApprovalMode, loadConfigForPackage, type NaxConfig, resolveBashApproval } from "@/config";
+import { getSafeLogger } from "@/logger";
 import { NAX_COMMIT } from "@/version";
 import { type AskChannel, cancelPendingAsk, createHumanAskLink } from "./ask-link";
 import type { InteractionStage } from "./types";

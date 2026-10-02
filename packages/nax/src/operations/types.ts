@@ -1,3 +1,4 @@
+import type { CodingToolName } from "@nathapp/nax-agent";
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import type { ConfigSelector, ConfiguredModel, NaxConfig, TestStrategy } from "../config";
@@ -6,7 +7,6 @@ import { DEFAULT_CODING_TOOLS } from "../config/permissions";
 import type { ComposeInput } from "../prompts/compose";
 import type { NaxRuntime, PackageView } from "../runtime";
 import type { SessionRole } from "../session/types";
-import type { CodingToolName } from "../tools";
 
 /** Absent means the default read set; `[]` means none. The two differ. */
 export function resolveDeclaredTools(op: { tools?: readonly CodingToolName[] }): readonly CodingToolName[] {
@@ -96,9 +96,9 @@ export interface CallContext {
     onQuestionDetected: (text: string) => Promise<string>;
   };
   /** Answers an `ask` verdict (P2); built at the execution stage. */
-  readonly askResolver?: import("../permissions").AskResolver;
+  readonly askResolver?: import("@nathapp/nax-agent").AskResolver;
   /** P5 shadow command classifier; built and drained at the execution stage. */
-  readonly commandShadow?: import("../command-safety").CommandShadow;
+  readonly commandShadow?: import("@nathapp/nax-agent").CommandShadow;
   /** Max interaction round-trips when interactionBridge is active (default: 10). */
   readonly maxInteractionTurns?: number;
   /** Optional region id forwarded onto every dispatch event the op produces. */
@@ -280,7 +280,7 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
    * grants its permission profile resolved. `{ Write: [".nax-x.json"] }` means
    * "this role may write, but only that file". See src/tools/narrow-grants.ts.
    */
-  readonly toolPatterns?: import("../tools").ToolPatternNarrowing;
+  readonly toolPatterns?: import("@nathapp/nax-agent").ToolPatternNarrowing;
   /**
    * Optional resolver for whether the session should remain open after the
    * turn. When omitted, callOp derives this from `session.lifetime`

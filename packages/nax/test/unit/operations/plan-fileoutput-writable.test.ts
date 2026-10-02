@@ -14,13 +14,13 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ToolScope } from "@nathapp/nax-agent";
+import { compileToolPolicy } from "@nathapp/nax-agent";
+import { buildCodingToolSupport } from "@nathapp/nax-agent/internal";
 import { makeNaxConfig } from "@test/helpers";
-import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import type { PlanInteractiveInput, PlanRefineInput } from "@/operations";
 import { planInteractiveOp, planRefineOp } from "@/operations";
-import type { ToolScope } from "@/tools";
-import { compileToolPolicy } from "@/tools";
 
 const PATH_SCOPE: ToolScope = { pathFields: ["path"] };
 const root = mkdtempSync(join(tmpdir(), "nax-2115-"));

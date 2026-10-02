@@ -5,7 +5,7 @@
  */
 
 /** Verification scope: what tests to run */
-import type { QualityCommandSpec } from "../quality/command-spec";
+import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
 
 /** Verification scope: what tests to run */
 export type VerificationScope = "scoped" | "full" | "regression";

@@ -8,10 +8,10 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { _clientDeps, _resetNativeClient } from "@nathapp/nax-agent/internal";
 import type { Client } from "@nathapp/nax-ai";
 import { makeNaxConfig } from "@test/helpers";
 import { AcpAgentAdapter } from "@/agents/acp/adapter";
-import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import { createAgentRegistry, getAllAgents, KNOWN_AGENT_NAMES } from "@/agents/registry";
 import type { ProviderCatalogOverride } from "@/config/schema-types";

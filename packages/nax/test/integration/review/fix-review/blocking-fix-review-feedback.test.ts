@@ -26,6 +26,7 @@
  *     the real `runFixReview` decides the verdict from it.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { SpawnOptions, SpawnResult } from "@nathapp/nax-agent/internal";
 import {
   makeMockAgentManager,
   makeMockCallContext,
@@ -40,7 +41,6 @@ import type { Finding } from "@/findings";
 import type { AutofixTestWriterInput, CallContext, Operation } from "@/operations";
 import { _treeSnapshotDeps } from "@/review/fix-review/tree-snapshot";
 import type { NaxRuntime } from "@/runtime";
-import type { SpawnOptions, SpawnResult } from "@/utils/bun-deps";
 
 const WORKDIR = "/tmp/nax-us-005-fix-review";
 const STORY_REF = "ref-story-start";

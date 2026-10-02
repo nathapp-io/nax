@@ -9,13 +9,13 @@
 
 import { statSync } from "node:fs";
 import { join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { globToRegex, normalizePath } from "../context/engine";
 import { CANONICAL_RULES_DIR, loadCanonicalRules } from "../context/rules/canonical-loader";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { discoverWorkspacePackages } from "../test-runners";
 import { isRelativeAndSafe } from "../utils/path-security";
-import { byCodePoint } from "../utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable deps

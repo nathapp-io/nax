@@ -25,15 +25,20 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nativeTranscriptDirs } from "@/agents/native/session/session";
-import { loadTranscript } from "@/agents/native/session/transcript-store";
-import { runNativeTurn } from "@/agents/native/session/turn-loop";
+import type { CodingTool, SendTurnOpts } from "@nathapp/nax-agent";
+import {
+  _spillDeps,
+  compileToolPolicy,
+  createCodingToolRuntime,
+  loadTranscript,
+  MODEL_MAX_BYTES,
+  nativeTranscriptDirs,
+  readFileModule,
+  runNativeTurn,
+  scratchpadReadTool,
+  truncateModule as truncatePolicy,
+} from "@nathapp/nax-agent/internal";
 import { buildRunInteractionHandler } from "@/agents/run-interaction-handler";
-import type { SendTurnOpts } from "@/agents/session-types";
-import type { CodingTool } from "@/tools";
-import { _spillDeps, compileToolPolicy, createCodingToolRuntime, MODEL_MAX_BYTES, scratchpadReadTool } from "@/tools";
-import * as readFileModule from "@/tools/read-file";
-import * as truncatePolicy from "@/tools/truncate";
 
 const baseUsage = { inputTokens: 1, outputTokens: 1 };
 

@@ -2,16 +2,19 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { CodingTool, SendTurnOpts } from "@nathapp/nax-agent";
+import type { AfterResponsePatch } from "@nathapp/nax-agent/internal";
+import {
+  createLoopEventRegistry,
+  loadTranscript,
+  nativeSessionLastUsage,
+  nativeTranscriptDirs,
+  runNativeTurn,
+  saveTranscript,
+} from "@nathapp/nax-agent/internal";
 import { waitForCondition } from "@test/helpers";
-import { createLoopEventRegistry } from "@/agents/native/session/loop-events";
-import type { AfterResponsePatch } from "@/agents/native/session/loop-events/types";
-import { nativeSessionLastUsage, nativeTranscriptDirs } from "@/agents/native/session/session";
-import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
-import { runNativeTurn } from "@/agents/native/session/turn-loop";
-import type { SendTurnOpts } from "@/agents/session-types";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
-import type { CodingTool } from "@/tools";
 
 let dir: string;
 const handle = { id: "sess-turn-lifecycle", agentName: "native" } as const;

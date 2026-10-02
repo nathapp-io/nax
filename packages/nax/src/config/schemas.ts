@@ -5,9 +5,9 @@
  * Sub-schemas are extracted into schemas-*.ts files.
  */
 
+import { DEFAULT_BASH_APPROVAL_MODE, DEFAULT_SANDBOX_CONFIG } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, DEFAULT_MODEL_MAPS } from "./agent-defaults";
-import { DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
 import { MODEL_SHORTHAND_TIERS, resolveTierMembership } from "./schema-types";
 import { AuthConfigSchema } from "./schemas-auth";
 import { ContextConfigSchema } from "./schemas-context";
@@ -51,7 +51,6 @@ import {
   ReviewConfigSchema,
   SemanticReviewConfigSchema,
 } from "./schemas-review";
-import { DEFAULT_SANDBOX_CONFIG } from "./schemas-sandbox";
 
 export type { AuthConfig } from "./schemas-auth";
 export { AuthConfigSchema } from "./schemas-auth";

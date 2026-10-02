@@ -8,7 +8,7 @@
  * tests drive it with a fake instead of a spawn mock.
  */
 
-import type { AgentLogger } from "@/agents/infra";
+import type { AgentLogger } from "@nathapp/nax-agent/internal";
 import { parsePorcelainForNaxPaths } from "./porcelain";
 
 /** Runs `git <args>` from `cwd`. `gitWithTimeout` satisfies this. */

@@ -24,7 +24,7 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { byCodePoint } from "../src/utils/sort";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { specifierSites } from "./lib/import-specifiers";
 import { findRepoRoot } from "./lib/repo-root";
 

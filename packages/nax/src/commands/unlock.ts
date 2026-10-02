@@ -15,11 +15,11 @@
 
 import { mkdir, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { isProcessAlive } from "@nathapp/nax-agent/internal";
 import { findProjectDir, loadConfig } from "@/config";
 import { type FeatureLockRecord, featureLockPath, isLockSuspect } from "@/execution";
 import { getSafeLogger, type Logger } from "@/logger";
 import { projectOutputDir } from "@/runtime";
-import { isProcessAlive } from "@/utils/process-alive";
 
 /**
  * Options for unlock command

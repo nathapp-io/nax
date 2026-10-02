@@ -20,10 +20,9 @@
  */
 
 import path from "node:path";
+import { normalizeCommandSpec, type QualityCommandSpec, spawn } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
-import { normalizeCommandSpec, type QualityCommandSpec } from "../quality/command-spec";
 import { assertTrusted } from "../trust";
-import { spawn } from "../utils/bun-deps";
 import { parseCommandToArgv } from "../utils/command-argv";
 
 /** Per-run registry: which package dirs are newly created, and which have had setup run. */

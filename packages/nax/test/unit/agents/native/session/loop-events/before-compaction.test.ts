@@ -2,12 +2,16 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { COMPACTION_SUMMARY_PREFIX, type ResolvedCompaction } from "@/agents/native/session/compaction";
-import { createLoopEventRegistry } from "@/agents/native/session/loop-events";
-import { nativeSessionLastUsage, nativeTranscriptDirs } from "@/agents/native/session/session";
-import { saveTranscript } from "@/agents/native/session/transcript-store";
-import { runNativeTurn } from "@/agents/native/session/turn-loop";
-import type { SendTurnOpts } from "@/agents/session-types";
+import type { SendTurnOpts } from "@nathapp/nax-agent";
+import {
+  COMPACTION_SUMMARY_PREFIX,
+  createLoopEventRegistry,
+  nativeSessionLastUsage,
+  nativeTranscriptDirs,
+  type ResolvedCompaction,
+  runNativeTurn,
+  saveTranscript,
+} from "@nathapp/nax-agent/internal";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 

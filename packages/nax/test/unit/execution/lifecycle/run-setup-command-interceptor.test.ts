@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { CommandInterceptor } from "@nathapp/nax-agent/internal";
+import { gitTool } from "@nathapp/nax-agent/internal";
 import {
   assertDefined,
   makeMockAgentManager,
@@ -14,14 +16,12 @@ import {
 } from "@test/helpers";
 import type { IAgentManager } from "@/agents";
 import type { NaxConfig } from "@/config";
-import type { CommandInterceptor } from "@/execution/command-interceptor";
 import type { RtkDeps } from "@/execution/interceptors/rtk";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
 import { _runSetupDeps, type RunSetupOptions, setupRun } from "@/execution/lifecycle/run-setup";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { CreateRuntimeOptions, NaxRuntime } from "@/runtime";
-import { gitTool } from "@/tools/git";
 import { _gitDeps } from "@/utils/git";
 
 const ctx = () => ({ root: "/repo", resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 });

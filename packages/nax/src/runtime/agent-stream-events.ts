@@ -1,7 +1,7 @@
+import type { AgentStreamEvent } from "@nathapp/nax-agent";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { isPipelineStage, type PipelineStage } from "@/config";
 import { getSafeLogger } from "@/logger";
-import { errorMessage } from "@/utils/errors";
-import type { AgentStreamEvent } from "../agents/agent-stream-event-types";
 
 export type {
   AgentAwaitingHumanEvent,
@@ -14,7 +14,7 @@ export type {
   AgentThinkingUpdateEvent,
   AgentToolCallUpdateEvent,
   AgentUsageUpdateEvent,
-} from "../agents/agent-stream-event-types";
+} from "@nathapp/nax-agent";
 
 /**
  * A stream event as nax's listeners receive it: the session contract types

@@ -12,11 +12,10 @@
  * imports this file.
  */
 
-import { getSafeLogger } from "@/logger";
-import { type CommandLauncher, runTmpRoot, sessionTmpDirUnder } from "@/sandbox";
 import {
   BASH_TOOL_NAME,
   type CodingToolName,
+  type CommandLauncher,
   type DeclaredCommandRunner,
   EXEC_TOOL_NAME,
   expandMcpRuleGrants,
@@ -25,21 +24,28 @@ import {
   partitionMcpRules,
   type ResolvedProviderTools,
   resolveProviderTools,
+  runTmpRoot,
+  sessionTmpDirUnder,
   type ToolGrant,
-} from "@/tools";
-import type { ToolAuditHeader } from "@/tools/tool-audit";
+} from "@nathapp/nax-agent";
+import type { ToolAuditHeader } from "@nathapp/nax-agent/internal";
+import {
+  buildCodingToolSupport,
+  buildLedgerSessionName,
+  type CodingToolSupport,
+  errorMessage,
+  resolveSessionSandbox,
+  UNIVERSAL_CODING_TOOLS,
+} from "@nathapp/nax-agent/internal";
+import { getSafeLogger } from "@/logger";
 import { loadConfigForPackage, type NaxConfig } from "../config";
 import { toolAuditDir } from "../config/paths";
 import { type ResolvedPermissions, resolvePermissions } from "../config/permissions";
 import { type QualityCommandSpec, runQualityCommand } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
-import { errorMessage } from "../utils/errors";
-import { resolveSessionSandbox } from "./coding-tool-sandbox";
-import { buildCodingToolSupport, buildLedgerSessionName, type CodingToolSupport } from "./coding-tool-support";
 import { resolvePackageName } from "./exec-package-name";
 import { naxProtectedPaths } from "./nax-protected-paths";
 import type { AgentRunOptions } from "./types";
-import { UNIVERSAL_CODING_TOOLS } from "./universal-coding-tools";
 
 /** The dispatch options `resolveCodingToolSupport` reads — its exact signature. */
 export type ResolveCodingToolSupportOptions = Pick<

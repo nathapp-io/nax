@@ -13,10 +13,11 @@
  * object the pool hangs off — silently reintroduces the stale-index bug spec R7
  * exists to prevent, and it passes every test that does not use two worktrees.
  */
+
+import type { ProviderTool, ToolProvider } from "@nathapp/nax-agent";
+import { validateProviderId } from "@nathapp/nax-agent";
 import type { McpConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
-import type { ProviderTool, ToolProvider } from "@/tools";
-import { validateProviderId } from "@/tools";
 import { applyLock, MCP_LOCK_REFRESH_COMMAND, type McpLockFile, readMcpLock } from "./lock";
 import type { McpPool } from "./pool";
 

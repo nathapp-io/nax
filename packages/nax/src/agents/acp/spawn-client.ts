@@ -9,11 +9,11 @@
  * by SpawnAcpSession in ./spawn-client-session.
  */
 
+import { parseModelSpec } from "@nathapp/nax-agent";
 import type { AcpClient, AcpClientOptions, AcpSession } from "@/agents";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { AgentStreamEvent } from "@/runtime";
-import { parseModelSpec } from "../model-spec";
 import { buildAllowedEnv } from "../shared/env";
 import { applyReasoningEffort } from "./reasoning-effort";
 import { parseSessionIds } from "./session-ids";

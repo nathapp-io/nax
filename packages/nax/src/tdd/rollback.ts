@@ -1,11 +1,10 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import { gitSpawnEnv, hardenedGitArgv, killProcessGroup } from "@nathapp/nax-agent/internal";
 import { DRAIN_TIMEOUT, raceWithDeadline } from "@/verification";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { autoCommitIfDirty, getGitRoot, getUntrackedPaths } from "../utils/git";
-import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
-import { killProcessGroup } from "../utils/process-kill";
 
 /**
  * Hard deadline on the bare git subprocesses in this module (`git reset --hard`

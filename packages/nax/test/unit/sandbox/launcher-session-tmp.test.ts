@@ -12,8 +12,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  _launcherDeps,
+  createCommandLauncher,
+  DISABLED_SANDBOX_STATE,
+  type SandboxPolicy,
+} from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore, withWarnSpy } from "@test/helpers";
-import { _launcherDeps, createCommandLauncher, DISABLED_SANDBOX_STATE, type SandboxPolicy } from "@/sandbox";
 
 let root: string;
 beforeEach(() => {

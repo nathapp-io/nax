@@ -5,9 +5,9 @@
  * including execution limits, quality gates, and feature settings.
  */
 
+import type { QualityCommandSpec, SandboxConfig } from "@nathapp/nax-agent/internal";
 import type { ConstitutionConfig } from "@/constitution/types";
 import type { ReviewConfig } from "@/review/types";
-import type { QualityCommandSpec } from "../quality/command-spec";
 import type { AgentConfig, GenerateConfig } from "./runtime-types-agent";
 import type { AutoRouteConfig } from "./runtime-types-auto-route";
 import type { ContextConfig } from "./runtime-types-context";
@@ -31,7 +31,6 @@ import type {
 import type { AuthConfig } from "./schemas-auth";
 import type { CommandSafetyConfig } from "./schemas-command-safety";
 import type { AgentRoutingConfig } from "./schemas-infra";
-import type { SandboxConfig } from "./schemas-sandbox";
 
 export interface EscalationEntry {
   from: string;

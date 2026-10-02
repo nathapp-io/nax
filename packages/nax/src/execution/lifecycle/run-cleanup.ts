@@ -10,6 +10,8 @@
  * - Release lock
  */
 
+import { resetSandboxBackend } from "@nathapp/nax-agent";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { packageConfigCache } from "@/config";
 import { disposeFeatureResolver } from "@/context";
 import { _resetCanonicalRulesCache } from "@/context/engine";
@@ -26,9 +28,7 @@ import type {
 } from "@/plugins";
 import { countStories, type PRD } from "@/prd";
 import { clearLanguageCache } from "@/project";
-import { resetSandboxBackend } from "@/sandbox";
 import { clearWorkspaceCache } from "@/test-runners/detect";
-import { errorMessage } from "@/utils/errors";
 import { clearGitRootCache } from "@/verification";
 import { resetRuntimeCrashRetryCounts } from "../escalation";
 import { releaseFeatureLock } from "../feature-lock";

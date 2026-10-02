@@ -11,18 +11,22 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  type AskResolver,
+  type CommandLauncher,
+  type CommandShadow,
+  chainAskLinks,
+  createCommandLauncher,
+  createCommandShadow,
+} from "@nathapp/nax-agent";
+import { type BashApprovalMode, buildCodingToolSupport, DEFAULT_BASH_APPROVAL_MODE } from "@nathapp/nax-agent/internal";
+import {
   cleanupTempDir,
   makeCommandShadowRecorder,
   makeFakeSandboxBackend,
   makeNaxConfig,
   makeTempDir,
 } from "@test/helpers";
-import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
-import { type CommandShadow, createCommandShadow } from "@/command-safety";
-import { type BashApprovalMode, DEFAULT_BASH_APPROVAL_MODE } from "@/config/bash-approval";
-import { type AskResolver, chainAskLinks } from "@/permissions";
-import { type CommandLauncher, createCommandLauncher } from "@/sandbox";
 
 /**
  * A fix-shaped session. Read/Glob/Grep are declared AND granted deliberately:

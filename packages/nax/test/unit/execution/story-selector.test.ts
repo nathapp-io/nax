@@ -5,13 +5,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { makePRD, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { StoryBatch } from "@/execution/batching";
 import { groupStoriesByDependencies, selectIndependentBatch, selectNextStories } from "@/execution/story-selector";
 import { markStoryFailed, markStoryPassed } from "@/prd";
 import type { UserStory } from "@/prd/types";
-import { byCodePoint } from "@/utils/sort";
 
 /**
  * Helper to create a minimal UserStory for testing

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE, resolveBashApproval } from "@nathapp/nax-agent/internal";
 import { makeNaxConfig } from "@test/helpers";
-import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE, resolveBashApproval } from "@/config/bash-approval";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { resolvePermissions } from "@/config/permissions";
 import { NaxConfigSchema } from "@/config/schemas";

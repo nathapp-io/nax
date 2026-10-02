@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { AuthStamp } from "@nathapp/nax-agent";
+import { _resetFingerprintSalt, createChangeGuard, fingerprintCredential } from "@nathapp/nax-agent/internal";
 import type { CredentialStore, ProviderId, StoredCredential } from "@nathapp/nax-ai";
 import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
-import { createChangeGuard } from "@/agents/native/credentials/change-guard";
-import { _resetFingerprintSalt, fingerprintCredential } from "@/agents/native/credentials/fingerprint";
-import type { AuthStamp } from "@/agents/session-types";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 
 /**

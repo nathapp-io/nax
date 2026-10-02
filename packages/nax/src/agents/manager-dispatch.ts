@@ -13,6 +13,8 @@
  * receives the adapter lookup, `dispatchCompleteHop` receives the call.
  */
 
+import { type AuthStamp, parseModelSpec, SessionTurnError } from "@nathapp/nax-agent";
+import { errorMessage, NATIVE_AGENT } from "@nathapp/nax-agent/internal";
 import { resolveModel, trackedSpawnDeadlines } from "@/config";
 import type { AgentManagerConfig } from "@/config/selectors";
 import { type PipelineStage, type ResolvedPermissions, resolvePermissions } from "../config/permissions";
@@ -21,11 +23,7 @@ import { NaxError } from "../errors";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../runtime/dispatch-events";
 import { formatSessionName } from "../runtime/session-name";
 import type { SessionRole } from "../runtime/session-role";
-import { errorMessage } from "../utils/errors";
 import type { AgentCompleteOutcome, AgentFallbackRecord, LoggerLike, RunAsSessionOpts } from "./manager-types";
-import { parseModelSpec } from "./model-spec";
-import { NATIVE_AGENT } from "./native/models";
-import { type AuthStamp, SessionTurnError } from "./session-types";
 import type { FallbackTarget } from "./swap-decision";
 import type {
   AgentAdapter,

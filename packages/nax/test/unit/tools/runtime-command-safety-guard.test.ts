@@ -18,16 +18,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  cleanupTempDir,
-  GUARD_LOW_ANSWER,
-  makeCommandShadowRecorder,
-  makeGuardFixture,
-  makeTempDir,
-} from "@test/helpers";
-import type { CommandGuard, CommandShadow, GuardDecision, GuardInput } from "@/command-safety";
-import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
-import type { AskResolver, AskVerdict } from "@/permissions";
+import type {
+  AskResolver,
+  AskVerdict,
+  CommandGuard,
+  CommandShadow,
+  GuardDecision,
+  GuardInput,
+} from "@nathapp/nax-agent";
 import {
   BASH_TOOL_NAME,
   type CodingTool,
@@ -36,7 +34,15 @@ import {
   createCodingToolRuntime,
   createRunCommandTool,
   type ToolGrant,
-} from "@/tools";
+} from "@nathapp/nax-agent";
+import {
+  cleanupTempDir,
+  GUARD_LOW_ANSWER,
+  makeCommandShadowRecorder,
+  makeGuardFixture,
+  makeTempDir,
+} from "@test/helpers";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 
 type AskRequest = Parameters<AskResolver["resolve"]>[0];
 

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { _resetFingerprintSalt, fingerprintCredential } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _resetFingerprintSalt, fingerprintCredential } from "@/agents/native/credentials/fingerprint";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 
 /**

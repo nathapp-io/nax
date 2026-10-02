@@ -6,6 +6,7 @@
  */
 
 import path from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { featureDir, validateFilePath } from "@/config";
 import { NaxError } from "@/errors";
 import { processQueueFile } from "@/execution";
@@ -19,7 +20,6 @@ import {
   validateInjectedStory,
 } from "@/prd";
 import type { QueueCommand } from "@/queue";
-import { errorMessage } from "@/utils/errors";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**

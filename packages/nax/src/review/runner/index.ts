@@ -4,6 +4,7 @@
  * Runs configurable quality checks after story implementation
  */
 
+import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
 import type { BunFile } from "bun";
 import type { ExecutionConfig, QualityConfig } from "@/config/schema";
 import type { ReviewConfig as ReviewNaxConfig } from "@/config/selectors";
@@ -11,7 +12,6 @@ import type { Iteration } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { UserStory } from "@/prd";
 import { runQualityCommand } from "@/quality";
-import type { QualityCommandSpec } from "@/quality/command-spec";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
 import { resolveLanguageCommand } from "../language-commands";

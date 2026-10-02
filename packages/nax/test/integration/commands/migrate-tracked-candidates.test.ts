@@ -17,6 +17,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { assertDefined, cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 import {
   _gitDeps,
@@ -27,7 +28,6 @@ import {
   partitionTrackedCandidates,
 } from "@/commands/migrate";
 import { initLogger, resetLogger } from "@/logger";
-import { gitSpawnEnv } from "@/utils/git-env";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture paths — the two candidates every criterion is built from

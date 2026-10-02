@@ -1,10 +1,15 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { cpSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  type GitRunResult,
+  gitlinkSafeAdd,
+  gitSpawnEnv,
+  hasStagedChanges,
+  parseGitlinks,
+} from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { gitWithTimeout } from "@/utils/git";
-import { type GitRunResult, gitlinkSafeAdd, hasStagedChanges, parseGitlinks } from "@/utils/git-add";
-import { gitSpawnEnv } from "@/utils/git-env";
 
 const OK: GitRunResult = { stdout: "", stderr: "", exitCode: 0 };
 

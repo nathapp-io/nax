@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { NON_FLOOR_GUARANTEE, packChunks } from "@/context/engine/packing";
 import type { ScoredChunk } from "@/context/engine/scoring";
-import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { analyzeTestExitCode, parseBunTestOutput, parseTestOutput } from "@/test-runners";
-import { byCodePoint } from "@/utils/sort";
 
 describe("pytest output — structured error/stack extraction", () => {
   test("extracts stackTrace file:line reference from verbose FAILURES block", () => {

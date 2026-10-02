@@ -1,5 +1,5 @@
 import { mock } from "bun:test";
-import type { LoopHandlerSet } from "@/agents/native/session/loop-events";
+import type { LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import type { ISessionManager, SessionDescriptor } from "@/session/types";
 

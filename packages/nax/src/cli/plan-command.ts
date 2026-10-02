@@ -9,15 +9,15 @@
  */
 
 import { basename } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "../config";
 import { NaxError } from "../errors";
 import type { PlanResult } from "../plan/strategies";
 import { buildPlanModeContext, createPlanStrategy } from "../plan/strategies";
-import { errorMessage } from "../utils/errors";
 
 export { assertIsValidPrd } from "../plan/strategies";
 
-import { gitSpawnEnv } from "../utils/git-env";
+import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { _planDeps } from "./plan-runtime";
 
 // Re-exported for backward compatibility — callers that import from "./plan" still work.

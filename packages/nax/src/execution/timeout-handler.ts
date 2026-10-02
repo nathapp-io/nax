@@ -5,7 +5,7 @@
  * Ensures all timers are cleaned up in all code paths (exit, timeout, hard deadline).
  */
 
-import { killProcessGroup } from "../utils/process-kill";
+import { killProcessGroup } from "@nathapp/nax-agent/internal";
 
 export interface ProcessTimeoutOptions {
   /** Grace period in ms between SIGTERM and SIGKILL (default: 5000) */

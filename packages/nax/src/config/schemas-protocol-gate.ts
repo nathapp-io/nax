@@ -13,11 +13,11 @@
  * rather than as AGENT_NOT_FOUND mid-story.
  */
 
-import type { z } from "zod";
 // Relative, not `@/agents`: the barrel would pull the whole agents tree into
 // config (which agents itself imports). model-spec.ts is a dependency-free
 // leaf, so this edge closes no cycle. See project-conventions.md § Path Aliases.
-import { parseModelSpec } from "../agents/model-spec";
+import { parseModelSpec } from "@nathapp/nax-agent";
+import type { z } from "zod";
 import {
   DEFAULT_AGENT_NAME as DEFAULT_AGENT,
   DEFAULT_AGENT_PROTOCOL as DEFAULT_PROTOCOL,

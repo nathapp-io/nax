@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import type { AskResolver, CommandShadow } from "@nathapp/nax-agent";
+import type { CommandInterceptor } from "@nathapp/nax-agent/internal";
 import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
-import type { CommandShadow } from "@/command-safety";
-import type { CommandInterceptor } from "@/execution/command-interceptor";
 import { buildRunDispatchOptions } from "@/operations/call-run-options";
 import type { CallContext } from "@/operations/types";
-import type { AskResolver } from "@/permissions";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];

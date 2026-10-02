@@ -14,24 +14,24 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir, waitForCondition, withDepsRestore } from "@test/helpers";
-import { _sessionSandboxDeps, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
-import { buildCodingToolSupport } from "@/agents/coding-tool-support";
-import { naxProtectedPaths } from "@/agents/nax-protected-paths";
-import type { BashApprovalMode } from "@/config/bash-approval";
-import { DEFAULT_SANDBOX_CONFIG } from "@/config/schemas-sandbox";
-import { type AskResolver, chainAskLinks } from "@/permissions";
+import { type AskResolver, chainAskLinks, createBashTool } from "@nathapp/nax-agent";
+import type { BashApprovalMode } from "@nathapp/nax-agent/internal";
 import {
+  _agentOutputEnvDeps,
   _resetSandboxRegistryForTests,
+  _sessionSandboxDeps,
+  buildCodingToolSupport,
   createCommandLauncher,
+  DEFAULT_SANDBOX_CONFIG,
   LIKELY_SANDBOX_DENIAL,
   probeSandboxOnce,
   resetSandboxBackend,
+  resolveSessionSandbox,
   runTmpRoot,
   sandboxBackendFor,
-} from "@/sandbox";
-import { createBashTool } from "@/tools";
-import { _agentOutputEnvDeps } from "@/utils/agent-output-env";
+} from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeTempDir, waitForCondition, withDepsRestore } from "@test/helpers";
+import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 
 const CONFIG = { ...DEFAULT_SANDBOX_CONFIG, enabled: true };
 const probe = await probeSandboxOnce(sandboxBackendFor(CONFIG));

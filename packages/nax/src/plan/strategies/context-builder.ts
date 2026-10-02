@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { buildPackageSummary, buildSourceRootsSection } from "@/cli/plan-helpers";
 import { createPlanRuntime, DEFAULT_TIMEOUT_SECONDS, detectProjectName } from "@/cli/plan-runtime";
 import type { NaxConfig } from "@/config";
@@ -6,7 +7,6 @@ import { planConfigSelector } from "@/config";
 import { NaxError } from "@/errors";
 import { buildInteractionBridge } from "@/interaction";
 import { getSafeLogger } from "@/logger";
-import { errorMessage } from "@/utils/errors";
 import { validateFeatureName } from "@/utils/feature-name";
 import { assertSpecLintClean } from "../spec-lint-gate";
 import type { PlanCommandOptions, PlanDeps, PlanModeContext } from "./types";

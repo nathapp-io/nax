@@ -61,7 +61,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { byCodePoint } from "../src/utils/sort";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
 
 const ROOT = gatePackageRoot(import.meta.dir);

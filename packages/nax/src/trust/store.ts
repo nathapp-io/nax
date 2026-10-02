@@ -22,12 +22,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
+import { errorMessage, withPathFileLock } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 // Leaf import, not the @/config barrel — see match.ts.
 import { globalConfigDir } from "@/config/paths";
 import { NaxError } from "@/errors";
-import { errorMessage } from "@/utils/errors";
-import { withPathFileLock } from "@/utils/path-file-lock";
 import { findCoveringEntry, normalizeTrustPath } from "./match";
 import type { AddTrustResult, RemoveTrustResult, TrustEntry, TrustStoreFile, TrustStoreRead } from "./types";
 

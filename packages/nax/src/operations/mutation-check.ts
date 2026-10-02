@@ -13,6 +13,7 @@
  */
 
 import { isAbsolute, join } from "node:path";
+import { isInside, realOrRaw } from "@nathapp/nax-agent/internal";
 import { mutationCheckConfigSelector, qualityConfigSelector } from "../config";
 import type { MutationCheckConfig } from "../config/selectors";
 import { getLogger } from "../logger";
@@ -23,7 +24,6 @@ import type { ResolvedTestPatterns } from "../test-runners";
 import type { SelectScopedTestsInput, SelectScopedTestsResult } from "../test-runners/scoped-selection";
 import { selectScopedTests } from "../test-runners/scoped-selection";
 import { getGitRoot } from "../utils/git";
-import { isInside, realOrRaw } from "../utils/realpath";
 import { getChangedLineRanges } from "../verification/changed-line-ranges";
 import {
   applyMutant,

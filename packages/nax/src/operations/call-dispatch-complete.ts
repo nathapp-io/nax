@@ -9,6 +9,7 @@
  * it stays defined in `call.ts` because the barrel re-exports it for tests.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { computeAcpHandle } from "../agents";
 import type { RetryStrategy } from "../agents/retry";
 import type { CompleteOptions } from "../agents/types";
@@ -16,7 +17,6 @@ import { resolveModelForAgent } from "../config";
 import type { AdapterFailure } from "../context/engine";
 import { getSafeLogger } from "../logger";
 import { storyExecRoot } from "../runtime/packages";
-import { errorMessage } from "../utils/errors";
 import type { CallOpDeps, DispatchPrologue } from "./call-dispatch-prologue";
 import { throwAborted, throwNoDispatch, throwRetryBudgetExhausted } from "./call-dispatch-prologue";
 import { MAX_COMPLETE_RETRY_ATTEMPTS, recordDispatchOutcome, resolveOpRetry } from "./call-resolvers";

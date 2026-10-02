@@ -526,7 +526,7 @@ describe("createSessionRunHop — diff-access substitution", () => {
   async function promptSentTo(
     agentName: string,
     overrides: {
-      declaredTools?: readonly import("@/tools").CodingToolName[];
+      declaredTools?: readonly import("@nathapp/nax-agent").CodingToolName[];
       codingToolRoot?: string;
       permissionProfile?: "unrestricted" | "safe";
       config?: AgentRunOptions["config"];

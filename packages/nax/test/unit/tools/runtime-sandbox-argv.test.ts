@@ -8,11 +8,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { createCommandLauncher } from "@nathapp/nax-agent";
+import type { ToolCallRecord } from "@nathapp/nax-agent/internal";
+import {
+  _codingToolDeps,
+  buildCodingToolSupport,
+  type CodingTool,
+  compileToolPolicy,
+  createCodingToolRuntime,
+} from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeFakeSandboxBackend, makeLogger, makeTempDir } from "@test/helpers";
-import { buildCodingToolSupport } from "@/agents/coding-tool-support";
-import { createCommandLauncher } from "@/sandbox";
-import { _codingToolDeps, type CodingTool, compileToolPolicy, createCodingToolRuntime } from "@/tools";
-import type { ToolCallRecord } from "@/tools/tool-audit";
 
 let root: string;
 let recorded: ToolCallRecord[];

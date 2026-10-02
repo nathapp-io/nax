@@ -10,13 +10,13 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, rename } from "node:fs/promises";
 import path from "node:path";
+import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { validateProjectName } from "../cli/init";
 import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { getLogger, getSafeLogger } from "../logger";
 import { projectOutputDir, readProjectIdentity, writeProjectIdentity } from "../runtime";
 import { gitWithTimeout } from "../utils/git";
-import { gitSpawnEnv } from "../utils/git-env";
 
 /**
  * The git subprocess seam the candidate partition spawns through.

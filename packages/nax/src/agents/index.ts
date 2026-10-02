@@ -1,3 +1,5 @@
+export type { AdapterInteractionResponse, InteractionHandler, ModelSpec } from "@nathapp/nax-agent";
+export { NO_OP_INTERACTION_HANDLER, parseModelSpec } from "@nathapp/nax-agent";
 export type {
   AcpClient,
   AcpClientOptions,
@@ -29,8 +31,6 @@ export {
 export { classifyCompleteException } from "./complete-exception-classifier";
 export type { CostEstimate, ModelCostRates, TokenUsage, TokenUsageWithConfidence } from "./cost";
 export { formatCostWithConfidence, resolvePricingSource } from "./cost";
-export type { AdapterInteractionResponse, InteractionHandler } from "./interaction-handler";
-export { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 export { _agentManagerDeps, AgentManager } from "./manager";
 export type {
   AgentCompleteOutcome,
@@ -43,8 +43,6 @@ export type {
   IAgentManager,
   RunAsSessionOpts,
 } from "./manager-types";
-export type { ModelSpec } from "./model-spec";
-export { parseModelSpec } from "./model-spec";
 export { checkAgentHealth, getAllAgentNames, getInstalledAgents, KNOWN_AGENT_NAMES } from "./registry";
 export type {
   RetryContext,

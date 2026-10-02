@@ -2,11 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assertDefined, cleanupTempDir, makeTempDir, withWarnSpy } from "@test/helpers";
-import { compileToolPolicy } from "@/tools/policy";
-import type { CodingTool } from "@/tools/registry";
-import { createCodingToolRuntime } from "@/tools/runtime";
+import type { CodingTool } from "@nathapp/nax-agent/internal";
 import {
+  compileToolPolicy,
+  createCodingToolRuntime,
   createToolAuditSink,
   flushOpenToolAuditSinks,
   type RegisteredSink,
@@ -14,7 +13,8 @@ import {
   TOOL_AUDIT_SCHEMA_VERSION,
   type ToolCallRecord,
   unregisterToolAuditSink,
-} from "@/tools/tool-audit";
+} from "@nathapp/nax-agent/internal";
+import { assertDefined, cleanupTempDir, makeTempDir, withWarnSpy } from "@test/helpers";
 
 describe("createToolAuditSink", () => {
   test("writes one file holding every recorded call", async () => {

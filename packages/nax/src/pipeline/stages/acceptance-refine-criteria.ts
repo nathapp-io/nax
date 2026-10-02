@@ -13,6 +13,7 @@
  * run-level warning.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { RefinedCriterion } from "@/acceptance";
 import type { NaxConfig } from "@/config";
 import type { AcceptanceConfig } from "@/config/selectors";
@@ -24,7 +25,6 @@ import {
   type Operation,
 } from "@/operations";
 import type { UserStory } from "@/prd/types";
-import { errorMessage } from "@/utils/errors";
 import { storyAbsWorkdir } from "@/utils/path-frame";
 import type { PipelineContext } from "../types";
 

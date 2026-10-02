@@ -8,6 +8,7 @@
  * 4. Initial PRD analysis
  */
 
+import { gitSpawnEnv, spawn } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
@@ -22,9 +23,7 @@ import type { PRD } from "@/prd/types";
 // nested barrel, so this reaches it without loading `src/review/index.ts`.
 import { runReview } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
-import { spawn } from "@/utils/bun-deps";
 import { hasCommitsForStory } from "@/utils/git";
-import { gitSpawnEnv } from "@/utils/git-env";
 import { storyAbsWorkdir } from "@/utils/path-frame";
 import { deriveStoryWorktreeId, storyBranchName } from "@/worktree";
 

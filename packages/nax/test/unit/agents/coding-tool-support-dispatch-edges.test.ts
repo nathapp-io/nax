@@ -13,12 +13,12 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import type { ToolProvider } from "@nathapp/nax-agent";
+import { _resetSandboxRegistryForTests } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
-import { _resetSandboxRegistryForTests } from "@/sandbox";
-import type { ToolProvider } from "@/tools";
 
 afterEach(() => _resetSandboxRegistryForTests());
 

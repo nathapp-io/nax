@@ -7,10 +7,14 @@
  */
 
 import { join } from "node:path";
+import {
+  commandSpecIncludes,
+  type QualityCommandSpec,
+  replaceInCommandSpec,
+  shellQuoteArg,
+} from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "../config";
 import { isMonorepoOrchestratorCommand } from "../test-runners";
-import { shellQuoteArg } from "../verification/shell-quote";
-import { commandSpecIncludes, type QualityCommandSpec, replaceInCommandSpec } from "./command-spec";
 
 export interface ResolvedTestCommands {
   /**

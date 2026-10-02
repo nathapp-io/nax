@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { makePRD, makeStory, makeTempDir } from "@test/helpers";
 import {
   acquireLock,
@@ -19,7 +20,6 @@ import {
   type StoryCounts,
 } from "@/execution/helpers";
 import type { PRD, UserStory } from "@/prd";
-import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { realOrRaw } from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
   makeFakeClock,
@@ -10,7 +11,6 @@ import {
   makeTempDir,
   useUntrustedRegistry,
 } from "@test/helpers";
-import { realOrRaw } from "@/utils/realpath";
 import {
   _worktreeDependencyDeps,
   prepareWorktreeDependencies,

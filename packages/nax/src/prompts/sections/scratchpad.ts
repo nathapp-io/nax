@@ -28,7 +28,7 @@
  * gets the section; it just does not get the tools.
  */
 
-import { SCRATCHPAD_DIR } from "@/tools";
+import { SCRATCHPAD_DIR } from "@nathapp/nax-agent";
 
 export function buildScratchpadSection(): string {
   const dir = `${SCRATCHPAD_DIR}/`;

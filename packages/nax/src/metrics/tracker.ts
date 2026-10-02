@@ -6,6 +6,7 @@
 
 import { rename } from "node:fs/promises";
 import path from "node:path";
+import { errorMessage, withPathFileLock } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "../agents";
 import type { AgentFallbackRecord } from "../agents/manager-types";
 import { resolveModelForAgent } from "../config/schema";
@@ -15,9 +16,7 @@ import { computePollutionMetrics } from "../context/engine/pollution";
 import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
 import { type CostSnapshot, totalSpendUsd } from "../runtime/cost-aggregator";
-import { errorMessage } from "../utils/errors";
 import { loadJsonFile, loadJsonFileStrict, saveJsonFile } from "../utils/json-file";
-import { withPathFileLock } from "../utils/path-file-lock";
 import type { AgentFallbackHop, ContextProviderMetrics, FloorOverageMetrics, RunMetrics, StoryMetrics } from "./types";
 import { StoryTokenUsage } from "./types";
 

@@ -6,8 +6,8 @@
 
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { basename, isAbsolute, normalize, relative, resolve } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
-import { errorMessage } from "../utils/errors";
 
 /** Maximum directory depth to prevent infinite loops */
 export const MAX_DIRECTORY_DEPTH = 10;
