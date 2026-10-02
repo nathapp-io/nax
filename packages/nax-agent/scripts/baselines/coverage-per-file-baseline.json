@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-02T16:00:05.491Z",
+  "updatedAt": "2026-10-02T16:02:24.125Z",
   "byFile": {
     "src/coding-tools/coding-tool-sandbox.ts": 0.2025,
     "src/config/bash-approval.ts": 0.4286,
@@ -10,7 +10,6 @@
     "src/internal/command-spec/index.ts": 0.6111,
     "src/internal/git-exec.ts": 0.7647,
     "src/native/auth.ts": 0.4104,
-    "src/native/credentials/change-guard.ts": 0.4096,
     "src/native/credentials/exec-source.ts": 0.4403,
     "src/native/credentials/helper-process.ts": 0.7842,
     "src/native/models.ts": 0.7576,
