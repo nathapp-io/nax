@@ -23,9 +23,9 @@ import { dirname, join } from "node:path";
  *   1 — ratchet breached or baseline missing
  */
 import { Glob } from "bun";
-import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
+import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
 
-const ROOT = gatePackageRoot(import.meta.dir);
+const ROOT = gatePackageRoot();
 const BASELINE_FILE = gateBaselinePath(ROOT, "file-sizes-baseline.json");
 
 const SRC_LIMIT = 600;

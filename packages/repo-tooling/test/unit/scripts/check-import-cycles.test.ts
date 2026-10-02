@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { byCodePoint } from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import {
   buildImportGraph,
   findCyclicModules,
   formatReport,
   resolveSpecifier,
   stripComments,
-} from "@scripts/check-import-cycles";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+} from "#scripts/check-import-cycles";
+import { byCodePoint } from "#scripts/lib/sort";
 
 function write(root: string, rel: string, content: string): void {
   const full = join(root, rel);

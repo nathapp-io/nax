@@ -143,6 +143,11 @@ function toolingViolation(pkg: PackageInfo, file: string, spec: string): string 
   if (pkg.devDeps.has(name)) return inDir(pkg, file, "test") ? null : `devDependency ${name} imported outside test/`;
   if (NAX_PACKAGES.has(name)) return `${pkg.name} imports ${name}`;
   if (pkg.deps.has(name)) return null;
+  // A moved gate test scans fixture strings as text, so it can name a package
+  // the tooling package does not use (e.g. check-sandbox-imports' fixture
+  // `await import("@anthropic-ai/sandbox-runtime")`). Only real code is held to
+  // the declared-dependency set; nax packages are still rejected above.
+  if (inDir(pkg, file, "test")) return null;
   return `undeclared dependency ${name}`;
 }
 

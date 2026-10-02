@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-02T07:19:53.713Z",
+  "updatedAt": "2026-10-02T11:21:21.905Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -9,8 +9,6 @@
     "scripts/check-config-profile-threading.ts": { "blankNonCode": 31, "findViolations": 25 },
     "scripts/check-coverage.ts": { "checkPerFile": 27 },
     "scripts/check-dispatch-field-forwarding.ts": { "blankNonCode": 31 },
-    "scripts/check-git-spawn-env.ts": { "findGitSpawnViolations": 41, "mask": 25 },
-    "scripts/check-import-cycles.ts": { "stripComments": 47, "stronglyConnectedComponents": 44 },
     "scripts/check-logger-storyid.ts": { "findCallEnd": 55, "splitTopLevelArgs": 21 },
     "scripts/check-story-workdir-access.ts": { "findViolations": 32, "walk": 32, "main": 26 },
     "scripts/check-worktree-id-ssot.ts": { "scanLine": 26 },

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import {
   findPackageFrameDerivationViolations,
   formatPackageFrameDerivationReport,
-} from "@scripts/check-package-frame-derivation";
-import { makeTempDir } from "@test/helpers";
+} from "#scripts/check-package-frame-derivation";
 
 describe("findPackageFrameDerivationViolations", () => {
   let tempDir: string;

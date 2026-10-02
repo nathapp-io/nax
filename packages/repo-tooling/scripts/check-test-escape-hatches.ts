@@ -86,9 +86,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Glob } from "bun";
-import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
+import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
 
-const ROOT = gatePackageRoot(import.meta.dir);
+const ROOT = gatePackageRoot();
 const SCAN_DIR = "test";
 const BASELINE_FILE = gateBaselinePath(ROOT, "test-escape-hatches-baseline.json");
 

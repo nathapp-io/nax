@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { formatReport, scanAsUnknownAs } from "@scripts/check-test-as-unknown-as";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { formatReport, scanAsUnknownAs } from "#scripts/check-test-as-unknown-as";
 
 function write(root: string, rel: string, content: string) {
   mkdirSync(join(root, rel.split("/").slice(0, -1).join("/")), { recursive: true });

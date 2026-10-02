@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { gateBaselinePath, gatePackageRoot } from "@scripts/lib/package-root";
+import { join } from "node:path";
+import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
 
 const NAX_ERROR_GATE = join(import.meta.dir, "../../../scripts/check-nax-error.ts");
 const SATELLITES_GATE = join(import.meta.dir, "../../../scripts/check-test-satellites.ts");
@@ -17,20 +17,21 @@ function tree(root: string, files: Record<string, string>): void {
 }
 
 describe("gatePackageRoot", () => {
-  test("defaults to the package the script lives in", () => {
-    expect(gatePackageRoot("/repo/packages/nax/scripts", ["bun", "check.ts"])).toBe(join("/repo/packages/nax"));
+  test("defaults to the current working directory, not the script's own package", () => {
+    expect(gatePackageRoot(["bun", "check-x.ts"], "/repo/packages/nax")).toBe("/repo/packages/nax");
   });
 
-  test("resolves a relative --package against the cwd", () => {
-    expect(gatePackageRoot("/repo/packages/nax/scripts", ["bun", "check.ts", "--package=."])).toBe(
-      resolve(process.cwd(), "."),
-    );
-  });
-
-  test("takes an absolute --package as is", () => {
-    expect(gatePackageRoot("/x/scripts", ["bun", "check.ts", "--package=/repo/packages/nax-agent"])).toBe(
+  test("--package= resolves a relative directory against the cwd", () => {
+    expect(gatePackageRoot(["bun", "check-x.ts", "--package=."], "/repo/packages/nax-agent")).toBe(
       "/repo/packages/nax-agent",
     );
+    expect(gatePackageRoot(["bun", "check-x.ts", "--package=../nax"], "/repo/packages/nax-agent")).toBe(
+      "/repo/packages/nax",
+    );
+  });
+
+  test("--package= keeps an absolute directory", () => {
+    expect(gatePackageRoot(["bun", "check-x.ts", "--package=/abs/pkg"], "/repo")).toBe("/abs/pkg");
   });
 });
 

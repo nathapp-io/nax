@@ -21,7 +21,7 @@ async function config(pkg: string): Promise<BiomeConfig> {
   return parsed;
 }
 
-for (const pkg of ["nax-agent", "test-kit"]) {
+for (const pkg of ["nax-agent", "test-kit", "repo-tooling"]) {
   describe(`${pkg} biome config`, () => {
     test("has nax's linter and formatter settings", async () => {
       const [nax, copy] = await Promise.all([config("nax"), config(pkg)]);

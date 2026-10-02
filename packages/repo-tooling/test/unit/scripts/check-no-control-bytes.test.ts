@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { findControlByteViolations, formatControlByteReport } from "@scripts/check-no-control-bytes";
-import { makeTempDir } from "@test/helpers";
+import { makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { findControlByteViolations, formatControlByteReport } from "#scripts/check-no-control-bytes";
 
 describe("findControlByteViolations", () => {
   let tempDir: string;

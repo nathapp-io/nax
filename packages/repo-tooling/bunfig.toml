@@ -1,0 +1,6 @@
+# Bun test configuration for repo-tooling (the gate scripts' own tests).
+
+[test]
+smol = true
+root = "./test"
+timeout = 5000

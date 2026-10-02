@@ -7,8 +7,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { findGitSpawnViolations } from "@scripts/check-git-spawn-env";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { findGitSpawnViolations } from "#scripts/check-git-spawn-env";
 
 const SCRIPT = join(import.meta.dir, "../../../scripts/check-git-spawn-env.ts");
 
@@ -185,13 +185,5 @@ describe("check-git-spawn-env CLI", () => {
     const { code, out } = runGate({ "src/tdd/x.ts": '\nBun.spawn(["git", "status"], { cwd });\n' });
     expect(code).toBe(1);
     expect(out).toContain(join("src", "tdd", "x.ts:2"));
-  });
-
-  test("AC12: exits 0 and reports clean on this repository", () => {
-    const repoRoot = join(import.meta.dir, "../../..");
-    const proc = Bun.spawnSync(["bun", "run", SCRIPT, repoRoot]);
-    const out = proc.stdout.toString() + proc.stderr.toString();
-    expect(out).toContain("check-git-spawn-env: clean");
-    expect(proc.exitCode).toBe(0);
   });
 });

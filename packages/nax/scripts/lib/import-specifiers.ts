@@ -11,7 +11,7 @@
  * form is here because a boundary rule that cannot see it is a boundary rule
  * that reports green on `require("@nathapp/nax")`.
  */
-import { stripComments } from "../check-import-cycles";
+import { stripComments } from "@nathapp/nax-repo-tooling/scripts/check-import-cycles";
 
 const STATIC_RE = /^[ \t]*(?:import|export)\s+(?:type\s+)?[A-Za-z0-9_$*,{}\s]*?from\s+["']([^"']+)["']/gm;
 const SIDE_EFFECT_RE = /^[ \t]*import\s+["']([^"']+)["']/gm;
