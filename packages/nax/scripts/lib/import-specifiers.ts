@@ -3,7 +3,10 @@
  *
  * Used by check-package-boundaries (and, until it ran, the S1-5 move script).
  * Matches run on comment-stripped text (stripComments keeps every offset), so a
- * specifier inside a comment is never reported or rewritten.
+ * specifier inside a comment is never reported or rewritten. A match that
+ * STARTS inside a string literal is dropped too: fixture text such as
+ * `'await import("@scope/pkg");'` is data, not an import, while a real
+ * `await import("@scope/pkg")` starts at `import`, which is code.
  *
  * Covered forms: `import ... from "x"` and `export ... from "x"` (type-only and
  * multi-line included), side-effect `import "x"`, dynamic `import("x")`, inline
@@ -11,7 +14,8 @@
  * form is here because a boundary rule that cannot see it is a boundary rule
  * that reports green on `require("@nathapp/nax")`.
  */
-import { stripComments } from "../check-import-cycles";
+import { stripComments } from "@nathapp/nax-repo-tooling/scripts/check-import-cycles";
+import { createScanner, formatSyntaxKind, LanguageVariant } from "typescript/unstable/ast";
 
 const STATIC_RE = /^[ \t]*(?:import|export)\s+(?:type\s+)?[A-Za-z0-9_$*,{}\s]*?from\s+["']([^"']+)["']/gm;
 const SIDE_EFFECT_RE = /^[ \t]*import\s+["']([^"']+)["']/gm;
@@ -30,13 +34,146 @@ export interface SpecifierSite {
   readonly prelude: string;
 }
 
+const REGEX_PREDECESSORS = new Set([
+  "OpenParenToken",
+  "OpenBracketToken",
+  "OpenBraceToken",
+  "CommaToken",
+  "ColonToken",
+  "QuestionToken",
+  "SemicolonToken",
+  "EqualsToken",
+  "EqualsGreaterThanToken",
+  "ExclamationToken",
+  "TildeToken",
+  "PlusToken",
+  "MinusToken",
+  "AsteriskToken",
+  "PercentToken",
+  "AmpersandToken",
+  "BarToken",
+  "CaretToken",
+  "AmpersandAmpersandToken",
+  "BarBarToken",
+  "QuestionQuestionToken",
+  "ReturnKeyword",
+  "ThrowKeyword",
+  "CaseKeyword",
+  "DeleteKeyword",
+  "VoidKeyword",
+  "TypeOfKeyword",
+  "InstanceOfKeyword",
+  "InKeyword",
+  "OfKeyword",
+  "AwaitKeyword",
+  "YieldKeyword",
+  "BlockCloseBraceToken",
+]);
+const CONTROL_PAREN_PREDECESSORS = new Set([
+  "IfKeyword",
+  "WhileKeyword",
+  "ForKeyword",
+  "WithKeyword",
+  "SwitchKeyword",
+  "CatchKeyword",
+]);
+
+interface ScannerState {
+  readonly templateExpressionBraces: number[];
+  readonly controlParens: boolean[];
+  readonly blockBraces: boolean[];
+  previous: string;
+}
+
+function isRegexStart(previous: string): boolean {
+  return previous === "" || previous === "ControlCloseParenToken" || REGEX_PREDECESSORS.has(previous);
+}
+
+function scanCodeToken(scanner: ReturnType<typeof createScanner>, state: ScannerState): string {
+  let kind = formatSyntaxKind(scanner.scan());
+  if (kind === "SlashToken" && isRegexStart(state.previous)) {
+    kind = formatSyntaxKind(scanner.reScanSlashToken());
+  } else if (kind === "OpenParenToken") {
+    state.controlParens.push(CONTROL_PAREN_PREDECESSORS.has(state.previous));
+  } else if (kind === "CloseParenToken" && state.controlParens.pop()) {
+    kind = "ControlCloseParenToken";
+  }
+  kind = trackBlock(kind, state);
+  kind = trackTemplateExpression(scanner, kind, state.templateExpressionBraces);
+  state.previous = kind;
+  return kind;
+}
+
+function trackBlock(kind: string, state: ScannerState): string {
+  if (kind === "OpenBraceToken") {
+    state.blockBraces.push(
+      state.previous === "ControlCloseParenToken" ||
+        ["ElseKeyword", "TryKeyword", "FinallyKeyword", "DoKeyword"].includes(state.previous),
+    );
+  }
+  if (kind !== "CloseBraceToken") return kind;
+  if (state.templateExpressionBraces.at(-1) === 0) return kind;
+  if (state.blockBraces.pop()) return "BlockCloseBraceToken";
+  return kind;
+}
+
+function trackTemplateExpression(
+  scanner: ReturnType<typeof createScanner>,
+  kind: string,
+  expressions: number[],
+): string {
+  let nextKind = kind;
+  if (kind === "OpenBraceToken" && expressions.length > 0) expressions[expressions.length - 1] += 1;
+  if (kind === "BlockCloseBraceToken" && expressions.length > 0) expressions[expressions.length - 1] -= 1;
+  if (kind === "CloseBraceToken" && expressions.length > 0) {
+    const last = expressions.length - 1;
+    if (expressions[last] === 0) nextKind = formatSyntaxKind(scanner.reScanTemplateToken(false));
+    else expressions[last] -= 1;
+  }
+  if (nextKind === "TemplateHead") expressions.push(0);
+  if (nextKind === "TemplateTail") expressions.pop();
+  return nextKind;
+}
+
+function isExecutableToken(kind: string): boolean {
+  return ![
+    "StringLiteral",
+    "NoSubstitutionTemplateLiteral",
+    "TemplateHead",
+    "TemplateMiddle",
+    "TemplateTail",
+    "RegularExpressionLiteral",
+    "NumericLiteral",
+    "BigIntLiteral",
+  ].includes(kind);
+}
+
+/** Token starts that are executable code, including code inside template expressions. */
+function codeTokenStarts(text: string): Set<number> {
+  const scanner = createScanner(true, LanguageVariant.Standard, text);
+  const starts = new Set<number>();
+  const state: ScannerState = { templateExpressionBraces: [], controlParens: [], blockBraces: [], previous: "" };
+  while (scanner.getTokenEnd() < text.length) {
+    const kind = scanCodeToken(scanner, state);
+    if (isExecutableToken(kind)) starts.add(scanner.getTokenStart());
+  }
+  return starts;
+}
+
 export function specifierSites(source: string): SpecifierSite[] {
   const text = stripComments(source);
+  const codeStarts = codeTokenStarts(text);
   const sites: SpecifierSite[] = [];
   const add = (re: RegExp, kind: SpecifierSite["kind"]) => {
     for (const m of text.matchAll(re)) {
       const spec = m[1];
       if (spec === undefined || m.index === undefined) continue;
+      // Static patterns begin at line indentation; all others begin at their
+      // import/require token. Template raw text and quoted fixtures have no
+      // executable token at that position.
+      const staticKeyword = kind === "static" || kind === "side-effect";
+      const keywordOffset = staticKeyword ? m.index + (m[0].match(/\b(?:import|export)\b/)?.index ?? 0) : m.index;
+      if (!codeStarts.has(keywordOffset)) continue;
       const at = m[0].lastIndexOf(spec);
       sites.push({ spec, start: m.index + at, kind, prelude: kind === "dynamic" ? "" : m[0].slice(0, at - 1) });
     }

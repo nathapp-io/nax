@@ -2,7 +2,7 @@
  * The native LLM path: nax's own client, in-process, over @nathapp/nax-ai.
  *
  * This directory is the only place in src/ permitted to import nax-ai
- * (scripts/check-nax-ai-imports.ts). nax composes it into its AgentAdapter in
+ * (packages/repo-tooling/scripts/check-nax-ai-imports.ts). nax composes it into its AgentAdapter in
  * `src/agents/native-agent/`, so the wire library stays replaceable.
  *
  * The barrel re-exports only; it owns no values. NATIVE_AGENT lives in

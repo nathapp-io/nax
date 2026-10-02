@@ -41,7 +41,7 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | Copy-pasted mock setup across files | `test/helpers/` shared factories | DRY; single place to update when interfaces change |
 | Spawning full `nax` process in tests | Mock the relevant module | Prechecks fail in temp dirs; slow; flaky |
 | Real signal sending (`process.kill`) | Mock `process.on()` | Can kill the test runner |
-| Direct real-home `.nax` paths in tests (`join(homedir(), ".nax", ...)`) except explicit path-helper fallback tests | `globalConfigDir()`, `identityPath()`, isolated global dir from `test/preload.ts` | Tests must not write to the developer's actual `~/.nax`. Enforced by `scripts/check-no-real-global-nax.ts`. |
+| Direct real-home `.nax` paths in tests (`join(homedir(), ".nax", ...)`) except explicit path-helper fallback tests | `globalConfigDir()`, `identityPath()`, isolated global dir from `test/preload.ts` | Tests must not write to the developer's actual `~/.nax`. Enforced by `packages/repo-tooling/scripts/check-no-real-global-nax.ts`. |
 
 ## Test-File Classification Convention
 

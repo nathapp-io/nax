@@ -16,7 +16,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
-const SCRIPT = "scripts/report-test-consolidation.ts";
+const SCRIPT = join(REPO, "..", "repo-tooling", "scripts", "report-test-consolidation.ts");
 
 interface RunResult {
   exitCode: number;

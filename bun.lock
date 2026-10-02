@@ -28,6 +28,8 @@
       "devDependencies": {
         "@biomejs/biome": "2.5.10",
         "@nathapp/nax-agent": "workspace:*",
+        "@nathapp/nax-repo-tooling": "workspace:*",
+        "@nathapp/nax-test-kit": "workspace:*",
         "@types/bun": "^1.3.8",
         "@types/react": "^19.2.14",
         "bun-types": "^1.3.9",
@@ -46,6 +48,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "2.5.10",
+        "@nathapp/nax-test-kit": "workspace:*",
         "@types/bun": "^1.3.8",
         "bun-types": "^1.3.9",
         "typescript": "^7.0.2",
@@ -64,6 +67,27 @@
         "@types/proper-lockfile": "4.1.4",
         "typescript": "7.0.2",
         "vitest": "4.1.9",
+      },
+    },
+    "packages/repo-tooling": {
+      "name": "@nathapp/nax-repo-tooling",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@biomejs/biome": "2.5.10",
+        "@nathapp/nax-test-kit": "workspace:*",
+        "@types/bun": "^1.3.8",
+        "bun-types": "^1.3.9",
+        "typescript": "7.0.2",
+      },
+    },
+    "packages/test-kit": {
+      "name": "@nathapp/nax-test-kit",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@biomejs/biome": "2.5.10",
+        "@types/bun": "^1.3.8",
+        "bun-types": "^1.3.9",
+        "typescript": "7.0.2",
       },
     },
   },
@@ -149,6 +173,10 @@
     "@nathapp/nax-agent": ["@nathapp/nax-agent@workspace:packages/nax-agent"],
 
     "@nathapp/nax-ai": ["@nathapp/nax-ai@workspace:packages/nax-ai"],
+
+    "@nathapp/nax-repo-tooling": ["@nathapp/nax-repo-tooling@workspace:packages/repo-tooling"],
+
+    "@nathapp/nax-test-kit": ["@nathapp/nax-test-kit@workspace:packages/test-kit"],
 
     "@oxc-project/types": ["@oxc-project/types@0.152.0", "", {}, "sha512-oM/5rLBm2tPkg0iBgkH/FOeR3PCDpY19GTgAZjMFM8h9WI9VW7cLgzp6nwtarYKmovavIQZ+Fe/RKX/8C8O/Rw=="],
 

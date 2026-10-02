@@ -57,7 +57,7 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
+import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
 
 /**
  * Every filesystem read below hangs off this, so `--package=<dir>` re-points the
@@ -66,7 +66,7 @@ import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
  * would rank nax while claiming to rank the package asked for, which is how
  * check-test-satellites came to scan only nax and leave nax-agent ungated.
  */
-const ROOT = gatePackageRoot(import.meta.dir);
+const ROOT = gatePackageRoot();
 
 /** `check-file-sizes.ts` TEST_LIMIT. A merged file above this breaks `bun run lint`. */
 export const TEST_LINE_LIMIT = 800;

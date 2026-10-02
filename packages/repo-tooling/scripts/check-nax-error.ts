@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { byCodePoint } from "@nathapp/nax-agent/internal";
 /**
  * Ratchet check: prevents new `throw new Error(...)` from being added to src/.
  * All errors must use NaxError per .claude/rules/error-handling.md.
@@ -22,9 +21,10 @@ import { byCodePoint } from "@nathapp/nax-agent/internal";
  *   1 — ratchet breached or baseline missing
  */
 import { Glob } from "bun";
-import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
+import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
+import { byCodePoint } from "#scripts/lib/sort";
 
-const ROOT = gatePackageRoot(import.meta.dir);
+const ROOT = gatePackageRoot();
 const BASELINE_FILE = gateBaselinePath(ROOT, "nax-error-baseline.json");
 const SCAN_DIR = "src";
 const ALLOW_MARKER = "nax-lint-allow: plain-error";

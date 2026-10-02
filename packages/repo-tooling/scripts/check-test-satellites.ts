@@ -38,9 +38,9 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { byCodePoint } from "@nathapp/nax-agent/internal";
-import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
-import { mirrorsSrcModule, SCAN_DIRS, TICKET_RE, walk } from "./report-test-consolidation";
+import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
+import { byCodePoint } from "#scripts/lib/sort";
+import { mirrorsSrcModule, SCAN_DIRS, TICKET_RE, walk } from "#scripts/report-test-consolidation";
 
 /**
  * The scanned package. Only the baseline path is read from it here; the walk, and
@@ -52,7 +52,7 @@ import { mirrorsSrcModule, SCAN_DIRS, TICKET_RE, walk } from "./report-test-cons
  * fail on nax's baseline or — with --update-baseline — overwrite it with
  * nax-agent's list, dropping nax's own entries.
  */
-const ROOT = gatePackageRoot(import.meta.dir);
+const ROOT = gatePackageRoot();
 const BASELINE_FILE = gateBaselinePath(ROOT, "test-satellites-baseline.json");
 
 export interface Baseline {

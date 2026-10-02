@@ -6,7 +6,7 @@
  * FAILED build is not: a transient failure must not poison the process.
  *
  * This file and its siblings are the only place in src/ permitted to import
- * nax-ai (scripts/check-nax-ai-imports.ts).
+ * nax-ai (packages/repo-tooling/scripts/check-nax-ai-imports.ts).
  */
 
 import { type Client, createClient, defaultProtocols, defaultProviders } from "@nathapp/nax-ai";

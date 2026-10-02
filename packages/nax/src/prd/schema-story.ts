@@ -2,7 +2,7 @@
  * Per-story PRD validation.
  *
  * Extracted from ./schema.ts, which was 629 lines against the 600-line gate
- * (scripts/check-file-sizes.ts). A pure move: no logic changed.
+ * (packages/repo-tooling/scripts/check-file-sizes.ts). A pure move: no logic changed.
  *
  * Field-level validation lives in ./schema-story-fields.ts (complexity drain
  * P0, docs/plans/STATUS-complexity-drain.md) — this file sequences those

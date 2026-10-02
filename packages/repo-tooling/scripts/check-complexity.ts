@@ -61,10 +61,10 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { byCodePoint } from "@nathapp/nax-agent/internal";
-import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
+import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
+import { byCodePoint } from "#scripts/lib/sort";
 
-const ROOT = gatePackageRoot(import.meta.dir);
+const ROOT = gatePackageRoot();
 const DEFAULT_BASELINE_FILE = gateBaselinePath(ROOT, "complexity-baseline.json");
 const RULE = "complexity/noExcessiveCognitiveComplexity";
 /** Directories this package has; packages/nax-agent has no bin/ or scripts sources. */

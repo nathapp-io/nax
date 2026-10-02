@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { findPermissionModeViolations, formatPermissionModeViolationReport } from "@scripts/check-permission-mode-ssot";
-import { makeTempDir } from "@test/helpers";
+import { makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { findPermissionModeViolations, formatPermissionModeViolationReport } from "#scripts/check-permission-mode-ssot";
 
 describe("findPermissionModeViolations", () => {
   let tempDir: string;

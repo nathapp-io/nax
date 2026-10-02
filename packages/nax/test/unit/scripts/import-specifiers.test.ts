@@ -44,6 +44,53 @@ describe("specifierSites", () => {
   test("ignores specifiers inside comments", () => {
     expect(specifierSites('// import { x } from "./x";\n/* import("./y") */\n')).toEqual([]);
   });
+
+  test("ignores import-like text inside a string, but still finds a real dynamic import", () => {
+    const src = 'const src = \'await import("@scope/pkg");\';\nconst f = await import("@scope/pkg");\n';
+    expect(specifierSites(src).map((s) => [s.spec, s.kind])).toEqual([["@scope/pkg", "dynamic"]]);
+  });
+
+  test("finds real imports after regex literals and inside template interpolations", () => {
+    const regexLine = 'const re = /"/g; const f = await import("@scope/pkg");';
+    const interp = "$" + '{await import("@scope/pkg")}';
+    const templateLine = `const s = \`x ${interp} y\`;`;
+    expect(specifierSites(regexLine).map((s) => [s.spec, s.kind])).toEqual([["@scope/pkg", "dynamic"]]);
+    expect(specifierSites(templateLine).map((s) => [s.spec, s.kind])).toEqual([["@scope/pkg", "dynamic"]]);
+    expect(rewriteSpecifiers(templateLine, () => "@scope/replaced")).toBe(
+      `const s = \`x ${"$" + '{await import("@scope/replaced")}'} y\`;`,
+    );
+  });
+
+  test("scans nested template expressions and ignores import-like template text and division", () => {
+    const nested =
+      "$" +
+      '{(() => { if (ready) { const block = true; } const close = "}"; /* } */ return `inner ' +
+      "$" +
+      '{import("@nested")}' +
+      "` tail`; })()}";
+    const second = "$" + '{import("@second")}';
+    const rawText = `\`raw await import("@fixture") ${nested} middle ${second} trailing import("@fixture")\``;
+    const src = `const ratio = value / other; const literal = value / "not code"; const s = ${rawText};`;
+    expect(specifierSites(src).map((site) => [site.spec, site.kind])).toEqual([
+      ["@nested", "dynamic"],
+      ["@second", "dynamic"],
+    ]);
+  });
+
+  test("does not treat quotes or slash characters in regex classes as source strings", () => {
+    const src = String.raw`const re = /["\\/]+/g; const f = import("@after-regex");`;
+    expect(specifierSites(src).map((site) => [site.spec, site.kind])).toEqual([["@after-regex", "dynamic"]]);
+  });
+
+  test("recognizes regex literals after control-condition parentheses", () => {
+    const src = 'if (ready) {} /"/.test(text); const f = import("@after-condition");';
+    expect(specifierSites(src).map((site) => [site.spec, site.kind])).toEqual([["@after-condition", "dynamic"]]);
+  });
+
+  test("keeps division after object literals as division", () => {
+    const src = 'const quotient = ({ value: 10 }) / divisor; const f = import("@after-division");';
+    expect(specifierSites(src).map((site) => [site.spec, site.kind])).toEqual([["@after-division", "dynamic"]]);
+  });
 });
 
 describe("rewriteSpecifiers", () => {

@@ -60,11 +60,11 @@ at runtime and nothing to publish.
 Run all of them from `packages/nax-agent`. Never run bare `bun test` with no path: it
 would pick up every file in the package.
 
-`check:all` runs Biome over `src/` and `test/` and then nax's gate scripts with
+`check:all` runs Biome over `src/` and `test/` and then the shared gate scripts with
 `--package=.`, so the source and test ratchets apply to this package's files. The gate
-scripts themselves live in `packages/nax/scripts/` and are invoked as
-`bun ../nax/scripts/check-*.ts`; that is deliberate — one gate implementation, scoped to
-each package, rather than a fork per package.
+scripts themselves live in `packages/repo-tooling/scripts/` and are invoked as
+`bun ../repo-tooling/scripts/check-*.ts`; that is deliberate — one gate implementation,
+scoped to each package, rather than a fork per package.
 
 **There is no coverage step here.** nax's CI `Coverage floor` step runs nax's unit,
 integration and ui suites plus nax-agent's unit and integration suites in one invocation
@@ -100,8 +100,12 @@ Two entries, and only two:
   It re-exports the same module instances, so patching a seam here patches the object the
   agent reads.
 
-A third entry, `./test/helpers/*`, exists for nax's own tests and is not part of the
-runtime surface.
+A third surface exists for nax's own tests and is not part of the runtime surface: the
+package exports exactly three named subpaths,
+`@nathapp/nax-agent/test/helpers/{command-safety,sandbox,systemone-stub}`. The ten generic
+helpers (`absent`, `assert-defined`, `deps`, `fake-clock`, `fs`, `mock-fetch`,
+`session-tmp-deps`, `spawn`, `temp`, `timeout`) live in `@nathapp/nax-test-kit/bun/*`, and
+nax re-exports them from its own `test/helpers/<name>.ts` shims.
 
 ## Engineering Rules
 
@@ -136,9 +140,12 @@ runtime surface.
 ## Testing Rules
 
 - Tests live under `test/`, mirroring `src/`, named `*.test.ts`.
-- Shared fixtures and mocks live in `test/helpers/` and are exported to nax's own tests
-  through the `@nathapp/nax-agent/test/helpers/*` entry. Do not re-implement one inline in a
-  second package — extend the shared helper.
+- Shared fixtures and mocks live in `test/helpers/`. The package-specific helpers are
+  exported to nax's own tests through exactly three named subpaths,
+  `@nathapp/nax-agent/test/helpers/{command-safety,sandbox,systemone-stub}`; the ten generic
+  helpers live in `@nathapp/nax-test-kit/bun/*` and nax re-exports them from its own
+  `test/helpers/<name>.ts` shims. Do not re-implement one inline in a second package — extend
+  the shared helper.
 - `test/fixtures/` holds recorded fixtures. The sandbox tests that probe for a working `bwrap`
   use `test.skipIf(!probe.available)`, so they pass by skipping when one is unavailable —
   a green local run is not evidence they ran. CI installs `bubblewrap`, `socat` and
