@@ -3,8 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { listCredentialFiles, listNaxEntries, resolveGitLayout } from "@nathapp/nax-agent";
 import { policyInputsModule as policyInputs, realOrRaw } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { globalConfigDir } from "@/config/paths";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 let base: string;
 beforeEach(() => {
@@ -64,18 +63,19 @@ describe("listNaxEntries", () => {
 });
 
 describe("listCredentialFiles", () => {
-  test("every credentials* file in the global nax dir, as literals", async () => {
-    const dir = globalConfigDir();
+  test("every credentials* file in the credential dir, as literals", async () => {
+    const dir = makeTempDir("sbx-cred-");
     mkdirSync(dir, { recursive: true });
     const made = ["credentials", "credentials-bak-2", "config.json"].map((n) => join(dir, n));
     try {
       for (const f of made) writeFileSync(f, "{}");
-      const files = await listCredentialFiles(globalConfigDir());
+      const files = await listCredentialFiles(dir);
       expect(files).toContain(join(dir, "credentials"));
       expect(files).toContain(join(dir, "credentials-bak-2"));
       expect(files).not.toContain(join(dir, "config.json"));
     } finally {
       for (const f of made) rmSync(f, { force: true });
+      cleanupTempDir(dir);
     }
   });
 });
