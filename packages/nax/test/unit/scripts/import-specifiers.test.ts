@@ -50,20 +50,46 @@ describe("specifierSites", () => {
     expect(specifierSites(src).map((s) => [s.spec, s.kind])).toEqual([["@scope/pkg", "dynamic"]]);
   });
 
-  test("pins the known stringSpans blind spot for regex literals and template interpolation (S2-6)", () => {
-    // KNOWN LIMITATION, NOT desired behavior. stringSpans models neither regex
-    // literals nor `${}` template interpolation, so a quote inside a regex that
-    // pairs with a later quote on the same line swallows the real import as
-    // string data, and a specifier inside `${...}` is read as string text. Both
-    // real sites are silently dropped. This pins the current behavior to be
-    // fixed in S2-6; it does not assert that dropping them is correct.
+  test("finds real imports after regex literals and inside template interpolations", () => {
     const regexLine = 'const re = /"/g; const f = await import("@scope/pkg");';
-    // Assemble the `${...}` sequence rather than writing it in a string literal,
-    // so biome's noTemplateCurlyInString does not (correctly) flag the fixture.
     const interp = "$" + '{await import("@scope/pkg")}';
     const templateLine = `const s = \`x ${interp} y\`;`;
-    expect(specifierSites(regexLine)).toEqual([]);
-    expect(specifierSites(templateLine)).toEqual([]);
+    expect(specifierSites(regexLine).map((s) => [s.spec, s.kind])).toEqual([["@scope/pkg", "dynamic"]]);
+    expect(specifierSites(templateLine).map((s) => [s.spec, s.kind])).toEqual([["@scope/pkg", "dynamic"]]);
+    expect(rewriteSpecifiers(templateLine, () => "@scope/replaced")).toBe(
+      `const s = \`x ${"$" + '{await import("@scope/replaced")}'} y\`;`,
+    );
+  });
+
+  test("scans nested template expressions and ignores import-like template text and division", () => {
+    const nested =
+      "$" +
+      '{(() => { if (ready) { const block = true; } const close = "}"; /* } */ return `inner ' +
+      "$" +
+      '{import("@nested")}' +
+      "` tail`; })()}";
+    const second = "$" + '{import("@second")}';
+    const rawText = `\`raw await import("@fixture") ${nested} middle ${second} trailing import("@fixture")\``;
+    const src = `const ratio = value / other; const literal = value / "not code"; const s = ${rawText};`;
+    expect(specifierSites(src).map((site) => [site.spec, site.kind])).toEqual([
+      ["@nested", "dynamic"],
+      ["@second", "dynamic"],
+    ]);
+  });
+
+  test("does not treat quotes or slash characters in regex classes as source strings", () => {
+    const src = String.raw`const re = /["\\/]+/g; const f = import("@after-regex");`;
+    expect(specifierSites(src).map((site) => [site.spec, site.kind])).toEqual([["@after-regex", "dynamic"]]);
+  });
+
+  test("recognizes regex literals after control-condition parentheses", () => {
+    const src = 'if (ready) {} /"/.test(text); const f = import("@after-condition");';
+    expect(specifierSites(src).map((site) => [site.spec, site.kind])).toEqual([["@after-condition", "dynamic"]]);
+  });
+
+  test("keeps division after object literals as division", () => {
+    const src = 'const quotient = ({ value: 10 }) / divisor; const f = import("@after-division");';
+    expect(specifierSites(src).map((site) => [site.spec, site.kind])).toEqual([["@after-division", "dynamic"]]);
   });
 });
 

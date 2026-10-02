@@ -15,6 +15,7 @@
  * that reports green on `require("@nathapp/nax")`.
  */
 import { stripComments } from "@nathapp/nax-repo-tooling/scripts/check-import-cycles";
+import { createScanner, formatSyntaxKind, LanguageVariant } from "typescript/unstable/ast";
 
 const STATIC_RE = /^[ \t]*(?:import|export)\s+(?:type\s+)?[A-Za-z0-9_$*,{}\s]*?from\s+["']([^"']+)["']/gm;
 const SIDE_EFFECT_RE = /^[ \t]*import\s+["']([^"']+)["']/gm;
@@ -33,70 +34,146 @@ export interface SpecifierSite {
   readonly prelude: string;
 }
 
-/**
- * [start, end) spans of string literals in `text` (the comment-stripped source),
- * tracking backslash escapes. A single/double-quoted string cannot span a raw
- * newline, so an *unmatched* quote on a line is not a span; that keeps the scan
- * from swallowing real imports that follow it.
- *
- * Regex literals and `${}` template interpolations are NOT modeled. A quote
- * inside a regex literal that pairs with a later quote on the same line, and any
- * specifier inside `${...}`, are therefore read as string data — so a real
- * `import(...)` / `require(...)` in either position can be silently missed.
- * Known limitation, pinned by test/unit/scripts/import-specifiers.test.ts, to be
- * addressed in S2-6.
- */
-function stringSpans(text: string): Array<readonly [number, number]> {
-  const spans: Array<readonly [number, number]> = [];
-  let i = 0;
-  while (i < text.length) {
-    const open = text[i];
-    if (open !== '"' && open !== "'" && open !== "`") {
-      i++;
-      continue;
-    }
-    let j = i + 1;
-    let closed = false;
-    while (j < text.length) {
-      const c = text[j];
-      if (c === "\\") {
-        j += 2;
-        continue;
-      }
-      if (c === open) {
-        j++;
-        closed = true;
-        break;
-      }
-      if (c === "\n" && open !== "`") break;
-      j++;
-    }
-    if (closed) {
-      spans.push([i, j]);
-      i = j;
-    } else {
-      i++;
-    }
-  }
-  return spans;
+const REGEX_PREDECESSORS = new Set([
+  "OpenParenToken",
+  "OpenBracketToken",
+  "OpenBraceToken",
+  "CommaToken",
+  "ColonToken",
+  "QuestionToken",
+  "SemicolonToken",
+  "EqualsToken",
+  "EqualsGreaterThanToken",
+  "ExclamationToken",
+  "TildeToken",
+  "PlusToken",
+  "MinusToken",
+  "AsteriskToken",
+  "PercentToken",
+  "AmpersandToken",
+  "BarToken",
+  "CaretToken",
+  "AmpersandAmpersandToken",
+  "BarBarToken",
+  "QuestionQuestionToken",
+  "ReturnKeyword",
+  "ThrowKeyword",
+  "CaseKeyword",
+  "DeleteKeyword",
+  "VoidKeyword",
+  "TypeOfKeyword",
+  "InstanceOfKeyword",
+  "InKeyword",
+  "OfKeyword",
+  "AwaitKeyword",
+  "YieldKeyword",
+  "BlockCloseBraceToken",
+]);
+const CONTROL_PAREN_PREDECESSORS = new Set([
+  "IfKeyword",
+  "WhileKeyword",
+  "ForKeyword",
+  "WithKeyword",
+  "SwitchKeyword",
+  "CatchKeyword",
+]);
+
+interface ScannerState {
+  readonly templateExpressionBraces: number[];
+  readonly controlParens: boolean[];
+  readonly blockBraces: boolean[];
+  previous: string;
 }
 
-function startsInsideString(spans: ReadonlyArray<readonly [number, number]>, offset: number): boolean {
-  return spans.some(([start, end]) => offset >= start && offset < end);
+function isRegexStart(previous: string): boolean {
+  return previous === "" || previous === "ControlCloseParenToken" || REGEX_PREDECESSORS.has(previous);
+}
+
+function scanCodeToken(scanner: ReturnType<typeof createScanner>, state: ScannerState): string {
+  let kind = formatSyntaxKind(scanner.scan());
+  if (kind === "SlashToken" && isRegexStart(state.previous)) {
+    kind = formatSyntaxKind(scanner.reScanSlashToken());
+  } else if (kind === "OpenParenToken") {
+    state.controlParens.push(CONTROL_PAREN_PREDECESSORS.has(state.previous));
+  } else if (kind === "CloseParenToken" && state.controlParens.pop()) {
+    kind = "ControlCloseParenToken";
+  }
+  kind = trackBlock(kind, state);
+  kind = trackTemplateExpression(scanner, kind, state.templateExpressionBraces);
+  state.previous = kind;
+  return kind;
+}
+
+function trackBlock(kind: string, state: ScannerState): string {
+  if (kind === "OpenBraceToken") {
+    state.blockBraces.push(
+      state.previous === "ControlCloseParenToken" ||
+        ["ElseKeyword", "TryKeyword", "FinallyKeyword", "DoKeyword"].includes(state.previous),
+    );
+  }
+  if (kind !== "CloseBraceToken") return kind;
+  if (state.templateExpressionBraces.at(-1) === 0) return kind;
+  if (state.blockBraces.pop()) return "BlockCloseBraceToken";
+  return kind;
+}
+
+function trackTemplateExpression(
+  scanner: ReturnType<typeof createScanner>,
+  kind: string,
+  expressions: number[],
+): string {
+  let nextKind = kind;
+  if (kind === "OpenBraceToken" && expressions.length > 0) expressions[expressions.length - 1] += 1;
+  if (kind === "BlockCloseBraceToken" && expressions.length > 0) expressions[expressions.length - 1] -= 1;
+  if (kind === "CloseBraceToken" && expressions.length > 0) {
+    const last = expressions.length - 1;
+    if (expressions[last] === 0) nextKind = formatSyntaxKind(scanner.reScanTemplateToken(false));
+    else expressions[last] -= 1;
+  }
+  if (nextKind === "TemplateHead") expressions.push(0);
+  if (nextKind === "TemplateTail") expressions.pop();
+  return nextKind;
+}
+
+function isExecutableToken(kind: string): boolean {
+  return ![
+    "StringLiteral",
+    "NoSubstitutionTemplateLiteral",
+    "TemplateHead",
+    "TemplateMiddle",
+    "TemplateTail",
+    "RegularExpressionLiteral",
+    "NumericLiteral",
+    "BigIntLiteral",
+  ].includes(kind);
+}
+
+/** Token starts that are executable code, including code inside template expressions. */
+function codeTokenStarts(text: string): Set<number> {
+  const scanner = createScanner(true, LanguageVariant.Standard, text);
+  const starts = new Set<number>();
+  const state: ScannerState = { templateExpressionBraces: [], controlParens: [], blockBraces: [], previous: "" };
+  while (scanner.getTokenEnd() < text.length) {
+    const kind = scanCodeToken(scanner, state);
+    if (isExecutableToken(kind)) starts.add(scanner.getTokenStart());
+  }
+  return starts;
 }
 
 export function specifierSites(source: string): SpecifierSite[] {
   const text = stripComments(source);
-  const strings = stringSpans(text);
+  const codeStarts = codeTokenStarts(text);
   const sites: SpecifierSite[] = [];
   const add = (re: RegExp, kind: SpecifierSite["kind"]) => {
     for (const m of text.matchAll(re)) {
       const spec = m[1];
       if (spec === undefined || m.index === undefined) continue;
-      // A match that starts inside a string is fixture text, not code. A real
-      // import's match starts at `import` / `export` / `require` (code), even
-      // though its specifier sits between quotes.
-      if (startsInsideString(strings, m.index)) continue;
+      // Static patterns begin at line indentation; all others begin at their
+      // import/require token. Template raw text and quoted fixtures have no
+      // executable token at that position.
+      const staticKeyword = kind === "static" || kind === "side-effect";
+      const keywordOffset = staticKeyword ? m.index + (m[0].match(/\b(?:import|export)\b/)?.index ?? 0) : m.index;
+      if (!codeStarts.has(keywordOffset)) continue;
       const at = m[0].lastIndexOf(spec);
       sites.push({ spec, start: m.index + at, kind, prelude: kind === "dynamic" ? "" : m[0].slice(0, at - 1) });
     }

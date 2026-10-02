@@ -140,8 +140,12 @@ function toolingViolation(pkg: PackageInfo, file: string, spec: string): string 
   if (spec.startsWith(".")) return leavesPackage(pkg, file, spec) ? "relative import leaves the package" : null;
   const name = packageName(spec);
   if (name === pkg.name) return null;
+  if (NAX_PACKAGES.has(name)) {
+    if (pkg.name === REPO_TOOLING && name === TEST_KIT && pkg.devDeps.has(name) && inDir(pkg, file, "test"))
+      return null;
+    return `${pkg.name} imports ${name}`;
+  }
   if (pkg.devDeps.has(name)) return inDir(pkg, file, "test") ? null : `devDependency ${name} imported outside test/`;
-  if (NAX_PACKAGES.has(name)) return `${pkg.name} imports ${name}`;
   if (pkg.deps.has(name)) return null;
   return `undeclared dependency ${name}`;
 }

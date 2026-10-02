@@ -40,6 +40,10 @@ describe("discoverCheckScripts", () => {
 });
 
 describe("parseCiEntryPoints", () => {
+  test("treats an empty workflow as having no entry points", () => {
+    expect(parseCiEntryPoints("")).toEqual({ scriptNames: [], scriptFiles: [] });
+  });
+
   test("collects `bun run <script>` invocations from run: steps", () => {
     const ci = `
 jobs:
@@ -53,6 +57,8 @@ jobs:
 
   test("expands a matrix check list into script names", () => {
     const ci = `
+jobs:
+  checks:
     strategy:
       matrix:
         check: [typecheck, lint, check:all]
@@ -66,10 +72,29 @@ jobs:
 
   test("collects direct scripts/ file references from run: steps", () => {
     const ci = `
+jobs:
+  checks:
     steps:
       - run: bash scripts/check-process-cwd.sh
 `;
     expect(parseCiEntryPoints(ci).scriptFiles).toContain("check-process-cwd.sh");
+  });
+
+  test("expands a multiline matrix into run-script names", () => {
+    const ci = `
+jobs:
+  checks:
+    strategy:
+      matrix:
+        check:
+          - typecheck
+          - lint
+          - check:all
+    steps:
+      - run: |
+          bun run \${{ matrix.check }}
+`;
+    expect(parseCiEntryPoints(ci).scriptNames).toEqual(["typecheck", "lint", "check:all"]);
   });
 });
 
@@ -168,7 +193,10 @@ describe("findUnreachableCheckScriptsInRepo — package root vs repo root", () =
     writeFileSync(join(pkg, "scripts", "check-a.ts"), "");
     writeFileSync(join(pkg, "scripts", "check-b.ts"), "");
     writeFileSync(join(pkg, "package.json"), JSON.stringify({ scripts: { "check:a": "bun run scripts/check-a.ts" } }));
-    writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "      - run: bun run check:a\n");
+    writeFileSync(
+      join(dir, ".github", "workflows", "ci.yml"),
+      "jobs:\n  nax:\n    defaults:\n      run:\n        working-directory: packages/nax\n    steps:\n      - run: bun run check:a\n",
+    );
 
     expect(findUnreachableCheckScriptsInRepo(pkg, dir)).toEqual(["check-b.ts"]);
   });
@@ -188,10 +216,18 @@ describe("findUnreachableCheckScriptsInRepo across workspace packages", () => {
 
   function seed(naxAiScripts: Record<string, string>): void {
     repo = makeTempDir("gate-reach-ws-");
-    file(".github/workflows/ci.yml", "jobs:\n  a:\n    steps:\n      - run: bun run check:all\n");
+    file(
+      ".github/workflows/ci.yml",
+      "jobs:\n  nax:\n    defaults:\n      run:\n        working-directory: packages/nax\n    steps:\n      - run: bun run build\n",
+    );
     file(
       "packages/nax/package.json",
-      JSON.stringify({ scripts: { "check:all": "bun scripts/check-a.ts && bun ../repo-tooling/scripts/check-b.ts" } }),
+      JSON.stringify({
+        scripts: {
+          build: "bun run check:all",
+          "check:all": "bun scripts/check-a.ts && bun ../repo-tooling/scripts/check-b.ts",
+        },
+      }),
     );
     file("packages/nax/scripts/check-a.ts", "");
     file("packages/repo-tooling/package.json", JSON.stringify({ scripts: { "check:all": "bun run lint" } }));
@@ -200,14 +236,59 @@ describe("findUnreachableCheckScriptsInRepo across workspace packages", () => {
     file("packages/nax-ai/package.json", JSON.stringify({ scripts: naxAiScripts }));
   }
 
-  test("a repo-tooling gate reached only from another package counts as reached", () => {
-    seed({ "check:all": "bun ../repo-tooling/scripts/check-c.ts --package=." });
-    expect(findUnreachableCheckScriptsInRepo(join(repo, "packages", "nax"), repo)).toEqual([]);
+  test("an uninvoked package build cannot make its repo-tooling gate look reached", () => {
+    seed({ build: "bun ../repo-tooling/scripts/check-c.ts --package=." });
+    expect(findUnreachableCheckScriptsInRepo(join(repo, "packages", "nax"), repo)).toEqual(["check-c.ts"]);
   });
 
   test("a repo-tooling gate no package runs is reported", () => {
     seed({ "check:all": "bun run lint" });
     expect(findUnreachableCheckScriptsInRepo(join(repo, "packages", "nax"), repo)).toEqual(["check-c.ts"]);
+  });
+
+  test("CI script names are resolved only in each job's working directory", () => {
+    repo = makeTempDir("gate-reach-jobs-");
+    file(
+      ".github/workflows/ci.yml",
+      `jobs:
+  nax:
+    defaults:
+      run:
+        working-directory: packages/nax
+    steps:
+      - run: bun run build
+`,
+    );
+    file("packages/nax/package.json", JSON.stringify({ scripts: { build: "bun scripts/check-same.ts" } }));
+    file("packages/nax/scripts/check-same.ts", "");
+    file("packages/repo-tooling/package.json", JSON.stringify({ scripts: { build: "bun scripts/check-same.ts" } }));
+    file("packages/repo-tooling/scripts/check-same.ts", "");
+
+    expect(findUnreachableCheckScriptsInRepo(join(repo, "packages", "nax"), repo)).toEqual([
+      "packages/repo-tooling/scripts/check-same.ts",
+    ]);
+  });
+
+  test("a per-step working-directory overrides its job default", () => {
+    repo = makeTempDir("gate-reach-step-cwd-");
+    file(
+      ".github/workflows/ci.yml",
+      `jobs:
+  tooling:
+    defaults:
+      run:
+        working-directory: packages/nax
+    steps:
+      - run: bun run build
+        working-directory: packages/repo-tooling
+`,
+    );
+    file("packages/nax/package.json", JSON.stringify({ scripts: { build: "bun run lint" } }));
+    file("packages/repo-tooling/package.json", JSON.stringify({ scripts: { build: "bun scripts/check-tooling.ts" } }));
+    file("packages/nax/scripts/check-nax.ts", "");
+    file("packages/repo-tooling/scripts/check-tooling.ts", "");
+
+    expect(findUnreachableCheckScriptsInRepo(join(repo, "packages", "nax"), repo)).toEqual(["check-nax.ts"]);
   });
 });
 

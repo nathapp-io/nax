@@ -147,8 +147,27 @@ describe("check-package-boundaries", () => {
     );
     expect(whys()).toEqual([
       "packages/repo-tooling/scripts/bad.ts @nathapp/nax-agent/internal @nathapp/nax-repo-tooling imports @nathapp/nax-agent",
-      "packages/repo-tooling/scripts/bad.ts @nathapp/nax-test-kit/bun/temp devDependency @nathapp/nax-test-kit imported outside test/",
+      "packages/repo-tooling/scripts/bad.ts @nathapp/nax-test-kit/bun/temp @nathapp/nax-repo-tooling imports @nathapp/nax-test-kit",
       "packages/repo-tooling/scripts/bad.ts ../../nax/scripts/y relative import leaves the package",
+    ]);
+  });
+
+  test("repo-tooling cannot import a nax package from tests even if it is a devDependency", () => {
+    workspace();
+    write(
+      "packages/repo-tooling/package.json",
+      JSON.stringify({
+        name: "@nathapp/nax-repo-tooling",
+        devDependencies: {
+          "@nathapp/nax-test-kit": "workspace:*",
+          "@nathapp/nax-agent": "workspace:*",
+        },
+      }),
+    );
+    write("packages/repo-tooling/test/unit/bad.test.ts", 'import { secret } from "@nathapp/nax-agent/internal";\n');
+
+    expect(whys()).toEqual([
+      "packages/repo-tooling/test/unit/bad.test.ts @nathapp/nax-agent/internal @nathapp/nax-repo-tooling imports @nathapp/nax-agent",
     ]);
   });
 
