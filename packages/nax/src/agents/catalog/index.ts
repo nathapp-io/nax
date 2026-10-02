@@ -1,6 +1,6 @@
 /**
  * Catalog-backed pricing lookup. Owns the @nathapp/nax-ai boundary for the
- * non-native side of nax; see `scripts/check-nax-ai-imports.ts`.
+ * non-native side of nax; see `packages/repo-tooling/scripts/check-nax-ai-imports.ts`.
  *
  * `lookupPricing(provider, model)` reads nax-ai's normalised catalog, returns
  * its `Pricing` shape unchanged (bar a defensive cache-rate fill), and returns

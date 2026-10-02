@@ -2,7 +2,7 @@
  * Obtaining and managing credentials, in nax's vocabulary.
  *
  * This file and its siblings are the only place in src/ permitted to import
- * nax-ai (scripts/check-nax-ai-imports.ts). Nothing it exports carries a
+ * nax-ai (packages/repo-tooling/scripts/check-nax-ai-imports.ts). Nothing it exports carries a
  * nax-ai type, so src/cli/auth.ts can consume it without breaching that gate.
  */
 

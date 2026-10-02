@@ -18,7 +18,7 @@
  * findings (US-003 attaches them at the consuming gate,
  * `src/operations/full-suite-gate.ts`); it does NOT render prompts (US-004).
  * All path IO goes through `featureDir()` so feature-tree open-coding stays
- * gated by `scripts/check-feature-dir-ssot.ts`.
+ * gated by `packages/repo-tooling/scripts/check-feature-dir-ssot.ts`.
  */
 
 import { existsSync } from "node:fs";

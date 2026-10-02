@@ -1,7 +1,7 @@
 /**
  * Native model resolver — owns the local catalog lookup for native ids.
  *
- * Precheck must not import nax-ai directly (scripts/check-nax-ai-imports.ts),
+ * Precheck must not import nax-ai directly (packages/repo-tooling/scripts/check-nax-ai-imports.ts),
  * so the resolver sits next to the rest of the native path. Production callers
  * go through `resolveNativeId` (which uses the cached nax-ai client); tests
  * bypass the function entirely and stub `_modelResolutionDeps` in
@@ -66,7 +66,7 @@ export async function resolveNativeId(
 ): Promise<ResolveResult> {
   // The native client's `Client` type comes from nax-ai; we declare the
   // variable as `unknown` to keep the file free of nax-ai type imports
-  // (scripts/check-nax-ai-imports.ts forbids it). The single property we
+  // (packages/repo-tooling/scripts/check-nax-ai-imports.ts forbids it). The single property we
   // touch (`model(provider, model)`) is what we actually need.
   let client: unknown;
   try {

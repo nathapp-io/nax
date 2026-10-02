@@ -8,7 +8,7 @@
  *
  * Splitting this out of `execution-plan.ts` was load-bearing, not stylistic:
  * that file is exactly 600 lines (the `SRC_LIMIT` enforced by
- * `scripts/check-file-sizes.ts`), and is not grandfathered in
+ * `packages/repo-tooling/scripts/check-file-sizes.ts`), and is not grandfathered in
  * `scripts/baselines/file-sizes-baseline.json` — zero headroom, any added
  * line fails the ratchet. The extraction also gives a single seam to unit-test
  * the mixed-threshold / semantic-advisory seeding behaviour without booting

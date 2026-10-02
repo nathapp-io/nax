@@ -38,11 +38,11 @@ at runtime and nothing to publish.
 Run all of them from `packages/nax-agent`. Never run bare `bun test` with no path: it
 would pick up every file in the package.
 
-`check:all` runs Biome over `src/` and `test/` and then nax's gate scripts with
+`check:all` runs Biome over `src/` and `test/` and then the shared gate scripts with
 `--package=.`, so the source and test ratchets apply to this package's files. The gate
-scripts themselves live in `packages/nax/scripts/` and are invoked as
-`bun ../nax/scripts/check-*.ts`; that is deliberate — one gate implementation, scoped to
-each package, rather than a fork per package.
+scripts themselves live in `packages/repo-tooling/scripts/` and are invoked as
+`bun ../repo-tooling/scripts/check-*.ts`; that is deliberate — one gate implementation,
+scoped to each package, rather than a fork per package.
 
 **There is no coverage step here.** nax's CI `Coverage floor` step runs nax's unit,
 integration and ui suites plus nax-agent's unit and integration suites in one invocation

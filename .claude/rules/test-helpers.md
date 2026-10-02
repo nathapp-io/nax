@@ -72,7 +72,7 @@ Use the shared path helpers instead:
 - `identityPath()` for project identity files
 - `makeTempDir()` / `withTempDir()` for temp workdirs
 
-`test/preload.ts` redirects global nax state into an isolated temp directory, and `scripts/check-no-real-global-nax.ts` enforces this rule.
+`test/preload.ts` redirects global nax state into an isolated temp directory, and `packages/repo-tooling/scripts/check-no-real-global-nax.ts` enforces this rule.
 
 ## Adding a New Helper
 

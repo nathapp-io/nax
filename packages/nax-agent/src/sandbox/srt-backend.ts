@@ -1,6 +1,6 @@
 /**
  * The ONLY importer of @anthropic-ai/sandbox-runtime (enforced by
- * scripts/check-sandbox-imports.ts). Loaded by dynamic import so a run that
+ * packages/repo-tooling/scripts/check-sandbox-imports.ts). Loaded by dynamic import so a run that
  * never sandboxes never loads it.
  *
  * srt's SandboxManager is a process-wide singleton; per-call customConfig

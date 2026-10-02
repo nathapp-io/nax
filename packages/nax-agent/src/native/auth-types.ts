@@ -3,7 +3,7 @@
  *
  * A deliberate mirror of nax-ai's LoginInteraction family. It exists so the
  * CLI can implement a terminal interaction without importing nax-ai, which
- * scripts/check-nax-ai-imports.ts confines to this directory. The mapper in
+ * packages/repo-tooling/scripts/check-nax-ai-imports.ts confines to this directory. The mapper in
  * auth.ts is the only translation point, so a rename upstream is a one-file
  * change here.
  *

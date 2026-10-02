@@ -8,7 +8,7 @@
 /**
  * Reasoning levels the catalog may declare, mirrored from nax-ai's
  * `ThinkingLevel` union (nax#1982). nax-ai cannot be imported here
- * (`scripts/check-nax-ai-imports.ts`), so the union is hand-mirrored;
+ * (`packages/repo-tooling/scripts/check-nax-ai-imports.ts`), so the union is hand-mirrored;
  * `test/unit/agents/native/models.test.ts` pins it against
  * `THINKING_LEVELS` in `src/agents/native/models.ts`, which is itself a
  * compile-time-exhaustive `Record<ThinkingLevel, true>` over the nax-ai

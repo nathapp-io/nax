@@ -28,7 +28,7 @@
  * Coverage: `gitWithTimeout` applies it, and every other site in `src/` that
  * spawns git itself passes `env: gitSpawnEnv(...)`. The generic forge and
  * auto-pr runners harden every command they spawn, since `gh` / `glab` run git
- * underneath. `scripts/check-git-spawn-env.ts` (in `lint:checks`) fails on a
+ * underneath. `packages/repo-tooling/scripts/check-git-spawn-env.ts` (in `lint:checks`) fails on a
  * `["git", ...]` argv literal that is neither inside a spawn call carrying one
  * of these helpers nor marked `// nax-git-env-allow: <reason>` (argv handed to
  * a runner that hardens it itself). An argv held in a variable and spawned

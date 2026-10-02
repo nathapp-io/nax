@@ -146,8 +146,8 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      # Biome plus nax's source and test gates run against this package
-      # (`bun ../nax/scripts/check-*.ts --package=.`).
+      # Biome plus the shared source and test gates run against this package
+      # (`bun ../repo-tooling/scripts/check-*.ts --package=.`).
       - name: Check all
         run: bun run check:all
 
@@ -159,6 +159,49 @@ jobs:
 
       # No coverage step: nax's `Coverage floor` step runs these suites with
       # nax's and gates nax-agent's sources (S1-5 plan, Decision 7).
+
+  tooling:
+    name: tooling
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/repo-tooling
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: .
+
+      - name: Typecheck (repo-tooling)
+        run: bun run typecheck
+
+      - name: Check all (repo-tooling)
+        run: bun run check:all
+
+      - name: Test (repo-tooling)
+        run: bun run test
+
+      - name: Typecheck (test-kit)
+        run: bun run typecheck
+        working-directory: packages/test-kit
+
+      - name: Check all (test-kit)
+        run: bun run check:all
+        working-directory: packages/test-kit
 
   # The four jobs below are nax-ai's former standalone ci.yml, moved into the
   # monorepo unchanged apart from the job ids/names, a package-scoped

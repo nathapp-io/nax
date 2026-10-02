@@ -2,7 +2,7 @@
  * The credential store, and the one place that reads its file directly.
  *
  * This directory is the only place in src/ permitted to import nax-ai
- * (scripts/check-nax-ai-imports.ts).
+ * (packages/repo-tooling/scripts/check-nax-ai-imports.ts).
  *
  * The store is memoised like client.ts's client: createFileCredentialStore
  * holds a cross-process lock, and two instances over one path would each take
