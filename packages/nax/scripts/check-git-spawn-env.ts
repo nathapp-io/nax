@@ -235,7 +235,8 @@ if (import.meta.main) {
   }
   if (found.length > 0) {
     // The helper lives in nax-agent now and this gate runs against both
-    // packages, so no repo-relative path is accurate here — name the symbol.
+    // packages, whose roots differ, so no package-relative path is accurate for
+    // both — name the symbol. The header's repo-relative path is accurate for both.
     console.error("git spawned without the hardened environment (hardenedGitEnv / gitSpawnEnv):");
     for (const f of found) console.error(f);
     console.error(
