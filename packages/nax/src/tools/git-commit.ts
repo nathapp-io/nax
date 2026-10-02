@@ -91,6 +91,21 @@ export async function partitionNaxOwnedPaths(
 ): Promise<{ kept: string[]; skipped: string[]; unknown: UnknownPathResult[] }> {
   if (paths.length === 0) return { kept: [], skipped: [], unknown: [] };
 
+  // Fail CLOSED on an absent policy (S1 spec port 6): `ToolRunContext.protectedPaths`
+  // is optional, so a runtime built without one hands us an empty list. Writing
+  // that list to the exclude file makes `check-ignore` exit 1 for EVERY path --
+  // which reads as "not ignored" and would put nax-owned run artifacts straight
+  // back into `kept`, silently, exactly the incident this tool exists to prevent.
+  // Refusing every path keeps the failure loud and puts it in the category the
+  // caller already reports.
+  if (ignorePatterns.length === 0) {
+    return {
+      kept: [],
+      skipped: [],
+      unknown: paths.map((path) => ({ path, reason: "no protected-paths ignore patterns were supplied" })),
+    };
+  }
+
   const excludeDir = mkdtempSync(join(tmpdir(), "nax-commit-filter-"));
   const excludeFile = join(excludeDir, "exclude");
   try {

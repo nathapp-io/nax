@@ -1,4 +1,4 @@
-import type { AgentStreamEvent, AgentUsageUpdateEvent, IAgentStreamEventBus } from "../agent-stream-events";
+import type { AgentUsageUpdateEvent, IAgentStreamEventBus } from "../agent-stream-events";
 import type { DispatchEvent, IDispatchEventBus } from "../dispatch-events";
 import type { IUsageAuditor, UsageAuditEntry } from "../usage-auditor";
 
@@ -67,7 +67,7 @@ export function attachUsageAuditSubscriber(
   auditor: IUsageAuditor,
   runId: string,
 ): () => void {
-  const offStream = bus.onAgentStream((event: AgentStreamEvent) => {
+  const offStream = bus.onAgentStream((event) => {
     switch (event.kind) {
       case "agent.usage_update":
         auditor.record(toUsageEntry(event, runId));

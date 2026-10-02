@@ -109,6 +109,12 @@ describe("Git tool interception", () => {
     // Internal callers machine-parse their stdout; compacting it breaks them
     // silently. Port 7 keeps the interceptor on `ToolRunContext`, which
     // `gitWithTimeout` never receives, so an internal caller cannot reach one.
+    // The rewriter is installed precisely so this proves a REACHABLE interceptor
+    // still cannot reach the internal caller — without it, `beforeEach` leaves
+    // `interceptor` undefined and argv construction alone satisfies the
+    // assertion, leaving the guard inert (a module-global read reintroduced in
+    // `gitWithTimeout` would leave this test green).
+    interceptor = prefixer();
     const { gitWithTimeout } = await import("@/utils/git");
     await gitWithTimeout(["diff", "--name-only"], "/repo");
 

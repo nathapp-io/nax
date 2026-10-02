@@ -188,6 +188,45 @@ describe("gitCommitTool — nax-owned artifact filtering (Fix 3)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Port 6: `ToolRunContext.protectedPaths` is optional, so a runtime built
+// without one reaches partitionNaxOwnedPaths with an empty pattern list. An
+// empty exclude file makes `check-ignore` exit 1 for EVERY path, which reads as
+// "not ignored" — so without the guard below this re-ran the exact silent
+// staging incident Critical 1 fixed. Fail closed instead, and confirm with real
+// git that nothing was staged.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("gitCommitTool — an absent protected-paths policy fails closed", () => {
+  const ctxWithoutPolicy = (root: string) => ({
+    root,
+    resolvedPaths: [],
+    maxBytes: 4096,
+    maxFileBytes: 1024,
+  });
+
+  test("refuses every path, loudly, when no ignore patterns were supplied", async () => {
+    const repo = await makeRepo();
+    const scratchDir = join(repo, ".nax", "scratchpad");
+    mkdirSync(scratchDir, { recursive: true });
+    writeFileSync(join(scratchDir, "notes.md"), "scratch note\n");
+
+    // A plain source file is enough: without the guard this staged it, and the
+    // .nax artifact alongside it, as an ordinary successful commit.
+    const result = await gitCommitTool.run(
+      { message: "feat: no policy", paths: ["a.ts", ".nax/scratchpad/notes.md"] },
+      ctxWithoutPolicy(repo),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("no protected-paths ignore patterns");
+    // Nothing reached `git add`: no commit, and both paths still untracked.
+    expect(git(repo, "log", "--oneline").stdout.trim()).toBe("");
+    expect(isTracked(repo, "a.ts")).toBe(false);
+    expect(isTracked(repo, ".nax/scratchpad/notes.md")).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Critical 1 (code review, post-Fix-3): partitionNaxOwnedPaths was fail-OPEN.
 // `exitCode === 1` alone does not mean "not ignored" -- gitWithTimeout collapses
 // a hung subprocess to exitCode 1 too, and a fatal git error (128) is neither

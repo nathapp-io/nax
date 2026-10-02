@@ -1,5 +1,5 @@
 import { getSafeLogger } from "@/logger";
-import type { AgentStreamEvent, IAgentStreamEventBus } from "@/runtime";
+import type { IAgentStreamEventBus } from "@/runtime";
 
 interface CallTrackingState {
   callId: string;
@@ -17,7 +17,7 @@ interface CallTrackingState {
 export function attachAgentStreamLogging(bus: IAgentStreamEventBus, runId: string): () => void {
   const activeCalls = new Map<string, CallTrackingState>();
 
-  return bus.onAgentStream((event: AgentStreamEvent) => {
+  return bus.onAgentStream((event) => {
     switch (event.kind) {
       case "agent.call_started": {
         const now = event.timestamp;

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeNaxConfig } from "@test/helpers";
+import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 import { resolvePermissions } from "@/config/permissions";
 import { compileToolPolicy, createCodingToolRuntime, DEFAULT_TOOL_MAX_FILE_BYTES, deleteTool } from "@/tools";
 import { gitWithTimeout } from "@/utils/git";
@@ -282,7 +283,7 @@ describe("Delete wiring", () => {
       ],
       root,
     );
-    const runtime = createCodingToolRuntime({ policy });
+    const runtime = createCodingToolRuntime({ policy, protectedPaths: naxProtectedPaths() });
 
     const deleted = await runtime.callTool("Delete", { path: "src/tracked.ts" });
     expect(deleted.kind).toBe("ok");
