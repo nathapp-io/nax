@@ -5,7 +5,8 @@
   "description": "Shared bun:test helpers for the nax workspace packages. Never published.",
   "type": "module",
   "exports": {
-    "./bun/*": "./src/bun/*.ts"
+    "./bun/*": "./src/bun/*.ts",
+    "./cases/*": "./src/cases/*.ts"
   },
   "scripts": {
     "typecheck": "bun x tsc --noEmit",
