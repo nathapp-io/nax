@@ -1,5 +1,5 @@
 /**
- * One `ToolProvider` (src/tools/provider-types.ts) per configured MCP server.
+ * One `ToolProvider` (packages/nax-agent/src/tools/provider-types.ts) per configured MCP server.
  *
  * The provider id IS the config key, which makes one identifier carry across
  * `mcp.servers.<id>`, the advertised name `<id>__<tool>`, the ledger's

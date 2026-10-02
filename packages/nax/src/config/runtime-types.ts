@@ -143,7 +143,7 @@ export interface ExecutionConfig {
   sandbox?: SandboxConfig;
   /** P5: shadow command classifier; absent = off. */
   commandSafety?: CommandSafetyConfig;
-  /** Per-stage tool policy (GitHub #374). Read by resolveScopedPermissions; enforced by src/tools/. */
+  /** Per-stage tool policy (GitHub #374). Read by resolveScopedPermissions; enforced by packages/nax-agent/src/tools/. */
   permissions?: Record<
     string,
     {

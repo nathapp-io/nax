@@ -1,7 +1,7 @@
 /**
  * Run-start scratchpad wipe (US-004).
  *
- * The scratchpad tools (src/tools/scratchpad.ts) promise throwaway storage:
+ * The scratchpad tools (packages/nax-agent/src/tools/scratchpad.ts) promise throwaway storage:
  * "It is never committed and is wiped when a run finishes (a failed run's
  * scratchpad is retained for inspection until the next run starts and clears
  * it)." This is the start half of that contract — the backstop that clears the

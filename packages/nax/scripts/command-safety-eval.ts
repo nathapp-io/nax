@@ -2,7 +2,7 @@
  * P5 eval (spec 7.2): turns the labelled corpus and the live shadow rows into
  * the evidence for the promotion decision. It decides nothing.
  *
- *   bun scripts/command-safety-eval.ts --corpus test/fixtures/command-safety/corpus.jsonl \
+ *   bun scripts/command-safety-eval.ts --corpus ../nax-agent/test/fixtures/command-safety/corpus.jsonl \
  *     --rows ~/.nax/<project>/command-safety/<runId>.jsonl [--rows ...] \
  *     [--url http://127.0.0.1:8020/t/nax-command-safety/v1/systemone --auth-env NAX_COMMAND_SAFETY_AUTH] \
  *     [--weights harm=0.5,noulMax=0.5] [--segments] \

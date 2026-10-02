@@ -360,7 +360,7 @@ function buildRefDiffSection(storyGitRef: string, stat: string, excludePatterns:
   // The pathspec (`pathspec`, the story's package dir or "." for a repo-root
   // story) now does the scoping the old package cwd used to provide. Flags
   // precede the ref because a flag after a revision list reads as a pathspec
-  // (src/tools/git.ts:202). `git log --oneline` prints no paths, so it takes no
+  // (packages/nax-agent/src/tools/git.ts:202). `git log --oneline` prints no paths, so it takes no
   // pathspec and no flags. The native rendering does not use these strings — it
   // swaps in the Git tool, whose `paths` array carries the same `pathspec` as
   // its base entry.

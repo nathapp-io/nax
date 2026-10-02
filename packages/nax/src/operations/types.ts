@@ -278,7 +278,7 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
   /**
    * Per-tool path globs this op is held to, narrowing — never widening — the
    * grants its permission profile resolved. `{ Write: [".nax-x.json"] }` means
-   * "this role may write, but only that file". See src/tools/narrow-grants.ts.
+   * "this role may write, but only that file". See packages/nax-agent/src/tools/narrow-grants.ts.
    */
   readonly toolPatterns?: import("@nathapp/nax-agent").ToolPatternNarrowing;
   /**

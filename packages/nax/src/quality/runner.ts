@@ -51,7 +51,7 @@ export interface QualityCommandOptions {
    * Who invoked this run. Defaults to `"harness"`.
    *
    * `"agent-tool"` marks the agent's own iteration loop arriving through the
-   * `RunCommand` coding tool (src/tools/run-command.ts). Those records are
+   * `RunCommand` coding tool (packages/nax-agent/src/tools/run-command.ts). Those records are
    * demoted to debug: they still reach the JSONL (the file sink writes every
    * level) but stay off the console, because a failing lint there is normal TDD
    * red rather than a harness fault — and because on the acpx transport the

@@ -9,7 +9,7 @@
  *
  * Terminal I/O only. Every read of `approvals.json` goes through
  * `_approvalsCliDeps.readApprovalsFileDetailed` so the store is read by the
- * same module that owns writes (`src/permissions/approvals-store.ts`); the
+ * same module that owns writes (`packages/nax-agent/src/permissions/approvals-store.ts`); the
  * CLI here is a thin surface and never touches the file directly.
  *
  * Store resolution mirrors `src/cli/runs.ts:14-19`:

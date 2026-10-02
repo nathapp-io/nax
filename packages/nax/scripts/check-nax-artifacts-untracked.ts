@@ -95,7 +95,7 @@ export type IgnoreRuleStatus = "in-place" | "missing" | "unknown";
  * `git rm --cached` was the only correct remedy — the opposite of the accuracy
  * this function exists to provide.
  *
- * THREE-STATE, matching `partitionNaxOwnedPaths` in `src/tools/git-commit.ts`:
+ * THREE-STATE, matching `partitionNaxOwnedPaths` in `packages/nax-agent/src/tools/git-commit.ts`:
  * exit 0 is `"in-place"`, exit 1 is `"missing"`, and anything else — a fatal
  * error (128: not a git repo, path outside the repo) or a genuinely unexpected
  * code — is `"unknown"`. `"unknown"` is never silently folded into `"missing"`;

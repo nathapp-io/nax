@@ -149,7 +149,7 @@ export interface ToolAuditAnchor {
  * by the very run that produced it — the #1359 false-zero shape this ledger
  * exists to prevent, reintroduced by its own location.
  *
- * Feeding Home: src/tools/tool-audit.ts writes one JSON file per session here.
+ * Feeding Home: packages/nax-agent/src/tools/tool-audit.ts writes one JSON file per session here.
  */
 export function toolAuditDir(anchor: ToolAuditAnchor, featureId?: string): string {
   const outputDir = anchor.outputDir?.trim();

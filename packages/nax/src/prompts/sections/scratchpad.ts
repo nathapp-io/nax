@@ -2,7 +2,7 @@
  * Agent scratchpad awareness section.
  *
  * Every op receives the scratchpad tools (`ScratchpadWrite` / `ScratchpadRead` /
- * `ScratchpadList`, src/tools/scratchpad.ts), confined to `SCRATCHPAD_DIR`. The
+ * `ScratchpadList`, packages/nax-agent/src/tools/scratchpad.ts), confined to `SCRATCHPAD_DIR`. The
  * long analytical turns — implementer, rectifier, and both reviewers — would
  * otherwise never learn that directory exists: the standing `.nax/` immutability
  * rule (`buildNaxArtifactsSection`, which names the scratchpad as its one

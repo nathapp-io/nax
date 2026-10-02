@@ -230,7 +230,7 @@ export const verifierOp: RunOperationWithHooks<VerifierInput, VerifierOutput, Td
   // assumes it changed nothing but the verdict.
   tools: ["Read", "Glob", "Grep", "Git", "RunCommand", "Write"],
   // The verdict file is the ONLY path this role may write. Narrowing, never
-  // widening — see src/tools/narrow-grants.ts.
+  // widening — see packages/nax-agent/src/tools/narrow-grants.ts.
   toolPatterns: { Write: [VERDICT_FILE] },
   // Verification is a cheap scoped task — follows the configured per-role tier.
   model: (_input, ctx) => ctx.config.tdd?.sessionTiers?.verifier,

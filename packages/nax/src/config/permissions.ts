@@ -278,7 +278,7 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
  *
  * Note what does NOT appear here: any notion of a filesystem root. Containment
  * is not expressible in config by design — the root is a hard boundary that no
- * profile can widen, enforced in src/tools/policy.ts.
+ * profile can widen, enforced in packages/nax-agent/src/tools/policy.ts.
  */
 function resolveScopedPermissions(config: AgentManagerConfig | undefined, stage: PipelineStage): ResolvedPermissions {
   // No baseline: withRules concatenates the block's allow rules onto []. When
