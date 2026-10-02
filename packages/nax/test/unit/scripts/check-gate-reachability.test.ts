@@ -6,6 +6,7 @@ import {
   collectReachableScriptFiles,
   discoverCheckScripts,
   findUnreachableCheckScripts,
+  findUnreachableCheckScriptsInRepo,
   parseCiEntryPoints,
 } from "@scripts/check-gate-reachability";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -170,6 +171,43 @@ describe("findUnreachableCheckScriptsInRepo — package root vs repo root", () =
     writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "      - run: bun run check:a\n");
 
     expect(findUnreachableCheckScriptsInRepo(pkg, dir)).toEqual(["check-b.ts"]);
+  });
+});
+
+describe("findUnreachableCheckScriptsInRepo across workspace packages", () => {
+  let repo = "";
+  afterEach(() => {
+    if (repo) cleanupTempDir(repo);
+    repo = "";
+  });
+
+  function file(rel: string, content: string): void {
+    mkdirSync(join(repo, rel, ".."), { recursive: true });
+    writeFileSync(join(repo, rel), content);
+  }
+
+  function seed(naxAiScripts: Record<string, string>): void {
+    repo = makeTempDir("gate-reach-ws-");
+    file(".github/workflows/ci.yml", "jobs:\n  a:\n    steps:\n      - run: bun run check:all\n");
+    file(
+      "packages/nax/package.json",
+      JSON.stringify({ scripts: { "check:all": "bun scripts/check-a.ts && bun ../repo-tooling/scripts/check-b.ts" } }),
+    );
+    file("packages/nax/scripts/check-a.ts", "");
+    file("packages/repo-tooling/package.json", JSON.stringify({ scripts: { "check:all": "bun run lint" } }));
+    file("packages/repo-tooling/scripts/check-b.ts", "");
+    file("packages/repo-tooling/scripts/check-c.ts", "");
+    file("packages/nax-ai/package.json", JSON.stringify({ scripts: naxAiScripts }));
+  }
+
+  test("a repo-tooling gate reached only from another package counts as reached", () => {
+    seed({ "check:all": "bun ../repo-tooling/scripts/check-c.ts --package=." });
+    expect(findUnreachableCheckScriptsInRepo(join(repo, "packages", "nax"), repo)).toEqual([]);
+  });
+
+  test("a repo-tooling gate no package runs is reported", () => {
+    seed({ "check:all": "bun run lint" });
+    expect(findUnreachableCheckScriptsInRepo(join(repo, "packages", "nax"), repo)).toEqual(["check-c.ts"]);
   });
 });
 

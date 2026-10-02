@@ -110,25 +110,47 @@ export function findUnreachableCheckScripts(inputs: UnreachableInputs): string[]
   return inputs.checkScripts.filter((name) => !reachable.has(name)).sort(byCodePoint);
 }
 
-/** Resolves every input from the repo on disk, then applies the rule.
- *  `packageRoot` owns package.json + scripts/; `repoRoot` owns .github/. */
-export function findUnreachableCheckScriptsInRepo(packageRoot: string, repoRoot: string): string[] {
-  const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
-    scripts?: Record<string, string>;
-  };
-  const packageScripts = pkg.scripts ?? {};
+const TOOLING_DIR = join("packages", "repo-tooling");
 
+function readScripts(dir: string): Record<string, string> {
+  const file = join(dir, "package.json");
+  if (!existsSync(file)) return {};
+  const pkg = JSON.parse(readFileSync(file, "utf8")) as { scripts?: Record<string, string> };
+  return pkg.scripts ?? {};
+}
+
+function workspacePackageDirs(repoRoot: string): string[] {
+  const dir = join(repoRoot, "packages");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .sort(byCodePoint)
+    .map((name) => join(dir, name))
+    .filter((d) => existsSync(join(d, "package.json")));
+}
+
+/** Resolves every input from the repo on disk, then applies the rule.
+ *  The checked scripts are `packageRoot/scripts` plus repo-tooling's (S2-0);
+ *  a script counts as reached when CI or any workspace package's scripts reach it. */
+export function findUnreachableCheckScriptsInRepo(packageRoot: string, repoRoot: string): string[] {
   const ciPath = join(repoRoot, CI_WORKFLOW);
   const ci = existsSync(ciPath)
     ? parseCiEntryPoints(readFileSync(ciPath, "utf8"))
     : { scriptNames: [], scriptFiles: [] };
 
-  return findUnreachableCheckScripts({
-    checkScripts: discoverCheckScripts(packageRoot),
-    entryScriptNames: ci.scriptNames,
-    entryScriptFiles: ci.scriptFiles,
-    packageScripts,
-  });
+  const reached = new Set<string>();
+  for (const dir of [packageRoot, ...workspacePackageDirs(repoRoot)]) {
+    const inputs = {
+      entryScriptNames: ci.scriptNames,
+      entryScriptFiles: ci.scriptFiles,
+      packageScripts: readScripts(dir),
+    };
+    for (const file of collectReachableScriptFiles(inputs)) reached.add(file);
+  }
+
+  const checkScripts = [
+    ...new Set([...discoverCheckScripts(packageRoot), ...discoverCheckScripts(join(repoRoot, TOOLING_DIR))]),
+  ];
+  return checkScripts.filter((name) => !reached.has(name)).sort(byCodePoint);
 }
 
 function main() {
@@ -142,7 +164,11 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`OK: all ${discoverCheckScripts(packageRoot).length} check scripts are reachable from CI`);
+  const total = new Set([
+    ...discoverCheckScripts(packageRoot),
+    ...discoverCheckScripts(join(findRepoRoot(packageRoot), TOOLING_DIR)),
+  ]).size;
+  console.log(`OK: all ${total} check scripts are reachable from CI`);
 }
 
 if (import.meta.main) {
