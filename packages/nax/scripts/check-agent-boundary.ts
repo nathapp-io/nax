@@ -24,16 +24,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { byCodePoint } from "../src/utils/sort";
-import { resolveSpecifier, stripComments, walk } from "./check-import-cycles";
+import { resolveSpecifier, walk } from "./check-import-cycles";
 import { isInMoveSet, loadMoveManifest, type MoveManifest } from "./lib/agent-move-manifest";
+import { specifiersOf } from "./lib/import-specifiers";
+
+export { specifiersOf } from "./lib/import-specifiers";
 
 const ROOT = join(import.meta.dir, "..");
 const BASELINE_FILE = join(import.meta.dir, "baselines", "agent-boundary-baseline.json");
 const MANIFEST_FILE = join(import.meta.dir, "s1-move-manifest.json");
-
-const STATIC_RE = /^[ \t]*(?:import|export)\s+(?:type\s+)?[A-Za-z0-9_$*,{}\s]*?from\s+["']([^"']+)["']/gm;
-const SIDE_EFFECT_RE = /^[ \t]*import\s+["']([^"']+)["']/gm;
-const DYNAMIC_RE = /\bimport\(\s*["']([^"']+)["']\s*\)/g;
 
 export interface BoundaryEdge {
   readonly from: string;
@@ -44,17 +43,6 @@ interface Baseline {
   count: number;
   updatedAt: string;
   edges: string[];
-}
-
-export function specifiersOf(source: string): string[] {
-  const text = stripComments(source);
-  const specs: string[] = [];
-  for (const re of [STATIC_RE, SIDE_EFFECT_RE, DYNAMIC_RE]) {
-    for (const match of text.matchAll(re)) {
-      if (match[1]) specs.push(match[1]);
-    }
-  }
-  return specs;
 }
 
 function toRel(rootDir: string, file: string): string {
