@@ -17,11 +17,18 @@ describe("checkNaxAiPin", () => {
   test("fails when the dependency is missing", () => {
     expect(checkNaxAiPin({ dependencies: {} }, { version: "0.1.16" })).toMatch(/missing/);
   });
-  test("the real repo passes", async () => {
+  test("names the package it checks", () => {
+    expect(checkNaxAiPin({ dependencies: {} }, { version: "0.1.16" }, "packages/nax-agent")).toMatch(
+      /packages\/nax-agent/,
+    );
+  });
+  test("the real repo passes, for nax and for nax-agent", async () => {
     const { findRepoRoot } = await import("@scripts/lib/repo-root");
     const root = findRepoRoot(import.meta.dir);
-    const nax = await Bun.file(`${root}/packages/nax/package.json`).json();
     const ai = await Bun.file(`${root}/packages/nax-ai/package.json`).json();
-    expect(checkNaxAiPin(nax, ai)).toBeNull();
+    for (const label of ["packages/nax", "packages/nax-agent"]) {
+      const pkg = await Bun.file(`${root}/${label}/package.json`).json();
+      expect(checkNaxAiPin(pkg, ai, label)).toBeNull();
+    }
   });
 });
