@@ -66,10 +66,11 @@ scripts themselves live in `packages/repo-tooling/scripts/` and are invoked as
 `bun ../repo-tooling/scripts/check-*.ts`; that is deliberate — one gate implementation,
 scoped to each package, rather than a fork per package.
 
-**There is no coverage step here.** nax's CI `Coverage floor` step runs nax's unit,
-integration and ui suites plus nax-agent's unit and integration suites in one invocation
-and gates this package's sources too, so a second coverage run would only restate it. Run
-`bun run test:coverage` from `packages/nax` after changes that add or move tests.
+**Coverage is gated here.** `bun run test:coverage` runs `test/unit/` and `test/integration/`
+with coverage and enforces 80% lines and functions overall and 80% per `src/` file against
+`scripts/baselines/coverage-per-file-baseline.json`. With `--require-all-files` it also fails on
+any `src/` file that holds code but has no record in the report. CI runs it in this package's
+job. The baseline only shrinks, and it must be empty before the first publish (spec S2 R2).
 
 ## Architecture
 
