@@ -72,9 +72,22 @@ const FLOOR = { lines: 0.8, functions: 0.8 };
  */
 const AGGREGATE_SCOPE_PREFIX = "src/";
 
+/**
+ * nax-agent's sources, as lcov names them from this package (`../nax-agent/src/...`).
+ * nax's own tests still exercise them, and nax-agent's tests run in the same
+ * invocation (AGENT_SUITES), so the gate measures exactly the union it measured
+ * before the S1-5 move. nax-agent's own tests alone do not reach the floor yet.
+ */
+const AGENT_SCOPE_PREFIX = "../nax-agent/src/";
+const SCOPE_PREFIXES: readonly string[] = [AGGREGATE_SCOPE_PREFIX, AGENT_SCOPE_PREFIX];
+
+function inScope(file: string, prefixes: string | readonly string[]): boolean {
+  return (typeof prefixes === "string" ? [prefixes] : prefixes).some((p) => file.startsWith(p));
+}
+
 /** Per-file floor for the second ratchet described above. */
 const PER_FILE_FLOOR = 0.8;
-const PER_FILE_SCOPE_PREFIX = AGGREGATE_SCOPE_PREFIX;
+const PER_FILE_SCOPE_PREFIXES = SCOPE_PREFIXES;
 /** Baseline comparisons ignore drift below this to absorb run-to-run rounding noise. */
 const PER_FILE_EPSILON = 0.001;
 
@@ -95,7 +108,13 @@ const PER_FILE_EPSILON = 0.001;
 export const UNMEASURABLE: Record<string, string> = {};
 
 /** Suites the gate measures, in one invocation. `test/e2e/` is deliberately out. */
-const GATED_SUITES = ["test/unit/", "test/integration/", "test/ui/"];
+const AGENT_SUITES = ["../nax-agent/test/unit/", "../nax-agent/test/integration/"];
+const GATED_SUITES = [
+  "test/unit/",
+  "test/integration/",
+  "test/ui/",
+  ...AGENT_SUITES.filter((s) => existsSync(join(ROOT, s))),
+];
 
 /** Wall-clock cap for the coverage run, in ms. A full merged run takes about 55s. */
 const RUN_TIMEOUT_MS = 300_000;
@@ -206,20 +225,20 @@ async function runCoverage(): Promise<number> {
 
 /**
  * Sums the aggregate line/function totals, counting only records under
- * `AGGREGATE_SCOPE_PREFIX`. Records outside it (test helpers, preload) are skipped.
+ * `SCOPE_PREFIXES`. Records outside them (test helpers, preload) are skipped.
  */
-export function parseLcov(text: string, scopePrefix: string = AGGREGATE_SCOPE_PREFIX): Totals {
+export function parseLcov(text: string, scopePrefixes: string | readonly string[] = SCOPE_PREFIXES): Totals {
   const totals: Totals = { linesFound: 0, linesHit: 0, fnFound: 0, fnHit: 0 };
-  let inScope = false;
+  let included = false;
   for (const line of text.split("\n")) {
     const colon = line.indexOf(":");
     if (colon === -1) continue;
     const tag = line.slice(0, colon);
     if (tag === "SF") {
-      inScope = line.slice(colon + 1).startsWith(scopePrefix);
+      included = inScope(line.slice(colon + 1), scopePrefixes);
       continue;
     }
-    if (!inScope) continue;
+    if (!included) continue;
     const value = Number.parseInt(line.slice(colon + 1), 10);
     if (Number.isNaN(value)) continue;
     switch (tag) {
@@ -250,7 +269,7 @@ export interface PerFileBaseline {
   byFile: Record<string, number>;
 }
 
-/** Parses per-file `SF:`/`LF:`/`LH:` records from an lcov report, scoped to PER_FILE_SCOPE_PREFIX. */
+/** Parses per-file `SF:`/`LF:`/`LH:` records from an lcov report, scoped to PER_FILE_SCOPE_PREFIXES. */
 export function parsePerFileLines(text: string): Map<string, number> {
   const result = new Map<string, number>();
   let file: string | null = null;
@@ -266,7 +285,7 @@ export function parsePerFileLines(text: string): Map<string, number> {
     } else if (line.startsWith("LH:")) {
       lh = Number.parseInt(line.slice(3), 10) || 0;
     } else if (line.startsWith("end_of_record")) {
-      if (file?.startsWith(PER_FILE_SCOPE_PREFIX)) result.set(file, pct(lh, lf));
+      if (file !== null && inScope(file, PER_FILE_SCOPE_PREFIXES)) result.set(file, pct(lh, lf));
       file = null;
     }
   }
@@ -390,7 +409,7 @@ function checkPerFile(perFile: Map<string, number>, opts: { list: boolean }): bo
   }
 
   console.log(
-    `\n── per-file coverage ratchet (${PER_FILE_SCOPE_PREFIX}) ──\n  ${belowFloor.length} files below floor (baseline ${Object.keys(baseline.byFile).length}).`,
+    `\n── per-file coverage ratchet (${PER_FILE_SCOPE_PREFIXES.join(", ")}) ──\n  ${belowFloor.length} files below floor (baseline ${Object.keys(baseline.byFile).length}).`,
   );
 
   if (newViolations.length === 0 && grown.length === 0 && missing.length === 0) {
@@ -449,7 +468,7 @@ async function main() {
   const perFile = parsePerFileLines(lcovText);
 
   const fmt = (n: number) => `${(n * 100).toFixed(2)}%`;
-  console.log(`\n── coverage gate (${GATED_SUITES.join(", ")} → ${AGGREGATE_SCOPE_PREFIX}) ──`);
+  console.log(`\n── coverage gate (${GATED_SUITES.join(", ")} → ${SCOPE_PREFIXES.join(", ")}) ──`);
   console.log(`  lines:     ${fmt(lines)}  (${totals.linesHit}/${totals.linesFound}, floor ${fmt(FLOOR.lines)})`);
   console.log(`  functions: ${fmt(functions)}  (${totals.fnHit}/${totals.fnFound}, floor ${fmt(FLOOR.functions)})`);
 
