@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { assertDefined, makeSpawn, withDepsRestore } from "@test/helpers";
+import { runQualityCommand } from "@/quality";
 import type { CommandLauncher, LaunchRequest } from "@/sandbox";
 import { compileToolPolicy } from "@/tools/policy";
 import type { ToolRunContext } from "@/tools/registry";
@@ -77,7 +78,9 @@ describe("RunCommand argv branch", () => {
   });
 
   test("the declared branch still works and is unaffected", async () => {
-    const declaredOnly = createRunCommandTool(new Map([["test", "echo ok"]]), {});
+    const declaredOnly = createRunCommandTool(new Map([["test", "echo ok"]]), {
+      runDeclaredCommand: runQualityCommand,
+    });
     // Unlike the exec-branch tests above, this one actually runs the
     // command, so it needs a cwd that exists — /repo is deliberately
     // fictional everywhere else in this file.

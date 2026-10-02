@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir } from "@test/helpers";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import type { BashApprovalMode } from "@/config/bash-approval";
+import { runQualityCommand } from "@/quality";
 import { type CommandLauncher, createCommandLauncher, rawBashRefusalReason } from "@/sandbox";
 import { realOrRaw } from "@/utils/realpath";
 
@@ -83,6 +84,7 @@ describe("sandbox wiring (production seam)", () => {
       declared: ["RunCommand"],
       grants: [{ tool: "RunCommand", patterns: ["*"] }],
       declaredCommands: new Map([["hello", "echo hi"]]),
+      runDeclaredCommand: runQualityCommand,
       bashApproval: "raw",
       launcher,
     });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AgentStreamEvent, IAgentStreamEventBus } from "@/runtime";
+import type { IAgentStreamEventBus } from "@/runtime";
 
 export interface ActiveCallState {
   callId: string;
@@ -44,7 +44,7 @@ export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
   useEffect(() => {
     if (!bus) return;
 
-    const unsubscribe = bus.onAgentStream((event: AgentStreamEvent) => {
+    const unsubscribe = bus.onAgentStream((event) => {
       // Mutate the ref's Map directly — the render-facing snapshot is taken
       // separately in the drain effect below, so copying per event (at token
       // rate) bought nothing. Values are still replaced rather than mutated,

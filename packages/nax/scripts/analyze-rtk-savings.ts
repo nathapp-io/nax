@@ -12,6 +12,7 @@
  */
 import { NaxError } from "../src/errors";
 import { buildGitArgv } from "../src/tools/git";
+import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "../src/utils/nax-owned-paths";
 
 export interface CorpusEntry {
   readonly id: string;
@@ -51,14 +52,14 @@ const COMMIT_RELATIVE_SHAPES: readonly { id: string; input: (ref: string) => Rec
 export function buildGitCorpus(sampleRefs: readonly string[] = ["HEAD"]): CorpusEntry[] {
   const out: CorpusEntry[] = [];
   for (const shape of GIT_SHAPES) {
-    const argv = buildGitArgv(shape.input);
+    const argv = buildGitArgv(shape.input, NAX_OWNED_GIT_EXCLUDE_PATHSPECS);
     if (!Array.isArray(argv)) continue;
     out.push({ id: shape.id, kind: "argv", argv: ["git", ...argv], verb: String(shape.input.subcommand) });
   }
   for (const shape of COMMIT_RELATIVE_SHAPES) {
     for (const [i, ref] of sampleRefs.entries()) {
       const input = shape.input(ref);
-      const argv = buildGitArgv(input);
+      const argv = buildGitArgv(input, NAX_OWNED_GIT_EXCLUDE_PATHSPECS);
       if (!Array.isArray(argv)) continue;
       out.push({
         id: sampleRefs.length > 1 ? `${shape.id}[${i}]` : shape.id,

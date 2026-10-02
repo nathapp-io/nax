@@ -2,18 +2,14 @@
  * `resolveCodingToolSupport`'s decision tree, extracted from
  * coding-tool-support.ts (A7 cognitive-complexity drain).
  *
- * coding-tool-support.ts sat at the 600-line source cap, so the extraction
- * could not land there: this sibling holds every named predicate and branch
- * body, and `resolveCodingToolSupport` itself stays in coding-tool-support.ts
- * as the sequencer — guard clauses first, then the support-args assembly — so
- * the module's public surface is unchanged.
+ * `resolveCodingToolSupport` is the sequencer, defined last in this file: guard
+ * clauses first, then the support-args assembly.
  *
- * Import direction: this file imports TYPES from coding-tool-support.ts only
- * (`import type`, erased at runtime and excluded from `check:import-cycles`).
- * `_codingToolSupportDeps` stays defined in coding-tool-support.ts (tests
- * reassign its properties through that module) and reaches
- * `loadPackageEffectiveConfig` by reference; the property is read at call
- * time, so a test's reassignment before the dispatch still lands.
+ * Import direction: this file is nax's side of the coding-tool seam (S1 spec
+ * section 4.2, port 1). It owns `resolveCodingToolSupport`, which reads nax
+ * config and supplies every nax-owned port, and calls the move set's
+ * `buildCodingToolSupport` with resolved arguments only. The move set never
+ * imports this file.
  */
 
 import { getSafeLogger } from "@/logger";
@@ -21,23 +17,27 @@ import { type CommandLauncher, runTmpRoot, sessionTmpDirUnder } from "@/sandbox"
 import {
   BASH_TOOL_NAME,
   type CodingToolName,
+  type DeclaredCommandRunner,
   EXEC_TOOL_NAME,
+  expandMcpRuleGrants,
   mcpRuleAdmits,
+  type ProtectedPathsPolicy,
   partitionMcpRules,
   type ResolvedProviderTools,
   resolveProviderTools,
   type ToolGrant,
 } from "@/tools";
 import type { ToolAuditHeader } from "@/tools/tool-audit";
-import type { loadConfigForPackage, NaxConfig } from "../config";
+import { loadConfigForPackage, type NaxConfig } from "../config";
 import { toolAuditDir } from "../config/paths";
-import type { ResolvedPermissions } from "../config/permissions";
-import type { QualityCommandSpec } from "../quality";
+import { type ResolvedPermissions, resolvePermissions } from "../config/permissions";
+import { type QualityCommandSpec, runQualityCommand } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { errorMessage } from "../utils/errors";
 import { resolveSessionSandbox } from "./coding-tool-sandbox";
-import type { buildCodingToolSupport } from "./coding-tool-support";
+import { buildCodingToolSupport, buildLedgerSessionName, type CodingToolSupport } from "./coding-tool-support";
 import { resolvePackageName } from "./exec-package-name";
+import { naxProtectedPaths } from "./nax-protected-paths";
 import type { AgentRunOptions } from "./types";
 import { UNIVERSAL_CODING_TOOLS } from "./universal-coding-tools";
 
@@ -46,6 +46,7 @@ export type ResolveCodingToolSupportOptions = Pick<
   AgentRunOptions,
   | "declaredTools"
   | "providers"
+  | "commandInterceptor"
   | "toolPatterns"
   | "codingToolRoot"
   | "codingToolFileOutput"
@@ -378,6 +379,7 @@ export async function resolveDispatchLauncher(
     needsLauncher: declared.includes(BASH_TOOL_NAME) || declared.includes(EXEC_TOOL_NAME),
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     ...(runRoot !== undefined ? { tmpDir: sessionTmpDirUnder(runRoot, sessionName), runTmpRoot: runRoot } : {}),
+    protectedPaths: _codingToolSupportDeps.protectedPaths(),
   });
 }
 
@@ -415,4 +417,114 @@ export function resolvedDispatchArgs(inputs: ResolvedDispatchInputs): Partial<Re
     ...(inputs.packageName !== undefined ? { packageName: inputs.packageName } : {}),
     ...(inputs.launcher !== undefined ? { launcher: inputs.launcher } : {}),
   };
+}
+
+/** Injectable deps for testability — mirrors the _agentManagerDeps pattern. Each nax-owned port has its default here. */
+export const _codingToolSupportDeps: {
+  loadConfigForPackage: typeof loadConfigForPackage;
+  /** Port 7: the declared-command runner RunCommand calls. */
+  runDeclaredCommand: DeclaredCommandRunner;
+  /** Port 6: the host-owned paths the tools and the sandbox protect. */
+  protectedPaths: () => ProtectedPathsPolicy;
+} = {
+  loadConfigForPackage,
+  runDeclaredCommand: runQualityCommand,
+  protectedPaths: naxProtectedPaths,
+};
+
+/**
+ * Resolve coding-tool support for one dispatch, from the run options alone.
+ *
+ * nax-permission-mode-allow: delegates the decision to resolvePermissions();
+ * decides nothing itself.
+ *
+ * Exists so the two real hops (`operations/build-hop-callback.ts`,
+ * `runtime/session-run-hop.ts`) resolve support identically and cannot drift:
+ * a tool wired into one hop and not the other is invisible until an operation
+ * happens to dispatch through the other. Call this, never the raw producer in
+ * `coding-tool-support.ts` — it takes no `auditDir`, so it yields a
+ * non-recording ledger sink.
+ */
+export async function resolveCodingToolSupport(
+  options: ResolveCodingToolSupportOptions,
+): Promise<CodingToolSupport | undefined> {
+  const declared = options.declaredTools ?? [];
+  const resolved = resolvePermissions(options.config, options.pipelineStage ?? "run");
+  // PR1 (single-frame redesign, #2066 residual): the declared-command map and
+  // the quality-derived fields around it resolve from the STORY'S PACKAGE
+  // config when one is known — see loadPackageEffectiveConfig.
+  const packageEffectiveConfig = await loadPackageEffectiveConfig(_codingToolSupportDeps, options);
+  // RULING F2: options.config is typed as the agent-manager Pick, yet carries
+  // the full NaxConfig at runtime — the read is widened inside
+  // extractDispatchConfigFields. Package-first: a per-package
+  // quality.commands/install/execution override is honored; options.config
+  // covers a root story or a failed resolution.
+  const fields = extractDispatchConfigFields(packageEffectiveConfig ?? options.config);
+  const declaredCommands = declaredCommandsFrom(fields.commands);
+  // nax#2066: the declared-command map came from the ROOT config for a package
+  // story, and nothing in the run artifacts said so — it took a transcript audit
+  // to find. Name what the agent was actually given, once per dispatch.
+  getSafeLogger()?.debug("tools", "Declared commands resolved for dispatch", {
+    storyId: options.storyId ?? "_dispatch",
+    commands: [...declaredCommands.keys()],
+    permissionProfile: options.config?.execution?.permissionProfile ?? "unrestricted",
+    codingToolRoot: options.codingToolRoot,
+  });
+  const root = options.codingToolRoot;
+  const commandCwd = resolveCommandCwd(options.codingToolPackageDir, options.projectDir, root);
+  const auditDir = resolveDispatchAuditDir(root, options.outputDir, options.featureName);
+  const sessionName = buildLedgerSessionName({
+    ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
+    ...(options.sessionRole !== undefined ? { sessionRole: options.sessionRole } : {}),
+    ...(options.featureName !== undefined ? { featureName: options.featureName } : {}),
+  });
+  const header = buildLedgerHeader(options);
+  const packageName = await resolvePackageNameForDispatch(root, declared, commandCwd);
+  const { allow, denied, asked, providerResult } = await resolveProviderContribution(resolved, options, root);
+  const declaredWithProviders = unionDeclaredTools(declared, providerResult);
+  warnDroppedProviders(providerResult, options.storyId);
+  // Resolved BEFORE this guard (R15): a provider-only op declares no built-in
+  // names, yet appending the provider names above is exactly what makes it a
+  // real op. An empty union is the only case that yields no support.
+  if (declaredWithProviders.length === 0) return undefined;
+  // Deny and ask bind under EVERY profile (spec R10), so Mcp deny/ask rules are
+  // expanded even when providerScope is "all" — a deny must be able to withdraw
+  // one tool from an otherwise fully-granted provider.
+  const denyRules = [...denied.grants, ...expandMcpRuleGrants(denied.mcpPatterns, providerResult.entries)];
+  const askRules = [...asked.grants, ...expandMcpRuleGrants(asked.mcpPatterns, providerResult.entries)];
+  const launcher = await resolveDispatchLauncher(options, declared, sessionName);
+  return buildCodingToolSupport({
+    root: options.codingToolRoot,
+    pipelineStage: options.pipelineStage ?? "run",
+    // No `repoRoot`: post single-frame redesign (PR2) it equals `root`, so
+    // buildCodingToolSupport's `args.repoRoot ?? args.root` fallback supplies it.
+    commandCwd,
+    grants: [...allow.grants, ...providerResult.grants],
+    bashApproval: resolved.bashApproval,
+    declared: declaredWithProviders,
+    extraTools: providerResult.tools,
+    providerIdByTool: providerResult.providerIdByTool,
+    declaredCommands,
+    runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
+    interceptor: options.commandInterceptor,
+    protectedPaths: _codingToolSupportDeps.protectedPaths(),
+    stripEnvVars: fields.stripEnvVars,
+    sessionName,
+    header,
+    allowScripts: fields.allowScripts,
+    naxAllowWrite: options.config?.execution?.sandbox?.filesystem.allowWrite ?? [],
+    ...optionalDispatchArgs(options),
+    ...resolvedDispatchArgs({
+      packageDir: options.codingToolPackageDir,
+      projectDir: options.projectDir,
+      commandCwd,
+      denyRules,
+      askRules,
+      denyPaths: fields.denyPaths,
+      shell: fields.shell,
+      auditDir,
+      packageName,
+      launcher,
+    }),
+  });
 }

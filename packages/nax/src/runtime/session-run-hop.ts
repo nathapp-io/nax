@@ -1,5 +1,5 @@
 import { buildRunInteractionHandler } from "../agents/acp/adapter";
-import { resolveCodingToolSupport } from "../agents/coding-tool-support";
+import { resolveCodingToolSupport } from "../agents/coding-tool-support-resolve";
 import type { IAgentManager } from "../agents/manager-types";
 import { applyDiffAccessForAgentProtocol, promptWithToolPreamble } from "../agents/tool-preamble";
 import type { AgentResult, AgentRunOptions } from "../agents/types";

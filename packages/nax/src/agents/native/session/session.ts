@@ -7,6 +7,7 @@
  * either no-ops or transcript-file handles".
  */
 
+import type { AgentStreamEvent } from "@/agents/agent-stream-event-types";
 import { NaxError } from "@/agents/infra";
 import type { OpenSessionOpts, SessionHandle } from "@/agents/session-types";
 import { createSpinBreaker, type SpinBreaker } from "@/runtime/spin-breaker";
@@ -56,7 +57,7 @@ export const nativeSessionTimeouts = new Map<string, number>();
 export const nativeSessionStreamHooks = new Map<
   string,
   {
-    onStreamActivity?: (event: import("@/runtime").AgentStreamEvent) => void;
+    onStreamActivity?: (event: AgentStreamEvent) => void;
     onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
   }
 >();

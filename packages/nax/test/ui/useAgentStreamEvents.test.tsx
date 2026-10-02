@@ -34,7 +34,7 @@ function started(overrides: Partial<AgentStreamEvent> = {}): AgentStreamEvent {
     agentName: "claude",
     sessionName: "nax-US-001",
     storyId: "US-001",
-    stage: "execution",
+    stage: "run",
     timestamp: 1_000,
     model: "claude-opus-5",
     timeoutSeconds: 600,
@@ -147,7 +147,7 @@ describe("useAgentStreamEvents", () => {
       expect(lastFrame()).toContain("agent:claude");
       expect(lastFrame()).toContain("model:claude-opus-5");
       expect(lastFrame()).toContain("story:US-001");
-      expect(lastFrame()).toContain("stage:execution");
+      expect(lastFrame()).toContain("stage:run");
       expect(lastFrame()).toContain("status:active");
       unmount();
     });

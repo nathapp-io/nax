@@ -20,7 +20,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeNaxConfig, makeTempDir, stubSessionTmpDeps, withDepsRestore } from "@test/helpers";
-import { resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import { _launcherDeps, _resetSandboxRegistryForTests, _sessionTmpDeps, runTmpRoot } from "@/sandbox";
 
 let root: string;

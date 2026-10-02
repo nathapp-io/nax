@@ -16,7 +16,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
-import { _codingToolSupportDeps, resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { _codingToolSupportDeps, resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import type { McpServerConfig } from "@/config";
 import { _mcpClientDeps } from "@/mcp/client";
 import { buildRunDispatchOptions } from "@/operations/call-run-options";

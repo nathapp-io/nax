@@ -15,21 +15,12 @@
  * 64KB pipe buffer and deadlocks a naive implementation.
  */
 
-import type { CommandInterceptor, InterceptRequest } from "@/execution/command-interceptor";
+import type { InterceptRequest } from "@/execution/command-interceptor";
 import { interceptArgv } from "@/execution/command-interceptor";
 import { gitWithTimeout } from "@/utils/git-exec";
-import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
+import { gitExcludePathspecsOf } from "./protected-paths";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 import { cutToByteCap, READ_CEILING } from "./truncate";
-
-/**
- * Interception seam for the Git TOOL only.
- *
- * Deliberately here and not on `_gitDeps`: `gitWithTimeout` is shared by 52
- * callers, nine of which machine-parse `log`/`diff` stdout. Compacting their
- * output breaks them silently. Only this tool's output is agent-facing.
- */
-export const _gitToolDeps = { interceptor: undefined as CommandInterceptor | undefined };
 
 /**
  * Read-only verbs. Mutating verbs are not representable in the input type.
@@ -196,7 +187,14 @@ function looksLikeFlag(value: string): boolean {
   return value.startsWith("-");
 }
 
-export function buildGitArgv(input: Record<string, unknown>): string[] | { error: string } {
+/**
+ * `defaultExcludes`: pathspecs appended to an unscoped call (the host's own
+ * state, nax#2007); none by default.
+ */
+export function buildGitArgv(
+  input: Record<string, unknown>,
+  defaultExcludes: readonly string[] = [],
+): string[] | { error: string } {
   const subcommand = input.subcommand;
   if (typeof subcommand !== "string" || !GIT_READ_VERBS.includes(subcommand)) {
     return { error: `subcommand must be one of: ${GIT_READ_VERBS.join(", ")}` };
@@ -305,14 +303,14 @@ export function buildGitArgv(input: Record<string, unknown>): string[] | { error
     // the command's own scope was. `.` is resolved by git against the cwd,
     // which gitWithTimeout sets to the permitted root.
     argv.push(".");
-    // nax's own run state under .nax/ is git-tracked during a run, so an
+    // The host's own run state under .nax/ is git-tracked during a run, so an
     // unscoped call reported it back as the agent's diff (#2007). Excluded only
     // on this DEFAULT branch: a caller that names a path under .nax/ gets it --
     // the tool is read-only, and silently returning nothing for an explicitly
     // requested path would be a worse failure than the one being fixed.
     // `blame` is exempt because git rejects exclude pathspecs on it and exits
     // 128; do not "unify" it back in.
-    if (subcommand !== "blame") argv.push(...NAX_OWNED_GIT_EXCLUDE_PATHSPECS);
+    if (subcommand !== "blame") argv.push(...defaultExcludes);
     return argv;
   }
 
@@ -372,12 +370,13 @@ export const gitTool: CodingTool = {
   },
 
   async run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult> {
-    const built = buildGitArgv(input);
+    const built = buildGitArgv(input, gitExcludePathspecsOf(ctx));
     if ("error" in built) return { content: built.error, isError: true };
+    const interceptor = ctx.interceptor;
 
     try {
       // nax-git-env-allow: not a spawn; the (possibly rewritten) argv runs through gitWithTimeout below
-      const intercepted = await interceptArgv(["git", ...built], ctx.root, _gitToolDeps.interceptor);
+      const intercepted = await interceptArgv(["git", ...built], ctx.root, interceptor);
       // The I/O ceiling, not the model-facing cap — see the `cutToByteCap`
       // call below, which bounds the same body at the same value.
       const ioCeiling = ctx.readCeiling ?? READ_CEILING;
@@ -411,7 +410,7 @@ export const gitTool: CodingTool = {
         // nax-git-env-allow: not a spawn; the postProcess request describing the argv already run
         const req: InterceptRequest = { kind: "argv", argv: ["git", ...built], cwd: ctx.root, site: "git" };
         try {
-          body = _gitToolDeps.interceptor?.postProcess?.(stdout, req)?.output ?? stdout;
+          body = interceptor?.postProcess?.(stdout, req)?.output ?? stdout;
         } catch {
           body = stdout;
         }

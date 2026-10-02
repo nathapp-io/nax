@@ -2,7 +2,6 @@ export { _bashToolDeps, BASH_TIMEOUT_MS, createBashTool, DEFAULT_BASH_SHELL } fr
 export { deleteTool } from "./delete";
 export { _editDeps, editTool } from "./edit";
 export {
-  _gitToolDeps,
   buildGitArgv,
   DEFAULT_LOG_FORMAT,
   DEFAULT_LOG_MAX_COUNT,
@@ -18,6 +17,8 @@ export type { ExecTarget, NormalizeInput, NormalizeResult } from "./package-mana
 export { classifyExec, isKnownManager, normalizeExec, normalizeManagerBinary } from "./package-managers";
 export type { ToolPolicyOptions } from "./policy";
 export { compileToolPolicy, resolveWithin } from "./policy";
+export type { ProtectedPathsPolicy } from "./protected-paths";
+export { gitExcludePathspecsOf, gitIgnorePatternsOf } from "./protected-paths";
 export * from "./provider-adapt";
 export * from "./provider-advertise";
 export * from "./provider-grants";
@@ -35,6 +36,7 @@ export {
   registerCodingTool,
 } from "./registry";
 export { requestCapabilityTool } from "./request-capability";
+export type { DeclaredCommandRequest, DeclaredCommandResult, DeclaredCommandRunner } from "./run-command";
 export { createRunCommandTool, substituteCommand, substituteCommandSpec } from "./run-command";
 export type { CodingToolOutcome, CodingToolRuntime, ToolCallContext } from "./runtime";
 export {

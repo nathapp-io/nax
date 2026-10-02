@@ -32,6 +32,32 @@ export type PipelineStage =
   | "complete";
 
 /**
+ * Every PipelineStage, as an exhaustive record so a new stage cannot be
+ * forgotten here.
+ *
+ * `McpStageSchema` (`src/config/schemas-mcp.ts`) hand-spells the same nine
+ * labels plus `"*"`. That copy is deliberately NOT derived — an unknown stage
+ * must be a schema error at load, not a server that silently attaches to
+ * nothing — but it is a second site to update, and unlike this one nothing in
+ * the compiler catches a stage added to only one of them.
+ */
+const PIPELINE_STAGES: Record<PipelineStage, true> = {
+  plan: true,
+  run: true,
+  setup: true,
+  verify: true,
+  review: true,
+  rectification: true,
+  regression: true,
+  acceptance: true,
+  complete: true,
+};
+
+export function isPipelineStage(value: string): value is PipelineStage {
+  return Object.hasOwn(PIPELINE_STAGES, value);
+}
+
+/**
  * Disposition for an **unset** `permissionProfile` — ruled 2026-08-30 (ENH-45).
  *
  * nax's own pipeline is the caller: every stage runs an agent that must edit

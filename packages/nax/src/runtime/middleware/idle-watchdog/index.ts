@@ -1,7 +1,7 @@
 import type { NaxConfig } from "@/config";
 import { DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG } from "@/config";
 import { getSafeLogger } from "@/logger";
-import type { AgentStreamEvent, IAgentStreamEventBus } from "@/runtime";
+import type { IAgentStreamEventBus } from "@/runtime";
 
 export interface ResolvedIdleWatchdogSettings {
   idleTimeoutMs: number;
@@ -285,7 +285,7 @@ export function attachAgentIdleWatchdog(
     if (activeStates.size > 0) scheduleTickIfNeeded(tickRef, tick, tickIntervalMs);
   }
 
-  const unsubscribe = agentStreamEvents.onAgentStream((event: AgentStreamEvent) => {
+  const unsubscribe = agentStreamEvents.onAgentStream((event) => {
     switch (event.kind) {
       case "agent.call_started": {
         const now = _idleWatchdogDeps.now();

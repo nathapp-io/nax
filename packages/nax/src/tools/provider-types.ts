@@ -13,7 +13,6 @@
 
 import { NaxError } from "@/agents/infra";
 import type { JSONSchema } from "@/agents/tool-descriptor";
-import type { PipelineStage } from "@/config/permissions";
 import type { ToolResult, ToolRunContext } from "./registry";
 
 export type ProviderKind = "static" | "discovered";
@@ -29,7 +28,8 @@ export interface ProviderTool {
 export interface ToolProvider {
   readonly id: string;
   readonly kind: ProviderKind;
-  readonly stages: readonly (PipelineStage | "*")[];
+  /** Stage names this provider attaches to, or "*" for every stage. */
+  readonly stages: readonly string[];
   /**
    * `workdir` is the HOP'S PERMITTED ROOT, never the runtime's workdir. A
    * provider may legitimately expose different tools per working root, and a
@@ -50,6 +50,6 @@ export function validateProviderId(id: string): void {
   }
 }
 
-export function providerAttachesTo(provider: Pick<ToolProvider, "stages">, stage: PipelineStage): boolean {
+export function providerAttachesTo(provider: Pick<ToolProvider, "stages">, stage: string): boolean {
   return provider.stages.some((s) => s === "*" || s === stage);
 }

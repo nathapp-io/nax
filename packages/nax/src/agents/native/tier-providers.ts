@@ -1,7 +1,17 @@
-import type { PrecheckConfig } from "@/config/selectors";
 import { NATIVE_AGENT } from "./models";
 
-export type NativeTierConfig = Pick<PrecheckConfig, "agent" | "models">;
+/**
+ * The two config fields this reads, declared here so the move set needs no nax
+ * config type (S1 spec section 4.2, port 4). nax's `PrecheckConfig` satisfies it.
+ */
+export interface NativeTierConfig {
+  readonly agent?: {
+    readonly native?: { readonly catalogOverrides?: readonly { readonly provider: string }[] };
+  };
+  readonly models?: Readonly<
+    Record<string, Readonly<Record<string, string | { readonly model: string } | undefined>> | undefined>
+  >;
+}
 
 /** The provider prefix of a native id, or undefined when it has none (never guessed). */
 function providerOf(id: string): string | undefined {

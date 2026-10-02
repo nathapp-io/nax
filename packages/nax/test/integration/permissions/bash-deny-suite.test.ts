@@ -17,7 +17,8 @@ import {
   makeNaxConfig,
   makeTempDir,
 } from "@test/helpers";
-import { buildCodingToolSupport, resolveCodingToolSupport } from "@/agents/coding-tool-support";
+import { buildCodingToolSupport } from "@/agents/coding-tool-support";
+import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import { type CommandShadow, createCommandShadow } from "@/command-safety";
 import { type BashApprovalMode, DEFAULT_BASH_APPROVAL_MODE } from "@/config/bash-approval";
 import { type AskResolver, chainAskLinks } from "@/permissions";

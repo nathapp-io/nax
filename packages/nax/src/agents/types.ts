@@ -169,6 +169,11 @@ export interface AgentRunOptions {
   declaredTools?: readonly import("@/tools").CodingToolName[];
   /** Provider-supplied tools to advertise for this dispatch, resolved per hop. */
   providers?: readonly import("@/tools").ToolProvider[];
+  /**
+   * The run's command interceptor (S1 spec port 7), copied from the runtime by
+   * `buildRunDispatchOptions` so both dispatch hops resolve the same one.
+   */
+  commandInterceptor?: import("@/execution/command-interceptor").CommandInterceptor;
   /** Per-tool narrowing from the op's `toolPatterns`; applied to the resolved grants. */
   toolPatterns?: import("@/tools").ToolPatternNarrowing;
   /**

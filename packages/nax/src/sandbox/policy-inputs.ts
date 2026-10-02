@@ -6,7 +6,6 @@ import { readdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { gitWithTimeout } from "@/utils/git-exec";
-import { globalConfigDir, PROJECT_NAX_DIR } from "../config/paths";
 import { SANDBOX_GLOB_CHARS } from "../config/schemas-sandbox";
 import { realOrRaw } from "../utils/realpath";
 
@@ -41,23 +40,23 @@ export async function resolveGitLayout(root: string): Promise<GitLayout> {
 }
 
 /**
- * Top-level entry names under `<root>/.nax` right now (nax#2260). An entry
- * with a glob character is skipped: nax never creates one, and a glob in the
- * policy would make every build throw (F1) -- an agent could otherwise switch
- * the sandbox off by creating `.nax/a*b`.
+ * Top-level entry names under `<root>/<stateDir>` right now (nax#2260;
+ * `stateDir` is `.nax` for nax). An entry with a glob character is skipped:
+ * nax never creates one, and a glob in the policy would make every build
+ * throw (F1) -- an agent could otherwise switch the sandbox off by creating
+ * `.nax/a*b`.
  */
-export async function listNaxEntries(root: string): Promise<string[]> {
+export async function listNaxEntries(root: string, stateDir: string): Promise<string[]> {
   try {
-    const names = await _policyInputDeps.readdir(join(root, PROJECT_NAX_DIR));
+    const names = await _policyInputDeps.readdir(join(root, stateDir));
     return names.filter((name) => !SANDBOX_GLOB_CHARS.test(name));
   } catch {
     return [];
   }
 }
 
-/** Every `credentials*` file in the global nax dir, expanded to literals (F1: no globs). */
-export async function listCredentialFiles(): Promise<string[]> {
-  const dir = globalConfigDir();
+/** Every `credentials*` file in `dir` (the host's credential dir), expanded to literals (F1: no globs). */
+export async function listCredentialFiles(dir: string): Promise<string[]> {
   try {
     const entries = await _policyInputDeps.readdir(dir, { withFileTypes: true });
     return entries.filter((e) => e.name.startsWith("credentials")).map((e) => join(dir, e.name));

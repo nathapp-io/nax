@@ -15,6 +15,7 @@
  * `_sessionTmpDeps`, so `runTmpRoot("r1")` is `/tmp/nax/r1` on any host.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import {
   assertDefined,
   type ConfinedSessionSeam,
@@ -27,7 +28,13 @@ import {
   withSessionSandboxSeam,
 } from "@test/helpers";
 import { _sessionSandboxDeps } from "@/agents/coding-tool-sandbox";
-import { resolveDispatchLauncher } from "@/agents/coding-tool-support-resolve";
+import * as moveSetSupport from "@/agents/coding-tool-support";
+import {
+  _codingToolSupportDeps,
+  resolveCodingToolSupport,
+  resolveDispatchLauncher,
+} from "@/agents/coding-tool-support-resolve";
+import { loadConfigForPackage } from "@/config";
 import {
   _launcherDeps,
   _resetSandboxRegistryForTests,
@@ -49,6 +56,7 @@ describe("resolveDispatchLauncher — US-002 the run's own temp root", () => {
   withSessionSandboxSeam(_sessionSandboxDeps);
   withDepsRestore(_sessionTmpDeps);
   withDepsRestore(_launcherDeps);
+  withDepsRestore(_codingToolSupportDeps, ["protectedPaths"]);
 
   let root: string;
   beforeEach(() => {
@@ -102,5 +110,32 @@ describe("resolveDispatchLauncher — US-002 the run's own temp root", () => {
     const { policy } = await runDispatched();
 
     expect(policy.writeRoots).not.toContain(realOrRaw("/tmp"));
+  });
+
+  test("port 6: the sandbox denies writes to the trust store the protected-paths policy names", async () => {
+    const trustStoreFile = join(root, "trust.json");
+    _codingToolSupportDeps.protectedPaths = () => ({
+      gitExcludePathspecs: [],
+      gitIgnorePatterns: [],
+      projectStateDir: ".nax",
+      credentialDir: root,
+      trustStoreFile,
+    });
+    const { policy } = await runDispatched();
+
+    expect(policy.denyWrite).toContain(realOrRaw(trustStoreFile));
+  });
+});
+
+describe("resolveCodingToolSupport — nax-side entry (S1 spec port 1)", () => {
+  test("lives here, with nax's real config loader as its default dep", () => {
+    expect(typeof resolveCodingToolSupport).toBe("function");
+    expect(_codingToolSupportDeps.loadConfigForPackage).toBe(loadConfigForPackage);
+  });
+
+  test("is no longer exported by the move-set module, which keeps only resolved-argument assembly", () => {
+    expect(Object.keys(moveSetSupport)).not.toContain("resolveCodingToolSupport");
+    expect(Object.keys(moveSetSupport)).not.toContain("_codingToolSupportDeps");
+    expect(typeof moveSetSupport.buildCodingToolSupport).toBe("function");
   });
 });

@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, waitForCondition, withDepsRestore } from "@test/helpers";
 import { _sessionSandboxDeps, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
 import { buildCodingToolSupport } from "@/agents/coding-tool-support";
+import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 import type { BashApprovalMode } from "@/config/bash-approval";
 import { DEFAULT_SANDBOX_CONFIG } from "@/config/schemas-sandbox";
 import { type AskResolver, chainAskLinks } from "@/permissions";
@@ -121,6 +122,7 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
       root: r,
       ...(opts.outputDir !== undefined ? { outputDir: opts.outputDir } : {}),
       needsLauncher: true,
+      protectedPaths: naxProtectedPaths(),
     });
     const support = buildCodingToolSupport({
       root: r,
@@ -371,6 +373,7 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
         needsLauncher: true,
         runTmpRoot: runRoot,
         tmpDir: sessionDir,
+        protectedPaths: naxProtectedPaths(),
       });
     }
 

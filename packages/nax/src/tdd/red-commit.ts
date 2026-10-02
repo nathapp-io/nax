@@ -21,6 +21,7 @@ import { partitionNaxOwnedPaths } from "../tools";
 import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
 import { gitlinkSafeAdd } from "../utils/git-add";
+import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
 import { realOrRaw } from "../utils/realpath";
 import { getChangedFiles } from "./isolation";
 
@@ -74,7 +75,7 @@ async function commitFromRoot(opts: RedCommitOptions, deps: RedCommitDeps): Prom
   if (isBlocked(gitRoot, opts)) return { status: "skipped", reason: "blocked-worktree" };
   const changed = await deps.getChangedFiles(opts.workdir, opts.beforeRef);
   const files = await expandUntrackedDirs(gitRoot, changed, deps);
-  const { kept } = await deps.partitionNaxOwnedPaths(gitRoot, files);
+  const { kept } = await deps.partitionNaxOwnedPaths(gitRoot, files, NAX_GITIGNORE_ENTRIES);
   if (kept.length === 0) return NOTHING;
   const addOpts = { pathspecs: kept, timeoutMs: RED_COMMIT_GIT_TIMEOUT_MS };
   const added = await gitlinkSafeAdd(deps.git, gitRoot, addOpts);

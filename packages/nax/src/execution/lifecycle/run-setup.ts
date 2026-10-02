@@ -40,7 +40,6 @@ import { detectProjectProfile } from "@/project";
 import { createRuntime, type NaxRuntime } from "@/runtime";
 import { SessionManager, sweepFeatureTranscripts } from "@/session";
 import { discoverWorkspacePackages } from "@/test-runners";
-import { _bashToolDeps, _gitToolDeps } from "@/tools";
 import { errorMessage } from "@/utils/errors";
 import { gitSpawnEnv } from "@/utils/git-env";
 import { storyPackageDir } from "@/utils/path-frame";
@@ -201,8 +200,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // from Phase 2 agent sessions, so this always precedes the first git call.
   // `enabled` governs behaviour, not whether the interceptor exists — the state
   // record is written every run, which is what makes spec §7 A/B arms
-  // distinguishable. Entry points that skip setupRun leave the seam undefined
-  // and interception simply does not apply — fail-safe.
+  // distinguishable. It travels on the runtime (`NaxRuntime.commandInterceptor`)
+  // into every dispatch's options; entry points that skip setupRun create
+  // runtimes without one, and interception simply does not apply — fail-safe.
   const ci = config.execution.commandInterceptor;
   // US-003: ONE interceptor for every site this run intercepts. Two instances
   // would probe the rtk binary twice and could disagree about the mode, so the
@@ -215,8 +215,6 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     verbs: ci.git.verbs,
     bash: ci.bash.enabled,
   });
-  _gitToolDeps.interceptor = interceptor;
-  _bashToolDeps.interceptor = interceptor;
 
   // ── Status writer (encapsulates status file state and write logic) ───────
   const statusWriter = new StatusWriter(statusFile, config, {
@@ -250,6 +248,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     agentManager: options.agentManager,
     featureName: options.feature,
     agentStreamEvents: options.agentStreamEvents,
+    commandInterceptor: interceptor,
     // nax#1808: the auto-commit refusal reads runtime.dryRun; without this the
     // flag never leaves RunSetupOptions and the guard is inert in production.
     dryRun: options.dryRun,
