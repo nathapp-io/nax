@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { AuthStamp } from "@nathapp/nax-agent";
 import { _resetFingerprintSalt, createChangeGuard, fingerprintCredential } from "@nathapp/nax-agent/internal";
 import type { CredentialStore, ProviderId, StoredCredential } from "@nathapp/nax-ai";
-import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
-import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import { assertNaxError, cleanupTempDir, type LogCall, makeLogger, makeTempDir } from "#test/helpers/index";
 
 /**
  * Stub `CredentialStore` — the guard only needs `read`, and a mutable `set` lets a
@@ -38,37 +38,34 @@ const API_KEY = (key: string): StoredCredential => ({ kind: "api-key", key });
 const OAUTH = (refresh: string): StoredCredential => ({ kind: "oauth", access: "ACCESS", refresh, expires: 1 });
 
 let dir: string;
-let entries: LogEntry[];
-let unsubscribe: () => void;
+let logger: ReturnType<typeof makeLogger>;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+const originalLogger = getSafeLogger();
 
 beforeEach(() => {
   dir = makeTempDir("nax-change-guard-");
   process.env.NAX_GLOBAL_CONFIG_DIR = dir;
   _resetFingerprintSalt();
 
-  entries = [];
-  resetLogger();
-  initLogger({ level: "silent" });
-  unsubscribe = addSink((entry) => entries.push(entry));
+  logger = makeLogger();
+  setAgentLogger(logger);
 });
 
 afterEach(() => {
-  unsubscribe();
-  resetLogger();
+  setAgentLogger(originalLogger);
   _resetFingerprintSalt();
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   cleanupTempDir(dir);
 });
 
 /** Entries whose event name (the log message) equals `name`. */
-function named(name: string): LogEntry[] {
-  return entries.filter((entry) => entry.message === name);
+function named(name: string): LogCall[] {
+  return logger.calls.filter((entry) => entry.message === name);
 }
 
 /** Every credential-lifecycle entry captured so far. */
-function credentialEvents(): LogEntry[] {
-  return entries.filter((entry) => entry.message.startsWith("credential."));
+function credentialEvents(): LogCall[] {
+  return logger.calls.filter((entry) => entry.message.startsWith("credential."));
 }
 
 describe("createChangeGuard", () => {
@@ -113,7 +110,7 @@ describe("createChangeGuard", () => {
     const guard = createChangeGuard(stub.store, { onChange: "warn", describe: () => undefined });
 
     await guard.read("anthropic");
-    entries.length = 0;
+    logger.reset();
 
     await guard.read("anthropic");
 
@@ -128,7 +125,7 @@ describe("createChangeGuard", () => {
     const guard = createChangeGuard(stub.store, { onChange: "warn", describe: () => undefined });
     await guard.read("anthropic");
     const previousFingerprint = await fingerprintCredential(first);
-    entries.length = 0;
+    logger.reset();
 
     stub.set(second);
     await guard.read("anthropic");
@@ -191,7 +188,7 @@ describe("createChangeGuard", () => {
     stub.set(API_KEY("K1"));
     const guard = createChangeGuard(stub.store, { onChange: "warn", describe: () => undefined });
     await guard.read("anthropic");
-    entries.length = 0;
+    logger.reset();
 
     stub.set(OAUTH("R"));
     await guard.read("anthropic");
@@ -217,7 +214,7 @@ describe("createChangeGuard", () => {
     stub.set(OAUTH("R1"));
     const guard = createChangeGuard(stub.store, { onChange: "refuse", describe: () => undefined });
     await guard.read("anthropic");
-    entries.length = 0;
+    logger.reset();
 
     stub.set(OAUTH("R2"));
     await guard.read("anthropic");
@@ -235,7 +232,7 @@ describe("createChangeGuard", () => {
       describe: () => ({ source: "exec", account: "team-a" }),
     });
     await guard.read("anthropic");
-    entries.length = 0;
+    logger.reset();
 
     stub.set(API_KEY("K2"));
     await guard.read("anthropic");
@@ -283,7 +280,7 @@ describe("createChangeGuard", () => {
     stub.set(API_KEY("K1"));
     const guard = createChangeGuard(stub.store, { onChange: "warn", describe: () => undefined });
     await guard.read("anthropic");
-    entries.length = 0;
+    logger.reset();
 
     stub.set(undefined);
     const result = await guard.read("anthropic");
@@ -301,7 +298,7 @@ describe("createChangeGuard", () => {
 
     stub.set(undefined);
     await guard.read("anthropic");
-    entries.length = 0;
+    logger.reset();
 
     stub.set(original);
     await guard.read("anthropic");
@@ -374,7 +371,7 @@ describe("createChangeGuard", () => {
     const guard = createChangeGuard(stub.store, { onChange: "refuse", describe: () => undefined });
     await guard.read("anthropic");
     const stamp = guard.servedAuth("anthropic");
-    entries.length = 0;
+    logger.reset();
 
     await guard.modify("anthropic", async () => API_KEY("K2"));
     await guard.delete("anthropic");

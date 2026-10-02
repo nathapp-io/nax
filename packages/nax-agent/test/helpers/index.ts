@@ -45,3 +45,4 @@ export {
 export { type FakeSandboxMode, makeFakeSandboxBackend } from "./sandbox";
 export type { StubMode } from "./systemone-stub";
 export { startSystemOneStub, stubAnswerBody } from "./systemone-stub";
+export { type TimerSpyResult, withTimerSpy } from "./timer-spy";

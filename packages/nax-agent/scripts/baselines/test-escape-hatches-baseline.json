@@ -2,7 +2,7 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 0,
-    "looseCast": 7
+    "looseCast": 8
   },
   "updatedAt": "2026-10-02T12:10:07.528Z",
   "byFile": {
@@ -16,6 +16,9 @@
       "looseCast": 1
     },
     "test/unit/logger/redact.test.ts": {
+      "looseCast": 1
+    },
+    "test/unit/native/auth-store-ops.test.ts": {
       "looseCast": 1
     }
   }

@@ -14,15 +14,22 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { NaxError } from "@nathapp/nax-agent/internal";
 import {
   AUTH_HELPER_STDERR_MAX_BYTES,
   AUTH_HELPER_STDOUT_MAX_BYTES,
   createExecCredentialSource,
   LEASE_FRESHNESS_MS,
 } from "@nathapp/nax-agent/internal";
-import { assertNaxError, cleanupTempDir, makeTempDir, withTimerSpy } from "@test/helpers";
-import type { NaxError } from "@/errors";
-import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import {
+  assertNaxError,
+  cleanupTempDir,
+  type LogCall,
+  makeLogger,
+  makeTempDir,
+  withTimerSpy,
+} from "#test/helpers/index";
 
 type ExecSource = ReturnType<typeof createExecCredentialSource>;
 
@@ -118,24 +125,21 @@ const DECLINE_REPLY = JSON.stringify({ version: 1, decline: true });
 
 let dir: string;
 let helper: FakeHelper;
-let entries: LogEntry[];
-let unsubscribe: () => void;
+let logger: ReturnType<typeof makeLogger>;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+const originalLogger = getSafeLogger();
 
 beforeEach(() => {
   dir = makeTempDir("nax-exec-source-");
   process.env.NAX_GLOBAL_CONFIG_DIR = dir;
   helper = makeFakeHelper(dir);
 
-  entries = [];
-  resetLogger();
-  initLogger({ level: "silent" });
-  unsubscribe = addSink((entry) => entries.push(entry));
+  logger = makeLogger();
+  setAgentLogger(logger);
 });
 
 afterEach(() => {
-  unsubscribe();
-  resetLogger();
+  setAgentLogger(originalLogger);
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   cleanupTempDir(dir);
 });
@@ -160,8 +164,8 @@ async function readError(source: ExecSource, providerId = "anthropic"): Promise<
 }
 
 /** Entries whose event name (the log message) equals `name`. */
-function named(name: string): LogEntry[] {
-  return entries.filter((entry) => entry.message === name);
+function named(name: string): LogCall[] {
+  return logger.calls.filter((entry) => entry.message === name);
 }
 
 /**
@@ -538,7 +542,7 @@ describe("createExecCredentialSource", () => {
       helper.set({ stdout: credentialReply("LONG-KEY", { expiresAt: Date.now() + 30_000 }) });
       const source = sourceFor();
       await source.read("anthropic");
-      entries.length = 0;
+      logger.reset();
       helper.set({ exitCode: 1 });
 
       await source.read("anthropic");
@@ -566,7 +570,7 @@ describe("createExecCredentialSource", () => {
       helper.set({ stdout: credentialReply("LONG-KEY", { expiresAt: Date.now() + 30_000 }) });
       const source = sourceFor();
       await source.read("anthropic");
-      entries.length = 0;
+      logger.reset();
       helper.set({ exitCode: 1 });
 
       await source.read("anthropic");

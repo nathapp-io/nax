@@ -12,8 +12,8 @@ import {
   providersWithoutCredentials,
   removeStoredProvider,
 } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import { cleanupTempDir, makeLogger, makeTempDir } from "#test/helpers/index";
 
 let dir: string;
 let piPath: string;
@@ -184,22 +184,20 @@ describe("providersWithoutCredentials — reading through the store (US-004)", (
   });
 
   test("AC13: logs credential.resolved for anthropic when ~/.nax/credentials holds an anthropic api-key", async () => {
-    const entries: LogEntry[] = [];
-    resetLogger();
-    initLogger({ level: "silent" });
-    const unsubscribe = addSink((entry) => entries.push(entry));
+    const previous = getSafeLogger();
+    const logger = makeLogger();
+    setAgentLogger(logger);
     try {
       await naxCredentialStore().modify("anthropic", async () => ({ kind: "api-key", key: "sk-anthropic" }));
       _authDeps.ambientAuthAvailable = mock(async () => false);
 
       await providersWithoutCredentials(["anthropic"]);
 
-      const resolved = entries.filter((entry) => entry.message === "credential.resolved");
+      const resolved = logger.calls.filter((entry) => entry.message === "credential.resolved");
       expect(resolved).toHaveLength(1);
       expect(resolved[0].data).toMatchObject({ providerId: "anthropic", source: "file" });
     } finally {
-      unsubscribe();
-      resetLogger();
+      setAgentLogger(previous);
     }
   });
 
