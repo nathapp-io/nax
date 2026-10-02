@@ -188,6 +188,7 @@ The total test count is conserved across the two packages at each move. No test 
 - The "pin is published" step also runs for nax-agent's `@nathapp/nax-ai` pin.
 - `packages/nax-agent/scripts/release.ts`, modelled on nax-ai's, bumps the version and changelog and creates the tag.
 - **Open item for the plan:** npm trusted publishing (OIDC) is configured per package on npmjs.com, which may require the package to exist first. The plan checks npm's current documentation before S2-9 and states whether `0.1.0` needs a one-off publish by the maintainer.
+- `.nax/context.md` (Layout and Releases) and nax-agent's package context stop calling nax-agent private-only and add the `nax-agent-vX.Y.Z` tag and its release order (nax-ai first, then nax-agent, then nax); the generated agent files are regenerated with `nax generate`.
 - Nothing is published without the maintainer's approval of that release.
 
 ## 9. Delivery
