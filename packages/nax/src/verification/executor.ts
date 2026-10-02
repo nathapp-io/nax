@@ -6,7 +6,8 @@
  */
 
 import { resolve } from "node:path";
-import { killProcessGroup, spawn, withAgentOutputEnv } from "@nathapp/nax-agent/internal";
+import { killProcessGroup, withAgentOutputEnv } from "@nathapp/nax-agent/internal";
+import { spawn } from "@/utils/bun-deps";
 import { assertTrusted } from "../trust";
 import type { TestExecutionResult } from "./types";
 

@@ -17,8 +17,9 @@
  * importing the seam directly, which would cycle back to unified-executor.ts.
  */
 
-import { cancellableDelay, errorMessage } from "@nathapp/nax-agent/internal";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { pipelineEventBus } from "@/pipeline/event-bus";
+import { cancellableDelay } from "@/utils/bun-deps";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import { isStalled, loadPRD } from "../prd";

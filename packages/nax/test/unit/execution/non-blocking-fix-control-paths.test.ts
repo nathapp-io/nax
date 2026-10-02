@@ -20,7 +20,6 @@
 import { describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import type { SpawnResult } from "@nathapp/nax-agent/internal";
 import {
   assertDefined,
   makeFinding,
@@ -40,6 +39,7 @@ import {
   runNonBlockingFix,
 } from "@/execution/non-blocking-fix";
 import type { FixReviewVerdict } from "@/review/fix-review";
+import type { SpawnResult } from "@/utils/bun-deps";
 
 // ─── classification: createMeasureSourceDiff ──────────────────────────────────
 

@@ -5,7 +5,8 @@
  * Rejects invalid contestants before any spend occurs.
  */
 
-import { which as defaultWhich, errorMessage } from "@nathapp/nax-agent/internal";
+import { errorMessage } from "@nathapp/nax-agent/internal";
+import { which as defaultWhich } from "@/utils/bun-deps";
 import { ACP_ADAPTER_NAMES, AcpAgentAdapter } from "../agents/acp";
 import type { NaxConfig } from "../config";
 import { deepMergeConfig } from "../config";

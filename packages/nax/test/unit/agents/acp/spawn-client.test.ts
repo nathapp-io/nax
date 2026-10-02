@@ -6,9 +6,9 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { SpawnOptions } from "@nathapp/nax-agent/internal";
 import { assertDefined, waitForCondition, withDepsRestore, withTimerSpy } from "@test/helpers";
 import { _spawnClientDeps, SpawnAcpClient } from "@/agents/acp";
+import type { SpawnOptions } from "@/utils/bun-deps";
 import { makeSpawnResult, stubProcessKill } from "./_spawn-client-test-helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
  */
 
 import { NATIVE_AGENT } from "@nathapp/nax-agent";
-import { spawn } from "@nathapp/nax-agent/internal";
+import { spawn } from "@/utils/bun-deps";
 import { resolveDefaultAgent } from "../agents";
 import type { PrecheckConfig } from "../config/selectors";
 import type { Check } from "./types";

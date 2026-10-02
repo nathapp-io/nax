@@ -5,7 +5,8 @@
  * so it sees all previously merged stories (MFX-005).
  */
 
-import { errorMessage, killProcessGroup, typedSpawn } from "@nathapp/nax-agent/internal";
+import { errorMessage, killProcessGroup } from "@nathapp/nax-agent/internal";
+import { typedSpawn } from "@/utils/bun-deps";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";

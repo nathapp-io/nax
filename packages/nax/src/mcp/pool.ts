@@ -13,10 +13,10 @@
  * so one hop never has two calls in flight against one server.
  */
 
-import { cancellableDelay } from "@nathapp/nax-agent/internal";
 import type { McpServerConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
 import { assertTrusted } from "@/trust";
+import { cancellableDelay } from "@/utils/bun-deps";
 import { connectMcpServer } from "./client";
 import type { McpCallResult, McpConnection, McpToolDescriptor } from "./types";
 

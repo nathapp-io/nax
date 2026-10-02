@@ -24,7 +24,6 @@ export * as infraModule from "#src/infra/index";
 export * from "#src/infra/spin-breaker/index";
 export * from "#src/internal/agent-output-env";
 export * from "#src/internal/argv-exec";
-export * from "#src/internal/bun-deps";
 export * from "#src/internal/command-spec/index";
 export * from "#src/internal/file-lock";
 export * from "#src/internal/git-add";
