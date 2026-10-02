@@ -3,7 +3,7 @@
  * webhook.ts (file-size limit).
  */
 
-import { sleep } from "@/utils/bun-deps";
+import { sleep } from "@nathapp/nax-agent/internal";
 
 /** @internal test seam — see each field for what it exists for. */
 export const _webhookPluginDeps = {

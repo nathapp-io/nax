@@ -18,8 +18,13 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  compileToolPolicy,
+  createCodingToolRuntime,
+  createRunCommandTool,
+  createToolAuditSink,
+} from "@nathapp/nax-agent";
 import { runQualityCommand } from "@/quality";
-import { compileToolPolicy, createCodingToolRuntime, createRunCommandTool, createToolAuditSink } from "@/tools";
 import { markTrusted } from "@/trust";
 import { gitWithTimeout } from "@/utils/git";
 import { naxProtectedPaths } from "../src/agents/nax-protected-paths";

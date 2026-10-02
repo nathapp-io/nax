@@ -2,8 +2,10 @@
 priority: 30
 paths:
   - "packages/nax/*"
+  - "packages/nax-agent/*"
 appliesTo:
   - "packages/nax/test/**/*.ts"
+  - "packages/nax-agent/test/**/*.ts"
 stages:
   - "tdd-test-writer"
   - "rectify"

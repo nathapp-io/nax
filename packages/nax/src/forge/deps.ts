@@ -11,8 +11,7 @@
  * cannot hang a run's completion phase.
  */
 
-import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
-import { killProcessGroup } from "../utils/process-kill";
+import { gitSpawnEnv, hardenedGitArgv, killProcessGroup } from "@nathapp/nax-agent/internal";
 import type { ForgeDeps } from "./types";
 
 /** Default wall-clock cap for any one subprocess (BUG-8). */

@@ -6,6 +6,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { CommandShadow } from "@nathapp/nax-agent";
+import { headlessAskResolver } from "@nathapp/nax-agent";
 import {
   makeMockAgentManager,
   makeMockRuntime,
@@ -15,7 +17,6 @@ import {
   makeStatusWriter,
   makeStory,
 } from "@test/helpers";
-import type { CommandShadow } from "@/command-safety";
 import {
   _acceptanceFixScopeDeps,
   type AcceptanceFixScopeSource,
@@ -29,7 +30,6 @@ import {
 import type { FixCycleContext } from "@/findings";
 import type { DispatchAskWiring, RunDispatchAskOptions } from "@/interaction";
 import { InteractionChain } from "@/interaction";
-import { headlessAskResolver } from "@/permissions";
 
 function fakeWiring(withShadow = true): { wiring: DispatchAskWiring; disposed: () => number } {
   let disposed = 0;

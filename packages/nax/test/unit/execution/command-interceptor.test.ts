@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { CommandInterceptor, InterceptRequest, InterceptResult } from "@/execution/command-interceptor";
-import { interceptArgv, validateRewrite } from "@/execution/command-interceptor";
+import type { CommandInterceptor, InterceptRequest, InterceptResult } from "@nathapp/nax-agent/internal";
+import { interceptArgv, validateRewrite } from "@nathapp/nax-agent/internal";
 
 const req: InterceptRequest = { kind: "argv", argv: ["git", "log", "--oneline"], cwd: "/repo", site: "git" };
 

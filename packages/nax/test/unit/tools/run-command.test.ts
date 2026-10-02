@@ -2,12 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  compileToolPolicy,
+  createRunCommandTool as createBareRunCommandTool,
+  createCodingToolRuntime,
+  substituteCommand,
+} from "@nathapp/nax-agent/internal";
 import { withTempDir } from "@test/helpers";
 import { runQualityCommand } from "@/quality";
 import { buildScopedCommand } from "@/test-runners/scoped-selection";
-import { compileToolPolicy } from "@/tools/policy";
-import { createRunCommandTool as createBareRunCommandTool, substituteCommand } from "@/tools/run-command";
-import { createCodingToolRuntime } from "@/tools/runtime";
 
 /** Production wires nax's quality runner (S1 spec port 7); every tool here gets it. */
 const createRunCommandTool = (...[declared, opts]: Parameters<typeof createBareRunCommandTool>) =>

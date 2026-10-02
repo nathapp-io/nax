@@ -16,7 +16,7 @@
 import { mkdir, rename, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
-import { isProcessAlive } from "@/utils/process-alive";
+import { isProcessAlive } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { tryExclusiveCreate } from "./lock";

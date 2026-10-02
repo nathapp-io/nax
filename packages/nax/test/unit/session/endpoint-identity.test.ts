@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionHandle, SessionModel } from "@/agents/session-types";
+import type { SessionHandle, SessionModel } from "@nathapp/nax-agent";
 import { decideReuse, sameEndpoint } from "@/session/endpoint-identity";
 import type { SessionDescriptor } from "@/session/types";
 

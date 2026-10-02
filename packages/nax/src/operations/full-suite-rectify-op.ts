@@ -1,9 +1,9 @@
+import { commandSpecIncludes, renderCommandSpec } from "@nathapp/nax-agent/internal";
 import { autofixConfigSelector } from "../config";
 import type { AutofixConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder, repoScopedRectification } from "../prompts";
-import { commandSpecIncludes, renderCommandSpec } from "../quality/command-spec";
 import { storyRoutingModel } from "./story-routing-model";
 import { parseTestEditDeclarations, type TestEditDeclaration } from "./test-edit-declaration";
 import type { RunOperation } from "./types";

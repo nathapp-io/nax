@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { gitSpawnEnv, hardenedGitArgv, hardenedGitEnv } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { gitWithTimeout } from "@/utils/git";
-import { gitSpawnEnv, hardenedGitArgv, hardenedGitEnv } from "@/utils/git-env";
 
 describe("hardenedGitEnv", () => {
   test("adds the hardened entries from index 0 when none are set", () => {

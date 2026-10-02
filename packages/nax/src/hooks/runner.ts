@@ -5,13 +5,13 @@
  */
 
 import { join } from "node:path";
+import { killProcessGroup } from "@nathapp/nax-agent/internal";
 import { buildAllowedEnv } from "../agents/shared/env";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { assertTrusted } from "../trust";
 import { parseCommandToArgv } from "../utils/command-argv";
 import { loadJsonFile } from "../utils/json-file";
-import { killProcessGroup } from "../utils/process-kill";
 import type { HookContext, HookDef, HookEvent, HooksConfig } from "./types";
 
 const DEFAULT_TIMEOUT = 5000;

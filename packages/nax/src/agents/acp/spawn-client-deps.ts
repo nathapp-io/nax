@@ -5,7 +5,7 @@
  * between them.
  */
 
-import { typedSpawn } from "@/utils/bun-deps";
+import { typedSpawn } from "@nathapp/nax-agent/internal";
 
 // Grace period for stream drain after acpx exits — handles Bun bug where
 // piped streams may not close after SIGTERM (e.g. cancelActivePrompt).

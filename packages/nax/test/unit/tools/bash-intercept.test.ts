@@ -24,20 +24,20 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
+import type { CommandLauncher, LaunchRequest } from "@nathapp/nax-agent";
+import { DISABLED_SANDBOX_STATE } from "@nathapp/nax-agent";
 import type {
   CommandInterceptor,
   InterceptRequest,
   InterceptResult,
   ShellInterceptRequest,
   ShellInterceptResult,
-} from "@/execution/command-interceptor";
+  ToolCallRecord,
+} from "@nathapp/nax-agent/internal";
+import { _bashToolDeps, compileToolPolicy, createBashTool, createCodingToolRuntime } from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import type { RtkRewriteResult } from "@/execution/interceptors/rtk";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
-import type { CommandLauncher, LaunchRequest } from "@/sandbox";
-import { DISABLED_SANDBOX_STATE } from "@/sandbox";
-import { _bashToolDeps, compileToolPolicy, createBashTool, createCodingToolRuntime } from "@/tools";
-import type { ToolCallRecord } from "@/tools/tool-audit";
 
 /** The model's command, and what the provider answers for it. */
 const ORIGINAL = "bun test a.test.ts";

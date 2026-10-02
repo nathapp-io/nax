@@ -14,13 +14,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertNaxError, cleanupTempDir, makeTempDir, withTimerSpy } from "@test/helpers";
 import {
   AUTH_HELPER_STDERR_MAX_BYTES,
   AUTH_HELPER_STDOUT_MAX_BYTES,
   createExecCredentialSource,
   LEASE_FRESHNESS_MS,
-} from "@/agents/native/credentials/exec-source";
+} from "@nathapp/nax-agent/internal";
+import { assertNaxError, cleanupTempDir, makeTempDir, withTimerSpy } from "@test/helpers";
 import type { NaxError } from "@/errors";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 

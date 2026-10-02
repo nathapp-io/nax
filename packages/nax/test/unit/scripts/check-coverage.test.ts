@@ -57,6 +57,18 @@ describe("parseLcov", () => {
     expect(totals).toEqual({ linesFound: 20, linesHit: 10, fnFound: 10, fnHit: 5 });
   });
 
+  test("counts nax-agent's sources, as lcov names them from nax", () => {
+    const totals = parseLcov(
+      lcovWithFns([
+        ["src/a.ts", 9, 10, 4, 5],
+        ["../nax-agent/src/b.ts", 10, 10, 5, 5],
+        ["../nax-agent/test/helpers/temp.ts", 0, 40, 0, 8],
+      ]),
+    );
+
+    expect(totals).toEqual({ linesFound: 20, linesHit: 19, fnFound: 10, fnHit: 9 });
+  });
+
   test("the scope prefix is injectable", () => {
     const body = lcovWithFns([
       ["src/a.ts", 9, 10, 4, 5],
@@ -83,6 +95,11 @@ describe("parsePerFileLines", () => {
 
   test("a file with no findable lines counts as fully covered rather than dividing by zero", () => {
     expect(parsePerFileLines(lcov([["src/empty.ts", 0, 0]])).get("src/empty.ts")).toBe(1);
+  });
+
+  test("reports nax-agent's files under their lcov path", () => {
+    const perFile = parsePerFileLines(lcov([["../nax-agent/src/tools/git.ts", 9, 10]]));
+    expect([...perFile.keys()]).toEqual(["../nax-agent/src/tools/git.ts"]);
   });
 });
 

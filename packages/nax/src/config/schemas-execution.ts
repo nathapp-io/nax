@@ -3,11 +3,10 @@
  * Extracted from schemas.ts to stay within the 600-line file limit.
  */
 
+import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE, SandboxConfigSchema } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
-import { BashApprovalModeSchema, DEFAULT_BASH_APPROVAL_MODE } from "./bash-approval";
 import { CommandSafetyConfigSchema } from "./schemas-command-safety";
 import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
-import { SandboxConfigSchema } from "./schemas-sandbox";
 
 const ComplexityRungSchema = z.union([
   ModelTierSchema,
@@ -205,7 +204,7 @@ const PermissionBlockSchema = z
 
 /**
  * Per-stage tool policy (GitHub #374). Keys are pipeline stages plus "default".
- * Read by resolveScopedPermissions; enforced by src/tools/.
+ * Read by resolveScopedPermissions; enforced by packages/nax-agent/src/tools/.
  */
 export const PermissionsBlockSchema = z.record(z.string(), PermissionBlockSchema);
 

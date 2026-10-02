@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   _authDeps,
+  _resetCredentialStore,
   ambientShadows,
+  credentialFilePath,
   importPiCredentials,
   listStoredProviders,
+  naxCredentialStore,
   providersWithoutCredentials,
   removeStoredProvider,
-} from "@/agents/native/auth";
-import { _resetCredentialStore, credentialFilePath, naxCredentialStore } from "@/agents/native/credentials";
+} from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 
 let dir: string;

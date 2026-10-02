@@ -30,10 +30,10 @@
  */
 
 import { createHash } from "node:crypto";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getLogger } from "@/logger";
 import type { RunMetrics } from "@/metrics";
 import { loadRunMetrics as _loadRunMetrics } from "@/metrics";
-import { errorMessage } from "@/utils/errors";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────

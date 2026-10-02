@@ -13,11 +13,11 @@
  * also out of scope — parallel stories inherit the run-start baseline.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
 import { resolveQualityTestCommands } from "@/quality";
 import { parseTestOutput, type TestSummary } from "@/test-runners";
-import { errorMessage } from "@/utils/errors";
 import {
   clearStoryBaselines,
   executeWithTimeout,

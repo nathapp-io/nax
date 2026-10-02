@@ -10,8 +10,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createToolAuditSink, flushOpenToolAuditSinks } from "@nathapp/nax-agent";
 import { assertDefined, cleanupTempDir, makeMockRuntime, makeTempDir } from "@test/helpers";
-import { createToolAuditSink, flushOpenToolAuditSinks } from "@/tools";
 
 type ParsedAuditBody = {
   partial?: boolean;

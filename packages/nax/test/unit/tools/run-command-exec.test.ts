@@ -1,14 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import type { CommandLauncher, LaunchRequest } from "@nathapp/nax-agent";
+import type { ToolRunContext } from "@nathapp/nax-agent/internal";
+import {
+  _agentOutputEnvDeps,
+  _argvExecDeps,
+  compileToolPolicy,
+  createCodingToolRuntime,
+  createRunCommandTool,
+  EXEC_TIMEOUT_MS,
+  type RunCommandExecOptions,
+  runExecBranch,
+} from "@nathapp/nax-agent/internal";
 import { assertDefined, makeSpawn, withDepsRestore } from "@test/helpers";
 import { runQualityCommand } from "@/quality";
-import type { CommandLauncher, LaunchRequest } from "@/sandbox";
-import { compileToolPolicy } from "@/tools/policy";
-import type { ToolRunContext } from "@/tools/registry";
-import { createRunCommandTool, type RunCommandExecOptions } from "@/tools/run-command";
-import { EXEC_TIMEOUT_MS, runExecBranch } from "@/tools/run-command-exec";
-import { createCodingToolRuntime } from "@/tools/runtime";
-import { _agentOutputEnvDeps } from "@/utils/agent-output-env";
-import { _argvExecDeps } from "@/utils/argv-exec";
 
 const ctx: ToolRunContext = { root: "/repo", resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_000_000 };
 const exec: RunCommandExecOptions = {
@@ -103,11 +107,13 @@ describe("RunCommand argv branch", () => {
 
   test("the argv branch's whole file never reaches the shell executor", async () => {
     // Whole-file, not a slice from a known function name: the argv branch
-    // now lives in its own module (src/tools/run-command-exec.ts), so this
+    // now lives in its own module (packages/nax-agent/src/tools/run-command-exec.ts), so this
     // guard cannot be defeated by adding a function after runExecBranch or
     // by reordering the file — the failure mode the prior slice-based guard
     // had when everything lived in run-command.ts together.
-    const source = await Bun.file(new URL("../../../src/tools/run-command-exec.ts", import.meta.url)).text();
+    const source = await Bun.file(
+      new URL("../../../../nax-agent/src/tools/run-command-exec.ts", import.meta.url),
+    ).text();
     expect(source).not.toContain("runQualityCommand");
     expect(source).not.toContain("shellQuoteArg");
     expect(source).not.toContain("quality/runner");

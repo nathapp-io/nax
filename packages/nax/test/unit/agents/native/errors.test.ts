@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type NativeProtocolError, NativeSessionUnsupportedError, toAdapterFailure } from "@/agents/native/errors";
+import { type NativeProtocolError, NativeSessionUnsupportedError, toAdapterFailure } from "@nathapp/nax-agent/internal";
 import { decideSwap } from "@/agents/swap-decision";
 import type { AdapterFailure } from "@/context/engine";
 import { NaxError } from "@/errors";

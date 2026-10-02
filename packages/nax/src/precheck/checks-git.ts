@@ -3,7 +3,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import type { Check } from "./types";
 
 /** Check if directory is a git repository. Uses: git rev-parse --git-dir */

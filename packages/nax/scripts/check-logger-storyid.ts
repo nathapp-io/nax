@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 /**
  * Ratchet check: every logger.{info,warn,error,debug} call inside the scoped
  * dirs must pass a data object whose FIRST key is `storyId`.
@@ -22,7 +23,6 @@ import { dirname, join } from "node:path";
  * Exit 0 if count <= baseline, exit 1 if ratchet breached or baseline missing.
  */
 import { Glob } from "bun";
-import { byCodePoint } from "../src/utils/sort";
 
 const ROOT = join(import.meta.dir, "..");
 const BASELINE_FILE = join(import.meta.dir, "baselines", "logger-storyid-baseline.json");

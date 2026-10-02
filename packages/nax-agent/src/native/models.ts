@@ -1,0 +1,210 @@
+/**
+ * Model reference, usage and cost for the native path.
+ *
+ * The provider travels inside the model string, not beside it: a multi-provider
+ * agent needs it there, and opencode's entries already encode it that way
+ * (ADR-027 section 1). Under acpx the same string stays opaque.
+ */
+
+import type { Pricing, ProviderOverride, ThinkingLevel } from "@nathapp/nax-ai";
+import type { ProviderCatalogOverride } from "#src/config/catalog-overrides";
+import { parseModelSpec } from "#src/cost/model-spec";
+import { getSafeLogger, NaxError } from "#src/infra/index";
+
+/** The one agent name that routes to this transport. Defined once in the
+ *  `@/config/native-agent` leaf (config validates against it); re-exported
+ *  here, not in the barrel, so session-adapter.ts can import it without an
+ *  index -> session-adapter -> index cycle. */
+export { NATIVE_AGENT_NAME as NATIVE_AGENT } from "#src/config/native-agent/index";
+export { parseModelSpec };
+
+export interface NativeModelRef {
+  readonly provider: string;
+  readonly model: string;
+  /** Reasoning-effort suffix, when the config string carried one. Free-form —
+   *  validate with `toThinkingLevel` before sending it on the wire. */
+  readonly effort?: string;
+}
+
+/**
+ * Strip the nax-level `[effort]` suffix FIRST, then split on the FIRST slash: a
+ * provider id never contains one, a model id often does
+ * (`huggingface/MiniMaxAI/MiniMax-M2.7`). Order matters — the suffix is
+ * trailing, so splitting on the slash before stripping it would leave the
+ * suffix glued onto the model id (`"claude-opus-5[high]"`) and
+ * `client.model()` would throw its own unknown-model error instead of this
+ * function's clearer one.
+ *
+ * A suffix with no slash (`"claude-opus-5[high]"`) still fails malformed-model
+ * validation: `parseModelSpec` only removes the suffix, it does not supply a
+ * missing provider.
+ */
+export function parseNativeModel(raw: string): NativeModelRef {
+  const { model: withoutSuffix, effort } = parseModelSpec(raw);
+  const slash = withoutSuffix.indexOf("/");
+  const provider = slash === -1 ? "" : withoutSuffix.slice(0, slash);
+  const model = slash === -1 ? "" : withoutSuffix.slice(slash + 1);
+
+  if (provider === "" || model === "") {
+    throw new NaxError(
+      // Naming the sibling field is the point (nax#1851): a reader looking at
+      // `{ provider: "anthropic", model: "claude-sonnet-5" }` assumes the field
+      // right there is the one being used, and the old message said nothing to
+      // correct that. No suggested id is composed from it — on this path the
+      // value reaching us may be `resolveModel`'s inference rather than
+      // anything configured, and a guessed suggestion is worse than none.
+      `Native model "${raw}" must be written "provider/model" (e.g. "openai/gpt-5.4-mini"). There is no default provider. A "provider" field beside "model" in config is NOT used on the native path — the provider belongs in the model id itself.`,
+      "NATIVE_MODEL_MALFORMED",
+      { stage: "complete", model: raw },
+    );
+  }
+  return { provider, model, ...(effort !== undefined ? { effort } : {}) };
+}
+
+/**
+ * Every level nax-ai's `ThinkingLevel` union admits, as an exhaustive mapped
+ * type rather than a hand-rolled string array. `Record<ThinkingLevel, true>`
+ * only type-checks when every union member has an entry, so if nax-ai adds a
+ * level upstream, this fails to COMPILE — a real gate, not a comment that can
+ * silently drift out of sync with the union it mirrors.
+ */
+export const THINKING_LEVELS: Record<ThinkingLevel, true> = {
+  off: true,
+  minimal: true,
+  low: true,
+  medium: true,
+  high: true,
+  xhigh: true,
+  max: true,
+};
+
+function isThinkingLevel(value: string): value is ThinkingLevel {
+  return Object.hasOwn(THINKING_LEVELS, value);
+}
+
+/**
+ * Translate nax's config-side "effort" suffix into nax-ai's request-side
+ * "thinking" field. Kept in this one place, named for the seam it crosses: nax
+ * calls the concept "effort", nax-ai calls the identical value "thinking".
+ *
+ * The suffix is a free-form string (see model-spec.ts), so a value outside
+ * nax-ai's ThinkingLevel union is possible from a typo'd profile. This
+ * mirrors applyReasoningEffort's stance in
+ * src/agents/acp/reasoning-effort.ts: "Best-effort: a failure leaves the
+ * session at the adapter default rather than failing the whole run. The
+ * warning is what keeps that downgrade visible." nax does not clamp against
+ * per-model capabilities here — that is nax-ai's clampThinkingLevel's job,
+ * run inside client.complete against the resolved model's own
+ * thinkingLevels.
+ */
+export function toThinkingLevel(effort: string | undefined): ThinkingLevel | undefined {
+  if (effort === undefined) return undefined;
+  if (isThinkingLevel(effort)) return effort;
+
+  getSafeLogger()?.warn("native-adapter", `Unknown effort "${effort}"; continuing at provider default`, { effort });
+  return undefined;
+}
+
+/**
+ * Translate nax's config-side catalog overrides (agent.native.catalogOverrides,
+ * nax#1982) into nax-ai's declaration-data `ProviderOverride` records.
+ *
+ * The override is a COMPLETE entry, not a patch: nax-ai's `normaliseCatalog`
+ * applies it last through `setModel`, which replaces any same-id entry and
+ * lazily creates the provider bucket — that is what makes an id absent from
+ * the bundled pi-ai snapshot resolvable (verified against nax-ai 0.1.10).
+ * `provider` is stamped from the outer record because nax-ai's `ResolvedModel`
+ * carries it per model.
+ */
+export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[]): ProviderOverride[] {
+  return overrides.map((override) => ({
+    provider: override.provider,
+    // Omitted when undeclared, never passed as `undefined`: nax-ai reads
+    // `!== undefined` as a declaration and checks it against the protocol
+    // entries (nax#2019).
+    ...(override.baseUrl !== undefined ? { baseUrl: override.baseUrl } : {}),
+    // Copied, not aliased: nax-ai's client catalog assigns this reference
+    // straight onto ResolvedProvider.headers (providers/catalog.ts) without a
+    // copy of its own, so forwarding the live config object would let a later
+    // mutation reach an already-built client.
+    ...(override.headers !== undefined ? { headers: { ...override.headers } } : {}),
+    models: override.models.map((model) => ({
+      id: model.id,
+      provider: override.provider,
+      protocol: model.protocol,
+      pricing: model.pricing,
+      contextWindow: model.contextWindow,
+      // Omitted when the override declares none: nax-ai then falls back to the
+      // template sibling's ceiling, which is the only honest value available.
+      ...(model.maxTokens !== undefined ? { maxTokens: model.maxTokens } : {}),
+      supportsTools: model.supportsTools,
+      thinkingLevels: model.thinkingLevels,
+      // nax#2191: forwarded verbatim. nax-ai's `assertOverrideModelRouting`
+      // rejects an empty `{}` (pi's check is truthiness, not emptiness — issue
+      // #43), so omission is the only safe absent shape. The protocol-side
+      // rejection on a non-`openai-completions` model is nax-ai's; nax's
+      // schema refuses an empty declaration at config load so the user gets
+      // the error there rather than on first dispatch.
+      ...(model.openRouterRouting !== undefined ? { openRouterRouting: model.openRouterRouting } : {}),
+    })),
+  }));
+}
+
+/**
+ * `estimateCostUsd` (and the tier-selection helper it relies on) was
+ * relocated to `src/agents/cost/` (US-001) so the ACP and native paths share
+ * one implementation. Native callers now import it from `@/agents/cost`.
+ */
+/**
+ * Turn nax-ai's catalog `Pricing` into the rate object `priceCall` prices from
+ * (nax#1843, nax#1847). Both call sites -- `nativeComplete()` (complete.ts)
+ * and `NativeSessionAdapter.sendTurn()` (session-adapter.ts) -- build the rate
+ * object this way, and both receive the override already converted by
+ * `toSessionModel`, so the fix cannot drift between them.
+ *
+ * An explicit `modelDef.pricing` override wins WHOLESALE: the caller converts
+ * the config override with `toPricing` (via `toSessionModel`), which fills
+ * the override's own missing cache rates from its input rate, but catalog
+ * values are never merged into an override -- that would silently rewrite
+ * rates the user configured on purpose.
+ *
+ * US-003 (#1817): reports which branch it took alongside the card, so the
+ * adapter can stamp `pricingSource` on the result without re-deriving the
+ * rate-card branch (US-003 retired the table-backed `MODEL_PRICING` lookup
+ * this resolver was the successor to). The card is the rate object; the
+ * source is the answer to "which one did we use".
+ */
+export function buildRateCard(
+  catalog: Pricing,
+  override: Pricing | undefined,
+): { rates: Pricing; source: "config-override" | "catalog-rates" } {
+  if (override !== undefined) return { rates: override, source: "config-override" };
+  return { rates: catalog, source: "catalog-rates" };
+}
+
+/**
+ * Resolve the context window `runNativeTurn` compacts against: an explicit
+ * `ModelDef.contextWindow` override, falling back to nax-ai's
+ * `ResolvedModel.contextWindow` (nax#1848). Same override-then-fallback shape
+ * as `buildRateCard`, but with a direction guard that has no pricing
+ * equivalent: the window never reaches the provider, so it feeds only
+ * `shouldCompact` / `keepBudget` (`session/turn-loop.ts`). Lowering it is
+ * therefore safe -- compaction just fires earlier against an otherwise real
+ * request. Raising it above the real window would defeat compaction and
+ * reintroduce the overflow it exists to prevent, so that direction is
+ * rejected outright rather than clamped: this is a deliberate testing / cost
+ * lever, not a value set by accident, and a wrong value should be loud. An
+ * override equal to the real window is accepted -- it changes nothing.
+ */
+export function resolveContextWindow(override: number | undefined, realWindow: number): number {
+  if (override === undefined) return realWindow;
+  if (override > realWindow) {
+    throw new NaxError(
+      `configured contextWindow (${override}) exceeds the model's real context window (${realWindow}); ` +
+        "raising it above the real window would defeat compaction and risk a provider overflow",
+      "CONTEXT_WINDOW_OVERRIDE_EXCEEDS_REAL_WINDOW",
+      { configuredContextWindow: override, realContextWindow: realWindow },
+    );
+  }
+  return override;
+}

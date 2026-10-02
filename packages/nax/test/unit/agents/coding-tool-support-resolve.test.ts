@@ -17,6 +17,17 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
+  _launcherDeps,
+  _resetSandboxRegistryForTests,
+  _sessionSandboxDeps,
+  _sessionTmpDeps,
+  type LaunchRequest,
+  codingToolSupportModule as moveSetSupport,
+  realOrRaw,
+  runTmpRoot,
+  type SandboxPolicy,
+} from "@nathapp/nax-agent/internal";
+import {
   assertDefined,
   type ConfinedSessionSeam,
   cleanupTempDir,
@@ -27,23 +38,12 @@ import {
   withDepsRestore,
   withSessionSandboxSeam,
 } from "@test/helpers";
-import { _sessionSandboxDeps } from "@/agents/coding-tool-sandbox";
-import * as moveSetSupport from "@/agents/coding-tool-support";
 import {
   _codingToolSupportDeps,
   resolveCodingToolSupport,
   resolveDispatchLauncher,
 } from "@/agents/coding-tool-support-resolve";
 import { loadConfigForPackage } from "@/config";
-import {
-  _launcherDeps,
-  _resetSandboxRegistryForTests,
-  _sessionTmpDeps,
-  type LaunchRequest,
-  runTmpRoot,
-  type SandboxPolicy,
-} from "@/sandbox";
-import { realOrRaw } from "@/utils/realpath";
 
 const RUN_ID = "r1";
 /** The ledger session name the dispatch derives for a story + role. */

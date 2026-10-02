@@ -4,6 +4,14 @@
  * Shared utilities for running quality commands (lint, typecheck, build, lintFix, etc.)
  */
 
+export type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
+export {
+  commandSpecIncludes,
+  containsShellChain,
+  normalizeCommandSpec,
+  renderCommandSpec,
+  replaceInCommandSpec,
+} from "@nathapp/nax-agent/internal";
 export type { DefaultQualityCommands } from "./command-defaults";
 export {
   _commandDefaultsDeps,
@@ -12,14 +20,6 @@ export {
 } from "./command-defaults";
 export type { ResolvedTestCommands } from "./command-resolver";
 export { _commandResolverDeps, resolveQualityTestCommands } from "./command-resolver";
-export type { QualityCommandSpec } from "./command-spec";
-export {
-  commandSpecIncludes,
-  containsShellChain,
-  normalizeCommandSpec,
-  renderCommandSpec,
-  replaceInCommandSpec,
-} from "./command-spec";
 export type { Diagnostic } from "./diagnostics";
 export { detectTool, MAX_RAW_TAIL_CHARS, parseDiagnostics } from "./diagnostics";
 export type { QualityCommandOptions, QualityCommandResult } from "./runner";

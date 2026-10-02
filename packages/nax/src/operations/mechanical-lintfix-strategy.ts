@@ -1,11 +1,10 @@
+import { type QualityCommandSpec, replaceInCommandSpec, shellQuoteArg } from "@nathapp/nax-agent/internal";
 import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
-import { type QualityCommandSpec, replaceInCommandSpec } from "../quality/command-spec";
 import type { QualityCommandOptions, QualityCommandResult } from "../quality/runner";
 import { runQualityCommand } from "../quality/runner";
-import { shellQuoteArg } from "../verification/shell-quote";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface MechanicalLintFixInput {

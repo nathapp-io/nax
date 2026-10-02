@@ -6,14 +6,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { CommandShadow } from "@nathapp/nax-agent";
+import { headlessAskResolver } from "@nathapp/nax-agent";
 import { makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
-import type { CommandShadow } from "@/command-safety";
 import type { StorySnapshot } from "@/execution";
 import { _regressionDeps, runDeferredRegression } from "@/execution";
 import type { FixCycleContext } from "@/findings";
 import type { DispatchAskWiring, RunDispatchAskOptions } from "@/interaction";
 import { InteractionChain } from "@/interaction";
-import { headlessAskResolver } from "@/permissions";
 import type { FlakeTriageInput, FlakeTriageResult, VerificationResult } from "@/verification";
 
 const config = makeNaxConfig({

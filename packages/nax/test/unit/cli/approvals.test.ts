@@ -23,6 +23,13 @@
 import { describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import {
+  type ApprovalEntry,
+  type ApprovalsFileRead,
+  type ApprovalsTaint,
+  approvalId,
+  approvalsPath,
+} from "@nathapp/nax-agent";
 import { withTempDir } from "@test/helpers";
 import { Command } from "commander";
 import {
@@ -31,13 +38,6 @@ import {
   registerApprovalsCommand,
   resolveApprovalsFile,
 } from "@/cli/approvals";
-import {
-  type ApprovalEntry,
-  type ApprovalsFileRead,
-  type ApprovalsTaint,
-  approvalId,
-  approvalsPath,
-} from "@/permissions";
 import { projectOutputDir } from "@/runtime";
 
 type CliDeps = typeof _approvalsCliDeps;

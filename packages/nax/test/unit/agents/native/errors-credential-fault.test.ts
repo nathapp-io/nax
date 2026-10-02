@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { credentialFaultCode, type NativeProtocolError } from "@/agents/native/errors";
+import { credentialFaultCode, type NativeProtocolError } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 
 const CREDENTIAL_CODES: readonly string[] = [

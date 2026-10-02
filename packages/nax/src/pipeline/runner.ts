@@ -5,9 +5,9 @@
  * controlling the flow (continue/skip/fail/escalate/pause/retry).
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
-import { errorMessage } from "../utils/errors";
 import type { PipelineEventEmitter } from "./events";
 import type { PipelineContext, PipelineStage, StageResult } from "./types";
 

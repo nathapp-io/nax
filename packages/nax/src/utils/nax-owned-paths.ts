@@ -7,7 +7,7 @@
  * it, and they need different syntax:
  *
  * - The read-only Git TOOL scopes its DEFAULT view with long-form `:(exclude)`
- *   pathspecs (consumer: `src/tools/git.ts`). The long form is preferred there
+ *   pathspecs (consumer: `packages/nax-agent/src/tools/git.ts`). The long form is preferred there
  *   because it is what lands in the tool-audit ledger and it reads clearly.
  * - The review diff collector scopes `git diff` with git's short `:!` form
  *   (consumer: `src/review/diff-utils.ts`'s `ALWAYS_EXCLUDED`).
@@ -16,7 +16,7 @@
  * leading-doublestar equivalent, and the review set also covers `.nax-pids`),
  * so both are stored here rather than "simplified" into one. This neutral,
  * dependency-free module is the shared definition for these two consumers, so
- * `src/tools/` need not import from `src/review/` (which would trip
+ * `packages/nax-agent/src/tools/` need not import from `src/review/` (which would trip
  * check:import-cycles). It is not the sole place in the tree that spells a nax
  * exclude: pre-existing sites still hardcode their own `:!` forms.
  */

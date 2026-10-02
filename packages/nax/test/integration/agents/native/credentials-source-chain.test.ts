@@ -15,10 +15,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { _resetCredentialStore, buildNativeClient, naxCredentialStore } from "@nathapp/nax-agent/internal";
 import type { Client } from "@nathapp/nax-ai";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { buildNativeClient } from "@/agents/native/client";
-import { _resetCredentialStore, naxCredentialStore } from "@/agents/native/credentials";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 
 const PROVIDER = "opencode-go";

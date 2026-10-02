@@ -45,9 +45,10 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
 
-const ROOT = join(import.meta.dir, "..");
-const BASELINE_FILE = join(import.meta.dir, "baselines", "import-cycles-baseline.json");
+const ROOT = gatePackageRoot(import.meta.dir);
+const BASELINE_FILE = gateBaselinePath(ROOT, "import-cycles-baseline.json");
 const SCAN_DIR = "src";
 
 /** Extensions tried, in order, when resolving a specifier to a file on disk. */
@@ -201,6 +202,7 @@ export function* walk(dir: string): Generator<string> {
 export function resolveSpecifier(rootDir: string, fromFile: string, spec: string): string | null {
   let base: string;
   if (spec.startsWith("@/")) base = join(rootDir, "src", spec.slice(2));
+  else if (spec.startsWith("#src/")) base = join(rootDir, "src", spec.slice(5));
   else if (spec.startsWith("./") || spec.startsWith("../")) base = resolve(dirname(fromFile), spec);
   else return null;
 

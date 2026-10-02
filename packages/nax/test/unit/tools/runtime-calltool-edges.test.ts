@@ -23,11 +23,11 @@
  *     import), not the `_codingToolDeps` seam the other runtime logs use.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { AskResolver } from "@nathapp/nax-agent";
+import { type CodingTool, compileToolPolicy, createCodingToolRuntime } from "@nathapp/nax-agent";
+import type { ToolCallRecord } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
-import type { AskResolver } from "@/permissions";
-import { type CodingTool, compileToolPolicy, createCodingToolRuntime } from "@/tools";
-import type { ToolCallRecord } from "@/tools/tool-audit";
 
 let root: string;
 

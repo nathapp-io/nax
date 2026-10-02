@@ -9,7 +9,7 @@
  * exceeded, without capping any single call's read-and-return.
  */
 
-import { errorMessage } from "@/utils/errors";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 
 /** Max size (bytes) of a candidate file read into the shared content cache; larger files are skipped unread (GROWTH-2). */
 export const MAX_NEIGHBOR_FILE_SIZE_BYTES = 1 * 1024 * 1024;

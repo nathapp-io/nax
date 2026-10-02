@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { NATIVE_AGENT } from "@/agents/native";
+import { NATIVE_AGENT } from "@nathapp/nax-agent";
+import { NATIVE_AGENT_NAME } from "@nathapp/nax-agent/internal";
 import { NATIVE_AGENT_NAME as fromConfigBarrel } from "@/config";
-import { NATIVE_AGENT_NAME } from "@/config/native-agent";
 
 describe("@/config/native-agent", () => {
   test("is the one definition the config barrel and the native barrel re-export", () => {

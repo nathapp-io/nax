@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Gate: the three build-time resolution invariants the published bundle depends on.
+ * Gate: the four build-time resolution invariants the published bundle depends on.
  *
  * All are the same class of trap -- a packaging decision whose breakage shows up
  * only in `dist/nax.js`, never in the test suite, because the suite runs from
@@ -49,14 +49,20 @@
  *    vendored seccomp binaries and `srt-win.exe` relative to its own files,
  *    which a bundle would not carry.
  *
+ * 4. `@nathapp/nax-agent` is bundled, never installed: nax lists it only as a
+ *    `workspace:*` devDependency, and declares every runtime dependency of
+ *    nax-agent itself (scripts/lib/agent-bundling.ts).
+ *
  * Usage:
  *   bun scripts/check-bundle-externals.ts
  *
  * Exit codes:
- *   0 -- all three invariants hold
+ *   0 -- all four invariants hold
  *   1 -- one of them is broken
  */
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { checkAgentBundling } from "./lib/agent-bundling";
 
 const REQUIRED_EXTERNAL = '--external "@nathapp/nax-ai"';
 const REQUIRED_SANDBOX_EXTERNAL = '--external "@anthropic-ai/sandbox-runtime"';
@@ -110,11 +116,14 @@ if (!existsSync(STUB_ENTRY)) {
   failures.push(`the stub entry point ${STUB_ENTRY} is missing.`);
 }
 
+const agentPkg = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "nax-agent", "package.json"), "utf8"));
+failures.push(...checkAgentBundling(pkg, agentPkg));
+
 if (failures.length > 0) {
   for (const f of failures) console.error(`check-bundle-externals: ${f}\n`);
   process.exit(1);
 }
 
 console.log(
-  "check-bundle-externals: nax-ai and sandbox-runtime stay external; react-devtools-core resolves to the stub",
+  "check-bundle-externals: nax-ai and sandbox-runtime stay external; react-devtools-core resolves to the stub; nax-agent is bundled",
 );

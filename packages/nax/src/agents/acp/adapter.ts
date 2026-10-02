@@ -11,8 +11,8 @@
  * See: docs/specs/acp-session-mode.md
  */
 
+import type { ProtocolIds } from "@nathapp/nax-agent";
 import { getSafeLogger } from "@/logger";
-import type { ProtocolIds } from "@/runtime/protocol-types";
 import type { ITokenUsageMapper } from "../cost";
 import type {
   AgentAdapter,

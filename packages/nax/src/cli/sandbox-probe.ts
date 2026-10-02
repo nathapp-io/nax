@@ -1,12 +1,12 @@
-import type { SandboxConfig } from "@/config";
-import { DEFAULT_SANDBOX_CONFIG } from "@/config";
 import {
   createSrtBackend,
   type ProbeResult,
   probeSandbox,
   type SandboxBackend,
   type SandboxBackendName,
-} from "@/sandbox";
+} from "@nathapp/nax-agent";
+import type { SandboxConfig } from "@/config";
+import { DEFAULT_SANDBOX_CONFIG } from "@/config";
 
 export interface SandboxProbeReport {
   backend: SandboxBackendName;

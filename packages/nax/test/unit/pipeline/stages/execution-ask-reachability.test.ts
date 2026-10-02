@@ -10,8 +10,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { CommandShadow } from "@nathapp/nax-agent";
 import { makeAgentAdapter, makeNaxConfig, makeStory, makeTestContext } from "@test/helpers";
-import type { CommandShadow } from "@/command-safety";
 import type { ConfigSelector } from "@/config";
 import { _storyOrchestratorDeps, ExecutionPlan } from "@/execution";
 import { InteractionChain } from "@/interaction";

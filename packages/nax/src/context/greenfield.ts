@@ -9,6 +9,7 @@
 
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
+import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import type { UserStory } from "../prd/types";
 import {
@@ -18,7 +19,6 @@ import {
   isTestFileByPatterns,
   type ResolvedTestPatterns,
 } from "../test-runners";
-import { gitSpawnEnv } from "../utils/git-env";
 
 /** Injectable deps for testability. */
 export const _greenfieldDeps = {

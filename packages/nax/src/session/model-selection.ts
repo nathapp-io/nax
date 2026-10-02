@@ -6,8 +6,8 @@
  * injectable-dependency facade.
  */
 
+import type { SessionModel } from "@nathapp/nax-agent";
 import { toSessionModel } from "../agents/session-model-mapping";
-import type { SessionModel } from "../agents/session-types";
 import type { ModelDef, ModelTier } from "../config/schema";
 
 export interface ModelSelection {

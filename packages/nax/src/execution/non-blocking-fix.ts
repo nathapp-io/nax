@@ -21,13 +21,14 @@
  * which imports this module TYPE-ONLY so the runtime edge stays
  * one-directional.
  */
+
+import { isInside } from "@nathapp/nax-agent/internal";
 import type { NonBlockingFixConfig } from "../config/selectors";
 import { isRecurrenceRetired } from "../findings/retirement-stamp";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
 import type { FixReviewVerdict } from "../review/fix-review";
 import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
-import { isInside } from "../utils/realpath";
 import type { QuarantineMemo } from "../verification";
 import type { SourceDiffMetrics } from "./nbf-source-diff";
 import { listCommitsSince } from "./nbf-source-diff";

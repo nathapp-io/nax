@@ -66,6 +66,27 @@ describe("check-sandbox-imports", () => {
     expect(code).not.toBe(0);
   });
 
+  // S1-5 moved the sandbox into nax-agent, where every peer import is a
+  // `#src/...` subpath specifier. Before `#src/` joined the pattern this rule
+  // was vacuous there: no `#src/operations/...` import could ever be caught.
+  test("fails when nax-agent's sandbox imports an orchestrator module through #src/", () => {
+    const root = tree({ "src/sandbox/launcher.ts": 'import { x } from "#src/operations/foo";\n' });
+    const { code, out } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).not.toBe(0);
+    expect(out).toContain("orchestrator");
+  });
+
+  test("still passes for the #src/ peer imports nax-agent's sandbox really uses", () => {
+    const root = tree({
+      "src/sandbox/launcher.ts":
+        'import { q } from "#src/infra/errors";\nimport { w } from "#src/internal/argv-exec";\nimport { t } from "../tools/nax-owned-writes";\n',
+    });
+    const { code } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).toBe(0);
+  });
+
   test("ignores the specifier inside comments", () => {
     const root = tree({
       "src/tools/bash.ts": "// see @anthropic-ai/sandbox-runtime\n * @anthropic-ai/sandbox-runtime\n",

@@ -1,5 +1,5 @@
+import { cancellableDelay } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { cancellableDelay } from "@/utils/bun-deps";
 
 export function formatRemaining(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { type AskRequest, approvalsPath, readApprovalsFile } from "@nathapp/nax-agent";
+import { buildCodingToolSupport } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import { buildDispatchAskWiring } from "@/interaction";
-import { type AskRequest, approvalsPath, readApprovalsFile } from "@/permissions";
 
 const LONG = `echo ${"x".repeat(400)}`;
 

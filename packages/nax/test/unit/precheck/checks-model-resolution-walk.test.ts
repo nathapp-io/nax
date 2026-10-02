@@ -12,8 +12,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { collectConfiguredModelPins } from "@/precheck/checks-model-resolution-walk";
-import { byCodePoint } from "@/utils/sort";
 
 const FIX_REVIEW_SITE = "review.fixReview.model";
 

@@ -1,7 +1,7 @@
 import { join } from "node:path";
+import { _argvExecDeps, runArgv } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "../config";
 import { assertTrustedSync } from "../trust";
-import { _argvExecDeps, runArgv } from "../utils/argv-exec";
 import { parseCommandToArgv } from "../utils/command-argv";
 import type { PrepareWorktreeDependenciesOptions, WorktreeDependencyContext } from "./types";
 import { WorktreeDependencyPreparationError } from "./types";

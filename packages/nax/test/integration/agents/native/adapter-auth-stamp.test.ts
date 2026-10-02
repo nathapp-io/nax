@@ -19,12 +19,18 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { SessionHandle, TurnResult } from "@nathapp/nax-agent";
+import {
+  _clientDeps,
+  _resetCredentialStore,
+  _resetNativeClient,
+  buildNativeClient,
+  naxCredentialStore,
+  servedAuth,
+} from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _clientDeps, _resetNativeClient, buildNativeClient } from "@/agents/native/client";
-import { _resetCredentialStore, naxCredentialStore, servedAuth } from "@/agents/native/credentials";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import { toSessionModel } from "@/agents/session-model-mapping";
-import type { SessionHandle, TurnResult } from "@/agents/session-types";
 import type { ResolvedPermissions } from "@/config/permissions";
 import type { ModelDef, ProviderCatalogOverride } from "@/config/schema-types";
 

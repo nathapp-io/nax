@@ -13,8 +13,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { AuthStamp } from "@nathapp/nax-agent";
 import { completeResultProvenance } from "@/agents/manager-dispatch";
-import type { AuthStamp } from "@/agents/session-types";
 import type { CompleteResult } from "@/agents/types";
 
 const STAMP: AuthStamp = { fingerprint: "0123456789ab", source: "exec", account: "team-a" };

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { coreModule as costCore } from "@nathapp/nax-agent/internal";
 import * as costBarrel from "@/agents/cost";
-import * as costCore from "@/agents/cost/core";
 
 describe("@/agents/cost/core", () => {
   test("serves the same function objects as @/agents/cost", () => {

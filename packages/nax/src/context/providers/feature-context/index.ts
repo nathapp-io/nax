@@ -6,12 +6,12 @@
  * Role filtering and budget enforcement happen in the prompt builders.
  */
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import type { ContextConfig } from "@/config/selectors";
 import { resolveFeatureId } from "@/context/feature-resolver";
 import { getLogger } from "@/logger";
 import type { UserStory } from "@/prd";
-import { errorMessage } from "@/utils/errors";
 
 /** Injectable deps for testing */
 export const _featureContextDeps = {

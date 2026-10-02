@@ -25,10 +25,10 @@
  * not throw.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getLogger } from "../logger";
 import { getContextFiles, getExpectedFiles } from "../prd/types";
 import { collectDiffFileList, resolveEffectiveRef } from "../review/diff-utils";
-import { errorMessage } from "../utils/errors";
 import { storyWorkdir, toRepoFrame } from "../utils/path-frame";
 import type { PipelineContext } from "./types";
 

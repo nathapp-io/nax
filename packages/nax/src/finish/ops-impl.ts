@@ -17,11 +17,12 @@
  * `review` and `fix` deliberately do neither: a reviewer or fixer that cannot
  * run is exactly the case the machine's catch exists for.
  */
+
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ConfiguredModel } from "@/config";
 import type { ForgeDeps, ForgeKind } from "@/forge";
 import type { CallContext, FinishFixInput, FinishNarrativeInput, FinishReviewInput } from "@/operations";
 import { callOp, finishFixOp, finishNarrativeOp, finishReviewOp } from "@/operations";
-import { errorMessage } from "../utils/errors";
 import type { AuditTarget } from "./audit";
 import { commitAndPush } from "./commit";
 import { buildEscalationComment, postEscalation } from "./escalate";

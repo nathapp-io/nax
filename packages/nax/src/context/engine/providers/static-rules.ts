@@ -15,6 +15,7 @@
 
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { type CanonicalRule, DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "@/context/rules/canonical-loader";
 import { applySectionBudget, priorityToRawScore } from "@/context/rules/rule-budget";
 import type { RuleSection } from "@/context/rules/rule-sections";
@@ -24,7 +25,6 @@ import { getLogger } from "@/logger";
 // `length / 4` here would let a chunk's reported token count disagree with the
 // number the budget admitted it on.
 import { estimateTokens } from "@/optimizer";
-import { errorMessage } from "@/utils/errors";
 import type { ProviderScopingReport } from "../manifest-types";
 import { frameAppliesTo, globToRegex, isGlobScopePath, normalizePath, ruleMatchesPackage } from "../scope-path-match";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";

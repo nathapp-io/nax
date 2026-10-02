@@ -12,13 +12,13 @@
  * the regression gate — all for a failure the story did not cause.
  */
 
+import { shellQuoteArg } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import type { Framework } from "../test-runners/detector";
 import { parseTestOutput } from "../test-runners/parser";
 import type { TestFailure } from "../test-runners/types";
 import { executeWithTimeout } from "./executor";
-import { shellQuoteArg } from "./shell-quote";
 import type { TestExecutionResult } from "./types";
 
 // Frameworks that exit 0 for "zero tests matched the isolation filter" (primarily `go

@@ -16,13 +16,13 @@
 
 import { readdir } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import { getContextFiles } from "@/prd";
 import { storyExecRoot } from "@/runtime";
-import { errorMessage } from "@/utils/errors";
 import { storyWorkdir } from "@/utils/path-frame";
 import { estimateAvailableBudgetTokens } from "./available-budget";
 import { loadFeatureManifests, writeContextManifest } from "./manifest-store";

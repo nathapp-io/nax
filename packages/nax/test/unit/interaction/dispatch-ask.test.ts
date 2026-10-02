@@ -6,18 +6,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { assertDefined, cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
-import { setAgentLogger } from "@/agents/infra";
-import type { CommandShadow } from "@/command-safety";
-import type { NaxConfig } from "@/config";
-import type { AskChannel, AskChannelResponse, DispatchAskDeps, DispatchAskOptions } from "@/interaction";
-import {
-  _dispatchAskDeps,
-  APPROVAL_AUDIT_DIR,
-  buildDispatchAskWiring,
-  buildRunDispatchAskWiring,
-  collectEffectiveRunStageModes,
-} from "@/interaction";
+import type { CommandShadow } from "@nathapp/nax-agent";
 import {
   type ApprovalEntry,
   type AskControl,
@@ -28,7 +17,18 @@ import {
   prepareApprovalsStore,
   readApprovalsFile,
   writeApprovalsFile,
-} from "@/permissions";
+} from "@nathapp/nax-agent";
+import { setAgentLogger } from "@nathapp/nax-agent/internal";
+import { assertDefined, cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import type { NaxConfig } from "@/config";
+import type { AskChannel, AskChannelResponse, DispatchAskDeps, DispatchAskOptions } from "@/interaction";
+import {
+  _dispatchAskDeps,
+  APPROVAL_AUDIT_DIR,
+  buildDispatchAskWiring,
+  buildRunDispatchAskWiring,
+  collectEffectiveRunStageModes,
+} from "@/interaction";
 
 const REQ: AskRequest = {
   tool: "Bash",

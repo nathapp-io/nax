@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { makePRD, makeStory } from "@test/helpers";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
@@ -9,7 +10,6 @@ import {
   warnOnAcCrossReferences,
   warnOnDroppedContextFiles,
 } from "@/operations";
-import { byCodePoint } from "@/utils/sort";
 
 const SPEC = [
   "# Feature",

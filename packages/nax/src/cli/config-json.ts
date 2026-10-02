@@ -5,8 +5,8 @@
  * requirements an external orchestrator needs before dispatching a run.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { findProjectDir, loadConfig, validateDirectory } from "../config";
-import { errorMessage } from "../utils/errors";
 import { determineConfigSources } from "./config-display";
 import { maskProfileValues } from "./config-profile";
 import { buildConfigRequirements, type ConfigRequirements } from "./config-requirements";

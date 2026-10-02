@@ -13,10 +13,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { precheckCommand } from "@/commands/precheck";
 import { EXIT_CODES } from "@/precheck";
-import { gitSpawnEnv } from "@/utils/git-env";
 
 // Fixtures live in the OS temp dir, never inside the nax working tree: a
 // fixture whose `git init` failed would otherwise resolve to nax's own repo and

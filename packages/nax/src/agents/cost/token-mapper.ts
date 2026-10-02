@@ -1,4 +1,4 @@
-import type { TokenUsage } from "./standard-types";
+import type { TokenUsage } from "@nathapp/nax-agent";
 
 /**
  * Generic mapper from an external wire format to internal canonical TokenUsage.

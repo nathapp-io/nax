@@ -24,8 +24,8 @@
 import { appendFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger, redactSecrets } from "../logger";
-import { errorMessage } from "../utils/errors";
 
 export interface PromptAuditEntry {
   readonly ts: number;

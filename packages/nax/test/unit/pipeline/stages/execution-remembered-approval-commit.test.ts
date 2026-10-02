@@ -15,6 +15,8 @@
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import type { AskRequest } from "@nathapp/nax-agent";
+import { readApprovals } from "@nathapp/nax-agent";
 import {
   cleanupTempDir,
   makeAgentAdapter,
@@ -27,8 +29,6 @@ import {
 import type { ConfigSelector } from "@/config";
 import { ExecutionPlan } from "@/execution";
 import type { CallContext } from "@/operations/types";
-import type { AskRequest } from "@/permissions";
-import { readApprovals } from "@/permissions";
 import { executionStage } from "@/pipeline";
 import type { PipelineContext } from "@/pipeline/types";
 import { NAX_COMMIT } from "@/version";

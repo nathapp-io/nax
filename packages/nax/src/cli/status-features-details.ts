@@ -16,6 +16,7 @@
  * alive).
  */
 
+import { isProcessAlive as isPidAlive } from "@nathapp/nax-agent/internal";
 import chalk from "chalk";
 import type {
   AcceptancePhaseStatus,
@@ -24,7 +25,6 @@ import type {
   RegressionPhaseStatus,
 } from "../execution/status-file";
 import type { countStories, PRD } from "../prd";
-import { isProcessAlive as isPidAlive } from "../utils/process-alive";
 
 /** Story counts as produced by countStories(prd) */
 type StoryCounts = ReturnType<typeof countStories>;

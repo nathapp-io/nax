@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { assertNaxError } from "@test/helpers";
 import { type MigrationPlanEntry, type PlanMigrationOptions, planMigration } from "@/cli";
-import { byCodePoint } from "@/utils/sort";
 
 const TARGET_DIR = "/target";
 

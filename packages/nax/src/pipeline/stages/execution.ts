@@ -9,9 +9,9 @@
  *   → applyPostRunInspection → decideStageAction.
  */
 
+import { buildCommandShadow, prepareApprovalsStore } from "@nathapp/nax-agent";
 import { validateAgentForTier } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
-import { buildCommandShadow } from "@/command-safety";
 import { isThreeSessionStrategy, loadConfigForPackage } from "@/config";
 import { assembleForStage } from "@/context/engine";
 import { NaxError } from "@/errors";
@@ -33,7 +33,6 @@ import {
 } from "@/interaction";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
-import { prepareApprovalsStore } from "@/permissions";
 import { captureGitRef, getUntrackedPaths } from "@/utils/git";
 import { storyPackageDir } from "@/utils/path-frame";
 import { resolveScopeFiles } from "../scope-files";

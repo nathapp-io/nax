@@ -21,8 +21,8 @@
  * neither.
  */
 
+import { NATIVE_AGENT, nativeTierProviders, providersWithoutCredentials } from "@nathapp/nax-agent";
 import { resolveDefaultAgent } from "../agents";
-import { NATIVE_AGENT, nativeTierProviders, providersWithoutCredentials } from "../agents/native";
 import type { PrecheckConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import type { Check } from "./types";

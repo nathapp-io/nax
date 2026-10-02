@@ -17,6 +17,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import {
   listFragmentStoryIds as listFragmentStoryIdsImpl,
@@ -26,7 +27,6 @@ import { FeatureContextProvider as FeatureContextProviderV1 } from "@/context/pr
 import { getLogger } from "@/logger";
 import type { PRD, UserStory } from "@/prd";
 import { loadPRD as loadPRDImpl } from "@/prd";
-import { errorMessage } from "@/utils/errors";
 import { applyStaleness, detectContradictions, parseFeatureContextEntries, selectStaleByAge } from "../staleness";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 

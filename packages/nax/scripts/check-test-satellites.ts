@@ -30,17 +30,30 @@
  *   bun scripts/check-test-satellites.ts                   # check (CI mode)
  *   bun scripts/check-test-satellites.ts --update-baseline # save new baseline
  *   bun scripts/check-test-satellites.ts --list            # print offending files
+ *   bun scripts/check-test-satellites.ts --package=<dir>   # scan another package
  *
  * Exit codes:
  *   0 — no new ticket-named test files (current ⊆ baseline)
  *   1 — a new ticket-named test file appeared, or the baseline is missing
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { byCodePoint } from "../src/utils/sort";
+import { basename, dirname } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
+import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
 import { mirrorsSrcModule, SCAN_DIRS, TICKET_RE, walk } from "./report-test-consolidation";
 
-const BASELINE_FILE = join(import.meta.dir, "baselines", "test-satellites-baseline.json");
+/**
+ * The scanned package. Only the baseline path is read from it here; the walk, and
+ * the `src/` mirror check it feeds, resolve the same `--package` flag inside
+ * report-test-consolidation, so the two roots cannot drift apart silently.
+ *
+ * Anchoring the baseline to this file's own directory instead is the failure the
+ * package flag exists to prevent: the gate would scan nax-agent and then either
+ * fail on nax's baseline or — with --update-baseline — overwrite it with
+ * nax-agent's list, dropping nax's own entries.
+ */
+const ROOT = gatePackageRoot(import.meta.dir);
+const BASELINE_FILE = gateBaselinePath(ROOT, "test-satellites-baseline.json");
 
 export interface Baseline {
   updatedAt: string;

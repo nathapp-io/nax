@@ -1,6 +1,6 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { TurnResult } from "../agents/types";
 import { getSafeLogger } from "../logger";
-import { errorMessage } from "../utils/errors";
 import type { HopBodyContext } from "./types";
 
 /**

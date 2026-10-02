@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { nativeTierProviders } from "@nathapp/nax-agent";
 import { makeNaxConfig } from "@test/helpers";
-import { nativeTierProviders } from "@/agents/native";
 
 describe("nativeTierProviders", () => {
   test("AC1: maps a provider to every tier that names it, in tier order", () => {

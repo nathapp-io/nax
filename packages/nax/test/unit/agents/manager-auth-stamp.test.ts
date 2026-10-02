@@ -11,9 +11,9 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import type { AuthStamp } from "@nathapp/nax-agent";
 import { makeAgentAdapter, makeAgentRegistry, makeNaxConfig } from "@test/helpers";
 import { AgentManager } from "@/agents/manager";
-import type { AuthStamp } from "@/agents/session-types";
 import type { CompleteOptions, CompleteResult } from "@/agents/types";
 import type { CostEvent, ICostAggregator } from "@/runtime/cost-aggregator";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";

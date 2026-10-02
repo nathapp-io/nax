@@ -16,10 +16,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  _authDeps,
+  _resetCredentialStore,
+  fingerprintCredential,
+  naxCredentialStore,
+  readStoredEntries,
+} from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _authDeps } from "@/agents/native/auth";
-import { _resetCredentialStore, naxCredentialStore, readStoredEntries } from "@/agents/native/credentials";
-import { fingerprintCredential } from "@/agents/native/credentials/fingerprint";
 import { _cliAuthDeps, authListCommand, authLoginCommand, authRmCommand } from "@/cli/auth";
 
 function stripAnsi(s: string): string {

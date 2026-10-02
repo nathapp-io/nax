@@ -7,9 +7,9 @@
  * missing override still means "use the catalog".
  */
 
+import type { SessionModel } from "@nathapp/nax-agent";
 import type { ModelDef } from "../config/schema-types";
 import { toPricing } from "../config/schema-types";
-import type { SessionModel } from "./session-types";
 
 export function toSessionModel(def: ModelDef): SessionModel {
   return {

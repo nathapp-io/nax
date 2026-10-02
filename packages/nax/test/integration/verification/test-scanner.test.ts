@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import fs, { stat as realStat } from "node:fs/promises";
 import path from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { makeTempDir, withDepsRestore } from "@test/helpers";
 import {
   _testScannerDeps,
@@ -12,7 +13,6 @@ import {
   type TestFileInfo,
   truncateToTokenBudget,
 } from "@/context/test-scanner";
-import { byCodePoint } from "@/utils/sort";
 
 describe("extractTestStructure", () => {
   test("extracts describe and test blocks", () => {

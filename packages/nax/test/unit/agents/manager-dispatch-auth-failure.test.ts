@@ -15,8 +15,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { AuthStamp } from "@nathapp/nax-agent";
 import { completeResultProvenance } from "@/agents/manager-dispatch";
-import type { AuthStamp } from "@/agents/session-types";
 import type { CompleteResult } from "@/agents/types";
 import type { AdapterFailure } from "@/context/engine";
 

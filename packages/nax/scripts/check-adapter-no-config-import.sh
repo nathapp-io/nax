@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fail if any file under src/agents/{acp,native,native-agent}/ reads NaxConfig or CompleteConfig from complete() options,
+# Fail if any file under src/agents/{acp,native-agent}/ reads NaxConfig or CompleteConfig from complete() options,
 # or imports NaxConfig / DEFAULT_CONFIG / config loader directly.
 # This enforces the adapter boundary: adapters receive a resolved ModelDef, not raw NaxConfig.
 #
@@ -7,7 +7,8 @@
 # only NaxConfig, CompleteConfig, defaults, and loader are banned.
 set -euo pipefail
 
-scan_dirs="src/agents/acp/ src/agents/native/ src/agents/native-agent/"
+# src/agents/native/ moved to packages/nax-agent (S1-5); check-package-boundaries keeps it free of nax.
+scan_dirs="src/agents/acp/ src/agents/native-agent/"
 
 # Block direct NaxConfig / CompleteConfig / DEFAULT_CONFIG imports (structural config reads)
 banned_imports=$(grep -r "import.*\(NaxConfig\|CompleteConfig\|DEFAULT_CONFIG\)" $scan_dirs --include="*.ts" 2>/dev/null || true)
@@ -15,10 +16,9 @@ banned_imports=$(grep -r "import.*\(NaxConfig\|CompleteConfig\|DEFAULT_CONFIG\)"
 defaults_loader=$(grep -r "import.*config/\(defaults\|loader\)" $scan_dirs --include="*.ts" 2>/dev/null || true)
 # Block options?.config or _options.config access in adapter (old CompleteOptions.config pattern)
 options_config=$(grep -r "options\?\?\.config\b\|_options\.config\b\|options\.config\b" $scan_dirs --include="*.ts" 2>/dev/null || true)
-# Block reaching the plugin system from the native loop: a plugin `loop-handlers`
-# handler is handed nax-owned payload/context TYPES, but nothing under
-# src/agents/native/ may depend on src/plugins (the coding agent must stay
-# extractable). Reject the `@/plugins` alias and any relative specifier ending in
+# Block reaching the plugin system from an adapter: a plugin `loop-handlers`
+# handler is handed nax-owned payload/context TYPES, but no adapter may depend
+# on src/plugins. Reject the `@/plugins` alias and any relative specifier ending in
 # a `/plugins` segment; loop-event type imports (`.../loop-events`,
 # `.../loop-events/types`) are the sanctioned route and must keep passing.
 plugins_imports=$(grep -rE "from[[:space:]]+[\"'](@/plugins|(\.\.?/)([^\"']*/)?plugins)([\"'/])" $scan_dirs --include="*.ts" 2>/dev/null || true)

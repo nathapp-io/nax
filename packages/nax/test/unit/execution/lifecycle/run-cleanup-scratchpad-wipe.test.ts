@@ -18,10 +18,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { SCRATCHPAD_DIR } from "@nathapp/nax-agent";
 import { cleanupTempDir, makePluginRegistry, makePRD, makeTempDir, withWarnSpy } from "@test/helpers";
 import { _runCleanupDeps, cleanupRun } from "@/execution";
 import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
-import { SCRATCHPAD_DIR } from "@/tools";
 
 function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunCleanupOptions {
   return {

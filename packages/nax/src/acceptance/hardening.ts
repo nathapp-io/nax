@@ -6,6 +6,7 @@
  */
 
 import path from "node:path";
+import { killProcessGroup } from "@nathapp/nax-agent/internal";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
@@ -18,7 +19,6 @@ import type { DispatchContext } from "../runtime/dispatch-context";
 import { parseTestFailures } from "../test-runners/ac-parser";
 import { assertTrusted } from "../trust";
 import { storyWorkdir } from "../utils/path-frame";
-import { killProcessGroup } from "../utils/process-kill";
 import { buildAcceptanceRunCommand, generateSkeletonTests } from "./generator";
 import { resolveSuggestedPackageFeatureTestPath } from "./test-path";
 import type { AcceptanceCriterion, RefinedCriterion } from "./types";

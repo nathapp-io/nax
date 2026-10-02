@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { AskRequest } from "@nathapp/nax-agent";
 import { assertDefined, waitForCondition } from "@test/helpers";
 import { type AskChannel, type AskChannelResponse, createHumanAskLink, type InteractionRequest } from "@/interaction";
-import type { AskRequest } from "@/permissions";
 
 /**
  * Characterisation of `runSession` branches the mirror suite leaves unpinned,

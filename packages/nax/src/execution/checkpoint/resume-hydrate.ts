@@ -1,4 +1,4 @@
-import { gitSpawnEnv, hardenedGitArgv } from "@/utils/git-env";
+import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import type { ResumePlan } from "./resume-plan";
 import type { TreeState } from "./types";
 

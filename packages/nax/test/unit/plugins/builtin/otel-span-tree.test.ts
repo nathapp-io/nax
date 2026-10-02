@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import type {
   CounterDataPoint,
   HistogramDataPoint,
@@ -14,7 +15,6 @@ import {
   PHASE_DURATION_BOUNDS,
 } from "@/plugins/builtin/otel-reporter/span-tree";
 import type { PhaseCompleteEvent } from "@/plugins/types";
-import { byCodePoint } from "@/utils/sort";
 
 function makePhaseEvent(overrides: Partial<PhaseCompleteEvent> = {}): PhaseCompleteEvent {
   return {

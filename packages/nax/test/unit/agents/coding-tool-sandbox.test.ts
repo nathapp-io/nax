@@ -2,6 +2,18 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
+  _launcherDeps,
+  _resetSandboxRegistryForTests,
+  _sessionSandboxDeps,
+  DEFAULT_SANDBOX_CONFIG,
+  type LaunchRequest,
+  rawRefusalFor,
+  realOrRaw,
+  resolveSessionSandbox,
+  type SandboxConfig,
+  type SandboxPolicy,
+} from "@nathapp/nax-agent/internal";
+import {
   assertDefined,
   type ConfinedSessionSeam,
   cleanupTempDir,
@@ -14,12 +26,8 @@ import {
   withSessionSandboxSeam,
   withWarnSpy,
 } from "@test/helpers";
-import { _sessionSandboxDeps, rawRefusalFor, resolveSessionSandbox } from "@/agents/coding-tool-sandbox";
 import { naxProtectedPaths } from "@/agents/nax-protected-paths";
-import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "@/config/schemas-sandbox";
-import { _launcherDeps, _resetSandboxRegistryForTests, type LaunchRequest, type SandboxPolicy } from "@/sandbox";
 import { trustStorePath } from "@/trust";
-import { realOrRaw } from "@/utils/realpath";
 
 let root: string;
 beforeEach(() => {

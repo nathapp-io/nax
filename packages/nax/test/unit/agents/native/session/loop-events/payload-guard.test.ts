@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createLoopEventRegistry } from "@/agents/native/session/loop-events";
-import type {
-  BeforeTurnEndPayload,
-  TransformContextPatch,
-  TransformContextPayload,
-} from "@/agents/native/session/loop-events/types";
+import type { BeforeTurnEndPayload, TransformContextPatch, TransformContextPayload } from "@nathapp/nax-agent/internal";
+import { createLoopEventRegistry } from "@nathapp/nax-agent/internal";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 

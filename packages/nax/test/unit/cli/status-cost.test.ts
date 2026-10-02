@@ -20,6 +20,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   type CostReportEmitDeps,
@@ -32,7 +33,6 @@ import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { CostReportV1 } from "@/metrics";
 import type { RunMetrics, StoryMetrics } from "@/metrics/types";
 import { projectOutputDir } from "@/runtime";
-import { byCodePoint } from "@/utils/sort";
 
 function makeRunMetrics(overrides: Partial<RunMetrics> = {}): RunMetrics {
   return {

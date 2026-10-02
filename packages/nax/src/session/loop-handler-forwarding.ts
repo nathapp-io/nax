@@ -17,8 +17,8 @@
  * `shouldLogNativeOnlyScope`).
  */
 
-import type { LoopHandlerContext, LoopHandlerSet } from "../agents/native/session/loop-events/types";
-import type { SessionHandle } from "../agents/session-types";
+import type { SessionHandle } from "@nathapp/nax-agent";
+import type { LoopHandlerContext, LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import { NATIVE_AGENT_NAME } from "../config";
 import type { SessionDescriptor } from "./types";
 

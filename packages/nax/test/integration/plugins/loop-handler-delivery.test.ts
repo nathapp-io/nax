@@ -16,10 +16,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { _clientDeps, _resetNativeClient, clearNativeSessionState } from "@nathapp/nax-agent/internal";
 import type { Client, ConversationMessage, ResolvedModel } from "@nathapp/nax-ai";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _clientDeps, _resetNativeClient } from "@/agents/native/client";
-import { clearNativeSessionState } from "@/agents/native/session/session";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import { globalConfigDir, NATIVE_AGENT_NAME } from "@/config";
 import { loadPlugins } from "@/plugins";

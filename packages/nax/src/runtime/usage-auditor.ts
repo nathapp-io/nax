@@ -12,8 +12,8 @@
 import { appendFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
-import { errorMessage } from "../utils/errors";
 import { type CanonicalSessionRole, KNOWN_SESSION_ROLES } from "./session-role";
 
 export interface UsageAuditEntry {

@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { realOrRaw } from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
   makeMockAgentManager,
@@ -22,7 +23,6 @@ import {
 } from "@test/helpers";
 import { _hardeningDeps, type HardeningContext, runHardeningPass } from "@/acceptance/hardening";
 import type { NaxConfig } from "@/config";
-import { realOrRaw } from "@/utils/realpath";
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 

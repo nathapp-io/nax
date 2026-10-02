@@ -11,8 +11,8 @@
  * See: docs/specs/SPEC-context-engine-v2-amendments.md Amendment A.2
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getLogger } from "@/logger";
-import { errorMessage } from "@/utils/errors";
 import { _manifestStoreDeps, loadContextManifests } from "./manifest-store";
 import type { ProviderWeightsCache } from "./provider-weights-cache";
 import { globToRegex, normalizePath } from "./providers/static-rules";

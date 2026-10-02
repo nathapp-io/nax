@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { ToolRunContext } from "@nathapp/nax-agent";
 import { assertDefined } from "@test/helpers";
 import { runMcpLockCommand } from "@/cli/mcp";
 import type { McpServerConfig } from "@/config";
@@ -9,7 +10,6 @@ import type { McpLockFile } from "@/mcp/lock";
 import { schemaHash } from "@/mcp/lock";
 import { createMcpPool } from "@/mcp/pool";
 import { createMcpProviders } from "@/mcp/provider";
-import type { ToolRunContext } from "@/tools";
 
 const FIXTURE = resolve(import.meta.dir, "../../fixtures/mcp/fake-server.ts");
 const dirs: string[] = [];

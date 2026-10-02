@@ -8,13 +8,13 @@
  * Extracted from `acceptance-setup.ts` so that file stays under its line limit.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { buildAcceptanceRunCommand } from "@/acceptance";
 import type { NaxConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
 import { acceptanceRepairOp } from "@/operations";
 import { MAX_RAW_TAIL_CHARS } from "@/quality";
 import { classifyAcceptanceCrash, isCommandNotRunnable, parseTestFailuresDetailed } from "@/test-runners";
-import { errorMessage } from "@/utils/errors";
 import type { PipelineContext } from "../types";
 import type { _acceptanceSetupDeps } from "./acceptance-setup";
 

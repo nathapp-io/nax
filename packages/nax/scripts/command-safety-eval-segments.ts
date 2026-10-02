@@ -14,7 +14,7 @@
  * (substitutions, here-docs, unterminated quotes) has no segments and is
  * scored whole only — the extra signal stops, the whole-command score does not.
  */
-import { lexBashCommand } from "../src/permissions";
+import { lexBashCommand } from "@nathapp/nax-agent";
 import {
   allScores,
   auroc,

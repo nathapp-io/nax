@@ -5,8 +5,8 @@
  * by running `<agent> --version` and parsing the output.
  */
 
+import { typedSpawn } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { typedSpawn } from "@/utils/bun-deps";
 import { getAllAgents, getInstalledAgents } from "../registry";
 
 /**

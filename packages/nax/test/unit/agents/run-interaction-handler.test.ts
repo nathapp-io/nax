@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import type { CodingToolOutcome, CodingToolRuntime } from "@nathapp/nax-agent";
 import { buildRunInteractionHandler, type RunInteractionOptions } from "@/agents/run-interaction-handler";
-import type { CodingToolOutcome, CodingToolRuntime } from "@/tools";
 
 // No casts: the handler takes a NARROWED option type (see Step 4), so a test can
 // construct one honestly. `check:test-as-unknown-as` sits at baseline 0.

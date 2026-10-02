@@ -16,8 +16,8 @@
 // the POSIX write(2) syscall guarantees is atomic for writes up to PIPE_BUF
 // (same precedent as `src/session/scratch-writer.ts`, `src/logger/logger.ts`).
 import { appendFile } from "node:fs/promises";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
-import { errorMessage } from "@/utils/errors";
 import type { PhaseKind } from "../story-orchestrator";
 import type { CheckpointRecord, CheckpointWriterDeps, TreeState } from "./types";
 

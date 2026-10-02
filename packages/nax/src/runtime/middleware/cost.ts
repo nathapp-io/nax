@@ -1,5 +1,5 @@
+import type { AuthStamp } from "@nathapp/nax-agent";
 import { resolvePricingSource } from "@/agents";
-import type { AuthStamp } from "@/agents/session-types";
 import { NAX_AI_VERSION } from "@/version";
 import type { CostErrorEvent, CostEvent, ICostAggregator, OperationSummaryEvent } from "../cost-aggregator";
 import { toCostRowRates } from "../cost-row-rates";

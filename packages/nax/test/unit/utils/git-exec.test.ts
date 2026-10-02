@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { gitExecModule as gitExec } from "@nathapp/nax-agent/internal";
 import { makeSpawn } from "@test/helpers";
 import * as gitModule from "@/utils/git";
-import * as gitExec from "@/utils/git-exec";
 
 describe("utils/git-exec", () => {
   const originalSpawn = gitExec._gitDeps.spawn;

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { _resetCredentialsConfig, configureCredentials, credentialsConfig, NaxError } from "@/agents/infra";
+import {
+  _resetCredentialsConfig,
+  configureCredentials,
+  credentialsConfig,
+  NaxError,
+} from "@nathapp/nax-agent/internal";
 import { configureNaxCredentials } from "@/config";
 
 describe("credentials slot", () => {

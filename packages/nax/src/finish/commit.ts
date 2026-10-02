@@ -25,9 +25,10 @@
  *   `Omit<FinishRound, "attempt">`; `recordRound` (`./audit`) is the sole
  *   assigner of that field.
  */
+
+import { gitlinkSafeAdd, hasStagedChanges } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { gitWithTimeout } from "../utils/git";
-import { gitlinkSafeAdd, hasStagedChanges } from "../utils/git-add";
 import type { Finding, FindingDisposition, FinishPhase, FinishRound, FinishRoundOutcome } from "./types";
 
 export const _finishGitDeps = { git: gitWithTimeout };

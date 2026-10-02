@@ -1,0 +1,3 @@
+# nax - scanning exclusions
+coverage/
+node_modules/

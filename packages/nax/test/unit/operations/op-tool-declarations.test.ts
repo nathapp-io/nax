@@ -24,9 +24,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { CodingToolName } from "@nathapp/nax-agent";
 import * as ops from "@/operations";
 import { resolveDeclaredTools } from "@/operations/types";
-import type { CodingToolName } from "@/tools";
 
 /**
  * Ops this story gives `Edit` to without `Exec`: they edit only the single

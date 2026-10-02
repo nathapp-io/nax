@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-30T13:53:10.478Z",
+  "updatedAt": "2026-10-02T07:19:53.713Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -21,13 +21,8 @@
     "src/agents/acp/adapter-complete-flow.ts": { "=>": 29 },
     "src/agents/acp/spawn-client-session.ts": { "prompt": 24 },
     "src/agents/acp/stdout-line-reader.ts": { "=>": 32 },
-    "src/agents/coding-tool-extras.ts": { "buildDeclaredCommandTools": 24 },
-    "src/agents/coding-tool-support.ts": { "buildCodingToolSupport": 38 },
     "src/agents/manager-run-fallback.ts": { "runWithFallback": 54 },
     "src/agents/manager.ts": { "completeWithFallback": 40 },
-    "src/agents/native/session-adapter.ts": { "sendTurn": 21 },
-    "src/agents/native/session/tool-input-validation.ts": { "validateToolInput": 26 },
-    "src/agents/native/session/turn-tool-batch.ts": { "runToolBatch": 59 },
     "src/agents/retry/hop-retry-policy.ts": { "trySameAgentRetry": 45 },
     "src/agents/retry/parse-retry.ts": { "shouldRetry": 44 },
     "src/agents/run-interaction-handler.ts": { "onInteraction": 52 },
@@ -43,7 +38,6 @@
     "src/cli/prompts-main.ts": { "promptsCommand": 22 },
     "src/cli/rules-lint.ts": { "rulesLintCommand": 37 },
     "src/cli/status-features.ts": { "displayAllFeatures": 37 },
-    "src/command-safety/shadow.ts": { "toRow": 27 },
     "src/commands/common.ts": { "resolveProject": 22 },
     "src/commands/curator.ts": { "curatorCommit": 46, "parseCheckedProposals": 27 },
     "src/commands/detect.ts": { "detectCommand": 36 },
@@ -155,7 +149,6 @@
     "src/runtime/middleware/idle-watchdog/index.ts": { "=>": 37 },
     "src/runtime/packages.ts": { "hydrate": 21 },
     "src/runtime/session-run-hop.ts": { "=>": 57 },
-    "src/runtime/spin-breaker/index.ts": { "observe": 25 },
     "src/session/manager.ts": { "sendPrompt": 21 },
     "src/tdd/verdict-reader.ts": { "isValidVerdict": 27 },
     "src/test-runners/conventions.ts": { "globToRegex": 22 },
@@ -165,16 +158,6 @@
     "src/test-runners/parse-rust.ts": { "extractRustFailures": 23 },
     "src/test-runners/parser.ts": { "parseJestOutput": 27, "parsePytestOutput": 22 },
     "src/test-runners/resolver.ts": { "resolveTestFilePatterns": 24 },
-    "src/tools/git-commit.ts": { "run": 22 },
-    "src/tools/git.ts": { "buildGitArgv": 47 },
-    "src/tools/grep.ts": { "run": 21 },
-    "src/tools/policy-bash-raw.ts": { "screenRawBashCommand": 26 },
-    "src/tools/policy-bash.ts": { "checkBashCommand": 21 },
-    "src/tools/policy.ts": { "verbBranch": 29, "argvBranch": 23 },
-    "src/tools/read.ts": { "run": 24 },
-    "src/tools/run-command.ts": { "run": 56 },
-    "src/tools/runtime.ts": { "log": 40, "runTool": 24 },
-    "src/tools/truncate.ts": { "truncateForModel": 24 },
     "src/tui/App.tsx": { "App": 21 },
     "src/tui/hooks/useAgentStreamEvents.ts": { "=>": 30 },
     "src/utils/command-argv.ts": { "parseCommandToArgv": 27 },
@@ -199,7 +182,6 @@
     "test/unit/execution/pid-registry.test.ts": { "=>": 22 },
     "test/unit/execution/story-orchestrator/fix-review-strategy.test.ts": { "=>": 24 },
     "test/unit/interaction/plugins/telegram.test.ts": { "=>": 21 },
-    "test/unit/runtime/spin-breaker.test.ts": { "=>": 27 },
-    "test/unit/tools/glob.test.ts": { "parseGroupLine": 26 }
+    "test/unit/runtime/spin-breaker.test.ts": { "=>": 27 }
   }
 }

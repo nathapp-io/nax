@@ -3,21 +3,22 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
+import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "@nathapp/nax-agent";
 import {
   clearNativeSessionState,
   closeNativeSession,
+  loadTranscript,
   nativeSessionCompaction,
+  nativeSessionId,
   nativeSessionLastUsage,
   nativeSessionTranscriptOwners,
   nativeSessionTransportRetry,
   openNativeSession,
+  runNativeTurn,
+  saveTranscript,
   sessionAnchorFor,
-} from "@/agents/native/session/session";
-import { loadTranscript, saveTranscript } from "@/agents/native/session/transcript-store";
-import { runNativeTurn } from "@/agents/native/session/turn-loop";
-import { nativeSessionId } from "@/agents/native/session-affinity";
-import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "@/agents/session-types";
+} from "@nathapp/nax-agent/internal";
+import { makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import { SessionManager } from "@/session/manager";
 import type { OpenSessionRequest } from "@/session/types";
 

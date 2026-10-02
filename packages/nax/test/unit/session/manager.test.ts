@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { assertDefined, makeAgentAdapter, makeNaxConfig } from "@test/helpers";
 import type { OpenSessionOpts, SessionHandle } from "@/agents/types";
 import { NaxError } from "@/errors";
 import { PidRegistry } from "@/execution/pid-registry";
 import { _sessionManagerDeps, SessionManager } from "@/session/manager";
 import type { OpenSessionRequest, SessionState } from "@/session/types";
-import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test setup

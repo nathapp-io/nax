@@ -13,6 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import {
   assertDefined,
   makeMockRuntime,
@@ -28,7 +29,6 @@ import { getLogger } from "@/logger";
 import { _completionDeps, completionStage } from "@/pipeline/stages";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
-import { errorMessage } from "@/utils/errors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration

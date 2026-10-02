@@ -9,14 +9,17 @@
  * runQualityCommand() instead. (#135)
  */
 
+import {
+  errorMessage,
+  killProcessGroup,
+  normalizeCommandSpec,
+  type QualityCommandSpec,
+} from "@nathapp/nax-agent/internal";
 import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
 import { assertTrusted } from "../trust";
-import { errorMessage } from "../utils/errors";
-import { killProcessGroup } from "../utils/process-kill";
 import { withAgentOutputEnv } from "../verification/executor";
 import { aggregateResults } from "./aggregate";
-import { normalizeCommandSpec, type QualityCommandSpec } from "./command-spec";
 
 /** Default timeout for quality commands — matches legacy REVIEW_CHECK_TIMEOUT_MS. */
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -48,7 +51,7 @@ export interface QualityCommandOptions {
    * Who invoked this run. Defaults to `"harness"`.
    *
    * `"agent-tool"` marks the agent's own iteration loop arriving through the
-   * `RunCommand` coding tool (src/tools/run-command.ts). Those records are
+   * `RunCommand` coding tool (packages/nax-agent/src/tools/run-command.ts). Those records are
    * demoted to debug: they still reach the JSONL (the file sink writes every
    * level) but stay off the console, because a failing lint there is normal TDD
    * red rather than a harness fault — and because on the acpx transport the

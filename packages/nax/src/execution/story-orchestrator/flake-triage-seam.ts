@@ -7,12 +7,12 @@
  * between the two orchestrator files.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
 import { renderCommandSpec } from "@/quality";
 import { detectFramework } from "@/test-runners";
-import { errorMessage } from "@/utils/errors";
 import { storyPackageDir } from "@/utils/path-frame";
 import {
   type FlakeTriageScope,

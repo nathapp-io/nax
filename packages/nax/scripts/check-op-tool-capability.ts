@@ -31,9 +31,9 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { type CodingToolName, getCodingTool, registerBuiltinCodingTools } from "@nathapp/nax-agent";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { resolveDeclaredTools } from "../src/operations/types";
-import { type CodingToolName, getCodingTool, registerBuiltinCodingTools } from "../src/tools";
-import { byCodePoint } from "../src/utils/sort";
 
 const BASELINE_FILE = join(import.meta.dir, "baselines", "op-tool-capability-baseline.json");
 

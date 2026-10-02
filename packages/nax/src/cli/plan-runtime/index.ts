@@ -8,6 +8,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { errorMessage, gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { scanSourceRoots } from "@/analyze";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG, isUnrecognizedLiteralModel, resolveConfiguredModel } from "@/config";
@@ -18,8 +19,6 @@ import type { PRD } from "@/prd";
 import type { PrecheckResultWithCode } from "@/precheck";
 import type { NaxRuntime } from "@/runtime";
 import { claimProjectIdentity, createRuntime } from "@/runtime";
-import { errorMessage } from "@/utils/errors";
-import { gitSpawnEnv } from "@/utils/git-env";
 import { createCliInteractionBridge } from "../plan-helpers";
 
 export const DEFAULT_TIMEOUT_SECONDS = 600;

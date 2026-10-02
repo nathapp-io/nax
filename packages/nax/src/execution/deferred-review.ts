@@ -5,11 +5,11 @@
  * all stories complete, using the full diff from run-start to HEAD.
  */
 
+import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import { spawn } from "bun";
 import type { PluginRegistry } from "../plugins";
 import type { ReviewConfig } from "../review/types";
 import { GIT_TIMEOUT_MS } from "../utils/git";
-import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
 import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /** Injectable deps for testing */

@@ -11,11 +11,11 @@
  * interaction opts, the rate card, and the turn deadline.
  */
 
+import type { AdapterInteraction } from "@nathapp/nax-agent";
+import { createTurnDeadline } from "@nathapp/nax-agent";
 import { getSafeLogger } from "@/logger";
 import type { ITokenUsageMapper, RateCard, TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostUsd } from "../cost";
-import type { AdapterInteraction } from "../interaction-handler";
-import { createTurnDeadline } from "../turn-deadline";
 import type { InteractionExchange, SendTurnOpts, TurnResult } from "../types";
 import { SessionTurnError } from "../types";
 import {

@@ -4,9 +4,9 @@
  * Orchestrates the layout, stories panel, live activity panel, and status bar.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, Text, useApp, useInput } from "ink";
 import { memo, useEffect, useRef, useState } from "react";
-import { errorMessage } from "../utils/errors";
 import { writeQueueCommand, writeRetryCommand } from "../utils/queue-writer";
 import { CostOverlay } from "./components/CostOverlay";
 import { HelpOverlay } from "./components/HelpOverlay";

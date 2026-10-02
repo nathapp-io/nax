@@ -5,14 +5,13 @@
  * Rejects invalid contestants before any spend occurs.
  */
 
+import { which as defaultWhich, errorMessage } from "@nathapp/nax-agent/internal";
 import { ACP_ADAPTER_NAMES, AcpAgentAdapter } from "../agents/acp";
 import type { NaxConfig } from "../config";
 import { deepMergeConfig } from "../config";
 import { loadProfile } from "../config/profile";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { which as defaultWhich } from "../utils/bun-deps";
-import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
 
 const BAKEOFF_BRANCH_PREFIX = "nax/bakeoff-";

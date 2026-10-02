@@ -1,3 +1,4 @@
+import { errorMessage, type QualityCommandSpec, renderCommandSpec } from "@nathapp/nax-agent/internal";
 import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 // Leaf import (not the execution barrel) to avoid the execution→operations cycle.
@@ -5,11 +6,9 @@ import { maybeRunNewPackageSetup } from "../execution/new-package-setup";
 import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
-import { type QualityCommandSpec, renderCommandSpec } from "../quality/command-spec";
 import { appendScratchEntry } from "../session/scratch-writer";
 import type { ResolvedTestPatterns, SelectScopedTestsResult, TestSummary } from "../test-runners";
 import { parseTestOutput, selectScopedTests } from "../test-runners";
-import { errorMessage } from "../utils/errors";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { regression } from "../verification/runners";
 import type { VerificationGateOptions, VerificationResult } from "../verification/types";

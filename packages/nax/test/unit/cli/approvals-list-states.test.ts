@@ -29,10 +29,10 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { type ApprovalEntry, type ApprovalsTaint, approvalId, approvalsPath } from "@nathapp/nax-agent";
 import { assertDefined, withTempDir } from "@test/helpers";
 import { Command } from "commander";
 import { _approvalsCliDeps, approvalsListCommand, registerApprovalsCommand } from "@/cli/approvals";
-import { type ApprovalEntry, type ApprovalsTaint, approvalId, approvalsPath } from "@/permissions";
 
 type CliDeps = typeof _approvalsCliDeps;
 

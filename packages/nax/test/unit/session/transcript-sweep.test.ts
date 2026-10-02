@@ -21,12 +21,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ConversationMessage } from "@nathapp/nax-ai";
 import {
   _resetTranscriptTruncationWarningForTests,
   MAX_RETAINED_TRANSCRIPTS,
   saveTranscript,
-} from "@/agents/native/session/transcript-store";
+} from "@nathapp/nax-agent/internal";
+import type { ConversationMessage } from "@nathapp/nax-ai";
 import { sweepFeatureTranscripts } from "@/session";
 
 let rootDir: string;

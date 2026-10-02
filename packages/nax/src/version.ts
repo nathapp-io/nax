@@ -23,9 +23,9 @@
  * package that differs from the declared pin is out of scope.
  */
 
+import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { CATALOG_VERSION } from "@/agents/catalog";
 import pkg from "../package.json";
-import { gitSpawnEnv } from "./utils/git-env";
 
 declare const GIT_COMMIT: string;
 

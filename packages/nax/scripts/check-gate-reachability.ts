@@ -23,7 +23,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { byCodePoint } from "../src/utils/sort";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { findRepoRoot } from "./lib/repo-root";
 
 const CI_WORKFLOW = join(".github", "workflows", "ci.yml");

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { createRunCommandTool } from "@nathapp/nax-agent";
 import { applyProtocolRegions, unwrapProtocolRegions } from "@/prompts/sections";
 import { buildSelfVerificationSection } from "@/prompts/sections/self-verification";
-import { createRunCommandTool } from "@/tools";
 
 describe("buildSelfVerificationSection", () => {
   test("renders the gate header and the marker block", () => {

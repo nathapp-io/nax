@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { compileToolPolicy } from "@nathapp/nax-agent";
+import { expandProviderGrants } from "@nathapp/nax-agent/internal";
 import { makeNaxConfig } from "@test/helpers";
 import { resolvePermissions } from "@/config/permissions";
-import { compileToolPolicy } from "@/tools";
-import { expandProviderGrants } from "@/tools/provider-grants";
 
 describe("expandProviderGrants", () => {
   test("emits one grant per namespaced tool name", () => {

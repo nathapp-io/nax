@@ -6,10 +6,8 @@
  */
 
 import { resolve } from "node:path";
+import { killProcessGroup, spawn, withAgentOutputEnv } from "@nathapp/nax-agent/internal";
 import { assertTrusted } from "../trust";
-import { withAgentOutputEnv } from "../utils/agent-output-env";
-import { spawn } from "../utils/bun-deps";
-import { killProcessGroup } from "../utils/process-kill";
 import type { TestExecutionResult } from "./types";
 
 /** Injectable deps for testability — mock _executorDeps.spawn instead of global Bun.spawn */
@@ -43,7 +41,7 @@ export function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<
  * here would let a copy drift the moment one of them is edited, and the spawn
  * sites would silently stop agreeing on what counts as an inherited marker.
  */
-export { AGENT_OUTPUT_MARKERS, withAgentOutputEnv } from "../utils/agent-output-env";
+export { AGENT_OUTPUT_MARKERS, withAgentOutputEnv } from "@nathapp/nax-agent/internal";
 
 /**
  * Nothing is stripped unless the caller asks. This used to default to

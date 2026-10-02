@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { _authDeps, _resetCredentialStore, naxCredentialStore } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _authDeps } from "@/agents/native/auth";
-import { _resetCredentialStore, naxCredentialStore } from "@/agents/native/credentials";
 import { _cliAuthDeps, authImportCommand, authListCommand, authLoginCommand, authRmCommand } from "@/cli/auth";
 import { _authPromptDeps, type PromptStdin } from "@/cli/auth-prompt";
 import { _openUrlDeps } from "@/cli/open-url";
@@ -406,7 +405,7 @@ const ROOT = join(import.meta.dir, "..", "..", "..");
 
 describe("auth command wiring", () => {
   test("the native barrel re-exports the auth surface", async () => {
-    const barrel = await import("@/agents/native");
+    const barrel = await import("@nathapp/nax-agent");
     expect(typeof barrel.runLogin).toBe("function");
     expect(typeof barrel.importPiCredentials).toBe("function");
     expect(typeof barrel.listStoredProviders).toBe("function");

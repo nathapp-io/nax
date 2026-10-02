@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import * as infra from "@/agents/infra";
+import { infraModule as infra } from "@nathapp/nax-agent/internal";
 import { LockAcquisitionError, NaxError } from "@/errors";
 
 const InfraNaxError = infra.NaxError;

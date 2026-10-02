@@ -6,9 +6,10 @@
  *
  * See: docs/specs/SPEC-session-manager-integration.md
  */
-import type { LoopHandlerSet } from "../agents/native/session/loop-events/types";
+
+import type { ProtocolIds } from "@nathapp/nax-agent";
+import type { LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import type { ToolDescriptor } from "../context/engine";
-import type { ProtocolIds } from "../runtime/protocol-types";
 import type { SessionRole } from "../runtime/session-role";
 
 export type { CanonicalSessionRole, SessionRole } from "../runtime/session-role";
@@ -192,7 +193,7 @@ export interface OpenSessionRequest {
  */
 export interface SendPromptOpts {
   /** Mid-turn interaction callback (context-tool calls, agent questions). */
-  interactionHandler?: import("../agents/interaction-handler").InteractionHandler;
+  interactionHandler?: import("@nathapp/nax-agent").InteractionHandler;
   /** Abort signal — mid-turn abort transitions the handle to CANCELLED. */
   signal?: AbortSignal;
   /** Max interaction round-trips per turn (default: 10). */
@@ -203,7 +204,7 @@ export interface SendPromptOpts {
    */
   contextPullTools?: readonly ToolDescriptor[];
   /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */
-  codingTools?: readonly import("@/tools").CodingTool[];
+  codingTools?: readonly import("@nathapp/nax-agent").CodingTool[];
   /** Per-turn identity, forwarded to the adapter's `SendTurnOpts.turnId`. */
   turnId?: string;
 }
@@ -213,13 +214,13 @@ export interface SendPromptOpts {
  */
 export interface RunInSessionOpts extends OpenSessionRequest {
   /** Mid-turn interaction callback forwarded to sendPrompt. */
-  interactionHandler?: import("../agents/interaction-handler").InteractionHandler;
+  interactionHandler?: import("@nathapp/nax-agent").InteractionHandler;
   /** Max interaction round-trips per prompt. */
   maxInteractions?: number;
   /** Native: pull-tool catalogue forwarded to sendPrompt. ACP ignores it. */
   contextPullTools?: readonly ToolDescriptor[];
   /** Native: coding-tool catalogue forwarded to sendTurn — ACP ignores it. */
-  codingTools?: readonly import("@/tools").CodingTool[];
+  codingTools?: readonly import("@nathapp/nax-agent").CodingTool[];
 }
 
 /**

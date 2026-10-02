@@ -1,0 +1,434 @@
+/**
+ * Read-only git, for reviewers that need a real diff rather than one pushed
+ * into the prompt.
+ *
+ * This spawns a subprocess, which ADR-029 section 3 severed for Bash. The
+ * distinction, written down rather than assumed: git is a FIXED binary invoked
+ * with an argv nax constructs entirely, with no shell. The model supplies
+ * structure — a subcommand, refs, pathspecs — never a command string. Bash
+ * inverts that, which is why it needs a sandbox and a threat model instead of
+ * an allowlist.
+ *
+ * Reuses gitWithTimeout, which already provides the argv-array spawn, the
+ * explicit cwd, the SIGKILL timeout, and concurrent pipe draining — the last of
+ * which matters here because `git log -p` is exactly the output that fills a
+ * 64KB pipe buffer and deadlocks a naive implementation.
+ */
+
+import type { InterceptRequest } from "#src/command-interceptor/index";
+import { interceptArgv } from "#src/command-interceptor/index";
+import { gitWithTimeout } from "#src/internal/git-exec";
+import { gitExcludePathspecsOf } from "./protected-paths";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { cutToByteCap, READ_CEILING } from "./truncate";
+
+/**
+ * Read-only verbs. Mutating verbs are not representable in the input type.
+ *
+ * Note what bounds these: the argv shape below, not the verb list. A read-only
+ * verb still spans the whole repository unless its scope is stated.
+ */
+export const GIT_READ_VERBS: readonly string[] = ["diff", "log", "show", "status", "blame"];
+
+/**
+ * Typed flag fields, and the verbs each one is valid on.
+ *
+ * nax emits every one of these flags itself: a boolean or a closed enum comes
+ * in, a fixed string goes out. The model never supplies flag text, so the
+ * property the header comment defends — the model supplies structure, nax
+ * constructs the argv — is unchanged by their existence. That is the whole
+ * reason they are typed fields rather than a passthrough list.
+ *
+ * They exist because `git diff --name-only --diff-filter=A` is step 1 of the
+ * adversarial reviewer's test-audit workflow and was not expressible at all:
+ * the only way to ask for it was to put the flags in `refs`/`paths`, where
+ * `looksLikeFlag` refuses them (#1818). A field is gated to the verbs it
+ * applies to so a wrong pairing is a nax error the model can act on, rather
+ * than a git usage error it has to interpret.
+ */
+export const GIT_DIFF_FILTERS: readonly string[] = ["A", "M", "D", "R"];
+// `show` is deliberately absent: git itself refuses it — "options '--name-only',
+// '--name-status', '--check', and '-s' cannot be used together" (git 2.50.1),
+// because `show` already supplies a conflicting output selector. Verified by
+// running it; a nax-side refusal here is the clearer of the two errors.
+// `show` takes git's ordinary diff and log options, so it belongs in all three.
+// It was omitted from every gate while sitting in GIT_READ_VERBS, which made
+// `git show --name-only <ref>` inexpressible: 22 denials across 4 features in
+// the tool audit, from verifier, implementer and test-writer alike (nax#1800).
+// `status` stays out -- git has no --name-only there, and inventing an
+// acceptance would only move the failure to a raw git error.
+const GIT_NAME_ONLY_VERBS: readonly string[] = ["diff", "log", "show"];
+const GIT_DIFF_FILTER_VERBS: readonly string[] = ["diff", "log", "show"];
+const GIT_ONELINE_VERBS: readonly string[] = ["log", "show"];
+
+/**
+ * `log` alone takes a commit bound. Every other read verb already names what it
+ * operates on -- `show` and `blame` take a ref, `diff` a range, `status` the
+ * working tree -- so none of them is unbounded in the way `log` is, and
+ * defaulting them would invent a truncation nobody asked for.
+ */
+const GIT_MAX_COUNT_VERBS: readonly string[] = ["log"];
+
+/**
+ * Commit bound applied to a `log` that does not supply its own.
+ *
+ * `log` was the one read verb with no bound on how much it returns: a pathspec
+ * selects WHICH commits to show, then each selected commit prints in full. With
+ * `nameOnly` that compounds, because `--name-only` lists every file in each
+ * matching commit rather than the path that selected it -- nax#2009 measured
+ * 79KB from 7 commits on a single-file pathspec, the largest call in a
+ * 267-call session.
+ *
+ * Applied ONLY to a `log` that names no `refs`. A ref range is a scope the
+ * caller already chose, and capping on top of it discards commits they asked
+ * for with no marker. A commit cap appends nothing, so the model cannot tell
+ * 12 commits from 200-capped-to-20. The reviewer prompt asks for a story's
+ * history as `log <ref>..HEAD --oneline`
+ * (`src/prompts/sections/protocol-region.ts`), and `--max-count` keeps the
+ * NEWEST n -- a default there would have silently dropped the initial
+ * implementation commits. An unscoped `log` walks the whole history of HEAD
+ * and is the shape with no bound at all.
+ */
+export const DEFAULT_LOG_MAX_COUNT = 20;
+
+/**
+ * Compact commit rendering for `log`.
+ *
+ * `format:` rather than `tformat:` or the bare form: it places the separator
+ * BETWEEN commits, so each --name-only file list stays grouped with the commit
+ * that produced it instead of being orphaned after a blank line. Observed
+ * against a real repo, `format:%h %ad %s --name-only` renders the file list on
+ * the line directly after its commit's header; `tformat:` (which is what a bare
+ * `--format=` means) leaves a blank line between the two.
+ *
+ * `--date=short` pairs with it: `%ad` renders in whatever form `--date`
+ * selects, and the default is the raw commit timestamp
+ * (`Thu Apr 7 15:13:13 2005 -0700`) -- more noise than the compact line is
+ * meant to carry. (`%ai`/`%as` would be the ISO-8601 spellings; neither is
+ * used here.)
+ */
+export const DEFAULT_LOG_FORMAT = "format:%h %ad %s";
+
+/**
+ * `fullMessage` opts back in to git's `medium` default by suppressing the
+ * compact `--format=`. It only makes sense for `log`: `show` renders a single
+ * commit whose message is usually the reason for the call, and the other
+ * read verbs do not render commit messages at all.
+ */
+const GIT_FULL_MESSAGE_VERBS: readonly string[] = ["log"];
+
+/**
+ * git parses `--max-count` into a C int, so INT_MAX is the real ceiling.
+ *
+ * Above it the field would defeat its own purpose: `Number.isInteger(1e21)` is
+ * true and interpolation renders it `1e+21`, so `maxCount: 1e21` reached git as
+ * `fatal: '1e+21': not an integer` -- a git usage error the model has to
+ * interpret, which is the class this field refuses rather than coerces.
+ */
+const GIT_MAX_COUNT_CEILING = 2_147_483_647;
+
+/**
+ * A positive-integer field, gated to the verbs it applies to.
+ *
+ * Refused rather than coerced, for the reason `flagFromBoolean` gives: a
+ * non-integer would reach git as `--max-count=1.5` and come back as a git usage
+ * error the model then has to interpret. The `typeof` check rejects every
+ * non-number -- the numeric string `"5"`, `true`, `null`, objects -- and
+ * `Number.isInteger` rejects NaN and Infinity.
+ */
+function flagFromPositiveInteger(
+  input: Record<string, unknown>,
+  field: string,
+  subcommand: string,
+  validVerbs: readonly string[],
+  flag: string,
+): string | null | { error: string } {
+  const value = input[field];
+  if (value === undefined) return null;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > GIT_MAX_COUNT_CEILING) {
+    return { error: `"${field}" must be a positive integer` };
+  }
+  if (!validVerbs.includes(subcommand)) {
+    return { error: `"${field}" is not valid for "${subcommand}" (valid for: ${validVerbs.join(", ")})` };
+  }
+  return `${flag}=${value}`;
+}
+
+/**
+ * A boolean flag field: absent or `false` emits nothing, `true` emits the flag.
+ *
+ * A non-boolean is refused rather than coerced — `nameOnly: "false"` is truthy
+ * in JavaScript, so coercion would turn a model's mistake into the opposite of
+ * what it asked for.
+ */
+function flagFromBoolean(
+  input: Record<string, unknown>,
+  field: string,
+  subcommand: string,
+  validVerbs: readonly string[],
+  flag: string,
+): string | null | { error: string } {
+  const value = input[field];
+  if (value === undefined) return null;
+  if (typeof value !== "boolean") return { error: `"${field}" must be a boolean` };
+  // Checked before the verb gate: `false` asks for nothing, so refusing it for
+  // the wrong verb would invent a refusal — the failure class this change
+  // exists to reduce.
+  if (!value) return null;
+  if (!validVerbs.includes(subcommand)) {
+    return { error: `"${field}" is not valid for "${subcommand}" (valid for: ${validVerbs.join(", ")})` };
+  }
+  return flag;
+}
+
+export { GIT_ESCAPE_FLAGS } from "#src/tools/git-flags/index";
+
+function looksLikeFlag(value: string): boolean {
+  return value.startsWith("-");
+}
+
+/**
+ * `defaultExcludes`: pathspecs appended to an unscoped call (the host's own
+ * state, nax#2007); none by default.
+ */
+export function buildGitArgv(
+  input: Record<string, unknown>,
+  defaultExcludes: readonly string[] = [],
+): string[] | { error: string } {
+  const subcommand = input.subcommand;
+  if (typeof subcommand !== "string" || !GIT_READ_VERBS.includes(subcommand)) {
+    return { error: `subcommand must be one of: ${GIT_READ_VERBS.join(", ")}` };
+  }
+
+  const refs = Array.isArray(input.refs) ? input.refs : [];
+  const paths = Array.isArray(input.paths) ? input.paths : [];
+
+  // No `--relative` is injected. Since the single-frame redesign the permitted
+  // root is the repository root, so git's default repo-rooted path framing
+  // already agrees with Read/Grep/Glob. The flag only ever compensated for a
+  // package-subdir root (#1807); from the repo root it is wrong.
+  const argv: string[] = [subcommand];
+
+  // Flags precede the refs. Git accepts them in either position, but a flag
+  // placed after a revision list reads as a pathspec to anyone (model or
+  // human) scanning the argv, and this argv is written into the tool-audit
+  // ledger that #1818 was filed from.
+  const nameOnly = flagFromBoolean(input, "nameOnly", subcommand, GIT_NAME_ONLY_VERBS, "--name-only");
+  if (nameOnly !== null && typeof nameOnly === "object") return nameOnly;
+  if (nameOnly !== null) argv.push(nameOnly);
+
+  const diffFilter = input.diffFilter;
+  if (diffFilter !== undefined) {
+    if (typeof diffFilter !== "string" || !GIT_DIFF_FILTERS.includes(diffFilter)) {
+      return { error: `"diffFilter" must be one of: ${GIT_DIFF_FILTERS.join(", ")}` };
+    }
+    if (!GIT_DIFF_FILTER_VERBS.includes(subcommand)) {
+      return {
+        error: `"diffFilter" is not valid for "${subcommand}" (valid for: ${GIT_DIFF_FILTER_VERBS.join(", ")})`,
+      };
+    }
+    argv.push(`--diff-filter=${diffFilter}`);
+  }
+
+  // `fullMessage` is validated first, before `oneline` is pushed into argv, so
+  // the contradiction refusal is the actual return and the local argv is
+  // never built. The non-boolean check precedes the verb gate for the same
+  // reason `flagFromBoolean` does: a non-boolean still names the field it's
+  // about.
+  const fullMessage = input.fullMessage;
+  if (fullMessage !== undefined) {
+    if (typeof fullMessage !== "boolean") {
+      return { error: `"fullMessage" must be a boolean` };
+    }
+    if (fullMessage) {
+      if (input.oneline === true) {
+        // Both at once is a contradiction: `oneline` requests a one-line
+        // commit list, `fullMessage` requests git's medium default (subject,
+        // author, date, body). Refused by name rather than resolved silently.
+        return {
+          error: `"oneline" and "fullMessage" cannot both be true; pick one`,
+        };
+      }
+      if (!GIT_FULL_MESSAGE_VERBS.includes(subcommand)) {
+        return {
+          error: `"fullMessage" is not valid for "${subcommand}" (valid for: ${GIT_FULL_MESSAGE_VERBS.join(", ")})`,
+        };
+      }
+    }
+  }
+
+  const oneline = flagFromBoolean(input, "oneline", subcommand, GIT_ONELINE_VERBS, "--oneline");
+  if (oneline !== null && typeof oneline === "object") return oneline;
+  if (oneline !== null) argv.push(oneline);
+
+  // `--oneline` and `--format=` are last-wins on the same argv; `oneline`
+  // continuing to win is intentional — it is the caller's explicit request.
+  // `fullMessage` suppresses the default because its whole purpose is to
+  // restore git's medium rendering.
+  if (subcommand === "log" && oneline === null && fullMessage !== true) {
+    argv.push(`--format=${DEFAULT_LOG_FORMAT}`);
+    argv.push("--date=short");
+  }
+
+  const maxCount = flagFromPositiveInteger(input, "maxCount", subcommand, GIT_MAX_COUNT_VERBS, "--max-count");
+  if (maxCount !== null && typeof maxCount === "object") return maxCount;
+  if (maxCount !== null) argv.push(maxCount);
+  // Only an UNSCOPED log gets the default -- see DEFAULT_LOG_MAX_COUNT. A refs
+  // range is the caller's own scope, and capping it would drop commits they
+  // asked for with nothing in the output to say so.
+  else if (GIT_MAX_COUNT_VERBS.includes(subcommand) && refs.length === 0) {
+    argv.push(`--max-count=${DEFAULT_LOG_MAX_COUNT}`);
+  }
+
+  for (const ref of refs) {
+    if (typeof ref !== "string") return { error: "refs must be strings" };
+    // A ref that begins with "-" would be parsed as an option, which is how an
+    // escape flag would arrive. Refuse rather than sanitise.
+    if (looksLikeFlag(ref)) return { error: `ref "${ref}" may not begin with "-"` };
+    argv.push(ref);
+  }
+
+  // `--` ALWAYS terminates the revision list, even with no paths to follow it.
+  // Without it git disambiguates an argument that is not a valid revision by
+  // checking whether it names a path, and silently reinterprets it as a
+  // pathspec -- so `show ../../outside/secret` read a file outside the root,
+  // never reaching resolveWithin because a colon-less ref was treated as "a
+  // pure revision, nothing to contain". With `--` git rejects it outright.
+  argv.push("--");
+
+  if (paths.length === 0) {
+    // Scope an unrestricted call to the root. A ref names a whole commit, whose
+    // diff spans the entire repository, so `show HEAD` returned outside-root
+    // content without naming a path at all -- nothing in the argv was wrong,
+    // the command's own scope was. `.` is resolved by git against the cwd,
+    // which gitWithTimeout sets to the permitted root.
+    argv.push(".");
+    // The host's own run state under .nax/ is git-tracked during a run, so an
+    // unscoped call reported it back as the agent's diff (#2007). Excluded only
+    // on this DEFAULT branch: a caller that names a path under .nax/ gets it --
+    // the tool is read-only, and silently returning nothing for an explicitly
+    // requested path would be a worse failure than the one being fixed.
+    // `blame` is exempt because git rejects exclude pathspecs on it and exits
+    // 128; do not "unify" it back in.
+    if (subcommand !== "blame") argv.push(...defaultExcludes);
+    return argv;
+  }
+
+  for (const path of paths) {
+    if (typeof path !== "string") return { error: "paths must be strings" };
+    if (looksLikeFlag(path)) return { error: `path "${path}" may not begin with "-"` };
+    argv.push(path);
+  }
+
+  return argv;
+}
+
+export const gitTool: CodingTool = {
+  name: "Git",
+  description:
+    "Run a read-only git command (diff, log, show, status, blame) in the repository. Supply refs and pathspecs as arrays, not as a command line. Command-line flags are not accepted in any field; use the nameOnly, diffFilter, oneline, fullMessage and maxCount fields instead.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      subcommand: { type: "string", enum: [...GIT_READ_VERBS], description: "Read-only git subcommand" },
+      refs: { type: "array", items: { type: "string" }, description: "Refs, e.g. ['HEAD~1','HEAD']" },
+      paths: { type: "array", items: { type: "string" }, description: "Pathspecs, relative to the permitted root" },
+      nameOnly: {
+        type: "boolean",
+        description:
+          "List file names only, no content (diff, log, show). On log the file list is restricted to the pathspec; log renders a compact commit line by default — set fullMessage to restore full commit bodies.",
+      },
+      diffFilter: {
+        type: "string",
+        enum: [...GIT_DIFF_FILTERS],
+        description: "Select only files Added (A), Modified (M), Deleted (D) or Renamed (R) (diff)",
+      },
+      oneline: { type: "boolean", description: "One line per commit (log)" },
+      fullMessage: {
+        type: "boolean",
+        description:
+          "Restore git's medium commit rendering on log (subject, author, date, body). The default is a compact one-line form; set this to opt back in to the full message.",
+      },
+      maxCount: {
+        type: "integer",
+        description: `Maximum commits to return, newest first (log). A log with no refs defaults to ${DEFAULT_LOG_MAX_COUNT}; a log with a ref range is left unbounded. Raise it to walk further back.`,
+      },
+    },
+    required: ["subcommand"],
+  },
+  // `paths` entries and the path-portion of `refs` entries (git's
+  // "<rev>:<path>" syntax) are checked for containment via arrayPathFields /
+  // refPathFields — see the ToolScope doc comment for why they carry no
+  // pattern matching. The verb gate above is still what bounds which git
+  // subcommands may run at all.
+  scope: {
+    pathFields: [],
+    arrayPathFields: ["paths"],
+    refPathFields: ["refs"],
+    verbField: "subcommand",
+    allowedVerbs: GIT_READ_VERBS,
+  },
+
+  async run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult> {
+    const built = buildGitArgv(input, gitExcludePathspecsOf(ctx));
+    if ("error" in built) return { content: built.error, isError: true };
+    const interceptor = ctx.interceptor;
+
+    try {
+      // nax-git-env-allow: not a spawn; the (possibly rewritten) argv runs through gitWithTimeout below
+      const intercepted = await interceptArgv(["git", ...built], ctx.root, interceptor);
+      // The I/O ceiling, not the model-facing cap — see the `cutToByteCap`
+      // call below, which bounds the same body at the same value.
+      const ioCeiling = ctx.readCeiling ?? READ_CEILING;
+      const { stdout, stderr, exitCode } = await gitWithTimeout(
+        built,
+        ctx.root,
+        undefined,
+        ioCeiling,
+        intercepted.argv,
+      );
+      // Computed before the error branch so a REWRITTEN command that ran and
+      // FAILED is still ledged — replay fidelity is exactly where the failure
+      // path matters (US-008). `InterceptOutcome.executed` is optional but
+      // `ToolResult.audit.executed` is required, so the narrowing stays.
+      const audit = intercepted.executed !== undefined ? { executed: intercepted.executed } : undefined;
+      if (exitCode !== 0 && stdout.trim() === "") {
+        return {
+          content: stderr.trim() || `git exited ${exitCode}`,
+          isError: true,
+          ...(audit !== undefined ? { audit } : {}),
+        };
+      }
+      // postProcess runs BEFORE trimEnd/truncate: stripping a hint changes what
+      // the trailing whitespace and the byte budget apply to, and truncating
+      // first would hand postProcess a hint that truncation cut in half. It is
+      // consulted only for output of a command this interceptor actually
+      // rewrote, and a throw degrades to the raw output (advisory, like the
+      // rewrite-time fail-open in interceptArgv).
+      let body = stdout;
+      if (intercepted.rewritten) {
+        // nax-git-env-allow: not a spawn; the postProcess request describing the argv already run
+        const req: InterceptRequest = { kind: "argv", argv: ["git", ...built], cwd: ctx.root, site: "git" };
+        try {
+          body = interceptor?.postProcess?.(stdout, req)?.output ?? stdout;
+        } catch {
+          body = stdout;
+        }
+      }
+      // Known limitation: gitWithTimeout bounds stdout with the I/O ceiling
+      // BEFORE postProcess sees it, so a trailing hint on a very large output
+      // can be truncated mid-string and escape stripping. Fixing it means
+      // moving the bound after post-processing, which changes the drain
+      // contract — its own change.
+      //
+      // The model-facing cap is the session policy's, not this one: what is
+      // returned here is bounded only by the tool-layer ceiling, so a result
+      // the model cannot see whole still reaches the policy intact — and is
+      // spilled rather than silently replaced by a per-tool marker.
+      const content = cutToByteCap(body.trimEnd(), ioCeiling) || "(no output)";
+      return { content, ...(audit !== undefined ? { audit } : {}) };
+    } catch (err) {
+      return { content: err instanceof Error ? err.message : String(err), isError: true };
+    }
+  },
+};

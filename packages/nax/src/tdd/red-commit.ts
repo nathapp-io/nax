@@ -15,14 +15,13 @@
  * `git status --porcelain` print root-relative paths even from a package
  * subdirectory. Never throws.
  */
+
+import { partitionNaxOwnedPaths } from "@nathapp/nax-agent";
+import { errorMessage, gitlinkSafeAdd, realOrRaw } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { partitionNaxOwnedPaths } from "../tools";
-import { errorMessage } from "../utils/errors";
 import { gitWithTimeout } from "../utils/git";
-import { gitlinkSafeAdd } from "../utils/git-add";
 import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
-import { realOrRaw } from "../utils/realpath";
 import { getChangedFiles } from "./isolation";
 
 const RED_COMMIT_GIT_TIMEOUT_MS = 30_000;

@@ -1,3 +1,4 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
@@ -8,7 +9,6 @@ import { runQualityCommand } from "../quality/runner";
 import type { LintOutputFormat, LintParseResult } from "../review/lint-parsing";
 import { parseLintOutput } from "../review/lint-parsing";
 import { appendScratchEntry } from "../session/scratch-writer";
-import { errorMessage } from "../utils/errors";
 import { resolveGateCwd } from "./gate-cwd";
 import type { CallContext, DeterministicOperation } from "./types";
 

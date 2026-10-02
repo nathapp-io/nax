@@ -2,12 +2,10 @@
  * Git utility functions
  */
 
-import { gitlinkSafeAdd, hasStagedChanges } from "./git-add";
-import { _gitDeps, gitWithTimeout } from "./git-exec";
+import { _gitDeps, gitlinkSafeAdd, gitWithTimeout, hasStagedChanges, realOrRaw } from "@nathapp/nax-agent/internal";
 import { restoreDeletedNaxPaths } from "./nax-path-restore";
-import { realOrRaw } from "./realpath";
 
-export { _gitDeps, GIT_TIMEOUT_MS, getGitRoot, gitWithTimeout } from "./git-exec";
+export { _gitDeps, GIT_TIMEOUT_MS, getGitRoot, gitWithTimeout } from "@nathapp/nax-agent/internal";
 
 /**
  * Timeout for the `git add -A` / `git commit` pair in autoCommitIfDirty.

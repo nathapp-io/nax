@@ -3,6 +3,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import chalk from "chalk";
 import { loadContextManifests } from "../context/engine";
 import { buildEvidenceTerms, classifyWithTerms } from "../context/engine/effectiveness";
@@ -16,7 +17,6 @@ import {
   scoreEffectiveness,
 } from "../context/engine/effectiveness-eval";
 import type { StoredContextManifest } from "../context/engine/manifest-store";
-import { errorMessage } from "../utils/errors";
 
 export interface ContextInspectOptions {
   dir?: string;

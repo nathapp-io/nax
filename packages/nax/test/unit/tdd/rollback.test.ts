@@ -8,9 +8,9 @@
  * calls instead of shelling out to `git clean`.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { assertCaughtInstanceOf, assertNaxError, makeSpawn, makeSpawnResult } from "@test/helpers";
 import { _rollbackDeps, captureSnapshotRef, rollbackToRef } from "@/tdd/rollback";
-import { byCodePoint } from "@/utils/sort";
 
 function makeResetSpawn(exitCode = 0) {
   return makeSpawn(() => ({ exitCode })).spawn;

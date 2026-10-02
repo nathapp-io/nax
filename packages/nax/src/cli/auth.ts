@@ -9,8 +9,7 @@
  * behaviour is testable and bin/nax.ts owns the process.
  */
 
-import chalk from "chalk";
-import type { AuthEvent, AuthInteraction, AuthMethod, AuthPrompt } from "@/agents/native";
+import type { AuthEvent, AuthInteraction, AuthMethod, AuthPrompt } from "@nathapp/nax-agent";
 import {
   AuthCancelledError,
   ambientShadows,
@@ -21,7 +20,8 @@ import {
   removeStoredProvider,
   runLogin,
   servedAuth,
-} from "@/agents/native";
+} from "@nathapp/nax-agent";
+import chalk from "chalk";
 import { readGlobalAuthConfig } from "@/config";
 import { type AuthListReport, collectAuthList, errorCode, renderAuthListJson, renderAuthListText } from "./auth-list";
 import { PromptCancelledError, promptForLine, promptForSecret, promptForSelect } from "./auth-prompt";

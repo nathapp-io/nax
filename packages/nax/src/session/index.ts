@@ -2,7 +2,7 @@
  * Session Manager — public barrel
  */
 
-export type { ProtocolIds } from "../runtime/protocol-types";
+export type { ProtocolIds } from "@nathapp/nax-agent";
 export { _sessionManagerDeps, SessionManager } from "./manager";
 export { formatSessionName } from "./naming";
 export { recordAgentHandoff } from "./reopen-handoff";

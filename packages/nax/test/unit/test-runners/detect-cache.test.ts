@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { makeSpawn } from "@test/helpers";
 import { globsToTestRegex } from "@/test-runners/conventions";
 import type { DetectionResult } from "@/test-runners/detect";
@@ -19,7 +20,6 @@ import { _fileScanDeps } from "@/test-runners/detect/file-scan";
 import { _frameworkConfigDeps } from "@/test-runners/detect/framework-configs";
 import { _frameworkDefaultsDeps } from "@/test-runners/detect/framework-defaults";
 import { detectTestFilePatterns } from "@/test-runners/detect/index";
-import { byCodePoint } from "@/utils/sort";
 
 type Orig = {
   readText: typeof _frameworkConfigDeps.readText;

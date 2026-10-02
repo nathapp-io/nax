@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import {
   collectReachableScriptFiles,
   discoverCheckScripts,
@@ -8,7 +9,6 @@ import {
   parseCiEntryPoints,
 } from "@scripts/check-gate-reachability";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { byCodePoint } from "@/utils/sort";
 
 function writeScripts(root: string, names: string[]) {
   mkdirSync(join(root, "scripts"), { recursive: true });

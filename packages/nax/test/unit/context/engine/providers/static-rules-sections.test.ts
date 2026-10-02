@@ -13,12 +13,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { priorityToRawScore } from "@/context";
 import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import type { CanonicalRule } from "@/context/rules/canonical-loader";
 import type { RuleSection } from "@/context/rules/rule-sections";
-import { byCodePoint } from "@/utils/sort";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dep save/restore

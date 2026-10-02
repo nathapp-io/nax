@@ -1,9 +1,9 @@
 /** Track spawned agent PIDs and clean them up on crash without process-group kills. */
 
 import { existsSync } from "node:fs";
+import type { SpawnResult } from "@nathapp/nax-agent/internal";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import type { SpawnResult } from "@/utils/bun-deps";
-import { errorMessage } from "@/utils/errors";
 
 const PID_REGISTRY_FILE = ".nax-pids";
 const PID_TREE_KILL_GRACE_MS = 250;

@@ -4,9 +4,9 @@
  * Send interaction requests via Telegram Bot API with inline keyboard and poll replies.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
-import { errorMessage } from "@/utils/errors";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 import { assertTelegramApprovalFitsOneMessage } from "./telegram-approval";
 import { normalizeChatId, TelegramConfigSchema, type TelegramMessage, type TelegramUpdate } from "./telegram-config";

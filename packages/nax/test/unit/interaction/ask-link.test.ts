@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { AskRequest } from "@nathapp/nax-agent";
 import { assertDefined, type FakeClock, makeFakeClock, waitForCondition } from "@test/helpers";
 import type { AskChannel, AskChannelResponse, InteractionRequest } from "@/interaction";
 import { cancelPendingAsk, createHumanAskLink } from "@/interaction";
 import { _askLinkDeps } from "@/interaction/ask-link";
-import type { AskRequest } from "@/permissions";
 
 const REQ: AskRequest = {
   tool: "Bash",

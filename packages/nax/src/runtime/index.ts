@@ -1,3 +1,14 @@
+export {
+  createSpinBreaker,
+  DEFAULT_SPIN_BREAKER_SETTINGS,
+  type ResolvedSpinBreakerSettings,
+  SPIN_TERMINAL_NOTICE,
+  type SpinBreaker,
+  type SpinStopReason,
+  type SpinSummary,
+  type SpinVerdict,
+  spinTerminalNotice,
+} from "@nathapp/nax-agent/internal";
 export type {
   AdvisoryFindingSummaryEntry,
   IReviewAuditor,
@@ -83,22 +94,11 @@ export { isSameProject } from "./same-project";
 export { formatSessionName } from "./session-name";
 export type { CanonicalSessionRole, SessionRole } from "./session-role";
 export { isSessionRole, KNOWN_SESSION_ROLES } from "./session-role";
-export {
-  createSpinBreaker,
-  DEFAULT_SPIN_BREAKER_SETTINGS,
-  type ResolvedSpinBreakerSettings,
-  SPIN_TERMINAL_NOTICE,
-  type SpinBreaker,
-  type SpinStopReason,
-  type SpinSummary,
-  type SpinVerdict,
-  spinTerminalNotice,
-} from "./spin-breaker";
 export type { IUsageAuditor, UsageAuditEntry } from "./usage-auditor";
 export { _usageAuditorDeps, createNoOpUsageAuditor, UsageAuditor } from "./usage-auditor";
 
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { flushOpenToolAuditSinks } from "@/tools";
+import { flushOpenToolAuditSinks } from "@nathapp/nax-agent";
 import type { IAgentManager } from "../agents";
 import type { CreateAgentManagerOpts } from "../agents/factory";
 import { createAgentManager } from "../agents/factory";
@@ -274,13 +274,13 @@ export interface NaxRuntime {
    * Tool providers advertised to every native dispatch this run. Built from
    * `config.mcp`; empty when no server is configured or all are disabled.
    */
-  readonly toolProviders: readonly import("@/tools").ToolProvider[];
+  readonly toolProviders: readonly import("@nathapp/nax-agent").ToolProvider[];
   /**
    * The run's command interceptor (US-003; S1 spec port 7). Installed by
    * `setupRun`; absent for entry points that never run it (plan, prompts,
    * setup), where interception does not apply.
    */
-  readonly commandInterceptor?: import("@/execution/command-interceptor").CommandInterceptor;
+  readonly commandInterceptor?: import("@nathapp/nax-agent/internal").CommandInterceptor;
   close(): Promise<void>;
 }
 
@@ -312,7 +312,7 @@ export interface CreateRuntimeOptions {
    */
   agentStreamEvents?: IAgentStreamEventBus;
   /** See NaxRuntime.commandInterceptor. */
-  commandInterceptor?: import("@/execution/command-interceptor").CommandInterceptor;
+  commandInterceptor?: import("@nathapp/nax-agent/internal").CommandInterceptor;
 }
 
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {

@@ -7,9 +7,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeLogger, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _gitDeps, autoCommitIfDirty } from "@/utils/git";
-import { gitSpawnEnv } from "@/utils/git-env";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

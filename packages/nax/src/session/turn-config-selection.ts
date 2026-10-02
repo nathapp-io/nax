@@ -7,10 +7,8 @@
  * is a worse fit (`manager-deps.ts` is the injectable-dependency facade).
  */
 
-import type { ResolvedCompaction } from "../agents/native/session/compaction";
-import type { TurnRetryConfig } from "../agents/native/session/turn-retry";
+import type { ResolvedCompaction, ResolvedSpinBreakerSettings, TurnRetryConfig } from "@nathapp/nax-agent/internal";
 import type { AgentManagerConfig } from "../config/selectors";
-import type { ResolvedSpinBreakerSettings } from "../runtime/spin-breaker";
 import { selectSpinBreakerSettings } from "./spin-breaker-selection";
 
 export interface NativeTurnConfigSelection {

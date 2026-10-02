@@ -12,14 +12,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nativeTranscriptDirs } from "@/agents/native/session/session";
-import { loadTranscript } from "@/agents/native/session/transcript-store";
-import { runNativeTurn } from "@/agents/native/session/turn-loop";
-import type { TurnDeps } from "@/agents/native/session/turn-types";
+import type { CodingTool } from "@nathapp/nax-agent";
+import { compileToolPolicy, createCodingToolRuntime, MODEL_MAX_BYTES } from "@nathapp/nax-agent";
+import type { ToolCallRecord, TurnDeps } from "@nathapp/nax-agent/internal";
+import { loadTranscript, nativeTranscriptDirs, runNativeTurn } from "@nathapp/nax-agent/internal";
 import { buildRunInteractionHandler } from "@/agents/run-interaction-handler";
-import type { CodingTool } from "@/tools";
-import { compileToolPolicy, createCodingToolRuntime, MODEL_MAX_BYTES } from "@/tools";
-import type { ToolCallRecord } from "@/tools/tool-audit";
 
 const baseUsage = { inputTokens: 1, outputTokens: 1 };
 const handle = { id: "sess-nudge-truncation", agentName: "native" } as const;

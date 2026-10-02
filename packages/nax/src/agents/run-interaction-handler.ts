@@ -8,7 +8,7 @@
  * ACP into the native tree is backwards and trips `check:alias-internals`.
  */
 
-import type { InteractionHandler } from "./interaction-handler";
+import type { InteractionHandler } from "@nathapp/nax-agent";
 import type { AgentRunOptions } from "./types";
 
 /** Exactly what the handler reads. Narrower than AgentRunOptions on purpose. */

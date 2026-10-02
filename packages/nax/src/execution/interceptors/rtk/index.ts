@@ -4,9 +4,9 @@ import type {
   InterceptResult,
   ShellInterceptRequest,
   ShellInterceptResult,
-} from "@/execution/command-interceptor";
+} from "@nathapp/nax-agent/internal";
+import { runArgv } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { runArgv } from "@/utils/argv-exec";
 
 export interface InterceptorState {
   enabled: boolean;

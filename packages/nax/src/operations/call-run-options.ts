@@ -9,12 +9,12 @@
  * past it.
  */
 
+import type { CodingToolName, ToolPatternNarrowing } from "@nathapp/nax-agent";
 import type { ModelDef, ModelTier, NaxConfig } from "../config";
 import { DEFAULT_CONFIG } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import { packageOverrideKey, storyExecRoot } from "../runtime/packages";
 import type { SessionRole } from "../session/types";
-import type { CodingToolName, ToolPatternNarrowing } from "../tools";
 import { storyWorkdir } from "../utils/path-frame";
 import type { CallContext } from "./types";
 

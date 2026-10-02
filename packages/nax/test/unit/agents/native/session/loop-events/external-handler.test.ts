@@ -14,13 +14,6 @@
  */
 
 import { afterEach, describe, expect, type Mock, test } from "bun:test";
-import { assertDefined, withDebugSpy, withTimerSpy, withWarnSpy } from "@test/helpers";
-import { createLoopEventRegistry, type LoopEventRegistry } from "@/agents/native/session/loop-events";
-import {
-  _externalHandlerDeps,
-  LOOP_HANDLER_TIMEOUT_MS,
-  wrapExternalHandler,
-} from "@/agents/native/session/loop-events/external-handler";
 import type {
   AfterToolPayload,
   BeforeToolOutcome,
@@ -30,7 +23,15 @@ import type {
   LoopEvent,
   LoopHandlerContext,
   LoopHandlerEntry,
-} from "@/agents/native/session/loop-events/types";
+} from "@nathapp/nax-agent/internal";
+import {
+  _externalHandlerDeps,
+  createLoopEventRegistry,
+  LOOP_HANDLER_TIMEOUT_MS,
+  type LoopEventRegistry,
+  wrapExternalHandler,
+} from "@nathapp/nax-agent/internal";
+import { assertDefined, withDebugSpy, withTimerSpy, withWarnSpy } from "@test/helpers";
 import type { Logger } from "@/logger";
 
 // ─────────────────────────────────────────────────────────────────────────────

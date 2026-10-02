@@ -21,6 +21,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { _sessionTmpDeps, runTmpRoot } from "@nathapp/nax-agent/internal";
 import {
   assertDefined,
   cleanupTempDir,
@@ -31,7 +32,6 @@ import {
   withWarnSpy,
 } from "@test/helpers";
 import { _runTmpWipeDeps, wipeRunTmp } from "@/execution/lifecycle/run-tmp-wipe";
-import { _sessionTmpDeps, runTmpRoot } from "@/sandbox";
 
 describe("wipeRunTmp (US-004)", () => {
   withDepsRestore(_runTmpWipeDeps);

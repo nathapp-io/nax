@@ -7,11 +7,9 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { normalizeCommandSpec } from "../quality/command-spec";
+import { normalizeCommandSpec, shellQuoteArg, sleep } from "@nathapp/nax-agent/internal";
 import { analyzeTestExitCode } from "../test-runners";
-import { sleep } from "../utils/bun-deps";
 import { buildTestCommand, executeWithTimeout, normalizeEnvironment } from "./executor";
-import { shellQuoteArg } from "./shell-quote";
 import type { AssetVerificationResult, VerificationGateOptions, VerificationResult } from "./types";
 
 /** Verify all expected files exist before running tests. */

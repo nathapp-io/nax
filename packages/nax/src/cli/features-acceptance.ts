@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { groupStoriesByPackage } from "../acceptance";
 import { findProjectDir, loadConfig, loadPackageOverride } from "../config";
 import { getSafeLogger } from "../logger";
 import { loadPRD } from "../prd";
-import { errorMessage } from "../utils/errors";
 
 /**
  * One resolved acceptance test target — a single package the feature touches.

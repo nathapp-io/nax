@@ -5,10 +5,9 @@
  * excludes test/index/generated files, caps at maxFiles.
  */
 
+import { errorMessage, gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import { getLogger } from "../logger";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
-import { errorMessage } from "../utils/errors";
-import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
 
 export interface AutoDetectOptions {
   /** Working directory for git grep */

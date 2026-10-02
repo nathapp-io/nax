@@ -6,9 +6,10 @@
  * inline oscillation-breaker handling `decideStageAction` keeps, just for the
  * parallel cross-attempt counter.
  */
+
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Logger } from "../logger";
 import type { PipelineContext, StageResult } from "../pipeline/types";
-import { errorMessage } from "../utils/errors";
 import { inspectRecurrenceBreaker } from "./recurrence-breaker";
 
 /**

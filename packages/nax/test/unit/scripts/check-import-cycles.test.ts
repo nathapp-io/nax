@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import {
   buildImportGraph,
   findCyclicModules,
@@ -9,7 +10,6 @@ import {
   stripComments,
 } from "@scripts/check-import-cycles";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { byCodePoint } from "@/utils/sort";
 
 function write(root: string, rel: string, content: string): void {
   const full = join(root, rel);
@@ -36,6 +36,11 @@ describe("resolveSpecifier", () => {
   test("resolves an @/ alias to src/", () => {
     const from = join(root, "src/a/leaf.ts");
     expect(resolveSpecifier(root, from, "@/a")).toBe(join(root, "src/a/index.ts"));
+  });
+
+  test("resolves a #src/ package import to src/ (nax-agent's form; it does no index resolution)", () => {
+    const from = join(root, "src/a/leaf.ts");
+    expect(resolveSpecifier(root, from, "#src/a/index")).toBe(join(root, "src/a/index.ts"));
   });
 });
 

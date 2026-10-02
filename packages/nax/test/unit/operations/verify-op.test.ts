@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
+import { narrowGrants } from "@nathapp/nax-agent";
 import { assertDefined, cleanupTempDir, makeNaxConfig, makeSpawn, makeStory, makeTempDir } from "@test/helpers";
 import { type ConfigSelector, DEFAULT_CONFIG, type TddConfig, tddConfigSelector } from "@/config";
 import type { Logger } from "@/logger";
 import { verifierOp } from "@/operations";
 import type { PackageView } from "@/runtime";
 import { VERDICT_FILE } from "@/tdd";
-import { narrowGrants } from "@/tools";
 
 /**
  * A real `PackageView` over `DEFAULT_CONFIG`. `parse` reads nothing from it,

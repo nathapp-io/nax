@@ -13,6 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { realOrRaw } from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
   makeSpawn,
@@ -23,7 +24,6 @@ import {
   withInfoSpy,
 } from "@test/helpers";
 import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
-import { realOrRaw } from "@/utils/realpath";
 
 // ---------------------------------------------------------------------------
 // Mock helpers

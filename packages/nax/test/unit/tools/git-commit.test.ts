@@ -2,13 +2,18 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  _resetBuiltinsForTest,
+  _resetRegistryForTest,
+  buildCommitArgvs,
+  GIT_ESCAPE_FLAGS,
+  getCodingTool,
+  gitCommitTool,
+  registerBuiltinCodingTools,
+} from "@nathapp/nax-agent/internal";
 import { makeSpawn, makeSpawnResult } from "@test/helpers";
 import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 import { DEFAULT_CODING_TOOLS } from "@/config/permissions";
-import { GIT_ESCAPE_FLAGS } from "@/tools/git";
-import { buildCommitArgvs, gitCommitTool } from "@/tools/git-commit";
-import { _resetRegistryForTest, getCodingTool } from "@/tools/registry";
-import { _resetBuiltinsForTest, registerBuiltinCodingTools } from "@/tools/runtime";
 import { _gitDeps } from "@/utils/git";
 
 async function makeRepo(): Promise<string> {

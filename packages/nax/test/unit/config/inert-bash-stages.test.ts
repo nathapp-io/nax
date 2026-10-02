@@ -15,9 +15,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { resolveBashSupport } from "@nathapp/nax-agent/internal";
 import { type DeepPartial, makeNaxConfig } from "@test/helpers";
 import type { z } from "zod";
-import { resolveBashSupport } from "@/agents/coding-tool-bash";
 import type { NaxConfig, PipelineStage } from "@/config";
 import { BASH_DECLARING_STAGES, findInertBashStages } from "@/config";
 import { resolvePermissions } from "@/config/permissions";

@@ -5,7 +5,7 @@
  * `stage:` (for `stages:`) would leave a server attached to nothing, which
  * reads at runtime as "MCP is broken" rather than "the config has a typo".
  *
- * Server ids are PROVIDER ids (src/tools/provider-types.ts): the id is the tool
+ * Server ids are PROVIDER ids (packages/nax-agent/src/tools/provider-types.ts): the id is the tool
  * name's namespace, so the two charsets must agree or a config that parses
  * would throw at adaptation time instead.
  */
@@ -16,7 +16,7 @@ export const MCP_SERVER_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
 
 /**
  * Per-call ceiling. Not a measured value: nax's own bounds are GIT_TIMEOUT_MS
- * 10s (src/utils/git.ts) and EXEC_TIMEOUT_MS 300s (src/tools/run-command-exec.ts),
+ * 10s (src/utils/git.ts) and EXEC_TIMEOUT_MS 300s (packages/nax-agent/src/tools/run-command-exec.ts),
  * and MCP calls span both extremes — a graph search is milliseconds, an index
  * rebuild is minutes. 60s is long enough for any interactive query and short
  * enough that a wedged server does not consume a hop. A server with genuinely

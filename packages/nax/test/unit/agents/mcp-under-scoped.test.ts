@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { ProviderTool, ToolProvider } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
-import type { ProviderTool, ToolProvider } from "@/tools";
 
 let root: string;
 

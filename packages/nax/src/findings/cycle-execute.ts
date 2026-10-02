@@ -16,7 +16,7 @@
  * scope: repo-scoped (validate callbacks are caller-supplied; no direct I/O)
  */
 
-import { errorMessage } from "@/utils/errors";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { classifyOutcome } from "./classify-outcome";
 import { recordIteration } from "./cycle-iteration-log";
 import type { CycleFrame, CycleLoopState, DispatchedIteration } from "./cycle-loop";

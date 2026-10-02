@@ -6,8 +6,8 @@
  * @module logger
  */
 
-export type { SecretValuePattern } from "../utils/redact.js";
-export { redactSecrets, SECRET_VALUE_PATTERNS } from "../utils/redact.js";
+export type { SecretValuePattern } from "@nathapp/nax-agent/internal";
+export { redactSecrets, SECRET_VALUE_PATTERNS } from "@nathapp/nax-agent/internal";
 export { formatConsole, formatJsonl } from "./formatters.js";
 export { addSink, getLogger, getSafeLogger, initLogger, Logger, resetLogger } from "./logger.js";
 export type {

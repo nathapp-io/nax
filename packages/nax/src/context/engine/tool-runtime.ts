@@ -6,13 +6,13 @@
  * text-based tool-call protocol in its multi-turn loop.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { UserStory } from "@/prd";
 import type { ResolvedTestPatterns } from "@/test-runners";
 import { resolveTestFilePatterns } from "@/test-runners";
-import { errorMessage } from "@/utils/errors";
 import { storyPackageDir } from "@/utils/path-frame";
 // STYLE-6 fix: import handleQueryScratch directly from its handler module
 // to avoid the circular `pull-tools.ts` ↔ `handlers/query-scratch.ts`

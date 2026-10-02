@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { CommandInterceptor, ShellInterceptRequest, ShellInterceptResult } from "@nathapp/nax-agent/internal";
+import { isProcessAlive } from "@nathapp/nax-agent/internal";
 import { waitForCondition, withTempDir } from "@test/helpers";
-import type { CommandInterceptor, ShellInterceptRequest, ShellInterceptResult } from "@/execution/command-interceptor";
 import type { InterceptorState, RtkDeps, RtkRewriteResult } from "@/execution/interceptors/rtk";
 import { createRtkInterceptor, RTK_REWRITE_TIMEOUT_MS } from "@/execution/interceptors/rtk";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
-import { isProcessAlive } from "@/utils/process-alive";
 
 const req = (verb: string) => ({
   kind: "argv" as const,

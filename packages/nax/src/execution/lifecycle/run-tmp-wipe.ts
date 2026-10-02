@@ -21,9 +21,9 @@
 
 import { lstatSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import { runTmpRoot } from "@nathapp/nax-agent";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { runTmpRoot } from "@/sandbox";
-import { errorMessage } from "@/utils/errors";
 
 /** Injectable deps for the wipe (see docs/architecture/conventions.md §2). */
 export const _runTmpWipeDeps = {

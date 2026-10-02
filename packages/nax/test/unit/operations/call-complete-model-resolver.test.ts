@@ -9,6 +9,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import type { ToolProvider } from "@nathapp/nax-agent";
 import {
   makeMockAgentManager,
   makeMockCallContext,
@@ -23,7 +24,6 @@ import { type DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema, pickSelector } fr
 import type { BuildHopCallbackContext, CompleteOperation, RunOperation } from "@/operations";
 import { _callOpDeps, callOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import type { ToolProvider } from "@/tools";
 
 const testSel = pickSelector("complete-model-resolver-test", "routing");
 const createdRuntimes: NaxRuntime[] = [];

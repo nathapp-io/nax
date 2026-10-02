@@ -2,8 +2,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:te
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeLogger } from "@test/helpers";
-import { ASK_DENIED_REASON, ASK_NO_CHANNEL_REASON, ASK_TIMEOUT_REASON, type AskResolver } from "@/permissions";
+import { ASK_DENIED_REASON, ASK_NO_CHANNEL_REASON, ASK_TIMEOUT_REASON, type AskResolver } from "@nathapp/nax-agent";
+import type { ToolCallRecord } from "@nathapp/nax-agent/internal";
 import {
   _codingToolDeps,
   _resetBuiltinsForTest,
@@ -12,8 +12,8 @@ import {
   compileToolPolicy,
   createCodingToolRuntime,
   registerCodingTool,
-} from "@/tools";
-import type { ToolCallRecord } from "@/tools/tool-audit";
+} from "@nathapp/nax-agent/internal";
+import { makeLogger } from "@test/helpers";
 import { _gitDeps } from "@/utils/git";
 
 let root: string;

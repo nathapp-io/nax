@@ -257,7 +257,7 @@ describe("priceCall defensive cache fallback (S1-1)", () => {
   test("a level whose cache rates are missing at runtime prices cache tokens at that level's input rate", () => {
     // A catalog Pricing that, despite its type, arrived without cache rates.
     // JSON.parse keeps the fixture untyped without a double cast.
-    const rates: import("@/agents/cost/standard-types").Pricing = JSON.parse('{"input":2,"output":8}');
+    const rates: import("@nathapp/nax-agent").Pricing = JSON.parse('{"input":2,"output":8}');
     const { costUsd, resolvedRates } = priceCall(
       { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000 },
       rates,

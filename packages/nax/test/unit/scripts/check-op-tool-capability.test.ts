@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { collectOps, findViolations, REQUIRED_TOOLS_BY_ROLE } from "@scripts/check-op-tool-capability";
-import { byCodePoint } from "@/utils/sort";
 
 describe("REQUIRED_TOOLS_BY_ROLE", () => {
   test("a verifier must be able to run commands and write its verdict, but never to edit", () => {

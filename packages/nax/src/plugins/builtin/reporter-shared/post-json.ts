@@ -1,5 +1,5 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { errorMessage } from "@/utils/errors";
 
 export interface PostJsonDeps {
   fetch: typeof globalThis.fetch;

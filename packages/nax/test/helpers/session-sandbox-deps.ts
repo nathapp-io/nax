@@ -14,8 +14,8 @@
  * one test that actually needs the seam.
  */
 import { afterEach, beforeEach } from "bun:test";
-import type { SandboxConfig } from "@/config/schemas-sandbox";
-import type { GitLayout, ProbeResult, SandboxBackend } from "@/sandbox";
+import type { GitLayout, ProbeResult, SandboxBackend } from "@nathapp/nax-agent";
+import type { SandboxConfig } from "@nathapp/nax-agent/internal";
 import { makeFakeSandboxBackend } from "./sandbox";
 
 /** The `{ runTmpRoot, tmpdir }` argument US-002's `runTempRoots` takes. */

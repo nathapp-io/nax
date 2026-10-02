@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { buildCodingToolSupport } from "@nathapp/nax-agent/internal";
 import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
-import { buildCodingToolSupport } from "@/agents/coding-tool-support";
 import { resolvePermissions } from "@/config/permissions";
 import type { AcceptanceFixSourceInput, AcceptanceFixTestInput } from "@/operations/acceptance-fix";
 import { resolveDeclaredTools } from "@/operations/types";

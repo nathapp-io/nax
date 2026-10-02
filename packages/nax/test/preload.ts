@@ -19,8 +19,8 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { _clientDeps } from "@nathapp/nax-agent/internal";
 import { _acpAdapterDeps } from "../src/agents/acp/adapter";
-import { _clientDeps } from "../src/agents/native/client";
 import { configureNaxCredentials } from "../src/config";
 import { _notifyDeps } from "../src/finish/notify";
 import { _nativeCredentialDeps } from "../src/precheck/checks-native-credentials";

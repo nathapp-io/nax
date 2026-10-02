@@ -8,12 +8,10 @@
  * Phase 2: per-stage scoped allowlists (stub below).
  */
 
+import type { CodingToolName, ResolvedPermissions, ToolGrant } from "@nathapp/nax-agent";
+import { EXEC_TOOL_NAME, parseRuleList } from "@nathapp/nax-agent";
+import { type BashApprovalMode, resolveBashApproval } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import type { ResolvedPermissions } from "@/permissions";
-import { parseRuleList } from "@/permissions";
-import type { CodingToolName, ToolGrant } from "@/tools";
-import { EXEC_TOOL_NAME } from "@/tools";
-import { type BashApprovalMode, resolveBashApproval } from "./bash-approval";
 import type { AgentManagerConfig } from "./selectors";
 
 export type { ResolvedPermissions };
@@ -280,7 +278,7 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
  *
  * Note what does NOT appear here: any notion of a filesystem root. Containment
  * is not expressible in config by design — the root is a hard boundary that no
- * profile can widen, enforced in src/tools/policy.ts.
+ * profile can widen, enforced in packages/nax-agent/src/tools/policy.ts.
  */
 function resolveScopedPermissions(config: AgentManagerConfig | undefined, stage: PipelineStage): ResolvedPermissions {
   // No baseline: withRules concatenates the block's allow rules onto []. When

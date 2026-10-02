@@ -25,6 +25,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import {
   makeDispatchContext,
   makeMockRuntime,
@@ -46,7 +47,6 @@ import { pipelineEventBus, type RunCompletedEvent } from "@/pipeline/event-bus";
 import type { PRD, UserStory } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import type { CostSnapshot, ICostAggregator } from "@/runtime/cost-aggregator";
-import { byCodePoint } from "@/utils/sort";
 
 // ---------------------------------------------------------------------------
 // Helpers — back-fill / merge

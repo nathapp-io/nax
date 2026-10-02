@@ -11,8 +11,8 @@ import type { LogEntry, LogLevel } from "../logger/types";
 
 export { formatDuration };
 
+import { cancellableDelay } from "@nathapp/nax-agent/internal";
 import type { VerbosityMode } from "../log-format/types";
-import { cancellableDelay } from "../utils/bun-deps";
 import { extractRunSummary } from "./logs-reader";
 
 /**

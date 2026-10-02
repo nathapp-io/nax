@@ -5,9 +5,8 @@
  * Prevents zombie processes from consuming CPU after agent crashes.
  */
 
+import { killProcessGroup, sleep, spawn } from "@nathapp/nax-agent/internal";
 import { getLogger } from "../logger";
-import { sleep, spawn } from "../utils/bun-deps";
-import { killProcessGroup } from "../utils/process-kill";
 
 /** Injectable deps for testability — mock _cleanupDeps instead of global Bun.spawn/process.kill */
 export const _cleanupDeps = {

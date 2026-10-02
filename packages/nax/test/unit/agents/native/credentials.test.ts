@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   _resetCredentialStore,
   credentialFilePath,
   naxCredentialStore,
   readStoredEntries,
   servedAuth,
-} from "@/agents/native/credentials";
+} from "@nathapp/nax-agent/internal";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { NaxError } from "@/errors";
 
 let dir: string;

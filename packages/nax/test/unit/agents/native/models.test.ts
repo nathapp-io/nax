@@ -6,8 +6,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import type { Pricing } from "@/agents/cost";
-import { estimateCostUsd } from "@/agents/cost";
 import {
   buildRateCard,
   parseNativeModel,
@@ -15,7 +13,9 @@ import {
   THINKING_LEVELS,
   toProviderOverrides,
   toThinkingLevel,
-} from "@/agents/native/models";
+} from "@nathapp/nax-agent/internal";
+import type { Pricing } from "@/agents/cost";
+import { estimateCostUsd } from "@/agents/cost";
 import { ThinkingLevelSchema } from "@/config";
 import type { ConfigPricing, ProviderCatalogOverride } from "@/config/schema-types";
 import { toPricing } from "@/config/schema-types";

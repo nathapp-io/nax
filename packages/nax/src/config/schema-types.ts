@@ -5,7 +5,7 @@
  * including model tier definitions and basic enumerations.
  */
 
-import type { Pricing, PricingTier } from "../agents/cost/standard-types";
+import type { Pricing, PricingTier } from "@nathapp/nax-agent";
 import { getSafeLogger } from "../logger";
 
 export type Complexity = "simple" | "medium" | "complex" | "expert";
@@ -121,7 +121,7 @@ export type {
   OpenRouterRouting,
   ProviderCatalogOverride,
   ThinkingLevel,
-} from "./catalog-overrides";
+} from "@nathapp/nax-agent/internal";
 
 export type ModelEntry = ModelDef | string;
 export type ModelMap = Record<ModelTier, ModelEntry>;

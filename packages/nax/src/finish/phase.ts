@@ -12,6 +12,8 @@
  * runtime field that was not there. Neither is a reason to fail a run whose
  * stories all passed, so this returns null and emits a failed phase instead.
  */
+
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { defaultForgeDeps, detectForge } from "@/forge";
 import { buildRunDispatchAskWiring, type DispatchAskWiring, type InteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
@@ -19,7 +21,6 @@ import type { CallContext } from "@/operations";
 import { pipelineEventBus } from "@/pipeline";
 import type { NaxRuntime } from "@/runtime";
 import { totalSpendUsd } from "@/runtime";
-import { errorMessage } from "../utils/errors";
 import type { AuditTarget } from "./audit";
 import type { FinishSettings } from "./config";
 import { readFinishConfig } from "./config";

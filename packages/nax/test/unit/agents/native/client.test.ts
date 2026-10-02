@@ -7,10 +7,16 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import {
+  _clientDeps,
+  _resetCredentialStore,
+  _resetNativeClient,
+  buildNativeClient,
+  getNativeClient,
+  naxCredentialStore,
+} from "@nathapp/nax-agent/internal";
 import { createClient, type ProtocolOptions } from "@nathapp/nax-ai";
 import { assertNaxError, cleanupTempDir, makeTempDir, mockFetch } from "@test/helpers";
-import { _clientDeps, _resetNativeClient, buildNativeClient, getNativeClient } from "@/agents/native/client";
-import { _resetCredentialStore, naxCredentialStore } from "@/agents/native/credentials";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 
 const REAL_BUILD = _clientDeps.build;

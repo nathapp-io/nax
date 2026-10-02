@@ -14,6 +14,7 @@
  * importing this module from `plan-refine.ts` creates no cycle.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
 import {
   backfillSpecWorkdirs,
@@ -23,7 +24,6 @@ import {
   validatePlanOutput,
 } from "../prd";
 import type { PlanPromptBuilder } from "../prompts";
-import { errorMessage } from "../utils/errors";
 import { makeSelfHealStep, type SelfHealStep } from "./self-heal";
 
 /** What the step reads off a planning op's input. */

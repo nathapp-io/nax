@@ -1,7 +1,7 @@
 /**
  * Run-start scratchpad wipe (US-004).
  *
- * The scratchpad tools (src/tools/scratchpad.ts) promise throwaway storage:
+ * The scratchpad tools (packages/nax-agent/src/tools/scratchpad.ts) promise throwaway storage:
  * "It is never committed and is wiped when a run finishes (a failed run's
  * scratchpad is retained for inspection until the next run starts and clears
  * it)." This is the start half of that contract — the backstop that clears the
@@ -24,9 +24,9 @@
 
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import { SCRATCHPAD_DIR } from "@nathapp/nax-agent";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { SCRATCHPAD_DIR } from "@/tools";
-import { errorMessage } from "@/utils/errors";
 
 /** Injectable deps for the wipe (see docs/architecture/conventions.md §2). */
 export const _scratchpadWipeDeps = {

@@ -10,11 +10,11 @@
  * are one concern (reject-with-migration-hint) and change together.
  */
 
-import { MCP_RULE_TOOL, RESERVED_TOOL_NAMES } from "@/tools";
-import { NaxError } from "../errors";
+import { MCP_RULE_TOOL, RESERVED_TOOL_NAMES } from "@nathapp/nax-agent";
 // Leaf import — see config-warnings.ts's own header comment for why this must
 // not route through the `@/quality` barrel (config -> quality -> config cycle).
-import type { QualityCommandSpec } from "../quality/command-spec";
+import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
+import { NaxError } from "../errors";
 import { collectCommandChainWarnings } from "./config-warnings";
 import { MCP_SERVER_ID_RE } from "./schemas-mcp";
 
@@ -381,7 +381,7 @@ function validateToolExpression(stage: string, expression: string, known: Set<st
     );
   }
   // An EMPTY list is refused for EVERY tool, never widened. `parseToolExpression`
-  // (`src/permissions/grammar.ts`) collapses an empty list to ["*"], so a typo'd
+  // (`packages/nax-agent/src/permissions/grammar.ts`) collapses an empty list to ["*"], so a typo'd
   // `Bash()` loads clean and grants every shell command -- the exact widening
   // validateMcpExpression already refuses, and Bash is where it costs most. A
   // bare `Bash` with no parentheses stays valid: that names the wildcard by
@@ -412,7 +412,7 @@ function validateToolExpression(stage: string, expression: string, known: Set<st
  * (surface-shape) beside the per-pattern id check.
  *
  * An EMPTY pattern list is refused, never widened: `parseToolExpression`
- * (`src/permissions/grammar.ts`) collapses an empty list to `["*"]`, so a bare
+ * (`packages/nax-agent/src/permissions/grammar.ts`) collapses an empty list to `["*"]`, so a bare
  * `Mcp`, `Mcp()` or `Mcp(,)` left unchecked would silently admit every provider
  * under `scoped` — the opposite of an allowlist. `Mcp(*)` stays valid because it
  * names the wildcard explicitly.
@@ -472,7 +472,7 @@ export function validatePermissionsBlock(conf: Record<string, unknown>): void {
   if (!blocks) return;
 
   // `Mcp` is a PSEUDO-tool: it is expanded to concrete `<server>__<tool>`
-  // grants before compilation (src/tools/provider-grants.ts), so it is legal
+  // grants before compilation (packages/nax-agent/src/tools/provider-grants.ts), so it is legal
   // in a rule list even though no tool by that name is ever registered.
   const known = new Set<string>([...RESERVED_TOOL_NAMES, MCP_RULE_TOOL]);
   for (const [stage, block] of Object.entries(blocks)) {

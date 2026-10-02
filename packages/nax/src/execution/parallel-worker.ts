@@ -2,6 +2,7 @@
  * Parallel worker — Story execution in worktrees
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
@@ -11,7 +12,6 @@ import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PRD, UserStory } from "../prd";
 import { routeTask } from "../routing";
-import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import { storyAbsWorkdir } from "../utils/path-frame";
 import type { WorktreeDependencyContext } from "../worktree/types";

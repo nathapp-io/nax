@@ -5,7 +5,7 @@ import {
   isRetryableTransportFault,
   retryTransportFault,
   turnRetryDelayMs,
-} from "@/agents/native/session/turn-retry";
+} from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 
 /** Mirrors the fixture ProtocolStreamError used in turn-loop-compaction.test.ts. */

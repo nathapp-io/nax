@@ -23,6 +23,7 @@
  */
 import { existsSync as defaultExistsSync, renameSync as defaultRenameSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { type AgentRoutingConfig, DEFAULT_AGENT_NAME, type ModelsConfig } from "@/config";
 import { discoverWorkspacePackages as defaultDiscoverWorkspacePackages } from "@/context/generator";
 import { NaxError } from "@/errors";
@@ -37,7 +38,6 @@ import {
   formatSpecStructureViolation,
 } from "@/prd";
 import type { PRD } from "@/prd/types";
-import { errorMessage } from "@/utils/errors";
 import { finalizePrdRouting } from "./finalize-routing";
 import type { PlanModeContext } from "./types";
 

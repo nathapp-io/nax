@@ -7,10 +7,10 @@
 
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "@/config";
 import { validateFilePath } from "@/config";
 import { NaxError } from "@/errors";
-import { byCodePoint } from "@/utils/sort";
 import { aiderGenerator } from "../generators/aider";
 import { claudeGenerator } from "../generators/claude";
 import { codexGenerator } from "../generators/codex";

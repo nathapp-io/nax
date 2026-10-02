@@ -5,12 +5,12 @@
  * so a port that is declared but never threaded fails here.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { type DeclaredCommandRequest, gitExcludePathspecsOf, gitIgnorePatternsOf } from "@nathapp/nax-agent";
+import type { CommandInterceptor } from "@nathapp/nax-agent/internal";
+import { _launcherDeps } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeNaxConfig, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _codingToolSupportDeps, resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
-import type { CommandInterceptor } from "@/execution/command-interceptor";
 import { runQualityCommand } from "@/quality";
-import { _launcherDeps } from "@/sandbox";
-import { type DeclaredCommandRequest, gitExcludePathspecsOf, gitIgnorePatternsOf } from "@/tools";
 import { _gitDeps } from "@/utils/git";
 
 let root: string;

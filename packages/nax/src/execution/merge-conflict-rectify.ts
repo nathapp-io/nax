@@ -5,6 +5,7 @@
  * so it sees all previously merged stories (MFX-005).
  */
 
+import { errorMessage, killProcessGroup, typedSpawn } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";
@@ -12,9 +13,6 @@ import type { PipelineEventEmitter } from "../pipeline/events";
 import type { AgentGetFn, PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd";
-import { typedSpawn } from "../utils/bun-deps";
-import { errorMessage } from "../utils/errors";
-import { killProcessGroup } from "../utils/process-kill";
 import type { MergeResult } from "../worktree";
 import { deriveStoryWorktreeId, storyWorktreePath } from "../worktree";
 import { buildWorktreePipelineContext } from "./parallel-worker";

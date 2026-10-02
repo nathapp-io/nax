@@ -17,9 +17,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  _clientDeps,
+  _resetCredentialStore,
+  _resetNativeClient,
+  buildNativeClient,
+  naxCredentialStore,
+} from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _clientDeps, _resetNativeClient, buildNativeClient } from "@/agents/native/client";
-import { _resetCredentialStore, naxCredentialStore } from "@/agents/native/credentials";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import type { ResolvedCompleteOptions } from "@/agents/types";
 import type { ProviderCatalogOverride } from "@/config/schema-types";

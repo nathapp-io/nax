@@ -11,12 +11,10 @@
  * DEFAULT_TEST_FILE_PATTERNS for backward compatibility.
  */
 
+import { errorMessage, gitSpawnEnv, hardenedGitArgv, spawn } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
-import { spawn } from "../utils/bun-deps";
-import { errorMessage } from "../utils/errors";
-import { gitSpawnEnv, hardenedGitArgv } from "../utils/git-env";
 import type { IsolationCheck } from "./types";
 
 const GIT_TIMEOUT_MS = 10_000;

@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import {
   assertDefined,
   assertNaxError,
@@ -28,7 +29,6 @@ import { _persistPrdDeps } from "@/plan/strategies";
 import type { PRD, UserStory } from "@/prd";
 import { getContextFiles } from "@/prd";
 import { readProjectIdentity } from "@/runtime";
-import { gitSpawnEnv } from "@/utils/git-env";
 
 function makeMockDecomposeManager(
   decomposeFn?: (agentName: string, opts: CompleteOptions) => Promise<{ stories: DecomposedStory[] }>,

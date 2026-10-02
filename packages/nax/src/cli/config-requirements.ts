@@ -1,5 +1,5 @@
+import { NATIVE_AGENT, nativeTierProviders } from "@nathapp/nax-agent";
 import { resolveDefaultAgent } from "@/agents";
-import { NATIVE_AGENT, nativeTierProviders } from "@/agents/native";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_AGENT_PROTOCOL } from "@/config";
 

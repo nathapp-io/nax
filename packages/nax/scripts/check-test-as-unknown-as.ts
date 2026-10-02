@@ -24,10 +24,11 @@ import { dirname, join } from "node:path";
  * stuck on legitimate uses).
  */
 import { Glob } from "bun";
+import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
 
-const ROOT = join(import.meta.dir, "..");
+const ROOT = gatePackageRoot(import.meta.dir);
 const SCAN_DIR = "test";
-const BASELINE_FILE = join(import.meta.dir, "baselines", "test-as-unknown-as-baseline.json");
+const BASELINE_FILE = gateBaselinePath(ROOT, "test-as-unknown-as-baseline.json");
 /**
  * Global so a line carrying more than one cast counts as more than one. A
  * per-line count would let two cast lines be joined into one to lower the

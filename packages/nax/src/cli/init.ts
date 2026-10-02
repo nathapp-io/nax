@@ -7,11 +7,11 @@
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { featuresDir, globalConfigDir, PROJECT_FEATURES_DIR, projectConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { isSameProject, readProjectIdentity } from "../runtime";
-import { gitSpawnEnv } from "../utils/git-env";
 import {
   NAX_GITIGNORE_ENTRIES,
   NAX_NAXIGNORE_ENTRIES,

@@ -17,10 +17,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { assertDefined, assertNaxError, cleanupTempDir, loadTrustModule, makeTempDir, trustFn } from "@test/helpers";
 import { NaxError } from "@/errors";
 import type { TrustEntry, TrustStoreFile } from "@/trust";
-import { byCodePoint } from "@/utils/sort";
 
 const trust = await loadTrustModule();
 

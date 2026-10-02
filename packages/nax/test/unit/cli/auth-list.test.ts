@@ -21,10 +21,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, type Mock, mock, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { _authDeps, _resetCredentialStore, credentialFilePath, naxCredentialStore } from "@nathapp/nax-agent/internal";
 import type { StoredCredential } from "@nathapp/nax-ai";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _authDeps } from "@/agents/native/auth";
-import { _resetCredentialStore, credentialFilePath, naxCredentialStore } from "@/agents/native/credentials";
 import { _cliAuthDeps, authListCommand } from "@/cli/auth";
 import { type AuthListReport, collectAuthList } from "@/cli/auth-list";
 

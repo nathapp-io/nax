@@ -22,6 +22,8 @@
  * `decideStageAction` runs still lands. This module imports `./post-run`
  * TYPE-ONLY — a runtime import would cycle straight back to the seam.
  */
+
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Finding } from "../findings/types";
 import { isTriggerEnabled } from "../interaction/triggers";
 import { getLogger } from "../logger";
@@ -29,7 +31,6 @@ import { fullSuiteGateOp } from "../operations";
 import { routeTddFailure } from "../pipeline/stages/execution-helpers";
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { isBlockingSeverity } from "../review/severity";
-import { errorMessage } from "../utils/errors";
 import { cleanupSessionOnFailure as cleanupSessionOnFailureImpl } from "./lifecycle/post-run-session-cleanup";
 import type { CaptureParsedSummary } from "./lifecycle/test-baseline-capture";
 import { invokeRollForwardFromContext } from "./lifecycle/test-baseline-capture";

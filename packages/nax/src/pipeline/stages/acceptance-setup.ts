@@ -22,6 +22,7 @@
  */
 
 import path from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
 import { generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
 import type { AgentAdapter } from "@/agents/types";
@@ -32,7 +33,6 @@ import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { callOp as _callOp, acceptanceGenerateOp } from "@/operations";
 import { isInAcceptanceScope } from "@/prd";
-import { errorMessage } from "@/utils/errors";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
 import { executeWithTimeout } from "@/verification";
 import { pipelineEventBus } from "../event-bus";

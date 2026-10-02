@@ -7,8 +7,8 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { shellQuoteArg } from "@nathapp/nax-agent/internal";
 import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
-import { shellQuoteArg } from "../verification/shell-quote";
 import {
   acceptanceTestFilename as defaultAcceptanceTestFilename,
   resolveAcceptanceTestFile as defaultResolveAcceptanceTestFile,

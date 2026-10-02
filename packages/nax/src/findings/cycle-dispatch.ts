@@ -23,8 +23,8 @@
  *   no-progress bail can skip it.
  */
 
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Logger } from "@/logger";
-import { errorMessage } from "@/utils/errors";
 import { NaxError } from "../errors";
 import { ledgerSpendFor } from "./cycle-cost";
 import { recordIteration } from "./cycle-iteration-log";

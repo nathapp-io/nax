@@ -30,6 +30,7 @@
  *     and restores nothing.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { SpawnOptions, SpawnResult } from "@nathapp/nax-agent/internal";
 import {
   assertDefined,
   makeFixCycleResult,
@@ -50,7 +51,6 @@ import type { CallContext, FixReviewOpInput, Operation } from "@/operations";
 import { _treeSnapshotDeps } from "@/review/fix-review/tree-snapshot";
 import type { NaxRuntime } from "@/runtime";
 import { _rollbackDeps } from "@/tdd";
-import type { SpawnOptions, SpawnResult } from "@/utils/bun-deps";
 
 /** The sha the stubbed `captureSnapshotRef` returns — the NBF snapshot. */
 const NBF_SHA = "nbf-snapshot-sha";

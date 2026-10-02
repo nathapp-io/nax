@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _fileLockDeps } from "@/utils/file-lock";
+import { _fileLockDeps } from "@nathapp/nax-agent/internal";
 import { withQueueFileLock } from "@/utils/queue-file-lock";
 
 let orig: typeof _fileLockDeps;

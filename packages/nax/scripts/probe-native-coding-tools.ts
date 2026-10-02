@@ -14,7 +14,7 @@
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compileToolPolicy, createCodingToolRuntime } from "@/tools";
+import { compileToolPolicy, createCodingToolRuntime } from "@nathapp/nax-agent";
 
 const base = mkdtempSync(join(tmpdir(), "nax-probe-"));
 const root = join(base, "repo");

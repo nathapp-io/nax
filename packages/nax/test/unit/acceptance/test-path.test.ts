@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { assertDefined } from "@test/helpers";
 import {
   _groupDeps,
@@ -8,7 +9,6 @@ import {
   suggestedTestFilename,
 } from "@/acceptance";
 import type { PRD, UserStory } from "@/prd";
-import { byCodePoint } from "@/utils/sort";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 

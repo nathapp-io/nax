@@ -8,8 +8,7 @@
  * Excluded: node_modules/, dist/, build/, .nax/, coverage/, .git/
  */
 
-import { gitSpawnEnv } from "@/utils/git-env";
-import { killProcessGroup } from "@/utils/process-kill";
+import { gitSpawnEnv, killProcessGroup } from "@nathapp/nax-agent/internal";
 import type { DetectionSource } from "./types";
 
 /**

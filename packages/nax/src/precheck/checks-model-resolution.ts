@@ -20,7 +20,7 @@
  * drive specific outcomes without loading the bundled catalog.
  */
 
-import { NATIVE_AGENT, resolveNativeId } from "@/agents/native";
+import { NATIVE_AGENT, resolveNativeId } from "@nathapp/nax-agent";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 import {
   collectConfiguredModelPins,

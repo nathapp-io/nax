@@ -20,6 +20,8 @@ function runGate(root: string): { code: number; out: string } {
   return { code: proc.exitCode, out: proc.stdout.toString() + proc.stderr.toString() };
 }
 
+const AGENT_PACKAGE_JSON = JSON.stringify({ name: "@nathapp/nax-agent" });
+
 function tree(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), "nax-gate-"));
   for (const [rel, body] of Object.entries(files)) {
@@ -31,10 +33,13 @@ function tree(files: Record<string, string>): string {
 }
 
 describe("check-nax-ai-imports", () => {
-  test("passes when nax-ai is imported only from src/agents/native", () => {
+  // S1-5: the native loop is no longer nax's, so the gate reads the scanned
+  // package's own name from its package.json and admits src/native/ instead.
+  test("nax-agent: passes when nax-ai is imported only from src/native", () => {
     const root = tree({
-      "src/agents/native/client.ts": 'import { createClient } from "@nathapp/nax-ai";\n',
-      "src/agents/registry.ts": 'import { NativeAgentAdapter } from "./native";\n',
+      "package.json": AGENT_PACKAGE_JSON,
+      "src/native/client.ts": 'import { createClient } from "@nathapp/nax-ai";\n',
+      "src/session/session-types.ts": 'import type { NativeSessionAdapter } from "#src/native/index";\n',
     });
     const { code } = runGate(root);
     rmSync(root, { recursive: true, force: true });
@@ -75,32 +80,51 @@ describe("check-nax-ai-imports", () => {
     expect(out).toContain("clean");
   });
 
-  test("passes when nax-ai is imported from BOTH native and catalog prefixes", () => {
+  test("nax: src/agents/native is no longer an allowed site, since the native agent moved to nax-agent", () => {
     const root = tree({
       "src/agents/native/client.ts": 'import { createClient } from "@nathapp/nax-ai";\n',
       "src/agents/catalog/lookup.ts": 'import { defaultProviders } from "@nathapp/nax-ai";\n',
-      "src/agents/registry.ts": 'import { CatalogLookup } from "./catalog";\n',
+    });
+    const { code, out } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).not.toBe(0);
+    expect(out).toContain("src/agents/native/client.ts");
+    expect(out).not.toContain("src/agents/catalog/lookup.ts:");
+  });
+
+  test("nax-agent: passes for the R3 re-export file", () => {
+    const root = tree({
+      "package.json": AGENT_PACKAGE_JSON,
+      "src/cost/standard-types.ts": 'export type { TokenUsage } from "@nathapp/nax-ai";\n',
     });
     const { code } = runGate(root);
     rmSync(root, { recursive: true, force: true });
     expect(code).toBe(0);
   });
 
-  test("passes for the S1-1 staging re-export file", () => {
+  test("nax-agent: still fails for a sibling of the re-export file", () => {
     const root = tree({
-      "src/agents/cost/standard-types.ts": 'export type { TokenUsage } from "@nathapp/nax-ai";\n',
-    });
-    const { code } = runGate(root);
-    rmSync(root, { recursive: true, force: true });
-    expect(code).toBe(0);
-  });
-
-  test("still fails for a sibling of the staging file", () => {
-    const root = tree({
-      "src/agents/cost/estimate.ts": 'import type { Pricing } from "@nathapp/nax-ai";\n',
+      "package.json": AGENT_PACKAGE_JSON,
+      "src/cost/estimate.ts": 'import type { Pricing } from "@nathapp/nax-ai";\n',
     });
     const { code } = runGate(root);
     rmSync(root, { recursive: true, force: true });
     expect(code).not.toBe(0);
+  });
+
+  // src/tools/types.ts names the package only to explain why it does NOT
+  // import it. The allow-list is for real imports, so that file must not be
+  // listed: an entry here would be dead weight that reads as permission.
+  test("nax-agent: a doc comment naming the package is not an import site, so none is needed for it", () => {
+    const root = tree({
+      "package.json": AGENT_PACKAGE_JSON,
+      "src/tools/types.ts":
+        "/**\n * Deliberately free of any transport type: none of which may see `@nathapp/nax-ai`\n */\nexport const x = 1;\n",
+      "src/native/index.ts": 'export { client } from "./client";\n',
+    });
+    const { code, out } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).toBe(0);
+    expect(out).toContain("clean");
   });
 });

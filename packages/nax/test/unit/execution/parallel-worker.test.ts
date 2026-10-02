@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import { byCodePoint } from "@nathapp/nax-agent/internal";
 import {
   assertDefined,
   cleanupTempDir,
@@ -22,7 +23,6 @@ import type { PipelineContext, PipelineStage } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
 import type { RoutingDecision } from "@/routing/decision";
 import { storyExecRoot } from "@/runtime";
-import { byCodePoint } from "@/utils/sort";
 import type { WorktreeDependencyContext } from "@/worktree/types";
 
 function makeWorkerStory(id: string): UserStory {

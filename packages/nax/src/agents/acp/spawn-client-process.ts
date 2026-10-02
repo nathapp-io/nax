@@ -11,10 +11,14 @@
  * verification/executor.ts hard-kill pattern.
  */
 
+import {
+  cancellableDelay,
+  isProcessAlive,
+  killProcessGroup,
+  type SpawnOptions,
+  type SpawnResult,
+} from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { cancellableDelay, type SpawnOptions, type SpawnResult } from "@/utils/bun-deps";
-import { isProcessAlive } from "@/utils/process-alive";
-import { killProcessGroup } from "@/utils/process-kill";
 
 export interface TrackedSpawnDeps {
   spawn: (cmd: string[], opts: SpawnOptions) => SpawnResult;

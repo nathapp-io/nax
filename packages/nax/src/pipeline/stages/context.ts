@@ -17,6 +17,7 @@
 
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { FeatureContextProvider } from "@/context";
 import {
@@ -43,7 +44,6 @@ import { getContextFiles } from "@/prd";
 import { storyExecRoot } from "@/runtime";
 import { readDigestFile, writeDigestFile } from "@/session";
 import { resolveTestFilePatterns } from "@/test-runners";
-import { errorMessage } from "@/utils/errors";
 import { storyWorkdir } from "@/utils/path-frame";
 import { packageDirRelative } from "@/utils/paths";
 import { resolveScopeFiles } from "../scope-files";

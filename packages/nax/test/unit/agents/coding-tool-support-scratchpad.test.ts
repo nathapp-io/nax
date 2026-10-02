@@ -36,14 +36,17 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { realpath as realpathAsync } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ToolProvider } from "@nathapp/nax-agent";
+import {
+  _argvExecDeps,
+  _resetSandboxRegistryForTests,
+  buildCodingToolSupport,
+  buildLedgerSessionName,
+} from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeNaxConfig, makeSpawn, makeTempDir } from "@test/helpers";
-import { buildCodingToolSupport, buildLedgerSessionName } from "@/agents/coding-tool-support";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import { resolvePackageName } from "@/agents/exec-package-name";
 import { DEFAULT_CODING_TOOLS } from "@/config/permissions";
-import { _resetSandboxRegistryForTests } from "@/sandbox";
-import type { ToolProvider } from "@/tools";
-import { _argvExecDeps } from "@/utils/argv-exec";
 
 let scratchpadRoot: string;
 

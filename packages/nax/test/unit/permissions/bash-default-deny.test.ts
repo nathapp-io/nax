@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { BASH_TOOL_NAME } from "@nathapp/nax-agent";
 import { makeNaxConfig } from "@test/helpers";
 import { validatePermissionsBlock } from "@/config/config-guards";
 import { resolvePermissions } from "@/config/permissions";
-import { BASH_TOOL_NAME } from "@/tools";
 
 const cfg = (execution: Record<string, unknown>) => makeNaxConfig({ execution });
 

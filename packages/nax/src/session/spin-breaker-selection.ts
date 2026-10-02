@@ -11,8 +11,8 @@
  * hand-built NaxConfig that skipped zod parsing still gets a sane policy.
  */
 
+import { DEFAULT_SPIN_BREAKER_SETTINGS, type ResolvedSpinBreakerSettings } from "@nathapp/nax-agent/internal";
 import type { AgentManagerConfig } from "../config/selectors";
-import { DEFAULT_SPIN_BREAKER_SETTINGS, type ResolvedSpinBreakerSettings } from "../runtime/spin-breaker";
 
 /**
  * nax#2017: the time axis is normally derived from the tool-call-only idle

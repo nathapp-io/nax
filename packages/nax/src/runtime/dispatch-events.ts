@@ -1,8 +1,8 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { TokenUsage } from "../agents/cost";
 import type { PipelineStage, ResolvedPermissions } from "../config/permissions";
 import { getSafeLogger } from "../logger";
 import type { AdvisoryFinding } from "../review/review-audit";
-import { errorMessage } from "../utils/errors";
 import type { SessionRole } from "./session-role";
 
 /**
@@ -89,7 +89,7 @@ export interface DispatchEventBase {
    * a subscriber records from one stays byte-identical to its pre-US-006
    * shape.
    */
-  readonly auth?: import("../agents/session-types").AuthStamp;
+  readonly auth?: import("@nathapp/nax-agent").AuthStamp;
   /** Per-callOp invocation id, stamped by the operation layer. */
   readonly callId?: string;
   /** Caller-supplied region id forwarded from CallContext.scopeId. */

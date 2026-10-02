@@ -79,7 +79,7 @@ export async function appendToRollup(observations: Observation[], rollupPath: st
     // Already-exists or read-only parent surfaces inside the locked body.
   });
 
-  const { withPathFileLock } = await import("@/utils/path-file-lock");
+  const { withPathFileLock } = await import("@nathapp/nax-agent/internal");
   await withPathFileLock(rollupPath, () => appendToRollupUnlocked(observations, rollupPath)).catch(() => {
     // Lock-acquisition / write failures are logged below in the unlocked
     // body — never thrown because the curator must not affect run exit.
