@@ -1,0 +1,8 @@
+{
+  "updatedAt": "2026-10-02T07:40:06.250Z",
+  "byFile": {
+    "test/unit/native/session/us-003-acs.test.ts": true,
+    "test/unit/tools/us-003-acs.test.ts": true,
+    "test/unit/tools/us-003-scratchpad-acs.test.ts": true
+  }
+}

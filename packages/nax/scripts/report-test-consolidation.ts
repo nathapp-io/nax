@@ -39,6 +39,7 @@
  *   bun run report:test-consolidation --group <base-path>      # one group, with the merge arithmetic
  *   bun run report:test-consolidation --mirrors                # the do-not-merge list
  *   bun run report:test-consolidation --json                   # machine-readable
+ *   bun scripts/report-test-consolidation.ts --package=.       # rank another package's tests
  *
  * Exit codes: 0 on a successful report; 1 if --group names no group or an ambiguous one.
  *
@@ -49,11 +50,23 @@
  * invoked from `main()` (one named phase function per report mode), run only
  * under `import.meta.main`, so importing this module is free of
  * side effects (it used to scan and `process.exit` at module load).
+ *
+ * The importers inherit that root, which is deliberate: one definition of
+ * "satellite"/"ticket"/"mirror" means one definition of where those live. A
+ * second, independent root here is how the two could drift apart silently.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
 
-const ROOT = join(import.meta.dir, "..");
+/**
+ * Every filesystem read below hangs off this, so `--package=<dir>` re-points the
+ * whole report — the walk, the `src/` mirror check and the frozen-size baseline —
+ * at the named package. Anchored to this file's own directory instead, the report
+ * would rank nax while claiming to rank the package asked for, which is how
+ * check-test-satellites came to scan only nax and leave nax-agent ungated.
+ */
+const ROOT = gatePackageRoot(import.meta.dir);
 
 /** `check-file-sizes.ts` TEST_LIMIT. A merged file above this breaks `bun run lint`. */
 export const TEST_LINE_LIMIT = 800;
@@ -80,7 +93,7 @@ export const TICKET_RE = /(#\s?\d{3,4}|nax#\d+|\bUS-\d+\b|\bAC\d+\b|ADR-\d+|issu
  */
 export const SKIP_ROOTS = new Set(["test/helpers", "test/fixtures", "test/.tmp", "test/tmp"]);
 
-const BASELINE_PATH = join(import.meta.dir, "baselines", "file-sizes-baseline.json");
+const BASELINE_PATH = gateBaselinePath(ROOT, "file-sizes-baseline.json");
 
 /** Match `check-file-sizes.ts` countLines exactly: a trailing newline is not a line. */
 export function countLines(text: string): number {

@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { gateBaselinePath, gatePackageRoot } from "@scripts/lib/package-root";
 
 const NAX_ERROR_GATE = join(import.meta.dir, "../../../scripts/check-nax-error.ts");
+const SATELLITES_GATE = join(import.meta.dir, "../../../scripts/check-test-satellites.ts");
 const PLANTED = "src/planted-by-package-flag.ts";
 
 function tree(root: string, files: Record<string, string>): void {
@@ -68,5 +69,22 @@ describe("a gate honours --package=", () => {
 
     expect(proc.exitCode).not.toBe(0);
     expect(out).toContain(PLANTED);
+  });
+
+  // check-test-satellites reads its file list from report-test-consolidation,
+  // which owns the walk, so two roots were nax-anchored rather than one. The
+  // containment argument is the same: `us-777-planted` exists in no package but
+  // the temp dir, so if either root ignored the flag the gate would print nax's
+  // two files and `Total: 2`, never naming the planted one.
+  test("check-test-satellites scans the package --package names, not the one it lives in", () => {
+    const root = mkdtempSync(join(tmpdir(), "nax-package-root-"));
+    const plantedTest = "test/unit/tools/us-777-planted.test.ts";
+    tree(root, { [plantedTest]: 'describe("planted", () => {});\n' });
+    const proc = Bun.spawnSync(["bun", "run", SATELLITES_GATE, `--package=${root}`, "--list"]);
+    const out = proc.stdout.toString() + proc.stderr.toString();
+    rmSync(root, { recursive: true, force: true });
+
+    expect(out).toContain(plantedTest);
+    expect(out).toContain("Total: 1");
   });
 });

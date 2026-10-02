@@ -18,7 +18,9 @@
     "lint": "bun run lint:biome && bun run lint:checks",
     "lint:biome": "bun x biome check --error-on-warnings --diagnostic-level=warn src/ test/",
     "lint:fix": "bun x biome check --write src/ test/",
-    "lint:checks": "bun ../nax/scripts/check-nax-error.ts --package=. && bun ../nax/scripts/check-file-sizes.ts --package=. && bun ../nax/scripts/check-complexity.ts --package=. && bun ../nax/scripts/check-import-cycles.ts --package=. && bun ../nax/scripts/check-test-as-unknown-as.ts --package=. && bun ../nax/scripts/check-test-escape-hatches.ts --package=. && bun ../nax/scripts/check-no-control-bytes.ts && bun ../nax/scripts/check-no-real-global-nax.ts && bun ../nax/scripts/check-permission-mode-ssot.ts && bun ../nax/scripts/check-feature-dir-ssot.ts && bun ../nax/scripts/check-package-frame-derivation.ts && bun ../nax/scripts/check-git-spawn-env.ts . && bun ../nax/scripts/check-sandbox-imports.ts . && bun ../nax/scripts/check-nax-ai-imports.ts .",
+    "check:test-satellites": "bun ../nax/scripts/check-test-satellites.ts --package=.",
+    "check:test-satellites:update": "bun ../nax/scripts/check-test-satellites.ts --package=. --update-baseline",
+    "lint:checks": "bun ../nax/scripts/check-nax-error.ts --package=. && bun ../nax/scripts/check-file-sizes.ts --package=. && bun ../nax/scripts/check-complexity.ts --package=. && bun ../nax/scripts/check-import-cycles.ts --package=. && bun ../nax/scripts/check-test-as-unknown-as.ts --package=. && bun ../nax/scripts/check-test-escape-hatches.ts --package=. && bun run check:test-satellites && bun ../nax/scripts/check-no-control-bytes.ts && bun ../nax/scripts/check-no-real-global-nax.ts && bun ../nax/scripts/check-permission-mode-ssot.ts && bun ../nax/scripts/check-feature-dir-ssot.ts && bun ../nax/scripts/check-package-frame-derivation.ts && bun ../nax/scripts/check-git-spawn-env.ts . && bun ../nax/scripts/check-sandbox-imports.ts . && bun ../nax/scripts/check-nax-ai-imports.ts .",
     "test": "bun test ./test/unit/ --timeout=60000 && bun test ./test/integration/ --timeout=60000",
     "check:all": "bun run --silent lint"
   },
