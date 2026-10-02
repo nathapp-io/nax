@@ -23,9 +23,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compileToolPolicy, createCodingToolRuntime, gitTool, grepTool, MODEL_MAX_BYTES } from "@nathapp/nax-agent";
-import { _grepDeps } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
-import { _gitDeps } from "@/utils/git";
+import { _gitDeps, _grepDeps } from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeSpawn, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
 let root: string;
 const realGrepWhich = _grepDeps.which;

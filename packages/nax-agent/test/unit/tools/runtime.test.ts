@@ -6,6 +6,7 @@ import { ASK_DENIED_REASON, ASK_NO_CHANNEL_REASON, ASK_TIMEOUT_REASON, type AskR
 import type { ToolCallRecord } from "@nathapp/nax-agent/internal";
 import {
   _codingToolDeps,
+  _gitDeps,
   _resetBuiltinsForTest,
   _resetRegistryForTest,
   type CodingTool,
@@ -13,8 +14,7 @@ import {
   createCodingToolRuntime,
   registerCodingTool,
 } from "@nathapp/nax-agent/internal";
-import { makeLogger } from "@test/helpers";
-import { _gitDeps } from "@/utils/git";
+import { makeLogger } from "#test/helpers/index";
 
 let root: string;
 let gitRoot: string;

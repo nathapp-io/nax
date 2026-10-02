@@ -7,6 +7,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import type { ProviderCatalogOverride } from "@nathapp/nax-agent/internal";
 import {
   _clientDeps,
   _resetCredentialStore,
@@ -16,8 +17,7 @@ import {
   naxCredentialStore,
 } from "@nathapp/nax-agent/internal";
 import { createClient, type ProtocolOptions } from "@nathapp/nax-ai";
-import { assertNaxError, cleanupTempDir, makeTempDir, mockFetch } from "@test/helpers";
-import type { ProviderCatalogOverride } from "@/config/schema-types";
+import { assertNaxError, cleanupTempDir, makeTempDir, mockFetch } from "#test/helpers/index";
 
 const REAL_BUILD = _clientDeps.build;
 // A real client with no providers and no protocols: constructing it loads no

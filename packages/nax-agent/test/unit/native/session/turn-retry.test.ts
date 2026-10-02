@@ -3,10 +3,10 @@ import {
   abortableSleep,
   canAttemptTurnRetry,
   isRetryableTransportFault,
+  NaxError,
   retryTransportFault,
   turnRetryDelayMs,
 } from "@nathapp/nax-agent/internal";
-import { NaxError } from "@/errors";
 
 /** Mirrors the fixture ProtocolStreamError used in turn-loop-compaction.test.ts. */
 class ProtocolStreamError extends Error {
