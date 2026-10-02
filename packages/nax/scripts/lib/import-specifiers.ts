@@ -1,9 +1,9 @@
 /**
  * Import specifiers in TypeScript source, found and rewritten by regex.
  *
- * Used by the package-boundary gates and the S1-5 move script. Matches run on
- * comment-stripped text (stripComments keeps every offset), so a specifier
- * inside a comment is never reported or rewritten.
+ * Used by check-package-boundaries (and, until it ran, the S1-5 move script).
+ * Matches run on comment-stripped text (stripComments keeps every offset), so a
+ * specifier inside a comment is never reported or rewritten.
  *
  * Covered forms: `import ... from "x"` and `export ... from "x"` (type-only and
  * multi-line included), side-effect `import "x"`, dynamic `import("x")`, inline

@@ -1,0 +1,31 @@
+{
+  "counts": {
+    "tsSuppress": 0,
+    "ratchetAllow": 0,
+    "looseCast": 12
+  },
+  "updatedAt": "2026-10-02T07:19:10.178Z",
+  "byFile": {
+    "test/helpers/spawn.ts": {
+      "looseCast": 3
+    },
+    "test/helpers/absent.ts": {
+      "looseCast": 1
+    },
+    "test/helpers/deps.ts": {
+      "looseCast": 1
+    },
+    "test/unit/internal/process-kill.test.ts": {
+      "looseCast": 4
+    },
+    "test/unit/internal/file-lock.test.ts": {
+      "looseCast": 1
+    },
+    "test/unit/internal/process-alive.test.ts": {
+      "looseCast": 1
+    },
+    "test/unit/logger/redact.test.ts": {
+      "looseCast": 1
+    }
+  }
+}

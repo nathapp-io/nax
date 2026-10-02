@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Gate: the workspace package boundaries (S1 spec section 7). Replaces the S1
- * move ratchet (check-agent-boundary) once nax-agent is a package.
+ * Gate: the workspace package boundaries (S1 spec section 7). It replaced the
+ * S1 move ratchet (check-agent-boundary), which is deleted along with the move
+ * script that wrote it.
  *
  * - packages/nax-agent imports only node:/bun builtins, its declared
  *   dependencies, `#src/` and `#test/`, relative paths that stay inside the
