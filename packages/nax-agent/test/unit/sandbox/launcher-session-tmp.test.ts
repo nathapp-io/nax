@@ -18,7 +18,7 @@ import {
   DISABLED_SANDBOX_STATE,
   type SandboxPolicy,
 } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore, withWarnSpy } from "@test/helpers";
+import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore, withWarnSpy } from "#test/helpers/index";
 
 let root: string;
 beforeEach(() => {

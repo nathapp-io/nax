@@ -17,7 +17,7 @@ import {
   compileToolPolicy,
   createCodingToolRuntime,
 } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeFakeSandboxBackend, makeLogger, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeFakeSandboxBackend, makeLogger, makeTempDir } from "#test/helpers/index";
 
 let root: string;
 let recorded: ToolCallRecord[];

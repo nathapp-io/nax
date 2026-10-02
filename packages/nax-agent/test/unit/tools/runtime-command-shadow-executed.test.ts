@@ -22,7 +22,7 @@ import {
   compileToolPolicy,
   createCodingToolRuntime,
 } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeLogger, makeTempDir } from "#test/helpers/index";
 
 let root: string;
 let rows: CommandSafetyRow[];
