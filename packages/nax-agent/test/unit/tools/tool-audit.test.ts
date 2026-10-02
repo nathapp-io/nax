@@ -14,7 +14,7 @@ import {
   type ToolCallRecord,
   unregisterToolAuditSink,
 } from "@nathapp/nax-agent/internal";
-import { assertDefined, cleanupTempDir, makeTempDir, withWarnSpy } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir, withWarnSpy } from "#test/helpers/index";
 
 describe("createToolAuditSink", () => {
   test("writes one file holding every recorded call", async () => {

@@ -42,7 +42,7 @@ import {
   scratchpadReadTool,
   scratchpadWriteTool,
 } from "@nathapp/nax-agent/internal";
-import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 let root: string;
 

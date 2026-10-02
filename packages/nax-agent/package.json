@@ -6,10 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./internal": "./src/internal.ts",
-    "./test/helpers/command-safety": "./test/helpers/command-safety.ts",
-    "./test/helpers/sandbox": "./test/helpers/sandbox.ts",
-    "./test/helpers/systemone-stub": "./test/helpers/systemone-stub.ts"
+    "./internal": "./src/internal.ts"
   },
   "imports": {
     "#src/*": "./src/*.ts",

@@ -100,12 +100,10 @@ Two entries, and only two:
   It re-exports the same module instances, so patching a seam here patches the object the
   agent reads.
 
-A third surface exists for nax's own tests and is not part of the runtime surface: the
-package exports exactly three named subpaths,
-`@nathapp/nax-agent/test/helpers/{command-safety,sandbox,systemone-stub}`. The ten generic
-helpers (`absent`, `assert-defined`, `deps`, `fake-clock`, `fs`, `mock-fetch`,
-`session-tmp-deps`, `spawn`, `temp`, `timeout`) live in `@nathapp/nax-test-kit/bun/*`, and
-nax re-exports them from its own `test/helpers/<name>.ts` shims.
+nax-agent exports no test helpers. Its own helpers live in `test/helpers/` (imported as
+`#test/helpers/index`). The ten generic ones live in `@nathapp/nax-test-kit/bun/*`, which nax
+and nax-agent share. nax keeps its own copies of `command-safety` and `sandbox` for the four
+nax wiring tests that use them.
 
 ## Engineering Rules
 
@@ -140,12 +138,10 @@ nax re-exports them from its own `test/helpers/<name>.ts` shims.
 ## Testing Rules
 
 - Tests live under `test/`, mirroring `src/`, named `*.test.ts`.
-- Shared fixtures and mocks live in `test/helpers/`. The package-specific helpers are
-  exported to nax's own tests through exactly three named subpaths,
-  `@nathapp/nax-agent/test/helpers/{command-safety,sandbox,systemone-stub}`; the ten generic
-  helpers live in `@nathapp/nax-test-kit/bun/*` and nax re-exports them from its own
-  `test/helpers/<name>.ts` shims. Do not re-implement one inline in a second package — extend
-  the shared helper.
+- Shared fixtures and mocks live in `test/helpers/`. Generic helpers belong in
+  `@nathapp/nax-test-kit/bun/*`. A nax-agent helper that nax also needs is copied into nax's
+  `test/helpers/` with a first-line note naming the original; that is the one sanctioned
+  duplicate (spec S2 §6.2). Otherwise extend the shared helper instead of re-implementing it inline.
 - `test/fixtures/` holds recorded fixtures. The sandbox tests that probe for a working `bwrap`
   use `test.skipIf(!probe.available)`, so they pass by skipping when one is unavailable —
   a green local run is not evidence they ran. CI installs `bubblewrap`, `socat` and

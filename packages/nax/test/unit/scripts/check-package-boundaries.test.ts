@@ -35,10 +35,7 @@ function workspace(): void {
     "packages/nax/src/a.ts",
     'import { x } from "@nathapp/nax-agent";\nimport { y } from "@nathapp/nax-agent/internal";\n',
   );
-  write(
-    "packages/nax/test/a.test.ts",
-    'import { t } from "@nathapp/nax-test-kit/bun/temp";\nimport { s } from "@nathapp/nax-agent/test/helpers/sandbox";\n',
-  );
+  write("packages/nax/test/a.test.ts", 'import { t } from "@nathapp/nax-test-kit/bun/temp";\n');
   write("packages/nax/scripts/gate.ts", 'import { c } from "@nathapp/nax-repo-tooling/scripts/check-import-cycles";\n');
   write("packages/test-kit/package.json", JSON.stringify({ name: "@nathapp/nax-test-kit" }));
   write(
@@ -105,14 +102,17 @@ describe("check-package-boundaries", () => {
     expect(whys()).toEqual(["packages/nax-agent/src/bad.ts ../../nax/src/config relative import leaves the package"]);
   });
 
-  test("nax may use the two entries and three named helper subpaths, the helpers only from test/", () => {
+  test("nax may use only the two entries; no nax-agent test helper subpath, even from test/", () => {
     workspace();
     write(
       "packages/nax/src/bad.ts",
       'import { g } from "@nathapp/nax-agent/src/tools/git";\nimport { s } from "@nathapp/nax-agent/test/helpers/sandbox";\n',
     );
-    write("packages/nax/test/bad.test.ts", 'import { t } from "@nathapp/nax-agent/test/helpers/temp";\n');
-    expect(whys()).toHaveLength(3);
+    write(
+      "packages/nax/test/bad.test.ts",
+      'import { s } from "@nathapp/nax-agent/test/helpers/sandbox";\nimport { t } from "@nathapp/nax-agent/test/helpers/temp";\n',
+    );
+    expect(whys()).toHaveLength(4);
   });
 
   test("nax may import test-kit only from test/ and repo-tooling only from scripts/ and test/", () => {
