@@ -1,7 +1,6 @@
 {
-  "updatedAt": "2026-10-02T17:09:55.612Z",
+  "updatedAt": "2026-10-02T17:11:34.723Z",
   "byFile": {
-    "src/coding-tools/coding-tool-sandbox.ts": 0.2025,
     "src/config/bash-approval.ts": 0.4286,
     "src/cost/estimate.ts": 0.7576,
     "src/cost/usage-math.ts": 0.1905,
