@@ -10,8 +10,9 @@
  */
 
 import { errorMessage } from "#src/infra/errors";
-import { getSafeLogger } from "#src/infra/index";
+import { getSafeLogger, NaxError } from "#src/infra/index";
 import { redactSecrets } from "#src/internal/redact";
+import { type AgentSpawnResult, type AgentSpawnStdin, runtimeSpawn } from "#src/runtime/index";
 import { HELPER_SUBCOMMAND, requestLine } from "./helper-protocol";
 
 /**
@@ -39,7 +40,7 @@ const AUTH_HELPER_STDERR_COLLECT_MAX_BYTES = AUTH_HELPER_STDERR_MAX_BYTES * 8;
  */
 const DRAIN_GRACE_MS = 500;
 
-/** The slice of Bun's Subprocess this module uses. */
+/** The slice of the runtime's spawn result this module uses. */
 interface HelperProcess {
   readonly stdin: { write(data: string): unknown; end(): unknown };
   readonly stdout: ReadableStream<Uint8Array>;
@@ -53,6 +54,22 @@ interface HelperProcess {
   kill(signal: "SIGKILL"): void;
 }
 
+/** A piped spawn always has stdin; a runtime that broke that is a spawn failure, caught by the caller. */
+function hasStdin(proc: AgentSpawnResult): proc is AgentSpawnResult & { readonly stdin: AgentSpawnStdin } {
+  return proc.stdin !== undefined;
+}
+
+function spawnHelper(argv: readonly string[]): HelperProcess {
+  // nax-git-env-allow: caller-supplied helper argv, not git; the child inherits nax's env by contract
+  const proc = runtimeSpawn(argv, { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  if (!hasStdin(proc)) {
+    throw new NaxError("[credentials] the runtime returned no stdin for a piped spawn", "CREDENTIAL_HELPER_FAILED", {
+      stage: "credentials",
+    });
+  }
+  return proc;
+}
+
 /**
  * Injectable seam (the `_deps` pattern): every external call this module makes
  * goes through it, so a test can drive the helper without a real process.
@@ -61,9 +78,7 @@ interface HelperProcess {
  * which is what the helper contract promises.
  */
 export const _execSourceDeps = {
-  spawn: (argv: readonly string[]): HelperProcess =>
-    // nax-git-env-allow: caller-supplied helper argv, not git; the child inherits nax's env by contract
-    Bun.spawn([...argv], { stdin: "pipe", stdout: "pipe", stderr: "pipe" }) as unknown as HelperProcess,
+  spawn: spawnHelper,
   /**
    * Timer pair, wrapped so the global functions are resolved per call — a test
    * that spies on `setTimeout` (the timer-leak helper) still sees these.
@@ -274,7 +289,7 @@ export async function runHelper(
     // nax-git-env-allow: caller-supplied helper argv, not git; the child inherits nax's env by contract
     proc = _execSourceDeps.spawn([...command, HELPER_SUBCOMMAND]);
   } catch (cause) {
-    // A missing binary never reaches `exited`: Bun throws ENOENT from spawn.
+    // A missing binary never reaches `exited`: the runtime throws ENOENT from spawn.
     return { kind: "spawn-failed", detail: `could not be started: ${errorMessage(cause)}`, cause, stderr: "" };
   }
 

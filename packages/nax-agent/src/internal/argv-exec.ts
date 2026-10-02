@@ -15,7 +15,7 @@
  *   stays open, the group is SIGKILLed and `orphansKilled: true` is set with
  *   whatever the readers captured so far.
  */
-import { spawn } from "./bun-deps";
+import { runtimeSpawn } from "#src/runtime/index";
 import { killProcessGroup } from "./process-kill";
 
 export interface RunArgvOptions {
@@ -59,7 +59,7 @@ export const DRAIN_GRACE_MS = 500;
 
 /** Injectable seam, mirroring _worktreeDependencyDeps. */
 export const _argvExecDeps = {
-  spawn,
+  spawn: runtimeSpawn,
   killProcessGroup,
   /**
    * The post-exit drain grace (US-001). A real test can shrink it to keep the

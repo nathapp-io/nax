@@ -12,7 +12,8 @@
  */
 
 import { drainBounded } from "#src/internal/bounded-io";
-import { spawn, which } from "#src/internal/bun-deps";
+import { runtimeSpawn } from "#src/runtime/index";
+import { which } from "#src/runtime/which";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 import { cutToByteCap, READ_CEILING } from "./truncate";
 
@@ -31,7 +32,10 @@ function containsRegexMetacharacter(pattern: string): boolean {
 }
 
 /** @internal Injectable for tests — exercises the fallback without uninstalling ripgrep. */
-export const _grepDeps = { which, spawn };
+export const _grepDeps = {
+  which: (name: string): string | null => which(name),
+  spawn: runtimeSpawn,
+};
 
 export type GrepPatternType = "literal" | "regex";
 

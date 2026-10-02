@@ -135,7 +135,7 @@ describe("autoCommitIfDirty — blocked worktrees", () => {
   });
 });
 
-function mockSpawnOutput(output: string, exitCode = 0): typeof Bun.spawn {
+function mockSpawnOutput(output: string, exitCode = 0): typeof _gitDeps.spawn {
   return makeSpawn(() => ({ stdout: output, exitCode })).spawn;
 }
 
