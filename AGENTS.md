@@ -31,6 +31,7 @@ This repository is a Bun-workspace monorepo. Package-specific context lives in
 |:-----|:--------|:------|
 | `packages/nax` | `@nathapp/nax` | CLI orchestrator (Bun bundle, `dist/nax.js`) |
 | `packages/nax-ai` | `@nathapp/nax-ai` | Provider-agnostic LLM client (Node target, ESM-only, vitest) |
+| `packages/nax-agent` | `@nathapp/nax-agent` | Native coding agent: session contract, loop, tools, permissions, sandbox (private; bundled into nax) |
 
 Dependency direction: `nax-ai` → `nax-agent` → `nax` (a package never imports one to its right).
 

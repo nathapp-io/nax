@@ -2,9 +2,11 @@
 priority: 10
 paths:
   - "packages/nax/*"
+  - "packages/nax-agent/*"
 appliesTo:
   - "packages/nax/src/**/*.ts"
   - "packages/nax/bin/*.ts"
+  - "packages/nax-agent/src/**/*.ts"
 stages:
   - "context"
   - "execution"

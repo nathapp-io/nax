@@ -1,0 +1,144 @@
+# Codex Instructions
+
+This file is auto-generated from `.nax/context.md`.
+DO NOT EDIT MANUALLY — run `nax generate` to regenerate.
+
+---
+
+## Project Metadata
+
+> Auto-injected by `nax generate`
+
+**Project:** `@nathapp/nax-agent`
+
+**Language:** TypeScript
+
+**Key dependencies:** zod, @types/bun, bun-types, typescript
+
+**Commands:** test: `bun run test` | lint: `bun run check:all` | typecheck: `bun run typecheck`
+
+---
+# nax-agent — nax's native coding agent, as a package
+
+`@nathapp/nax-agent` holds the native coding agent: the session contract, the native
+session adapter and its turn loop, the tool set, permission resolution, the OS sandbox,
+command-safety, cost, config and the process-level helpers beneath them. nax keeps the
+orchestration — the runner, the pipeline, the agent registry, `AgentAdapter` — and reaches
+the agent through this one package.
+
+The package is `private` and **bundled, never installed**: nax lists it only as a
+workspace dependency, and `bun run check:bundle-externals` asserts it is inlined into
+`dist/nax.js` rather than left as an external import. There is no second copy of the agent
+at runtime and nothing to publish.
+
+> Edit this file to update AI agent context — do not edit `CLAUDE.md`, `AGENTS.md`,
+> `.cursorrules`, `GEMINI.md` or other generated agent files directly.
+> Run `nax generate` after changing it.
+
+## Tech Stack
+
+| Layer | Choice |
+|:------|:-------|
+| Runtime | **Bun 1.4.0** — Bun-native APIs only, no Node.js equivalents |
+| Language | **TypeScript strict** — no `any` without explicit justification |
+| Test | **`bun:test`** — describe/test/expect |
+| Lint/Format | **Biome** (`bun run lint:biome`), plus nax's own gate scripts |
+| Build | none — nax's bundle is the build |
+
+## Commands
+
+| Command | Purpose |
+|:--------|:--------|
+| `bun run typecheck` | `tsc --noEmit` over `src/` and `test/` |
+| `bun run check:all` | Biome plus every repo gate (`lint`) |
+| `bun run lint:fix` | Biome lint fix |
+| `bun test ./test/unit/foo.test.ts --timeout=60000` | Targeted test during iteration with timeout |
+| `bun run test` | `test/unit/` then `test/integration/` |
+
+Run all of them from `packages/nax-agent`. Never run bare `bun test` with no path: it
+would pick up every file in the package.
+
+`check:all` runs Biome over `src/` and `test/` and then nax's gate scripts with
+`--package=.`, so the source and test ratchets apply to this package's files. The gate
+scripts themselves live in `packages/nax/scripts/` and are invoked as
+`bun ../nax/scripts/check-*.ts`; that is deliberate — one gate implementation, scoped to
+each package, rather than a fork per package.
+
+**There is no coverage step here.** nax's CI `Coverage floor` step runs nax's unit,
+integration and ui suites plus nax-agent's unit and integration suites in one invocation
+and gates this package's sources too, so a second coverage run would only restate it. Run
+`bun run test:coverage` from `packages/nax` after changes that add or move tests.
+
+## Architecture
+
+```text
+src/
+├── session/            # the session contract both transports satisfy (types, events, deadlines)
+├── native/             # the native session adapter and its turn loop over @nathapp/nax-ai
+├── tools/              # the tool set: registry, policy, exec, read/write, git, package managers
+├── permissions/        # permission resolution, the ask chain, bash lexing, approval taint
+├── sandbox/            # the OS sandbox: policy builder, launcher, probe, srt backend
+├── command-safety/     # the rule scorer and its build/guard/tap/shadow surfaces
+├── coding-tools/       # coding-tool wrappers (bash, sandbox, support) over tools/
+├── command-interceptor/# the shell interception surface
+├── cost/               # usage → cost math, model specs, the nax-ai type re-export
+├── config/             # sandbox/approval/catalog config schemas and the native-agent config
+├── infra/              # NaxError, the logger slot, credential config, the spin breaker
+├── internal/           # below-the-line helpers: git, locks, argv exec, redaction, command-spec
+├── index.ts            # the `.` entry
+└── internal.ts         # the `./internal` entry
+```
+
+Two entries, and only two:
+
+- **`.`** (`src/index.ts`) — the contract nax codes against: session types, the native
+  session adapter, the tool/permission/sandbox/command-safety barrels, the cost core.
+- **`./internal`** (`src/internal.ts`) — what nax reaches below the public entry: shared
+  helpers, `NaxError`, deep modules and the `_*Deps` test seams. **Not covered by semver.**
+  It re-exports the same module instances, so patching a seam here patches the object the
+  agent reads.
+
+A third entry, `./test/helpers/*`, exists for nax's own tests and is not part of the
+runtime surface.
+
+## Engineering Rules
+
+- **The package boundary is a gate, not a convention.** `bun run check:package-boundaries`
+  (from `packages/nax`) scans every package. nax-agent imports only node:/bun builtins, its
+  declared dependencies, `#src/` and `#test/`, relative paths that stay inside the package,
+  and itself. Never `@nathapp/nax`, never a relative path into another package, and never a
+  tsconfig alias. A `packages/*` directory with a `package.json` but no rule in that gate
+  is a hard failure, so adding a package cannot silently escape it.
+- **Import with `#src/`, never `@/`.** The package's own `imports` map defines `#src/*` and
+  `#test/*`; `@/` is nax's tsconfig alias and does not resolve here. Relative imports that
+  leave the package are rejected by the same gate.
+- **The dependency direction is `nax-ai` → `nax-agent` → `nax`.** A package never imports
+  one to its right. nax-agent depends on `@nathapp/nax-ai`, never the reverse.
+- **`@nathapp/nax-ai` is importable from two sites only:** `src/native/` and the re-export
+  `src/cost/standard-types.ts`. `bun run check:nax-ai-imports .` enforces it in this
+  package; the same script enforces nax's single site, `src/agents/catalog/`. The client
+  stays swappable only while its surface has one consumer.
+- **Leaf code stays cost-blind.** Selectors and helpers that influence routing or execution
+  decisions must not read cost data. Cost belongs to the orchestration layers above.
+- **Permission decisions go through the resolved mode.** Resolve once and pass it down; never
+  hardcode `approve-all`/`approve-reads`. `bun run check:permission-mode-ssot` enforces the
+  single source of truth and a consumer of an already-resolved mode takes a
+  `// nax-permission-mode-allow: <reason>` marker.
+- **`_*Deps` seams, not monkey-patched globals.** External calls (spawn, fs, fetch) go
+  through an exported `_deps` object so tests can override them.
+- **Opaque values stay opaque.** A credential `key` is never inspected, logged or synthesised.
+  Pass through or omit; never substitute `""`.
+- **`errorMessage()` lives at `#src/infra/errors`** here; nax takes the same helper from
+  `@nathapp/nax-agent/internal`. Never re-implement it inline.
+
+## Testing Rules
+
+- Tests live under `test/`, mirroring `src/`, named `*.test.ts`.
+- Shared fixtures and mocks live in `test/helpers/` and are exported to nax's own tests
+  through the `@nathapp/nax-agent/test/helpers/*` entry. Do not re-implement one inline in a
+  second package — extend the shared helper.
+- `test/fixtures/` holds recorded fixtures. The sandbox tests that probe for a working `bwrap`
+  use `test.skipIf(!probe.available)`, so they pass by skipping when one is unavailable —
+  a green local run is not evidence they ran. CI installs `bubblewrap`, `socat` and
+  `ripgrep` so they do.
+- **A regression test must be shown to fail against the old code before it counts.**

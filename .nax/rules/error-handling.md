@@ -2,8 +2,10 @@
 priority: 15
 paths:
   - "packages/nax/*"
+  - "packages/nax-agent/*"
 appliesTo:
   - "packages/nax/src/**/*.ts"
+  - "packages/nax-agent/src/**/*.ts"
 stages:
   - "context"
   - "execution"
@@ -78,10 +80,10 @@ throw new NaxError(
 
 ## errorMessage Utility
 
-Use `errorMessage()` from `src/utils/errors` to safely extract messages from unknown errors:
+Use `errorMessage()` from `@nathapp/nax-agent/internal` (nax) or `#src/infra/errors` (nax-agent) to safely extract messages from unknown errors:
 
 ```typescript
-import { errorMessage } from "../../src/utils/errors";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 
 const msg = errorMessage(err); // Safe for unknown, Error, string, undefined
 ```

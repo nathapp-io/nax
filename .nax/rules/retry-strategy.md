@@ -2,11 +2,13 @@
 priority: 45
 paths:
   - "packages/nax/*"
+  - "packages/nax-agent/*"
 appliesTo:
   - "packages/nax/src/agents/**/*.ts"
   - "packages/nax/src/operations/**/*.ts"
   - "packages/nax/src/config/schemas-review.ts"
   - "packages/nax/src/session/session-keeper.ts"
+  - "packages/nax-agent/src/native/**/*.ts"
 stages:
   - "execution"
   - "tdd-implementer"
@@ -40,7 +42,7 @@ decision, and has never been a `RetryStrategy`:
   The retry runs inside the spawned claude / codex / opencode process, outside
   nax entirely.
 - **Native** — there is no child process; nax is the agent. The same layer
-  therefore lives in nax, in `src/agents/native/session/turn-retry.ts`
+  therefore lives in nax-agent, in `packages/nax-agent/src/native/session/turn-retry.ts`
   (nax#1870), and its loop is the sanctioned execution site for that layer.
 
 So `turn-retry.ts` is ACP parity, not a third tier and not a violation of the
