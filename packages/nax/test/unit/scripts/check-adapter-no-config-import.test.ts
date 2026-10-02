@@ -1,10 +1,9 @@
 /**
  * The adapter-config boundary gate's plugin rule (US-004).
  *
- * `src/agents/native/` must not reach into the plugin system: a plugin
- * `loop-handlers` handler is handed nax-owned payload and context TYPES, but
- * nothing in the native loop may depend on `src/plugins` — that dependency
- * would close a cycle and make the coding agent unextractable (P6).
+ * nax's adapter shells (`src/agents/native-agent/`, `src/agents/acp/`) must not
+ * reach into the plugin system. The native loop itself moved to packages/nax-agent
+ * in S1-5, where check-package-boundaries forbids any import of nax, plugins included.
  *
  * The gate is proven by violating it: a gate never seen to fail is not a gate.
  * It is run the way CI runs it — `bash scripts/check-adapter-no-config-import.sh`
@@ -48,7 +47,7 @@ function runGate(cwd: string): { code: number; out: string } {
 describe("check-adapter-no-config-import: the src/plugins rule", () => {
   test("AC12: exits 1 and prints the offending file when a native file imports @/plugins", () => {
     root = tree({
-      "src/agents/native/x.ts": 'import { loadPlugins } from "@/plugins";\nexport const forward = loadPlugins;\n',
+      "src/agents/native-agent/x.ts": 'import { loadPlugins } from "@/plugins";\nexport const forward = loadPlugins;\n',
     });
 
     const { code, out } = runGate(root);
@@ -59,7 +58,7 @@ describe("check-adapter-no-config-import: the src/plugins rule", () => {
 
   test("AC12 (boundary): exits 1 when a native file reaches src/plugins by relative path", () => {
     root = tree({
-      "src/agents/native/x.ts":
+      "src/agents/native-agent/x.ts":
         'import type { LoopHandlerSet } from "../../plugins";\nexport type Forwarded = LoopHandlerSet;\n',
     });
 
@@ -71,7 +70,7 @@ describe("check-adapter-no-config-import: the src/plugins rule", () => {
 
   test("AC13: exits 0 when the only import is the loop-event module", () => {
     root = tree({
-      "src/agents/native/x.ts":
+      "src/agents/native-agent/x.ts":
         'import type { LoopHandlerSet } from "@/agents/native/session/loop-events";\nexport type Forwarded = LoopHandlerSet;\n',
     });
 
@@ -82,7 +81,7 @@ describe("check-adapter-no-config-import: the src/plugins rule", () => {
 
   test("AC13 (boundary): exits 0 for a relative loop-event import too", () => {
     root = tree({
-      "src/agents/native/x.ts":
+      "src/agents/native-agent/x.ts":
         'import type { LoopHandlerContext } from "./session/loop-events/types";\nexport type Ctx = LoopHandlerContext;\n',
     });
 
