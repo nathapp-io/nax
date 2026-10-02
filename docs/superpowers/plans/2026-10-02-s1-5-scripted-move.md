@@ -18,10 +18,10 @@ Every piece of code in this plan was run, before this plan was written, in a thr
 
 | Check | Result |
 |---|---|
-| Plan | 188 sources, **142 tests**, 13 helpers, 1 fixture; 446 staying files rewritten; 68 modules re-exported by `/internal`; 9 namespace re-exports |
+| Plan | 188 sources, **142 tests**, 13 helpers, 1 fixture; 446 staying files rewritten (451 on the branch: the script also rewrites five of this plan's own new script and test files, deleted in Task 10); 68 modules re-exported by `/internal`; 9 namespace re-exports |
 | Typecheck | nax (src + test + scripts) and nax-agent green after one `EXPLICIT_REEXPORTS` entry (`NO_OP_INTERACTION_HANDLER`, TS2308) and one preload fix, both folded into this plan's code |
 | nax-agent suite under its own preload | unit 2116 pass / 138 files; integration 30 pass / 4 files; 0 fail |
-| nax suite | unit 19808 tests / 1304 files; integration 1547 (1509 pass, 38 skip) / 144 files; ui 98 / 10; e2e 33 / 11 |
+| nax suite | unit 19808 tests / 1304 files on `main`'s base (19853 / 1312 at the move commit and 19819 / 1309 after Task 10, counting this plan's new gate tests); integration 1547 (1509 pass, 38 skip) / 144 files; ui 98 / 10; e2e 33 / 11 |
 | Test conservation vs `main` | unit 21924 / 1442 files on main = 19808 + 2116 / 1304 + 138; integration 1577 / 148 = 1547 + 30 / 144 + 4 |
 | Combined coverage run (nax gate, widened) | 23599 tests / 1600 files; lines 96.80%, functions 94.26% (S1-4's PR: 96.80 / 94.28). nax-agent sources alone in that run: 98.74% lines |
 | nax-agent's own tests alone | **77.54% lines, 54 files below 80%** (why Decision 7 exists) |
@@ -52,8 +52,19 @@ Unexpected findings the plan absorbs:
 
 ## Decisions this plan takes (flag in review if you disagree)
 
-1. **One PR, as D15 rules, with a reviewable commit sequence:** prep (Tasks 1-5), the script (6-7), one generated move commit (9), post-move fixes (10), CI/config/rules (11). The generated commit is mechanical (renames plus rewritten specifiers). Every hand-written change sits in its own commit around it.
-2. **Which tests move is computed, not listed.** A test moves when three things hold: it imports at least one moving source; it imports no staying source; every test helper it reaches is free of nax imports. Tests that read the disk need an explicit ruling (`STAY_IN_NAX` / `MOVE_DESPITE_DISK`, Task 6). The result is 142 files. The other 177 test files that exercise moved code stay in nax as wiring tests. That includes the 8 blocked only by `mock-logger`, `warn-spy`, `assert-nax-error`, `mock-nax-config` or `runtime`; porting them is a carried item.
+1. **One PR, as D15 rules, with a reviewable commit sequence:** prep (Tasks 1-5), the script (6-7), one generated move commit (9), post-move fixes (10), CI/config/rules (11). The generated commit is mechanical (renames plus rewritten specifiers). Every hand-written change sits in its own commit around it. **The move commit itself is red by design**: 3 nax tests and several baselines go stale until Task 10. Every other commit is green. The PR text asks for a squash merge, or explicitly accepts one red commit in `main`'s history (bisect).
+2. **Which tests move is computed, not listed.** A test moves when three things hold: it imports at least one moving source; it imports no staying source; every test helper it reaches is free of nax imports. Tests that read the disk need an explicit ruling (`STAY_IN_NAX` / `MOVE_DESPITE_DISK`, Task 6). The result is 142 files. The other 177 test files that exercise moved code stay in nax as wiring tests. That includes 8 tests blocked only by a nax-bound helper. Porting them is a carried item. They stay in nax as wiring tests, with their imports rewritten:
+
+| Test (stays in nax) | Blocking helper | nax module it reaches |
+|---|---|---|
+| `test/unit/tools/runtime-command-shadow-executed.test.ts` | `mock-logger` | `logger/index` |
+| `test/unit/tools/runtime-sandbox-argv.test.ts` | `mock-logger` | `logger/index` |
+| `test/unit/tools/tool-audit.test.ts` | `warn-spy` | `logger/index` |
+| `test/unit/sandbox/launcher-session-tmp.test.ts` | `warn-spy` | `logger/index` |
+| `test/unit/tools/scratchpad.test.ts` | `assert-nax-error` | `errors.ts` |
+| `test/unit/utils/bun-deps.test.ts` | `assert-nax-error` | `errors.ts` |
+| `test/unit/agents/native/tier-providers.test.ts` | `mock-nax-config` | `config/index` |
+| `test/integration/tools/tool-audit-partial-close.test.ts` | `runtime` | `agents/index`, `config/index` and 10 more |
 3. **Spec deviation (section 8): shared test helpers live once in nax-agent and are reached through a package subpath, not a tsconfig alias.** The 13 helpers the moved tests reach are all used by staying tests too, `temp` by 418 of them. They move to `packages/nax-agent/test/helpers/`. nax keeps a one-line shim at each old path (`export * from "@nathapp/nax-agent/test/helpers/<name>"`), so nax's barrel and its 1400+ tests are untouched. nax-agent exports `"./test/helpers/*"`. The spec's `@agent-test/*` alias was rejected on measurement for two reasons. Bun reads `paths` only from `tsconfig.json`, not `tsconfig.test.json`. And `tsc -p tsconfig.test.json` fails with TS6059 for every helper outside `rootDir`, which the subpath avoids because package-resolved files count as external. `check-package-boundaries` allows the subpath only from nax's `test/`.
 4. **The entries are generated with `export *`, routed by a fixed rule.**
    - **`.`** (`src/index.ts`) re-exports the contract directory `session/`, the native, tools, permissions, sandbox and command-safety barrels, and the cost core. It also exports `configureCredentials` / `setAgentLogger` and the slot types explicitly.
@@ -63,7 +74,14 @@ Unexpected findings the plan absorbs:
    - **Collisions.** An ambiguous name is dropped silently at runtime, but tsc reports it (TS2308) on the entry file. That happens in both packages' typecheck, because nax's program reaches the entries. One ambiguity exists and is settled in `EXPLICIT_REEXPORTS`: `NO_OP_INTERACTION_HANDLER` from `session/interaction-handler`, the `InteractionHandler`-typed alias.
    - **Seams on `.`.** The `_` seams of the public barrels are also reachable through `.`. S2, which publishes the package, prunes the public surface.
 5. **`/internal` is not a lightweight entry.** The spec wanted `NaxError` through `/internal` "so loading `NaxError` does not load the whole agent". With `export *` over 68 modules, `/internal` loads most of the agent. This costs nothing in S1: nax bundles everything, and nax-agent never imports nax, so no cycle is possible. S2 revisits entry granularity together with publishing.
-6. **Spec deviation (section 7): gates that guard moved code are widened, not copied.** `check-nax-error`, `check-file-sizes`, `check-complexity`, `check-import-cycles` (which learns `#src/`), `check-test-as-unknown-as` and `check-test-escape-hatches` each take `--package=<dir>`. The baseline then lives in `<package>/scripts/baselines/`. `check-git-spawn-env`, `check-sandbox-imports`, `check-nax-ai-imports` and `check-no-control-bytes` already take a root or use the cwd. nax-agent's `lint:checks` runs all ten from `../nax/scripts`. This keeps one implementation per gate, and each baseline moves with its files. `check-logger-storyid` and `check-op-tool-capability` scan only nax code and stay as they are. Deferred to the arc (carried): `check-alias-internals` and `check-test-satellites` for nax-agent, and moving the gate scripts into a shared tooling location (S2).
+6. **Spec deviation (section 7): gates that guard moved code are widened, not copied.** `check-nax-error`, `check-file-sizes`, `check-complexity`, `check-import-cycles` (which learns `#src/`), `check-test-as-unknown-as` and `check-test-escape-hatches` each take `--package=<dir>`. The baseline then lives in `<package>/scripts/baselines/`. Eight more already take a root or use the cwd: `check-git-spawn-env`, `check-sandbox-imports`, `check-nax-ai-imports`, `check-no-control-bytes`, `check-no-real-global-nax`, `check-permission-mode-ssot`, `check-feature-dir-ssot` and `check-package-frame-derivation`. The last four were added by the final review, which ran them from packages/nax-agent: the moved code passes all four, and without them it would silently leave their scan. nax-agent's `lint:checks` runs all fourteen from `../nax/scripts`. This keeps one implementation per gate, and each baseline moves with its files.
+
+Three gates stay nax-only on purpose, and none loses coverage:
+- `check-logger-storyid` scans only `pipeline/stages` and `review`; moved code logs through the `AgentLogger` slot.
+- `check-op-tool-capability` loads nax's `src/operations`.
+- `check-bash-dispatch-ask` counts the same 14 nax call sites after the move.
+
+Deferred to the arc (carried): `check-alias-internals`, `check-test-satellites` and `check-worktree-id-ssot` for nax-agent (none is path-parameterised; the last one's two moved allow-list entries are deleted in Task 10), and moving the gate scripts into a shared tooling location (S2).
 7. **Spec deviation (section 4.1): nax-agent's coverage is gated by nax's coverage job, which runs nax-agent's tests too.** nax-agent's own 142 test files reach 77.54% lines and leave 54 files below the 80% per-file floor. The rest of their coverage comes from the 177 nax tests that stay. A nax-agent-only gate would either fail or need its floors lowered. Instead, `check-coverage` adds `../nax-agent/test/unit/` and `../nax-agent/test/integration/` to its single invocation, under nax's preload, which those tests ran under until now. It also counts `../nax-agent/src/` records. The gate therefore measures exactly what it measured before the move: 96.80% lines on the prototype, against 96.80% in S1-4's PR. A self-hosted nax-agent coverage gate becomes possible once the wiring tests are ported. That is carried to S2, which needs it for Node CI anyway.
 8. **Spec deviation (section 4.1): Biome rules are not hoisted.** Measured on Biome 2.5.10:
    - `"root": false` inherits nothing.
@@ -162,9 +180,10 @@ Then remove from `adapter-complete-rates.test.ts` the imports only the cut block
 - `beforeEach` and `spyOn` from `bun:test`;
 - `rm` from `node:fs/promises` (keep `mkdtemp`);
 - `makeNaxConfig`;
-- `* as sessionState`, `* as transcriptStore`, `closeStorySessions`, `DEFAULT_SPIN_BREAKER_SETTINGS`, `byCodePoint`.
+- `* as sessionState`, `* as transcriptStore`, `closeStorySessions`, `DEFAULT_SPIN_BREAKER_SETTINGS`, `byCodePoint`;
+- `openNativeSession` and `import type { OpenSessionOpts }` (final review: unused after the cut).
 
-Keep `openNativeSession`, `OpenSessionOpts`, `saveTranscript` and `SessionManager`, which the remaining cases use. `bun x biome check test/unit/agents/native/adapter-complete-rates.test.ts` must report no unused import.
+Keep `saveTranscript` and `SessionManager`, which the remaining cases use. `bun x biome check test/unit/agents/native/adapter-complete-rates.test.ts` must report no unused import.
 
 - [ ] **Step 3: Split the credential-probe blocks out of `adapter.test.ts`.** Cut lines 433-481, the `describe("isInstalled")` and `describe("hasCredentials")` blocks. Create `test/unit/agents/native/adapter-credential-probe.test.ts` with this header and the cut lines unchanged:
 
@@ -212,11 +231,11 @@ git commit -m "refactor: prepare packages/nax for the S1-5 move"
 
 ### Task 2: A shared import-specifier library
 
-`check-agent-boundary.ts:30-57` already finds specifiers. The move script and `check-package-boundaries` also need each site's offset (to rewrite it) and its statement prelude (to see `import * as` and `export *`). One library serves all three.
+`check-agent-boundary.ts:34-36,49-58` already finds specifiers. The move script and `check-package-boundaries` also need each site's offset (to rewrite it) and its statement prelude (to see `import * as` and `export *`). One library serves all three.
 
 **Files:**
 - Create: `scripts/lib/import-specifiers.ts`, `test/unit/scripts/import-specifiers.test.ts`
-- Modify: `scripts/check-agent-boundary.ts:30-57`
+- Modify: `scripts/check-agent-boundary.ts:34-36,49-58`
 
 **Interfaces:**
 - Produces: `specifierSites(source): SpecifierSite[]` (`{ spec, start, kind: "static" | "side-effect" | "dynamic", prelude }`), `specifiersOf(source): string[]`, `rewriteSpecifiers(source, map: (site) => SiteRewrite): string`, where `SiteRewrite = string | { statement: string } | null`.
@@ -357,7 +376,7 @@ export function rewriteSpecifiers(source: string, map: (site: SpecifierSite) => 
 }
 ```
 
-- [ ] **Step 4: Point the ratchet at the library.** In `scripts/check-agent-boundary.ts`, delete the three regex constants and the `specifiersOf` function (lines 30-57). Add `import { specifiersOf } from "./lib/import-specifiers";` and keep the name exported for `test/unit/scripts/check-agent-boundary.test.ts`: `export { specifiersOf } from "./lib/import-specifiers";`. Remove `stripComments` from its `./check-import-cycles` import if nothing else in the file uses it.
+- [ ] **Step 4: Point the ratchet at the library.** In `scripts/check-agent-boundary.ts`, delete the three regex constants (lines 34-36) and the `specifiersOf` function (lines 49-58), each with its trailing blank line. Keep `BoundaryEdge` and `Baseline` (lines 38-47). Add `import { specifiersOf } from "./lib/import-specifiers";` and keep the name exported for `test/unit/scripts/check-agent-boundary.test.ts`: `export { specifiersOf } from "./lib/import-specifiers";`. Remove `stripComments` from its `./check-import-cycles` import if nothing else in the file uses it.
 
 - [ ] **Step 5: Verify and commit.**
 
@@ -476,7 +495,7 @@ For nax the result is identical: `join(scriptDir, "..", "scripts", "baselines")`
 - [ ] **Step 5: Verify and commit.**
 
 ```bash
-bun test test/unit/scripts/package-root.test.ts test/unit/scripts/check-import-cycles.test.ts test/unit/scripts/check-complexity.test.ts test/unit/scripts/check-file-sizes.test.ts --timeout=60000
+bun test test/unit/scripts/package-root.test.ts test/unit/scripts/check-import-cycles.test.ts test/unit/scripts/check-complexity.test.ts --timeout=60000
 bun run lint
 git add scripts/ test/unit/scripts/
 git commit -m "refactor: let the source and test gates scan another package"
@@ -536,7 +555,7 @@ function inScope(file: string, prefixes: string | readonly string[]): boolean {
 }
 ```
 Then:
-- line 77: `const PER_FILE_SCOPE_PREFIXES = SCOPE_PREFIXES;`
+- rename `PER_FILE_SCOPE_PREFIX` to `PER_FILE_SCOPE_PREFIXES` at lines 77, 253, 269 and 393; line 77 becomes `const PER_FILE_SCOPE_PREFIXES = SCOPE_PREFIXES;`
 - line 98:
   ```ts
   const AGENT_SUITES = ["../nax-agent/test/unit/", "../nax-agent/test/integration/"];
@@ -641,6 +660,17 @@ describe("check-package-boundaries", () => {
     ]);
   });
 
+  test("nax-agent's src may not import a devDependency; its tests may", () => {
+    workspace();
+    write(
+      "packages/nax-agent/package.json",
+      JSON.stringify({ name: "@nathapp/nax-agent", dependencies: { zod: "^4" }, devDependencies: { chalk: "^5" } }),
+    );
+    write("packages/nax-agent/src/bad.ts", 'import { c } from "chalk";\n');
+    write("packages/nax-agent/test/unit/ok.test.ts", 'import { c } from "chalk";\n');
+    expect(whys()).toEqual(["packages/nax-agent/src/bad.ts chalk devDependency chalk imported outside test/"]);
+  });
+
   test("nax-agent may not reach out of the package by a relative path", () => {
     workspace();
     write("packages/nax-agent/src/bad.ts", 'import { a } from "../../nax/src/config";\n');
@@ -711,7 +741,10 @@ export interface BoundaryViolation {
 interface PackageInfo {
   readonly dir: string;
   readonly name: string;
+  /** Runtime dependencies: importable from anywhere in the package. */
   readonly deps: ReadonlySet<string>;
+  /** devDependencies: importable from test/ only (nax bundles src/, so src/ may need only what nax ships). */
+  readonly devDeps: ReadonlySet<string>;
 }
 
 const CODE = /\.(?:ts|tsx|mts|cts)$/;
@@ -741,8 +774,12 @@ function loadPackage(dir: string): PackageInfo {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
   };
-  const deps = new Set([...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})]);
-  return { dir, name: pkg.name, deps };
+  return {
+    dir,
+    name: pkg.name,
+    deps: new Set(Object.keys(pkg.dependencies ?? {})),
+    devDeps: new Set(Object.keys(pkg.devDependencies ?? {})),
+  };
 }
 
 function isBuiltin(spec: string): boolean {
@@ -761,8 +798,10 @@ function agentViolation(pkg: PackageInfo, file: string, spec: string): string | 
   if (spec.startsWith("@/") || spec.startsWith("@test/") || spec.startsWith("@scripts/")) return "tsconfig alias";
   const name = packageName(spec);
   if (name === "@nathapp/nax") return "imports nax";
-  if (name === AGENT) return null;
-  return pkg.deps.has(name) ? null : `undeclared dependency ${name}`;
+  if (name === AGENT || pkg.deps.has(name)) return null;
+  const inTests = relative(pkg.dir, file).startsWith(`test${sep}`);
+  if (pkg.devDeps.has(name)) return inTests ? null : `devDependency ${name} imported outside test/`;
+  return `undeclared dependency ${name}`;
 }
 
 function naxAiViolation(_pkg: PackageInfo, _file: string, spec: string): string | null {
@@ -1032,7 +1071,7 @@ and `scripts/lib/s1-move/plan.ts`:
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { byCodePoint } from "../../../src/utils/sort";
+import { byCodePoint } from "@/utils/sort";
 import { destinationOf, isInMoveSet, type MoveManifest } from "../agent-move-manifest";
 import { specifierSites } from "../import-specifiers";
 import { isLocalSpecifier, resolveInPackage } from "./resolve";
@@ -1398,9 +1437,10 @@ describe("rewriteStayingFile", () => {
     expect(errors[0]).toContain("export *");
   });
 
-  test("leaves imports of staying code and of shimmed helpers alone", () => {
+  test("leaves imports of staying code and of the helpers barrel alone", () => {
     fixture();
-    const src = 'import { c } from "@/config";\nimport { makeTemp } from "@test/helpers/temp";\n';
+    // The barrel, not a deep helper path: check-alias-internals flags `@test/<dir>/<file>` even inside a string.
+    const src = 'import { c } from "@/config";\nimport { makeTemp } from "@test/helpers";\n';
     expect(rewriteStayingFile(root, "test/a.test.ts", src, DEST, needs()).text).toBe(src);
   });
 });
@@ -1548,7 +1588,7 @@ describe("scaffold", () => {
  * by naming its module, which beats `export *`.
  */
 import { basename, dirname } from "node:path";
-import { byCodePoint } from "../../../src/utils/sort";
+import { byCodePoint } from "@/utils/sort";
 
 const PUBLIC_FILES: ReadonlySet<string> = new Set([
   "src/native/index.ts",
@@ -1840,6 +1880,10 @@ const LINT_CHECKS = [
   "bun ../nax/scripts/check-test-as-unknown-as.ts --package=.",
   "bun ../nax/scripts/check-test-escape-hatches.ts --package=.",
   "bun ../nax/scripts/check-no-control-bytes.ts",
+  "bun ../nax/scripts/check-no-real-global-nax.ts",
+  "bun ../nax/scripts/check-permission-mode-ssot.ts",
+  "bun ../nax/scripts/check-feature-dir-ssot.ts",
+  "bun ../nax/scripts/check-package-frame-derivation.ts",
   "bun ../nax/scripts/check-git-spawn-env.ts .",
   "bun ../nax/scripts/check-sandbox-imports.ts .",
   "bun ../nax/scripts/check-nax-ai-imports.ts .",
@@ -2184,7 +2228,7 @@ cd packages/nax
 ```
 
 - [ ] **Step 2: Dry run.** `bun scripts/s1-move.ts --dry-run | grep -v "^  test \|^  helper "`. Expected:
-  - `sources 188, tests 142, helpers 13, fixtures 1` and `staying files rewritten 446; internal modules 68; namespaces 9`.
+  - `sources 188, tests 142, helpers 13, fixtures 1` and `staying files rewritten 451; internal modules 68; namespaces 9`.
   - No `[FAIL]`.
   - The `mention` lines include `test/unit/tools/run-command-exec.test.ts` (fixed in Task 10). Every other mention is a comment or a data string; check each one, and do not let any read a moved file from disk.
 
@@ -2204,7 +2248,7 @@ cd packages/nax
 bun scripts/s1-move.ts
 git -C ../.. status --short | awk '{print $1}' | sort | uniq -c
 ```
-Expected: about 344 renames, 450 modifications (446 rewritten files, `package.json`, `bun.lock`, the 13 shims re-staged) and the new nax-agent files. `bun.lock` gains a `packages/nax-agent` workspace block and nax's `"@nathapp/nax-agent": "workspace:*"`.
+Expected: 344 renames (106 pure, 238 with edits), about 455 modifications (451 rewritten files, `package.json`, `bun.lock`, the 13 shims re-staged) and the new nax-agent files. `bun.lock` gains a `packages/nax-agent` workspace block and nax's `"@nathapp/nax-agent": "workspace:*"`.
 
 - [ ] **Step 3: Typecheck both packages.**
 
@@ -2218,7 +2262,7 @@ Expected: both green. A TS2308 on `nax-agent/src/index.ts` or `src/internal.ts` 
 
 ```bash
 (cd ../nax-agent && bun run test)            # unit 2116 / 138 files, integration 30 / 4 files, 0 fail
-AGENT=1 bun test test/unit/ --timeout=60000 | tail -4        # 19808 tests / 1304 files
+AGENT=1 bun test test/unit/ --timeout=60000 | tail -4        # 19853 tests / 1312 files (with Tasks 1-7's tests)
 AGENT=1 bun test test/integration/ --timeout=60000 | tail -4 # 1547 tests / 144 files
 AGENT=1 bun test test/ui/ --timeout=60000 | tail -4 && bun run test:e2e | tail -4
 ```
@@ -2227,7 +2271,7 @@ Expected: nax unit shows exactly 3 failures, all fixed in Task 10:
 - `check-complexity script > passes against a baseline that matches the tree`
 - `RunCommand argv branch > the argv branch's whole file never reaches the shell executor`
 
-Integration, ui and e2e are green. Conservation: nax unit + nax-agent unit = main's unit total (21924 / 1442 on `ce87ea571`, plus whatever `main` added since). Record both totals for the PR.
+Integration, ui and e2e are green. Conservation: nax unit + nax-agent unit = the branch's pre-move unit total. Measure it at the commit before the move: 21969 / 1450 in the final review, which is `main`'s 21924 / 1442 plus Tasks 1-7's 45 tests in 8 files. Record both totals for the PR.
 
 - [ ] **Step 5: Build and pack.**
 
@@ -2263,18 +2307,16 @@ Every edit here is a gate or a test whose subject moved. Commit in the order giv
 
 - [ ] **Step 1: The staying test that reads a moved file.** In `test/unit/tools/run-command-exec.test.ts:114`, the URL becomes `"../../../../nax-agent/src/tools/run-command-exec.ts"`. In its comment above (line 110), change `src/tools/run-command-exec.ts` to `packages/nax-agent/src/tools/run-command-exec.ts`. Then run `bun test test/unit/tools/run-command-exec.test.ts --timeout=60000`.
 
-- [ ] **Step 2: `check-nax-ai-imports` gets per-package allow-lists.** In `scripts/check-nax-ai-imports.ts`, replace the header's first paragraph (lines 3-6) with:
+- [ ] **Step 2: `check-nax-ai-imports` gets per-package allow-lists.** In `scripts/check-nax-ai-imports.ts`, replace the header's first paragraph (lines 4-6; line 7 is the ` *` separator, keep it) with:
 
 ```ts
-/**
  * Fails if @nathapp/nax-ai is imported outside the allow-listed sites of the
  * package being scanned (read from its package.json name):
  * - packages/nax: src/agents/catalog/ only. nax reaches the R3 usage and rate
  *   types through @nathapp/nax-agent's re-export (S1 spec section 7).
  * - packages/nax-agent: src/native/ and the R3 re-export src/cost/standard-types.ts.
- *
 ```
-Replace lines 18-24 (`const ROOT` through `ALLOWED_FILES`) with:
+Replace lines 19-24 (`const ROOT` through `ALLOWED_FILES`) with:
 
 ```ts
 const ROOT = process.argv[2] ?? process.cwd();
@@ -2317,7 +2359,7 @@ Verify: `bun test test/unit/scripts/check-nax-ai-imports.test.ts --timeout=60000
     ```
   - Lines 18-20 read "Block reaching the plugin system from the native loop ... nothing under src/agents/native/ may depend on src/plugins (the coding agent must stay extractable)". They become "Block reaching the plugin system from an adapter ... no adapter may depend on src/plugins."
   - In `test/unit/scripts/check-adapter-no-config-import.test.ts`, the four fixtures `"src/agents/native/x.ts"` become `"src/agents/native-agent/x.ts"`. The depth is the same, so the relative-path cases keep their specifiers.
-  - The header's first paragraph becomes: "nax's adapter shells (`src/agents/native-agent/`, `src/agents/acp/`) must not reach into the plugin system. The native loop itself moved to packages/nax-agent in S1-5, where check-package-boundaries forbids any import of nax, plugins included."
+  - In `check-adapter-no-config-import.test.ts`'s header comment, replace the first paragraph with: "nax's adapter shells (`src/agents/native-agent/`, `src/agents/acp/`) must not reach into the plugin system. The native loop itself moved to packages/nax-agent in S1-5, where check-package-boundaries forbids any import of nax, plugins included."
 
 - [ ] **Step 4: Bundle layout and the nax-ai pin cover nax-agent.** Create `scripts/lib/agent-bundling.ts`:
 
@@ -2397,6 +2439,7 @@ describe("checkAgentBundling", () => {
 });
 ```
 In `scripts/check-bundle-externals.ts`:
+- Header line 3: "Gate: the three build-time resolution invariants" becomes "Gate: the four build-time resolution invariants".
 - Add invariant 4 to the header, after 3: "4. `@nathapp/nax-agent` is bundled, never installed: nax lists it only as a `workspace:*` devDependency, and declares every runtime dependency of nax-agent itself (scripts/lib/agent-bundling.ts)."
 - Exit-code line: `0 -- all four invariants hold`.
 - Imports: add `import { join } from "node:path";` and `import { checkAgentBundling } from "./lib/agent-bundling";`.
@@ -2559,7 +2602,7 @@ AGENT=1 bun test test/unit/scripts/ test/unit/tools/run-command-exec.test.ts --t
 git add -A ../nax-agent/scripts scripts test package.json
 git commit -m "chore: point the gates at the new layout and move their baselines"
 ```
-Expected: both `check:all` runs are green, and the scripts suite passes (710 tests in the prototype). If you prefer smaller commits, commit steps 1-6 as `fix:`/`test:` commits and steps 7-8 as `chore:`. Every commit must leave `check:all` green.
+Expected: both `check:all` runs are green, and the scripts suite passes (711 tests in the final review). If you prefer smaller commits, commit steps 1-6 as `fix:`/`test:` commits and steps 7-8 as `chore:`. Every commit after the move commit must leave `check:all` green.
 
 ---
 
@@ -2569,9 +2612,9 @@ Expected: both `check:all` runs are green, and the scripts suite passes (710 tes
   - the run lists 5 suites, including `../nax-agent/test/unit/` and `../nax-agent/test/integration/`;
   - about 23600 tests across about 1600 files;
   - lines ≥ 96.5%, functions ≥ 94%;
-  - the per-file ratchet unchanged: nax-agent files measure as before the move, and the only file below the floor is the existing baseline row `src/execution/feature-lock.ts`.
+  - the per-file ratchet passes: nax-agent files measure as before the move. The only file below the floor is the baseline row `src/execution/feature-lock.ts`. The gate may also print that `src/execution/lock.ts` now meets the floor; that is informational.
 
-  Record the numbers for the PR. No baseline change is expected. If one is needed, stop and report.
+  Record the numbers for the PR. The gate must pass without a baseline change. If it needs one, stop and report.
 
 ---
 
@@ -2656,7 +2699,7 @@ Update the comment above the nax job's `Coverage floor` step to say it also gate
   }
 }
 ```
-Then create `.nax/mono/packages/nax-agent/context.md`. Follow `.nax/mono/packages/nax-ai/context.md`'s shape: the generate banner, then what the package is, commands, layout and rules. Cover at least:
+No `constitution.md` (nax-ai has one): nax-agent's non-negotiables are the package boundary, which `check-package-boundaries` enforces, and the root constitution. Then create `.nax/mono/packages/nax-agent/context.md`. Follow `.nax/mono/packages/nax-ai/context.md`'s shape: the generate banner, then what the package is, commands, layout and rules. Cover at least:
 - what nax-agent holds and that nax bundles it;
 - the two entries, with `/internal` not covered by semver;
 - `#src/` and `#test/` imports only, never `@/`;
@@ -2666,7 +2709,8 @@ Then create `.nax/mono/packages/nax-agent/context.md`. Follow `.nax/mono/package
 - the src layout table: `session/`, `native/`, `tools/`, `permissions/`, `sandbox/`, `command-safety/`, `coding-tools/`, `command-interceptor/`, `cost/`, `config/`, `infra/`, `internal/`.
 
 - [ ] **Step 3: Repo and nax context.**
-  - `.nax/context.md`: add a row after line 10: `` | `packages/nax-agent` | `@nathapp/nax-agent` | Native coding agent: session contract, loop, tools, permissions, sandbox (private; bundled into nax) | ``.
+  - `.nax/context.md`: add a row after line 11 (the nax-ai row), so the table reads in dependency order from line 11 on: `` | `packages/nax-agent` | `@nathapp/nax-agent` | Native coding agent: session contract, loop, tools, permissions, sandbox (private; bundled into nax) | ``.
+  - `.nax/mono/packages/nax/context.md:79`: in the `src/agents/catalog/` row, `via \`src/agents/cost/standard-types.ts\`` becomes `via \`@nathapp/nax-agent\``.
   - `.nax/mono/packages/nax/context.md:81`: the `src/agents/native/` row becomes `` | `src/agents/native-agent/` | nax's thin `NativeAgentAdapter` shell over `@nathapp/nax-agent`'s native session adapter | ``.
   - Lines 139-141 (the nax-ai rule): "**nax-ai is importable from one site only in nax:** `src/agents/catalog/`. nax takes the `Pricing`/`TokenUsage` types from `@nathapp/nax-agent`. Enforced by `bun run check:nax-ai-imports`."
   - Anywhere that file says the native agent, tools, permissions or sandbox live under `src/`, point at `packages/nax-agent`. `grep -n "src/tools\|src/permissions\|src/sandbox\|src/command-safety\|agents/native/" .nax/mono/packages/nax/context.md` lists them.
@@ -2682,12 +2726,13 @@ Then create `.nax/mono/packages/nax-agent/context.md`. Follow `.nax/mono/package
 | `forbidden-patterns-tests.md`, `test-architecture.md`, `test-helpers.md`, `test-writing.md`, `testing-commands.md` | `"packages/nax-agent/test/**/*.test.ts"` |
 | `test-ratchets.md` | `"packages/nax-agent/test/**/*.ts"` |
 
-Text references that name a moved path become `packages/nax-agent/...`:
-- `adapter-wiring.md:107,117`;
-- `error-handling.md:81,84` (`errorMessage` now comes from `@nathapp/nax-agent/internal` in nax);
-- `retry-strategy.md:43`.
+Text references that name a moved path, with their exact replacements:
+- `adapter-wiring.md:107-109` ("nax-ai imports live in `src/agents/native/`, `src/agents/catalog/`, and the staging re-export ... nowhere else. Enforced by `bun run check:nax-ai-imports`.") becomes: "nax-ai imports live in `src/agents/catalog/` (nax) and, in packages/nax-agent, in `src/native/` and the re-export `src/cost/standard-types.ts`, and nowhere else. Enforced by `bun run check:nax-ai-imports` in each package."
+- `adapter-wiring.md:115-119`, from "nax uses nax-ai's `Pricing`/`TokenUsage` through" to "`bun run check:import-cycles` rejects.", becomes: "nax uses nax-ai's `Pricing`/`TokenUsage` through `@nathapp/nax-agent`'s re-export, so there is no separate nax type. It must not import from `src/agents/cost/`, which already depends on it; the reverse edge would close a runtime import cycle that `bun run check:import-cycles` rejects."
+- `error-handling.md:81`: "Use `errorMessage()` from `src/utils/errors`" becomes "Use `errorMessage()` from `@nathapp/nax-agent/internal` (nax) or `#src/infra/errors` (nax-agent)". At line 84, the example import becomes `import { errorMessage } from "@nathapp/nax-agent/internal";`.
+- `retry-strategy.md:43`: "in `src/agents/native/session/turn-retry.ts`" becomes "in `packages/nax-agent/src/native/session/turn-retry.ts`". In the sentence before it, "lives in nax" becomes "lives in nax-agent".
 
-- [ ] **Step 5: Regenerate and check.** From the repo root (the root `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `codex.md` and `opencode.json` are generated from `.nax/context.md`, which step 3 edited):
+- [ ] **Step 5: Regenerate and check.** From the repo root (the root `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` and `codex.md` are generated from `.nax/context.md`, which step 3 edited):
 
 ```bash
 bun packages/nax/bin/nax.ts rules lint
@@ -2708,7 +2753,7 @@ These commands make no LLM calls.
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add .github/workflows/ci.yml .nax .claude/rules CLAUDE.md AGENTS.md GEMINI.md codex.md opencode.json packages/nax/*.md packages/nax-agent/*.md
+git add .github/workflows/ci.yml .nax .claude/rules CLAUDE.md AGENTS.md GEMINI.md codex.md packages/nax/*.md packages/nax-agent/*.md
 git commit -m "ci: add the nax-agent job; point nax config, rules and agent files at the new package"
 ```
 
@@ -2741,6 +2786,7 @@ All exit 0.
   - **Summary** (what moved, counts, the two entries, the gate swap).
   - **Spec deviations**: Decisions 3, 6, 7, 8 and 13, each with its measurement.
   - **Generated vs hand-written** (the move commit is generated, so review it by sampling; review every other commit line by line).
+  - **Merge**: the move commit is red by design (Decision 1); squash-merge, or accept one red commit in `main`'s history.
   - **Tests**: conservation numbers; no test edited except the subject-moved and split ones, listed by file.
   - **Behaviour notes**: none expected; the bundle and the pack are unchanged.
   - **Carried items** (for the arc SSOT):
@@ -2751,6 +2797,8 @@ All exit 0.
     5. `docs/architecture` paths.
     6. Pruning `_` seams from the public entry, and entry granularity (S2).
     7. Required-check update for the new CI job in branch protection (user, outside the repo).
+    8. Remove or condition the `./test/helpers/*` export before nax-agent is published (S2); spec section 8 says helpers are never exports.
+    9. `check-alias-internals`, `check-test-satellites` and `check-worktree-id-ssot` for nax-agent (see 2).
   - **Next**: S1 acceptance smoke (billed, approved at launch), then S2/S3.
 
 ## Self-review notes (for the reviewer of this plan)
@@ -2768,3 +2816,19 @@ All exit 0.
   - replace the ratchet: 5/10.
 - **Section 8 S1-5.** Test count before and after: 9 and 12. Build: 9 and 12. `GIT_COMMIT`: 9. Pack: 9 and 12. Global-install layout: 10 (invariant 4) and 12. `check-package-boundaries`: 5 and 10.
 - **Section 9.** Item 1 is covered (5, 10). Item 2 is covered for tests (11), with coverage per Decision 7. Item 3, the billed smoke, is outside this PR. Item 4 (SSOT) is the PR follow-up.
+- **Narrowings the final review flagged, all deliberate:**
+  - **Test counts.** Spec section 8 says the script "prints both" test counts. Here the script prints the plan size, and Task 9 step 4 and Task 12 step 4 count tests by hand.
+  - **Bundle check.** Spec section 7 has `check-bundle-externals` assert every external import of nax-agent. Here `checkAgentBundling` compares declared dependencies. Undeclared imports are caught by `check-package-boundaries`, and devDependencies are allowed only under nax-agent's `test/`.
+  - **`check-logger-storyid`.** It stays nax-only (Decision 6).
+
+## Final-review record (2026-10-02)
+
+Two reviewers each applied every task in a throwaway worktree from `51fe17cda`. Both returned "ready after fixes", with the same measurements as above: 188 / 142 / 13 / 1 move, 344 renames, conserved test totals, combined coverage 96.79-96.80%, identical CLI output before and after (md5 of `--help`, `config`, `auth list`, `agents`, `models`), and green `check:all` in nax, nax-agent and the root.
+
+One fix round was applied to this plan:
+- **Lint and commit breakers:** the `byCodePoint` import uses `@/utils/sort` (Biome bans `../../`); the rewrite test avoids a deep `@test/helpers/...` string; `opencode.json` was dropped from Task 11.
+- **Wrong line ranges and imports:** Task 1's two extra unused imports; Task 2's line ranges; Task 10's header line ranges and the "four invariants" wording.
+- **Gate coverage:** four more gates wired into nax-agent (Decision 6); devDependencies allowed only under nax-agent's `test/`.
+- **Exact rule and context text:** written out in Task 11.
+- **Counts:** corrected for this plan's own new tests.
+- **Disclosure:** the red move commit (Decision 1); the 8 wiring tests named (Decision 2); carried items 8 and 9.
