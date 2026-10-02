@@ -16,6 +16,15 @@ export type { AgentLogger, CredentialAuthConfig, CredentialsConfig } from "#src/
 export { configureCredentials, setAgentLogger } from "#src/infra/index";
 export * from "#src/native/index";
 export * from "#src/permissions/index";
+export {
+  type AgentRuntime,
+  type AgentSpawnOptions,
+  type AgentSpawnResult,
+  type AgentSpawnStdin,
+  getAgentRuntime,
+  nodeRuntime,
+  setAgentRuntime,
+} from "#src/runtime/index";
 export * from "#src/sandbox/index";
 export * from "#src/session/adapter-failure";
 export * from "#src/session/agent-stream-events";
