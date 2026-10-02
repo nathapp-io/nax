@@ -6,6 +6,9 @@
  */
 import { existsSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
+// Alias, not `../../`: Biome's noRestrictedImports bans a relative import that climbs two levels.
+import { stripComments } from "@scripts/check-import-cycles";
+import { type SpecifierSite, specifierSites } from "@scripts/lib/import-specifiers";
 
 const SUFFIXES = ["/index.ts", ".ts", ".tsx", "/index.tsx"] as const;
 const ALIASES: Readonly<Record<string, string>> = { "@/": "src", "@test/": "test", "@scripts/": "scripts" };
@@ -13,6 +16,16 @@ const ALIASES: Readonly<Record<string, string>> = { "@/": "src", "@test/": "test
 /** True for a specifier that must resolve inside the package (alias or relative). */
 export function isLocalSpecifier(spec: string): boolean {
   return spec.startsWith(".") || Object.keys(ALIASES).some((a) => spec.startsWith(a));
+}
+
+/** The source with comments stripped, so a match never fires on commented-out code. Offsets are preserved. */
+export function strippedText(source: string): string {
+  return stripComments(source);
+}
+
+/** The specifiers this file names, in source order, comments already stripped. */
+export function markersOf(source: string): SpecifierSite[] {
+  return specifierSites(stripComments(source));
 }
 
 function baseFor(root: string, fromRel: string, spec: string): string | null {

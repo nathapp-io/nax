@@ -16,8 +16,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { byCodePoint } from "@/utils/sort";
 import { destinationOf, isInMoveSet, type MoveManifest } from "../agent-move-manifest";
-import { specifierSites } from "../import-specifiers";
-import { isLocalSpecifier, resolveInPackage } from "./resolve";
+import { isLocalSpecifier, markersOf, resolveInPackage, strippedText } from "./resolve";
 
 export interface FileMove {
   readonly from: string;
@@ -29,6 +28,14 @@ export interface MovePlan {
   readonly tests: readonly FileMove[];
   readonly helpers: readonly FileMove[];
   readonly fixtures: readonly FileMove[];
+  /**
+   * Advisory only, and empty when the tree is clean. A test here reads the disk
+   * without one of the self-locating spellings DISK_MARKER matches, so the ruling
+   * gate cannot see it — a CWD-relative read is exactly that shape. Such a test
+   * still moves; the list exists so a human confirms the path survives the move
+   * rather than discovering it from a failure in the moved package.
+   */
+  readonly unmarkedDiskReaders: readonly string[];
 }
 
 /** Read nax files from disk and must stay with them, although their imports would let them move. */
@@ -47,7 +54,18 @@ export const MOVE_DESPITE_DISK: ReadonlySet<string> = new Set([
 export const FIXTURES: readonly string[] = ["test/fixtures/command-safety/corpus.jsonl"];
 
 const BARREL = "test/helpers/index.ts";
+/**
+ * The three self-locating spellings: a test that reads the disk through one of them
+ * has a path the move can be reasoned about, so it needs a ruling.
+ */
 const DISK_MARKER = /import\.meta\.(?:dir|url)|__dirname|process\.cwd\(\)/;
+/**
+ * Calls that take a path and read what is there. A CWD-relative read carries none
+ * of DISK_MARKER's self-locating spellings — that gap is what unmarkedDiskReaders
+ * reports. Write calls are deliberately absent: they create what they touch, so a
+ * moved path cannot strand them.
+ */
+const DISK_READ = /\b(?:Bun\.file|readFileSync|readFile|readdirSync|existsSync)\s*\(/;
 const TEST_FILE = /\.test\.tsx?$/;
 const SOURCE_FILE = /\.tsx?$/;
 const BARREL_EXPORT = /export\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
@@ -114,7 +132,7 @@ function helpersFromBarrel(prelude: string, barrel: Map<string, string>): string
 
 export function importsOf(root: string, rel: string, barrel: Map<string, string>): TestImports {
   const result: TestImports = { sources: [], helpers: [], unresolved: [] };
-  for (const site of specifierSites(readFileSync(join(root, rel), "utf8"))) {
+  for (const site of markersOf(readFileSync(join(root, rel), "utf8"))) {
     if (!isLocalSpecifier(site.spec)) continue;
     const target = resolveInPackage(root, rel, site.spec);
     if (target === null) result.unresolved.push(site.spec);
@@ -125,27 +143,45 @@ export function importsOf(root: string, rel: string, barrel: Map<string, string>
   return result;
 }
 
-/** Memoised: does this non-test file under test/ reach only moving sources? */
+/** True for a file that mentions a disk read but none of DISK_MARKER's self-locating spellings. */
+function readsDiskWithoutMarker(text: string): boolean {
+  const code = strippedText(text);
+  return DISK_READ.test(code) && !DISK_MARKER.test(code);
+}
+
+/**
+ * Memoised: does this non-test file under test/ reach only moving sources?
+ *
+ * `pending` holds the helpers on the current DFS stack. An edge back into one of
+ * them is a cycle: it makes the helpers in it unknown to each other, not free, so
+ * the answer is provisional — `true`, and crucially NOT memoised, because a verdict
+ * that leaned on a skipped edge has not been established. `cyclic` records that per
+ * call, so the caller that did skip an edge withholds its own memo entry too, and
+ * the provisional `true` can never reach one. Re-querying a helper in a cycle then
+ * re-walks it cleanly and settles. `sources` and `unresolved` are read outside the
+ * `every` short-circuit, so a helper a cycle left unresolved is verified afresh.
+ */
 export function makeHelperCheck(
   root: string,
   manifest: MoveManifest,
   barrel: Map<string, string>,
 ): (helper: string) => boolean {
   const memo = new Map<string, boolean>();
+  const pending = new Set<string>();
   const check = (helper: string): boolean => {
     const known = memo.get(helper);
     if (known !== undefined) return known;
-    memo.set(helper, true); // optimistic while in progress: a cycle cannot make itself nax-bound
-    if (!helper.startsWith("test/") || TEST_FILE.test(helper) || helper.includes("#")) {
-      memo.set(helper, false);
-      return false;
-    }
+    if (pending.has(helper)) return true;
+    if (!helper.startsWith("test/") || TEST_FILE.test(helper) || helper.includes("#")) return false;
+    pending.add(helper);
     const imports = importsOf(root, helper, barrel);
+    const cyclic = imports.helpers.some((h) => pending.has(h));
+    const helpersFree = imports.helpers.filter((h) => !pending.has(h)).every(check);
+    pending.delete(helper);
+    // importsOf can hit the filesystem, so outside the short-circuit above too.
     const free =
-      imports.unresolved.length === 0 &&
-      imports.sources.every((s) => isInMoveSet(manifest, s)) &&
-      imports.helpers.every(check);
-    memo.set(helper, free);
+      imports.unresolved.length === 0 && imports.sources.every((s) => isInMoveSet(manifest, s)) && helpersFree;
+    if (!cyclic) memo.set(helper, free);
     return free;
   };
   return check;
@@ -218,9 +254,13 @@ export function buildMovePlan(root: string, manifest: MoveManifest): MovePlan {
   const helperIsFree = makeHelperCheck(root, manifest, barrel);
   const tests: FileMove[] = [];
   const needsRuling: string[] = [];
+  const unmarked: string[] = [];
   for (const rel of listFiles(root, "test").filter((r) => TEST_FILE.test(r))) {
     const ruling = classifyTest(root, manifest, rel, barrel, helperIsFree);
-    if (ruling === "move") tests.push({ from: rel, to: testDestination(manifest, rel) });
+    if (ruling === "move") {
+      tests.push({ from: rel, to: testDestination(manifest, rel) });
+      if (readsDiskWithoutMarker(readFileSync(join(root, rel), "utf8"))) unmarked.push(rel);
+    }
     if (ruling === "needs-ruling") needsRuling.push(rel);
   }
   if (needsRuling.length > 0) {
@@ -231,7 +271,7 @@ export function buildMovePlan(root: string, manifest: MoveManifest): MovePlan {
   const seeds = tests.flatMap((t) => importsOf(root, t.from, barrel).helpers);
   const helpers = [...helperClosure(root, seeds, barrel)].sort(byCodePoint).map((rel) => ({ from: rel, to: rel }));
   const fixtures = FIXTURES.map((rel) => ({ from: rel, to: rel }));
-  const plan = { sources, tests, helpers, fixtures };
+  const plan = { sources, tests, helpers, fixtures, unmarkedDiskReaders: unmarked };
   assertNoCollisions([...sources, ...tests, ...helpers, ...fixtures]);
   return plan;
 }
