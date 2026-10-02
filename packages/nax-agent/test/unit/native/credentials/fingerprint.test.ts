@@ -3,8 +3,8 @@ import { createHmac } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _resetFingerprintSalt, fingerprintCredential } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import { cleanupTempDir, type LogCall, makeLogger, makeTempDir } from "#test/helpers/index";
 
 /**
  * `NAX_GLOBAL_CONFIG_DIR` points at a fresh temp dir in every test (story harness),
@@ -12,9 +12,9 @@ import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
  */
 let dir: string;
 let saltPath: string;
-let entries: LogEntry[];
-let unsubscribe: () => void;
+let logger: ReturnType<typeof makeLogger>;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+const originalLogger = getSafeLogger();
 
 beforeEach(() => {
   dir = makeTempDir("nax-fingerprint-");
@@ -22,15 +22,12 @@ beforeEach(() => {
   saltPath = join(dir, "auth-fingerprint-salt");
   _resetFingerprintSalt();
 
-  entries = [];
-  resetLogger();
-  initLogger({ level: "silent" });
-  unsubscribe = addSink((entry) => entries.push(entry));
+  logger = makeLogger();
+  setAgentLogger(logger);
 });
 
 afterEach(() => {
-  unsubscribe();
-  resetLogger();
+  setAgentLogger(originalLogger);
   _resetFingerprintSalt();
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
   cleanupTempDir(dir);
@@ -42,8 +39,8 @@ function expectedFingerprint(secret: string, salt: Buffer): string {
 }
 
 /** Entries whose event name (the log message) equals `name`. */
-function named(name: string): LogEntry[] {
-  return entries.filter((entry) => entry.message === name);
+function named(name: string): LogCall[] {
+  return logger.calls.filter((entry) => entry.message === name);
 }
 
 describe("fingerprintCredential", () => {

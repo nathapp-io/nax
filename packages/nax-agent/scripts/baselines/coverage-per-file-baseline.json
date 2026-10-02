@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-02T14:24:24.866Z",
+  "updatedAt": "2026-10-02T16:00:05.491Z",
   "byFile": {
     "src/coding-tools/coding-tool-sandbox.ts": 0.2025,
     "src/config/bash-approval.ts": 0.4286,
@@ -12,8 +12,7 @@
     "src/native/auth.ts": 0.4104,
     "src/native/credentials/change-guard.ts": 0.4096,
     "src/native/credentials/exec-source.ts": 0.4403,
-    "src/native/credentials/fingerprint.ts": 0.7808,
-    "src/native/credentials/helper-process.ts": 0.7674,
+    "src/native/credentials/helper-process.ts": 0.7842,
     "src/native/models.ts": 0.7576,
     "src/native/session-adapter.ts": 0.7366,
     "src/native/session/loop-events/cache-boundary.ts": 0.68,
