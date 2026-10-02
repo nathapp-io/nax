@@ -12,6 +12,8 @@ import { describe, expect, test } from "bun:test";
 import { nativeTierProviders } from "@nathapp/nax-agent";
 import { makeNaxConfig } from "@test/helpers";
 
+// AC1-AC6 feed the reader a full NaxConfig (DEFAULT_CONFIG merged), so they stay with nax's config; the plain-object contract test lives in nax-agent.
+
 describe("nativeTierProviders", () => {
   test("AC1: maps a provider to every tier that names it, in tier order", () => {
     const config = makeNaxConfig({
@@ -71,13 +73,5 @@ describe("nativeTierProviders", () => {
     const config = makeNaxConfig({ models: {} });
 
     expect(nativeTierProviders(config).size).toBe(0);
-  });
-
-  test("reads a plain object carrying only the two fields it declares (no NaxConfig)", () => {
-    const byProvider = nativeTierProviders({
-      agent: { native: { catalogOverrides: [{ provider: "proxy" }] } },
-      models: { native: { fast: "anthropic/claude-haiku-4-5", balanced: { model: "proxy/x" } } },
-    });
-    expect([...byProvider.entries()]).toEqual([["anthropic", ["fast"]]]);
   });
 });

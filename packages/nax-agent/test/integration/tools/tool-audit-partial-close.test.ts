@@ -2,15 +2,15 @@
  * US-004 — closing a runtime must persist tool calls still buffered by the
  * sinks whose hop `finally` never ran.
  *
- * This exercise goes through nax's `createRuntime().close()` (AC10). The
- * barrel flush (AC8) is tested in nax-agent.
+ * These exercises go through the package barrel (AC8). The runtime-close path
+ * (AC10) is nax's wiring and is tested in nax.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createToolAuditSink } from "@nathapp/nax-agent";
-import { assertDefined, cleanupTempDir, makeMockRuntime, makeTempDir } from "@test/helpers";
+import { createToolAuditSink, flushOpenToolAuditSinks } from "@nathapp/nax-agent";
+import { assertDefined, cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 type ParsedAuditBody = {
   partial?: boolean;
@@ -41,28 +41,24 @@ describe("tool-audit partial flush at runtime close (US-004)", () => {
     return dir;
   }
 
-  test("US-004 AC10: runtime.close() writes a still-open sink as partial", async () => {
+  test("US-004 AC8: the partial flush reached through the @/tools barrel flushes a created sink", async () => {
     const dir = makeAuditDir();
-    const runtime = makeMockRuntime();
-    const sink = createToolAuditSink({
-      dir,
-      sessionName: "US-004-implementer",
-      header: { runId: runtime.runId },
-    });
+    const runId = `run-${crypto.randomUUID()}`;
+    const sink = createToolAuditSink({ dir, sessionName: "barrel", header: { runId } });
     sink.record({
-      tool: "Exec",
+      tool: "Read",
       outcome: "ok",
-      input: { argv: ["bun", "test"] },
-      resultBytes: 3,
+      input: { path: "a.ts" },
+      resultBytes: 10,
       at: "2026-09-20T00:00:00.000Z",
     });
 
-    await runtime.close();
+    await flushOpenToolAuditSinks(runId);
 
     const body = await onlyAuditBody(dir);
     expect(body.partial).toBe(true);
-    expect(body.runId).toBe(runtime.runId);
+    expect(body.runId).toBe(runId);
     expect(body.calls).toHaveLength(1);
-    expect(body.calls[0].tool).toBe("Exec");
+    expect(body.calls[0].tool).toBe("Read");
   });
 });
