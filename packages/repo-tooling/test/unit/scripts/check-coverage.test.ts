@@ -12,7 +12,9 @@ import {
   buildUpdatedBaseline,
   extractTestSummary,
   findMissingBaselined,
+  findUnreportedFiles,
   gatedSuites,
+  hasExecutableCode,
   parseLcov,
   parsePerFileLines,
   UNMEASURABLE,
@@ -225,5 +227,61 @@ describe("gatedSuites", () => {
       "test/unit/",
       "test/integration/",
     ]);
+  });
+});
+
+describe("hasExecutableCode", () => {
+  test("a file of interfaces and type aliases has none", () => {
+    expect(hasExecutableCode("export interface A { x: number }\nexport type B = A | string;\n")).toBe(false);
+  });
+
+  test("type-only imports and re-exports have none", () => {
+    expect(hasExecutableCode('import type { A } from "./a";\nexport type { B } from "./b";\n')).toBe(false);
+  });
+
+  test("a barrel of value re-exports has none", () => {
+    expect(hasExecutableCode('export * from "./a";\nexport { b } from "./b";\nexport * as c from "./c";\n')).toBe(
+      false,
+    );
+  });
+
+  test("comments alone have none", () => {
+    expect(hasExecutableCode("/** doc */\n// note\n")).toBe(false);
+  });
+
+  test("a const declaration is code", () => {
+    expect(hasExecutableCode("export const LIMIT = 3;\n")).toBe(true);
+  });
+
+  test("a function declaration is code", () => {
+    expect(hasExecutableCode("export function f(): number { return 1; }\n")).toBe(true);
+  });
+
+  test("an enum is code (TypeScript emits an object for it)", () => {
+    expect(hasExecutableCode("export enum Mode { A, B }\n")).toBe(true);
+  });
+});
+
+describe("findUnreportedFiles", () => {
+  const perFile = new Map([["src/reported.ts", 0.9]]);
+  const allCode = () => true;
+
+  test("a file the report names is not unreported", () => {
+    expect(findUnreportedFiles(["src/reported.ts"], perFile, allCode, {})).toEqual([]);
+  });
+
+  test("an executable file the report omits is unreported, sorted", () => {
+    expect(findUnreportedFiles(["src/z.ts", "src/a.ts", "src/reported.ts"], perFile, allCode, {})).toEqual([
+      "src/a.ts",
+      "src/z.ts",
+    ]);
+  });
+
+  test("a file with no executable code is exempt", () => {
+    expect(findUnreportedFiles(["src/types.ts"], perFile, () => false, {})).toEqual([]);
+  });
+
+  test("a file listed in UNMEASURABLE is exempt", () => {
+    expect(findUnreportedFiles(["src/hole.ts"], perFile, allCode, { "src/hole.ts": "#1779 repro" })).toEqual([]);
   });
 });

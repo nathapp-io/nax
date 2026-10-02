@@ -48,6 +48,7 @@
  *   bun run test:coverage:report   # run + print summary, never fail
  *   bun run test:coverage:update   # run + save new per-file baseline (--update-baseline)
  *   bun run test:coverage:list     # run + print all below-floor files (--list)
+ *   --require-all-files            also fail on any src/ file with code that has no record in the report
  *   (each package script calls this file from its own package directory)
  *
  * Exit codes:
@@ -318,6 +319,48 @@ export function findMissingBaselined(
     .sort((a, b) => a.file.localeCompare(b.file));
 }
 
+const TRANSPILER = new Bun.Transpiler({ loader: "tsx" });
+
+/** What is left of transpiled output that Bun does not record as executable. */
+const NON_EXECUTABLE: readonly RegExp[] = [
+  /\/\*[\s\S]*?\*\//g,
+  /\/\/[^\n]*/g,
+  /^\s*import\s[^;\n]*;?\s*$/gm,
+  /^\s*export\s*(?:\*(?:\s+as\s+[\w$]+)?|\{[^}]*\})\s*from\s*["'][^"']+["'];?\s*$/gm,
+  /^\s*export\s*\{\s*\}\s*;?\s*$/gm,
+];
+
+/**
+ * Whether a source file has anything Bun would record a line for. Bun writes no
+ * `SF:` record for a file of types or re-exports only, so such a file's absence
+ * from the report is expected, not a measurement hole.
+ */
+export function hasExecutableCode(source: string): boolean {
+  const js = NON_EXECUTABLE.reduce((text, re) => text.replace(re, ""), TRANSPILER.transformSync(source));
+  return js.trim() !== "";
+}
+
+/**
+ * `src/` files on disk that hold executable code but have no record in the report
+ * (spec S2 §7.2). The ratchet alone cannot see them: a file the report never names
+ * is neither below the floor nor baselined, so it would pass at 0%.
+ */
+export function findUnreportedFiles(
+  onDisk: readonly string[],
+  perFile: ReadonlyMap<string, number>,
+  hasCode: (file: string) => boolean,
+  unmeasurable: Record<string, string> = UNMEASURABLE,
+): string[] {
+  return onDisk
+    .filter((file) => !perFile.has(file) && !(file in unmeasurable) && hasCode(file))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+/** Every `.ts`/`.tsx` source under `<root>/src/`, as the report names them (`src/...`). */
+export function sourceFiles(root: string): string[] {
+  return [...new Bun.Glob("src/**/*.{ts,tsx}").scanSync({ cwd: root })].filter((f) => !f.endsWith(".d.ts"));
+}
+
 /**
  * The baseline `--update-baseline` should write: every below-floor file in the report,
  * plus any previously-baselined file that the report omitted while it still exists on
@@ -445,7 +488,23 @@ function checkPerFile(perFile: Map<string, number>, opts: { list: boolean }): bo
   return false;
 }
 
+/** Prints the unreported files for --list / --report. */
+function printUnreported(unreported: readonly string[]): void {
+  for (const file of unreported) console.log(`${file}  NOT IN REPORT`);
+}
+
+/** CI mode: an unreported file with code fails the run. Returns false (and explains) when it should. */
+function checkUnreported(unreported: readonly string[]): boolean {
+  if (unreported.length === 0) return true;
+  console.error(`\n[coverage] FAIL — ${unreported.length} src/ file(s) hold code but have no record in the report:`);
+  for (const file of unreported) console.error(`  ${file}`);
+  console.error("Each file holds code but no test loads it. Add a test that does, or, if a test does load it");
+  console.error("and Bun still omits it (GitHub #1779), list it in UNMEASURABLE with the reason.");
+  return false;
+}
+
 async function main() {
+  const requireAllFiles = process.argv.includes("--require-all-files");
   const reportOnly = process.argv.includes("--report");
   const updateBaseline = process.argv.includes("--update-baseline");
   const list = process.argv.includes("--list");
@@ -467,14 +526,19 @@ async function main() {
   const lines = pct(totals.linesHit, totals.linesFound);
   const functions = pct(totals.fnHit, totals.fnFound);
   const perFile = parsePerFileLines(lcovText);
+  const unreported = requireAllFiles
+    ? findUnreportedFiles(sourceFiles(ROOT), perFile, (f) => hasExecutableCode(readFileSync(join(ROOT, f), "utf8")))
+    : [];
 
   const fmt = (n: number) => `${(n * 100).toFixed(2)}%`;
   console.log(`\n── coverage gate (${gatedSuites(ROOT).join(", ")} → ${SCOPE_PREFIXES.join(", ")}) ──`);
   console.log(`  lines:     ${fmt(lines)}  (${totals.linesHit}/${totals.linesFound}, floor ${fmt(FLOOR.lines)})`);
   console.log(`  functions: ${fmt(functions)}  (${totals.fnHit}/${totals.fnFound}, floor ${fmt(FLOOR.functions)})`);
+  if (requireAllFiles) console.log(`  unreported src/ files with code: ${unreported.length}`);
 
   if (list) {
     checkPerFile(perFile, { list: true });
+    printUnreported(unreported);
     return;
   }
 
@@ -496,6 +560,7 @@ async function main() {
 
   if (reportOnly) {
     checkPerFile(perFile, { list: false });
+    printUnreported(unreported);
     return;
   }
 
@@ -504,6 +569,7 @@ async function main() {
   if (functions < FLOOR.functions) failures.push(`function coverage ${fmt(functions)} < floor ${fmt(FLOOR.functions)}`);
 
   const perFileOk = checkPerFile(perFile, { list: false });
+  const allFilesOk = checkUnreported(unreported);
 
   if (failures.length > 0) {
     console.error(`\n[coverage] FAIL — ${failures.join("; ")}`);
@@ -514,7 +580,7 @@ async function main() {
     process.exit(1);
   }
 
-  if (!perFileOk) process.exit(1);
+  if (!perFileOk || !allFilesOk) process.exit(1);
 
   console.log("\n[coverage] OK — at or above floor.");
 }
