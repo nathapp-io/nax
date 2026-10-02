@@ -2,9 +2,13 @@
  * Session-protocol types — the shapes exchanged across the openSession / sendTurn /
  * closeSession boundary, split out of types.ts under the file-size ratchet (#1702).
  *
- * Nothing here imports from ./types: the dependency runs one way (types.ts imports
- * and re-exports this module), so the split adds no import cycle. Every existing
- * import site keeps working unchanged — types.ts re-exports all of it.
+ * Nothing here imports back into types.ts, so the split adds no import cycle:
+ * the dependency runs one way. `types.ts` stayed in nax
+ * (`packages/nax/src/agents/types.ts`) and reaches this module through the
+ * `@nathapp/nax-agent` entry. It re-exports a *selected subset* — the session
+ * protocol's public contract — so existing `@/agents/types` import sites keep
+ * working; a consumer of anything outside that subset (`AuthStamp`,
+ * `InvalidToolCallDetail`) imports it from `@nathapp/nax-agent` directly.
  */
 
 import type { Pricing, PricingRates, TokenUsage } from "#src/cost/standard-types";
@@ -33,8 +37,9 @@ export interface AuthStamp {
 /**
  * The model a session runs on, in the contract's own vocabulary (S1 spec section
  * 4.2, port 2). nax builds it from its config `ModelDef` with `toSessionModel`
- * (`src/agents/session-model-mapping.ts`); `pricing` is already converted to the
- * standard rate card, so the session never sees config field names.
+ * (`packages/nax/src/agents/session-model-mapping.ts`); `pricing` is already
+ * converted to the standard rate card, so the session never sees config field
+ * names.
  */
 export interface SessionModel {
   readonly provider: string;

@@ -2,7 +2,8 @@
 /**
  * Every git nax spawns carries the hardened environment (#2198).
  *
- * `hardenedGitEnv` / `gitSpawnEnv` (`src/utils/git-env.ts`) turn off
+ * `hardenedGitEnv` / `gitSpawnEnv` (`packages/nax-agent/src/internal/git-env.ts`)
+ * turn off
  * `core.fsmonitor`, a config key naming a program git runs on every
  * status/diff/add. It only protects the spawns that pass it: the fix first
  * landed inside `gitWithTimeout` alone, while more than twenty sites spawned
@@ -233,7 +234,9 @@ if (import.meta.main) {
     }
   }
   if (found.length > 0) {
-    console.error("git spawned without the hardened environment (src/utils/git-env.ts):");
+    // The helper lives in nax-agent now and this gate runs against both
+    // packages, so no repo-relative path is accurate here — name the symbol.
+    console.error("git spawned without the hardened environment (hardenedGitEnv / gitSpawnEnv):");
     for (const f of found) console.error(f);
     console.error(
       "Pass `env: gitSpawnEnv(overlay?)` and wrap a status/diff argv in `hardenedGitArgv(...)`, or mark `// nax-git-env-allow: <reason>`.",
