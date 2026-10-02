@@ -14,11 +14,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { ExecCredentialSource } from "@nathapp/nax-agent/internal";
+import type { ExecCredentialSource, NaxError } from "@nathapp/nax-agent/internal";
 import { createChainedCredentialStore } from "@nathapp/nax-agent/internal";
 import type { CredentialStore, StoredCredential } from "@nathapp/nax-ai";
-import { assertNaxError } from "@test/helpers";
-import type { NaxError } from "@/errors";
+import { assertNaxError } from "#test/helpers/index";
 
 const FILE_CREDENTIAL: StoredCredential = { kind: "api-key", key: "FILE-KEY" };
 const EXEC_CREDENTIAL: StoredCredential = { kind: "api-key", key: "HELPER-KEY" };

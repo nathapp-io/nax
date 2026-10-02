@@ -5,3 +5,10 @@ smol = true
 root = "./test"
 timeout = 5000
 preload = ["./test/preload.ts"]
+
+# Coverage, only when `--coverage` is passed (`bun run test:coverage`). Mirrors
+# packages/nax/bunfig.toml: lcov only, test files skipped, floors enforced by
+# packages/repo-tooling/scripts/check-coverage.ts, which parses coverage/lcov.info.
+coverageSkipTestFiles = true
+coverageReporter = ["lcov"]
+coverageDir = "coverage"

@@ -5,11 +5,11 @@ import {
   type GitRunResult,
   gitlinkSafeAdd,
   gitSpawnEnv,
+  gitWithTimeout,
   hasStagedChanges,
   parseGitlinks,
 } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { gitWithTimeout } from "@/utils/git";
+import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 const OK: GitRunResult = { stdout: "", stderr: "", exitCode: 0 };
 

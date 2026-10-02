@@ -9,13 +9,17 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  aggregateFailures,
   buildUpdatedBaseline,
   extractTestSummary,
   findMissingBaselined,
+  findUnreportedFiles,
+  gatedSuites,
+  hasExecutableCode,
   parseLcov,
   parsePerFileLines,
   UNMEASURABLE,
-} from "@scripts/check-coverage";
+} from "#scripts/check-coverage";
 
 /** Builds an lcov body for the given files, each as a `covered/found` line pair. */
 function lcov(records: Array<[file: string, hit: number, found: number]>): string {
@@ -57,7 +61,7 @@ describe("parseLcov", () => {
     expect(totals).toEqual({ linesFound: 20, linesHit: 10, fnFound: 10, fnHit: 5 });
   });
 
-  test("counts nax-agent's sources, as lcov names them from nax", () => {
+  test("counts src/ only: a sibling package's records, as lcov names them, are out of scope", () => {
     const totals = parseLcov(
       lcovWithFns([
         ["src/a.ts", 9, 10, 4, 5],
@@ -66,7 +70,7 @@ describe("parseLcov", () => {
       ]),
     );
 
-    expect(totals).toEqual({ linesFound: 20, linesHit: 19, fnFound: 10, fnHit: 9 });
+    expect(totals).toEqual({ linesFound: 10, linesHit: 9, fnFound: 5, fnHit: 4 });
   });
 
   test("the scope prefix is injectable", () => {
@@ -97,9 +101,14 @@ describe("parsePerFileLines", () => {
     expect(parsePerFileLines(lcov([["src/empty.ts", 0, 0]])).get("src/empty.ts")).toBe(1);
   });
 
-  test("reports nax-agent's files under their lcov path", () => {
-    const perFile = parsePerFileLines(lcov([["../nax-agent/src/tools/git.ts", 9, 10]]));
-    expect([...perFile.keys()]).toEqual(["../nax-agent/src/tools/git.ts"]);
+  test("leaves a sibling package's files out of the per-file map", () => {
+    const perFile = parsePerFileLines(
+      lcov([
+        ["../nax-agent/src/tools/git.ts", 9, 10],
+        ["src/a.ts", 1, 2],
+      ]),
+    );
+    expect([...perFile.keys()]).toEqual(["src/a.ts"]);
   });
 });
 
@@ -200,5 +209,106 @@ describe("extractTestSummary", () => {
 
   test("returns an empty string when bun printed no summary", () => {
     expect(extractTestSummary(noise)).toBe("");
+  });
+});
+
+describe("gatedSuites", () => {
+  test("runs every candidate suite directory the package has, in order", () => {
+    const present = new Set(["/pkg/test/unit/", "/pkg/test/integration/", "/pkg/test/ui/"]);
+    expect(gatedSuites("/pkg", (p) => present.has(`${p}/`) || present.has(p))).toEqual([
+      "test/unit/",
+      "test/integration/",
+      "test/ui/",
+    ]);
+  });
+
+  test("skips a suite directory the package does not have", () => {
+    const present = new Set(["/pkg/test/unit/", "/pkg/test/integration/"]);
+    expect(gatedSuites("/pkg", (p) => present.has(`${p}/`) || present.has(p))).toEqual([
+      "test/unit/",
+      "test/integration/",
+    ]);
+  });
+});
+
+describe("hasExecutableCode", () => {
+  test("a file of interfaces and type aliases has none", () => {
+    expect(hasExecutableCode("export interface A { x: number }\nexport type B = A | string;\n")).toBe(false);
+  });
+
+  test("type-only imports and re-exports have none", () => {
+    expect(hasExecutableCode('import type { A } from "./a";\nexport type { B } from "./b";\n')).toBe(false);
+  });
+
+  test("a barrel of value re-exports has none", () => {
+    expect(hasExecutableCode('export * from "./a";\nexport { b } from "./b";\nexport * as c from "./c";\n')).toBe(
+      false,
+    );
+  });
+
+  test("comments alone have none", () => {
+    expect(hasExecutableCode("/** doc */\n// note\n")).toBe(false);
+  });
+
+  test("a const declaration is code", () => {
+    expect(hasExecutableCode("export const LIMIT = 3;\n")).toBe(true);
+  });
+
+  test("a function declaration is code", () => {
+    expect(hasExecutableCode("export function f(): number { return 1; }\n")).toBe(true);
+  });
+
+  test("an enum is code (TypeScript emits an object for it)", () => {
+    expect(hasExecutableCode("export enum Mode { A, B }\n")).toBe(true);
+  });
+});
+
+describe("findUnreportedFiles", () => {
+  const perFile = new Map([["src/reported.ts", 0.9]]);
+  const allCode = () => true;
+
+  test("a file the report names is not unreported", () => {
+    expect(findUnreportedFiles(["src/reported.ts"], perFile, allCode, {})).toEqual([]);
+  });
+
+  test("an executable file the report omits is unreported, sorted", () => {
+    expect(findUnreportedFiles(["src/z.ts", "src/a.ts", "src/reported.ts"], perFile, allCode, {})).toEqual([
+      "src/a.ts",
+      "src/z.ts",
+    ]);
+  });
+
+  test("a file with no executable code is exempt", () => {
+    expect(findUnreportedFiles(["src/types.ts"], perFile, () => false, {})).toEqual([]);
+  });
+
+  test("a file listed in UNMEASURABLE is exempt", () => {
+    expect(findUnreportedFiles(["src/hole.ts"], perFile, allCode, { "src/hole.ts": "#1779 repro" })).toEqual([]);
+  });
+});
+
+describe("hasExecutableCode on .ts-only syntax", () => {
+  test("a generic arrow in a .ts file is code, not a transpile crash", () => {
+    expect(hasExecutableCode("export const id = <T>(x: T): T => x;\n", "src/id.ts")).toBe(true);
+  });
+
+  test("source the transpiler rejects counts as code (fail loud, never exempt)", () => {
+    expect(hasExecutableCode("export const = ;\n", "src/broken.ts")).toBe(true);
+  });
+});
+
+describe("aggregateFailures", () => {
+  test("a report that measured no src/ lines fails instead of reading as 100%", () => {
+    expect(aggregateFailures({ linesFound: 0, linesHit: 0, fnFound: 0, fnHit: 0 })).toEqual([
+      "the report measured no src/ lines (empty or mis-scoped lcov)",
+    ]);
+  });
+
+  test("totals at the floor pass, and each floor below it is named", () => {
+    expect(aggregateFailures({ linesFound: 10, linesHit: 8, fnFound: 10, fnHit: 8 })).toEqual([]);
+    expect(aggregateFailures({ linesFound: 10, linesHit: 7, fnFound: 10, fnHit: 7 })).toEqual([
+      "line coverage 70.00% < floor 80.00%",
+      "function coverage 70.00% < floor 80.00%",
+    ]);
   });
 });

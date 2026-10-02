@@ -18,18 +18,18 @@ AGENT = 1
 # normal `bun test` runs are unaffected.
 #
 # `coverageSkipTestFiles` drops `*.test.ts` but NOT `test/helpers/**` or
-# `test/preload.ts`, which still get `SF:` records. check-coverage.ts therefore scopes
+# `test/preload.ts`, which still get `SF:` records. packages/repo-tooling/scripts/check-coverage.ts therefore scopes
 # both floors to `src/` rather than summing every record.
 #
 # No `coverageThreshold` here: Bun only enforces it via exit code when the `text`
 # reporter is enabled (and outside `--parallel`), and it has neither a per-file ratchet
-# nor a missing-file guard. The floors live in scripts/check-coverage.ts, which parses
+# nor a missing-file guard. The floors live in packages/repo-tooling/scripts/check-coverage.ts, which parses
 # coverage/lcov.info.
 coverageSkipTestFiles = true
 # lcov only. The "text" reporter used to abort the run with `error: An internal error
 # occurred (WriteFailed)` whenever stdout was a pipe rather than a TTY; that is fixed
 # as of Bun 1.4.0 (re-probed 2026-08-30). It stays off because its per-file table is
-# cosmetic here — check-coverage.ts parses coverage/lcov.info and prints the totals.
+# cosmetic here — packages/repo-tooling/scripts/check-coverage.ts parses coverage/lcov.info and prints the totals.
 # For per-file detail, run `bun run test:coverage:list`.
 coverageReporter = ["lcov"]
 coverageDir = "coverage"

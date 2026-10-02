@@ -7,7 +7,6 @@
     "scripts/check-alias-internals.ts": { "scanFileForAliasInternals": 23 },
     "scripts/check-bash-dispatch-ask.ts": { "blankNonCode": 25 },
     "scripts/check-config-profile-threading.ts": { "blankNonCode": 31, "findViolations": 25 },
-    "scripts/check-coverage.ts": { "checkPerFile": 27 },
     "scripts/check-dispatch-field-forwarding.ts": { "blankNonCode": 31 },
     "scripts/check-logger-storyid.ts": { "findCallEnd": 55, "splitTopLevelArgs": 21 },
     "scripts/check-story-workdir-access.ts": { "findViolations": 32, "walk": 32, "main": 26 },

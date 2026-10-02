@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { NaxError } from "@nathapp/nax-agent/internal";
 import {
   _resetCredentialStore,
   credentialFilePath,
@@ -8,8 +9,7 @@ import {
   readStoredEntries,
   servedAuth,
 } from "@nathapp/nax-agent/internal";
-import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
-import type { NaxError } from "@/errors";
+import { assertNaxError, cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 let dir: string;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;

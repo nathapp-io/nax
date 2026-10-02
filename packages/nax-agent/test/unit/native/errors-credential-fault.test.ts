@@ -9,8 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { credentialFaultCode, type NativeProtocolError } from "@nathapp/nax-agent/internal";
-import { NaxError } from "@/errors";
+import { credentialFaultCode, type NativeProtocolError, NaxError } from "@nathapp/nax-agent/internal";
 
 const CREDENTIAL_CODES: readonly string[] = [
   "CREDENTIAL_HELPER_FAILED",

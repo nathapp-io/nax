@@ -16,9 +16,9 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import type { CatalogModelOverride, ProviderCatalogOverride } from "@nathapp/nax-agent/internal";
 import { _clientDeps, _resetNativeClient, resolveNativeId } from "@nathapp/nax-agent/internal";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
-import type { CatalogModelOverride, ProviderCatalogOverride } from "@/config/schema-types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
