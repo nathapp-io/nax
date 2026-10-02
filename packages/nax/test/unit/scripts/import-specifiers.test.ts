@@ -48,4 +48,12 @@ describe("rewriteSpecifiers", () => {
     const out = rewriteSpecifiers(src, () => ({ statement: 'import { xModule as ts } from "pkg/internal"' }));
     expect(out).toBe('  import { xModule as ts } from "pkg/internal";\nexport const y = 1;\n');
   });
+
+  test("throws rather than mangling the source when a whole-statement replacement hits a non-static site", () => {
+    // A dynamic or side-effect site has an empty prelude, so statementStart() would
+    // resolve to the opening quote and the splice would splice into `import(`.
+    for (const src of ['const c = import("./a");\n', 'import "./side";\n']) {
+      expect(() => rewriteSpecifiers(src, () => ({ statement: "X" }))).toThrow(/only valid for a static import/);
+    }
+  });
 });

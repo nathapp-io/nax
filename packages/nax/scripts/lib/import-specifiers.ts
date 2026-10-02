@@ -66,6 +66,11 @@ export function rewriteSpecifiers(source: string, map: (site: SpecifierSite) => 
       out = out.slice(0, site.start) + next + out.slice(site.start + site.spec.length);
       continue;
     }
+    if (site.kind !== "static") {
+      throw new Error(
+        `rewriteSpecifiers: a whole-statement replacement is only valid for a static import, not this ${site.kind} site ("${site.spec}"); return a string to rewrite only the specifier`,
+      );
+    }
     const indent = site.prelude.match(/^[ \t]*/)?.[0] ?? "";
     out = out.slice(0, statementStart(site)) + indent + next.statement + out.slice(site.start + site.spec.length + 1);
   }
