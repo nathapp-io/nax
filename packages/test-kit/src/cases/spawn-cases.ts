@@ -5,7 +5,7 @@
  * vitest with `for (const c of SPAWN_CASES) test(c.name, () => c.run(runtime))`.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CaseRuntime, CaseSpawnResult } from "./runtime-types";
@@ -46,6 +46,13 @@ function stdinOf(p: CaseSpawnResult): NonNullable<CaseSpawnResult["stdin"]> {
 function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = mkdtempSync(join(tmpdir(), "nax-spawn-case-"));
   return fn(dir).finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+/** An executable shell script at `path` printing `out`. */
+function script(path: string, out: string): string {
+  writeFileSync(path, `#!/bin/sh\necho ${out}\n`);
+  chmodSync(path, 0o755);
+  return path;
 }
 
 export const SPAWN_CASES: readonly RuntimeCase[] = [
@@ -234,5 +241,57 @@ export const SPAWN_CASES: readonly RuntimeCase[] = [
       }
       assert.ok(gone, `grandchild ${grandchild} survived the group kill`);
     },
+  },
+  {
+    name: "a relative binary path resolves against cwd, not the parent's working directory",
+    run: (rt) =>
+      withTempDir(async (dir) => {
+        mkdirSync(join(dir, "bin"));
+        script(join(dir, "bin", "x"), "relbin");
+        const p = rt.spawn(["./bin/x"], { cwd: dir, ...PIPES });
+        assert.equal((await text(p.stdout)).trim(), "relbin");
+        assert.equal(await p.exited, 0);
+      }),
+  },
+  {
+    name: "a relative PATH entry resolves against cwd",
+    run: (rt) =>
+      withTempDir(async (dir) => {
+        mkdirSync(join(dir, "custom"));
+        script(join(dir, "custom", "nax-only-here"), "custom");
+        const p = rt.spawn(["nax-only-here"], { cwd: dir, env: { PATH: "custom" }, ...PIPES });
+        assert.equal((await text(p.stdout)).trim(), "custom");
+      }),
+  },
+  {
+    name: "env without PATH: standard binaries still resolve (default /usr/bin:/bin)",
+    async run(rt) {
+      const p = rt.spawn(["sh", "-c", "echo hi"], { env: { FOO: "x" }, ...PIPES });
+      assert.equal((await text(p.stdout)).trim(), "hi");
+    },
+  },
+  {
+    name: "env without PATH: a binary only on the parent's PATH throws ENOENT synchronously",
+    run: (rt) =>
+      withTempDir(async (dir) => {
+        script(join(dir, "nax-parent-only"), "x");
+        const previous = process.env.PATH;
+        process.env.PATH = `${dir}:${previous ?? ""}`;
+        try {
+          assert.equal(thrownBy(() => rt.spawn(["nax-parent-only"], { env: { FOO: "x" }, ...PIPES })).code, "ENOENT");
+        } finally {
+          process.env.PATH = previous;
+        }
+      }),
+  },
+  {
+    name: "a script whose interpreter is missing throws ENOENT synchronously",
+    run: (rt) =>
+      withTempDir(async (dir) => {
+        const bad = join(dir, "bad-interpreter");
+        writeFileSync(bad, "#!/nonexistent/nax-interpreter\n");
+        chmodSync(bad, 0o755);
+        assert.equal(thrownBy(() => rt.spawn([bad], PIPES)).code, "ENOENT");
+      }),
   },
 ];
