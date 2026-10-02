@@ -86,10 +86,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Glob } from "bun";
+import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
 
-const ROOT = join(import.meta.dir, "..");
+const ROOT = gatePackageRoot(import.meta.dir);
 const SCAN_DIR = "test";
-const BASELINE_FILE = join(import.meta.dir, "baselines", "test-escape-hatches-baseline.json");
+const BASELINE_FILE = gateBaselinePath(ROOT, "test-escape-hatches-baseline.json");
 
 /** Counted per match, not per line: a line-based count lets two hatches be
  *  joined onto one line to lower the number without removing either. */

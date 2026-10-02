@@ -62,11 +62,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { byCodePoint } from "../src/utils/sort";
+import { gateBaselinePath, gatePackageRoot } from "./lib/package-root";
 
-const ROOT = join(import.meta.dir, "..");
-const DEFAULT_BASELINE_FILE = join(import.meta.dir, "baselines", "complexity-baseline.json");
+const ROOT = gatePackageRoot(import.meta.dir);
+const DEFAULT_BASELINE_FILE = gateBaselinePath(ROOT, "complexity-baseline.json");
 const RULE = "complexity/noExcessiveCognitiveComplexity";
-const SCAN_DIRS = ["src/", "bin/", "test/", "scripts/"];
+/** Directories this package has; packages/nax-agent has no bin/ or scripts sources. */
+const SCAN_DIRS = ["src/", "bin/", "test/", "scripts/"].filter((dir) => existsSync(join(ROOT, dir)));
 const SOURCE_GLOB = "**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}";
 
 export const STRICT_LIMIT = 20;

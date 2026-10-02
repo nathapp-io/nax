@@ -37,6 +37,11 @@ describe("resolveSpecifier", () => {
     const from = join(root, "src/a/leaf.ts");
     expect(resolveSpecifier(root, from, "@/a")).toBe(join(root, "src/a/index.ts"));
   });
+
+  test("resolves a #src/ package import to src/ (nax-agent's form; it does no index resolution)", () => {
+    const from = join(root, "src/a/leaf.ts");
+    expect(resolveSpecifier(root, from, "#src/a/index")).toBe(join(root, "src/a/index.ts"));
+  });
 });
 
 describe("buildImportGraph", () => {
