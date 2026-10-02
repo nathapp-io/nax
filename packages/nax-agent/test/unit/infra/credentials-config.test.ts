@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { NaxError } from "#src/infra/index";
 import {
-  type CredentialsConfig,
   _resetCredentialsConfig,
+  type CredentialsConfig,
   configureCredentials,
   credentialsConfig,
 } from "#src/infra/credentials-config";
+import type { NaxError } from "#src/infra/index";
 import { assertNaxError } from "#test/helpers/index";
 
 /**

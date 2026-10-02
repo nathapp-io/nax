@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { getSafeLogger, setAgentLogger } from "#src/infra/index";
 import type { NaxError } from "#src/infra/index";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
 import { parseNativeModel, resolveContextWindow, toThinkingLevel } from "#src/native/models";
 import { assertNaxError, makeLogger } from "#test/helpers/index";
 

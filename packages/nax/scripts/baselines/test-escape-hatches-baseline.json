@@ -2,7 +2,7 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 30,
-    "looseCast": 1462
+    "looseCast": 1461
   },
   "updatedAt": "2026-10-02T07:19:52.695Z",
   "byFile": {
@@ -716,9 +716,6 @@
       "looseCast": 2
     },
     "test/unit/agents/retry/hop-retry-policy.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/agents/native/auth-store-ops.test.ts": {
       "looseCast": 1
     },
     "test/unit/agents/native/session/loop-events/transform-context.test.ts": {
