@@ -107,11 +107,13 @@ describe("RunCommand argv branch", () => {
 
   test("the argv branch's whole file never reaches the shell executor", async () => {
     // Whole-file, not a slice from a known function name: the argv branch
-    // now lives in its own module (src/tools/run-command-exec.ts), so this
+    // now lives in its own module (packages/nax-agent/src/tools/run-command-exec.ts), so this
     // guard cannot be defeated by adding a function after runExecBranch or
     // by reordering the file — the failure mode the prior slice-based guard
     // had when everything lived in run-command.ts together.
-    const source = await Bun.file(new URL("../../../src/tools/run-command-exec.ts", import.meta.url)).text();
+    const source = await Bun.file(
+      new URL("../../../../nax-agent/src/tools/run-command-exec.ts", import.meta.url),
+    ).text();
     expect(source).not.toContain("runQualityCommand");
     expect(source).not.toContain("shellQuoteArg");
     expect(source).not.toContain("quality/runner");
