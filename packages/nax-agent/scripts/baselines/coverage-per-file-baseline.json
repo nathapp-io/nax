@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-02T17:00:04.157Z",
+  "updatedAt": "2026-10-02T17:02:13.865Z",
   "byFile": {
     "src/coding-tools/coding-tool-sandbox.ts": 0.2025,
     "src/config/bash-approval.ts": 0.4286,
@@ -19,8 +19,6 @@
     "src/session/session-types.ts": 0.0571,
     "src/tools/delete.ts": 0.18,
     "src/tools/git-commit.ts": 0.1503,
-    "src/tools/git.ts": 0.7766,
-    "src/tools/package-managers-table.ts": 0.766,
-    "src/tools/package-managers.ts": 0.7701
+    "src/tools/git.ts": 0.7766
   }
 }
