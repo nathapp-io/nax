@@ -25,7 +25,11 @@ function write(rel: string, content = "export const x = 1;\n"): void {
 /** nax paths -> nax-agent paths for the fixture below. */
 const DEST = new Map([
   ["src/agents/native/client.ts", "src/native/client.ts"],
+  ["src/agents/native/complete.ts", "src/native/complete.ts"],
   ["src/agents/native/models.ts", "src/native/models.ts"],
+  ["src/agents/infra/index.ts", "src/infra/index.ts"],
+  ["src/agents/session-types.ts", "src/session/session-types.ts"],
+  ["src/permissions/approvals-link.ts", "src/permissions/approvals-link.ts"],
   ["src/tools/index.ts", "src/tools/index.ts"],
   ["src/tools/git.ts", "src/tools/git.ts"],
   ["src/utils/sort.ts", "src/internal/sort.ts"],
@@ -62,6 +66,28 @@ describe("rewriteMovedFile", () => {
         'import { g } from "#src/tools/git";',
       ].join("\n"),
     );
+  });
+
+  test("aliases a relative specifier whose relation the move breaks", () => {
+    fixture();
+    // Real pairs from the manifest (scripts/s1-move-manifest.json), not synthetic ones:
+    // both files land in a different directory, so the old relative path no longer names
+    // the target. `complete.ts` moves up a level (native/) and keeps reaching the session
+    // contract, which moves sideways into session/; `approvals-link.ts` stays put and
+    // reaches agents/infra/, which moves to infra/. 37 such sites exist on the real tree.
+    //
+    // The sibling test pins a depth change incidentally, inside an assertion that reads
+    // as "this is how sort is reached". This one isolates a relocation — the shape most of
+    // those 37 take — and names the reason: keep the old text here and it dangles.
+    const broken: readonly [string, string, string][] = [
+      ["src/agents/native/complete.ts", "../session-types", "#src/session/session-types"],
+      ["src/permissions/approvals-link.ts", "../agents/infra", "#src/infra/index"],
+    ];
+    for (const [from, spec, alias] of broken) {
+      const { text, errors } = rewriteMovedFile(root, from, `import { x } from "${spec}";\n`, DEST);
+      expect(errors).toEqual([]);
+      expect(text).toBe(`import { x } from "${alias}";\n`);
+    }
   });
 
   test("points moved tests at nax-agent's helper barrel", () => {
