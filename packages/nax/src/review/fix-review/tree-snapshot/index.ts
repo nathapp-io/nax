@@ -23,15 +23,9 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  gitlinkSafeAdd,
-  gitSpawnEnv,
-  hardenedGitArgv,
-  type SpawnOptions,
-  type SpawnResult,
-  typedSpawn,
-} from "@nathapp/nax-agent/internal";
+import { gitlinkSafeAdd, gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
+import { type SpawnOptions, type SpawnResult, typedSpawn } from "@/utils/bun-deps";
 
 /**
  * `diffBetween` pathspecs: the whole tree, minus every `.nax/` directory. All

@@ -33,6 +33,7 @@
  * ```
  */
 
+import "../src/agent-runtime/install";
 import { existsSync, mkdirSync, symlinkSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

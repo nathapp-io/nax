@@ -136,7 +136,9 @@ interface PartialSubprocess {
  * what the slots require, while the implementation hands the fake through
  * untouched, because the source reads only the PartialSubprocess subset.
  */
-function presentAsSpawn(mockFn: (cmd: string[], opts?: Record<string, unknown>) => PartialSubprocess): typeof Bun.spawn;
+function presentAsSpawn(
+  mockFn: (cmd: string[], opts?: Record<string, unknown>) => PartialSubprocess,
+): typeof Bun.spawn & typeof _gitDeps.spawn;
 function presentAsSpawn(mockFn: (cmd: string[], opts?: Record<string, unknown>) => PartialSubprocess): unknown {
   return (cmd: string[], opts?: Record<string, unknown>) => mockFn(cmd, opts);
 }

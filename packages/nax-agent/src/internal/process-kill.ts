@@ -26,6 +26,10 @@
  * ```
  */
 export function killProcessGroup(pid: number, signal: NodeJS.Signals | number): boolean {
+  // A pid that is not a real child reaches other processes: 0 is our own group,
+  // 1 (as -1) is every process we may signal, and a negative pid is init or a
+  // foreign group. A spawn that failed has no pid, so refuse rather than signal.
+  if (!Number.isInteger(pid) || pid <= 1) return false;
   // Try process group kill first (negative PID)
   try {
     process.kill(-pid, signal);

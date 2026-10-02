@@ -7,7 +7,6 @@
     "src/cost/usage-math.ts": 0.1905,
     "src/infra/credentials-config.ts": 0.5714,
     "src/internal/agent-output-env.ts": 0.625,
-    "src/internal/bun-deps.ts": 0.2692,
     "src/internal/command-spec/index.ts": 0.6111,
     "src/internal/git-exec.ts": 0.7647,
     "src/native/auth.ts": 0.4104,

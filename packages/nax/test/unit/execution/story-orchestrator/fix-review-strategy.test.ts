@@ -22,7 +22,6 @@
  * tree and the right findings, and both are only observable through it.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { SpawnOptions, SpawnResult } from "@nathapp/nax-agent/internal";
 import {
   makeCallOp,
   makeMockAgentManager,
@@ -43,6 +42,7 @@ import {
   testWriterRectifyOp,
 } from "@/operations";
 import { _treeSnapshotDeps } from "@/review/fix-review/tree-snapshot";
+import type { SpawnOptions, SpawnResult } from "@/utils/bun-deps";
 
 const WORKDIR = "/tmp/nax-us-005-fix-review";
 const STORY_REF = "ref-story-start";

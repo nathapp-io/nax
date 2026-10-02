@@ -11,7 +11,8 @@
  * DEFAULT_TEST_FILE_PATTERNS for backward compatibility.
  */
 
-import { errorMessage, gitSpawnEnv, hardenedGitArgv, spawn } from "@nathapp/nax-agent/internal";
+import { errorMessage, gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
+import { spawn } from "@/utils/bun-deps";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";

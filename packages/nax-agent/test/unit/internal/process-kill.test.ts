@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { killProcessGroup } from "#src/internal/process-kill";
 
 describe("killProcessGroup", () => {
@@ -127,35 +127,16 @@ describe("killProcessGroup", () => {
     expect(result).toBe(true);
     expect(killCalls[0]).toEqual({ pid: -9999, signal: 9 });
   });
+});
 
-  test("handles zero PID gracefully", () => {
-    const killCalls: Array<{ pid: number | string; signal?: string | number }> = [];
-
-    process.kill = ((pid, signal) => {
-      killCalls.push({ pid, signal });
-    }) as typeof process.kill;
-
-    const result = killProcessGroup(0, "SIGTERM");
-
-    expect(result).toBe(true);
-    // Note: -0 === 0 in JavaScript, so we just check that it's called with a zero-like pid
-    expect(killCalls[0]?.signal).toBe("SIGTERM");
-    expect(Object.is(killCalls[0]?.pid, -0) || killCalls[0]?.pid === 0).toBe(true);
-  });
-
-  test("handles negative PID (already negative process group ID)", () => {
-    const killCalls: Array<{ pid: number | string; signal?: string | number }> = [];
-
-    process.kill = ((pid, signal) => {
-      killCalls.push({ pid, signal });
-    }) as typeof process.kill;
-
-    // Note: killProcessGroup receives positive PID and negates it
-    // But if given negative, it tries -(−pid) = pid (which becomes positive)
-    const result = killProcessGroup(-1234, "SIGTERM");
-
-    expect(result).toBe(true);
-    // Should negate: -(-1234) = 1234
-    expect(killCalls[0]).toEqual({ pid: 1234, signal: "SIGTERM" });
+describe("killProcessGroup refuses a pid that would reach other processes", () => {
+  test.each([0, 1, -1, -1234, Number.NaN])("pid %p signals nothing and returns false", (pid) => {
+    const spy = spyOn(process, "kill").mockImplementation(() => true);
+    try {
+      expect(killProcessGroup(pid, "SIGKILL")).toBe(false);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

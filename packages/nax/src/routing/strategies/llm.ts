@@ -6,9 +6,9 @@
  * Cache lives in llm-cache.ts; re-exported here for backward compat.
  */
 
-import { typedSpawn } from "@nathapp/nax-agent/internal";
 import type { UserStory } from "@/prd";
 import { OneShotPromptBuilder, type RoutingCandidate, type SchemaDescriptor } from "@/prompts";
+import { typedSpawn } from "@/utils/bun-deps";
 
 // Re-export cache utilities (now live in llm-cache.ts) — backward compat
 export {

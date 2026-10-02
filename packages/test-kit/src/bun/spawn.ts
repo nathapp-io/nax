@@ -30,6 +30,7 @@
  *   ).spawn;
  */
 import { mock } from "bun:test";
+import type { CaseRuntime } from "../cases/runtime-types";
 
 /** What `Bun.spawn` returns, as the source code consumes it. */
 export type SpawnResult = ReturnType<typeof Bun.spawn>;
@@ -71,7 +72,12 @@ export interface SpawnCall {
 
 export interface SpawnStub {
   /** Assignable to `Bun.spawn` and to every `_xDeps.spawn` in src/. */
-  spawn: typeof Bun.spawn;
+  /**
+   * Assignable both to `typeof Bun.spawn` (nax's own spawn seams) and to
+   * nax-agent's `AgentRuntime["spawn"]` seams, which are typed against the same
+   * shape as CaseRuntime.
+   */
+  spawn: typeof Bun.spawn & CaseRuntime["spawn"];
   /** Every call, in order. */
   calls: SpawnCall[];
   /** The most recent call's resolved `env`, for env-plumbing assertions. */
@@ -162,14 +168,14 @@ export function makeSpawnResult(result: FakeProcSpec | string = {}): unknown {
 }
 
 /**
- * A `spawn` stub typed as `typeof Bun.spawn`, recording every call.
+ * A `spawn` stub, recording every call.
  *
  * `handler` returns the stdout string, a {@link FakeProcSpec}, or a
  * {@link SpawnResult} built by {@link makeSpawnResult}. Omit it for a stub that
  * always succeeds silently.
  */
 export function makeSpawn(handler?: (call: SpawnCall) => FakeProcSpec | string | SpawnResult): SpawnStub;
-export function makeSpawn(handler: (call: SpawnCall) => FakeProcSpec | string | SpawnResult = () => "") {
+export function makeSpawn(handler: (call: SpawnCall) => FakeProcSpec | string | SpawnResult = () => ""): unknown {
   const calls: SpawnCall[] = [];
   const impl = mock((...args: unknown[]): SpawnResult => {
     // Bun.spawn takes either (cmd, opts) or a single options object with `cmd`.

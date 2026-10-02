@@ -20,7 +20,8 @@
  */
 
 import path from "node:path";
-import { normalizeCommandSpec, type QualityCommandSpec, spawn } from "@nathapp/nax-agent/internal";
+import { normalizeCommandSpec, type QualityCommandSpec } from "@nathapp/nax-agent/internal";
+import { spawn } from "@/utils/bun-deps";
 import { getSafeLogger } from "../logger";
 import { assertTrusted } from "../trust";
 import { parseCommandToArgv } from "../utils/command-argv";

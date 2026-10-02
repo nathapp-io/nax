@@ -3,7 +3,7 @@
  */
 
 import { appendFileSync } from "node:fs";
-import { cancellableDelay } from "@nathapp/nax-agent/internal";
+import { cancellableDelay } from "@/utils/bun-deps";
 import { getSafeLogger } from "../logger";
 import type { StatusWriter } from "./status-writer";
 

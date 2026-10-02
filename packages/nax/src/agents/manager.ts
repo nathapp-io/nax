@@ -1,10 +1,10 @@
 /** AgentManager owns agent lifecycle and fallback policy (ADR-012). */
 
 import { EventEmitter } from "node:events";
-import { cancellableDelay } from "@nathapp/nax-agent/internal";
 import { DEFAULT_AGENT_NAME } from "@/config";
 import type { ModelsConfig } from "@/config/schema-types";
 import type { AgentManagerConfig } from "@/config/selectors";
+import { cancellableDelay } from "@/utils/bun-deps";
 import { resolvePermissions } from "../config/permissions";
 import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";

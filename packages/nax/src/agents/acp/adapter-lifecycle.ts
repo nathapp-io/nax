@@ -5,11 +5,11 @@
 
 import { createHash } from "node:crypto";
 import type { ProtocolIds, SessionModel } from "@nathapp/nax-agent";
-import { sleep, which } from "@nathapp/nax-agent/internal";
 import type { RateCard } from "@/agents/cost";
 import { resolveRateCard as defaultResolveRateCard } from "@/agents/cost";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
+import { sleep, which } from "@/utils/bun-deps";
 import type { SessionHandle } from "../types";
 import type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
 import { parseAgentError } from "./parse-agent-error";

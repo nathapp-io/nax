@@ -16,6 +16,7 @@
  * Fail fast here instead.
  */
 
+import "../src/agent-runtime/install";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

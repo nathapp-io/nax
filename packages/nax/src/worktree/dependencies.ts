@@ -11,7 +11,7 @@ import { WorktreeDependencyPreparationError } from "./types";
  * its own export because `test/unit/worktree/dependencies.test.ts` injects
  * through it.
  */
-export const _worktreeDependencyDeps = _argvExecDeps;
+export const _worktreeDependencyDeps: typeof _argvExecDeps = _argvExecDeps;
 
 /**
  * Resolve the cwd a story executes from inside its worktree, installing

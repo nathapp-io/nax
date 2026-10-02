@@ -14,7 +14,8 @@
  * module under the file-size limit.
  */
 
-import { gitSpawnEnv, hardenedGitArgv, typedSpawn } from "@nathapp/nax-agent/internal";
+import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
+import { typedSpawn } from "@/utils/bun-deps";
 import type { TestPatternConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";

@@ -66,6 +66,7 @@ src/
 ├── config/             # sandbox/approval/catalog config schemas and the native-agent config
 ├── infra/              # NaxError, the logger slot, credential config, the spin breaker
 ├── internal/           # below-the-line helpers: git, locks, argv exec, redaction, command-spec
+├── runtime/            # the runtime slot: AgentRuntime contract, Node default, which
 ├── index.ts            # the `.` entry
 └── internal.ts         # the `./internal` entry
 ```
@@ -86,6 +87,7 @@ nax wiring tests that use them.
 
 ## Engineering Rules
 
+- **Spawn only through the runtime slot.** `runtimeSpawn` / `getAgentRuntime().spawn` from `#src/runtime/index`; never `Bun.spawn` or `node:child_process` directly. The Node runtime is the default; nax installs a Bun runtime (`packages/nax/src/agent-runtime/install.ts`). New spawn behaviour gets a case in `@nathapp/nax-test-kit/cases/spawn-cases`, which both runtimes run.
 - **The package boundary is a gate, not a convention.** `bun run check:package-boundaries`
   (from `packages/nax`) scans every package. nax-agent imports only node:/bun builtins, its
   declared dependencies, `#src/` and `#test/`, relative paths that stay inside the package,

@@ -5,8 +5,8 @@
  */
 
 import { getSafeLogger } from "#src/infra/index";
+import { runtimeSpawn } from "#src/runtime/index";
 import { drainBounded } from "./bounded-io";
-import { spawn } from "./bun-deps";
 import { hardenedGitArgv, hardenedGitEnv } from "./git-env";
 
 /**
@@ -34,7 +34,7 @@ const TIMEOUT_RETRY_GIT_TIMEOUT_MS = 3_000;
  * @internal
  */
 export const _gitDeps = {
-  spawn,
+  spawn: runtimeSpawn,
   getSafeLogger,
   gitTimeoutMs: GIT_TIMEOUT_MS,
   timeoutRetryGitTimeoutMs: TIMEOUT_RETRY_GIT_TIMEOUT_MS,

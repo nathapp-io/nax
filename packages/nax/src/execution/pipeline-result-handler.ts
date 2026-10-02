@@ -7,8 +7,9 @@
  */
 
 import { existsSync } from "node:fs";
-import { gitSpawnEnv, spawn } from "@nathapp/nax-agent/internal";
+import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { pipelineEventBus } from "@/pipeline/event-bus";
+import { spawn } from "@/utils/bun-deps";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import type { InteractionChain } from "../interaction/chain";

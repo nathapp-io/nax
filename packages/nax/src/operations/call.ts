@@ -16,7 +16,7 @@
  * well under the 600-line gate on purpose.
  */
 
-import { cancellableDelay } from "@nathapp/nax-agent/internal";
+import { cancellableDelay } from "@/utils/bun-deps";
 import { buildHopCallback } from "./build-hop-callback";
 import { dispatchCompleteOp } from "./call-dispatch-complete";
 import { buildDispatchPrologue } from "./call-dispatch-prologue";
