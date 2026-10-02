@@ -265,6 +265,24 @@ function pct(hit: number, found: number): number {
   return found === 0 ? 1 : hit / found;
 }
 
+const fmtPct = (n: number) => `${(n * 100).toFixed(2)}%`;
+
+/**
+ * The aggregate floor's failures. A report with no `src/` lines at all fails on its
+ * own: `pct` reads 0/0 as 100%, so an empty or mis-scoped lcov (wrong cwd, paths that
+ * no longer start with `src/`) would otherwise pass every floor.
+ */
+export function aggregateFailures(totals: Totals): string[] {
+  if (totals.linesFound === 0) return ["the report measured no src/ lines (empty or mis-scoped lcov)"];
+  const lines = pct(totals.linesHit, totals.linesFound);
+  const functions = pct(totals.fnHit, totals.fnFound);
+  const failures: string[] = [];
+  if (lines < FLOOR.lines) failures.push(`line coverage ${fmtPct(lines)} < floor ${fmtPct(FLOOR.lines)}`);
+  if (functions < FLOOR.functions)
+    failures.push(`function coverage ${fmtPct(functions)} < floor ${fmtPct(FLOOR.functions)}`);
+  return failures;
+}
+
 export interface PerFileBaseline {
   updatedAt: string;
   /** Map of relative path -> recorded line coverage ratio (0-1) for every grandfathered file. */
@@ -319,7 +337,11 @@ export function findMissingBaselined(
     .sort((a, b) => a.file.localeCompare(b.file));
 }
 
-const TRANSPILER = new Bun.Transpiler({ loader: "tsx" });
+/** One transpiler per loader: `tsx` rejects valid `.ts` syntax such as `<T>(x: T) => x`. */
+const TRANSPILERS = {
+  ts: new Bun.Transpiler({ loader: "ts" }),
+  tsx: new Bun.Transpiler({ loader: "tsx" }),
+} as const;
 
 /** What is left of transpiled output that Bun does not record as executable. */
 const NON_EXECUTABLE: readonly RegExp[] = [
@@ -335,9 +357,16 @@ const NON_EXECUTABLE: readonly RegExp[] = [
  * `SF:` record for a file of types or re-exports only, so such a file's absence
  * from the report is expected, not a measurement hole.
  */
-export function hasExecutableCode(source: string): boolean {
-  const js = NON_EXECUTABLE.reduce((text, re) => text.replace(re, ""), TRANSPILER.transformSync(source));
-  return js.trim() !== "";
+export function hasExecutableCode(source: string, path = "file.ts"): boolean {
+  const transpiler = path.endsWith(".tsx") ? TRANSPILERS.tsx : TRANSPILERS.ts;
+  let js: string;
+  try {
+    js = transpiler.transformSync(source);
+  } catch {
+    // Source that does not transpile is never exempt: report it rather than crash the gate.
+    return true;
+  }
+  return NON_EXECUTABLE.reduce((text, re) => text.replace(re, ""), js).trim() !== "";
 }
 
 /**
@@ -527,7 +556,7 @@ async function main() {
   const functions = pct(totals.fnHit, totals.fnFound);
   const perFile = parsePerFileLines(lcovText);
   const unreported = requireAllFiles
-    ? findUnreportedFiles(sourceFiles(ROOT), perFile, (f) => hasExecutableCode(readFileSync(join(ROOT, f), "utf8")))
+    ? findUnreportedFiles(sourceFiles(ROOT), perFile, (f) => hasExecutableCode(readFileSync(join(ROOT, f), "utf8"), f))
     : [];
 
   const fmt = (n: number) => `${(n * 100).toFixed(2)}%`;
@@ -564,9 +593,7 @@ async function main() {
     return;
   }
 
-  const failures: string[] = [];
-  if (lines < FLOOR.lines) failures.push(`line coverage ${fmt(lines)} < floor ${fmt(FLOOR.lines)}`);
-  if (functions < FLOOR.functions) failures.push(`function coverage ${fmt(functions)} < floor ${fmt(FLOOR.functions)}`);
+  const failures = aggregateFailures(totals);
 
   const perFileOk = checkPerFile(perFile, { list: false });
   const allFilesOk = checkUnreported(unreported);

@@ -9,6 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  aggregateFailures,
   buildUpdatedBaseline,
   extractTestSummary,
   findMissingBaselined,
@@ -283,5 +284,31 @@ describe("findUnreportedFiles", () => {
 
   test("a file listed in UNMEASURABLE is exempt", () => {
     expect(findUnreportedFiles(["src/hole.ts"], perFile, allCode, { "src/hole.ts": "#1779 repro" })).toEqual([]);
+  });
+});
+
+describe("hasExecutableCode on .ts-only syntax", () => {
+  test("a generic arrow in a .ts file is code, not a transpile crash", () => {
+    expect(hasExecutableCode("export const id = <T>(x: T): T => x;\n", "src/id.ts")).toBe(true);
+  });
+
+  test("source the transpiler rejects counts as code (fail loud, never exempt)", () => {
+    expect(hasExecutableCode("export const = ;\n", "src/broken.ts")).toBe(true);
+  });
+});
+
+describe("aggregateFailures", () => {
+  test("a report that measured no src/ lines fails instead of reading as 100%", () => {
+    expect(aggregateFailures({ linesFound: 0, linesHit: 0, fnFound: 0, fnHit: 0 })).toEqual([
+      "the report measured no src/ lines (empty or mis-scoped lcov)",
+    ]);
+  });
+
+  test("totals at the floor pass, and each floor below it is named", () => {
+    expect(aggregateFailures({ linesFound: 10, linesHit: 8, fnFound: 10, fnHit: 8 })).toEqual([]);
+    expect(aggregateFailures({ linesFound: 10, linesHit: 7, fnFound: 10, fnHit: 7 })).toEqual([
+      "line coverage 70.00% < floor 80.00%",
+      "function coverage 70.00% < floor 80.00%",
+    ]);
   });
 });
