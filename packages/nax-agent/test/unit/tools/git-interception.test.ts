@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { buildGitArgv, DEFAULT_LOG_MAX_COUNT, GIT_ESCAPE_FLAGS } from "@nathapp/nax-agent";
 import type { CommandInterceptor, InterceptResult } from "@nathapp/nax-agent/internal";
-import { compileToolPolicy, gitTool } from "@nathapp/nax-agent/internal";
-import { makeSpawn, withDepsRestore } from "@test/helpers";
-import { createRtkInterceptor } from "@/execution/interceptors/rtk";
-import { _gitDeps } from "@/utils/git";
+import { _gitDeps, compileToolPolicy, gitTool } from "@nathapp/nax-agent/internal";
+import { makeSpawn, withDepsRestore } from "#test/helpers/index";
 
 let interceptor: CommandInterceptor | undefined;
 
@@ -114,7 +112,7 @@ describe("Git tool interception", () => {
     // assertion, leaving the guard inert (a module-global read reintroduced in
     // `gitWithTimeout` would leave this test green).
     interceptor = prefixer();
-    const { gitWithTimeout } = await import("@/utils/git");
+    const { gitWithTimeout } = await import("@nathapp/nax-agent/internal");
     await gitWithTimeout(["diff", "--name-only"], "/repo");
 
     expect(calls.at(-1)?.[0]).toBe("git");
@@ -151,23 +149,6 @@ describe("Git tool interception", () => {
     await gitTool.run({ subcommand: "log" }, ctx());
 
     expect(called).toBe(false);
-  });
-
-  test("a hint is stripped from output that also needs trimming", async () => {
-    // The call site runs postProcess BEFORE trimEnd, so it must strip a hint
-    // even when the hint is not the final characters — the trailing whitespace
-    // after it is exactly what trimEnd would otherwise remove.
-    _gitDeps.spawn = makeSpawn(() => "body\n[full diff: rtk git diff --no-compact]\n   ").spawn;
-    interceptor = createRtkInterceptor({
-      enabled: true,
-      verbs: ["log"],
-      _deps: { which: () => "/usr/bin/rtk", version: () => "0.45.0", record: () => {} },
-    });
-
-    const result = await gitTool.run({ subcommand: "log" }, ctx());
-
-    expect(result.isError).toBeFalsy();
-    expect(result.content).toBe("body");
   });
 });
 
