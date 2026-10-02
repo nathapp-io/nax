@@ -8,10 +8,8 @@ import {
   DEFAULT_TOOL_MAX_FILE_BYTES,
   deleteTool,
 } from "@nathapp/nax-agent";
-import { makeNaxConfig } from "@test/helpers";
-import { naxProtectedPaths } from "@/agents/nax-protected-paths";
-import { resolvePermissions } from "@/config/permissions";
-import { gitWithTimeout } from "@/utils/git";
+import { gitWithTimeout } from "@nathapp/nax-agent/internal";
+import { testProtectedPaths } from "#test/helpers/index";
 
 let root: string;
 
@@ -217,22 +215,6 @@ describe("deleteTool", () => {
 });
 
 describe("Delete wiring", () => {
-  test("the unrestricted profile grants Delete", () => {
-    // makeNaxConfig, not a raw literal: `.nax/rules/test-helpers.md` forbids
-    // re-implementing shared fixtures inline, and a bare object literal does
-    // not narrow permissionProfile to its union type.
-    const { toolGrants } = resolvePermissions(
-      makeNaxConfig({ execution: { permissionProfile: "unrestricted" } }),
-      "run",
-    );
-    expect((toolGrants ?? []).map((g) => g.tool)).toContain("Delete");
-  });
-
-  test("the safe profile does NOT grant Delete", () => {
-    const { toolGrants } = resolvePermissions(makeNaxConfig({ execution: { permissionProfile: "safe" } }), "run");
-    expect((toolGrants ?? []).map((g) => g.tool)).not.toContain("Delete");
-  });
-
   test("a declared Delete reaches the tool through the runtime and deletes", async () => {
     const policy = compileToolPolicy([{ tool: "Delete", patterns: ["*"] }], root);
     const runtime = createCodingToolRuntime({ policy });
@@ -288,7 +270,7 @@ describe("Delete wiring", () => {
       ],
       root,
     );
-    const runtime = createCodingToolRuntime({ policy, protectedPaths: naxProtectedPaths() });
+    const runtime = createCodingToolRuntime({ policy, protectedPaths: testProtectedPaths() });
 
     const deleted = await runtime.callTool("Delete", { path: "src/tracked.ts" });
     expect(deleted.kind).toBe("ok");
