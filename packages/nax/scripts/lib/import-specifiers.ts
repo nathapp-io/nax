@@ -36,8 +36,15 @@ export interface SpecifierSite {
 /**
  * [start, end) spans of string literals in `text` (the comment-stripped source),
  * tracking backslash escapes. A single/double-quoted string cannot span a raw
- * newline, so an unmatched quote — for example one inside a regex literal — is
- * not a span; that keeps the scan from swallowing real imports that follow it.
+ * newline, so an *unmatched* quote on a line is not a span; that keeps the scan
+ * from swallowing real imports that follow it.
+ *
+ * Regex literals and `${}` template interpolations are NOT modeled. A quote
+ * inside a regex literal that pairs with a later quote on the same line, and any
+ * specifier inside `${...}`, are therefore read as string data — so a real
+ * `import(...)` / `require(...)` in either position can be silently missed.
+ * Known limitation, pinned by test/unit/scripts/import-specifiers.test.ts, to be
+ * addressed in S2-6.
  */
 function stringSpans(text: string): Array<readonly [number, number]> {
   const spans: Array<readonly [number, number]> = [];

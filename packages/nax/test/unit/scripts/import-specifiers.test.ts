@@ -49,6 +49,22 @@ describe("specifierSites", () => {
     const src = 'const src = \'await import("@scope/pkg");\';\nconst f = await import("@scope/pkg");\n';
     expect(specifierSites(src).map((s) => [s.spec, s.kind])).toEqual([["@scope/pkg", "dynamic"]]);
   });
+
+  test("pins the known stringSpans blind spot for regex literals and template interpolation (S2-6)", () => {
+    // KNOWN LIMITATION, NOT desired behavior. stringSpans models neither regex
+    // literals nor `${}` template interpolation, so a quote inside a regex that
+    // pairs with a later quote on the same line swallows the real import as
+    // string data, and a specifier inside `${...}` is read as string text. Both
+    // real sites are silently dropped. This pins the current behavior to be
+    // fixed in S2-6; it does not assert that dropping them is correct.
+    const regexLine = 'const re = /"/g; const f = await import("@scope/pkg");';
+    // Assemble the `${...}` sequence rather than writing it in a string literal,
+    // so biome's noTemplateCurlyInString does not (correctly) flag the fixture.
+    const interp = "$" + '{await import("@scope/pkg")}';
+    const templateLine = `const s = \`x ${interp} y\`;`;
+    expect(specifierSites(regexLine)).toEqual([]);
+    expect(specifierSites(templateLine)).toEqual([]);
+  });
 });
 
 describe("rewriteSpecifiers", () => {

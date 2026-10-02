@@ -2,19 +2,10 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 0,
-    "looseCast": 12
+    "looseCast": 7
   },
-  "updatedAt": "2026-10-02T07:19:10.178Z",
+  "updatedAt": "2026-10-02T12:10:07.528Z",
   "byFile": {
-    "test/helpers/spawn.ts": {
-      "looseCast": 3
-    },
-    "test/helpers/absent.ts": {
-      "looseCast": 1
-    },
-    "test/helpers/deps.ts": {
-      "looseCast": 1
-    },
     "test/unit/internal/process-kill.test.ts": {
       "looseCast": 4
     },
