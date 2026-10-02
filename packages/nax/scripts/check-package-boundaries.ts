@@ -9,9 +9,8 @@
  *   package, and itself. Never `@nathapp/nax`, never a tsconfig alias (`@/`).
  * - packages/nax-ai imports neither @nathapp/nax nor @nathapp/nax-agent.
  * - packages/nax reaches nax-agent only through `@nathapp/nax-agent` or
- *   `@nathapp/nax-agent/internal`, plus three named helper subpaths
- *   (`@nathapp/nax-agent/test/helpers/{command-safety,sandbox,systemone-stub}`)
- *   from its own tests until S2-2. It may import test-kit only from test/ and
+ *   `@nathapp/nax-agent/internal`, and never a nax-agent test helper (S2-1
+ *   removed that export). It may import test-kit only from test/ and
  *   repo-tooling only from scripts/ and test/. Never a relative path into
  *   another package.
  * - packages/test-kit and packages/repo-tooling (private tooling) import no nax
@@ -53,9 +52,6 @@ const CODE = /\.(?:ts|tsx|mts|cts)$/;
 const SCAN_DIRS = ["src", "test", "bin", "scripts"];
 const AGENT = "@nathapp/nax-agent";
 const NAX_ALLOWED_AGENT_SPECS = new Set([AGENT, `${AGENT}/internal`]);
-const NAX_AGENT_HELPERS = new Set(
-  ["command-safety", "sandbox", "systemone-stub"].map((name) => `${AGENT}/test/helpers/${name}`),
-);
 const TEST_KIT = "@nathapp/nax-test-kit";
 const REPO_TOOLING = "@nathapp/nax-repo-tooling";
 const NAX_PACKAGES = new Set(["@nathapp/nax", AGENT, "@nathapp/nax-ai", TEST_KIT, REPO_TOOLING]);
@@ -130,8 +126,7 @@ function naxViolation(pkg: PackageInfo, file: string, spec: string): string | nu
       : `${REPO_TOOLING} imported outside scripts/ and test/`;
   }
   if (name !== AGENT || NAX_ALLOWED_AGENT_SPECS.has(spec)) return null;
-  if (inDir(pkg, file, "test") && NAX_AGENT_HELPERS.has(spec)) return null;
-  return `only ${[...NAX_ALLOWED_AGENT_SPECS].join(" or ")} (and ${[...NAX_AGENT_HELPERS].join(", ")} from test/)`;
+  return `only ${[...NAX_ALLOWED_AGENT_SPECS].join(" or ")}`;
 }
 
 /** test-kit and repo-tooling: leaf packages that import no nax package (repo-tooling's tests may use test-kit). */
