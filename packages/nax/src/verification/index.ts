@@ -13,7 +13,7 @@ export * from "./flake-triage-telemetry";
 export * from "./mutation";
 export * from "./rectification";
 export * from "./runners";
-export * from "./shell-quote";
+export { shellQuoteArg } from "./shell-quote";
 export { clearGitRootCache } from "./smart-runner";
 export * from "./test-baseline";
 export * from "./types";
