@@ -3,6 +3,14 @@
  * of which paths nax itself owns stays in nax and reaches the coding tools and
  * the sandbox as data. Built per dispatch so `NAX_GLOBAL_CONFIG_DIR` is read
  * live, as `globalConfigDir()` and `trustStorePath()` always were.
+ *
+ * MUST stay pure and side-effect free: `resolveCodingToolSupport` calls this
+ * twice per dispatch — once for the sandbox policy, once for every
+ * `ToolRunContext` — rather than threading one object through
+ * `resolveDispatchLauncher` (which kept a narrower signature for its direct
+ * test callers). Two calls only agree because the function reads the same
+ * inputs twice. Memoizing it would break `NAX_GLOBAL_CONFIG_DIR` being followed
+ * live, which a test pins.
  */
 import { globalConfigDir, PROJECT_NAX_DIR } from "@/config";
 import type { ProtectedPathsPolicy } from "@/tools";

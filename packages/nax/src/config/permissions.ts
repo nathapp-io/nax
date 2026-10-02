@@ -31,7 +31,16 @@ export type PipelineStage =
   | "acceptance"
   | "complete";
 
-/** Every PipelineStage, as an exhaustive record so a new stage cannot be forgotten here. */
+/**
+ * Every PipelineStage, as an exhaustive record so a new stage cannot be
+ * forgotten here.
+ *
+ * `McpStageSchema` (`src/config/schemas-mcp.ts`) hand-spells the same nine
+ * labels plus `"*"`. That copy is deliberately NOT derived — an unknown stage
+ * must be a schema error at load, not a server that silently attaches to
+ * nothing — but it is a second site to update, and unlike this one nothing in
+ * the compiler catches a stage added to only one of them.
+ */
 const PIPELINE_STAGES: Record<PipelineStage, true> = {
   plan: true,
   run: true,

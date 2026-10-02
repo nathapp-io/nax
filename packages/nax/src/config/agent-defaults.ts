@@ -2,10 +2,11 @@
  * The built-in agent defaults: protocol, default agent, and each agent's
  * built-in tier map.
  *
- * A dependency-free leaf so the schema, the `agent.protocol` gate and the
- * runtime fallbacks all read one definition (BUG-20: derived, never
- * hand-written at a second site). The gate imports it relatively, so it must
- * stay free of `@/` imports.
+ * One definition per default, so the schema, the `agent.protocol` gate and the
+ * runtime fallbacks all read the same value (BUG-20: derived, never
+ * hand-written at a second site). The gate imports this file relatively, so it
+ * must stay free of `@/` imports — that is the invariant to preserve here, not
+ * zero dependencies: `NATIVE_AGENT_NAME` now re-exports from `./native-agent`.
  */
 
 export type AgentProtocol = "acp" | "native" | "hybrid";

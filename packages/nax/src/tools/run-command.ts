@@ -298,7 +298,7 @@ async function refuseWithoutRunner(): Promise<DeclaredCommandResult> {
   return { success: false, exitCode: 1, output: MISSING_RUNNER_OUTPUT };
 }
 
-/** Kept out of `run`, which sits at its complexity baseline. */
+/** One named default, so the refusal path lives in a single place. */
 function declaredCommandRunner(opts: RunCommandToolOptions): DeclaredCommandRunner {
   return opts.runDeclaredCommand ?? refuseWithoutRunner;
 }
