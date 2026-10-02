@@ -103,4 +103,26 @@ describe("check-package-boundaries", () => {
     write("packages/nax-ai/src/bad.ts", 'import { a } from "@nathapp/nax-agent";\nimport { n } from "@nathapp/nax";\n');
     expect(whys()).toHaveLength(2);
   });
+
+  test("require() is a specifier the rules see, not an invisible hole", () => {
+    workspace();
+    write(
+      "packages/nax-agent/src/bad.ts",
+      'const n = require("@nathapp/nax");\nconst c = require("../../nax/src/config");\n',
+    );
+    expect(whys()).toEqual([
+      "packages/nax-agent/src/bad.ts @nathapp/nax imports nax",
+      "packages/nax-agent/src/bad.ts ../../nax/src/config relative import leaves the package",
+    ]);
+  });
+
+  test("a package with no boundary rule fails the gate instead of being skipped", () => {
+    workspace();
+    // No src/, no imports at all: the package a rule is missing for is exactly the
+    // one the gate would otherwise scan for nothing and still report green on.
+    write("packages/nax-extra/package.json", JSON.stringify({ name: "@nathapp/nax-extra" }));
+    expect(() => whys()).toThrow(
+      /no boundary rule for these packages, so the gate cannot enforce them: @nathapp\/nax-extra/,
+    );
+  });
 });

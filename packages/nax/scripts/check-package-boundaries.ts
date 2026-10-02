@@ -13,6 +13,11 @@
  *
  * Scans src/, test/, bin/ and scripts/ of every package.
  *
+ * Default-deny: a packages/* directory that has a package.json but no entry in
+ * RULES is a hard failure, not a skip. A rule keyed on a package name that the
+ * tree does not use would otherwise no-op silently and this gate would print
+ * [OK] while enforcing nothing.
+ *
  * Usage:
  *   bun scripts/check-package-boundaries.ts            # check the repo this script lives in
  *   bun scripts/check-package-boundaries.ts <repoRoot>  # check another tree (tests)
@@ -116,15 +121,31 @@ const RULES: Readonly<Record<string, Rule>> = {
   "@nathapp/nax": naxViolation,
 };
 
+/**
+ * Throws if any package in the tree has no rule. Skipping one would let a
+ * misnamed package.json (or a package added before its rule exists) report
+ * green with that package entirely unenforced.
+ */
+function assertEveryPackageEnforced(unenforced: readonly string[]): void {
+  if (unenforced.length === 0) return;
+  throw new Error(
+    `check-package-boundaries: no boundary rule for these packages, so the gate cannot enforce them: ${unenforced.join(", ")}. Add each name to RULES.`,
+  );
+}
+
 export function findBoundaryViolations(repoRoot: string): BoundaryViolation[] {
   const violations: BoundaryViolation[] = [];
+  const unenforced: string[] = [];
   const packagesDir = join(repoRoot, "packages");
   for (const entry of readdirSync(packagesDir).sort(byCodePoint)) {
     const dir = join(packagesDir, entry);
     if (!existsSync(join(dir, "package.json"))) continue;
     const pkg = loadPackage(dir);
     const rule = RULES[pkg.name];
-    if (rule === undefined) continue;
+    if (rule === undefined) {
+      unenforced.push(pkg.name);
+      continue;
+    }
     for (const file of SCAN_DIRS.flatMap((d) => codeFiles(join(dir, d)))) {
       for (const site of specifierSites(readFileSync(file, "utf8"))) {
         const why = rule(pkg, file, site.spec);
@@ -132,6 +153,7 @@ export function findBoundaryViolations(repoRoot: string): BoundaryViolation[] {
       }
     }
   }
+  assertEveryPackageEnforced(unenforced);
   return violations;
 }
 

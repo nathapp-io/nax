@@ -6,21 +6,27 @@
  * inside a comment is never reported or rewritten.
  *
  * Covered forms: `import ... from "x"` and `export ... from "x"` (type-only and
- * multi-line included), side-effect `import "x"`, dynamic `import("x")` and
- * inline type references `import("x").T`.
+ * multi-line included), side-effect `import "x"`, dynamic `import("x")`, inline
+ * type references `import("x").T`, and CommonJS `require("x")`. The require
+ * form is here because a boundary rule that cannot see it is a boundary rule
+ * that reports green on `require("@nathapp/nax")`.
  */
 import { stripComments } from "../check-import-cycles";
 
 const STATIC_RE = /^[ \t]*(?:import|export)\s+(?:type\s+)?[A-Za-z0-9_$*,{}\s]*?from\s+["']([^"']+)["']/gm;
 const SIDE_EFFECT_RE = /^[ \t]*import\s+["']([^"']+)["']/gm;
 const DYNAMIC_RE = /\bimport\(\s*["']([^"']+)["']\s*\)/g;
+const REQUIRE_RE = /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
 
-/** One specifier occurrence. `prelude` is the statement text before the quote (empty for `import("x")`). */
+/**
+ * One specifier occurrence. `prelude` is the statement text before the quote
+ * (empty for `import("x")`, the `require` call head for `require("x")`).
+ */
 export interface SpecifierSite {
   readonly spec: string;
   /** Offset of the first character of the specifier (inside the quotes). */
   readonly start: number;
-  readonly kind: "static" | "side-effect" | "dynamic";
+  readonly kind: "static" | "side-effect" | "dynamic" | "require";
   readonly prelude: string;
 }
 
@@ -38,6 +44,7 @@ export function specifierSites(source: string): SpecifierSite[] {
   add(STATIC_RE, "static");
   add(SIDE_EFFECT_RE, "side-effect");
   add(DYNAMIC_RE, "dynamic");
+  add(REQUIRE_RE, "require");
   return sites.sort((a, b) => a.start - b.start);
 }
 
@@ -56,6 +63,11 @@ function statementStart(site: SpecifierSite): number {
  * Replaces specifiers. `map` returns the new specifier, a whole-statement
  * replacement (static sites only), or `null` to keep the site unchanged.
  * Offsets are applied back to front, so earlier ones stay valid.
+ *
+ * A `require` site takes the specifier-string form only: `require("x")` is a
+ * call inside an expression, so splicing a statement in its place would write
+ * `const { a } = import { a } from "..."`. It therefore throws, like the other
+ * non-static kinds.
  */
 export function rewriteSpecifiers(source: string, map: (site: SpecifierSite) => SiteRewrite): string {
   let out = source;
