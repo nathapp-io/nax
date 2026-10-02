@@ -37,4 +37,22 @@ describe("nax-agent's spawn seams resolve the runtime slot per call", () => {
     expect(() => _execSourceDeps.spawn(["helper"])).toThrow("recorded");
     expect(rt.calls).toEqual([{ cmd: ["helper"], stdin: "pipe" }]);
   });
+
+  test("_execSourceDeps.spawn refuses a runtime that gave a piped spawn no stdin (CREDENTIAL_HELPER_FAILED)", () => {
+    const noStdin: AgentRuntime = {
+      spawn: () => ({
+        stdout: new ReadableStream<Uint8Array>(),
+        stderr: new ReadableStream<Uint8Array>(),
+        exited: Promise.resolve(0),
+        pid: 1,
+        exitCode: 0,
+        signalCode: null,
+        kill: () => {},
+      }),
+    };
+    setAgentRuntime(noStdin);
+    expect(() => _execSourceDeps.spawn(["helper"])).toThrow(
+      expect.objectContaining({ code: "CREDENTIAL_HELPER_FAILED" }),
+    );
+  });
 });
