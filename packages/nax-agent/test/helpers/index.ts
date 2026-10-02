@@ -20,6 +20,15 @@ export { makeSpawn, makeSpawnResult } from "@nathapp/nax-test-kit/bun/spawn";
 export { cleanupTempDir, makeTempDir, withTempDir } from "@nathapp/nax-test-kit/bun/temp";
 export { waitForCondition, withTimeout } from "@nathapp/nax-test-kit/bun/timeout";
 export {
+  type LogCall,
+  type MockLogger,
+  makeLogger,
+  withDebugSpy,
+  withInfoSpy,
+  withWarnSpy,
+} from "./agent-logger";
+export { assertCaughtInstanceOf, assertNaxError } from "./assert-nax-error";
+export {
   GUARD_HIGH_ANSWER,
   GUARD_LOW_ANSWER,
   GUARD_THRESHOLD,
