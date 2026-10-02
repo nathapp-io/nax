@@ -11,8 +11,11 @@
  * ratchet and no missing-file guard, so the floors stay enforced here by parsing
  * the lcov report.
  *
- * Scope: `test/unit/`, `test/integration/` and `test/ui/`, in ONE `bun test`
- * invocation (~47s), measuring `src/` only — see AGGREGATE_SCOPE_PREFIX. It used to be the unit suite alone, on the grounds that Bun
+ * Scope: whichever of `test/unit/`, `test/integration/` and `test/ui/` the package
+ * has, in ONE `bun test` invocation, measuring the package's `src/` only — see
+ * AGGREGATE_SCOPE_PREFIX. The package is the current directory, or `--package=<dir>`;
+ * its baseline lives in `<package>/scripts/baselines/`. In nax it used to be the unit
+ * suite alone, on the grounds that Bun
  * "cannot merge coverage across the separate process-group invocations the wrapper
  * uses" and that the other suites "add little source coverage" — the first is true
  * of scripts/run-tests.ts's phases but not of a single invocation given all three
@@ -25,7 +28,7 @@
  * (e.g. 12% -> 0%) inside an 87%-covered repo. A second ratchet, in the same
  * style as check-file-sizes.ts / check-nax-error.ts, tracks every `src/`
  * file whose unit-suite line coverage sits below PER_FILE_FLOOR. Files already
- * below it are grandfathered in scripts/baselines/coverage-per-file-baseline.json
+ * below it are grandfathered in <package>/scripts/baselines/coverage-per-file-baseline.json
  * at their current pct; the gate then fails if a NEW file drops below the floor,
  * or a grandfathered file's coverage falls further below its recorded baseline.
  * Both floors read the same merged report, so a file covered only by an
@@ -41,10 +44,11 @@
  * recorded number rather than dropping it.
  *
  * Usage:
- *   bun scripts/check-coverage.ts                   # run + enforce floors (CI mode)
- *   bun scripts/check-coverage.ts --report          # run + print summary, never fail
- *   bun scripts/check-coverage.ts --update-baseline # run + save new per-file baseline
- *   bun scripts/check-coverage.ts --list            # run + print all below-floor files
+ *   bun run test:coverage          # run + enforce floors (CI mode)
+ *   bun run test:coverage:report   # run + print summary, never fail
+ *   bun run test:coverage:update   # run + save new per-file baseline (--update-baseline)
+ *   bun run test:coverage:list     # run + print all below-floor files (--list)
+ *   (each package script calls this file from its own package directory)
  *
  * Exit codes:
  *   0 — coverage at/above floor (or --report / --update-baseline / --list)
@@ -52,10 +56,11 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
 
-const ROOT = join(import.meta.dir, "..");
+const ROOT = gatePackageRoot();
 const LCOV_PATH = join(ROOT, "coverage", "lcov.info");
-const PER_FILE_BASELINE_FILE = join(import.meta.dir, "baselines", "coverage-per-file-baseline.json");
+const PER_FILE_BASELINE_FILE = gateBaselinePath(ROOT, "coverage-per-file-baseline.json");
 
 /** Enforced floor. Matches the documented 80% rule (.claude/rules/common/testing.md). */
 const FLOOR = { lines: 0.8, functions: 0.8 };
@@ -72,14 +77,7 @@ const FLOOR = { lines: 0.8, functions: 0.8 };
  */
 const AGGREGATE_SCOPE_PREFIX = "src/";
 
-/**
- * nax-agent's sources, as lcov names them from this package (`../nax-agent/src/...`).
- * nax's own tests still exercise them, and nax-agent's tests run in the same
- * invocation (AGENT_SUITES), so the gate measures exactly the union it measured
- * before the S1-5 move. nax-agent's own tests alone do not reach the floor yet.
- */
-const AGENT_SCOPE_PREFIX = "../nax-agent/src/";
-const SCOPE_PREFIXES: readonly string[] = [AGGREGATE_SCOPE_PREFIX, AGENT_SCOPE_PREFIX];
+const SCOPE_PREFIXES: readonly string[] = [AGGREGATE_SCOPE_PREFIX];
 
 function inScope(file: string, prefixes: string | readonly string[]): boolean {
   return (typeof prefixes === "string" ? [prefixes] : prefixes).some((p) => file.startsWith(p));
@@ -107,14 +105,12 @@ const PER_FILE_EPSILON = 0.001;
  */
 export const UNMEASURABLE: Record<string, string> = {};
 
-/** Suites the gate measures, in one invocation. `test/e2e/` is deliberately out. */
-const AGENT_SUITES = ["../nax-agent/test/unit/", "../nax-agent/test/integration/"];
-const GATED_SUITES = [
-  "test/unit/",
-  "test/integration/",
-  "test/ui/",
-  ...AGENT_SUITES.filter((s) => existsSync(join(ROOT, s))),
-];
+/** Suites a package may have; the gate runs the ones that exist, in ONE invocation. `test/e2e/` is deliberately out. */
+export const CANDIDATE_SUITES = ["test/unit/", "test/integration/", "test/ui/"] as const;
+
+export function gatedSuites(root: string, exists: (path: string) => boolean = existsSync): string[] {
+  return CANDIDATE_SUITES.filter((suite) => exists(join(root, suite)));
+}
 
 /** Wall-clock cap for the coverage run, in ms. A full merged run takes about 55s. */
 const RUN_TIMEOUT_MS = 300_000;
@@ -167,11 +163,16 @@ async function runCoverage(): Promise<number> {
   // Mirrors scripts/run-tests.ts: under AGENT=1 a green run stays quiet (just bun's
   // summary block) and the captured output is replayed only when the run fails.
   const quiet = process.env.AGENT === "1";
+  const suites = gatedSuites(ROOT);
+  if (suites.length === 0) {
+    console.error(`[coverage] no test/unit, test/integration or test/ui directory under ${ROOT}`);
+    return 1;
+  }
   const child = Bun.spawn(
     [
       "bun",
       "test",
-      ...GATED_SUITES,
+      ...suites,
       "--coverage",
       "--coverage-reporter=lcov",
       // Same per-test budget as the CI suite steps (`bun test <dir>
@@ -392,7 +393,7 @@ function checkPerFile(perFile: Map<string, number>, opts: { list: boolean }): bo
     console.error(
       `Currently below the ${(PER_FILE_FLOOR * 100).toFixed(0)}% per-file floor: ${belowFloor.length} files.`,
     );
-    console.error("Run 'bun scripts/check-coverage.ts --update-baseline' to initialize.");
+    console.error("Run 'bun run test:coverage:update' to initialize.");
     return false;
   }
 
@@ -440,7 +441,7 @@ function checkPerFile(perFile: Map<string, number>, opts: { list: boolean }): bo
     for (const v of grown) console.error(v);
   }
   console.error("\nIf a file's coverage genuinely improved, lower its baseline with:");
-  console.error("  bun scripts/check-coverage.ts --update-baseline");
+  console.error("  bun run test:coverage:update");
   return false;
 }
 
@@ -468,7 +469,7 @@ async function main() {
   const perFile = parsePerFileLines(lcovText);
 
   const fmt = (n: number) => `${(n * 100).toFixed(2)}%`;
-  console.log(`\n── coverage gate (${GATED_SUITES.join(", ")} → ${SCOPE_PREFIXES.join(", ")}) ──`);
+  console.log(`\n── coverage gate (${gatedSuites(ROOT).join(", ")} → ${SCOPE_PREFIXES.join(", ")}) ──`);
   console.log(`  lines:     ${fmt(lines)}  (${totals.linesHit}/${totals.linesFound}, floor ${fmt(FLOOR.lines)})`);
   console.log(`  functions: ${fmt(functions)}  (${totals.fnHit}/${totals.fnFound}, floor ${fmt(FLOOR.functions)})`);
 
@@ -507,7 +508,9 @@ async function main() {
   if (failures.length > 0) {
     console.error(`\n[coverage] FAIL — ${failures.join("; ")}`);
     console.error("Add tests for the uncovered code (see the per-file report above), or");
-    console.error("if the floor is genuinely too high, adjust FLOOR in scripts/check-coverage.ts.");
+    console.error(
+      "if the floor is genuinely too high, adjust FLOOR in packages/repo-tooling/scripts/check-coverage.ts.",
+    );
     process.exit(1);
   }
 

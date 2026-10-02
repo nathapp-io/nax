@@ -100,11 +100,11 @@ jobs:
 
       # Enforces the documented 80% floor over `src/`, aggregate and per file. Bun's
       # own coverageThreshold only exits non-zero with the `text` reporter enabled,
-      # and has no per-file ratchet, so scripts/check-coverage.ts parses lcov instead.
+      # and has no per-file ratchet, so packages/repo-tooling/scripts/check-coverage.ts parses lcov instead.
       # Re-runs unit + integration + ui in ONE invocation (~55s) — Bun writes a
       # single merged report per invocation and cannot merge across them, so the
-      # three steps above cannot be reused for this. It also gates nax-agent's
-      # sources: these suites run them, and the nax-agent job has no coverage step.
+      # three steps above cannot be reused for this. nax-agent gates its own
+      # sources in its own job.
       - name: Coverage floor
         run: bun run test:coverage
 

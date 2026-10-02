@@ -12,10 +12,11 @@ import {
   buildUpdatedBaseline,
   extractTestSummary,
   findMissingBaselined,
+  gatedSuites,
   parseLcov,
   parsePerFileLines,
   UNMEASURABLE,
-} from "@scripts/check-coverage";
+} from "#scripts/check-coverage";
 
 /** Builds an lcov body for the given files, each as a `covered/found` line pair. */
 function lcov(records: Array<[file: string, hit: number, found: number]>): string {
@@ -57,7 +58,7 @@ describe("parseLcov", () => {
     expect(totals).toEqual({ linesFound: 20, linesHit: 10, fnFound: 10, fnHit: 5 });
   });
 
-  test("counts nax-agent's sources, as lcov names them from nax", () => {
+  test("counts src/ only: a sibling package's records, as lcov names them, are out of scope", () => {
     const totals = parseLcov(
       lcovWithFns([
         ["src/a.ts", 9, 10, 4, 5],
@@ -66,7 +67,7 @@ describe("parseLcov", () => {
       ]),
     );
 
-    expect(totals).toEqual({ linesFound: 20, linesHit: 19, fnFound: 10, fnHit: 9 });
+    expect(totals).toEqual({ linesFound: 10, linesHit: 9, fnFound: 5, fnHit: 4 });
   });
 
   test("the scope prefix is injectable", () => {
@@ -97,9 +98,14 @@ describe("parsePerFileLines", () => {
     expect(parsePerFileLines(lcov([["src/empty.ts", 0, 0]])).get("src/empty.ts")).toBe(1);
   });
 
-  test("reports nax-agent's files under their lcov path", () => {
-    const perFile = parsePerFileLines(lcov([["../nax-agent/src/tools/git.ts", 9, 10]]));
-    expect([...perFile.keys()]).toEqual(["../nax-agent/src/tools/git.ts"]);
+  test("leaves a sibling package's files out of the per-file map", () => {
+    const perFile = parsePerFileLines(
+      lcov([
+        ["../nax-agent/src/tools/git.ts", 9, 10],
+        ["src/a.ts", 1, 2],
+      ]),
+    );
+    expect([...perFile.keys()]).toEqual(["src/a.ts"]);
   });
 });
 
@@ -200,5 +206,24 @@ describe("extractTestSummary", () => {
 
   test("returns an empty string when bun printed no summary", () => {
     expect(extractTestSummary(noise)).toBe("");
+  });
+});
+
+describe("gatedSuites", () => {
+  test("runs every candidate suite directory the package has, in order", () => {
+    const present = new Set(["/pkg/test/unit/", "/pkg/test/integration/", "/pkg/test/ui/"]);
+    expect(gatedSuites("/pkg", (p) => present.has(`${p}/`) || present.has(p))).toEqual([
+      "test/unit/",
+      "test/integration/",
+      "test/ui/",
+    ]);
+  });
+
+  test("skips a suite directory the package does not have", () => {
+    const present = new Set(["/pkg/test/unit/", "/pkg/test/integration/"]);
+    expect(gatedSuites("/pkg", (p) => present.has(`${p}/`) || present.has(p))).toEqual([
+      "test/unit/",
+      "test/integration/",
+    ]);
   });
 });
