@@ -5,7 +5,7 @@
  * skipLibCheck:false. Only diagnostics under the installed package's dist/
  * fail; third-party ones are ignored (the S2-7 api-surface precedent).
  */
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,14 +16,13 @@ const PKG = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE = join(PKG, "test/node/fixtures/packed-smoke.mjs");
 
 function run(cmd: string, args: string[], cwd: string): string {
-  try {
-    return execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  } catch (error) {
-    const e = error as { stdout?: string; stderr?: string; status?: number };
+  const proc = spawnSync(cmd, args, { cwd, encoding: "utf8" });
+  if (proc.status !== 0) {
     throw new Error(
-      `${cmd} ${args.join(" ")} (cwd ${cwd}) failed with status ${e.status}:\n${e.stdout ?? ""}${e.stderr ?? ""}`,
+      `${cmd} ${args.join(" ")} (cwd ${cwd}) failed with status ${proc.status}:\n${proc.stdout}${proc.stderr}`,
     );
   }
+  return proc.stdout;
 }
 
 let consumer = "";
@@ -86,7 +85,7 @@ describe("the packed tarball", () => {
     try {
       output = run(join(consumer, "node_modules/.bin/tsc"), ["-p", "tsconfig.json"], consumer);
     } catch (error) {
-      output = (error as Error).message;
+      output = String(error);
     }
     const ownDist = join(consumer, "node_modules/@nathapp/nax-agent/dist/");
     expect(output.split("\n").filter((line) => line.includes(ownDist))).toEqual([]);
