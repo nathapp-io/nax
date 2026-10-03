@@ -24,15 +24,15 @@
 import { applyModelTruncationPolicy, MODEL_MAX_BYTES } from "#src/tools/index";
 import type { HandlerOf } from "./loop-events/types.ts";
 import { nudgeOverheadBytes } from "./nudge.ts";
-import { nativeSessionScratchpadRoots, nativeTranscriptDirs } from "./session.ts";
+import type { NativeSessionState } from "./session.ts";
 
 /**
  * Where this session's spills belong, or `undefined` when the session is not
  * known to the runtime at all — in which case nothing is spilled and the marker
  * names no path, rather than naming a file written somewhere unreachable.
  */
-export function spillRootFor(sessionId: string): string | undefined {
-  return nativeSessionScratchpadRoots.get(sessionId) ?? nativeTranscriptDirs.get(sessionId);
+export function spillRootFor(state: NativeSessionState, sessionId: string): string | undefined {
+  return state.scratchpadRoots.get(sessionId) ?? state.transcriptDirs.get(sessionId);
 }
 
 /**
@@ -42,11 +42,12 @@ export function spillRootFor(sessionId: string): string | undefined {
  * naming the spill path and both byte counts.
  */
 export async function truncateNativeToolResult(
+  state: NativeSessionState,
   sessionId: string,
   body: string,
   opts: { readonly toolName?: string; readonly callId?: string; readonly reserveBytes?: number },
 ): Promise<string> {
-  const root = spillRootFor(sessionId);
+  const root = spillRootFor(state, sessionId);
   // `reserveBytes` is what the CALLER will add to this result after the policy
   // has run -- today only the spin-breaker nudge, which the turn loop prepends.
   // Anything appended or prepended downstream has to be charged against the
@@ -65,9 +66,7 @@ export async function truncateNativeToolResult(
     ...(root !== undefined
       ? {
           root,
-          spillPathStyle: nativeSessionScratchpadRoots.has(sessionId)
-            ? ("root-relative" as const)
-            : ("absolute" as const),
+          spillPathStyle: state.scratchpadRoots.has(sessionId) ? ("root-relative" as const) : ("absolute" as const),
         }
       : {}),
     maxBytes: Math.max(0, MODEL_MAX_BYTES - reserved),
@@ -80,9 +79,9 @@ export async function truncateNativeToolResult(
  * riding on the payload reserves its own bytes out of the result's budget, so
  * the ceiling holds after `withNudge` prepends it.
  */
-export function createTruncationHandler(sessionName: string): HandlerOf<"after_tool"> {
+export function createTruncationHandler(state: NativeSessionState, sessionName: string): HandlerOf<"after_tool"> {
   return async (payload) => {
-    const shaped = await truncateNativeToolResult(sessionName, payload.content, {
+    const shaped = await truncateNativeToolResult(state, sessionName, payload.content, {
       toolName: payload.toolName,
       callId: payload.callId,
       ...(payload.nudgeText !== undefined ? { reserveBytes: nudgeOverheadBytes(payload.nudgeText) } : {}),

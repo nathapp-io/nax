@@ -25,6 +25,7 @@ import type {
   LoopHandlerContext,
   LoopHandlerSet,
 } from "./loop-events/index.ts";
+import type { NativeSessionState } from "./session.ts";
 import type { toToolDefinitions } from "./tool-mapping.ts";
 import type { TurnRetryConfig } from "./turn-retry.ts";
 
@@ -56,6 +57,8 @@ export interface NativeSummaryResponse {
 }
 
 export interface TurnDeps {
+  /** The owning adapter's per-session state (S3 spec 5.2). Required: there is no process-global fallback. */
+  readonly sessionState: NativeSessionState;
   complete(
     messages: readonly ConversationMessage[],
     tools: ReturnType<typeof toToolDefinitions>,

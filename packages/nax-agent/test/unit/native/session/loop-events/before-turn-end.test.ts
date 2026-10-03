@@ -27,24 +27,25 @@ import { join } from "node:path";
 import { createSpinBreaker, DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
 import { createLoopEventRegistry } from "#src/native/session/loop-events/index";
 import type { BeforeTurnEndPayload } from "#src/native/session/loop-events/types";
-import { nativeTranscriptDirs } from "#src/native/session/session";
+import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { loadTranscript } from "#src/native/session/transcript-store";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import type { SendTurnOpts } from "#src/session/session-types";
 import { createTurnDeadline } from "#src/session/turn-deadline";
 import type { CodingTool } from "#src/tools/index";
+import { seedNativeSession } from "#test/helpers/index";
 
 const baseUsage = { inputTokens: 1, outputTokens: 1 };
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-before-turn-end", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-before-turn-end-"));
-  nativeTranscriptDirs.set(handle.id, dir);
+  sessionState = seedNativeSession(createNativeSessionState(), handle.id, { transcriptDir: dir });
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete(handle.id);
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -86,6 +87,7 @@ describe("runNativeTurn — before_turn_end and the bounded followUp channel", (
     const sent: unknown[][] = [];
     let calls = 0;
     const result = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       loopEvents: registry,
       complete: async (messages) => {
         calls += 1;
@@ -143,6 +145,7 @@ describe("runNativeTurn — before_turn_end and the bounded followUp channel", (
     });
     let calls = 0;
     const result = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       loopEvents: registry,
       complete: async () => {
         calls += 1;
@@ -175,6 +178,7 @@ describe("runNativeTurn — before_turn_end and the bounded followUp channel", (
     });
     let calls = 0;
     const result = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       complete: async () => {
         calls += 1;
         // Same call every round trip so the breaker fires on the second
@@ -221,6 +225,7 @@ describe("runNativeTurn — before_turn_end and the bounded followUp channel", (
     });
     let calls = 0;
     const result = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       complete: async () => {
         calls += 1;
         // Three identical malformed calls — the 3rd trips the budget.
@@ -258,6 +263,7 @@ describe("runNativeTurn — before_turn_end and the bounded followUp channel", (
     let now = 0;
     let calls = 0;
     const result = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       deadline: createTurnDeadline(30, () => now),
       complete: async () => {
         calls += 1;
@@ -293,6 +299,7 @@ describe("review #20: before_turn_end on the error path", () => {
       return {};
     });
     await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       loopEvents: registry,
       complete: async () => reply({ text: "done" }),
     });
@@ -308,6 +315,7 @@ describe("review #20: before_turn_end on the error path", () => {
     });
     const boom = new Error("provider down");
     const err = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       loopEvents: registry,
       complete: async () => {
         throw boom;
@@ -327,6 +335,7 @@ describe("review #20: before_turn_end on the error path", () => {
     const ac = new AbortController();
     // deps.signal (4th argument) is what the catch reads; opts.signal alone is not threaded into it.
     await runNativeTurn(handle, "hi", baseOpts({ signal: ac.signal }), {
+      sessionState,
       loopEvents: registry,
       signal: ac.signal,
       complete: async () => {

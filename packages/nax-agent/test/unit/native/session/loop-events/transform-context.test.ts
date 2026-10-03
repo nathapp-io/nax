@@ -7,30 +7,26 @@ import type { TranscriptMessage as NativeTranscriptMessage } from "@nathapp/nax-
 import {
   completeWithRecovery,
   createLoopEventRegistry,
+  createNativeSessionState,
   createTurnAccumulator,
   loadTranscript,
-  nativeSessionLastUsage,
-  nativeTranscriptDirs,
+  type NativeSessionState,
   runNativeTurn,
 } from "@nathapp/nax-agent/internal";
 import { getSafeLogger, setAgentLogger } from "#src/infra/index";
-import { makeLogger } from "#test/helpers/index";
+import { makeLogger, seedNativeSession } from "#test/helpers/index";
 
 const originalLogger = getSafeLogger();
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-transform", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-transform-"));
-  nativeTranscriptDirs.set("sess-transform", dir);
+  sessionState = seedNativeSession(createNativeSessionState(), "sess-transform", { transcriptDir: dir });
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete("sess-transform");
-  // Same hygiene as turn-loop-compaction.test.ts: the anchor is module-level
-  // state keyed by session id, and a stale entry would hand a later test a
-  // phantom anchor (turn-loop.ts reads it before the first request).
-  nativeSessionLastUsage.delete("sess-transform");
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -52,7 +48,7 @@ const opts = (over: Partial<SendTurnOpts> = {}): SendTurnOpts => ({
  * here needs a real anchor to protect.
  */
 function seedAnchor(): void {
-  nativeSessionLastUsage.set("sess-transform", { promptTokens: 100, anchorIndex: 0 });
+  sessionState.lastUsage.set("sess-transform", { promptTokens: 100, anchorIndex: 0 });
 }
 
 /**
@@ -78,6 +74,7 @@ describe("native turn loop — transform_context event", () => {
     setAgentLogger(logger);
     try {
       await runNativeTurn(handle, "hi", opts(), {
+        sessionState,
         loopEvents: registry,
         complete: async (messages) => {
           // Copied, not aliased: the loop pushes the assistant reply onto the
@@ -114,6 +111,7 @@ describe("native turn loop — transform_context event", () => {
     }));
     const sentWire: unknown[][] = [];
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       loopEvents: registry,
       complete: async (messages) => {
         sentWire.push([...messages]);
@@ -164,6 +162,7 @@ describe("completeWithRecovery — the honoured flag", () => {
       loopEvents: registry,
       roundTrip: 1,
       deps: {
+        sessionState,
         complete: async (messages) => {
           seen.push([...messages]);
           return reply();
@@ -197,6 +196,7 @@ describe("completeWithRecovery — the honoured flag", () => {
       loopEvents: createLoopEventRegistry(),
       roundTrip: 1,
       deps: {
+        sessionState,
         complete: async (messages) => {
           wireRef = messages; // the reference itself, not a copy — the identity pin
           return reply();
@@ -245,6 +245,7 @@ describe("completeWithRecovery — the honoured flag", () => {
       loopEvents: registry,
       roundTrip: 1,
       deps: {
+        sessionState,
         complete: async () => {
           attempts += 1;
           if (attempts === 1) {

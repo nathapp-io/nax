@@ -20,6 +20,7 @@ import { ASK_HUMAN_TOOL_NAME } from "#src/native/session/ask-human";
 import type { TranscriptMessage } from "#src/native/session/compaction";
 import { createInvalidCallBudget } from "#src/native/session/handle-invalid-tool-call";
 import { createLoopEventRegistry } from "#src/native/session/loop-events/index";
+import { createNativeSessionState } from "#src/native/session/session";
 import { codingToolsToDefinitions } from "#src/native/session/tool-mapping";
 import type { NativeTurnActivity } from "#src/native/session/turn-events";
 import { runToolBatch, type ToolBatchArgs } from "#src/native/session/turn-tool-batch";
@@ -29,6 +30,7 @@ import type { CodingTool } from "#src/tools/index";
 import { assertDefined } from "#test/helpers/index";
 
 const CANCELLED_CONTENT = "Not run: the turn was cancelled.";
+const sessionState = createNativeSessionState();
 
 const fakeRead: CodingTool = {
   name: "Read",
@@ -99,6 +101,7 @@ describe("runToolBatch — turn signal cancellation (US-002)", () => {
       },
     };
     const deps: TurnDeps = {
+      sessionState,
       signal: controller.signal,
       complete: async () => {
         throw new Error("unexpected");
@@ -125,6 +128,7 @@ describe("runToolBatch — turn signal cancellation (US-002)", () => {
       },
     };
     const deps: TurnDeps = {
+      sessionState,
       signal: controller.signal,
       complete: async () => {
         throw new Error("unexpected");
@@ -157,6 +161,7 @@ describe("runToolBatch — turn signal cancellation (US-002)", () => {
       },
     };
     const deps: TurnDeps = {
+      sessionState,
       signal: controller.signal,
       complete: async () => {
         throw new Error("complete must not be reached from a cancelled batch");
@@ -191,6 +196,7 @@ describe("runToolBatch — turn signal cancellation (US-002)", () => {
       },
     };
     const deps: TurnDeps = {
+      sessionState,
       signal: controller.signal,
       complete: async () => ({ text: "", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 }),
     };
@@ -222,6 +228,7 @@ describe("runToolBatch — turn signal cancellation (US-002)", () => {
       },
     };
     const deps: TurnDeps = {
+      sessionState,
       complete: async () => ({ text: "", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 }),
     };
 
@@ -250,6 +257,7 @@ describe("runToolBatch — turn signal cancellation (US-002)", () => {
       },
     };
     const deps: TurnDeps = {
+      sessionState,
       signal: controller.signal,
       complete: async () => ({ text: "", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 }),
     };
@@ -279,6 +287,7 @@ describe("runToolBatch — awaiting-human keepalive activity (US-004)", () => {
       },
     };
     const deps: TurnDeps = {
+      sessionState,
       complete: async () => ({ text: "", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 }),
       // The batch must forward an onWaiting that ALSO emits the activity; a
       // bare forwarding of `deps.onWaiting` never reaches `deps.onActivity`.

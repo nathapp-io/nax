@@ -9,7 +9,7 @@
  * 300 s Bash timeout):
  *
  *  - a session opened through the runtime has a scratchpad root recorded in
- *    `nativeSessionScratchpadRoots` (its workdir). The marker is then
+ *    the state (its workdir). The marker is then
  *    root-relative — `.nax/scratchpad/spill/<Tool>-<callId>.txt` — so it is
  *    openable from the directory the session's tools and shell start in (AC7).
  *  - a session driven without one (unit tests calling `runNativeTurn`
@@ -24,10 +24,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { nativeSessionScratchpadRoots, nativeTranscriptDirs } from "#src/native/session/session";
-import { truncateNativeToolResult } from "#src/native/session/truncation-handler";
+import { createNativeSessionState } from "#src/native/session/session";
+import { spillRootFor, truncateNativeToolResult } from "#src/native/session/truncation-handler";
 import { MODEL_MAX_BYTES } from "#src/tools/index";
-import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { cleanupTempDir, makeTempDir, seedNativeSession } from "#test/helpers/index";
 
 const SESSION_WORKDIR = "sess-with-workdir";
 const SESSION_TRANSCRIPT = "sess-transcript-only";
@@ -42,10 +42,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  nativeSessionScratchpadRoots.delete(SESSION_WORKDIR);
-  nativeSessionScratchpadRoots.delete(SESSION_BOTH);
-  nativeTranscriptDirs.delete(SESSION_TRANSCRIPT);
-  nativeTranscriptDirs.delete(SESSION_BOTH);
   cleanupTempDir(workdir);
   cleanupTempDir(transcriptDir);
 });
@@ -67,17 +63,20 @@ function namedPath(content: string): string {
 }
 
 // -----------------------------------------------------------------------------
-// AC7 — a session registered in nativeSessionScratchpadRoots with workdir W
-//       produces a `.nax/scratchpad/spill/...` marker, and the spill file
-//       exists under W/.nax/scratchpad/spill/.
+// AC7 — a session registered with a scratchpad root of W produces a
+//       `.nax/scratchpad/spill/...` marker, and the spill file exists under
+//       W/.nax/scratchpad/spill/.
 // -----------------------------------------------------------------------------
 
 describe("AC7: a session with a scratchpad root gets a root-relative marker under its workdir", () => {
   test("AC7: the marker names .nax/scratchpad/spill/Bash-<callId>.txt and the file exists under W", async () => {
-    nativeSessionScratchpadRoots.set(SESSION_WORKDIR, workdir);
+    const state = seedNativeSession(createNativeSessionState(), SESSION_WORKDIR, {
+      transcriptDir,
+      scratchpadRoot: workdir,
+    });
     const body = overCapBody();
 
-    const content = await truncateNativeToolResult(SESSION_WORKDIR, body, { toolName: "Bash", callId: "c1" });
+    const content = await truncateNativeToolResult(state, SESSION_WORKDIR, body, { toolName: "Bash", callId: "c1" });
 
     expect(namedPath(content)).toBe(".nax/scratchpad/spill/Bash-c1.txt");
     expect(markerLineOf(content)).toContain("(open with Read or ScratchpadRead)");
@@ -87,9 +86,12 @@ describe("AC7: a session with a scratchpad root gets a root-relative marker unde
   });
 
   test("AC7 boundary: a within-cap result is unchanged and spills nothing under W", async () => {
-    nativeSessionScratchpadRoots.set(SESSION_WORKDIR, workdir);
+    const state = seedNativeSession(createNativeSessionState(), SESSION_WORKDIR, {
+      transcriptDir,
+      scratchpadRoot: workdir,
+    });
 
-    const content = await truncateNativeToolResult(SESSION_WORKDIR, "exit 0\nfine\n", {
+    const content = await truncateNativeToolResult(state, SESSION_WORKDIR, "exit 0\nfine\n", {
       toolName: "Bash",
       callId: "c1b",
     });
@@ -99,7 +101,8 @@ describe("AC7: a session with a scratchpad root gets a root-relative marker unde
   });
 
   test("AC7 boundary: an unregistered session names no path at all", async () => {
-    const content = await truncateNativeToolResult("sess-unknown", overCapBody(), {
+    const state = createNativeSessionState();
+    const content = await truncateNativeToolResult(state, "sess-unknown", overCapBody(), {
       toolName: "Bash",
       callId: "c1c",
     });
@@ -113,16 +116,16 @@ describe("AC7: a session with a scratchpad root gets a root-relative marker unde
 });
 
 // -----------------------------------------------------------------------------
-// AC8 — a session registered only in nativeTranscriptDirs with directory T
-//       produces a marker naming an absolute path starting with T.
+// AC8 — a session registered only with a transcript directory of T produces a
+//       marker naming an absolute path starting with T.
 // -----------------------------------------------------------------------------
 
 describe("AC8: a session falling back to its transcript directory gets an absolute marker", () => {
   test("AC8: the marker names an absolute path starting with T", async () => {
-    nativeTranscriptDirs.set(SESSION_TRANSCRIPT, transcriptDir);
+    const state = seedNativeSession(createNativeSessionState(), SESSION_TRANSCRIPT, { transcriptDir });
     const body = overCapBody();
 
-    const content = await truncateNativeToolResult(SESSION_TRANSCRIPT, body, { toolName: "Bash", callId: "c2" });
+    const content = await truncateNativeToolResult(state, SESSION_TRANSCRIPT, body, { toolName: "Bash", callId: "c2" });
 
     const expected = join(transcriptDir, ".nax", "scratchpad", "spill", "Bash-c2.txt");
     expect(isAbsolute(expected)).toBe(true);
@@ -133,13 +136,19 @@ describe("AC8: a session falling back to its transcript directory gets an absolu
   });
 
   test("AC8 boundary: a scratchpad root wins over a transcript dir for the same session", async () => {
-    // Both maps hold the session — what a real open does when the runtime
-    // records a workdir. The scratchpad root is the session's shell root, so
-    // the marker must stay root-relative even though a transcript dir exists.
-    nativeSessionScratchpadRoots.set(SESSION_BOTH, workdir);
-    nativeTranscriptDirs.set(SESSION_BOTH, transcriptDir);
+    // Both collections hold the session — what a real open does when the
+    // runtime records a workdir. The scratchpad root is the session's shell
+    // root, so the marker must stay root-relative even though a transcript dir
+    // exists.
+    const state = seedNativeSession(createNativeSessionState(), SESSION_BOTH, {
+      transcriptDir,
+      scratchpadRoot: workdir,
+    });
 
-    const content = await truncateNativeToolResult(SESSION_BOTH, overCapBody(), { toolName: "Bash", callId: "c2b" });
+    const content = await truncateNativeToolResult(state, SESSION_BOTH, overCapBody(), {
+      toolName: "Bash",
+      callId: "c2b",
+    });
 
     expect(namedPath(content)).toBe(".nax/scratchpad/spill/Bash-c2b.txt");
     expect(existsSync(join(workdir, ".nax", "scratchpad", "spill", "Bash-c2b.txt"))).toBe(true);
@@ -147,9 +156,9 @@ describe("AC8: a session falling back to its transcript directory gets an absolu
   });
 
   test("AC8 boundary: a within-cap result through the transcript fallback names no path", async () => {
-    nativeTranscriptDirs.set(SESSION_TRANSCRIPT, transcriptDir);
+    const state = seedNativeSession(createNativeSessionState(), SESSION_TRANSCRIPT, { transcriptDir });
 
-    const content = await truncateNativeToolResult(SESSION_TRANSCRIPT, "exit 0\nfine\n", {
+    const content = await truncateNativeToolResult(state, SESSION_TRANSCRIPT, "exit 0\nfine\n", {
       toolName: "Bash",
       callId: "c2c",
     });
@@ -157,4 +166,20 @@ describe("AC8: a session falling back to its transcript directory gets an absolu
     expect(content).toBe("exit 0\nfine\n");
     expect(existsSync(join(transcriptDir, ".nax", "scratchpad", "spill"))).toBe(false);
   });
+});
+
+test("a session unknown to the state spills nowhere and names no path", async () => {
+  const state = createNativeSessionState();
+  const big = "x".repeat(MODEL_MAX_BYTES + 10);
+  const out = await truncateNativeToolResult(state, "unknown-session", big, { toolName: "Read", callId: "c1" });
+  expect(spillRootFor(state, "unknown-session")).toBeUndefined();
+  expect(out.length).toBeLessThanOrEqual(MODEL_MAX_BYTES);
+  expect(out).not.toContain(".nax/scratchpad");
+});
+
+test("the scratchpad root of one state does not leak into another", () => {
+  const a = seedNativeSession(createNativeSessionState(), "s", { transcriptDir: "/t/a", scratchpadRoot: "/w/a" });
+  const b = seedNativeSession(createNativeSessionState(), "s", { transcriptDir: "/t/b" });
+  expect(spillRootFor(a, "s")).toBe("/w/a");
+  expect(spillRootFor(b, "s")).toBe("/t/b");
 });

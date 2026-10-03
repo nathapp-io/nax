@@ -22,15 +22,22 @@ import {
   type ResolvedSpinBreakerSettings,
   type SpinBreaker,
 } from "#src/infra/spin-breaker/index";
-import { closeNativeSession, nativeSessionSpinBreaker, openNativeSession } from "#src/native/session/session";
+import {
+  closeNativeSession,
+  createNativeSessionState,
+  type NativeSessionState,
+  openNativeSession,
+} from "#src/native/session/session";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import type { TurnDeps } from "#src/native/session/turn-types";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "#src/session/session-types";
 
 let dir: string;
+let state: NativeSessionState;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-session-spin-"));
+  state = createNativeSessionState();
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
@@ -80,6 +87,7 @@ async function runTurnAgainst(handle: SessionHandle, breaker: SpinBreaker | unde
     "hi",
     { interactionHandler },
     {
+      sessionState: state,
       complete: loopingComplete(maxToolCalls),
       ...(breaker !== undefined ? { spinBreaker: breaker } : {}),
     },
@@ -102,6 +110,7 @@ async function runTurnWith(
     "hi",
     { interactionHandler: { onInteraction: async () => ({ answer: answer() }) } },
     {
+      sessionState: state,
       complete,
       ...(breaker !== undefined ? { spinBreaker: breaker } : {}),
     },
@@ -119,9 +128,9 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
       ...DEFAULT_SPIN_BREAKER_SETTINGS,
       stopAfterSameKeyRepeats: 12,
     };
-    const handle = await openNativeSession("sess-shared", opts({ spinBreaker: settings }));
+    const handle = await openNativeSession(state, "sess-shared", opts({ spinBreaker: settings }));
 
-    const breaker = nativeSessionSpinBreaker.get("sess-shared");
+    const breaker = state.spinBreakers.get("sess-shared");
     expect(breaker).toBeDefined();
 
     const first = await runTurnAgainst(handle, breaker, 7);
@@ -132,7 +141,7 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
     expect(second.spinStopped).toBe(true);
     expect(second.turnIncomplete).toBe(true);
 
-    await closeNativeSession(handle, false);
+    await closeNativeSession(state, handle, false);
   });
 
   test("two different session names get independent breakers", async () => {
@@ -140,11 +149,11 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
       ...DEFAULT_SPIN_BREAKER_SETTINGS,
       stopAfterSameKeyRepeats: 12,
     };
-    const handleA = await openNativeSession("sess-iso-a", opts({ spinBreaker: settings }));
-    const handleB = await openNativeSession("sess-iso-b", opts({ spinBreaker: settings }));
+    const handleA = await openNativeSession(state, "sess-iso-a", opts({ spinBreaker: settings }));
+    const handleB = await openNativeSession(state, "sess-iso-b", opts({ spinBreaker: settings }));
 
-    const breakerA = nativeSessionSpinBreaker.get("sess-iso-a");
-    const breakerB = nativeSessionSpinBreaker.get("sess-iso-b");
+    const breakerA = state.spinBreakers.get("sess-iso-a");
+    const breakerB = state.spinBreakers.get("sess-iso-b");
     expect(breakerA).toBeDefined();
     expect(breakerB).toBeDefined();
     expect(breakerA).not.toBe(breakerB);
@@ -156,8 +165,8 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
     const resultB = await runTurnAgainst(handleB, breakerB, 11);
     expect(resultB.spinStopped).toBeUndefined();
 
-    await closeNativeSession(handleA, false);
-    await closeNativeSession(handleB, false);
+    await closeNativeSession(state, handleA, false);
+    await closeNativeSession(state, handleB, false);
   });
 
   test("closeNativeSession evicts the breaker so a reused name starts fresh", async () => {
@@ -165,19 +174,19 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
       ...DEFAULT_SPIN_BREAKER_SETTINGS,
       stopAfterSameKeyRepeats: 12,
     };
-    const handleA = await openNativeSession("sess-reuse", opts({ spinBreaker: settings }));
-    const breakerA = nativeSessionSpinBreaker.get("sess-reuse");
+    const handleA = await openNativeSession(state, "sess-reuse", opts({ spinBreaker: settings }));
+    const breakerA = state.spinBreakers.get("sess-reuse");
 
     // Drive 11 calls into session A — counter is at 11 but below the cap.
     const first = await runTurnAgainst(handleA, breakerA, 11);
     expect(first.spinStopped).toBeUndefined();
 
-    await closeNativeSession(handleA, false);
-    expect(nativeSessionSpinBreaker.has("sess-reuse")).toBe(false);
+    await closeNativeSession(state, handleA, false);
+    expect(state.spinBreakers.has("sess-reuse")).toBe(false);
 
     // Reopen with the same name and same settings.
-    const handleB = await openNativeSession("sess-reuse", opts({ spinBreaker: settings }));
-    const breakerB = nativeSessionSpinBreaker.get("sess-reuse");
+    const handleB = await openNativeSession(state, "sess-reuse", opts({ spinBreaker: settings }));
+    const breakerB = state.spinBreakers.get("sess-reuse");
     expect(breakerB).toBeDefined();
     expect(breakerB).not.toBe(breakerA);
 
@@ -186,12 +195,12 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
     const second = await runTurnAgainst(handleB, breakerB, 11);
     expect(second.spinStopped).toBeUndefined();
 
-    await closeNativeSession(handleB, false);
+    await closeNativeSession(state, handleB, false);
   });
 
   test("a session without opts.spinBreaker has no breaker registered", async () => {
-    const handle = await openNativeSession("sess-none", opts());
-    expect(nativeSessionSpinBreaker.has("sess-none")).toBe(false);
+    const handle = await openNativeSession(state, "sess-none", opts());
+    expect(state.spinBreakers.has("sess-none")).toBe(false);
 
     // Drive the same looping shape and assert no spin flag — same behaviour
     // as the pre-#2013 path: no breaker, no enforcement.
@@ -199,7 +208,7 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
     expect(result.spinStopped).toBeUndefined();
     expect(result.output).toBe("done");
 
-    await closeNativeSession(handle, false);
+    await closeNativeSession(state, handle, false);
   });
 
   // nax#2120 Important #1: the first stop is reprieved by the turn loop
@@ -210,8 +219,8 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
   // the run evidence so it re-accumulates in full.
   test("a reprieved first stop does not make the next turn stop cold", async () => {
     const settings: ResolvedSpinBreakerSettings = { ...DEFAULT_SPIN_BREAKER_SETTINGS };
-    const handle = await openNativeSession("sess-reprieve", opts({ spinBreaker: settings }));
-    const breaker = nativeSessionSpinBreaker.get("sess-reprieve");
+    const handle = await openNativeSession(state, "sess-reprieve", opts({ spinBreaker: settings }));
+    const breaker = state.spinBreakers.get("sess-reprieve");
     expect(breaker).toBeDefined();
 
     let answered = 0;
@@ -261,6 +270,6 @@ describe("spin breaker — session lifetime (nax#2047)", () => {
     expect(second.spinStopped).toBeUndefined();
     expect(second.output).toBe("done");
 
-    await closeNativeSession(handle, false);
+    await closeNativeSession(state, handle, false);
   });
 });

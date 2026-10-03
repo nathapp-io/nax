@@ -27,7 +27,6 @@ import { join } from "node:path";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { _adapterDeps } from "#src/native/adapter-deps";
 import { _clientDeps, _resetNativeClient } from "#src/native/client";
-import { clearNativeSessionState } from "#src/native/session/session";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
 import type { InteractionHandler } from "#src/session/interaction-handler";
 import type { CodingTool } from "#src/tools/index";
@@ -173,7 +172,6 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
     } finally {
       release?.();
       await turn;
-      clearNativeSessionState(handle.id);
     }
   });
 
@@ -218,7 +216,6 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
     } finally {
       release?.();
       await turn;
-      clearNativeSessionState(handle.id);
     }
   });
 
@@ -260,21 +257,17 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
       })
       .catch(() => {});
 
-    try {
-      // Two advances: the first lets the turn start and arm the deadline
-      // timer (the sendTurn's `await Promise.resolve()` chain settles the
-      // session-open microtasks, then `deadlineMs` schedules the abort).
-      // The second fires the deadline, aborting `deadlineController.signal`,
-      // which `AbortSignal.any` forwards to the tool's `captured.signal`.
-      await clock.advance(0);
-      await waitForCondition(() => captured.signal !== undefined, 1000).catch(() => {});
-      expect(captured.signal).toBeDefined();
-      await clock.advance(1_000);
-      await waitForCondition(() => captured.signal?.aborted === true, 1000).catch(() => {});
-      expect(captured.signal?.aborted).toBe(true);
-    } finally {
-      clearNativeSessionState(handle.id);
-    }
+    // Two advances: the first lets the turn start and arm the deadline
+    // timer (the sendTurn's `await Promise.resolve()` chain settles the
+    // session-open microtasks, then `deadlineMs` schedules the abort).
+    // The second fires the deadline, aborting `deadlineController.signal`,
+    // which `AbortSignal.any` forwards to the tool's `captured.signal`.
+    await clock.advance(0);
+    await waitForCondition(() => captured.signal !== undefined, 1000).catch(() => {});
+    expect(captured.signal).toBeDefined();
+    await clock.advance(1_000);
+    await waitForCondition(() => captured.signal?.aborted === true, 1000).catch(() => {});
+    expect(captured.signal?.aborted).toBe(true);
   });
 
   test("AC13: onActiveCall cancel during a complete request aborts the signal that request receives", async () => {
@@ -321,7 +314,6 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
     } finally {
       release?.();
       await turn;
-      clearNativeSessionState(handle.id);
     }
   });
 });

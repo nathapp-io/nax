@@ -42,6 +42,7 @@ export {
   observedOnly,
   requireGuard,
 } from "./command-safety";
+export { type NativeSessionSeed, seedNativeSession } from "./native-session-state";
 export { TEST_GIT_EXCLUDE_PATHSPECS, TEST_GITIGNORE_PATTERNS, testProtectedPaths } from "./protected-paths";
 export { type FakeSandboxMode, makeFakeSandboxBackend } from "./sandbox";
 export {

@@ -6,19 +6,20 @@ import type { SendTurnOpts } from "@nathapp/nax-agent";
 import type { NativeTurnActivity } from "@nathapp/nax-agent/internal";
 import {
   COMPACTION_SUMMARY_PREFIX,
+  createNativeSessionState,
   loadTranscript,
-  nativeSessionLastUsage,
-  nativeTranscriptDirs,
+  type NativeSessionState,
   type ResolvedCompaction,
   runNativeTurn,
   saveTranscript,
 } from "@nathapp/nax-agent/internal";
 import { getSafeLogger, setAgentLogger } from "#src/infra/index";
-import { makeLogger } from "#test/helpers/index";
+import { makeLogger, seedNativeSession } from "#test/helpers/index";
 
 const originalLogger = getSafeLogger();
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-c", agentName: "native" } as const;
 const cfg: ResolvedCompaction = { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 };
 const usage = { inputTokens: 1, outputTokens: 1 };
@@ -26,15 +27,9 @@ const opts = (): SendTurnOpts => ({ interactionHandler: { onInteraction: async (
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-compact-"));
-  nativeTranscriptDirs.set("sess-c", dir);
+  sessionState = seedNativeSession(createNativeSessionState(), "sess-c", { transcriptDir: dir });
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete("sess-c");
-  // The usage anchor is a module-level map keyed by session id, keyed the same
-  // as the transcript dir above — without clearing it here, a later test
-  // reusing "sess-c" inherits a stale anchor from whatever array length the
-  // previous test's turn ended on, corrupting estimateContextTokens.
-  nativeSessionLastUsage.delete("sess-c");
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -55,6 +50,7 @@ describe("proactive compaction", () => {
     let summarizeCalls = 0;
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 8000,
       compaction: cfg,
       summarize: async () => {
@@ -79,6 +75,7 @@ describe("proactive compaction", () => {
     let summarizeCalls = 0;
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 200_000,
       compaction: cfg,
       summarize: async () => {
@@ -96,6 +93,7 @@ describe("proactive compaction", () => {
     let summarizeCalls = 0;
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       compaction: cfg,
       summarize: async () => {
         summarizeCalls += 1;
@@ -112,6 +110,7 @@ describe("proactive compaction", () => {
     let sentToModel: readonly unknown[] = [];
 
     const result = await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 8000,
       compaction: cfg,
       summarize: async () => {
@@ -137,6 +136,7 @@ describe("proactive compaction", () => {
 
     await expect(
       runNativeTurn(handle, "next", opts(), {
+        sessionState,
         contextWindow: 8000,
         compaction: cfg,
         deadline: { remainingMs: () => (expired ? 0 : 1000), expired: () => expired },
@@ -165,6 +165,7 @@ describe("proactive compaction", () => {
         "next",
         { ...opts(), signal: controller.signal },
         {
+          sessionState,
           contextWindow: 8000,
           compaction: cfg,
           summarize: async () => {
@@ -186,6 +187,7 @@ describe("proactive compaction", () => {
     await seedOversizedTranscript();
 
     const result = await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 8000,
       compaction: cfg,
       summarize: async () => ({ text: "summary", usage: { inputTokens: 500, outputTokens: 50 }, costUsd: 0.25 }),
@@ -201,6 +203,7 @@ describe("proactive compaction", () => {
     await seedOversizedTranscript();
 
     const result = await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 8000,
       compaction: cfg,
       summarize: async () => ({
@@ -226,6 +229,7 @@ describe("proactive compaction", () => {
     const activity: string[] = [];
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 8000,
       compaction: cfg,
       onActivity: (a) => activity.push(a.kind),
@@ -241,6 +245,7 @@ describe("proactive compaction", () => {
     await seedOversizedTranscript();
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 8000,
       compaction: cfg,
       summarize: async () => ({ text: "summary", usage, costUsd: 0 }),
@@ -257,6 +262,7 @@ describe("proactive compaction", () => {
     let summarizeCalls = 0;
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 8000,
       compaction: cfg,
       summarize: async () => {
@@ -297,6 +303,7 @@ describe("proactive compaction", () => {
       await seedOversizedTranscript();
 
       const result = await runNativeTurn(handle, "next", opts(), {
+        sessionState,
         contextWindow: 8000,
         compaction: cfg,
         summarize: async () => {
@@ -319,6 +326,7 @@ describe("proactive compaction", () => {
       await seedOversizedTranscript();
 
       await runNativeTurn(handle, "next", opts(), {
+        sessionState,
         contextWindow: 8000,
         compaction: cfg,
         summarize: async () => ({ text: "summary", usage, costUsd: 0 }),
@@ -359,6 +367,7 @@ describe("proactive compaction", () => {
     let completeCalls = 0;
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 20_000,
       compaction: cfg,
       summarize: async () => {
@@ -395,6 +404,7 @@ describe("proactive compaction", () => {
     let completeCalls = 0;
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 20_000,
       compaction: cfg,
       summarize: async () => {
@@ -455,6 +465,7 @@ describe("reactive backstop", () => {
     let summarizeCalls = 0;
 
     const result = await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: BACKSTOP_WINDOW,
       compaction: cfg,
       summarize: async () => {
@@ -481,6 +492,7 @@ describe("reactive backstop", () => {
     let completes = 0;
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: BACKSTOP_WINDOW,
       compaction: cfg,
       onActivity: (beat) => activity.push(beat),
@@ -508,6 +520,7 @@ describe("reactive backstop", () => {
 
     await expect(
       runNativeTurn(handle, "next", opts(), {
+        sessionState,
         contextWindow: BACKSTOP_WINDOW,
         compaction: cfg,
         summarize: async () => ({ text: "summary", usage, costUsd: 0 }),
@@ -528,6 +541,7 @@ describe("reactive backstop", () => {
 
     await expect(
       runNativeTurn(handle, "next", opts(), {
+        sessionState,
         contextWindow: BACKSTOP_WINDOW,
         compaction: { ...cfg, enabled: false },
         summarize: async () => {
@@ -551,6 +565,7 @@ describe("reactive backstop", () => {
 
     await expect(
       runNativeTurn(handle, "next", opts(), {
+        sessionState,
         contextWindow: 8000, // proactive fires first, and fails
         compaction: cfg,
         summarize: async () => {
@@ -573,6 +588,7 @@ describe("reactive backstop", () => {
 
     await expect(
       runNativeTurn(handle, "next", opts(), {
+        sessionState,
         contextWindow: BACKSTOP_WINDOW,
         compaction: cfg,
         summarize: async () => ({ text: "summary", usage, costUsd: 0 }),

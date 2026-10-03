@@ -18,12 +18,14 @@ import {
   _clientDeps,
   _resetNativeClient,
   byCodePoint,
+  closeNativeSession,
+  createNativeSessionState,
   DEFAULT_SPIN_BREAKER_SETTINGS,
   loadTranscript,
+  type NativeSessionState,
   NaxError,
   openNativeSession,
   saveTranscript,
-  sessionModule as sessionState,
   transcriptStoreModule as transcriptStore,
 } from "@nathapp/nax-agent/internal";
 import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
@@ -215,16 +217,16 @@ describe("NativeSessionAdapter closePhysicalSession -- run teardown reaches the 
     await rm(closeDir, { recursive: true, force: true });
   });
 
-  function exportedCollections(): string[] {
-    return Object.entries(sessionState)
+  function exportedCollections(state: NativeSessionState): string[] {
+    return Object.entries(state)
       .filter(([, value]) => value instanceof Map || value instanceof Set)
       .map(([exportName]) => exportName)
       .sort(byCodePoint);
   }
 
-  function collectionsHolding(name: string): string[] {
+  function collectionsHolding(state: NativeSessionState, name: string): string[] {
     const holding: string[] = [];
-    for (const [exportName, value] of Object.entries(sessionState)) {
+    for (const [exportName, value] of Object.entries(state)) {
       if (value instanceof Map && value.has(name)) holding.push(exportName);
       else if (value instanceof Set && value.has(name)) holding.push(exportName);
     }
@@ -247,7 +249,7 @@ describe("NativeSessionAdapter closePhysicalSession -- run teardown reaches the 
   test("physical close removes a successful session's transcript", async () => {
     const adapter = new NativeSessionAdapter();
     const name = "nax-teardown-us-003-success";
-    await openNativeSession(name, openOpts());
+    await adapter.openSession(name, openOpts());
     await transcriptStore.saveTranscript(closeDir, name, []);
     expect(await Bun.file(transcriptStore.transcriptPath(closeDir, name)).exists()).toBe(true);
 
@@ -257,18 +259,18 @@ describe("NativeSessionAdapter closePhysicalSession -- run teardown reaches the 
   });
 
   test("a throwing transcript retain still clears every native map", async () => {
-    const adapter = new NativeSessionAdapter();
+    const state = createNativeSessionState();
     const name = "nax-throw-us-002-implementer";
-    const handle = await openNativeSession(name, openOpts());
-    sessionState.nativeSessionFailed.add(name);
-    sessionState.nativeSessionLastUsage.set(name, { promptTokens: 10, anchorIndex: 0 });
-    expect(collectionsHolding(name)).toEqual(exportedCollections());
+    const handle = await openNativeSession(state, name, openOpts());
+    state.failed.add(name);
+    state.lastUsage.set(name, { promptTokens: 10, anchorIndex: 0 });
+    expect(collectionsHolding(state, name)).toEqual(exportedCollections(state));
     const retainSpy = spyOn(transcriptStore, "retainTranscript").mockRejectedValue(new Error("retain boom"));
     try {
-      await expect(adapter.closeSession(handle)).rejects.toThrow("retain boom");
+      await expect(closeNativeSession(state, handle)).rejects.toThrow("retain boom");
     } finally {
       retainSpy.mockRestore();
     }
-    expect(collectionsHolding(name)).toEqual([]);
+    expect(collectionsHolding(state, name)).toEqual([]);
   });
 });

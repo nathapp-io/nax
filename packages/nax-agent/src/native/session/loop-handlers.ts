@@ -41,6 +41,7 @@ import {
   type LoopHandlerSet,
   wrapExternalHandler,
 } from "./loop-events/index.ts";
+import type { NativeSessionState } from "./session.ts";
 import { createTruncationHandler } from "./truncation-handler.ts";
 
 export interface BuiltinLoopHandlerDeps {
@@ -50,6 +51,8 @@ export interface BuiltinLoopHandlerDeps {
    * per-turn dep, so a repointed registry never keeps a stale session.
    */
   readonly sessionName: string;
+  /** The owning adapter's per-session state, read through `state.current` at dispatch like the session name. */
+  readonly sessionState: NativeSessionState;
   /** Per-turn invalid-call budget. The loop reads `exceeded` for the halt. */
   readonly budget: InvalidCallBudget;
   /** Absent disables the breaker, exactly as `TurnDeps.spinBreaker` does. */
@@ -156,7 +159,9 @@ export function registerBuiltinLoopHandlers(registry: LoopEventRegistry, deps: B
   // whatever the handlers produced. The handler is rebuilt per dispatch so the
   // session name is read through `state.current` — the same lifetime the other
   // per-turn deps use — rather than frozen at install time.
-  registry.register("after_tool", (payload) => createTruncationHandler(state.current.sessionName)(payload));
+  registry.register("after_tool", (payload) =>
+    createTruncationHandler(state.current.sessionState, state.current.sessionName)(payload),
+  );
 }
 
 function repairInvalidCall(

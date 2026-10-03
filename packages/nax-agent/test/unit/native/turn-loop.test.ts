@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nativeTranscriptDirs } from "#src/native/session/session";
+import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { loadTranscript } from "#src/native/session/transcript-store";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import { readNativeTurnFailureUsage } from "#src/native/session/turn-types";
@@ -11,16 +11,17 @@ import type { AdapterInteraction } from "#src/session/interaction-handler";
 import type { SendTurnOpts } from "#src/session/session-types";
 import { createTurnDeadline } from "#src/session/turn-deadline";
 import type { CodingTool } from "#src/tools/index";
+import { seedNativeSession } from "#test/helpers/index";
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-a", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-turn-"));
-  nativeTranscriptDirs.set("sess-a", dir);
+  sessionState = seedNativeSession(createNativeSessionState(), "sess-a", { transcriptDir: dir });
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete("sess-a");
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -46,7 +47,7 @@ const fakeRead: CodingTool = {
 
 describe("native turn loop", () => {
   test("a reply with no tool calls ends the turn in one round trip", async () => {
-    const result = await runNativeTurn(handle, "hi", opts(), { complete: async () => reply() });
+    const result = await runNativeTurn(handle, "hi", opts(), { sessionState, complete: async () => reply() });
     expect(result.output).toBe("done");
     expect(result.internalRoundTrips).toBe(1);
   });
@@ -58,6 +59,7 @@ describe("native turn loop", () => {
   test("persists the conversation when the model call throws, not only on the clean exit", async () => {
     await expect(
       runNativeTurn(handle, "hi", opts(), {
+        sessionState,
         complete: async () => {
           throw new Error("upstream exploded");
         },
@@ -72,6 +74,7 @@ describe("native turn loop", () => {
     let calls = 0;
     await expect(
       runNativeTurn(handle, "hi", opts(), {
+        sessionState,
         complete: async () => {
           calls += 1;
           if (calls === 1) {
@@ -100,6 +103,7 @@ describe("native turn loop", () => {
   test("attaches the usage/cost burned on earlier round trips to the thrown error", async () => {
     let calls = 0;
     const caught = await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       complete: async () => {
         calls += 1;
         if (calls <= 2) {
@@ -129,6 +133,7 @@ describe("native turn loop", () => {
 
   test("persists the conversation, including thinking blocks", async () => {
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       complete: async () => reply({ thinking: [{ text: "hmm", signature: "sig-1" }] }),
     });
     const saved = await loadTranscript(dir, "sess-a");
@@ -151,6 +156,7 @@ describe("native turn loop", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           round += 1;
           return round === 1
@@ -170,6 +176,7 @@ describe("native turn loop", () => {
   test("accumulates token usage across the whole turn, not just the last call", async () => {
     let round = 0;
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       complete: async () => {
         round += 1;
         return round === 1
@@ -184,6 +191,7 @@ describe("native turn loop", () => {
   test("returns aggregate effective rates that reproduce the whole turn's estimated cost", async () => {
     let round = 0;
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       complete: async () => {
         round += 1;
         return round === 1
@@ -218,6 +226,7 @@ describe("native turn loop", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           round += 1;
           return round === 1 ? reply({ toolCalls: [{ id: "c1", name: "t", input: {} }] }) : reply({ text: "ok" });
@@ -244,6 +253,7 @@ describe("native turn loop", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           round += 1;
           return round === 1 ? reply({ toolCalls: [{ id: "c1", name: "t", input: {} }] }) : reply({ text: "ok" });
@@ -256,8 +266,10 @@ describe("native turn loop", () => {
   });
 
   test("a session with no known transcript directory fails loudly", async () => {
-    nativeTranscriptDirs.delete("sess-a");
-    await expect(runNativeTurn(handle, "hi", opts(), { complete: async () => reply() })).rejects.toThrow(/transcript/i);
+    sessionState.transcriptDirs.delete("sess-a");
+    await expect(runNativeTurn(handle, "hi", opts(), { sessionState, complete: async () => reply() })).rejects.toThrow(
+      /transcript/i,
+    );
   });
 
   test("a denied coding tool becomes a tool-result that is NOT isError", async () => {
@@ -276,6 +288,7 @@ describe("native turn loop", () => {
         },
       }),
       {
+        sessionState,
         complete: async (msgs) => {
           messages.push(...msgs);
           round += 1;
@@ -308,6 +321,7 @@ describe("native turn loop", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           round += 1;
           return round === 1 ? reply({ toolCalls: [{ id: "c1", name: "Read", input: {} }] }) : reply();
@@ -334,6 +348,7 @@ describe("native turn loop", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           round += 1;
           return round === 1
@@ -350,6 +365,7 @@ describe("native turn loop", () => {
   test("flags an incomplete turn when the budget cuts the loop off mid-work", async () => {
     let now = 0;
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       deadline: createTurnDeadline(10, () => now),
       complete: async () => {
         now += 6_000;
@@ -361,7 +377,7 @@ describe("native turn loop", () => {
   });
 
   test("a turn that ends on its own is not flagged incomplete", async () => {
-    const result = await runNativeTurn(handle, "hi", opts(), { complete: async () => reply() });
+    const result = await runNativeTurn(handle, "hi", opts(), { sessionState, complete: async () => reply() });
     expect(result.output).toBe("done");
     expect(result.turnIncomplete).toBeUndefined();
   });
@@ -369,6 +385,7 @@ describe("native turn loop", () => {
   test("runs past ten round trips when the model keeps working", async () => {
     let round = 0;
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       complete: async () => {
         round += 1;
         return round < 25
@@ -392,6 +409,7 @@ describe("native turn loop — coding tool use reported on the result", () => {
   test("records which coding tools were advertised and which were called", async () => {
     let round = 0;
     const result = await runNativeTurn(handle, "review it", opts({ codingTools: [fakeRead] }), {
+      sessionState,
       complete: async () => {
         round += 1;
         return round === 1 ? reply({ toolCalls: [{ id: "c1", name: "Read", input: { path: "a.ts" } }] }) : reply();
@@ -403,6 +421,7 @@ describe("native turn loop — coding tool use reported on the result", () => {
 
   test("reports an empty call list when tools were advertised but never used", async () => {
     const result = await runNativeTurn(handle, "review it", opts({ codingTools: [fakeRead] }), {
+      sessionState,
       complete: async () => reply(),
     });
 
@@ -410,7 +429,7 @@ describe("native turn loop — coding tool use reported on the result", () => {
   });
 
   test("omits the report entirely when no coding tools were advertised", async () => {
-    const result = await runNativeTurn(handle, "hi", opts(), { complete: async () => reply() });
+    const result = await runNativeTurn(handle, "hi", opts(), { sessionState, complete: async () => reply() });
 
     expect(result.codingToolUse).toBeUndefined();
   });
@@ -430,6 +449,7 @@ describe("native turn loop — what the model is told exists", () => {
   test("passes the coding tool's wire definition to the provider", async () => {
     let advertised: unknown;
     await runNativeTurn(handle, "hi", opts({ codingTools: [fakeRead] }), {
+      sessionState,
       complete: async (_messages, tools) => {
         advertised = tools;
         return reply();
@@ -448,6 +468,7 @@ describe("native turn loop — what the model is told exists", () => {
   test("advertises nothing when the session was granted no coding tools", async () => {
     let advertised: unknown;
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       complete: async (_messages, tools) => {
         advertised = tools;
         return reply();
@@ -462,6 +483,7 @@ describe("native turn loop — what the model is told exists", () => {
     const deadline = createTurnDeadline(30, () => now);
     let calls = 0;
     const result = await runNativeTurn(handle, "hi", opts({ maxInteractions: 50 }), {
+      sessionState,
       deadline,
       complete: async () => {
         calls += 1;
@@ -479,6 +501,7 @@ describe("native turn loop — what the model is told exists", () => {
   test("an unbounded turn is never stopped by the deadline", async () => {
     let round = 0;
     const result = await runNativeTurn(handle, "hi", opts({ maxInteractions: 5 }), {
+      sessionState,
       complete: async () => {
         round += 1;
         return round < 3
@@ -494,6 +517,7 @@ describe("native turn loop — what the model is told exists", () => {
     const seen: string[] = [];
     let round = 0;
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       onActivity: (a) => seen.push(a.kind),
       complete: async () => {
         round += 1;
@@ -511,6 +535,7 @@ describe("native turn loop — what the model is told exists", () => {
   test("sums cache token counts across round trips when every response reports them", async () => {
     let round = 0;
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       complete: async () => {
         round += 1;
         return round === 1
@@ -528,7 +553,7 @@ describe("native turn loop — what the model is told exists", () => {
   });
 
   test("omits cache fields entirely when no round trip reported cache data", async () => {
-    const result = await runNativeTurn(handle, "hi", opts(), { complete: async () => reply() });
+    const result = await runNativeTurn(handle, "hi", opts(), { sessionState, complete: async () => reply() });
     expect("cacheReadTokens" in result.tokenUsage).toBe(false);
     expect("cacheWriteTokens" in result.tokenUsage).toBe(false);
   });
@@ -536,6 +561,7 @@ describe("native turn loop — what the model is told exists", () => {
   test("sums cache tokens across a mix of round trips that do and do not report them", async () => {
     let round = 0;
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       complete: async () => {
         round += 1;
         if (round === 1) {
@@ -565,6 +591,7 @@ describe("native turn loop — what the model is told exists", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           round += 1;
           return round === 1
@@ -593,6 +620,7 @@ describe("native turn loop — what the model is told exists", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           round += 1;
           // Asks five times, so only the budget — not the fixture — can stop it
@@ -626,6 +654,7 @@ describe("native turn loop — what the model is told exists", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           round += 1;
           // Calls the unadvertised tool anyway, which is the case under test.
@@ -653,6 +682,7 @@ describe("native turn loop — what the model is told exists", () => {
         interactionHandler: { onInteraction: async () => null },
       }),
       {
+        sessionState,
         complete: async () => {
           round += 1;
           return round <= 3
