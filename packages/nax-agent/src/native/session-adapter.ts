@@ -8,7 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import { priceCall } from "#src/cost/core/index";
-import { getSafeLogger } from "#src/infra/index";
+import { getSafeLogger, NaxError } from "#src/infra/index";
 import {
   type AgentSessionAdapter,
   type OpenSessionOpts,
@@ -24,13 +24,9 @@ import { toAdapterFailure } from "./errors.ts";
 import { buildRateCard, NATIVE_AGENT, parseNativeModel, resolveContextWindow, toThinkingLevel } from "./models.ts";
 import {
   closeNativeSession,
+  createNativeSessionState,
   markNativeTurnOutcome,
-  nativeSessionCompaction,
-  nativeSessionSpinBreaker,
-  nativeSessionStreamHooks,
-  nativeSessionTimeouts,
-  nativeSessionTranscriptOwners,
-  nativeSessionTransportRetry,
+  type NativeSessionState,
   openNativeSession,
 } from "./session/session.ts";
 import { buildNativeStreamEvent } from "./session/turn-events.ts";
@@ -76,8 +72,27 @@ function loopHandlerDeps(opts: SendTurnOpts): Pick<TurnDeps, "loopHandlers" | "l
   };
 }
 
+const adapterStates = new WeakMap<NativeSessionAdapter, NativeSessionState>();
+
+/** The adapter's per-session state. `/internal` only: tests and the S3 facade read it; nax never does. */
+export function nativeSessionStateOf(adapter: NativeSessionAdapter): NativeSessionState {
+  const state = adapterStates.get(adapter);
+  if (state === undefined) {
+    throw new NaxError("NativeSessionAdapter has no session state", "NATIVE_SESSION_STATE_MISSING", {
+      stage: "native-session",
+    });
+  }
+  return state;
+}
+
 export class NativeSessionAdapter implements AgentSessionAdapter {
-  constructor(private readonly catalogOverrides: NativeCatalogOverrides = []) {}
+  constructor(private readonly catalogOverrides: NativeCatalogOverrides = []) {
+    adapterStates.set(this, createNativeSessionState());
+  }
+
+  private get state(): NativeSessionState {
+    return nativeSessionStateOf(this);
+  }
 
   /**
    * Can this agent authenticate to at least one provider?
@@ -114,7 +129,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
   }
 
   openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle> {
-    return openNativeSession(name, opts);
+    return openNativeSession(this.state, name, opts);
   }
 
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
@@ -124,7 +139,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     const resolved = await client.model(provider, model);
     const catalog = client.pricing(resolved);
     const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?.pricing);
-    const storedTimeoutSeconds = nativeSessionTimeouts.get(handle.id);
+    const storedTimeoutSeconds = this.state.timeouts.get(handle.id);
     if (storedTimeoutSeconds === undefined) {
       getSafeLogger()?.warn("native-adapter", "session has no recorded timeout; falling back to the default budget", {
         sessionName: handle.id,
@@ -140,17 +155,17 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     // because this is where `timeoutSeconds` is known; consulted by the loop.
     const deadline = createTurnDeadline(timeoutSeconds);
 
-    const hooks = nativeSessionStreamHooks.get(handle.id);
+    const hooks = this.state.streamHooks.get(handle.id);
     // One callId per turn, mirroring SpawnAcpSession.prompt(). `runId` is
     // backfilled by the runtime's forwarding closure, which is the only place
     // that knows it — see runtime/index.ts.
     const callId = randomUUID();
-    // The transcript/ledger join key, not a stream id. `nativeSessionTranscriptOwners`
+    // The transcript/ledger join key, not a stream id. `this.state.transcriptOwners`
     // is keyed on this same `handle.id` and already holds the session's
     // `transcriptOwner` (`scopeId ?? callId` from session-run-hop.ts). Omitted
     // entirely when the session declared no owner, so an absent key reads as
     // "unknown" rather than as a wrong one.
-    const owner = nativeSessionTranscriptOwners.get(handle.id);
+    const owner = this.state.transcriptOwners.get(handle.id);
     const eventBase = {
       callId,
       runId: "",
@@ -195,16 +210,17 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
       // so a settled turn must drop its timer to avoid keeping it armed past
       // the turn boundary.
       result = await runNativeTurn(handle, prompt, opts, {
+        sessionState: this.state,
         deadline,
         contextWindow: resolveContextWindow(handle.modelDef?.contextWindow, resolved.contextWindow),
-        ...(nativeSessionCompaction.get(handle.id) !== undefined
-          ? { compaction: nativeSessionCompaction.get(handle.id) }
+        ...(this.state.compaction.get(handle.id) !== undefined
+          ? { compaction: this.state.compaction.get(handle.id) }
           : {}),
-        ...(nativeSessionTransportRetry.get(handle.id) !== undefined
-          ? { transportRetry: nativeSessionTransportRetry.get(handle.id) }
+        ...(this.state.transportRetry.get(handle.id) !== undefined
+          ? { transportRetry: this.state.transportRetry.get(handle.id) }
           : {}),
-        ...(nativeSessionSpinBreaker.get(handle.id) !== undefined
-          ? { spinBreaker: nativeSessionSpinBreaker.get(handle.id) }
+        ...(this.state.spinBreakers.get(handle.id) !== undefined
+          ? { spinBreaker: this.state.spinBreakers.get(handle.id) }
           : {}),
         ...(opts.loopEvents !== undefined ? { loopEvents: opts.loopEvents } : {}),
         // US-003: the run's plugin-contributed loop handlers and the facts
@@ -331,7 +347,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
         status: turnController.signal.aborted ? "cancelled" : "error",
         timestamp: Date.now(),
       });
-      markNativeTurnOutcome(handle.id, true);
+      markNativeTurnOutcome(this.state, handle.id, true);
       // The same treatment complete() gives a protocol fault, on the path that
       // was missing it (nax#1838). Rethrowing untouched left build-hop-callback
       // to synthesise a generic fail-adapter-error, which cost a rate limit its
@@ -374,7 +390,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
       status: result.timedOut === true ? "timeout" : turnController.signal.aborted ? "cancelled" : "success",
       timestamp: Date.now(),
     });
-    markNativeTurnOutcome(handle.id, false);
+    markNativeTurnOutcome(this.state, handle.id, false);
     // US-006: the store only observes `provider` while a request is in flight,
     // so the stamp is read here, after the loop.
     return { ...result, ...authFields(provider) };
@@ -385,7 +401,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     // session's last turn (markNativeTurnOutcome) rather than from this call.
     // Passing a literal false here is what deleted the transcript of a failed
     // session -- the one the retry reloads and a human reads (nax#1838).
-    return closeNativeSession(handle);
+    return closeNativeSession(this.state, handle);
   }
 
   /**
@@ -396,14 +412,14 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
    * stayed behind for the process lifetime.
    *
    * The ACP contract takes a handle string and closeNativeSession takes a
-   * SessionHandle, but the maps are keyed by the session-name string both
-   * carry, so clear by name rather than synthesising a handle.
+   * SessionHandle, but this adapter's state is keyed by the session-name string
+   * both carry, so clear by name rather than synthesising a handle.
    */
   async closePhysicalSession(
     handle: string,
     _workdir?: string,
     _options?: { force?: boolean; signal?: AbortSignal },
   ): Promise<void> {
-    return closeNativeSession({ id: handle, agentName: NATIVE_AGENT });
+    return closeNativeSession(this.state, { id: handle, agentName: NATIVE_AGENT });
   }
 }

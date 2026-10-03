@@ -491,6 +491,8 @@ NATIVE_AGENT_NAME
 type NativeCatalogOverrides
 type NativeModelRef
 type NativeProtocolError
+type NativeSessionState
+type NativeSessionStreamHooks
 NativeSessionUnsupportedError
 type NativeStreamEventBase
 type NativeSummaryResponse
@@ -672,6 +674,7 @@ createCodingToolRuntime
 createCommandLauncher
 createExecCredentialSource
 createLoopEventRegistry
+createNativeSessionState
 createNoOpToolAuditSink
 createRunCommandTool
 createSpinBreaker
@@ -742,17 +745,8 @@ maskForPrompt
 mcpRuleAdmits
 namespacedToolName
 narrowGrants
-nativeSessionCompaction
-nativeSessionFailed
 nativeSessionId
-nativeSessionLastUsage
-nativeSessionScratchpadRoots
-nativeSessionSpinBreaker
-nativeSessionStreamHooks
-nativeSessionTimeouts
-nativeSessionTranscriptOwners
-nativeSessionTransportRetry
-nativeTranscriptDirs
+nativeSessionStateOf
 naxCredentialStore
 newSessionKey
 normalizeCommandSpec
