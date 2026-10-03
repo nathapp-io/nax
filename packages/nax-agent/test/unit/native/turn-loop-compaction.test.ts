@@ -13,8 +13,10 @@ import {
   runNativeTurn,
   saveTranscript,
 } from "@nathapp/nax-agent/internal";
-import { addSink, initLogger, resetLogger } from "@/logger";
-import type { LogEntry } from "@/logger/types";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import { makeLogger } from "#test/helpers/index";
+
+const originalLogger = getSafeLogger();
 
 let dir: string;
 const handle = { id: "sess-c", agentName: "native" } as const;
@@ -271,17 +273,15 @@ describe("proactive compaction", () => {
   });
 
   describe("no-progress logging", () => {
-    let logCalls: LogEntry[];
+    let logger: ReturnType<typeof makeLogger>;
 
     beforeEach(() => {
-      resetLogger();
-      logCalls = [];
-      initLogger({ level: "info", suppressConsole: true });
-      addSink((entry) => logCalls.push(entry));
+      logger = makeLogger();
+      setAgentLogger(logger);
     });
 
     afterEach(() => {
-      resetLogger();
+      setAgentLogger(originalLogger);
     });
 
     test("logs a warning, but still completes, when a compaction makes no size progress", async () => {
@@ -309,7 +309,9 @@ describe("proactive compaction", () => {
       });
 
       expect(result.output).toBe("done");
-      const warnings = logCalls.filter((e) => e.level === "warn" && e.message === "compaction made no size progress");
+      const warnings = logger.calls.filter(
+        (e) => e.level === "warn" && e.message === "compaction made no size progress",
+      );
       expect(warnings.length).toBeGreaterThan(0);
     });
 
@@ -323,8 +325,8 @@ describe("proactive compaction", () => {
         complete: async () => ({ text: "done", usage, costUsd: 0 }),
       });
 
-      expect(logCalls.map((entry) => `${entry.level}:${entry.message}`)).toContain("info:compaction completed");
-      const audit = logCalls.find((e) => e.level === "info" && e.message === "compaction completed");
+      expect(logger.calls.map((entry) => `${entry.level}:${entry.message}`)).toContain("info:compaction completed");
+      const audit = logger.calls.find((e) => e.level === "info" && e.message === "compaction completed");
       expect(audit?.data).toMatchObject({
         sessionName: "sess-c",
         messagesDropped: 2,

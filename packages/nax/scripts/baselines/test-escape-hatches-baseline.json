@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 26,
-    "looseCast": 1461
+    "looseCast": 1460
   },
-  "updatedAt": "2026-10-03T02:38:45.669Z",
+  "updatedAt": "2026-10-03T02:39:25.551Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -713,9 +713,6 @@
       "looseCast": 2
     },
     "test/unit/agents/retry/hop-retry-policy.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/agents/native/session/loop-events/transform-context.test.ts": {
       "looseCast": 1
     },
     "test/unit/worktree/manager.test.ts": {

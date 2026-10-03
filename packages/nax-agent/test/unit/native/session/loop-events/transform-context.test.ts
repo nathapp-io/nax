@@ -13,8 +13,10 @@ import {
   nativeTranscriptDirs,
   runNativeTurn,
 } from "@nathapp/nax-agent/internal";
-import { addSink, initLogger, resetLogger } from "@/logger";
-import type { LogEntry } from "@/logger/types";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import { makeLogger } from "#test/helpers/index";
+
+const originalLogger = getSafeLogger();
 
 let dir: string;
 const handle = { id: "sess-transform", agentName: "native" } as const;
@@ -72,10 +74,8 @@ describe("native turn loop — transform_context event", () => {
     });
     // The rejection is a warn (spec 3.7: the patch stops, never the turn), so
     // the log is the dispatch's observable effect on the sent array.
-    resetLogger();
-    const logCalls: LogEntry[] = [];
-    initLogger({ level: "info", suppressConsole: true });
-    addSink((entry) => logCalls.push(entry));
+    const logger = makeLogger();
+    setAgentLogger(logger);
     try {
       await runNativeTurn(handle, "hi", opts(), {
         loopEvents: registry,
@@ -87,7 +87,7 @@ describe("native turn loop — transform_context event", () => {
         },
       });
     } finally {
-      resetLogger();
+      setAgentLogger(originalLogger);
     }
     // The handler ran — the event actually fired on the request attempt.
     expect(handlerCalls).toBe(1);
@@ -95,7 +95,7 @@ describe("native turn loop — transform_context event", () => {
     expect(sent[0]).not.toEqual([{ role: "user", content: "hijacked" }]);
     // ...and the original did.
     expect(sent[0]).toEqual([{ role: "user", content: "hi" }]);
-    const warnings = logCalls.filter(
+    const warnings = logger.calls.filter(
       (e) => e.level === "warn" && e.message === "history patch rejected: prefix rewritten off-boundary",
     );
     expect(warnings).toHaveLength(1);

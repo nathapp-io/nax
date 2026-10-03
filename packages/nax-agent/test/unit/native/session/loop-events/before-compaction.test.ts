@@ -12,8 +12,10 @@ import {
   runNativeTurn,
   saveTranscript,
 } from "@nathapp/nax-agent/internal";
-import { addSink, initLogger, resetLogger } from "@/logger";
-import type { LogEntry } from "@/logger/types";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import { makeLogger } from "#test/helpers/index";
+
+const originalLogger = getSafeLogger();
 
 let dir: string;
 const handle = { id: "sess-before-compaction", agentName: "native" } as const;
@@ -132,10 +134,8 @@ describe("native turn loop — before_compaction event", () => {
     });
     // The ignore is a warn — assert the brief-verbatim line so the log is
     // load-bearing, not decorative.
-    resetLogger();
-    const logCalls: LogEntry[] = [];
-    initLogger({ level: "info", suppressConsole: true });
-    addSink((entry) => logCalls.push(entry));
+    const logger = makeLogger();
+    setAgentLogger(logger);
 
     try {
       const result = await runNativeTurn(handle, "next", opts(), {
@@ -163,13 +163,13 @@ describe("native turn loop — before_compaction event", () => {
       // And the turn recovered: compact, then retry once.
       expect(completes).toBe(2);
       expect(result.output).toBe("done");
-      const warnings = logCalls.filter(
+      const warnings = logger.calls.filter(
         (e) => e.level === "warn" && e.message === "before_compaction decline ignored at overflow",
       );
       expect(warnings).toHaveLength(1);
       expect(warnings[0]?.data).toMatchObject({ sessionName: handle.id });
     } finally {
-      resetLogger();
+      setAgentLogger(originalLogger);
     }
   });
 
