@@ -81,7 +81,7 @@ Tests are named in their owning tasks below. Keep each new source file below exi
 - Produces: `nodeGlob(pattern: string, opts: AgentGlobOptions): AsyncIterable<string>` and `nodeGlobSync(pattern: string, opts: AgentGlobOptions): Iterable<string>` in `node-glob.ts`.
 - Produces: leaf-package `CaseGlobRuntime`, with the two glob signatures and structurally identical options; `GLOB_CASES: readonly { name: string; run(runtime: CaseGlobRuntime): Promise<void> }[]`. Keep existing `CaseRuntime` spawn-only so spawn cases have no unnecessary coupling.
 
-- [ ] **Step 1: Write runner-neutral cases and Bun/Node test wrappers.** Use node:assert/strict and node:fs temporary directories, cleaned in finally. Each case exercises both methods and compares sorted sets; sorting belongs to tests/callers, not adapters. Representative assertions:
+- [x] **Step 1: Write runner-neutral cases and Bun/Node test wrappers.** Use node:assert/strict and node:fs temporary directories, cleaned in finally. Each case exercises both methods and compares sorted sets; sorting belongs to tests/callers, not adapters. Representative assertions:
 
 ```ts
 // Fixture: a.ts, b.js, dir/c.ts, .secret, .hidden/h.ts,
@@ -102,19 +102,19 @@ Define local `hits(rt: CaseGlobRuntime, pattern: string, cwd: string): Promise<s
 
 Wrap `GLOB_CASES` in bun:test under each package, supplying `nodeRuntime` or `bunAgentRuntime`. Runtime fakes gain empty async/sync glob methods (or spread `nodeRuntime` and override spawn). Do not make the production glob methods optional to avoid updating tests.
 
-- [ ] **Step 2: Run the two wrappers to prove the missing glob methods fail.**
+- [x] **Step 2: Run the two wrappers to prove the missing glob methods fail.**
 
 From agent: `rtk proxy bun test ./test/unit/runtime/node-glob.test.ts --timeout=60000`; from nax: `rtk proxy bun test ./test/unit/agent-runtime/glob-runtime.test.ts --timeout=60000`. Expected: failure because glob methods are absent; hidden-pattern tests also expose today's Bun behaviour.
 
-- [ ] **Step 3: Implement the contract and adapters.** Add methods/types above. `node-glob.ts` uses only node: runtime imports plus erased type imports, so Node can import it directly in Task 6. Use fs.promises.glob/fs.globSync with withFileTypes; assemble each path from `Dirent.parentPath` and `name`, then relativize against the resolved cwd. Check cwd with statSync before scanning. Include only actual regular-file Dirents, excluding symlink entries. Prune directory symlinks beyond the pattern's literal directory prefix through the glob exclusion callback; permit symlink directories explicitly named before the first glob metacharacter. Filter every result-relative segment beginning `.`. Deduplicate yielded paths; emit absolute paths only when requested. Preserve malformed-pattern empty results proven above; do not catch all errors and return an empty set.
+- [x] **Step 3: Implement the contract and adapters.** Add methods/types above. `node-glob.ts` uses only node: runtime imports plus erased type imports, so Node can import it directly in Task 6. Use fs.promises.glob/fs.globSync with withFileTypes; assemble each path from `Dirent.parentPath` and `name`, then relativize against the resolved cwd. Check cwd with statSync before scanning. Include only actual regular-file Dirents, excluding symlink entries. Prune directory symlinks beyond the pattern's literal directory prefix through the glob exclusion callback; permit symlink directories explicitly named before the first glob metacharacter. Filter every result-relative segment beginning `.`. Deduplicate yielded paths; emit absolute paths only when requested. Preserve malformed-pattern empty results proven above; do not catch all errors and return an empty set.
 
 The Bun methods use `new Bun.Glob(pattern).scan` / `scanSync` with `onlyFiles: true`, `dot: false`, `followSymlinks: false`, then filter hidden result-relative segments explicitly (dot:false alone does not enforce D21). Resolve cwd once for absolute-to-relative filtering. Do not filter based on the absolute path's dot ancestors.
 
 Export `AgentGlobOptions` through runtime/index and the existing named runtime block in `src/index.ts`. Attach `nodeGlob`/`nodeGlobSync` to `nodeRuntime`. Keep `node-runtime.ts` focused on spawn; do not move or rewrite spawn.
 
-- [ ] **Step 4: Run both wrappers and affected runtime checks.** In agent: `rtk proxy bun test ./test/unit/runtime/ --timeout=60000`, `rtk bun run typecheck`; in nax: `rtk proxy bun test ./test/unit/agent-runtime/ --timeout=60000`, `rtk bun run typecheck`; in test-kit: `rtk bun run typecheck`, `rtk bun run check:all`. Expected: all pass, including existing spawn cases.
+- [x] **Step 4: Run both wrappers and affected runtime checks.** In agent: `rtk proxy bun test ./test/unit/runtime/ --timeout=60000`, `rtk bun run typecheck`; in nax: `rtk proxy bun test ./test/unit/agent-runtime/ --timeout=60000`, `rtk bun run typecheck`; in test-kit: `rtk bun run typecheck`, `rtk bun run check:all`. Expected: all pass, including existing spawn cases.
 
-- [ ] **Step 5: Commit only Task 1 files.** `rtk git add <the exact files above>`; `rtk git commit -m "feat: add glob to the agent runtime contract"`.
+- [x] **Step 5: Commit only Task 1 files.** `rtk git add <the exact files above>`; `rtk git commit -m "feat: add glob to the agent runtime contract"`.
 
 ### Task 2: Route Glob and ScratchpadList through the live runtime
 

@@ -17,6 +17,7 @@ export { configureCredentials, setAgentLogger } from "#src/infra/index";
 export * from "#src/native/index";
 export * from "#src/permissions/index";
 export {
+  type AgentGlobOptions,
   type AgentRuntime,
   type AgentSpawnOptions,
   type AgentSpawnResult,

@@ -2,13 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { _argvExecDeps } from "#src/internal/argv-exec";
 import { _gitDeps } from "#src/internal/git-exec";
 import { _execSourceDeps } from "#src/native/credentials/helper-process";
-import { type AgentRuntime, setAgentRuntime } from "#src/runtime/index";
+import { type AgentRuntime, nodeRuntime, setAgentRuntime } from "#src/runtime/index";
 import { _grepDeps } from "#src/tools/grep";
 
 /** A runtime installed AFTER the seams' modules loaded: a seam that captured the runtime at load would miss it. */
 function recordingRuntime(): AgentRuntime & { calls: { cmd: readonly string[]; stdin?: string }[] } {
   const calls: { cmd: readonly string[]; stdin?: string }[] = [];
   return {
+    ...nodeRuntime,
     calls,
     spawn(cmd, opts) {
       calls.push({ cmd, stdin: opts.stdin });
@@ -40,6 +41,7 @@ describe("nax-agent's spawn seams resolve the runtime slot per call", () => {
 
   test("_execSourceDeps.spawn refuses a runtime that gave a piped spawn no stdin (CREDENTIAL_HELPER_FAILED)", () => {
     const noStdin: AgentRuntime = {
+      ...nodeRuntime,
       spawn: () => ({
         stdout: new ReadableStream<Uint8Array>(),
         stderr: new ReadableStream<Uint8Array>(),
