@@ -15,6 +15,8 @@
   "scripts": {
     "typecheck": "bun x tsc --noEmit",
     "build": "bun x tsc -p tsconfig.build.json",
+    "check:api": "bun ../repo-tooling/scripts/check-api-snapshot.ts --package=.",
+    "api:update": "bun ../repo-tooling/scripts/check-api-snapshot.ts --package=. --update",
     "lint": "bun run lint:biome && bun run lint:checks",
     "lint:biome": "bun x biome check --error-on-warnings --diagnostic-level=warn src/ test/",
     "lint:fix": "bun x biome check --write src/ test/",
