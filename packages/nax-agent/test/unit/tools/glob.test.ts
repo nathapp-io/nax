@@ -519,3 +519,8 @@ describe("globTool.description", () => {
     expect(globTool.description).toContain("bare backslash is literal");
   });
 });
+
+test("explicit hidden file patterns yield no matches", async () => {
+  writeFileSync(join(root, ".secret"), "hidden");
+  expect((await globTool.run({ pattern: ".secret" }, ctx())).content).toBe('no matches for ".secret"');
+});

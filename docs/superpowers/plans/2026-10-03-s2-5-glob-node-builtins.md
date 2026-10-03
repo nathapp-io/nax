@@ -125,7 +125,7 @@ Export `AgentGlobOptions` through runtime/index and the existing named runtime b
 
 **Interfaces:** Consumes Task 1's two runtime methods through `getAgentRuntime(): AgentRuntime`. Produces unchanged `_globDeps.scan(pattern, { cwd, absolute }): AsyncIterable<string>`, `globTool.run` and `scratchpadListTool.run` outputs.
 
-- [ ] **Step 1: Add failing tests for call-time delegation.** Load tool modules before installing a recording runtime; override `glob` to return `["b.ts", "a.ts"]` and `globSync` to return `["b.txt", "a.txt"]`. Create the scratchpad directory so its existing missing-directory guard permits scanning. Run existing tools using their current context fixtures, then assert:
+- [x] **Step 1: Add failing tests for call-time delegation.** Load tool modules before installing a recording runtime; override `glob` to return `["b.ts", "a.ts"]` and `globSync` to return `["b.txt", "a.txt"]`. Create the scratchpad directory so its existing missing-directory guard permits scanning. Run existing tools using their current context fixtures, then assert:
 
 ```ts
 expect(globResult.content).toBe("./ a.ts b.ts");
@@ -136,13 +136,13 @@ expect(syncCalls).toEqual([{ pattern: "**/*", opts: { cwd: join(root, SCRATCHPAD
 
 Define recording runtime locally by spreading nodeRuntime and replacing these methods; restore the prior runtime in finally/afterEach. Add filesystem tool tests: explicitly named hidden file yields `no matches for ".secret"`; scratchpad containing hidden files/directories lists only visible notes; missing scratchpad still returns `(no entries)`; retain 500-match limits, grouped escaping, and confinement tests.
 
-- [ ] **Step 2: Run `rtk proxy bun test ./test/unit/runtime/seam-delegation.test.ts ./test/unit/tools/glob.test.ts ./test/unit/tools/scratchpad.test.ts --timeout=60000` in agent.** Expected: delegation assertions fail on direct Bun scans.
+- [x] **Step 2: Run `rtk proxy bun test ./test/unit/runtime/seam-delegation.test.ts ./test/unit/tools/glob.test.ts ./test/unit/tools/scratchpad.test.ts --timeout=60000` in agent.** Expected: delegation assertions fail on direct Bun scans.
 
-- [ ] **Step 3: Delegate per invocation.** `_globDeps.scan` calls `getAgentRuntime().glob(pattern, opts)`; ScratchpadList calls `getAgentRuntime().globSync("**/*", { cwd: scratchpad, absolute: false })`. Keep `_globDeps` object identity and override shape. Keep sorting, capping, policy checks, missing-directory handling and formatting at their existing sites. Rewrite comments describing the old direct Bun implementation.
+- [x] **Step 3: Delegate per invocation.** `_globDeps.scan` calls `getAgentRuntime().glob(pattern, opts)`; ScratchpadList calls `getAgentRuntime().globSync("**/*", { cwd: scratchpad, absolute: false })`. Keep `_globDeps` object identity and override shape. Keep sorting, capping, policy checks, missing-directory handling and formatting at their existing sites. Rewrite comments describing the old direct Bun implementation.
 
-- [ ] **Step 4: Repeat Step 2 and run agent typecheck.** Expected: passing tool outputs and delegation tests.
+- [x] **Step 4: Repeat Step 2 and run agent typecheck.** Expected: passing tool outputs and delegation tests.
 
-- [ ] **Step 5: Commit Task 2 files.** Message: `refactor: delegate agent glob tools through the runtime slot`.
+- [x] **Step 5: Commit Task 2 files.** Message: `refactor: delegate agent glob tools through the runtime slot`.
 
 ### Task 3: Replace Bun filesystem calls while preserving failures and bytes
 

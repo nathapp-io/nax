@@ -616,3 +616,12 @@ describe("US-001 — ScratchpadWrite.description advertises probe scripts", () =
     expect(lower).toContain("run against the project's code");
   });
 });
+
+test("ScratchpadList excludes hidden files and dot-directory descendants", async () => {
+  const scratchpad = join(root, SCRATCHPAD_DIR);
+  mkdirSync(join(scratchpad, ".hidden"), { recursive: true });
+  writeFileSync(join(scratchpad, ".secret"), "hidden");
+  writeFileSync(join(scratchpad, ".hidden", "nested.txt"), "hidden");
+  writeFileSync(join(scratchpad, "visible.txt"), "visible");
+  expect((await scratchpadListTool.run({}, ctx(scratchpad))).content).toBe("visible.txt");
+});

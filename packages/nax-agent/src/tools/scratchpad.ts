@@ -16,6 +16,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
+import { getAgentRuntime } from "#src/runtime/index";
 import { resolveWithin } from "./policy";
 import { readFileSlice } from "./read-file";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
@@ -175,7 +176,7 @@ export const scratchpadListTool: CodingTool = {
     // should see a clean empty listing, not an ENOENT to recover from.
     if (!existsSync(scratchpad)) return { content: "(no entries)" };
 
-    const entries = new Bun.Glob("**/*").scanSync({ cwd: scratchpad, absolute: false, onlyFiles: true });
+    const entries = getAgentRuntime().globSync("**/*", { cwd: scratchpad, absolute: false });
     // Mirror glob.ts: every match is re-checked through resolveWithin before
     // it is emitted, so a directory symlink planted inside the scratchpad
     // cannot leak external paths the policy never saw. resolveWithin runs
@@ -185,7 +186,7 @@ export const scratchpadListTool: CodingTool = {
     // Sort first, then cap. Capping first would leak the scan's enumeration
     // order into the model, which is not what any caller expects from a
     // listing -- a deterministic alphabetical prefix is the useful signal
-    // when a scratchpad has grown past the cap. scanSync materializes the
+    // when a scratchpad has grown past the cap. The caller materializes the
     // full list before we see it, so the sort/cap are bounded by what the
     // scan produced, not by anything the tool itself decided to walk.
     const sorted = [...entries].sort();

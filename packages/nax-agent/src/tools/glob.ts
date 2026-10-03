@@ -1,7 +1,7 @@
 /**
  * List files matching a glob, always relative to and bounded by the root.
  *
- * Bun.Glob scans from a cwd, so the root is the cwd and results are relative by
+ * The runtime scans from a cwd, so the root is the cwd and results are relative by
  * construction. A pattern that tries to climb out ("../**") therefore matches
  * nothing rather than escaping.
  *
@@ -16,6 +16,7 @@
  */
 
 import { sep } from "node:path";
+import { getAgentRuntime } from "#src/runtime/index";
 import { resolveWithin } from "./policy";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
 
@@ -23,7 +24,7 @@ const MAX_MATCHES = 500;
 
 /**
  * A pattern with a ".." segment can only match paths outside the root, so it
- * is answered without scanning at all: Bun.Glob would otherwise walk the
+ * is answered without scanning at all: the scanner would otherwise walk the
  * parent tree (unbounded on real filesystems) just to yield hits that
  * resolveWithin would discard. The result echoes no pattern, so no ".." can
  * leak into the output.
@@ -39,7 +40,7 @@ function climbsOut(pattern: string): boolean {
  */
 export const _globDeps = {
   scan(pattern: string, opts: { cwd: string; absolute: boolean }): AsyncIterable<string> {
-    return new Bun.Glob(pattern).scan(opts);
+    return getAgentRuntime().glob(pattern, opts);
   },
 };
 
