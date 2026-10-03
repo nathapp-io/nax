@@ -8,7 +8,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { _agentOutputEnvDeps, agentOutputOverlay } from "#src/internal/agent-output-env";
+import {
+  _agentOutputEnvDeps,
+  AGENT_OUTPUT_MARKERS,
+  agentOutputOverlay,
+  withAgentOutputEnv,
+} from "#src/internal/agent-output-env";
 import { withDepsRestore } from "#test/helpers/index";
 
 const MARKER_FREE = { PATH: "/usr/bin", HOME: "/home/x" };
@@ -62,5 +67,28 @@ describe("agentOutputOverlay (US-004)", () => {
     } finally {
       delete process.env.NAX_AGENT_OUTPUT_PROBE;
     }
+  });
+});
+
+describe("withAgentOutputEnv", () => {
+  test("adds AGENT=1 to an env with no marker, leaving the input untouched", () => {
+    const env = { ...MARKER_FREE };
+
+    expect(withAgentOutputEnv(env)).toEqual({ ...MARKER_FREE, AGENT: "1" });
+    expect(env).toEqual(MARKER_FREE);
+  });
+
+  test("returns the same env when any marker is present", () => {
+    for (const marker of AGENT_OUTPUT_MARKERS) {
+      const env = { ...MARKER_FREE, [marker]: "1" };
+
+      expect(withAgentOutputEnv(env)).toBe(env);
+    }
+  });
+
+  test("returns the same env when the caller stripped AGENT", () => {
+    const env = { ...MARKER_FREE };
+
+    expect(withAgentOutputEnv(env, ["AGENT"])).toBe(env);
   });
 });
