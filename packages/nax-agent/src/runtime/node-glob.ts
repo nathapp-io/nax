@@ -27,7 +27,8 @@ function scanOptions(pattern: string, opts: AgentGlobOptions) {
 
 function filePath(entry: Dirent, cwd: string, absolute: boolean, literal: boolean): string | null {
   const full = join(entry.parentPath, entry.name);
-  if (!entry.isFile() && !(literal && entry.isSymbolicLink() && statSync(full, { throwIfNoEntry: false })?.isFile())) return null;
+  if (!entry.isFile() && !(literal && entry.isSymbolicLink() && statSync(full, { throwIfNoEntry: false })?.isFile()))
+    return null;
   const path = relative(cwd, full);
   if (path.split(sep).some((segment) => segment.startsWith("."))) return null;
   return absolute ? resolve(full) : path;

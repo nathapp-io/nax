@@ -207,3 +207,14 @@ describe("check-package-boundaries", () => {
     );
   });
 });
+
+test("agent production Bun imports fail while retained Bun tests and nax runtime pass", () => {
+  workspace();
+  write("packages/nax-agent/src/bun.ts", 'import { Glob } from "bun";\nimport { test } from "bun:test";\n');
+  write("packages/nax-agent/test/bun.test.ts", 'import { test } from "bun:test";\n');
+  write("packages/nax/src/agent-runtime/bun-runtime.ts", 'import { Glob } from "bun";\n');
+  expect(whys()).toEqual([
+    "packages/nax-agent/src/bun.ts bun Bun import outside test/",
+    "packages/nax-agent/src/bun.ts bun:test Bun import outside test/",
+  ]);
+});

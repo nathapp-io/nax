@@ -227,15 +227,15 @@ Strengthen native/client.test.ts's existing “a header VALUE change still trips
 
 **Interfaces:** Retains `findBunApiUses(srcDir: string, packageRoot: string): Promise<BunApiViolation[]>` and `findBoundaryViolations(repoRoot: string): BoundaryViolation[]`. Adds agent `check:no-bun-apis = "bun ../repo-tooling/scripts/check-no-bun-apis.ts --package=."`, called by lint:checks/check:all.
 
-- [ ] **Step 1: Extend gate fixture assertions.** Require violations for `globalThis.Bun`, `globalThis.Bun.file(...)`, `typeof Bun`, `import.meta.dir`, direct Bun member access, bun: static/dynamic imports, and bare `bun` imports. Keep comment lines, myBun identifiers and node: imports accepted. Assert relative filename/line accuracy. In boundary fixtures reject `src/x.ts` imports from `bun` and `bun:test` for nax-agent, while `test/x.test.ts` importing bun:test remains accepted. nax's Bun runtime must remain accepted.
+- [x] **Step 1: Extend gate fixture assertions.** Require violations for `globalThis.Bun`, `globalThis.Bun.file(...)`, `typeof Bun`, `import.meta.dir`, direct Bun member access, bun: static/dynamic imports, and bare `bun` imports. Keep comment lines, myBun identifiers and node: imports accepted. Assert relative filename/line accuracy. In boundary fixtures reject `src/x.ts` imports from `bun` and `bun:test` for nax-agent, while `test/x.test.ts` importing bun:test remains accepted. nax's Bun runtime must remain accepted.
 
-- [ ] **Step 2: Run repo-tooling `rtk proxy bun test ./test/unit/scripts/check-no-bun-apis.test.ts --timeout=60000` and nax `rtk proxy bun test ./test/unit/scripts/check-package-boundaries.test.ts --timeout=60000`.** Expected: new forbidden forms are missed/accepted by the current gates.
+- [x] **Step 2: Run repo-tooling `rtk proxy bun test ./test/unit/scripts/check-no-bun-apis.test.ts --timeout=60000` and nax `rtk proxy bun test ./test/unit/scripts/check-package-boundaries.test.ts --timeout=60000`.** Expected: new forbidden forms are missed/accepted by the current gates.
 
-- [ ] **Step 3: Strengthen and wire gates.** Expand the source detector to the forms above without introducing exceptions. Retain its existing comment-line model; reword single-line source docblocks that mention Bun member syntax instead of allowlisting them. In agentViolation reject Bun builtins outside test/ before the generic isBuiltin allowance; retaining bun:test tests is R1, not a shipped-source exception. Update the boundary module's documentation accordingly. Add/call check:no-bun-apis in agent's manifest; leave dependencies and version unchanged.
+- [x] **Step 3: Strengthen and wire gates.** Expand the source detector to the forms above without introducing exceptions. Retain its existing comment-line model; reword single-line source docblocks that mention Bun member syntax instead of allowlisting them. In agentViolation reject Bun builtins outside test/ before the generic isBuiltin allowance; retaining bun:test tests is R1, not a shipped-source exception. Update the boundary module's documentation accordingly. Add/call check:no-bun-apis in agent's manifest; leave dependencies and version unchanged.
 
-- [ ] **Step 4: Repeat gate tests; run agent `rtk bun run check:no-bun-apis` and `rtk bun run check:all`; nax `rtk bun run check:package-boundaries`; nax-ai `rtk bun run check:no-bun-apis`.** Expected: clean source detector and all boundaries hold. A source gate failure identifies a site to replace/reword, never a new baseline entry.
+- [x] **Step 4: Repeat gate tests; run agent `rtk bun run check:no-bun-apis` and `rtk bun run check:all`; nax `rtk bun run check:package-boundaries`; nax-ai `rtk bun run check:no-bun-apis`.** Expected: clean source detector and all boundaries hold. A source gate failure identifies a site to replace/reword, never a new baseline entry.
 
-- [ ] **Step 5: Commit Task 5 files.** Message: `chore: enforce Bun-free nax-agent source`.
+- [x] **Step 5: Commit Task 5 files.** Message: `chore: enforce Bun-free nax-agent source`.
 
 ### Task 6: Prove the Node floor and finish the slice
 

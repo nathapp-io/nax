@@ -23,8 +23,9 @@ import { gatePackageRoot } from "#scripts/lib/package-root";
  * protocol. Word-boundary-prefixed so identifiers that merely end in "Bun"
  * do not trip it.
  */
-const BUN_GLOBAL = /(?<![\w$.])Bun\s*\./;
-const BUN_MODULE = /from\s+["']bun:[\w-]+["']|import\s*\(\s*["']bun:[\w-]+["']/;
+const BUN_GLOBAL = /(?<![\w$.])(?:Bun\s*\.|globalThis\s*\.\s*Bun\b|typeof\s+Bun\b)/;
+const BUN_MODULE = /(?:from\s+|import\s*(?:\(\s*)?)["']bun(?::[\w-]+)?["']/;
+const BUN_META = /\bimport\s*\.\s*meta\s*\.\s*dir\b/;
 
 export interface BunApiViolation {
   readonly file: string;
@@ -53,7 +54,7 @@ export async function findBunApiUses(srcDir: string, packageRoot: string): Promi
       // so only flag lines that are not purely commentary.
       const stripped = text.trim();
       if (stripped.startsWith("*") || stripped.startsWith("//")) return;
-      if (BUN_GLOBAL.test(text) || BUN_MODULE.test(text)) {
+      if (BUN_GLOBAL.test(text) || BUN_MODULE.test(text) || BUN_META.test(text)) {
         violations.push({ file: relative(packageRoot, file), line: index + 1, text: stripped });
       }
     });
