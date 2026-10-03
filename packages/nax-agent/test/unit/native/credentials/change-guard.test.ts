@@ -1,8 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { AuthStamp } from "@nathapp/nax-agent";
 import { _resetFingerprintSalt, createChangeGuard, fingerprintCredential } from "@nathapp/nax-agent/internal";
-import type { CredentialStore, ProviderId, StoredCredential } from "@nathapp/nax-ai";
-import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import {
+  type CredentialStore,
+  createMemoryCredentialStore,
+  type ProviderId,
+  type StoredCredential,
+} from "@nathapp/nax-ai";
+import {
+  _resetCredentialsConfig,
+  type CredentialsConfig,
+  configureCredentials,
+  credentialsConfig,
+  getSafeLogger,
+  setAgentLogger,
+} from "#src/infra/index";
 import { assertNaxError, cleanupTempDir, type LogCall, makeLogger, makeTempDir } from "#test/helpers/index";
 
 /**
@@ -42,7 +54,23 @@ let logger: ReturnType<typeof makeLogger>;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 const originalLogger = getSafeLogger();
 
+/**
+ * The credentials slot is process-global and the preload filled it. Save what
+ * was there and put it back after each test, so the explicit-salt test can clear
+ * the slot and leave the module as it found it for the suites that rely on the
+ * preload's slot (S2-3b pattern).
+ */
+let savedCredentials: CredentialsConfig | undefined;
+let credentialsWasConfigured = false;
+
 beforeEach(() => {
+  try {
+    savedCredentials = credentialsConfig();
+    credentialsWasConfigured = true;
+  } catch {
+    credentialsWasConfigured = false;
+  }
+
   dir = makeTempDir("nax-change-guard-");
   process.env.NAX_GLOBAL_CONFIG_DIR = dir;
   _resetFingerprintSalt();
@@ -55,6 +83,8 @@ afterEach(() => {
   setAgentLogger(originalLogger);
   _resetFingerprintSalt();
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+  if (credentialsWasConfigured && savedCredentials !== undefined) configureCredentials(savedCredentials);
+  else _resetCredentialsConfig();
   cleanupTempDir(dir);
 });
 
@@ -417,5 +447,17 @@ describe("createChangeGuard", () => {
         expect(serialized).not.toContain(secret);
       }
     }
+  });
+
+  test("a guard with an explicit salt never reads the credentials slot", async () => {
+    _resetCredentialsConfig();
+    const inner = createMemoryCredentialStore({ anthropic: { kind: "api-key", key: "k" } });
+    const guard = createChangeGuard(inner, {
+      onChange: "warn",
+      salt: Buffer.alloc(32, 1),
+      describe: () => ({ source: "memory" }),
+    });
+    await guard.read("anthropic");
+    expect(guard.servedAuth("anthropic")?.source).toBe("memory");
   });
 });
