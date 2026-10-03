@@ -111,6 +111,32 @@ describe("extractPackageSurface", () => {
     ]);
   });
 
+  test("a value re-exported through `export type` has no runtime binding on the entry, so it is marked type", async () => {
+    const root = fixture({
+      "src/a.ts": "export class K {}\nexport const v = 1;\nexport class K2 {}\nexport const v2 = 2;\n",
+      "src/c.ts": "export const w = 3;\nexport class W2 {}\n",
+      "src/mid.ts": 'export type { K } from "./a.ts";\n',
+      "src/index.ts": [
+        'export type { K, v } from "./a.ts";',
+        'export { type K2, v2 } from "./a.ts";',
+        'export type * from "./c.ts";',
+        'export { K as K3 } from "./mid.ts";',
+        "",
+      ].join("\n"),
+      "src/internal.ts": 'export * from "./a.ts";\n',
+    });
+    const entries = (await extractPackageSurface(root))["."];
+    expect(entries).toEqual([
+      { name: "K", kind: "type" },
+      { name: "K2", kind: "type" },
+      { name: "K3", kind: "type" },
+      { name: "W2", kind: "type" },
+      { name: "v", kind: "type" },
+      { name: "v2", kind: "value" },
+      { name: "w", kind: "type" },
+    ]);
+  }, 60_000);
+
   test("fails when the package does not build", async () => {
     const bad = fixture({ ...FIXTURE_FILES, "src/index.ts": 'export * from "not-installed-anywhere";\n' });
     await expect(extractPackageSurface(bad)).rejects.toThrow(/tsc failed/);

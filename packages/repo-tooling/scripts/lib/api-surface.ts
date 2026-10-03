@@ -27,6 +27,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { API, type Checker, SymbolFlags, type Symbol as TsSymbol } from "typescript/unstable/async";
 import { byCodePoint } from "#scripts/lib/sort";
+import { TypeOnlyExports } from "#scripts/lib/type-only-exports";
 
 export type ApiEntryPoint = "." | "./internal";
 export const ENTRY_POINTS: readonly ApiEntryPoint[] = [".", "./internal"];
@@ -74,9 +75,16 @@ function writeProjectFiles(projectDir: string, packageDir: string): void {
   if (existsSync(modules)) symlinkSync(modules, join(projectDir, "node_modules"));
 }
 
-async function kindOf(checker: Checker, symbol: TsSymbol): Promise<ApiEntry["kind"]> {
+async function kindOf(
+  checker: Checker,
+  typeOnly: TypeOnlyExports,
+  moduleSymbol: TsSymbol,
+  symbol: TsSymbol,
+): Promise<ApiEntry["kind"]> {
   const target = symbol.flags & SymbolFlags.Alias ? await checker.getAliasedSymbol(symbol) : symbol;
-  return target.flags & SymbolFlags.Value ? "value" : "type";
+  if (!(target.flags & SymbolFlags.Value)) return "type";
+  // The target's flags say what the declaration IS; a type-only route says what this entry HANDS OUT.
+  return (await typeOnly.onlyTypeRoutes(moduleSymbol, symbol.name)) ? "type" : "value";
 }
 
 /** The exports of each entry of an already-built project. Fails on any diagnostic inside its `dist/`. */
@@ -102,9 +110,10 @@ export async function extractApiSurface(projectDir: string): Promise<ApiSurface>
       const sourceFile = await project.program.getSourceFile(file);
       const moduleSymbol = sourceFile && (await project.checker.getSymbolAtLocation(sourceFile));
       if (moduleSymbol === undefined) throw new Error(`${file} is missing or exports nothing`);
+      const typeOnly = new TypeOnlyExports(project);
       const entries: ApiEntry[] = [];
       for (const symbol of await project.checker.getExportsOfModule(moduleSymbol)) {
-        entries.push({ name: symbol.name, kind: await kindOf(project.checker, symbol) });
+        entries.push({ name: symbol.name, kind: await kindOf(project.checker, typeOnly, moduleSymbol, symbol) });
       }
       out[entry] = entries.sort((a, b) => byCodePoint(a.name, b.name));
     }
