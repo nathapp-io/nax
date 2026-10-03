@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  _gitDeps,
   _resetBuiltinsForTest,
   _resetRegistryForTest,
   buildCommitArgvs,
@@ -11,10 +12,7 @@ import {
   gitCommitTool,
   registerBuiltinCodingTools,
 } from "@nathapp/nax-agent/internal";
-import { makeSpawn, makeSpawnResult } from "@test/helpers";
-import { naxProtectedPaths } from "@/agents/nax-protected-paths";
-import { DEFAULT_CODING_TOOLS } from "@/config/permissions";
-import { _gitDeps } from "@/utils/git";
+import { makeSpawn, makeSpawnResult, testProtectedPaths } from "#test/helpers/index";
 
 async function makeRepo(): Promise<string> {
   const repo = mkdtempSync(join(tmpdir(), "nax-git-commit-"));
@@ -32,7 +30,7 @@ const toolContext = (root: string) => ({
   resolvedPaths: [],
   maxBytes: 4096,
   maxFileBytes: 1024,
-  protectedPaths: naxProtectedPaths(),
+  protectedPaths: testProtectedPaths(),
 });
 
 describe("buildCommitArgvs", () => {
@@ -86,10 +84,6 @@ describe("buildCommitArgvs", () => {
     _resetBuiltinsForTest();
     registerBuiltinCodingTools();
     expect(getCodingTool("GitCommit")?.name).toBe("GitCommit");
-  });
-
-  test("is NOT in the default grant -- mutation is always explicit", () => {
-    expect(DEFAULT_CODING_TOOLS).not.toContain("GitCommit");
   });
 });
 

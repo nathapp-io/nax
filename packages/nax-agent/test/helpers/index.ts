@@ -42,7 +42,17 @@ export {
   observedOnly,
   requireGuard,
 } from "./command-safety";
+export { TEST_GIT_EXCLUDE_PATHSPECS, TEST_GITIGNORE_PATTERNS, testProtectedPaths } from "./protected-paths";
 export { type FakeSandboxMode, makeFakeSandboxBackend } from "./sandbox";
+export {
+  type ConfinedSessionOptions,
+  type ConfinedSessionSeam,
+  NON_SHARED_TMPDIR,
+  POLICY_BUILT,
+  type SessionSandboxDepsLike,
+  stubSessionSandboxDeps,
+  withSessionSandboxSeam,
+} from "./session-sandbox-deps";
 export type { StubMode } from "./systemone-stub";
 export { startSystemOneStub, stubAnswerBody } from "./systemone-stub";
 export { type TimerSpyResult, withTimerSpy } from "./timer-spy";

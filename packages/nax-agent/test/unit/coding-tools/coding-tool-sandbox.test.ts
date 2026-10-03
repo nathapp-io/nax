@@ -22,12 +22,11 @@ import {
   NON_SHARED_TMPDIR,
   POLICY_BUILT,
   stubSessionSandboxDeps,
+  testProtectedPaths,
   withDepsRestore,
   withSessionSandboxSeam,
   withWarnSpy,
-} from "@test/helpers";
-import { naxProtectedPaths } from "@/agents/nax-protected-paths";
-import { trustStorePath } from "@/trust";
+} from "#test/helpers/index";
 
 let root: string;
 beforeEach(() => {
@@ -59,7 +58,7 @@ describe("resolveSessionSandbox", () => {
       root,
       needsLauncher: true,
       tmpDir,
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
     await launcher.run({
       spec: { kind: "shell", shell: "/bin/sh", command: "true" },
@@ -84,7 +83,7 @@ describe("resolveSessionSandbox", () => {
       config: disabled,
       root,
       needsLauncher: true,
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
     await launcher.run({
       spec: { kind: "shell", shell: "/bin/sh", command: "true" },
@@ -107,7 +106,7 @@ describe("resolveSessionSandbox", () => {
       config: disabled,
       root,
       needsLauncher: true,
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
     expect(l.state).toEqual({ kind: "disabled" });
     expect(probes).toBe(0);
@@ -123,7 +122,7 @@ describe("resolveSessionSandbox", () => {
       config: enabled,
       root,
       needsLauncher: false,
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
     expect(l.state.kind).toBe("disabled");
     expect(probes).toBe(0);
@@ -139,7 +138,7 @@ describe("resolveSessionSandbox", () => {
       root,
       outputDir,
       needsLauncher: true,
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
     expect(l.state).toEqual({ kind: "available", backend: "srt", network: "open" });
     await l.run({
@@ -169,7 +168,7 @@ describe("resolveSessionSandbox", () => {
       config: enabled,
       root,
       needsLauncher: true,
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
     const req = {
       spec: { kind: "shell", shell: "/bin/sh", command: "true" },
@@ -188,11 +187,12 @@ describe("resolveSessionSandbox", () => {
     const backend = makeFakeSandboxBackend();
     _sessionSandboxDeps.backendFor = () => backend;
     _sessionSandboxDeps.probe = async () => ({ available: true });
+    const protectedPaths = testProtectedPaths();
     const launcher = await resolveSessionSandbox({
       config: enabled,
       root,
       needsLauncher: true,
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths,
     });
     await launcher.run({
       spec: { kind: "shell", shell: "/bin/sh", command: "echo hi" },
@@ -201,7 +201,7 @@ describe("resolveSessionSandbox", () => {
       timeoutMs: 5000,
       stripEnvVars: [],
     });
-    expect(backend.calls[0]?.policy.denyWrite).toContain(realOrRaw(trustStorePath()));
+    expect(backend.calls[0]?.policy.denyWrite).toContain(realOrRaw(protectedPaths.trustStoreFile));
   });
 
   test("enabled + unavailable: unavailable launcher and a raw refusal", async () => {
@@ -211,7 +211,7 @@ describe("resolveSessionSandbox", () => {
       config: enabled,
       root,
       needsLauncher: true,
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
     expect(l.state).toEqual({ kind: "unavailable", backend: "srt", reason: "no bwrap" });
     expect(rawRefusalFor(l)).toContain("sandbox unavailable (no bwrap)");
@@ -228,7 +228,7 @@ describe("resolveSessionSandbox", () => {
       config: enabled,
       root: globRoot,
       needsLauncher: true,
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
     expect(l.state.kind).toBe("unavailable");
     expect(l.state.kind === "unavailable" ? l.state.reason : "").toContain("re[x]po");
@@ -243,7 +243,7 @@ describe("resolveSessionSandbox", () => {
       throw new Error("boom");
     };
     await expect(
-      resolveSessionSandbox({ config: enabled, root, needsLauncher: true, protectedPaths: naxProtectedPaths() }),
+      resolveSessionSandbox({ config: enabled, root, needsLauncher: true, protectedPaths: testProtectedPaths() }),
     ).rejects.toThrow("boom");
   });
 
@@ -282,7 +282,7 @@ describe("resolveSessionSandbox — US-002 confined run temp roots", () => {
     needsLauncher: true,
     runTmpRoot: RUN_TMP_ROOT,
     tmpDir: SESSION_TMP_DIR,
-    protectedPaths: naxProtectedPaths(),
+    protectedPaths: testProtectedPaths(),
   });
 
   /** The same setup with neither a run root nor a session dir supplied. */
@@ -290,7 +290,7 @@ describe("resolveSessionSandbox — US-002 confined run temp roots", () => {
     config: sandboxConfig(false),
     root,
     needsLauncher: true,
-    protectedPaths: naxProtectedPaths(),
+    protectedPaths: testProtectedPaths(),
   });
 
   function launchRequest(): LaunchRequest {

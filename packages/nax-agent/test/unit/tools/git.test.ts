@@ -11,11 +11,10 @@ import {
   GIT_READ_VERBS,
   gitTool,
 } from "@nathapp/nax-agent";
-import { GIT_DIFF_FILTERS } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { naxProtectedPaths } from "@/agents/nax-protected-paths";
-import { _gitDeps } from "@/utils/git";
-import { NAX_OWNED_GIT_EXCLUDE_PATHSPECS } from "@/utils/nax-owned-paths";
+import { _gitDeps, GIT_DIFF_FILTERS } from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeTempDir, TEST_GIT_EXCLUDE_PATHSPECS, testProtectedPaths } from "#test/helpers/index";
+
+const GIT_EXCLUDES = [...TEST_GIT_EXCLUDE_PATHSPECS];
 
 function contentOf(result: { kind: string; content?: string }): string {
   if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}: ${JSON.stringify(result)}`);
@@ -23,7 +22,7 @@ function contentOf(result: { kind: string; content?: string }): string {
 }
 
 function argvOf(input: Record<string, unknown>): string[] {
-  const built = buildGitArgv(input, NAX_OWNED_GIT_EXCLUDE_PATHSPECS);
+  const built = buildGitArgv(input, GIT_EXCLUDES);
   if ("error" in built) throw new Error(`expected argv, got error: ${built.error}`);
   return built;
 }
@@ -34,7 +33,7 @@ describe("buildGitArgv", () => {
   // the cwd, which is the permitted root. See the root-boundary tests below for
   // the two escapes this shape closes.
   test("scopes a plain diff to the root and terminates the revision list", () => {
-    expect(argvOf({ subcommand: "diff" })).toEqual(["diff", "--", ".", ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS]);
+    expect(argvOf({ subcommand: "diff" })).toEqual(["diff", "--", ".", ...GIT_EXCLUDES]);
   });
 
   test("appends refs then paths after a '--' separator", () => {
@@ -99,20 +98,8 @@ describe("buildGitArgv", () => {
   });
 });
 
-/**
- * nax#2007 — nax writes run state under `.nax/`, and during a run it is
- * git-tracked, so an unscoped Git call reported it back to the agent as its own
- * diff. The fix narrows only the DEFAULT view: a caller that names a path gets
- * exactly what it asked for. `blame` is exempt because git rejects exclude
- * pathspecs there and exits 128.
- */
 describe("buildGitArgv — nax-owned paths are excluded from the default view", () => {
-  const GIT_EXCLUDES = [":(exclude).nax", ":(glob,exclude)**/.nax/**"];
-
-  test("the shared SSOT constant is the git exclude form the tool uses", () => {
-    expect([...NAX_OWNED_GIT_EXCLUDE_PATHSPECS]).toEqual(GIT_EXCLUDES);
-  });
-
+  // The SSOT pin (NAX_OWNED_GIT_EXCLUDE_PATHSPECS === this form) stays in nax: test/unit/tools/git-ssot.test.ts.
   test("status with no paths ends with the root and the nax exclusions", () => {
     expect(argvOf({ subcommand: "status" })).toEqual(["status", "--", ".", ...GIT_EXCLUDES]);
   });
@@ -193,7 +180,7 @@ describe("gitTool — the default view hides nested and root .nax run state", ()
     const repo = await makeRepo();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const content = contentOf(await rt.callTool("Git", { subcommand: "status" }));
@@ -207,7 +194,7 @@ describe("gitTool — the default view hides nested and root .nax run state", ()
     const repo = await makeRepo();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const content = contentOf(await rt.callTool("Git", { subcommand: "diff" }));
@@ -231,13 +218,7 @@ describe("gitTool — the default view hides nested and root .nax run state", ()
  */
 describe("buildGitArgv — typed flag fields", () => {
   test("emits --name-only for diff and log", () => {
-    expect(argvOf({ subcommand: "diff", nameOnly: true })).toEqual([
-      "diff",
-      "--name-only",
-      "--",
-      ".",
-      ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
-    ]);
+    expect(argvOf({ subcommand: "diff", nameOnly: true })).toEqual(["diff", "--name-only", "--", ".", ...GIT_EXCLUDES]);
     expect(argvOf({ subcommand: "log", nameOnly: true })).toContain("--name-only");
   });
 
@@ -286,30 +267,15 @@ describe("buildGitArgv — typed flag fields", () => {
   });
 
   test("a false or omitted boolean emits nothing", () => {
-    expect(argvOf({ subcommand: "diff", nameOnly: false })).toEqual([
-      "diff",
-      "--",
-      ".",
-      ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
-    ]);
+    expect(argvOf({ subcommand: "diff", nameOnly: false })).toEqual(["diff", "--", ".", ...GIT_EXCLUDES]);
     expect(argvOf({ subcommand: "log", oneline: false })).not.toContain("--oneline");
   });
 
   // `false` asks for nothing, so refusing it for the wrong verb would invent a
   // refusal — the failure class this change exists to reduce.
   test("an explicitly-false flag is accepted even on a verb it does not apply to", () => {
-    expect(argvOf({ subcommand: "status", nameOnly: false })).toEqual([
-      "status",
-      "--",
-      ".",
-      ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
-    ]);
-    expect(argvOf({ subcommand: "diff", oneline: false })).toEqual([
-      "diff",
-      "--",
-      ".",
-      ...NAX_OWNED_GIT_EXCLUDE_PATHSPECS,
-    ]);
+    expect(argvOf({ subcommand: "status", nameOnly: false })).toEqual(["status", "--", ".", ...GIT_EXCLUDES]);
+    expect(argvOf({ subcommand: "diff", oneline: false })).toEqual(["diff", "--", ".", ...GIT_EXCLUDES]);
   });
 
   // The closed enum is the whole safety property: were the value interpolated
@@ -411,7 +377,7 @@ describe("gitTool — the permitted root bounds the repository view", () => {
     const { root } = await makeRepo();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const result = await rt.callTool("Git", { subcommand: "show", refs: ["../../outside/secret.txt"] });
@@ -424,7 +390,7 @@ describe("gitTool — the permitted root bounds the repository view", () => {
     const { root } = await makeRepo();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const result = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD"] });
@@ -436,7 +402,7 @@ describe("gitTool — the permitted root bounds the repository view", () => {
     const { root } = await makeRepo();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const result = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD"] });
@@ -475,7 +441,7 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
     const { root } = await makeRepoWithFileInPackage();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
@@ -489,7 +455,7 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
     const { root } = await makeRepoWithFileInPackage();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const result = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD"] });
@@ -511,7 +477,7 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
     writeFileSync(join(repo, "f.txt"), "two\n");
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
@@ -528,7 +494,7 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
     const { root } = await makeRepoWithFileInPackage({ fileName: "café.txt" });
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
@@ -543,7 +509,7 @@ describe("gitTool — output paths are repo-rooted when the root is the reposito
     const { root } = await makeRepoWithFileInPackage({ fileName: "with space.txt" });
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const result = await rt.callTool("Git", { subcommand: "diff" });
@@ -693,7 +659,7 @@ describe("gitTool — log renders the compact format and keeps --name-only group
     const repo = await makeRepoWithCommits();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const content = contentOf(await rt.callTool("Git", { subcommand: "log" }));
@@ -713,7 +679,7 @@ describe("gitTool — log renders the compact format and keeps --name-only group
     const repo = await makeRepoWithCommits();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const content = contentOf(await rt.callTool("Git", { subcommand: "log", nameOnly: true, paths: ["src"] }));
@@ -736,7 +702,7 @@ describe("gitTool — log renders the compact format and keeps --name-only group
     const repo = await makeRepoWithCommits();
     const rt = createCodingToolRuntime({
       policy: compileToolPolicy([{ tool: "Git", patterns: ["*"] }], repo),
-      protectedPaths: naxProtectedPaths(),
+      protectedPaths: testProtectedPaths(),
     });
 
     const content = contentOf(await rt.callTool("Git", { subcommand: "log", fullMessage: true }));
