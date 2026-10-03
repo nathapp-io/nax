@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   _clientDeps,
   _resetNativeClient,
+  type GuardedCredentialStore,
   getNativeClient,
   type ProviderCatalogOverride,
 } from "@nathapp/nax-agent/internal";
@@ -64,8 +65,13 @@ function providerOverride(provider: string): ProviderCatalogOverride {
   return { provider, models: [] };
 }
 
+/** Narrow the builder's opaque credential option to the guarded store the adapter passes. */
+function isGuardedCredentialStore(store: unknown): store is GuardedCredentialStore {
+  return typeof store === "object" && store !== null && "servedAuth" in store;
+}
+
 describe("adapter-owned client", () => {
-  test("a memory-sourced adapter runs a turn with the slot unset and stamps source memory", async () => {
+  test("a memory-sourced adapter runs a turn with the slot unset and hands the memory store to the client builder", async () => {
     try {
       savedSlot = credentialsConfig();
     } catch {
@@ -85,6 +91,17 @@ describe("adapter-owned client", () => {
     expect(seenOptions).toHaveLength(1);
     expect(seenOptions[0].credentials).toBeDefined();
     expect(await adapter.hasCredentials()).toBe(true);
+
+    // The stub client reads no credential, so the turn itself produces no auth
+    // stamp. Read the store the adapter handed the builder instead — the same
+    // store the real protocol layer would read — to pin the memory source
+    // end-to-end without reaching through the adapter's private state.
+    const store = seenOptions[0].credentials;
+    if (!isGuardedCredentialStore(store)) {
+      throw new Error("the adapter handed the client builder a store without servedAuth");
+    }
+    await store.read("stub");
+    expect(store.servedAuth("stub")?.source).toBe("memory");
   });
 
   test("two owned clients with different overrides both build; the memo still refuses a mismatch", async () => {
