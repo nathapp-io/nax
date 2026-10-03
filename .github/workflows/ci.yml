@@ -191,6 +191,58 @@ jobs:
       # Built-ins and type-stripped local source only; no install/preload needed.
       - run: node packages/nax-agent/test/node/glob-floor.mjs 22.19.0
 
+  # S2-8: the Node contract suite (spec §7.3). vitest's bin has an
+  # `#!/usr/bin/env node` shebang, so `bun run` executes it under the matrix
+  # Node; the suite also asserts `process.versions.bun` is undefined.
+  # Matrix ruling 2026-10-03: Ubuntu × [22, 24]; the exact 22.19.0 floor stays
+  # covered by nax-agent-glob-floor.
+  nax-agent-node:
+    name: "nax-agent: node ${{ matrix.node }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    defaults:
+      run:
+        working-directory: packages/nax-agent
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: .
+
+      # The pack smoke runs one sandboxed command on Linux; a missing
+      # bubblewrap FAILS it (the fixture asserts the sandbox was applied).
+      - name: Enable the OS sandbox (bubblewrap)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap socat ripgrep
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - run: node --version
+
+      - name: Node contract suite
+        run: bun run test:node
+
   tooling:
     name: tooling
     runs-on: ubuntu-latest
