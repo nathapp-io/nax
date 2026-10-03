@@ -26,7 +26,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AdapterInteraction, CodingTool, SendTurnOpts } from "@nathapp/nax-agent";
 import type { TurnDeps } from "@nathapp/nax-agent/internal";
-import { loadTranscript, nativeTranscriptDirs, runNativeTurn } from "@nathapp/nax-agent/internal";
+import {
+  createNativeSessionState,
+  loadTranscript,
+  type NativeSessionState,
+  runNativeTurn,
+} from "@nathapp/nax-agent/internal";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 
@@ -62,15 +67,16 @@ const VALID_INPUT = { command: "typecheck" };
 
 let dir: string;
 let budgetDir: string;
+let state: NativeSessionState;
 const handle = { id: "sess-invalid-input", agentName: "native" } as const;
 const budgetHandle = { id: "sess-invalid-input-budget", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-turn-invalid-input-"));
-  nativeTranscriptDirs.set("sess-invalid-input", dir);
+  state = createNativeSessionState();
+  state.transcriptDirs.set("sess-invalid-input", dir);
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete("sess-invalid-input");
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -140,7 +146,7 @@ async function runTurn(
       },
     },
   });
-  await runNativeTurn(handle, "hi", opts, { complete: driving.first });
+  await runNativeTurn(handle, "hi", opts, { sessionState: state, complete: driving.first });
   const saved = await loadTranscript(dir, handle.id);
   return { saved };
 }
@@ -158,6 +164,7 @@ describe("runNativeTurn — invalid tool call input (nax#2047)", () => {
       },
     });
     await runNativeTurn(handle, "hi", opts, {
+      sessionState: state,
       complete: async () => {
         roundTrip += 1;
         if (roundTrip > 1) return { text: "done", usage: baseUsage, costUsd: 0 };
@@ -369,7 +376,11 @@ describe("runNativeTurn — null-optional rewrite under a spin-breaker nudge (na
         },
       },
     });
-    await runNativeTurn(handle, "hi", opts, { complete: driving.first, spinBreaker: alwaysNudging });
+    await runNativeTurn(handle, "hi", opts, {
+      sessionState: state,
+      complete: driving.first,
+      spinBreaker: alwaysNudging,
+    });
     const saved = await loadTranscript(dir, handle.id);
 
     expect(observed).toEqual([{ command: "typecheck" }]);
@@ -415,10 +426,9 @@ function budgetDrivingComplete(plan: RoundTripPlan): BudgetDrivingComplete {
 describe("runNativeTurn — invalid call budget (nax#2047)", () => {
   beforeEach(async () => {
     budgetDir = await mkdtemp(join(tmpdir(), "nax-turn-invalid-input-budget-"));
-    nativeTranscriptDirs.set("sess-invalid-input-budget", budgetDir);
+    state.transcriptDirs.set("sess-invalid-input-budget", budgetDir);
   });
   afterEach(async () => {
-    nativeTranscriptDirs.delete("sess-invalid-input-budget");
     await rm(budgetDir, { recursive: true, force: true });
   });
 
@@ -435,7 +445,7 @@ describe("runNativeTurn — invalid call budget (nax#2047)", () => {
         },
       },
     });
-    const result = await runNativeTurn(budgetHandle, "hi", opts, { complete: driving.first });
+    const result = await runNativeTurn(budgetHandle, "hi", opts, { sessionState: state, complete: driving.first });
     const saved = await loadTranscript(budgetDir, budgetHandle.id);
     return { result, saved };
   }

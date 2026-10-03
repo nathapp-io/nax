@@ -28,8 +28,8 @@ import type { ToolDescriptor } from "./tool-descriptor.ts";
 export interface AuthStamp {
   /** Keyed credential digest (see `fingerprint.ts`). Not comparable across machines. */
   fingerprint: string;
-  /** Where the credential was read from. */
-  source: "file" | "exec";
+  /** Where the credential was read from: the `file` store, an `exec` helper, or an in-process `memory` store. */
+  source: "file" | "exec" | "memory";
   /** Account label the source reported, when it reports one. */
   account?: string;
 }

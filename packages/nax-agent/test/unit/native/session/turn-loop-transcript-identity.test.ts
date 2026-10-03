@@ -8,24 +8,21 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import type { ConversationMessage } from "@nathapp/nax-ai";
 import { createLoopEventRegistry, type LoopEventRegistry } from "#src/native/session/loop-events/index";
-import { nativeSessionLastUsage, nativeTranscriptDirs } from "#src/native/session/session";
+import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { transcriptPath } from "#src/native/session/transcript-store";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import type { SendTurnOpts, SessionHandle } from "#src/session/session-types";
-import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { cleanupTempDir, makeTempDir, seedNativeSession } from "#test/helpers/index";
 
 const SESSION = "sess-transcript-identity";
 let dir: string;
+let sessionState: NativeSessionState;
 
 beforeEach(() => {
   dir = makeTempDir("nax-transcript-identity-");
-  nativeTranscriptDirs.set(SESSION, dir);
+  sessionState = seedNativeSession(createNativeSessionState(), SESSION, { transcriptDir: dir });
 });
 afterEach(() => {
-  nativeTranscriptDirs.delete(SESSION);
-  // Module-level state keyed by session id: a stale anchor would leak into
-  // the next test (turn-lifecycle.test.ts's hygiene note).
-  nativeSessionLastUsage.delete(SESSION);
   cleanupTempDir(dir);
 });
 
@@ -52,6 +49,7 @@ async function turn(
 ): Promise<ConversationMessage[][]> {
   const sent: ConversationMessage[][] = [];
   await runNativeTurn(handle, prompt, opts, {
+    sessionState,
     loopEvents,
     complete: async (messages) => {
       // Copied, not aliased: the loop pushes the reply onto the array afterwards.
@@ -119,11 +117,11 @@ describe("runNativeTurn — the persisted anchor is per model (P3 spec 8.3(d))",
   test("a turn on another model does not read the previous model's anchor", async () => {
     await turn(onModel("openai/model-a"), "first");
     // Recorded before the assistant push: [user "first"] -> index 0.
-    expect(nativeSessionLastUsage.get(SESSION)).toMatchObject({ model: "openai/model-a", anchorIndex: 0 });
+    expect(sessionState.lastUsage.get(SESSION)).toMatchObject({ model: "openai/model-a", anchorIndex: 0 });
 
     expect(await firstAnchorSeen(onModel("anthropic/model-b"))).toBeUndefined();
     // The entry left behind is B's own (B's history was refused: [user "second"] -> 0).
-    expect(nativeSessionLastUsage.get(SESSION)).toMatchObject({ model: "anthropic/model-b", anchorIndex: 0 });
+    expect(sessionState.lastUsage.get(SESSION)).toMatchObject({ model: "anthropic/model-b", anchorIndex: 0 });
   });
 
   test("control: a turn on the same model reads its anchor", async () => {
@@ -135,7 +133,7 @@ describe("runNativeTurn — the persisted anchor is per model (P3 spec 8.3(d))",
     // transform-context.test.ts:50 seeds this shape: an anchor, no model, no
     // transcript. Pinned so the fixture's behaviour is intended, not accidental.
     // 5, not 0: no real turn here records 5, so this cannot pass by coincidence.
-    nativeSessionLastUsage.set(SESSION, { promptTokens: 100, anchorIndex: 5 });
+    sessionState.lastUsage.set(SESSION, { promptTokens: 100, anchorIndex: 5 });
     expect(await firstAnchorSeen(onModel("openai/model-a"))).toBe(5);
   });
 });

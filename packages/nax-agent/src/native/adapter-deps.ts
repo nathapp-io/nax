@@ -6,7 +6,7 @@
 
 import type { AuthStamp } from "#src/session/session-types";
 import { anyAmbientCredential, listStoredProviders } from "./auth.ts";
-import { authSourceIsExec, servedAuth } from "./credentials/index.ts";
+import { authSourceIsExec, type GuardedCredentialStore, servedAuth } from "./credentials/index.ts";
 
 export function isProtocolStreamError(err: unknown): err is { protocolError: { kind: string; message: string } } {
   return typeof err === "object" && err !== null && "protocolError" in err;
@@ -40,9 +40,9 @@ export const _adapterDeps = {
  * `provider`, `{}` otherwise — so the key stays absent, never `undefined`. A
  * helper because `sendTurn` cannot carry another branch on the complexity
  * ratchet; it reads the `_adapterDeps` seam so a unit test can pin the stamp
- * without assembling a real store.
+ * without assembling a real store. With `store`, it reads only that store.
  */
-export function authFields(provider: string): { auth?: AuthStamp } {
-  const auth = _adapterDeps.servedAuth(provider);
+export function authFields(provider: string, store?: GuardedCredentialStore): { auth?: AuthStamp } {
+  const auth = store === undefined ? _adapterDeps.servedAuth(provider) : store.servedAuth(provider);
   return auth === undefined ? {} : { auth };
 }

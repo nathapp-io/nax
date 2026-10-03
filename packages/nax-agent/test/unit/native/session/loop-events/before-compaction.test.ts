@@ -6,18 +6,19 @@ import type { SendTurnOpts } from "@nathapp/nax-agent";
 import {
   COMPACTION_SUMMARY_PREFIX,
   createLoopEventRegistry,
-  nativeSessionLastUsage,
-  nativeTranscriptDirs,
+  createNativeSessionState,
+  type NativeSessionState,
   type ResolvedCompaction,
   runNativeTurn,
   saveTranscript,
 } from "@nathapp/nax-agent/internal";
 import { getSafeLogger, setAgentLogger } from "#src/infra/index";
-import { makeLogger } from "#test/helpers/index";
+import { makeLogger, seedNativeSession } from "#test/helpers/index";
 
 const originalLogger = getSafeLogger();
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-before-compaction", agentName: "native" } as const;
 const cfg: ResolvedCompaction = { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 };
 const usage = { inputTokens: 1, outputTokens: 1 };
@@ -25,14 +26,9 @@ const opts = (): SendTurnOpts => ({ interactionHandler: { onInteraction: async (
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-before-compaction-"));
-  nativeTranscriptDirs.set(handle.id, dir);
+  sessionState = seedNativeSession(createNativeSessionState(), handle.id, { transcriptDir: dir });
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete(handle.id);
-  // Same hygiene as turn-loop-compaction.test.ts: the anchor is module-level
-  // state keyed by session id, and a stale entry would hand a later test a
-  // phantom anchor (turn-loop.ts reads it before the first request).
-  nativeSessionLastUsage.delete(handle.id);
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -93,6 +89,7 @@ describe("native turn loop — before_compaction event", () => {
     let sentToModel: readonly { role: string }[] = [];
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       loopEvents: registry,
       contextWindow: 8000,
       compaction: cfg,
@@ -139,6 +136,7 @@ describe("native turn loop — before_compaction event", () => {
 
     try {
       const result = await runNativeTurn(handle, "next", opts(), {
+        sessionState,
         loopEvents: registry,
         contextWindow: BACKSTOP_WINDOW,
         compaction: cfg,
@@ -181,6 +179,7 @@ describe("native turn loop — before_compaction event", () => {
     let sentToModel: readonly { role: string }[] = [];
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       loopEvents: registry,
       contextWindow: 8000,
       compaction: cfg,

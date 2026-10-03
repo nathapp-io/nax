@@ -20,15 +20,22 @@ import { fingerprintCredential } from "./fingerprint.ts";
 /**
  * Where a credential came from, as reported by `describe`. `AuthStamp` without
  * the fingerprint — the guard computes that itself from the credential.
+ * `memory` is a store held in process (a session's own credentials), distinct
+ * from the on-disk `file` and the `exec` helper.
  */
 export interface CredentialOrigin {
-  source: "file" | "exec";
+  source: "file" | "exec" | "memory";
   account?: string;
 }
 
 export interface ChangeGuardOptions {
   /** `warn` adopts the new identity and serves it; `refuse` throws instead. */
   onChange: CredentialAuthConfig["onChange"];
+  /**
+   * Fingerprint key. Absent = the machine salt file (today). A session store
+   * passes an in-memory salt, so its fingerprints never touch the slot.
+   */
+  readonly salt?: Buffer;
   /**
    * Where the credential read from `inner` came from. Called immediately after
    * each successful read, because the credential itself carries no provenance.
@@ -53,7 +60,7 @@ type Verdict = "same" | "renewed" | "changed";
 interface Identity {
   kind: "api-key" | "oauth";
   fingerprint: string;
-  source: "file" | "exec";
+  source: "file" | "exec" | "memory";
   account?: string;
 }
 
@@ -135,7 +142,7 @@ export function createChangeGuard(inner: CredentialStore, options: ChangeGuardOp
     const described = options.describe(providerId);
     const identity: Identity = {
       kind: credential.kind,
-      fingerprint: await fingerprintCredential(credential),
+      fingerprint: await fingerprintCredential(credential, options.salt),
       source: described?.source ?? "file",
       ...(described?.account !== undefined ? { account: described.account } : {}),
     };

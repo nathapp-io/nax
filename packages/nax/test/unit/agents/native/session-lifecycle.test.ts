@@ -7,12 +7,10 @@ import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "@nathapp/nax-
 import {
   clearNativeSessionState,
   closeNativeSession,
+  createNativeSessionState,
   loadTranscript,
-  nativeSessionCompaction,
+  type NativeSessionState,
   nativeSessionId,
-  nativeSessionLastUsage,
-  nativeSessionTranscriptOwners,
-  nativeSessionTransportRetry,
   openNativeSession,
   runNativeTurn,
   saveTranscript,
@@ -23,8 +21,10 @@ import { SessionManager } from "@/session/manager";
 import type { OpenSessionRequest } from "@/session/types";
 
 let dir: string;
+let state: NativeSessionState;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-session-"));
+  state = createNativeSessionState();
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
@@ -42,19 +42,21 @@ const opts = (over: Partial<OpenSessionOpts> = {}): OpenSessionOpts => ({
 
 describe("native session lifecycle", () => {
   test("opening returns a handle naming the session and the native agent", async () => {
-    const handle = await openNativeSession("sess-a", opts());
+    const handle = await openNativeSession(state, "sess-a", opts());
     expect(handle.id).toBe("sess-a");
     expect(handle.agentName).toBe("native");
   });
 
   test("a missing transcriptDir fails loudly rather than choosing a default", async () => {
-    await expect(openNativeSession("sess-a", opts({ transcriptDir: undefined }))).rejects.toThrow(/transcriptDir/i);
+    await expect(openNativeSession(state, "sess-a", opts({ transcriptDir: undefined }))).rejects.toThrow(
+      /transcriptDir/i,
+    );
   });
 
   test("a clean close deletes the transcript", async () => {
-    const handle = await openNativeSession("sess-a", opts());
+    const handle = await openNativeSession(state, "sess-a", opts());
     await saveTranscript(dir, "sess-a", [{ role: "user", content: "hi" }]);
-    await closeNativeSession(handle, false);
+    await closeNativeSession(state, handle, false);
     expect(await loadTranscript(dir, "sess-a")).toEqual([]);
   });
 
@@ -63,9 +65,9 @@ describe("native session lifecycle", () => {
     // next same-named session reads, so "kept for post-mortem" and "kept to be
     // resumed" were indistinguishable. It is now retained under a name
     // loadTranscript cannot reach.
-    const handle = await openNativeSession("sess-a", opts());
+    const handle = await openNativeSession(state, "sess-a", opts());
     await saveTranscript(dir, "sess-a", [{ role: "user", content: "hi" }]);
-    await closeNativeSession(handle, true);
+    await closeNativeSession(state, handle, true);
 
     const kept = (await readdir(dir)).filter((n) => n.startsWith("sess-a.transcript.failed-"));
     expect(kept).toHaveLength(1);
@@ -74,38 +76,38 @@ describe("native session lifecycle", () => {
 
   test("opening without resume clears a transcript an earlier session left behind", async () => {
     await saveTranscript(dir, "sess-a", [{ role: "user", content: "stale" }], { owner: "call-1" });
-    await openNativeSession("sess-a", opts({ resume: false }));
+    await openNativeSession(state, "sess-a", opts({ resume: false }));
     expect(await loadTranscript(dir, "sess-a")).toEqual([]);
   });
 
   test("opening with resume keeps the transcript the retry needs", async () => {
     await saveTranscript(dir, "sess-a", [{ role: "user", content: "keep me" }], { owner: "call-1" });
-    await openNativeSession("sess-a", opts({ resume: true }));
+    await openNativeSession(state, "sess-a", opts({ resume: true }));
     expect(await loadTranscript(dir, "sess-a", { owner: "call-1" })).toHaveLength(1);
   });
 
   test("the transcript owner declared at open is what the turn loop reads back", async () => {
-    const handle = await openNativeSession("sess-a", opts({ transcriptOwner: "call-1" }));
-    expect(nativeSessionTranscriptOwners.get(handle.id)).toBe("call-1");
-    await closeNativeSession(handle, false);
-    expect(nativeSessionTranscriptOwners.has("sess-a")).toBe(false);
+    const handle = await openNativeSession(state, "sess-a", opts({ transcriptOwner: "call-1" }));
+    expect(state.transcriptOwners.get(handle.id)).toBe("call-1");
+    await closeNativeSession(state, handle, false);
+    expect(state.transcriptOwners.has("sess-a")).toBe(false);
   });
 
   test("opening publishes the session identity it will send to the provider", async () => {
-    const handle = await openNativeSession("sess-ids", opts());
+    const handle = await openNativeSession(state, "sess-ids", opts());
     // Same value the adapter derives per call, so the audit trail records what
     // actually went on the wire rather than a parallel id.
     expect(handle.protocolIds?.recordId).toBe(nativeSessionId("sess-ids"));
     expect(handle.protocolIds?.sessionId).toBe(nativeSessionId("sess-ids"));
-    await closeNativeSession(handle, false);
+    await closeNativeSession(state, handle, false);
   });
 
   test("two different session names get different identities", async () => {
-    const a = await openNativeSession("sess-one", opts());
-    const b = await openNativeSession("sess-two", opts());
+    const a = await openNativeSession(state, "sess-one", opts());
+    const b = await openNativeSession(state, "sess-two", opts());
     expect(a.protocolIds?.recordId).not.toBe(b.protocolIds?.recordId);
-    await closeNativeSession(a, false);
-    await closeNativeSession(b, false);
+    await closeNativeSession(state, a, false);
+    await closeNativeSession(state, b, false);
   });
 });
 
@@ -450,15 +452,15 @@ describe("native session transport-retry settings", () => {
   const settings = { maxAttempts: 4, baseDelayMs: 1500 };
 
   test("openSession records the resolved settings for the turn to read", async () => {
-    const handle = await openNativeSession("sess-retry", opts({ transportRetry: settings }));
-    expect(nativeSessionTransportRetry.get("sess-retry")).toEqual(settings);
-    await closeNativeSession(handle, false);
+    const handle = await openNativeSession(state, "sess-retry", opts({ transportRetry: settings }));
+    expect(state.transportRetry.get("sess-retry")).toEqual(settings);
+    await closeNativeSession(state, handle, false);
   });
 
   test("closing clears the settings, like every other session map", async () => {
-    const handle = await openNativeSession("sess-retry2", opts({ transportRetry: settings }));
-    await closeNativeSession(handle, false);
-    expect(nativeSessionTransportRetry.has("sess-retry2")).toBe(false);
+    const handle = await openNativeSession(state, "sess-retry2", opts({ transportRetry: settings }));
+    await closeNativeSession(state, handle, false);
+    expect(state.transportRetry.has("sess-retry2")).toBe(false);
   });
 });
 
@@ -466,51 +468,51 @@ describe("native session compaction settings", () => {
   const settings = { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 };
 
   test("openSession records the resolved settings for the turn to read", async () => {
-    const handle = await openNativeSession("sess-cfg", opts({ compaction: settings }));
-    expect(nativeSessionCompaction.get("sess-cfg")).toEqual(settings);
-    await closeNativeSession(handle, false);
+    const handle = await openNativeSession(state, "sess-cfg", opts({ compaction: settings }));
+    expect(state.compaction.get("sess-cfg")).toEqual(settings);
+    await closeNativeSession(state, handle, false);
   });
 
   test("closing clears the settings and the usage anchor, like every other session map", async () => {
-    const handle = await openNativeSession("sess-cfg2", opts({ compaction: settings }));
-    nativeSessionLastUsage.set("sess-cfg2", { promptTokens: 10, anchorIndex: 0 });
-    await closeNativeSession(handle, false);
-    expect(nativeSessionCompaction.has("sess-cfg2")).toBe(false);
-    expect(nativeSessionLastUsage.has("sess-cfg2")).toBe(false);
+    const handle = await openNativeSession(state, "sess-cfg2", opts({ compaction: settings }));
+    state.lastUsage.set("sess-cfg2", { promptTokens: 10, anchorIndex: 0 });
+    await closeNativeSession(state, handle, false);
+    expect(state.compaction.has("sess-cfg2")).toBe(false);
+    expect(state.lastUsage.has("sess-cfg2")).toBe(false);
   });
 });
 
 describe("sessionAnchorFor — the persisted anchor is per model (P3 spec 8.3(d))", () => {
   const NAME = "sess-anchor";
   afterEach(() => {
-    nativeSessionLastUsage.delete(NAME);
+    state.lastUsage.delete(NAME);
   });
 
   test("an anchor measured under another model is dropped", () => {
     // Prefix stability is a property of (model, prefix) (spec 3.3): this anchor
     // indexes history the transcript store refused.
-    nativeSessionLastUsage.set(NAME, { promptTokens: 10, anchorIndex: 3, model: "openai/model-a" });
-    expect(sessionAnchorFor(NAME, "anthropic/model-b")).toBeUndefined();
-    expect(nativeSessionLastUsage.has(NAME)).toBe(false);
+    state.lastUsage.set(NAME, { promptTokens: 10, anchorIndex: 3, model: "openai/model-a" });
+    expect(sessionAnchorFor(state, NAME, "anthropic/model-b")).toBeUndefined();
+    expect(state.lastUsage.has(NAME)).toBe(false);
   });
 
   test("an anchor measured under the same model is kept", () => {
     const entry = { promptTokens: 10, anchorIndex: 3, model: "openai/model-a" };
-    nativeSessionLastUsage.set(NAME, entry);
-    expect(sessionAnchorFor(NAME, "openai/model-a")).toEqual(entry);
-    expect(nativeSessionLastUsage.has(NAME)).toBe(true);
+    state.lastUsage.set(NAME, entry);
+    expect(sessionAnchorFor(state, NAME, "openai/model-a")).toEqual(entry);
+    expect(state.lastUsage.has(NAME)).toBe(true);
   });
 
   test("an anchor with no recorded model makes no claim", () => {
     const entry = { promptTokens: 10, anchorIndex: 0 };
-    nativeSessionLastUsage.set(NAME, entry);
-    expect(sessionAnchorFor(NAME, "openai/model-b")).toEqual(entry);
+    state.lastUsage.set(NAME, entry);
+    expect(sessionAnchorFor(state, NAME, "openai/model-b")).toEqual(entry);
   });
 
   test("a turn with no model makes no claim", () => {
     const entry = { promptTokens: 10, anchorIndex: 3, model: "openai/model-a" };
-    nativeSessionLastUsage.set(NAME, entry);
-    expect(sessionAnchorFor(NAME, undefined)).toEqual(entry);
+    state.lastUsage.set(NAME, entry);
+    expect(sessionAnchorFor(state, NAME, undefined)).toEqual(entry);
   });
 });
 
@@ -523,7 +525,7 @@ describe("a model change on a session name is a new conversation, end to end (na
   afterEach(() => {
     // A failed assertion skips the closeSession at the end of a test; do not
     // let this name's native session state leak into the next one.
-    clearNativeSessionState(NAME);
+    clearNativeSessionState(state, NAME);
   });
 
   const request = (model: string): OpenSessionRequest => ({
@@ -541,6 +543,7 @@ describe("a model change on a session name is a new conversation, end to end (na
   async function sendOn(handle: SessionHandle, prompt: string): Promise<unknown[][]> {
     const sent: unknown[][] = [];
     await runNativeTurn(handle, prompt, turnOpts, {
+      sessionState: state,
       complete: async (messages) => {
         sent.push([...messages]);
         return {
@@ -556,8 +559,8 @@ describe("a model change on a session name is a new conversation, end to end (na
 
   const nativeManager = (): SessionManager => {
     const adapter = makeAgentAdapter({
-      openSession: (name: string, o: OpenSessionOpts) => openNativeSession(name, o),
-      closeSession: (h: SessionHandle) => closeNativeSession(h),
+      openSession: (name: string, o: OpenSessionOpts) => openNativeSession(state, name, o),
+      closeSession: (h: SessionHandle) => closeNativeSession(state, h),
     });
     return new SessionManager({ getAdapter: () => adapter });
   };

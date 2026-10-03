@@ -33,9 +33,9 @@ import type {
   LoopHandlerSet,
 } from "#src/native/session/loop-events/types";
 import { registerBuiltinLoopHandlers } from "#src/native/session/loop-handlers";
-import { nativeTranscriptDirs } from "#src/native/session/session";
+import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { MODEL_MAX_BYTES } from "#src/tools/index";
-import { assertDefined, cleanupTempDir, makeTempDir, waitForCondition } from "#test/helpers/index";
+import { assertDefined, cleanupTempDir, makeTempDir, seedNativeSession, waitForCondition } from "#test/helpers/index";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -45,13 +45,13 @@ const SESSION = "sess-loop-handlers-plugins";
 const CTX: LoopHandlerContext = { sessionName: SESSION, role: "implementer" };
 
 let dir: string;
+let sessionState: NativeSessionState;
 
 beforeEach(() => {
   dir = makeTempDir("nax-loop-handlers-plugins-");
-  nativeTranscriptDirs.set(SESSION, dir);
+  sessionState = seedNativeSession(createNativeSessionState(), SESSION, { transcriptDir: dir });
 });
 afterEach(() => {
-  nativeTranscriptDirs.delete(SESSION);
   cleanupTempDir(dir);
 });
 
@@ -101,6 +101,7 @@ interface InstallOverrides {
 function install(registry: LoopEventRegistry, over: InstallOverrides = {}): void {
   registerBuiltinLoopHandlers(registry, {
     sessionName: SESSION,
+    sessionState,
     budget: createInvalidCallBudget(),
     ...(over.spinBreaker !== undefined ? { spinBreaker: over.spinBreaker } : {}),
     onSpinStop: () => {},

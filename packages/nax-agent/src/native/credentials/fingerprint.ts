@@ -174,9 +174,12 @@ function identifyingSecret(credential: StoredCredential): string {
  * is fingerprinted as the template, because nax-ai documents `key` as opaque.
  * `oauth` fingerprints its `refresh` token, so access-token rotation is
  * invisible while refresh-token rotation is not.
+ *
+ * `salt` overrides the machine salt file: an in-process caller that keeps its own
+ * key (a session store) passes one, and a supplied salt never touches the slot.
  */
-export async function fingerprintCredential(credential: StoredCredential): Promise<string> {
-  const salt = await resolveSalt();
+export async function fingerprintCredential(credential: StoredCredential, salt?: Buffer): Promise<string> {
+  const key = salt ?? (await resolveSalt());
   const secret = identifyingSecret(credential);
-  return createHmac("sha256", salt).update(secret).digest("hex").slice(0, FINGERPRINT_CHARS);
+  return createHmac("sha256", key).update(secret).digest("hex").slice(0, FINGERPRINT_CHARS);
 }

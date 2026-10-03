@@ -44,7 +44,6 @@ import {
 } from "./compaction.ts";
 import type { InvalidCallBudget } from "./handle-invalid-tool-call.ts";
 import type { LoopEventRegistry } from "./loop-events/index.ts";
-import { nativeSessionLastUsage } from "./session.ts";
 import type { createTurnAccumulator } from "./turn-accumulator.ts";
 import { usageBeat } from "./turn-accumulator.ts";
 import { runProactiveCompaction } from "./turn-compaction-step.ts";
@@ -85,7 +84,7 @@ export interface TurnRoundParams {
   handle: SessionHandle;
   opts: SendTurnOpts;
   deps: TurnDeps;
-  /** `transcriptIdentity.model` — carried into every `nativeSessionLastUsage.set` this turn writes. */
+  /** `transcriptIdentity.model` — carried into every `sessionState.lastUsage.set` this turn writes. */
   transcriptModel: string | undefined;
   tools: ToolDefinition[];
   codingToolNames: ReadonlySet<string>;
@@ -215,7 +214,7 @@ async function runModelRoundTrip(
   const promptTokens = inputClassTokens(res.usage);
   state.lastUsage = { promptTokens };
   state.anchorIndex = state.messages.length - 1;
-  nativeSessionLastUsage.set(handle.id, {
+  deps.sessionState.lastUsage.set(handle.id, {
     promptTokens,
     anchorIndex: state.anchorIndex,
     ...(params.transcriptModel !== undefined ? { model: params.transcriptModel } : {}),

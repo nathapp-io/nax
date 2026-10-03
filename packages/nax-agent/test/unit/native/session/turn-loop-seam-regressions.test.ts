@@ -19,23 +19,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSpinBreaker, DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
 import { createLoopEventRegistry } from "#src/native/session/loop-events/index";
-import { nativeTranscriptDirs } from "#src/native/session/session";
+import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import type { TurnDeps } from "#src/native/session/turn-types";
 import type { SendTurnOpts } from "#src/session/session-types";
 import type { CodingTool } from "#src/tools/index";
+import { seedNativeSession } from "#test/helpers/index";
 
 const baseUsage = { inputTokens: 1, outputTokens: 1 };
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-seam-regression", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-turn-seam-regression-"));
-  nativeTranscriptDirs.set("sess-seam-regression", dir);
+  sessionState = seedNativeSession(createNativeSessionState(), "sess-seam-regression", { transcriptDir: dir });
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete("sess-seam-regression");
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -85,6 +86,7 @@ describe("runNativeTurn — loop event seam regressions", () => {
     registry.register("before_tool", () => ({ kind: "allow", input: { path: "canonical.ts" } }));
 
     const result = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       complete: loopingComplete("Read", (nth) => ({ path: `f${nth}.ts` }), 12),
       spinBreaker: createSpinBreaker({
         ...DEFAULT_SPIN_BREAKER_SETTINGS,
@@ -116,6 +118,7 @@ describe("runNativeTurn — loop event seam regressions", () => {
     // Turn 1 installs the built-ins on this registry and leaves the breaker
     // with no evidence: its single call is a new key, which resets the run.
     const first = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       complete: loopingComplete("Read", () => ({ path: "a.ts" }), 1),
       spinBreaker: breaker,
       loopEvents: registry,
@@ -127,6 +130,7 @@ describe("runNativeTurn — loop event seam regressions", () => {
     // turn-loop-spin.test.ts pins the same numbers. A stale pair left behind
     // by turn 1 observing too would spend the run twice as fast.
     const second = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       complete: loopingComplete("RunCommand", () => ({ command: "testScoped" }), 20),
       spinBreaker: breaker,
       loopEvents: registry,

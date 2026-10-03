@@ -16,7 +16,7 @@ import {
   getNativeClient,
   naxCredentialStore,
 } from "@nathapp/nax-agent/internal";
-import { createClient, type ProtocolOptions } from "@nathapp/nax-ai";
+import { type CredentialStore, createClient, type ProtocolOptions } from "@nathapp/nax-ai";
 import { assertNaxError, cleanupTempDir, makeTempDir, mockFetch } from "#test/helpers/index";
 
 const REAL_BUILD = _clientDeps.build;
@@ -111,6 +111,34 @@ describe("buildNativeClient", () => {
     }
 
     expect(seenCredentials).toBe(naxCredentialStore());
+  });
+
+  test("forwards an adapter-owned credential store to defaultProtocols, so a session never reads the process slot", async () => {
+    const realDefaultProtocols = _clientDeps.defaultProtocols;
+    let seenCredentials: unknown;
+    _clientDeps.defaultProtocols = ((options?: ProtocolOptions) => {
+      seenCredentials = options?.credentials;
+      return realDefaultProtocols(options);
+    }) as typeof _clientDeps.defaultProtocols;
+
+    // A minimal store an embedder passes for a memory-sourced session. The
+    // assertion is identity, not shape: if the `??` in buildNativeClient were
+    // reordered to prefer the process store, this would observe
+    // naxCredentialStore() instead and fail — the seam the process-slot test
+    // above cannot cover because it exercises only the absent-options branch.
+    const custom: CredentialStore = {
+      read: async () => undefined,
+      modify: async (_providerId, fn) => fn(undefined),
+      delete: async () => {},
+    };
+
+    try {
+      await buildNativeClient([], { credentials: custom });
+    } finally {
+      _clientDeps.defaultProtocols = realDefaultProtocols;
+    }
+
+    expect(seenCredentials).toBe(custom);
   });
 });
 

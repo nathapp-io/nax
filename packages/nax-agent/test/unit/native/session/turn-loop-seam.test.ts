@@ -33,23 +33,24 @@ import { join } from "node:path";
 import { createSpinBreaker, DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
 import { ASK_HUMAN_TOOL_NAME } from "#src/native/session/ask-human";
 import { createLoopEventRegistry, type LoopEventRegistry } from "#src/native/session/loop-events/index";
-import { nativeTranscriptDirs } from "#src/native/session/session";
+import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { loadTranscript } from "#src/native/session/transcript-store";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import type { SendTurnOpts } from "#src/session/session-types";
 import type { CodingTool } from "#src/tools/index";
+import { seedNativeSession } from "#test/helpers/index";
 
 const baseUsage = { inputTokens: 1, outputTokens: 1 };
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-seam", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-turn-seam-"));
-  nativeTranscriptDirs.set("sess-seam", dir);
+  sessionState = seedNativeSession(createNativeSessionState(), "sess-seam", { transcriptDir: dir });
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete("sess-seam");
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -101,6 +102,7 @@ describe("runNativeTurn — after_tool invocation sites", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           // Round 1: ask_human — consumes the only budget slot.
@@ -152,6 +154,7 @@ describe("runNativeTurn — after_tool invocation sites", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -190,6 +193,7 @@ describe("runNativeTurn — after_tool invocation sites", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -219,6 +223,7 @@ describe("runNativeTurn — after_tool invocation sites", () => {
     const { count } = withCounter(registry);
     let roundTrip = 0;
     await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       complete: async () => {
         roundTrip += 1;
         // Same tool call every round trip so the spin breaker can fire
@@ -264,6 +269,7 @@ describe("runNativeTurn — after_tool invocation sites", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -302,6 +308,7 @@ describe("runNativeTurn — after_tool invocation sites", () => {
     const { count } = withCounter(registry);
     let roundTrip = 0;
     await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       complete: async () => {
         roundTrip += 1;
         if (roundTrip === 1) {
@@ -341,6 +348,7 @@ describe("runNativeTurn — after_tool invocation sites", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -387,6 +395,7 @@ describe("runNativeTurn — before_tool outcomes (AC5–AC8)", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -423,6 +432,7 @@ describe("runNativeTurn — before_tool outcomes (AC5–AC8)", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -467,6 +477,7 @@ describe("runNativeTurn — before_tool outcomes (AC5–AC8)", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -511,6 +522,7 @@ describe("runNativeTurn — before_tool outcomes (AC5–AC8)", () => {
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -540,6 +552,7 @@ describe("runNativeTurn — preserved behaviour (AC17/AC18)", () => {
   test("AC17: identical tool calls past the spin threshold end the loop with spinStopped (today's behaviour)", async () => {
     let roundTrip = 0;
     const result = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       complete: async () => {
         roundTrip += 1;
         // Same call every round trip — past the spin threshold.
@@ -573,6 +586,7 @@ describe("runNativeTurn — preserved behaviour (AC17/AC18)", () => {
     const MALFORMED = { path: 42 } as const; // not a string — invalid per Read's schema
     let roundTrip = 0;
     const result = await runNativeTurn(handle, "hi", baseOpts(), {
+      sessionState,
       complete: async () => {
         roundTrip += 1;
         if (roundTrip <= 3) {

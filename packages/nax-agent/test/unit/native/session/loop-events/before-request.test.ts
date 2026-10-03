@@ -4,19 +4,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createLoopEventRegistry } from "#src/native/session/loop-events/index";
 import type { CompleteCallOptions } from "#src/native/session/loop-events/types";
-import { nativeTranscriptDirs } from "#src/native/session/session";
+import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import type { SendTurnOpts } from "#src/session/session-types";
+import { seedNativeSession } from "#test/helpers/index";
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-before-request", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-before-request-"));
-  nativeTranscriptDirs.set("sess-before-request", dir);
+  sessionState = seedNativeSession(createNativeSessionState(), "sess-before-request", { transcriptDir: dir });
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete("sess-before-request");
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -58,6 +59,7 @@ describe("native turn loop — before_request event", () => {
     });
     let calls = 0;
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       loopEvents: registry,
       transportRetry: retryConfig,
       sleep: noopSleep,
@@ -81,6 +83,7 @@ describe("native turn loop — before_request event", () => {
       return { options: { temperature: 0.2 } };
     });
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       loopEvents: registry,
       complete: async (_messages, _tools, options) => {
         expect(options).toEqual({ temperature: 0.2 });
@@ -102,6 +105,7 @@ describe("native turn loop — before_request event", () => {
       return { options: { thinking: true } };
     });
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       loopEvents: registry,
       complete: async (_messages, _tools, options) => {
         expect(options).toEqual({ temperature: 0.2, thinking: true });
@@ -114,6 +118,7 @@ describe("native turn loop — before_request event", () => {
     let calls = 0;
     const seen: (CompleteCallOptions | undefined)[] = [];
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       complete: async (_messages, _tools, options) => {
         calls += 1;
         seen.push(options);

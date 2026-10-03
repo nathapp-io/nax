@@ -24,7 +24,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { Client, ConversationMessage, ResolvedModel, ToolCall } from "@nathapp/nax-ai";
 import { _clientDeps, _resetNativeClient } from "#src/native/client";
 import type { LoopHandlerContext, LoopHandlerEntry, LoopHandlerSet } from "#src/native/session/loop-events/types";
-import { clearNativeSessionState } from "#src/native/session/session";
 import { loadTranscript } from "#src/native/session/transcript-store";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
 import type { SendTurnOpts } from "#src/session/session-types";
@@ -159,12 +158,8 @@ async function driveTurn(args: {
     ...(args.loopHandlerContext !== undefined ? { loopHandlerContext: args.loopHandlerContext } : {}),
   };
 
-  try {
-    await adapter.sendTurn(handle, "hi", opts);
-    return { capture, transcript: await loadTranscript(transcriptDir, handle.id) };
-  } finally {
-    clearNativeSessionState(handle.id);
-  }
+  await adapter.sendTurn(handle, "hi", opts);
+  return { capture, transcript: await loadTranscript(transcriptDir, handle.id) };
 }
 
 /** The stored tool result answering `callId`, or a failed test. */

@@ -3,7 +3,14 @@ import { createHmac } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _resetFingerprintSalt, fingerprintCredential } from "@nathapp/nax-agent/internal";
-import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import {
+  _resetCredentialsConfig,
+  type CredentialsConfig,
+  configureCredentials,
+  credentialsConfig,
+  getSafeLogger,
+  setAgentLogger,
+} from "#src/infra/index";
 import { cleanupTempDir, type LogCall, makeLogger, makeTempDir } from "#test/helpers/index";
 
 /**
@@ -16,7 +23,23 @@ let logger: ReturnType<typeof makeLogger>;
 const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
 const originalLogger = getSafeLogger();
 
+/**
+ * The credentials slot is process-global and the preload filled it. Save what
+ * was there and put it back after each test, so a test that clears the slot to
+ * prove the explicit salt is used leaves the module as it found it for the
+ * suites that rely on the preload's slot (S2-3b pattern).
+ */
+let savedCredentials: CredentialsConfig | undefined;
+let credentialsWasConfigured = false;
+
 beforeEach(() => {
+  try {
+    savedCredentials = credentialsConfig();
+    credentialsWasConfigured = true;
+  } catch {
+    credentialsWasConfigured = false;
+  }
+
   dir = makeTempDir("nax-fingerprint-");
   process.env.NAX_GLOBAL_CONFIG_DIR = dir;
   saltPath = join(dir, "auth-fingerprint-salt");
@@ -30,6 +53,8 @@ afterEach(() => {
   setAgentLogger(originalLogger);
   _resetFingerprintSalt();
   process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
+  if (credentialsWasConfigured && savedCredentials !== undefined) configureCredentials(savedCredentials);
+  else _resetCredentialsConfig();
   cleanupTempDir(dir);
 });
 
@@ -158,5 +183,14 @@ describe("fingerprintCredential", () => {
 
     expect(second).toMatch(/^[0-9a-f]{12}$/);
     expect(named("credential.salt_invalid")).toHaveLength(1);
+  });
+
+  test("an explicit salt is used instead of the machine salt file", async () => {
+    _resetCredentialsConfig(); // the slot is unset: reading it would throw CREDENTIALS_NOT_CONFIGURED
+    const salt = Buffer.alloc(32, 7);
+    const a = await fingerprintCredential({ kind: "api-key", key: "k1" }, salt);
+    const b = await fingerprintCredential({ kind: "api-key", key: "k1" }, salt);
+    expect(a).toBe(b);
+    expect(a).toMatch(/^[0-9a-f]{12}$/);
   });
 });

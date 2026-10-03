@@ -16,7 +16,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { _clientDeps, _resetNativeClient, clearNativeSessionState } from "@nathapp/nax-agent/internal";
+import { NativeSessionAdapter } from "@nathapp/nax-agent";
+import {
+  _clientDeps,
+  _resetNativeClient,
+  clearNativeSessionState,
+  nativeSessionStateOf,
+} from "@nathapp/nax-agent/internal";
 import type { Client, ConversationMessage, ResolvedModel } from "@nathapp/nax-ai";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
@@ -113,7 +119,8 @@ async function driveNativeSession(deliverHandlers: boolean): Promise<(readonly C
   const requests: (readonly ConversationMessage[])[] = [];
   _clientDeps.build = async () => scriptedClient(requests);
 
-  const adapter = new NativeAgentAdapter();
+  const sessions = new NativeSessionAdapter();
+  const adapter = new NativeAgentAdapter(undefined, [], sessions);
   const manager = new SessionManager({ getAdapter: () => adapter });
   if (deliverHandlers) manager.configureLoopHandlers(set);
 
@@ -134,7 +141,7 @@ async function driveNativeSession(deliverHandlers: boolean): Promise<(readonly C
     await manager.sendPrompt(handle, "hi");
     return requests;
   } finally {
-    clearNativeSessionState(sessionName);
+    clearNativeSessionState(nativeSessionStateOf(sessions), sessionName);
   }
 }
 

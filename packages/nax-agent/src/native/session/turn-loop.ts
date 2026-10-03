@@ -27,7 +27,7 @@ import { createInvalidCallBudget } from "./handle-invalid-tool-call.ts";
 import { applyHistoryPatch } from "./loop-events/cache-boundary.ts";
 import { createLoopEventRegistry } from "./loop-events/index.ts";
 import { registerBuiltinLoopHandlers } from "./loop-handlers.ts";
-import { nativeSessionTranscriptOwners, nativeTranscriptDirs, sessionAnchorFor } from "./session.ts";
+import { sessionAnchorFor } from "./session.ts";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping.ts";
 import {
   loadTranscript,
@@ -70,7 +70,7 @@ export async function runNativeTurn(
   opts: SendTurnOpts,
   deps: TurnDeps,
 ): Promise<TurnResult> {
-  const dir = nativeTranscriptDirs.get(handle.id);
+  const dir = deps.sessionState.transcriptDirs.get(handle.id);
   if (dir === undefined) {
     throw new NaxError(`no transcript directory for session "${handle.id}"`, "NATIVE_TRANSCRIPT_DIR_MISSING", {
       stage: "native-session",
@@ -82,7 +82,7 @@ export async function runNativeTurn(
   // nax#2150 (P3 spec 8.3): so does a recorded different model — the store
   // owns that guarantee, whatever the session layer above decided.
   const transcriptIdentity: TranscriptIdentity = {
-    owner: nativeSessionTranscriptOwners.get(handle.id),
+    owner: deps.sessionState.transcriptOwners.get(handle.id),
     model: transcriptModelIdentity(handle.modelDef?.model),
   };
   let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id, transcriptIdentity))];
@@ -98,6 +98,7 @@ export async function runNativeTurn(
   const loopEvents = deps.loopEvents ?? createLoopEventRegistry();
   registerBuiltinLoopHandlers(loopEvents, {
     sessionName: handle.id,
+    sessionState: deps.sessionState,
     budget: invalidCallBudget,
     ...(deps.spinBreaker !== undefined ? { spinBreaker: deps.spinBreaker } : {}),
     ...(deps.loopHandlers !== undefined ? { loopHandlers: deps.loopHandlers } : {}),
@@ -108,7 +109,7 @@ export async function runNativeTurn(
     },
   });
 
-  const anchor = sessionAnchorFor(handle.id, transcriptIdentity.model);
+  const anchor = sessionAnchorFor(deps.sessionState, handle.id, transcriptIdentity.model);
   const lastUsage = anchor?.promptTokens !== undefined ? { promptTokens: anchor.promptTokens } : undefined;
   const anchorIndex = anchor?.anchorIndex;
 

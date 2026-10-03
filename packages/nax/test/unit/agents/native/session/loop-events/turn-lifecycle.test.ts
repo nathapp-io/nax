@@ -6,9 +6,9 @@ import type { CodingTool, SendTurnOpts } from "@nathapp/nax-agent";
 import type { AfterResponsePatch } from "@nathapp/nax-agent/internal";
 import {
   createLoopEventRegistry,
+  createNativeSessionState,
   loadTranscript,
-  nativeSessionLastUsage,
-  nativeTranscriptDirs,
+  type NativeSessionState,
   runNativeTurn,
   saveTranscript,
 } from "@nathapp/nax-agent/internal";
@@ -17,18 +17,15 @@ import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 
 let dir: string;
+let state: NativeSessionState;
 const handle = { id: "sess-turn-lifecycle", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-turn-lifecycle-"));
-  nativeTranscriptDirs.set(handle.id, dir);
+  state = createNativeSessionState();
+  state.transcriptDirs.set(handle.id, dir);
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete(handle.id);
-  // Same hygiene as transform-context.test.ts: the anchor is module-level
-  // state keyed by session id, and a stale entry would hand a later test a
-  // phantom anchor (turn-loop.ts reads it before the first request).
-  nativeSessionLastUsage.delete(handle.id);
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -63,7 +60,7 @@ const opts = (over: Partial<SendTurnOpts> = {}): SendTurnOpts => ({
  * rejection test needs a real anchor to protect.
  */
 function seedAnchor(anchorIndex: number): void {
-  nativeSessionLastUsage.set(handle.id, { promptTokens: 100, anchorIndex });
+  state.lastUsage.set(handle.id, { promptTokens: 100, anchorIndex });
 }
 
 /** The warn entries a turn logs, captured through a fresh sink (the transform-context fixture). */
@@ -101,6 +98,7 @@ describe("native turn loop — before_turn and after_response", () => {
     });
     const sent: unknown[][] = [];
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState: state,
       loopEvents: registry,
       complete: async (messages) => {
         // Copied, not aliased: the loop pushes the assistant reply onto the
@@ -150,6 +148,7 @@ describe("native turn loop — before_turn and after_response", () => {
     // the log is the dispatch's observable effect on the sent array.
     const warnings = await captureWarnings(() =>
       runNativeTurn(handle, "hi", opts(), {
+        sessionState: state,
         loopEvents: registry,
         complete: async (messages) => {
           sent.push([...messages]);
@@ -188,6 +187,7 @@ describe("native turn loop — before_turn and after_response", () => {
     const warnings = await captureWarnings(async () => {
       for (let i = 0; i < 2; i += 1) {
         await runNativeTurn(handle, "hi", opts(), {
+          sessionState: state,
           loopEvents: registry,
           complete: async (messages) => {
             sent.push([...messages]);
@@ -218,6 +218,7 @@ describe("native turn loop — before_turn and after_response", () => {
       return { text: "patched" };
     });
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState: state,
       loopEvents: registry,
       complete: async () => reply({ text: "raw reply" }),
     });
@@ -262,6 +263,7 @@ describe("native turn loop — before_turn and after_response", () => {
       },
     );
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState: state,
       loopEvents: registry,
       complete: async () => reply(),
     });
@@ -311,6 +313,7 @@ describe("native turn loop — tool events around a permission ask", () => {
         },
       }),
       {
+        sessionState: state,
         loopEvents: registry,
         complete: async () => {
           calls += 1;

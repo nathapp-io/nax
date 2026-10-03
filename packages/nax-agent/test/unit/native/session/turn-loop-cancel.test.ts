@@ -17,11 +17,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nativeTranscriptDirs } from "#src/native/session/session";
+import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { loadTranscript } from "#src/native/session/transcript-store";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import type { SendTurnOpts } from "#src/session/session-types";
 import type { CodingTool } from "#src/tools/index";
+import { seedNativeSession } from "#test/helpers/index";
 
 const CANCELLED_CONTENT = "Not run: the turn was cancelled.";
 const REASON = "operator pressed stop";
@@ -29,14 +30,14 @@ const REASON = "operator pressed stop";
 const baseUsage = { inputTokens: 1, outputTokens: 1 };
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-turn-cancel", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-turn-cancel-"));
-  nativeTranscriptDirs.set(handle.id, dir);
+  sessionState = seedNativeSession(createNativeSessionState(), handle.id, { transcriptDir: dir });
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete(handle.id);
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -97,6 +98,7 @@ describe("runNativeTurn — turn signal cancellation (US-002)", () => {
     const controller = new AbortController();
     const seen: string[] = [];
     await runNativeTurn(handle, "hi", baseOpts({ interactionHandler: { onInteraction: abortOnA(controller, seen) } }), {
+      sessionState,
       complete: twoCallComplete({ calls: 0 }),
       signal: controller.signal,
     }).catch(() => {});
@@ -107,6 +109,7 @@ describe("runNativeTurn — turn signal cancellation (US-002)", () => {
   test("AC2: the saved transcript result for b is exactly the cancelled notice with isError true", async () => {
     const controller = new AbortController();
     await runNativeTurn(handle, "hi", baseOpts({ interactionHandler: { onInteraction: abortOnA(controller, []) } }), {
+      sessionState,
       complete: twoCallComplete({ calls: 0 }),
       signal: controller.signal,
     }).catch(() => {});
@@ -122,6 +125,7 @@ describe("runNativeTurn — turn signal cancellation (US-002)", () => {
   test("AC3: cancellation leaves exactly one result per assistant tool-call id in the saved transcript", async () => {
     const controller = new AbortController();
     await runNativeTurn(handle, "hi", baseOpts({ interactionHandler: { onInteraction: abortOnA(controller, []) } }), {
+      sessionState,
       complete: twoCallComplete({ calls: 0 }),
       signal: controller.signal,
     }).catch(() => {});
@@ -140,6 +144,7 @@ describe("runNativeTurn — turn signal cancellation (US-002)", () => {
       "hi",
       baseOpts({ interactionHandler: { onInteraction: abortOnA(controller, []) } }),
       {
+        sessionState,
         complete: twoCallComplete({ calls: 0 }),
         signal: controller.signal,
       },
@@ -156,6 +161,7 @@ describe("runNativeTurn — turn signal cancellation (US-002)", () => {
     const controller = new AbortController();
     const counter = { calls: 0 };
     await runNativeTurn(handle, "hi", baseOpts({ interactionHandler: { onInteraction: abortOnA(controller, []) } }), {
+      sessionState,
       complete: twoCallComplete(counter),
       signal: controller.signal,
     }).catch(() => {});
@@ -177,6 +183,7 @@ describe("runNativeTurn — turn signal cancellation (US-002)", () => {
         },
       }),
       {
+        sessionState,
         complete: twoCallComplete({ calls: 0 }),
         signal: controller.signal,
       },
@@ -205,6 +212,7 @@ describe("runNativeTurn — no-signal preservation (US-002)", () => {
         },
       }),
       {
+        sessionState,
         complete: twoCallComplete(counter),
       },
     );

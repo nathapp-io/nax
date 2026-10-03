@@ -20,25 +20,26 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nativeTranscriptDirs } from "#src/native/session/session";
+import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { loadTranscript } from "#src/native/session/transcript-store";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import type { SendTurnOpts } from "#src/session/session-types";
 import type { CodingTool } from "#src/tools/index";
 import { MODEL_MAX_BYTES } from "#src/tools/index";
+import { seedNativeSession } from "#test/helpers/index";
 
 const baseUsage = { inputTokens: 1, outputTokens: 1 };
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-us003", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-us003-acs-"));
-  nativeTranscriptDirs.set("sess-us003", dir);
+  sessionState = seedNativeSession(createNativeSessionState(), "sess-us003", { transcriptDir: dir });
 });
 
 afterEach(async () => {
-  nativeTranscriptDirs.delete("sess-us003");
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -93,6 +94,7 @@ describe("AC16: native Grep > MODEL_MAX_BYTES -> transcript message <= MODEL_MAX
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -131,6 +133,7 @@ describe("AC16: native Grep > MODEL_MAX_BYTES -> transcript message <= MODEL_MAX
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -181,6 +184,7 @@ describe("AC17: native ScratchpadRead offset/limit -> values reach the handler i
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -226,6 +230,7 @@ describe("AC17: native ScratchpadRead offset/limit -> values reach the handler i
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -270,6 +275,7 @@ describe("AC18: native tool result within every cap -> no spill marker in conten
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -312,6 +318,7 @@ describe("AC18: native tool result within every cap -> no spill marker in conten
         },
       }),
       {
+        sessionState,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {

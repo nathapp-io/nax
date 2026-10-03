@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { byCodePoint, sessionModule as sessionState } from "@nathapp/nax-agent/internal";
+import { NativeSessionAdapter } from "@nathapp/nax-agent";
+import { byCodePoint, type NativeSessionState, nativeSessionStateOf } from "@nathapp/nax-agent/internal";
 import { makeNaxConfig } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import { closeStorySessions } from "@/execution/session-manager-runtime";
@@ -19,6 +20,7 @@ import { SessionManager } from "@/session/manager";
 
 // RE-ARCH: keep
 let closeDir: string;
+let state: NativeSessionState;
 beforeEach(async () => {
   closeDir = await mkdtemp(join(tmpdir(), "nax-native-close-"));
 });
@@ -27,7 +29,7 @@ afterEach(async () => {
 });
 
 function exportedCollections(): string[] {
-  return Object.entries(sessionState)
+  return Object.entries(state)
     .filter(([, value]) => value instanceof Map || value instanceof Set)
     .map(([exportName]) => exportName)
     .sort(byCodePoint);
@@ -35,7 +37,7 @@ function exportedCollections(): string[] {
 
 function collectionsHolding(name: string): string[] {
   const holding: string[] = [];
-  for (const [exportName, value] of Object.entries(sessionState)) {
+  for (const [exportName, value] of Object.entries(state)) {
     if (value instanceof Map && value.has(name)) holding.push(exportName);
     else if (value instanceof Set && value.has(name)) holding.push(exportName);
   }
@@ -44,7 +46,9 @@ function collectionsHolding(name: string): string[] {
 
 describe("native closePhysicalSession — run teardown reaches the session maps", () => {
   test("a keepOpen session's story close clears every native map", async () => {
-    const adapter = new NativeAgentAdapter();
+    const sessions = new NativeSessionAdapter();
+    state = nativeSessionStateOf(sessions);
+    const adapter = new NativeAgentAdapter(undefined, [], sessions);
     const sm = new SessionManager({
       getAdapter: () => adapter,
       config: makeNaxConfig({
@@ -66,8 +70,8 @@ describe("native closePhysicalSession — run teardown reaches the session maps"
     // RUNNING and every map keeps its entry. The per-turn entries `open` does
     // not set are added here so the test covers all nine, not only the five the
     // open path happens to populate.
-    sessionState.nativeSessionFailed.add(name);
-    sessionState.nativeSessionLastUsage.set(name, { promptTokens: 10, anchorIndex: 0 });
+    state.failed.add(name);
+    state.lastUsage.set(name, { promptTokens: 10, anchorIndex: 0 });
     expect(collectionsHolding(name)).toEqual(exportedCollections());
     await closeStorySessions(sm, "US-001", () => adapter);
     expect(sm.getForStory("US-001")).toHaveLength(0);

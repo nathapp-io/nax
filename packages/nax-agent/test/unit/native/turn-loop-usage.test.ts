@@ -1,24 +1,21 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { nativeSessionLastUsage, nativeTranscriptDirs } from "#src/native/session/session";
+import { createNativeSessionState, type NativeSessionState } from "#src/native/session/session";
 import { saveTranscript } from "#src/native/session/transcript-store";
 import { buildNativeStreamEvent, type NativeTurnActivity } from "#src/native/session/turn-events";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import type { SendTurnOpts } from "#src/session/session-types";
-import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { cleanupTempDir, makeTempDir, seedNativeSession } from "#test/helpers/index";
 
 let dir: string;
+let sessionState: NativeSessionState;
 const handle = { id: "sess-usage", agentName: "native" } as const;
 const base = { callId: "call-1", runId: "run-1", agentName: "native", sessionName: "sess-usage" };
 
 beforeEach(() => {
   dir = makeTempDir("nax-turn-usage-");
-  nativeTranscriptDirs.set("sess-usage", dir);
+  sessionState = seedNativeSession(createNativeSessionState(), "sess-usage", { transcriptDir: dir });
 });
 afterEach(() => {
-  nativeTranscriptDirs.delete("sess-usage");
-  // The usage anchor is a module-level map keyed by session id; clear it so a
-  // later test reusing the id does not inherit a stale pre-compaction anchor.
-  nativeSessionLastUsage.delete("sess-usage");
   cleanupTempDir(dir);
 });
 
@@ -55,6 +52,7 @@ describe("native turn loop — usage activities (nax#2045)", () => {
   test("emits the round trip's cache figures and its 1-based ordinal", async () => {
     const activity: NativeTurnActivity[] = [];
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       onActivity: (a) => activity.push(a),
       complete: async () =>
         reply({
@@ -78,6 +76,7 @@ describe("native turn loop — usage activities (nax#2045)", () => {
   test("leaves cache figures absent, not 0, when the round trip reported none", async () => {
     const activity: NativeTurnActivity[] = [];
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       onActivity: (a) => activity.push(a),
       complete: async () => reply(),
     });
@@ -90,6 +89,7 @@ describe("native turn loop — usage activities (nax#2045)", () => {
   test("keeps an explicit zero cacheRead on the beat", async () => {
     const activity: NativeTurnActivity[] = [];
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       onActivity: (a) => activity.push(a),
       complete: async () => reply({ usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0 } }),
     });
@@ -101,6 +101,7 @@ describe("native turn loop — usage activities (nax#2045)", () => {
     const activity: NativeTurnActivity[] = [];
     let round = 0;
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       onActivity: (a) => activity.push(a),
       complete: async () => {
         round += 1;
@@ -123,6 +124,7 @@ describe("native turn loop — usage activities (nax#2045)", () => {
     const activity: NativeTurnActivity[] = [];
 
     await runNativeTurn(handle, "next", opts(), {
+      sessionState,
       contextWindow: 8000,
       compaction: { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 },
       onActivity: (a) => activity.push(a),
@@ -149,6 +151,7 @@ describe("native turn loop — usage activities (nax#2045)", () => {
     const activity: NativeTurnActivity[] = [];
     let calls = 0;
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState,
       transportRetry: { maxAttempts: 3, baseDelayMs: 100 },
       sleep: async () => {},
       onActivity: (a) => activity.push(a),

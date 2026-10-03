@@ -94,8 +94,8 @@ function completeOptions(modelDef: ModelDef = MODEL_DEF): ResolvedCompleteOption
   return { modelDef, workdir: dir, resolvedPermissions: PERMS };
 }
 
-async function openTurnSession(name: string) {
-  return new NativeAgentAdapter().openSession(name, {
+async function openTurnSession(adapter: NativeAgentAdapter, name: string) {
+  return adapter.openSession(name, {
     agentName: "native",
     workdir: dir,
     resolvedPermissions: PERMS,
@@ -205,7 +205,7 @@ describe("NativeAgentAdapter.sendTurn() — auth stamp reads the seam (US-006)",
   // the provider parsed from `handle.modelDef.model`.
   test("AC5 seam: sendTurn() returns the stamp the servedAuth seam reports for handle.modelDef.model's provider", async () => {
     const adapter = new NativeAgentAdapter();
-    const handle = await openTurnSession("nax-us006-seam-turn");
+    const handle = await openTurnSession(adapter, "nax-us006-seam-turn");
 
     const turn = await send(adapter, handle);
 
@@ -216,7 +216,7 @@ describe("NativeAgentAdapter.sendTurn() — auth stamp reads the seam (US-006)",
   test("AC5 boundary: sendTurn() omits the auth key when the seam reports no identity", async () => {
     seamDeps.servedAuth = () => undefined;
     const adapter = new NativeAgentAdapter();
-    const handle = await openTurnSession("nax-us006-seam-turn-none");
+    const handle = await openTurnSession(adapter, "nax-us006-seam-turn-none");
 
     const turn = await send(adapter, handle);
 

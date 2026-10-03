@@ -72,6 +72,7 @@ export * from "#src/native/session/turn-events";
 export * from "#src/native/session/turn-loop";
 export * from "#src/native/session/turn-retry";
 export * from "#src/native/session/turn-types";
+export { nativeSessionStateOf } from "#src/native/session-adapter";
 export * from "#src/native/session-affinity";
 export * from "#src/permissions/index";
 export * from "#src/sandbox/index";
