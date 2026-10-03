@@ -9,7 +9,7 @@ This repository is a Bun-workspace monorepo. Package-specific context lives in
 |:-----|:--------|:------|
 | `packages/nax` | `@nathapp/nax` | CLI orchestrator (Bun bundle, `dist/nax.js`) |
 | `packages/nax-ai` | `@nathapp/nax-ai` | Provider-agnostic LLM client (Node target, ESM-only, vitest) |
-| `packages/nax-agent` | `@nathapp/nax-agent` | Native coding agent: session contract, loop, tools, permissions, sandbox (private; bundled into nax) |
+| `packages/nax-agent` | `@nathapp/nax-agent` | Node library: session contract, loop, tools, permissions, sandbox; also bundled into nax (workspace private; npm uses staged manifest) |
 | `packages/repo-tooling` | `@nathapp/nax-repo-tooling` | Check scripts shared by the packages (private; never published) |
 | `packages/test-kit` | `@nathapp/nax-test-kit` | Shared bun:test helpers (private; never published) |
 
@@ -27,6 +27,7 @@ Dependency direction: `nax-ai` → `nax-agent` → `nax` (a package never import
 
 ## Releases
 
-Tag-driven, one `release.yml`: `vX.Y.Z` publishes `@nathapp/nax`; `nax-ai-vX.Y.Z` publishes `@nathapp/nax-ai`.
+Tag-driven, one `release.yml`: `vX.Y.Z` publishes `@nathapp/nax`; `nax-ai-vX.Y.Z` publishes `@nathapp/nax-ai`; `nax-agent-vX.Y.Z` publishes `@nathapp/nax-agent` from `.publish/`.
 Releases are maintainer-initiated only.
-Bumping nax-ai: bump its version and nax's exact pin in one PR; release `nax-ai-vX.Y.Z` before releasing nax.
+Release order: nax-ai → nax-agent → nax. Bumping nax-ai updates both consumers' exact pins in the same PR.
+nax-agent's first 0.1.0 publish is manual (maintainer OTP/2FA), followed by trusted-publisher setup; its tag verifies the existing artifact and creates the GitHub prerelease. Later agent tags use OIDC with provenance. See `packages/nax-agent/RELEASING.md`.

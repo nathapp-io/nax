@@ -41,6 +41,9 @@ Three pieces of host knowledge are passed in as data or functions, because the p
 
 The embedder-facing session API is still being designed, so `0.x` may reshape `.` with a minor bump. See [`CHANGELOG.md`](CHANGELOG.md).
 
+Maintainers: see the [release procedure](https://github.com/nathapp-io/nax/blob/main/packages/nax-agent/RELEASING.md)
+for the manual 0.1.0 publish and OTP step, trusted-publisher setup and subsequent tagged releases.
+
 ## License
 
 MIT
