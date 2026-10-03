@@ -81,7 +81,11 @@ Tests are named in their owning tasks below. Keep each new source file below exi
 - Produces: `nodeGlob(pattern: string, opts: AgentGlobOptions): AsyncIterable<string>` and `nodeGlobSync(pattern: string, opts: AgentGlobOptions): Iterable<string>` in `node-glob.ts`.
 - Produces: leaf-package `CaseGlobRuntime`, with the two glob signatures and structurally identical options; `GLOB_CASES: readonly { name: string; run(runtime: CaseGlobRuntime): Promise<void> }[]`. Keep existing `CaseRuntime` spawn-only so spawn cases have no unnecessary coupling.
 
+<<<<<<< Updated upstream
 - [x] **Step 1: Write runner-neutral cases and Bun/Node test wrappers.** Use node:assert/strict and node:fs temporary directories, cleaned in finally. Each case exercises both methods and compares sorted sets; sorting belongs to tests/callers, not adapters. Representative assertions:
+=======
+- [ ] **Step 1: Write runner-neutral cases and Bun/Node test wrappers.** Use node:assert/strict and node:fs temporary directories, cleaned in finally. Each case exercises both methods and compares sorted sets; sorting belongs to tests/callers, not adapters. Representative assertions:
+>>>>>>> Stashed changes
 
 ```ts
 // Fixture: a.ts, b.js, dir/c.ts, .secret, .hidden/h.ts,
@@ -102,19 +106,33 @@ Define local `hits(rt: CaseGlobRuntime, pattern: string, cwd: string): Promise<s
 
 Wrap `GLOB_CASES` in bun:test under each package, supplying `nodeRuntime` or `bunAgentRuntime`. Runtime fakes gain empty async/sync glob methods (or spread `nodeRuntime` and override spawn). Do not make the production glob methods optional to avoid updating tests.
 
+<<<<<<< Updated upstream
 - [x] **Step 2: Run the two wrappers to prove the missing glob methods fail.**
 
 From agent: `rtk proxy bun test ./test/unit/runtime/node-glob.test.ts --timeout=60000`; from nax: `rtk proxy bun test ./test/unit/agent-runtime/glob-runtime.test.ts --timeout=60000`. Expected: failure because glob methods are absent; hidden-pattern tests also expose today's Bun behaviour.
 
 - [x] **Step 3: Implement the contract and adapters.** Add methods/types above. `node-glob.ts` uses only node: runtime imports plus erased type imports, so Node can import it directly in Task 6. Use fs.promises.glob/fs.globSync with withFileTypes; assemble each path from `Dirent.parentPath` and `name`, then relativize against the resolved cwd. Check cwd with statSync before scanning. Include only actual regular-file Dirents, excluding symlink entries. Prune directory symlinks beyond the pattern's literal directory prefix through the glob exclusion callback; permit symlink directories explicitly named before the first glob metacharacter. Filter every result-relative segment beginning `.`. Deduplicate yielded paths; emit absolute paths only when requested. Preserve malformed-pattern empty results proven above; do not catch all errors and return an empty set.
+=======
+- [ ] **Step 2: Run the two wrappers to prove the missing glob methods fail.**
+
+From agent: `rtk proxy bun test ./test/unit/runtime/node-glob.test.ts --timeout=60000`; from nax: `rtk proxy bun test ./test/unit/agent-runtime/glob-runtime.test.ts --timeout=60000`. Expected: failure because glob methods are absent; hidden-pattern tests also expose today's Bun behaviour.
+
+- [ ] **Step 3: Implement the contract and adapters.** Add methods/types above. `node-glob.ts` uses only node: runtime imports plus erased type imports, so Node can import it directly in Task 6. Use fs.promises.glob/fs.globSync with withFileTypes; assemble each path from `Dirent.parentPath` and `name`, then relativize against the resolved cwd. Check cwd with statSync before scanning. Include only actual regular-file Dirents, excluding symlink entries. Prune directory symlinks beyond the pattern's literal directory prefix through the glob exclusion callback; permit symlink directories explicitly named before the first glob metacharacter. Filter every result-relative segment beginning `.`. Deduplicate yielded paths; emit absolute paths only when requested. Preserve malformed-pattern empty results proven above; do not catch all errors and return an empty set.
+>>>>>>> Stashed changes
 
 The Bun methods use `new Bun.Glob(pattern).scan` / `scanSync` with `onlyFiles: true`, `dot: false`, `followSymlinks: false`, then filter hidden result-relative segments explicitly (dot:false alone does not enforce D21). Resolve cwd once for absolute-to-relative filtering. Do not filter based on the absolute path's dot ancestors.
 
 Export `AgentGlobOptions` through runtime/index and the existing named runtime block in `src/index.ts`. Attach `nodeGlob`/`nodeGlobSync` to `nodeRuntime`. Keep `node-runtime.ts` focused on spawn; do not move or rewrite spawn.
 
+<<<<<<< Updated upstream
 - [x] **Step 4: Run both wrappers and affected runtime checks.** In agent: `rtk proxy bun test ./test/unit/runtime/ --timeout=60000`, `rtk bun run typecheck`; in nax: `rtk proxy bun test ./test/unit/agent-runtime/ --timeout=60000`, `rtk bun run typecheck`; in test-kit: `rtk bun run typecheck`, `rtk bun run check:all`. Expected: all pass, including existing spawn cases.
 
 - [x] **Step 5: Commit only Task 1 files.** `rtk git add <the exact files above>`; `rtk git commit -m "feat: add glob to the agent runtime contract"`.
+=======
+- [ ] **Step 4: Run both wrappers and affected runtime checks.** In agent: `rtk proxy bun test ./test/unit/runtime/ --timeout=60000`, `rtk bun run typecheck`; in nax: `rtk proxy bun test ./test/unit/agent-runtime/ --timeout=60000`, `rtk bun run typecheck`; in test-kit: `rtk bun run typecheck`, `rtk bun run check:all`. Expected: all pass, including existing spawn cases.
+
+- [ ] **Step 5: Commit only Task 1 files.** `rtk git add <the exact files above>`; `rtk git commit -m "feat: add glob to the agent runtime contract"`.
+>>>>>>> Stashed changes
 
 ### Task 2: Route Glob and ScratchpadList through the live runtime
 
@@ -125,7 +143,11 @@ Export `AgentGlobOptions` through runtime/index and the existing named runtime b
 
 **Interfaces:** Consumes Task 1's two runtime methods through `getAgentRuntime(): AgentRuntime`. Produces unchanged `_globDeps.scan(pattern, { cwd, absolute }): AsyncIterable<string>`, `globTool.run` and `scratchpadListTool.run` outputs.
 
+<<<<<<< Updated upstream
 - [x] **Step 1: Add failing tests for call-time delegation.** Load tool modules before installing a recording runtime; override `glob` to return `["b.ts", "a.ts"]` and `globSync` to return `["b.txt", "a.txt"]`. Create the scratchpad directory so its existing missing-directory guard permits scanning. Run existing tools using their current context fixtures, then assert:
+=======
+- [ ] **Step 1: Add failing tests for call-time delegation.** Load tool modules before installing a recording runtime; override `glob` to return `["b.ts", "a.ts"]` and `globSync` to return `["b.txt", "a.txt"]`. Create the scratchpad directory so its existing missing-directory guard permits scanning. Run existing tools using their current context fixtures, then assert:
+>>>>>>> Stashed changes
 
 ```ts
 expect(globResult.content).toBe("./ a.ts b.ts");
@@ -136,6 +158,7 @@ expect(syncCalls).toEqual([{ pattern: "**/*", opts: { cwd: join(root, SCRATCHPAD
 
 Define recording runtime locally by spreading nodeRuntime and replacing these methods; restore the prior runtime in finally/afterEach. Add filesystem tool tests: explicitly named hidden file yields `no matches for ".secret"`; scratchpad containing hidden files/directories lists only visible notes; missing scratchpad still returns `(no entries)`; retain 500-match limits, grouped escaping, and confinement tests.
 
+<<<<<<< Updated upstream
 - [x] **Step 2: Run `rtk proxy bun test ./test/unit/runtime/seam-delegation.test.ts ./test/unit/tools/glob.test.ts ./test/unit/tools/scratchpad.test.ts --timeout=60000` in agent.** Expected: delegation assertions fail on direct Bun scans.
 
 - [x] **Step 3: Delegate per invocation.** `_globDeps.scan` calls `getAgentRuntime().glob(pattern, opts)`; ScratchpadList calls `getAgentRuntime().globSync("**/*", { cwd: scratchpad, absolute: false })`. Keep `_globDeps` object identity and override shape. Keep sorting, capping, policy checks, missing-directory handling and formatting at their existing sites. Rewrite comments describing the old direct Bun implementation.
@@ -143,6 +166,15 @@ Define recording runtime locally by spreading nodeRuntime and replacing these me
 - [x] **Step 4: Repeat Step 2 and run agent typecheck.** Expected: passing tool outputs and delegation tests.
 
 - [x] **Step 5: Commit Task 2 files.** Message: `refactor: delegate agent glob tools through the runtime slot`.
+=======
+- [ ] **Step 2: Run `rtk proxy bun test ./test/unit/runtime/seam-delegation.test.ts ./test/unit/tools/glob.test.ts ./test/unit/tools/scratchpad.test.ts --timeout=60000` in agent.** Expected: delegation assertions fail on direct Bun scans.
+
+- [ ] **Step 3: Delegate per invocation.** `_globDeps.scan` calls `getAgentRuntime().glob(pattern, opts)`; ScratchpadList calls `getAgentRuntime().globSync("**/*", { cwd: scratchpad, absolute: false })`. Keep `_globDeps` object identity and override shape. Keep sorting, capping, policy checks, missing-directory handling and formatting at their existing sites. Rewrite comments describing the old direct Bun implementation.
+
+- [ ] **Step 4: Repeat Step 2 and run agent typecheck.** Expected: passing tool outputs and delegation tests.
+
+- [ ] **Step 5: Commit Task 2 files.** Message: `refactor: delegate agent glob tools through the runtime slot`.
+>>>>>>> Stashed changes
 
 ### Task 3: Replace Bun filesystem calls while preserving failures and bytes
 
@@ -155,7 +187,11 @@ Define recording runtime locally by spreading nodeRuntime and replacing these me
 
 **Interfaces:** Produces `fileSizeOrZero(path: string): number` in file-size.ts; only ENOENT maps to zero. Retains `readFileSlice(target: string, opts?: ReadFileSliceOptions): Promise<ReadFileSliceResult>`, `readApprovalsFileDetailed(path: string): Promise<ApprovalsFileRead>`, `_gitGuardDeps.readText(p: string): Promise<string>`, `_spillDeps.writeFile(path: string, data: string): Promise<number>`.
 
+<<<<<<< Updated upstream
 - [x] **Step 1: Add byte/error tests.** In new file-size tests assert `fileSizeOrZero` returns 6 for UTF-8 `héllo`, 0 for missing path, and throws ENOTDIR for `regularFile/child`. In read-file tests pin missing-file rejection to ENOENT (the zero size probe must not mask the subsequent open error), empty content/zero lines, and existing UTF-8 ceiling behaviour. Scratchpad tests assert `resultBytesPreTruncation === 6` for `héllo` with existing header expectations. For approvals assert missing state, parse failure state, preserved taint/entries, and directory-path read rejection. Add EACCES with a chmod(000) fixture and finally restoration; skip that one test only if running as root. A read failure must not become `missing` or `unparseable`. In git-guards tests call the real readText seam on UTF-8 text and on a missing file. For spill call the real writeFile seam, assert returned byte count 6 and stored bytes equal `héllo`; a missing parent must reject ENOENT rather than creating it.
+=======
+- [ ] **Step 1: Add byte/error tests.** In new file-size tests assert `fileSizeOrZero` returns 6 for UTF-8 `héllo`, 0 for missing path, and throws ENOTDIR for `regularFile/child`. In read-file tests pin missing-file rejection to ENOENT (the zero size probe must not mask the subsequent open error), empty content/zero lines, and existing UTF-8 ceiling behaviour. Scratchpad tests assert `resultBytesPreTruncation === 6` for `héllo` with existing header expectations. For approvals assert missing state, parse failure state, preserved taint/entries, and directory-path read rejection. Add EACCES with a chmod(000) fixture and finally restoration; skip that one test only if running as root. A read failure must not become `missing` or `unparseable`. In git-guards tests call the real readText seam on UTF-8 text and on a missing file. For spill call the real writeFile seam, assert returned byte count 6 and stored bytes equal `héllo`; a missing parent must reject ENOENT rather than creating it.
+>>>>>>> Stashed changes
 
 ```ts
 expect(await _spillDeps.writeFile(target, "héllo")).toBe(6);
@@ -165,6 +201,7 @@ expect(await readApprovalsFileDetailed(missing)).toEqual({
 });
 ```
 
+<<<<<<< Updated upstream
 - [x] **Step 2: Run the six test files explicitly in agent.** Expected: new file-size helper import fails; tests documenting old semantics may already pass. Do not force unchanged-behaviour tests to fail artificially.
 
 - [x] **Step 3: Implement Node I/O swaps.** `fileSizeOrZero` wraps statSync(path).size and catches only errors with code ENOENT; use it for both size probes. Approval reading uses readFile(path, "utf8"), catches only ENOENT before JSON parsing, and propagates other errors. `_gitGuardDeps.readText` uses readFile(p, "utf8"). `_spillDeps.writeFile` awaits writeFile(path, data, "utf8") then returns Buffer.byteLength(data), preserving Promise<number> for existing consumers/stubs. Parent creation stays in the existing spill caller. No Bun-backed sleep/which remains to move; retain S2–4's `runtime/which.ts` and existing Node timers.
@@ -172,6 +209,15 @@ expect(await readApprovalsFileDetailed(missing)).toEqual({
 - [x] **Step 4: Repeat the six explicit test paths and run `rtk bun run typecheck` in agent.** Expected: passing UTF-8, missing/error and existing paging/spill/guard tests.
 
 - [x] **Step 5: Commit Task 3 files.** Message: `refactor: use Node filesystem APIs in nax-agent`.
+=======
+- [ ] **Step 2: Run the six test files explicitly in agent.** Expected: new file-size helper import fails; tests documenting old semantics may already pass. Do not force unchanged-behaviour tests to fail artificially.
+
+- [ ] **Step 3: Implement Node I/O swaps.** `fileSizeOrZero` wraps statSync(path).size and catches only errors with code ENOENT; use it for both size probes. Approval reading uses readFile(path, "utf8"), catches only ENOENT before JSON parsing, and propagates other errors. `_gitGuardDeps.readText` uses readFile(p, "utf8"). `_spillDeps.writeFile` awaits writeFile(path, data, "utf8") then returns Buffer.byteLength(data), preserving Promise<number> for existing consumers/stubs. Parent creation stays in the existing spill caller. No Bun-backed sleep/which remains to move; retain S2–4's `runtime/which.ts` and existing Node timers.
+
+- [ ] **Step 4: Repeat the six explicit test paths and run `rtk bun run typecheck` in agent.** Expected: passing UTF-8, missing/error and existing paging/spill/guard tests.
+
+- [ ] **Step 5: Commit Task 3 files.** Message: `refactor: use Node filesystem APIs in nax-agent`.
+>>>>>>> Stashed changes
 
 ### Task 4: Replace hash implementations without changing deduplication rules
 
@@ -183,7 +229,11 @@ expect(await readApprovalsFileDetailed(missing)).toEqual({
 
 **Interfaces:** Produces `digest64(text: string): string`, SHA-256's first 16 hexadecimal characters. Retains `createSpinBreaker(settings: ResolvedSpinBreakerSettings, deps?: { readonly now?: () => number }): SpinBreaker` and private `summariseOverrides` shape `{ providers: string[]; headerKeys: string[]; digest: string }` (12 hexadecimal characters).
 
+<<<<<<< Updated upstream
 - [x] **Step 1: Add digest and behaviour assertions.** Golden vectors:
+=======
+- [ ] **Step 1: Add digest and behaviour assertions.** Golden vectors:
+>>>>>>> Stashed changes
 
 ```ts
 expect(digest64("")).toBe("e3b0c44298fc1c14");
@@ -207,6 +257,7 @@ expect(breaker.summary().newKeyEvents).toBe(3);
 
 Strengthen native/client.test.ts's existing “a header VALUE change still trips the guard” test, using its existing `overrideWithHeaders` fixtures, with `expect(builtFor.digest).toBe("c2995e7e854d")` and `expect(requested.digest).toBe("b15f20421d0d")`. Planning verified both values against Bun.CryptoHasher and Node createHash on the canonicalized fixture. Preserve secret-redaction assertions and header-key-order equivalence.
 
+<<<<<<< Updated upstream
 - [x] **Step 2: Run `rtk proxy bun test ./test/unit/infra/spin-breaker-hash.test.ts ./test/unit/native/client.test.ts --timeout=60000` in agent.** Expected: missing digest64 import fails; native compatibility golden assertions already pass before the swap.
 
 - [x] **Step 3: Implement digest64 and switch its two spin-breaker callers.** Keep result normalization, stableStringify, MAX_KEY_BYTES=512 and key separator unchanged. In native/client.ts replace the hasher with `createHash("sha256").update(canonicalOverrideKey(overrides)).digest("hex").slice(0, DIGEST_LENGTH)`; DIGEST_LENGTH remains 12. These two hash widths have different purposes; do not use digest64 for the native summary.
@@ -214,6 +265,15 @@ Strengthen native/client.test.ts's existing “a header VALUE change still trips
 - [x] **Step 4: Repeat Step 2 plus `rtk proxy bun test ./test/unit/native/session/session-lifetime-spin.test.ts --timeout=60000`.** Expected: native digest goldens unchanged; repeat detection and stop/nudge semantics preserved.
 
 - [x] **Step 5: Commit Task 4 files.** Message: `refactor: replace agent Bun hashing with Node crypto`.
+=======
+- [ ] **Step 2: Run `rtk proxy bun test ./test/unit/infra/spin-breaker-hash.test.ts ./test/unit/native/client.test.ts --timeout=60000` in agent.** Expected: missing digest64 import fails; native compatibility golden assertions already pass before the swap.
+
+- [ ] **Step 3: Implement digest64 and switch its two spin-breaker callers.** Keep result normalization, stableStringify, MAX_KEY_BYTES=512 and key separator unchanged. In native/client.ts replace the hasher with `createHash("sha256").update(canonicalOverrideKey(overrides)).digest("hex").slice(0, DIGEST_LENGTH)`; DIGEST_LENGTH remains 12. These two hash widths have different purposes; do not use digest64 for the native summary.
+
+- [ ] **Step 4: Repeat Step 2 plus `rtk proxy bun test ./test/unit/native/session/session-lifetime-spin.test.ts --timeout=60000`.** Expected: native digest goldens unchanged; repeat detection and stop/nudge semantics preserved.
+
+- [ ] **Step 5: Commit Task 4 files.** Message: `refactor: replace agent Bun hashing with Node crypto`.
+>>>>>>> Stashed changes
 
 ### Task 5: Enforce zero Bun APIs in production source
 
@@ -227,6 +287,7 @@ Strengthen native/client.test.ts's existing “a header VALUE change still trips
 
 **Interfaces:** Retains `findBunApiUses(srcDir: string, packageRoot: string): Promise<BunApiViolation[]>` and `findBoundaryViolations(repoRoot: string): BoundaryViolation[]`. Adds agent `check:no-bun-apis = "bun ../repo-tooling/scripts/check-no-bun-apis.ts --package=."`, called by lint:checks/check:all.
 
+<<<<<<< Updated upstream
 - [x] **Step 1: Extend gate fixture assertions.** Require violations for `globalThis.Bun`, `globalThis.Bun.file(...)`, `typeof Bun`, `import.meta.dir`, direct Bun member access, bun: static/dynamic imports, and bare `bun` imports. Keep comment lines, myBun identifiers and node: imports accepted. Assert relative filename/line accuracy. In boundary fixtures reject `src/x.ts` imports from `bun` and `bun:test` for nax-agent, while `test/x.test.ts` importing bun:test remains accepted. nax's Bun runtime must remain accepted.
 
 - [x] **Step 2: Run repo-tooling `rtk proxy bun test ./test/unit/scripts/check-no-bun-apis.test.ts --timeout=60000` and nax `rtk proxy bun test ./test/unit/scripts/check-package-boundaries.test.ts --timeout=60000`.** Expected: new forbidden forms are missed/accepted by the current gates.
@@ -236,6 +297,17 @@ Strengthen native/client.test.ts's existing “a header VALUE change still trips
 - [x] **Step 4: Repeat gate tests; run agent `rtk bun run check:no-bun-apis` and `rtk bun run check:all`; nax `rtk bun run check:package-boundaries`; nax-ai `rtk bun run check:no-bun-apis`.** Expected: clean source detector and all boundaries hold. A source gate failure identifies a site to replace/reword, never a new baseline entry.
 
 - [x] **Step 5: Commit Task 5 files.** Message: `chore: enforce Bun-free nax-agent source`.
+=======
+- [ ] **Step 1: Extend gate fixture assertions.** Require violations for `globalThis.Bun`, `globalThis.Bun.file(...)`, `typeof Bun`, `import.meta.dir`, direct Bun member access, bun: static/dynamic imports, and bare `bun` imports. Keep comment lines, myBun identifiers and node: imports accepted. Assert relative filename/line accuracy. In boundary fixtures reject `src/x.ts` imports from `bun` and `bun:test` for nax-agent, while `test/x.test.ts` importing bun:test remains accepted. nax's Bun runtime must remain accepted.
+
+- [ ] **Step 2: Run repo-tooling `rtk proxy bun test ./test/unit/scripts/check-no-bun-apis.test.ts --timeout=60000` and nax `rtk proxy bun test ./test/unit/scripts/check-package-boundaries.test.ts --timeout=60000`.** Expected: new forbidden forms are missed/accepted by the current gates.
+
+- [ ] **Step 3: Strengthen and wire gates.** Expand the source detector to the forms above without introducing exceptions. Retain its existing comment-line model; reword single-line source docblocks that mention Bun member syntax instead of allowlisting them. In agentViolation reject Bun builtins outside test/ before the generic isBuiltin allowance; retaining bun:test tests is R1, not a shipped-source exception. Update the boundary module's documentation accordingly. Add/call check:no-bun-apis in agent's manifest; leave dependencies and version unchanged.
+
+- [ ] **Step 4: Repeat gate tests; run agent `rtk bun run check:no-bun-apis` and `rtk bun run check:all`; nax `rtk bun run check:package-boundaries`; nax-ai `rtk bun run check:no-bun-apis`.** Expected: clean source detector and all boundaries hold. A source gate failure identifies a site to replace/reword, never a new baseline entry.
+
+- [ ] **Step 5: Commit Task 5 files.** Message: `chore: enforce Bun-free nax-agent source`.
+>>>>>>> Stashed changes
 
 ### Task 6: Prove the Node floor and finish the slice
 
@@ -247,6 +319,7 @@ Strengthen native/client.test.ts's existing “a header VALUE change still trips
 
 **Interfaces:** Consumes Task 1's self-contained nodeGlob/nodeGlobSync module and runner-neutral GLOB_CASES. Produces a real-Node smoke executable: `node test/node/glob-floor.mjs 22.19.0`; successful output `glob floor ok: 22.19.0` after all cases and warning checks pass.
 
+<<<<<<< Updated upstream
 - [x] **Step 1: Add the floor runner.** Import `../../src/runtime/node-glob.ts` and `../../../test-kit/src/cases/glob-cases.ts` via direct paths in this test-only MJS runner. Node's type stripping must encounter only erasable TypeScript; both modules' local type imports are erased. Check `process.versions.bun === undefined`, optional argv version equals `process.versions.node`, and native fs.globSync/promises.glob exist. Listen for ExperimentalWarning mentioning glob and fail if one occurs. Run all GLOB_CASES against `{ glob: nodeGlob, globSync: nodeGlobSync }`, allowing pending warnings to dispatch before the final assertion. No aliases, build output, test preload, network or provider access is involved.
 
 - [x] **Step 2: Execute with local Node.** From agent: `rtk proxy node test/node/glob-floor.mjs`. Expected: all cases pass and output names the actual local version (22.22.2 in planning). Then `rtk proxy node test/node/glob-floor.mjs 0.0.0` must fail the version assertion; this proves the floor check cannot silently run whichever Node is installed.
@@ -256,6 +329,17 @@ Strengthen native/client.test.ts's existing “a header VALUE change still trips
 - [x] **Step 4: Run final repository gates.** From root: `rtk bun run typecheck`, `rtk bun run check:all`, `rtk bun run test`, `rtk bun run build`. From agent and nax respectively: `rtk bun run test:coverage`. Confirm agent coverage baseline remains `{}` and every new source file meets 80% lines/functions. Add missing behavioural tests if coverage identifies a gap; do not lower thresholds. Confirm nax runtime installation remains first in bin/preload and nax-agent remains bundled. Compare `packages/nax/package.json` dependencies against the execution base; byte-identical is required. Record actual results, including sandbox skips, separately from claimed floor verification.
 
 - [x] **Step 5: Commit and hand off the completed implementation for review.** Message: `ci: verify agent glob at the Node floor`. Follow the selected execution skill's review/branch workflow; creating a release or launching billed smokes is outside this slice. Record S2–5's plan/PR/merge in master-plan §5 only. S2–6 can then add the ESM codemod and Node build.
+=======
+- [ ] **Step 1: Add the floor runner.** Import `../../src/runtime/node-glob.ts` and `../../../test-kit/src/cases/glob-cases.ts` via direct paths in this test-only MJS runner. Node's type stripping must encounter only erasable TypeScript; both modules' local type imports are erased. Check `process.versions.bun === undefined`, optional argv version equals `process.versions.node`, and native fs.globSync/promises.glob exist. Listen for ExperimentalWarning mentioning glob and fail if one occurs. Run all GLOB_CASES against `{ glob: nodeGlob, globSync: nodeGlobSync }`, allowing pending warnings to dispatch before the final assertion. No aliases, build output, test preload, network or provider access is involved.
+
+- [ ] **Step 2: Execute with local Node.** From agent: `rtk proxy node test/node/glob-floor.mjs`. Expected: all cases pass and output names the actual local version (22.22.2 in planning). Then `rtk proxy node test/node/glob-floor.mjs 0.0.0` must fail the version assertion; this proves the floor check cannot silently run whichever Node is installed.
+
+- [ ] **Step 3: Wire a focused CI job `nax-agent-glob-floor`.** Matrix OS `[ubuntu-latest, macos-latest]`; setup-node exactly `22.19.0`; use existing checkout/setup action conventions. Run `node --version` then `node packages/nax-agent/test/node/glob-floor.mjs 22.19.0`. This runner requires no workspace install because it imports only built-ins and type-stripped local files. Existing Bun jobs already exercise actual runtime/tool integration and source coverage; the later S2–8 matrix will add full Node contracts and tarball smokes. Require both floor legs to pass with no glob experimental warning. The documentation says the floor is sufficient; if CI disagrees, report the specific failure and obtain a master-plan ruling before raising the floor or adding a dependency.
+
+- [ ] **Step 4: Run final repository gates.** From root: `rtk bun run typecheck`, `rtk bun run check:all`, `rtk bun run test`, `rtk bun run build`. From agent and nax respectively: `rtk bun run test:coverage`. Confirm agent coverage baseline remains `{}` and every new source file meets 80% lines/functions. Add missing behavioural tests if coverage identifies a gap; do not lower thresholds. Confirm nax runtime installation remains first in bin/preload and nax-agent remains bundled. Compare `packages/nax/package.json` dependencies against the execution base; byte-identical is required. Record actual results, including sandbox skips, separately from claimed floor verification.
+
+- [ ] **Step 5: Commit and hand off the completed implementation for review.** Message: `ci: verify agent glob at the Node floor`. Follow the selected execution skill's review/branch workflow; creating a release or launching billed smokes is outside this slice. Record S2–5's plan/PR/merge in master-plan §5 only. S2–6 can then add the ESM codemod and Node build.
+>>>>>>> Stashed changes
 
 ## Self-review and requirement map
 
