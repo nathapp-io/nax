@@ -5,25 +5,15 @@
  * skipLibCheck:false. Only diagnostics under the installed package's dist/
  * fail; third-party ones are ignored (the S2-7 api-surface precedent).
  */
-import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { runSmokeCommand as run } from "./helpers/process";
 
 const PKG = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE = join(PKG, "test/node/fixtures/packed-smoke.mjs");
-
-function run(cmd: string, args: string[], cwd: string): string {
-  const proc = spawnSync(cmd, args, { cwd, encoding: "utf8" });
-  if (proc.status !== 0) {
-    throw new Error(
-      `${cmd} ${args.join(" ")} (cwd ${cwd}) failed with status ${proc.status}:\n${proc.stdout}${proc.stderr}`,
-    );
-  }
-  return proc.stdout;
-}
 
 let consumer = "";
 let packDir = "";
@@ -41,6 +31,7 @@ beforeAll(() => {
     "npm",
     ["install", "--no-audit", "--no-fund", join(packDir, tgz), "typescript@7.0.2", "@types/node@25.2.3"],
     consumer,
+    120_000,
   );
 }, 300_000);
 
@@ -52,7 +43,7 @@ afterAll(() => {
 describe("the packed tarball", () => {
   test("runs one tool round-trip, one native turn and (on Linux) one sandboxed command", () => {
     cpSync(FIXTURE, join(consumer, "packed-smoke.mjs"));
-    expect(run("node", ["packed-smoke.mjs"], consumer)).toContain("packed smoke ok");
+    expect(run("node", ["packed-smoke.mjs"], consumer, 120_000)).toContain("packed smoke ok");
   }, 180_000);
 
   test("typechecks for a skipLibCheck:false consumer; only third-party diagnostics are allowed", () => {
@@ -81,16 +72,12 @@ describe("the packed tarball", () => {
         include: ["index.ts"],
       }),
     );
-    const tsc = spawnSync(join(consumer, "node_modules/.bin/tsc"), ["-p", "tsconfig.json"], {
-      cwd: consumer,
-      encoding: "utf8",
-    });
-    expect(tsc.error).toBeUndefined();
-    expect(tsc.status).not.toBeNull();
+    // Type errors are filtered below; spawn failures and deadlines still fail.
+    const output = run(join(consumer, "node_modules/.bin/tsc"), ["-p", "tsconfig.json"], consumer, 90_000, [0, 1, 2]);
     // tsc prints diagnostic paths relative to its cwd (Linux CI), so match the
     // fragment, never an absolute path — an absolute match is vacuous there.
     const ownDist = "node_modules/@nathapp/nax-agent/dist/";
-    const errorLines = `${tsc.stdout}${tsc.stderr}`.split("\n").filter((line) => line.includes("error TS"));
+    const errorLines = output.split("\n").filter((line) => line.includes("error TS"));
     expect(errorLines.filter((line) => line.includes(ownDist))).toEqual([]);
     // A failure to resolve the package at all lands on the consumer's index.ts;
     // only third-party diagnostics may mention a package other than ours.

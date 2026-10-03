@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configureCredentials, globTool, NativeSessionAdapter } from "@nathapp/nax-agent";
+import { configureCredentials, globTool, NativeSessionAdapter, resetSandboxBackend } from "@nathapp/nax-agent";
 import { _clientDeps, DEFAULT_SANDBOX_CONFIG, resolveSessionSandbox } from "@nathapp/nax-agent/internal";
 
 assert.equal(process.versions.bun, undefined, "the packed smoke must run on native Node");
@@ -69,28 +69,33 @@ await adapter.closeSession(handle);
 // 3. Linux only (spec §7.3): one command through the real OS sandbox. A
 //    missing sandbox FAILS here; CI installs bubblewrap.
 if (process.platform === "linux") {
-  const launcher = await resolveSessionSandbox({
-    config: DEFAULT_SANDBOX_CONFIG,
-    root: workdir,
-    needsLauncher: true,
-    protectedPaths: {
-      gitExcludePathspecs: [],
-      gitIgnorePatterns: [],
-      projectStateDir: ".nax",
-      credentialDir: join(workdir, ".credentials"),
-      trustStoreFile: join(workdir, ".trust.json"),
-    },
-  });
-  const result = await launcher.run({
-    spec: { kind: "shell", shell: "/bin/sh", command: "echo packed-sandbox" },
-    root: workdir,
-    cwd: workdir,
-    timeoutMs: 30_000,
-    stripEnvVars: [],
-  });
-  assert.equal(result.sandbox.wrapped, true, `sandbox was not applied: ${JSON.stringify(result.sandbox)}`);
-  assert.equal(result.exitCode, 0, `sandboxed command failed: ${result.stderr}`);
-  assert.match(result.stdout, /packed-sandbox/);
+  try {
+    const launcher = await resolveSessionSandbox({
+      config: DEFAULT_SANDBOX_CONFIG,
+      root: workdir,
+      needsLauncher: true,
+      protectedPaths: {
+        gitExcludePathspecs: [],
+        gitIgnorePatterns: [],
+        projectStateDir: ".nax",
+        credentialDir: join(workdir, ".credentials"),
+        trustStoreFile: join(workdir, ".trust.json"),
+      },
+    });
+    const result = await launcher.run({
+      spec: { kind: "shell", shell: "/bin/sh", command: "echo packed-sandbox" },
+      root: workdir,
+      cwd: workdir,
+      timeoutMs: 30_000,
+      stripEnvVars: [],
+    });
+    assert.equal(result.sandbox.wrapped, true, `sandbox was not applied: ${JSON.stringify(result.sandbox)}`);
+    assert.equal(result.exitCode, 0, `sandboxed command failed: ${result.stderr}`);
+    assert.match(result.stdout, /packed-sandbox/);
+  } finally {
+    // Linux's socat bridge keeps Node alive until the backend is reset.
+    await resetSandboxBackend();
+  }
 }
 
 console.log("packed smoke ok");

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 import {
@@ -72,6 +72,28 @@ describe("buildStagedManifest", () => {
 });
 
 describe("missingStageInputs", () => {
+  test("requires both emitted files for every nested source module", () => {
+    const dir = makeTempDir("stage-partial-");
+    try {
+      for (const rel of [...STAGE_INPUTS, "src/command-safety/index.ts", "src/ambient.d.ts"]) {
+        const full = join(dir, rel);
+        mkdirSync(join(full, ".."), { recursive: true });
+        writeFileSync(full, "");
+      }
+      expect(missingStageInputs(dir)).toEqual(["dist/command-safety/index.js", "dist/command-safety/index.d.ts"]);
+      mkdirSync(join(dir, "dist/command-safety"), { recursive: true });
+      writeFileSync(join(dir, "dist/command-safety/index.js"), "");
+      expect(missingStageInputs(dir)).toEqual(["dist/command-safety/index.d.ts"]);
+      writeFileSync(join(dir, "dist/command-safety/index.d.ts"), "");
+      expect(missingStageInputs(dir)).toEqual([]);
+      rmSync(join(dir, "dist/command-safety/index.js"));
+      mkdirSync(join(dir, "dist/command-safety/index.js"));
+      expect(missingStageInputs(dir)).toEqual(["dist/command-safety/index.js"]);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
   test("names every missing input on an empty package dir and none once they exist", () => {
     const dir = makeTempDir("stage-inputs-");
     try {
