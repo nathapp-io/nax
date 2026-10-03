@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import * as pub from "@nathapp/nax-agent";
 import * as internal from "@nathapp/nax-agent/internal";
 import { _commandShadowDeps, _systemOneClientDeps } from "#src/command-safety/index";
@@ -57,5 +59,32 @@ describe(".", () => {
     expect(pub.setAgentLogger).toBeFunction();
     expect(pub.configureCredentials).toBeFunction();
     expect(pub.nodeRuntime.spawn).toBeFunction();
+  });
+});
+
+/** The snapshot's non-`type` names per section: the names a JS consumer can actually read. */
+function snapshotValueNames(): { main: string[]; internal: string[] } {
+  const text = readFileSync(join(import.meta.dir, "../../../api/nax-agent.api.txt"), "utf8");
+  const sections: Record<string, string[]> = {};
+  let current = "";
+  for (const line of text.split("\n")) {
+    if (line === "" || line.startsWith("#")) continue;
+    if (line.startsWith("[")) {
+      current = line.slice(1, -1);
+      sections[current] = [];
+    } else if (!line.startsWith("type ")) sections[current]?.push(line);
+  }
+  return { main: sections["."] ?? [], internal: sections["./internal"] ?? [] };
+}
+
+describe("runtime exports versus the API snapshot", () => {
+  // The snapshot is read from the declarations; these keys are what the JS actually exposes.
+  // A value exported through `export type`, or a type exported without `type`, makes them differ.
+  test(". exposes exactly the snapshot's non-type names", () => {
+    expect(Object.keys(pub).sort(byCodePoint)).toEqual(snapshotValueNames().main);
+  });
+
+  test("/internal exposes exactly the snapshot's non-type names", () => {
+    expect(Object.keys(internal).sort(byCodePoint)).toEqual(snapshotValueNames().internal);
   });
 });
