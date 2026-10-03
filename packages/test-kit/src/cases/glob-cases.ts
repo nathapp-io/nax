@@ -46,6 +46,8 @@ export const GLOB_CASES: readonly { name: string; run(rt: CaseGlobRuntime): Prom
     ["malformed brace", "{", []],
     ["literal miss", "not-present", []],
     ["literal file", "a.ts", ["a.ts"]],
+    ["leading current-directory literal", "./a.ts", ["./a.ts"]],
+    ["leading current-directory wildcard", "./dir/*.ts", ["./dir/c.ts"]],
     ["literal symlink file", "link.ts", ["link.ts"]],
     ["literal dangling symlink", "broken", []],
   ].map(([name, pattern, expected]) => ({

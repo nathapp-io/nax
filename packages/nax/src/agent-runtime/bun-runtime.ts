@@ -17,7 +17,7 @@ export const bunAgentRuntime: AgentRuntime = {
       followSymlinks: false,
     })) {
       const path = opts.absolute ? relative(cwd, hit) : hit;
-      if (!path.split(sep).some((segment) => segment.startsWith("."))) yield hit;
+      if (!path.split(sep).some((segment) => segment !== "." && segment.startsWith("."))) yield hit;
     }
   },
   *globSync(pattern, opts) {
@@ -30,7 +30,7 @@ export const bunAgentRuntime: AgentRuntime = {
       followSymlinks: false,
     })) {
       const path = opts.absolute ? relative(cwd, hit) : hit;
-      if (!path.split(sep).some((segment) => segment.startsWith("."))) yield hit;
+      if (!path.split(sep).some((segment) => segment !== "." && segment.startsWith("."))) yield hit;
     }
   },
   // nax-git-env-allow: the generic runtime; git callers (gitWithTimeout) pass hardenedGitEnv themselves
