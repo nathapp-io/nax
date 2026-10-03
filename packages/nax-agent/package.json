@@ -26,6 +26,7 @@
     "check:no-bun-apis": "bun ../repo-tooling/scripts/check-no-bun-apis.ts --package=.",
     "lint:checks": "bun run check:no-bun-apis && bun ../repo-tooling/scripts/check-nax-error.ts --package=. && bun ../repo-tooling/scripts/check-file-sizes.ts --package=. && bun ../repo-tooling/scripts/check-complexity.ts --package=. && bun ../repo-tooling/scripts/check-import-cycles.ts --package=. && bun ../repo-tooling/scripts/check-test-as-unknown-as.ts --package=. && bun ../repo-tooling/scripts/check-test-escape-hatches.ts --package=. && bun run check:test-satellites && bun ../repo-tooling/scripts/check-no-control-bytes.ts && bun ../repo-tooling/scripts/check-no-real-global-nax.ts && bun ../repo-tooling/scripts/check-permission-mode-ssot.ts && bun ../repo-tooling/scripts/check-feature-dir-ssot.ts && bun ../repo-tooling/scripts/check-package-frame-derivation.ts && bun ../repo-tooling/scripts/check-git-spawn-env.ts . && bun ../repo-tooling/scripts/check-sandbox-imports.ts . && bun ../repo-tooling/scripts/check-nax-ai-imports.ts .",
     "test": "bun test ./test/unit/ --timeout=60000 && bun test ./test/integration/ --timeout=60000",
+    "test:node": "vitest --run",
     "check:all": "bun run --silent lint",
     "test:coverage": "bun ../repo-tooling/scripts/check-coverage.ts --require-all-files",
     "test:coverage:report": "bun ../repo-tooling/scripts/check-coverage.ts --require-all-files --report",
@@ -43,7 +44,8 @@
     "@types/bun": "^1.3.8",
     "@types/node": "25.2.3",
     "bun-types": "^1.3.9",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vitest": "4.1.9"
   },
   "license": "MIT",
   "author": "William Khoo",
