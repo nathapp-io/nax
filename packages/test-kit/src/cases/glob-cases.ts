@@ -38,6 +38,8 @@ export const GLOB_CASES: readonly { name: string; run(rt: CaseGlobRuntime): Prom
     ["braces", "{a,b}.{ts,js}", ["a.ts", "b.js"]],
     ["character classes", "[ab].*", ["a.ts", "b.js"]],
     ["duplicate brace alternatives", "{a,a}.ts", ["a.ts"]],
+    ["brace directory symlink is not a literal prefix", "{linked-dir,other}/**/*", []],
+    ["character-class directory symlink is not a literal prefix", "[l]inked-dir/**/*", []],
     ["explicit directory symlink prefix", "linked-dir/**/*", ["linked-dir/c.ts"]],
     ["explicit dotfile", ".secret", []],
     ["explicit hidden wildcard", "**/.*", []],
@@ -57,6 +59,17 @@ export const GLOB_CASES: readonly { name: string; run(rt: CaseGlobRuntime): Prom
         assert.deepEqual(await hits(rt, String(pattern), root), expected);
       }),
   })),
+  {
+    name: "escaped literal brackets in directories and files",
+    run: (rt) =>
+      fixture(async (root) => {
+        mkdirSync(join(root, "odd[dir]"));
+        writeFileSync(join(root, "odd[dir]/q.ts"), "x");
+        writeFileSync(join(root, "odd[file].ts"), "x");
+        assert.deepEqual(await hits(rt, String.raw`odd\[dir\]/*.ts`, root), ["odd[dir]/q.ts"]);
+        assert.deepEqual(await hits(rt, String.raw`odd\[file\].ts`, root), ["odd[file].ts"]);
+      }),
+  },
   {
     name: "absolute paths preserve the relative matched set",
     run: (rt) =>
