@@ -6,10 +6,13 @@ command-safety, cost, config and the process-level helpers beneath them. nax kee
 orchestration — the runner, the pipeline, the agent registry, `AgentAdapter` — and reaches
 the agent through this one package.
 
-The package is `private` and **bundled, never installed**: nax lists it only as a
-workspace dependency, and `bun run check:bundle-externals` asserts it is inlined into
-`dist/nax.js` rather than left as an external import. There is no second copy of the agent
-at runtime and nothing to publish.
+The workspace manifest remains `private: true` and resolves `.ts` source. The npm
+library uses the generated `.publish/` manifest pointing at Node ESM `dist/`.
+nax keeps a workspace devDependency and bundles the same source; its
+`bun run check:bundle-externals` asserts the agent is inlined into `dist/nax.js`.
+Release preparation and publication follow `packages/nax-agent/RELEASING.md`:
+manual 0.1.0 publish with maintainer OTP/2FA, then trusted-publisher setup;
+subsequent `nax-agent-vX.Y.Z` tags publish through OIDC with provenance.
 
 > Edit this file to update AI agent context — do not edit `CLAUDE.md`, `AGENTS.md`,
 > `.cursorrules`, `GEMINI.md` or other generated agent files directly.
@@ -21,7 +24,7 @@ at runtime and nothing to publish.
 |:------|:-------|
 | Runtime | **Bun 1.4.0** for dev and tests; the shipped source is Node-compatible (>=22.19.0) and uses no Bun API (`bun run check:no-bun-apis`) |
 | Language | **TypeScript strict** — no `any` without explicit justification |
-| Test | **`bun:test`** — describe/test/expect |
+| Test | **`bun:test`** for unit/integration coverage; **vitest on real Node 22/24** for runtime contracts and packed-tarball smoke |
 | Lint/Format | **Biome** (`bun run lint:biome`), plus nax's own gate scripts |
 | Build | `bun run build` — `tsc -p tsconfig.build.json` (nodenext) to `dist/`, for the npm package; nax still bundles the source |
 
@@ -31,6 +34,11 @@ at runtime and nothing to publish.
 |:--------|:--------|
 | `bun run typecheck` | `tsc --noEmit` over `src/` and `test/` |
 | `bun run build` | `tsc -p tsconfig.build.json`: Node ESM `dist/`; fails on an extensionless relative import |
+| `bun run stage-publish` | Generate `.publish/` from the built `dist/` and documentation; workspace exports remain source-pointing |
+| `bun run test:node` | Real-Node vitest contracts plus packed-tarball/consumer smoke |
+| `bun run release --dry-run patch` | Preview release version and tag without mutations |
+| `bun run release patch` | Confirmed PR-first package/changelog/lockfile release preparation |
+| `bun run release tag` | Separate confirmation on clean main before tag push and release workflow |
 | `bun run check:api` | Build, read the exports of `.` and `./internal` from the declarations, diff against `api/nax-agent.api.txt`; fails if `.` exports a `_` name |
 | `bun run api:update` | Rewrite `api/nax-agent.api.txt` after an intended surface change (refuses a `_` name on `.`) |
 | `bun run check:all` | Biome plus every repo gate (`lint`) |
@@ -93,7 +101,7 @@ nax wiring tests that use them.
 
 - **Spawn only through the runtime slot.** `runtimeSpawn` / `getAgentRuntime().spawn` from `#src/runtime/index`; never `Bun.spawn` or `node:child_process` directly. The Node runtime is the default; nax installs a Bun runtime (`packages/nax/src/agent-runtime/install.ts`). New spawn behaviour gets a case in `@nathapp/nax-test-kit/cases/spawn-cases`, which both runtimes run.
 - **The package boundary is a gate, not a convention.** `bun run check:package-boundaries`
-  (from `packages/nax`) scans every package. nax-agent imports only node:/bun builtins, its
+  (from `packages/nax`) scans every package. Shipped nax-agent source imports only Node builtins, its
   declared dependencies, `#src/` and `#test/`, relative paths that stay inside the package,
   and itself. Never `@nathapp/nax`, never a relative path into another package, and never a
   tsconfig alias. A `packages/*` directory with a `package.json` but no rule in that gate

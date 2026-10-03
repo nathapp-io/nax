@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax-agent",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "nax's native coding agent: session contract, native loop, tools, permissions, sandbox, command-safety.",
   "type": "module",
@@ -13,6 +13,7 @@
     "#test/*": "./test/*.ts"
   },
   "scripts": {
+    "release": "bun scripts/release.ts",
     "typecheck": "bun x tsc --noEmit",
     "build": "bun x tsc -p tsconfig.build.json",
     "stage-publish": "bun scripts/stage-publish.ts",

@@ -7,6 +7,8 @@ on:
       - "v*.*.*-canary.*"
       - "nax-ai-v*.*.*"
       - "nax-ai-v*.*.*-canary.*"
+      - "nax-agent-v*.*.*"
+      - "nax-agent-v*.*.*-canary.*"
   workflow_dispatch:
     inputs:
       tag:
@@ -26,6 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
           fetch-depth: 0 # full history for changelog extraction
 
       - name: Resolve package
@@ -34,10 +37,14 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           case "$TAG" in
+            nax-agent-v*) V="${TAG#nax-agent-v}"; echo "dir=packages/nax-agent" >> "$GITHUB_OUTPUT"; echo "name=@nathapp/nax-agent" >> "$GITHUB_OUTPUT" ;;
             nax-ai-v*) V="${TAG#nax-ai-v}"; echo "dir=packages/nax-ai" >> "$GITHUB_OUTPUT"; echo "name=@nathapp/nax-ai" >> "$GITHUB_OUTPUT" ;;
             v*)        V="${TAG#v}";        echo "dir=packages/nax" >> "$GITHUB_OUTPUT";    echo "name=@nathapp/nax" >> "$GITHUB_OUTPUT" ;;
             *) echo "Unrecognised tag $TAG"; exit 1 ;;
           esac
+          if ! [[ "$V" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-zA-Z0-9]+([.-][a-zA-Z0-9]+)*)?$ ]]; then
+            echo "::error::Invalid release version in tag $TAG"; exit 1
+          fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
 
       - uses: oven-sh/setup-bun@v2
@@ -52,15 +59,25 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Pre-publish checks
-        working-directory: ${{ steps.pkg.outputs.dir }}
-        env:
-          NAME: ${{ steps.pkg.outputs.name }}
+      - name: Validate npm version
         run: |
-          if [ "$NAME" = "@nathapp/nax-ai" ]; then bun run lint && bun run typecheck && bun x vitest --run && bun run build; else bun run build; fi
+          NPM_VERSION="$(npm --version)" node -e '
+            const v = process.env.NPM_VERSION;
+            const parts = /^([0-9]+)\.([0-9]+)\.([0-9]+)$/.exec(v || "");
+            if (!parts || Number(parts[1]) < 11 || (Number(parts[1]) === 11 && (Number(parts[2]) < 5 || (Number(parts[2]) === 5 && Number(parts[3]) < 1)))) {
+              throw new Error("Trusted publishing requires npm >=11.5.1; found " + v);
+            }
+          '
 
-      # Validate tag matches package.json version (the `v` / `nax-ai-v` prefix
-      # is stripped by the Resolve package step, so both packages compare the
+      - name: Enable the OS sandbox (bubblewrap)
+        if: steps.pkg.outputs.name == '@nathapp/nax-agent'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap socat ripgrep
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      # Validate tag matches package.json version (the package tag prefix
+      # is stripped by the Resolve package step, so all packages compare the
       # bare version against their own package.json)
       - name: Validate version
         run: |
@@ -74,20 +91,39 @@ jobs:
         env:
           VERSION: ${{ steps.pkg.outputs.version }}
 
+      - name: Pre-publish checks
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        env:
+          NAME: ${{ steps.pkg.outputs.name }}
+        run: |
+          if [ "$NAME" = "@nathapp/nax-agent" ]; then
+            bun run check:all
+            bun run typecheck
+            bun run build
+            bun run check:api
+            bun run test:coverage
+            bun run test:node
+            bun run stage-publish
+          elif [ "$NAME" = "@nathapp/nax-ai" ]; then
+            bun run lint && bun run typecheck && bun x vitest --run && bun run build
+          else
+            bun run build
+          fi
+
       # Determine tag and release type
       - name: Set release info
         id: info
         env:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
           NAME: ${{ steps.pkg.outputs.name }}
+          VERSION: ${{ steps.pkg.outputs.version }}
         run: |
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-          VERSION="${{ steps.pkg.outputs.version }}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-          if [ "$NAME" = "@nathapp/nax-ai" ]; then
-            # nax-ai's own rule: canary → canary dist-tag; otherwise latest,
+          if [ "$NAME" = "@nathapp/nax-ai" ] || [ "$NAME" = "@nathapp/nax-agent" ]; then
+            # Library release rule: canary → canary dist-tag; otherwise latest,
             # with 0.x marked prerelease. Never notifies Telegram.
             if [[ "$TAG" == *"-canary."* ]]; then
               echo "npm_tag=canary" >> "$GITHUB_OUTPUT"
@@ -116,17 +152,44 @@ jobs:
       # nax pins @nathapp/nax-ai in its dependencies, so a nax release is only
       # installable if the pinned nax-ai version is already on npm.
       - name: nax-ai pin is published
-        if: steps.pkg.outputs.name == '@nathapp/nax'
-        working-directory: packages/nax
+        if: steps.pkg.outputs.name == '@nathapp/nax' || steps.pkg.outputs.name == '@nathapp/nax-agent'
+        working-directory: ${{ steps.pkg.outputs.dir }}
         run: |
           PIN=$(node -p "require('./package.json').dependencies['@nathapp/nax-ai']")
           npm view "@nathapp/nax-ai@$PIN" version || { echo "::error::@nathapp/nax-ai@$PIN is not on npm; release nax-ai first"; exit 1; }
 
       # Publish to npm (trusted publishing via OIDC — no token needed)
       - name: Publish to npm
-        run: npm publish --access public --tag ${{ steps.info.outputs.npm_tag }} --provenance
+        run: |
+          if [ "$NAME" = "@nathapp/nax-agent" ]; then
+            if [ "$VERSION" = "0.1.0" ]; then
+              if REGISTRY_RESULT=$(npm view @nathapp/nax-agent@0.1.0 version --json); then
+                bun scripts/verify-bootstrap.ts
+                exit 0
+              else
+                REGISTRY_RESULT="$REGISTRY_RESULT" node -e '
+                  const result = JSON.parse(process.env.REGISTRY_RESULT || "{}");
+                  if (result.error?.code !== "E404") throw new Error("bootstrap registry check failed: " + JSON.stringify(result));
+                '
+              fi
+            fi
+            # publishConfig.tag also needs the canary value; do not rely on flag precedence.
+            node -e '
+              const fs = require("node:fs");
+              const path = "./.publish/package.json";
+              const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
+              pkg.publishConfig.tag = process.env.NPM_TAG;
+              fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n");
+            '
+            npm publish ./.publish/ --access public --tag "$NPM_TAG" --provenance
+          else
+            npm publish --access public --tag "$NPM_TAG" --provenance
+          fi
         working-directory: ${{ steps.pkg.outputs.dir }}
         env:
+          NAME: ${{ steps.pkg.outputs.name }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+          NPM_TAG: ${{ steps.info.outputs.npm_tag }}
           NPM_CONFIG_PROVENANCE: "true"
 
       # Extract release notes from CHANGELOG.md (optional — falls back to GitHub auto-generate)
