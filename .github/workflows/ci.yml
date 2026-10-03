@@ -156,6 +156,11 @@ jobs:
       - name: Build
         run: bun run build
 
+      # S2-7: the built public API of "." and "./internal" equals api/nax-agent.api.txt,
+      # and "." exports no "_" name. Intended changes: `bun run api:update`, commit the file.
+      - name: API snapshot
+        run: bun run check:api
+
       - name: Test (unit)
         run: bun test ./test/unit/ --timeout=60000 --bail
 

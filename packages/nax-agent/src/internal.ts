@@ -1,8 +1,13 @@
 /**
  * @nathapp/nax-agent/internal: what nax reaches below the public entry -- shared
- * helpers, NaxError, deep modules and the _*Deps test seams (S1 spec section 4.4).
- * Not covered by semver. It re-exports the same module instances, so patching a
- * seam here patches the object the agent reads.
+ * helpers, NaxError, deep modules and the _*Deps test seams.
+ *
+ * NAX-ONLY AND OUTSIDE SEMVER. Nothing here is a supported API for any other
+ * consumer: names, shapes and behaviour change in any release, patch included.
+ * It exists because nax bundles this package and its tests patch the seams. It
+ * re-exports the same module instances, so patching a seam here patches the
+ * object the agent reads. `.` exports no "_" name; every seam and reset hook
+ * lives here (S2 spec section 5.3).
  *
  * Written by the S1-5 move script; maintained by hand from here on.
  */
@@ -13,6 +18,8 @@ export * from "#src/coding-tools/coding-tool-support";
 export * as codingToolSupportModule from "#src/coding-tools/coding-tool-support";
 export * from "#src/coding-tools/universal-coding-tools";
 export * from "#src/command-interceptor/index";
+export { _commandShadowDeps } from "#src/command-safety/shadow";
+export { _systemOneClientDeps } from "#src/command-safety/systemone-client";
 export * from "#src/config/bash-approval";
 export * from "#src/config/catalog-overrides";
 export * from "#src/config/native-agent/index";

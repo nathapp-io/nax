@@ -25,7 +25,15 @@ const NAMES = [
   "PricingRates",
   "PricingTier",
 ];
-const DECL = new RegExp(`^\\s*(?:export\\s+)?(?:declare\\s+)?(interface|type|class)\\s+(${NAMES.join("|")})\\b`);
+const NAME_ALT = NAMES.join("|");
+/**
+ * A declaration, not a bare mention: `interface|class Name` then `<`, `{`, `extends`
+ * or `implements`; `type Name` then `<` or `=`. A line such as `  type Pricing,`
+ * inside a multi-line `export { type Pricing, … } from` list is a re-export.
+ */
+const DECL = new RegExp(
+  `^\\s*(?:export\\s+)?(?:declare\\s+)?(?:(interface|class)\\s+(${NAME_ALT})\\b(?=\\s*(?:[<{]|extends\\b|implements\\b))|(type)\\s+(${NAME_ALT})\\b(?=\\s*[<=]))`,
+);
 const OWNER = "packages/nax-ai/";
 
 function* srcFiles(dir: string): Generator<string> {
@@ -67,7 +75,7 @@ export function findVocabularyViolations(repoRoot: string): string[] {
         .split("\n")
         .forEach((line, index) => {
           const match = DECL.exec(line);
-          if (match) violations.push(`${rel}:${index + 1}  ${match[1]} ${match[2]}`);
+          if (match) violations.push(`${rel}:${index + 1}  ${match[1] ?? match[3]} ${match[2] ?? match[4]}`);
         });
     }
   }

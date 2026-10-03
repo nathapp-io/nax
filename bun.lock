@@ -73,12 +73,14 @@
     "packages/repo-tooling": {
       "name": "@nathapp/nax-repo-tooling",
       "version": "0.0.0",
+      "dependencies": {
+        "typescript": "7.0.2",
+      },
       "devDependencies": {
         "@biomejs/biome": "2.5.10",
         "@nathapp/nax-test-kit": "workspace:*",
         "@types/bun": "^1.3.8",
         "bun-types": "^1.3.9",
-        "typescript": "7.0.2",
       },
     },
     "packages/test-kit": {
