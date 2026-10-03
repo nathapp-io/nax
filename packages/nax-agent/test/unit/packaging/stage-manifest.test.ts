@@ -60,6 +60,15 @@ describe("buildStagedManifest", () => {
     expect(JSON.stringify(manifest)).not.toContain("./src/");
     expect(JSON.stringify(manifest)).not.toContain("test/helpers");
   });
+
+  test("every types target the manifest advertises is a staging input", () => {
+    const text = JSON.stringify(buildStagedManifest(source, OPTS));
+    const inputs: readonly string[] = STAGE_INPUTS;
+    for (const target of ["dist/index.d.ts", "dist/internal.d.ts"]) {
+      expect(text).toContain(`"types":"./${target}"`);
+      expect(inputs.includes(target)).toBe(true);
+    }
+  });
 });
 
 describe("missingStageInputs", () => {

@@ -5,7 +5,15 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-export const STAGE_INPUTS = ["dist/index.js", "dist/internal.js", "README.md", "CHANGELOG.md", "LICENSE"] as const;
+export const STAGE_INPUTS = [
+  "dist/index.js",
+  "dist/internal.js",
+  "dist/index.d.ts",
+  "dist/internal.d.ts",
+  "README.md",
+  "CHANGELOG.md",
+  "LICENSE",
+] as const;
 
 export function missingStageInputs(pkgDir: string): string[] {
   return STAGE_INPUTS.filter((rel) => !existsSync(join(pkgDir, rel)));

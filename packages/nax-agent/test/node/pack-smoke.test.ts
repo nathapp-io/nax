@@ -81,13 +81,19 @@ describe("the packed tarball", () => {
         include: ["index.ts"],
       }),
     );
-    let output = "";
-    try {
-      output = run(join(consumer, "node_modules/.bin/tsc"), ["-p", "tsconfig.json"], consumer);
-    } catch (error) {
-      output = String(error);
-    }
-    const ownDist = join(consumer, "node_modules/@nathapp/nax-agent/dist/");
-    expect(output.split("\n").filter((line) => line.includes(ownDist))).toEqual([]);
+    const tsc = spawnSync(join(consumer, "node_modules/.bin/tsc"), ["-p", "tsconfig.json"], {
+      cwd: consumer,
+      encoding: "utf8",
+    });
+    expect(tsc.error).toBeUndefined();
+    expect(tsc.status).not.toBeNull();
+    // tsc prints diagnostic paths relative to its cwd (Linux CI), so match the
+    // fragment, never an absolute path — an absolute match is vacuous there.
+    const ownDist = "node_modules/@nathapp/nax-agent/dist/";
+    const errorLines = `${tsc.stdout}${tsc.stderr}`.split("\n").filter((line) => line.includes("error TS"));
+    expect(errorLines.filter((line) => line.includes(ownDist))).toEqual([]);
+    // A failure to resolve the package at all lands on the consumer's index.ts;
+    // only third-party diagnostics may mention a package other than ours.
+    expect(errorLines.filter((line) => line.includes("@nathapp/nax-agent") && !line.includes(ownDist))).toEqual([]);
   }, 120_000);
 });
