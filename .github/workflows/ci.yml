@@ -164,6 +164,23 @@ jobs:
       - name: Coverage floor
         run: bun run test:coverage
 
+  nax-agent-glob-floor:
+    name: "nax-agent: glob (Node 22.19.0, ${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+      - run: node --version
+      # Built-ins and type-stripped local source only; no install/preload needed.
+      - run: node packages/nax-agent/test/node/glob-floor.mjs 22.19.0
+
   tooling:
     name: tooling
     runs-on: ubuntu-latest

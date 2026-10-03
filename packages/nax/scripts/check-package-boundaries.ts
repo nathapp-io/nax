@@ -4,7 +4,7 @@
  * S1 move ratchet (check-agent-boundary), which is deleted along with the move
  * script that wrote it.
  *
- * - packages/nax-agent imports only node:/bun builtins, its declared
+ * - packages/nax-agent imports only node: builtins (Bun imports in tests only), its declared
  *   dependencies, `#src/` and `#test/`, relative paths that stay inside the
  *   package, and itself. Never `@nathapp/nax`, never a tsconfig alias (`@/`).
  * - packages/nax-ai imports neither @nathapp/nax nor @nathapp/nax-agent.
@@ -100,6 +100,7 @@ function leavesPackage(pkg: PackageInfo, file: string, spec: string): boolean {
 }
 
 function agentViolation(pkg: PackageInfo, file: string, spec: string): string | null {
+  if ((spec === "bun" || spec.startsWith("bun:")) && !inDir(pkg, file, "test")) return "Bun import outside test/";
   if (isBuiltin(spec) || spec.startsWith("#src/") || spec.startsWith("#test/")) return null;
   if (spec.startsWith(".")) return leavesPackage(pkg, file, spec) ? "relative import leaves the package" : null;
   if (spec.startsWith("@/") || spec.startsWith("@test/") || spec.startsWith("@scripts/")) return "tsconfig alias";

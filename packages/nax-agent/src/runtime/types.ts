@@ -42,7 +42,15 @@ export interface AgentSpawnResult {
  * The slot's contract. `spawn` throws synchronously when the process cannot be
  * started (missing binary, missing or non-directory cwd, not executable).
  */
+export interface AgentGlobOptions {
+  cwd: string;
+  absolute: boolean;
+}
+
 export interface AgentRuntime {
   // nax-git-env-allow: the generic spawn contract; git callers (gitWithTimeout) pass hardenedGitEnv themselves
   spawn(cmd: readonly string[], opts: AgentSpawnOptions): AgentSpawnResult;
+  /** Files only, no hidden result-relative segments; cwd failures propagate. */
+  glob(pattern: string, opts: AgentGlobOptions): AsyncIterable<string>;
+  globSync(pattern: string, opts: AgentGlobOptions): Iterable<string>;
 }

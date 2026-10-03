@@ -10,6 +10,7 @@ import { statSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
+import { nodeGlob, nodeGlobSync } from "./node-glob";
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult, AgentSpawnStdin } from "./types";
 import { which } from "./which";
 
@@ -129,4 +130,4 @@ export function nodeSpawn(cmd: readonly string[], opts: AgentSpawnOptions): Agen
   };
 }
 
-export const nodeRuntime: AgentRuntime = { spawn: nodeSpawn };
+export const nodeRuntime: AgentRuntime = { spawn: nodeSpawn, glob: nodeGlob, globSync: nodeGlobSync };

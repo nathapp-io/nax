@@ -20,7 +20,7 @@
  * all (WORKTREE_COMMON_WRITE_DIRS, #2211), so the file cannot be created there
  * and the tripwire is only a second line.
  */
-import { lstat, readdir, rm } from "node:fs/promises";
+import { lstat, readdir, readFile, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
@@ -61,7 +61,7 @@ export const _gitGuardDeps = {
       return false;
     }
   },
-  readText: (p: string): Promise<string> => Bun.file(p).text(),
+  readText: (p: string): Promise<string> => readFile(p, "utf8"),
   remove: (p: string): Promise<void> => rm(p, { recursive: true, force: true }),
 };
 

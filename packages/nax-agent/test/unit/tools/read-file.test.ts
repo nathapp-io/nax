@@ -235,3 +235,11 @@ describe("AC21: readFileSlice rejects offset=0 or limit=0 rather than returning 
     expect(rejected).toBe(true);
   });
 });
+
+test("a missing file still rejects ENOENT after the size probe", async () => {
+  await expect(readFileSlice(path("absent"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+test("an empty file is zero lines with empty content", async () => {
+  writeFileSync(path("empty"), "");
+  expect(await readFileSlice(path("empty"))).toEqual({ content: "", bounded: false, totalLines: 0 });
+});

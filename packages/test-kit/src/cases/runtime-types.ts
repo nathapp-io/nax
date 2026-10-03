@@ -28,3 +28,9 @@ export interface CaseRuntime {
     },
   ): CaseSpawnResult;
 }
+
+/** Runner-neutral glob contract; intentionally independent of spawn cases. */
+export interface CaseGlobRuntime {
+  glob(pattern: string, opts: { cwd: string; absolute: boolean }): AsyncIterable<string>;
+  globSync(pattern: string, opts: { cwd: string; absolute: boolean }): Iterable<string>;
+}

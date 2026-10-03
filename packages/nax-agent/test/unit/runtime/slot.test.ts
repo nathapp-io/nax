@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { type AgentRuntime, getAgentRuntime, nodeRuntime, setAgentRuntime } from "#src/runtime/index";
 
 const fake: AgentRuntime = {
+  ...nodeRuntime,
   spawn: () => {
     throw new Error("fake runtime");
   },

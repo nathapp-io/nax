@@ -310,3 +310,12 @@ describe("AC14 runtime: ScratchpadRead paging through runtime.callTool", () => {
     expect(outcome.content).not.toContain("L8\n");
   });
 });
+
+test("ScratchpadRead reports UTF-8 byte length", async () => {
+  const target = join(root, ".nax/scratchpad/utf8.txt");
+  mkdirSync(join(root, ".nax/scratchpad"), { recursive: true });
+  writeFileSync(target, "héllo");
+  const result = await scratchpadReadTool.run({ path: "utf8.txt" }, ctx(target));
+  expect(result.content).toBe("[1 lines]\nhéllo");
+  expect(result.resultBytesPreTruncation).toBe(6);
+});

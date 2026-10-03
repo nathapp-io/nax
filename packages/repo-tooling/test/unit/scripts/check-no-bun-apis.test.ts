@@ -31,3 +31,25 @@ describe("findBunApiUses", () => {
     expect(await findBunApiUses(join(root, "src"), root)).toEqual([]);
   });
 });
+
+test.each([
+  "const runtime = globalThis.Bun;",
+  'const f = globalThis.Bun.file("x");',
+  "type Runtime = typeof Bun;",
+  "const dir = import.meta.dir;",
+  'const module = await import("bun:test");',
+  'import { Glob } from "bun";',
+  'import "bun";',
+])("rejects Bun-specific source: %s", async (code) => {
+  root = makeTempDir("no-bun-forms-");
+  src("bad.ts", `const ok = 1;\n${code}\n`);
+  expect(await findBunApiUses(join(root, "src"), root)).toEqual([{ file: join("src", "bad.ts"), line: 2, text: code }]);
+});
+test("Node imports and commentary about runtime forms remain accepted", async () => {
+  root = makeTempDir("no-bun-comments-");
+  src(
+    "ok.ts",
+    'import { readFile } from "node:fs/promises";\n// globalThis.Bun and import.meta.dir\n * typeof Bun\nconst myBun = { file: 1 };\nmyBun.file;\n',
+  );
+  expect(await findBunApiUses(join(root, "src"), root)).toEqual([]);
+});

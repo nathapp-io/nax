@@ -203,3 +203,12 @@ describe("strayCommonDirTripwire", () => {
     await expect(trip?.() ?? Promise.resolve()).resolves.toBeUndefined();
   });
 });
+
+test("git pointer reads preserve UTF-8 text", async () => {
+  const file = join(base, "pointer");
+  writeFileSync(file, "héllo");
+  expect(await _gitGuardDeps.readText(file)).toBe("héllo");
+});
+test("missing git pointer read propagates ENOENT", async () => {
+  await expect(_gitGuardDeps.readText(join(base, "missing"))).rejects.toMatchObject({ code: "ENOENT" });
+});
