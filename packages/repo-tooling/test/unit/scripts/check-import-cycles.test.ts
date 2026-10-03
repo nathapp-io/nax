@@ -42,6 +42,15 @@ describe("resolveSpecifier", () => {
     const from = join(root, "src/a/leaf.ts");
     expect(resolveSpecifier(root, from, "#src/a/index")).toBe(join(root, "src/a/index.ts"));
   });
+
+  test("resolves explicit .ts specifiers to the file and to a directory index (nax-agent's form since S2-6)", () => {
+    write(root, "src/b.ts", "export const b = 1;\n");
+    const from = join(root, "src/a/leaf.ts");
+    expect(resolveSpecifier(root, from, "../b.ts")).toBe(join(root, "src/b.ts"));
+    expect(resolveSpecifier(root, from, "./index.ts")).toBe(join(root, "src/a/index.ts"));
+    expect(resolveSpecifier(root, from, "../a/index.ts")).toBe(join(root, "src/a/index.ts"));
+    expect(resolveSpecifier(root, from, "./missing.ts")).toBeNull();
+  });
 });
 
 describe("buildImportGraph", () => {
@@ -61,6 +70,14 @@ describe("buildImportGraph", () => {
 
   test("includes value imports", () => {
     write(root, "src/a/leaf.ts", 'import { b } from "./other";\nexport const a = b;\n');
+    write(root, "src/a/other.ts", "export const b = 1;\n");
+
+    const graph = buildImportGraph(root);
+    expect(graph.get(join(root, "src/a/leaf.ts"))).toEqual([join(root, "src/a/other.ts")]);
+  });
+
+  test("records a value edge through an explicit .ts specifier", () => {
+    write(root, "src/a/leaf.ts", 'import { b } from "./other.ts";\nexport const a = b;\n');
     write(root, "src/a/other.ts", "export const b = 1;\n");
 
     const graph = buildImportGraph(root);

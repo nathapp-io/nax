@@ -24,7 +24,10 @@ const SCAN = join(ROOT, "src");
 const ALLOWED_FILE = join("src", "sandbox", "srt-backend.ts");
 const SANDBOX_DIR = join("src", "sandbox") + sep;
 const SRT = /@anthropic-ai\/sandbox-runtime/;
-const ORCHESTRATOR = /from\s+["'](?:@\/|#src\/|(?:\.\.\/)+)(pipeline|execution|operations|prd|runtime)(?:\/|["'])/;
+// The module name ends at `/` (a deeper path), a quote (a barrel), or `.ts"`
+// (an explicit file, nax-agent's form since S2-6).
+const ORCHESTRATOR =
+  /from\s+["'](?:@\/|#src\/|(?:\.\.\/)+)(pipeline|execution|operations|prd|runtime)(?:\/|\.ts["']|["'])/;
 
 async function* walk(dir: string): AsyncGenerator<string> {
   let entries: Dirent[];
