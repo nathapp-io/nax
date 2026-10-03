@@ -71,6 +71,7 @@ export {
 } from "#src/cost/model-spec";
 export type { AgentLogger, CredentialAuthConfig, CredentialsConfig } from "#src/infra/index";
 export { configureCredentials, setAgentLogger } from "#src/infra/index";
+export type { CredentialSource } from "#src/native/credentials/session-source";
 export {
   AuthCancelledError,
   type AuthEvent,
@@ -111,6 +112,7 @@ export {
   type StoredEntry,
   servedAuth,
 } from "#src/native/index";
+export type { NativeSessionAdapterOptions } from "#src/native/session-adapter";
 export {
   type ApprovalAuditRow,
   type ApprovalEntry,

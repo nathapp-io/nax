@@ -73,6 +73,7 @@ type CommandSafetyRow
 type CommandShadow
 type CommandShadowOptions
 type CredentialAuthConfig
+type CredentialSource
 type CredentialsConfig
 DEFAULT_BASH_SHELL
 DEFAULT_LOG_FORMAT
@@ -126,6 +127,7 @@ type NativeCompleteContext
 type NativeCompleteOptions
 type NativeCompleteResult
 NativeSessionAdapter
+type NativeSessionAdapterOptions
 NativeSessionUnsupportedError
 type NativeTierConfig
 type NormalizeInput
