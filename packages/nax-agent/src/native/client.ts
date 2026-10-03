@@ -10,7 +10,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { type Client, createClient, defaultProtocols, defaultProviders } from "@nathapp/nax-ai";
+import { type Client, type CredentialStore, createClient, defaultProtocols, defaultProviders } from "@nathapp/nax-ai";
 import type { ProviderCatalogOverride } from "#src/config/catalog-overrides";
 import { NaxError } from "#src/infra/index";
 import { byCodePoint } from "#src/internal/sort";
@@ -52,6 +52,12 @@ export interface BuildNativeClientOptions {
    * in tests that intentionally fail at the protocol boundary.
    */
   readonly transportRetries?: number;
+  /**
+   * The store the protocols resolve credentials from. Absent = the process
+   * store (`naxCredentialStore()`). A session that owns its credentials passes
+   * its own store, so it never reads the process slot.
+   */
+  readonly credentials?: CredentialStore;
 }
 
 /**
@@ -84,7 +90,7 @@ export async function buildNativeClient(
         // is what makes `nax auth login` reach a run. This is the only inlet:
         // ClientOptions once carried a `credentials` field that createClient
         // never read, and nax-ai 0.1.4 removed it for exactly that reason.
-        credentials: naxCredentialStore(),
+        credentials: options.credentials ?? naxCredentialStore(),
         // Construction-time, like `credentials`: the identity is a constant of
         // the process, so nax-ai takes it here rather than on every request.
         clientApp: NAX_CLIENT_APP,

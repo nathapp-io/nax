@@ -7,6 +7,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { Client } from "@nathapp/nax-ai";
 import { priceCall } from "#src/cost/core/index";
 import { getSafeLogger, NaxError } from "#src/infra/index";
 import {
@@ -19,7 +20,9 @@ import {
 } from "#src/session/session-types";
 import { createTurnDeadline } from "#src/session/turn-deadline";
 import { _adapterDeps, authFields, isProtocolStreamError } from "./adapter-deps.ts";
-import { getNativeClient, type NativeCatalogOverrides } from "./client.ts";
+import { _clientDeps, getNativeClient, type NativeCatalogOverrides } from "./client.ts";
+import type { GuardedCredentialStore } from "./credentials/index.ts";
+import { type CredentialSource, createSessionCredentialStore } from "./credentials/session-source.ts";
 import { toAdapterFailure } from "./errors.ts";
 import { buildRateCard, NATIVE_AGENT, parseNativeModel, resolveContextWindow, toThinkingLevel } from "./models.ts";
 import {
@@ -85,9 +88,38 @@ export function nativeSessionStateOf(adapter: NativeSessionAdapter): NativeSessi
   return state;
 }
 
+/** Options for an adapter that owns its client and/or its credentials (S3 5.2). */
+export interface NativeSessionAdapterOptions {
+  /** A credential source owned by this adapter. Implies an owned client. */
+  readonly credentials?: CredentialSource;
+  /** Build and own a client even without `credentials` (for per-session catalog overrides). */
+  readonly ownClient?: boolean;
+}
+
 export class NativeSessionAdapter implements AgentSessionAdapter {
-  constructor(private readonly catalogOverrides: NativeCatalogOverrides = []) {
+  private readonly ownStore: GuardedCredentialStore | undefined;
+  private ownClient: Promise<Client> | undefined;
+  private readonly owns: boolean;
+
+  constructor(
+    private readonly catalogOverrides: NativeCatalogOverrides = [],
+    options: NativeSessionAdapterOptions = {},
+  ) {
     adapterStates.set(this, createNativeSessionState());
+    this.ownStore = options.credentials !== undefined ? createSessionCredentialStore(options.credentials) : undefined;
+    this.owns = this.ownStore !== undefined || options.ownClient === true;
+  }
+
+  /** The module memo for nax (one client per process, as before); an owned client for an embedder session. */
+  private client(): Promise<Client> {
+    if (!this.owns) return getNativeClient(this.catalogOverrides);
+    this.ownClient ??= _clientDeps
+      .build(this.catalogOverrides, this.ownStore !== undefined ? { credentials: this.ownStore } : {})
+      .catch((err: unknown) => {
+        this.ownClient = undefined;
+        throw err;
+      });
+    return this.ownClient;
   }
 
   private get state(): NativeSessionState {
@@ -120,6 +152,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
    */
   async hasCredentials(): Promise<boolean> {
     try {
+      if (this.ownStore !== undefined) return true;
       if (await _adapterDeps.authSourceIsExec()) return true;
       if ((await _adapterDeps.listStoredProviders()).length > 0) return true;
       return await _adapterDeps.anyAmbientCredential();
@@ -135,7 +168,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
     const { provider, model, effort } = parseNativeModel(handle.modelDef?.model ?? "");
     const thinking = toThinkingLevel(effort);
-    const client = await getNativeClient(this.catalogOverrides);
+    const client = await this.client();
     const resolved = await client.model(provider, model);
     const catalog = client.pricing(resolved);
     const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?.pricing);
@@ -393,7 +426,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     markNativeTurnOutcome(this.state, handle.id, false);
     // US-006: the store only observes `provider` while a request is in flight,
     // so the stamp is read here, after the loop.
-    return { ...result, ...authFields(provider) };
+    return { ...result, ...authFields(provider, this.ownStore) };
   }
 
   closeSession(handle: SessionHandle): Promise<void> {
