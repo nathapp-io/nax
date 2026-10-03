@@ -143,8 +143,8 @@ function credentialReply(key: string, account?: string): string {
   );
 }
 
-async function openTurnSession(name: string): Promise<SessionHandle> {
-  return adapter().openSession(name, {
+async function openTurnSession(a: NativeAgentAdapter, name: string): Promise<SessionHandle> {
+  return a.openSession(name, {
     agentName: "native",
     workdir: dir,
     resolvedPermissions: PERMS,
@@ -246,7 +246,7 @@ describe("NativeAgentAdapter.sendTurn() — auth stamp (US-006)", () => {
   test("AC5: sendTurn() returns auth.fingerprint equal to servedAuth(provider).fingerprint", async () => {
     await writeCredential("FILE-KEY");
     const a = adapter();
-    const handle = await openTurnSession("nax-us006-turn-fingerprint");
+    const handle = await openTurnSession(a, "nax-us006-turn-fingerprint");
 
     const turn = await send(a, handle);
 
@@ -263,7 +263,7 @@ describe("NativeAgentAdapter.sendTurn() — auth stamp (US-006)", () => {
     _resetCredentialStore();
     _resetNativeClient();
     const a = adapter();
-    const handle = await openTurnSession("nax-us006-turn-exec");
+    const handle = await openTurnSession(a, "nax-us006-turn-exec");
 
     const turn = await send(a, handle);
 

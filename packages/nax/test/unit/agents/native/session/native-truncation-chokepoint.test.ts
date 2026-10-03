@@ -30,9 +30,10 @@ import {
   _spillDeps,
   compileToolPolicy,
   createCodingToolRuntime,
+  createNativeSessionState,
   loadTranscript,
   MODEL_MAX_BYTES,
-  nativeTranscriptDirs,
+  type NativeSessionState,
   readFileModule,
   runNativeTurn,
   scratchpadReadTool,
@@ -43,6 +44,7 @@ import { buildRunInteractionHandler } from "@/agents/run-interaction-handler";
 const baseUsage = { inputTokens: 1, outputTokens: 1 };
 
 let dir: string;
+let state: NativeSessionState;
 /** The workdir whose scratchpad the paging test reads from. */
 let root: string;
 const handle = { id: "sess-truncation", agentName: "native" } as const;
@@ -50,10 +52,10 @@ const handle = { id: "sess-truncation", agentName: "native" } as const;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-turn-truncation-"));
   root = await mkdtemp(join(tmpdir(), "nax-turn-truncation-root-"));
-  nativeTranscriptDirs.set("sess-truncation", dir);
+  state = createNativeSessionState();
+  state.transcriptDirs.set("sess-truncation", dir);
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete("sess-truncation");
   await rm(dir, { recursive: true, force: true });
   await rm(root, { recursive: true, force: true });
 });
@@ -134,6 +136,7 @@ describe("AC16: when a native Grep call exceeds MODEL_MAX_BYTES, then truncateFo
           },
         }),
         {
+          sessionState: state,
           complete: async () => {
             roundTrip += 1;
             if (roundTrip === 1) {
@@ -188,6 +191,7 @@ describe("AC16: when a native Grep call exceeds MODEL_MAX_BYTES, then truncateFo
         },
       }),
       {
+        sessionState: state,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -230,6 +234,7 @@ describe("AC16: when a native Grep call exceeds MODEL_MAX_BYTES, then truncateFo
         },
       }),
       {
+        sessionState: state,
         complete: async () => {
           roundTrip += 1;
           if (roundTrip === 1) {
@@ -279,6 +284,7 @@ describe("AC17: when native ScratchpadRead receives offset and limit, then readF
           interactionHandler: realToolHandler(),
         }),
         {
+          sessionState: state,
           complete: async () => {
             roundTrip += 1;
             if (roundTrip === 1) {
@@ -335,6 +341,7 @@ describe("AC17: when native ScratchpadRead receives offset and limit, then readF
           interactionHandler: realToolHandler(),
         }),
         {
+          sessionState: state,
           complete: async () => {
             roundTrip += 1;
             if (roundTrip === 1) {
@@ -395,6 +402,7 @@ describe("AC18: when a native tool result is within every cap, then the spill wr
           },
         }),
         {
+          sessionState: state,
           complete: async () => {
             roundTrip += 1;
             if (roundTrip === 1) {
@@ -450,6 +458,7 @@ describe("AC18: when a native tool result is within every cap, then the spill wr
           },
         }),
         {
+          sessionState: state,
           complete: async () => {
             roundTrip += 1;
             if (roundTrip === 1) {

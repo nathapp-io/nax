@@ -6,24 +6,26 @@ import type { SendTurnOpts } from "@nathapp/nax-agent";
 import { createTurnDeadline } from "@nathapp/nax-agent";
 import type { TurnDeps } from "@nathapp/nax-agent/internal";
 import {
+  createNativeSessionState,
   createSpinBreaker,
   DEFAULT_SPIN_BREAKER_SETTINGS,
   loadTranscript,
-  nativeTranscriptDirs,
+  type NativeSessionState,
   runNativeTurn,
 } from "@nathapp/nax-agent/internal";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 
 let dir: string;
+let state: NativeSessionState;
 const handle = { id: "sess-retry", agentName: "native" } as const;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-turn-retry-"));
-  nativeTranscriptDirs.set("sess-retry", dir);
+  state = createNativeSessionState();
+  state.transcriptDirs.set("sess-retry", dir);
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete("sess-retry");
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -58,6 +60,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     let calls = 0;
     const delays: number[] = [];
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState: state,
       transportRetry: retryConfig,
       sleep: async (ms) => {
         delays.push(ms);
@@ -84,6 +87,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     const startedAt = Date.now();
     let calls = 0;
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState: state,
       transportRetry: { maxAttempts: 3, baseDelayMs: 600_000 },
       sleep: noopSleep,
       complete: async () => {
@@ -100,6 +104,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
   test("retries an overloaded error", async () => {
     let calls = 0;
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState: state,
       transportRetry: retryConfig,
       sleep: noopSleep,
       complete: async () => {
@@ -117,6 +122,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
       let calls = 0;
       await expect(
         runNativeTurn(handle, "hi", opts(), {
+          sessionState: state,
           transportRetry: retryConfig,
           sleep: noopSleep,
           complete: async () => {
@@ -133,6 +139,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     let calls = 0;
     const delays: number[] = [];
     const result = await runNativeTurn(handle, "hi", opts(), {
+      sessionState: state,
       transportRetry: retryConfig,
       sleep: async (ms) => {
         delays.push(ms);
@@ -165,6 +172,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     test("logs the rate-limit kind and provider diagnostics before retrying", async () => {
       let calls = 0;
       await runNativeTurn(handle, "hi", opts(), {
+        sessionState: state,
         transportRetry: retryConfig,
         sleep: noopSleep,
         complete: async () => {
@@ -201,6 +209,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     let calls = 0;
     await expect(
       runNativeTurn(handle, "hi", opts(), {
+        sessionState: state,
         transportRetry: retryConfig,
         sleep: noopSleep,
         complete: async () => {
@@ -217,6 +226,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     let thrown: unknown;
     const originals: Error[] = [];
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState: state,
       transportRetry: { maxAttempts: 2, baseDelayMs: 10 },
       sleep: noopSleep,
       complete: async () => {
@@ -238,6 +248,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     let calls = 0;
     await expect(
       runNativeTurn(handle, "hi", opts(), {
+        sessionState: state,
         transportRetry: retryConfig,
         deadline: createTurnDeadline(10, () => now),
         sleep: noopSleep,
@@ -257,6 +268,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     let calls = 0;
     await expect(
       runNativeTurn(handle, "hi", opts({ signal: controller.signal }), {
+        sessionState: state,
         transportRetry: retryConfig,
         sleep: noopSleep,
         complete: async () => {
@@ -272,6 +284,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     let calls = 0;
     const delays: number[] = [];
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState: state,
       transportRetry: retryConfig,
       sleep: async (ms) => {
         delays.push(ms);
@@ -289,6 +302,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     let calls = 0;
     const activity: unknown[] = [];
     await runNativeTurn(handle, "hi", opts(), {
+      sessionState: state,
       transportRetry: retryConfig,
       sleep: noopSleep,
       onActivity: (a) => activity.push(a),
@@ -306,6 +320,7 @@ describe("native turn loop — transport-fault retry (nax#1870)", () => {
     let calls = 0;
     await expect(
       runNativeTurn(handle, "hi", opts(), {
+        sessionState: state,
         complete: async () => {
           calls += 1;
           throw new ProtocolStreamError({ kind: "transport", message: "stall" });
@@ -326,14 +341,15 @@ interface RunTurnWithSpinOpts {
 
 describe("runNativeTurn — spin breaker", () => {
   let spinDir: string;
+  let spinState: NativeSessionState;
   const spinHandle = { id: "sess-spin", agentName: "native" } as const;
 
   beforeEach(async () => {
     spinDir = await mkdtemp(join(tmpdir(), "nax-turn-spin-"));
-    nativeTranscriptDirs.set("sess-spin", spinDir);
+    spinState = createNativeSessionState();
+    spinState.transcriptDirs.set("sess-spin", spinDir);
   });
   afterEach(async () => {
-    nativeTranscriptDirs.delete("sess-spin");
     await rm(spinDir, { recursive: true, force: true });
   });
 
@@ -355,7 +371,7 @@ describe("runNativeTurn — spin breaker", () => {
       spinHandle,
       "hi",
       { interactionHandler },
-      { complete: opts.complete, spinBreaker: opts.spinBreaker },
+      { sessionState: spinState, complete: opts.complete, spinBreaker: opts.spinBreaker },
     );
     if (opts.onToolResult !== undefined) {
       const saved = await loadTranscript(spinDir, spinHandle.id);

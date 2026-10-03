@@ -15,20 +15,26 @@ import { join } from "node:path";
 import type { CodingTool } from "@nathapp/nax-agent";
 import { compileToolPolicy, createCodingToolRuntime, MODEL_MAX_BYTES } from "@nathapp/nax-agent";
 import type { ToolCallRecord, TurnDeps } from "@nathapp/nax-agent/internal";
-import { loadTranscript, nativeTranscriptDirs, runNativeTurn } from "@nathapp/nax-agent/internal";
+import {
+  createNativeSessionState,
+  loadTranscript,
+  type NativeSessionState,
+  runNativeTurn,
+} from "@nathapp/nax-agent/internal";
 import { buildRunInteractionHandler } from "@/agents/run-interaction-handler";
 
 const baseUsage = { inputTokens: 1, outputTokens: 1 };
 const handle = { id: "sess-nudge-truncation", agentName: "native" } as const;
 
 let dir: string;
+let state: NativeSessionState;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "nax-turn-nudge-truncation-"));
-  nativeTranscriptDirs.set(handle.id, dir);
+  state = createNativeSessionState();
+  state.transcriptDirs.set(handle.id, dir);
 });
 afterEach(async () => {
-  nativeTranscriptDirs.delete(handle.id);
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -77,6 +83,7 @@ describe("the model-facing byte ceiling holds when a nudge is prepended", () => 
         interactionHandler: { onInteraction: async () => ({ answer: bigBody }) },
       },
       {
+        sessionState: state,
         spinBreaker: alwaysNudging(nudgeText),
         complete: async () => {
           roundTrip += 1;
@@ -126,6 +133,7 @@ describe("the model-facing byte ceiling holds when a nudge is prepended", () => 
       "hi",
       { codingTools: [runtimeTool], interactionHandler },
       {
+        sessionState: state,
         spinBreaker: alwaysNudging(nudgeText),
         complete: async () => {
           roundTrip += 1;
