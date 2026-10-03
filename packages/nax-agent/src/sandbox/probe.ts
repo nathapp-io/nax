@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runArgv } from "#src/internal/argv-exec";
 import { realOrRaw } from "#src/internal/realpath";
-import type { ProbeResult, SandboxBackend } from "./types";
+import type { ProbeResult, SandboxBackend } from "./types.ts";
 
 const PROBE_TIMEOUT_MS = 30_000;
 

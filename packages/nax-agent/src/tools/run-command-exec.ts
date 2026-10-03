@@ -26,13 +26,13 @@ import { agentOutputOverlay } from "#src/internal/agent-output-env";
 import type { ArgvExecResult } from "#src/internal/argv-exec";
 import { runArgv } from "#src/internal/argv-exec";
 import { formatExecBody } from "#src/internal/exec-framing";
-import type { CommandLauncher, SandboxRecord } from "../sandbox";
-import { deniedFlag, validateArgv } from "./exec-guard";
-import { normalizeExec } from "./package-managers";
-import type { ExecTarget } from "./package-managers-types";
-import type { ToolResult, ToolRunContext } from "./registry";
-import type { RunCommandToolOptions } from "./run-command";
-import { cutToByteCap, READ_CEILING } from "./truncate";
+import type { CommandLauncher, SandboxRecord } from "../sandbox/index.ts";
+import { deniedFlag, validateArgv } from "./exec-guard.ts";
+import { normalizeExec } from "./package-managers.ts";
+import type { ExecTarget } from "./package-managers-types.ts";
+import type { ToolResult, ToolRunContext } from "./registry.ts";
+import type { RunCommandToolOptions } from "./run-command.ts";
+import { cutToByteCap, READ_CEILING } from "./truncate.ts";
 
 /**
  * Deadline for the argv branch's spawn (`runExecBranch`).

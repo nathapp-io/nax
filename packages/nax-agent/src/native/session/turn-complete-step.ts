@@ -20,13 +20,13 @@
  */
 
 import { getSafeLogger } from "#src/infra/index";
-import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
-import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events";
-import { applyHistoryPatch } from "./loop-events/cache-boundary";
-import type { TurnAccumulator } from "./turn-accumulator";
-import { runOverflowCompaction } from "./turn-compaction-step";
-import { realSleep, retryTransportFault } from "./turn-retry";
-import type { NativeTurnResponse, TurnDeps } from "./turn-types";
+import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction.ts";
+import { applyHistoryPatch } from "./loop-events/cache-boundary.ts";
+import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events/index.ts";
+import type { TurnAccumulator } from "./turn-accumulator.ts";
+import { runOverflowCompaction } from "./turn-compaction-step.ts";
+import { realSleep, retryTransportFault } from "./turn-retry.ts";
+import type { NativeTurnResponse, TurnDeps } from "./turn-types.ts";
 
 /**
  * Structural, matching adapter-deps.ts's guard: nax-ai's error class is not

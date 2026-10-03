@@ -18,10 +18,10 @@ import {
   type TurnResult,
 } from "#src/session/session-types";
 import { createTurnDeadline } from "#src/session/turn-deadline";
-import { _adapterDeps, authFields, isProtocolStreamError } from "./adapter-deps";
-import { getNativeClient, type NativeCatalogOverrides } from "./client";
-import { toAdapterFailure } from "./errors";
-import { buildRateCard, NATIVE_AGENT, parseNativeModel, resolveContextWindow, toThinkingLevel } from "./models";
+import { _adapterDeps, authFields, isProtocolStreamError } from "./adapter-deps.ts";
+import { getNativeClient, type NativeCatalogOverrides } from "./client.ts";
+import { toAdapterFailure } from "./errors.ts";
+import { buildRateCard, NATIVE_AGENT, parseNativeModel, resolveContextWindow, toThinkingLevel } from "./models.ts";
 import {
   closeNativeSession,
   markNativeTurnOutcome,
@@ -32,11 +32,11 @@ import {
   nativeSessionTranscriptOwners,
   nativeSessionTransportRetry,
   openNativeSession,
-} from "./session/session";
-import { buildNativeStreamEvent } from "./session/turn-events";
-import { runNativeTurn } from "./session/turn-loop";
-import { readNativeTurnFailureUsage, type TurnDeps } from "./session/turn-types";
-import { nativeSessionId } from "./session-affinity";
+} from "./session/session.ts";
+import { buildNativeStreamEvent } from "./session/turn-events.ts";
+import { runNativeTurn } from "./session/turn-loop.ts";
+import { readNativeTurnFailureUsage, type TurnDeps } from "./session/turn-types.ts";
+import { nativeSessionId } from "./session-affinity.ts";
 
 /**
  * Fallback whole-turn budget when a session's timeout entry is missing.

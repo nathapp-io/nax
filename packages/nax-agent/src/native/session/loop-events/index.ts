@@ -3,7 +3,7 @@
  * module became a directory, and this re-exports every name it exported, so
  * no importer churns.
  */
-export { type BuildToolResultArgs, buildToolResult, type DenialInfo, type ToolResultMessage } from "../tool-result";
+export { type BuildToolResultArgs, buildToolResult, type DenialInfo, type ToolResultMessage } from "../tool-result.ts";
 /**
  * The external-handler surface (US-002). It is re-exported rather than reached
  * through `./external-handler` because `check:alias-internals` rejects a VALUE
@@ -11,8 +11,8 @@ export { type BuildToolResultArgs, buildToolResult, type DenialInfo, type ToolRe
  * US-003's installer and US-004's delivery code can take. Identity matters:
  * `_externalHandlerDeps` is the object the wrapper reads at dispatch time.
  */
-export { _externalHandlerDeps, LOOP_HANDLER_TIMEOUT_MS, wrapExternalHandler } from "./external-handler";
-export { createLoopEventRegistry, LOOP_EVENTS, type LoopEventRegistry } from "./registry";
+export { _externalHandlerDeps, LOOP_HANDLER_TIMEOUT_MS, wrapExternalHandler } from "./external-handler.ts";
+export { createLoopEventRegistry, LOOP_EVENTS, type LoopEventRegistry } from "./registry.ts";
 export type {
   AfterToolPatch,
   AfterToolPayload,
@@ -22,4 +22,4 @@ export type {
   LoopHandlerContext,
   LoopHandlerEntry,
   LoopHandlerSet,
-} from "./types";
+} from "./types.ts";

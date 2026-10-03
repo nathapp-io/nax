@@ -1,4 +1,4 @@
-import type { ToolGrant } from "./types";
+import type { ToolGrant } from "./types.ts";
 
 /**
  * Parse one #374 tool expression.

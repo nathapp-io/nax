@@ -17,9 +17,9 @@
 import { relative, resolve, sep } from "node:path";
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import { realOrRaw } from "#src/internal/realpath";
-import { validateArgv } from "./exec-guard";
-import { naxOwnedWriteRefusal, naxWriteOptIns } from "./nax-owned-writes";
-import { commandBranch } from "./policy-command-branch";
+import { validateArgv } from "./exec-guard.ts";
+import { naxOwnedWriteRefusal, naxWriteOptIns } from "./nax-owned-writes.ts";
+import { commandBranch } from "./policy-command-branch.ts";
 import {
   type CompiledEntry,
   type CompiledPattern,
@@ -31,10 +31,10 @@ import {
   matchedRulePatterns,
   matchesAny,
   matchesArgvGrant,
-} from "./policy-match";
-import { type PathsBranchContext, pathsBranch, type RuleState, resolveWithin } from "./policy-paths-branch";
-import { EXEC_TOOL_NAME, type PolicyVerdict, type ToolGrant, type ToolPolicy, type ToolScope } from "./types";
-import { argvShellHint } from "./verb-denial-argv-hint";
+} from "./policy-match.ts";
+import { type PathsBranchContext, pathsBranch, type RuleState, resolveWithin } from "./policy-paths-branch.ts";
+import { EXEC_TOOL_NAME, type PolicyVerdict, type ToolGrant, type ToolPolicy, type ToolScope } from "./types.ts";
+import { argvShellHint } from "./verb-denial-argv-hint.ts";
 
 /** The single containment seam now lives beside the path branch that drives it. */
 export { resolveWithin };

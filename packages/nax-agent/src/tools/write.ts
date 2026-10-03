@@ -8,7 +8,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 
 export const writeTool: CodingTool = {
   name: "Write",

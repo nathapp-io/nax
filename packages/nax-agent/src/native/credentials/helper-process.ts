@@ -13,7 +13,7 @@ import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger, NaxError } from "#src/infra/index";
 import { redactSecrets } from "#src/internal/redact";
 import { type AgentSpawnResult, type AgentSpawnStdin, runtimeSpawn } from "#src/runtime/index";
-import { HELPER_SUBCOMMAND, requestLine } from "./helper-protocol";
+import { HELPER_SUBCOMMAND, requestLine } from "./helper-protocol.ts";
 
 /**
  * Hard cap on the helper's stdout. Over it the reply is malformed and the

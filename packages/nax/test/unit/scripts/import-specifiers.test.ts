@@ -122,3 +122,11 @@ describe("rewriteSpecifiers", () => {
     }
   });
 });
+
+test("explicit .ts specifiers are found and rewritten like any other (S2-6 codemod input and output)", () => {
+  const src = 'import { a } from "./a.ts";\nexport * from "../b/index.ts";\ntype C = import("./c.ts").C;\n';
+  expect(specifierSites(src).map((s) => s.spec)).toEqual(["./a.ts", "../b/index.ts", "./c.ts"]);
+  expect(rewriteSpecifiers(src, (s) => (s.spec === "./a.ts" ? "./a2.ts" : null))).toBe(
+    src.replace('"./a.ts"', '"./a2.ts"'),
+  );
+});

@@ -20,7 +20,7 @@
  */
 
 import type { ProviderCatalogOverride } from "#src/config/catalog-overrides";
-import { getNativeClient } from "./client";
+import { getNativeClient } from "./client.ts";
 
 export type ResolveStatus = "resolved" | "unresolved" | "error";
 

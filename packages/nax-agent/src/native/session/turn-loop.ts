@@ -21,21 +21,26 @@
 
 import { getSafeLogger, NaxError } from "#src/infra/index";
 import type { InteractionExchange, SendTurnOpts, SessionHandle, TurnResult } from "#src/session/session-types";
-import { askHumanToolDefinition } from "./ask-human";
-import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
-import { createInvalidCallBudget } from "./handle-invalid-tool-call";
-import { createLoopEventRegistry } from "./loop-events";
-import { applyHistoryPatch } from "./loop-events/cache-boundary";
-import { registerBuiltinLoopHandlers } from "./loop-handlers";
-import { nativeSessionTranscriptOwners, nativeTranscriptDirs, sessionAnchorFor } from "./session";
-import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping";
-import { loadTranscript, saveTranscript, type TranscriptIdentity, transcriptModelIdentity } from "./transcript-store";
-import { createTurnAccumulator } from "./turn-accumulator";
-import { dispatchTurnEndOnError } from "./turn-end-event";
-import type { SpinFlags, TurnLoopState, TurnRoundParams } from "./turn-loop-round-trip";
-import { runRoundTripLoop, runTurnEndPhase } from "./turn-loop-round-trip";
-import { buildTurnResult, logTurnTailWarnings } from "./turn-result";
-import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types";
+import { askHumanToolDefinition } from "./ask-human.ts";
+import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction.ts";
+import { createInvalidCallBudget } from "./handle-invalid-tool-call.ts";
+import { applyHistoryPatch } from "./loop-events/cache-boundary.ts";
+import { createLoopEventRegistry } from "./loop-events/index.ts";
+import { registerBuiltinLoopHandlers } from "./loop-handlers.ts";
+import { nativeSessionTranscriptOwners, nativeTranscriptDirs, sessionAnchorFor } from "./session.ts";
+import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping.ts";
+import {
+  loadTranscript,
+  saveTranscript,
+  type TranscriptIdentity,
+  transcriptModelIdentity,
+} from "./transcript-store.ts";
+import { createTurnAccumulator } from "./turn-accumulator.ts";
+import { dispatchTurnEndOnError } from "./turn-end-event.ts";
+import type { SpinFlags, TurnLoopState, TurnRoundParams } from "./turn-loop-round-trip.ts";
+import { runRoundTripLoop, runTurnEndPhase } from "./turn-loop-round-trip.ts";
+import { buildTurnResult, logTurnTailWarnings } from "./turn-result.ts";
+import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types.ts";
 
 /**
  * The messages `before_turn` appends as the turn's seed: the handler's patch

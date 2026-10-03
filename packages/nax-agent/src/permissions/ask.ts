@@ -1,4 +1,4 @@
-import { type AskResolver, chainAskLinks } from "./ask-chain";
+import { type AskResolver, chainAskLinks } from "./ask-chain.ts";
 
 /**
  * Why an ask-matched call was refused. One string per CASE: the previous single

@@ -38,7 +38,7 @@
  * export them from its barrel — `read.ts` imports them by relative path.
  */
 
-import { splitModelLines } from "./truncate";
+import { splitModelLines } from "./truncate.ts";
 
 /** Inputs the ranged branch already has on hand. */
 export interface LimitStopFooterInput {

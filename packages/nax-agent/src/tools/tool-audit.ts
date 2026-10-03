@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
 import { redactRowStrings } from "#src/permissions/index";
-import type { SandboxRecord } from "../sandbox";
+import type { SandboxRecord } from "../sandbox/index.ts";
 
 export interface ToolCallRecord {
   readonly tool: string;

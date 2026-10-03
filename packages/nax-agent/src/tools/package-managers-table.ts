@@ -115,8 +115,8 @@
  * flat denial.
  */
 
-import { normalizeFlagToken } from "./exec-guard";
-import type { NormalizeResult, NoScripts, WorkspaceContext } from "./package-managers-types";
+import { normalizeFlagToken } from "./exec-guard.ts";
+import type { NormalizeResult, NoScripts, WorkspaceContext } from "./package-managers-types.ts";
 
 export interface ManagerEntry {
   /** Install verbs AND their aliases. A verb outside this list makes the call generic, not denied. */

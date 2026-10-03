@@ -8,7 +8,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { redactRowStrings } from "#src/permissions/index";
-import type { CommandSafetyRow } from "./types";
+import type { CommandSafetyRow } from "./types.ts";
 
 export async function appendCommandSafetyRow(dir: string, runId: string, row: CommandSafetyRow): Promise<void> {
   await mkdir(dir, { recursive: true });

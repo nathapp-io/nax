@@ -1,5 +1,5 @@
-import { nodeRuntime } from "./node-runtime";
-import type { AgentRuntime } from "./types";
+import { nodeRuntime } from "./node-runtime.ts";
+import type { AgentRuntime } from "./types.ts";
 
 let installed: AgentRuntime | null = null;
 

@@ -14,8 +14,8 @@
 
 import type { ThinkingBlock, ToolCall, ToolDefinition } from "@nathapp/nax-ai";
 import type { TokenUsage } from "#src/cost/standard-types";
-import type { TranscriptMessage as NativeTranscriptMessage } from "../compaction";
-import type { DenialInfo } from "../tool-result";
+import type { TranscriptMessage as NativeTranscriptMessage } from "../compaction.ts";
+import type { DenialInfo } from "../tool-result.ts";
 
 export type LoopEvent =
   | "before_tool"

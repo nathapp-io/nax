@@ -49,10 +49,10 @@
 import { relative, resolve, sep } from "node:path";
 import { realOrRaw } from "#src/internal/realpath";
 import { type BashToken, lexBashCommand } from "#src/permissions/index";
-import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd";
-import type { NaxOwnedKind } from "./nax-owned-writes";
-import { isNaxConfigFile, naxOwnedBashRefusal, naxOwnedKind } from "./nax-owned-writes";
-import type { BashCheck } from "./policy-bash";
+import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
+import type { NaxOwnedKind } from "./nax-owned-writes.ts";
+import { isNaxConfigFile, naxOwnedBashRefusal, naxOwnedKind } from "./nax-owned-writes.ts";
+import type { BashCheck } from "./policy-bash.ts";
 
 export interface RawScreenArgs {
   readonly tool: string;

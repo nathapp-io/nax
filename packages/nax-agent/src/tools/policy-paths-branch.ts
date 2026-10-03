@@ -24,11 +24,11 @@
 
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "#src/internal/realpath";
-import { isNaxConfigFile } from "./nax-owned-writes";
-import { pathListElements } from "./path-list";
-import { pathFieldValue } from "./policy-input";
-import { type CompiledEntry, type CompiledPattern, matchesAny } from "./policy-match";
-import type { PolicyVerdict, ToolScope } from "./types";
+import { isNaxConfigFile } from "./nax-owned-writes.ts";
+import { pathListElements } from "./path-list.ts";
+import { pathFieldValue } from "./policy-input.ts";
+import { type CompiledEntry, type CompiledPattern, matchesAny } from "./policy-match.ts";
+import type { PolicyVerdict, ToolScope } from "./types.ts";
 
 /** Mutable scratch shared by `check()`'s branch helpers: first ask rule matched. */
 export interface RuleState {

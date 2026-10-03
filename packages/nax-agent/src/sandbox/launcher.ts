@@ -14,8 +14,8 @@ import { mkdir } from "node:fs/promises";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger, NaxError } from "#src/infra/index";
 import { runArgv } from "#src/internal/argv-exec";
-import { quoteArgvForShell } from "./argv-quote";
-import { denialHintLine, LIKELY_SANDBOX_DENIAL } from "./messages";
+import { quoteArgvForShell } from "./argv-quote.ts";
+import { denialHintLine, LIKELY_SANDBOX_DENIAL } from "./messages.ts";
 import type {
   CommandLauncher,
   LaunchRequest,
@@ -24,7 +24,7 @@ import type {
   SandboxPolicy,
   SandboxRecord,
   SandboxState,
-} from "./types";
+} from "./types.ts";
 
 export const DISABLED_SANDBOX_STATE: SandboxState = { kind: "disabled" };
 

@@ -37,16 +37,20 @@ import { inputClassTokens } from "#src/cost/core/index";
 import { getSafeLogger } from "#src/infra/index";
 import type { SpinBreaker } from "#src/infra/spin-breaker/index";
 import type { InteractionExchange, SendTurnOpts, SessionHandle } from "#src/session/session-types";
-import { estimateContextTokens, type TranscriptMessage as NativeTranscriptMessage, shouldCompact } from "./compaction";
-import type { InvalidCallBudget } from "./handle-invalid-tool-call";
-import type { LoopEventRegistry } from "./loop-events";
-import { nativeSessionLastUsage } from "./session";
-import type { createTurnAccumulator } from "./turn-accumulator";
-import { usageBeat } from "./turn-accumulator";
-import { runProactiveCompaction } from "./turn-compaction-step";
-import { completeWithRecovery } from "./turn-complete-step";
-import { runToolBatch } from "./turn-tool-batch";
-import type { TurnDeps } from "./turn-types";
+import {
+  estimateContextTokens,
+  type TranscriptMessage as NativeTranscriptMessage,
+  shouldCompact,
+} from "./compaction.ts";
+import type { InvalidCallBudget } from "./handle-invalid-tool-call.ts";
+import type { LoopEventRegistry } from "./loop-events/index.ts";
+import { nativeSessionLastUsage } from "./session.ts";
+import type { createTurnAccumulator } from "./turn-accumulator.ts";
+import { usageBeat } from "./turn-accumulator.ts";
+import { runProactiveCompaction } from "./turn-compaction-step.ts";
+import { completeWithRecovery } from "./turn-complete-step.ts";
+import { runToolBatch } from "./turn-tool-batch.ts";
+import type { TurnDeps } from "./turn-types.ts";
 
 /**
  * The per-turn bound on `before_turn_end`'s followUp channel (spec 6.4): the

@@ -8,7 +8,7 @@
  * `noul` questions with true/false criteria. Changing any text here bumps
  * QUESTION_SET_VERSION; rows from different versions are never mixed.
  */
-import type { HarmOption, QuestionId } from "./types";
+import type { HarmOption, QuestionId } from "./types.ts";
 
 export const QUESTION_SET_VERSION = 1;
 export const HARM_QUESTION_ID = "harm";

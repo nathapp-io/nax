@@ -6,8 +6,8 @@
 
 import { getSafeLogger } from "#src/infra/index";
 import { runtimeSpawn } from "#src/runtime/index";
-import { drainBounded } from "./bounded-io";
-import { hardenedGitArgv, hardenedGitEnv } from "./git-env";
+import { drainBounded } from "./bounded-io.ts";
+import { hardenedGitArgv, hardenedGitEnv } from "./git-env.ts";
 
 /**
  * Default timeout for git subprocess calls.

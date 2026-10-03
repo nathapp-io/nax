@@ -102,6 +102,18 @@ describe("check-package-boundaries", () => {
     expect(whys()).toEqual(["packages/nax-agent/src/bad.ts ../../nax/src/config relative import leaves the package"]);
   });
 
+  test("an explicit .ts relative path is judged by where it lands, not by its extension", () => {
+    workspace();
+    write(
+      "packages/nax-agent/src/ok.ts",
+      'import { r } from "./tools/index.ts";\nexport * from "../src/tools/index.ts";\n',
+    );
+    write("packages/nax-agent/src/bad.ts", 'import { a } from "../../nax/src/config.ts";\n');
+    expect(whys()).toEqual([
+      "packages/nax-agent/src/bad.ts ../../nax/src/config.ts relative import leaves the package",
+    ]);
+  });
+
   test("nax may use only the two entries; no nax-agent test helper subpath, even from test/", () => {
     workspace();
     write(

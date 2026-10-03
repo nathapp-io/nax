@@ -18,10 +18,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import { fileSizeOrZero } from "#src/internal/file-size";
 import { getAgentRuntime } from "#src/runtime/index";
-import { resolveWithin } from "./policy";
-import { readFileSlice } from "./read-file";
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
-import { READ_CEILING } from "./truncate";
+import { resolveWithin } from "./policy.ts";
+import { readFileSlice } from "./read-file.ts";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
+import { READ_CEILING } from "./truncate.ts";
 
 /** The canonical scratchpad path, written into the policy as `scope.confineTo`. */
 export const SCRATCHPAD_DIR = ".nax/scratchpad";

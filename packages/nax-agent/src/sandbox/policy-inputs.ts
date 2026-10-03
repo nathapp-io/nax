@@ -7,7 +7,7 @@ import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { gitWithTimeout } from "#src/internal/git-exec";
 import { realOrRaw } from "#src/internal/realpath";
-import { SANDBOX_GLOB_CHARS } from "../config/schemas-sandbox";
+import { SANDBOX_GLOB_CHARS } from "../config/schemas-sandbox.ts";
 
 export type GitLayout =
   | { readonly kind: "none" }

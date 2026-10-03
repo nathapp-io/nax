@@ -40,9 +40,9 @@
 import type { ToolCall, ToolDefinition } from "@nathapp/nax-ai";
 import { byCodePoint } from "#src/internal/sort";
 import type { InvalidToolCallDetail } from "#src/session/session-types";
-import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
-import { exemplarFor } from "./tool-input-exemplar";
-import { stripNullOptionals, type ToolInputViolation, validateToolInput } from "./tool-input-validation";
+import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction.ts";
+import { exemplarFor } from "./tool-input-exemplar.ts";
+import { stripNullOptionals, type ToolInputViolation, validateToolInput } from "./tool-input-validation.ts";
 
 /** Three identical invalid calls in a turn ends it (Task 4). */
 export const INVALID_CALL_BUDGET_THRESHOLD = 3;

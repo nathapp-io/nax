@@ -15,7 +15,7 @@
 
 import type { CredentialStore, ProviderId, StoredCredential } from "@nathapp/nax-ai";
 import { NaxError } from "#src/infra/index";
-import type { ExecCredentialSource } from "./exec-source";
+import type { ExecCredentialSource } from "./exec-source.ts";
 
 /** The store the run is assembled around: a chain, plus where each provider came from. */
 export interface ChainedCredentialStore extends CredentialStore {

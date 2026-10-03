@@ -29,7 +29,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
-import { SCRATCHPAD_DIR } from "./scratchpad";
+import { SCRATCHPAD_DIR } from "./scratchpad.ts";
 import {
   capModelLine,
   cutToByteCap,
@@ -41,7 +41,7 @@ import {
   type TruncationDirection,
   truncateForModel,
   truncationDirectionFor,
-} from "./truncate";
+} from "./truncate.ts";
 
 /** Directory under the scratchpad that holds spilled tool output. */
 export const SPILL_DIR = "spill";

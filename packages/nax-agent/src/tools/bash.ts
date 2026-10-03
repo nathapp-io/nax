@@ -26,12 +26,12 @@ import { agentOutputOverlay } from "#src/internal/agent-output-env";
 import type { ArgvExecResult } from "#src/internal/argv-exec";
 import { runArgv } from "#src/internal/argv-exec";
 import { formatExecBody } from "#src/internal/exec-framing";
-import type { BashApprovalMode } from "../config/bash-approval";
-import type { SandboxRecord } from "../sandbox";
-import { type CommandLauncher, rawBashRefusalReason, sandboxSentence, unsandboxedSentence } from "../sandbox";
-import type { CodingTool, ToolRunContext } from "./registry";
-import { cutToByteCap, READ_CEILING } from "./truncate";
-import { BASH_TOOL_NAME } from "./types";
+import type { BashApprovalMode } from "../config/bash-approval.ts";
+import type { SandboxRecord } from "../sandbox/index.ts";
+import { type CommandLauncher, rawBashRefusalReason, sandboxSentence, unsandboxedSentence } from "../sandbox/index.ts";
+import type { CodingTool, ToolRunContext } from "./registry.ts";
+import { cutToByteCap, READ_CEILING } from "./truncate.ts";
+import { BASH_TOOL_NAME } from "./types.ts";
 
 /**
  * Deadline for a Bash spawn — the same ceiling the Exec branch uses

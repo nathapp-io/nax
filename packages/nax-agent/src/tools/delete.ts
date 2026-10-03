@@ -57,8 +57,8 @@
 import { lstat, unlink } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { gitWithTimeout } from "#src/internal/git-exec";
-import { matchesDenyPaths } from "./deny-paths";
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { matchesDenyPaths } from "./deny-paths.ts";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 
 const GIT_TIMEOUT_MS = 30_000;
 

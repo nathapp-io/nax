@@ -13,7 +13,7 @@
 
 import { NaxError } from "#src/infra/index";
 import type { JSONSchema } from "#src/session/tool-descriptor";
-import type { ToolResult, ToolRunContext } from "./registry";
+import type { ToolResult, ToolRunContext } from "./registry.ts";
 
 export type ProviderKind = "static" | "discovered";
 

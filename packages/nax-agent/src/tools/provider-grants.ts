@@ -8,8 +8,8 @@
  * parsed form compiles to the key `"Mcp"`, matches no advertised name, and
  * denies every call while every parser unit test still passes.
  */
-import { namespacedToolName } from "./provider-adapt";
-import type { ToolGrant } from "./types";
+import { namespacedToolName } from "./provider-adapt.ts";
+import type { ToolGrant } from "./types.ts";
 
 export interface ProviderGrantEntry {
   readonly providerId: string;

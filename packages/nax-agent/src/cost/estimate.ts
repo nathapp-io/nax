@@ -16,8 +16,8 @@
  * `@/agents/cost` get the helper without reaching into `./calculate`.
  */
 
-import type { Pricing, PricingRates, TokenUsage } from "./standard-types";
-import { inputClassTokens } from "./usage-math";
+import type { Pricing, PricingRates, TokenUsage } from "./standard-types.ts";
+import { inputClassTokens } from "./usage-math.ts";
 
 /**
  * `inputClassTokens` is re-exported from here so callers using

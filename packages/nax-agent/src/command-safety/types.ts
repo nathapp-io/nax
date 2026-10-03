@@ -9,7 +9,7 @@
  * a later decision reads is exact.
  */
 
-import type { CallIdentifiers } from "./identifiers";
+import type { CallIdentifiers } from "./identifiers.ts";
 
 /** The six harm categories. Also the ids of the six `noul` questions. */
 export const QUESTION_IDS = [

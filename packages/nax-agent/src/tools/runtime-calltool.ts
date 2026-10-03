@@ -21,12 +21,12 @@ import { type CommandGuard, type CommandShadow, openShadowTap } from "#src/comma
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
 import { ASK_CANCELLED_REASON, type AskControl, type AskResolver, type AskVerdict } from "#src/permissions/index";
-import type { SandboxRecord } from "../sandbox";
-import { askDenyReason, askSummary } from "./ask-request";
-import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect";
-import type { CodingTool } from "./registry";
-import type { CodingToolOutcome, ToolCallContext } from "./runtime";
-import { BASH_TOOL_NAME, EXEC_TOOL_NAME, type ToolPolicy } from "./types";
+import type { SandboxRecord } from "../sandbox/index.ts";
+import { askDenyReason, askSummary } from "./ask-request.ts";
+import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect.ts";
+import type { CodingTool } from "./registry.ts";
+import type { CodingToolOutcome, ToolCallContext } from "./runtime.ts";
+import { BASH_TOOL_NAME, EXEC_TOOL_NAME, type ToolPolicy } from "./types.ts";
 
 type PolicyVerdict = ReturnType<ToolPolicy["check"]>;
 

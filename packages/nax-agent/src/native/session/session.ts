@@ -11,11 +11,11 @@ import { NaxError } from "#src/infra/index";
 import { createSpinBreaker, type SpinBreaker } from "#src/infra/spin-breaker/index";
 import type { AgentStreamEvent } from "#src/session/agent-stream-events";
 import type { OpenSessionOpts, SessionHandle } from "#src/session/session-types";
-import { NATIVE_AGENT } from "../models";
-import { nativeSessionId } from "../session-affinity";
-import type { ResolvedCompaction } from "./compaction";
-import { deleteTranscript, pruneRetainedTranscripts, retainTranscript } from "./transcript-store";
-import type { TurnRetryConfig } from "./turn-retry";
+import { NATIVE_AGENT } from "../models.ts";
+import { nativeSessionId } from "../session-affinity.ts";
+import type { ResolvedCompaction } from "./compaction.ts";
+import { deleteTranscript, pruneRetainedTranscripts, retainTranscript } from "./transcript-store.ts";
+import type { TurnRetryConfig } from "./turn-retry.ts";
 
 /**
  * Session name -> transcript directory, so sendTurn and close can find it.

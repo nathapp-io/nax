@@ -13,10 +13,10 @@
 import { join } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
-import { appendCommandSafetyRow } from "./row";
-import { createCommandShadow } from "./shadow";
-import { createSystemOneClient } from "./systemone-client";
-import type { CommandShadow } from "./types";
+import { appendCommandSafetyRow } from "./row.ts";
+import { createCommandShadow } from "./shadow.ts";
+import { createSystemOneClient } from "./systemone-client.ts";
+import type { CommandShadow } from "./types.ts";
 
 export const COMMAND_SAFETY_DIR = "command-safety";
 

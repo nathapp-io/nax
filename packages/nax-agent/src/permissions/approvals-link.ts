@@ -25,10 +25,10 @@
  */
 import { relative, resolve } from "node:path";
 import { getSafeLogger } from "#src/infra/index";
-import { findApproval, readApprovalsFile } from "./approvals-store";
-import { isForgeCapable } from "./approvals-taint";
-import type { AskLink, AskLinkOutcome } from "./ask-chain";
-import type { AskRequest } from "./types";
+import { findApproval, readApprovalsFile } from "./approvals-store.ts";
+import { isForgeCapable } from "./approvals-taint.ts";
+import type { AskLink, AskLinkOutcome } from "./ask-chain.ts";
+import type { AskRequest } from "./types.ts";
 
 const ABSTAIN: AskLinkOutcome = { decision: "abstain", decidedBy: "cache" };
 

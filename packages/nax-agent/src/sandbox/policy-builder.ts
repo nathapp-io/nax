@@ -9,23 +9,23 @@
 import { isAbsolute, join, resolve } from "node:path";
 import { NaxError } from "#src/infra/index";
 import { realOrRaw } from "#src/internal/realpath";
-import { SANDBOX_GLOB_CHARS, type SandboxConfig } from "../config/schemas-sandbox";
+import { SANDBOX_GLOB_CHARS, type SandboxConfig } from "../config/schemas-sandbox.ts";
 import {
   NAX_ALWAYS_DENIED_ENTRIES,
   NAX_SCRATCHPAD_ENTRY,
   naxWriteOptIns,
   QUEUE_CONTROL_FILES,
-} from "../tools/nax-owned-writes";
+} from "../tools/nax-owned-writes.ts";
 import {
   BUILTIN_CACHE_WRITE_ROOTS,
   BUILTIN_CREDENTIAL_READ_DENIES,
   MACOS_CACHE_WRITE_ROOT,
   SRT_MACOS_TMPDIR,
   SRT_MACOS_TMPDIR_DENIES,
-} from "./defaults";
-import { WORKTREE_COMMON_WRITE_DIRS, WORKTREE_CONFIG_FILE } from "./git-guards";
-import type { GitLayout } from "./policy-inputs";
-import type { SandboxPolicy } from "./types";
+} from "./defaults.ts";
+import { WORKTREE_COMMON_WRITE_DIRS, WORKTREE_CONFIG_FILE } from "./git-guards.ts";
+import type { GitLayout } from "./policy-inputs.ts";
+import type { SandboxPolicy } from "./types.ts";
 
 export interface SandboxPolicyInput {
   readonly root: string;

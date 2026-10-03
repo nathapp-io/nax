@@ -59,6 +59,23 @@ describe("check-sandbox-imports", () => {
     expect(out).toContain("orchestrator");
   });
 
+  // S2-6 gives every relative import an explicit `.ts`. The rule required `/` or
+  // a quote after the module name, so a file-form import walked straight past it.
+  test("fails when src/sandbox imports an orchestrator file through an explicit .ts specifier", () => {
+    const root = tree({ "src/sandbox/launcher.ts": 'import { x } from "../pipeline.ts";\n' });
+    const { code, out } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).not.toBe(0);
+    expect(out).toContain("orchestrator");
+  });
+
+  test("still passes for an explicit .ts peer import that is not an orchestrator", () => {
+    const root = tree({ "src/sandbox/launcher.ts": 'import { x } from "./pipeline-free.ts";\n' });
+    const { code } = runGate(root);
+    rmSync(root, { recursive: true, force: true });
+    expect(code).toBe(0);
+  });
+
   test("fails when src/sandbox imports an orchestrator module through the @/ alias", () => {
     const root = tree({ "src/sandbox/launcher.ts": 'import { x } from "@/pipeline/stages";\n' });
     const { code } = runGate(root);

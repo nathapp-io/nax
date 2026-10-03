@@ -15,9 +15,9 @@
  */
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { AskDecidedBy } from "./ask-chain";
-import { redactRowStrings } from "./secret-spans";
-import type { AskRequest } from "./types";
+import type { AskDecidedBy } from "./ask-chain.ts";
+import { redactRowStrings } from "./secret-spans.ts";
+import type { AskRequest } from "./types.ts";
 
 export interface ApprovalAuditRow {
   readonly request: AskRequest;

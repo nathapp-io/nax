@@ -18,9 +18,9 @@
 import type { InterceptRequest } from "#src/command-interceptor/index";
 import { interceptArgv } from "#src/command-interceptor/index";
 import { gitWithTimeout } from "#src/internal/git-exec";
-import { gitExcludePathspecsOf } from "./protected-paths";
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
-import { cutToByteCap, READ_CEILING } from "./truncate";
+import { gitExcludePathspecsOf } from "./protected-paths.ts";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
+import { cutToByteCap, READ_CEILING } from "./truncate.ts";
 
 /**
  * Read-only verbs. Mutating verbs are not representable in the input type.

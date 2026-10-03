@@ -7,7 +7,7 @@
  */
 
 import type { InteractionExchange, SendTurnOpts } from "#src/session/session-types";
-import { buildToolResult, type ToolResultMessage } from "./tool-result";
+import { buildToolResult, type ToolResultMessage } from "./tool-result.ts";
 
 export interface AskHumanOutcome {
   /** Appended to the message array by the caller. */

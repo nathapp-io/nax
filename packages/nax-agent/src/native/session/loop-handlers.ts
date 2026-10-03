@@ -33,15 +33,15 @@
 
 import type { ToolCall, ToolDefinition } from "@nathapp/nax-ai";
 import { type SpinBreaker, spinTerminalNotice } from "#src/infra/spin-breaker/index";
-import { type InvalidCallBudget, normalizeNullOptionals } from "./handle-invalid-tool-call";
+import { type InvalidCallBudget, normalizeNullOptionals } from "./handle-invalid-tool-call.ts";
 import {
   type BeforeToolOutcome,
   type LoopEventRegistry,
   type LoopHandlerContext,
   type LoopHandlerSet,
   wrapExternalHandler,
-} from "./loop-events";
-import { createTruncationHandler } from "./truncation-handler";
+} from "./loop-events/index.ts";
+import { createTruncationHandler } from "./truncation-handler.ts";
 
 export interface BuiltinLoopHandlerDeps {
   /**

@@ -14,8 +14,8 @@
 import type { Pricing, PricingRates, TokenUsage } from "#src/cost/standard-types";
 import type { ResolvedPermissions } from "#src/permissions/index";
 import type { ProtocolIds } from "#src/session/protocol-types";
-import type { AdapterFailure } from "./adapter-failure";
-import type { ToolDescriptor } from "./tool-descriptor";
+import type { AdapterFailure } from "./adapter-failure.ts";
+import type { ToolDescriptor } from "./tool-descriptor.ts";
 
 /**
  * Identity of the credential that served a call (US-002).
@@ -171,7 +171,7 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
 /** Options for sendTurn(). */
 export interface SendTurnOpts {
   /** Unified callback for context-tool calls and agent questions. */
-  interactionHandler: import("./interaction-handler").InteractionHandler;
+  interactionHandler: import("./interaction-handler.ts").InteractionHandler;
   /** Native-only in-process loop-event registrations for this turn. ACP ignores this. */
   loopEvents?: import("#src/native/session/loop-events/index").LoopEventRegistry;
   /**

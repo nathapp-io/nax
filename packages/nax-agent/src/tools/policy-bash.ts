@@ -28,9 +28,9 @@
 
 import type { BashSegment, BashToken } from "#src/permissions/index";
 import { lexBashCommand } from "#src/permissions/index";
-import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd";
-import { deniedFlag } from "./exec-guard";
-import type { CompiledEntry, CompiledPattern } from "./policy-match";
+import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
+import { deniedFlag } from "./exec-guard.ts";
+import type { CompiledEntry, CompiledPattern } from "./policy-match.ts";
 
 export type BashCheck =
   | { readonly kind: "allow" }

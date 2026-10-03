@@ -9,7 +9,7 @@
  *
  * The refusal is the point. The value is the row it leaves behind.
  */
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 
 export const requestCapabilityTool: CodingTool = {
   name: "RequestCapability",

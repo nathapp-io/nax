@@ -15,7 +15,7 @@
  */
 
 import { getSafeLogger } from "#src/infra/index";
-import type { CodingToolName, ToolGrant } from "./types";
+import type { CodingToolName, ToolGrant } from "./types.ts";
 
 /** Per-tool path globs an operation asks to be held to. */
 export type ToolPatternNarrowing = Partial<Record<CodingToolName, readonly string[]>>;

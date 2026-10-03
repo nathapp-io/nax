@@ -1,4 +1,4 @@
-import type { ToolInputViolation } from "./tool-input-validation";
+import type { ToolInputViolation } from "./tool-input-validation.ts";
 
 export function exemplarFor(
   schema: unknown,

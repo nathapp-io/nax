@@ -16,7 +16,7 @@
  *   whatever the readers captured so far.
  */
 import { runtimeSpawn } from "#src/runtime/index";
-import { killProcessGroup } from "./process-kill";
+import { killProcessGroup } from "./process-kill.ts";
 
 export interface RunArgvOptions {
   readonly argv: readonly string[];

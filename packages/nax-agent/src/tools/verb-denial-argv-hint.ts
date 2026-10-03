@@ -1,4 +1,4 @@
-import { describeExecAllowlist } from "./exec-allowlist-text";
+import { describeExecAllowlist } from "./exec-allowlist-text.ts";
 
 /**
  * The extra clause `policy.ts`'s `verbBranch` appends to a subcommand denial

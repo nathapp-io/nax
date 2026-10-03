@@ -18,12 +18,12 @@ import { statSync } from "node:fs";
 import type { QualityCommandSpec } from "#src/internal/command-spec/index";
 import { describeValuesType } from "#src/internal/describe-value-type";
 import { shellQuoteArg } from "#src/internal/shell-quote";
-import { type CommandLauncher, sandboxSentence, unsandboxedSentence } from "../sandbox";
-import { describeExecAllowlist } from "./exec-allowlist-text";
-import { pathListElements } from "./path-list";
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
-import { runExecBranch } from "./run-command-exec";
-import { cutToByteCap, READ_CEILING } from "./truncate";
+import { type CommandLauncher, sandboxSentence, unsandboxedSentence } from "../sandbox/index.ts";
+import { describeExecAllowlist } from "./exec-allowlist-text.ts";
+import { pathListElements } from "./path-list.ts";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
+import { runExecBranch } from "./run-command-exec.ts";
+import { cutToByteCap, READ_CEILING } from "./truncate.ts";
 
 const PLACEHOLDER = /\{\{([a-zA-Z]+)\}\}/g;
 

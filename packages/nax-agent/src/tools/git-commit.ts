@@ -15,8 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitlinkSafeAdd, hasStagedChanges } from "#src/internal/git-add";
 import { gitWithTimeout } from "#src/internal/git-exec";
-import { gitIgnorePatternsOf } from "./protected-paths";
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { gitIgnorePatternsOf } from "./protected-paths.ts";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 
 export function buildCommitArgvs(
   input: Record<string, unknown>,

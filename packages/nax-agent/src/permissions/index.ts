@@ -1,7 +1,7 @@
-export * from "./approval-audit";
-export * from "./approvals-link";
-export * from "./approvals-store";
-export * from "./approvals-taint";
+export * from "./approval-audit.ts";
+export * from "./approvals-link.ts";
+export * from "./approvals-store.ts";
+export * from "./approvals-taint.ts";
 export {
   ASK_CANCELLED_REASON,
   ASK_DENIED_REASON,
@@ -10,10 +10,10 @@ export {
   ASK_UNAVAILABLE_REASON,
   ASK_UNSHOWABLE_REASON,
   headlessAskResolver,
-} from "./ask";
-export * from "./ask-chain";
-export type { BashLexResult, BashRedirect, BashSegment, BashSegmentSeparator, BashToken } from "./bash-lex";
-export { lexBashCommand } from "./bash-lex";
-export { parseRuleList, parseToolExpression } from "./grammar";
-export * from "./secret-spans";
-export type { AskRequest, ResolvedPermissions } from "./types";
+} from "./ask.ts";
+export * from "./ask-chain.ts";
+export type { BashLexResult, BashRedirect, BashSegment, BashSegmentSeparator, BashToken } from "./bash-lex.ts";
+export { lexBashCommand } from "./bash-lex.ts";
+export { parseRuleList, parseToolExpression } from "./grammar.ts";
+export * from "./secret-spans.ts";
+export type { AskRequest, ResolvedPermissions } from "./types.ts";

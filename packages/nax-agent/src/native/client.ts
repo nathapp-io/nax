@@ -14,8 +14,8 @@ import { type Client, createClient, defaultProtocols, defaultProviders } from "@
 import type { ProviderCatalogOverride } from "#src/config/catalog-overrides";
 import { NaxError } from "#src/infra/index";
 import { byCodePoint } from "#src/internal/sort";
-import { naxCredentialStore } from "./credentials";
-import { toProviderOverrides } from "./models";
+import { naxCredentialStore } from "./credentials/index.ts";
+import { toProviderOverrides } from "./models.ts";
 
 /** The catalog overrides a native client is built with (`agent.native.catalogOverrides`). */
 export type NativeCatalogOverrides = readonly ProviderCatalogOverride[];

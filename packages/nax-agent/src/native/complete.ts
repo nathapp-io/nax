@@ -7,12 +7,12 @@
 import { priceCall } from "#src/cost/core/index";
 import type { AdapterFailure } from "#src/session/adapter-failure";
 import type { AuthStamp, SessionModel } from "#src/session/session-types";
-import type { PricingRates, TokenUsage } from "../cost/standard-types";
-import { _adapterDeps, authFields, isProtocolStreamError } from "./adapter-deps";
-import { getNativeClient, type NativeCatalogOverrides } from "./client";
-import { toAdapterFailure } from "./errors";
-import { buildRateCard, parseNativeModel, toThinkingLevel } from "./models";
-import { nativeSessionId } from "./session-affinity";
+import type { PricingRates, TokenUsage } from "../cost/standard-types.ts";
+import { _adapterDeps, authFields, isProtocolStreamError } from "./adapter-deps.ts";
+import { getNativeClient, type NativeCatalogOverrides } from "./client.ts";
+import { toAdapterFailure } from "./errors.ts";
+import { buildRateCard, parseNativeModel, toThinkingLevel } from "./models.ts";
+import { nativeSessionId } from "./session-affinity.ts";
 
 export interface NativeCompleteOptions {
   readonly model: SessionModel;

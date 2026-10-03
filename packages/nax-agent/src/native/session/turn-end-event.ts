@@ -6,8 +6,8 @@
  * and a built-in handler is not timed at all.
  */
 import { getSafeLogger } from "#src/infra/index";
-import type { LoopEventRegistry } from "./loop-events";
-import type { BeforeTurnEndPayload } from "./loop-events/types";
+import type { LoopEventRegistry } from "./loop-events/index.ts";
+import type { BeforeTurnEndPayload } from "./loop-events/types.ts";
 
 export async function dispatchTurnEndOnError(
   loopEvents: LoopEventRegistry,
