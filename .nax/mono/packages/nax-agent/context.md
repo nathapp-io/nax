@@ -19,7 +19,7 @@ at runtime and nothing to publish.
 
 | Layer | Choice |
 |:------|:-------|
-| Runtime | **Bun 1.4.0** — Bun-native APIs only, no Node.js equivalents |
+| Runtime | **Bun 1.4.0** for dev and tests; the shipped source is Node-compatible (>=22.19.0) and uses no Bun API (`bun run check:no-bun-apis`) |
 | Language | **TypeScript strict** — no `any` without explicit justification |
 | Test | **`bun:test`** — describe/test/expect |
 | Lint/Format | **Biome** (`bun run lint:biome`), plus nax's own gate scripts |
@@ -31,6 +31,8 @@ at runtime and nothing to publish.
 |:--------|:--------|
 | `bun run typecheck` | `tsc --noEmit` over `src/` and `test/` |
 | `bun run build` | `tsc -p tsconfig.build.json`: Node ESM `dist/`; fails on an extensionless relative import |
+| `bun run check:api` | Build, read the exports of `.` and `./internal` from the declarations, diff against `api/nax-agent.api.txt`; fails if `.` exports a `_` name |
+| `bun run api:update` | Rewrite `api/nax-agent.api.txt` after an intended surface change (refuses a `_` name on `.`) |
 | `bun run check:all` | Biome plus every repo gate (`lint`) |
 | `bun run lint:fix` | Biome lint fix |
 | `bun test ./test/unit/foo.test.ts --timeout=60000` | Targeted test during iteration with timeout |
@@ -74,12 +76,13 @@ src/
 
 Two entries, and only two:
 
-- **`.`** (`src/index.ts`) — the contract nax codes against: session types, the native
-  session adapter, the tool/permission/sandbox/command-safety barrels, the cost core.
-- **`./internal`** (`src/internal.ts`) — what nax reaches below the public entry: shared
-  helpers, `NaxError`, deep modules and the `_*Deps` test seams. **Not covered by semver.**
-  It re-exports the same module instances, so patching a seam here patches the object the
-  agent reads.
+- **`.`** (`src/index.ts`) — the supported contract. Every export is **named** (no `export *`)
+  and none starts with `_`. Adding or removing a name changes `api/nax-agent.api.txt`: run
+  `bun run api:update` and commit it. CI (`bun run check:api`) compares the built declarations.
+- **`./internal`** (`src/internal.ts`) — nax-only, outside semver (see its header). It holds the
+  shared helpers, `NaxError`, deep modules and **every `_*Deps` seam and `_reset…` hook**; a new
+  seam is exported here, never from `.`. It re-exports the same module instances, so patching a
+  seam here patches the object the agent reads.
 
 nax-agent exports no test helpers. Its own helpers live in `test/helpers/` (imported as
 `#test/helpers/index`). The ten generic ones live in `@nathapp/nax-test-kit/bun/*`, which nax
