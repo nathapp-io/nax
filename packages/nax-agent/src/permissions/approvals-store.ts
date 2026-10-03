@@ -19,7 +19,7 @@
  * primitive that surface calls into.
  */
 import { createHash } from "node:crypto";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { withPathFileLock } from "#src/internal/path-file-lock";
 
@@ -144,11 +144,15 @@ export function approvalId(entry: ApprovalEntry): string {
  * must stay fail-closed use `readApprovalsFile`, which catches it.
  */
 export async function readApprovalsFileDetailed(path: string): Promise<ApprovalsFileRead> {
-  const file = Bun.file(path);
-  if (!(await file.exists())) {
-    return { state: "missing", file: EMPTY_FILE, droppedMalformed: 0 };
+  let contents: string;
+  try {
+    contents = await readFile(path, "utf8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return { state: "missing", file: EMPTY_FILE, droppedMalformed: 0 };
+    }
+    throw error;
   }
-  const contents = await file.text();
   let parsed: unknown;
   try {
     parsed = JSON.parse(contents);

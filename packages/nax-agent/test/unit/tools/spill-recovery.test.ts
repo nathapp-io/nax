@@ -26,6 +26,7 @@ import {
   MODEL_MAX_BYTES,
   READ_CEILING,
 } from "#src/tools/index";
+import { _spillDeps } from "#src/tools/spill";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 let root: string;
@@ -518,4 +519,13 @@ describe("US-001 AC10: a truncated Bash result is recoverable with Read through 
     expect(bash.content).toBe("exit 0\nsmall output\n");
     expect(markerPathOf(bash.content)).toBe("");
   });
+});
+
+test("spill writer preserves its UTF-8 byte-count contract", async () => {
+  const target = join(root, "utf8");
+  expect(await _spillDeps.writeFile(target, "héllo")).toBe(6);
+  expect(readFileSync(target, "utf8")).toBe("héllo");
+});
+test("spill writer requires its caller to create the parent", async () => {
+  await expect(_spillDeps.writeFile(join(root, "missing", "file"), "x")).rejects.toMatchObject({ code: "ENOENT" });
 });

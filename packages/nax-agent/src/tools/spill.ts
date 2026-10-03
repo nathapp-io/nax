@@ -22,10 +22,10 @@
  *
  * Filesystem calls are injectable (`_spillDeps`), following `_scratchpadWipeDeps`
  * in src/execution/lifecycle/scratchpad-wipe.ts, and writes go through
- * Bun-native APIs rather than the Node synchronous ones.
+ * asynchronous Node filesystem APIs.
  */
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
@@ -49,7 +49,10 @@ export const SPILL_DIR = "spill";
 /** Injectable filesystem seam (see docs/architecture/conventions.md §2). */
 export const _spillDeps = {
   mkdir: (path: string): Promise<string | undefined> => mkdir(path, { recursive: true }),
-  writeFile: (path: string, data: string): Promise<number> => Bun.write(path, data),
+  writeFile: async (path: string, data: string): Promise<number> => {
+    await writeFile(path, data, "utf8");
+    return Buffer.byteLength(data);
+  },
 };
 
 export interface SpillRequest {

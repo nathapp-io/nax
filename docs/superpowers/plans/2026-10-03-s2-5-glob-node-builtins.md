@@ -155,7 +155,7 @@ Define recording runtime locally by spreading nodeRuntime and replacing these me
 
 **Interfaces:** Produces `fileSizeOrZero(path: string): number` in file-size.ts; only ENOENT maps to zero. Retains `readFileSlice(target: string, opts?: ReadFileSliceOptions): Promise<ReadFileSliceResult>`, `readApprovalsFileDetailed(path: string): Promise<ApprovalsFileRead>`, `_gitGuardDeps.readText(p: string): Promise<string>`, `_spillDeps.writeFile(path: string, data: string): Promise<number>`.
 
-- [ ] **Step 1: Add byte/error tests.** In new file-size tests assert `fileSizeOrZero` returns 6 for UTF-8 `héllo`, 0 for missing path, and throws ENOTDIR for `regularFile/child`. In read-file tests pin missing-file rejection to ENOENT (the zero size probe must not mask the subsequent open error), empty content/zero lines, and existing UTF-8 ceiling behaviour. Scratchpad tests assert `resultBytesPreTruncation === 6` for `héllo` with existing header expectations. For approvals assert missing state, parse failure state, preserved taint/entries, and directory-path read rejection. Add EACCES with a chmod(000) fixture and finally restoration; skip that one test only if running as root. A read failure must not become `missing` or `unparseable`. In git-guards tests call the real readText seam on UTF-8 text and on a missing file. For spill call the real writeFile seam, assert returned byte count 6 and stored bytes equal `héllo`; a missing parent must reject ENOENT rather than creating it.
+- [x] **Step 1: Add byte/error tests.** In new file-size tests assert `fileSizeOrZero` returns 6 for UTF-8 `héllo`, 0 for missing path, and throws ENOTDIR for `regularFile/child`. In read-file tests pin missing-file rejection to ENOENT (the zero size probe must not mask the subsequent open error), empty content/zero lines, and existing UTF-8 ceiling behaviour. Scratchpad tests assert `resultBytesPreTruncation === 6` for `héllo` with existing header expectations. For approvals assert missing state, parse failure state, preserved taint/entries, and directory-path read rejection. Add EACCES with a chmod(000) fixture and finally restoration; skip that one test only if running as root. A read failure must not become `missing` or `unparseable`. In git-guards tests call the real readText seam on UTF-8 text and on a missing file. For spill call the real writeFile seam, assert returned byte count 6 and stored bytes equal `héllo`; a missing parent must reject ENOENT rather than creating it.
 
 ```ts
 expect(await _spillDeps.writeFile(target, "héllo")).toBe(6);
@@ -165,13 +165,13 @@ expect(await readApprovalsFileDetailed(missing)).toEqual({
 });
 ```
 
-- [ ] **Step 2: Run the six test files explicitly in agent.** Expected: new file-size helper import fails; tests documenting old semantics may already pass. Do not force unchanged-behaviour tests to fail artificially.
+- [x] **Step 2: Run the six test files explicitly in agent.** Expected: new file-size helper import fails; tests documenting old semantics may already pass. Do not force unchanged-behaviour tests to fail artificially.
 
-- [ ] **Step 3: Implement Node I/O swaps.** `fileSizeOrZero` wraps statSync(path).size and catches only errors with code ENOENT; use it for both size probes. Approval reading uses readFile(path, "utf8"), catches only ENOENT before JSON parsing, and propagates other errors. `_gitGuardDeps.readText` uses readFile(p, "utf8"). `_spillDeps.writeFile` awaits writeFile(path, data, "utf8") then returns Buffer.byteLength(data), preserving Promise<number> for existing consumers/stubs. Parent creation stays in the existing spill caller. No Bun-backed sleep/which remains to move; retain S2–4's `runtime/which.ts` and existing Node timers.
+- [x] **Step 3: Implement Node I/O swaps.** `fileSizeOrZero` wraps statSync(path).size and catches only errors with code ENOENT; use it for both size probes. Approval reading uses readFile(path, "utf8"), catches only ENOENT before JSON parsing, and propagates other errors. `_gitGuardDeps.readText` uses readFile(p, "utf8"). `_spillDeps.writeFile` awaits writeFile(path, data, "utf8") then returns Buffer.byteLength(data), preserving Promise<number> for existing consumers/stubs. Parent creation stays in the existing spill caller. No Bun-backed sleep/which remains to move; retain S2–4's `runtime/which.ts` and existing Node timers.
 
-- [ ] **Step 4: Repeat the six explicit test paths and run `rtk bun run typecheck` in agent.** Expected: passing UTF-8, missing/error and existing paging/spill/guard tests.
+- [x] **Step 4: Repeat the six explicit test paths and run `rtk bun run typecheck` in agent.** Expected: passing UTF-8, missing/error and existing paging/spill/guard tests.
 
-- [ ] **Step 5: Commit Task 3 files.** Message: `refactor: use Node filesystem APIs in nax-agent`.
+- [x] **Step 5: Commit Task 3 files.** Message: `refactor: use Node filesystem APIs in nax-agent`.
 
 ### Task 4: Replace hash implementations without changing deduplication rules
 

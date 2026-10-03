@@ -16,6 +16,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
+import { fileSizeOrZero } from "#src/internal/file-size";
 import { getAgentRuntime } from "#src/runtime/index";
 import { resolveWithin } from "./policy";
 import { readFileSlice } from "./read-file";
@@ -118,7 +119,7 @@ export const scratchpadReadTool: CodingTool = {
         ...(offset !== undefined ? { offset } : {}),
         ...(limit !== undefined ? { limit } : {}),
       });
-      const fullBytes = Bun.file(target).size;
+      const fullBytes = fileSizeOrZero(target);
       const { content, bounded, totalLines } = slice;
       // The header leads EVERY read that returns file content, the paged one
       // included: it reports the FILE's line count, which is what a model

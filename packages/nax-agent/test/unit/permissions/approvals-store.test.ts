@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type ApprovalEntry,
@@ -306,5 +306,40 @@ describe("readApprovalsFile", () => {
       const path = writeStore(dir, JSON.stringify({ entries: "bun run test" }));
       expect((await readApprovalsFile(path)).entries).toEqual([]);
     });
+  });
+});
+
+describe("approval-file I/O failures are not parse failures", () => {
+  test("detailed missing read retains the missing-state shape", async () => {
+    const dir = makeTempDir("approval-missing-");
+    try {
+      expect(await readApprovalsFileDetailed(join(dir, "missing"))).toEqual({
+        state: "missing",
+        file: { entries: [], taint: undefined },
+        droppedMalformed: 0,
+      });
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+  test("reading a directory propagates EISDIR", async () => {
+    const dir = makeTempDir("approval-dir-");
+    try {
+      await expect(readApprovalsFileDetailed(dir)).rejects.toMatchObject({ code: "EISDIR" });
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+  test.skipIf(process.getuid?.() === 0)("unreadable approval data propagates EACCES", async () => {
+    const dir = makeTempDir("approval-permissions-");
+    const file = join(dir, "approval.json");
+    writeFileSync(file, '{"entries":[]}');
+    chmodSync(file, 0o000);
+    try {
+      await expect(readApprovalsFileDetailed(file)).rejects.toMatchObject({ code: "EACCES" });
+    } finally {
+      chmodSync(file, 0o600);
+      cleanupTempDir(dir);
+    }
   });
 });

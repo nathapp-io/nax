@@ -8,6 +8,7 @@
 
 import { open } from "node:fs/promises";
 import { NaxError } from "#src/infra/index";
+import { fileSizeOrZero } from "#src/internal/file-size";
 import { cutBufferToByteCap, READ_CEILING } from "./truncate";
 
 export interface ReadFileSliceOptions {
@@ -58,13 +59,13 @@ export async function readFileSlice(target: string, opts: ReadFileSliceOptions =
 
   const ceiling = opts.readCeiling ?? READ_CEILING;
 
-  // Probe the file size with `Bun.file(target).size` so we know whether the
+  // Probe the file size with `fileSizeOrZero(target)` so we know whether the
   // file exceeds the ceiling without reading past it. That stat is also why
   // this reads exactly `ceiling` bytes rather than `readPrefix`'s
   // ceiling-plus-one: the overshoot exists to infer "there was more" from the
   // read itself, and here the stat already answers that — so the extra byte
   // would only carry the read past the bound it is meant to enforce.
-  const fileSize = Bun.file(target).size;
+  const fileSize = fileSizeOrZero(target);
   const readBudget = Math.min(ceiling, fileSize);
   const handle = await open(target, "r");
   let body = "";
