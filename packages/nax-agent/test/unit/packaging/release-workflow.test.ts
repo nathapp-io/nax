@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir } from "#test/helpers/index";
+import { makeReleaseCliFixture } from "#test/helpers/release-cli-fixture";
 import { makeReleaseShell, releaseStep, releaseWorkflow } from "#test/helpers/release-shell";
 
 describe("release workflow routing", () => {
@@ -32,11 +33,37 @@ describe("release workflow routing", () => {
 
   test("dispatch checks out its tag and agent tags trigger the workflow", () => {
     const checkout = releaseWorkflow.jobs.release.steps.find((step) => step.uses?.startsWith("actions/checkout@"));
-    expect(checkout?.with?.ref).toBe(`\${{ github.event.inputs.tag || github.ref_name }}`);
+    expect(checkout?.with?.ref).toBe(`refs/tags/\${{ github.event.inputs.tag || github.ref_name }}`);
     expect(checkout?.with?.["fetch-depth"]).toBe(0);
     expect(releaseWorkflow.on.push.tags).toContain("nax-agent-v*.*.*");
     expect(releaseWorkflow.on.push.tags).toContain("nax-agent-v*.*.*-canary.*");
   });
+
+  test.each([true, false])(
+    "checkout requires the tag when a matching branch exists (tag present: %s)",
+    (tagPresent) => {
+      const fixture = makeReleaseCliFixture();
+      const tag = "nax-agent-v0.1.0";
+      try {
+        const taggedCommit = fixture.git("rev-parse", "HEAD");
+        if (tagPresent) fixture.git("tag", tag);
+        fixture.git("checkout", "-b", tag);
+        fixture.git("commit", "--allow-empty", "-m", "branch-only change");
+        fixture.git("checkout", "main");
+        const checkout = releaseWorkflow.jobs.release.steps.find((step) => step.uses?.startsWith("actions/checkout@"));
+        const ref = String(checkout?.with?.ref).replace(/\$\{\{[^}]+\}\}/, tag);
+        if (tagPresent) {
+          fixture.git("checkout", ref);
+          expect(fixture.git("rev-parse", "HEAD")).toBe(taggedCommit);
+        } else {
+          expect(() => fixture.git("checkout", ref)).toThrow();
+          expect(fixture.git("branch", "--show-current")).toBe("main");
+        }
+      } finally {
+        cleanupTempDir(fixture.dir);
+      }
+    },
+  );
 
   test.each([
     ["@nathapp/nax-agent", "0.1.0", "latest", "true", "false"],
