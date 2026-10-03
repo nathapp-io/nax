@@ -31,8 +31,8 @@ import {
   type LoopEventRegistry,
   wrapExternalHandler,
 } from "@nathapp/nax-agent/internal";
-import { assertDefined, withDebugSpy, withTimerSpy, withWarnSpy } from "@test/helpers";
-import type { Logger } from "@/logger";
+import type { AgentLogger } from "#src/infra/index";
+import { assertDefined, withDebugSpy, withTimerSpy, withWarnSpy } from "#test/helpers/index";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -84,7 +84,7 @@ function entryFor(plugin: string, event: LoopEvent, handler: LoopHandlerEntry["h
  * Every `native-loop-events` warn record the spy captured, in call order — one
  * entry per logger.warn call, so a length assertion counts records.
  */
-function loopEventWarnings(spy: Mock<Logger["warn"]>): Array<Record<string, unknown>> {
+function loopEventWarnings(spy: Mock<AgentLogger["warn"]>): Array<Record<string, unknown>> {
   return spy.mock.calls.filter((call) => call[0] === "native-loop-events").map((call) => call[2] ?? {});
 }
 

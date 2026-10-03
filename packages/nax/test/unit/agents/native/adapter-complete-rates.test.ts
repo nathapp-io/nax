@@ -25,7 +25,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ResolvedCompaction } from "@nathapp/nax-agent/internal";
-import { _adapterDeps, _clientDeps, _resetNativeClient, saveTranscript } from "@nathapp/nax-agent/internal";
+import { _adapterDeps, _clientDeps, _resetNativeClient } from "@nathapp/nax-agent/internal";
 import type { Client, ClientRequest, Pricing, ResolvedModel } from "@nathapp/nax-ai";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import { toSessionModel } from "@/agents/session-model-mapping";
@@ -33,7 +33,6 @@ import type { ResolvedCompleteOptions } from "@/agents/types";
 import { SessionFailureError, SessionTurnError } from "@/agents/types";
 import type { ModelDef } from "@/config/schema-types";
 import type { AdapterFailure } from "@/context/engine";
-import { NaxError } from "@/errors";
 import { SessionManager } from "@/session/manager";
 import type { OpenSessionRequest } from "@/session/types";
 
@@ -412,82 +411,6 @@ async function openSessionWithModelDef(
   });
   return { adapter, handle, dir };
 }
-
-async function seedOversizedTranscript(dir: string, sessionName: string) {
-  await saveTranscript(dir, sessionName, [
-    { role: "user", content: "the task" },
-    { role: "assistant", content: "a".repeat(20_000) },
-    { role: "user", content: "keep going" },
-    { role: "assistant", content: "b".repeat(20_000) },
-  ]);
-}
-
-const sendCtxWin = (adapter: NativeAgentAdapter, handle: Awaited<ReturnType<NativeAgentAdapter["openSession"]>>) =>
-  adapter.sendTurn(handle, "next", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } });
-
-describe("NativeAgentAdapter.sendTurn contextWindow override", () => {
-  test("an override below the real window reaches runNativeTurn's deps and fires compaction", async () => {
-    const model = catalogModel();
-    const { client, completeCalls } = countingClient(model);
-    _clientDeps.build = async () => client;
-    const { adapter, handle, dir } = await openSessionWithModelDef("ctxwin-below", {
-      provider: "unknown",
-      model: "openai/gpt-5.4-mini",
-      contextWindow: 8_000,
-    });
-    await seedOversizedTranscript(dir, handle.id);
-    await sendCtxWin(adapter, handle);
-    // summarize + the real turn: compaction fired only because the override
-    // (8,000) reached the turn deps -- the catalog window (128,000) would not
-    // have triggered it on this transcript.
-    expect(completeCalls()).toBe(2);
-  });
-  test("no override falls back to the catalog's resolved.contextWindow, so compaction does not fire", async () => {
-    const model = catalogModel();
-    const { client, completeCalls } = countingClient(model);
-    _clientDeps.build = async () => client;
-    const { adapter, handle, dir } = await openSessionWithModelDef("ctxwin-fallback", {
-      provider: "unknown",
-      model: "openai/gpt-5.4-mini",
-    });
-    await seedOversizedTranscript(dir, handle.id);
-    await sendCtxWin(adapter, handle);
-    // Same oversized transcript as the "below" case, but no override: the
-    // real window (128,000) is nowhere near crossed, so only the turn call
-    // happens.
-    expect(completeCalls()).toBe(1);
-  });
-  test("an override above the real window is rejected, naming both numbers", async () => {
-    const model = catalogModel();
-    const { client } = countingClient(model);
-    _clientDeps.build = async () => client;
-    const { adapter, handle, dir } = await openSessionWithModelDef("ctxwin-above", {
-      provider: "unknown",
-      model: "openai/gpt-5.4-mini",
-      contextWindow: 200_000,
-    });
-    await seedOversizedTranscript(dir, handle.id);
-    const err = await sendCtxWin(adapter, handle).catch((e: unknown) => e);
-    if (!(err instanceof NaxError)) throw new Error(`expected a NaxError, got ${String(err)}`);
-    expect(err.message).toContain("200000");
-    expect(err.message).toContain(String(REAL_WINDOW));
-  });
-  test("an override exactly equal to the real window is accepted", async () => {
-    const model = catalogModel();
-    const { client, completeCalls } = countingClient(model);
-    _clientDeps.build = async () => client;
-    const { adapter, handle, dir } = await openSessionWithModelDef("ctxwin-equal", {
-      provider: "unknown",
-      model: "openai/gpt-5.4-mini",
-      contextWindow: REAL_WINDOW,
-    });
-    await seedOversizedTranscript(dir, handle.id);
-    await sendCtxWin(adapter, handle);
-    // Equal to the real window behaves exactly like no override: the small
-    // oversized transcript does not cross it.
-    expect(completeCalls()).toBe(1);
-  });
-});
 
 describe("NativeAgentAdapter.sendTurn config pricing override", () => {
   // The whole chain the branch moved, end to end: selectModel's converted

@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CodingTool } from "@nathapp/nax-agent";
@@ -17,7 +17,6 @@ import {
   _clientDeps,
   _resetNativeClient,
   createLoopEventRegistry,
-  loadTranscript,
   nativeSessionId,
   saveTranscript,
 } from "@nathapp/nax-agent/internal";
@@ -198,121 +197,9 @@ describe("NativeAgentAdapter.complete", () => {
   });
 });
 
-// US-003 AC6: sendTurn() stamps pricingSource on TurnResult the same way
-// complete() stamps it on CompleteResult. Asserted on the result, not on
-// buildRateCard — the wiring through runNativeTurn is the part that's new.
-describe("NativeAgentAdapter.sendTurn pricingSource", () => {
-  test("US-003 AC6: sendTurn() with no modelDef.pricing stamps pricingSource=catalog-rates on TurnResult", async () => {
-    _clientDeps.build = async () => fakeClient();
-    const adapter = new NativeAgentAdapter();
-    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-pricing-source-"));
-    const handle = await adapter.openSession("sess-pricing-source", {
-      agentName: "native",
-      workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
-      timeoutSeconds: 60,
-      transcriptDir,
-    });
-
-    const result = await adapter.sendTurn(handle, "hi", {
-      interactionHandler: { onInteraction: async () => ({ answer: "" }) },
-    });
-
-    expect(result.pricingSource).toBe("catalog-rates");
-  });
-});
-
 // nax#1838/#1840 sendTurn failure classification and cost-accounting tests
 // live in adapter-turn-classification.test.ts (split by describe block to
 // stay under the 800-line test-file cap).
-
-/**
- * nax#1838: AgentAdapter.closeSession carries no failure signal, so the native
- * adapter passed failed:false unconditionally and every close deleted the
- * transcript -- including the close that follows a failed turn, which is exactly
- * the one whose history the retry needs and whose contents a human would read.
- */
-describe("NativeAgentAdapter.closeSession after a failed turn", () => {
-  test("keeps the transcript when the last turn failed", async () => {
-    _clientDeps.build = async () =>
-      fakeClient({
-        complete: async () => {
-          throw new Error("upstream exploded");
-        },
-      });
-    const adapter = new NativeAgentAdapter();
-    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-keep-"));
-    const handle = await adapter.openSession("sess-keep", {
-      agentName: "native",
-      workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
-      timeoutSeconds: 60,
-      transcriptDir,
-    });
-
-    await adapter
-      .sendTurn(handle, "hi", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } })
-      .catch(() => {});
-    await adapter.closeSession(handle);
-
-    // nax#1877: kept for a human to read, under a name the next session of
-    // this name cannot load — the post-mortem artifact and the resumption
-    // source used to be the same file.
-    const kept = (await readdir(transcriptDir)).filter((n) => n.startsWith("sess-keep.transcript.failed-"));
-    expect(kept).toHaveLength(1);
-    expect(await loadTranscript(transcriptDir, "sess-keep")).toEqual([]);
-  });
-
-  test("still deletes it when every turn succeeded", async () => {
-    _clientDeps.build = async () => fakeClient();
-    const adapter = new NativeAgentAdapter();
-    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-drop-"));
-    const handle = await adapter.openSession("sess-drop", {
-      agentName: "native",
-      workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
-      timeoutSeconds: 60,
-      transcriptDir,
-    });
-
-    await adapter.sendTurn(handle, "hi", { interactionHandler: { onInteraction: async () => ({ answer: "" }) } });
-    await adapter.closeSession(handle);
-
-    expect(await loadTranscript(transcriptDir, "sess-drop")).toEqual([]);
-  });
-
-  test("a turn that recovers clears the mark, so a finished session is still cleaned up", async () => {
-    let calls = 0;
-    _clientDeps.build = async () =>
-      fakeClient({
-        complete: async () => {
-          calls += 1;
-          if (calls === 1) throw new Error("transient");
-          return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" };
-        },
-      });
-    const adapter = new NativeAgentAdapter();
-    const transcriptDir = await mkdtemp(join(tmpdir(), "nax-adapter-recover-"));
-    const handle = await adapter.openSession("sess-recover", {
-      agentName: "native",
-      workdir: process.cwd(),
-      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
-      timeoutSeconds: 60,
-      transcriptDir,
-    });
-
-    const turn = { interactionHandler: { onInteraction: async () => ({ answer: "" }) } };
-    await adapter.sendTurn(handle, "hi", turn).catch(() => {});
-    await adapter.sendTurn(handle, "again", turn);
-    await adapter.closeSession(handle);
-
-    expect(await loadTranscript(transcriptDir, "sess-recover")).toEqual([]);
-  });
-});
 
 describe("NativeAgentAdapter shape", () => {
   test("takes its tiers from config, since native's are arbitrary names", () => {

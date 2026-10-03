@@ -1,20 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import type { BeforeTurnEndPayload, TransformContextPatch, TransformContextPayload } from "@nathapp/nax-agent/internal";
 import { createLoopEventRegistry } from "@nathapp/nax-agent/internal";
-import { addSink, initLogger, resetLogger } from "@/logger";
-import type { LogEntry } from "@/logger/types";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import { type LogCall, makeLogger } from "#test/helpers/index";
 
-async function captureWarnings(run: () => Promise<unknown>): Promise<LogEntry[]> {
-  const logCalls: LogEntry[] = [];
-  resetLogger();
-  initLogger({ level: "info", suppressConsole: true });
-  addSink((entry) => logCalls.push(entry));
+const originalLogger = getSafeLogger();
+
+async function captureWarnings(run: () => Promise<unknown>): Promise<LogCall[]> {
+  const logger = makeLogger();
+  setAgentLogger(logger);
   try {
     await run();
   } finally {
-    resetLogger();
+    setAgentLogger(originalLogger);
   }
-  return logCalls.filter((e) => e.level === "warn");
+  return logger.calls.filter((e) => e.level === "warn");
 }
 
 function turnEnd(messages: BeforeTurnEndPayload["messages"]): BeforeTurnEndPayload {

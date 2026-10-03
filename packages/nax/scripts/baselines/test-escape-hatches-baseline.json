@@ -1,10 +1,10 @@
 {
   "counts": {
     "tsSuppress": 0,
-    "ratchetAllow": 30,
-    "looseCast": 1461
+    "ratchetAllow": 26,
+    "looseCast": 1460
   },
-  "updatedAt": "2026-10-02T07:19:52.695Z",
+  "updatedAt": "2026-10-03T02:39:25.551Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -709,16 +709,10 @@
     "test/unit/agents/acp/adapter-phase-a.test.ts": {
       "looseCast": 6
     },
-    "test/unit/agents/cost/calculate.test.ts": {
-      "ratchetAllow": 4
-    },
     "test/unit/agents/retry/parse-retry.test.ts": {
       "looseCast": 2
     },
     "test/unit/agents/retry/hop-retry-policy.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/agents/native/session/loop-events/transform-context.test.ts": {
       "looseCast": 1
     },
     "test/unit/worktree/manager.test.ts": {
