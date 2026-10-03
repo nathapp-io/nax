@@ -183,7 +183,7 @@ expect(await readApprovalsFileDetailed(missing)).toEqual({
 
 **Interfaces:** Produces `digest64(text: string): string`, SHA-256's first 16 hexadecimal characters. Retains `createSpinBreaker(settings: ResolvedSpinBreakerSettings, deps?: { readonly now?: () => number }): SpinBreaker` and private `summariseOverrides` shape `{ providers: string[]; headerKeys: string[]; digest: string }` (12 hexadecimal characters).
 
-- [ ] **Step 1: Add digest and behaviour assertions.** Golden vectors:
+- [x] **Step 1: Add digest and behaviour assertions.** Golden vectors:
 
 ```ts
 expect(digest64("")).toBe("e3b0c44298fc1c14");
@@ -207,13 +207,13 @@ expect(breaker.summary().newKeyEvents).toBe(3);
 
 Strengthen native/client.test.ts's existing “a header VALUE change still trips the guard” test, using its existing `overrideWithHeaders` fixtures, with `expect(builtFor.digest).toBe("c2995e7e854d")` and `expect(requested.digest).toBe("b15f20421d0d")`. Planning verified both values against Bun.CryptoHasher and Node createHash on the canonicalized fixture. Preserve secret-redaction assertions and header-key-order equivalence.
 
-- [ ] **Step 2: Run `rtk proxy bun test ./test/unit/infra/spin-breaker-hash.test.ts ./test/unit/native/client.test.ts --timeout=60000` in agent.** Expected: missing digest64 import fails; native compatibility golden assertions already pass before the swap.
+- [x] **Step 2: Run `rtk proxy bun test ./test/unit/infra/spin-breaker-hash.test.ts ./test/unit/native/client.test.ts --timeout=60000` in agent.** Expected: missing digest64 import fails; native compatibility golden assertions already pass before the swap.
 
-- [ ] **Step 3: Implement digest64 and switch its two spin-breaker callers.** Keep result normalization, stableStringify, MAX_KEY_BYTES=512 and key separator unchanged. In native/client.ts replace the hasher with `createHash("sha256").update(canonicalOverrideKey(overrides)).digest("hex").slice(0, DIGEST_LENGTH)`; DIGEST_LENGTH remains 12. These two hash widths have different purposes; do not use digest64 for the native summary.
+- [x] **Step 3: Implement digest64 and switch its two spin-breaker callers.** Keep result normalization, stableStringify, MAX_KEY_BYTES=512 and key separator unchanged. In native/client.ts replace the hasher with `createHash("sha256").update(canonicalOverrideKey(overrides)).digest("hex").slice(0, DIGEST_LENGTH)`; DIGEST_LENGTH remains 12. These two hash widths have different purposes; do not use digest64 for the native summary.
 
-- [ ] **Step 4: Repeat Step 2 plus `rtk proxy bun test ./test/unit/native/session/session-lifetime-spin.test.ts --timeout=60000`.** Expected: native digest goldens unchanged; repeat detection and stop/nudge semantics preserved.
+- [x] **Step 4: Repeat Step 2 plus `rtk proxy bun test ./test/unit/native/session/session-lifetime-spin.test.ts --timeout=60000`.** Expected: native digest goldens unchanged; repeat detection and stop/nudge semantics preserved.
 
-- [ ] **Step 5: Commit Task 4 files.** Message: `refactor: replace agent Bun hashing with Node crypto`.
+- [x] **Step 5: Commit Task 4 files.** Message: `refactor: replace agent Bun hashing with Node crypto`.
 
 ### Task 5: Enforce zero Bun APIs in production source
 

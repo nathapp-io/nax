@@ -9,6 +9,7 @@
  * nax-ai (packages/repo-tooling/scripts/check-nax-ai-imports.ts).
  */
 
+import { createHash } from "node:crypto";
 import { type Client, createClient, defaultProtocols, defaultProviders } from "@nathapp/nax-ai";
 import type { ProviderCatalogOverride } from "#src/config/catalog-overrides";
 import { NaxError } from "#src/infra/index";
@@ -169,10 +170,7 @@ function summariseOverrides(overrides: readonly ProviderCatalogOverride[]): {
   return {
     providers: overrides.map((o) => o.provider).sort(),
     headerKeys: [...new Set(overrides.flatMap((o) => Object.keys(o.headers ?? {})))].sort(),
-    digest: new Bun.CryptoHasher("sha256")
-      .update(canonicalOverrideKey(overrides))
-      .digest("hex")
-      .slice(0, DIGEST_LENGTH),
+    digest: createHash("sha256").update(canonicalOverrideKey(overrides)).digest("hex").slice(0, DIGEST_LENGTH),
   };
 }
 

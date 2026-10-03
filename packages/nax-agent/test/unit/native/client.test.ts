@@ -381,6 +381,8 @@ describe("catalog overrides", () => {
     expect(requested.headerKeys).toEqual(["authorization"]);
     expect(builtFor.digest).toMatch(/^[0-9a-f]{12}$/);
     expect(builtFor.digest).not.toBe(requested.digest);
+    expect(builtFor.digest).toBe("c2995e7e854d");
+    expect(requested.digest).toBe("b15f20421d0d");
   });
 
   test("a failed build is not memoised, so a later different set can build", async () => {

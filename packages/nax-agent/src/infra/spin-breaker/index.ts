@@ -20,6 +20,7 @@
 import { getSafeLogger } from "#src/infra/index";
 import { byCodePoint } from "#src/internal/sort";
 import { stripControlChars } from "#src/internal/strip-control-chars";
+import { digest64 } from "./hash";
 
 export interface ResolvedSpinBreakerSettings {
   readonly enabled: boolean;
@@ -151,7 +152,7 @@ const DURATION_OR_TIMESTAMP =
 
 function resultDigest(text: string): string {
   const normalised = stripControlChars(text).replace(DURATION_OR_TIMESTAMP, "").replace(/\s+/g, " ").trim();
-  return String(Bun.hash(normalised));
+  return digest64(normalised);
 }
 
 /**
@@ -163,7 +164,7 @@ const KEY_SEPARATOR = " ";
 
 function callKey(toolName: string, input: unknown): string {
   const body = stableStringify(input);
-  const clipped = body.length > MAX_KEY_BYTES ? String(Bun.hash(body)) : body;
+  const clipped = body.length > MAX_KEY_BYTES ? digest64(body) : body;
   return `${toolName}${KEY_SEPARATOR}${clipped}`;
 }
 
