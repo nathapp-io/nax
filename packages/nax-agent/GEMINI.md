@@ -43,13 +43,14 @@ at runtime and nothing to publish.
 | Language | **TypeScript strict** — no `any` without explicit justification |
 | Test | **`bun:test`** — describe/test/expect |
 | Lint/Format | **Biome** (`bun run lint:biome`), plus nax's own gate scripts |
-| Build | none — nax's bundle is the build |
+| Build | `bun run build` — `tsc -p tsconfig.build.json` (nodenext) to `dist/`, for the npm package; nax still bundles the source |
 
 ## Commands
 
 | Command | Purpose |
 |:--------|:--------|
 | `bun run typecheck` | `tsc --noEmit` over `src/` and `test/` |
+| `bun run build` | `tsc -p tsconfig.build.json`: Node ESM `dist/`; fails on an extensionless relative import |
 | `bun run check:all` | Biome plus every repo gate (`lint`) |
 | `bun run lint:fix` | Biome lint fix |
 | `bun test ./test/unit/foo.test.ts --timeout=60000` | Targeted test during iteration with timeout |
@@ -117,6 +118,9 @@ nax wiring tests that use them.
 - **Import with `#src/`, never `@/`.** The package's own `imports` map defines `#src/*` and
   `#test/*`; `@/` is nax's tsconfig alias and does not resolve here. Relative imports that
   leave the package are rejected by the same gate.
+- **Relative imports in `src/` name the file: `./x.ts`, `./dir/index.ts`.** The published build
+  (`bun run build`, tsc nodenext) rewrites them to `.js` and rejects an extensionless one
+  (TS2835/TS2834). `#src/…` specifiers stay extensionless. Tests are not built and keep either form.
 - **The dependency direction is `nax-ai` → `nax-agent` → `nax`.** A package never imports
   one to its right. nax-agent depends on `@nathapp/nax-ai`, never the reverse.
 - **`@nathapp/nax-ai` is importable from two sites only:** `src/native/` and the re-export
