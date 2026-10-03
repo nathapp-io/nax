@@ -13,6 +13,7 @@
     "#test/*": "./test/*.ts"
   },
   "scripts": {
+    "release": "bun scripts/release.ts",
     "typecheck": "bun x tsc --noEmit",
     "build": "bun x tsc -p tsconfig.build.json",
     "stage-publish": "bun scripts/stage-publish.ts",
