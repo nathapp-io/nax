@@ -1,7 +1,7 @@
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
 import { toToolDefinitions } from "@nathapp/nax-agent/internal";
-import type { ToolDescriptor } from "@/context/engine";
+import type { ToolDescriptor } from "#src/session/tool-descriptor";
 
 const descriptor: ToolDescriptor = {
   name: "query_neighbor",
