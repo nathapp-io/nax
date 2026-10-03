@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import * as pub from "@nathapp/nax-agent";
 import * as internal from "@nathapp/nax-agent/internal";
 import { _commandShadowDeps, _systemOneClientDeps } from "#src/command-safety/index";
 import { byCodePoint } from "#src/internal/sort";
@@ -38,5 +39,23 @@ describe("/internal", () => {
     // A copy would make a test that patches the seam patch nothing.
     expect(internal._commandShadowDeps).toBe(_commandShadowDeps);
     expect(internal._systemOneClientDeps).toBe(_systemOneClientDeps);
+  });
+});
+
+describe(".", () => {
+  test("exports no `_` name: the seams and reset hooks are /internal's", () => {
+    expect(
+      Object.keys(pub)
+        .filter((key) => key.startsWith("_"))
+        .sort(byCodePoint),
+    ).toEqual([]);
+  });
+
+  test("keeps the runtime slot, the logger slot and the credentials slot", () => {
+    expect(pub.setAgentRuntime).toBeFunction();
+    expect(pub.getAgentRuntime).toBeFunction();
+    expect(pub.setAgentLogger).toBeFunction();
+    expect(pub.configureCredentials).toBeFunction();
+    expect(pub.nodeRuntime.spawn).toBeFunction();
   });
 });
