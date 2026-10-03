@@ -12,9 +12,9 @@
  */
 
 import type { PricingRates, TokenUsage } from "#src/cost/standard-types";
-import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance";
-import type { NativeTurnActivity } from "./turn-events";
-import { cacheUsageFields } from "./turn-types";
+import { addRateTotals, aggregateRates, createRateTotals } from "./rate-provenance.ts";
+import type { NativeTurnActivity } from "./turn-events.ts";
+import { cacheUsageFields } from "./turn-types.ts";
 
 /**
  * Token counts ONLY. `costUsd` is deliberately NOT a field here: both readers

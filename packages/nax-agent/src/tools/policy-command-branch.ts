@@ -11,10 +11,10 @@
  */
 
 import type { BashApprovalMode } from "#src/config/bash-approval";
-import { checkBashCommand } from "./policy-bash";
-import { screenRawBashCommand } from "./policy-bash-raw";
-import type { CompiledEntry } from "./policy-match";
-import type { PolicyVerdict, ToolScope } from "./types";
+import { checkBashCommand } from "./policy-bash.ts";
+import { screenRawBashCommand } from "./policy-bash-raw.ts";
+import type { CompiledEntry } from "./policy-match.ts";
+import type { PolicyVerdict, ToolScope } from "./types.ts";
 
 export interface BashCommandBranchArgs {
   readonly tool: string;

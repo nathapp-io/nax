@@ -15,7 +15,7 @@
  * it never enters over a possible holder (fail closed).
  */
 
-import { withFileLock } from "./file-lock";
+import { withFileLock } from "./file-lock.ts";
 
 export interface PathFileLockOptions {
   /** Milliseconds between acquisition retries. Default 10. */

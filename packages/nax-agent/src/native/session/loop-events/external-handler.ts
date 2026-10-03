@@ -18,8 +18,8 @@
 
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
-import { isCompleteBeforeToolOutcome } from "./registry";
-import type { HandlerOf, LoopEvent, LoopHandlerContext, LoopHandlerEntry, PatchOf, PayloadOf } from "./types";
+import { isCompleteBeforeToolOutcome } from "./registry.ts";
+import type { HandlerOf, LoopEvent, LoopHandlerContext, LoopHandlerEntry, PatchOf, PayloadOf } from "./types.ts";
 
 /**
  * How long a plugin handler may run before the wrapper answers for it. A

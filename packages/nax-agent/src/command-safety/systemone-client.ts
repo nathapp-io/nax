@@ -6,8 +6,8 @@
  * that decides nothing) and never truncates (an oversize command is recorded
  * as `oversize`). The timeout is a config value, applied as an AbortSignal.
  */
-import { buildRequest } from "./questions";
-import { HARM_OPTIONS, type HarmOption, type ModelResult, QUESTION_IDS, type QuestionId } from "./types";
+import { buildRequest } from "./questions.ts";
+import { HARM_OPTIONS, type HarmOption, type ModelResult, QUESTION_IDS, type QuestionId } from "./types.ts";
 
 export type Classify = (command: string) => Promise<ModelResult>;
 

@@ -6,10 +6,10 @@
  * explicit `provider` field rather than expecting a consumer to string-split.
  */
 import { NaxError } from "#src/infra/index";
-import type { ProviderTool } from "./provider-types";
-import { validateProviderId } from "./provider-types";
-import type { CodingTool } from "./registry";
-import { RESERVED_TOOL_NAMES } from "./registry";
+import type { ProviderTool } from "./provider-types.ts";
+import { validateProviderId } from "./provider-types.ts";
+import type { CodingTool } from "./registry.ts";
+import { RESERVED_TOOL_NAMES } from "./registry.ts";
 
 export function namespacedToolName(providerId: string, localName: string): string {
   validateProviderId(providerId);

@@ -20,7 +20,7 @@
 import { getSafeLogger } from "#src/infra/index";
 import { byCodePoint } from "#src/internal/sort";
 import { stripControlChars } from "#src/internal/strip-control-chars";
-import { digest64 } from "./hash";
+import { digest64 } from "./hash.ts";
 
 export interface ResolvedSpinBreakerSettings {
   readonly enabled: boolean;

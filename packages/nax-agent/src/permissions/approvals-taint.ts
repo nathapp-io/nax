@@ -43,7 +43,7 @@
  */
 import { getSafeLogger } from "#src/infra/index";
 import { withPathFileLock } from "#src/internal/path-file-lock";
-import { type ApprovalsTaint, readApprovalsFile, writeApprovalsFile } from "./approvals-store";
+import { type ApprovalsTaint, readApprovalsFile, writeApprovalsFile } from "./approvals-store.ts";
 
 /** `kill(pid, 0)` failing with EPERM means the process exists but is not ours. */
 const ERRNO_NO_PERMISSION = "EPERM";

@@ -11,7 +11,7 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { join } from "node:path";
 import type { ConversationMessage } from "@nathapp/nax-ai";
 import { getLogger, NaxError } from "#src/infra/index";
-import { parseModelSpec } from "../models";
+import { parseModelSpec } from "../models.ts";
 
 export function transcriptPath(dir: string, sessionName: string): string {
   return join(dir, `${sessionName}.transcript.json`);

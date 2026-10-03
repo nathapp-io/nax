@@ -10,12 +10,12 @@
  * shares the classifier cache and the rule baseline (US-003). The guard
  * never re-classifies and never rejects.
  */
-import { createCommandGuard } from "./guard";
-import { callIdentifiers } from "./identifiers";
-import { QUESTION_SET_VERSION } from "./questions";
-import { scoreRules } from "./rule-scorer";
-import type { Classify } from "./systemone-client";
-import { detectTmpWrite } from "./tmp-write";
+import { createCommandGuard } from "./guard.ts";
+import { callIdentifiers } from "./identifiers.ts";
+import { QUESTION_SET_VERSION } from "./questions.ts";
+import { scoreRules } from "./rule-scorer.ts";
+import type { Classify } from "./systemone-client.ts";
+import { detectTmpWrite } from "./tmp-write.ts";
 import type {
   CommandSafetyRow,
   CommandShadow,
@@ -25,7 +25,7 @@ import type {
   ModelResult,
   Observation,
   RuleResult,
-} from "./types";
+} from "./types.ts";
 
 export interface CommandShadowOptions {
   readonly classify: Classify;

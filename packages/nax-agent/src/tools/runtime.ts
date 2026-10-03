@@ -14,30 +14,30 @@ import type { CommandInterceptor } from "#src/command-interceptor/index";
 import type { CommandShadow } from "#src/command-safety/index";
 import { getSafeLogger } from "#src/infra/index";
 import { type AskResolver, headlessAskResolver } from "#src/permissions/index";
-import type { SandboxRecord } from "../sandbox";
-import { deleteTool } from "./delete";
-import { editTool } from "./edit";
-import { gitTool } from "./git";
-import { gitCommitTool } from "./git-commit";
-import { globTool } from "./glob";
-import { grepTool } from "./grep";
-import type { ProtectedPathsPolicy } from "./protected-paths";
-import { readTool } from "./read";
-import { type CodingTool, getCodingTool, registerBuiltinTool, type ToolRunContext } from "./registry";
-import { requestCapabilityTool } from "./request-capability";
+import type { SandboxRecord } from "../sandbox/index.ts";
+import { deleteTool } from "./delete.ts";
+import { editTool } from "./edit.ts";
+import { gitTool } from "./git.ts";
+import { gitCommitTool } from "./git-commit.ts";
+import { globTool } from "./glob.ts";
+import { grepTool } from "./grep.ts";
+import type { ProtectedPathsPolicy } from "./protected-paths.ts";
+import { readTool } from "./read.ts";
+import { type CodingTool, getCodingTool, registerBuiltinTool, type ToolRunContext } from "./registry.ts";
+import { requestCapabilityTool } from "./request-capability.ts";
 import {
   openCallShadowTap,
   resolveAskOutcome,
   resolveDenialOutcome,
   resolveGuardDenial,
   resolvePolicyIdentity,
-} from "./runtime-calltool";
-import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad";
-import { applyModelTruncationPolicy } from "./spill";
-import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit";
-import { READ_CEILING } from "./truncate";
-import type { ToolPolicy } from "./types";
-import { writeTool } from "./write";
+} from "./runtime-calltool.ts";
+import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad.ts";
+import { applyModelTruncationPolicy } from "./spill.ts";
+import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit.ts";
+import { READ_CEILING } from "./truncate.ts";
+import type { ToolPolicy } from "./types.ts";
+import { writeTool } from "./write.ts";
 
 /** Per-call output ceiling, mirroring ToolDescriptor.maxTokensPerCall in spirit. */
 export const DEFAULT_TOOL_MAX_BYTES = 40_000;

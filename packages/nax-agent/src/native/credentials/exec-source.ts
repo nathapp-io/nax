@@ -26,11 +26,11 @@
 
 import type { CredentialStore, ProviderId, StoredCredential } from "@nathapp/nax-ai";
 import { getSafeLogger, NaxError } from "#src/infra/index";
-import type { HelperProcessResult } from "./helper-process";
-import { runHelper } from "./helper-process";
-import { parseReply } from "./helper-protocol";
+import type { HelperProcessResult } from "./helper-process.ts";
+import { runHelper } from "./helper-process.ts";
+import { parseReply } from "./helper-protocol.ts";
 
-export { AUTH_HELPER_STDERR_MAX_BYTES, AUTH_HELPER_STDOUT_MAX_BYTES } from "./helper-process";
+export { AUTH_HELPER_STDERR_MAX_BYTES, AUTH_HELPER_STDOUT_MAX_BYTES } from "./helper-process.ts";
 
 /**
  * A lease closer to expiry than this is accepted but never fresh: the next read

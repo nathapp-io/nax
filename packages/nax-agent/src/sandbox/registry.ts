@@ -5,10 +5,10 @@
  */
 
 import { getSafeLogger } from "#src/infra/index";
-import type { SandboxConfig } from "../config/schemas-sandbox";
-import { probeSandbox } from "./probe";
-import { createSrtBackend } from "./srt-backend";
-import type { ProbeResult, SandboxBackend } from "./types";
+import type { SandboxConfig } from "../config/schemas-sandbox.ts";
+import { probeSandbox } from "./probe.ts";
+import { createSrtBackend } from "./srt-backend.ts";
+import type { ProbeResult, SandboxBackend } from "./types.ts";
 
 export const _sandboxRegistryDeps = {
   createBackend: (network: SandboxConfig["network"]): SandboxBackend => createSrtBackend(network),

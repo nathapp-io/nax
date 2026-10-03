@@ -1,4 +1,4 @@
-import { NaxError } from "./nax-error";
+import { NaxError } from "./nax-error.ts";
 
 /** Auth settings used by the native credential store. */
 export interface CredentialAuthConfig {

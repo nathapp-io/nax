@@ -9,7 +9,7 @@
 import { open } from "node:fs/promises";
 import { NaxError } from "#src/infra/index";
 import { fileSizeOrZero } from "#src/internal/file-size";
-import { cutBufferToByteCap, READ_CEILING } from "./truncate";
+import { cutBufferToByteCap, READ_CEILING } from "./truncate.ts";
 
 export interface ReadFileSliceOptions {
   /** Tool-layer I/O bound. Omit to default to `READ_CEILING`. */

@@ -20,14 +20,14 @@
 import type { ToolCall, ToolDefinition } from "@nathapp/nax-ai";
 import type { SpinBreaker } from "#src/infra/spin-breaker/index";
 import type { InteractionExchange, SendTurnOpts } from "#src/session/session-types";
-import { ASK_HUMAN_TOOL_NAME } from "./ask-human";
-import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction";
-import { type InvalidCallBudget, rewriteToolCallInput } from "./handle-invalid-tool-call";
-import type { LoopEventRegistry } from "./loop-events";
-import { withNudge } from "./nudge";
-import { buildToolResult } from "./tool-result";
-import { handleAskHumanCall } from "./turn-ask-human";
-import type { TurnDeps } from "./turn-types";
+import { ASK_HUMAN_TOOL_NAME } from "./ask-human.ts";
+import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction.ts";
+import { type InvalidCallBudget, rewriteToolCallInput } from "./handle-invalid-tool-call.ts";
+import type { LoopEventRegistry } from "./loop-events/index.ts";
+import { withNudge } from "./nudge.ts";
+import { buildToolResult } from "./tool-result.ts";
+import { handleAskHumanCall } from "./turn-ask-human.ts";
+import type { TurnDeps } from "./turn-types.ts";
 
 export interface ToolBatchResult {
   readonly messages: readonly NativeTranscriptMessage[];

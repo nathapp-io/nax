@@ -20,7 +20,7 @@
  * — no LLM, no config, no new tool arguments.
  */
 
-import { splitModelLines } from "./truncate";
+import { splitModelLines } from "./truncate.ts";
 
 /** Context lines shown on each side of the replacement. */
 const CONTEXT_LINES = 3;

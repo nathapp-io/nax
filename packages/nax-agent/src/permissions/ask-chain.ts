@@ -10,7 +10,7 @@
  * exhausted or all-abstaining chain denies whether or not the last link is
  * total. A link that throws is treated as no answer, never as permission.
  */
-import type { AskRequest } from "./types";
+import type { AskRequest } from "./types.ts";
 
 /** A link's answer. `abstain` means "no opinion, try the next link". */
 export type AskDecision = "allow" | "deny" | "abstain";

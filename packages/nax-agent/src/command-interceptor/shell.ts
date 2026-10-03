@@ -13,7 +13,7 @@
  */
 import type { BashSegment, BashToken } from "#src/permissions/index";
 import { lexBashCommand } from "#src/permissions/index";
-import type { CommandInterceptor } from "./index";
+import type { CommandInterceptor } from "./index.ts";
 
 export interface ShellInterceptRequest {
   readonly kind: "shell";

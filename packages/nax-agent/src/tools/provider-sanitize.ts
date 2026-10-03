@@ -13,7 +13,7 @@
  * malformed or oversized SCHEMA is different — it cannot be safely truncated,
  * so that one tool is skipped and its siblings survive.
  */
-import type { ProviderKind, ProviderTool } from "./provider-types";
+import type { ProviderKind, ProviderTool } from "./provider-types.ts";
 
 export const MAX_PROVIDER_DESCRIPTION_BYTES = 2_000;
 export const MAX_PROVIDER_SCHEMA_BYTES = 20_000;

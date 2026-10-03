@@ -5,8 +5,8 @@
  * nothing from src/tools. Only the `Bash` and `Exec` identities are observed;
  * a RunCommand verb call runs a user-declared command and never is (D14).
  */
-import { type CallIdentifiers, callIdentifiers } from "./identifiers";
-import type { CommandShadow, ExecRun, LedgerOutcome, MechanicalVerdict, Observation } from "./types";
+import { type CallIdentifiers, callIdentifiers } from "./identifiers.ts";
+import type { CommandShadow, ExecRun, LedgerOutcome, MechanicalVerdict, Observation } from "./types.ts";
 
 export interface ShadowTap {
   /**

@@ -13,9 +13,9 @@
 import type { CommandInterceptor } from "#src/command-interceptor/index";
 import { NaxError } from "#src/infra/index";
 import type { JSONSchema } from "#src/session/tool-descriptor";
-import type { SandboxRecord } from "../sandbox";
-import type { ProtectedPathsPolicy } from "./protected-paths";
-import type { CodingToolName, ToolScope } from "./types";
+import type { SandboxRecord } from "../sandbox/index.ts";
+import type { ProtectedPathsPolicy } from "./protected-paths.ts";
+import type { CodingToolName, ToolScope } from "./types.ts";
 
 export interface ToolResult {
   readonly content: string;

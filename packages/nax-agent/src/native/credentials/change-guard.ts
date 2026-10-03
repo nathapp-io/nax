@@ -15,7 +15,7 @@ import type { CredentialStore, ProviderId, StoredCredential } from "@nathapp/nax
 import type { CredentialAuthConfig } from "#src/infra/index";
 import { getSafeLogger, NaxError } from "#src/infra/index";
 import type { AuthStamp } from "#src/session/session-types";
-import { fingerprintCredential } from "./fingerprint";
+import { fingerprintCredential } from "./fingerprint.ts";
 
 /**
  * Where a credential came from, as reported by `describe`. `AuthStamp` without

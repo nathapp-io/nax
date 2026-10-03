@@ -7,7 +7,7 @@
  * command strings out of both.
  */
 import { GIT_ESCAPE_FLAGS } from "#src/tools/git-flags/index";
-import type { ShellInterceptRequest, ShellInterceptResult } from "./shell";
+import type { ShellInterceptRequest, ShellInterceptResult } from "./shell.ts";
 
 /** Two members: the Git argv site and the Bash shell site (R10). */
 export type Site = "git" | "bash";
@@ -94,4 +94,4 @@ export async function interceptArgv(
   return { argv: outcome.argv, executed: outcome.argv, provider: outcome.provider, rewritten: true };
 }
 
-export * from "./shell";
+export * from "./shell.ts";

@@ -1,14 +1,19 @@
-export { quoteArgvForShell } from "./argv-quote";
-export { _gitGuardDeps, listGitGuardFiles, strayCommonDirTripwire } from "./git-guards";
-export { _launcherDeps, type CommandLauncherOptions, createCommandLauncher, DISABLED_SANDBOX_STATE } from "./launcher";
+export { quoteArgvForShell } from "./argv-quote.ts";
+export { _gitGuardDeps, listGitGuardFiles, strayCommonDirTripwire } from "./git-guards.ts";
+export {
+  _launcherDeps,
+  type CommandLauncherOptions,
+  createCommandLauncher,
+  DISABLED_SANDBOX_STATE,
+} from "./launcher.ts";
 export {
   denialHintLine,
   LIKELY_SANDBOX_DENIAL,
   rawBashRefusalReason,
   sandboxSentence,
   unsandboxedSentence,
-} from "./messages";
-export { buildSandboxPolicy, type SandboxPolicyInput } from "./policy-builder";
+} from "./messages.ts";
+export { buildSandboxPolicy, type SandboxPolicyInput } from "./policy-builder.ts";
 export {
   _policyInputDeps,
   defaultTempRoots,
@@ -17,8 +22,8 @@ export {
   listNaxEntries,
   resolveGitLayout,
   runTempRoots,
-} from "./policy-inputs";
-export { _probeDeps, probeSandbox } from "./probe";
+} from "./policy-inputs.ts";
+export { _probeDeps, probeSandbox } from "./probe.ts";
 export {
   _resetSandboxRegistryForTests,
   _sandboxRegistryDeps,
@@ -26,9 +31,9 @@ export {
   resetSandboxBackend,
   sandboxBackendFor,
   warnSandboxUnavailableOnce,
-} from "./registry";
-export { _sessionTmpDeps, runTmpRoot, sessionTmpDir, sessionTmpDirUnder } from "./session-tmp";
-export { _srtBackendDeps, createSrtBackend } from "./srt-backend";
+} from "./registry.ts";
+export { _sessionTmpDeps, runTmpRoot, sessionTmpDir, sessionTmpDirUnder } from "./session-tmp.ts";
+export { _srtBackendDeps, createSrtBackend } from "./srt-backend.ts";
 export type {
   CommandLauncher,
   LaunchRequest,
@@ -42,4 +47,4 @@ export type {
   SandboxRecord,
   SandboxState,
   SandboxWrapRequest,
-} from "./types";
+} from "./types.ts";

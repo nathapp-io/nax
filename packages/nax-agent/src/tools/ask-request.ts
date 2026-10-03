@@ -15,7 +15,7 @@ import {
   type AskVerdict,
   maskForPrompt,
 } from "#src/permissions/index";
-import type { ToolScope } from "./types";
+import type { ToolScope } from "./types.ts";
 
 /** Ceiling for the one-line call description an AskResolver receives. */
 export const MAX_ASK_SUMMARY_CHARS = 200;

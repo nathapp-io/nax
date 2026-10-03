@@ -68,15 +68,15 @@
  */
 
 import { resolve } from "node:path";
-import { normalizeFlagToken } from "./exec-guard";
-import type { ManagerEntry } from "./package-managers-table";
-import { MANAGER_TABLE } from "./package-managers-table";
-import type { NormalizeResult, NoScripts, WorkspaceContext } from "./package-managers-types";
-import { resolveWithin } from "./policy";
+import { normalizeFlagToken } from "./exec-guard.ts";
+import type { ManagerEntry } from "./package-managers-table.ts";
+import { MANAGER_TABLE } from "./package-managers-table.ts";
+import type { NormalizeResult, NoScripts, WorkspaceContext } from "./package-managers-types.ts";
+import { resolveWithin } from "./policy.ts";
 
-export type { ExecTarget, NormalizeResult } from "./package-managers-types";
+export type { ExecTarget, NormalizeResult } from "./package-managers-types.ts";
 
-import type { ExecTarget } from "./package-managers-types";
+import type { ExecTarget } from "./package-managers-types.ts";
 
 export interface NormalizeInput extends WorkspaceContext {
   readonly argv: readonly string[];

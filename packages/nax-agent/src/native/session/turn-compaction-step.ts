@@ -29,10 +29,10 @@ import {
   keepBudget,
   type TranscriptMessage as NativeTranscriptMessage,
   prepareCompaction,
-} from "./compaction";
-import type { LoopEventRegistry } from "./loop-events";
-import { type TurnAccumulator, usageBeat } from "./turn-accumulator";
-import type { NativeSummaryResponse, TurnDeps } from "./turn-types";
+} from "./compaction.ts";
+import type { LoopEventRegistry } from "./loop-events/index.ts";
+import { type TurnAccumulator, usageBeat } from "./turn-accumulator.ts";
+import type { NativeSummaryResponse, TurnDeps } from "./turn-types.ts";
 
 /**
  * The compaction dependencies, with the three the step cannot run without

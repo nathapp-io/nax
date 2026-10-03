@@ -1,4 +1,4 @@
-import { NATIVE_AGENT } from "./models";
+import { NATIVE_AGENT } from "./models.ts";
 
 /**
  * The two config fields this reads, declared here so the move set needs no nax

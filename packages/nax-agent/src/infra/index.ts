@@ -3,12 +3,12 @@
  * slots nax fills. Imports nothing from nax.
  */
 
-export { type AgentLogger, getLogger, getSafeLogger, setAgentLogger } from "./agent-logger";
+export { type AgentLogger, getLogger, getSafeLogger, setAgentLogger } from "./agent-logger.ts";
 export {
   _resetCredentialsConfig,
   type CredentialAuthConfig,
   type CredentialsConfig,
   configureCredentials,
   credentialsConfig,
-} from "./credentials-config";
-export { NaxError } from "./nax-error";
+} from "./credentials-config.ts";
+export { NaxError } from "./nax-error.ts";

@@ -33,9 +33,9 @@ import {
   type ToolGrant,
   type ToolPatternNarrowing,
 } from "#src/tools/index";
-import { resolveBashSupport } from "./coding-tool-bash";
-import { buildDeclaredCommandTools } from "./coding-tool-extras";
-import { isTempConfined, rawScreenOptionsFor } from "./coding-tool-sandbox";
+import { resolveBashSupport } from "./coding-tool-bash.ts";
+import { buildDeclaredCommandTools } from "./coding-tool-extras.ts";
+import { isTempConfined, rawScreenOptionsFor } from "./coding-tool-sandbox.ts";
 
 export interface CodingToolSupport {
   readonly runtime: CodingToolRuntime;
@@ -99,7 +99,7 @@ export function buildCodingToolSupport(args: {
   shell?: string;
   auditDir?: string;
   sessionName?: string;
-  header?: import("../tools/tool-audit").ToolAuditHeader;
+  header?: import("../tools/tool-audit.ts").ToolAuditHeader;
   callId?: string;
   scopeId?: string;
   /**

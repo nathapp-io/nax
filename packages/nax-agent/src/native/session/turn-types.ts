@@ -18,10 +18,15 @@ import type { ConversationMessage, ThinkingBlock, ToolCall } from "@nathapp/nax-
 import type { PricingRates, TokenUsage } from "#src/cost/standard-types";
 import type { SpinBreaker } from "#src/infra/spin-breaker/index";
 import type { TurnDeadline } from "#src/session/turn-deadline";
-import type { TranscriptMessage as NativeTranscriptMessage, ResolvedCompaction } from "./compaction";
-import type { CompleteCallOptions, LoopEventRegistry, LoopHandlerContext, LoopHandlerSet } from "./loop-events";
-import type { toToolDefinitions } from "./tool-mapping";
-import type { TurnRetryConfig } from "./turn-retry";
+import type { TranscriptMessage as NativeTranscriptMessage, ResolvedCompaction } from "./compaction.ts";
+import type {
+  CompleteCallOptions,
+  LoopEventRegistry,
+  LoopHandlerContext,
+  LoopHandlerSet,
+} from "./loop-events/index.ts";
+import type { toToolDefinitions } from "./tool-mapping.ts";
+import type { TurnRetryConfig } from "./turn-retry.ts";
 
 export interface NativeTurnResponse {
   readonly text: string;
@@ -76,7 +81,7 @@ export interface TurnDeps {
    * supplies one that forwards onto the runtime stream bus so the idle
    * watchdog can see native sessions.
    */
-  onActivity?: (activity: import("./turn-events").NativeTurnActivity) => void;
+  onActivity?: (activity: import("./turn-events.ts").NativeTurnActivity) => void;
   /**
    * Which rate card priced this turn (US-003, first half of #1817). Absent
    * on tests that build TurnDeps by hand and do not care about the source.

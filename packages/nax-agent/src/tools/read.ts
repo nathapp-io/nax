@@ -23,9 +23,9 @@
  */
 
 import { readPrefix } from "#src/internal/bounded-io";
-import { applyCapCut, limitStopFooter, shouldAppendLimitStopFooter } from "./read-continuation";
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
-import { MODEL_MAX_BYTES, MODEL_MAX_LINES, READ_CEILING, splitModelLines } from "./truncate";
+import { applyCapCut, limitStopFooter, shouldAppendLimitStopFooter } from "./read-continuation.ts";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
+import { MODEL_MAX_BYTES, MODEL_MAX_LINES, READ_CEILING, splitModelLines } from "./truncate.ts";
 
 /** Range arguments models invent instead of offset/limit -- rejected by name, never silently dropped. */
 const UNSUPPORTED_RANGE_ALIASES = ["start_line", "end_line", "start", "end", "line", "lineEnd", "size"] as const;

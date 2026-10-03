@@ -33,7 +33,7 @@
 import { posix } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { lexBashCommand } from "#src/permissions/index";
-import { QUESTION_IDS, type QuestionId, type RuleResult } from "./types";
+import { QUESTION_IDS, type QuestionId, type RuleResult } from "./types.ts";
 
 export const RULE_SET_VERSION = 3;
 

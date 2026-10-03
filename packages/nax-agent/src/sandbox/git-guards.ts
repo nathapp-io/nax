@@ -25,8 +25,8 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
 import { realOrRaw } from "#src/internal/realpath";
-import { SANDBOX_GLOB_CHARS } from "../config/schemas-sandbox";
-import type { GitLayout } from "./policy-inputs";
+import { SANDBOX_GLOB_CHARS } from "../config/schemas-sandbox.ts";
+import type { GitLayout } from "./policy-inputs.ts";
 
 const WORKTREES_DIR = "worktrees";
 const COMMONDIR_FILE = "commondir";

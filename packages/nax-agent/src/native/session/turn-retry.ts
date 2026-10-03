@@ -29,7 +29,7 @@
  * the shape — a `protocolError.kind` string — is inspected, never the class.
  */
 
-import { credentialFaultCode } from "../errors";
+import { credentialFaultCode } from "../errors.ts";
 
 /** Total call attempts including the first (2 = one retry, 3 = two retries). */
 export interface TurnRetryConfig {

@@ -11,9 +11,9 @@
  * so two rules `assess` alone cannot express — the temp-only exemption's
  * `outside_project` skip and the harm-tie-breaker — stay unit-testable.
  */
-import { isTempOnly } from "./temp-only";
-import type { CommandGuard, GuardDecision, GuardInput, ModelResult, QuestionId, RuleResult } from "./types";
-import { QUESTION_IDS } from "./types";
+import { isTempOnly } from "./temp-only.ts";
+import type { CommandGuard, GuardDecision, GuardInput, ModelResult, QuestionId, RuleResult } from "./types.ts";
+import { QUESTION_IDS } from "./types.ts";
 
 /**
  * The first category in `QUESTION_IDS` order that `hits` sets to true.

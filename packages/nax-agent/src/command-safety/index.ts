@@ -1,18 +1,18 @@
-export type { BuildCommandShadowOptions } from "./build";
-export { buildCommandShadow, COMMAND_SAFETY_DIR } from "./build";
-export { createCommandGuard, scoreGuard } from "./guard";
-export type { SystemOneQuestion, SystemOneRequest } from "./questions";
-export { buildRequest, HARM_QUESTION_ID, QUESTION_SET_VERSION, SYSTEMONE_MODEL_LABEL } from "./questions";
-export { appendCommandSafetyRow } from "./row";
-export { RULE_SET_VERSION, type RuleContext, scoreRules } from "./rule-scorer";
-export type { CommandShadowOptions } from "./shadow";
-export { _commandShadowDeps, createCommandShadow, shadowCacheKey } from "./shadow";
-export type { Classify, SystemOneClientOptions } from "./systemone-client";
-export { _systemOneClientDeps, createSystemOneClient, parseAnswer } from "./systemone-client";
-export type { ShadowCall, ShadowTap } from "./tap";
-export { openShadowTap, toMechanical } from "./tap";
-export { isTempOnly } from "./temp-only";
-export { detectTmpWrite } from "./tmp-write";
+export type { BuildCommandShadowOptions } from "./build.ts";
+export { buildCommandShadow, COMMAND_SAFETY_DIR } from "./build.ts";
+export { createCommandGuard, scoreGuard } from "./guard.ts";
+export type { SystemOneQuestion, SystemOneRequest } from "./questions.ts";
+export { buildRequest, HARM_QUESTION_ID, QUESTION_SET_VERSION, SYSTEMONE_MODEL_LABEL } from "./questions.ts";
+export { appendCommandSafetyRow } from "./row.ts";
+export { RULE_SET_VERSION, type RuleContext, scoreRules } from "./rule-scorer.ts";
+export type { CommandShadowOptions } from "./shadow.ts";
+export { _commandShadowDeps, createCommandShadow, shadowCacheKey } from "./shadow.ts";
+export type { Classify, SystemOneClientOptions } from "./systemone-client.ts";
+export { _systemOneClientDeps, createSystemOneClient, parseAnswer } from "./systemone-client.ts";
+export type { ShadowCall, ShadowTap } from "./tap.ts";
+export { openShadowTap, toMechanical } from "./tap.ts";
+export { isTempOnly } from "./temp-only.ts";
+export { detectTmpWrite } from "./tmp-write.ts";
 export type {
   CommandGuard,
   CommandSafetyRow,
@@ -29,5 +29,5 @@ export type {
   Observation,
   QuestionId,
   RuleResult,
-} from "./types";
-export { HARM_OPTIONS, QUESTION_IDS } from "./types";
+} from "./types.ts";
+export { HARM_OPTIONS, QUESTION_IDS } from "./types.ts";

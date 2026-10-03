@@ -9,9 +9,9 @@
  * process.env itself and is DISCARDED here (spec F6).
  */
 import { mkdir } from "node:fs/promises";
-import type { SandboxConfig } from "../config/schemas-sandbox";
-import { SRT_MACOS_TMPDIR } from "./defaults";
-import type { SandboxBackend, SandboxPolicy, SandboxWrapRequest } from "./types";
+import type { SandboxConfig } from "../config/schemas-sandbox.ts";
+import { SRT_MACOS_TMPDIR } from "./defaults.ts";
+import type { SandboxBackend, SandboxPolicy, SandboxWrapRequest } from "./types.ts";
 
 type SrtModule = typeof import("@anthropic-ai/sandbox-runtime");
 type SrtRuntimeConfig = Parameters<SrtModule["SandboxManager"]["initialize"]>[0];

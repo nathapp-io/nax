@@ -70,5 +70,5 @@ export interface AdapterFailure {
    */
   reason?: string;
   /** The rejected call behind a `fail-invalid-tool-call`, for the retry prompt. */
-  invalidToolCall?: import("./session-types").InvalidToolCallDetail;
+  invalidToolCall?: import("./session-types.ts").InvalidToolCallDetail;
 }

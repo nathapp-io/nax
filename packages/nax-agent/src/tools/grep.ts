@@ -14,8 +14,8 @@
 import { drainBounded } from "#src/internal/bounded-io";
 import { runtimeSpawn } from "#src/runtime/index";
 import { which } from "#src/runtime/which";
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
-import { cutToByteCap, READ_CEILING } from "./truncate";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
+import { cutToByteCap, READ_CEILING } from "./truncate.ts";
 
 const GREP_TIMEOUT_MS = 15_000;
 

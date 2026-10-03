@@ -1,5 +1,5 @@
 /** Pure usage arithmetic shared by the pricing core and nax's reporting helpers. */
-import type { TokenUsage } from "./standard-types";
+import type { TokenUsage } from "./standard-types.ts";
 
 /** Coerce a token count to a finite number, falling back to 0. Defense in
  * depth (BUG-10): upstream guards in parser.ts / token-mapper.ts should

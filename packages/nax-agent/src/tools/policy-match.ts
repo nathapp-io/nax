@@ -7,7 +7,7 @@
  * surface is unchanged; tests may import it directly.
  */
 
-import type { ToolGrant } from "./types";
+import type { ToolGrant } from "./types.ts";
 
 /**
  * Minimatch-style glob to RegExp: `**` spans separators, `*` does not.

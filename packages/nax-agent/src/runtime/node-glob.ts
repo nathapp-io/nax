@@ -2,7 +2,7 @@
 import { type Dirent, globSync, lstatSync, statSync } from "node:fs";
 import { glob } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
-import type { AgentGlobOptions } from "./types";
+import type { AgentGlobOptions } from "./types.ts";
 
 function scanOptions(pattern: string, opts: AgentGlobOptions) {
   const cwd = resolve(opts.cwd);

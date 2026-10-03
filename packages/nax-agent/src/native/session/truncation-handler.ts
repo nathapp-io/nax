@@ -22,9 +22,9 @@
  */
 
 import { applyModelTruncationPolicy, MODEL_MAX_BYTES } from "#src/tools/index";
-import type { HandlerOf } from "./loop-events/types";
-import { nudgeOverheadBytes } from "./nudge";
-import { nativeSessionScratchpadRoots, nativeTranscriptDirs } from "./session";
+import type { HandlerOf } from "./loop-events/types.ts";
+import { nudgeOverheadBytes } from "./nudge.ts";
+import { nativeSessionScratchpadRoots, nativeTranscriptDirs } from "./session.ts";
 
 /**
  * Where this session's spills belong, or `undefined` when the session is not

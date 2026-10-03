@@ -9,8 +9,8 @@
  */
 
 import { readFile, stat, writeFile } from "node:fs/promises";
-import { composeEditRegion, replaceUniqueLiteral } from "./edit-region";
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { composeEditRegion, replaceUniqueLiteral } from "./edit-region.ts";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 
 /** The file I/O `editTool` performs, behind one seam so a test can make a read or a write fail. */
 export interface EditDeps {

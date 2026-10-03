@@ -11,8 +11,8 @@
 import { getSafeLogger } from "#src/infra/index";
 import type { InteractionExchange, InvalidToolCallDetail, TurnResult } from "#src/session/session-types";
 import type { CodingTool } from "#src/tools/index";
-import type { TurnAccumulator } from "./turn-accumulator";
-import type { TurnDeps } from "./turn-types";
+import type { TurnAccumulator } from "./turn-accumulator.ts";
+import type { TurnDeps } from "./turn-types.ts";
 
 export interface LogTurnTailWarningsArgs {
   readonly sessionName: string;

@@ -17,8 +17,8 @@
 
 import { sep } from "node:path";
 import { getAgentRuntime } from "#src/runtime/index";
-import { resolveWithin } from "./policy";
-import type { CodingTool, ToolResult, ToolRunContext } from "./registry";
+import { resolveWithin } from "./policy.ts";
+import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 
 const MAX_MATCHES = 500;
 

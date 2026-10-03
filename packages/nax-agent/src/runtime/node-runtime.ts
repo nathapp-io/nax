@@ -10,9 +10,9 @@ import { statSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
-import { nodeGlob, nodeGlobSync } from "./node-glob";
-import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult, AgentSpawnStdin } from "./types";
-import { which } from "./which";
+import { nodeGlob, nodeGlobSync } from "./node-glob.ts";
+import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult, AgentSpawnStdin } from "./types.ts";
+import { which } from "./which.ts";
 
 type SpawnErrorCode = "ENOENT" | "ENOTDIR" | "EACCES";
 

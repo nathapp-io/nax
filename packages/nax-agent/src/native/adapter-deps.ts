@@ -5,8 +5,8 @@
  */
 
 import type { AuthStamp } from "#src/session/session-types";
-import { anyAmbientCredential, listStoredProviders } from "./auth";
-import { authSourceIsExec, servedAuth } from "./credentials";
+import { anyAmbientCredential, listStoredProviders } from "./auth.ts";
+import { authSourceIsExec, servedAuth } from "./credentials/index.ts";
 
 export function isProtocolStreamError(err: unknown): err is { protocolError: { kind: string; message: string } } {
   return typeof err === "object" && err !== null && "protocolError" in err;

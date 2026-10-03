@@ -11,7 +11,7 @@
  * cycle fails it.
  */
 
-export { _adapterDeps } from "./adapter-deps";
+export { _adapterDeps } from "./adapter-deps.ts";
 export {
   AuthCancelledError,
   ambientShadows,
@@ -24,7 +24,7 @@ export {
   providersWithoutCredentials,
   removeStoredProvider,
   runLogin,
-} from "./auth";
+} from "./auth.ts";
 export type {
   AuthEvent,
   AuthInteraction,
@@ -33,26 +33,26 @@ export type {
   AuthOption,
   AuthPrompt,
   AuthResult,
-} from "./auth-types";
-export type { NativeCatalogOverrides } from "./client";
+} from "./auth-types.ts";
+export type { NativeCatalogOverrides } from "./client.ts";
 export {
   type NativeCompleteContext,
   type NativeCompleteOptions,
   type NativeCompleteResult,
   nativeComplete,
-} from "./complete";
-export { credentialFilePath, naxCredentialStore, type StoredEntry, servedAuth } from "./credentials";
-export { NativeSessionUnsupportedError } from "./errors";
+} from "./complete.ts";
+export { credentialFilePath, naxCredentialStore, type StoredEntry, servedAuth } from "./credentials/index.ts";
+export { NativeSessionUnsupportedError } from "./errors.ts";
 export {
   type ResolveResult,
   type ResolveStatus,
   resolveNativeId,
-} from "./model-resolver";
-export { NATIVE_AGENT } from "./models";
+} from "./model-resolver.ts";
+export { NATIVE_AGENT } from "./models.ts";
 export {
   MAX_RETAINED_TRANSCRIPTS,
   pruneRetainedTranscripts,
-} from "./session/transcript-store";
-export { NativeSessionAdapter } from "./session-adapter";
-export { newSessionKey } from "./session-affinity";
-export { type NativeTierConfig, nativeTierProviders } from "./tier-providers";
+} from "./session/transcript-store.ts";
+export { NativeSessionAdapter } from "./session-adapter.ts";
+export { newSessionKey } from "./session-affinity.ts";
+export { type NativeTierConfig, nativeTierProviders } from "./tier-providers.ts";

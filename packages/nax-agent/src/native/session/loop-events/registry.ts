@@ -36,8 +36,8 @@
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
 import { isThenable } from "#src/internal/thenable";
-import { restoreMutated, snapshotArrays } from "./payload-guard";
-import type { BeforeToolOutcome, BeforeToolPayload, HandlerOf, LoopEvent, PatchOf, PayloadOf } from "./types";
+import { restoreMutated, snapshotArrays } from "./payload-guard.ts";
+import type { BeforeToolOutcome, BeforeToolPayload, HandlerOf, LoopEvent, PatchOf, PayloadOf } from "./types.ts";
 
 export interface LoopEventRegistry {
   register<E extends LoopEvent>(event: E, handler: HandlerOf<E>): void;

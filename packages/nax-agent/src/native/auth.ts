@@ -18,8 +18,8 @@ import {
   login,
 } from "@nathapp/nax-ai";
 import { NaxError } from "#src/infra/index";
-import type { AuthEvent, AuthInteraction, AuthMethod, AuthPrompt, AuthResult } from "./auth-types";
-import { naxCredentialStore, readStoredEntries, type StoredEntry } from "./credentials";
+import type { AuthEvent, AuthInteraction, AuthMethod, AuthPrompt, AuthResult } from "./auth-types.ts";
+import { naxCredentialStore, readStoredEntries, type StoredEntry } from "./credentials/index.ts";
 
 /**
  * Deliberately dumb: the two vocabularies are one-for-one by design, so this

@@ -5,12 +5,12 @@
  * must never wedge a run. The failure is logged by the caller, which owns the
  * logger; this module stays pure so it can be tested without one.
  */
-import { adaptProviderTool } from "./provider-adapt";
-import { expandProviderGrants, type ProviderGrantEntry } from "./provider-grants";
-import { sanitizeProviderTools } from "./provider-sanitize";
-import { providerAttachesTo, type ToolProvider } from "./provider-types";
-import type { CodingTool } from "./registry";
-import type { ToolGrant } from "./types";
+import { adaptProviderTool } from "./provider-adapt.ts";
+import { expandProviderGrants, type ProviderGrantEntry } from "./provider-grants.ts";
+import { sanitizeProviderTools } from "./provider-sanitize.ts";
+import { providerAttachesTo, type ToolProvider } from "./provider-types.ts";
+import type { CodingTool } from "./registry.ts";
+import type { ToolGrant } from "./types.ts";
 
 export interface ResolvedProviderTools {
   readonly tools: readonly CodingTool[];

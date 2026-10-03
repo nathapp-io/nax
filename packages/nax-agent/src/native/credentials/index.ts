@@ -21,12 +21,12 @@ import { join } from "node:path";
 import { createFileCredentialStore, type ProviderId } from "@nathapp/nax-ai";
 import { credentialsConfig, NaxError } from "#src/infra/index";
 import type { AuthStamp } from "#src/session/session-types";
-import { createChainedCredentialStore } from "./chained-store";
-import { createChangeGuard, type GuardedCredentialStore } from "./change-guard";
-import { createExecCredentialSource } from "./exec-source";
-import { _resetFingerprintSalt } from "./fingerprint";
+import { createChainedCredentialStore } from "./chained-store.ts";
+import { createChangeGuard, type GuardedCredentialStore } from "./change-guard.ts";
+import { createExecCredentialSource } from "./exec-source.ts";
+import { _resetFingerprintSalt } from "./fingerprint.ts";
 
-export type { GuardedCredentialStore } from "./change-guard";
+export type { GuardedCredentialStore } from "./change-guard.ts";
 
 /** One credential's public facts. Deliberately carries no key. */
 export interface StoredEntry {

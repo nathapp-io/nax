@@ -65,7 +65,7 @@
 
 import { readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { NaxError } from "#src/infra/index";
-import { isProcessAlive } from "./process-alive";
+import { isProcessAlive } from "./process-alive.ts";
 
 const DEFAULT_RETRY_MS = 10;
 const DEFAULT_TIMEOUT_MS = 5_000;
