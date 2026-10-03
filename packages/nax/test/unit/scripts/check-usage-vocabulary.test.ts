@@ -56,6 +56,23 @@ describe("check-usage-vocabulary", () => {
     expect(findVocabularyViolations(root)).toEqual([]);
   });
 
+  test("a name inside a multi-line `export { type X, … } from` list is a re-export, not a declaration", () => {
+    root = makeTempDir("usage-vocab-");
+    write(
+      "packages/nax-agent/src/index.ts",
+      [
+        "export {",
+        "  addTokenUsage,",
+        "  type Pricing,",
+        "  type PricingRates,",
+        "  type TokenUsage",
+        '} from "#src/cost/core/index";',
+        "",
+      ].join("\n"),
+    );
+    expect(findVocabularyViolations(root)).toEqual([]);
+  });
+
   test("test files are not scanned", () => {
     root = makeTempDir("usage-vocab-");
     write("packages/nax/test/unit/x.test.ts", "interface TokenUsage { inputTokens: number }\n");
