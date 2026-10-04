@@ -1,6 +1,11 @@
-import { describe, expect, test } from "bun:test";
-import { resolve } from "node:path";
-import { screenRawBashCommand } from "#src/tools/policy-bash-raw";
+import { beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { naxOwnedBashRefusal, naxOwnedPathsPolicy } from "#src/tools/nax-owned-writes";
+import { EMPTY_OWNED_PATHS_POLICY, type OwnedBashCandidate, type OwnedPathsPolicy } from "#src/tools/owned-paths";
+import { resolveWithin } from "#src/tools/policy";
+import { type RawScreenArgs, screenRawBashCommand } from "#src/tools/policy-bash-raw";
 
 const ROOT = "/tmp/raw-screen-root";
 
@@ -17,6 +22,7 @@ function screen(command: unknown) {
     command,
     initialPath: ROOT,
     root: ROOT,
+    ownedPaths: naxOwnedPathsPolicy,
     resolvePath: (candidate, cwd) => {
       const resolved = resolve(cwd, candidate);
       return resolved === ROOT || resolved.startsWith(`${ROOT}/`) ? resolved : null;
@@ -212,6 +218,7 @@ describe("screenRawBashCommand — US-001: lexical nax config file detection", (
       command: "echo x > .nax/config.json",
       initialPath: ROOT,
       root: ROOT,
+      ownedPaths: naxOwnedPathsPolicy,
       resolvePath: () => null,
     });
     expect(result.kind).toBe("deny");
@@ -331,6 +338,7 @@ function screenWith(command: unknown, sandboxWrapped?: boolean) {
     initialPath: ROOT,
     root: ROOT,
     sandboxWrapped: sandboxWrapped ?? false,
+    ownedPaths: naxOwnedPathsPolicy,
     resolvePath: (candidate, cwd) => {
       const resolved = resolve(cwd, candidate);
       return resolved === ROOT || resolved.startsWith(`${ROOT}/`) ? resolved : null;
@@ -483,5 +491,63 @@ describe("screenRawBashCommand — US-002: sandbox-wrapped PRD reads", () => {
 
   test("AC12 boundary: an explicit sandboxWrapped: false screens exactly like an absent flag", () => {
     expect(screenWith("git diff .nax/features/f/prd.json", false)).toEqual(screen("git diff .nax/features/f/prd.json"));
+  });
+});
+
+// S3-2: the raw screen no longer knows nax's owned paths itself. It builds one
+// candidate per live working-directory frame and hands the whole set to
+// `args.ownedPaths.bashRefusal`, which decides refusals -- and applies the
+// sandbox-wrapped PRD-read exemption. With the empty policy nothing is refused;
+// with `naxOwnedPathsPolicy` every refusal text is today's, byte for byte.
+describe("screenRawBashCommand reads owned paths from the port (S3-2)", () => {
+  let rawRoot = "";
+  beforeEach(() => {
+    rawRoot = realpathSync(mkdtempSync(join(tmpdir(), "raw-screen-owned-")));
+    mkdirSync(join(rawRoot, ".nax", "features", "f"), { recursive: true });
+  });
+
+  const args = (command: string, ownedPaths: OwnedPathsPolicy, sandboxWrapped = false): RawScreenArgs => ({
+    tool: "Bash",
+    command,
+    initialPath: rawRoot,
+    root: rawRoot,
+    resolvePath: (candidate, cwd) => resolveWithin(rawRoot, resolve(cwd, candidate), ownedPaths),
+    ownedPaths,
+    sandboxWrapped,
+  });
+
+  test("with the empty policy a redirect into nax config is allowed", () => {
+    expect(screenRawBashCommand(args("echo x > .nax/config.json", EMPTY_OWNED_PATHS_POLICY)).kind).toBe("allow");
+  });
+
+  test("with nax's policy the texts are today's", () => {
+    const named = screenRawBashCommand(args("cat .queue.txt", naxOwnedPathsPolicy));
+    expect(named).toMatchObject({ kind: "deny", reason: naxOwnedBashRefusal("Bash", "queue", ".queue.txt", "names") });
+    const redirect = screenRawBashCommand(args("echo x > .nax/config.json", naxOwnedPathsPolicy));
+    expect(redirect).toMatchObject({
+      kind: "deny",
+      reason: naxOwnedBashRefusal("Bash", "config", ".nax/config.json", "redirects into", { sandboxWrapped: false }),
+    });
+  });
+
+  test("sandbox-wrapped: naming a PRD is allowed, redirecting into it is not", () => {
+    expect(screenRawBashCommand(args("cat .nax/features/f/prd.json", naxOwnedPathsPolicy, true)).kind).toBe("allow");
+    expect(screenRawBashCommand(args("echo x > .nax/features/f/prd.json", naxOwnedPathsPolicy, true)).kind).toBe(
+      "deny",
+    );
+  });
+
+  test("the port receives one candidate per live frame, in frame order", () => {
+    // Every token is screened, the command word included, so record by token.
+    const seen = new Map<string, readonly OwnedBashCandidate[]>();
+    const spy: OwnedPathsPolicy = {
+      ...EMPTY_OWNED_PATHS_POLICY,
+      bashRefusal: (_tool, token, candidates) => {
+        seen.set(token, candidates);
+        return undefined;
+      },
+    };
+    screenRawBashCommand(args("cat a.txt", spy));
+    expect(seen.get("a.txt")).toEqual([{ lexical: join(rawRoot, "a.txt"), rel: "a.txt" }]);
   });
 });

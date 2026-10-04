@@ -3,6 +3,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import { compileToolPolicy } from "#src/tools/index";
+import { naxOwnedPathsPolicy } from "#src/tools/nax-owned-writes";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 const BASH_SCOPE = { pathFields: [], commandField: "command" } as const;
@@ -29,6 +30,7 @@ function policyFor(
     ...(options?.deny !== undefined ? { denyRules: [{ tool: "Bash", patterns: options.deny }] } : {}),
     ...(options?.ask !== undefined ? { askRules: [{ tool: "Bash", patterns: options.ask }] } : {}),
     ...(options?.bashApproval !== undefined ? { bashApproval: options.bashApproval } : {}),
+    ownedPaths: naxOwnedPathsPolicy,
   });
 }
 

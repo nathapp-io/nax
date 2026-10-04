@@ -319,6 +319,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
           bashApproval,
           rawBashRefusal: options?.rawBashRefusal,
           sandboxWrapped: options?.sandboxWrapped,
+          ownedPaths: owned,
           resolvedRoot,
           denyBy,
           askBy,

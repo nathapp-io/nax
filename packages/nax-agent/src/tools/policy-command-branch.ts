@@ -11,6 +11,7 @@
  */
 
 import type { BashApprovalMode } from "#src/config/bash-approval";
+import type { OwnedPathsPolicy } from "./owned-paths.ts";
 import { checkBashCommand } from "./policy-bash.ts";
 import { screenRawBashCommand } from "./policy-bash-raw.ts";
 import type { CompiledEntry } from "./policy-match.ts";
@@ -26,6 +27,8 @@ export interface BashCommandBranchArgs {
   readonly rawBashRefusal?: string;
   /** US-002: true when the sandbox wraps the command, so `raw` no longer refuses a PRD it only reads. */
   readonly sandboxWrapped?: boolean;
+  /** S3-2: host-owned path rules; the `raw` screen hands it one candidate per live frame. */
+  readonly ownedPaths: OwnedPathsPolicy;
   readonly resolvedRoot: string;
   readonly denyBy: ReadonlyMap<string, CompiledEntry>;
   readonly askBy: ReadonlyMap<string, CompiledEntry>;
@@ -43,6 +46,7 @@ export function commandBranch(args: BashCommandBranchArgs): PolicyVerdict | unde
     bashApproval,
     rawBashRefusal,
     sandboxWrapped,
+    ownedPaths,
     resolvedRoot,
     denyBy,
     askBy,
@@ -61,6 +65,7 @@ export function commandBranch(args: BashCommandBranchArgs): PolicyVerdict | unde
       root: resolvedRoot,
       sandboxWrapped: sandboxWrapped === true,
       resolvePath,
+      ownedPaths,
     });
     if (screened.kind === "deny") return deny(screened.reason, screened.breach, screened.escalatable);
     return { allowed: true, resolvedPaths: [] };

@@ -6,9 +6,12 @@
  * rather than refused. That inversion is the whole point of the mode.
  *
  * The one thing this screen still does is catch a naive mistake: if the lexer
- * CAN parse the command and a segment names or redirects into a path nax owns
- * (`.nax/config.json`, `.nax/mono/*\/config.json`, `.nax/features/**\/prd.json`,
- * the root queue-control files), the command is denied.
+ * CAN parse the command and a segment names or redirects into a path the
+ * host's owned-paths policy owns (for nax: `.nax/config.json`,
+ * `.nax/mono/*\/config.json`, `.nax/features/**\/prd.json`, the root
+ * queue-control files), the command is denied. Which paths those are, and how
+ * a refusal reads, is the `OwnedPathsPolicy` port's decision (S3-2); this
+ * screen only supplies the per-frame candidates.
  *
  * ADVISORY BY CONSTRUCTION. A command using substitution is not parsed and
  * therefore is not screened at all: `sh -c "$(echo rm) .nax/features/f/prd.json"`
@@ -50,8 +53,7 @@ import { relative, resolve, sep } from "node:path";
 import { realOrRaw } from "#src/internal/realpath";
 import { type BashToken, lexBashCommand } from "#src/permissions/index";
 import { cdTargetsFor, nextWorkingDirectories } from "./bash-cwd.ts";
-import type { NaxOwnedKind } from "./nax-owned-writes.ts";
-import { isNaxConfigFile, naxOwnedBashRefusal, naxOwnedKind } from "./nax-owned-writes.ts";
+import type { OwnedBashCandidate, OwnedPathsPolicy } from "./owned-paths.ts";
 import type { BashCheck } from "./policy-bash.ts";
 
 export interface RawScreenArgs {
@@ -70,6 +72,8 @@ export interface RawScreenArgs {
    * write. Absent or false screens exactly as before.
    */
   readonly sandboxWrapped?: boolean;
+  /** S3-2: host-owned path rules; decides which tokens and redirects are refused and how. */
+  readonly ownedPaths: OwnedPathsPolicy;
 }
 
 /**
@@ -120,61 +124,40 @@ function deny(reason: string): BashCheck {
 }
 
 /**
- * A protected path, named for the refusal message, or undefined.
+ * One `OwnedBashCandidate` per live frame, in frame order.
  *
- * Returns the KIND it matched alongside the token the agent used, so the caller
- * can print kind-specific refusal text (`naxOwnedBashRefusal`).
+ * The two passes are the policy's now (`OwnedPathsPolicy.bashRefusal`); this
+ * function only supplies the evidence, one candidate per frame.
  *
- * Checked against EVERY frame in `cwd`, mirroring the conservatism of gated
+ * Built against EVERY frame in `cwd`, mirroring the conservatism of gated
  * mode's own `resolveAll`: a `;`-joined `cd` can leave more than one frame
  * live at once (see `nextWorkingDirectories`), and a candidate that is safe
- * from one frame but hits a protected path from another must still deny.
+ * from one frame but hits an owned path from another must still be seen.
  *
- * Two passes, in order:
+ * Per frame, the candidate carries both halves of today's two-pass order:
  *
- * 1. LEXICAL nax-config check. The raw screen has no typed seam in front of
- *    it, and `args.resolvePath` (production: `resolveWithin`) returns null
- *    for `.nax/config.json` exactly because typed tools are SUPPOSED to refuse
- *    those writes. Falling through to that null would let the entire class
- *    of nax-config writes go unscreened. Resolve the candidate lexically
- *    against each frame -- `realOrRaw` walks to the nearest existing ancestor,
- *    so a not-yet-created file under a symlinked temp root still compares
- *    equal to `realOrRaw(root)` -- and refuse on `isNaxConfigFile` BEFORE the
- *    resolver is consulted.
+ * 1. `lexical`: the candidate resolved lexically against the frame --
+ *    `realOrRaw` walks to the nearest existing ancestor, so a not-yet-created
+ *    file under a symlinked temp root still compares equal to
+ *    `realOrRaw(root)`. The policy's nax-config check (`isNaxConfigFile`) runs
+ *    on this, BEFORE the resolver is consulted -- the raw screen has no typed
+ *    seam in front of it, and `resolvePath` (production: `resolveWithin`)
+ *    returns null for `.nax/config.json` exactly because typed tools are
+ *    SUPPOSED to refuse those writes.
  *
- * 2. Typed-seam resolver pass (unchanged). `args.resolvePath` continues to be
- *    the gate for everything else: a `null` skips this frame, an out-of-root
- *    path skips this frame, and `isNaxOwnedWritePath` covers the queue file
- *    and feature PRD set.
- *
- * The two checks do not overlap: pass 1 covers nax config files; pass 2 covers
- * feature PRDs and the queue run-control files. `isNaxConfigFile` is checked
- * lexically here because the resolver cannot return it, and lexically in
- * `resolveWithin` for the same reason; `isNaxOwnedWritePath` is unchanged.
+ * 2. `rel`: the typed-seam resolver's root-relative spelling for the same
+ *    frame, null when it refused or the path is outside the root. The
+ *    policy's PRD/queue check (`naxOwnedKind`) runs on this.
  */
-function protectedHit(
-  args: RawScreenArgs,
-  candidate: string,
-  cwd: readonly string[],
-): { kind: NaxOwnedKind; hit: string } | undefined {
-  for (const directory of cwd) {
-    // Pass 1: lexical nax-config check. Independent of the resolver on
-    // purpose -- see the comment above. `realOrRaw` walks to the nearest
-    // existing ancestor so the comparison holds even when the file does not
-    // yet exist on disk (which is the common case: the screen catches the
-    // write BEFORE the file lands).
-    const lexical = realOrRaw(resolve(directory, candidate));
-    if (isNaxConfigFile(args.root, lexical)) return { kind: "config", hit: candidate };
-
-    // Pass 2: typed-seam resolver (unchanged).
+function ownedCandidates(args: RawScreenArgs, candidate: string, cwd: readonly string[]): OwnedBashCandidate[] {
+  return cwd.map((directory) => {
     const resolved = args.resolvePath(candidate, directory);
-    if (resolved === null) continue;
-    const rel = relative(args.root, resolved).split(sep).join("/");
-    if (rel.startsWith("..")) continue;
-    const kind = naxOwnedKind(rel);
-    if (kind !== undefined) return { kind, hit: candidate };
-  }
-  return undefined;
+    const rel = resolved === null ? null : relative(args.root, resolved).split(sep).join("/");
+    return {
+      lexical: realOrRaw(resolve(directory, candidate)),
+      rel: rel === null || rel.startsWith("..") ? null : rel,
+    };
+  });
 }
 
 export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
@@ -199,24 +182,27 @@ export function screenRawBashCommand(args: RawScreenArgs): BashCheck {
           `Search within the repository root instead: ${args.root}`,
       );
     }
+    // US-002: sandbox-wrapped, a token that only NAMES a PRD is allowed -- the
+    // policy now applies that exemption (`bashRefusal` receives
+    // `sandboxWrapped` and skips the PRD read itself). A redirect WRITES, so
+    // the policy refuses it even sandbox-wrapped, with the read/write truth.
     for (const token of segment.tokens) {
       if (token.opaque) continue;
-      const hit = protectedHit(args, token.text, cwd);
-      // US-002: sandbox-wrapped, a token that only NAMES a PRD is allowed --
-      // the sandbox is the boundary, so a read costs nothing. Config and queue
-      // are unchanged in both modes.
-      if (hit !== undefined && !(sandboxWrapped && hit.kind === "prd")) {
-        return deny(naxOwnedBashRefusal(tool, hit.kind, hit.hit, "names"));
-      }
+      const reason = args.ownedPaths.bashRefusal(tool, token.text, ownedCandidates(args, token.text, cwd), {
+        root: args.root,
+        verb: "names",
+        sandboxWrapped,
+      });
+      if (reason !== undefined) return deny(reason);
     }
     for (const redirect of segment.redirects) {
       if (redirect.opaque) continue;
-      const hit = protectedHit(args, redirect.target, cwd);
-      if (hit !== undefined) {
-        // A redirect WRITES, so even sandbox-wrapped it is refused -- with the
-        // read/write truth for a PRD (US-002), unchanged text elsewhere.
-        return deny(naxOwnedBashRefusal(tool, hit.kind, hit.hit, "redirects into", { sandboxWrapped }));
-      }
+      const reason = args.ownedPaths.bashRefusal(tool, redirect.target, ownedCandidates(args, redirect.target, cwd), {
+        root: args.root,
+        verb: "redirects into",
+        sandboxWrapped,
+      });
+      if (reason !== undefined) return deny(reason);
     }
 
     // See the file header ("THE CRITICAL ASYMMETRY"). An unmodelled `cd` is

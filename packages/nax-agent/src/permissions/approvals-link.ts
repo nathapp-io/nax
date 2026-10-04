@@ -4,9 +4,9 @@
  * TRUST BOUNDARY. Living outside repoRoot protects this file from the TYPED
  * path-bearing tools, but NOT from Bash: the `OwnedPathsPolicy` port's
  * `writeRefusal` (`tools/owned-paths.ts`) excludes
- * Bash by design, and under `raw` mode screenRawBashCommand's protectedHit
- * skips every path outside the root (policy-bash-raw.ts:84), so the file is
- * never screened. A raw shell can forge entries.
+ * Bash by design, and under `raw` mode screenRawBashCommand's owned-path
+ * candidates skip every path outside the root (policy-bash-raw.ts), so the
+ * file is never screened. A raw shell can forge entries.
  *
  * That is not a new vulnerability -- a raw shell needs no forged permission to
  * run a command -- but it IS a cross-stage escalation in a MIXED-mode run,

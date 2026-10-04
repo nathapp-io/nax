@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-02T07:19:10.341Z",
+  "updatedAt": "2026-10-04T04:36:20.199Z",
   "limit": 20,
   "byFile": {
     "src/coding-tools/coding-tool-extras.ts": { "buildDeclaredCommandTools": 24 },
@@ -12,7 +12,7 @@
     "src/tools/git-commit.ts": { "run": 22 },
     "src/tools/git.ts": { "buildGitArgv": 47 },
     "src/tools/grep.ts": { "run": 21 },
-    "src/tools/policy-bash-raw.ts": { "screenRawBashCommand": 26 },
+    "src/tools/policy-bash-raw.ts": { "screenRawBashCommand": 24 },
     "src/tools/policy-bash.ts": { "checkBashCommand": 21 },
     "src/tools/policy.ts": { "verbBranch": 29, "argvBranch": 23 },
     "src/tools/read.ts": { "run": 24 },

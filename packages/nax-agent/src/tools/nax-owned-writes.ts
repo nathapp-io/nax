@@ -155,9 +155,9 @@ export function isNaxOwnedWritePath(rel: string): boolean {
  *
  * `/`-joined and root-relative, like `isNaxOwnedWritePath`. Never returns
  * `"config"` -- nax config files are recognised by the lexical
- * `isNaxConfigFile` pass, which callers (`protectedHit` in policy-bash-raw.ts)
- * run FIRST. Keeping the two apart is what lets the raw screen name the kind it
- * matched without duplicating the config rule here.
+ * `isNaxConfigFile` pass, which `bashRefusal` below runs FIRST over the raw
+ * screen's candidates. Keeping the two apart is what lets the policy name the
+ * kind it matched without duplicating the config rule here.
  */
 export function naxOwnedKind(rel: string): "prd" | "queue" | undefined {
   const segments = rel.split("/");
