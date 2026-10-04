@@ -24,7 +24,7 @@ import {
   nativeSessionStateOf,
 } from "@nathapp/nax-agent/internal";
 import type { Client, ConversationMessage, ResolvedModel } from "@nathapp/nax-ai";
-import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir, withDerivedStream } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import { globalConfigDir, NATIVE_AGENT_NAME } from "@/config";
 import { loadPlugins } from "@/plugins";
@@ -85,7 +85,7 @@ function tempDir(prefix: string): string {
 
 /** A model that records every message array it is asked to answer. */
 function scriptedClient(requests: (readonly ConversationMessage[])[]): Client {
-  return {
+  return withDerivedStream({
     model: async () => MODEL,
     listModels: async () => [MODEL],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
@@ -95,7 +95,7 @@ function scriptedClient(requests: (readonly ConversationMessage[])[]): Client {
       return { text: "done", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" as const };
     },
     validate: () => {},
-  };
+  });
 }
 
 /**

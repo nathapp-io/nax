@@ -22,6 +22,7 @@ import { createInvalidCallBudget } from "#src/native/session/handle-invalid-tool
 import { createLoopEventRegistry } from "#src/native/session/loop-events/index";
 import { createNativeSessionState } from "#src/native/session/session";
 import { codingToolsToDefinitions } from "#src/native/session/tool-mapping";
+import { createTurnEventEmitter } from "#src/native/session/turn-event-emitter";
 import type { NativeTurnActivity } from "#src/native/session/turn-events";
 import { runToolBatch, type ToolBatchArgs } from "#src/native/session/turn-tool-batch";
 import type { TurnDeps } from "#src/native/session/turn-types";
@@ -65,6 +66,7 @@ function batchArgs(over: Partial<ToolBatchArgs> & { deps: TurnDeps; opts: SendTu
     maxInteractions: 0,
     spinWarned: false,
     interactionsSoFar: 0,
+    turnEvents: createTurnEventEmitter(undefined),
     ...over,
   };
 }

@@ -48,6 +48,7 @@ import type { createTurnAccumulator } from "./turn-accumulator.ts";
 import { usageBeat } from "./turn-accumulator.ts";
 import { runProactiveCompaction } from "./turn-compaction-step.ts";
 import { completeWithRecovery } from "./turn-complete-step.ts";
+import { type TurnEventEmitter, usageEvent } from "./turn-event-emitter.ts";
 import { runToolBatch } from "./turn-tool-batch.ts";
 import type { TurnDeps } from "./turn-types.ts";
 
@@ -99,6 +100,8 @@ export interface TurnRoundParams {
   codingToolsCalled: string[];
   /** Mutated in place via `.add()` — the caller owns the turn-lifetime accumulator. */
   usage: ReturnType<typeof createTurnAccumulator>;
+  /** S3-3: the turn's one event emitter (a no-op without an `onTurnEvent` sink). */
+  turnEvents: TurnEventEmitter;
 }
 
 /**
@@ -154,6 +157,7 @@ async function maybeCompact(state: TurnLoopState, params: TurnRoundParams): Prom
     // The anchor described the pre-compaction array; it is meaningless now.
     state.lastUsage = undefined;
     state.anchorIndex = undefined;
+    params.turnEvents.emit({ type: "compaction", reason: "proactive" });
   }
   return { summarizeFailed: step.summarizeFailed };
 }
@@ -188,6 +192,7 @@ async function runModelRoundTrip(
     roundTrip: state.roundTrips + 1,
     ...(handle.modelDef?.model !== undefined ? { model: handle.modelDef.model } : {}),
     deps,
+    turnEvents: params.turnEvents,
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
   const res = step.res;
@@ -222,6 +227,7 @@ async function runModelRoundTrip(
 
   // 1-based; `roundTrips` is incremented above, before this beat fires.
   deps.onActivity?.(usageBeat(res.usage, res.costUsd, state.roundTrips));
+  params.turnEvents.emit(usageEvent(state.roundTrips, res.usage, res.costUsd));
   if (res.text.length > 0) deps.onActivity?.({ kind: "message", bytes: res.text.length });
   if (res.thinking !== undefined && res.thinking.length > 0) {
     deps.onActivity?.({
@@ -296,6 +302,7 @@ async function dispatchToolBatch(
     maxInteractions,
     spinWarned: spinFlags.warned,
     interactionsSoFar: params.interactions.length,
+    turnEvents: params.turnEvents,
   });
   state.messages = [...batch.messages];
   params.interactions.push(...batch.interactions);

@@ -231,6 +231,13 @@ export interface SendTurnOpts {
    * precisely so tool calls made during the turn can carry it.
    */
   turnId?: string;
+  /**
+   * S3-3: per-turn event sink (deltas, stream_reset, tool calls and results,
+   * per-round usage, compaction). Native honours it; ACP ignores it until S4.
+   * Called synchronously; a throw or rejection is contained by the backend.
+   * nax sets none.
+   */
+  onTurnEvent?: import("./turn-event.ts").TurnEventSink;
 }
 
 /**

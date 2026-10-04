@@ -21,7 +21,7 @@ import {
   saveTranscript,
 } from "@nathapp/nax-agent/internal";
 import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
-import { waitForCondition } from "@test/helpers";
+import { waitForCondition, withDerivedStream } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import type { ResolvedCompleteOptions } from "@/agents/types";
 
@@ -47,7 +47,7 @@ const MODEL = {
 } satisfies ResolvedModel;
 
 function fakeClient(over: Record<string, unknown> = {}): Client {
-  return {
+  return withDerivedStream({
     model: async () => MODEL,
     listModels: async () => [MODEL],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
@@ -59,7 +59,7 @@ function fakeClient(over: Record<string, unknown> = {}): Client {
     }),
     validate: () => {},
     ...over,
-  };
+  });
 }
 
 function options(): ResolvedCompleteOptions {

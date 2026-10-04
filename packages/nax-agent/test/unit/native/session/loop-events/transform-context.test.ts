@@ -14,6 +14,7 @@ import {
   runNativeTurn,
 } from "@nathapp/nax-agent/internal";
 import { getSafeLogger, setAgentLogger } from "#src/infra/index";
+import { createTurnEventEmitter } from "#src/native/session/turn-event-emitter";
 import { makeLogger, seedNativeSession } from "#test/helpers/index";
 
 const originalLogger = getSafeLogger();
@@ -161,6 +162,7 @@ describe("completeWithRecovery — the honoured flag", () => {
       anchorIndex: 0,
       loopEvents: registry,
       roundTrip: 1,
+      turnEvents: createTurnEventEmitter(undefined),
       deps: {
         sessionState,
         complete: async (messages) => {
@@ -195,6 +197,7 @@ describe("completeWithRecovery — the honoured flag", () => {
       anchorIndex: 0,
       loopEvents: createLoopEventRegistry(),
       roundTrip: 1,
+      turnEvents: createTurnEventEmitter(undefined),
       deps: {
         sessionState,
         complete: async (messages) => {
@@ -244,6 +247,7 @@ describe("completeWithRecovery — the honoured flag", () => {
       anchorIndex: 0,
       loopEvents: registry,
       roundTrip: 1,
+      turnEvents: createTurnEventEmitter(undefined),
       deps: {
         sessionState,
         complete: async () => {

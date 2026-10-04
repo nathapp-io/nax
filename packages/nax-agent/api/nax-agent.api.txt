@@ -210,6 +210,8 @@ type TruncateForModelOptions
 type TruncationDirection
 type TruncationResult
 type TurnDeadline
+type TurnEvent
+type TurnEventSink
 type TurnMarker
 type TurnResult
 adaptProviderTool
@@ -576,6 +578,8 @@ type SpinStopReason
 type SpinSummary
 type SpinVerdict
 type StoredEntry
+type StreamDelta
+type StreamDeltaSink
 THINKING_LEVELS
 TOOL_AUDIT_SCHEMA_VERSION
 type ThinkingLevel

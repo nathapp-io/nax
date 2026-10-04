@@ -28,7 +28,7 @@ import { loadTranscript } from "#src/native/session/transcript-store";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
 import type { SendTurnOpts } from "#src/session/session-types";
 import type { CodingTool } from "#src/tools/index";
-import { assertDefined, cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { assertDefined, cleanupTempDir, makeTempDir, withDerivedStream } from "#test/helpers/index";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Harness
@@ -76,7 +76,7 @@ interface Capture {
 }
 
 function scriptedClient(script: (roundTrip: number) => ScriptedAnswer, capture: Capture): Client {
-  return {
+  return withDerivedStream({
     model: async () => MODEL,
     listModels: async () => [MODEL],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
@@ -93,7 +93,7 @@ function scriptedClient(script: (roundTrip: number) => ScriptedAnswer, capture: 
       };
     },
     validate: () => {},
-  };
+  });
 }
 
 /** A coding tool the loop advertises; the harness's handler answers in its place. */

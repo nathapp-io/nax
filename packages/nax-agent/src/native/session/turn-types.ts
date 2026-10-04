@@ -27,7 +27,10 @@ import type {
 } from "./loop-events/index.ts";
 import type { NativeSessionState } from "./session.ts";
 import type { toToolDefinitions } from "./tool-mapping.ts";
+import type { StreamDeltaSink } from "./turn-event-emitter.ts";
 import type { TurnRetryConfig } from "./turn-retry.ts";
+
+export type { StreamDelta, StreamDeltaSink } from "./turn-event-emitter.ts";
 
 export interface NativeTurnResponse {
   readonly text: string;
@@ -59,10 +62,17 @@ export interface NativeSummaryResponse {
 export interface TurnDeps {
   /** The owning adapter's per-session state (S3 spec 5.2). Required: there is no process-global fallback. */
   readonly sessionState: NativeSessionState;
+  /**
+   * One round-trip model call. `onDelta` (S3-3) receives the call's text and
+   * thinking deltas as they stream. The loop builds it per attempt from the
+   * turn's emitter, already stamped with the round, and leaves it absent when
+   * the turn has no `onTurnEvent` sink. Fakes may ignore it.
+   */
   complete(
     messages: readonly ConversationMessage[],
     tools: ReturnType<typeof toToolDefinitions>,
     options?: CompleteCallOptions,
+    onDelta?: StreamDeltaSink,
   ): Promise<NativeTurnResponse>;
   /**
    * One model call, no tools, used only to summarize a dropped span. Separate
@@ -148,6 +158,11 @@ export interface TurnDeps {
    * `SendTurnOpts`. Read at dispatch, like the rest of the per-turn state.
    */
   loopHandlerContext?: LoopHandlerContext;
+  /**
+   * S3-3: the turn's event sink, forwarded from `SendTurnOpts`. `runNativeTurn`
+   * wraps it once in a `TurnEventEmitter`; nothing else calls it.
+   */
+  onTurnEvent?: import("#src/session/turn-event").TurnEventSink;
 }
 
 /**

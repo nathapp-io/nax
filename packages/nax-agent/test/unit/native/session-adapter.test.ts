@@ -31,6 +31,7 @@ import {
 import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
+import { withDerivedStream } from "#test/helpers/index";
 
 const REAL_BUILD = _clientDeps.build;
 const REAL_WINDOW = 128_000;
@@ -57,7 +58,7 @@ function countingClient(
   complete?: Client["complete"],
 ): { client: Client; completeCalls: () => number } {
   let calls = 0;
-  const client: Client = {
+  const client: Client = withDerivedStream({
     model: async () => model,
     listModels: async () => [model],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
@@ -69,7 +70,7 @@ function countingClient(
         return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" };
       }),
     validate: () => {},
-  };
+  });
   return { client, completeCalls: () => calls };
 }
 

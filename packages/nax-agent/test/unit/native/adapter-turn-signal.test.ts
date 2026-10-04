@@ -31,7 +31,7 @@ import { NativeSessionAdapter } from "#src/native/session-adapter";
 import type { InteractionHandler } from "#src/session/interaction-handler";
 import type { CodingTool } from "#src/tools/index";
 import { compileToolPolicy, createCodingToolRuntime } from "#src/tools/index";
-import { makeFakeClock, waitForCondition } from "#test/helpers/index";
+import { makeFakeClock, waitForCondition, withDerivedStream } from "#test/helpers/index";
 
 const REAL_BUILD = _clientDeps.build;
 const REAL_LIST = _adapterDeps.listStoredProviders;
@@ -59,7 +59,7 @@ const MODEL = {
 } satisfies ResolvedModel;
 
 function fakeClient(over: Record<string, unknown> = {}): Client {
-  return {
+  return withDerivedStream({
     model: async () => MODEL,
     listModels: async () => [MODEL],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
@@ -71,7 +71,7 @@ function fakeClient(over: Record<string, unknown> = {}): Client {
     }),
     validate: () => {},
     ...over,
-  };
+  });
 }
 
 /** Round 1 offers one Read tool call; every later round closes the turn. */

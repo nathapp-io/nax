@@ -109,6 +109,7 @@ export {
 export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
 export { makeSpawn, makeSpawnResult } from "./spawn";
 export { type MockStatusWriter, makeStatusWriter } from "./status-writer";
+export { eventsFromResult, streamFromComplete, withDerivedStream } from "./stream-from-complete";
 export { cleanupTempDir, makeTempDir, withTempDir } from "./temp";
 export { waitForCondition, withTimeout } from "./timeout";
 export type { TimerSpyResult } from "./timer-spy";
