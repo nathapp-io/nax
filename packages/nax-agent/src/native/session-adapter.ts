@@ -32,6 +32,7 @@ import {
   markNativeTurnOutcome,
   type NativeSessionState,
   openNativeSession,
+  systemFieldFor,
 } from "./session/session.ts";
 import { buildNativeStreamEvent } from "./session/turn-events.ts";
 import { runNativeTurn } from "./session/turn-loop.ts";
@@ -187,6 +188,9 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     // Keyed on the session, so every turn of one conversation carries the same
     // id and the provider can keep its cache warm across them.
     const sessionId = nativeSessionId(handle.id);
+    // S3-4: the session's system prompt (facade `instructions`), or `{}`.
+    // Resolved here so the `complete` closure spreads it without a branch.
+    const systemField = systemFieldFor(this.state, handle.id);
 
     // One budget for the whole turn, not one per round-trip. Created here
     // because this is where `timeoutSeconds` is known; consulted by the loop.
@@ -340,6 +344,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
                 messages,
                 ...(tools.length > 0 ? { tools } : {}),
                 sessionId,
+                ...systemField,
                 signal,
                 ...(requestThinking !== undefined ? { thinking: requestThinking } : {}),
                 ...(requestOptions?.temperature !== undefined ? { temperature: requestOptions.temperature } : {}),

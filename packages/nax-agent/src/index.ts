@@ -8,6 +8,14 @@
  * Generated once by S2-7 from the previous `export *` barrels; maintained by hand.
  */
 
+// biome-ignore assist/source/organizeImports: hand-ordered by byte code — `session-adapter` sorts before `session/` because `-` is below `/`
+export type {
+  CommandInterceptor,
+  InterceptRequest,
+  InterceptResult,
+  ShellInterceptRequest,
+  ShellInterceptResult,
+} from "#src/command-interceptor/index";
 export {
   appendCommandSafetyRow,
   type BuildCommandShadowOptions,
@@ -119,6 +127,33 @@ export {
   type TurnMarker,
 } from "#src/native/index";
 export type { NativeSessionAdapterOptions } from "#src/native/session-adapter";
+export type {
+  AfterResponsePatch,
+  AfterResponsePayload,
+  AfterToolPatch,
+  AfterToolPayload,
+  BeforeCompactionPatch,
+  BeforeCompactionPayload,
+  BeforeRequestPatch,
+  BeforeRequestPayload,
+  BeforeToolOutcome,
+  BeforeToolPayload,
+  BeforeTurnEndPatch,
+  BeforeTurnEndPayload,
+  BeforeTurnPatch,
+  BeforeTurnPayload,
+  CompleteCallOptions,
+  ExternalHandlerOf,
+  LoopEvent,
+  LoopEventMap,
+  LoopHandlerContext,
+  LoopHandlerEntry,
+  LoopHandlerSet,
+  PatchOf,
+  PayloadOf,
+  TransformContextPatch,
+  TransformContextPayload,
+} from "#src/native/session/loop-events/types";
 export {
   type ApprovalAuditRow,
   type ApprovalEntry,
@@ -230,6 +265,24 @@ export {
   warnSandboxUnavailableOnce,
 } from "#src/sandbox/index";
 export type { AdapterFailure } from "#src/session/adapter-failure";
+export { createAgentSession } from "#src/session/agent-session";
+export { AgentSessionError, type AgentSessionErrorCode } from "#src/session/agent-session-errors";
+export type {
+  AgentSession,
+  AgentSessionHostPorts,
+  AgentSessionProfile,
+  AnswerReply,
+  AnswerStatus,
+  ApprovalDecidedBy,
+  CreateAgentSessionOptions,
+  EmbedderTool,
+  EmbedderToolContext,
+  EmbedderToolResult,
+  SessionEvent,
+  SessionEventBase,
+  SessionEventBody,
+  TurnEndStatus,
+} from "#src/session/agent-session-types";
 export type {
   AgentAwaitingHumanEvent,
   AgentCallEndedEvent,

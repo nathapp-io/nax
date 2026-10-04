@@ -106,6 +106,11 @@ const session = await createAgentSession({
   from `/internal` to `.` (they are already referenced by the public `SendTurnOpts`). The facade fills
   `LoopHandlerContext` with `sessionName`, `workdir`, `model` and `provider`; the nax-shaped fields (`storyId`,
   `feature`, `role`) stay optional and unset.
+- **As built (S3-4):** `instructions` is sent as the request's top-level `system` through a new optional
+  `OpenSessionOpts.systemPrompt` (nax-ai's `ConversationMessage` has no system role). `workdir` is optional for `none`;
+  the facade then uses a private temporary root, removed on `close()`. `bashApproval` and `allowUnsandboxed` are rejected
+  outside `full`, and `allowUnsandboxed` requires `bashApproval: "gated"`. `hostPorts.runDeclaredCommand` is deferred
+  (RunCommand needs a declared-command catalogue); `lastTurn` is `{...} | undefined` rather than optional.
 
 ### 4.2 The session object
 
@@ -163,9 +168,12 @@ interface EmbedderTool {
 }
 ```
 
-- The facade builds a `CodingTool` (`tools/registry.ts:105-121`) per embedder tool and passes it in the runtime's
-  `extraTools`, with a grant in the compiled policy. The model sees the tool's own `name`. (The `ProviderTool` route,
-  `tools/provider-adapt.ts:12-37`, namespaces names as `<providerId>__<localName>` and is not used here.)
+- **As built (S3-4):** the facade appends a descriptor-only `CodingTool` per embedder tool to `SendTurnOpts.codingTools`
+  and runs the embedder's `run` from its own `InteractionHandler`, which receives the `toolCallId` and the turn signal on
+  the `coding-tool` request. It does not use the runtime's `extraTools`, which would let a name shadow a built-in. A
+  failed embedder tool (`isError: true` or a throw) is reported by throwing from the handler; the tool batch records the
+  message as an `isError` result. The model sees the tool's own `name`. (The `ProviderTool` route,
+  `tools/provider-adapt.ts`, namespaces names as `<providerId>__<localName>` and is not used here.)
 - A name that collides with a built-in or reserved name throws `AGENT_SESSION_TOOL_NAME_RESERVED` at creation (same
   reserved list as `registerCodingTool`, `tools/registry.ts:124-148`).
 - `approval: "always"`: the facade's wrapper around `run` calls the session ask link itself before running, with
@@ -304,13 +312,19 @@ The same per-turn sink (`SendTurnOpts.onTurnEvent`) carries `tool_call`, `tool_r
 `compaction`, so the facade builds §4.4 without parsing the activity stream. Questions and approvals do not go through
 the sink: the facade raises them itself (§6.1). The existing activity and stream-bus events stay unchanged for nax.
 
+**As built (S3-3).** `compaction.reason` is `"proactive" | "overflow"`. The compaction summary emits no `usage` (turn
+totals come from `TurnResult`). `ask_human`, and calls the loop answers without running (spin stop, cancel, the invalid
+call budget), emit no tool events. Redaction and byte caps (`tool_call.input` 8192, `tool_result.preview` 4096) are
+applied in the backend at the sink, best-effort. `stream_reset` is emitted by the loop's per-attempt request wrapper.
+`tool_call.input` redaction cuts each string to the scan size first (S3-4).
+
 ### 5.5 `TranscriptStore` port (R4)
 
 ```ts
 interface TranscriptStore {
   load(sessionId: string): Promise<TranscriptDoc | null>;
   save(sessionId: string, doc: TranscriptDoc): Promise<void>;
-  retainFailed(sessionId: string, doc: TranscriptDoc): Promise<void>;
+  retainFailed(sessionId: string): Promise<void>;
   delete(sessionId: string): Promise<void>;
   markTurn(sessionId: string, marker: TurnMarker): Promise<void>;   // read-merge, facade only
 }
@@ -324,6 +338,8 @@ interface TranscriptDoc {
 }
 interface TurnMarker { turnId: string; state: "running" | "ended" }
 ```
+
+As built (S3-1): `retainFailed` takes no document; it moves the stored one aside.
 
 - **File store.** `createFileTranscriptStore(dir)` keeps today's layout and bytes: `<dir>/<name>.transcript.json`,
   the `.transcript.failed-<stamp>.json` rename, the prune to 50 (`native/session/transcript-store.ts:16,172-193`),
@@ -368,6 +384,11 @@ The facade's `AskResolver` is `chainAskLinks([sessionAskLink])`, passed to `buil
 - **Turn deadline.** `turnTimeoutSeconds` is wall clock (`createTurnDeadline`, `session-adapter.ts:141`) and keeps
   running during asks. When it fires, the turn ends `timed_out` and pending asks resolve with `decidedBy: "cancelled"`.
   The default (3600) is at least the largest `approvalTimeoutMs`, so one ask cannot outlive its turn by default.
+
+**As built (S3-4).** Under `full`, `bashApproval: "gated"` puts every Bash command to the person (an unconditional ask
+rule over the unconditional grant); `"escalate"` asks only for commands the screen refuses; `"raw"` never asks. Write,
+Edit and Delete never ask. `approval_requested.command` is masked with `maskForPrompt`; a command that cannot be masked
+safely is unshowable. An embedder tool's `run` is raced against the turn signal and abandoned on abort.
 
 ### 6.2 Host ports for embedders
 
@@ -452,6 +473,8 @@ All new codes are namespaced `AGENT_SESSION_*` to avoid clashes with nax's `SESS
 | `AGENT_SESSION_SANDBOX_UNAVAILABLE` | §6.3 |
 | `AGENT_SESSION_TOOL_NAME_RESERVED` | embedder tool name collides with a built-in or reserved name |
 | `AGENT_SESSION_CONSUMER_STALLED` | `turn_end.error.code` when the control-event cap is hit (§4.4) |
+| `AGENT_SESSION_TURN_FAILED` | `turn_end.error.code` for a turn failure with no adapter outcome or nax-agent code (S3-4); provider faults carry `AdapterFailure.outcome`, nax-agent errors their own code |
+| `AGENT_SESSION_SPIN_STOPPED` / `AGENT_SESSION_INVALID_TOOL_CALLS` / `AGENT_SESSION_TURN_INCOMPLETE` | `turn_end.error.code` when the loop halts the turn (spin breaker, invalid-call budget, calls left pending); `output` and `usage` are kept (S3-4) |
 
 Turn-level failures map to `turn_end.status`: provider and transport faults `errored`, the turn deadline `timed_out`,
 `cancel()` and iterator `return()` `cancelled`, a throwing store `errored`.

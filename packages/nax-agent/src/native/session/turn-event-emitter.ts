@@ -25,7 +25,7 @@ import type { ToolCall } from "@nathapp/nax-ai";
 import type { TokenUsage } from "#src/cost/standard-types";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
-import { redactSecrets } from "#src/internal/redact";
+import { capStrings, redactSecrets } from "#src/internal/redact";
 import { isThenable } from "#src/internal/thenable";
 import type { TurnEvent, TurnEventSink } from "#src/session/turn-event";
 import { cutToByteCap } from "#src/tools/truncate";
@@ -38,7 +38,7 @@ export const TOOL_RESULT_PREVIEW_BYTES = 4096;
 /** Byte cap on `tool_call.input` as JSON; a larger input becomes `{ truncated: true, preview }`. */
 export const TOOL_CALL_INPUT_BYTES = 8192;
 
-/** Redaction scans at most this many bytes of a result; the preview keeps far fewer. */
+/** Redaction scans at most this many bytes of a result, and of each string in a tool input; the preview keeps far fewer. */
 const REDACTION_SCAN_BYTES = TOOL_RESULT_PREVIEW_BYTES * 16;
 
 const UNANSWERED_PREVIEW = "Not answered: the turn ended.";
@@ -74,7 +74,7 @@ export function usageEvent(round: number, usage: TokenUsage, costUsd: number): T
 }
 
 function cappedInput(input: unknown): unknown {
-  const redacted = redactSecrets(input);
+  const redacted = redactSecrets(capStrings(input, REDACTION_SCAN_BYTES));
   let json: string;
   try {
     json = JSON.stringify(redacted) ?? "null";
