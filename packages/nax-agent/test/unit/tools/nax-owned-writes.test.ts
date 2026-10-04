@@ -1,14 +1,19 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   isNaxConfigFile,
   isNaxOwnedWritePath,
+  NAX_ALWAYS_DENIED_ENTRIES,
   NAX_OWNED_WRITE_TOOLS,
   NAX_SCRATCHPAD_ENTRY,
   naxOwnedBashRefusal,
   naxOwnedKind,
+  naxOwnedPathsPolicy,
   naxOwnedWriteRefusal,
   naxWriteOptIns,
+  QUEUE_CONTROL_FILES,
 } from "#src/tools/nax-owned-writes";
 import { SCRATCHPAD_DIR } from "#src/tools/scratchpad";
 
@@ -383,5 +388,72 @@ describe("naxOwnedBashRefusal — sandboxWrapped (US-002)", () => {
     expect(naxOwnedBashRefusal("Bash", "prd", PRD, "names", { sandboxWrapped: false })).toBe(
       naxOwnedBashRefusal("Bash", "prd", PRD, "names"),
     );
+  });
+});
+
+describe("naxOwnedPathsPolicy (the OwnedPathsPolicy adapter over this module)", () => {
+  const p = naxOwnedPathsPolicy;
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "nax-owned-adapter-")));
+
+  test("writeRefusal is naxOwnedWriteRefusal", () => {
+    const optIns = new Set<string>();
+    for (const rel of [".nax/features/f/prd.json", ".queue.txt", ".nax/features/f/context.md", "src/a.ts"]) {
+      expect(p.writeRefusal("Write", rel, { optIns })).toBe(naxOwnedWriteRefusal("Write", rel, undefined, optIns));
+    }
+    expect(
+      p.writeRefusal("Write", ".nax/features/f/prd.json", { exemptRel: ".nax/features/f/prd.json", optIns }),
+    ).toBeUndefined();
+    expect(p.writeRefusal("Read", ".queue.txt", { optIns })).toBeUndefined();
+  });
+
+  test("configRefusal returns today's reason text for a config file and undefined otherwise", () => {
+    expect(p.configRefusal(root, join(root, ".nax", "config.json"))).toBe(
+      "is one of nax's own config files, which every tool is refused regardless of grant -- " +
+        "`quality.commands` and `acceptance.command` are run through a shell WITHOUT passing the " +
+        "permission gate because a human wrote them, so editing this file is a route to running " +
+        "an ungated command on the next run",
+    );
+    expect(p.configRefusal(root, join(root, ".nax", "mono", "packages", "api", "config.json"))).toBeDefined();
+    expect(p.configRefusal(root, join(root, "docs", "nax", "config.json"))).toBeUndefined();
+  });
+
+  test("bashRefusal: the first matching frame decides, config by lexical path, PRD/queue by rel", () => {
+    const configFirst = [
+      { lexical: join(root, ".nax", "config.json"), rel: null },
+      { lexical: join(root, "x"), rel: ".queue.txt" },
+    ];
+    expect(p.bashRefusal("Bash", "t", configFirst, { root, verb: "names", sandboxWrapped: false })).toBe(
+      naxOwnedBashRefusal("Bash", "config", "t", "names"),
+    );
+    const queue = [{ lexical: join(root, ".queue.txt"), rel: ".queue.txt" }];
+    expect(p.bashRefusal("Bash", ".queue.txt", queue, { root, verb: "redirects into", sandboxWrapped: true })).toBe(
+      naxOwnedBashRefusal("Bash", "queue", ".queue.txt", "redirects into", { sandboxWrapped: true }),
+    );
+  });
+
+  test("bashRefusal: a sandbox-wrapped command that only names a PRD is allowed; a redirect into it is not", () => {
+    const prd = [{ lexical: join(root, ".nax", "features", "f", "prd.json"), rel: ".nax/features/f/prd.json" }];
+    expect(p.bashRefusal("Bash", "prd.json", prd, { root, verb: "names", sandboxWrapped: true })).toBeUndefined();
+    expect(p.bashRefusal("Bash", "prd.json", prd, { root, verb: "names", sandboxWrapped: false })).toBe(
+      naxOwnedBashRefusal("Bash", "prd", "prd.json", "names"),
+    );
+    expect(p.bashRefusal("Bash", "prd.json", prd, { root, verb: "redirects into", sandboxWrapped: true })).toBe(
+      naxOwnedBashRefusal("Bash", "prd", "prd.json", "redirects into", { sandboxWrapped: true }),
+    );
+  });
+
+  test("bashRefusal: a PRD in an earlier frame wins over config in a later one (today's first-hit order)", () => {
+    const prdThenConfig = [
+      { lexical: join(root, "a"), rel: ".nax/features/f/prd.json" },
+      { lexical: join(root, ".nax", "config.json"), rel: null },
+    ];
+    expect(p.bashRefusal("Bash", "t", prdThenConfig, { root, verb: "names", sandboxWrapped: true })).toBeUndefined();
+  });
+
+  test("sandbox data is today's constants", () => {
+    expect(p.deniedEntries).toEqual(NAX_ALWAYS_DENIED_ENTRIES);
+    expect(p.rootWriteDenies).toEqual([...QUEUE_CONTROL_FILES]);
+    expect(p.scratchpadEntry).toBe(NAX_SCRATCHPAD_ENTRY);
+    expect([...p.writeOptIns(root, [".nax/rules"])]).toEqual([...naxWriteOptIns(root, [".nax/rules"])]);
   });
 });

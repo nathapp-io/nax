@@ -125,6 +125,26 @@ describe("resolveDispatchLauncher — US-002 the run's own temp root", () => {
 
     expect(policy.denyWrite).toContain(realOrRaw(trustStoreFile));
   });
+
+  test("S3-2 pin: the sandbox denies nax's owned entries and run-control files", async () => {
+    const { policy } = await runDispatched();
+
+    for (const entry of [
+      "config.json",
+      "mono",
+      "rules",
+      "context.md",
+      "hooks.json",
+      "plugins",
+      "templates",
+      "prompts",
+    ]) {
+      expect(policy.denyWrite).toContain(realOrRaw(join(root, ".nax", entry)));
+    }
+    expect(policy.denyWrite).toContain(realOrRaw(join(root, ".queue.txt")));
+    expect(policy.denyWrite).toContain(realOrRaw(join(root, ".queue.txt.processing")));
+    expect(policy.denyWrite).not.toContain(realOrRaw(join(root, ".nax", "scratchpad")));
+  });
 });
 
 describe("resolveCodingToolSupport — nax-side entry (S1 spec port 1)", () => {

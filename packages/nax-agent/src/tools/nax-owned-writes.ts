@@ -14,6 +14,7 @@
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { realOrRaw } from "#src/internal/realpath";
+import type { OwnedBashCandidate, OwnedPathsPolicy } from "./owned-paths.ts";
 
 /**
  * The one top-level `.nax/` entry agents may write freely: the scratchpad.
@@ -291,3 +292,41 @@ function naxStateRefusal(rel: string, optIns: ReadonlySet<string>): string | und
     "A human can open a path for a story by listing it in execution.sandbox.filesystem.allowWrite in the project config."
   );
 }
+
+/** `outOfRootReason`'s text for a nax config file (completes `path "x" <text>`). */
+export const NAX_CONFIG_REFUSAL =
+  "is one of nax's own config files, which every tool is refused regardless of grant -- " +
+  "`quality.commands` and `acceptance.command` are run through a shell WITHOUT passing the " +
+  "permission gate because a human wrote them, so editing this file is a route to running " +
+  "an ungated command on the next run";
+
+/**
+ * The first frame that hits, in today's two-pass order per frame (see the raw
+ * Bash screen in policy-bash-raw.ts): the lexical config check, then the
+ * resolver's PRD/queue check.
+ */
+function firstOwnedHit(root: string, candidates: readonly OwnedBashCandidate[]): NaxOwnedKind | undefined {
+  for (const candidate of candidates) {
+    if (isNaxConfigFile(root, candidate.lexical)) return "config";
+    const kind = candidate.rel === null ? undefined : naxOwnedKind(candidate.rel);
+    if (kind !== undefined) return kind;
+  }
+  return undefined;
+}
+
+/** nax's OwnedPathsPolicy: this module's rules behind the S3-2 port. */
+export const naxOwnedPathsPolicy: OwnedPathsPolicy = {
+  writeRefusal: (tool, rel, ctx) => naxOwnedWriteRefusal(tool, rel, ctx.exemptRel, ctx.optIns),
+  configRefusal: (root, resolved) => (isNaxConfigFile(root, resolved) ? NAX_CONFIG_REFUSAL : undefined),
+  bashRefusal: (tool, token, candidates, ctx) => {
+    const kind = firstOwnedHit(ctx.root, candidates);
+    if (kind === undefined) return undefined;
+    // US-002: sandbox-wrapped, a token that only NAMES a PRD is allowed.
+    if (ctx.verb === "names" && ctx.sandboxWrapped && kind === "prd") return undefined;
+    return naxOwnedBashRefusal(tool, kind, token, ctx.verb, { sandboxWrapped: ctx.sandboxWrapped });
+  },
+  deniedEntries: NAX_ALWAYS_DENIED_ENTRIES,
+  rootWriteDenies: [...QUEUE_CONTROL_FILES],
+  scratchpadEntry: NAX_SCRATCHPAD_ENTRY,
+  writeOptIns: naxWriteOptIns,
+};
