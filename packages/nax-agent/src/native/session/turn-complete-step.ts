@@ -25,6 +25,7 @@ import { applyHistoryPatch } from "./loop-events/cache-boundary.ts";
 import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events/index.ts";
 import type { TurnAccumulator } from "./turn-accumulator.ts";
 import { runOverflowCompaction } from "./turn-compaction-step.ts";
+import type { TurnEventEmitter } from "./turn-event-emitter.ts";
 import { realSleep, retryTransportFault } from "./turn-retry.ts";
 import type { NativeTurnResponse, TurnDeps } from "./turn-types.ts";
 
@@ -88,6 +89,8 @@ export interface CompleteStepArgs {
   readonly model?: string;
   readonly deps: TurnDeps;
   readonly signal?: AbortSignal;
+  /** S3-3: the turn's event emitter. Emits stream_reset and the overflow compaction; hands the adapter a per-attempt delta sink. */
+  readonly turnEvents: TurnEventEmitter;
 }
 
 export async function completeWithRecovery(args: CompleteStepArgs): Promise<CompleteStepResult> {
@@ -103,6 +106,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
     model,
     deps,
     signal,
+    turnEvents,
   } = args;
   let messages: readonly NativeTranscriptMessage[] = args.messages;
   let compacted = false;
@@ -117,6 +121,11 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
   let attempt = 0;
   const request = async (msgs: readonly NativeTranscriptMessage[]): Promise<NativeTurnResponse> => {
     attempt += 1;
+    // Spec 5.3: every request attempt after the first voids the round's
+    // deltas so far. nax-ai retries only before the first event, so any
+    // re-issue with deltas already shown comes from here (transport retry or
+    // the overflow retry).
+    if (attempt > 1) turnEvents.emit({ type: "stream_reset", round: roundTrip, attempt });
     const patch = await loopEvents.dispatch("before_request", {
       ...(model !== undefined ? { model } : {}),
       roundTrip,
@@ -149,7 +158,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
     // successful attempt is the last one to reach this line — `honoured`
     // describes the wire the provider actually answered (spec 3.6).
     honoured = wire.honoured;
-    return deps.complete(wire.messages, tools, options);
+    return deps.complete(wire.messages, tools, options, turnEvents.deltaSink(roundTrip));
   };
   try {
     res = await request(messages);
@@ -219,6 +228,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
       });
       messages = [...step.messages];
       compacted = true;
+      turnEvents.emit({ type: "compaction", reason: "overflow" });
       // Retried once. A second overflow propagates: compacting further would be
       // guessing, and the failure now carries a correct diagnosis.
       res = await request(messages);

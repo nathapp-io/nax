@@ -63,17 +63,19 @@ function summaryPrompt(previousSummary?: string): string {
 }
 
 /**
- * US-003: the plugin-contributed loop handlers a turn carries, in the shape
- * `runNativeTurn` takes them in. Built here rather than inline in `sendTurn`
- * because those two conditional spreads are what pushed that method past its
- * recorded cognitive complexity; each field is omitted entirely when the
- * caller supplied none, so a session that loaded no `loop-handlers` plugin
- * carries neither key.
+ * US-003: the per-turn inputs the adapter forwards verbatim into `TurnDeps`:
+ * the plugin-contributed loop handlers and the facts their handlers read, plus
+ * (S3-3) the turn's `onTurnEvent` sink. Built here rather than inline in
+ * `sendTurn` because those conditional spreads are what pushed that method past
+ * its recorded cognitive complexity; each field is omitted entirely when the
+ * caller supplied none, so a session that loaded no `loop-handlers` plugin and
+ * sets no sink carries none of these keys.
  */
-function loopHandlerDeps(opts: SendTurnOpts): Pick<TurnDeps, "loopHandlers" | "loopHandlerContext"> {
+function perTurnDeps(opts: SendTurnOpts): Pick<TurnDeps, "loopHandlers" | "loopHandlerContext" | "onTurnEvent"> {
   return {
     ...(opts.loopHandlers !== undefined ? { loopHandlers: opts.loopHandlers } : {}),
     ...(opts.loopHandlerContext !== undefined ? { loopHandlerContext: opts.loopHandlerContext } : {}),
+    ...(opts.onTurnEvent !== undefined ? { onTurnEvent: opts.onTurnEvent } : {}),
   };
 }
 
@@ -262,7 +264,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
         // their handlers read travel the same way as `loopEvents` — both are
         // per-turn inputs the loop installs onto its registry rather than
         // state the adapter owns.
-        ...loopHandlerDeps(opts),
+        ...perTurnDeps(opts),
         // US-002: the one per-turn signal threaded into the batch and the
         // in-flight coding-tool runtime. When `opts.signal` and the watchdog
         // and the deadline are all absent, `turnSignal` is a non-aborted

@@ -37,6 +37,7 @@ import {
 } from "./transcript-identity.ts";
 import { createTurnAccumulator } from "./turn-accumulator.ts";
 import { dispatchTurnEndOnError } from "./turn-end-event.ts";
+import { createTurnEventEmitter } from "./turn-event-emitter.ts";
 import type { SpinFlags, TurnLoopState, TurnRoundParams } from "./turn-loop-round-trip.ts";
 import { runRoundTripLoop, runTurnEndPhase } from "./turn-loop-round-trip.ts";
 import { buildTurnResult, logTurnTailWarnings } from "./turn-result.ts";
@@ -181,6 +182,7 @@ export async function runNativeTurn(
     interactions,
     codingToolsCalled,
     usage,
+    turnEvents: createTurnEventEmitter(deps.onTurnEvent),
   };
 
   let state: TurnLoopState = {

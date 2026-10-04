@@ -158,6 +158,11 @@ export interface TurnDeps {
    * `SendTurnOpts`. Read at dispatch, like the rest of the per-turn state.
    */
   loopHandlerContext?: LoopHandlerContext;
+  /**
+   * S3-3: the turn's event sink, forwarded from `SendTurnOpts`. `runNativeTurn`
+   * wraps it once in a `TurnEventEmitter`; nothing else calls it.
+   */
+  onTurnEvent?: import("#src/session/turn-event").TurnEventSink;
 }
 
 /**
