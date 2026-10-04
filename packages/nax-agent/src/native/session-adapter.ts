@@ -2,7 +2,8 @@
  * The native session adapter: openSession / sendTurn / closeSession over
  * nax-ai, no subprocess. openSession/closeSession are transcript-file
  * bookkeeping, and sendTurn maps the native turn loop (session/turn-loop.ts)
- * over complete() — nax owns the conversation because nax-ai's client is
+ * over streamed model calls (`stream-complete.ts`; the compaction summary uses
+ * complete()) — nax owns the conversation because nax-ai's client is
  * stateless (ADR-027 section 10, ADR-028).
  */
 
@@ -36,6 +37,7 @@ import { buildNativeStreamEvent } from "./session/turn-events.ts";
 import { runNativeTurn } from "./session/turn-loop.ts";
 import { readNativeTurnFailureUsage, type TurnDeps } from "./session/turn-types.ts";
 import { nativeSessionId } from "./session-affinity.ts";
+import { streamComplete } from "./stream-complete.ts";
 
 /**
  * Fallback whole-turn budget when a session's timeout entry is missing.
@@ -306,7 +308,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
             if (timer !== undefined) _adapterDeps.clearTimeout(timer);
           }
         },
-        complete: async (messages, tools, requestOptions) => {
+        complete: async (messages, tools, requestOptions, onDelta) => {
           // The controller is armed with what is LEFT of the turn, so N
           // round-trips can no longer add up to N x timeoutSeconds. Still
           // combined with any caller-supplied opts.signal via AbortSignal.any so
@@ -329,25 +331,30 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
           const requestThinking = requestOptions?.thinking === false ? undefined : thinking;
 
           try {
-            const res = await client.complete(resolved, {
-              messages,
-              ...(tools.length > 0 ? { tools } : {}),
-              sessionId,
-              signal,
-              ...(requestThinking !== undefined ? { thinking: requestThinking } : {}),
-              ...(requestOptions?.temperature !== undefined ? { temperature: requestOptions.temperature } : {}),
-              // nax#1835: "short" is fixed, not config-driven (this repo's
-              // precedent -- the compaction design -- rejects knobs added
-              // before evidence). The turn loop's round trips are seconds
-              // apart, so "short" already hits; "long" would only pay off for
-              // a later turn and bills more at write time for a window this
-              // turn does not need. Only this round-trip closure sets it: the
-              // one-shot complete() and the summarize closure below have no
-              // successor turn (or, for summarize, a shape unlikely to repeat)
-              // to reuse the entry, so a cache write there costs more than it
-              // saves.
-              cacheRetention: "short",
-            });
+            const res = await streamComplete(
+              client,
+              resolved,
+              {
+                messages,
+                ...(tools.length > 0 ? { tools } : {}),
+                sessionId,
+                signal,
+                ...(requestThinking !== undefined ? { thinking: requestThinking } : {}),
+                ...(requestOptions?.temperature !== undefined ? { temperature: requestOptions.temperature } : {}),
+                // nax#1835: "short" is fixed, not config-driven (this repo's
+                // precedent -- the compaction design -- rejects knobs added
+                // before evidence). The turn loop's round trips are seconds
+                // apart, so "short" already hits; "long" would only pay off for
+                // a later turn and bills more at write time for a window this
+                // turn does not need. Only this round-trip closure sets it: the
+                // one-shot complete() and the summarize closure below have no
+                // successor turn (or, for summarize, a shape unlikely to repeat)
+                // to reuse the entry, so a cache write there costs more than it
+                // saves.
+                cacheRetention: "short",
+              },
+              onDelta,
+            );
             const usage = res.usage;
             // Single `priceCall` invocation: `costUsd` and `resolvedRates`
             // come from the same call so they cannot diverge — the
