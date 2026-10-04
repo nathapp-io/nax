@@ -27,7 +27,7 @@ export interface SandboxPolicyInput {
   readonly git: GitLayout;
   /** Redirecting git files present now, every worktree included (listGitGuardFiles, #2198). */
   readonly gitGuardFiles: readonly string[];
-  /** Top-level entry names under `<root>/.nax` right now (listNaxEntries). */
+  /** Top-level entry names under `<root>/<projectStateDir>` right now (listNaxEntries). */
   readonly naxEntries: readonly string[];
   /** S3-2: host-owned path rules; supplies the always-denied project-state entries and root files. */
   readonly ownedPaths: OwnedPathsPolicy;

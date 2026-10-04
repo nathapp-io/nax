@@ -139,7 +139,7 @@ function deny(reason: string): BashCheck {
  * 1. `lexical`: the candidate resolved lexically against the frame --
  *    `realOrRaw` walks to the nearest existing ancestor, so a not-yet-created
  *    file under a symlinked temp root still compares equal to
- *    `realOrRaw(root)`. The policy's nax-config check (`isNaxConfigFile`) runs
+ *    `realOrRaw(root)`. The policy's lexical config check runs
  *    on this, BEFORE the resolver is consulted -- the raw screen has no typed
  *    seam in front of it, and `resolvePath` (production: `resolveWithin`)
  *    returns null for `.nax/config.json` exactly because typed tools are
@@ -147,7 +147,7 @@ function deny(reason: string): BashCheck {
  *
  * 2. `rel`: the typed-seam resolver's root-relative spelling for the same
  *    frame, null when it refused or the path is outside the root. The
- *    policy's PRD/queue check (`naxOwnedKind`) runs on this.
+ *    policy's PRD/queue check runs on this.
  */
 function ownedCandidates(args: RawScreenArgs, candidate: string, cwd: readonly string[]): OwnedBashCandidate[] {
   return cwd.map((directory) => {

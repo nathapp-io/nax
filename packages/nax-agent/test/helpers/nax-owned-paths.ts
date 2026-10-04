@@ -281,7 +281,7 @@ export function naxOwnedWriteRefusal(
  * `isNaxConfigFile` refusal, which covers reads too.
  *
  * Only a leading `.nax/` segment is matched, so a monorepo package's own
- * `.nax/` is excluded on purpose -- see `naxDenies` in nax-agent's
+ * `.nax/` is excluded on purpose -- see `projectStateDenies` in nax-agent's
  * src/sandbox/policy-builder.ts for why that is mostly safe to delete and
  * where the one gap (package `rules/`) remains.
  */

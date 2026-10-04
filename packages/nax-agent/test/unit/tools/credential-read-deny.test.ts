@@ -108,6 +108,13 @@ describe("Read, Glob and Grep apply the credential read-deny", () => {
     expect(result.content).toContain("narrow");
   });
 
+  test("Grep refuses a search rooted at a symlink to the credential directory", async () => {
+    symlinkSync(credDir, join(root, "link"));
+    const result = await grepTool.run({ pattern: "x", path: "link" }, ctxFor([join(root, "link")]));
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("credential");
+  });
+
   test("Grep inside an unrelated subdirectory still runs", async () => {
     mkdirSync(join(root, "src"));
     writeFileSync(join(root, "src", "a.ts"), "needle");

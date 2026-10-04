@@ -132,6 +132,7 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
       grants: opts.grants ?? [{ tool: "Read", patterns: ["*"] }],
       bashApproval: opts.bashApproval ?? "raw",
       launcher,
+      ownedPaths: naxOwnedPathsPolicy,
       ...(opts.askResolver !== undefined ? { askResolver: opts.askResolver } : {}),
       ...(opts.stripEnvVars !== undefined ? { stripEnvVars: opts.stripEnvVars } : {}),
     });
