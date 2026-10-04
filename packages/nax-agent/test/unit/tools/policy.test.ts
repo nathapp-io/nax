@@ -1,9 +1,10 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolScope } from "#src/tools/index";
-import { compileToolPolicy, resolveWithin } from "#src/tools/index";
+import { compileToolPolicy } from "#src/tools/index";
+import { naxOwnedPathsPolicy } from "#src/tools/nax-owned-writes";
 
 const PATH_SCOPE: ToolScope = { pathFields: ["path"] };
 let root: string;
@@ -19,7 +20,8 @@ beforeAll(() => {
   writeFileSync(join(outside, "secret.txt"), "no");
   symlinkSync(outside, join(root, "escape-link"));
 
-  // Fixture for the .git-exclusion describe block below (nax#1943).
+  // Fixture also serving the .git-exclusion describe, which lives in
+  // policy-owned-paths.test.ts alongside the rest of the seam's coverage.
   mkdirSync(join(root, ".git"), { recursive: true });
   writeFileSync(join(root, ".git", "index"), "not a real index");
   mkdirSync(join(root, ".github", "workflows"), { recursive: true });
@@ -36,19 +38,23 @@ beforeAll(() => {
 
 describe("compileToolPolicy — patterns", () => {
   test("allows a path matching the grant's glob", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["src/**"] }], root);
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["src/**"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const verdict = policy.check("Write", PATH_SCOPE, { path: "src/a.ts" });
     expect(verdict.allowed).toBe(true);
   });
 
   test("denies a path outside the grant's glob", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["src/**"] }], root);
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["src/**"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const verdict = policy.check("Write", PATH_SCOPE, { path: "test/a.ts" });
     expect(verdict.allowed).toBe(false);
   });
 
   test("denies a tool with no grant at all; a bare '*' grant allows any path inside the root", () => {
-    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, { ownedPaths: naxOwnedPathsPolicy });
     expect(policy.check("Write", PATH_SCOPE, { path: "src/a.ts" }).allowed).toBe(false);
     expect(policy.check("Read", PATH_SCOPE, { path: "test/deep/x.ts" }).allowed).toBe(true);
   });
@@ -58,21 +64,21 @@ describe("compileToolPolicy — containment is the hard boundary", () => {
   // The design's central safety claim. If this block is ever deleted to make
   // something pass, unrestricted silently means the whole filesystem.
   test("unrestricted-equivalent grants STILL deny outside the root", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, { ownedPaths: naxOwnedPathsPolicy });
     const verdict = policy.check("Write", PATH_SCOPE, { path: join(outside, "secret.txt") });
     expect(verdict.allowed).toBe(false);
     if (!verdict.allowed) expect(verdict.breach).toBe(true);
   });
 
   test("denies '..' traversal", () => {
-    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, { ownedPaths: naxOwnedPathsPolicy });
     const verdict = policy.check("Read", PATH_SCOPE, { path: "../elsewhere/secret.txt" });
     expect(verdict.allowed).toBe(false);
     if (!verdict.allowed) expect(verdict.breach).toBe(true);
   });
 
   test("an out-of-root refusal names the root the agent is actually confined to", () => {
-    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, { ownedPaths: naxOwnedPathsPolicy });
     const verdict = policy.check("Read", PATH_SCOPE, { path: "../elsewhere/secret.txt" });
     expect(verdict.allowed).toBe(false);
     if (verdict.allowed) throw new Error("unreachable");
@@ -81,21 +87,25 @@ describe("compileToolPolicy — containment is the hard boundary", () => {
   });
 
   test("denies a symlink pointing outside the root", () => {
-    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, { ownedPaths: naxOwnedPathsPolicy });
     const verdict = policy.check("Read", PATH_SCOPE, { path: "escape-link/secret.txt" });
     expect(verdict.allowed).toBe(false);
     if (!verdict.allowed) expect(verdict.breach).toBe(true);
   });
 
   test("a breach is distinguishable from an ordinary pattern denial", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["src/**"] }], root);
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["src/**"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const denial = policy.check("Write", PATH_SCOPE, { path: "test/a.ts" });
     expect(denial.allowed).toBe(false);
     if (!denial.allowed) expect(denial.breach).toBe(false);
   });
 
   test("allows a path that does not exist yet, inside the root", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["src/**"] }], root);
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["src/**"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     expect(policy.check("Write", PATH_SCOPE, { path: "src/not/created/yet.ts" }).allowed).toBe(true);
   });
 });
@@ -108,13 +118,15 @@ describe("compileToolPolicy — tool-level gating", () => {
   };
 
   test("allows a granted verb; denies a verb the grant omits", () => {
-    const policy = compileToolPolicy([{ tool: "Git", patterns: ["diff", "log"] }], root);
+    const policy = compileToolPolicy([{ tool: "Git", patterns: ["diff", "log"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     expect(policy.check("Git", VERB_SCOPE, { subcommand: "diff" }).allowed).toBe(true);
     expect(policy.check("Git", VERB_SCOPE, { subcommand: "blame" }).allowed).toBe(false);
   });
 
   test("denies a verb outside the tool's own allowedVerbs even when granted '*'", () => {
-    const policy = compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root);
+    const policy = compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root, { ownedPaths: naxOwnedPathsPolicy });
     expect(policy.check("Git", VERB_SCOPE, { subcommand: "push" }).allowed).toBe(false);
   });
 
@@ -125,6 +137,7 @@ describe("compileToolPolicy — tool-level gating", () => {
         { tool: "Git", patterns: ["diff"] },
       ],
       root,
+      { ownedPaths: naxOwnedPathsPolicy },
     );
     expect([...policy.grantedTools()].sort()).toEqual(["Git", "Read"]);
   });
@@ -145,7 +158,11 @@ describe("compileToolPolicy — tool-level gating", () => {
  */
 describe("compileToolPolicy — ** spans directory segments, not partial names", () => {
   function allows(patterns: string[], path: string): boolean {
-    return compileToolPolicy([{ tool: "Write", patterns }], root).check("Write", PATH_SCOPE, { path }).allowed;
+    return compileToolPolicy([{ tool: "Write", patterns }], root, { ownedPaths: naxOwnedPathsPolicy }).check(
+      "Write",
+      PATH_SCOPE,
+      { path },
+    ).allowed;
   }
 
   test("a mid-pattern ** matches whole segments", () => {
@@ -202,7 +219,11 @@ const GIT_SCOPE: ToolScope = {
 
 describe("compileToolPolicy — path globs apply to array and ref fields too", () => {
   function check(patterns: string[], input: Record<string, unknown>) {
-    return compileToolPolicy([{ tool: "Git", patterns }], root).check("Git", GIT_SCOPE, input);
+    return compileToolPolicy([{ tool: "Git", patterns }], root, { ownedPaths: naxOwnedPathsPolicy }).check(
+      "Git",
+      GIT_SCOPE,
+      input,
+    );
   }
 
   test("a path glob beside the verbs restricts array paths", () => {
@@ -231,7 +252,9 @@ describe("compileToolPolicy — path globs apply to array and ref fields too", (
 
   test("a tool with no verbs at all glob-scopes its array paths", () => {
     const scope: ToolScope = { pathFields: [], arrayPathFields: ["paths"] };
-    const policy = compileToolPolicy([{ tool: "Bulk", patterns: ["src/**"] }], root);
+    const policy = compileToolPolicy([{ tool: "Bulk", patterns: ["src/**"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     expect(policy.check("Bulk", scope, { paths: ["src/a.ts"] }).allowed).toBe(true);
     expect(policy.check("Bulk", scope, { paths: ["test/a.ts"] }).allowed).toBe(false);
   });
@@ -245,7 +268,9 @@ describe("compileToolPolicy — path globs apply to array and ref fields too", (
 
 describe("compileToolPolicy — Exec argv matching", () => {
   test("Exec grant matches per argv token, not across a joined string", () => {
-    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["bun add*"] }], "/repo");
+    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["bun add*"] }], "/repo", {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const scope: ToolScope = { pathFields: [], argvField: "argv" };
     expect(policy.check("Exec", scope, { argv: ["bun", "add", "-d", "x"] }).allowed).toBe(true);
     expect(policy.check("Exec", scope, { argv: ["bun", "publish"] }).allowed).toBe(false);
@@ -253,13 +278,15 @@ describe("compileToolPolicy — Exec argv matching", () => {
   });
 
   test("a RunCommand(*) grant does not admit an argv call checked under the Exec identity", () => {
-    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], "/repo");
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], "/repo", {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const scope: ToolScope = { pathFields: [], verbField: "command", allowedVerbs: ["test"], argvField: "argv" };
     expect(policy.check("Exec", scope, { argv: ["bun", "install"] }).allowed).toBe(false);
   });
 
   test("an unconditional Exec('*') grant still runs validateArgv before matching", () => {
-    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], "/repo");
+    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], "/repo", { ownedPaths: naxOwnedPathsPolicy });
     const scope: ToolScope = { pathFields: [], argvField: "argv" };
     const verdict = policy.check("Exec", scope, { argv: ["bun", "add", "x; rm -rf /"] });
     expect(verdict.allowed).toBe(false);
@@ -267,7 +294,9 @@ describe("compileToolPolicy — Exec argv matching", () => {
   });
 
   test("an argv denial names the forms that would have been allowed", () => {
-    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["bun add*", "npm install*"] }], "/repo");
+    const policy = compileToolPolicy([{ tool: "Exec", patterns: ["bun add*", "npm install*"] }], "/repo", {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const scope: ToolScope = { pathFields: [], argvField: "argv" };
     const verdict = policy.check("Exec", scope, { argv: ["bun", "x", "tsc", "--noEmit"] });
     expect(verdict.allowed).toBe(false);
@@ -279,7 +308,7 @@ describe("compileToolPolicy — Exec argv matching", () => {
   });
 
   test("an argv denial under a grant with no matchable form says so rather than naming an empty list", () => {
-    const policy = compileToolPolicy([{ tool: "Exec", patterns: [] }], "/repo");
+    const policy = compileToolPolicy([{ tool: "Exec", patterns: [] }], "/repo", { ownedPaths: naxOwnedPathsPolicy });
     const scope: ToolScope = { pathFields: [], argvField: "argv" };
     const verdict = policy.check("Exec", scope, { argv: ["bun", "install"] });
     expect(verdict.allowed).toBe(false);
@@ -287,165 +316,11 @@ describe("compileToolPolicy — Exec argv matching", () => {
   });
 
   test("a call with no argv field present falls through to the ordinary verbField check", () => {
-    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["test"] }], "/repo");
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["test"] }], "/repo", {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const scope: ToolScope = { pathFields: [], verbField: "command", allowedVerbs: ["test"], argvField: "argv" };
     expect(policy.check("RunCommand", scope, { command: "test" }).allowed).toBe(true);
-  });
-});
-
-/**
- * `.git/` is INSIDE the permitted root, so containment alone never bars it,
- * and an unconditional ("*") grant -- what every non-Exec tool gets under the
- * default `unrestricted` profile -- skips glob matching entirely. Without a
- * dedicated exclusion, any path-bearing tool could corrupt `.git/index` or
- * rewrite `.git/config` (nax#1943). Both `resolveWithin` directly (the seam
- * `glob.ts` and `package-managers.ts` call without going through `check()`)
- * and `check()`'s denial message are covered here.
- */
-describe("compileToolPolicy — .git/ is excluded at the resolveWithin seam", () => {
-  test("resolveWithin denies a top-level .git path even though it is inside root", () => {
-    expect(resolveWithin(root, ".git/index")).toBeNull();
-    expect(resolveWithin(root, ".git")).toBeNull();
-  });
-
-  test("resolveWithin denies a NON-leading .git segment (nested repo / submodule)", () => {
-    expect(resolveWithin(root, "vendor/nested-repo/.git/config")).toBeNull();
-    expect(resolveWithin(root, "vendor/nested-repo/.git")).toBeNull();
-  });
-
-  test("resolveWithin still permits paths that merely LOOK like .git by substring", () => {
-    // A naive startsWith(".git") would wrongly swallow all three of these.
-    expect(resolveWithin(root, ".gitignore")).not.toBeNull();
-    expect(resolveWithin(root, ".gitattributes")).not.toBeNull();
-    expect(resolveWithin(root, ".github/workflows/ci.yml")).not.toBeNull();
-  });
-
-  test("resolveWithin denies a symlink whose target lives under .git/", () => {
-    expect(resolveWithin(root, "link-into-git")).toBeNull();
-  });
-
-  test("a path spelled from OUTSIDE the root that resolves into .git/ is refused", () => {
-    // `isInside` resolves symlinks on both sides, so this is caught by the
-    // in-root branch rather than needing a `.git/` check of its own.
-    // PR2/Task 13: the execTouchedPaths carve-out that used to re-admit such
-    // a path from an out-of-root spelling is retired, so there is no second
-    // route to assert against.
-    const viaOutside = join(outside, "touched-link");
-    expect(resolveWithin(root, viaOutside)).toBeNull();
-  });
-
-  test("check() denies a .git/ path even under an unconditional '*' grant", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
-    const verdict = policy.check("Write", PATH_SCOPE, { path: ".git/index" });
-    expect(verdict.allowed).toBe(false);
-  });
-
-  test("check()'s denial message names git metadata, not a generic 'outside the root' claim", () => {
-    // The path IS inside the root, so the generic message would be actively
-    // misleading here -- it must get its own accurate reason (see
-    // outOfRootReason in policy.ts).
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
-    const verdict = policy.check("Write", PATH_SCOPE, { path: ".git/index" });
-    expect(verdict.allowed).toBe(false);
-    if (!verdict.allowed) {
-      expect(verdict.reason).toContain("git");
-      expect(verdict.reason).not.toContain("resolves outside the permitted root");
-    }
-  });
-
-  test("check() still denies an actually-out-of-root path with the generic message", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
-    const verdict = policy.check("Write", PATH_SCOPE, { path: join(outside, "secret.txt") });
-    expect(verdict.allowed).toBe(false);
-    if (!verdict.allowed) expect(verdict.reason).toContain("resolves outside the permitted root");
-  });
-
-  test("check() denials for .git/ are still breaches, the same as any other containment denial", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
-    const verdict = policy.check("Write", PATH_SCOPE, { path: ".git/index" });
-    expect(verdict.allowed).toBe(false);
-    if (!verdict.allowed) expect(verdict.breach).toBe(true);
-  });
-
-  test("a scoped glob grant does not accidentally re-admit .git/ via a wildcard", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["**"] }], root);
-    expect(policy.check("Write", PATH_SCOPE, { path: ".git/index" }).allowed).toBe(false);
-  });
-
-  test("ordinary paths are unaffected", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
-    expect(policy.check("Write", PATH_SCOPE, { path: "src/a.ts" }).allowed).toBe(true);
-    expect(policy.check("Write", PATH_SCOPE, { path: ".gitignore" }).allowed).toBe(true);
-  });
-});
-
-/**
- * nax's own CONFIG files are refused to every path-bearing tool.
- *
- * `quality.commands` and `acceptance.command` are run by key through a shell
- * and never pass the permission gate (spec R8) -- they are trusted because a
- * human wrote them. That trust rests entirely on a model being unable to write
- * them: an agent that can edit `.nax/config.json` can add a quality command and
- * get an ungated shell on the next run, routing around every `Bash(...)` rule,
- * the lexer's refusals and containment itself.
- *
- * Deliberately NARROW -- the config files only, not `.nax/` wholesale. The rest
- * of `.nax/` is run state, specs and PRDs the agent legitimately reads, and
- * refusing all of it would break ordinary work to close one hole.
- */
-describe("compileToolPolicy — nax config files are excluded at the resolveWithin seam", () => {
-  test.each([".nax/config.json", ".nax/mono/api/config.json", ".nax/mono/web-app/config.json"])(
-    "resolveWithin denies %s even though it is inside root",
-    (candidate) => {
-      expect(resolveWithin(root, candidate)).toBeNull();
-    },
-  );
-
-  test.each([
-    ".nax/features/x/prd.json",
-    ".nax/features/x/spec.md",
-    ".nax/rules/project-conventions.md",
-    ".nax/context.md",
-    ".nax/mono/api/notes.md",
-    ".naxignore",
-    "src/.nax-helper.ts",
-    "docs/nax/config.json",
-  ])("resolveWithin still permits %s", (candidate) => {
-    expect(resolveWithin(root, candidate)).not.toBeNull();
-  });
-
-  test("check() denies .nax/config.json even under an unconditional '*' grant", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
-    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/config.json" }).allowed).toBe(false);
-  });
-
-  test("the denial names nax config, not a generic 'outside the root' claim", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
-    const verdict = policy.check("Write", PATH_SCOPE, { path: ".nax/config.json" });
-    expect(verdict.allowed).toBe(false);
-    if (!verdict.allowed) {
-      expect(verdict.reason).toContain("nax");
-      expect(verdict.reason).not.toContain("resolves outside the permitted root");
-    }
-  });
-
-  test("reads are refused too -- the file names what a later run will execute", () => {
-    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
-    expect(policy.check("Read", PATH_SCOPE, { path: ".nax/config.json" }).allowed).toBe(false);
-  });
-});
-
-describe("compileToolPolicy — nax-owned run state", () => {
-  test("Write is refused for a feature PRD even under an unconditional grant", () => {
-    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root);
-    const verdict = policy.check("Write", PATH_SCOPE, { path: ".nax/features/auth/prd.json" });
-    expect(verdict.allowed).toBe(false);
-    expect(verdict.allowed === false && verdict.reason).toContain("acceptance criteria");
-  });
-
-  test("Read is still allowed for the same path", () => {
-    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root);
-    expect(policy.check("Read", PATH_SCOPE, { path: ".nax/features/auth/prd.json" }).allowed).toBe(true);
   });
 });
 
@@ -457,7 +332,9 @@ describe("verb denial names what is permitted (#1971)", () => {
   };
 
   test("an unknown verb is told the verbs the stage can use", () => {
-    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const verdict = policy.check("RunCommand", SCOPE, { command: "test:coverage" });
     expect(verdict.allowed).toBe(false);
     expect(verdict.allowed === false && verdict.reason).toContain("test:coverage");
@@ -465,7 +342,9 @@ describe("verb denial names what is permitted (#1971)", () => {
   });
 
   test("a narrower grant names only what the grant allows, not every allowedVerb", () => {
-    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["lint", "test"] }], root);
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["lint", "test"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const verdict = policy.check("RunCommand", SCOPE, { command: "coverage" });
     expect(verdict.allowed).toBe(false);
     // `coverage` is an allowedVerb but NOT granted to this stage: naming it
@@ -477,7 +356,9 @@ describe("verb denial names what is permitted (#1971)", () => {
   });
 
   test("a grant with no usable verb says so rather than naming an empty list", () => {
-    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["build"] }], root);
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["build"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const verdict = policy.check("RunCommand", SCOPE, { command: "lint" });
     expect(verdict.allowed).toBe(false);
     expect(verdict.allowed === false && verdict.reason).toContain("no subcommands are permitted for this stage");
@@ -506,6 +387,7 @@ describe("verb denial names what is permitted (#1971)", () => {
         { tool: "Exec", patterns: ["bun install", "bun add*", "npm ci"] },
       ],
       root,
+      { ownedPaths: naxOwnedPathsPolicy },
     );
     const verdict = policy.check("RunCommand", scopeWithArgv, {
       command: "bun test test/unit/x.test.ts 2>&1 | head -200",
@@ -525,7 +407,9 @@ describe("verb denial names what is permitted (#1971)", () => {
 
   test("with an argv escape hatch but no Exec grant at all, the denial reads as a dead end, not an invitation", () => {
     const scopeWithArgv: ToolScope = { ...SCOPE, argvField: "argv" };
-    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const verdict = policy.check("RunCommand", scopeWithArgv, { command: "wc -l src/x.ts" });
     expect(verdict.allowed).toBe(false);
     expect(verdict.allowed === false && verdict.reason).toContain('"command" never takes a shell string');
@@ -537,7 +421,9 @@ describe("verb denial names what is permitted (#1971)", () => {
   // so a regression that silently dropped the hint (leaving the structural
   // clause behind, say) fails one of the two rather than passing both.
   test("with no argv escape hatch, the denial does not mention argv at all", () => {
-    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root);
+    const policy = compileToolPolicy([{ tool: "RunCommand", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+    });
     const verdict = policy.check("RunCommand", SCOPE, { command: "bun test foo.test.ts | head -50" });
     expect(verdict.allowed).toBe(false);
     expect(verdict.allowed === false && verdict.reason).not.toContain("argv");
@@ -552,6 +438,7 @@ describe("verb denial names what is permitted (#1971)", () => {
 describe("compileToolPolicy — deny rules (spec R6)", () => {
   test("unconditional deny beats an unconditional allow, and de-advertises", () => {
     const policy = compileToolPolicy([{ tool: "Delete", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       denyRules: [{ tool: "Delete", patterns: ["*"] }],
     });
     const verdict = policy.check("Delete", PATH_SCOPE, { path: "src/x.ts" });
@@ -562,6 +449,7 @@ describe("compileToolPolicy — deny rules (spec R6)", () => {
 
   test("path-scoped deny refuses matching paths and leaves others allowed", () => {
     const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       denyRules: [{ tool: "Read", patterns: [".env*"] }],
     });
     expect(policy.check("Read", PATH_SCOPE, { path: ".env.local" }).allowed).toBe(false);
@@ -576,6 +464,7 @@ describe("compileToolPolicy — deny rules (spec R6)", () => {
       allowedVerbs: ["diff", "log", "show"],
     };
     const policy = compileToolPolicy([{ tool: "Git", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       denyRules: [{ tool: "Git", patterns: ["show"] }],
     });
     expect(policy.check("Git", verbScope, { subcommand: "show" }).allowed).toBe(false);
@@ -586,6 +475,7 @@ describe("compileToolPolicy — deny rules (spec R6)", () => {
 describe("compileToolPolicy — ask rules (spec R1/R6)", () => {
   test("an unconditional ask gates a granted tool with no policy fields", () => {
     const policy = compileToolPolicy([{ tool: "Glob", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       askRules: [{ tool: "Glob", patterns: ["*"] }],
     });
 
@@ -596,6 +486,7 @@ describe("compileToolPolicy — ask rules (spec R1/R6)", () => {
 
   test("ask on a granted call yields outcome ask with resolvedPaths", () => {
     const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       askRules: [{ tool: "Write", patterns: ["src/**"] }],
     });
     const verdict = policy.check("Write", PATH_SCOPE, { path: "src/x.ts" });
@@ -609,6 +500,7 @@ describe("compileToolPolicy — ask rules (spec R1/R6)", () => {
 
   test("deny beats ask on the same call", () => {
     const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       denyRules: [{ tool: "Write", patterns: ["src/**"] }],
       askRules: [{ tool: "Write", patterns: ["src/**"] }],
     });
@@ -617,13 +509,17 @@ describe("compileToolPolicy — ask rules (spec R1/R6)", () => {
   });
 
   test("ask does not grant: an ungranted tool with an ask rule stays plainly denied", () => {
-    const policy = compileToolPolicy([], root, { askRules: [{ tool: "Write", patterns: ["*"] }] });
+    const policy = compileToolPolicy([], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+      askRules: [{ tool: "Write", patterns: ["*"] }],
+    });
     const verdict = policy.check("Write", PATH_SCOPE, { path: "src/x.ts" });
     expect(verdict.allowed === false && verdict.outcome).toBe("denied");
   });
 
   test("containment breach beats ask", () => {
     const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       askRules: [{ tool: "Write", patterns: ["*"] }],
     });
     const verdict = policy.check("Write", PATH_SCOPE, { path: "../outside.ts" });
@@ -635,6 +531,7 @@ describe("compileToolPolicy — ask rules (spec R1/R6)", () => {
     // The tool is granted for src/** only; an ask on test/** must not widen the
     // grant, so the allow check still rejects the path.
     const policy = compileToolPolicy([{ tool: "Write", patterns: ["src/**"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       askRules: [{ tool: "Write", patterns: ["test/**"] }],
     });
     const verdict = policy.check("Write", PATH_SCOPE, { path: "test/x.ts" });
@@ -653,6 +550,7 @@ describe("compileToolPolicy — deny/ask on the Exec argv branch (spec R6)", () 
 
   test("an argv deny refuses the matching form and allows the rest", () => {
     const policy = compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       denyRules: [{ tool: "Exec", patterns: ["npm publish*"] }],
     });
     const denied = policy.check("Exec", ARGV_SCOPE, { argv: ["npm", "publish"] });
@@ -662,6 +560,7 @@ describe("compileToolPolicy — deny/ask on the Exec argv branch (spec R6)", () 
 
   test("an argv ask marks the call for approval with no resolved paths", () => {
     const policy = compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       askRules: [{ tool: "Exec", patterns: ["npm publish*"] }],
     });
     const verdict = policy.check("Exec", ARGV_SCOPE, { argv: ["npm", "publish"] });
@@ -681,6 +580,7 @@ describe("compileToolPolicy — deny/ask on the Exec argv branch (spec R6)", () 
 describe("compileToolPolicy — deny/ask rules for one tool merge (spec Task 4)", () => {
   test("two deny rules for one tool both keep applying", () => {
     const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       denyRules: [
         { tool: "Write", patterns: ["src/a*"] },
         { tool: "Write", patterns: ["test/**"] },
@@ -695,6 +595,7 @@ describe("compileToolPolicy — deny/ask rules for one tool merge (spec Task 4)"
     // Wildcard first: a last-write-wins compiler would keep the later scoped
     // rule and leave Delete advertised. Merging must not.
     const policy = compileToolPolicy([{ tool: "Delete", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       denyRules: [
         { tool: "Delete", patterns: ["*"] },
         { tool: "Delete", patterns: ["src/**"] },
@@ -705,6 +606,7 @@ describe("compileToolPolicy — deny/ask rules for one tool merge (spec Task 4)"
 
   test("reports the configured ask expression that matched", () => {
     const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
       askRules: [
         { tool: "Read", patterns: ["src/**"] },
         { tool: "Read", patterns: ["test/**"] },
@@ -715,79 +617,5 @@ describe("compileToolPolicy — deny/ask rules for one tool merge (spec Task 4)"
 
     expect(verdict.allowed).toBe(false);
     if (verdict.allowed === false) expect(verdict.rule).toBe("Read(test/**)");
-  });
-});
-
-describe("compileToolPolicy — plan-op PRD write exemption (nax#2115)", () => {
-  const PRD_REL = ".nax/features/auth/prd.json";
-  const grants = [{ tool: "Write", patterns: ["**"] }];
-
-  test("without the exemption, the plan op's own fileOutput path is denied", () => {
-    const policy = compileToolPolicy(grants, root);
-    const verdict = policy.check("Write", PATH_SCOPE, { path: PRD_REL });
-    expect(verdict.allowed).toBe(false);
-    expect(verdict.allowed === false && verdict.reason).toContain("nax's own run state");
-  });
-
-  test("with the exemption, that exact path is allowed", () => {
-    const policy = compileToolPolicy(grants, root, { ownedWriteExemption: join(root, PRD_REL) });
-    expect(policy.check("Write", PATH_SCOPE, { path: PRD_REL }).allowed).toBe(true);
-  });
-
-  test("the exemption does not open a sibling feature's PRD", () => {
-    const policy = compileToolPolicy(grants, root, { ownedWriteExemption: join(root, PRD_REL) });
-    const verdict = policy.check("Write", PATH_SCOPE, { path: ".nax/features/billing/prd.json" });
-    expect(verdict.allowed).toBe(false);
-    expect(verdict.allowed === false && verdict.reason).toContain("nax's own run state");
-  });
-
-  test("an alternate spelling of the exempt path still resolves to it and is allowed", () => {
-    const policy = compileToolPolicy(grants, root, { ownedWriteExemption: join(root, PRD_REL) });
-    expect(policy.check("Write", PATH_SCOPE, { path: "./.nax/features/auth/prd.json" }).allowed).toBe(true);
-    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/features/../features/auth/prd.json" }).allowed).toBe(true);
-  });
-
-  // The exempt PRD does NOT exist when the policy compiles -- `nax plan` creates
-  // its feature dir but the agent writes the file afterwards. `root` here is a
-  // mkdtemp path, which on macOS sits behind a /var -> /private/var symlink, so
-  // this also pins that realOrRaw resolves an absent leaf via its nearest
-  // existing ancestor. If it fell back to the raw path, resolvedRoot (realpathed)
-  // and the exemption would disagree and the exemption would go SILENTLY inert.
-  test("exempts a path that does not exist yet, behind a symlinked root", () => {
-    expect(existsSync(join(root, PRD_REL))).toBe(false);
-    const policy = compileToolPolicy(grants, root, { ownedWriteExemption: join(root, PRD_REL) });
-    expect(policy.check("Write", PATH_SCOPE, { path: PRD_REL }).allowed).toBe(true);
-  });
-
-  test("the exemption never widens the nax CONFIG refusal", () => {
-    const policy = compileToolPolicy(grants, root, { ownedWriteExemption: join(root, ".nax/config.json") });
-    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/config.json" }).allowed).toBe(false);
-  });
-});
-
-describe("compileToolPolicy — .nax/ state and the allowWrite opt-in (nax#2260)", () => {
-  const grants = [{ tool: "Write", patterns: ["**"] }];
-
-  test("a Write under .nax/rules is refused by default, the scratchpad is not", () => {
-    const policy = compileToolPolicy(grants, root);
-    const verdict = policy.check("Write", PATH_SCOPE, { path: ".nax/rules/a.md" });
-    expect(verdict.allowed === false && verdict.reason).toContain("execution.sandbox.filesystem.allowWrite");
-    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/scratchpad/p.ts" }).allowed).toBe(true);
-  });
-
-  test("a symlink inside the scratchpad cannot reach .nax/rules", () => {
-    mkdirSync(join(root, ".nax", "rules"), { recursive: true });
-    mkdirSync(join(root, ".nax", "scratchpad"), { recursive: true });
-    symlinkSync(join(root, ".nax", "rules"), join(root, ".nax", "scratchpad", "rules-link"));
-    const verdict = compileToolPolicy(grants, root).check("Write", PATH_SCOPE, {
-      path: ".nax/scratchpad/rules-link/x.md",
-    });
-    expect(verdict.allowed).toBe(false);
-  });
-
-  test("naxAllowWrite opens the listed entry and nothing else", () => {
-    const policy = compileToolPolicy(grants, root, { naxAllowWrite: [".nax/rules"] });
-    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/rules/a.md" }).allowed).toBe(true);
-    expect(policy.check("Write", PATH_SCOPE, { path: ".nax/context.md" }).allowed).toBe(false);
   });
 });

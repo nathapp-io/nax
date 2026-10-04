@@ -23,6 +23,7 @@ import {
   _sessionTmpDeps,
   type LaunchRequest,
   codingToolSupportModule as moveSetSupport,
+  naxOwnedPathsPolicy,
   realOrRaw,
   runTmpRoot,
   type SandboxPolicy,
@@ -157,5 +158,9 @@ describe("resolveCodingToolSupport — nax-side entry (S1 spec port 1)", () => {
     expect(Object.keys(moveSetSupport)).not.toContain("resolveCodingToolSupport");
     expect(Object.keys(moveSetSupport)).not.toContain("_codingToolSupportDeps");
     expect(typeof moveSetSupport.buildCodingToolSupport).toBe("function");
+  });
+
+  test("S3-2: nax's owned-paths policy is the default port", () => {
+    expect(_codingToolSupportDeps.ownedPaths).toBe(naxOwnedPathsPolicy);
   });
 });

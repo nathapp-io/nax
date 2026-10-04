@@ -15,7 +15,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { _resetSandboxRegistryForTests } from "@nathapp/nax-agent/internal";
+import { _resetSandboxRegistryForTests, type CodingToolName } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 
@@ -32,7 +32,7 @@ afterEach(() => {
   _resetSandboxRegistryForTests();
 });
 
-const DECLARED = ["Read", "Write", "Bash", "Glob", "Exec", "RunCommand"];
+const DECLARED: readonly CodingToolName[] = ["Read", "Write", "Bash", "Glob", "Exec", "RunCommand"];
 
 async function denialFor(tool: string, input: Record<string, unknown>, bashApproval?: "raw"): Promise<string> {
   const support = await resolveCodingToolSupport({

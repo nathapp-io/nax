@@ -17,6 +17,7 @@
 
 import { sep } from "node:path";
 import { getAgentRuntime } from "#src/runtime/index";
+import { EMPTY_OWNED_PATHS_POLICY } from "./owned-paths.ts";
 import { resolveWithin } from "./policy.ts";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 
@@ -147,7 +148,7 @@ export const globTool: CodingTool = {
       // a throwing iterator and exercise the catch branch without planting a
       // malformed pattern on disk.
       for await (const hit of _globDeps.scan(pattern, { cwd: ctx.root, absolute: false })) {
-        if (resolveWithin(ctx.root, hit) === null) continue;
+        if (resolveWithin(ctx.root, hit, ctx.ownedPaths ?? EMPTY_OWNED_PATHS_POLICY) === null) continue;
         matches.push(hit.split(sep).join("/"));
         if (matches.length >= MAX_MATCHES) break;
       }

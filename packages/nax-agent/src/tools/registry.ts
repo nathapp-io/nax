@@ -14,6 +14,7 @@ import type { CommandInterceptor } from "#src/command-interceptor/index";
 import { NaxError } from "#src/infra/index";
 import type { JSONSchema } from "#src/session/tool-descriptor";
 import type { SandboxRecord } from "../sandbox/index.ts";
+import type { OwnedPathsPolicy } from "./owned-paths.ts";
 import type { ProtectedPathsPolicy } from "./protected-paths.ts";
 import type { CodingToolName, ToolScope } from "./types.ts";
 
@@ -100,6 +101,8 @@ export interface ToolRunContext {
   readonly interceptor?: CommandInterceptor;
   /** Host-owned paths (S1 spec port 6). Absent: the Git tools exclude and skip nothing extra. */
   readonly protectedPaths?: ProtectedPathsPolicy;
+  /** Host-owned path rules (S3-2 port). Absent: no owned-path refusals. */
+  readonly ownedPaths?: OwnedPathsPolicy;
 }
 
 export interface CodingTool {

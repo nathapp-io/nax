@@ -28,13 +28,15 @@ import {
   sessionTmpDirUnder,
   type ToolGrant,
 } from "@nathapp/nax-agent";
-import type { ToolAuditHeader } from "@nathapp/nax-agent/internal";
 import {
   buildCodingToolSupport,
   buildLedgerSessionName,
   type CodingToolSupport,
   errorMessage,
+  naxOwnedPathsPolicy,
+  type OwnedPathsPolicy,
   resolveSessionSandbox,
+  type ToolAuditHeader,
   UNIVERSAL_CODING_TOOLS,
 } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
@@ -432,10 +434,13 @@ export const _codingToolSupportDeps: {
   runDeclaredCommand: DeclaredCommandRunner;
   /** Port 6: the host-owned paths the tools and the sandbox protect. */
   protectedPaths: () => ProtectedPathsPolicy;
+  /** S3-2 port: the paths nax owns the writes to; injected into the tools (and, from Task 4, the sandbox). */
+  ownedPaths: OwnedPathsPolicy;
 } = {
   loadConfigForPackage,
   runDeclaredCommand: runQualityCommand,
   protectedPaths: naxProtectedPaths,
+  ownedPaths: naxOwnedPathsPolicy,
 };
 
 /**
@@ -514,6 +519,7 @@ export async function resolveCodingToolSupport(
     runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
     interceptor: options.commandInterceptor,
     protectedPaths: _codingToolSupportDeps.protectedPaths(),
+    ownedPaths: _codingToolSupportDeps.ownedPaths,
     stripEnvVars: fields.stripEnvVars,
     sessionName,
     header,

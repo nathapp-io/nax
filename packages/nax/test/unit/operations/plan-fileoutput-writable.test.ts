@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolScope } from "@nathapp/nax-agent";
 import { compileToolPolicy } from "@nathapp/nax-agent";
-import { buildCodingToolSupport } from "@nathapp/nax-agent/internal";
+import { buildCodingToolSupport, naxOwnedPathsPolicy } from "@nathapp/nax-agent/internal";
 import { makeNaxConfig } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import type { PlanInteractiveInput, PlanRefineInput } from "@/operations";
@@ -55,7 +55,10 @@ describe("plan ops can write their own declared fileOutput (nax#2115)", () => {
     });
 
     test(`${name} may write that path under its own compiled policy, but not a PRD it does not own`, () => {
-      const policy = compileToolPolicy(grants, root, { ownedWriteExemption: outputPath });
+      const policy = compileToolPolicy(grants, root, {
+        ownedPaths: naxOwnedPathsPolicy,
+        ownedWriteExemption: outputPath,
+      });
       expect(policy.check("Write", PATH_SCOPE, { path: OWNED_REL }).allowed).toBe(true);
       expect(policy.check("Write", PATH_SCOPE, { path: ".nax/features/other/prd.json" }).allowed).toBe(false);
     });
@@ -75,6 +78,7 @@ describe("plan-refine may edit its own declared fileOutput (US-001)", () => {
   test("Edit on the owned path is allowed, a sibling feature's PRD is denied (US-001 AC3)", () => {
     expect(editGrants).toHaveLength(1);
     const policy = compileToolPolicy(editGrants, root, {
+      ownedPaths: naxOwnedPathsPolicy,
       ownedWriteExemption: planRefineOp.fileOutput?.(refineInput),
     });
     expect(policy.check("Edit", PATH_SCOPE, { path: OWNED_REL }).allowed).toBe(true);
@@ -99,6 +103,7 @@ describe("fileOutputPath reaches the compiled policy (nax#2115)", () => {
       root,
       declared: [...declared],
       grants,
+      ownedPaths: naxOwnedPathsPolicy,
       ...(fileOutputPath !== undefined ? { fileOutputPath } : {}),
     });
 

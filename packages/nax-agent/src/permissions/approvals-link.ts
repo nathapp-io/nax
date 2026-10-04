@@ -2,7 +2,8 @@
  * The approvals cache as the FIRST link of the ask chain (P2 design 4.3, 6.6).
  *
  * TRUST BOUNDARY. Living outside repoRoot protects this file from the TYPED
- * path-bearing tools, but NOT from Bash: nax-owned-writes.ts:52-58 excludes
+ * path-bearing tools, but NOT from Bash: the `OwnedPathsPolicy` port's
+ * `writeRefusal` (`tools/owned-paths.ts`) excludes
  * Bash by design, and under `raw` mode screenRawBashCommand's protectedHit
  * skips every path outside the root (policy-bash-raw.ts:84), so the file is
  * never screened. A raw shell can forge entries.
