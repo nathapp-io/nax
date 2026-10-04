@@ -18,7 +18,7 @@
  */
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import type { OwnedBashCandidate, OwnedPathsPolicy } from "@nathapp/nax-agent/internal";
+import type { OwnedBashCandidate, OwnedPathsPolicy } from "@nathapp/nax-agent";
 import { realOrRaw } from "@nathapp/nax-agent/internal";
 
 /**

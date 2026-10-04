@@ -80,6 +80,7 @@ export * from "#src/native/session-affinity";
 export * from "#src/permissions/index";
 export * from "#src/sandbox/index";
 export * as policyInputsModule from "#src/sandbox/policy-inputs";
+export * from "#src/tools/credential-read-deny";
 export * from "#src/tools/git";
 export * from "#src/tools/git-commit";
 export * from "#src/tools/grep";

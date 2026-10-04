@@ -85,6 +85,7 @@ DISABLED_SANDBOX_STATE
 type DeclaredCommandRequest
 type DeclaredCommandResult
 type DeclaredCommandRunner
+EMPTY_OWNED_PATHS_POLICY
 EXEC_TOOL_NAME
 type ExecRun
 type ExecTarget
@@ -135,6 +136,8 @@ type NormalizeInput
 type NormalizeResult
 type Observation
 type OpenSessionOpts
+type OwnedBashCandidate
+type OwnedPathsPolicy
 PROVIDER_ID_RE
 type PolicyVerdict
 type PrepareApprovalsStoreOptions
@@ -680,6 +683,7 @@ compactionThreshold
 compileToolPolicy
 completeWithRecovery
 configureCredentials
+containsCredentialPath
 containsShellChain
 coreModule
 createApprovalsLink
@@ -701,6 +705,8 @@ createToolAuditSink
 createTurnAccumulator
 credentialFaultCode
 credentialFilePath
+credentialPathTest
+credentialReadRefusal
 credentialsConfig
 cutBufferToByteCap
 defaultTempRoots
