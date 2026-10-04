@@ -10,7 +10,7 @@
  * into an isError result whose content is the thrown message.
  */
 import { NaxError } from "#src/infra/nax-error";
-import { redactSecrets } from "#src/internal/redact";
+import { capStrings, redactSecrets } from "#src/internal/redact";
 import { askDenyReason } from "#src/tools/ask-request";
 import type { CodingTool } from "#src/tools/registry";
 import type { CodingToolRuntime, ToolCallContext } from "#src/tools/runtime";
@@ -21,6 +21,13 @@ import { askPerson, type SessionAskDeps } from "./session-ask-link.ts";
 
 /** Byte cap on an embedder approval's default summary. */
 export const EMBEDDER_SUMMARY_BYTES = 1024;
+
+/**
+ * Redaction scans at most this many bytes of an embedder tool input; the
+ * summary keeps far fewer. Same 16x pattern as `turn-event-emitter.ts`'s
+ * `REDACTION_SCAN_BYTES` so the bound is comparable to a tool-call input.
+ */
+const EMBEDDER_SCAN_BYTES = EMBEDDER_SUMMARY_BYTES * 16;
 
 type CodingToolRequest = Extract<AdapterInteraction, { kind: "coding-tool" }>;
 
@@ -50,7 +57,11 @@ export function embedderToolDescriptor(tool: EmbedderTool): CodingTool {
 export function defaultSummary(input: unknown): string {
   let json: string;
   try {
-    json = JSON.stringify(redactSecrets(input)) ?? "null";
+    // Cap before redactSecrets walks: a multi-MB tool input must not run
+    // every SECRET_VALUE_PATTERNS regex (PEM block up to 64KB per match)
+    // over megabytes. The post-serialize cutToByteCap is the display cap;
+    // this is the scan cap.
+    json = JSON.stringify(redactSecrets(capStrings(input, EMBEDDER_SCAN_BYTES))) ?? "null";
   } catch {
     return "[input not serializable]";
   }
@@ -64,7 +75,11 @@ function toolError(message: string, tool: string): NaxError {
 function summaryFor(tool: EmbedderTool, input: unknown): string {
   if (tool.describe === undefined) return defaultSummary(input);
   try {
-    return cutToByteCap(redactSecrets(String(tool.describe(input))), EMBEDDER_SUMMARY_BYTES);
+    // Same bound as defaultSummary: cap first, then redact, then display-cut.
+    // capStrings preserves the string's type at runtime; the cast is the
+    // single point where the generic is recovered for cutToByteCap.
+    const described = redactSecrets(capStrings(String(tool.describe(input)), EMBEDDER_SCAN_BYTES)) as string;
+    return cutToByteCap(described, EMBEDDER_SUMMARY_BYTES);
   } catch {
     return defaultSummary(input);
   }

@@ -724,6 +724,7 @@ byCodePoint
 byNumber
 cacheUsageFields
 canAttemptTurnRetry
+capStrings
 chainAskLinks
 classifyExec
 clearApprovalsTaint

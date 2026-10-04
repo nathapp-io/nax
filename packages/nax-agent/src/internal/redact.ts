@@ -150,6 +150,63 @@ const MAX_REDACT_DEPTH = 100;
 const CIRCULAR_REF_MARKER = "[Circular]";
 
 /**
+ * A copy of `value` with every string cut to `scanBytes`, so a downstream
+ * regex scan (typically `redactSecrets`) never walks a multi-MB payload.
+ * Cycles become `"[Circular]"`; only the current recursion path is "seen",
+ * matching `redactValue` so a shared, non-cyclic reference is copied, not
+ * labelled.
+ *
+ * Exported for callers that need to bound their own redaction: the JSONL
+ * logger writes via `redactSecrets` without a cap because individual log
+ * entries are bounded; `native/session/turn-event-emitter.ts:cappedInput`
+ * and `session/session-interaction.ts:defaultSummary` cap before their
+ * downstream scan so a 2 MB `Write` content or embedder tool input does not
+ * run every `SECRET_VALUE_PATTERNS` regex over megabytes.
+ *
+ * The byte cap is inlined rather than imported from `tools/truncate.ts`:
+ * `internal/` is below `tools/`, so the direction is one-way. No
+ * `MAX_REDACT_DEPTH` guard here — `redactValue` carries one as a backstop
+ * against pathologically deep-but-acyclic input; capStrings is only called
+ * on values the surrounding code already bounds (tool inputs under the
+ * provider's request cap, embedder describe strings under the model call
+ * size), and any cycle is caught by the WeakSet on the current path.
+ */
+export function capStrings(value: unknown, scanBytes: number, seen: WeakSet<object> = new WeakSet()): unknown {
+  if (typeof value === "string") return cutStringToBytes(value, scanBytes);
+  if (typeof value !== "object" || value === null) return value;
+  if (seen.has(value)) return CIRCULAR_REF_MARKER;
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) return value.map((item) => capStrings(item, scanBytes, seen));
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, capStrings(item, scanBytes, seen)]),
+    );
+  } finally {
+    seen.delete(value);
+  }
+}
+
+/**
+ * Backs up over UTF-8 continuation bytes so a cut inside a codepoint lands
+ * on a whole one. Mirrors `tools/truncate.ts:cutToByteCap` without the
+ * `internal/` → `tools/` dependency. Continuation bytes span `0x80`–`0xBF`
+ * (`10xxxxxx`); the predicate matches that range, not the single value
+ * `0x80`, so a multi-byte char whose boundary lands on a different
+ * continuation byte (`0xA9`, `0xB8`, …) is also rejected.
+ */
+function cutStringToBytes(body: string, maxBytes: number): string {
+  if (Buffer.byteLength(body, "utf8") <= maxBytes) return body;
+  const buf = Buffer.from(body, "utf8");
+  let cut = Math.min(buf.length, maxBytes);
+  while (cut > 0) {
+    const byte = buf[cut] ?? 0;
+    if (byte < 0x80 || byte > 0xbf) break;
+    cut -= 1;
+  }
+  return buf.subarray(0, cut).toString("utf8");
+}
+
+/**
  * MED-02: unguarded recursion here threw a RangeError (stack overflow) out
  * of every logger call whenever a data payload contained a circular
  * reference — a single bad log call could crash whatever code path was

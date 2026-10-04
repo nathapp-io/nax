@@ -25,7 +25,7 @@ import type { ToolCall } from "@nathapp/nax-ai";
 import type { TokenUsage } from "#src/cost/standard-types";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
-import { redactSecrets } from "#src/internal/redact";
+import { capStrings, redactSecrets } from "#src/internal/redact";
 import { isThenable } from "#src/internal/thenable";
 import type { TurnEvent, TurnEventSink } from "#src/session/turn-event";
 import { cutToByteCap } from "#src/tools/truncate";
@@ -73,26 +73,8 @@ export function usageEvent(round: number, usage: TokenUsage, costUsd: number): T
   };
 }
 
-/**
- * A copy of `value` with every string cut to REDACTION_SCAN_BYTES, so the
- * redactor never walks a multi-MB `Write` content. Cycles become "[Circular]".
- */
-function capStrings(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
-  if (typeof value === "string") return cutToByteCap(value, REDACTION_SCAN_BYTES);
-  if (typeof value !== "object" || value === null) return value;
-  if (seen.has(value)) return "[Circular]";
-  seen.add(value);
-  try {
-    if (Array.isArray(value)) return value.map((item) => capStrings(item, seen));
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, capStrings(item, seen)]));
-  } finally {
-    // Only the current path is "seen", as in redactSecrets: a shared, non-cyclic reference is copied, not labelled.
-    seen.delete(value);
-  }
-}
-
 function cappedInput(input: unknown): unknown {
-  const redacted = redactSecrets(capStrings(input));
+  const redacted = redactSecrets(capStrings(input, REDACTION_SCAN_BYTES));
   let json: string;
   try {
     json = JSON.stringify(redacted) ?? "null";

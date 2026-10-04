@@ -8,6 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import type { EmbedderTool, EmbedderToolContext, SessionEventBody } from "@nathapp/nax-agent";
 import { NaxError } from "#src/infra/nax-error";
+import { capStrings } from "#src/internal/redact";
 import { _agentSessionDeps } from "#src/session/agent-session-deps";
 import type { AdapterInteraction } from "#src/session/interaction-handler";
 import { createPendingAskTable } from "#src/session/pending-asks";
@@ -127,6 +128,32 @@ describe("embedderToolDescriptor and defaultSummary", () => {
   test("the default summary is redacted, byte-capped JSON", () => {
     expect(defaultSummary({ id: 7, apiKey: "plainsecret" })).toBe('{"id":7,"apiKey":"[REDACTED]"}');
     expect(Buffer.byteLength(defaultSummary({ blob: "z".repeat(5000) }))).toBeLessThanOrEqual(EMBEDDER_SUMMARY_BYTES);
+  });
+
+  test("a multi-MB string is cut before redactSecrets walks it; a key-named secret is still masked", () => {
+    const summary = defaultSummary({ content: "x".repeat(2_000_000), apiKey: "plainsecret" });
+    expect(Buffer.byteLength(summary, "utf8")).toBeLessThanOrEqual(EMBEDDER_SUMMARY_BYTES);
+    expect(summary).not.toContain("plainsecret");
+  });
+
+  test("non-ASCII content at the scan-cap boundary is not corrupted to U+FFFD", () => {
+    // 2-byte (é), 3-byte (中), 4-byte (😀) chars at byte boundaries that
+    // would land inside the codepoint. The cap must back up to a clean
+    // boundary; a too-narrow continuation-byte predicate (matching 0x80
+    // only, not 0x80-0xBF) would emit U+FFFD in the scan-cap region for
+    // nearly every non-ASCII character. Observed directly on capStrings
+    // because the display cap (cutToByteCap) uses the proper predicate
+    // and would otherwise mask the bug in higher-level callers.
+    for (const ch of ["é", "中", "😀"]) {
+      const capped = capStrings({ note: ch.repeat(20_000) }, 16_384) as { note: string };
+      expect(capped.note).not.toContain("\uFFFD");
+    }
+  });
+
+  test("a cyclic input does not recurse forever", () => {
+    const cyclic: Record<string, unknown> = { id: 1 };
+    cyclic.self = cyclic;
+    expect(() => defaultSummary(cyclic)).not.toThrow();
   });
 });
 
