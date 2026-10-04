@@ -321,3 +321,37 @@ describe("transcriptModelIdentity", () => {
     expect(transcriptModelIdentity(undefined)).toBeUndefined();
   });
 });
+
+describe("transcript file bytes (S3-1 byte-identity contract)", () => {
+  const SAVED_AT = /"savedAt": "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"/;
+
+  test("an owned, model-stamped save writes owner, model, savedAt, messages in that order, 2-space JSON", async () => {
+    await saveTranscript(dir, "sess-bytes", msgs, { owner: "call-1", model: "anthropic/claude-x" });
+    const raw = await readFile(transcriptPath(dir, "sess-bytes"), "utf8");
+    expect(raw).toMatch(SAVED_AT);
+    const expected = JSON.stringify(
+      { owner: "call-1", model: "anthropic/claude-x", savedAt: "<T>", messages: msgs },
+      null,
+      2,
+    );
+    expect(raw.replace(SAVED_AT, '"savedAt": "<T>"')).toBe(expected);
+  });
+
+  test("an identity-less save writes only savedAt and messages, never schemaVersion or turn", async () => {
+    await saveTranscript(dir, "sess-bare", msgs);
+    const raw = await readFile(transcriptPath(dir, "sess-bare"), "utf8");
+    expect(raw.replace(SAVED_AT, '"savedAt": "<T>"')).toBe(JSON.stringify({ savedAt: "<T>", messages: msgs }, null, 2));
+    expect(raw).not.toContain("schemaVersion");
+    expect(raw).not.toContain('"turn"');
+  });
+
+  test("retain renames to <name>.transcript.failed-<stamp>.json without touching the bytes", async () => {
+    await saveTranscript(dir, "sess-keep", msgs, { owner: "o" });
+    const before = await readFile(transcriptPath(dir, "sess-keep"), "utf8");
+    await retainTranscript(dir, "sess-keep");
+    const names = await readdir(dir);
+    expect(names).toHaveLength(1);
+    expect(names[0]).toMatch(/^sess-keep\.transcript\.failed-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/);
+    expect(await readFile(join(dir, names[0] ?? ""), "utf8")).toBe(before);
+  });
+});
