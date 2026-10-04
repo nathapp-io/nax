@@ -166,6 +166,12 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    */
   retainOnClose?: boolean;
   /**
+   * Native: the session's system prompt, sent as the request's top-level
+   * `system` on every round trip (not on the compaction summary). The S3
+   * facade sets it from `instructions`; nax leaves it unset. ACP ignores it.
+   */
+  systemPrompt?: string;
+  /**
    * Native: resolved compaction settings. A resolved primitive, never NaxConfig —
    * src/agents/native/ must not read config (check:adapter-no-config-import).
    */

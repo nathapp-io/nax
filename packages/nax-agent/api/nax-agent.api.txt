@@ -865,6 +865,7 @@ strayCommonDirTripwire
 stripControlChars
 substituteCommand
 substituteCommandSpec
+systemFieldFor
 taintApprovals
 toAdapterFailure
 toLoginInteraction

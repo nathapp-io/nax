@@ -142,6 +142,13 @@ export interface NativeSessionState {
    * (P3 spec 8.3(d)); read it through `sessionAnchorFor`, never directly.
    */
   readonly lastUsage: Map<string, SessionAnchor>;
+
+  /**
+   * Session name -> the system prompt sent as each round trip's top-level
+   * `system` (S3-4; the facade's `instructions`). nax opens without one. Same
+   * lifecycle as the maps above: set on open, cleared on close.
+   */
+  readonly systemPrompts: Map<string, string>;
 }
 
 export function createNativeSessionState(): NativeSessionState {
@@ -157,6 +164,7 @@ export function createNativeSessionState(): NativeSessionState {
     transportRetry: new Map(),
     spinBreakers: new Map(),
     lastUsage: new Map(),
+    systemPrompts: new Map(),
   };
 }
 
@@ -224,6 +232,21 @@ function openTranscriptStore(name: string, opts: OpenSessionOpts): TranscriptSto
   return createFileTranscriptStore(opts.transcriptDir);
 }
 
+/**
+ * Records, or clears, the session's system prompt at open. A helper so that
+ * openNativeSession gains no branch.
+ */
+function recordSystemPrompt(state: NativeSessionState, name: string, systemPrompt: string | undefined): void {
+  if (systemPrompt === undefined) state.systemPrompts.delete(name);
+  else state.systemPrompts.set(name, systemPrompt);
+}
+
+/** The request field for the session's system prompt: `{ system }`, or `{}` when it has none. */
+export function systemFieldFor(state: NativeSessionState, sessionName: string): { readonly system?: string } {
+  const system = state.systemPrompts.get(sessionName);
+  return system === undefined ? {} : { system };
+}
+
 export async function openNativeSession(
   state: NativeSessionState,
   name: string,
@@ -237,6 +260,7 @@ export async function openNativeSession(
   state.scratchpadRoots.set(name, opts.workdir);
   if (opts.transcriptOwner !== undefined) state.transcriptOwners.set(name, opts.transcriptOwner);
   else state.transcriptOwners.delete(name);
+  recordSystemPrompt(state, name, opts.systemPrompt);
   // `resume` is SessionManager's "this name already has a descriptor in this
   // process" signal, and it had no consumer on this transport (nax#1877) — a
   // native session resumed whatever transcript happened to be on disk. Honouring
@@ -287,6 +311,7 @@ export function clearNativeSessionState(state: NativeSessionState, sessionName: 
   state.transportRetry.delete(sessionName);
   state.spinBreakers.delete(sessionName);
   state.lastUsage.delete(sessionName);
+  state.systemPrompts.delete(sessionName);
 }
 
 /**

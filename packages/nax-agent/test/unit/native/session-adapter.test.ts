@@ -246,6 +246,7 @@ describe("NativeSessionAdapter closePhysicalSession -- run teardown reaches the 
     compaction: COMPACTION,
     transportRetry: { maxAttempts: 3, baseDelayMs: 2000 },
     spinBreaker: DEFAULT_SPIN_BREAKER_SETTINGS,
+    systemPrompt: "s3-4 teardown",
   });
 
   test("physical close removes a successful session's transcript", async () => {
