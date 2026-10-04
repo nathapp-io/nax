@@ -41,7 +41,7 @@ export function transcriptModelIdentity(rawModel: string | undefined): string | 
  * a reader that has an owner: the cost is one re-exploration, where inheriting
  * it silently bills a conversation this session never had.
  */
-export function isForeignTranscript(doc: TranscriptDoc, identity: TranscriptIdentity, sessionName: string): boolean {
+function isForeignTranscript(doc: TranscriptDoc, identity: TranscriptIdentity, sessionName: string): boolean {
   const { owner, model } = identity;
   if (owner !== undefined && doc.owner !== owner) {
     getLogger().debug("native-session", "Ignoring a transcript owned by another invocation", {

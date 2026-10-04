@@ -6,10 +6,12 @@ import { join } from "node:path";
 import type { ConversationMessage } from "@nathapp/nax-ai";
 import {
   _resetTranscriptTruncationWarningForTests,
+  createFileTranscriptStore,
   deleteTranscript,
   loadTranscript,
   MAX_RETAINED_TRANSCRIPTS,
   pruneRetainedTranscripts,
+  readTranscriptDoc,
   retainTranscript,
   saveTranscript,
   transcriptModelIdentity,
@@ -353,5 +355,100 @@ describe("transcript file bytes (S3-1 byte-identity contract)", () => {
     expect(names).toHaveLength(1);
     expect(names[0]).toMatch(/^sess-keep\.transcript\.failed-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/);
     expect(await readFile(join(dir, names[0] ?? ""), "utf8")).toBe(before);
+  });
+});
+
+describe("createFileTranscriptStore", () => {
+  test("load returns null for a missing session", async () => {
+    expect(await createFileTranscriptStore(dir).load("none")).toBeNull();
+  });
+
+  test("save then load round-trips the document, turn and schemaVersion included", async () => {
+    const store = createFileTranscriptStore(dir);
+    const doc = {
+      schemaVersion: 1 as const,
+      owner: "o",
+      savedAt: "t",
+      messages: msgs,
+      turn: { turnId: "t1", state: "ended" as const },
+    };
+    await store.save("s", doc);
+    expect(await store.load("s")).toEqual(doc);
+  });
+
+  test("save writes the same bytes saveTranscript writes for a loop document", async () => {
+    const store = createFileTranscriptStore(dir);
+    const doc = { owner: "o", model: "p/m", savedAt: "2026-10-04T00:00:00.000Z", messages: msgs };
+    await store.save("s", doc);
+    expect(await readFile(transcriptPath(dir, "s"), "utf8")).toBe(JSON.stringify(doc, null, 2));
+  });
+
+  test("a legacy bare array loads as an owner-less document", async () => {
+    await writeFile(transcriptPath(dir, "legacy"), JSON.stringify(msgs));
+    const doc = await readTranscriptDoc(dir, "legacy");
+    expect(doc?.messages).toEqual(msgs);
+    expect(doc?.owner).toBeUndefined();
+  });
+
+  test("a document with no messages field loads with empty messages", async () => {
+    await writeFile(transcriptPath(dir, "nomsg"), JSON.stringify({ savedAt: "t" }));
+    expect((await readTranscriptDoc(dir, "nomsg"))?.messages).toEqual([]);
+  });
+
+  test.each(["null", "42", '"x"', "true"])("valid JSON %s that is not a document is TRANSCRIPT_CORRUPT", async (body) => {
+    await writeFile(transcriptPath(dir, "odd"), body);
+    await expect(readTranscriptDoc(dir, "odd")).rejects.toMatchObject({ code: "TRANSCRIPT_CORRUPT" });
+  });
+
+  test("retainFailed renames the live file and prunes to the cap", async () => {
+    const store = createFileTranscriptStore(dir);
+    const past = new Date(Date.now() - 60_000);
+    for (let i = 0; i < MAX_RETAINED_TRANSCRIPTS; i++) {
+      const name = join(dir, `old-${i}.transcript.failed-x.json`);
+      await writeFile(name, "{}");
+      await utimes(name, past, past);
+    }
+    await store.save("s", { savedAt: "t", messages: msgs });
+    await store.retainFailed("s");
+    const names = await readdir(dir);
+    expect(names).toHaveLength(MAX_RETAINED_TRANSCRIPTS);
+    expect(names.some((n) => n.startsWith("s.transcript.failed-"))).toBe(true);
+    expect(await store.load("s")).toBeNull();
+  });
+
+  test("retainFailed and delete are safe with nothing on disk", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.retainFailed("none");
+    await store.delete("none");
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  test("markTurn on a missing session creates an empty document with the marker", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.markTurn("s", { turnId: "t1", state: "running" });
+    const doc = await store.load("s");
+    expect(doc?.messages).toEqual([]);
+    expect(doc?.turn).toEqual({ turnId: "t1", state: "running" });
+    expect(doc?.schemaVersion).toBeUndefined();
+  });
+
+  test("markTurn merges into an existing document and keeps its history and identity", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", { owner: "o", model: "p/m", savedAt: "t", messages: msgs });
+    await store.markTurn("s", { turnId: "t1", state: "ended" });
+    expect(await store.load("s")).toEqual({
+      owner: "o",
+      model: "p/m",
+      savedAt: "t",
+      messages: msgs,
+      turn: { turnId: "t1", state: "ended" },
+    });
+  });
+
+  test("markTurn on a corrupt file throws TRANSCRIPT_CORRUPT", async () => {
+    await writeFile(transcriptPath(dir, "bad"), "{not json");
+    await expect(
+      createFileTranscriptStore(dir).markTurn("bad", { turnId: "t", state: "running" }),
+    ).rejects.toMatchObject({ code: "TRANSCRIPT_CORRUPT" });
   });
 });
