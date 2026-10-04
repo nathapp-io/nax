@@ -12,6 +12,7 @@ import {
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { _resetCredentialsConfig, configureCredentials, credentialsConfig } from "#src/infra/credentials-config";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
+import { withDerivedStream } from "#test/helpers/index";
 
 const REAL_BUILD = _clientDeps.build;
 const dirs: string[] = [];
@@ -34,14 +35,14 @@ const model: ResolvedModel = {
   thinkingLevels: [],
 };
 function stubClient(): Client {
-  return {
+  return withDerivedStream({
     model: async () => model,
     listModels: async () => [model],
     pricing: () => ({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }),
     stream: async function* stream() {},
     complete: async () => ({ text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" }),
     validate: () => {},
-  };
+  });
 }
 async function oneTurn(adapter: NativeSessionAdapter, name: string) {
   const dir = await mkdtemp(join(tmpdir(), "adapter-client-"));

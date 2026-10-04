@@ -51,7 +51,11 @@ _clientDeps.build = async () => ({
   model: async () => model,
   listModels: async () => [model],
   pricing: () => ({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }),
-  stream: async function* () {},
+  stream: async function* () {
+    yield { type: "text-delta", text: "packed-ok" };
+    yield { type: "usage", usage: { inputTokens: 2, outputTokens: 3 } };
+    yield { type: "done", stopReason: "stop" };
+  },
   complete: async () => ({ text: "packed-ok", usage: { inputTokens: 2, outputTokens: 3 }, stopReason: "stop" }),
   validate: () => {},
 });

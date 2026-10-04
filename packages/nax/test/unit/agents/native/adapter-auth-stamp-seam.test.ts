@@ -39,7 +39,7 @@ import {
   servedAuth,
 } from "@nathapp/nax-agent/internal";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, withDerivedStream } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import { toSessionModel } from "@/agents/session-model-mapping";
 import type { ResolvedCompleteOptions } from "@/agents/types";
@@ -80,14 +80,14 @@ const MODEL = {
 
 /** A fake client: the stamp must come from the seam, not from a provider round trip. */
 function fakeClient(): Client {
-  return {
+  return withDerivedStream({
     model: async () => MODEL,
     listModels: async () => [MODEL],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
     stream: async function* stream() {},
     complete: async () => ({ text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" }),
     validate: () => {},
-  };
+  });
 }
 
 function completeOptions(modelDef: ModelDef = MODEL_DEF): ResolvedCompleteOptions {

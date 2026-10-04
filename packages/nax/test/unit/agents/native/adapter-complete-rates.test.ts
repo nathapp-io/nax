@@ -27,6 +27,7 @@ import { join } from "node:path";
 import type { ResolvedCompaction } from "@nathapp/nax-agent/internal";
 import { _adapterDeps, _clientDeps, _resetNativeClient } from "@nathapp/nax-agent/internal";
 import type { Client, ClientRequest, Pricing, ResolvedModel } from "@nathapp/nax-ai";
+import { withDerivedStream } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import { toSessionModel } from "@/agents/session-model-mapping";
 import type { ResolvedCompleteOptions } from "@/agents/types";
@@ -67,18 +68,19 @@ function stubClient(pricing: Pricing, usage: { inputTokens: number; outputTokens
     supportsTools: true,
     thinkingLevels: [],
   } satisfies ResolvedModel;
-  return async () => ({
-    model: async () => MODEL,
-    listModels: async () => [MODEL],
-    pricing: () => pricing,
-    stream: async function* stream() {},
-    complete: async () => ({
-      text: "ok",
-      usage,
-      stopReason: "stop" as const,
-    }),
-    validate: () => {},
-  });
+  return async () =>
+    withDerivedStream({
+      model: async () => MODEL,
+      listModels: async () => [MODEL],
+      pricing: () => pricing,
+      stream: async function* stream() {},
+      complete: async () => ({
+        text: "ok",
+        usage,
+        stopReason: "stop" as const,
+      }),
+      validate: () => {},
+    });
 }
 
 describe("NativeAgentAdapter.complete() — CompleteResult.rates propagation (US-002)", () => {
@@ -221,7 +223,7 @@ const turnClassModel = {
 } satisfies ResolvedModel;
 
 function fakeClient(over: Record<string, unknown> = {}): Client {
-  return {
+  return withDerivedStream({
     model: async () => turnClassModel,
     listModels: async () => [turnClassModel],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
@@ -233,7 +235,7 @@ function fakeClient(over: Record<string, unknown> = {}): Client {
     }),
     validate: () => {},
     ...over,
-  };
+  });
 }
 
 describe("NativeAgentAdapter.sendTurn failure classification", () => {
@@ -374,7 +376,7 @@ function catalogModel(): ResolvedModel {
 
 function countingClient(model: ResolvedModel): { client: Client; completeCalls: () => number } {
   let calls = 0;
-  const client: Client = {
+  const client: Client = withDerivedStream({
     model: async () => model,
     listModels: async () => [model],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
@@ -384,7 +386,7 @@ function countingClient(model: ResolvedModel): { client: Client; completeCalls: 
       return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" };
     },
     validate: () => {},
-  };
+  });
   return { client, completeCalls: () => calls };
 }
 
@@ -462,18 +464,19 @@ function costRatesOptions(): ResolvedCompleteOptions {
 
 describe("catalog cache rates reach cost through the adapter, not just estimateCostUsd", () => {
   test("complete() prices a cache read at the catalog's cacheRead rate, not the full input rate", async () => {
-    _clientDeps.build = async () => ({
-      model: async () => costRatesModel,
-      listModels: async () => [costRatesModel],
-      pricing: () => CATALOG_PRICING,
-      stream: async function* stream() {},
-      complete: async () => ({
-        text: "ok",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 },
-        stopReason: "stop",
-      }),
-      validate: () => {},
-    });
+    _clientDeps.build = async () =>
+      withDerivedStream({
+        model: async () => costRatesModel,
+        listModels: async () => [costRatesModel],
+        pricing: () => CATALOG_PRICING,
+        stream: async function* stream() {},
+        complete: async () => ({
+          text: "ok",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 },
+          stopReason: "stop",
+        }),
+        validate: () => {},
+      });
     const result = await new NativeAgentAdapter().complete("hi", costRatesOptions());
     // If the catalog's cacheRead were discarded (the bug), this would fall
     // back to the full input rate: 1M cache-read tokens x $2/1M = $2.00.
@@ -481,18 +484,19 @@ describe("catalog cache rates reach cost through the adapter, not just estimateC
     expect(result.estimatedCostUsd).toBeCloseTo(0.2, 6);
   });
   test("complete() prices a cache write at the catalog's cacheWrite rate, not the full input rate", async () => {
-    _clientDeps.build = async () => ({
-      model: async () => costRatesModel,
-      listModels: async () => [costRatesModel],
-      pricing: () => CATALOG_PRICING,
-      stream: async function* stream() {},
-      complete: async () => ({
-        text: "ok",
-        usage: { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1_000_000 },
-        stopReason: "stop",
-      }),
-      validate: () => {},
-    });
+    _clientDeps.build = async () =>
+      withDerivedStream({
+        model: async () => costRatesModel,
+        listModels: async () => [costRatesModel],
+        pricing: () => CATALOG_PRICING,
+        stream: async function* stream() {},
+        complete: async () => ({
+          text: "ok",
+          usage: { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1_000_000 },
+          stopReason: "stop",
+        }),
+        validate: () => {},
+      });
     const result = await new NativeAgentAdapter().complete("hi", costRatesOptions());
     // Discarded cacheWrite would fall back to input ($2/1M => $2.00). The
     // catalog's real cacheWrite rate is $2.5/1M => $2.50 -- the OPPOSITE
@@ -501,18 +505,19 @@ describe("catalog cache rates reach cost through the adapter, not just estimateC
     expect(result.estimatedCostUsd).toBeCloseTo(2.5, 6);
   });
   test("sendTurn prices a cache write at the catalog's cacheWrite rate, not the full input rate", async () => {
-    _clientDeps.build = async () => ({
-      model: async () => costRatesModel,
-      listModels: async () => [costRatesModel],
-      pricing: () => CATALOG_PRICING,
-      stream: async function* stream() {},
-      complete: async () => ({
-        text: "ok",
-        usage: { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1_000_000 },
-        stopReason: "stop",
-      }),
-      validate: () => {},
-    });
+    _clientDeps.build = async () =>
+      withDerivedStream({
+        model: async () => costRatesModel,
+        listModels: async () => [costRatesModel],
+        pricing: () => CATALOG_PRICING,
+        stream: async function* stream() {},
+        complete: async () => ({
+          text: "ok",
+          usage: { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1_000_000 },
+          stopReason: "stop",
+        }),
+        validate: () => {},
+      });
     const adapter = new NativeAgentAdapter();
     const handle = await adapter.openSession("sess-cost-rates", {
       agentName: "native",
@@ -550,7 +555,7 @@ function cacheRetentionOptions(): ResolvedCompleteOptions {
 
 function capturingClient(model: ResolvedModel): { client: Client; seen: ClientRequest[] } {
   const seen: ClientRequest[] = [];
-  const client: Client = {
+  const client: Client = withDerivedStream({
     model: async () => model,
     listModels: async () => [model],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
@@ -560,7 +565,7 @@ function capturingClient(model: ResolvedModel): { client: Client; seen: ClientRe
       return { text: "ok", usage: { inputTokens: 1, outputTokens: 0 }, stopReason: "stop" };
     },
     validate: () => {},
-  };
+  });
   return { client, seen };
 }
 

@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _adapterDeps, _clientDeps, _resetNativeClient } from "@nathapp/nax-agent/internal";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
+import { withDerivedStream } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
 import type { AgentStreamEvent } from "@/runtime/agent-stream-events";
@@ -40,7 +41,7 @@ const MODEL = {
 } satisfies ResolvedModel;
 
 function fakeClient(): Client {
-  return {
+  return withDerivedStream({
     model: async () => MODEL,
     listModels: async () => [MODEL],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
@@ -51,7 +52,7 @@ function fakeClient(): Client {
       stopReason: "stop",
     }),
     validate: () => {},
-  };
+  });
 }
 
 interface TurnCapture {
@@ -135,7 +136,7 @@ const catalogOverridesModel = {
 } satisfies ResolvedModel;
 
 function overridesFakeClient(over: Record<string, unknown> = {}): Client {
-  return {
+  return withDerivedStream({
     model: async () => catalogOverridesModel,
     listModels: async () => [catalogOverridesModel],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
@@ -147,7 +148,7 @@ function overridesFakeClient(over: Record<string, unknown> = {}): Client {
     }),
     validate: () => {},
     ...over,
-  };
+  });
 }
 
 const OVERRIDES: ProviderCatalogOverride[] = [
