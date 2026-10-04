@@ -84,12 +84,15 @@ export {
   ambientShadows,
   anyAmbientCredential,
   authImportOutcomeLabel,
+  createFileTranscriptStore,
+  createMemoryTranscriptStore,
   credentialFilePath,
   DEFAULT_PI_AUTH_PATH,
   type ImportOutcome,
   importPiCredentials,
   listStoredProviders,
   MAX_RETAINED_TRANSCRIPTS,
+  type MemoryTranscriptStore,
   NATIVE_AGENT,
   type NativeCatalogOverrides,
   type NativeCompleteContext,
@@ -111,6 +114,9 @@ export {
   runLogin,
   type StoredEntry,
   servedAuth,
+  type TranscriptDoc,
+  type TranscriptStore,
+  type TurnMarker,
 } from "#src/native/index";
 export type { NativeSessionAdapterOptions } from "#src/native/session-adapter";
 export {

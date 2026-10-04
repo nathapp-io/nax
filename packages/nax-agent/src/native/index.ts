@@ -49,10 +49,13 @@ export {
   resolveNativeId,
 } from "./model-resolver.ts";
 export { NATIVE_AGENT } from "./models.ts";
+export { createMemoryTranscriptStore, type MemoryTranscriptStore } from "./session/memory-transcript-store.ts";
 export {
+  createFileTranscriptStore,
   MAX_RETAINED_TRANSCRIPTS,
   pruneRetainedTranscripts,
 } from "./session/transcript-store.ts";
+export type { TranscriptDoc, TranscriptStore, TurnMarker } from "./session/transcript-types.ts";
 export { NativeSessionAdapter } from "./session-adapter.ts";
 export { newSessionKey } from "./session-affinity.ts";
 export { type NativeTierConfig, nativeTierProviders } from "./tier-providers.ts";
