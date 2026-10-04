@@ -283,6 +283,7 @@ classifyExec
 clearApprovalsTaint
 compileToolPolicy
 configureCredentials
+createAgentSession
 createApprovalsLink
 createBashTool
 createCodingToolRuntime
