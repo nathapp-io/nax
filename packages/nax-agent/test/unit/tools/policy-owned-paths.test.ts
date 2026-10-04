@@ -11,10 +11,10 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { naxOwnedPathsPolicy } from "#src/tools/nax-owned-writes";
 import { EMPTY_OWNED_PATHS_POLICY, type OwnedPathsPolicy } from "#src/tools/owned-paths";
 import { compileToolPolicy, resolveWithin } from "#src/tools/policy";
 import type { PolicyVerdict, ToolScope } from "#src/tools/types";
+import { naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
 
 const PATH_SCOPE: ToolScope = { pathFields: ["path"] };
 let root: string;

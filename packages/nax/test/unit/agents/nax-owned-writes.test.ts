@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SCRATCHPAD_DIR } from "@nathapp/nax-agent";
 import {
   isNaxConfigFile,
   isNaxOwnedWritePath,
@@ -14,8 +15,7 @@ import {
   naxOwnedWriteRefusal,
   naxWriteOptIns,
   QUEUE_CONTROL_FILES,
-} from "#src/tools/nax-owned-writes";
-import { SCRATCHPAD_DIR } from "#src/tools/scratchpad";
+} from "@/agents/nax-owned-writes";
 
 const ROOT = "/repo";
 

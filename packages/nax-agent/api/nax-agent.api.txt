@@ -498,10 +498,6 @@ type MemoryTranscriptStore
 type ModelTruncationOptions
 NATIVE_AGENT
 NATIVE_AGENT_NAME
-NAX_ALWAYS_DENIED_ENTRIES
-NAX_CONFIG_REFUSAL
-NAX_OWNED_WRITE_TOOLS
-NAX_SCRATCHPAD_ENTRY
 type NativeCatalogOverrides
 type NativeModelRef
 type NativeProtocolError
@@ -514,7 +510,6 @@ type NativeTurnActivity
 type NativeTurnFailureUsage
 type NativeTurnResponse
 NaxError
-type NaxOwnedKind
 type NormalizeInput
 type NormalizeResult
 type OpenRouterRouting
@@ -532,7 +527,6 @@ type ProviderCatalogOverride
 type ProviderGrantEntry
 type ProviderKind
 type ProviderTool
-QUEUE_CONTROL_FILES
 type QualityCommandSpec
 READ_CEILING
 RESERVED_TOOL_NAMES
@@ -751,8 +745,6 @@ interceptShell
 isForgeCapable
 isInside
 isKnownManager
-isNaxConfigFile
-isNaxOwnedWritePath
 isProcessAlive
 isProtocolStreamError
 isRetryableTransportFault
@@ -775,11 +767,6 @@ narrowGrants
 nativeSessionId
 nativeSessionStateOf
 naxCredentialStore
-naxOwnedBashRefusal
-naxOwnedKind
-naxOwnedPathsPolicy
-naxOwnedWriteRefusal
-naxWriteOptIns
 newSessionKey
 normalizeCommandSpec
 normalizeExec

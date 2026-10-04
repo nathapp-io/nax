@@ -33,7 +33,6 @@ import {
   buildLedgerSessionName,
   type CodingToolSupport,
   errorMessage,
-  naxOwnedPathsPolicy,
   type OwnedPathsPolicy,
   resolveSessionSandbox,
   type ToolAuditHeader,
@@ -46,6 +45,7 @@ import { type ResolvedPermissions, resolvePermissions } from "../config/permissi
 import { type QualityCommandSpec, runQualityCommand } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { resolvePackageName } from "./exec-package-name";
+import { naxOwnedPathsPolicy } from "./nax-owned-writes";
 import { naxProtectedPaths } from "./nax-protected-paths";
 import type { AgentRunOptions } from "./types";
 

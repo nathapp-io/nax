@@ -5,9 +5,9 @@ import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "#src/config/schemas-
 import { realOrRaw } from "#src/internal/realpath";
 import { SRT_MACOS_TMPDIR_DENIES } from "#src/sandbox/defaults";
 import { buildSandboxPolicy, type SandboxPolicyInput } from "#src/sandbox/index";
-import { naxOwnedPathsPolicy } from "#src/tools/nax-owned-writes";
 import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
 
 const GLOB = /[*?[\]{}]/;
 

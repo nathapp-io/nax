@@ -24,7 +24,6 @@ import {
   createCommandLauncher,
   DEFAULT_SANDBOX_CONFIG,
   LIKELY_SANDBOX_DENIAL,
-  naxOwnedPathsPolicy,
   probeSandboxOnce,
   resetSandboxBackend,
   resolveSessionSandbox,
@@ -32,6 +31,7 @@ import {
   sandboxBackendFor,
 } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, waitForCondition, withDepsRestore } from "@test/helpers";
+import { naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 
 const CONFIG = { ...DEFAULT_SANDBOX_CONFIG, enabled: true };

@@ -23,7 +23,6 @@ import {
   _sessionTmpDeps,
   type LaunchRequest,
   codingToolSupportModule as moveSetSupport,
-  naxOwnedPathsPolicy,
   realOrRaw,
   runTmpRoot,
   type SandboxPolicy,
@@ -44,6 +43,7 @@ import {
   resolveCodingToolSupport,
   resolveDispatchLauncher,
 } from "@/agents/coding-tool-support-resolve";
+import { naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 import { loadConfigForPackage } from "@/config";
 
 const RUN_ID = "r1";

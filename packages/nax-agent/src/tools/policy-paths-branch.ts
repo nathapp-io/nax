@@ -348,14 +348,14 @@ function runRefPathFields(frame: PathCheckFrame): PolicyVerdict | undefined {
  * `confineTo` (tool-declared, see `ToolScope`) shifts the root passed to
  * `resolveWithin` from `<root>` to `<root>/<confineTo>`: containment stays
  * the one seam, and only its ROOT changes. `relativeTo` keeps rooting at
- * `resolvedRoot` so grant globs, deny rules and `naxOwnedWriteRefusal`
- * continue to see the canonical repo-root-relative spelling -- authors
+ * `resolvedRoot` so grant globs, deny rules and the injected policy's
+ * `writeRefusal` continue to see the canonical repo-root-relative spelling -- authors
  * write `.nax/scratchpad/**`, never `**`, regardless of `confineTo`.
  *
  * `confineTo` is bound to stay INSIDE `resolvedRoot`: an authoring typo of
  * `..` or `../shared` would otherwise widen the containment root past the
- * policy boundary and re-scope `resolveWithin`'s `.git/`-metadata and
- * `isNaxConfigFile` protections to a root that no longer aligns with the
+ * policy boundary and re-scope `resolveWithin`'s `.git/`-metadata and the
+ * port's `configRefusal` protections to a root that no longer aligns with the
  * segments those checks assume -- the repo's own `.nax/config.json` would
  stop being segment-matched against `.nax`. The boundary is the policy
  root's invariant, so an out-of-root confineTo refuses the call outright

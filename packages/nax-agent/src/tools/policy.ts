@@ -167,8 +167,8 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * denied and an ask on an ungranted call never becomes an approval prompt.
    */
   function applyPathRules(tool: string, rel: string, state: RuleState): PolicyVerdict | undefined {
-    const naxOwned = owned.writeRefusal(tool, rel, { exemptRel: ownedWriteExemption, optIns: naxOptIns });
-    if (naxOwned !== undefined) return deny(`${tool} may not modify ${naxOwned}`);
+    const ownedRefusal = owned.writeRefusal(tool, rel, { exemptRel: ownedWriteExemption, optIns: naxOptIns });
+    if (ownedRefusal !== undefined) return deny(`${tool} may not modify ${ownedRefusal}`);
     const denyEntry = denyBy.get(tool);
     const askEntry = askBy.get(tool);
     if (denyEntry !== undefined && (denyEntry.unconditional || matchesAny(denyEntry.matchers, rel))) {

@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { naxOwnedBashRefusal, naxOwnedPathsPolicy } from "#src/tools/nax-owned-writes";
 import { EMPTY_OWNED_PATHS_POLICY, type OwnedBashCandidate, type OwnedPathsPolicy } from "#src/tools/owned-paths";
 import { resolveWithin } from "#src/tools/policy";
 import { type RawScreenArgs, screenRawBashCommand } from "#src/tools/policy-bash-raw";
+import { naxOwnedBashRefusal, naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
 
 const ROOT = "/tmp/raw-screen-root";
 

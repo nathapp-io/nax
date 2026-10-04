@@ -84,8 +84,7 @@ export * from "#src/tools/git";
 export * from "#src/tools/git-commit";
 export * from "#src/tools/grep";
 export * from "#src/tools/index";
-// S3-2: the port, and (temporarily, until Task 5 moves it to nax) nax's adapter.
-export * from "#src/tools/nax-owned-writes";
+// S3-2: the port (nax supplies the policy behind it from its own module).
 export * from "#src/tools/owned-paths";
 export * from "#src/tools/package-managers";
 export * from "#src/tools/policy";

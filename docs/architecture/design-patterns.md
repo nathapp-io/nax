@@ -304,7 +304,7 @@ export function getSafeLogger(): Logger | null {
 
 | Rule | Rationale |
 |:-----|:----------|
-| **Keep agents off nax-owned files** | `src/tools/nax-owned-writes.ts` refuses coding tools on `.nax/config.json` (and package configs), feature `prd.json` and the queue-control files — a writable config hands the agent an ungated `quality.commands` shell |
+| **Keep agents off nax-owned files** | nax's `src/agents/nax-owned-writes.ts`, injected through nax-agent's `OwnedPathsPolicy` port, refuses coding tools on `.nax/config.json` (and package configs), feature `prd.json` and the queue-control files — a writable config hands the agent an ungated `quality.commands` shell |
 | **Sandbox policy paths are literal** | srt on Linux silently drops glob entries, so `execution.sandbox` paths reject `* ? [ ] { }` at config load and the policy builder resolves every path with `realOrRaw()` |
 | **Security knobs are root-scoped** | `bashApproval`, `approvalTimeout`, `sandbox`, `commandSafety` are pinned to the root config (ADR-031, `src/config/root-only-keys.ts`); a package cannot loosen them |
 | **Audit every tool call** | `src/tools/tool-audit.ts` persists one row per coding-tool call (outcome incl. `denied` / `denied:ask`, reason, approval verdict, sandbox record, Bash `exitCode`, and `callId` / `scopeId` / `turnId` for correlation); logger calls are for operators and never replace the durable row |

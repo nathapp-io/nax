@@ -18,12 +18,7 @@ import {
   createCommandLauncher,
   createCommandShadow,
 } from "@nathapp/nax-agent";
-import {
-  type BashApprovalMode,
-  buildCodingToolSupport,
-  DEFAULT_BASH_APPROVAL_MODE,
-  naxOwnedPathsPolicy,
-} from "@nathapp/nax-agent/internal";
+import { type BashApprovalMode, buildCodingToolSupport, DEFAULT_BASH_APPROVAL_MODE } from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
   makeCommandShadowRecorder,
@@ -32,6 +27,7 @@ import {
   makeTempDir,
 } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
+import { naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 
 /**
  * A fix-shaped session. Read/Glob/Grep are declared AND granted deliberately:

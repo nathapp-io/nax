@@ -1,11 +1,17 @@
+// Verbatim copy of nax's src/agents/nax-owned-writes.ts (S3-2), the S2-3c precedent: nax-agent's engine tests exercise the port with nax's real rules; nax's own tests pin the original.
 /**
  * Which paths nax refuses to let an agent touch, and to which tools.
  *
- * A separate file rather than an addition to src/tools/policy.ts, for the same
- * reason src/tools/deny-paths.ts is one: that file carries the containment
- * seam and sits at the project's file-size ratchet, while this is a narrower
- * concern -- it has nothing to do with resolving or containing a path, only
- * with refusing one containment would otherwise allow.
+ * These rules are nax's, so the module lives in nax (src/agents/) and is
+ * injected into nax-agent through the OwnedPathsPolicy port (S3 spec 6.5,
+ * D16): nax-agent defines the seam, nax supplies the policy behind it. The
+ * `naxOwnedPathsPolicy` adapter at the bottom of this file is that injection.
+ *
+ * A separate file rather than an addition to nax-agent's policy.ts, for the
+ * same reason nax-agent's deny-paths.ts is one: that file carries the
+ * containment seam and sits at the project's file-size ratchet, while this is
+ * a narrower concern -- it has nothing to do with resolving or containing a
+ * path, only with refusing one containment would otherwise allow.
  *
  * Segment-exact, never a prefix or substring match: `.naxignore`,
  * `docs/nax/config.json` and `.nax/mono/api/notes.md` are ordinary paths a
@@ -14,12 +20,11 @@
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { realOrRaw } from "#src/internal/realpath";
-import type { OwnedBashCandidate, OwnedPathsPolicy } from "./owned-paths.ts";
+import type { OwnedBashCandidate, OwnedPathsPolicy } from "#src/tools/owned-paths";
 
 /**
  * The one top-level `.nax/` entry agents may write freely: the scratchpad.
- * Must equal the last segment of SCRATCHPAD_DIR (pinned by a test; importing
- * it here would close a scratchpad -> policy -> nax-owned-writes cycle).
+ * Must equal the last segment of nax-agent's SCRATCHPAD_DIR, pinned by a test.
  */
 export const NAX_SCRATCHPAD_ENTRY = "scratchpad";
 
@@ -102,7 +107,7 @@ export function isNaxConfigFile(root: string, resolved: string): boolean {
   // `.nax/config.json` (2), or `.nax/mono/<package>/config.json` at ANY package
   // depth (>= 4). The real override path is nested -- `loadConfigForWorkdir`
   // reads `.nax/mono/<packageDir>/config.json` where packageDir is the
-  // repo-relative package path (`src/config/loader.ts:382`), so a normal
+  // repo-relative package path (nax's `src/config/loader.ts:382`), so a normal
   // `packages/*` layout is 5 segments, not 4. A length-exact rule left every
   // such override writable whenever the story's root was the repo root.
   return isNaxConfigSegments(rel.split(sep));
@@ -124,7 +129,7 @@ export const NAX_OWNED_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edi
  * otherwise use to PAUSE, ABORT or SKIP stories without writing any code.
  *
  * `.queue.txt.processing` is the atomic-rename target the queue handler reads
- * from (src/execution/queue-handler.ts), so guarding only `.queue.txt` would
+ * from (nax's src/execution/queue-handler.ts), so guarding only `.queue.txt` would
  * leave the same hole one rename downstream.
  */
 export const QUEUE_CONTROL_FILES: ReadonlySet<string> = new Set([".queue.txt", ".queue.txt.processing"]);
@@ -180,7 +185,7 @@ export function naxOwnedKind(rel: string): "prd" | "queue" | undefined {
  * that only wanted to READ a PRD retried a command it will never be allowed to
  * run. Each branch now says what the file IS and what the agent can do instead.
  *
- * The text never spells `.nax/features/` literally: `src/tools/` is covered by
+ * The text never spells `.nax/features/` literally: this file is covered by
  * the `check:feature-dir-ssot` gate, so the PRD branch names the token the agent
  * used (`hit`) rather than the tree layout.
  *
@@ -276,7 +281,7 @@ export function naxOwnedWriteRefusal(
  * `isNaxConfigFile` refusal, which covers reads too.
  *
  * Only a leading `.nax/` segment is matched, so a monorepo package's own
- * `.nax/` is excluded on purpose -- see `naxDenies` in
+ * `.nax/` is excluded on purpose -- see `naxDenies` in nax-agent's
  * src/sandbox/policy-builder.ts for why that is mostly safe to delete and
  * where the one gap (package `rules/`) remains.
  */

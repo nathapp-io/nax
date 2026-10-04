@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolScope } from "#src/tools/index";
 import { compileToolPolicy } from "#src/tools/index";
-import { naxOwnedPathsPolicy } from "#src/tools/nax-owned-writes";
+import { naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
 
 const PATH_SCOPE: ToolScope = { pathFields: ["path"] };
 let root: string;

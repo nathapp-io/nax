@@ -16,9 +16,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolScope } from "@nathapp/nax-agent";
 import { compileToolPolicy } from "@nathapp/nax-agent";
-import { buildCodingToolSupport, naxOwnedPathsPolicy } from "@nathapp/nax-agent/internal";
+import { buildCodingToolSupport } from "@nathapp/nax-agent/internal";
 import { makeNaxConfig } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
+import { naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 import type { PlanInteractiveInput, PlanRefineInput } from "@/operations";
 import { planInteractiveOp, planRefineOp } from "@/operations";
 

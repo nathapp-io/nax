@@ -17,8 +17,8 @@ import { describe, expect, test } from "bun:test";
 import { buildCodingToolSupport } from "#src/coding-tools/coding-tool-support";
 import type { CommandLauncher, LaunchRequest, SandboxState } from "#src/sandbox/index";
 import { DISABLED_SANDBOX_STATE } from "#src/sandbox/index";
-import { naxOwnedPathsPolicy } from "#src/tools/nax-owned-writes";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
 
 const READ_PRD = "git diff .nax/features/f/prd.json";
 const WRITE_PRD = "echo x > .nax/features/f/prd.json";
