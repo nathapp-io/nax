@@ -270,6 +270,7 @@ export {
   createTurnDeadline,
   type TurnDeadline,
 } from "#src/session/turn-deadline";
+export type { TurnEvent, TurnEventSink } from "#src/session/turn-event";
 export {
   adaptProviderTool,
   advertisedSchemaBytes,

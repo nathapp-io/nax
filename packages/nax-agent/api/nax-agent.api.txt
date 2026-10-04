@@ -210,6 +210,8 @@ type TruncateForModelOptions
 type TruncationDirection
 type TruncationResult
 type TurnDeadline
+type TurnEvent
+type TurnEventSink
 type TurnMarker
 type TurnResult
 adaptProviderTool
