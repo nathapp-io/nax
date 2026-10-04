@@ -6,7 +6,13 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configureCredentials, globTool, NativeSessionAdapter, resetSandboxBackend } from "@nathapp/nax-agent";
+import {
+  configureCredentials,
+  EMPTY_OWNED_PATHS_POLICY,
+  globTool,
+  NativeSessionAdapter,
+  resetSandboxBackend,
+} from "@nathapp/nax-agent";
 import { _clientDeps, DEFAULT_SANDBOX_CONFIG, resolveSessionSandbox } from "@nathapp/nax-agent/internal";
 
 assert.equal(process.versions.bun, undefined, "the packed smoke must run on native Node");
@@ -74,6 +80,9 @@ if (process.platform === "linux") {
       config: DEFAULT_SANDBOX_CONFIG,
       root: workdir,
       needsLauncher: true,
+      // S3-2: ownedPaths is a required argument (no silent empty policy); an
+      // embedder without owned paths passes the empty policy from the entry.
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
       protectedPaths: {
         gitExcludePathspecs: [],
         gitIgnorePatterns: [],

@@ -27,6 +27,7 @@ import {
   makeTempDir,
 } from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
+import { naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 
 /**
  * A fix-shaped session. Read/Glob/Grep are declared AND granted deliberately:
@@ -87,6 +88,11 @@ function session(options?: {
     root,
     declared: [...(options?.declared ?? FIX_TOOLS)],
     grants,
+    // S3-2: the suite emulates what production's resolveCodingToolSupport
+    // supplies — nax's owned-paths policy. Without it the direct
+    // buildCodingToolSupport call defaults to the EMPTY policy and the
+    // raw screen's queue-file refusals never fire.
+    ownedPaths: naxOwnedPathsPolicy,
     ...(options?.bashApproval !== undefined ? { bashApproval: options.bashApproval } : {}),
     ...(options?.deny !== undefined ? { denyRules: [{ tool: "Bash", patterns: options.deny }] } : {}),
     ...(options?.ask !== undefined ? { askRules: [{ tool: "Bash", patterns: options.ask }] } : {}),

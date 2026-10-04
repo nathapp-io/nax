@@ -31,6 +31,7 @@ import {
   sandboxBackendFor,
 } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, waitForCondition, withDepsRestore } from "@test/helpers";
+import { naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 
 const CONFIG = { ...DEFAULT_SANDBOX_CONFIG, enabled: true };
@@ -123,6 +124,7 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
       ...(opts.outputDir !== undefined ? { outputDir: opts.outputDir } : {}),
       needsLauncher: true,
       protectedPaths: naxProtectedPaths(),
+      ownedPaths: naxOwnedPathsPolicy,
     });
     const support = buildCodingToolSupport({
       root: r,
@@ -130,6 +132,7 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
       grants: opts.grants ?? [{ tool: "Read", patterns: ["*"] }],
       bashApproval: opts.bashApproval ?? "raw",
       launcher,
+      ownedPaths: naxOwnedPathsPolicy,
       ...(opts.askResolver !== undefined ? { askResolver: opts.askResolver } : {}),
       ...(opts.stripEnvVars !== undefined ? { stripEnvVars: opts.stripEnvVars } : {}),
     });
@@ -374,6 +377,7 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
         runTmpRoot: runRoot,
         tmpDir: sessionDir,
         protectedPaths: naxProtectedPaths(),
+        ownedPaths: naxOwnedPathsPolicy,
       });
     }
 

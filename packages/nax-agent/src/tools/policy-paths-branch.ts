@@ -24,7 +24,7 @@
 
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isInside, realOrRaw } from "#src/internal/realpath";
-import { isNaxConfigFile } from "./nax-owned-writes.ts";
+import type { OwnedPathsPolicy } from "./owned-paths.ts";
 import { pathListElements } from "./path-list.ts";
 import { pathFieldValue } from "./policy-input.ts";
 import { type CompiledEntry, type CompiledPattern, matchesAny } from "./policy-match.ts";
@@ -46,6 +46,8 @@ export interface PathsBranchContext {
   readonly deny: (reason: string, breach?: boolean, escalatable?: boolean) => PolicyVerdict;
   readonly askVerdict: (resolvedPaths: readonly string[], rule: string) => PolicyVerdict;
   readonly applyPathRules: (tool: string, rel: string, state: RuleState) => PolicyVerdict | undefined;
+  /** The injected OwnedPathsPolicy (S3-2 port); the owned-config refusal reads through it. */
+  readonly ownedPaths: OwnedPathsPolicy;
 }
 
 /**
@@ -72,8 +74,9 @@ function entersGitMetadata(root: string, resolved: string): boolean {
 
 /**
  * Absolute, symlink-resolved form of `candidate` if it lies inside `root`,
- * is not itself (and does not lie under) `.git/`, and is not one of nax's own
- * config files.
+ * is not itself (and does not lie under) `.git/`, and is not refused by the
+ * injected OwnedPathsPolicy's `configRefusal` (S3-2 port) -- for nax, one of
+ * nax's own config files.
  *
  * The single containment seam. Multi-root support (a future configurable
  * extension) changes this function and nothing else, which is why every tool
@@ -85,7 +88,9 @@ function entersGitMetadata(root: string, resolved: string): boolean {
  * so containment alone never bars it, and an unconditional ("*") grant --
  * what every non-Exec tool gets under the default `unrestricted` profile --
  * skips glob matching entirely, so nothing downstream of this function would
- * catch it either.
+ * catch it either. The owned-config refusal arrives through the port: nax
+ * injects `naxOwnedPathsPolicy`, an embedder that injects nothing gets
+ * `EMPTY_OWNED_PATHS_POLICY` and only containment plus `.git/` remain.
  *
  * Pre-single-frame, this seam carried one exception: an `execTouchedPaths` set
  * (Task 10) admitted a workspace install's repo-ROOT manifest/lockfile even
@@ -94,11 +99,11 @@ function entersGitMetadata(root: string, resolved: string): boolean {
  * manifest is in-root by construction and that carve-out was retired
  * (PR2/Task 13). There is no exception to this seam now.
  */
-export function resolveWithin(root: string, candidate: string): string | null {
+export function resolveWithin(root: string, candidate: string, owned: OwnedPathsPolicy): string | null {
   const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
   if (isInside(root, absolute)) {
     const resolved = realOrRaw(absolute);
-    if (entersGitMetadata(root, resolved) || isNaxConfigFile(root, resolved)) return null;
+    if (entersGitMetadata(root, resolved) || owned.configRefusal(root, resolved) !== undefined) return null;
     return resolved;
   }
   return null;
@@ -139,16 +144,12 @@ export function resolveWithin(root: string, candidate: string): string | null {
  * message is where the agent first sees the absolute containment root -- and
  * naming a path the model itself handed in is the right disclosure.
  */
-function outOfRootReason(root: string, candidate: string): string {
+function outOfRootReason(root: string, candidate: string, owned: OwnedPathsPolicy): string {
   const absolute = isAbsolute(candidate) ? candidate : resolve(root, candidate);
-  if (isInside(root, absolute) && isNaxConfigFile(root, realOrRaw(absolute))) {
-    return (
-      "is one of nax's own config files, which every tool is refused regardless of grant -- " +
-      "`quality.commands` and `acceptance.command` are run through a shell WITHOUT passing the " +
-      "permission gate because a human wrote them, so editing this file is a route to running " +
-      "an ungated command on the next run"
-    );
-  }
+  // The owned-config refusal (for nax: nax's own config files) comes from the
+  // injected port (S3-2), which supplies the full reason text.
+  const configReason = isInside(root, absolute) ? owned.configRefusal(root, realOrRaw(absolute)) : undefined;
+  if (configReason !== undefined) return configReason;
   if (isInside(root, absolute) && entersGitMetadata(root, realOrRaw(absolute))) {
     return (
       "targets git metadata under .git/, which every tool is refused regardless of grant -- " +
@@ -230,10 +231,14 @@ function checkPathSegment(
   candidate: PathCandidate,
   enforceGlobs: boolean,
 ): PolicyVerdict | undefined {
-  const resolved = resolveWithin(frame.effectiveRoot, stripConfinePrefix(frame.confinePrefix, candidate.path));
+  const resolved = resolveWithin(
+    frame.effectiveRoot,
+    stripConfinePrefix(frame.confinePrefix, candidate.path),
+    frame.ctx.ownedPaths,
+  );
   if (resolved === null) {
     return frame.ctx.deny(
-      `${candidate.denialSubject} ${outOfRootReason(frame.effectiveRoot, candidate.outOfRootTarget)}`,
+      `${candidate.denialSubject} ${outOfRootReason(frame.effectiveRoot, candidate.outOfRootTarget, frame.ctx.ownedPaths)}`,
       true,
     );
   }
@@ -343,14 +348,14 @@ function runRefPathFields(frame: PathCheckFrame): PolicyVerdict | undefined {
  * `confineTo` (tool-declared, see `ToolScope`) shifts the root passed to
  * `resolveWithin` from `<root>` to `<root>/<confineTo>`: containment stays
  * the one seam, and only its ROOT changes. `relativeTo` keeps rooting at
- * `resolvedRoot` so grant globs, deny rules and `naxOwnedWriteRefusal`
- * continue to see the canonical repo-root-relative spelling -- authors
+ * `resolvedRoot` so grant globs, deny rules and the injected policy's
+ * `writeRefusal` continue to see the canonical repo-root-relative spelling -- authors
  * write `.nax/scratchpad/**`, never `**`, regardless of `confineTo`.
  *
  * `confineTo` is bound to stay INSIDE `resolvedRoot`: an authoring typo of
  * `..` or `../shared` would otherwise widen the containment root past the
- * policy boundary and re-scope `resolveWithin`'s `.git/`-metadata and
- * `isNaxConfigFile` protections to a root that no longer aligns with the
+ * policy boundary and re-scope `resolveWithin`'s `.git/`-metadata and the
+ * port's `configRefusal` protections to a root that no longer aligns with the
  * segments those checks assume -- the repo's own `.nax/config.json` would
  stop being segment-matched against `.nax`. The boundary is the policy
  root's invariant, so an out-of-root confineTo refuses the call outright

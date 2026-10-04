@@ -1999,7 +1999,8 @@ permission of their own.
   cannot be widened by any profile); rule precedence is deny > ask > allow.
   `narrow-grants.ts` lets an op narrow an inherited grant (e.g. `Write` to one
   file); `deny-paths.ts` applies `execution.denyPaths` to `Delete`.
-- **nax-owned writes** (`nax-owned-writes.ts`) — `.nax/config.json` and
+- **nax-owned writes** (nax's `src/agents/nax-owned-writes.ts`, injected
+  through nax-agent's `OwnedPathsPolicy` port) — `.nax/config.json` and
   `.nax/mono/<pkg>/config.json` are refused to every tool (their `quality.commands`
   run through a shell unchecked, so a model must never be able to write them);
   the mutating tools (`Write`, `Edit`, `Delete`, `GitCommit`) are also refused on

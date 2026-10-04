@@ -20,6 +20,7 @@ import {
   EXEC_TOOL_NAME,
   expandMcpRuleGrants,
   mcpRuleAdmits,
+  type OwnedPathsPolicy,
   type ProtectedPathsPolicy,
   partitionMcpRules,
   type ResolvedProviderTools,
@@ -28,13 +29,13 @@ import {
   sessionTmpDirUnder,
   type ToolGrant,
 } from "@nathapp/nax-agent";
-import type { ToolAuditHeader } from "@nathapp/nax-agent/internal";
 import {
   buildCodingToolSupport,
   buildLedgerSessionName,
   type CodingToolSupport,
   errorMessage,
   resolveSessionSandbox,
+  type ToolAuditHeader,
   UNIVERSAL_CODING_TOOLS,
 } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
@@ -44,6 +45,7 @@ import { type ResolvedPermissions, resolvePermissions } from "../config/permissi
 import { type QualityCommandSpec, runQualityCommand } from "../quality";
 import { packageOverrideKey, packageWorkdir } from "../runtime/packages";
 import { resolvePackageName } from "./exec-package-name";
+import { naxOwnedPathsPolicy } from "./nax-owned-writes";
 import { naxProtectedPaths } from "./nax-protected-paths";
 import type { AgentRunOptions } from "./types";
 
@@ -386,6 +388,7 @@ export async function resolveDispatchLauncher(
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     ...(runRoot !== undefined ? { tmpDir: sessionTmpDirUnder(runRoot, sessionName), runTmpRoot: runRoot } : {}),
     protectedPaths: _codingToolSupportDeps.protectedPaths(),
+    ownedPaths: _codingToolSupportDeps.ownedPaths,
   });
 }
 
@@ -432,10 +435,13 @@ export const _codingToolSupportDeps: {
   runDeclaredCommand: DeclaredCommandRunner;
   /** Port 6: the host-owned paths the tools and the sandbox protect. */
   protectedPaths: () => ProtectedPathsPolicy;
+  /** S3-2 port: the paths nax owns the writes to; injected into the tools (and, from Task 4, the sandbox). */
+  ownedPaths: OwnedPathsPolicy;
 } = {
   loadConfigForPackage,
   runDeclaredCommand: runQualityCommand,
   protectedPaths: naxProtectedPaths,
+  ownedPaths: naxOwnedPathsPolicy,
 };
 
 /**
@@ -514,6 +520,7 @@ export async function resolveCodingToolSupport(
     runDeclaredCommand: _codingToolSupportDeps.runDeclaredCommand,
     interceptor: options.commandInterceptor,
     protectedPaths: _codingToolSupportDeps.protectedPaths(),
+    ownedPaths: _codingToolSupportDeps.ownedPaths,
     stripEnvVars: fields.stripEnvVars,
     sessionName,
     header,

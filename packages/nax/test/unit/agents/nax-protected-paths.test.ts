@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { assertDefined } from "@test/helpers";
 import { _codingToolSupportDeps } from "@/agents/coding-tool-support-resolve";
 import { naxProtectedPaths } from "@/agents/nax-protected-paths";
 import { globalConfigDir, PROJECT_NAX_DIR } from "@/config";
@@ -31,6 +32,7 @@ describe("naxProtectedPaths — nax's knowledge, supplied to the tools and the s
     const second = naxProtectedPaths();
     expect(first.credentialDir).toBe("/tmp/nax-protected-a");
     expect(second.credentialDir).toBe("/tmp/nax-protected-b");
+    assertDefined(second.trustStoreFile, "the policy's trust store path");
     expect(second.trustStoreFile.startsWith(join("/tmp/nax-protected-b"))).toBe(true);
   });
 

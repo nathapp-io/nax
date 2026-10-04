@@ -8,6 +8,8 @@ release may change the public API.
 
 Per-session credential sources (`memory`, `exec`) and adapter-owned clients for embedders; `AuthStamp.source` may be `memory`. nax behaviour unchanged.
 
+The `OwnedPathsPolicy` host port lands on the public entry with `EMPTY_OWNED_PATHS_POLICY` and `OwnedBashCandidate`: which paths the host owns the writes to, and how its refusals read. Owned-path rules are now injected by the host — nax supplies its own policy, so nax behaviour is unchanged, and an embedder that injects nothing gets the empty policy. Signatures on `.` change to carry it: `resolveWithin` gains a required third parameter (`ownedPaths`); `SandboxPolicyInput` gains `ownedPaths` (required) and `projectStateDir` (optional), and `buildSandboxPolicy` follows; three `ProtectedPathsPolicy` fields (`projectStateDir`, `credentialDir`, `trustStoreFile`) become optional, and the sandbox skips the absent ones. `Read`, `Glob` and `Grep` now refuse a symlink-resolved host credential directory or trust-store file when the workdir contains it, regardless of grant.
+
 ## [0.1.0] - 2026-10-03
 
 First published version. Extracted from nax, where it was the native agent.

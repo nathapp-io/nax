@@ -33,6 +33,7 @@ import {
   type ToolGrant,
   type ToolPatternNarrowing,
 } from "#src/tools/index";
+import type { OwnedPathsPolicy } from "#src/tools/owned-paths";
 import { resolveBashSupport } from "./coding-tool-bash.ts";
 import { buildDeclaredCommandTools } from "./coding-tool-extras.ts";
 import { isTempConfined, rawScreenOptionsFor } from "./coding-tool-sandbox.ts";
@@ -128,6 +129,8 @@ export function buildCodingToolSupport(args: {
   fileOutputPath?: string;
   /** nax#2260: `execution.sandbox.filesystem.allowWrite`, forwarded to `compileToolPolicy`. */
   naxAllowWrite?: readonly string[];
+  /** S3-2: host-owned path rules; forwarded to compileToolPolicy and onto every ToolRunContext. nax passes naxOwnedPathsPolicy. */
+  ownedPaths?: OwnedPathsPolicy;
   bashApproval?: BashApprovalMode;
   /** Injectable ask resolver (Task 3); defaults to the headless deny resolver. */
   askResolver?: AskResolver;
@@ -220,10 +223,12 @@ export function buildCodingToolSupport(args: {
       ...(args.askRules !== undefined ? { askRules: args.askRules } : {}),
       ...(args.fileOutputPath !== undefined ? { ownedWriteExemption: args.fileOutputPath } : {}),
       ...(args.naxAllowWrite !== undefined ? { naxAllowWrite: args.naxAllowWrite } : {}),
+      ownedPaths: args.ownedPaths,
     }),
     declaredCommands: new Set(declaredCommands.keys()),
     interceptor: args.interceptor,
     protectedPaths: args.protectedPaths,
+    ownedPaths: args.ownedPaths,
     ...(args.abortSignal !== undefined ? { signal: args.abortSignal } : {}),
     ...(args.askResolver !== undefined ? { askResolver: args.askResolver } : {}),
     ...(args.commandShadow !== undefined ? { commandShadow: args.commandShadow } : {}),

@@ -18,7 +18,7 @@ import { relative, resolve, sep } from "node:path";
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import { realOrRaw } from "#src/internal/realpath";
 import { validateArgv } from "./exec-guard.ts";
-import { naxOwnedWriteRefusal, naxWriteOptIns } from "./nax-owned-writes.ts";
+import { EMPTY_OWNED_PATHS_POLICY, type OwnedPathsPolicy } from "./owned-paths.ts";
 import { commandBranch } from "./policy-command-branch.ts";
 import {
   type CompiledEntry,
@@ -53,16 +53,18 @@ export interface ToolPolicyOptions {
    */
   readonly askRules?: readonly ToolGrant[];
   /**
-   * The ONE nax-owned path this session may write despite `naxOwnedWriteRefusal`
-   * (nax#2115): the ABSOLUTE `fileOutput` path the dispatching op declared. It is
-   * canonicalised into this policy's own root-relative frame below rather than by
-   * the caller, so alternate spellings of the same file cannot diverge from the
-   * string the guard compares. Only the feature-PRD refusal honours it; the nax
-   * CONFIG refusal is deliberately not exempted.
+   * The ONE nax-owned path this session may write despite the port's
+   * `writeRefusal` (nax#2115): the ABSOLUTE `fileOutput` path the dispatching op
+   * declared. It is canonicalised into this policy's own root-relative frame below
+   * rather than by the caller, so alternate spellings of the same file cannot
+   * diverge from the string the guard compares. Only the feature-PRD refusal
+   * honours it; the owned CONFIG refusal is deliberately not exempted.
    */
   readonly ownedWriteExemption?: string;
-  /** nax#2260: `execution.sandbox.filesystem.allowWrite`; a listed top-level `.nax/` entry becomes writable. */
+  /** nax#2260: `execution.sandbox.filesystem.allowWrite`; a listed top-level `.nax/` entry becomes writable through the port's `writeOptIns`. */
   readonly naxAllowWrite?: readonly string[];
+  /** S3-2: host-owned path rules (OwnedPathsPolicy port). Absent: none, the embedder default. */
+  readonly ownedPaths?: OwnedPathsPolicy;
   /**
    * How a bash command string is adjudicated (ADR-030). Absent means `gated` —
    * today's behaviour — so every caller that does not opt in is unchanged.
@@ -98,6 +100,7 @@ function isFieldlessScope(scope: ToolScope): boolean {
 
 export function compileToolPolicy(grants: readonly ToolGrant[], root: string, options?: ToolPolicyOptions): ToolPolicy {
   const resolvedRoot = realOrRaw(root);
+  const owned = options?.ownedPaths ?? EMPTY_OWNED_PATHS_POLICY;
   // nax#2115: the SAME transform `relativeTo` applies to every checked path, so
   // the guard compares like with like. A path outside the root yields a
   // ".."-prefixed rel that can never equal a checked path's, exempting nothing.
@@ -105,7 +108,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
     options?.ownedWriteExemption === undefined
       ? undefined
       : relative(resolvedRoot, realOrRaw(options.ownedWriteExemption)).split(sep).join("/");
-  const naxOptIns = naxWriteOptIns(root, options?.naxAllowWrite ?? []);
+  const naxOptIns = owned.writeOptIns(root, options?.naxAllowWrite ?? []);
   const denyBy = compileRuleMap(options?.denyRules);
   const askBy = compileRuleMap(options?.askRules);
   const bashApproval: BashApprovalMode = options?.bashApproval ?? "gated";
@@ -164,8 +167,8 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * denied and an ask on an ungranted call never becomes an approval prompt.
    */
   function applyPathRules(tool: string, rel: string, state: RuleState): PolicyVerdict | undefined {
-    const naxOwned = naxOwnedWriteRefusal(tool, rel, ownedWriteExemption, naxOptIns);
-    if (naxOwned !== undefined) return deny(`${tool} may not modify ${naxOwned}`);
+    const ownedRefusal = owned.writeRefusal(tool, rel, { exemptRel: ownedWriteExemption, optIns: naxOptIns });
+    if (ownedRefusal !== undefined) return deny(`${tool} may not modify ${ownedRefusal}`);
     const denyEntry = denyBy.get(tool);
     const askEntry = askBy.get(tool);
     if (denyEntry !== undefined && (denyEntry.unconditional || matchesAny(denyEntry.matchers, rel))) {
@@ -280,7 +283,7 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
    * the nested helpers below stay authoritative, and the sibling reads them at
    * call time — `pathsBranch` itself lives in `./policy-paths-branch`.
    */
-  const pathsBranchContext: PathsBranchContext = { resolvedRoot, deny, askVerdict, applyPathRules };
+  const pathsBranchContext: PathsBranchContext = { resolvedRoot, deny, askVerdict, applyPathRules, ownedPaths: owned };
 
   return {
     root: resolvedRoot,
@@ -316,10 +319,11 @@ export function compileToolPolicy(grants: readonly ToolGrant[], root: string, op
           bashApproval,
           rawBashRefusal: options?.rawBashRefusal,
           sandboxWrapped: options?.sandboxWrapped,
+          ownedPaths: owned,
           resolvedRoot,
           denyBy,
           askBy,
-          resolvePath: (candidate, cwd) => resolveWithin(resolvedRoot, resolve(cwd, candidate)),
+          resolvePath: (candidate, cwd) => resolveWithin(resolvedRoot, resolve(cwd, candidate), owned),
           deny,
           askVerdict,
         }) ??

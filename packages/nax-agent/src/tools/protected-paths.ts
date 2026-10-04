@@ -9,12 +9,12 @@ export interface ProtectedPathsPolicy {
   readonly gitExcludePathspecs: readonly string[];
   /** Gitignore patterns GitCommit refuses to stage. */
   readonly gitIgnorePatterns: readonly string[];
-  /** Project-relative directory whose top-level entries the sandbox policy lists. */
-  readonly projectStateDir: string;
-  /** Directory whose `credentials*` files the sandbox denies. */
-  readonly credentialDir: string;
-  /** File the sandbox denies writes to: the trust store deciding whether repository code runs. */
-  readonly trustStoreFile: string;
+  /** Project-relative directory whose top-level entries the sandbox policy lists. Absent: the sandbox skips it (S3 spec 6.2). */
+  readonly projectStateDir?: string;
+  /** Directory whose `credentials*` files the sandbox denies. Absent: the sandbox skips it (S3 spec 6.2). */
+  readonly credentialDir?: string;
+  /** File the sandbox denies writes to: the trust store deciding whether repository code runs. Absent: the sandbox skips it (S3 spec 6.2). */
+  readonly trustStoreFile?: string;
 }
 
 /** The Git tool's default excludes; none when the session carries no policy. */

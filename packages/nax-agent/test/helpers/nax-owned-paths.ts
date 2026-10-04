@@ -1,11 +1,17 @@
+// Verbatim copy of nax's src/agents/nax-owned-writes.ts (S3-2), the S2-3c precedent: nax-agent's engine tests exercise the port with nax's real rules; nax's own tests pin the original.
 /**
  * Which paths nax refuses to let an agent touch, and to which tools.
  *
- * A separate file rather than an addition to src/tools/policy.ts, for the same
- * reason src/tools/deny-paths.ts is one: that file carries the containment
- * seam and sits at the project's file-size ratchet, while this is a narrower
- * concern -- it has nothing to do with resolving or containing a path, only
- * with refusing one containment would otherwise allow.
+ * These rules are nax's, so the module lives in nax (src/agents/) and is
+ * injected into nax-agent through the OwnedPathsPolicy port (S3 spec 6.5,
+ * D16): nax-agent defines the seam, nax supplies the policy behind it. The
+ * `naxOwnedPathsPolicy` adapter at the bottom of this file is that injection.
+ *
+ * A separate file rather than an addition to nax-agent's policy.ts, for the
+ * same reason nax-agent's deny-paths.ts is one: that file carries the
+ * containment seam and sits at the project's file-size ratchet, while this is
+ * a narrower concern -- it has nothing to do with resolving or containing a
+ * path, only with refusing one containment would otherwise allow.
  *
  * Segment-exact, never a prefix or substring match: `.naxignore`,
  * `docs/nax/config.json` and `.nax/mono/api/notes.md` are ordinary paths a
@@ -14,11 +20,11 @@
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { realOrRaw } from "#src/internal/realpath";
+import type { OwnedBashCandidate, OwnedPathsPolicy } from "#src/tools/owned-paths";
 
 /**
  * The one top-level `.nax/` entry agents may write freely: the scratchpad.
- * Must equal the last segment of SCRATCHPAD_DIR (pinned by a test; importing
- * it here would close a scratchpad -> policy -> nax-owned-writes cycle).
+ * Must equal the last segment of nax-agent's SCRATCHPAD_DIR, pinned by a test.
  */
 export const NAX_SCRATCHPAD_ENTRY = "scratchpad";
 
@@ -101,7 +107,7 @@ export function isNaxConfigFile(root: string, resolved: string): boolean {
   // `.nax/config.json` (2), or `.nax/mono/<package>/config.json` at ANY package
   // depth (>= 4). The real override path is nested -- `loadConfigForWorkdir`
   // reads `.nax/mono/<packageDir>/config.json` where packageDir is the
-  // repo-relative package path (`src/config/loader.ts:382`), so a normal
+  // repo-relative package path (nax's `src/config/loader.ts:382`), so a normal
   // `packages/*` layout is 5 segments, not 4. A length-exact rule left every
   // such override writable whenever the story's root was the repo root.
   return isNaxConfigSegments(rel.split(sep));
@@ -123,7 +129,7 @@ export const NAX_OWNED_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edi
  * otherwise use to PAUSE, ABORT or SKIP stories without writing any code.
  *
  * `.queue.txt.processing` is the atomic-rename target the queue handler reads
- * from (src/execution/queue-handler.ts), so guarding only `.queue.txt` would
+ * from (nax's src/execution/queue-handler.ts), so guarding only `.queue.txt` would
  * leave the same hole one rename downstream.
  */
 export const QUEUE_CONTROL_FILES: ReadonlySet<string> = new Set([".queue.txt", ".queue.txt.processing"]);
@@ -154,9 +160,9 @@ export function isNaxOwnedWritePath(rel: string): boolean {
  *
  * `/`-joined and root-relative, like `isNaxOwnedWritePath`. Never returns
  * `"config"` -- nax config files are recognised by the lexical
- * `isNaxConfigFile` pass, which callers (`protectedHit` in policy-bash-raw.ts)
- * run FIRST. Keeping the two apart is what lets the raw screen name the kind it
- * matched without duplicating the config rule here.
+ * `isNaxConfigFile` pass, which `bashRefusal` below runs FIRST over the raw
+ * screen's candidates. Keeping the two apart is what lets the policy name the
+ * kind it matched without duplicating the config rule here.
  */
 export function naxOwnedKind(rel: string): "prd" | "queue" | undefined {
   const segments = rel.split("/");
@@ -179,7 +185,7 @@ export function naxOwnedKind(rel: string): "prd" | "queue" | undefined {
  * that only wanted to READ a PRD retried a command it will never be allowed to
  * run. Each branch now says what the file IS and what the agent can do instead.
  *
- * The text never spells `.nax/features/` literally: `src/tools/` is covered by
+ * The text never spells `.nax/features/` literally: this file is covered by
  * the `check:feature-dir-ssot` gate, so the PRD branch names the token the agent
  * used (`hit`) rather than the tree layout.
  *
@@ -275,7 +281,7 @@ export function naxOwnedWriteRefusal(
  * `isNaxConfigFile` refusal, which covers reads too.
  *
  * Only a leading `.nax/` segment is matched, so a monorepo package's own
- * `.nax/` is excluded on purpose -- see `naxDenies` in
+ * `.nax/` is excluded on purpose -- see `projectStateDenies` in nax-agent's
  * src/sandbox/policy-builder.ts for why that is mostly safe to delete and
  * where the one gap (package `rules/`) remains.
  */
@@ -291,3 +297,41 @@ function naxStateRefusal(rel: string, optIns: ReadonlySet<string>): string | und
     "A human can open a path for a story by listing it in execution.sandbox.filesystem.allowWrite in the project config."
   );
 }
+
+/** `outOfRootReason`'s text for a nax config file (completes `path "x" <text>`). */
+export const NAX_CONFIG_REFUSAL =
+  "is one of nax's own config files, which every tool is refused regardless of grant -- " +
+  "`quality.commands` and `acceptance.command` are run through a shell WITHOUT passing the " +
+  "permission gate because a human wrote them, so editing this file is a route to running " +
+  "an ungated command on the next run";
+
+/**
+ * The first frame that hits, in today's two-pass order per frame (see the raw
+ * Bash screen in policy-bash-raw.ts): the lexical config check, then the
+ * resolver's PRD/queue check.
+ */
+function firstOwnedHit(root: string, candidates: readonly OwnedBashCandidate[]): NaxOwnedKind | undefined {
+  for (const candidate of candidates) {
+    if (isNaxConfigFile(root, candidate.lexical)) return "config";
+    const kind = candidate.rel === null ? undefined : naxOwnedKind(candidate.rel);
+    if (kind !== undefined) return kind;
+  }
+  return undefined;
+}
+
+/** nax's OwnedPathsPolicy: this module's rules behind the S3-2 port. */
+export const naxOwnedPathsPolicy: OwnedPathsPolicy = {
+  writeRefusal: (tool, rel, ctx) => naxOwnedWriteRefusal(tool, rel, ctx.exemptRel, ctx.optIns),
+  configRefusal: (root, resolved) => (isNaxConfigFile(root, resolved) ? NAX_CONFIG_REFUSAL : undefined),
+  bashRefusal: (tool, token, candidates, ctx) => {
+    const kind = firstOwnedHit(ctx.root, candidates);
+    if (kind === undefined) return undefined;
+    // US-002: sandbox-wrapped, a token that only NAMES a PRD is allowed.
+    if (ctx.verb === "names" && ctx.sandboxWrapped && kind === "prd") return undefined;
+    return naxOwnedBashRefusal(tool, kind, token, ctx.verb, { sandboxWrapped: ctx.sandboxWrapped });
+  },
+  deniedEntries: NAX_ALWAYS_DENIED_ENTRIES,
+  rootWriteDenies: [...QUEUE_CONTROL_FILES],
+  scratchpadEntry: NAX_SCRATCHPAD_ENTRY,
+  writeOptIns: naxWriteOptIns,
+};

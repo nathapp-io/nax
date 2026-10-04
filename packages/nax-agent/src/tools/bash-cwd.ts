@@ -8,9 +8,9 @@
  * `<root>/child/secret`), so both screens must track it identically to avoid
  * being fooled by it. This module is the ONE definition of "what does a `cd`
  * segment resolve to, and how do separators fold that into the running set
- * of candidate working directories" -- mirroring `isNaxOwnedWritePath` in
- * `nax-owned-writes.ts`, which is the same one-definition-two-callers shape
- * for a different seam.
+ * of candidate working directories" -- mirroring the `OwnedPathsPolicy` port's
+ * `writeRefusal` (`tools/owned-paths.ts`), which is the same
+ * one-definition-two-callers shape for a different seam.
  *
  * What this module does NOT decide: what happens when a `cd` cannot be
  * modelled (an option-shaped target, an opaque one, one that fails to

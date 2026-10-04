@@ -18,6 +18,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import { fileSizeOrZero } from "#src/internal/file-size";
 import { getAgentRuntime } from "#src/runtime/index";
+import { EMPTY_OWNED_PATHS_POLICY } from "./owned-paths.ts";
 import { resolveWithin } from "./policy.ts";
 import { readFileSlice } from "./read-file.ts";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
@@ -194,7 +195,7 @@ export const scratchpadListTool: CodingTool = {
     const files: string[] = [];
     for (const hit of sorted) {
       if (files.length >= MAX_MATCHES) break;
-      if (resolveWithin(ctx.root, hit) === null) continue;
+      if (resolveWithin(ctx.root, hit, ctx.ownedPaths ?? EMPTY_OWNED_PATHS_POLICY) === null) continue;
       files.push(hit.split(sep).join("/"));
     }
     if (files.length === 0) return { content: "(no entries)" };

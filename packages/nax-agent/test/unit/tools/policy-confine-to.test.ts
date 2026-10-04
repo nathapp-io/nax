@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolScope } from "#src/tools/index";
 import { compileToolPolicy, resolveWithin } from "#src/tools/index";
+import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
 
 let root: string;
 let outside: string;
@@ -376,17 +377,18 @@ describe("compileToolPolicy — root move retires the execTouchedPaths carve-out
     mkdirSync(rootMoveOutside, { recursive: true });
   });
 
-  test("resolveWithin is the 2-arg containment seam", () => {
-    // The third, optional execTouchedPaths parameter is gone. Function.length
-    // is the runtime-visible arity of the declared parameter list, so this is a
-    // genuine red pre-change (3) and green post-change (2).
-    expect(resolveWithin.length).toBe(2);
+  test("resolveWithin is the 3-arg containment seam", () => {
+    // S3-2: the third parameter is the injected OwnedPathsPolicy (required, no
+    // default). Function.length is the runtime-visible arity of the declared
+    // parameter list, so this is a genuine red pre-change (2) and green
+    // post-change (3).
+    expect(resolveWithin.length).toBe(3);
   });
 
   test("a genuinely out-of-root candidate is refused by ordinary containment", () => {
     // Removing the carve-out must not widen containment: a candidate in a
     // sibling directory is still rejected by isInside.
-    expect(resolveWithin(rootMoveRoot, join(rootMoveOutside, "package.json"))).toBeNull();
+    expect(resolveWithin(rootMoveRoot, join(rootMoveOutside, "package.json"), EMPTY_OWNED_PATHS_POLICY)).toBeNull();
   });
 
   test("a repo-root manifest is admitted by isInside alone, with no carve-out option", () => {

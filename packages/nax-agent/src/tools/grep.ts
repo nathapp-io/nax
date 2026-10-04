@@ -14,6 +14,7 @@
 import { drainBounded } from "#src/internal/bounded-io";
 import { runtimeSpawn } from "#src/runtime/index";
 import { which } from "#src/runtime/which";
+import { containsCredentialPath, credentialReadRefusal } from "./credential-read-deny.ts";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 import { cutToByteCap, READ_CEILING } from "./truncate.ts";
 
@@ -37,7 +38,57 @@ export const _grepDeps = {
   spawn: runtimeSpawn,
 };
 
+/**
+ * The two independent caveats a search may carry, either of which means the
+ * search the caller asked for is not quite the search that ran:
+ *
+ * 1. The literal disclosure fires whenever the search was literal AND the
+ *    pattern contained a metacharacter a regex would have treated specially --
+ *    regardless of whether it matched. #1876 only covered the zero-match case;
+ *    a literal match on a pattern like "foo.bar" is the WORSE case (#1922):
+ *    the caller has positive evidence and no cue that "." was never a
+ *    wildcard, so a real regex match was never attempted.
+ *
+ * 2. The dialect note fires when regex mode ran through the grep fallback.
+ *    ripgrep's Rust regex and POSIX ERE are NOT the same language: `\d`, `\w`
+ *    and `\b` are unsupported in ERE, and whether they degrade to a literal or
+ *    to something else differs BY PLATFORM (GNU grep treats `\d` as `d`; the
+ *    BSD grep on macOS matches a digit). Silently returning a different answer
+ *    depending on which binary the machine happens to have is exactly the
+ *    failure this file's header forbids of the fallback, so the divergence is
+ *    disclosed rather than hidden.
+ */
+function searchCaveat(mode: GrepPatternType, binary: "rg" | "grep", pattern: string): string {
+  const notes: string[] = [];
+  if (mode === "literal" && containsRegexMetacharacter(pattern)) {
+    notes.push("The search was performed literally and regex metacharacters were not interpreted.");
+  }
+  if (mode === "regex" && binary === "grep") {
+    notes.push(
+      "ripgrep is not installed here, so the pattern was matched with POSIX ERE via grep: escapes such as \\d, \\w and \\b are NOT supported — use [0-9], [A-Za-z0-9_] and similar instead.",
+    );
+  }
+  return notes.join(" ");
+}
+
 export type GrepPatternType = "literal" | "regex";
+
+/**
+ * The credential read-deny for a search rooted at `searchRoot` (S3 spec 6.3),
+ * or undefined. Two shapes: the search root itself is a credential path, and
+ * the subtler one where a subtree of `searchRoot` contains it — a root-level
+ * search on a workdir laid over the host's home would read the credential
+ * directory's contents via matches.
+ */
+function credentialSearchRefusal(ctx: ToolRunContext, searchRoot: string, shown: string): string | undefined {
+  const inside = credentialReadRefusal(ctx.protectedPaths, searchRoot);
+  if (inside !== undefined) return `path "${shown}" ${inside}`;
+  if (!containsCredentialPath(ctx.protectedPaths, searchRoot)) return undefined;
+  return (
+    "this search would reach the host's credential directory or trust store, which the read tools are refused; " +
+    "narrow the search to a subdirectory that does not contain it"
+  );
+}
 
 export function buildGrepArgv(
   binary: "rg" | "grep",
@@ -108,6 +159,10 @@ export const grepTool: CodingTool = {
     }
 
     const [target] = ctx.resolvedPaths;
+    // S3 spec 6.3: the search must not reach the host's credential directory
+    // or trust store, whatever grant resolved the target.
+    const refusal = credentialSearchRefusal(ctx, target ?? ctx.root, typeof input.path === "string" ? input.path : ".");
+    if (refusal !== undefined) return { content: refusal, isError: true };
     // The I/O ceiling, not the model-facing cap: `maxBytes` shapes what the
     // model is told and belongs to the session's truncation policy, while this
     // bound only keeps a search whose result is enormous from being buffered
@@ -140,34 +195,9 @@ export const grepTool: CodingTool = {
     clearTimeout(timer);
 
     const stdout = await stdoutText;
-    // Two independent caveats, either of which means the search the caller
-    // asked for is not quite the search that ran.
-    //
-    // 1. The literal disclosure fires whenever the search was literal AND the
-    //    pattern contained a metacharacter a regex would have treated
-    //    specially -- regardless of whether it matched. #1876 only covered the
-    //    zero-match case; a literal match on a pattern like "foo.bar" is the
-    //    WORSE case (#1922): the caller has positive evidence and no cue that
-    //    "." was never a wildcard, so a real regex match was never attempted.
-    //
-    // 2. The dialect note fires when regex mode ran through the grep fallback.
-    //    ripgrep's Rust regex and POSIX ERE are NOT the same language: `\d`,
-    //    `\w` and `\b` are unsupported in ERE, and whether they degrade to a
-    //    literal or to something else differs BY PLATFORM (GNU grep treats
-    //    `\d` as `d`; the BSD grep on macOS matches a digit). Silently
-    //    returning a different answer depending on which binary the machine
-    //    happens to have is exactly the failure this file's header forbids of
-    //    the fallback, so the divergence is disclosed rather than hidden.
-    const notes: string[] = [];
-    if (mode === "literal" && containsRegexMetacharacter(pattern)) {
-      notes.push("The search was performed literally and regex metacharacters were not interpreted.");
-    }
-    if (mode === "regex" && binary === "grep") {
-      notes.push(
-        "ripgrep is not installed here, so the pattern was matched with POSIX ERE via grep: escapes such as \\d, \\w and \\b are NOT supported — use [0-9], [A-Za-z0-9_] and similar instead.",
-      );
-    }
-    const caveat = notes.join(" ");
+    // Two independent caveats may apply -- the literal disclosure and the grep
+    // fallback's ERE dialect note. Their rules live in `searchCaveat` (above).
+    const caveat = searchCaveat(mode, binary, pattern);
 
     // Both binaries exit 1 for "no matches" — a normal outcome, not a failure.
     if (exitCode === 1 && stdout.trim() === "") {

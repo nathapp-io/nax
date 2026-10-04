@@ -23,6 +23,7 @@
  */
 
 import { readPrefix } from "#src/internal/bounded-io";
+import { credentialReadRefusal } from "./credential-read-deny.ts";
 import { applyCapCut, limitStopFooter, shouldAppendLimitStopFooter } from "./read-continuation.ts";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 import { MODEL_MAX_BYTES, MODEL_MAX_LINES, READ_CEILING, splitModelLines } from "./truncate.ts";
@@ -42,6 +43,36 @@ function countLines(prefix: string): number {
   if (prefix === "") return 0;
   const trimmed = prefix.endsWith("\n") ? prefix.slice(0, -1) : prefix;
   return trimmed.split("\n").length;
+}
+
+/** A parsed offset/limit pair, or an error string naming the rejected argument. */
+type ParsedRange = { offset: number; limit?: number } | { error: string };
+
+/**
+ * The range half of Read's input: the unsupported-alias rejection (#1923) plus
+ * offset/limit parsing. Extracted from `run` so the credential read-deny adds
+ * no complexity there.
+ */
+function parseRange(input: Record<string, unknown>): ParsedRange {
+  const usedAlias = UNSUPPORTED_RANGE_ALIASES.find((alias) => input[alias] !== undefined);
+  if (usedAlias !== undefined) {
+    return {
+      error: `"${usedAlias}" is not a supported Read argument -- use offset (1-based line number) and/or limit (line count) instead`,
+    };
+  }
+  let offset = 1;
+  if (input.offset !== undefined) {
+    const parsed = parsePositiveInt(input.offset, "offset");
+    if (typeof parsed === "string") return { error: parsed };
+    offset = parsed;
+  }
+  let limit: number | undefined;
+  if (input.limit !== undefined) {
+    const parsed = parsePositiveInt(input.limit, "limit");
+    if (typeof parsed === "string") return { error: parsed };
+    limit = parsed;
+  }
+  return { offset, limit };
 }
 
 export const readTool: CodingTool = {
@@ -69,16 +100,18 @@ export const readTool: CodingTool = {
     const [target] = ctx.resolvedPaths;
     if (target === undefined) return { content: "no path supplied", isError: true };
 
-    const usedAlias = UNSUPPORTED_RANGE_ALIASES.find((alias) => input[alias] !== undefined);
-    if (usedAlias !== undefined) {
-      return {
-        content: `"${usedAlias}" is not a supported Read argument -- use offset (1-based line number) and/or limit (line count) instead`,
-        isError: true,
-      };
+    // S3 spec 6.3: a workdir may resolve onto the host's credential directory
+    // or trust store; the read tools refuse those regardless of grant.
+    const credential = credentialReadRefusal(ctx.protectedPaths, target);
+    if (credential !== undefined) {
+      return { content: `path "${String(input.path)}" ${credential}`, isError: true };
     }
 
     const hasOffset = input.offset !== undefined;
     const hasLimit = input.limit !== undefined;
+    const range = parseRange(input);
+    if ("error" in range) return { content: range.error, isError: true };
+    const { offset, limit } = range;
 
     try {
       if (!hasOffset && !hasLimit) {
@@ -112,19 +145,6 @@ export const readTool: CodingTool = {
           maxLines: MODEL_MAX_LINES,
         });
         return { content: result.content };
-      }
-
-      let offset = 1;
-      if (hasOffset) {
-        const parsed = parsePositiveInt(input.offset, "offset");
-        if (typeof parsed === "string") return { content: parsed, isError: true };
-        offset = parsed;
-      }
-      let limit: number | undefined;
-      if (hasLimit) {
-        const parsed = parsePositiveInt(input.limit, "limit");
-        if (typeof parsed === "string") return { content: parsed, isError: true };
-        limit = parsed;
       }
 
       // Read up to maxFileBytes, not maxBytes: the requested range may start

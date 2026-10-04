@@ -6,6 +6,7 @@ import {
   _resetSandboxRegistryForTests,
   _sessionSandboxDeps,
   DEFAULT_SANDBOX_CONFIG,
+  EMPTY_OWNED_PATHS_POLICY,
   type LaunchRequest,
   rawRefusalFor,
   realOrRaw,
@@ -59,6 +60,7 @@ describe("resolveSessionSandbox", () => {
       needsLauncher: true,
       tmpDir,
       protectedPaths: testProtectedPaths(),
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
     });
     await launcher.run({
       spec: { kind: "shell", shell: "/bin/sh", command: "true" },
@@ -84,6 +86,7 @@ describe("resolveSessionSandbox", () => {
       root,
       needsLauncher: true,
       protectedPaths: testProtectedPaths(),
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
     });
     await launcher.run({
       spec: { kind: "shell", shell: "/bin/sh", command: "true" },
@@ -107,6 +110,7 @@ describe("resolveSessionSandbox", () => {
       root,
       needsLauncher: true,
       protectedPaths: testProtectedPaths(),
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
     });
     expect(l.state).toEqual({ kind: "disabled" });
     expect(probes).toBe(0);
@@ -123,6 +127,7 @@ describe("resolveSessionSandbox", () => {
       root,
       needsLauncher: false,
       protectedPaths: testProtectedPaths(),
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
     });
     expect(l.state.kind).toBe("disabled");
     expect(probes).toBe(0);
@@ -139,6 +144,7 @@ describe("resolveSessionSandbox", () => {
       outputDir,
       needsLauncher: true,
       protectedPaths: testProtectedPaths(),
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
     });
     expect(l.state).toEqual({ kind: "available", backend: "srt", network: "open" });
     await l.run({
@@ -169,6 +175,7 @@ describe("resolveSessionSandbox", () => {
       root,
       needsLauncher: true,
       protectedPaths: testProtectedPaths(),
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
     });
     const req = {
       spec: { kind: "shell", shell: "/bin/sh", command: "true" },
@@ -188,11 +195,13 @@ describe("resolveSessionSandbox", () => {
     _sessionSandboxDeps.backendFor = () => backend;
     _sessionSandboxDeps.probe = async () => ({ available: true });
     const protectedPaths = testProtectedPaths();
+    assertDefined(protectedPaths.trustStoreFile, "the test fixture's trust store path");
     const launcher = await resolveSessionSandbox({
       config: enabled,
       root,
       needsLauncher: true,
       protectedPaths,
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
     });
     await launcher.run({
       spec: { kind: "shell", shell: "/bin/sh", command: "echo hi" },
@@ -212,6 +221,7 @@ describe("resolveSessionSandbox", () => {
       root,
       needsLauncher: true,
       protectedPaths: testProtectedPaths(),
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
     });
     expect(l.state).toEqual({ kind: "unavailable", backend: "srt", reason: "no bwrap" });
     expect(rawRefusalFor(l)).toContain("sandbox unavailable (no bwrap)");
@@ -229,6 +239,7 @@ describe("resolveSessionSandbox", () => {
       root: globRoot,
       needsLauncher: true,
       protectedPaths: testProtectedPaths(),
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
     });
     expect(l.state.kind).toBe("unavailable");
     expect(l.state.kind === "unavailable" ? l.state.reason : "").toContain("re[x]po");
@@ -243,8 +254,39 @@ describe("resolveSessionSandbox", () => {
       throw new Error("boom");
     };
     await expect(
-      resolveSessionSandbox({ config: enabled, root, needsLauncher: true, protectedPaths: testProtectedPaths() }),
+      resolveSessionSandbox({
+        config: enabled,
+        root,
+        needsLauncher: true,
+        protectedPaths: testProtectedPaths(),
+        ownedPaths: EMPTY_OWNED_PATHS_POLICY,
+      }),
     ).rejects.toThrow("boom");
+  });
+
+  test("S3-2: absent credentialDir, projectStateDir and trustStoreFile are skipped, not errors", async () => {
+    _sessionSandboxDeps.backendFor = () => makeFakeSandboxBackend();
+    _sessionSandboxDeps.probe = async () => ({ available: true });
+    _sessionSandboxDeps.gitLayout = async () => ({ kind: "main", gitDir: `${root}/.git` });
+    _sessionSandboxDeps.gitGuardFiles = async () => [];
+    const lookups: string[] = [];
+    _sessionSandboxDeps.credentialFiles = async (dir) => {
+      lookups.push(`credentialFiles:${dir}`);
+      return [];
+    };
+    _sessionSandboxDeps.naxEntries = async (r, dir) => {
+      lookups.push(`naxEntries:${r}:${dir}`);
+      return [];
+    };
+    const launcher = await resolveSessionSandbox({
+      config: enabled,
+      root,
+      needsLauncher: true,
+      protectedPaths: { gitExcludePathspecs: [], gitIgnorePatterns: [] },
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
+    });
+    expect(launcher).toBeDefined();
+    expect(lookups).toEqual([]);
   });
 
   test("rawRefusalFor is undefined unless unavailable", () => {
@@ -283,6 +325,7 @@ describe("resolveSessionSandbox — US-002 confined run temp roots", () => {
     runTmpRoot: RUN_TMP_ROOT,
     tmpDir: SESSION_TMP_DIR,
     protectedPaths: testProtectedPaths(),
+    ownedPaths: EMPTY_OWNED_PATHS_POLICY,
   });
 
   /** The same setup with neither a run root nor a session dir supplied. */
@@ -291,6 +334,7 @@ describe("resolveSessionSandbox — US-002 confined run temp roots", () => {
     root,
     needsLauncher: true,
     protectedPaths: testProtectedPaths(),
+    ownedPaths: EMPTY_OWNED_PATHS_POLICY,
   });
 
   function launchRequest(): LaunchRequest {

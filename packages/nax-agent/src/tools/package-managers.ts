@@ -69,6 +69,7 @@
 
 import { resolve } from "node:path";
 import { normalizeFlagToken } from "./exec-guard.ts";
+import { EMPTY_OWNED_PATHS_POLICY, type OwnedPathsPolicy } from "./owned-paths.ts";
 import type { ManagerEntry } from "./package-managers-table.ts";
 import { MANAGER_TABLE } from "./package-managers-table.ts";
 import type { NormalizeResult, NoScripts, WorkspaceContext } from "./package-managers-types.ts";
@@ -81,6 +82,8 @@ import type { ExecTarget } from "./package-managers-types.ts";
 export interface NormalizeInput extends WorkspaceContext {
   readonly argv: readonly string[];
   readonly target: ExecTarget;
+  /** Host-owned path rules (S3-2 port) handed to resolveWithin; absent: none (the empty policy). */
+  readonly ownedPaths?: OwnedPathsPolicy;
 }
 
 /** Package runners that execute an arbitrary, model-named package outside
@@ -338,7 +341,11 @@ function findPositionalPathConflict(
   entry: ManagerEntry,
   repoRoot: string,
   resolvedCwd: string,
+  ownedPaths: OwnedPathsPolicy | undefined,
 ): string | undefined {
+  // Defaulted HERE, not at the call site: normalizeExec sits at its complexity
+  // limit and one more `??` there would breach the ratchet.
+  const owned = ownedPaths ?? EMPTY_OWNED_PATHS_POLICY;
   const manager = normalizeManagerBinary(argv[0] as string);
   const verbStart = firstNonFlagIndexAfterBinary(argv);
   if (verbStart === -1) return undefined; // unreachable for an install-shaped call
@@ -350,7 +357,7 @@ function findPositionalPathConflict(
     if (token.startsWith("-")) continue;
     if (!isPathShapedToken(token, manager)) continue;
     const absolute = token.startsWith("/") ? token : resolve(resolvedCwd, token);
-    if (resolveWithin(repoRoot, absolute) === null) {
+    if (resolveWithin(repoRoot, absolute, owned) === null) {
       return `argv contains a path-shaped argument "${token}" that resolves outside the permitted root`;
     }
   }
@@ -433,7 +440,7 @@ export function normalizeExec(input: NormalizeInput): NormalizeResult {
   const base = effectiveTarget === "package" ? entry.packageForm(argv, input) : entry.rootForm(argv, input);
   if ("error" in base) return base;
 
-  const positionalPathConflict = findPositionalPathConflict(argv, entry, input.repoRoot, base.cwd);
+  const positionalPathConflict = findPositionalPathConflict(argv, entry, input.repoRoot, base.cwd, input.ownedPaths);
   if (positionalPathConflict !== undefined) {
     return { error: positionalPathConflict };
   }

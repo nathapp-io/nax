@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-02T07:19:10.341Z",
+  "updatedAt": "2026-10-04T05:27:58.406Z",
   "limit": 20,
   "byFile": {
     "src/coding-tools/coding-tool-extras.ts": { "buildDeclaredCommandTools": 24 },
@@ -11,11 +11,9 @@
     "src/native/session/turn-tool-batch.ts": { "runToolBatch": 59 },
     "src/tools/git-commit.ts": { "run": 22 },
     "src/tools/git.ts": { "buildGitArgv": 47 },
-    "src/tools/grep.ts": { "run": 21 },
-    "src/tools/policy-bash-raw.ts": { "screenRawBashCommand": 26 },
+    "src/tools/policy-bash-raw.ts": { "screenRawBashCommand": 24 },
     "src/tools/policy-bash.ts": { "checkBashCommand": 21 },
     "src/tools/policy.ts": { "verbBranch": 29, "argvBranch": 23 },
-    "src/tools/read.ts": { "run": 24 },
     "src/tools/run-command.ts": { "run": 56 },
     "src/tools/runtime.ts": { "log": 40, "runTool": 24 },
     "src/tools/truncate.ts": { "truncateForModel": 24 },

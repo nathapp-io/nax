@@ -80,10 +80,13 @@ export * from "#src/native/session-affinity";
 export * from "#src/permissions/index";
 export * from "#src/sandbox/index";
 export * as policyInputsModule from "#src/sandbox/policy-inputs";
+export * from "#src/tools/credential-read-deny";
 export * from "#src/tools/git";
 export * from "#src/tools/git-commit";
 export * from "#src/tools/grep";
 export * from "#src/tools/index";
+// S3-2: the port (nax supplies the policy behind it from its own module).
+export * from "#src/tools/owned-paths";
 export * from "#src/tools/package-managers";
 export * from "#src/tools/policy";
 export * from "#src/tools/provider-grants";

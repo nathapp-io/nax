@@ -134,6 +134,7 @@ export async function runExecBranch(
     packageWorkdir: opts.exec.packageWorkdir,
     packageRelPath,
     allowScripts: opts.exec.allowScripts,
+    ownedPaths: ctx.ownedPaths,
     ...(opts.exec.packageName !== undefined ? { packageName: opts.exec.packageName } : {}),
   });
   if ("error" in normalized) return { content: normalized.error, isError: true };

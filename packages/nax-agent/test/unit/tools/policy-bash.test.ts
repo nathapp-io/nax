@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import { compileToolPolicy } from "#src/tools/index";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
 
 const BASH_SCOPE = { pathFields: [], commandField: "command" } as const;
 
@@ -29,6 +30,7 @@ function policyFor(
     ...(options?.deny !== undefined ? { denyRules: [{ tool: "Bash", patterns: options.deny }] } : {}),
     ...(options?.ask !== undefined ? { askRules: [{ tool: "Bash", patterns: options.ask }] } : {}),
     ...(options?.bashApproval !== undefined ? { bashApproval: options.bashApproval } : {}),
+    ownedPaths: naxOwnedPathsPolicy,
   });
 }
 

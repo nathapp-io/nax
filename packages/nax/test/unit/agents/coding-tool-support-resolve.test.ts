@@ -43,6 +43,7 @@ import {
   resolveCodingToolSupport,
   resolveDispatchLauncher,
 } from "@/agents/coding-tool-support-resolve";
+import { naxOwnedPathsPolicy } from "@/agents/nax-owned-writes";
 import { loadConfigForPackage } from "@/config";
 
 const RUN_ID = "r1";
@@ -125,6 +126,26 @@ describe("resolveDispatchLauncher — US-002 the run's own temp root", () => {
 
     expect(policy.denyWrite).toContain(realOrRaw(trustStoreFile));
   });
+
+  test("S3-2 pin: the sandbox denies nax's owned entries and run-control files", async () => {
+    const { policy } = await runDispatched();
+
+    for (const entry of [
+      "config.json",
+      "mono",
+      "rules",
+      "context.md",
+      "hooks.json",
+      "plugins",
+      "templates",
+      "prompts",
+    ]) {
+      expect(policy.denyWrite).toContain(realOrRaw(join(root, ".nax", entry)));
+    }
+    expect(policy.denyWrite).toContain(realOrRaw(join(root, ".queue.txt")));
+    expect(policy.denyWrite).toContain(realOrRaw(join(root, ".queue.txt.processing")));
+    expect(policy.denyWrite).not.toContain(realOrRaw(join(root, ".nax", "scratchpad")));
+  });
 });
 
 describe("resolveCodingToolSupport — nax-side entry (S1 spec port 1)", () => {
@@ -137,5 +158,9 @@ describe("resolveCodingToolSupport — nax-side entry (S1 spec port 1)", () => {
     expect(Object.keys(moveSetSupport)).not.toContain("resolveCodingToolSupport");
     expect(Object.keys(moveSetSupport)).not.toContain("_codingToolSupportDeps");
     expect(typeof moveSetSupport.buildCodingToolSupport).toBe("function");
+  });
+
+  test("S3-2: nax's owned-paths policy is the default port", () => {
+    expect(_codingToolSupportDeps.ownedPaths).toBe(naxOwnedPathsPolicy);
   });
 });

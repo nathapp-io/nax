@@ -386,3 +386,8 @@ export {
   writeSpill,
   writeTool,
 } from "#src/tools/index";
+export {
+  EMPTY_OWNED_PATHS_POLICY,
+  type OwnedBashCandidate,
+  type OwnedPathsPolicy,
+} from "#src/tools/owned-paths";
