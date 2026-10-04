@@ -10,9 +10,10 @@
  *   logged once per turn: an embedder's bug must not end a turn, a tool call
  *   or a Node process (an unhandled rejection does, by default).
  * - Tool input is redacted with the logger's redactor before it leaves; the
- *   result preview is redacted, then cut to `TOOL_RESULT_PREVIEW_BYTES` on a
- *   codepoint boundary. Redact first: cutting first could split a secret into
- *   a prefix the patterns no longer match.
+ *   result preview first cuts to `REDACTION_SCAN_BYTES` to bound the scan,
+ *   redacts, then cuts to `TOOL_RESULT_PREVIEW_BYTES` on a codepoint boundary.
+ *   The final cut follows redaction so it cannot split a secret into a prefix
+ *   the patterns no longer match.
  * - `toolResult` reports only a call `toolCall` reported (counted per id), and
  *   `flushUnanswered` answers what is left when a turn throws, so a consumer
  *   sees each `tool_call` answered by exactly one `tool_result`.
@@ -128,8 +129,12 @@ export function createTurnEventEmitter(sink: TurnEventSink | undefined): TurnEve
     emit,
     deltaSink: (round) => (delta) => emit({ ...delta, round }),
     toolCall(call, recordedInput) {
+      // Capped BEFORE the count moves: a throwing input (a hostile getter or
+      // proxy) must not leave an outstanding call the matching toolResult then
+      // answers with no preceding tool_call.
+      const input = cappedInput(recordedInput ?? call.input);
       outstanding.set(call.id, (outstanding.get(call.id) ?? 0) + 1);
-      emit({ type: "tool_call", callId: call.id, name: call.name, input: cappedInput(recordedInput ?? call.input) });
+      emit({ type: "tool_call", callId: call.id, name: call.name, input });
     },
     toolResult(result) {
       const count = outstanding.get(result.toolCallId) ?? 0;

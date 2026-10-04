@@ -168,6 +168,19 @@ describe("createTurnEventEmitter", () => {
     expect(events[1]).toEqual({ type: "tool_result", callId: "c1", isError: false, preview: "body" });
   });
 
+  test("an input whose redaction throws leaves no outstanding call for toolResult", () => {
+    const { events, sink } = collector();
+    const emitter = createTurnEventEmitter(sink);
+    const hostile = {
+      get path(): string {
+        throw new Error("input getter blew up");
+      },
+    };
+    expect(() => emitter.toolCall(readCall("c1", hostile), undefined)).toThrow();
+    emitter.toolResult(buildToolResult({ toolCallId: "c1", content: "failed" }));
+    expect(events).toEqual([]);
+  });
+
   test("isError mirrors the result; a denial is not an error", () => {
     const { events, sink } = collector();
     const emitter = createTurnEventEmitter(sink);

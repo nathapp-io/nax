@@ -175,6 +175,44 @@ describe("runNativeTurn turn events (S3-3)", () => {
     ]);
   });
 
+  test("a throw that escapes the batch leaves its tool_call answered by flushUnanswered", async () => {
+    const events: TurnEvent[] = [];
+    // The batch's own catch reads `err.message` to build the failure result.
+    // A message read that itself throws escapes that catch, so the reported
+    // tool_call is still outstanding when the turn's catch runs.
+    const hostile = new Error("the tool failed");
+    Object.defineProperty(hostile, "message", {
+      get() {
+        throw new Error("reading the tool error's message threw");
+      },
+    });
+    await expect(
+      runNativeTurn(
+        handle,
+        "hi",
+        turnOpts({
+          interactionHandler: {
+            onInteraction: async () => {
+              throw hostile;
+            },
+          },
+        }),
+        streamingDeps(events, {
+          complete: async (_m, _t, _o, onDelta) => {
+            onDelta?.({ type: "text_delta", text: "r1" });
+            return reply({ text: "r1", toolCalls: [{ id: "c1", name: "ctx", input: {} }] });
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(events[events.length - 1]).toEqual({
+      type: "tool_result",
+      callId: "c1",
+      isError: true,
+      preview: "Not answered: the turn ended.",
+    });
+  });
+
   test("without a sink the loop hands complete() no delta sink", async () => {
     const seen: unknown[] = [];
     await runNativeTurn(handle, "hi", turnOpts(), {

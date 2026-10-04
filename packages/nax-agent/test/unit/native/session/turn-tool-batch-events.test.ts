@@ -106,6 +106,31 @@ describe("runToolBatch tool events (S3-3)", () => {
     ]);
   });
 
+  test("a before_tool block that carries an input reports that rewrite in tool_call.input", async () => {
+    const events: TurnEvent[] = [];
+    const loopEvents = createLoopEventRegistry();
+    loopEvents.register("before_tool", async () => ({
+      kind: "block",
+      input: { path: "fixed.ts" },
+      content: "blocked",
+      isError: true,
+    }));
+    await runToolBatch(args(events, { opts: answering("never"), toolCalls: [call("c1", "a.ts")], loopEvents }));
+    expect(events[0]).toEqual({ type: "tool_call", callId: "c1", name: "Read", input: { path: "fixed.ts" } });
+    expect(events[1]).toEqual({ type: "tool_result", callId: "c1", isError: true, preview: "blocked" });
+  });
+
+  test("an invalid-call-budget halt emits no tool events", async () => {
+    const events: TurnEvent[] = [];
+    const invalidCallBudget = createInvalidCallBudget();
+    const tools = codingToolsToDefinitions([fakeRead]);
+    const malformed = { id: "bad", name: fakeRead.name, input: { path: 123 } };
+    for (let i = 0; i < 3; i += 1) invalidCallBudget.observe(malformed, tools);
+    expect(invalidCallBudget.exceeded).toBe(true);
+    await runToolBatch(args(events, { opts: answering("never"), toolCalls: [call("c1", "a.ts")], invalidCallBudget }));
+    expect(events).toEqual([]);
+  });
+
   test("a tool that throws is reported as an error result", async () => {
     const events: TurnEvent[] = [];
     const opts: SendTurnOpts = {
