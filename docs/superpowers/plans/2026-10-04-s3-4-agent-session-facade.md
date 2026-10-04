@@ -57,7 +57,7 @@
 ## Review Focus
 
 1. **A `sessionId` shaped like a path** (`../escape`, `a/b`, an empty string, or 200 characters) with a file-backed `TranscriptStore` (`<dir>/<id>.transcript.json`). Expected: `createAgentSession` throws `AGENT_SESSION_INVALID_OPTIONS` before any store call. No file is created outside the store directory. Pinned in Task 4.
-2. **An embedder tool whose `run` waits on its `signal` while the person cancels.** Expected:
+2. **An embedder tool whose `run` ignores its `signal` and never settles, while the person cancels.** Expected:
    - `ctx.signal` aborts and `turn_end.status` is `"cancelled"`;
    - the session accepts a new `send` once that `turn_end` has been delivered;
    - a late resolution of the abandoned `run` changes nothing.
@@ -92,7 +92,8 @@
 - **Tool failures become `isError` results by throwing from the handler.**
   - This covers embedder `isError: true`, an embedder `run` that throws, and a built-in `CodingToolOutcome` of kind `"error"`.
   - `AdapterInteractionResponse` has no error flag. `runToolBatch` already turns a handler throw into a tool result with the thrown message as content and `isError: true` (`turn-tool-batch.ts:300-315`), so no loop change is needed.
-  - Side effect: the spin breaker does not note the result for those calls (its `noteResult` sits on the success path), which matches how nax's tool errors already behave.
+  - Side effect: the spin breaker does not note the result for those calls (its `noteResult` sits on the success path).
+  - This differs from nax, deliberately: nax's handler returns a built-in `"error"` outcome as a normal answer, so its `isError` stays unset. The facade marks it as an error.
 - **The approval's `callId` for built-in tools comes from a per-session "current call" slot.**
   - `AskRequest` has no `toolCallId`. The batch runs calls one at a time, so the handler records the id before it calls `runtime.callTool` and clears it after.
   - Embedder approvals pass the id directly.
@@ -118,14 +119,29 @@
 - **`AgentSessionError` is a public class.** `NaxError` is not on `.`, so embedders get a typed `code` (`AgentSessionErrorCode`) from this subclass.
 - **The control-event cap (1000) and the timers go through `_agentSessionDeps` on `/internal`,** so tests can lower the cap and fire deadlines without sleeping.
 - **`workdir` is optional for `none`.** When it is absent, the facade creates a private temporary root for the scratchpad (`buildCodingToolSupport` requires a root) and removes it on `close()`.
-- **`AgentSession.lastTurn` is a required `| undefined` property, not an optional one.** The session class implements it as a getter, and under `exactOptionalPropertyTypes` a getter of type `X | undefined` does not satisfy `lastTurn?: X`. An embedder reads it the same way.
+- **`AgentSession.lastTurn` is a required `| undefined` property, not an optional one.** The session class implements it as a getter returning `X | undefined`, and a required property states that plainly. An embedder reads it the same way.
 - **The `ask_human` budget is fixed at 10 per turn (`ASK_HUMAN_BUDGET`).** This is nax's `agent.maxInteractionTurns` default. The spec only requires it to be above zero.
 - **Rules for `bashApproval` and `allowUnsandboxed`:**
   - Both are rejected with `AGENT_SESSION_INVALID_OPTIONS` outside `full`.
   - `allowUnsandboxed: true` requires `bashApproval: "gated"`; spec §6.3 only honours it with gated.
+- **What `bashApproval` means under `full`** (the spec names the modes but not their effect for an embedder):
+  - `raw`: Bash runs under the sandbox with no screen and no asks.
+  - `gated` (the default): every Bash command is put to the person (`approval_requested` with the masked `command` and the `callId`). The facade passes `askRules: [{ tool: "Bash", patterns: ["*"] }]` on top of the unconditional grant; ask rules are evaluated after grants.
+  - `escalate`: commands pass the screen without asking; only a command the screen refuses is put to the person.
+  - Write, Edit and Delete never ask in any mode: `full` trusts writes inside the workdir, under the sandbox.
+- **Approval `command` is masked.** Spec 6.1 says "the full text" and spec 6.3 says event payloads are redacted. The facade follows nax's own human link: `maskForPrompt(command)`; a command whose secret cannot be masked safely is treated as unshowable (denied, no event).
+- **An embedder tool's `run` is raced against the turn signal.** The tool batch awaits the handler with no abort race, so a `run` that ignores `ctx.signal` would otherwise hang the turn, `cancel()` and `close()`. On abort the handler answers at once with an error result; the abandoned `run`'s late settlement is ignored.
+- **`turn_end.status` for loop halts.** A `TurnResult` with `spinStopped`, `invalidCallBudgetExceeded` or `turnIncomplete` (and not `timedOut`) ends `errored`, with the codes `AGENT_SESSION_SPIN_STOPPED`, `AGENT_SESSION_INVALID_TOOL_CALLS` and `AGENT_SESSION_TURN_INCOMPLETE`. `output` and `usage` are kept. Facade sessions open with `DEFAULT_SPIN_BREAKER_SETTINGS`, so the repeat guard is on.
+- **A supplied `hostPorts.protectedPaths` is merged over the default**, so supplying `gitIgnorePatterns` to enable GitCommit does not drop the credential read-deny. Both arrays are validated.
+- **Redaction of facade-built text.** `turn_end.error.message` and an embedder `describe()` summary pass through `redactSecrets` (best-effort, as for tool previews).
+- **Known limitations, documented, not fixed in S3-4:**
+  - A first turn that fails before the loop saves (for example, auth fails in `client.model`) leaves a document holding only the turn marker. The same `sessionId` then gets `AGENT_SESSION_EXISTS`; `resumeAgentSession` (S3-5) is the way back. The `load` check before `openSession` is not atomic with it.
+  - `read` and `full` (and `none` with a `workdir`) write scratchpad files and truncation spills under `<workdir>/.nax/scratchpad`; they are not cleaned up.
+  - Sandbox state is process-wide: the first probe result is cached (a negative one too), and the sandbox backend keeps the first session's network config. Sandboxed commands may write the host's shared temp roots (no per-session temp root is passed; acceptable under D8).
+  - A claim voided before its first `next()` (by `cancel()`, `close()` or the consumer's `return()`) yields an empty stream with no `turn_end`: no turn ran.
 - **Turn deadline.** The facade arms its own timer at `turnTimeoutSeconds` and passes the same value as the adapter's `timeoutSeconds`.
   - When the timer fires, it aborts the turn signal. That ends a pending question, which carries no signal of its own.
-  - It marks the turn `timed_out`.
+  - It marks the turn `timed_out`. Classification reads the code of the turn signal's first abort reason (`AGENT_SESSION_CANCELLED`, `AGENT_SESSION_TURN_TIMEOUT`, `AGENT_SESSION_CONSUMER_STALLED`), so whichever happened first wins.
   - A `TurnResult` with `timedOut: true` from the adapter also maps to `timed_out`.
 - **Carried from S3-3** (Task 2): `tool_call.input` redaction is bounded. String values are cut to the redaction scan size before `redactSecrets` walks the input, so a multi-MB `Write` no longer runs the patterns over megabytes.
 - **Carried from S3-3 and S3-1** (Task 11): the spec is amended to match what shipped:
@@ -142,6 +158,7 @@
 | `packages/nax-agent/src/session/session-types.ts` | Modify | `OpenSessionOpts.systemPrompt` |
 | `packages/nax-agent/src/native/session/session.ts` | Modify | `systemPrompts` state map, `recordSystemPrompt`, `systemFieldFor` |
 | `packages/nax-agent/src/native/session-adapter.ts` | Modify | Send `system` on round-trip requests |
+| `packages/nax-agent/api/nax-agent.api.txt` | Modify | Task 1: `[./internal]` gains `systemFieldFor` |
 | `packages/nax-agent/test/unit/native/session-adapter-system-prompt.test.ts` | Create | Task 1 tests |
 | `packages/nax-agent/src/native/session/turn-event-emitter.ts` | Modify | `capStrings` before redaction |
 | `packages/nax-agent/test/unit/native/session/turn-event-emitter-input-cap.test.ts` | Create | Task 2 tests |
@@ -418,10 +435,16 @@ Expected: PASS (3 tests).
 Run: `cd packages/nax-agent && bun test ./test/unit/native/ --timeout=60000 && bun run typecheck && bun ../repo-tooling/scripts/check-complexity.ts --package=. && bun run check:all`
 Expected: all pass. Complexity reports no growth for `sendTurn` or `openNativeSession`.
 
+Run: `bun run check:api`
+Expected: FAIL. `internal.ts` re-exports `native/session/session.ts` with `export *`, so `[./internal]` gains `systemFieldFor`.
+
+Run: `bun run api:update && bun run check:api`
+Expected: PASS. The diff adds exactly `systemFieldFor` to `[./internal]`.
+
 - [ ] **Step 8: Commit**
 
 ```bash
-git add packages/nax-agent/src/session/session-types.ts packages/nax-agent/src/native/session/session.ts packages/nax-agent/src/native/session-adapter.ts packages/nax-agent/test/unit/native/session-adapter-system-prompt.test.ts
+git add packages/nax-agent/src/session/session-types.ts packages/nax-agent/src/native/session/session.ts packages/nax-agent/src/native/session-adapter.ts packages/nax-agent/api/nax-agent.api.txt packages/nax-agent/test/unit/native/session-adapter-system-prompt.test.ts
 git commit -m "feat(nax-agent): OpenSessionOpts.systemPrompt sent as the request system field"
 ```
 
@@ -511,8 +534,13 @@ function capStrings(value: unknown, seen: WeakSet<object> = new WeakSet()): unkn
   if (typeof value !== "object" || value === null) return value;
   if (seen.has(value)) return "[Circular]";
   seen.add(value);
-  if (Array.isArray(value)) return value.map((item) => capStrings(item, seen));
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, capStrings(item, seen)]));
+  try {
+    if (Array.isArray(value)) return value.map((item) => capStrings(item, seen));
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, capStrings(item, seen)]));
+  } finally {
+    // Only the current path is "seen", as in redactSecrets: a shared, non-cyclic reference is copied, not labelled.
+    seen.delete(value);
+  }
 }
 
 function cappedInput(input: unknown): unknown {
@@ -530,7 +558,7 @@ function cappedInput(input: unknown): unknown {
 
 Then update the doc comment on `REDACTION_SCAN_BYTES` to: `/** Redaction scans at most this many bytes of a result, and of each string in a tool input; the preview keeps far fewer. */`.
 
-A shared object reached twice without a cycle also becomes `"[Circular]"` on the second visit. That is acceptable for a display preview.
+`seen` tracks only the current path (the same rule as `redactSecrets`, `internal/redact.ts`), so an object shared by two keys is copied twice rather than labelled `"[Circular]"`.
 
 - [ ] **Step 4: Run the new and the existing emitter tests**
 
@@ -887,7 +915,7 @@ Expected:
 - `check:api` FAILS and lists the new `.` names: 45 type names (5 interceptor, 25 loop-handler, 14 facade, `AgentSessionErrorCode`) plus the `AgentSessionError` value.
 
 Then run: `bun run api:update && bun run check:api`
-Expected: PASS. Inspect the diff of `api/nax-agent.api.txt`: the `[.]` section gains exactly the names above, and nothing is removed.
+Expected: PASS. Inspect the diff of `api/nax-agent.api.txt`: the `[.]` section gains exactly the names above, `[./internal]` is unchanged since Task 1, and nothing is removed.
 
 - [ ] **Step 7: Commit**
 
@@ -1038,6 +1066,10 @@ describe("resolveAgentSessionOptions", () => {
     rejects(base({ mcpServers: undefined }), "AGENT_SESSION_INVALID_OPTIONS", "mcpServers");
   });
 
+  test("hostPorts.runDeclaredCommand is refused as deferred", () => {
+    rejects(base({ hostPorts: { runDeclaredCommand: async () => ({}) } }), "AGENT_SESSION_INVALID_OPTIONS", "deferred");
+  });
+
   test("read and full need an absolute workdir", () => {
     rejects(base({ profile: "read" }), "AGENT_SESSION_INVALID_OPTIONS", "workdir");
     rejects(base({ profile: "full", workdir: "relative/dir" }), "AGENT_SESSION_INVALID_OPTIONS", "workdir");
@@ -1063,6 +1095,10 @@ describe("resolveAgentSessionOptions", () => {
 
   test("a malformed model spec is an invalid option", () => {
     rejects(base({ model: "no-provider" }), "AGENT_SESSION_INVALID_OPTIONS", "model");
+  });
+
+  test("a protectedPaths policy without its arrays is rejected", () => {
+    rejects(base({ hostPorts: { protectedPaths: { credentialDir: "/x" } } }), "AGENT_SESSION_INVALID_OPTIONS", "protectedPaths");
   });
 
   test("a transcriptStore missing markTurn is rejected", () => {
@@ -1181,6 +1217,9 @@ function hasMethods(names: readonly string[]): (value: unknown) => boolean {
 
 const isFunction = (value: unknown): boolean => typeof value === "function";
 
+const isStringArray = (value: unknown): boolean =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
 const EmbedderToolSchema = z.object({
   name: z.string().regex(TOOL_NAME, "must be a letter, then letters, digits, _ or -, at most 64 characters"),
   description: z.string().min(1),
@@ -1212,7 +1251,13 @@ const OptionsSchema = z.strictObject({
   loopHandlers: z.array(z.custom(isRecord, "must be a loop handler entry")).optional(),
   hostPorts: z
     .strictObject({
-      protectedPaths: z.custom(isRecord, "must be a protected-paths policy").optional(),
+      protectedPaths: z
+        .custom(
+          (value) =>
+            isRecord(value) && isStringArray(value.gitExcludePathspecs) && isStringArray(value.gitIgnorePatterns),
+          "must be a protected-paths policy with gitExcludePathspecs and gitIgnorePatterns string arrays",
+        )
+        .optional(),
       commandInterceptor: z.custom(hasMethods(["intercept"]), "must implement intercept").optional(),
     })
     .optional(),
@@ -1227,6 +1272,9 @@ function invalid(message: string, context: Record<string, unknown> = {}): AgentS
 function checkShape(input: unknown): CreateAgentSessionOptions {
   if (isRecord(input) && "mcpServers" in input) {
     throw invalid("mcpServers is reserved for a later release (an MCP client for embedder tools)", { path: "mcpServers" });
+  }
+  if (isRecord(input) && isRecord(input.hostPorts) && "runDeclaredCommand" in input.hostPorts) {
+    throw invalid("hostPorts.runDeclaredCommand is deferred to a later release", { path: "hostPorts.runDeclaredCommand" });
   }
   const parsed = OptionsSchema.safeParse(input);
   if (parsed.success) return input as CreateAgentSessionOptions;
@@ -1292,7 +1340,7 @@ export function resolveAgentSessionOptions(input: unknown): ResolvedAgentSession
 }
 ```
 
-If `bun run typecheck` rejects `input as CreateAgentSessionOptions` because the parse result is structurally unrelated, write it as `return input as unknown as CreateAgentSessionOptions;`. That is a `src/` file, so the escape-hatch test ratchet does not apply. It is the one sanctioned cast: zod has validated the shape, and the caller's object is kept on purpose.
+`input as CreateAgentSessionOptions` is the one sanctioned cast in the facade: zod has validated the shape, and the caller's object is kept on purpose (a cast from `unknown` always compiles).
 
 - [ ] **Step 5: Export the seam on `./internal`**
 
@@ -1506,6 +1554,28 @@ describe("createSessionEventChannel", () => {
     expect(calls.returned).toBe(0);
   });
 
+  test("return() before the first next() fires onReturn and never fires onFirstPull", async () => {
+    const { ch, calls } = channel();
+    await ch.iterator.return?.();
+    expect(calls.returned).toBe(1);
+    expect((await ch.iterator.next()).done).toBe(true);
+    expect(calls.firstPull).toBe(0);
+  });
+
+  test("a second next() while one is pending rejects with AGENT_SESSION_BUSY", async () => {
+    const { ch } = channel();
+    const first = ch.iterator.next();
+    let caught: unknown;
+    try {
+      await ch.iterator.next();
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as { code?: string }).code).toBe("AGENT_SESSION_BUSY");
+    ch.end();
+    expect((await first).done).toBe(true);
+  });
+
   test("return() wakes a waiting consumer with done", async () => {
     const { ch } = channel();
     const waiting = ch.iterator.next();
@@ -1530,9 +1600,10 @@ Create `packages/nax-agent/src/session/session-event-channel.ts`:
  * pushes; one consumer pulls. While the consumer lags, adjacent deltas of the
  * same type and round merge. Control events are never merged or dropped; past
  * `controlCap` undelivered ones the channel reports a stall, once. One
- * consumer only: concurrent next() calls are not supported (for await never
- * makes them).
+ * consumer only: a second next() while one is pending rejects (for await
+ * never makes one). return() before the first next() never starts the turn.
  */
+import { AgentSessionError } from "./agent-session-errors.ts";
 import type { SessionEvent } from "./agent-session-types.ts";
 
 type DeltaEvent = Extract<SessionEvent, { readonly type: "text_delta" | "thinking_delta" }>;
@@ -1611,11 +1682,14 @@ export function createSessionEventChannel(options: SessionEventChannelOptions): 
   }
 
   async function next(): Promise<IteratorResult<SessionEvent>> {
+    if (consumerGone) return DONE;
+    if (waiter !== undefined) {
+      throw new AgentSessionError("send() iterables support one next() at a time", "AGENT_SESSION_BUSY");
+    }
     if (!pulled) {
       pulled = true;
       options.onFirstPull();
     }
-    if (consumerGone) return DONE;
     const [head, ...rest] = buffer;
     if (head !== undefined) {
       buffer = rest;
@@ -1644,12 +1718,12 @@ export function createSessionEventChannel(options: SessionEventChannelOptions): 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd packages/nax-agent && bun test ./test/unit/session/session-event-channel.test.ts --timeout=60000`
-Expected: PASS (11 tests).
+Expected: PASS (15 tests). If the gated Bash test sees no ask, read `tools/policy-bash.ts` and `tools/runtime-calltool.ts` (`resolveAskOutcome`) to confirm how an unconditional ask rule meets an unconditional grant. The design depends on ask rules being evaluated after grants: report what you find; do not switch the facade to escalate.
 
 - [ ] **Step 5: Gates and commit**
 
 Run: `cd packages/nax-agent && bun run typecheck && bun run lint:fix && bun run check:all`
-Expected: pass. No export changes in this task.
+Expected: pass. No export changes in this task. Biome scores each nested function separately, so the closures stay under the limit. If `check-complexity` nevertheless flags `createSessionEventChannel`, convert it to a class with the same methods; do not raise a baseline.
 
 ```bash
 git add packages/nax-agent/src/session/session-event-channel.ts packages/nax-agent/test/unit/session/session-event-channel.test.ts
@@ -1755,7 +1829,7 @@ function expectInvalid(fn: () => unknown): void {
 describe("createPendingAskTable", () => {
   withDepsRestore(_agentSessionDeps);
 
-  test("issue returns an id and the deadline as ISO time", () => {
+  test("issue returns an id and the deadline in ISO form", () => {
     manualTimers();
     _agentSessionDeps.now = () => 0;
     _agentSessionDeps.randomUUID = () => "req-1";
@@ -1942,6 +2016,16 @@ describe("createSessionAskLink", () => {
     expect(await pending).toEqual({ decision: "deny", decidedBy: "human" });
   });
 
+  test("the command is masked before it is shown", () => {
+    const { deps, events } = harness();
+    const token = "ghp_0123456789abcdefghijklmnopqrstuvwxyzAB";
+    void createSessionAskLink(deps).resolve({ ...request, command: `git push https://${token}@github.com/o/r` });
+    const shown = events[0];
+    expect(shown?.type).toBe("approval_requested");
+    expect(JSON.stringify(shown)).not.toContain(token);
+    expect(JSON.stringify(shown)).toContain("[REDACTED");
+  });
+
   test("an unshowable request is denied without prompting", async () => {
     const { deps, events } = harness();
     const outcome = await createSessionAskLink(deps).resolve({ ...request, unshowable: true });
@@ -2100,7 +2184,7 @@ Create `packages/nax-agent/src/session/session-ask-link.ts`:
  * whose approval is "always". Asks are serial in practice: the tool batch
  * runs one call at a time.
  */
-import { type AskLink, type AskLinkOutcome, type AskResolver, chainAskLinks } from "#src/permissions/index";
+import { type AskLink, type AskLinkOutcome, type AskResolver, chainAskLinks, maskForPrompt } from "#src/permissions/index";
 import type { SessionEventBody } from "./agent-session-types.ts";
 import type { PendingAskTable } from "./pending-asks.ts";
 
@@ -2151,13 +2235,16 @@ export function createSessionAskLink(deps: SessionAskDeps): AskLink {
     resolve(req, control) {
       // A request whose text could not be shown safely is never put in front of a person.
       if (req.unshowable === true) return Promise.resolve(UNSHOWABLE);
+      // As nax's human link: the command is masked, and one whose secret cannot be masked safely is unshowable.
+      const masked = req.command === undefined ? undefined : maskForPrompt(req.command);
+      if (masked !== undefined && !masked.ok) return Promise.resolve(UNSHOWABLE);
       const callId = deps.currentCallId();
       return askPerson(
         deps,
         {
           tool: req.tool,
           summary: req.summary,
-          ...(req.command !== undefined ? { command: req.command } : {}),
+          ...(masked !== undefined ? { command: masked.masked } : {}),
           reason: req.reason ?? `matched ${req.rule}`,
           ...(callId !== undefined ? { callId } : {}),
         },
@@ -2178,7 +2265,7 @@ If `AskLink`, `AskLinkOutcome` or `AskRequest` is not re-exported from `#src/per
 - [ ] **Step 6: Run both tests to verify they pass**
 
 Run: `cd packages/nax-agent && bun test ./test/unit/session/pending-asks.test.ts ./test/unit/session/session-ask-link.test.ts --timeout=60000`
-Expected: PASS (8 + 7 tests).
+Expected: PASS (8 + 8 tests). If the masking test fails because `findSecretSpans` does not recognise the GitHub token shape, replace it with a shape listed in `src/permissions/secret-spans.ts`; do not weaken the assertion.
 
 - [ ] **Step 7: Gates and commit**
 
@@ -2205,6 +2292,7 @@ git commit -m "feat(nax-agent): agent session pending asks and approval link"
 export const SESSION_STAGE = "session";
 export function declaredToolsFor(profile: AgentSessionProfile, protectedPaths: ProtectedPathsPolicy): readonly CodingToolName[];
 export function grantsFor(declared: readonly CodingToolName[]): readonly ToolGrant[];
+export function askRulesFor(declared: readonly CodingToolName[], bashApproval: BashApprovalMode): readonly ToolGrant[];
 export function defaultProtectedPaths(ownCredentials: boolean): ProtectedPathsPolicy;
 export interface SessionLauncherArgs {
   readonly profile: AgentSessionProfile;
@@ -2247,6 +2335,7 @@ import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { _resetCredentialsConfig, configureCredentials, credentialsConfig } from "#src/infra/credentials-config";
 import { chainAskLinks } from "#src/permissions/index";
 import {
+  askRulesFor,
   buildSessionToolSupport,
   declaredToolsFor,
   defaultProtectedPaths,
@@ -2290,6 +2379,14 @@ describe("declaredToolsFor and grantsFor", () => {
     expect(declaredToolsFor("read", { ...EMPTY, gitIgnorePatterns: ["dist/"] })).not.toContain("GitCommit");
   });
 
+  test("only gated Bash gets an ask rule", () => {
+    const full = declaredToolsFor("full", EMPTY);
+    expect(askRulesFor(full, "gated")).toEqual([{ tool: "Bash", patterns: ["*"] }]);
+    expect(askRulesFor(full, "raw")).toEqual([]);
+    expect(askRulesFor(full, "escalate")).toEqual([]);
+    expect(askRulesFor(declaredToolsFor("read", EMPTY), "gated")).toEqual([]);
+  });
+
   test("every declared tool gets an unconditional grant", () => {
     expect(grantsFor(["Read", "Git"])).toEqual([
       { tool: "Read", patterns: ["*"] },
@@ -2330,6 +2427,23 @@ describe("buildSessionToolSupport", () => {
     expect(names(full.support)).toEqual(expect.arrayContaining(["Write", "Edit", "Delete", "Bash"]));
     expect(names(full.support)).not.toContain("GitCommit");
     expect(names(full.support)).not.toContain("RunCommand");
+  });
+
+  test("full + gated puts a Bash command to the ask resolver, and a denial does not run it", async () => {
+    const asked: string[] = [];
+    const recording = chainAskLinks([
+      {
+        name: "recording",
+        async resolve(req) {
+          asked.push(req.command ?? "");
+          return { decision: "deny", decidedBy: "human" };
+        },
+      },
+    ]);
+    const { support } = buildSessionToolSupport(await args({ profile: "full", askResolver: recording }));
+    const outcome = await support.runtime.callTool("Bash", { command: "echo hi" });
+    expect(asked).toEqual(["echo hi"]);
+    expect(outcome.kind).toBe("denied");
   });
 
   test("Read refuses the credential directory", async () => {
@@ -2452,6 +2566,15 @@ export function grantsFor(declared: readonly CodingToolName[]): readonly ToolGra
   return declared.map((tool) => ({ tool, patterns: ["*"] }));
 }
 
+/**
+ * Under "gated", every Bash command is put to the person: an unconditional ask
+ * rule on top of the unconditional grant (ask rules are evaluated after
+ * grants). "raw" and "escalate" add none.
+ */
+export function askRulesFor(declared: readonly CodingToolName[], bashApproval: BashApprovalMode): readonly ToolGrant[] {
+  return bashApproval === "gated" && declared.includes("Bash") ? [{ tool: "Bash", patterns: ["*"] }] : [];
+}
+
 /** The configured credentials directory; undefined when configureCredentials was never called. */
 function configuredCredentialDir(): string | undefined {
   try {
@@ -2519,6 +2642,7 @@ export interface SessionToolSupport {
 export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionToolSupport {
   const declared = declaredToolsFor(args.profile, args.protectedPaths);
   const grants = grantsFor(declared);
+  const askRules = askRulesFor(declared, args.bashApproval);
   const support = buildCodingToolSupport({
     root: args.root,
     commandCwd: args.root,
@@ -2530,6 +2654,7 @@ export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionTo
     protectedPaths: args.protectedPaths,
     ownedPaths: EMPTY_OWNED_PATHS_POLICY,
     askResolver: args.askResolver,
+    ...(askRules.length > 0 ? { askRules } : {}),
     ...(args.interceptor !== undefined ? { interceptor: args.interceptor } : {}),
     ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
   });
@@ -2808,6 +2933,25 @@ describe("createSessionInteractionHandler", () => {
     expect(seen).toHaveLength(0);
   });
 
+  test("a run that ignores its signal is abandoned when the turn aborts", async () => {
+    const { tool } = embedder({ run: () => new Promise(() => {}) });
+    const h = harness({ kind: "ok", content: "" }, [tool]);
+    const controller = new AbortController();
+    const pending = createSessionInteractionHandler(h.deps).onInteraction({ ...codingTool("lookup"), signal: controller.signal });
+    controller.abort();
+    expect((await thrown(pending)).message).toContain("abandoned");
+  });
+
+  test("a describe summary is redacted and capped", async () => {
+    const { tool } = embedder({ approval: "always", describe: () => `deploy with apiKey=supersecretvalue ${"x".repeat(5000)}` });
+    const h = harness({ kind: "ok", content: "" }, [tool]);
+    void createSessionInteractionHandler(h.deps).onInteraction(codingTool("lookup"));
+    await new Promise((resolve) => setImmediate(resolve));
+    const summary = JSON.stringify(h.events[0]);
+    expect(summary).not.toContain("supersecretvalue");
+    expect(Buffer.byteLength(summary)).toBeLessThan(EMBEDDER_SUMMARY_BYTES + 400);
+  });
+
   test("a throwing describe falls back to the default summary", async () => {
     const { tool } = embedder({
       approval: "always",
@@ -2823,7 +2967,7 @@ describe("createSessionInteractionHandler", () => {
 });
 ```
 
-If the exact JSON that `redactSecrets` produces for `{ id: 7, apiKey: "plainsecret" }` differs (for example in the mask text), update the expected string to the mask that `redactSecrets` uses. Read `src/internal/redact.ts`; the mask is `"[REDACTED]"` per the S3-3 tests.
+The mask `redactSecrets` uses is `"[REDACTED]"` (verified in review). If the describe-redaction test still shows `supersecretvalue`, the text pattern for `KEY=value` in `src/internal/redact.ts` may need a different key; use one the patterns cover, and keep the assertion.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -2901,18 +3045,38 @@ function toolError(message: string, tool: string): NaxError {
 function summaryFor(tool: EmbedderTool, input: unknown): string {
   if (tool.describe === undefined) return defaultSummary(input);
   try {
-    return tool.describe(input);
+    return cutToByteCap(redactSecrets(String(tool.describe(input))), EMBEDDER_SUMMARY_BYTES);
   } catch {
     return defaultSummary(input);
   }
 }
 
+function runSafely(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext): Promise<EmbedderToolResult> {
+  return Promise.resolve()
+    .then(() => tool.run(input, ctx))
+    .catch((err: unknown) => {
+      const cause = err instanceof Error ? err.message : String(err);
+      return { content: `Tool "${tool.name}" failed: ${cause}`, isError: true };
+    });
+}
+
+/**
+ * Runs the tool, but answers at once when the turn aborts: the batch awaits
+ * this handler with no abort race of its own, so a run that ignores its signal
+ * would otherwise hang the turn. The abandoned run's late settlement is ignored.
+ */
 async function invoke(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext): Promise<EmbedderToolResult> {
+  const abandoned: EmbedderToolResult = { content: `Tool "${tool.name}" was abandoned: the turn ended.`, isError: true };
+  if (ctx.signal.aborted) return abandoned;
+  let onAbort = (): void => {};
+  const aborted = new Promise<EmbedderToolResult>((resolve) => {
+    onAbort = () => resolve(abandoned);
+    ctx.signal.addEventListener("abort", onAbort, { once: true });
+  });
   try {
-    return await tool.run(input, ctx);
-  } catch (err) {
-    const cause = err instanceof Error ? err.message : String(err);
-    return { content: `Tool "${tool.name}" failed: ${cause}`, isError: true };
+    return await Promise.race([runSafely(tool, input, ctx), aborted]);
+  } finally {
+    ctx.signal.removeEventListener("abort", onAbort);
   }
 }
 
@@ -2986,7 +3150,7 @@ The handler returns no `finalizeAudit`: the facade passes no `auditDir`, so the 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd packages/nax-agent && bun test ./test/unit/session/session-interaction.test.ts --timeout=60000`
-Expected: PASS (11 tests).
+Expected: PASS (14 tests).
 
 - [ ] **Step 5: Gates and commit**
 
@@ -3201,9 +3365,14 @@ export function turnEndOf(events: readonly SessionEvent[]): Extract<SessionEvent
   return end;
 }
 
-/** Waits (macrotask turns, no sleeping) until `lastTurn` changes from `before`. */
-export async function untilSettled(session: { readonly lastTurn: unknown }, before: unknown): Promise<void> {
-  for (let attempt = 0; attempt < 500; attempt++) {
+/** Waits (macrotask turns, no sleeping) until `lastTurn` changes from `before`, for at most `timeoutMs` of wall time. */
+export async function untilSettled(
+  session: { readonly lastTurn: unknown },
+  before: unknown,
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (session.lastTurn !== before) return;
     await new Promise((resolve) => setImmediate(resolve));
   }
@@ -3228,8 +3397,12 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAgentSession, type EmbedderTool, type SessionEvent, type TranscriptStore } from "@nathapp/nax-agent";
+import { NaxError } from "#src/infra/nax-error";
+import { _clientDeps } from "#src/native/client";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { _agentSessionDeps } from "#src/session/agent-session-deps";
+import { turnEndFromResult } from "#src/session/agent-session-turn";
+import type { TurnResult } from "#src/session/session-types";
 import {
   collect,
   installScriptedProvider,
@@ -3329,6 +3502,24 @@ describe("createAgentSession: chat", () => {
       expect.objectContaining({ role: "assistant", content: "Hello" }),
       { role: "user", content: "again" },
     ]);
+    await session.close();
+  });
+
+  test("a session with its own credentials builds a client of its own with them", async () => {
+    const provider = installScriptedProvider();
+    provider.push(textRound("ok"));
+    const scripted = _clientDeps.build;
+    const seen: unknown[] = [];
+    _clientDeps.build = async (overrides, options) => {
+      seen.push(options);
+      return scripted(overrides, options);
+    };
+    const session = await createAgentSession(
+      sessionOptions({ credentials: { kind: "memory", credentials: { openai: { kind: "api-key", key: "k" } } } }),
+    );
+    await collect(session.send("hi"));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ credentials: expect.anything() });
     await session.close();
   });
 
@@ -3442,6 +3633,34 @@ describe("createAgentSession: single flight and close", () => {
   });
 });
 
+describe("turnEndFromResult", () => {
+  const result = (extra: Partial<TurnResult> = {}): TurnResult => ({
+    output: "partial",
+    tokenUsage: { inputTokens: 3, outputTokens: 1 },
+    estimatedCostUsd: 0.5,
+    internalRoundTrips: 1,
+    ...extra,
+  });
+
+  test("a clean result completes and prefers the exact cost", () => {
+    expect(turnEndFromResult(result({ exactCostUsd: 0.4 }))).toMatchObject({ status: "completed", output: "partial", costUsd: 0.4 });
+  });
+
+  test("timedOut wins over the incomplete flag it implies", () => {
+    expect(turnEndFromResult(result({ timedOut: true, turnIncomplete: true })).status).toBe("timed_out");
+  });
+
+  test.each([
+    [{ spinStopped: true, turnIncomplete: true }, "AGENT_SESSION_SPIN_STOPPED"],
+    [{ invalidCallBudgetExceeded: true, turnIncomplete: true }, "AGENT_SESSION_INVALID_TOOL_CALLS"],
+    [{ turnIncomplete: true }, "AGENT_SESSION_TURN_INCOMPLETE"],
+  ] satisfies Array<[Partial<TurnResult>, string]>)("a loop halt %p ends errored with %p, keeping output and usage", (flags, code) => {
+    const end = turnEndFromResult(result(flags));
+    expect(end).toMatchObject({ status: "errored", output: "partial", usage: { inputTokens: 3, outputTokens: 1 } });
+    expect(end.error?.code).toBe(code);
+  });
+});
+
 describe("createAgentSession: turn failures arrive as turn_end", () => {
   test("a provider auth fault ends the turn errored with the adapter outcome", async () => {
     const provider = installScriptedProvider();
@@ -3451,6 +3670,24 @@ describe("createAgentSession: turn failures arrive as turn_end", () => {
     expect(end.status).toBe("errored");
     expect(end.error?.code).toBe("fail-auth");
     expect(session.lastTurn?.status).toBe("errored");
+    await session.close();
+  });
+
+  test("a store that throws a NaxError ends the turn with that error's code", async () => {
+    const provider = installScriptedProvider();
+    const inner = createMemoryTranscriptStore();
+    const store: TranscriptStore = {
+      load: (id) => inner.load(id),
+      save: (id, doc) => inner.save(id, doc),
+      retainFailed: (id) => inner.retainFailed(id),
+      delete: (id) => inner.delete(id),
+      markTurn: async () => {
+        throw new NaxError("store offline", "STORE_OFFLINE", { stage: "test" });
+      },
+    };
+    const session = await createAgentSession(sessionOptions({ transcriptStore: store }));
+    expect(turnEndOf(await collect(session.send("hi"))).error?.code).toBe("STORE_OFFLINE");
+    expect(provider.requests).toHaveLength(0);
     await session.close();
   });
 
@@ -3497,6 +3734,7 @@ Create `packages/nax-agent/src/session/agent-session-turn.ts`:
  */
 import type { TokenUsage } from "#src/cost/standard-types";
 import { NaxError } from "#src/infra/nax-error";
+import { redactSecrets } from "#src/internal/redact";
 import type { LoopHandlerContext, LoopHandlerSet } from "#src/native/session/loop-events/types";
 import type { TranscriptStore } from "#src/native/session/transcript-types";
 import { readNativeTurnFailureUsage } from "#src/native/session/turn-types";
@@ -3510,6 +3748,11 @@ import { type AgentSessionAdapter, type SessionHandle, SessionTurnError, type Tu
 
 /** The ask_human budget per turn: nax's agent.maxInteractionTurns default. */
 export const ASK_HUMAN_BUDGET = 10;
+
+/** Codes of the turn signal's abort reasons. AbortSignal keeps the first reason, so the first cause wins. */
+const CANCELLED = "AGENT_SESSION_CANCELLED";
+const TIMED_OUT = "AGENT_SESSION_TURN_TIMEOUT";
+const STALLED = "AGENT_SESSION_CONSUMER_STALLED";
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
@@ -3548,33 +3791,53 @@ export interface ClaimTurnHooks {
 }
 
 type TurnEndBody = Extract<SessionEventBody, { readonly type: "turn_end" }>;
-
-interface TurnFlags {
-  stalled: boolean;
-  timedOut: boolean;
-}
+type TurnFailure = { readonly code: string; readonly message: string };
 
 function abortReason(code: string, message: string): NaxError {
   return new NaxError(message, code, { stage: "agent-session" });
 }
 
-function fromResult(result: TurnResult): TurnEndBody {
-  return {
-    type: "turn_end",
-    status: result.timedOut === true ? "timed_out" : "completed",
+function abortCode(signal: AbortSignal): string | undefined {
+  return signal.aborted && signal.reason instanceof NaxError ? signal.reason.code : undefined;
+}
+
+function failure(code: string, message: string): TurnFailure {
+  return { code, message: redactSecrets(message) };
+}
+
+function haltOf(result: TurnResult): TurnFailure | undefined {
+  if (result.spinStopped === true) {
+    return failure("AGENT_SESSION_SPIN_STOPPED", "The turn was stopped: the agent repeated calls without progress.");
+  }
+  if (result.invalidCallBudgetExceeded === true) {
+    const call = result.invalidToolCall;
+    const detail = call === undefined ? "" : ` (${call.tool}.${call.property}: expected ${call.expected}, got ${call.actual})`;
+    return failure("AGENT_SESSION_INVALID_TOOL_CALLS", `The turn was stopped after repeated invalid tool calls${detail}.`);
+  }
+  if (result.turnIncomplete === true) {
+    return failure("AGENT_SESSION_TURN_INCOMPLETE", "The turn ended with tool calls still pending.");
+  }
+  return undefined;
+}
+
+/** Maps a returned TurnResult to turn_end. Exported for its unit test. */
+export function turnEndFromResult(result: TurnResult): TurnEndBody {
+  const base = {
+    type: "turn_end" as const,
     output: result.output,
     usage: result.tokenUsage,
     costUsd: result.exactCostUsd ?? result.estimatedCostUsd,
   };
+  if (result.timedOut === true) return { ...base, status: "timed_out" };
+  const halt = haltOf(result);
+  return halt === undefined ? { ...base, status: "completed" } : { ...base, status: "errored", error: halt };
 }
 
-function errorOf(err: unknown): { readonly code: string; readonly message: string } {
+function errorOf(err: unknown): TurnFailure {
   const message = err instanceof Error ? err.message : String(err);
-  if (err instanceof SessionTurnError && err.adapterFailure !== undefined) {
-    return { code: err.adapterFailure.outcome, message };
-  }
-  if (err instanceof NaxError) return { code: err.code, message };
-  return { code: "AGENT_SESSION_TURN_FAILED", message };
+  if (err instanceof SessionTurnError && err.adapterFailure !== undefined) return failure(err.adapterFailure.outcome, message);
+  if (err instanceof NaxError) return failure(err.code, message);
+  return failure("AGENT_SESSION_TURN_FAILED", message);
 }
 
 function spendOf(err: unknown): { readonly usage: TokenUsage; readonly costUsd: number } {
@@ -3584,42 +3847,58 @@ function spendOf(err: unknown): { readonly usage: TokenUsage; readonly costUsd: 
   return { usage: ZERO_USAGE, costUsd: 0 };
 }
 
-function fromError(err: unknown, flags: TurnFlags, signal: AbortSignal): TurnEndBody {
+function fromError(err: unknown, signal: AbortSignal): TurnEndBody {
   const base = { type: "turn_end" as const, output: "", ...spendOf(err) };
-  if (flags.stalled) {
+  const code = abortCode(signal);
+  if (code === STALLED) {
     const message = `More than ${_agentSessionDeps.controlEventCap} control events went undelivered; the turn was cancelled.`;
-    return { ...base, status: "errored", error: { code: "AGENT_SESSION_CONSUMER_STALLED", message } };
+    return { ...base, status: "errored", error: failure(STALLED, message) };
   }
-  if (flags.timedOut) return { ...base, status: "timed_out" };
+  if (code === TIMED_OUT) return { ...base, status: "timed_out" };
   if (signal.aborted) return { ...base, status: "cancelled" };
   return { ...base, status: "errored", error: errorOf(err) };
 }
 
-async function executeTurn(ctx: TurnRunContext, live: LiveTurn, message: string): Promise<TurnResult> {
-  await ctx.store.markTurn(ctx.sessionId, { turnId: live.turnId, state: "running" });
+function sendTurn(ctx: TurnRunContext, live: LiveTurn, message: string): Promise<TurnResult> {
+  return ctx.adapter.sendTurn(ctx.handle, message, {
+    interactionHandler: ctx.interactionHandler,
+    codingTools: ctx.codingTools,
+    maxInteractions: ASK_HUMAN_BUDGET,
+    turnId: live.turnId,
+    signal: live.signal,
+    onTurnEvent: (event) => live.emit(event),
+    loopHandlerContext: ctx.loopHandlerContext,
+    ...(ctx.loopHandlers !== undefined ? { loopHandlers: ctx.loopHandlers } : {}),
+  });
+}
+
+/** Writes the turn marker; a failure is returned, not thrown. */
+async function markTurn(
+  ctx: TurnRunContext,
+  turnId: string,
+  state: "running" | "ended",
+): Promise<{ readonly error: unknown } | undefined> {
   try {
-    return await ctx.adapter.sendTurn(ctx.handle, message, {
-      interactionHandler: ctx.interactionHandler,
-      codingTools: ctx.codingTools,
-      maxInteractions: ASK_HUMAN_BUDGET,
-      turnId: live.turnId,
-      signal: live.signal,
-      onTurnEvent: (event) => live.emit(event),
-      loopHandlerContext: ctx.loopHandlerContext,
-      ...(ctx.loopHandlers !== undefined ? { loopHandlers: ctx.loopHandlers } : {}),
-    });
-  } finally {
-    await ctx.store.markTurn(ctx.sessionId, { turnId: live.turnId, state: "ended" });
+    await ctx.store.markTurn(ctx.sessionId, { turnId, state });
+    return undefined;
+  } catch (error) {
+    return { error };
   }
 }
 
-async function runTurn(ctx: TurnRunContext, live: LiveTurn, message: string, flags: TurnFlags): Promise<TurnEndBody> {
+async function runTurn(ctx: TurnRunContext, live: LiveTurn, message: string): Promise<TurnEndBody> {
   live.emit({ type: "turn_start" });
+  const started = await markTurn(ctx, live.turnId, "running");
+  if (started !== undefined) return fromError(started.error, live.signal);
+  let end: TurnEndBody;
   try {
-    return fromResult(await executeTurn(ctx, live, message));
+    end = turnEndFromResult(await sendTurn(ctx, live, message));
   } catch (err) {
-    return fromError(err, flags, live.signal);
+    end = fromError(err, live.signal);
   }
+  const ended = await markTurn(ctx, live.turnId, "ended");
+  // A failed end marker fails the turn (spec 5.5) but keeps its output and spend.
+  return ended === undefined ? end : { ...end, status: "errored", error: errorOf(ended.error) };
 }
 
 function singleUse(iterator: AsyncIterator<SessionEvent>, sessionId: string): AsyncIterable<SessionEvent> {
@@ -3640,7 +3919,6 @@ function singleUse(iterator: AsyncIterator<SessionEvent>, sessionId: string): As
 export function claimTurn(ctx: TurnRunContext, message: string, hooks: ClaimTurnHooks): ClaimedTurn {
   const turnId = _agentSessionDeps.randomUUID();
   const controller = new AbortController();
-  const flags: TurnFlags = { stalled: false, timedOut: false };
   let state: "claimed" | "running" | "settled" = "claimed";
   let resolveSettled: () => void = () => {};
   const settled = new Promise<void>((resolve) => {
@@ -3650,11 +3928,8 @@ export function claimTurn(ctx: TurnRunContext, message: string, hooks: ClaimTurn
   const channel = createSessionEventChannel({
     controlCap: _agentSessionDeps.controlEventCap,
     onFirstPull: () => start(),
-    onReturn: () => controller.abort(abortReason("AGENT_SESSION_CANCELLED", "iterator closed")),
-    onStall: () => {
-      flags.stalled = true;
-      controller.abort(abortReason("AGENT_SESSION_CONSUMER_STALLED", "consumer stalled"));
-    },
+    onReturn: () => cancel("iterator closed"),
+    onStall: () => controller.abort(abortReason(STALLED, "consumer stalled")),
   });
   const emit = (body: SessionEventBody): void => {
     const at = new Date(_agentSessionDeps.now()).toISOString();
@@ -3673,20 +3948,22 @@ export function claimTurn(ctx: TurnRunContext, message: string, hooks: ClaimTurn
   function start(): void {
     if (state !== "claimed") return;
     state = "running";
-    const timer = _agentSessionDeps.setTimeout(() => {
-      flags.timedOut = true;
-      controller.abort(abortReason("AGENT_SESSION_TURN_TIMEOUT", "turn deadline"));
-    }, ctx.turnTimeoutSeconds * 1000);
+    const timer = _agentSessionDeps.setTimeout(
+      () => controller.abort(abortReason(TIMED_OUT, "turn deadline")),
+      ctx.turnTimeoutSeconds * 1000,
+    );
     hooks.onStart(live);
-    void runTurn(ctx, live, message, flags).then((end) => {
-      _agentSessionDeps.clearTimeout(timer);
-      settle(end);
-    });
+    void runTurn(ctx, live, message)
+      .catch((err: unknown) => fromError(err, controller.signal))
+      .then((end) => {
+        _agentSessionDeps.clearTimeout(timer);
+        settle(end);
+      });
   }
 
   function cancel(reason: string): void {
     if (state === "claimed") settle(undefined);
-    else if (state === "running") controller.abort(abortReason("AGENT_SESSION_CANCELLED", reason));
+    else if (state === "running") controller.abort(abortReason(CANCELLED, reason));
   }
 
   return { turnId, iterable: singleUse(channel.iterator, ctx.sessionId), settled, cancel };
@@ -3705,6 +3982,7 @@ Create `packages/nax-agent/src/session/agent-session.ts`:
  * only (openSession, sendTurn, closeSession), so the acpx backend (S4) slots
  * in behind the same API. resumeAgentSession follows in S3-5.
  */
+import { DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
 import { NATIVE_AGENT } from "#src/native/models";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
@@ -3838,7 +4116,8 @@ function createAdapter(options: ResolvedAgentSessionOptions): NativeSessionAdapt
 
 async function assemble(options: ResolvedAgentSessionOptions, sessionId: string, root: SessionRoot): Promise<AgentSession> {
   const raw = options.raw;
-  const protectedPaths = raw.hostPorts?.protectedPaths ?? defaultProtectedPaths(raw.credentials !== undefined);
+  // A supplied policy is merged over the default, so enabling GitCommit never drops the credential read-deny.
+  const protectedPaths = { ...defaultProtectedPaths(raw.credentials !== undefined), ...raw.hostPorts?.protectedPaths };
   const launcher = await resolveSessionLauncher({
     profile: raw.profile,
     root: root.dir,
@@ -3878,6 +4157,7 @@ async function assemble(options: ResolvedAgentSessionOptions, sessionId: string,
     timeoutSeconds: options.turnTimeoutSeconds,
     transcriptStore: raw.transcriptStore,
     retainOnClose: true,
+    spinBreaker: DEFAULT_SPIN_BREAKER_SETTINGS,
     ...(raw.instructions !== undefined ? { systemPrompt: raw.instructions } : {}),
   });
   const ctx: TurnRunContext = {
@@ -3926,7 +4206,7 @@ export { createAgentSession } from "#src/session/agent-session";
 - [ ] **Step 7: Run the test to verify it passes**
 
 Run: `cd packages/nax-agent && bun test ./test/unit/session/agent-session-chat.test.ts --timeout=60000`
-Expected: PASS (11 tests).
+Expected: PASS (18 tests).
 
 If the history test fails only because the assistant message carries extra fields, the `expect.objectContaining` already allows them. If the user messages carry extra fields too, wrap them in `expect.objectContaining` as well.
 
@@ -3968,7 +4248,11 @@ Create `packages/nax-agent/test/unit/session/agent-session-asks.test.ts`:
  * the iterator; close during a turn; and the stalled-consumer cap.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createAgentSession, type EmbedderTool, type EmbedderToolContext } from "@nathapp/nax-agent";
+import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { _agentSessionDeps } from "#src/session/agent-session-deps";
 import {
@@ -3985,7 +4269,12 @@ import {
   types,
   untilSettled,
 } from "#test/helpers/agent-session";
-import { assertNaxError, withDepsRestore } from "#test/helpers/index";
+import {
+  assertNaxError,
+  stubSessionSandboxDeps,
+  withDepsRestore,
+  withSessionSandboxSeam,
+} from "#test/helpers/index";
 
 const APPROVAL_MS = 600_000;
 
@@ -4015,8 +4304,8 @@ function lookupTool(approval: "never" | "always", runs: unknown[]): EmbedderTool
   };
 }
 
-/** An embedder tool that resolves only when its signal aborts. */
-function waitingTool(seen: EmbedderToolContext[]): EmbedderTool {
+/** An embedder tool that ignores its signal and never settles: the facade must abandon it. */
+function stuckTool(seen: EmbedderToolContext[]): EmbedderTool {
   return {
     name: "wait",
     description: "wait for something",
@@ -4024,9 +4313,7 @@ function waitingTool(seen: EmbedderToolContext[]): EmbedderTool {
     approval: "never",
     run(_input, ctx) {
       seen.push(ctx);
-      return new Promise((resolve) => {
-        ctx.signal.addEventListener("abort", () => resolve({ content: "late" }), { once: true });
-      });
+      return new Promise(() => {});
     },
   };
 }
@@ -4091,6 +4378,36 @@ describe("agent session: approvals", () => {
   });
 });
 
+describe("agent session: built-in approvals under full + gated", () => {
+  withDepsRestore(_agentSessionDeps);
+  withDepsRestore(_sessionSandboxDeps);
+  withSessionSandboxSeam(_sessionSandboxDeps);
+
+  test("a Bash command is put to the person with its call id and a masked command; a denial does not run it", async () => {
+    installManualTimers();
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    _sessionSandboxDeps.probe = async () => ({ available: false, reason: "no sandbox in unit tests" });
+    const token = "ghp_0123456789abcdefghijklmnopqrstuvwxyzAB";
+    const provider = installScriptedProvider();
+    provider.push(
+      toolRound([{ id: "b1", name: "Bash", input: { command: `git push https://${token}@github.com/o/r` } }]),
+      textRound("ok"),
+    );
+    const workdir = await mkdtemp(join(tmpdir(), "nax-agent-session-full-"));
+    const session = await createAgentSession(sessionOptions({ profile: "full", workdir, allowUnsandboxed: true }));
+    const events = reader(session.send("push it"));
+    const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
+    expect(request).toMatchObject({ callId: "b1", tool: "Bash" });
+    expect(request?.command).toContain("git push");
+    expect(JSON.stringify(request)).not.toContain(token);
+    session.answer(request?.requestId ?? "", { decision: "deny" });
+    const rest = await events.rest();
+    expect(eventsOf(rest, "tool_result")[0]?.preview).toContain("Denied");
+    expect(turnEndOf(rest).status).toBe("completed");
+    await session.close();
+  });
+});
+
 describe("agent session: questions", () => {
   withDepsRestore(_agentSessionDeps);
 
@@ -4129,17 +4446,19 @@ describe("agent session: questions", () => {
 describe("agent session: cancellation and teardown", () => {
   withDepsRestore(_agentSessionDeps);
 
-  test("cancel during a tool aborts its signal, ends the turn cancelled, and frees the session", async () => {
+  test("cancel during a tool that ignores its signal abandons it, ends the turn cancelled, and frees the session", async () => {
     installManualTimers();
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "wait", input: {} }]));
     const seen: EmbedderToolContext[] = [];
-    const session = await createAgentSession(sessionOptions({ tools: [waitingTool(seen)] }));
+    const session = await createAgentSession(sessionOptions({ tools: [stuckTool(seen)] }));
     const events = reader(session.send("go"));
     await events.until("tool_call");
     await tick();
     session.cancel("person pressed stop");
-    expect(turnEndOf(await events.rest()).status).toBe("cancelled");
+    const rest = await events.rest();
+    expect(eventsOf(rest, "tool_result")[0]).toMatchObject({ callId: "c1", isError: true });
+    expect(turnEndOf(rest).status).toBe("cancelled");
     expect(seen[0]?.signal.aborted).toBe(true);
     provider.push(textRound("next"));
     expect(turnEndOf(await collect(session.send("again"))).status).toBe("completed");
@@ -4166,7 +4485,7 @@ describe("agent session: cancellation and teardown", () => {
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "wait", input: {} }]));
     const store = createMemoryTranscriptStore();
-    const session = await createAgentSession(sessionOptions({ transcriptStore: store, tools: [waitingTool([])] }));
+    const session = await createAgentSession(sessionOptions({ transcriptStore: store, tools: [stuckTool([])] }));
     for await (const event of session.send("first")) {
       if (event.type === "tool_call") break;
     }
@@ -4184,7 +4503,7 @@ describe("agent session: cancellation and teardown", () => {
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "c1", name: "wait", input: {} }]));
     const store = createMemoryTranscriptStore();
-    const session = await createAgentSession(sessionOptions({ transcriptStore: store, tools: [waitingTool([])] }));
+    const session = await createAgentSession(sessionOptions({ transcriptStore: store, tools: [stuckTool([])] }));
     const events = reader(session.send("go"));
     await events.until("tool_call");
     const closing = session.close();
@@ -4236,6 +4555,7 @@ Expected: PASS (12 tests). Earlier tasks unit-test every piece, so a failure her
 - **The approval summary.** `'{"id":42}'` comes from `defaultSummary`. If the loop passes a rewritten input, it is the `before_tool` rewrite; check `repairInvalidCall`.
 - **Timer fire counts.** `timers.fire(APPROVAL_MS)` must fire exactly the one ask timer. If it fires 0, the table armed its timer through the real `setTimeout`, so check that `pending-asks.ts` uses `_agentSessionDeps.setTimeout`.
 - **The iterator break.** If `untilSettled` times out, `onReturn` did not abort. Check `claimTurn`'s channel options.
+- **The gated Bash approval.** If no `approval_requested` arrives, the ask rule from `askRulesFor` did not reach the policy; check `buildSessionToolSupport`. If the command shows the token, `maskForPrompt` did not recognise its shape; use a shape from `src/permissions/secret-spans.ts`.
 - **The stall.** If the turn completes instead, the channel's `controlCap` was read before the test lowered it. `claimTurn` reads `_agentSessionDeps.controlEventCap` per turn; keep it that way.
 
 - [ ] **Step 3: Full package suite, coverage and gates**
@@ -4286,7 +4606,16 @@ In `docs/superpowers/specs/2026-10-03-s3-conversational-session-api-design.md`:
   `tools/provider-adapt.ts`, namespaces names as `<providerId>__<localName>` and is not used here.)
 ```
 
-3. At the end of §5.4, add:
+3. At the end of §6.1, add:
+
+```markdown
+**As built (S3-4).** Under `full`, `bashApproval: "gated"` puts every Bash command to the person (an unconditional ask
+rule over the unconditional grant); `"escalate"` asks only for commands the screen refuses; `"raw"` never asks. Write,
+Edit and Delete never ask. `approval_requested.command` is masked with `maskForPrompt`; a command that cannot be masked
+safely is unshowable. An embedder tool's `run` is raced against the turn signal and abandoned on abort.
+```
+
+4. At the end of §5.4, add:
 
 ```markdown
 **As built (S3-3).** `compaction.reason` is `"proactive" | "overflow"`. The compaction summary emits no `usage` (turn
@@ -4296,12 +4625,13 @@ applied in the backend at the sink, best-effort. `stream_reset` is emitted by th
 `tool_call.input` redaction cuts each string to the scan size first (S3-4).
 ```
 
-4. In §5.5's `TranscriptStore` interface, change `retainFailed(sessionId: string, doc: TranscriptDoc): Promise<void>;` to `retainFailed(sessionId: string): Promise<void>;`. Then add after the interface block: `As built (S3-1): \`retainFailed\` takes no document; it moves the stored one aside.`
+5. In §5.5's `TranscriptStore` interface, change `retainFailed(sessionId: string, doc: TranscriptDoc): Promise<void>;` to `retainFailed(sessionId: string): Promise<void>;`. Then add after the interface block: `As built (S3-1): \`retainFailed\` takes no document; it moves the stored one aside.`
 
-5. In §7's table, add a row after `AGENT_SESSION_CONSUMER_STALLED`:
+6. In §7's table, add these rows after `AGENT_SESSION_CONSUMER_STALLED`:
 
 ```markdown
 | `AGENT_SESSION_TURN_FAILED` | `turn_end.error.code` for a turn failure with no adapter outcome or nax-agent code (S3-4); provider faults carry `AdapterFailure.outcome`, nax-agent errors their own code |
+| `AGENT_SESSION_SPIN_STOPPED` / `AGENT_SESSION_INVALID_TOOL_CALLS` / `AGENT_SESSION_TURN_INCOMPLETE` | `turn_end.error.code` when the loop halts the turn (spin breaker, invalid-call budget, calls left pending); `output` and `usage` are kept (S3-4) |
 ```
 
 - [ ] **Step 2: Whole-branch verification**
