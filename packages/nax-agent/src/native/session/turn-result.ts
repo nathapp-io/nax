@@ -2,7 +2,7 @@
  * The turn's tail: the warnings emitted once the loop has exited, and the
  * `TurnResult` assembled from what the loop accumulated.
  *
- * Extracted from `turn-loop.ts`, which keeps the `saveTranscript` call that
+ * Extracted from `turn-loop.ts`, which keeps the turn-end transcript save that
  * sits between the two: a write failure there fails the turn, unlike the
  * best-effort save in the catch, and that distinction belongs with the control
  * flow rather than in a result builder.

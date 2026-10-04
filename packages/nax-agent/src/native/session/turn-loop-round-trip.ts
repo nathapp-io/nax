@@ -304,7 +304,7 @@ async function dispatchToolBatch(
   if (batch.spinStopped || batch.budgetExceeded) return { shouldBreak: true };
   // US-002: a cancelled turn signal during the batch answers every
   // outstanding call synthetically and stops the loop. The throw routes
-  // through the existing catch block — its best-effort saveTranscript
+  // through the existing catch block — its best-effort transcript save
   // persists the synthetic results before the throw propagates, keeping one
   // result per assistant id in the saved transcript (AC2 / AC3). AC4 carries
   // the abort reason verbatim; AC6 — a no-reason abort — produces a
@@ -346,7 +346,7 @@ export type TurnEndOutcome = { action: "break" } | { action: "continue"; state: 
 
 /**
  * P3 `before_turn_end` (spec 6.4): fires at every turn ENDING, before the
- * final saveTranscript. `stopped` is dispatcher-computed: the three endings
+ * final turn-end transcript save. `stopped` is dispatcher-computed: the three endings
  * that are stops, not completions — the spin breaker (nax#2120), the
  * invalid-call budget (nax#2047), and the deadline — close the followUp
  * channel entirely, because resurrecting a turn a breaker just killed would

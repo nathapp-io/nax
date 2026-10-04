@@ -173,7 +173,7 @@ export interface BeforeCompactionPatch {
   readonly summary?: string;
 }
 
-/** `before_turn_end` — fires before the final saveTranscript. */
+/** `before_turn_end` — fires before the turn-end transcript save. */
 export interface BeforeTurnEndPayload {
   readonly messages: readonly NativeTranscriptMessage[];
   readonly roundTrips: number;

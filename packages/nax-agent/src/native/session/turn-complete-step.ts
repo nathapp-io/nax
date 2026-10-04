@@ -9,7 +9,7 @@
  * attaches `transform_context` and `before_request` here: both fire per request
  * attempt from the private `request()` wrapper below (spec 6.5, 6.6) —
  * before_request shapes the per-call options, transform_context shapes the WIRE
- * COPY only, and the array the caller holds (which saveTranscript persists) is
+ * COPY only, and the array the caller holds (which the turn-end transcript save persists) is
  * returned untouched. An honoured rewrite is reported as `honoured`, with the
  * boundary fact that produced it as `boundary`, so the caller can clear the
  * cache anchor exactly when spec 3.6 says to — a prefix-stable honour leaves
@@ -126,7 +126,7 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
     const options = patch.options === undefined ? baseOptions : { ...baseOptions, ...patch.options };
     // transform_context fires here too, per attempt (spec 6.6). The patch
     // shapes ONLY the wire copy handed to deps.complete below: `msgs` — the
-    // caller's array, the one saveTranscript persists — is returned untouched,
+    // caller's array, the one the turn-end transcript save persists — is returned untouched,
     // so the transcript stays the true record. `boundary` is this step's
     // overflow fact (`compacted`): true only on the post-compaction retry,
     // where a prefix rewrite is free. A model change never reaches this step:

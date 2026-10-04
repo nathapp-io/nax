@@ -14,13 +14,20 @@ import type { OpenSessionOpts, SessionHandle } from "#src/session/session-types"
 import { NATIVE_AGENT } from "../models.ts";
 import { nativeSessionId } from "../session-affinity.ts";
 import type { ResolvedCompaction } from "./compaction.ts";
-import { deleteTranscript, pruneRetainedTranscripts, retainTranscript } from "./transcript-store.ts";
+import { createFileTranscriptStore } from "./transcript-store.ts";
+import type { TranscriptStore } from "./transcript-types.ts";
 import type { TurnRetryConfig } from "./turn-retry.ts";
 
 /** The runtime hooks handed to openSession. */
 export interface NativeSessionStreamHooks {
   onStreamActivity?: (event: AgentStreamEvent) => void;
   onActiveCall?: (callId: string, cancel: () => Promise<void>) => void;
+}
+
+/** Where one open session's history lives, and whether close may remove it. */
+export interface SessionTranscript {
+  readonly store: TranscriptStore;
+  readonly retainOnClose: boolean;
 }
 
 /**
@@ -43,6 +50,13 @@ export interface NativeSessionState {
    * to a real resource), but worth knowing when debugging a growing map.
    */
   readonly transcriptDirs: Map<string, string>;
+
+  /**
+   * Session name -> the session's transcript store and close policy (S3-1).
+   * Set by every `openNativeSession`; read through `sessionTranscriptFor`. Same
+   * lifecycle as the maps above: set on open, cleared on close.
+   */
+  readonly transcripts: Map<string, SessionTranscript>;
 
   /**
    * Session name -> the root whose `.nax/scratchpad/` holds this session's
@@ -133,6 +147,7 @@ export interface NativeSessionState {
 export function createNativeSessionState(): NativeSessionState {
   return {
     transcriptDirs: new Map(),
+    transcripts: new Map(),
     scratchpadRoots: new Map(),
     timeouts: new Map(),
     streamHooks: new Map(),
@@ -175,19 +190,49 @@ export function markNativeTurnOutcome(state: NativeSessionState, sessionName: st
   else state.failed.delete(sessionName);
 }
 
+/**
+ * The session's transcript. A state seeded with only a transcript directory
+ * (tests that drive `runNativeTurn` without opening) resolves to the file store
+ * over it; `openNativeSession` always records an entry, so production does not
+ * take that path.
+ */
+export function sessionTranscriptFor(state: NativeSessionState, sessionName: string): SessionTranscript | undefined {
+  const opened = state.transcripts.get(sessionName);
+  if (opened !== undefined) return opened;
+  const dir = state.transcriptDirs.get(sessionName);
+  return dir === undefined ? undefined : { store: createFileTranscriptStore(dir), retainOnClose: false };
+}
+
+function openTranscriptStore(name: string, opts: OpenSessionOpts): TranscriptStore {
+  if (opts.transcriptDir && opts.transcriptStore !== undefined) {
+    throw new NaxError(
+      `native session "${name}" opened with both a transcriptDir and a transcriptStore`,
+      "NATIVE_TRANSCRIPT_SOURCE_CONFLICT",
+      { stage: "native-session" },
+    );
+  }
+  if (opts.transcriptStore !== undefined) return opts.transcriptStore;
+  // Never defaulted. An adapter that picks its own path writes a transcript
+  // somewhere nobody looks, which is #1794's empty-packageDir bug one layer up.
+  if (!opts.transcriptDir) {
+    throw new NaxError(
+      `native session "${name}" opened without a transcriptDir or transcriptStore`,
+      "NATIVE_TRANSCRIPT_DIR_MISSING",
+      { stage: "native-session" },
+    );
+  }
+  return createFileTranscriptStore(opts.transcriptDir);
+}
+
 export async function openNativeSession(
   state: NativeSessionState,
   name: string,
   opts: OpenSessionOpts,
 ): Promise<SessionHandle> {
-  // Never defaulted. An adapter that picks its own path writes a transcript
-  // somewhere nobody looks, which is #1794's empty-packageDir bug one layer up.
-  if (!opts.transcriptDir) {
-    throw new NaxError(`native session "${name}" opened without a transcriptDir`, "NATIVE_TRANSCRIPT_DIR_MISSING", {
-      stage: "native-session",
-    });
-  }
-  state.transcriptDirs.set(name, opts.transcriptDir);
+  const store = openTranscriptStore(name, opts);
+  if (opts.transcriptDir) state.transcriptDirs.set(name, opts.transcriptDir);
+  else state.transcriptDirs.delete(name);
+  state.transcripts.set(name, { store, retainOnClose: opts.retainOnClose === true });
   state.timeouts.set(name, opts.timeoutSeconds);
   state.scratchpadRoots.set(name, opts.workdir);
   if (opts.transcriptOwner !== undefined) state.transcriptOwners.set(name, opts.transcriptOwner);
@@ -195,10 +240,10 @@ export async function openNativeSession(
   // `resume` is SessionManager's "this name already has a descriptor in this
   // process" signal, and it had no consumer on this transport (nax#1877) — a
   // native session resumed whatever transcript happened to be on disk. Honouring
-  // it here is the flag's documented contract; the owner check in loadTranscript
+  // it here is the flag's documented contract; the owner check in historyFromTranscript
   // is what covers the cases `resume` cannot see (a same-process re-entry into a
   // stage, and a process that died without closing anything).
-  if (opts.resume !== true) await deleteTranscript(opts.transcriptDir, name);
+  if (opts.resume !== true) await store.delete(name);
   if (opts.compaction !== undefined) state.compaction.set(name, opts.compaction);
   if (opts.transportRetry !== undefined) state.transportRetry.set(name, opts.transportRetry);
   if (opts.spinBreaker !== undefined) state.spinBreakers.set(name, createSpinBreaker(opts.spinBreaker));
@@ -232,6 +277,7 @@ export async function openNativeSession(
  */
 export function clearNativeSessionState(state: NativeSessionState, sessionName: string): void {
   state.transcriptDirs.delete(sessionName);
+  state.transcripts.delete(sessionName);
   state.timeouts.delete(sessionName);
   state.scratchpadRoots.delete(sessionName);
   state.transcriptOwners.delete(sessionName);
@@ -245,28 +291,26 @@ export function clearNativeSessionState(state: NativeSessionState, sessionName: 
 
 /**
  * Kept on failure, deleted on success. Every Phase B op is lifetime "fresh", so
- * the transcript survives exactly when it is worth reading. The kept-on-failure
- * set is otherwise unbounded, so a failed close also prunes the feature's
- * `sessions/` directory down to `MAX_RETAINED_TRANSCRIPTS` (ADR-028 section 3).
+ * the transcript survives exactly when it is worth reading. Keeping is the
+ * store's `retainFailed`; the file store's also prunes the feature's
+ * `sessions/` directory down to `MAX_RETAINED_TRANSCRIPTS` (ADR-028 section 3),
+ * since the kept-on-failure set is otherwise unbounded. A session opened with
+ * `retainOnClose` skips both: its live document stays resumable.
  */
 export async function closeNativeSession(
   state: NativeSessionState,
   handle: SessionHandle,
   failed?: boolean,
 ): Promise<void> {
-  const dir = state.transcriptDirs.get(handle.id);
+  const transcript = sessionTranscriptFor(state, handle.id);
   // An explicit argument wins; otherwise the last turn's own verdict decides.
   // The adapter passes nothing, because its interface has no failure signal.
   const treatAsFailed = failed ?? state.failed.has(handle.id);
   try {
-    if (dir !== undefined) {
-      if (treatAsFailed) {
-        // Retain for a human, out of reach of the next session of this name.
-        await retainTranscript(dir, handle.id);
-        await pruneRetainedTranscripts(dir);
-      } else {
-        await deleteTranscript(dir, handle.id);
-      }
+    if (transcript !== undefined && !transcript.retainOnClose) {
+      // Retain for a human, out of reach of the next session of this name.
+      if (treatAsFailed) await transcript.store.retainFailed(handle.id);
+      else await transcript.store.delete(handle.id);
     }
   } finally {
     // The deletes must run even when the transcript I/O throws: a failed

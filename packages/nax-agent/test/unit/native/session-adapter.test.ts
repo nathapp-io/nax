@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { OpenSessionOpts, SessionModel } from "@nathapp/nax-agent";
+import type { OpenSessionOpts, SessionHandle, SessionModel } from "@nathapp/nax-agent";
 import {
   _clientDeps,
   _resetNativeClient,
@@ -29,6 +29,7 @@ import {
   transcriptStoreModule as transcriptStore,
 } from "@nathapp/nax-agent/internal";
 import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
+import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
 
 const REAL_BUILD = _clientDeps.build;
@@ -261,16 +262,18 @@ describe("NativeSessionAdapter closePhysicalSession -- run teardown reaches the 
   test("a throwing transcript retain still clears every native map", async () => {
     const state = createNativeSessionState();
     const name = "nax-throw-us-002-implementer";
-    const handle = await openNativeSession(state, name, openOpts());
+    const throwing = { ...createMemoryTranscriptStore(), retainFailed: () => Promise.reject(new Error("retain boom")) };
+    const factorySpy = spyOn(transcriptStore, "createFileTranscriptStore").mockReturnValue(throwing);
+    let handle: SessionHandle;
+    try {
+      handle = await openNativeSession(state, name, openOpts());
+    } finally {
+      factorySpy.mockRestore();
+    }
     state.failed.add(name);
     state.lastUsage.set(name, { promptTokens: 10, anchorIndex: 0 });
     expect(collectionsHolding(state, name)).toEqual(exportedCollections(state));
-    const retainSpy = spyOn(transcriptStore, "retainTranscript").mockRejectedValue(new Error("retain boom"));
-    try {
-      await expect(closeNativeSession(state, handle)).rejects.toThrow("retain boom");
-    } finally {
-      retainSpy.mockRestore();
-    }
+    await expect(closeNativeSession(state, handle)).rejects.toThrow("retain boom");
     expect(collectionsHolding(state, name)).toEqual([]);
   });
 });
