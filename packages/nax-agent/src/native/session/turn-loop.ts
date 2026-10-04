@@ -242,12 +242,16 @@ export async function runNativeTurn(
     // failure fails the turn, because continuing on unstored history is silent
     // degradation. Here a failure is already in flight, and masking it with a
     // write error would lose the cause.
-    await store.save(handle.id, transcriptDocFor(state.messages, transcriptIdentity)).catch((saveErr: unknown) => {
-      getSafeLogger()?.warn("native-adapter", "could not persist the transcript of a failed turn", {
-        sessionName: handle.id,
-        error: saveErr instanceof Error ? saveErr.message : String(saveErr),
+    // Deferred into a promise so a store whose `save` throws synchronously is
+    // caught here too, rather than escaping and replacing the turn's error.
+    await Promise.resolve()
+      .then(() => store.save(handle.id, transcriptDocFor(state.messages, transcriptIdentity)))
+      .catch((saveErr: unknown) => {
+        getSafeLogger()?.warn("native-adapter", "could not persist the transcript of a failed turn", {
+          sessionName: handle.id,
+          error: saveErr instanceof Error ? saveErr.message : String(saveErr),
+        });
       });
-    });
     // nax#1840: attach what was already spent, keyed on the error's own
     // identity so the error itself is rethrown byte-for-byte unmodified.
     if (typeof err === "object" && err !== null) {

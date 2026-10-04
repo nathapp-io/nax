@@ -5,6 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
+import type { ConversationMessage } from "@nathapp/nax-ai";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import {
   closeNativeSession,
@@ -13,6 +14,7 @@ import {
   type NativeSessionState,
   openNativeSession,
 } from "#src/native/session/session";
+import type { TranscriptDoc } from "#src/native/session/transcript-types";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "#src/session/session-types";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
@@ -42,6 +44,24 @@ const reply = { text: "done", usage: { inputTokens: 1, outputTokens: 1 }, costUs
 function turn(handle: SessionHandle, prompt: string): Promise<unknown> {
   return runNativeTurn(handle, prompt, opts, { sessionState: state, complete: async () => reply });
 }
+
+/** Runs one turn and returns every message array the provider was sent. */
+async function sentOn(handle: SessionHandle, prompt: string): Promise<ConversationMessage[][]> {
+  const sent: ConversationMessage[][] = [];
+  await runNativeTurn(handle, prompt, opts, {
+    sessionState: state,
+    complete: async (messages) => {
+      sent.push([...messages]);
+      return reply;
+    },
+  });
+  return sent;
+}
+
+const prior: ConversationMessage[] = [
+  { role: "user", content: "old question" },
+  { role: "assistant", content: "old answer" },
+];
 
 describe("native sessions on an injected TranscriptStore", () => {
   test("two turns share history through the store and nothing is written to disk", async () => {
@@ -114,5 +134,65 @@ describe("native sessions on an injected TranscriptStore", () => {
     await closeNativeSession(state, h2);
     expect(await cleanStore.load("c")).toBeNull();
     expect(cleanStore.retained("c")).toBeUndefined();
+  });
+
+  test("a custom store cannot hand another owner's history to the loop", async () => {
+    const store = createMemoryTranscriptStore();
+    await store.save("s", { owner: "a", savedAt: "t", messages: prior });
+    const handle = await openNativeSession(state, "s", base({ transcriptStore: store, transcriptOwner: "b" }));
+    const sent = await sentOn(handle, "new");
+    expect(sent[0]).toEqual([{ role: "user", content: "new" }]);
+  });
+
+  test("a custom store cannot hand another model's history to the loop", async () => {
+    const store = createMemoryTranscriptStore();
+    await store.save("s", { model: "openai/other", savedAt: "t", messages: prior });
+    const handle = await openNativeSession(state, "s", base({ transcriptStore: store }));
+    const sent = await sentOn(handle, "new");
+    expect(sent[0]).toEqual([{ role: "user", content: "new" }]);
+  });
+
+  test("an unknown schemaVersion from a store fails the turn", async () => {
+    const store = createMemoryTranscriptStore();
+    const future: TranscriptDoc = JSON.parse('{"schemaVersion":2,"savedAt":"t","messages":[]}');
+    await store.save("s", future);
+    const handle = await openNativeSession(state, "s", base({ transcriptStore: store }));
+    await expect(turn(handle, "one")).rejects.toMatchObject({ code: "TRANSCRIPT_SCHEMA_UNSUPPORTED" });
+  });
+
+  test("a store document whose messages is not an array fails the turn with TRANSCRIPT_CORRUPT", async () => {
+    const bad: TranscriptDoc = JSON.parse('{"savedAt":"t","messages":"abc"}');
+    const store = { ...createMemoryTranscriptStore(), load: () => Promise.resolve(bad) };
+    const handle = await openNativeSession(state, "s", base({ transcriptStore: store }));
+    await expect(turn(handle, "one")).rejects.toMatchObject({ code: "TRANSCRIPT_CORRUPT" });
+  });
+
+  test("a failing turn-end save fails the turn", async () => {
+    const store = { ...createMemoryTranscriptStore(), save: () => Promise.reject(new Error("save boom")) };
+    const handle = await openNativeSession(state, "s", base({ transcriptStore: store }));
+    await expect(turn(handle, "one")).rejects.toThrow("save boom");
+  });
+
+  test("a store whose save throws synchronously does not mask the turn's own error", async () => {
+    const store = {
+      ...createMemoryTranscriptStore(),
+      save: (): Promise<void> => {
+        throw new Error("save boom");
+      },
+    };
+    const handle = await openNativeSession(state, "s", base({ transcriptStore: store }));
+    const failing = runNativeTurn(handle, "one", opts, {
+      sessionState: state,
+      complete: async () => {
+        throw new Error("provider boom");
+      },
+    });
+    await expect(failing).rejects.toThrow("provider boom");
+  });
+
+  test("reopening a name with a store drops the directory it was opened with before", async () => {
+    await openNativeSession(state, "s", base({ transcriptDir: workdir }));
+    await openNativeSession(state, "s", base({ transcriptStore: createMemoryTranscriptStore() }));
+    expect(state.transcriptDirs.has("s")).toBe(false);
   });
 });

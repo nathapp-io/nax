@@ -66,7 +66,9 @@ function isForeignTranscript(doc: TranscriptDoc, identity: TranscriptIdentity, s
  * The history a session may resume from a loaded document (nax#1877, nax#2150).
  * An unknown `schemaVersion` fails the turn for the same reason
  * `TRANSCRIPT_CORRUPT` does: silently starting over would drop history the
- * conversation depends on.
+ * conversation depends on. Both checks run before the owner/model check, so a
+ * document this build cannot read fails even when it would be foreign: the
+ * reader cannot trust the identity fields of a shape it does not know.
  */
 export function historyFromTranscript(
   doc: TranscriptDoc | null,
@@ -79,6 +81,13 @@ export function historyFromTranscript(
     throw new NaxError(
       `transcript for session "${sessionName}" has unsupported schemaVersion ${String(version)}`,
       "TRANSCRIPT_SCHEMA_UNSUPPORTED",
+      { stage: "native-session" },
+    );
+  }
+  if (!Array.isArray(doc.messages)) {
+    throw new NaxError(
+      `transcript for session "${sessionName}" is unreadable: messages is not an array`,
+      "TRANSCRIPT_CORRUPT",
       { stage: "native-session" },
     );
   }

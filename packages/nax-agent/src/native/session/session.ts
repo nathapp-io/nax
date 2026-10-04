@@ -231,6 +231,7 @@ export async function openNativeSession(
 ): Promise<SessionHandle> {
   const store = openTranscriptStore(name, opts);
   if (opts.transcriptDir) state.transcriptDirs.set(name, opts.transcriptDir);
+  else state.transcriptDirs.delete(name);
   state.transcripts.set(name, { store, retainOnClose: opts.retainOnClose === true });
   state.timeouts.set(name, opts.timeoutSeconds);
   state.scratchpadRoots.set(name, opts.workdir);

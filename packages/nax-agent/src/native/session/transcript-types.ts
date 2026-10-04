@@ -20,7 +20,11 @@ export interface TranscriptDoc {
   readonly model?: string;
   readonly savedAt: string;
   readonly messages: readonly ConversationMessage[];
-  /** Read-only to the loop; owned by `markTurn`. */
+  /**
+   * Owned by `markTurn`. The loop never writes it, and its saves replace the
+   * whole document, so a loop save drops it; the caller re-marks after the turn
+   * (S3 spec 5.5 write order: markTurn(running), turn, markTurn(ended)).
+   */
   readonly turn?: TurnMarker;
 }
 

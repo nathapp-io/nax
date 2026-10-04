@@ -159,6 +159,10 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    * Native: leave the live transcript in place on close (S3 spec 5.5). By
    * default a clean close deletes it and a failed close moves it aside; the
    * facade sets this so the session stays resumable. nax leaves it unset.
+   * Limitation: the file store's prune on a failed close (cap 50, oldest first)
+   * counts every transcript in its directory, live ones included, so a
+   * retained session should not share a file-store directory with sessions
+   * that close failed.
    */
   retainOnClose?: boolean;
   /**
