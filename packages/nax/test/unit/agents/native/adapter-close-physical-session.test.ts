@@ -68,10 +68,11 @@ describe("native closePhysicalSession — run teardown reaches the session maps"
     });
     // keepOpen: session-run-hop skips closeSession, so the descriptor stays
     // RUNNING and every map keeps its entry. The per-turn entries `open` does
-    // not set are added here so the test covers all nine, not only the five the
-    // open path happens to populate.
+    // not set are added here so the test covers all twelve, not only the five
+    // the open path happens to populate.
     state.failed.add(name);
     state.lastUsage.set(name, { promptTokens: 10, anchorIndex: 0 });
+    state.systemPrompts.set(name, "close-test prompt");
     expect(collectionsHolding(name)).toEqual(exportedCollections());
     await closeStorySessions(sm, "US-001", () => adapter);
     expect(sm.getForStory("US-001")).toHaveLength(0);
