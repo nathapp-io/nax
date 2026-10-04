@@ -298,3 +298,30 @@ describe("agent session: cancellation and teardown", () => {
     await session.close();
   });
 });
+
+describe("agent session: answer statuses", () => {
+  withDepsRestore(_agentSessionDeps);
+
+  test("an answer to a request the session never issued is refused while the session is open", async () => {
+    installManualTimers();
+    installScriptedProvider();
+    const session = await createAgentSession(sessionOptions());
+    expectCode(() => session.answer("no-such-id", { decision: "allow" }), "AGENT_SESSION_INVALID_ANSWER");
+    await session.close();
+  });
+
+  test("every answer after close is unknown, including one close itself cancelled", async () => {
+    installManualTimers();
+    const provider = installScriptedProvider();
+    provider.push(toolRound([{ id: "c1", name: "lookup", input: {} }]));
+    const session = await createAgentSession(sessionOptions({ tools: [lookupTool("always", [])] }));
+    const events = reader(session.send("go"));
+    const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
+    const closing = session.close();
+    await events.rest();
+    await closing;
+    expect(session.answer(request?.requestId ?? "", { decision: "allow" })).toBe("unknown");
+    expect(session.answer("no-such-id", { decision: "allow" })).toBe("unknown");
+    await session.close();
+  });
+});
