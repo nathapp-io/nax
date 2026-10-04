@@ -218,6 +218,9 @@ export async function runNativeTurn(
       state = turnEnd.state;
     }
   } catch (err) {
+    // S3-3: a throw can leave a reported tool_call unanswered; answer it so the
+    // sink's one-result-per-call rule holds on every ending.
+    params.turnEvents.flushUnanswered();
     // Review #20: the event fires on EVERY ending, so a throwing turn
     // dispatches it before the transcript save — a handler sees the failure
     // ending with `ended: "aborted"` (signal fired) or `"errored"`, and its

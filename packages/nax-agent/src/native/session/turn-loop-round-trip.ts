@@ -302,6 +302,7 @@ async function dispatchToolBatch(
     maxInteractions,
     spinWarned: spinFlags.warned,
     interactionsSoFar: params.interactions.length,
+    turnEvents: params.turnEvents,
   });
   state.messages = [...batch.messages];
   params.interactions.push(...batch.interactions);

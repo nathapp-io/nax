@@ -27,6 +27,7 @@ import type { LoopEventRegistry } from "./loop-events/index.ts";
 import { withNudge } from "./nudge.ts";
 import { buildToolResult } from "./tool-result.ts";
 import { handleAskHumanCall } from "./turn-ask-human.ts";
+import type { TurnEventEmitter } from "./turn-event-emitter.ts";
 import type { TurnDeps } from "./turn-types.ts";
 
 export interface ToolBatchResult {
@@ -64,6 +65,8 @@ export interface ToolBatchArgs {
   readonly spinWarned: boolean;
   /** Exchanges already recorded this turn, so the ask_human budget is turn-lifetime, not per-batch. */
   readonly interactionsSoFar: number;
+  /** S3-3: the turn's event emitter; reports each answered call (no-op without a sink). */
+  readonly turnEvents: TurnEventEmitter;
 }
 
 export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult> {
@@ -80,6 +83,7 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
     maxInteractions,
     spinWarned,
     interactionsSoFar,
+    turnEvents,
   } = args;
 
   let messages: NativeTranscriptMessage[] = [...args.messages];
@@ -187,7 +191,10 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
         // call may still carry the input to record in its place (the
         // invalid-call repair's redacted call), written before the answer.
         if (outcome.input !== undefined) messages = rewriteToolCallInput(messages, call.id, outcome.input);
-        messages.push(buildToolResult({ toolCallId: call.id, content: outcome.content, isError: outcome.isError }));
+        turnEvents.toolCall(call, outcome.input);
+        const blocked = buildToolResult({ toolCallId: call.id, content: outcome.content, isError: outcome.isError });
+        messages.push(blocked);
+        turnEvents.toolResult(blocked);
         continue;
       }
       // `allow` and `nudge` may rewrite the call's input; the rewritten value
@@ -199,6 +206,7 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
       const nudgeText = outcome.kind === "nudge" ? outcome.text : undefined;
       const kind = codingToolNames.has(call.name) ? "coding-tool" : "context-tool";
       if (kind === "coding-tool") codingToolsCalled.push(call.name);
+      turnEvents.toolCall(call, rewritten);
       const answer = await opts.interactionHandler.onInteraction(
         kind === "coding-tool"
           ? {
@@ -274,14 +282,14 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
       });
       const finalContent = withNudge(nudgeText, patch.content ?? answerText);
       answer?.finalizeAudit?.(finalContent);
-      messages.push(
-        buildToolResult({
-          toolCallId: call.id,
-          content: finalContent,
-          isError: patch.isError,
-          denied: answer?.denied,
-        }),
-      );
+      const result = buildToolResult({
+        toolCallId: call.id,
+        content: finalContent,
+        isError: patch.isError,
+        denied: answer?.denied,
+      });
+      messages.push(result);
+      turnEvents.toolResult(result);
       // The breaker observed the call through the seam, i.e. with whatever
       // input a handler rewrote in place — so the result has to be noted
       // against that same input, or the key misses and result-based
@@ -299,13 +307,13 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
         toolName: call.name,
         callId: call.id,
       });
-      messages.push(
-        buildToolResult({
-          toolCallId: call.id,
-          content: patch.content ?? errorText,
-          isError: patch.isError ?? true,
-        }),
-      );
+      const failed = buildToolResult({
+        toolCallId: call.id,
+        content: patch.content ?? errorText,
+        isError: patch.isError ?? true,
+      });
+      messages.push(failed);
+      turnEvents.toolResult(failed);
     }
   }
 
