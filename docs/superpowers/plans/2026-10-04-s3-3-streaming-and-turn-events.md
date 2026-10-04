@@ -26,11 +26,11 @@
 - Dependency direction is `nax-ai` → `nax-agent` → `nax`. `@nathapp/nax-ai` is importable in nax-agent only from `src/native/` and `src/cost/standard-types.ts` (`check:nax-ai-imports`). `src/session/turn-event.ts` therefore must not import nax-ai.
 - nax-agent ships zero Bun APIs (`check:no-bun-apis`); `src/` uses `node:` built-ins only.
 - Every thrown error is a `NaxError` (`check-nax-error`). This PR adds no throw sites.
-- No `_` names on `.`; `/internal` is unstable. This PR adds two type names to `.` (`TurnEvent`, `TurnEventSink`): run `bun run check:api`, then `bun run api:update`, and commit the snapshot. Additions only.
+- No `_` names on `.`; `/internal` is unstable. This PR adds two type names to `.` (`TurnEvent`, `TurnEventSink`, Task 1) and two to `./internal` (`StreamDelta`, `StreamDeltaSink`, Task 3: `src/internal.ts:77` does `export * from "#src/native/session/turn-types"`). Run `bun run check:api`, then `bun run api:update`, and commit the snapshot. Additions only.
 - nax-agent coverage: 80% overall and per file, empty baseline (`bun run test:coverage`).
 - Never run bare `bun test` or `bun run nax`. Run package scripts from the package directory (`cd packages/nax-agent`, `cd packages/nax`).
 - No emojis. Source files stay under 600 lines and test files under 800 (`check-file-sizes`). `turn-tool-batch.test.ts` is already long: put new batch tests in a new file.
-- Complexity ratchet (`check-complexity`, limit 20, in `lint:checks`). Hot spots in this PR: `runToolBatch` (baselined at 59, may not grow) and `sendTurn` (baselined at 21, may not grow). Add NO branch, ternary, `??`, `&&`/`||` or optional call (`?.(`) to either function. The emitter methods take the raw values and do the branching themselves. Run `bun ../repo-tooling/scripts/check-complexity.ts --package=.` after every task that touches `src/native/`.
+- Complexity ratchet (`check-complexity`, limit 20, in `lint:checks`). Hot spots in this PR: `runToolBatch` (baselined at 59, may not grow) and `sendTurn` (baselined at 21, may not grow). Unbaselined but near the limit: `runModelRoundTrip` (18) and the adapter's `complete` closure (19); add no branch to them either. Add NO branch, ternary, `??`, `&&`/`||` or optional call (`?.(`) to either function. The emitter methods take the raw values and do the branching themselves. Run `bun ../repo-tooling/scripts/check-complexity.ts --package=.` after every task that touches `src/native/`.
 - Test escape-hatch ratchet: the regex `\bas\s+[A-Z]\w*` counts test text, test names included, as a loose cast. Use typed declarations (`const sink: TurnEventSink = ...`), and keep test names clear of "as <Capitalised>". `as const` is fine.
 - Test satellites gate: do not name test files after stories (`us-00x`).
 - Tests do not sleep. A test that needs a macrotask turn uses `await new Promise((resolve) => setImmediate(resolve))`.
@@ -55,6 +55,12 @@
 - **`stream_reset` is emitted by the loop, not by the adapter's tap.** The loop's `request()` wrapper in `turn-complete-step.ts` already owns the per-round-trip attempt counter (`before_request` reports it). It emits `stream_reset` before every attempt after the first, which is the spec's rule ("on every request attempt after the first") at the one site that knows it.
 - **The delta sink reaches the adapter as a fourth argument to `TurnDeps.complete`.** `CompleteCallOptions` is the loop-event bag that `before_request` handlers patch; a callback does not belong in it. The argument is optional, so the ~50 hand-written `complete` fakes in the loop tests keep compiling and simply never stream.
 - **`TurnEvent` and `TurnEventSink` go on `.` now.** `SendTurnOpts` is already on `.`, and its new field names them. The facade's `SessionEvent` (S3-4) is a separate type.
+- **Redaction is best-effort; previews and tool inputs must be treated as sensitive by an embedder.** `redactSecrets` masks secret-named keys in structured input and known token shapes and `KEY=value` assignments in text. It does NOT mask, for example, a JSON credential file's text (`{"client_secret": "..."}`) or `password: ...` lines, so a Read of a secret file outside the credential directory can surface in `tool_result.preview`. Task 1 pins this known gap so a later widening of the patterns (a separate PR: it changes logger output too) shows up as a deliberate test change. The `TurnEvent` doc says so.
+- **Text and thinking deltas are not redacted.** A chunk cannot be redacted reliably (a secret can straddle chunks), and `TurnResult.output` and the transcript are not redacted either. Documented on `TurnEvent`.
+- **`tool_call.input` is byte-capped too.** A `Write` carrying a multi-MB `content` must not cross the sink whole (the facade's channel caps events, not bytes). After redaction, an input whose JSON exceeds `TOOL_CALL_INPUT_BYTES = 8192` is replaced by `{ truncated: true, preview: <first 8192 bytes of the JSON> }`.
+- **Redaction scans a bounded prefix.** With `deferModelTruncation`, a result can be up to `READ_CEILING` (2 MB) when no truncation handler ran. The preview is cut to `16 x TOOL_RESULT_PREVIEW_BYTES` before redaction, then to the cap after it, so a sink-enabled turn never runs the patterns over megabytes.
+- **Tool-event pairing survives repeated ids and abnormal exits.** The emitter counts outstanding calls per id (a provider can repeat an id within a batch), and `runNativeTurn`'s catch block calls `flushUnanswered()`, which answers every still-outstanding `tool_call` with an error `tool_result` ("Not answered: the turn ended."), so the one-result-per-call rule holds even if the batch throws.
+- **Facade notes carried to S3-4** (documented on `TurnEvent`): `stream_reset` voids everything since the failed attempt, including the backoff interval; `usage` events exclude the compaction summary, so turn totals come from `TurnResult`; `tool_result` has no `denied` flag (a refusal is a non-error result with refusal text); calls answered without running appear in the transcript with no tool events.
 - **Test fakes derive `stream()` from `complete()`.** About 13 test files build fake nax-ai clients whose `stream` is an empty generator. Task 2 adds a helper that derives a working `stream()` from a fake's scripted `complete()`, so each fake's script stays the single source of its replies and counters on `complete` keep counting. The helper is a nax-agent test helper with a verbatim nax copy and a nax drift test (the S3-2 precedent, `nax/test/unit/agents/nax-owned-writes-copy.test.ts`).
 
 ## File Structure
@@ -106,8 +112,8 @@
 - Produces:
   - `type TurnEvent` and `type TurnEventSink = (event: TurnEvent) => void` from `#src/session/turn-event` (and `.`).
   - `type StreamDelta = { readonly type: "text_delta" | "thinking_delta"; readonly text: string }` and `type StreamDeltaSink = (delta: StreamDelta) => void`, defined in `turn-event-emitter.ts` in this task and re-exported from `turn-types.ts` in Task 3.
-  - `TOOL_RESULT_PREVIEW_BYTES = 4096`.
-  - `interface TurnEventEmitter { emit(event: TurnEvent): void; deltaSink(round: number): StreamDeltaSink | undefined; toolCall(call: ToolCall, recordedInput: unknown): void; toolResult(result: ToolResultMessage): void }`.
+  - `TOOL_RESULT_PREVIEW_BYTES = 4096`, `TOOL_CALL_INPUT_BYTES = 8192`.
+  - `interface TurnEventEmitter { emit(event: TurnEvent): void; deltaSink(round: number): StreamDeltaSink | undefined; toolCall(call: ToolCall, recordedInput: unknown): void; toolResult(result: ToolResultMessage): void; flushUnanswered(): void }`.
   - `createTurnEventEmitter(sink: TurnEventSink | undefined): TurnEventEmitter`.
   - `usageEvent(round: number, usage: TokenUsage, costUsd: number): TurnEvent`.
 
@@ -125,6 +131,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { buildToolResult } from "#src/native/session/tool-result";
 import {
   createTurnEventEmitter,
+  TOOL_CALL_INPUT_BYTES,
   TOOL_RESULT_PREVIEW_BYTES,
   usageEvent,
 } from "#src/native/session/turn-event-emitter";
@@ -170,6 +177,7 @@ describe("createTurnEventEmitter", () => {
       emitter.emit({ type: "compaction", reason: "overflow" });
       emitter.toolCall(readCall("c1"), undefined);
       emitter.toolResult(buildToolResult({ toolCallId: "c1", content: "x" }));
+      emitter.flushUnanswered();
     }).not.toThrow();
   });
 
@@ -198,6 +206,7 @@ describe("createTurnEventEmitter", () => {
         throw new Error("async sink exploded");
       };
       createTurnEventEmitter(asyncSink).emit({ type: "compaction", reason: "proactive" });
+      createTurnEventEmitter(asyncSink).emit({ type: "compaction", reason: "overflow" });
       await new Promise((resolve) => setImmediate(resolve));
       await new Promise((resolve) => setImmediate(resolve));
       expect(seen).toEqual([]);
@@ -214,6 +223,62 @@ describe("createTurnEventEmitter", () => {
     if (second?.type !== "tool_call") throw new Error("expected a tool_call");
     expect(JSON.stringify(second.input)).not.toContain(SECRET);
     expect(second.input).toHaveProperty("apiKey", "[REDACTED]");
+  });
+
+  test("a repeated call id is answered once per call", () => {
+    const { events, sink } = collector();
+    const emitter = createTurnEventEmitter(sink);
+    emitter.toolCall(readCall("dup"), undefined);
+    emitter.toolCall(readCall("dup"), undefined);
+    emitter.toolResult(buildToolResult({ toolCallId: "dup", content: "one" }));
+    emitter.toolResult(buildToolResult({ toolCallId: "dup", content: "two" }));
+    emitter.toolResult(buildToolResult({ toolCallId: "dup", content: "three" }));
+    expect(events.map((e) => e.type)).toEqual(["tool_call", "tool_call", "tool_result", "tool_result"]);
+  });
+
+  test("flushUnanswered answers every outstanding call with an error result, then nothing", () => {
+    const { events, sink } = collector();
+    const emitter = createTurnEventEmitter(sink);
+    emitter.toolCall(readCall("c1"), undefined);
+    emitter.toolCall(readCall("c2"), undefined);
+    emitter.toolResult(buildToolResult({ toolCallId: "c1", content: "ok" }));
+    emitter.flushUnanswered();
+    emitter.flushUnanswered();
+    expect(events.slice(3)).toEqual([
+      { type: "tool_result", callId: "c2", isError: true, preview: "Not answered: the turn ended." },
+    ]);
+  });
+
+  test("a tool_call input over the byte cap is replaced by a truncated JSON preview", () => {
+    const { events, sink } = collector();
+    const emitter = createTurnEventEmitter(sink);
+    emitter.toolCall({ id: "w1", name: "Write", input: { path: "big.txt", content: "x".repeat(50_000) } }, undefined);
+    const event = events[0];
+    if (event?.type !== "tool_call") throw new Error("expected a tool_call");
+    expect(event.input).toHaveProperty("truncated", true);
+    const preview = (event.input as { preview?: unknown }).preview;
+    expect(typeof preview).toBe("string");
+    expect(Buffer.byteLength(String(preview), "utf8")).toBeLessThanOrEqual(TOOL_CALL_INPUT_BYTES);
+  });
+
+  test("known gap (best-effort redaction): a JSON credential file's text is not masked", () => {
+    // Pinned so widening SECRET_VALUE_PATTERNS later is a deliberate, visible change.
+    const { events, sink } = collector();
+    const emitter = createTurnEventEmitter(sink);
+    emitter.toolCall(readCall("c1"), undefined);
+    emitter.toolResult(buildToolResult({ toolCallId: "c1", content: '{"client_secret": "plainvalue123"}' }));
+    expect(events[1]).toHaveProperty("preview", '{"client_secret": "plainvalue123"}');
+  });
+
+  test("redaction scans a bounded prefix of a very large result", () => {
+    const { events, sink } = collector();
+    const emitter = createTurnEventEmitter(sink);
+    emitter.toolCall(readCall("c1"), undefined);
+    emitter.toolResult(buildToolResult({ toolCallId: "c1", content: `${SECRET} ${"y".repeat(2_000_000)}` }));
+    const result = events[1];
+    if (result?.type !== "tool_result") throw new Error("expected a tool_result");
+    expect(result.preview).not.toContain(SECRET);
+    expect(Buffer.byteLength(result.preview, "utf8")).toBeLessThanOrEqual(TOOL_RESULT_PREVIEW_BYTES);
   });
 
   test("toolResult reports only a call toolCall reported, and only once", () => {
@@ -246,14 +311,14 @@ describe("createTurnEventEmitter", () => {
     const { events, sink } = collector();
     const emitter = createTurnEventEmitter(sink);
     // A secret up front, then 3-byte characters well past the cap.
-    const content = `token ${SECRET} ${"€".repeat(3000)}`;
+    const content = `token ${SECRET} ${"\u20ac".repeat(3000)}`;
     emitter.toolCall(readCall("c1"), undefined);
     emitter.toolResult(buildToolResult({ toolCallId: "c1", content }));
     const result = events[1];
     if (result?.type !== "tool_result") throw new Error("expected a tool_result");
     expect(result.preview).not.toContain(SECRET);
     expect(Buffer.byteLength(result.preview, "utf8")).toBeLessThanOrEqual(TOOL_RESULT_PREVIEW_BYTES);
-    expect(result.preview).not.toContain("�");
+    expect(result.preview).not.toContain("\uFFFD");
     expect(result.preview.length).toBeGreaterThan(1000);
   });
 });
@@ -300,8 +365,18 @@ Create `packages/nax-agent/src/session/turn-event.ts`:
  * - `stream_reset` voids the deltas of `round` so far: the round's request is
  *   being re-issued (a retry), and `attempt` is the new attempt's 1-based number.
  * - `usage` is one per round-trip model call and marks the round's end.
- * - `tool_call.input` and `tool_result.preview` are redacted; the preview is
- *   byte-capped. Every `tool_call` is followed by exactly one `tool_result`.
+ * - `stream_reset` voids everything since the failed attempt began, including
+ *   any retry backoff; the deltas after it are the new attempt's.
+ * - `usage` excludes the compaction summary call, so a turn's totals come from
+ *   `TurnResult` (`tokenUsage`, `estimatedCostUsd`), not from summing events.
+ * - `tool_call.input` and `tool_result.preview` are redacted BEST-EFFORT (the
+ *   logger's redactor: secret-named keys, known token shapes, KEY=value text)
+ *   and byte-capped. A secret file's text can still appear; treat previews and
+ *   inputs as sensitive. Text and thinking deltas are not redacted.
+ * - Every `tool_call` is followed by exactly one `tool_result`, also when the
+ *   turn throws. A refusal is a non-error result carrying the refusal text.
+ *   Calls the loop answers without running (spin stop, cancel) and `ask_human`
+ *   emit no tool events; they appear only in the transcript.
  */
 export type TurnEvent =
   | { readonly type: "text_delta"; readonly round: number; readonly text: string }
@@ -346,8 +421,11 @@ Create `packages/nax-agent/src/native/session/turn-event-emitter.ts`:
  *   result preview is redacted, then cut to `TOOL_RESULT_PREVIEW_BYTES` on a
  *   codepoint boundary. Redact first: cutting first could split a secret into
  *   a prefix the patterns no longer match.
- * - `toolResult` reports only a call `toolCall` reported, once, so a consumer
+ * - `toolResult` reports only a call `toolCall` reported (counted per id), and
+ *   `flushUnanswered` answers what is left when a turn throws, so a consumer
  *   sees each `tool_call` answered by exactly one `tool_result`.
+ * - Redaction is best-effort (see `TurnEvent`'s doc) and runs over a bounded
+ *   prefix: a result can be up to 2 MB when no truncation handler ran.
  */
 
 import type { ToolCall } from "@nathapp/nax-ai";
@@ -364,6 +442,14 @@ import { cacheUsageFields } from "./turn-types.ts";
 /** Byte cap on `tool_result.preview`. A preview is for display; the transcript holds the full result. */
 export const TOOL_RESULT_PREVIEW_BYTES = 4096;
 
+/** Byte cap on `tool_call.input` as JSON; a larger input becomes `{ truncated: true, preview }`. */
+export const TOOL_CALL_INPUT_BYTES = 8192;
+
+/** Redaction scans at most this many bytes of a result; the preview keeps far fewer. */
+const REDACTION_SCAN_BYTES = TOOL_RESULT_PREVIEW_BYTES * 16;
+
+const UNANSWERED_PREVIEW = "Not answered: the turn ended.";
+
 /** One streamed delta, before the loop stamps its round. */
 export interface StreamDelta {
   readonly type: "text_delta" | "thinking_delta";
@@ -379,6 +465,8 @@ export interface TurnEventEmitter {
   /** `recordedInput` is a `before_tool` rewrite when there is one; otherwise the model's `call.input` is reported. */
   toolCall(call: ToolCall, recordedInput: unknown): void;
   toolResult(result: ToolResultMessage): void;
+  /** Answers every outstanding `tool_call` with an error result. Called from the turn's catch block. */
+  flushUnanswered(): void;
 }
 
 export function usageEvent(round: number, usage: TokenUsage, costUsd: number): TurnEvent {
@@ -392,25 +480,47 @@ export function usageEvent(round: number, usage: TokenUsage, costUsd: number): T
   };
 }
 
+function cappedInput(input: unknown): unknown {
+  const redacted = redactSecrets(input);
+  let json: string;
+  try {
+    json = JSON.stringify(redacted) ?? "null";
+  } catch {
+    return { truncated: true, preview: "[input not serializable]" };
+  }
+  if (Buffer.byteLength(json, "utf8") <= TOOL_CALL_INPUT_BYTES) return redacted;
+  return { truncated: true, preview: cutToByteCap(json, TOOL_CALL_INPUT_BYTES) };
+}
+
+function previewOf(content: string): string {
+  return cutToByteCap(redactSecrets(cutToByteCap(content, REDACTION_SCAN_BYTES)), TOOL_RESULT_PREVIEW_BYTES);
+}
+
 const NOOP_EMITTER: TurnEventEmitter = {
   emit: () => {},
   deltaSink: () => undefined,
   toolCall: () => {},
   toolResult: () => {},
+  flushUnanswered: () => {},
 };
 
 export function createTurnEventEmitter(sink: TurnEventSink | undefined): TurnEventEmitter {
   if (sink === undefined) return NOOP_EMITTER;
   let warned = false;
-  const reported = new Set<string>();
+  /** Outstanding tool calls per id: a provider can repeat an id within a batch. */
+  const outstanding = new Map<string, number>();
 
   const contain = (event: TurnEvent, err: unknown): void => {
     if (warned) return;
     warned = true;
-    getSafeLogger()?.warn("native-turn-events", "onTurnEvent sink failed; events are still delivered", {
-      eventType: event.type,
-      error: errorMessage(err),
-    });
+    try {
+      getSafeLogger()?.warn("native-turn-events", "onTurnEvent sink failed; events are still delivered", {
+        eventType: event.type,
+        error: errorMessage(err),
+      });
+    } catch {
+      // The containment path itself must never throw or reject.
+    }
   };
 
   const emit = (event: TurnEvent): void => {
@@ -426,17 +536,28 @@ export function createTurnEventEmitter(sink: TurnEventSink | undefined): TurnEve
     emit,
     deltaSink: (round) => (delta) => emit({ ...delta, round }),
     toolCall(call, recordedInput) {
-      reported.add(call.id);
-      emit({ type: "tool_call", callId: call.id, name: call.name, input: redactSecrets(recordedInput ?? call.input) });
+      outstanding.set(call.id, (outstanding.get(call.id) ?? 0) + 1);
+      emit({ type: "tool_call", callId: call.id, name: call.name, input: cappedInput(recordedInput ?? call.input) });
     },
     toolResult(result) {
-      if (!reported.delete(result.toolCallId)) return;
+      const count = outstanding.get(result.toolCallId) ?? 0;
+      if (count === 0) return;
+      if (count === 1) outstanding.delete(result.toolCallId);
+      else outstanding.set(result.toolCallId, count - 1);
       emit({
         type: "tool_result",
         callId: result.toolCallId,
         isError: result.isError === true,
-        preview: cutToByteCap(redactSecrets(result.content), TOOL_RESULT_PREVIEW_BYTES),
+        preview: previewOf(result.content),
       });
+    },
+    flushUnanswered() {
+      for (const [callId, count] of outstanding) {
+        for (let i = 0; i < count; i += 1) {
+          emit({ type: "tool_result", callId, isError: true, preview: UNANSWERED_PREVIEW });
+        }
+      }
+      outstanding.clear();
     },
   };
 }
@@ -446,7 +567,7 @@ Check `#src/infra/errors` is the module that exports `errorMessage` (`grep -n "e
 
 - [ ] **Step 5: Export the contract on `.`**
 
-In `packages/nax-agent/src/index.ts`, after the `export { ... } from "#src/session/session-types";` block, add:
+In `packages/nax-agent/src/index.ts`, after the `#src/session/turn-deadline` export block (~line 272) and before the `adaptProviderTool` block (Biome `organizeImports` sorts by specifier), add:
 
 ```ts
 export type { TurnEvent, TurnEventSink } from "#src/session/turn-event";
@@ -460,9 +581,9 @@ Expected: PASS (all tests).
 - [ ] **Step 7: Update the API snapshot and run the gates**
 
 Run: `cd packages/nax-agent && bun run check:api`
-Expected: FAIL, listing exactly two additions, `type TurnEvent` and `type TurnEventSink`.
+Expected: FAIL, listing exactly two additions under `[.]`, `type TurnEvent` and `type TurnEventSink` (the two `[./internal]` delta types arrive in Task 3, which reruns `api:update`).
 Run: `bun run api:update && bun run check:api && bun run typecheck && bun run check:all`
-Expected: all PASS. `git diff api/` shows two added lines and nothing removed.
+Expected: all PASS. `git diff api/` shows two added lines and nothing removed. If Biome flags the async `asyncSink` test declaration (for example `nursery/noMisusedPromises`), add a targeted `// biome-ignore <rule>: the test needs an async sink that rejects` on that line; do not change the test.
 
 - [ ] **Step 8: Commit**
 
@@ -494,9 +615,8 @@ No source change. After this task every fake nax-ai client that a `sendTurn` can
   - `packages/nax/test/unit/agents/native/adapter-scope-id.test.ts`
   - `packages/nax/test/unit/agents/native/adapter-complete-rates.test.ts`
   - `packages/nax/test/unit/agents/native/adapter-auth-stamp-seam.test.ts`
-  - `packages/nax/test/unit/agents/native-agent/index.test.ts`
   - `packages/nax/test/integration/plugins/loop-handler-delivery.test.ts`
-  - Leave alone (they never reach `sendTurn`): `nax-agent/test/unit/native/complete.test.ts`, `model-resolver.test.ts`, `client.test.ts`, `nax-agent/test/node/builtins.test.ts`, `nax/test/unit/agents/registry-native.test.ts`. The integration tests that build a real client against a local server (`adapter-auth-stamp.test.ts`, `credentials-source-chain.test.ts`, `credential-fault-classification.test.ts`) already stream on the wire and need nothing.
+  - Leave alone (they never reach `sendTurn`): `nax/test/unit/agents/native-agent/index.test.ts` (its `sendTurn` hits are a fake adapter), `nax-agent/test/unit/native/complete.test.ts`, `model-resolver.test.ts`, `client.test.ts`, `nax-agent/test/node/builtins.test.ts`, `nax/test/unit/agents/registry-native.test.ts`. The integration tests that build a real client against a local server (`adapter-auth-stamp.test.ts`, `credentials-source-chain.test.ts`, `credential-fault-classification.test.ts`) already stream on the wire and need nothing.
 
 **Interfaces:**
 - Consumes: nax-ai's `Client`, `ClientRequest`, `CompleteResult`, `ProtocolEvent`, `ResolvedModel`, `collectStream`.
@@ -535,7 +655,7 @@ const results: Record<string, CompleteResult> = {
   full: {
     text: "calling",
     usage: { inputTokens: 3, outputTokens: 4, cacheReadTokens: 5, cacheWriteTokens: 0 },
-    stopReason: "tool-use",
+    stopReason: "tool_use",
     toolCalls: [{ id: "c1", name: "Read", input: { path: "a.ts" } }],
     thinking: [{ text: "first" }, { text: "second", signature: "sig" }],
     responseId: "resp-1",
@@ -544,6 +664,13 @@ const results: Record<string, CompleteResult> = {
 };
 
 describe("streamFromComplete", () => {
+  test("empty toolCalls / thinking arrays fold to absent, as the real collectStream does", async () => {
+    const stream = streamFromComplete(async () => ({ ...results.textOnly, toolCalls: [], thinking: [] }));
+    const folded = await collectStream(stream(model, { messages: [] }));
+    expect(folded).not.toHaveProperty("toolCalls");
+    expect(folded).not.toHaveProperty("thinking");
+  });
+
   for (const [name, result] of Object.entries(results)) {
     test(`folds back to the scripted result: ${name}`, async () => {
       const stream = streamFromComplete(async () => result);
@@ -641,7 +768,7 @@ export function withDerivedStream<C extends Client>(client: C): C {
 }
 ```
 
-Add to `packages/nax-agent/test/helpers/index.ts`:
+Add to `packages/nax-agent/test/helpers/index.ts`, in sorted position between the `./session-sandbox-deps` and `./systemone-stub` exports:
 
 ```ts
 export { eventsFromResult, streamFromComplete, withDerivedStream } from "./stream-from-complete";
@@ -660,7 +787,7 @@ Create `packages/nax/test/helpers/stream-from-complete.ts` as a byte-for-byte co
 // Verbatim copy of nax-agent's test/helpers/stream-from-complete.ts (S3-3); stream-from-complete-copy.test.ts guards drift.
 ```
 
-Add the same `export { eventsFromResult, streamFromComplete, withDerivedStream } from "./stream-from-complete";` line to `packages/nax/test/helpers/index.ts` (match that barrel's existing import-specifier style).
+Add the same `export { eventsFromResult, streamFromComplete, withDerivedStream } from "./stream-from-complete";` line to `packages/nax/test/helpers/index.ts`, in its alphabetical position (match that barrel's existing specifier style).
 
 Create `packages/nax/test/unit/agents/native/stream-from-complete-copy.test.ts`:
 
@@ -739,7 +866,7 @@ cd packages
 grep -rln "stream: async function\*" nax/test nax-agent/test
 ```
 
-Every hit that also calls `sendTurn`, `sendPrompt` or `runAsSession` (or builds a `NativeAgentAdapter` / `NativeSessionAdapter` and sends a turn) must be migrated.
+Every hit that also calls `sendTurn`, `sendPrompt` or `runAsSession` (or builds a `NativeAgentAdapter` / `NativeSessionAdapter` and sends a turn) must be migrated. `eventsFromResult` omits empty `toolCalls` / `thinking` arrays, as the real `collectStream` does; if a migrated fake returns `toolCalls: []` and a test asserts the transcript message carries `toolCalls: []`, that assertion described a shape a real provider can never produce: change it to the absent form and say so in the commit message.
 
 - [ ] **Step 7: Run both suites**
 
@@ -836,7 +963,7 @@ const script: ProtocolEvent[] = [
   { type: "tool-call", call: { id: "c1", name: "Read", input: {} } },
   { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } },
   { type: "usage", usage: { inputTokens: 9, outputTokens: 4 } },
-  { type: "done", stopReason: "tool-use" },
+  { type: "done", stopReason: "tool_use" },
 ];
 
 describe("streamComplete", () => {
@@ -845,7 +972,7 @@ describe("streamComplete", () => {
     expect(result).toEqual({
       text: "hello",
       usage: { inputTokens: 9, outputTokens: 4 },
-      stopReason: "tool-use",
+      stopReason: "tool_use",
       toolCalls: [{ id: "c1", name: "Read", input: {} }],
       thinking: [{ text: "hm" }],
     });
@@ -1011,7 +1138,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentStreamEvent, OpenSessionOpts, SessionModel } from "@nathapp/nax-agent";
+import type { AgentStreamEvent, OpenSessionOpts, SessionModel, TurnResult } from "@nathapp/nax-agent";
 import { _clientDeps, _resetNativeClient, saveTranscript } from "@nathapp/nax-agent/internal";
 import type { Client, CompleteResult, ProtocolEvent, ResolvedModel } from "@nathapp/nax-ai";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
@@ -1102,7 +1229,7 @@ describe("NativeSessionAdapter round trips stream (S3-3)", () => {
       { type: "usage", usage: REPLY.usage },
       { type: "done", stopReason: "stop" },
     ];
-    const runs = [];
+    const runs: { result: TurnResult; activity: unknown[] }[] = [];
     for (const events of [eventsFromResult(REPLY), chunked]) {
       _resetNativeClient();
       _clientDeps.build = async () => streamingClient(() => events, { stream: 0, complete: 0 });
@@ -1182,6 +1309,8 @@ This adds no branch to `sendTurn`.
 
 Run: `cd packages/nax-agent && bun test ./test/unit/native/session-adapter-streaming.test.ts ./test/unit/native/stream-complete.test.ts --timeout=60000`
 Expected: PASS.
+Run: `cd packages/nax-agent && bun run check:api`
+Expected: FAIL listing exactly two additions under `[./internal]`: `type StreamDelta` and `type StreamDeltaSink` (re-exported through `src/internal.ts:77`). Then `bun run api:update && bun run check:api`.
 Run: `cd packages/nax-agent && bun run test && bun run typecheck && bun run check:all && bun run test:node`
 Run: `cd packages/nax && bun run test && bun run typecheck && bun run check:all`
 Expected: all PASS. A failure reading "Protocol stream ended without a done event" in a test that never set a stream is a fake Task 2 missed: migrate it (Task 2 Step 6) in this commit.
@@ -1191,7 +1320,7 @@ Expected: PASS with `sendTurn` still at 21.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add packages/nax-agent/src/native/stream-complete.ts packages/nax-agent/src/native/session/turn-types.ts packages/nax-agent/src/native/session-adapter.ts packages/nax-agent/test
+git add packages/nax-agent/src/native/stream-complete.ts packages/nax-agent/src/native/session/turn-types.ts packages/nax-agent/src/native/session-adapter.ts packages/nax-agent/api/nax-agent.api.txt packages/nax-agent/test
 git commit -m "feat(nax-agent): native round trips stream through collectStream (S3-3)"
 ```
 
@@ -1361,8 +1490,8 @@ describe("runNativeTurn turn events (S3-3)", () => {
   });
 
   test("an overflow is reported as compaction then stream_reset for the retried request", async () => {
-    // ~2,000 tokens of history against a 4,000-token window: under the 90%
-    // proactive threshold (3,600), but over the overflow keep budget
+    // ~2,000 tokens of history against a 4,000-token window: under the proactive
+    // threshold (compactionThreshold: min(3600, 4000 - min(4096, 1000)) = 3000), but over the overflow keep budget
     // (keepBudget(4000, 30%, aggressive) = 600), so the overflow step has a span to summarize.
     await saveTranscript(dir, handle.id, [
       { role: "user", content: "the task" },
@@ -1605,7 +1734,8 @@ describe("runToolBatch tool events (S3-3)", () => {
       interactionHandler: {
         onInteraction: async (req) => {
           order.push(`run:${events.length}`);
-          return { answer: `body of ${String((req.input as { path?: unknown }).path)}` };
+          const input = req.kind === "coding-tool" ? req.input : undefined;
+          return { answer: `body of ${String(input?.path)}` };
         },
       },
     };
@@ -1682,7 +1812,7 @@ describe("runToolBatch tool events (S3-3)", () => {
 });
 ```
 
-The `before_tool` outcomes match `src/native/session/loop-events/types.ts:54-57`. The `(req.input as { path?: unknown })` cast in the first test is a lower-case structural cast and does not match the escape-hatch regex; if the gate still counts it, read the path through a small `pathOf(input: unknown)` helper as `turn-loop-cancel.test.ts` does.
+The `before_tool` outcomes match `src/native/session/loop-events/types.ts:54-57`. `AdapterInteraction` is a union (`src/session/interaction-handler.ts:3-33`) whose `question` variant has no `input`, hence the `kind` narrowing in the first test.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -1747,6 +1877,16 @@ Do NOT touch the `ask_human`, `terminate` or `answerCancelledFrom` paths.
 
 In `turn-loop-round-trip.ts` `dispatchToolBatch`, add `turnEvents: params.turnEvents,` to the `runToolBatch({...})` argument.
 
+In `turn-loop.ts`, make the first statement of the `catch (err) {` block that follows the outer `while (true)` loop (~line 218):
+
+```ts
+    // S3-3: a throw can leave a reported tool_call unanswered; answer it so the
+    // sink's one-result-per-call rule holds on every ending.
+    params.turnEvents.flushUnanswered();
+```
+
+(`runNativeTurn` is not baselined; this adds no branch.)
+
 In `turn-tool-batch.test.ts` `batchArgs`, add `turnEvents: createTurnEventEmitter(undefined),` before `...over`, importing `createTurnEventEmitter` from `#src/native/session/turn-event-emitter`.
 
 - [ ] **Step 4: Run the tests and gates**
@@ -1780,9 +1920,130 @@ git commit -m "feat(nax-agent): native tool batch reports tool_call and tool_res
 
 - [ ] **Step 1: Write the end-to-end test**
 
-Create `packages/nax-agent/test/unit/native/session-adapter-turn-events.test.ts`. Reuse the `streamingClient`, `open` and model fixtures from `session-adapter-streaming.test.ts` (copy them; test files do not import each other). Script two round trips: the first streams `{ text-delta "Let me look" }`, a `tool-call` for `Read` with input `{ path: "a.ts" }`, `usage`, `done`; the second streams `text-delta "done"`, `usage`, `done`. Give the turn a `Read` coding tool (`codingTools: [fakeRead]` from `turn-tool-batch-events.test.ts`) and an `interactionHandler` that answers coding-tool requests with `{ answer: "contents" }`. Then assert:
+Create `packages/nax-agent/test/unit/native/session-adapter-turn-events.test.ts` (test files do not import each other, so the fixtures are written out here):
 
 ```ts
+/**
+ * S3-3: onTurnEvent end to end through NativeSessionAdapter.sendTurn, and the
+ * sink is invisible to nax: with no sink, a collecting sink, a throwing sink or
+ * an async sink that rejects, the TurnResult, the saved transcript and the
+ * stream-bus activity are identical (spec 8: behaviour-neutral pins).
+ */
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type {
+  AgentStreamEvent,
+  CodingTool,
+  SendTurnOpts,
+  SessionModel,
+  TurnEvent,
+  TurnEventSink,
+  TurnResult,
+} from "@nathapp/nax-agent";
+import { _clientDeps, _resetNativeClient, loadTranscript } from "@nathapp/nax-agent/internal";
+import type { Client, ProtocolEvent, ResolvedModel } from "@nathapp/nax-ai";
+import { NativeSessionAdapter } from "#src/native/session-adapter";
+
+const REAL_BUILD = _clientDeps.build;
+afterEach(() => {
+  _clientDeps.build = REAL_BUILD;
+  _resetNativeClient();
+});
+
+const model: ResolvedModel = {
+  id: "gpt-5.4-mini",
+  provider: "openai",
+  protocol: "openai-responses",
+  pricing: { input: 3, output: 15, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 128_000,
+  supportsTools: true,
+  thinkingLevels: [],
+};
+const MODEL_DEF: SessionModel = { provider: "unknown", model: "openai/gpt-5.4-mini" };
+
+const fakeRead: CodingTool = {
+  name: "Read",
+  description: "Read a file",
+  inputSchema: { type: "object", properties: { path: { type: "string" } } },
+  scope: { pathFields: ["path"] },
+  async run() {
+    return { content: "never run: the interaction handler answers" };
+  },
+};
+
+const ROUND_1: ProtocolEvent[] = [
+  { type: "text-delta", text: "Let me look" },
+  { type: "tool-call", call: { id: "c1", name: "Read", input: { path: "a.ts" } } },
+  { type: "usage", usage: { inputTokens: 4, outputTokens: 2 } },
+  { type: "done", stopReason: "tool_use" },
+];
+const ROUND_2: ProtocolEvent[] = [
+  { type: "text-delta", text: "done" },
+  { type: "usage", usage: { inputTokens: 6, outputTokens: 1 } },
+  { type: "done", stopReason: "stop" },
+];
+
+function scriptedClient(): Client {
+  let calls = 0;
+  return {
+    model: async () => model,
+    listModels: async () => [model],
+    pricing: () => model.pricing,
+    stream() {
+      calls += 1;
+      const events = calls === 1 ? ROUND_1 : ROUND_2;
+      return (async function* replay() {
+        yield* events;
+      })();
+    },
+    complete: async () => {
+      throw new Error("round trips must stream");
+    },
+    validate: () => {},
+  };
+}
+
+interface Run {
+  readonly result: TurnResult;
+  readonly transcript: unknown;
+  readonly activity: unknown[];
+}
+
+async function runTurn(onTurnEvent?: TurnEventSink): Promise<Run> {
+  _resetNativeClient();
+  _clientDeps.build = async () => scriptedClient();
+  const adapter = new NativeSessionAdapter();
+  const dir = await mkdtemp(join(tmpdir(), "nax-adapter-turn-events-"));
+  const activity: AgentStreamEvent[] = [];
+  const handle = await adapter.openSession("turn-events", {
+    agentName: "native",
+    workdir: dir,
+    resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
+    modelDef: MODEL_DEF,
+    timeoutSeconds: 60,
+    transcriptDir: dir,
+    onStreamActivity: (event) => void activity.push(event),
+  });
+  const opts: SendTurnOpts = {
+    // Coding-tool calls reach the handler as kind "coding-tool"; its answer is the tool result.
+    interactionHandler: { onInteraction: async () => ({ answer: "contents" }) },
+    codingTools: [fakeRead],
+    ...(onTurnEvent !== undefined ? { onTurnEvent } : {}),
+  };
+  const result = await adapter.sendTurn(handle, "read a.ts", opts);
+  return {
+    result,
+    transcript: await loadTranscript(dir, handle.id),
+    activity: activity.map(({ callId: _c, timestamp: _t, ...rest }) => rest),
+  };
+}
+
+describe("NativeSessionAdapter.sendTurn onTurnEvent (S3-3)", () => {
+  test("streams the turn's events in order", async () => {
+    const events: TurnEvent[] = [];
+    const { result } = await runTurn((e) => void events.push(e));
     expect(events).toEqual([
       { type: "text_delta", round: 1, text: "Let me look" },
       { type: "usage", round: 1, inputTokens: 4, outputTokens: 2, costUsd: expect.any(Number) },
@@ -1792,16 +2053,29 @@ Create `packages/nax-agent/test/unit/native/session-adapter-turn-events.test.ts`
       { type: "usage", round: 2, inputTokens: 6, outputTokens: 1, costUsd: expect.any(Number) },
     ]);
     expect(result.output).toBe("done");
+  });
+
+  test("the sink is invisible to nax: no sink, collecting, throwing and rejecting sinks give the same turn", async () => {
+    const throwing: TurnEventSink = () => {
+      throw new Error("sink exploded");
+    };
+    const rejecting: TurnEventSink = async () => {
+      throw new Error("async sink exploded");
+    };
+    const baseline = await runTurn();
+    for (const sink of [(_e: TurnEvent) => {}, throwing, rejecting]) {
+      expect(await runTurn(sink)).toEqual(baseline);
+    }
+  });
+});
 ```
 
-with the `usage` values matching what the script yields. Add a second test in the file: the same turn with an `onTurnEvent` that throws on every call produces a `TurnResult` equal (ignoring nothing) to the run with a collecting sink, and the transcript (`loadTranscript(dir, handle.id)`) is equal too.
-
-Coding-tool calls reach the turn's `interactionHandler` as `kind: "coding-tool"` requests (`turn-tool-batch.ts:202`); the handler's `answer` is the tool's result, so no tool runtime is needed. `test/unit/native/adapter-loop-handlers.test.ts` drives coding-tool calls through `sendTurn` the same way.
+If Biome flags the async `rejecting` declaration, add a targeted `// biome-ignore <rule>: the test needs an async sink that rejects` on that line. If the transcript or `TurnResult` carries a value that differs per run for a reason unrelated to the sink (a temp-dir path, a timestamp), strip that one field in `runTurn` and name it in a comment; never loosen the whole comparison.
 
 - [ ] **Step 2: Run it**
 
 Run: `cd packages/nax-agent && bun test ./test/unit/native/session-adapter-turn-events.test.ts --timeout=60000`
-Expected: PASS (all wiring landed in Tasks 3-5). If it fails, the failure points at a wiring gap; fix the source, not the expectation.
+Expected: PASS (all wiring landed in Tasks 3-5). If it fails, the failure points at a wiring gap; fix the source, not the expectation. Show the equivalence test can fail: temporarily make the emitter's `emit` throw outside its try/catch, see it FAIL, revert.
 
 - [ ] **Step 3: Assert the sink in the packed-tarball smoke**
 
@@ -1820,7 +2094,24 @@ assert.deepEqual(
   `unexpected turn events: ${JSON.stringify(turnEvents)}`,
 );
 assert.equal(turnEvents[0].text, "packed-ok");
+
+// An async sink that rejects must not become an unhandled rejection (Node's
+// default ends the process on one). Bun's unit test cannot show Node's behaviour.
+const unhandled = [];
+process.on("unhandledRejection", (reason) => unhandled.push(reason));
+const again = await adapter.sendTurn(handle, "again", {
+  interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+  onTurnEvent: async () => {
+    throw new Error("async sink exploded");
+  },
+});
+await new Promise((resolve) => setImmediate(resolve));
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(again.output, "packed-ok");
+assert.deepEqual(unhandled, [], `unhandled rejections: ${unhandled.map(String).join("; ")}`);
 ```
+
+(The fixture's `stream` is a generator function, so each call replays the same three events.)
 
 - [ ] **Step 4: Run every gate**
 
