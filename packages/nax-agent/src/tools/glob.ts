@@ -15,8 +15,9 @@
  * basename to its directory reconstructs the matched set exactly.
  */
 
-import { sep } from "node:path";
+import { join, sep } from "node:path";
 import { getAgentRuntime } from "#src/runtime/index";
+import { credentialPathTest } from "./credential-read-deny.ts";
 import { EMPTY_OWNED_PATHS_POLICY } from "./owned-paths.ts";
 import { resolveWithin } from "./policy.ts";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
@@ -139,6 +140,9 @@ export const globTool: CodingTool = {
     if (climbsOut(pattern)) return { content: "no matches" };
 
     const matches: string[] = [];
+    // S3 spec 6.3: credential roots are canonicalised once; a native realpath
+    // per hit would be waste when a listing covers the credential directory.
+    const isCredential = credentialPathTest(ctx.protectedPaths);
     try {
       // `absolute: false` is the repo-wide idiom (test-scanner.ts:318,
       // fragments/store.ts:53, manifest-purge.ts:64) and yields root-relative
@@ -149,6 +153,7 @@ export const globTool: CodingTool = {
       // malformed pattern on disk.
       for await (const hit of _globDeps.scan(pattern, { cwd: ctx.root, absolute: false })) {
         if (resolveWithin(ctx.root, hit, ctx.ownedPaths ?? EMPTY_OWNED_PATHS_POLICY) === null) continue;
+        if (isCredential(join(ctx.root, hit))) continue;
         matches.push(hit.split(sep).join("/"));
         if (matches.length >= MAX_MATCHES) break;
       }
