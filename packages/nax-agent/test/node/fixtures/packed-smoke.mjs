@@ -70,10 +70,33 @@ const handle = await adapter.openSession("packed-smoke", {
   timeoutSeconds: 60,
   transcriptDir,
 });
+const turnEvents = [];
 const turn = await adapter.sendTurn(handle, "hi", {
   interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+  onTurnEvent: (event) => turnEvents.push(event),
 });
 assert.equal(turn.output, "packed-ok", `unexpected turn output: ${turn.output}`);
+assert.deepEqual(
+  turnEvents.map((event) => event.type),
+  ["text_delta", "usage"],
+  `unexpected turn events: ${JSON.stringify(turnEvents)}`,
+);
+assert.equal(turnEvents[0].text, "packed-ok");
+
+// An async sink that rejects must not become an unhandled rejection (Node's
+// default ends the process on one). Bun's unit test cannot show Node's behaviour.
+const unhandled = [];
+process.on("unhandledRejection", (reason) => unhandled.push(reason));
+const again = await adapter.sendTurn(handle, "again", {
+  interactionHandler: { onInteraction: async () => ({ answer: "" }) },
+  onTurnEvent: async () => {
+    throw new Error("async sink exploded");
+  },
+});
+await new Promise((resolve) => setImmediate(resolve));
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(again.output, "packed-ok");
+assert.deepEqual(unhandled, [], `unhandled rejections: ${unhandled.map(String).join("; ")}`);
 await adapter.closeSession(handle);
 
 // 3. Linux only (spec §7.3): one command through the real OS sandbox. A
