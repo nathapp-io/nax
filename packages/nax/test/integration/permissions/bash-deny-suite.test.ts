@@ -18,7 +18,12 @@ import {
   createCommandLauncher,
   createCommandShadow,
 } from "@nathapp/nax-agent";
-import { type BashApprovalMode, buildCodingToolSupport, DEFAULT_BASH_APPROVAL_MODE } from "@nathapp/nax-agent/internal";
+import {
+  type BashApprovalMode,
+  buildCodingToolSupport,
+  DEFAULT_BASH_APPROVAL_MODE,
+  naxOwnedPathsPolicy,
+} from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
   makeCommandShadowRecorder,
@@ -87,6 +92,11 @@ function session(options?: {
     root,
     declared: [...(options?.declared ?? FIX_TOOLS)],
     grants,
+    // S3-2: the suite emulates what production's resolveCodingToolSupport
+    // supplies — nax's owned-paths policy. Without it the direct
+    // buildCodingToolSupport call defaults to the EMPTY policy and the
+    // raw screen's queue-file refusals never fire.
+    ownedPaths: naxOwnedPathsPolicy,
     ...(options?.bashApproval !== undefined ? { bashApproval: options.bashApproval } : {}),
     ...(options?.deny !== undefined ? { denyRules: [{ tool: "Bash", patterns: options.deny }] } : {}),
     ...(options?.ask !== undefined ? { askRules: [{ tool: "Bash", patterns: options.ask }] } : {}),

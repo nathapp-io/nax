@@ -29,6 +29,7 @@ import {
   warnSandboxUnavailableOnce,
 } from "#src/sandbox/index";
 import type { ProtectedPathsPolicy } from "#src/tools/index";
+import type { OwnedPathsPolicy } from "#src/tools/owned-paths";
 
 export const _sessionSandboxDeps = {
   backendFor: sandboxBackendFor,
@@ -105,6 +106,8 @@ export async function resolveSessionSandbox(args: {
   readonly runTmpRoot?: string;
   /** Host-owned paths the policy denies (S1 spec port 6); nax passes `naxProtectedPaths()`. */
   readonly protectedPaths: ProtectedPathsPolicy;
+  /** S3-2: host-owned path rules; nax passes naxOwnedPathsPolicy, an embedder EMPTY_OWNED_PATHS_POLICY. */
+  readonly ownedPaths: OwnedPathsPolicy;
 }): Promise<CommandLauncher> {
   const config = args.config;
   if (config === undefined || !config.enabled || !args.needsLauncher) {
@@ -123,7 +126,9 @@ export async function resolveSessionSandbox(args: {
     });
   }
   const git = await _sessionSandboxDeps.gitLayout(args.root);
-  const credentialFiles = await _sessionSandboxDeps.credentialFiles(args.protectedPaths.credentialDir);
+  // S3 spec 6.2: an absent credentialDir denies nothing -- the lookup itself is skipped.
+  const credentialDir = args.protectedPaths.credentialDir;
+  const credentialFiles = credentialDir === undefined ? [] : await _sessionSandboxDeps.credentialFiles(credentialDir);
   const approvalsFile = args.outputDir !== undefined ? approvalsPath(args.outputDir) : undefined;
   // Before the policy: the confined roots include the session temp dir itself.
   const { tempRoots, confined } = await sessionTempRoots({
@@ -138,12 +143,22 @@ export async function resolveSessionSandbox(args: {
       git,
       // Per build, like the .nax entries: a worktree added mid-run gets its denies too.
       gitGuardFiles: await _sessionSandboxDeps.gitGuardFiles(git),
-      naxEntries: await _sessionSandboxDeps.naxEntries(root, args.protectedPaths.projectStateDir),
+      // S3 spec 6.2: no project-state dir, no lookup and no project-state denies.
+      naxEntries:
+        args.protectedPaths.projectStateDir === undefined
+          ? []
+          : await _sessionSandboxDeps.naxEntries(root, args.protectedPaths.projectStateDir),
       credentialFiles,
+      ...(args.protectedPaths.projectStateDir !== undefined
+        ? { projectStateDir: args.protectedPaths.projectStateDir }
+        : {}),
+      ownedPaths: args.ownedPaths,
       ...(approvalsFile !== undefined ? { approvalsFile } : {}),
       // US-006: a command inside the sandbox must not be able to rewrite the
       // trust store that decides whether repository code runs.
-      trustStoreFile: args.protectedPaths.trustStoreFile,
+      ...(args.protectedPaths.trustStoreFile !== undefined
+        ? { trustStoreFile: args.protectedPaths.trustStoreFile }
+        : {}),
       home: _sessionSandboxDeps.homedir(),
       tempRoots,
       // #2301: the RESOLVED confinement, not `config.filesystem.allowSharedTmp`.

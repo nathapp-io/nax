@@ -5,6 +5,8 @@ import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "#src/config/schemas-
 import { realOrRaw } from "#src/internal/realpath";
 import { SRT_MACOS_TMPDIR_DENIES } from "#src/sandbox/defaults";
 import { buildSandboxPolicy, type SandboxPolicyInput } from "#src/sandbox/index";
+import { naxOwnedPathsPolicy } from "#src/tools/nax-owned-writes";
+import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 const GLOB = /[*?[\]{}]/;
@@ -28,6 +30,8 @@ function input(over: Partial<SandboxPolicyInput> = {}): SandboxPolicyInput {
     git: { kind: "main", gitDir: join(root, ".git") },
     gitGuardFiles: [],
     naxEntries: ["config.json", "features", "rules", "scratchpad", "cache"],
+    ownedPaths: naxOwnedPathsPolicy,
+    projectStateDir: ".nax",
     credentialFiles: [join(base, "gnax", "credentials"), join(base, "gnax", "credentials-bak-2")],
     home,
     tempRoots: [join(base, "tmp")],
@@ -318,5 +322,32 @@ describe("buildSandboxPolicy", () => {
   test("no duplicates", () => {
     const policy = buildSandboxPolicy(input({ tempRoots: [join(base, "tmp"), join(base, "tmp")] }));
     expect(new Set(policy.writeRoots).size).toBe(policy.writeRoots.length);
+  });
+});
+
+describe("buildSandboxPolicy reads owned paths from the port (S3-2)", () => {
+  test("nax's policy and a project-state dir give today's denies", () => {
+    const policy = buildSandboxPolicy({ ...input(), naxEntries: [] });
+    expect(policy.denyWrite).toContain(join(root, ".nax", "config.json"));
+    expect(policy.denyWrite).toContain(join(root, ".queue.txt"));
+    expect(policy.denyWrite).not.toContain(join(root, ".nax", "scratchpad"));
+  });
+
+  test("the empty policy denies no owned entries and no root files", () => {
+    const policy = buildSandboxPolicy({ ...input(), ownedPaths: EMPTY_OWNED_PATHS_POLICY, naxEntries: ["features"] });
+    expect(policy.denyWrite).toContain(join(root, ".nax", "features"));
+    expect(policy.denyWrite).not.toContain(join(root, ".nax", "config.json"));
+    expect(policy.denyWrite).not.toContain(join(root, ".queue.txt"));
+  });
+
+  test("no project-state dir: no project-state denies at all", () => {
+    const policy = buildSandboxPolicy({
+      ...input(),
+      ownedPaths: naxOwnedPathsPolicy,
+      projectStateDir: undefined,
+      naxEntries: ["features"],
+    });
+    expect(policy.denyWrite.some((p) => p.includes(`${join(root, ".nax")}`))).toBe(false);
+    expect(policy.denyWrite).toContain(join(root, ".queue.txt"));
   });
 });

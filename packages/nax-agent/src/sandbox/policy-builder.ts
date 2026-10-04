@@ -10,12 +10,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { NaxError } from "#src/infra/index";
 import { realOrRaw } from "#src/internal/realpath";
 import { SANDBOX_GLOB_CHARS, type SandboxConfig } from "../config/schemas-sandbox.ts";
-import {
-  NAX_ALWAYS_DENIED_ENTRIES,
-  NAX_SCRATCHPAD_ENTRY,
-  naxWriteOptIns,
-  QUEUE_CONTROL_FILES,
-} from "../tools/nax-owned-writes.ts";
+import type { OwnedPathsPolicy } from "../tools/owned-paths.ts";
 import {
   BUILTIN_CACHE_WRITE_ROOTS,
   BUILTIN_CREDENTIAL_READ_DENIES,
@@ -34,6 +29,10 @@ export interface SandboxPolicyInput {
   readonly gitGuardFiles: readonly string[];
   /** Top-level entry names under `<root>/.nax` right now (listNaxEntries). */
   readonly naxEntries: readonly string[];
+  /** S3-2: host-owned path rules; supplies the always-denied project-state entries and root files. */
+  readonly ownedPaths: OwnedPathsPolicy;
+  /** Project-relative state directory (ProtectedPathsPolicy.projectStateDir); absent: no project-state denies. */
+  readonly projectStateDir?: string;
   readonly credentialFiles: readonly string[];
   readonly approvalsFile?: string;
   /** US-006 — the trust store (`trustStorePath()`), denied so a command cannot rewrite its own trust. */
@@ -117,13 +116,15 @@ function worktreeGitWriteRoots(git: GitLayout): string[] {
 }
 
 /**
- * nax#2260: every top-level `.nax/` entry, whole, plus the ones nax reads even
- * when absent -- except the scratchpad and entries opted in via allowWrite.
- * srt applies deny over allow and on Linux turns every literal deny into a
- * bind mount, so whole entries (one `features` deny, not one per PRD) keep
- * both the protection and the per-command cost bounded.
+ * nax#2260: every top-level project-state entry, whole, plus the ones the host
+ * loads even when absent (`ownedPaths.deniedEntries`) -- except the scratchpad
+ * and entries opted in via allowWrite. The ENTRIES come from the owned-paths
+ * port; the DIRECTORY comes from `projectStateDir`, and its absence denies
+ * nothing. srt applies deny over allow and on Linux turns every literal deny
+ * into a bind mount, so whole entries (one `features` deny, not one per PRD)
+ * keep both the protection and the per-command cost bounded.
  *
- * Only `<root>/.nax` is covered. A monorepo package's own `.nax/`
+ * Only `<root>/<projectStateDir>` is covered. A monorepo package's own `.nax/`
  * (`packages/<pkg>/.nax/`) is deliberately excluded: what lives there --
  * cache/, scratchpad/, status.json, the features' acceptance tests and run
  * artifacts -- is gitignored and rebuilt or regenerated, so deleting it is
@@ -132,11 +133,13 @@ function worktreeGitWriteRoots(git: GitLayout): string[] {
  * into prompts; covering it needs package discovery, because a `.nax/` at any
  * depth also matches test-fixture projects (`test/fixtures/<p>/.nax/`).
  */
-function naxDenies(root: string, entries: readonly string[], allowWrite: readonly string[]): string[] {
-  const optIns = naxWriteOptIns(root, allowWrite);
-  return [...new Set([...entries, ...NAX_ALWAYS_DENIED_ENTRIES])]
-    .filter((name) => name !== NAX_SCRATCHPAD_ENTRY && !optIns.has(name))
-    .map((name) => join(root, ".nax", name));
+function projectStateDenies(input: SandboxPolicyInput): string[] {
+  const { root, projectStateDir, ownedPaths } = input;
+  if (projectStateDir === undefined) return [];
+  const optIns = ownedPaths.writeOptIns(root, input.config.filesystem.allowWrite);
+  return [...new Set([...input.naxEntries, ...ownedPaths.deniedEntries])]
+    .filter((name) => name !== ownedPaths.scratchpadEntry && !optIns.has(name))
+    .map((name) => join(root, projectStateDir, name));
 }
 
 export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
@@ -187,8 +190,8 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     }),
   ]);
   const denyWrite = literal([
-    ...naxDenies(root, input.naxEntries, config.filesystem.allowWrite),
-    ...[...QUEUE_CONTROL_FILES].map((name) => join(root, name)),
+    ...projectStateDenies(input),
+    ...input.ownedPaths.rootWriteDenies.map((name) => join(root, name)),
     ...gitDenies(root, input.git),
     ...input.gitGuardFiles,
     ...(input.approvalsFile !== undefined ? [input.approvalsFile] : []),

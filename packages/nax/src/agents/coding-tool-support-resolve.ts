@@ -388,6 +388,7 @@ export async function resolveDispatchLauncher(
     ...(options.storyId !== undefined ? { storyId: options.storyId } : {}),
     ...(runRoot !== undefined ? { tmpDir: sessionTmpDirUnder(runRoot, sessionName), runTmpRoot: runRoot } : {}),
     protectedPaths: _codingToolSupportDeps.protectedPaths(),
+    ownedPaths: _codingToolSupportDeps.ownedPaths,
   });
 }
 

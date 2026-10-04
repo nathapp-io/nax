@@ -24,6 +24,7 @@ import {
   createCommandLauncher,
   DEFAULT_SANDBOX_CONFIG,
   LIKELY_SANDBOX_DENIAL,
+  naxOwnedPathsPolicy,
   probeSandboxOnce,
   resetSandboxBackend,
   resolveSessionSandbox,
@@ -123,6 +124,7 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
       ...(opts.outputDir !== undefined ? { outputDir: opts.outputDir } : {}),
       needsLauncher: true,
       protectedPaths: naxProtectedPaths(),
+      ownedPaths: naxOwnedPathsPolicy,
     });
     const support = buildCodingToolSupport({
       root: r,
@@ -374,6 +376,7 @@ describe.skipIf(!probe.available)(`live sandbox (${label})`, () => {
         runTmpRoot: runRoot,
         tmpDir: sessionDir,
         protectedPaths: naxProtectedPaths(),
+        ownedPaths: naxOwnedPathsPolicy,
       });
     }
 
