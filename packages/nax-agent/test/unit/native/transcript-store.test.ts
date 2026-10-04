@@ -395,10 +395,13 @@ describe("createFileTranscriptStore", () => {
     expect((await readTranscriptDoc(dir, "nomsg"))?.messages).toEqual([]);
   });
 
-  test.each(["null", "42", '"x"', "true"])("valid JSON %s that is not a document is TRANSCRIPT_CORRUPT", async (body) => {
-    await writeFile(transcriptPath(dir, "odd"), body);
-    await expect(readTranscriptDoc(dir, "odd")).rejects.toMatchObject({ code: "TRANSCRIPT_CORRUPT" });
-  });
+  test.each(["null", "42", '"x"', "true"])(
+    "valid JSON %s that is not a document is TRANSCRIPT_CORRUPT",
+    async (body) => {
+      await writeFile(transcriptPath(dir, "odd"), body);
+      await expect(readTranscriptDoc(dir, "odd")).rejects.toMatchObject({ code: "TRANSCRIPT_CORRUPT" });
+    },
+  );
 
   test("retainFailed renames the live file and prunes to the cap", async () => {
     const store = createFileTranscriptStore(dir);

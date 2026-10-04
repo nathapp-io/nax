@@ -90,7 +90,10 @@ export function historyFromTranscript(
  * The document the loop saves. Key order is owner, model, savedAt, messages:
  * the file store writes it as-is, and nax's transcript bytes depend on that order.
  */
-export function transcriptDocFor(messages: readonly ConversationMessage[], identity: TranscriptIdentity): TranscriptDoc {
+export function transcriptDocFor(
+  messages: readonly ConversationMessage[],
+  identity: TranscriptIdentity,
+): TranscriptDoc {
   return {
     ...(identity.owner !== undefined ? { owner: identity.owner } : {}),
     ...(identity.model !== undefined ? { model: identity.model } : {}),

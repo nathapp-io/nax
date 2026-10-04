@@ -150,6 +150,18 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
    */
   transcriptOwner?: string;
   /**
+   * Native: where the session's history lives (S3 spec 5.5). Mutually exclusive
+   * with `transcriptDir`, which is shorthand for the file store; exactly one of
+   * the two must be set. nax sets `transcriptDir`. ACP ignores it.
+   */
+  transcriptStore?: import("#src/native/session/transcript-types").TranscriptStore;
+  /**
+   * Native: leave the live transcript in place on close (S3 spec 5.5). By
+   * default a clean close deletes it and a failed close moves it aside; the
+   * facade sets this so the session stays resumable. nax leaves it unset.
+   */
+  retainOnClose?: boolean;
+  /**
    * Native: resolved compaction settings. A resolved primitive, never NaxConfig —
    * src/agents/native/ must not read config (check:adapter-no-config-import).
    */

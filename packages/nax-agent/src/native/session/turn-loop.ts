@@ -27,14 +27,14 @@ import { createInvalidCallBudget } from "./handle-invalid-tool-call.ts";
 import { applyHistoryPatch } from "./loop-events/cache-boundary.ts";
 import { createLoopEventRegistry } from "./loop-events/index.ts";
 import { registerBuiltinLoopHandlers } from "./loop-handlers.ts";
-import { sessionAnchorFor } from "./session.ts";
+import { sessionAnchorFor, sessionTranscriptFor } from "./session.ts";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping.ts";
 import {
-  loadTranscript,
-  saveTranscript,
+  historyFromTranscript,
   type TranscriptIdentity,
+  transcriptDocFor,
   transcriptModelIdentity,
-} from "./transcript-store.ts";
+} from "./transcript-identity.ts";
 import { createTurnAccumulator } from "./turn-accumulator.ts";
 import { dispatchTurnEndOnError } from "./turn-end-event.ts";
 import type { SpinFlags, TurnLoopState, TurnRoundParams } from "./turn-loop-round-trip.ts";
@@ -70,22 +70,26 @@ export async function runNativeTurn(
   opts: SendTurnOpts,
   deps: TurnDeps,
 ): Promise<TurnResult> {
-  const dir = deps.sessionState.transcriptDirs.get(handle.id);
-  if (dir === undefined) {
-    throw new NaxError(`no transcript directory for session "${handle.id}"`, "NATIVE_TRANSCRIPT_DIR_MISSING", {
+  const transcript = sessionTranscriptFor(deps.sessionState, handle.id);
+  if (transcript === undefined) {
+    throw new NaxError(`no transcript store for session "${handle.id}"`, "NATIVE_TRANSCRIPT_DIR_MISSING", {
       stage: "native-session",
     });
   }
+  const { store } = transcript;
 
   // nax#1877: an owner mismatch reads as a new conversation, so an abandoned
   // invocation's history cannot ride along on the first request of this one.
-  // nax#2150 (P3 spec 8.3): so does a recorded different model — the store
-  // owns that guarantee, whatever the session layer above decided.
+  // nax#2150 (P3 spec 8.3): so does a recorded different model — the loop
+  // applies that guarantee to every store's document (historyFromTranscript),
+  // whatever the session layer above decided.
   const transcriptIdentity: TranscriptIdentity = {
     owner: deps.sessionState.transcriptOwners.get(handle.id),
     model: transcriptModelIdentity(handle.modelDef?.model),
   };
-  let messages: NativeTranscriptMessage[] = [...(await loadTranscript(dir, handle.id, transcriptIdentity))];
+  let messages: NativeTranscriptMessage[] = [
+    ...historyFromTranscript(await store.load(handle.id), transcriptIdentity, handle.id),
+  ];
 
   // nax#2151: the invalid-call repair and the spin breaker are `before_tool`
   // registrations rather than inline branches. Absent a caller-supplied
@@ -127,7 +131,7 @@ export async function runNativeTurn(
     boundary: false,
   });
   // An honoured history patch (reachable only at an undefined anchor today)
-  // rewrites the IN-MEMORY array, and the saveTranscript at the turn's end
+  // rewrites the IN-MEMORY array, and the turn-end transcript save
   // persists it — before_turn is the conversation-rewriting event, unlike
   // transform_context's wire-copy-only ruling (spec 6.6).
   messages = [
@@ -238,7 +242,7 @@ export async function runNativeTurn(
     // failure fails the turn, because continuing on unstored history is silent
     // degradation. Here a failure is already in flight, and masking it with a
     // write error would lose the cause.
-    await saveTranscript(dir, handle.id, state.messages, transcriptIdentity).catch((saveErr: unknown) => {
+    await store.save(handle.id, transcriptDocFor(state.messages, transcriptIdentity)).catch((saveErr: unknown) => {
       getSafeLogger()?.warn("native-adapter", "could not persist the transcript of a failed turn", {
         sessionName: handle.id,
         error: saveErr instanceof Error ? saveErr.message : String(saveErr),
@@ -268,7 +272,7 @@ export async function runNativeTurn(
   // Persisted before returning, and a write failure fails the turn: continuing
   // on a history that could not be stored is the silent degradation #1794
   // removed from the pipeline (ADR-028 s4).
-  await saveTranscript(dir, handle.id, state.messages, transcriptIdentity);
+  await store.save(handle.id, transcriptDocFor(state.messages, transcriptIdentity));
 
   return buildTurnResult({
     output: state.output,

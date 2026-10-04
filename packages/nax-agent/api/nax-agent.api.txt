@@ -552,6 +552,7 @@ type SandboxWrapRequest
 type SecretSpan
 type SecretValuePattern
 type SessionAnchor
+type SessionTranscript
 type ShellInterceptOutcome
 type ShellInterceptRequest
 type ShellInterceptResult
@@ -675,6 +676,7 @@ createChangeGuard
 createCodingToolRuntime
 createCommandLauncher
 createExecCredentialSource
+createFileTranscriptStore
 createLoopEventRegistry
 createNativeSessionState
 createNoOpToolAuditSink
@@ -782,6 +784,7 @@ readFileSlice
 readNativeTurnFailureUsage
 readStoredEntries
 readTool
+readTranscriptDoc
 realOrRaw
 realSleep
 recordNativeTurnFailureUsage
@@ -827,6 +830,7 @@ sessionAnchorFor
 sessionModule
 sessionTmpDir
 sessionTmpDirUnder
+sessionTranscriptFor
 setAgentLogger
 shellQuoteArg
 shouldCompact

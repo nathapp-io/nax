@@ -57,6 +57,7 @@ describe("NativeSessionState", () => {
     clearNativeSessionState(state, "drop");
     for (const collection of [
       state.transcriptDirs,
+      state.transcripts,
       state.scratchpadRoots,
       state.timeouts,
       state.streamHooks,

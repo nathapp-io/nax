@@ -38,7 +38,7 @@ describe("historyFromTranscript", () => {
   });
 
   test("an unknown schemaVersion fails loudly rather than starting over", () => {
-    const future = JSON.parse('{"schemaVersion":2,"savedAt":"t","messages":[]}') as TranscriptDoc;
+    const future: TranscriptDoc = JSON.parse('{"schemaVersion":2,"savedAt":"t","messages":[]}');
     let caught: unknown;
     try {
       historyFromTranscript(future, {}, "s");
