@@ -11,6 +11,10 @@ ASK_UNSHOWABLE_REASON
 type AdapterFailure
 type AdapterInteraction
 type AdapterInteractionResponse
+type AfterResponsePatch
+type AfterResponsePayload
+type AfterToolPatch
+type AfterToolPayload
 type AgentAwaitingHumanEvent
 type AgentCallEndedEvent
 type AgentCallStartedEvent
@@ -19,7 +23,12 @@ type AgentLogger
 type AgentMessageUpdateEvent
 type AgentProcessUpdateEvent
 type AgentRuntime
+type AgentSession
 type AgentSessionAdapter
+AgentSessionError
+type AgentSessionErrorCode
+type AgentSessionHostPorts
+type AgentSessionProfile
 type AgentSpawnOptions
 type AgentSpawnResult
 type AgentSpawnStdin
@@ -28,7 +37,10 @@ type AgentStreamEventBase
 type AgentThinkingUpdateEvent
 type AgentToolCallUpdateEvent
 type AgentUsageUpdateEvent
+type AnswerReply
+type AnswerStatus
 type ApprovalAuditRow
+type ApprovalDecidedBy
 type ApprovalEntry
 type ApprovalsFile
 type ApprovalsFileRead
@@ -58,6 +70,16 @@ type BashRedirect
 type BashSegment
 type BashSegmentSeparator
 type BashToken
+type BeforeCompactionPatch
+type BeforeCompactionPayload
+type BeforeRequestPatch
+type BeforeRequestPayload
+type BeforeToolOutcome
+type BeforeToolPayload
+type BeforeTurnEndPatch
+type BeforeTurnEndPayload
+type BeforeTurnPatch
+type BeforeTurnPayload
 type BuildCommandShadowOptions
 COMMAND_SAFETY_DIR
 type Classify
@@ -67,11 +89,14 @@ type CodingToolName
 type CodingToolOutcome
 type CodingToolRuntime
 type CommandGuard
+type CommandInterceptor
 type CommandLauncher
 type CommandLauncherOptions
 type CommandSafetyRow
 type CommandShadow
 type CommandShadowOptions
+type CompleteCallOptions
+type CreateAgentSessionOptions
 type CredentialAuthConfig
 type CredentialSource
 type CredentialsConfig
@@ -87,8 +112,12 @@ type DeclaredCommandResult
 type DeclaredCommandRunner
 EMPTY_OWNED_PATHS_POLICY
 EXEC_TOOL_NAME
+type EmbedderTool
+type EmbedderToolContext
+type EmbedderToolResult
 type ExecRun
 type ExecTarget
+type ExternalHandlerOf
 type FinalOutcome
 GIT_ESCAPE_FLAGS
 GIT_READ_VERBS
@@ -101,6 +130,8 @@ type HarmOption
 type ImportOutcome
 type InteractionExchange
 type InteractionHandler
+type InterceptRequest
+type InterceptResult
 type InvalidToolCallDetail
 type JSONSchema
 LIKELY_SANDBOX_DENIAL
@@ -108,6 +139,11 @@ type LaunchRequest
 type LaunchResult
 type LaunchSpec
 type LedgerOutcome
+type LoopEvent
+type LoopEventMap
+type LoopHandlerContext
+type LoopHandlerEntry
+type LoopHandlerSet
 MAX_PROVIDER_DESCRIPTION_BYTES
 MAX_PROVIDER_SCHEMA_BYTES
 MAX_RETAINED_TRANSCRIPTS
@@ -139,6 +175,8 @@ type OpenSessionOpts
 type OwnedBashCandidate
 type OwnedPathsPolicy
 PROVIDER_ID_RE
+type PatchOf
+type PayloadOf
 type PolicyVerdict
 type PrepareApprovalsStoreOptions
 type Pricing
@@ -180,11 +218,16 @@ type SandboxState
 type SandboxWrapRequest
 type SecretSpan
 type SendTurnOpts
+type SessionEvent
+type SessionEventBase
+type SessionEventBody
 type SessionHandle
 type SessionModel
 SessionTurnError
 type ShadowCall
 type ShadowTap
+type ShellInterceptRequest
+type ShellInterceptResult
 type SpillRequest
 type StoredEntry
 type SystemOneClientOptions
@@ -206,10 +249,13 @@ type ToolScope
 type TrackedSpawnDeadlineOptions
 type TranscriptDoc
 type TranscriptStore
+type TransformContextPatch
+type TransformContextPayload
 type TruncateForModelOptions
 type TruncationDirection
 type TruncationResult
 type TurnDeadline
+type TurnEndStatus
 type TurnEvent
 type TurnEventSink
 type TurnMarker
