@@ -38,7 +38,7 @@ export const TOOL_RESULT_PREVIEW_BYTES = 4096;
 /** Byte cap on `tool_call.input` as JSON; a larger input becomes `{ truncated: true, preview }`. */
 export const TOOL_CALL_INPUT_BYTES = 8192;
 
-/** Redaction scans at most this many bytes of a result; the preview keeps far fewer. */
+/** Redaction scans at most this many bytes of a result, and of each string in a tool input; the preview keeps far fewer. */
 const REDACTION_SCAN_BYTES = TOOL_RESULT_PREVIEW_BYTES * 16;
 
 const UNANSWERED_PREVIEW = "Not answered: the turn ended.";
@@ -73,8 +73,26 @@ export function usageEvent(round: number, usage: TokenUsage, costUsd: number): T
   };
 }
 
+/**
+ * A copy of `value` with every string cut to REDACTION_SCAN_BYTES, so the
+ * redactor never walks a multi-MB `Write` content. Cycles become "[Circular]".
+ */
+function capStrings(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+  if (typeof value === "string") return cutToByteCap(value, REDACTION_SCAN_BYTES);
+  if (typeof value !== "object" || value === null) return value;
+  if (seen.has(value)) return "[Circular]";
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) return value.map((item) => capStrings(item, seen));
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, capStrings(item, seen)]));
+  } finally {
+    // Only the current path is "seen", as in redactSecrets: a shared, non-cyclic reference is copied, not labelled.
+    seen.delete(value);
+  }
+}
+
 function cappedInput(input: unknown): unknown {
-  const redacted = redactSecrets(input);
+  const redacted = redactSecrets(capStrings(input));
   let json: string;
   try {
     json = JSON.stringify(redacted) ?? "null";
