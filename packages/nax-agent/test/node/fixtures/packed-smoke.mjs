@@ -8,12 +8,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   configureCredentials,
+  createAgentSession,
+  createMemoryTranscriptStore,
   EMPTY_OWNED_PATHS_POLICY,
   globTool,
   NativeSessionAdapter,
   resetSandboxBackend,
+  resumeAgentSession,
 } from "@nathapp/nax-agent";
-import { _clientDeps, DEFAULT_SANDBOX_CONFIG, resolveSessionSandbox } from "@nathapp/nax-agent/internal";
+import {
+  _agentSessionDeps,
+  _clientDeps,
+  DEFAULT_SANDBOX_CONFIG,
+  resolveSessionSandbox,
+} from "@nathapp/nax-agent/internal";
 
 assert.equal(process.versions.bun, undefined, "the packed smoke must run on native Node");
 
@@ -133,5 +141,130 @@ if (process.platform === "linux") {
     await resetSandboxBackend();
   }
 }
+
+// 4. The S3 chat round-trip (S3 spec §1): a multi-turn session with streamed
+//    deltas, one embedder tool approved through answer(), one approval denied
+//    by timeout, one cancel, and one resume from the store after a simulated
+//    restart. Scripted provider; manual approval timers; memory credentials.
+const requests = [];
+let rounds = [];
+const chatModel = { ...model, id: "chat-stub" };
+_clientDeps.build = async () => ({
+  model: async () => chatModel,
+  listModels: async () => [chatModel],
+  pricing: () => chatModel.pricing,
+  stream(_model, req) {
+    requests.push(req);
+    const round = rounds.shift();
+    if (round === undefined) throw new Error(`no scripted reply for request ${requests.length}`);
+    return (async function* replay() {
+      yield* round;
+    })();
+  },
+  complete: async () => {
+    throw new Error("round trips must stream");
+  },
+  validate: () => {},
+});
+const text = (value) => [
+  { type: "text-delta", text: value },
+  { type: "usage", usage: { inputTokens: 2, outputTokens: 1 } },
+  { type: "done", stopReason: "stop" },
+];
+const call = (id) => [
+  { type: "tool-call", call: { id, name: "lookup", input: { id } } },
+  { type: "usage", usage: { inputTokens: 2, outputTokens: 1 } },
+  { type: "done", stopReason: "tool_use" },
+];
+
+const timers = new Map();
+let timerId = 0;
+_agentSessionDeps.setTimeout = (fn, ms) => {
+  timerId += 1;
+  timers.set(timerId, { fn, ms });
+  return timerId;
+};
+_agentSessionDeps.clearTimeout = (id) => {
+  timers.delete(id);
+};
+const fireApprovalTimers = () => {
+  for (const [id, timer] of [...timers]) {
+    if (timer.ms !== 30_000) continue;
+    timers.delete(id);
+    timer.fn();
+  }
+};
+
+const ran = [];
+const chatOptions = {
+  backend: "native",
+  sessionId: "packed-chat",
+  model: "stub/chat-stub",
+  profile: "none",
+  transcriptStore: createMemoryTranscriptStore(),
+  credentials: { kind: "memory", credentials: { stub: { kind: "api-key", key: "sk-packed" } } },
+  approvalTimeoutMs: 30_000,
+  tools: [
+    {
+      name: "lookup",
+      description: "look a record up",
+      inputSchema: { type: "object" },
+      approval: "always",
+      async run(input) {
+        ran.push(input);
+        return { content: "record" };
+      },
+    },
+  ],
+};
+const chat = await createAgentSession(chatOptions);
+
+async function turnOf(session, message, onApproval) {
+  const events = [];
+  for await (const event of session.send(message)) {
+    events.push(event);
+    if (event.type === "approval_requested") onApproval(session, event);
+  }
+  return events;
+}
+const endOf = (events) => events.at(-1);
+
+// Turn 1: approved through answer().
+rounds = [call("c1"), text("found it")];
+const approved = await turnOf(chat, "find c1", (session, event) => {
+  assert.equal(session.answer(event.requestId, { decision: "allow" }), "accepted");
+});
+assert.ok(
+  approved.some((event) => event.type === "text_delta"),
+  "no streamed delta",
+);
+assert.equal(endOf(approved).status, "completed", JSON.stringify(endOf(approved)));
+assert.deepEqual(ran, [{ id: "c1" }]);
+
+// Turn 2: the approval is denied by its timeout.
+rounds = [call("c2"), text("never mind")];
+const timedOut = await turnOf(chat, "find c2", () => fireApprovalTimers());
+assert.ok(
+  timedOut.some((event) => event.type === "approval_resolved" && event.decidedBy === "timeout"),
+  `no timeout: ${JSON.stringify(timedOut.map((event) => event.type))}`,
+);
+assert.deepEqual(ran, [{ id: "c1" }], "a timed-out approval ran the tool");
+
+// Turn 3: cancelled while the approval waits.
+rounds = [call("c3")];
+const cancelled = await turnOf(chat, "find c3", (session) => session.cancel("stop"));
+assert.equal(endOf(cancelled).status, "cancelled");
+await chat.close();
+
+// A restart: the process died after markTurn(running) of a later turn.
+await chatOptions.transcriptStore.markTurn("packed-chat", { turnId: "t-dead", state: "running" });
+const resumed = await resumeAgentSession("packed-chat", chatOptions);
+assert.deepEqual(resumed.lastTurn, { turnId: "t-dead", status: "interrupted" });
+rounds = [text("resumed")];
+const after = await turnOf(resumed, "still there?", () => {});
+assert.equal(endOf(after).output, "resumed");
+const history = requests.at(-1).messages;
+assert.deepEqual(history[0], { role: "user", content: "find c1" }, "resume lost the history");
+await resumed.close();
 
 console.log("packed smoke ok");
