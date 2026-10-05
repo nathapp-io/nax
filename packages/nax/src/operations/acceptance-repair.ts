@@ -8,6 +8,8 @@ import type { RunOperationWithHooks } from "./types";
 export interface AcceptanceRepairInput {
   targetTestFilePath: string;
   outputTail: string;
+  /** Target content captured by the gate before this repair turn. */
+  previousContent?: string;
 }
 
 export interface AcceptanceRepairOutput {
@@ -44,20 +46,20 @@ export const acceptanceRepairOp: RunOperationWithHooks<
     };
   },
   parse(output, _input, _ctx) {
-    return { testCode: extractTestCode(output) };
+    // Repair replies are often prose mentioning test syntax. Only fenced
+    // source is eligible; the generator's raw-source fallbacks are unsafe here.
+    const fenced = output.match(/```(?:\w+)?\s*[\s\S]*?```/);
+    return { testCode: fenced ? extractTestCode(fenced[0]) : null };
   },
   async verify(parsed, input, ctx) {
-    // The reply carried the repaired code → accept it as-is.
-    if (parsed.testCode !== null) return parsed;
-
-    // The agent edited the file in place as a tool-call side effect and replied
-    // conversationally. Fall back to the target file's content when it now
-    // holds real test source rather than a placeholder stub.
     const content = await ctx.readFile(input.targetTestFilePath);
-    if (content === null) return null;
-    if (hasLikelyTestContent(content) && !isStubTestContent(content)) {
+    const hasRealDiskTest = content !== null && hasLikelyTestContent(content) && !isStubTestContent(content);
+    // An in-place edit is the canonical artifact, even when the reply also
+    // contains fenced code. An unchanged file must not hide a reply-only repair.
+    if (hasRealDiskTest && (content !== input.previousContent || parsed.testCode === null)) {
       return { testCode: content };
     }
+    if (parsed.testCode !== null) return parsed;
     return null;
   },
 };

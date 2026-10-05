@@ -2,7 +2,7 @@
  * Acceptance RED gate (US-005)
  *
  * Distinguishes a genuine RED — a non-zero exit carrying an AC-tagged failure —
- * from a test-file load crash, and issues at most one repair turn for a
+ * from a test-file load crash, and issues at most two repair turns for a
  * *repairable* crash before counting the entry RED.
  *
  * Extracted from `acceptance-setup.ts` so that file stays under its line limit.
@@ -32,8 +32,10 @@ export interface AcceptanceRedGateEntry {
 /** Injectable collaborators the gate needs (subset of the setup stage's deps). */
 export type AcceptanceRedGateDeps = Pick<
   typeof _acceptanceSetupDeps,
-  "runTest" | "callOp" | "writeFile" | "autoCommitIfDirty"
+  "runTest" | "callOp" | "readFile" | "writeFile" | "autoCommitIfDirty"
 >;
+
+const MAX_LOAD_REPAIR_ATTEMPTS = 2;
 
 /** A run that exits non-zero with no AC-tagged failure — either expected RED or repairable. */
 function isCrash(output: string, exitCode: number): boolean {
@@ -41,13 +43,38 @@ function isCrash(output: string, exitCode: number): boolean {
   return parseTestFailuresDetailed(output).taggedFailureCount === 0;
 }
 
-/**
- * Classify one crashed entry and, when it is repairable, attempt a single
- * repair turn plus a re-run. The crash counts RED regardless (a load failure
- * surfacing only post-run as `AC-ERROR` is optimistically treated as RED, as
- * before this change) — the repair exists so the *post-run* acceptance stage
- * gets a file that actually loads.
- */
+/** Dispatch a scoped repair. Dispatch failures leave the crash counting RED. */
+async function repairCrash(options: {
+  ctx: PipelineContext;
+  entry: AcceptanceRedGateEntry;
+  output: string;
+  deps: AcceptanceRedGateDeps;
+}): Promise<boolean> {
+  const { ctx, entry, output, deps } = options;
+  const previousContent = await deps.readFile(entry.testPath);
+  let repair: { testCode: string | null } | null;
+  try {
+    repair = (await deps.callOp(
+      ctx,
+      entry.packageDir,
+      acceptanceRepairOp,
+      { targetTestFilePath: entry.testPath, outputTail: output.slice(-MAX_RAW_TAIL_CHARS), previousContent },
+      entry.storyId,
+      entry.config,
+    )) as { testCode: string | null } | null;
+  } catch (err) {
+    getSafeLogger()?.warn("acceptance-setup", "RED gate: acceptance repair failed", {
+      storyId: entry.storyId,
+      testPath: entry.testPath,
+      error: errorMessage(err),
+    });
+    return false;
+  }
+  if (repair?.testCode != null) await deps.writeFile(entry.testPath, repair.testCode);
+  return true;
+}
+
+/** Re-run each repair and feed the latest repairable crash into a bounded next turn. */
 async function handleCrash(
   ctx: PipelineContext,
   entry: AcceptanceRedGateEntry,
@@ -55,11 +82,9 @@ async function handleCrash(
   runCmd: string,
   deps: AcceptanceRedGateDeps,
 ): Promise<void> {
-  const { testPath, packageDir, language, storyId, config } = entry;
+  const { testPath, language, storyId } = entry;
   const logger = getSafeLogger();
-
-  const crashClass = classifyAcceptanceCrash(output, language);
-  if (crashClass === "expected-red") {
+  if (classifyAcceptanceCrash(output, language) === "expected-red") {
     logger?.info("acceptance-setup", "RED gate: compile errors are all missing-symbol — expected RED", {
       storyId,
       testPath,
@@ -67,40 +92,20 @@ async function handleCrash(
     });
     return;
   }
-
-  logger?.warn("acceptance-setup", "RED gate: acceptance file crashed on load — issuing one repair turn", {
+  logger?.warn("acceptance-setup", "RED gate: acceptance file crashed on load — issuing bounded repair turns", {
     storyId,
     testPath,
     language,
   });
-
-  // Only a rejected repair *dispatch* is swallowed — the crash still counts RED.
-  // Errors from the write, the auto-commit or the second run are genuine
-  // failures of the gate itself and propagate (as a first-run throw does).
-  let repair: { testCode: string | null } | null;
+  const originalContent = await deps.readFile(testPath);
+  let repaired = false;
   try {
-    repair = (await deps.callOp(
-      ctx,
-      packageDir,
-      acceptanceRepairOp,
-      { targetTestFilePath: testPath, outputTail: output.slice(-MAX_RAW_TAIL_CHARS) },
-      storyId,
-      config,
-    )) as { testCode: string | null } | null;
-  } catch (err) {
-    logger?.warn("acceptance-setup", "RED gate: acceptance repair failed", {
-      storyId,
-      testPath,
-      error: errorMessage(err),
-    });
-    return;
+    repaired = await repairUntilLoaded({ ctx, entry, output, runCmd, deps });
+  } finally {
+    if (!repaired && (await deps.readFile(testPath)) !== originalContent) {
+      await deps.writeFile(testPath, originalContent);
+    }
   }
-
-  // A repair returning `testCode: null` leaves the file untouched but still re-runs it.
-  if (repair?.testCode != null) {
-    await deps.writeFile(testPath, repair.testCode);
-  }
-
   await deps.autoCommitIfDirty(
     ctx.workdir,
     "acceptance-setup",
@@ -109,14 +114,46 @@ async function handleCrash(
     undefined,
     ctx.runtime.dryRun,
   );
+}
 
-  const second = await deps.runTest(testPath, packageDir, runCmd, config.acceptance.timeoutMs);
-  if (isCrash(second.output, second.exitCode)) {
-    logger?.warn("acceptance-setup", "RED gate: acceptance file still crashes after repair", {
-      storyId,
-      testPath,
-    });
+/** The orchestrator runs the scoped command; the repair session needs no execution tools. */
+async function repairUntilLoaded(options: {
+  ctx: PipelineContext;
+  entry: AcceptanceRedGateEntry;
+  output: string;
+  runCmd: string;
+  deps: AcceptanceRedGateDeps;
+}): Promise<boolean> {
+  const { ctx, entry, runCmd, deps } = options;
+  const { testPath, packageDir, language, storyId, config } = entry;
+  let output = options.output;
+  for (let attempt = 0; attempt < MAX_LOAD_REPAIR_ATTEMPTS; attempt++) {
+    if (!(await repairCrash({ ctx, entry, output, deps }))) return false;
+    const verified = await deps.runTest(testPath, packageDir, runCmd, config.acceptance.timeoutMs);
+    if (isCommandNotRunnable(verified.exitCode)) {
+      getSafeLogger()?.error(
+        "acceptance-setup",
+        "RED gate: acceptance command could not run — check acceptance.command",
+        {
+          storyId,
+          cmd: runCmd,
+          exitCode: verified.exitCode,
+        },
+      );
+      return false;
+    }
+    if (
+      !isCrash(verified.output, verified.exitCode) ||
+      classifyAcceptanceCrash(verified.output, language) === "expected-red"
+    )
+      return true;
+    output = verified.output;
   }
+  getSafeLogger()?.warn("acceptance-setup", "RED gate: acceptance file still crashes after repair", {
+    storyId,
+    testPath,
+  });
+  return false;
 }
 
 /**

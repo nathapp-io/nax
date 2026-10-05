@@ -3,7 +3,7 @@
  *
  * `runAcceptanceRedGate` must tell a genuine RED (a non-zero exit carrying an
  * AC-tagged failure) apart from a test-file load crash, and for a *repairable*
- * crash issue exactly one repair turn followed by a re-run before counting the
+ * crash issue at most two repair turns, each followed by a re-run before counting the
  * entry RED. The stage-level tests pin the wiring: `acceptanceSetupStage`
  * passes `_acceptanceSetupDeps`, each group's language and first story id, and
  * the per-package config into the gate.
@@ -24,11 +24,9 @@ import { _acceptanceSetupDeps, acceptanceSetupStage } from "@/pipeline/stages/ac
 import type { PipelineContext } from "@/pipeline/types";
 import { MAX_RAW_TAIL_CHARS } from "@/quality";
 
-// ---------------------------------------------------------------------------
 // Fixtures
-// ---------------------------------------------------------------------------
 
-const LOAD_CRASH_WARN = "RED gate: acceptance file crashed on load — issuing one repair turn";
+const LOAD_CRASH_WARN = "RED gate: acceptance file crashed on load — issuing bounded repair turns";
 const REPAIR_FAILED_WARN = "RED gate: acceptance repair failed";
 const STILL_CRASHES_WARN = "RED gate: acceptance file still crashes after repair";
 const EXPECTED_RED_INFO = "RED gate: compile errors are all missing-symbol — expected RED";
@@ -113,13 +111,12 @@ function generateOrRefine(opName: string, input: unknown): unknown {
   throw new Error(`unexpected op: ${opName}`);
 }
 
-// ---------------------------------------------------------------------------
 // Unit-test harness for runAcceptanceRedGate
-// ---------------------------------------------------------------------------
 
 interface RepairInput {
   targetTestFilePath?: string;
   outputTail?: string;
+  previousContent?: string;
 }
 
 interface GateHarness {
@@ -149,8 +146,10 @@ function makeHarness(options: {
   const writes: Array<{ path: string; content: string }> = [];
   const commits: Array<{ workdir: string; stage: string; role: string }> = [];
   let runIndex = 0;
+  let diskContent = "original source";
 
   const deps: AcceptanceRedGateDeps = {
+    readFile: async () => diskContent,
     runTest: async (testPath, _workdir, cmd) => {
       runIndex += 1;
       order.push(`runTest#${runIndex}`);
@@ -170,6 +169,7 @@ function makeHarness(options: {
       return options.repair ? options.repair() : { testCode: null };
     },
     writeFile: async (filePath, content) => {
+      diskContent = content;
       order.push("writeFile");
       writes.push({ path: filePath, content });
     },
@@ -193,9 +193,7 @@ function makeHarness(options: {
   };
 }
 
-// ---------------------------------------------------------------------------
 // Stage-level wiring
-// ---------------------------------------------------------------------------
 
 interface StageRunTestCall {
   testPath: string;
@@ -211,6 +209,7 @@ function wireStageDeps(options: {
   callOp: typeof _acceptanceSetupDeps.callOp;
 }): StageHarness {
   const runTestCalls: StageRunTestCall[] = [];
+  _acceptanceSetupDeps.readFile = async () => "original source";
   _acceptanceSetupDeps.fileExists = async () => false;
   _acceptanceSetupDeps.readMeta = async () => null;
   _acceptanceSetupDeps.copyFile = async () => {};
@@ -227,9 +226,7 @@ function wireStageDeps(options: {
   return { runTestCalls };
 }
 
-// ---------------------------------------------------------------------------
 // Log capture
-// ---------------------------------------------------------------------------
 
 let captured: LogEntry[];
 let unsubscribe: (() => void) | null = null;
@@ -256,13 +253,16 @@ function entriesWithMessage(message: string): LogEntry[] {
   return captured.filter((entry) => entry.message === message);
 }
 
-// ---------------------------------------------------------------------------
 // AC1–AC5, AC12: a repairable TypeScript load crash
-// ---------------------------------------------------------------------------
 
 describe("US-005 runAcceptanceRedGate: repairable crash", () => {
   test("AC1: asks acceptanceRepairOp once with the group testPath and the output tail", async () => {
-    const harness = makeHarness({ outputs: [{ exitCode: 1, output: TS_CRASH_OUTPUT }] });
+    const harness = makeHarness({
+      outputs: [
+        { exitCode: 1, output: TS_CRASH_OUTPUT },
+        { exitCode: 1, output: AC_FAILURE_OUTPUT },
+      ],
+    });
 
     const redCount = await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
 
@@ -277,7 +277,12 @@ describe("US-005 runAcceptanceRedGate: repairable crash", () => {
 
   test("AC1 boundary: outputTail is capped to the last MAX_RAW_TAIL_CHARS characters", async () => {
     const longOutput = `${"x".repeat(MAX_RAW_TAIL_CHARS + 500)}${TS_CRASH_OUTPUT}`;
-    const harness = makeHarness({ outputs: [{ exitCode: 1, output: longOutput }] });
+    const harness = makeHarness({
+      outputs: [
+        { exitCode: 1, output: longOutput },
+        { exitCode: 1, output: AC_FAILURE_OUTPUT },
+      ],
+    });
 
     await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
 
@@ -287,7 +292,12 @@ describe("US-005 runAcceptanceRedGate: repairable crash", () => {
   });
 
   test("AC2: re-runs the same testPath a second time after the repair", async () => {
-    const harness = makeHarness({ outputs: [{ exitCode: 1, output: TS_CRASH_OUTPUT }] });
+    const harness = makeHarness({
+      outputs: [
+        { exitCode: 1, output: TS_CRASH_OUTPUT },
+        { exitCode: 1, output: AC_FAILURE_OUTPUT },
+      ],
+    });
 
     const redCount = await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
 
@@ -297,7 +307,10 @@ describe("US-005 runAcceptanceRedGate: repairable crash", () => {
 
   test("AC3: writes the repaired testCode to the group testPath before the second run", async () => {
     const harness = makeHarness({
-      outputs: [{ exitCode: 1, output: TS_CRASH_OUTPUT }],
+      outputs: [
+        { exitCode: 1, output: TS_CRASH_OUTPUT },
+        { exitCode: 1, output: AC_FAILURE_OUTPUT },
+      ],
       repair: async () => ({ testCode: "REPAIRED TEST CODE" }),
     });
 
@@ -307,9 +320,12 @@ describe("US-005 runAcceptanceRedGate: repairable crash", () => {
     expect(harness.order.indexOf("writeFile")).toBeLessThan(harness.order.indexOf("runTest#2"));
   });
 
-  test("AC4: auto-commits after the repair and before the second run", async () => {
+  test("AC4: auto-commits after verifying the repair", async () => {
     const harness = makeHarness({
-      outputs: [{ exitCode: 1, output: TS_CRASH_OUTPUT }],
+      outputs: [
+        { exitCode: 1, output: TS_CRASH_OUTPUT },
+        { exitCode: 1, output: AC_FAILURE_OUTPUT },
+      ],
       repair: async () => ({ testCode: "REPAIRED TEST CODE" }),
     });
 
@@ -317,17 +333,17 @@ describe("US-005 runAcceptanceRedGate: repairable crash", () => {
 
     const commitIndex = harness.order.indexOf("autoCommit");
     expect(commitIndex).toBeGreaterThan(harness.order.indexOf(`callOp:${acceptanceRepairOp.name}`));
-    expect(commitIndex).toBeLessThan(harness.order.indexOf("runTest#2"));
+    expect(commitIndex).toBeGreaterThan(harness.order.indexOf("runTest#2"));
     expect(harness.commits).toHaveLength(1);
   });
 
-  test("AC5: a second crash stops at two runs, one repair, and a warn naming the testPath", async () => {
+  test("AC5: persistent crashes stop at three runs, two repairs, and a warn naming the testPath", async () => {
     const harness = makeHarness({ outputs: [{ exitCode: 1, output: TS_CRASH_OUTPUT }] });
 
     const redCount = await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
 
-    expect(harness.runTestPaths).toHaveLength(2);
-    expect(harness.repairOps).toHaveLength(1);
+    expect(harness.runTestPaths).toHaveLength(3);
+    expect(harness.repairOps).toHaveLength(2);
     expect(redCount).toBe(1);
 
     const warns = entriesWithMessage(STILL_CRASHES_WARN);
@@ -337,7 +353,12 @@ describe("US-005 runAcceptanceRedGate: repairable crash", () => {
   });
 
   test("AC5 boundary: the load crash itself is announced with a warn naming the testPath", async () => {
-    const harness = makeHarness({ outputs: [{ exitCode: 1, output: TS_CRASH_OUTPUT }] });
+    const harness = makeHarness({
+      outputs: [
+        { exitCode: 1, output: TS_CRASH_OUTPUT },
+        { exitCode: 1, output: AC_FAILURE_OUTPUT },
+      ],
+    });
 
     await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
 
@@ -348,7 +369,10 @@ describe("US-005 runAcceptanceRedGate: repairable crash", () => {
 
   test("AC12: a null testCode leaves the file untouched but still re-runs it", async () => {
     const harness = makeHarness({
-      outputs: [{ exitCode: 1, output: TS_CRASH_OUTPUT }],
+      outputs: [
+        { exitCode: 1, output: TS_CRASH_OUTPUT },
+        { exitCode: 1, output: AC_FAILURE_OUTPUT },
+      ],
       repair: async () => ({ testCode: null }),
     });
 
@@ -358,25 +382,25 @@ describe("US-005 runAcceptanceRedGate: repairable crash", () => {
     expect(harness.runTestPaths).toHaveLength(2);
   });
 
-  test("US-005: a second-run executor throw propagates and is not reported as a repair failure", async () => {
+  test("a verification executor throw restores the original file and propagates", async () => {
+    const harness = makeHarness({
+      outputs: [{ exitCode: 1, output: TS_CRASH_OUTPUT }],
+      repair: async () => ({ testCode: "unverified repair" }),
+    });
     let runs = 0;
-    const deps: AcceptanceRedGateDeps = {
-      runTest: async () => {
-        runs += 1;
-        if (runs === 2) throw new Error("second run exploded");
-        return { exitCode: 1, output: TS_CRASH_OUTPUT };
-      },
-      callOp: async () => ({ testCode: null }),
-      writeFile: async () => {},
-      autoCommitIfDirty: async () => {},
+    harness.deps.runTest = async () => {
+      if (++runs === 2) throw new Error("second run exploded");
+      return { exitCode: 1, output: TS_CRASH_OUTPUT };
     };
-
-    await expect(runAcceptanceRedGate(makeCtx(), [makeEntry()], deps)).rejects.toThrow("second run exploded");
+    await expect(runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps)).rejects.toThrow("second run exploded");
+    expect(harness.writes.at(-1)).toEqual({ path: GROUP_TEST_PATH, content: "original source" });
+    expect(harness.commits).toHaveLength(0);
     expect(entriesWithMessage(REPAIR_FAILED_WARN)).toHaveLength(0);
   });
 
   test("US-005: a writeFile rejection surfaces rather than being logged as a repair failure", async () => {
     const deps: AcceptanceRedGateDeps = {
+      readFile: async () => "original source",
       runTest: async () => ({ exitCode: 1, output: TS_CRASH_OUTPUT }),
       callOp: async () => ({ testCode: "REPAIRED TEST CODE" }),
       writeFile: async () => {
@@ -390,9 +414,48 @@ describe("US-005 runAcceptanceRedGate: repairable crash", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
+describe("acceptance repair verification feedback", () => {
+  test("feeds a new crash to the second repair and stops once tests load", async () => {
+    const nextCrash = "SyntaxError: duplicate identifier";
+    let repairs = 0;
+    const harness = makeHarness({
+      outputs: [
+        { exitCode: 1, output: TS_CRASH_OUTPUT },
+        { exitCode: 1, output: nextCrash },
+        { exitCode: 1, output: AC_FAILURE_OUTPUT },
+      ],
+      repair: async () => ({ testCode: `repair ${++repairs}` }),
+    });
+    expect(await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps)).toBe(1);
+    expect(harness.repairInputs.map((input) => input.outputTail)).toEqual([TS_CRASH_OUTPUT, nextCrash]);
+    expect(harness.repairInputs.map((input) => input.previousContent)).toEqual(["original source", "repair 1"]);
+    expect(new Set(harness.runTestCmds).size).toBe(1);
+  });
+
+  test("restores the original file when both repairs still crash", async () => {
+    const harness = makeHarness({
+      outputs: [{ exitCode: 1, output: TS_CRASH_OUTPUT }],
+      repair: async () => ({ testCode: "new broken source" }),
+    });
+    await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+    expect(harness.writes.at(-1)).toEqual({ path: GROUP_TEST_PATH, content: "original source" });
+    expect(harness.commits).toHaveLength(1);
+  });
+
+  test("stops retrying when verification cannot execute the command", async () => {
+    const harness = makeHarness({
+      outputs: [
+        { exitCode: 1, output: TS_CRASH_OUTPUT },
+        { exitCode: 127, output: "command not found" },
+      ],
+    });
+    await runAcceptanceRedGate(makeCtx(), [makeEntry()], harness.deps);
+    expect(harness.repairOps).toHaveLength(1);
+    expect(harness.runTestPaths).toHaveLength(2);
+  });
+});
+
 // AC6–AC7: language-specific crash classification
-// ---------------------------------------------------------------------------
 
 describe("US-005 runAcceptanceRedGate: crash classification", () => {
   test("AC6: an all-missing-symbol Go crash is expected RED — no repair call", async () => {
@@ -416,7 +479,10 @@ describe("US-005 runAcceptanceRedGate: crash classification", () => {
 
   test("AC7: a Go syntax error is repairable — one repair call", async () => {
     const harness = makeHarness({
-      outputs: [{ exitCode: 1, output: GO_SYNTAX_CRASH_OUTPUT }],
+      outputs: [
+        { exitCode: 1, output: GO_SYNTAX_CRASH_OUTPUT },
+        { exitCode: 1, output: AC_FAILURE_OUTPUT },
+      ],
       repair: async () => ({ testCode: null }),
     });
 
@@ -432,9 +498,7 @@ describe("US-005 runAcceptanceRedGate: crash classification", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // AC8–AC9: genuine RED and green runs are never repaired
-// ---------------------------------------------------------------------------
 
 describe("US-005 runAcceptanceRedGate: no repair when the outcome is unambiguous", () => {
   test("AC8: a non-zero exit carrying an AC-tagged failure is RED with no repair", async () => {
@@ -476,9 +540,7 @@ describe("US-005 runAcceptanceRedGate: no repair when the outcome is unambiguous
   });
 });
 
-// ---------------------------------------------------------------------------
 // AC1, AC10, AC11: stage-level wiring
-// ---------------------------------------------------------------------------
 
 describe("US-005 acceptanceSetupStage: RED gate repair wiring", () => {
   test("AC1: the stage's first RED run that crashes asks _acceptanceSetupDeps.callOp for acceptanceRepairOp", async () => {
@@ -499,7 +561,7 @@ describe("US-005 acceptanceSetupStage: RED gate repair wiring", () => {
     const ctx = makeStageCtx();
     await acceptanceSetupStage.execute(ctx);
 
-    expect(repairOps).toHaveLength(1);
+    expect(repairOps).toHaveLength(2);
     expect(repairOps[0]).toBe(acceptanceRepairOp);
     const groupTestPath = ctx.acceptanceTestPaths?.[0]?.testPath;
     expect(groupTestPath).toContain(".nax/features/test-feature");
@@ -528,7 +590,7 @@ describe("US-005 acceptanceSetupStage: RED gate repair wiring", () => {
     expect(result.action).toBe("continue");
   });
 
-  test("AC11: a group that crashes on both runs contributes exactly 1 to redFailCount", async () => {
+  test("AC11: a group that crashes on all three runs contributes exactly 1 to redFailCount", async () => {
     const harness = wireStageDeps({
       runTest: async () => ({ exitCode: 1, output: TS_CRASH_OUTPUT }),
       callOp: async (_ctx, _packageDir, op, input) => {
@@ -549,7 +611,7 @@ describe("US-005 acceptanceSetupStage: RED gate repair wiring", () => {
       await acceptanceSetupStage.execute(ctx);
 
       // The crash was repaired and re-run — but it counts RED exactly once.
-      expect(harness.runTestCalls).toHaveLength(2);
+      expect(harness.runTestCalls).toHaveLength(3);
       expect(redFailCounts).toEqual([1]);
       expect(ctx.acceptanceSetup?.redFailCount).toBe(1);
     } finally {
@@ -558,9 +620,7 @@ describe("US-005 acceptanceSetupStage: RED gate repair wiring", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // US-001: the gate hands the runner ONE shell command string
-// ---------------------------------------------------------------------------
 
 interface RunTestCall {
   testPath: string;
@@ -577,6 +637,7 @@ function makeRecordingDeps(outputs: ReadonlyArray<{ exitCode: number; output: st
   const calls: RunTestCall[] = [];
   let runIndex = 0;
   const deps: AcceptanceRedGateDeps = {
+    readFile: async () => "original source",
     runTest: async (testPath, workdir, cmd, timeoutMs) => {
       calls.push({ testPath, workdir, cmd, timeoutMs });
       const result = outputs[Math.min(runIndex, outputs.length - 1)];
@@ -632,9 +693,7 @@ describe("US-001 runAcceptanceRedGate: command string, not argv", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // US-002: command not runnable (exit 126 / 127) — named, not repaired
-// ---------------------------------------------------------------------------
 
 const COMMAND_NOT_RUNNABLE_RED_MSG = "RED gate: acceptance command could not run — check acceptance.command";
 const TS_EXIT_1_OUTPUT = "SyntaxError: Unexpected token";
@@ -708,7 +767,10 @@ describe("US-002 runAcceptanceRedGate: command not runnable (exit 126/127)", () 
 
   test("AC10: a TypeScript exit 1 still goes through the existing repair path", async () => {
     const harness = makeHarness({
-      outputs: [{ exitCode: 1, output: TS_EXIT_1_OUTPUT }],
+      outputs: [
+        { exitCode: 1, output: TS_EXIT_1_OUTPUT },
+        { exitCode: 1, output: AC_FAILURE_OUTPUT },
+      ],
       repair: async () => ({ testCode: null }),
     });
 
