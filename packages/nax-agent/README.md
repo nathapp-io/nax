@@ -42,14 +42,32 @@ Three pieces of host knowledge are passed in as data or functions, because the p
 `createAgentSession` gives an embedder (for example a long-running Node service) a multi-turn chat with a person in the loop. Events stream, tools come from the embedder, history lives in a store the embedder supplies, and a turn can be cancelled or answered with an approval.
 
 ```ts
-import { createAgentSession, createFileTranscriptStore, nativeBackend } from "@nathapp/nax-agent";
+import { createAgentSession, createFileTranscriptStore, type EmbedderTool, nativeBackend } from "@nathapp/nax-agent";
+
+const lookupOrder: EmbedderTool = {
+  name: "lookup_order",
+  description: "Look up an order by id.",
+  inputSchema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] },
+  approval: "always", // ask the person before every run
+  async run(input, { signal }) {
+    return { content: JSON.stringify(await orders.get(input, { signal })) };
+  },
+};
 
 const session = await createAgentSession({
   backend: nativeBackend({ model: "anthropic/claude-sonnet-5-5" }),
   profile: "ask",
   workdir: "/abs/project",
+  tools: [lookupOrder],
   transcriptStore: createFileTranscriptStore("/abs/state/sessions"),
 });
+
+for await (const event of session.send("Where is order 42?")) {
+  if (event.type === "text_delta") process.stdout.write(event.text);
+  if (event.type === "approval_requested") showApproval(event); // later: session.answer(event.requestId, { decision: "allow" })
+  if (event.type === "turn_end") console.log(event.status, event.costUsd);
+}
+await session.close();
 ```
 
 Profiles set what a session may do:
