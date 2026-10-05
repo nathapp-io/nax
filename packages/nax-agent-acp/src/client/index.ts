@@ -1,7 +1,12 @@
 /**
  * `@nathapp/nax-agent-acp/client`: the ACP backend for nax-agent sessions.
  *
- * Empty until S4-2, which adds `acpBackend()`. Nothing is released before S4-6,
- * so this partial entry is never published.
+ * S4-2 serves text-only `full` sessions; profiles none/read/ask (S4-3), embedder
+ * tools (S4-4), tool and usage events (S4-5) and resume (S4-6) are refused with
+ * AGENT_SESSION_CAPABILITY_UNSUPPORTED until their stage lands. Nothing is
+ * released before S4-6.
  */
-export {};
+export { acpBackend } from "#src/client/backend";
+export { ACP_STOP_CODES, type AcpStopCode } from "#src/client/errors";
+export type { AcpAgentSpec, AcpBackendOptions } from "#src/client/options";
+export type { AcpAgentName } from "#src/client/registry";
