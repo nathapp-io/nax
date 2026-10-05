@@ -79,6 +79,10 @@ export {
 } from "#src/cost/model-spec";
 export type { AgentLogger, CredentialAuthConfig, CredentialsConfig } from "#src/infra/index";
 export { configureCredentials, setAgentLogger } from "#src/infra/index";
+export { createStderrTail, type StderrTail } from "#src/infra/stderr-tail";
+export { isProcessAlive } from "#src/internal/process-alive";
+export { killProcessGroup } from "#src/internal/process-kill";
+export { capStrings, redactSecrets } from "#src/internal/redact";
 export type { CredentialSource } from "#src/native/credentials/session-source";
 export {
   AuthCancelledError,
@@ -122,6 +126,7 @@ export {
   runLogin,
   type StoredEntry,
   servedAuth,
+  type TranscriptAcpRecord,
   type TranscriptDoc,
   type TranscriptStore,
   type TurnMarker,
@@ -154,6 +159,7 @@ export type {
   TransformContextPatch,
   TransformContextPayload,
 } from "#src/native/session/loop-events/types";
+export { TOOL_CALL_INPUT_BYTES, TOOL_RESULT_PREVIEW_BYTES } from "#src/native/session/turn-event-emitter";
 export {
   type ApprovalAuditRow,
   type ApprovalEntry,
@@ -164,6 +170,7 @@ export {
   ASK_CANCELLED_REASON,
   ASK_DENIED_REASON,
   ASK_NO_CHANNEL_REASON,
+  ASK_PROFILE_REASON,
   ASK_TIMEOUT_REASON,
   ASK_UNAVAILABLE_REASON,
   ASK_UNSHOWABLE_REASON,
@@ -274,6 +281,7 @@ export type {
   AnswerReply,
   AnswerStatus,
   ApprovalDecidedBy,
+  CostSource,
   CreateAgentSessionOptions,
   EmbedderTool,
   EmbedderToolContext,
@@ -301,7 +309,18 @@ export {
   type InteractionHandler,
   NO_OP_INTERACTION_HANDLER,
 } from "#src/session/interaction-handler";
+export { nativeBackend } from "#src/session/native-backend";
+export type { NativeBackendOptions } from "#src/session/native-backend-options";
 export type { ProtocolIds } from "#src/session/protocol-types";
+export type {
+  ApprovalRequest,
+  BackendInfo,
+  BackendOpenContext,
+  OpenedBackend,
+  SessionAskPort,
+  SessionBackend,
+  TurnContribution,
+} from "#src/session/session-backend";
 export {
   type AgentSessionAdapter,
   type AuthStamp,

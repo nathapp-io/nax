@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ASK_NO_CHANNEL_REASON, ASK_UNSHOWABLE_REASON } from "#src/permissions/index";
+import { ASK_NO_CHANNEL_REASON, ASK_PROFILE_REASON, ASK_UNSHOWABLE_REASON } from "#src/permissions/index";
 import { askDenyReason, askSummary, MAX_ASK_SUMMARY_CHARS } from "#src/tools/ask-request";
 
 const GHP = "ghp_abcdefghijklmnop1234";
@@ -53,5 +53,10 @@ describe("askDenyReason", () => {
   test("unshowable has its own reason", () => {
     expect(askDenyReason("unshowable")).toBe(ASK_UNSHOWABLE_REASON);
     expect(askDenyReason("unavailable")).toBe(ASK_NO_CHANNEL_REASON);
+  });
+
+  test("profile has its own reason, not the no-channel fallback", () => {
+    expect(askDenyReason("profile")).toBe(ASK_PROFILE_REASON);
+    expect(askDenyReason("profile")).not.toBe(ASK_NO_CHANNEL_REASON);
   });
 });

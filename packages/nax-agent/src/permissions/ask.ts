@@ -18,6 +18,12 @@ export const ASK_DENIED_REASON = "matched an ask rule requiring human approval; 
 export const ASK_CANCELLED_REASON = "Not run: the turn was cancelled before anyone answered.";
 export const ASK_UNSHOWABLE_REASON =
   "Not run: the command contains a secret that cannot be shown to the approver safely; pass it through an environment variable instead.";
+/**
+ * The session profile's own policy refused the call (for example a tool the
+ * profile's ask rules put to a resolver that the profile itself denied). No
+ * person was asked and nobody timed out.
+ */
+export const ASK_PROFILE_REASON = "denied by the session profile's policy";
 
 /** Kept for compatibility with existing callers and tests. */
 export const ASK_UNAVAILABLE_REASON = ASK_NO_CHANNEL_REASON;

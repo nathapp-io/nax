@@ -269,6 +269,8 @@ export interface TurnResult {
   estimatedCostUsd: number;
   /** Exact cost reported by wire protocol (when available). */
   exactCostUsd?: number;
+  /** Absent means computed. */
+  costSource?: import("./agent-session-types.ts").CostSource;
   /** Number of session.prompt() calls made. */
   internalRoundTrips: number;
   /**

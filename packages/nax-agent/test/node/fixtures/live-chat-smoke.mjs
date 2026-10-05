@@ -9,7 +9,12 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { configureCredentials, createAgentSession, createMemoryTranscriptStore } from "@nathapp/nax-agent";
+import {
+  configureCredentials,
+  createAgentSession,
+  createMemoryTranscriptStore,
+  nativeBackend,
+} from "@nathapp/nax-agent";
 
 assert.equal(process.versions.bun, undefined, "the live chat smoke must run on native Node");
 
@@ -37,8 +42,7 @@ const lookupOrder = {
 };
 
 const session = await createAgentSession({
-  backend: "native",
-  model,
+  backend: nativeBackend({ model }),
   profile: "none",
   transcriptStore: createMemoryTranscriptStore(),
   tools: [lookupOrder],

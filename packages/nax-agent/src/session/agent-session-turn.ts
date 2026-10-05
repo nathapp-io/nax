@@ -9,14 +9,12 @@
 import type { TokenUsage } from "#src/cost/standard-types";
 import { NaxError } from "#src/infra/nax-error";
 import { redactSecrets } from "#src/internal/redact";
-import type { LoopHandlerContext, LoopHandlerSet } from "#src/native/session/loop-events/types";
 import type { TranscriptStore } from "#src/native/session/transcript-types";
 import { readNativeTurnFailureUsage } from "#src/native/session/turn-types";
-import type { CodingTool } from "#src/tools/registry";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import type { SessionEvent, SessionEventBody, TurnEndStatus } from "./agent-session-types.ts";
-import type { InteractionHandler } from "./interaction-handler.ts";
+import type { TurnContribution } from "./session-backend.ts";
 import { createSessionEventChannel } from "./session-event-channel.ts";
 import { type AgentSessionAdapter, type SessionHandle, SessionTurnError, type TurnResult } from "./session-types.ts";
 
@@ -35,10 +33,8 @@ export interface TurnRunContext {
   readonly adapter: AgentSessionAdapter;
   readonly handle: SessionHandle;
   readonly store: TranscriptStore;
-  readonly codingTools: readonly CodingTool[];
-  readonly interactionHandler: InteractionHandler;
-  readonly loopHandlers: LoopHandlerSet | undefined;
-  readonly loopHandlerContext: LoopHandlerContext;
+  /** The backend's per-turn contribution, read at each sendTurn. */
+  readonly turnOpts: () => TurnContribution;
   readonly turnTimeoutSeconds: number;
   readonly metadata: Readonly<Record<string, string>>;
 }
@@ -105,6 +101,7 @@ export function turnEndFromResult(result: TurnResult): TurnEndBody {
     output: result.output,
     usage: result.tokenUsage,
     costUsd: result.exactCostUsd ?? result.estimatedCostUsd,
+    ...(result.costSource !== undefined ? { costSource: result.costSource } : {}),
   };
   if (result.timedOut === true) return { ...base, status: "timed_out" };
   const halt = haltOf(result);
@@ -141,14 +138,11 @@ function fromError(err: unknown, signal: AbortSignal): TurnEndBody {
 
 function sendTurn(ctx: TurnRunContext, live: LiveTurn, message: string): Promise<TurnResult> {
   return ctx.adapter.sendTurn(ctx.handle, message, {
-    interactionHandler: ctx.interactionHandler,
-    codingTools: ctx.codingTools,
+    ...ctx.turnOpts(),
     maxInteractions: ASK_HUMAN_BUDGET,
     turnId: live.turnId,
     signal: live.signal,
     onTurnEvent: (event) => live.emit(event),
-    loopHandlerContext: ctx.loopHandlerContext,
-    ...(ctx.loopHandlers !== undefined ? { loopHandlers: ctx.loopHandlers } : {}),
   });
 }
 

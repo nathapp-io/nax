@@ -15,9 +15,17 @@ import {
   createSessionAskResolver,
   type SessionAskDeps,
 } from "#src/session/session-ask-link";
+import { createSessionAskPort } from "#src/session/session-ask-port";
 import { withDepsRestore } from "#test/helpers/index";
 
-function harness(callId?: string): { deps: SessionAskDeps; events: SessionEventBody[]; fire: () => void } {
+interface Harness {
+  readonly deps: SessionAskDeps;
+  readonly link: ReturnType<typeof createSessionAskLink>;
+  readonly events: SessionEventBody[];
+  readonly fire: () => void;
+}
+
+function harness(callId?: string): Harness {
   const timers: Array<() => void> = [];
   _agentSessionDeps.setTimeout = (fn: () => void): unknown => timers.push(fn);
   _agentSessionDeps.clearTimeout = () => {};
@@ -25,15 +33,21 @@ function harness(callId?: string): { deps: SessionAskDeps; events: SessionEventB
   let n = 0;
   _agentSessionDeps.randomUUID = () => `req-${++n}`;
   const events: SessionEventBody[] = [];
-  const deps: SessionAskDeps = {
-    table: createPendingAskTable(30_000),
-    emit: (body) => events.push(body),
-    currentCallId: () => callId,
+  const emit = (body: SessionEventBody): void => {
+    events.push(body);
   };
+  const table = createPendingAskTable(30_000);
+  const turn = new AbortController();
+  const deps: SessionAskDeps = {
+    table,
+    emit,
+  };
+  const port = createSessionAskPort({ table, emit, turn: () => ({ turnId: "t", signal: turn.signal }) });
+  const link = createSessionAskLink({ port, currentCallId: () => callId });
   const fire = (): void => {
     for (const fn of timers.splice(0)) fn();
   };
-  return { deps, events, fire };
+  return { deps, link, events, fire };
 }
 
 const request: AskRequest = {
@@ -92,8 +106,8 @@ describe("createSessionAskLink", () => {
   withDepsRestore(_agentSessionDeps);
 
   test("raises the request with the full command and the current call id", async () => {
-    const { deps, events } = harness("call-7");
-    const pending = createSessionAskLink(deps).resolve(request);
+    const { deps, link, events } = harness("call-7");
+    const pending = link.resolve(request);
     expect(events[0]).toMatchObject({
       type: "approval_requested",
       callId: "call-7",
@@ -106,9 +120,9 @@ describe("createSessionAskLink", () => {
   });
 
   test("the command is masked before it is shown", () => {
-    const { deps, events } = harness();
+    const { link, events } = harness();
     const token = "ghp_0123456789abcdefghijklmnopqrstuvwxyzAB";
-    void createSessionAskLink(deps).resolve({ ...request, command: `git push https://${token}@github.com/o/r` });
+    void link.resolve({ ...request, command: `git push https://${token}@github.com/o/r` });
     const shown = events[0];
     expect(shown?.type).toBe("approval_requested");
     expect(JSON.stringify(shown)).not.toContain(token);
@@ -116,16 +130,16 @@ describe("createSessionAskLink", () => {
   });
 
   test("an unshowable request is denied without prompting", async () => {
-    const { deps, events } = harness();
-    const outcome = await createSessionAskLink(deps).resolve({ ...request, unshowable: true });
+    const { link, events } = harness();
+    const outcome = await link.resolve({ ...request, unshowable: true });
     expect(outcome).toEqual({ decision: "deny", decidedBy: "unshowable" });
     expect(events).toEqual([]);
   });
 
   test("without a reason, the matched rule is named", () => {
-    const { deps, events } = harness();
+    const { link, events } = harness();
     const { reason: _dropped, ...noReason } = request;
-    void createSessionAskLink(deps).resolve(noReason);
+    void link.resolve(noReason);
     expect(events[0]).toMatchObject({ reason: "matched Bash(*)" });
   });
 });
@@ -134,8 +148,8 @@ describe("createSessionAskResolver", () => {
   withDepsRestore(_agentSessionDeps);
 
   test("marks a person reachable and resolves through the link", async () => {
-    const { deps } = harness();
-    const resolver = createSessionAskResolver(createSessionAskLink(deps));
+    const { deps, link } = harness();
+    const resolver = createSessionAskResolver(link);
     expect(resolver.humanReachable).toBe(true);
     const verdict = resolver.resolve(request);
     deps.table.answer("req-1", { decision: "allow" });

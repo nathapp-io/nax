@@ -16,7 +16,15 @@ import type { AskRequest } from "./types.ts";
 export type AskDecision = "allow" | "deny" | "abstain";
 
 /** Who actually decided. Carried into the ledger so it never has to be inferred. */
-export type AskDecidedBy = "cache" | "model" | "human" | "timeout" | "unavailable" | "cancelled" | "unshowable";
+export type AskDecidedBy =
+  | "cache"
+  | "model"
+  | "human"
+  | "timeout"
+  | "unavailable"
+  | "cancelled"
+  | "unshowable"
+  | "profile";
 
 /**
  * Per-ask control (US-003), carried SEPARATELY from the `AskRequest` so the

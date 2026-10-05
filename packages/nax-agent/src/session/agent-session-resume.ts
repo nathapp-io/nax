@@ -2,11 +2,10 @@
  * resumeAgentSession's checks on the stored document (S3 spec 4.2, 6.4). They
  * run before any backend opens: the id comes from the argument, the document
  * exists, this build reads its schema, its messages are an array, and the
- * model that wrote it is the one resuming. The model rule is the loop's own
- * (transcriptModelIdentity): an effort suffix is not a different model.
+ * backend that wrote it is the one resuming (S4 spec 5.5). A backend's own
+ * model rule (an effort suffix is not a different model) runs in its `open`.
  */
 import { NaxError } from "#src/infra/nax-error";
-import { transcriptModelIdentity } from "#src/native/session/transcript-identity";
 import type { TranscriptDoc, TranscriptStore } from "#src/native/session/transcript-types";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import type { CreateAgentSessionOptions } from "./agent-session-types.ts";
@@ -29,7 +28,7 @@ export function resumeInput(sessionId: string, options: CreateAgentSessionOption
 }
 
 /** The stored document a resume starts from. Throws when there is none or this session may not read it. */
-export async function loadResumable(store: TranscriptStore, sessionId: string, model: string): Promise<TranscriptDoc> {
+export async function loadResumable(store: TranscriptStore, sessionId: string): Promise<TranscriptDoc> {
   const doc = await store.load(sessionId);
   if (doc === null) {
     throw new AgentSessionError(
@@ -53,15 +52,19 @@ export async function loadResumable(store: TranscriptStore, sessionId: string, m
       { stage: "agent-session", sessionId },
     );
   }
-  const resuming = transcriptModelIdentity(model);
-  if (doc.model !== undefined && doc.model !== resuming) {
+  return doc;
+}
+
+/** The stored document's backend (absent means native) must be the resuming backend's (S4 spec 5.5). */
+export function checkBackendKind(doc: TranscriptDoc, sessionId: string, kind: string): void {
+  const stored = doc.backend ?? "native";
+  if (stored !== kind) {
     throw new AgentSessionError(
-      `Session "${sessionId}" was written by model "${doc.model}"; resume it with that model, not "${resuming}"`,
-      "AGENT_SESSION_MODEL_MISMATCH",
-      { sessionId },
+      `Session "${sessionId}" was written by backend "${stored}"; it cannot be resumed with "${kind}"`,
+      "AGENT_SESSION_BACKEND_MISMATCH",
+      { sessionId, stored, kind },
     );
   }
-  return doc;
 }
 
 /** The turn a dead process left running (spec 6.4), or undefined. */

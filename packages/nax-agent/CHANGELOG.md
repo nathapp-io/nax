@@ -4,6 +4,24 @@ All notable changes to `@nathapp/nax-agent` are recorded here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). While the version is `0.x`, a minor
 release may change the public API.
 
+## [Unreleased]
+
+The backend seam for S4. Breaking: `createAgentSession` takes a `SessionBackend`. nax behaviour unchanged.
+
+### Changed
+
+- **Breaking:** `CreateAgentSessionOptions.backend` is a `SessionBackend` (was `"native"`). `model`, `credentials`, `catalogOverrides`, `loopHandlers`, `hostPorts`, `bashApproval` and `allowUnsandboxed` move into `nativeBackend({ ... })`. A native-only key at the top level is `AGENT_SESSION_INVALID_OPTIONS`.
+- `resumeAgentSession` refuses a document written by another backend kind (`AGENT_SESSION_BACKEND_MISMATCH`); documents without a `backend` field are native.
+
+### Added
+
+- `SessionBackend`, `BackendOpenContext`, `OpenedBackend`, `BackendInfo`, `TurnContribution`, `SessionAskPort`, `ApprovalRequest`, and `nativeBackend` with `NativeBackendOptions`. `AgentSession.backend` reports the backend's kind and capabilities.
+- The `ask` profile: every Write, Edit, Delete, GitCommit and Bash is approved through `answer()`; it requires `bashApproval: "gated"` and the sandbox floor of `full`.
+- `ApprovalDecidedBy` gains `"profile"`; `usage` and `turn_end` gain `costSource` (`computed` | `reported` | `unpriced`; `CostSource`); `TurnResult` gains `costSource`.
+- Error codes `AGENT_SESSION_BACKEND_UNAVAILABLE`, `AGENT_SESSION_AUTH_REQUIRED`, `AGENT_SESSION_CAPABILITY_UNSUPPORTED`, `AGENT_SESSION_BACKEND_MISMATCH`.
+- `TranscriptDoc.backend` and `TranscriptDoc.acp` (`TranscriptAcpRecord`), optional and additive (schemaVersion stays 1).
+- Backend kit on `.`: `redactSecrets`, `capStrings`, `killProcessGroup`, `isProcessAlive`, `TOOL_CALL_INPUT_BYTES`, `TOOL_RESULT_PREVIEW_BYTES`, `createStderrTail` (`StderrTail`).
+
 ## [0.2.0] - 2026-10-05
 
 The conversational session API for embedders. nax behaviour unchanged.

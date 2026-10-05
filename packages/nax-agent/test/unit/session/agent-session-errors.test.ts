@@ -21,4 +21,17 @@ describe("AgentSessionError", () => {
   test("context defaults to the stage alone", () => {
     expect(new AgentSessionError("x", "AGENT_SESSION_CLOSED").context).toEqual({ stage: "agent-session" });
   });
+
+  test("the S4 codes construct AgentSessionErrors in the agent-session stage", () => {
+    for (const code of [
+      "AGENT_SESSION_BACKEND_UNAVAILABLE",
+      "AGENT_SESSION_AUTH_REQUIRED",
+      "AGENT_SESSION_CAPABILITY_UNSUPPORTED",
+      "AGENT_SESSION_BACKEND_MISMATCH",
+    ] as const) {
+      const err = new AgentSessionError("x", code, { capability: "tools" });
+      expect(err.code).toBe(code);
+      expect(err.context).toMatchObject({ stage: "agent-session", capability: "tools" });
+    }
+  });
 });

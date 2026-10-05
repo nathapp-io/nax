@@ -6,10 +6,12 @@
  * Every session brings a memory credentials source; nothing here calls
  * configureCredentials.
  */
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import {
   type CreateAgentSessionOptions,
   type CredentialSource,
@@ -26,6 +28,7 @@ import {
   installScriptedProvider,
   reader,
   resetScriptedProvider,
+  type SessionTestOptions,
   sessionOptions,
   textRound,
   toolRound,
@@ -37,13 +40,15 @@ import {
 const APPROVAL_MS = 30_000;
 const CREDENTIALS: CredentialSource = { kind: "memory", credentials: { openai: { kind: "api-key", key: "sk-node" } } };
 const SAVED_DEPS = { ..._agentSessionDeps };
+const SAVED_SANDBOX_DEPS = { ..._sessionSandboxDeps };
 
 afterEach(() => {
   Object.assign(_agentSessionDeps, SAVED_DEPS);
+  Object.assign(_sessionSandboxDeps, SAVED_SANDBOX_DEPS);
   resetScriptedProvider();
 });
 
-function nodeOptions(extra: Partial<CreateAgentSessionOptions> = {}): CreateAgentSessionOptions {
+function nodeOptions(extra: SessionTestOptions = {}): CreateAgentSessionOptions {
   return sessionOptions({ credentials: CREDENTIALS, approvalTimeoutMs: APPROVAL_MS, ...extra });
 }
 
@@ -261,5 +266,27 @@ describe("agent session on Node: profiles", () => {
       await rm(workdir, { recursive: true, force: true });
     }
     await none.close();
+  });
+
+  test("ask puts a Write to the person and lands it on disk only after allow", async () => {
+    installManualTimers();
+    _sessionSandboxDeps.probe = async () => ({ available: false, reason: "no sandbox in node tests" });
+    const provider = installScriptedProvider();
+    provider.push(toolRound([{ id: "w1", name: "Write", input: { path: "a.txt", content: "hi" } }]), textRound("done"));
+    const workdir = await mkdtemp(join(tmpdir(), "nax-agent-node-ask-"));
+    try {
+      const session = await createAgentSession(nodeOptions({ profile: "ask", workdir, allowUnsandboxed: true }));
+      const events = reader(session.send("write a.txt"));
+      const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
+      expect(request).toMatchObject({ callId: "w1", tool: "Write" });
+      expect(existsSync(join(workdir, "a.txt"))).toBe(false);
+      expect(session.answer(request?.requestId ?? "", { decision: "allow" })).toBe("accepted");
+      const rest = await events.rest();
+      expect(turnEndOf(rest).status).toBe("completed");
+      expect(readFileSync(join(workdir, "a.txt"), "utf8")).toBe("hi");
+      await session.close();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
   });
 });
