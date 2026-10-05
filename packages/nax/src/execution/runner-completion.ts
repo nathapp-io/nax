@@ -21,6 +21,7 @@ import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD } from "@/prd";
 import { countStories, isComplete } from "@/prd";
+import { totalSpendUsd } from "@/runtime";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import { storyPackageDir } from "@/utils/path-frame";
@@ -424,32 +425,9 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     });
   }
 
-  // Output run footer in headless mode
-  if (options.headless && options.formatterMode !== "json") {
-    const { outputAdvisoryFindingsSummary, outputMutationSummary, outputRunFooter } = await import(
-      "./lifecycle/headless-formatter"
-    );
-    outputAdvisoryFindingsSummary(advisoryFindings, options.formatterMode);
-    outputMutationSummary(mutationSummaries, options.formatterMode);
-    outputRunFooter({
-      finalCounts: {
-        total: finalCounts.total,
-        passed: finalCounts.passed,
-        failed: finalCounts.failed,
-        skipped: finalCounts.skipped,
-      },
-      durationMs,
-      totalCost: reportedTotal,
-      startedAt: options.startedAt,
-      completedAt: runCompletedAt,
-      formatterMode: options.formatterMode,
-    });
-  }
-
-  // Stop heartbeat and write exit summary (US-007)
-  logger?.debug("execution", "Completion phase — stopping heartbeat and writing exit summary");
+  // Stop heartbeat before finish so stale execution totals cannot overwrite
+  // the final status snapshot.
   stopHeartbeat();
-  await writeExitSummary(options.logFilePath, reportedTotal, options.iterations, options.storiesCompleted, durationMs);
 
   // Commit status.json and any other nax runtime files left dirty at run end
   logger?.debug("execution", "Completion phase — auto-committing dirty files");
@@ -489,6 +467,36 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     });
   }
 
+  // Finish mutates postRun in memory and can add successful or failed-dispatch
+  // spend. Persist both status paths and return the same reconciled total.
+  const finalTotal = await persistFinishStatus(options, reportedTotal);
+
+  // Output run footer in headless mode
+  if (options.headless && options.formatterMode !== "json") {
+    const { outputAdvisoryFindingsSummary, outputMutationSummary, outputRunFooter } = await import(
+      "./lifecycle/headless-formatter"
+    );
+    outputAdvisoryFindingsSummary(advisoryFindings, options.formatterMode);
+    outputMutationSummary(mutationSummaries, options.formatterMode);
+    outputRunFooter({
+      finalCounts: {
+        total: finalCounts.total,
+        passed: finalCounts.passed,
+        failed: finalCounts.failed,
+        skipped: finalCounts.skipped,
+      },
+      durationMs,
+      totalCost: finalTotal,
+      startedAt: options.startedAt,
+      completedAt: runCompletedAt,
+      formatterMode: options.formatterMode,
+    });
+  }
+
+  // Write exit summary with finish spend included (US-007)
+  logger?.debug("execution", "Completion phase — writing exit summary");
+  await writeExitSummary(options.logFilePath, finalTotal, options.iterations, options.storiesCompleted, durationMs);
+
   // Close the NaxRuntime — flushes auditors, drains cost aggregator, aborts signal
   await options.runtime?.close();
 
@@ -499,8 +507,18 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     runCompletedAt,
     acceptancePassed,
     pluginGateFailed,
-    reportedTotal,
+    reportedTotal: finalTotal,
   };
+}
+
+/** Persist finish's in-memory outcome and reconcile the run's final spend. */
+async function persistFinishStatus(options: RunnerCompletionOptions, reportedTotal: number): Promise<number> {
+  const finalTotal = options.runtime ? totalSpendUsd(options.runtime.costAggregator.snapshot()) : reportedTotal;
+  await options.statusWriter.update(finalTotal, options.iterations);
+  if (options.featureDir) {
+    await options.statusWriter.writeFeatureStatus(options.featureDir, finalTotal, options.iterations);
+  }
+  return finalTotal;
 }
 
 /**

@@ -12,17 +12,31 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { makeDispatchContext, makeNaxConfig, makeStatusWriter, makeTestRuntime } from "@test/helpers";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import {
+  cleanupTempDir,
+  makeDispatchContext,
+  makePRD as makeFixturePRD,
+  makeMockRuntime,
+  makeNaxConfig,
+  makeSpawn,
+  makeStatusWriter,
+  makeTempDir,
+  makeTestRuntime,
+} from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
+import { StatusWriter } from "@/execution/status-writer";
 import type { FinishPhaseContext } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
 import { InteractionChain } from "@/interaction";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { PluginRegistry } from "@/plugins";
 import type { PRD, UserStory } from "@/prd";
+import { _gitDeps } from "@/utils/git";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -143,6 +157,94 @@ function makeOptsWithRuntime(
 }
 
 describe("finish phase", () => {
+  test.each(["passed", "escalated", "skipped", "throw"])(
+    "persists final status and spend after finish: %s",
+    async (outcome) => {
+      const dir = makeTempDir("finish-persistence-");
+      const featureDir = join(dir, "feature");
+      mkdirSync(featureDir);
+      const config = makeConfig(false);
+      const prd = makeFixturePRD({ userStories: [makeStory("US-001", "passed")] });
+      const writer = new StatusWriter(join(dir, "status.json"), config, {
+        runId: "run-001",
+        feature: "test-feature",
+        startedAt: new Date().toISOString(),
+        dryRun: false,
+        startTimeMs: Date.now(),
+        pid: process.pid,
+      });
+      writer.setPrd(prd);
+      const runtime = makeMockRuntime({ config, workdir: dir });
+      const recordCost = (costUsd: number) =>
+        runtime.costAggregator.record({
+          ts: Date.now(),
+          runId: "run-001",
+          agentName: "native",
+          model: "test",
+          estimatedCostUsd: costUsd,
+          exactCostUsd: costUsd,
+          costUsd,
+          confidence: "exact",
+          durationMs: 1,
+        });
+      recordCost(0.0745);
+      _runnerCompletionDeps.handleRunCompletion = mock(async () => {
+        writer.setRunStatus("completed");
+        await writer.update(0.0745, 1);
+        return { ...defaultCompletionResult, reportedTotal: 0.0745 };
+      });
+      _runnerCompletionDeps.runFinishPhase = mock(async () => {
+        recordCost(0.06);
+        runtime.costAggregator.recordError({
+          kind: "error",
+          ts: Date.now(),
+          runId: "run-001",
+          agentName: "native",
+          errorCode: "FINISH_DISPATCH_FAILED",
+          durationMs: 1,
+          costUsd: 0.0228,
+        });
+        writer.setPostRunPhase("finish", {
+          status: outcome === "passed" ? "passed" : outcome === "skipped" ? "skipped" : "failed",
+          ...(outcome === "escalated"
+            ? { result: "escalated", url: "https://github.com/o/r/pull/1", escalationReason: "Review blocked" }
+            : {}),
+        });
+        if (outcome === "throw") throw new Error("finish failed after recording status");
+        return null;
+      });
+      const originalSpawn = _gitDeps.spawn;
+      _gitDeps.spawn = makeSpawn().spawn;
+      try {
+        const result = await runCompletionPhase({
+          ...makeOpts(config, prd, makeStatusWriter()),
+          workdir: dir,
+          statusWriter: writer,
+          featureDir,
+          ...makeDispatchContext({ runtime }),
+        });
+        for (const statusPath of [join(dir, "status.json"), join(featureDir, "status.json")]) {
+          const status = await Bun.file(statusPath).json();
+          expect(status.postRun?.finish?.status).toBe(
+            outcome === "passed" ? "passed" : outcome === "skipped" ? "skipped" : "failed",
+          );
+          expect(status.cost.spent).toBeCloseTo(0.1573, 4);
+          expect(status.run.status).toBe("completed");
+          if (outcome === "escalated") {
+            expect(status.postRun.finish.result).toBe("escalated");
+            expect(status.postRun.finish.url).toBe("https://github.com/o/r/pull/1");
+            expect(status.postRun.finish.escalationReason).toBe("Review blocked");
+          }
+        }
+        expect(result.reportedTotal).toBeCloseTo(0.1573, 4);
+      } finally {
+        _gitDeps.spawn = originalSpawn;
+        await runtime.close();
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
   test("runs before the runtime is closed", async () => {
     const order: string[] = [];
     _runnerCompletionDeps.runFinishPhase = mock(async () => {

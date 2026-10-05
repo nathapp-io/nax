@@ -60,8 +60,9 @@ function emptySnapshot(): CostSnapshot {
 
 const WORKDIR = `/tmp/nax-test-runner-completion-total-${randomUUID()}`;
 
-function makeOpts(): RunnerCompletionOptions {
+function makeOpts(total = 0): RunnerCompletionOptions {
   const runtime = makeMockRuntime();
+  runtime.costAggregator.snapshot = mock(() => ({ ...emptySnapshot(), totalCostUsd: total }));
   const config: NaxConfig = makeNaxConfig({
     acceptance: { enabled: false },
     execution: { regressionGate: { mode: "disabled" } },
@@ -141,7 +142,7 @@ describe("runCompletionPhase — US-001 reportedTotal seam", () => {
       reportedTotal: reconciled,
     }));
 
-    const result = await runCompletionPhase(makeOpts());
+    const result = await runCompletionPhase(makeOpts(reconciled));
 
     expect(result.reportedTotal).toBeCloseTo(5.8042, 4);
     expect(result.reportedTotal).toBe(reconciled);
@@ -155,7 +156,7 @@ describe("runCompletionPhase — US-001 reportedTotal seam", () => {
       reportedTotal: reconciled,
     }));
 
-    const result = await runCompletionPhase(makeOpts());
+    const result = await runCompletionPhase(makeOpts(reconciled));
 
     expect(result.reportedTotal).toBeCloseTo(5.6995, 4);
     expect(result.reportedTotal).toBe(reconciled);
