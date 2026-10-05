@@ -12,6 +12,7 @@ import { capStrings } from "#src/internal/redact";
 import { _agentSessionDeps } from "#src/session/agent-session-deps";
 import type { AdapterInteraction } from "#src/session/interaction-handler";
 import { createPendingAskTable } from "#src/session/pending-asks";
+import { createSessionAskPort } from "#src/session/session-ask-port";
 import {
   createSessionInteractionHandler,
   defaultSummary,
@@ -25,6 +26,7 @@ import { withDepsRestore } from "#test/helpers/index";
 interface Harness {
   readonly deps: SessionInteractionDeps;
   readonly events: SessionEventBody[];
+  readonly table: ReturnType<typeof createPendingAskTable>;
   readonly runtimeCalls: Array<{
     name: string;
     context: ToolCallContext | undefined;
@@ -51,11 +53,16 @@ function harness(outcome: CodingToolOutcome, tools: readonly EmbedderTool[] = []
     },
   };
   const turn = new AbortController();
+  const table = createPendingAskTable(30_000);
   const deps: SessionInteractionDeps = {
     sessionId: "s1",
     runtime,
     embedderTools: new Map(tools.map((tool) => [tool.name, tool])),
-    asks: { table: createPendingAskTable(30_000), emit: (body) => events.push(body), currentCallId: () => slot.callId },
+    asks: createSessionAskPort({
+      table,
+      emit: (body) => events.push(body),
+      turn: () => ({ turnId: "t", signal: turn.signal }),
+    }),
     turnSignal: () => turn.signal,
     setCurrentCallId: (callId) => {
       slot.callId = callId;
@@ -64,7 +71,7 @@ function harness(outcome: CodingToolOutcome, tools: readonly EmbedderTool[] = []
   const fireTimers = (): void => {
     for (const fn of timers.splice(0)) fn();
   };
-  return { deps, events, runtimeCalls, slot, fireTimers };
+  return { deps, events, table, runtimeCalls, slot, fireTimers };
 }
 
 function codingTool(
@@ -164,7 +171,7 @@ describe("createSessionInteractionHandler", () => {
     const h = harness({ kind: "ok", content: "" });
     const answer = createSessionInteractionHandler(h.deps).onInteraction({ kind: "question", text: "Which env?" });
     expect(h.events[0]).toMatchObject({ type: "question", requestId: "req-1", text: "Which env?" });
-    h.deps.asks.table.answer("req-1", { text: "staging" });
+    h.table.answer("req-1", { text: "staging" });
     expect(await answer).toEqual({ answer: "staging" });
   });
 
@@ -247,7 +254,7 @@ describe("createSessionInteractionHandler", () => {
       summary: 'look up {"id":42}',
     });
     expect(seen).toHaveLength(0);
-    h.deps.asks.table.answer("req-1", { decision: "allow" });
+    h.table.answer("req-1", { decision: "allow" });
     expect(await answer).toEqual({ answer: "record 42" });
     expect(seen).toHaveLength(1);
   });
@@ -258,7 +265,7 @@ describe("createSessionInteractionHandler", () => {
     const handler = createSessionInteractionHandler(h.deps);
     const first = handler.onInteraction(codingTool("lookup"));
     await new Promise((resolve) => setImmediate(resolve));
-    h.deps.asks.table.answer("req-1", { decision: "deny" });
+    h.table.answer("req-1", { decision: "deny" });
     expect(await first).toMatchObject({ denied: { breach: false } });
     const second = handler.onInteraction(codingTool("lookup"));
     await new Promise((resolve) => setImmediate(resolve));

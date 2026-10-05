@@ -17,7 +17,7 @@ import type { CodingToolRuntime, ToolCallContext } from "#src/tools/runtime";
 import { cutToByteCap } from "#src/tools/truncate";
 import type { EmbedderTool, EmbedderToolContext, EmbedderToolResult } from "./agent-session-types.ts";
 import type { AdapterInteraction, AdapterInteractionResponse, InteractionHandler } from "./interaction-handler.ts";
-import { askPerson, type SessionAskDeps } from "./session-ask-link.ts";
+import type { SessionAskPort } from "./session-backend.ts";
 
 /** Byte cap on an embedder approval's default summary. */
 export const EMBEDDER_SUMMARY_BYTES = 1024;
@@ -35,7 +35,7 @@ export interface SessionInteractionDeps {
   readonly sessionId: string;
   readonly runtime: CodingToolRuntime;
   readonly embedderTools: ReadonlyMap<string, EmbedderTool>;
-  readonly asks: SessionAskDeps;
+  readonly asks: SessionAskPort;
   /** The running turn's signal (a never-aborting one between turns). */
   readonly turnSignal: () => AbortSignal;
   readonly setCurrentCallId: (callId: string | undefined) => void;
@@ -132,7 +132,7 @@ async function runEmbedderTool(
       reason: `"${tool.name}" asks before every run`,
       callId: toolCallId,
     };
-    const outcome = await askPerson(deps.asks, ask, signal);
+    const outcome = await deps.asks.requestApproval({ ...ask, signal });
     if (outcome.decision !== "allow") {
       const reason = askDenyReason(outcome.decidedBy);
       return { answer: `Denied: ${reason}`, denied: { reason, breach: false } };
@@ -172,10 +172,8 @@ async function runCodingTool(
 }
 
 async function answerQuestion(deps: SessionInteractionDeps, text: string): Promise<AdapterInteractionResponse | null> {
-  const { requestId, expiresAt, settled } = deps.asks.table.issue("question", deps.turnSignal());
-  deps.asks.emit({ type: "question", requestId, text, expiresAt });
-  const settlement = await settled;
-  return settlement.by === "human" && "text" in settlement.reply ? { answer: settlement.reply.text } : null;
+  const answer = await deps.asks.askQuestion(text);
+  return answer === null ? null : { answer };
 }
 
 export function createSessionInteractionHandler(deps: SessionInteractionDeps): InteractionHandler {

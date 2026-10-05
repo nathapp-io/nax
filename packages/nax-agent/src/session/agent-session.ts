@@ -25,7 +25,8 @@ import type {
   TurnEndStatus,
 } from "./agent-session-types.ts";
 import { createPendingAskTable, type PendingAskTable } from "./pending-asks.ts";
-import { createSessionAskLink, createSessionAskResolver, type SessionAskDeps } from "./session-ask-link.ts";
+import { createSessionAskLink, createSessionAskResolver } from "./session-ask-link.ts";
+import { createSessionAskPort } from "./session-ask-port.ts";
 import { createSessionInteractionHandler, embedderToolDescriptor } from "./session-interaction.ts";
 import { buildSessionToolSupport, defaultProtectedPaths, resolveSessionLauncher } from "./session-tool-support.ts";
 
@@ -179,7 +180,7 @@ async function assemble(
   });
   const table = createPendingAskTable(options.approvalTimeoutMs);
   const slot: LiveSlot = { turn: undefined, callId: undefined };
-  const asks: SessionAskDeps = { table, emit: (body) => slot.turn?.emit(body), currentCallId: () => slot.callId };
+  const port = createSessionAskPort({ table, emit: (body) => slot.turn?.emit(body), turn: () => slot.turn });
   const { support, grants } = buildSessionToolSupport({
     profile: raw.profile,
     root: root.dir,
@@ -187,14 +188,14 @@ async function assemble(
     protectedPaths,
     bashApproval: options.bashApproval,
     launcher,
-    askResolver: createSessionAskResolver(createSessionAskLink(asks)),
+    askResolver: createSessionAskResolver(createSessionAskLink({ port, currentCallId: () => slot.callId })),
     interceptor: raw.hostPorts?.commandInterceptor,
   });
   const interactionHandler = createSessionInteractionHandler({
     sessionId,
     runtime: support.runtime,
     embedderTools: new Map(options.tools.map((tool) => [tool.name, tool])),
-    asks,
+    asks: port,
     turnSignal: () => slot.turn?.signal ?? IDLE_SIGNAL,
     setCurrentCallId: (callId) => {
       slot.callId = callId;

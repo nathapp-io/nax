@@ -13,6 +13,7 @@ import {
 } from "#src/permissions/index";
 import type { SessionEventBody } from "./agent-session-types.ts";
 import type { PendingAskTable } from "./pending-asks.ts";
+import type { SessionAskPort } from "./session-backend.ts";
 
 export interface SessionAskDeps {
   readonly table: PendingAskTable;
@@ -34,7 +35,7 @@ export async function askPerson(
   deps: SessionAskDeps,
   ask: ApprovalAsk,
   signal: AbortSignal | undefined,
-): Promise<AskLinkOutcome> {
+): Promise<{ readonly decision: "allow" | "deny"; readonly decidedBy: "human" | "timeout" | "cancelled" }> {
   const { requestId, expiresAt, settled } = deps.table.issue("approval", signal);
   deps.emit({
     type: "approval_requested",
@@ -55,7 +56,13 @@ export async function askPerson(
 
 const UNSHOWABLE: AskLinkOutcome = { decision: "deny", decidedBy: "unshowable" };
 
-export function createSessionAskLink(deps: SessionAskDeps): AskLink {
+export interface SessionAskLinkDeps {
+  readonly port: SessionAskPort;
+  /** The tool call being answered right now, if any. */
+  readonly currentCallId: () => string | undefined;
+}
+
+export function createSessionAskLink(deps: SessionAskLinkDeps): AskLink {
   return {
     name: "agent-session",
     resolve(req, control) {
@@ -65,17 +72,14 @@ export function createSessionAskLink(deps: SessionAskDeps): AskLink {
       const masked = req.command === undefined ? undefined : maskForPrompt(req.command);
       if (masked !== undefined && !masked.ok) return Promise.resolve(UNSHOWABLE);
       const callId = deps.currentCallId();
-      return askPerson(
-        deps,
-        {
-          tool: req.tool,
-          summary: req.summary,
-          ...(masked !== undefined ? { command: masked.masked } : {}),
-          reason: req.reason ?? `matched ${req.rule}`,
-          ...(callId !== undefined ? { callId } : {}),
-        },
-        control?.signal,
-      );
+      return deps.port.requestApproval({
+        tool: req.tool,
+        summary: req.summary,
+        ...(masked !== undefined ? { command: masked.masked } : {}),
+        reason: req.reason ?? `matched ${req.rule}`,
+        ...(callId !== undefined ? { callId } : {}),
+        ...(control?.signal !== undefined ? { signal: control.signal } : {}),
+      });
     },
   };
 }
