@@ -125,6 +125,13 @@ describe("acceptanceRepairOp.parse()", () => {
     expect(String(result.testCode)).toContain("describe");
   });
 
+  test.each(["I fixed `describe(...)` in place.", "The `import { test }` now works; describe(...) stays intact."])(
+    "does not extract inline prose: %s",
+    (output) => {
+      expect(acceptanceRepairOp.parse(output, SAMPLE_INPUT, makeBuildCtx()).testCode).toBeNull();
+    },
+  );
+
   test("returns null testCode when the reply carries no code block", () => {
     const ctx = makeBuildCtx();
     const result = acceptanceRepairOp.parse("I edited the file in place.", SAMPLE_INPUT, ctx);
@@ -138,6 +145,32 @@ describe("acceptanceRepairOp.verify()", () => {
     const parsed = { testCode: "describe('x', () => {})" };
     const result = await acceptanceRepairOp.verify(parsed, SAMPLE_INPUT, ctx);
     expect(result).toEqual(parsed);
+  });
+
+  test("prefers changed disk content over conflicting fenced reply code", async () => {
+    await withTempDir(async (dir) => {
+      const targetTestFilePath = join(dir, "t.test.ts");
+      const content = "test('AC-1: repaired', () => expect(2).toBe(2));";
+      await Bun.write(targetTestFilePath, content);
+      const result = await acceptanceRepairOp.verify(
+        { testCode: "test('AC-1: stale reply', () => expect(1).toBe(1));" },
+        { ...SAMPLE_INPUT, targetTestFilePath, previousContent: "broken source" },
+        makeVerifyCtx({ readFile: readDisk }),
+      );
+      expect(result).toEqual({ testCode: content });
+    });
+  });
+
+  test("uses fenced reply code when the disk file has not changed", async () => {
+    const content = "test('AC-1: old', () => expect(1).toBe(1));";
+    const parsed = { testCode: "test('AC-1: repaired', () => expect(2).toBe(2));" };
+    expect(
+      await acceptanceRepairOp.verify(
+        parsed,
+        { ...SAMPLE_INPUT, previousContent: content },
+        makeVerifyCtx({ readFile: async () => content }),
+      ),
+    ).toEqual(parsed);
   });
 
   test("AC16: falls back to the target file's real test source when the reply carried no code", async () => {
