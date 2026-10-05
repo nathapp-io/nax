@@ -236,10 +236,13 @@ type ShadowTap
 type ShellInterceptRequest
 type ShellInterceptResult
 type SpillRequest
+type StderrTail
 type StoredEntry
 type SystemOneClientOptions
 type SystemOneQuestion
 type SystemOneRequest
+TOOL_CALL_INPUT_BYTES
+TOOL_RESULT_PREVIEW_BYTES
 type TokenUsage
 type ToolAuditSink
 type ToolCallContext
@@ -287,6 +290,7 @@ buildGitArgv
 buildGrepArgv
 buildRequest
 buildSandboxPolicy
+capStrings
 chainAskLinks
 classifyExec
 clearApprovalsTaint
@@ -304,6 +308,7 @@ createMemoryTranscriptStore
 createNoOpToolAuditSink
 createRunCommandTool
 createSrtBackend
+createStderrTail
 createSystemOneClient
 createToolAuditSink
 createTurnDeadline
@@ -333,7 +338,9 @@ importPiCredentials
 inputClassTokens
 isForgeCapable
 isKnownManager
+isProcessAlive
 isTempOnly
+killProcessGroup
 lexBashCommand
 listCodingTools
 listCredentialFiles
@@ -374,6 +381,7 @@ readFileSlice
 readTool
 redactForRow
 redactRowStrings
+redactSecrets
 registerBuiltinCodingTools
 registerBuiltinTool
 registerCodingTool

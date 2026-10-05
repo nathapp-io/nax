@@ -79,6 +79,10 @@ export {
 } from "#src/cost/model-spec";
 export type { AgentLogger, CredentialAuthConfig, CredentialsConfig } from "#src/infra/index";
 export { configureCredentials, setAgentLogger } from "#src/infra/index";
+export { createStderrTail, type StderrTail } from "#src/infra/stderr-tail";
+export { isProcessAlive } from "#src/internal/process-alive";
+export { killProcessGroup } from "#src/internal/process-kill";
+export { capStrings, redactSecrets } from "#src/internal/redact";
 export type { CredentialSource } from "#src/native/credentials/session-source";
 export {
   AuthCancelledError,
@@ -155,6 +159,7 @@ export type {
   TransformContextPatch,
   TransformContextPayload,
 } from "#src/native/session/loop-events/types";
+export { TOOL_CALL_INPUT_BYTES, TOOL_RESULT_PREVIEW_BYTES } from "#src/native/session/turn-event-emitter";
 export {
   type ApprovalAuditRow,
   type ApprovalEntry,
