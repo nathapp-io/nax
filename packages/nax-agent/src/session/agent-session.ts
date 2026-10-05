@@ -9,6 +9,7 @@
 import { DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
 import { NATIVE_AGENT } from "#src/native/models";
 import type { TranscriptStore } from "#src/native/session/transcript-types";
+import type { TurnRetryConfig } from "#src/native/session/turn-retry";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
 import { AgentSessionError } from "./agent-session-errors.ts";
@@ -44,6 +45,13 @@ interface Opening {
 
 /** The handler's turn signal between turns: never aborts. */
 const IDLE_SIGNAL = new AbortController().signal;
+
+/**
+ * nax's `agent.native.transportRetry` default. The loop retries a transport,
+ * overloaded or rate-limit fault that arrives after events have streamed, and
+ * emits `stream_reset` so the consumer voids that round's deltas (spec 5.3).
+ */
+const SESSION_TRANSPORT_RETRY: TurnRetryConfig = { maxAttempts: 3, baseDelayMs: 2000 };
 
 interface SessionRoot {
   readonly dir: string;
@@ -203,6 +211,7 @@ async function assemble(
     retainOnClose: true,
     resume: opening.resume,
     spinBreaker: DEFAULT_SPIN_BREAKER_SETTINGS,
+    transportRetry: SESSION_TRANSPORT_RETRY,
     // An empty instructions is no system prompt: `system: ""` on the wire invites provider quirks.
     ...(raw.instructions !== undefined && raw.instructions !== "" ? { systemPrompt: raw.instructions } : {}),
   });

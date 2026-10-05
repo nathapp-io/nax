@@ -18,6 +18,8 @@ import { turnEndFromResult } from "#src/session/agent-session-turn";
 import type { TurnResult } from "#src/session/session-types";
 import {
   collect,
+  eventsOf,
+  faultRound,
   installScriptedProvider,
   resetScriptedProvider,
   sessionOptions,
@@ -333,6 +335,30 @@ describe("createAgentSession: turn failures arrive as turn_end", () => {
       error: { code: "AGENT_SESSION_TURN_FAILED", message: "disk full" },
     });
     expect(provider.requests).toHaveLength(0);
+    await session.close();
+  });
+});
+
+describe("createAgentSession: transport retry", () => {
+  test("a transport fault after streamed text is retried: stream_reset voids the deltas and the turn completes", async () => {
+    const provider = installScriptedProvider();
+    provider.push(faultRound("stale"), textRound("fresh"));
+    const session = await createAgentSession(sessionOptions());
+    const events = await collect(session.send("hi"));
+    expect(types(events)).toEqual(["turn_start", "text_delta", "stream_reset", "text_delta", "usage", "turn_end"]);
+    expect(eventsOf(events, "stream_reset")[0]).toMatchObject({ round: 1, attempt: 2 });
+    expect(turnEndOf(events)).toMatchObject({ status: "completed", output: "fresh" });
+    expect(provider.requests).toHaveLength(2);
+    await session.close();
+  });
+
+  test("a fault on every attempt ends the turn errored after three attempts", async () => {
+    const provider = installScriptedProvider();
+    provider.push(faultRound("a"), faultRound("b"), faultRound("c"));
+    const session = await createAgentSession(sessionOptions());
+    const end = turnEndOf(await collect(session.send("hi")));
+    expect(end.status).toBe("errored");
+    expect(provider.requests).toHaveLength(3);
     await session.close();
   });
 });
