@@ -43,12 +43,13 @@ R10 makes nax-agent and nax-agent-acp release in lockstep, so nax-agent's releas
 - No source under `src/` uses a Bun API (`check:no-bun-apis`).
 - `nax` runtime is unchanged. Only `packages/nax/scripts/check-package-boundaries.ts` and its test change under `packages/nax/`.
 - Never run bare `bun test` (no path) and never `bun run nax`. Package commands run from the package directory.
+- Code snippets in this plan are not pre-formatted. Run `bun run lint:fix` in the package before every `check:all` or `lint` step, so Biome's formatter (120 columns) applies.
 - No emojis in code, comments or docs. Edit `.nax/context.md` and `.nax/mono/packages/<pkg>/context.md` only, then regenerate. Never hand-edit `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` or `codex.md`.
 
 ## Review Focus
 
 1. **`workspace:*` leaking into the published manifest.** A consumer installing a manifest that says `workspace:*` gets an install error. The staged manifest must contain no `workspace:` string anywhere. Pinned in Task 5.
-2. **Tag routing collision between `nax-agent-v*` and `nax-agent-acp-v*`.** A tag routed to the wrong package publishes the wrong directory. Each tag must resolve to its own package, and a malformed acp tag must be rejected. Pinned in Task 7.
+2. **Tag routing for `nax-agent-acp-v*`.** A tag routed to the wrong package publishes the wrong directory. The globs are disjoint (`nax-agent-v*` cannot match `nax-agent-acp-v...`), so arm order does not matter, but each acp tag must resolve to `packages/nax-agent-acp`, and a malformed acp tag must be rejected. Pinned in Task 7.
 3. **Lockstep drift.** If nax-agent-acp's version differs from nax-agent's, the `^x.y.z` peer range points at a nax-agent that was never released with it. `stage-publish` and `release tag-acp` must both refuse. Pinned in Tasks 5 and 8.
 4. **Publishing acp before its peer.** The acp release must fail when the nax-agent version it names is not on npm. This covers an E404, a registry error, and empty output. Pinned in Task 7.
 5. **Registry lookups with prototype keys.** `registryEntry("__proto__")`, `registryEntry("toString")` or `registryEntry("constructor")` returning an object would make S4-2 launch an "agent" with no data. They must return `undefined`, and the table must be deeply frozen. Pinned in Task 4.
@@ -59,7 +60,8 @@ R10 makes nax-agent and nax-agent-acp release in lockstep, so nax-agent's releas
 - **D-b. The boundary rule lives in the existing `packages/nax/scripts/check-package-boundaries.ts`.** That gate is default-deny: a new package with no rule fails nax's `check:all`. A second gate would duplicate its specifier scanning.
 - **D-c. Bootstrap verification moves to repo-tooling.** Both packages now need it: nax-agent at 0.1.0, nax-agent-acp at 0.3.0. The repo context says gates shared by more than one package live in `packages/repo-tooling/scripts/`. The move is `scripts/verify-bootstrap.ts` plus `scripts/lib/bootstrap-artifact.ts`.
 - **D-d. The staging libs stay per package.** acp's manifest differs (two entries, a peer rewrite, the lockstep check), and nax-agent's stage lib is untouched. A third publishing package would be the point to lift `missingStageInputs` and `assertPublishRepo` into repo-tooling.
-- **D-e. One release helper releases both packages.** It is nax-agent's `scripts/release.ts`, following R10's "bump together". `release <kind>` bumps both versions and both changelogs in one PR. `release tag` pushes `nax-agent-v*`, as today. The new `release tag-acp` pushes `nax-agent-acp-v*` only after nax-agent at the same version is on npm.
+- **D-e. One release helper releases both packages.** It is nax-agent's `scripts/release.ts`, following R10's "bump together". `release <kind>` bumps both versions and both changelogs in one PR, except when the new nax-agent version is still below acp's (acp then stays put). `release tag` pushes `nax-agent-v*`, as today. The new `release tag-acp` pushes `nax-agent-acp-v*` only after nax-agent at the same version is on npm.
+- **D-f. Two mechanical release guards.** `stage-publish` refuses while the built `./client` is the bare scaffold, so the S4-1 package cannot ship. The acp first version (0.3.0) can only be tagged and verified after the manual publish, never uploaded through OIDC, which cannot create a package.
 
 ## Gap carried to S4-2 (not fixed here)
 
@@ -765,12 +767,9 @@ test("a source file importing the peer builds and emits only itself", () => {
 - [ ] **Step 3: Run the tests**
 
 Run: `cd packages/nax-agent-acp && bun test ./test/unit/packaging/ --timeout=60000`
-Expected: PASS. If `peer-build.test.ts` fails with TS6059 (file not under `rootDir`) or emits nax-agent files, apply this fallback and re-run:
+Expected: PASS. TypeScript treats the peer's `.ts` source, reached through the `node_modules` symlink, as an external library: it type-checks it but neither emits it nor applies `rootDir` to it.
 
-- `tsconfig.build.json` adds `"paths": { "@nathapp/nax-agent": ["../nax-agent/dist/index.d.ts"] }`.
-- The `build` script becomes `bun run --cwd ../nax-agent build && bun x tsc -p tsconfig.build.json`.
-
-Record which path was taken in the commit message body.
+If `peer-build.test.ts` fails (TS6059, or nax-agent files emitted), STOP and report the output. Do not improvise a fix. A `paths` mapping to `../nax-agent/dist/index.d.ts` is NOT a ready fallback: nax-agent's built declarations keep `#src/...` specifiers, which resolve back to its `.ts` source. S4-2 cannot build without this path working, so the fix is a design decision for the maintainer.
 
 - [ ] **Step 4: Build, typecheck, lint, and create baselines**
 
@@ -780,11 +779,13 @@ bun run typecheck
 bun run build && ls dist/client dist/server
 bun ../repo-tooling/scripts/check-nax-error.ts --package=. --update-baseline
 bun ../repo-tooling/scripts/check-file-sizes.ts --package=. --update-baseline
-bun ../repo-tooling/scripts/check-complexity.ts --package=. --update-baseline
+# check-complexity refuses to create a missing baseline with --update-baseline (it only lowers one).
+bun ../repo-tooling/scripts/check-complexity.ts --package=. --init-baseline
 bun ../repo-tooling/scripts/check-import-cycles.ts --package=. --update-baseline
 bun ../repo-tooling/scripts/check-test-as-unknown-as.ts --package=. --update-baseline
 bun ../repo-tooling/scripts/check-test-escape-hatches.ts --package=. --update-baseline
 bun run check:test-satellites:update
+bun run lint:fix
 bun run check:all
 ```
 Expected:
@@ -794,6 +795,9 @@ Expected:
 
 Run from the repo root: `cd packages/nax && bun run check:package-boundaries`
 Expected: `[OK] package boundaries hold` (the acp package is now on disk).
+
+Run from the repo root: `bun install --frozen-lockfile`
+Expected: exit 0, no lockfile change. This is what CI runs, and it proves the `workspace:*` peer plus devDependency resolve under the isolated linker.
 
 - [ ] **Step 5: Commit**
 
@@ -1065,10 +1069,16 @@ Expected:
 Run: `bun run check:all`
 Expected: exit 0.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Record D-a in the spec**
+
+In `docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md` §10, edit two rows so the S4-2 plan does not rebuild the registry:
+- S4-1 row: append `, and the agent registry data (§6.10, \`src/client/registry.ts\`, not exported)`.
+- S4-2 row: replace `` `launch`, `registry`, `connection` `` with `` `launch` (on the S4-1 registry), `connection` ``.
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add packages/nax-agent-acp
+git add packages/nax-agent-acp docs/superpowers/specs/2026-10-05-s4-acp-backend-design.md
 git commit -m "feat(nax-agent-acp): agent registry (S4 spec 6.10), coverage, API snapshot, Node contract"
 ```
 
@@ -1099,6 +1109,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import {
+  assertClientNotEmpty,
   assertPublishRepo,
   buildStagedManifest,
   missingStageInputs,
@@ -1173,6 +1184,13 @@ describe("buildStagedManifest", () => {
   test("a workspace: protocol in dependencies is refused rather than shipped", () => {
     const leaky = { ...source, dependencies: { ...source.dependencies, "@nathapp/nax-agent": "workspace:*" } };
     expect(() => buildStagedManifest(leaky, opts)).toThrow(/workspace:/);
+  });
+});
+
+describe("assertClientNotEmpty", () => {
+  test("refuses the bare scaffold entry and accepts an entry that exports something", () => {
+    expect(() => assertClientNotEmpty("export {};\n")).toThrow(/not releasable before S4 acceptance/);
+    expect(() => assertClientNotEmpty("export declare function acpBackend(): unknown;\n")).not.toThrow();
   });
 });
 
@@ -1267,6 +1285,17 @@ export function assertPublishRepo(githubRepository: string | undefined): void {
   }
 }
 
+/**
+ * Nothing is released before S4 acceptance (spec §10). Until S4-2 adds `acpBackend()`,
+ * the built client entry is the bare `export {};` and staging refuses it. The maintainer's
+ * S4-6 approval stays the real gate for S4-2 to S4-5.
+ */
+export function assertClientNotEmpty(clientDts: string): void {
+  if (clientDts.trim() === "export {};") {
+    throw new Error("stage-publish: ./client exports nothing yet; nax-agent-acp is not releasable before S4 acceptance");
+  }
+}
+
 /** R10: both packages share one version, so the peer range is a caret on it. */
 export function peerRangeFor(naxAgentVersion: string, ownVersion: string): string {
   if (naxAgentVersion !== ownVersion) {
@@ -1330,7 +1359,12 @@ export function buildStagedManifest(source: Json, opts: StageManifestOptions): J
  */
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { assertPublishRepo, buildStagedManifest, missingStageInputs } from "./lib/stage-manifest.ts";
+import {
+  assertClientNotEmpty,
+  assertPublishRepo,
+  buildStagedManifest,
+  missingStageInputs,
+} from "./lib/stage-manifest.ts";
 
 const PKG = resolve(import.meta.dir, "..");
 const OUT = join(PKG, ".publish");
@@ -1348,6 +1382,7 @@ function main(): void {
   }
   assertPublishRepo(process.env.GITHUB_REPOSITORY);
   const source = readJson(join(PKG, "package.json"));
+  assertClientNotEmpty(readFileSync(join(PKG, "dist/client/index.d.ts"), "utf8"));
   const naxAgentVersion = String(readJson(join(PKG, "../nax-agent/package.json")).version);
   const manifest = buildStagedManifest(source, { repository: REPOSITORY, directory: DIRECTORY, naxAgentVersion });
   rmSync(OUT, { recursive: true, force: true });
@@ -1363,13 +1398,15 @@ main();
 
 The manifest is built before `.publish/` is cleared, so a lockstep failure leaves nothing half-staged.
 
+The staged manifest has no `files` field, as nax-agent's has none: `.publish/` itself holds only `dist/`, the three docs and `package.json`, which satisfies §8's "files: dist and docs".
+
 - [ ] **Step 4: Run the tests, then stage for real**
 
 Run: `cd packages/nax-agent-acp && bun test ./test/unit/packaging/ --timeout=60000`
 Expected: PASS.
 
 Run: `cd packages/nax-agent-acp && bun run build && bun run stage-publish`
-Expected: FAIL with "nax-agent 0.2.0 and nax-agent-acp 0.3.0 must share one version (R10 lockstep)", because main's nax-agent is still 0.2.0. This is the intended guard. The real stage succeeds only after the lockstep release PR. Confirm `.publish/` was not created: `test ! -e .publish`.
+Expected: FAIL with "./client exports nothing yet; nax-agent-acp is not releasable before S4 acceptance". This is the intended guard; after S4-2 the next guard in line is the lockstep check, which fails while main's nax-agent is still 0.2.0. The real stage succeeds only after S4 acceptance and the joint release PR. Confirm `.publish/` was not created: `test ! -e .publish`.
 
 Run: `bun run check:all && bun run test:coverage`
 Expected: exit 0. Scripts are outside `src/`, so coverage is unchanged.
@@ -1670,6 +1707,18 @@ describe("nax-agent-acp release", () => {
     }
   });
 
+  test("0.3.0 absent from npm stops with a manual-publish error instead of an OIDC upload", () => {
+    const shell = makeReleaseShell({ manifest: acpManifest });
+    try {
+      const result = shell.run("Publish to npm", { ...ACP, NPM_ERROR: "E404" });
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain("publish it manually first");
+      expect(result.calls.some((call) => call.startsWith("npm publish"))).toBe(false);
+    } finally {
+      cleanupTempDir(shell.dir);
+    }
+  });
+
   test("later acp versions publish .publish/ with the selected dist-tag", () => {
     const shell = makeReleaseShell({ manifest: { ...acpManifest, version: "0.3.1" } });
     try {
@@ -1742,9 +1791,16 @@ New step, placed directly after "nax-ai pin is published":
                   const result = JSON.parse(process.env.REGISTRY_RESULT || "{}");
                   if (result.error?.code !== "E404") throw new Error("bootstrap registry check failed: " + JSON.stringify(result));
                 '
+                # Trusted publishing cannot create a package: the acp first version must already exist.
+                if [ "$NAME" = "@nathapp/nax-agent-acp" ]; then
+                  echo "::error::@nathapp/nax-agent-acp@$BOOTSTRAP is not on npm; publish it manually first (packages/nax-agent-acp/RELEASING.md)"
+                  exit 1
+                fi
               fi
             fi
 ```
+
+nax-agent keeps its existing E404 fall-through, so its tests stay unchanged.
 
 Keep the rest of that arm (the `publishConfig.tag` rewrite and `npm publish ./.publish/ ...`) as it is.
 
@@ -1774,13 +1830,19 @@ git commit -m "ci(release): route and publish nax-agent-acp-v* tags after their 
 - Modify: `packages/nax-agent/RELEASING.md`
 
 **Interfaces:**
-- `bun run release [--dry-run] <canary|promote|patch|minor|major|X.Y.Z>` (from `packages/nax-agent`) sets BOTH packages to `next`. It updates both `## [Unreleased]` changelog sections and commits five files: both `package.json`, both `CHANGELOG.md`, and `bun.lock`.
+- `bun run release [--dry-run] <canary|promote|patch|minor|major|X.Y.Z>` (from `packages/nax-agent`) computes `next` from nax-agent.
+  - When `next` is at or above nax-agent-acp's current version, it sets BOTH packages to `next`, updates both `## [Unreleased]` changelog sections, and commits five files: both `package.json`, both `CHANGELOG.md`, and `bun.lock`.
+  - When `next` is below acp's version, acp is left untouched and its notes are not required. Before the first joint release acp sits at 0.3.0 ahead of nax-agent, and a nax-agent 0.2.x patch must neither downgrade it nor need acp notes. It prints `nax-agent-acp stays at <v> (ahead of nax-agent)`.
+- `compareVersions(a, b): number` is exported from `scripts/lib/release-version.ts` (semver precedence; a prerelease sorts below its release).
 - `release tag` is unchanged and pushes `nax-agent-v<version>`.
-- `release [--dry-run] tag-acp` pushes `nax-agent-acp-v<version>`. It requires clean main, both versions equal, no existing tag, and `npm view @nathapp/nax-agent@<version> version` returning non-empty output.
+- `release [--dry-run] tag-acp` pushes `nax-agent-acp-v<version>`. It requires:
+  - clean main, both versions equal, and no existing tag
+  - `npm view @nathapp/nax-agent@<version> version` returning non-empty output
+  - at the bootstrap version 0.3.0, `npm view @nathapp/nax-agent-acp@0.3.0 version` also returning non-empty output, because the first publish is manual and the tag only verifies it
 
 - [ ] **Step 1: Write the failing tests**
 
-In `release-cli-fixture.ts`, after writing nax-agent's files, add the acp package:
+In `release-cli-fixture.ts`, after writing nax-agent's files and BEFORE the fixture's `git add .` / initial commit, add the acp package:
 
 ```ts
   const acp = join(dir, "packages/nax-agent-acp");
@@ -1789,10 +1851,11 @@ In `release-cli-fixture.ts`, after writing nax-agent's files, add the acp packag
   writeFileSync(join(acp, "CHANGELOG.md"), "# Changelog\n\n## [Unreleased]\n\n- ACP backend.\n");
 ```
 
-Add an `npm` stub to the fixture's fake bin map. It logs the call; `NPM_VIEW_FAIL=1` exits 1 and `NPM_VIEW_EMPTY=1` prints nothing:
+Add an `npm` stub to the fixture's fake bin map. It logs the call. `NPM_VIEW_FAIL=1` exits 1, `NPM_VIEW_EMPTY=1` prints nothing, and `NPM_VIEW_MISSING=<name@version>` exits 1 for that one spec only:
 
 ```ts
     npm: `if [ "$NPM_VIEW_FAIL" = "1" ]; then exit 1; fi
+if [ -n "$NPM_VIEW_MISSING" ] && [ "$2" = "$NPM_VIEW_MISSING" ]; then exit 1; fi
 if [ "$NPM_VIEW_EMPTY" = "1" ]; then exit 0; fi
 echo "0.1.0"`,
 ```
@@ -1890,15 +1953,68 @@ describe("lockstep with nax-agent-acp", () => {
     }
   });
 
+  function setVersions(f: ReturnType<typeof makeReleaseCliFixture>, agent: string, acp: string): void {
+    for (const [rel, version] of [
+      ["packages/nax-agent/package.json", agent],
+      ["packages/nax-agent-acp/package.json", acp],
+    ] as const) {
+      const path = join(f.dir, rel);
+      writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), version }));
+    }
+    f.git("commit", "-am", `versions ${agent} ${acp}`);
+  }
+
   test("tag-acp dry-run reports the bootstrap action at 0.3.0", () => {
     const f = makeReleaseCliFixture();
     try {
-      for (const rel of ["packages/nax-agent/package.json", "packages/nax-agent-acp/package.json"]) {
-        const path = join(f.dir, rel);
-        writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), version: "0.3.0" }));
-      }
-      f.git("commit", "-am", "0.3.0");
+      setVersions(f, "0.3.0", "0.3.0");
       expect(f.run(["tag-acp", "--dry-run"]).output).toContain("manual");
+    } finally {
+      cleanupTempDir(f.dir);
+    }
+  });
+
+  test("tag-acp at 0.3.0 refuses until the manual acp publish exists on npm", () => {
+    const f = makeReleaseCliFixture();
+    try {
+      setVersions(f, "0.3.0", "0.3.0");
+      const result = f.run(["tag-acp"], "y\n", { NPM_VIEW_MISSING: "@nathapp/nax-agent-acp@0.3.0" });
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain("manual");
+      expect(result.calls.some((call) => /^git (push|tag nax-agent-acp)\b/.test(call))).toBe(false);
+    } finally {
+      cleanupTempDir(f.dir);
+    }
+  });
+
+  test("a nax-agent release below acp's version leaves acp and its notes alone", () => {
+    const f = makeReleaseCliFixture();
+    try {
+      setVersions(f, "0.1.0", "0.3.0");
+      writeFileSync(join(f.dir, "packages/nax-agent-acp/CHANGELOG.md"), "# Changelog\n");
+      f.git("commit", "-am", "acp has no notes");
+      const result = f.run(["patch"], "y\n");
+      expect(result.status).toBe(0);
+      expect(result.output).toContain("nax-agent-acp stays at 0.3.0");
+      expect(f.git("diff", "--name-only", "main", "release/nax-agent-v0.1.1").split("\n")).toEqual([
+        "bun.lock",
+        "packages/nax-agent/CHANGELOG.md",
+        "packages/nax-agent/package.json",
+      ]);
+    } finally {
+      cleanupTempDir(f.dir);
+    }
+  });
+
+  test("the first joint release lifts nax-agent to acp's version and bumps both", () => {
+    const f = makeReleaseCliFixture();
+    try {
+      setVersions(f, "0.2.0", "0.3.0");
+      const result = f.run(["minor"], "y\n");
+      expect(result.status).toBe(0);
+      const show = (rel: string) => JSON.parse(f.git("show", `release/nax-agent-v0.3.0:${rel}`)).version;
+      expect(show("packages/nax-agent/package.json")).toBe("0.3.0");
+      expect(show("packages/nax-agent-acp/package.json")).toBe("0.3.0");
     } finally {
       cleanupTempDir(f.dir);
     }
@@ -1910,6 +2026,21 @@ describe("lockstep with nax-agent-acp", () => {
 
 Run: `cd packages/nax-agent && bun test ./test/unit/packaging/release-cli.test.ts --timeout=60000`
 Expected: FAIL. `tag-acp` is treated as an explicit version and rejected as invalid, and the bump changes three files instead of five.
+
+Also add `compareVersions` cases to `test/unit/packaging/release-version.test.ts`:
+
+```ts
+test("compareVersions orders by semver precedence; a canary sorts below its release", () => {
+  expect(compareVersions("0.3.0", "0.3.0")).toBe(0);
+  expect(compareVersions("0.2.1", "0.3.0")).toBeLessThan(0);
+  expect(compareVersions("0.10.0", "0.9.9")).toBeGreaterThan(0);
+  expect(compareVersions("0.3.0-canary.1", "0.3.0")).toBeLessThan(0);
+  expect(compareVersions("0.3.0-canary.10", "0.3.0-canary.9")).toBeGreaterThan(0);
+  expect(compareVersions("0.3.1-canary.1", "0.3.0")).toBeGreaterThan(0);
+});
+```
+
+(import `compareVersions` alongside the existing imports from the release-version lib.)
 
 - [ ] **Step 3: Implement in `scripts/release.ts`**
 
@@ -1933,9 +2064,10 @@ function lockstepVersion(): string {
   return agent;
 }
 
-function peerPublished(version: string): boolean {
+/** True only when npm reports the exact `name@version`; any registry failure counts as not published. */
+function onNpm(spec: string): boolean {
   try {
-    const out = execFileSync("npm", ["view", `@nathapp/nax-agent@${version}`, "version"], {
+    const out = execFileSync("npm", ["view", spec, "version"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 60_000,
@@ -1947,7 +2079,7 @@ function peerPublished(version: string): boolean {
 }
 ```
 
-`peerPublished`'s `catch` returns `false` on purpose: any registry failure means "not proven published", and the caller refuses. Write it with no bare empty catch, so the `no-empty-catch` plugin stays satisfied.
+`onNpm`'s `catch` returns `false` on purpose: any registry failure means "not proven published", and the caller refuses. Write it with no bare empty catch, so the `no-empty-catch` plugin stays satisfied.
 
 Add `tagAcpRelease(dryRun)`:
 
@@ -1966,8 +2098,11 @@ async function tagAcpRelease(dryRun: boolean): Promise<void> {
     console.log("Dry run; no tag created or pushed.");
     return;
   }
-  if (!peerPublished(version)) {
+  if (!onNpm(`@nathapp/nax-agent@${version}`)) {
     throw new Error(`@nathapp/nax-agent@${version} is not on npm; release nax-agent first (release order)`);
+  }
+  if (version === ACP_BOOTSTRAP && !onNpm(`@nathapp/nax-agent-acp@${ACP_BOOTSTRAP}`)) {
+    throw new Error(`@nathapp/nax-agent-acp@${ACP_BOOTSTRAP} must be published manually first (RELEASING.md)`);
   }
   if (!(await confirm(`Push ${tag}? ${action}.`))) {
     console.log("Aborted.");
@@ -1979,10 +2114,43 @@ async function tagAcpRelease(dryRun: boolean): Promise<void> {
 }
 ```
 
+Add `compareVersions` to `scripts/lib/release-version.ts`, reusing its `parseVersion`:
+
+```ts
+/** Semver precedence: -1, 0 or 1. A prerelease sorts below its release; numeric identifiers compare numerically. */
+export function compareVersions(a: string, b: string): number {
+  const x = parseVersion(a);
+  const y = parseVersion(b);
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (x[key] !== y[key]) return x[key] < y[key] ? -1 : 1;
+  }
+  if (x.prerelease === y.prerelease) return 0;
+  if (x.prerelease === undefined) return 1;
+  if (y.prerelease === undefined) return -1;
+  const left = x.prerelease.split(".");
+  const right = y.prerelease.split(".");
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const l = left[i];
+    const r = right[i];
+    if (l === undefined) return -1;
+    if (r === undefined) return 1;
+    if (l === r) continue;
+    const ln = /^\d+$/.test(l) ? Number(l) : undefined;
+    const rn = /^\d+$/.test(r) ? Number(r) : undefined;
+    if (ln !== undefined && rn !== undefined) return ln < rn ? -1 : 1;
+    if (ln !== undefined) return -1;
+    if (rn !== undefined) return 1;
+    return l < r ? -1 : 1;
+  }
+  return 0;
+}
+```
+
 In `bumpRelease`:
+- Read `acpCurrent = readJsonAt(ACP_PKG_PATH).version` and decide `const withAcp = compareVersions(next, acpCurrent) >= 0;`. When `withAcp` is false, log `nax-agent-acp stays at ${acpCurrent} (ahead of nax-agent)` and skip every acp step below (notes, writes, `git add`, PR-body line).
 - Read `originalAcpNotes = readFileSync(ACP_NOTES_PATH, "utf8")`.
-- The dry-run log adds `Tags: ${tag}, nax-agent-acp-v${next}`.
-- Before any mutation, compute `acpNotes`, with the error naming the package:
+- The dry-run log adds `Tags: ${tag}, nax-agent-acp-v${next}` when `withAcp`.
+- Before any mutation, and only when `withAcp`, compute `acpNotes`, with the error naming the package:
 
 ```ts
   let acpNotes: string;
@@ -2003,7 +2171,7 @@ In `main`:
 - Route `kinds[0] === "tag-acp"` to `tagAcpRelease`.
 - The usage line becomes `bun run release [--dry-run] <canary|promote|patch|minor|major|tag|tag-acp|X.Y.Z>`.
 
-If `release.ts` grows past a complexity or size baseline, split `tagAcpRelease` and the helpers into `scripts/lib/release-acp.ts` rather than raising a baseline.
+If `release.ts` grows past a complexity or size baseline, split `tagAcpRelease` and the helpers into `scripts/lib/release-acp.ts` rather than raising a baseline. In that case `release-cli-fixture.ts` must also copy `lib/release-acp.ts` (it copies only `release.ts` and `lib/release-version.ts` today).
 
 - [ ] **Step 4: Write the RELEASING docs**
 
@@ -2217,6 +2385,8 @@ Insert after the `nax-agent-node` job:
         run: bun run test:node
 ```
 
+Not added, on purpose: the OS sandbox setup (the agent process runs unsandboxed, R7), a glob-floor job, and the packed-tarball smoke (spec §10 puts it in S4-6).
+
 - [ ] **Step 2: Validate the YAML**
 
 Run (repo root): `bun -e 'const y = Bun.YAML.parse(await Bun.file(".github/workflows/ci.yml").text()); for (const j of ["nax-agent-acp", "nax-agent-acp-node"]) if (!y.jobs[j]) throw new Error(j); console.log("ok")'`
@@ -2376,7 +2546,7 @@ Expected: all exit 0. nax-agent's `api/nax-agent.api.txt` is unchanged (`git dif
 - [ ] **Step 2: Confirm the scope fence**
 
 Run: `git diff --stat origin/main -- packages/nax/ | cat`
-Expected: only `scripts/check-package-boundaries.ts`, its test, and the regenerated context files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `codex.md`).
+Expected: exactly `scripts/check-package-boundaries.ts` and `test/unit/scripts/check-package-boundaries.test.ts`. The root context feeds only the root generated files, so `packages/nax/CLAUDE.md` and its siblings must not change. Spec §11.4 ("`packages/nax/` diff empty") is measured against the merged S4-1 main, which S4-2 to S4-6 branch from.
 
 Run: `git diff --stat origin/main -- packages/nax-agent/src/ | cat`
 Expected: empty. S4-1 does not touch nax-agent source, so no billed `nax run` smoke is needed.
@@ -2395,7 +2565,7 @@ gh pr create --base main --title "feat(nax-agent-acp): S4-1 package scaffold, ga
 
 The body covers:
 - the S4-1 scope (spec §10 row)
-- decisions D-a to D-e
+- decisions D-a to D-f
 - the S4-2 gap: `NaxError` is not on `.`
 - the test plan: CI jobs `nax-agent-acp`, `nax-agent-acp: node 22/24`, `tooling`, `nax`, `nax-agent`
 - a statement that nothing is released
