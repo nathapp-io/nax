@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "nax's native coding agent: session contract, native loop, tools, permissions, sandbox, command-safety.",
   "type": "module",
@@ -51,6 +51,14 @@
   "license": "MIT",
   "author": "William Khoo",
   "homepage": "https://github.com/nathapp-io/nax/tree/main/packages/nax-agent",
-  "bugs": { "url": "https://github.com/nathapp-io/nax/issues" },
-  "keywords": ["agent", "coding-agent", "llm", "sandbox", "tools"]
+  "bugs": {
+    "url": "https://github.com/nathapp-io/nax/issues"
+  },
+  "keywords": [
+    "agent",
+    "coding-agent",
+    "llm",
+    "sandbox",
+    "tools"
+  ]
 }
