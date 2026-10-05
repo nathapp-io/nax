@@ -265,7 +265,7 @@ export {
   warnSandboxUnavailableOnce,
 } from "#src/sandbox/index";
 export type { AdapterFailure } from "#src/session/adapter-failure";
-export { createAgentSession } from "#src/session/agent-session";
+export { createAgentSession, resumeAgentSession } from "#src/session/agent-session";
 export { AgentSessionError, type AgentSessionErrorCode } from "#src/session/agent-session-errors";
 export type {
   AgentSession,
