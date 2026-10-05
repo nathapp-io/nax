@@ -37,6 +37,11 @@ export type TurnEvent =
       /** Absent when the call reported no cache data -- never coerced to 0. */
       readonly cacheWrite?: number;
       readonly costUsd: number;
+      /**
+       * Absent means computed from the catalog (the native backend). `unpriced`
+       * rows carry `costUsd: 0` and must not be summed as a real cost.
+       */
+      readonly costSource?: import("./agent-session-types.ts").CostSource;
     }
   | { readonly type: "compaction"; readonly reason: "proactive" | "overflow" };
 

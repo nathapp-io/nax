@@ -122,6 +122,7 @@ export {
   runLogin,
   type StoredEntry,
   servedAuth,
+  type TranscriptAcpRecord,
   type TranscriptDoc,
   type TranscriptStore,
   type TurnMarker,
@@ -274,6 +275,7 @@ export type {
   AnswerReply,
   AnswerStatus,
   ApprovalDecidedBy,
+  CostSource,
   CreateAgentSessionOptions,
   EmbedderTool,
   EmbedderToolContext,
@@ -302,6 +304,15 @@ export {
   NO_OP_INTERACTION_HANDLER,
 } from "#src/session/interaction-handler";
 export type { ProtocolIds } from "#src/session/protocol-types";
+export type {
+  ApprovalRequest,
+  BackendInfo,
+  BackendOpenContext,
+  OpenedBackend,
+  SessionAskPort,
+  SessionBackend,
+  TurnContribution,
+} from "#src/session/session-backend";
 export {
   type AgentSessionAdapter,
   type AuthStamp,

@@ -13,9 +13,20 @@ export interface TurnMarker {
   readonly state: "running" | "ended";
 }
 
+/** An ACP backend's record of the agent-side session (S4 spec 5.5). */
+export interface TranscriptAcpRecord {
+  readonly agentSessionId: string;
+  readonly agent: string;
+  readonly agentVersion?: string;
+  readonly cwd: string;
+}
+
 export interface TranscriptDoc {
   /** Absent means 1. nax-agent does not write it in S3-1. */
   readonly schemaVersion?: 1;
+  /** Absent means "native". */
+  readonly backend?: string;
+  readonly acp?: TranscriptAcpRecord;
   readonly owner?: string;
   readonly model?: string;
   readonly savedAt: string;

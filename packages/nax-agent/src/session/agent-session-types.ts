@@ -13,8 +13,11 @@ import type { TranscriptStore } from "#src/native/session/transcript-types";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
 import type { JSONSchema } from "./tool-descriptor.ts";
 
-/** What the session's agent may touch. Capability statements, not tool lists (spec 4.5). */
-export type AgentSessionProfile = "none" | "read" | "full";
+/**
+ * What the session's agent may touch. Capability statements, not tool lists
+ * (spec 4.5). `ask`: every mutating action is approved through `answer()`.
+ */
+export type AgentSessionProfile = "none" | "read" | "ask" | "full";
 
 export interface EmbedderToolContext {
   readonly sessionId: string;
@@ -88,7 +91,14 @@ export interface CreateAgentSessionOptions {
 
 export type TurnEndStatus = "completed" | "cancelled" | "timed_out" | "interrupted" | "errored";
 
-export type ApprovalDecidedBy = "human" | "timeout" | "cancelled" | "unavailable" | "unshowable";
+export type ApprovalDecidedBy = "human" | "timeout" | "cancelled" | "unavailable" | "unshowable" | "profile";
+
+/**
+ * How a turn's `costUsd` was obtained (S4 spec 5.5). Absent means `computed`
+ * from the catalog (the native backend). `unpriced` rows carry `costUsd: 0`
+ * and must not be summed as a real cost.
+ */
+export type CostSource = "computed" | "reported" | "unpriced";
 
 export interface SessionEventBase {
   readonly sessionId: string;
@@ -130,6 +140,7 @@ export type SessionEventBody =
       readonly cacheRead?: number;
       readonly cacheWrite?: number;
       readonly costUsd: number;
+      readonly costSource?: CostSource;
     }
   | { readonly type: "compaction"; readonly reason: "proactive" | "overflow" }
   | {
@@ -139,6 +150,7 @@ export type SessionEventBody =
       readonly output: string;
       readonly usage: TokenUsage;
       readonly costUsd: number;
+      readonly costSource?: CostSource;
       readonly error?: { readonly code: string; readonly message: string };
     };
 

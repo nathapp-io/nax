@@ -284,6 +284,11 @@ describe("turnEndFromResult", () => {
       expect(end.error?.code).toBe(code);
     },
   );
+
+  test("turnEndFromResult carries costSource when the backend set it, and omits it otherwise", () => {
+    expect(turnEndFromResult(result({ costSource: "unpriced" })).costSource).toBe("unpriced");
+    expect("costSource" in turnEndFromResult(result())).toBe(false);
+  });
 });
 
 describe("createAgentSession: turn failures arrive as turn_end", () => {

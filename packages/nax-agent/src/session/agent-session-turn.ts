@@ -105,6 +105,7 @@ export function turnEndFromResult(result: TurnResult): TurnEndBody {
     output: result.output,
     usage: result.tokenUsage,
     costUsd: result.exactCostUsd ?? result.estimatedCostUsd,
+    ...(result.costSource !== undefined ? { costSource: result.costSource } : {}),
   };
   if (result.timedOut === true) return { ...base, status: "timed_out" };
   const halt = haltOf(result);
