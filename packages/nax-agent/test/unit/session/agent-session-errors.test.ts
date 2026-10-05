@@ -1,9 +1,12 @@
 /**
  * S3-4: the facade's public error. A NaxError subclass so nax-agent's own
  * `instanceof NaxError` checks keep working, with a typed code for embedders
- * (NaxError itself is not on `.`).
+ * (NaxError itself is on `.` since S4-2, for backends).
  */
 import { describe, expect, test } from "bun:test";
+// Namespace import rather than a capitalized import rename: the escape-hatches
+// ratchet would count a rename here as a loose cast (regex, no parser).
+import * as publicEntry from "@nathapp/nax-agent";
 import { AgentSessionError } from "@nathapp/nax-agent";
 import { NaxError } from "#src/infra/nax-error";
 
@@ -20,6 +23,11 @@ describe("AgentSessionError", () => {
 
   test("context defaults to the stage alone", () => {
     expect(new AgentSessionError("x", "AGENT_SESSION_CLOSED").context).toEqual({ stage: "agent-session" });
+  });
+
+  test("NaxError is on the public entry and is the class nax-agent throws (S4-2, spec §5.6)", () => {
+    expect(publicEntry.NaxError).toBe(NaxError);
+    expect(new AgentSessionError("x", "AGENT_SESSION_CLOSED")).toBeInstanceOf(publicEntry.NaxError);
   });
 
   test("the S4 codes construct AgentSessionErrors in the agent-session stage", () => {
