@@ -57,7 +57,7 @@ const OptionsSchema = z.strictObject({
     .string()
     .regex(SESSION_ID, "must be 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit")
     .optional(),
-  profile: z.enum(["none", "read", "full"]),
+  profile: z.enum(["none", "read", "ask", "full"]),
   workdir: z
     .string()
     .refine((dir) => isAbsolute(dir), "must be an absolute path")

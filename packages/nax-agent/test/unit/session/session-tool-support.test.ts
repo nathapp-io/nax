@@ -68,12 +68,23 @@ describe("declaredToolsFor and grantsFor", () => {
     expect(declaredToolsFor("read", { ...EMPTY, gitIgnorePatterns: ["dist/"] })).not.toContain("GitCommit");
   });
 
-  test("only gated Bash gets an ask rule", () => {
-    const full = declaredToolsFor("full", EMPTY);
-    expect(askRulesFor(full, "gated")).toEqual([{ tool: "Bash", patterns: ["*"] }]);
-    expect(askRulesFor(full, "raw")).toEqual([]);
-    expect(askRulesFor(full, "escalate")).toEqual([]);
-    expect(askRulesFor(declaredToolsFor("read", EMPTY), "gated")).toEqual([]);
+  test("ask declares the full tool set and asks for every mutating tool", () => {
+    const policy = { gitExcludePathspecs: [], gitIgnorePatterns: [".nax/"] };
+    const declared = declaredToolsFor("ask", policy);
+    expect(declared).toEqual(declaredToolsFor("full", policy));
+    const asked = askRulesFor(declared, "gated", "ask")
+      .map((rule) => rule.tool)
+      .sort();
+    expect(asked).toEqual(["Bash", "Delete", "Edit", "GitCommit", "Write"]);
+    expect(askRulesFor(declared, "gated", "ask").every((rule) => rule.patterns.join() === "*")).toBe(true);
+  });
+
+  test("full keeps the 0.2.0 ask rules (Bash under gated only)", () => {
+    const declared = declaredToolsFor("full", EMPTY);
+    expect(askRulesFor(declared, "gated", "full").map((rule) => rule.tool)).toEqual(["Bash"]);
+    expect(askRulesFor(declared, "raw", "full")).toEqual([]);
+    expect(askRulesFor(declared, "escalate", "full")).toEqual([]);
+    expect(askRulesFor(declaredToolsFor("read", EMPTY), "gated", "full")).toEqual([]);
   });
 
   test("every declared tool gets an unconditional grant", () => {

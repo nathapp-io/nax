@@ -108,6 +108,11 @@ export function nativeProfileRules(
     throw invalid('allowUnsandboxed applies to profiles "ask" and "full" only', { path: "backend.allowUnsandboxed" });
   }
   const bashApproval = raw.bashApproval ?? "gated";
+  if (profile === "ask" && bashApproval !== "gated") {
+    throw invalid('profile "ask" requires bashApproval "gated" (other modes run Bash without asking)', {
+      path: "backend.bashApproval",
+    });
+  }
   if (raw.allowUnsandboxed === true && bashApproval !== "gated") {
     throw invalid('allowUnsandboxed requires bashApproval "gated"', { path: "backend.allowUnsandboxed" });
   }

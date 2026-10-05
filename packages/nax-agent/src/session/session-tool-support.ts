@@ -24,6 +24,7 @@ export const SESSION_STAGE = "session";
 
 const READ_TOOLS: readonly CodingToolName[] = ["Read", "Glob", "Grep", "Git"];
 const WRITE_TOOLS: readonly CodingToolName[] = ["Write", "Edit", "Delete", "Bash"];
+const ASK_PROFILE_TOOLS: readonly CodingToolName[] = ["Write", "Edit", "Delete", "GitCommit"];
 
 export function declaredToolsFor(
   profile: AgentSessionProfile,
@@ -41,12 +42,18 @@ export function grantsFor(declared: readonly CodingToolName[]): readonly ToolGra
 }
 
 /**
- * Under "gated", every Bash command is put to the person: an unconditional ask
- * rule on top of the unconditional grant (ask rules are evaluated after
- * grants). "raw" and "escalate" add none.
+ * Ask rules evaluate after grants. Under "gated" every Bash command is put to
+ * the person. Under the "ask" profile every mutating path tool is too, and the
+ * profile forces "gated", so Bash always asks there.
  */
-export function askRulesFor(declared: readonly CodingToolName[], bashApproval: BashApprovalMode): readonly ToolGrant[] {
-  return bashApproval === "gated" && declared.includes("Bash") ? [{ tool: "Bash", patterns: ["*"] }] : [];
+export function askRulesFor(
+  declared: readonly CodingToolName[],
+  bashApproval: BashApprovalMode,
+  profile: AgentSessionProfile,
+): readonly ToolGrant[] {
+  const bash = bashApproval === "gated" && declared.includes("Bash") ? ["Bash" as const] : [];
+  const mutating = profile === "ask" ? ASK_PROFILE_TOOLS.filter((tool) => declared.includes(tool)) : [];
+  return [...mutating, ...bash].map((tool) => ({ tool, patterns: ["*"] }));
 }
 
 /** The configured credentials directory; undefined when configureCredentials was never called. */
@@ -77,9 +84,9 @@ export interface SessionLauncherArgs {
   readonly allowUnsandboxed: boolean;
 }
 
-/** The sandbox floor (spec 6.3): "full" needs a usable sandbox unless gated + allowUnsandboxed. */
+/** The sandbox floor (spec 6.3): "ask" and "full" need a usable sandbox unless gated + allowUnsandboxed. */
 export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise<CommandLauncher | undefined> {
-  if (args.profile !== "full") return undefined;
+  if (args.profile !== "full" && args.profile !== "ask") return undefined;
   const launcher = await resolveSessionSandbox({
     config: DEFAULT_SANDBOX_CONFIG,
     root: args.root,
@@ -91,7 +98,7 @@ export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise
   if (args.bashApproval === "gated" && args.allowUnsandboxed) return undefined;
   const reason = launcher.state.kind === "unavailable" ? launcher.state.reason : "the sandbox is disabled";
   throw new AgentSessionError(
-    `Profile "full" needs a usable sandbox (${reason}). Pass bashApproval "gated" with allowUnsandboxed: true to run without one.`,
+    `Profile "${args.profile}" needs a usable sandbox (${reason}). Pass bashApproval "gated" with allowUnsandboxed: true to run without one.`,
     "AGENT_SESSION_SANDBOX_UNAVAILABLE",
     { reason },
   );
@@ -116,7 +123,7 @@ export interface SessionToolSupport {
 export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionToolSupport {
   const declared = declaredToolsFor(args.profile, args.protectedPaths);
   const grants = grantsFor(declared);
-  const askRules = askRulesFor(declared, args.bashApproval);
+  const askRules = askRulesFor(declared, args.bashApproval, args.profile);
   const support = buildCodingToolSupport({
     root: args.root,
     commandCwd: args.root,

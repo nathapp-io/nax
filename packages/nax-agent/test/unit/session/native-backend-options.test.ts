@@ -73,8 +73,16 @@ describe("nativeProfileRules", () => {
     expect(nativeProfileRules("full", raw)).toEqual({ bashApproval: "gated", allowUnsandboxed: false });
   });
 
-  test("ask defaults to gated and sandboxed, like full", () => {
-    expect(nativeProfileRules("ask", raw)).toEqual({ bashApproval: "gated", allowUnsandboxed: false });
+  test("ask forces gated: raw and escalate are refused, the default is gated", () => {
+    expect(nativeProfileRules("ask", { model: "openai/x" })).toEqual({
+      bashApproval: "gated",
+      allowUnsandboxed: false,
+    });
+    for (const mode of ["raw", "escalate"] as const) {
+      expect(code(() => nativeProfileRules("ask", { model: "openai/x", bashApproval: mode }))).toBe(
+        "AGENT_SESSION_INVALID_OPTIONS",
+      );
+    }
   });
 
   test("read and none accept neither knob", () => {
@@ -93,8 +101,8 @@ describe("nativeProfileRules", () => {
     }
   });
 
-  test("ask and full accept bashApproval and allowUnsandboxed", () => {
-    expect(nativeProfileRules("ask", { ...raw, bashApproval: "raw" })).toEqual({
+  test("full accepts bashApproval and allowUnsandboxed", () => {
+    expect(nativeProfileRules("full", { ...raw, bashApproval: "raw" })).toEqual({
       bashApproval: "raw",
       allowUnsandboxed: false,
     });
