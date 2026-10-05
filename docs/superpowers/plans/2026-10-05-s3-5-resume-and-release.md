@@ -68,6 +68,7 @@ Everything else is tests, fixtures and documentation.
   - Publishing happens only through the release helper and the tag workflow (`RELEASING.md`, "Subsequent releases").
   - Never `npm publish` by hand, never re-publish an existing version, never bump to a different version to retry.
   - Release order is nax-ai → nax-agent → nax. nax-ai is unchanged, and nax is not released in this plan.
+- **Formatting.** The code blocks in this plan are not biome-formatted (line wraps, import order). After writing code in any task, run `bun run lint:fix` from `packages/nax-agent`, then `bun run lint`. Formatting changes are expected; a lint error that `lint:fix` cannot fix is a finding.
 - **Style.** No emojis. Conventional commits (`feat:`, `test:`, `docs:`, `chore:`).
 - **macOS shell:** use `sed -i ''`, and a `for` loop over `grep -rl` output instead of piping into `xargs`.
 
@@ -584,6 +585,8 @@ Run, from `packages/nax-agent`:
 
 Expected: all PASS. The second command shows that the S3-4 suites are unchanged.
 
+If only the `[high]` effort case fails, and it fails at `sendTurn` because the scripted model lists no `thinkingLevels`, stop and report it: whether an effort suffix may resume is a design question, not a test to drop.
+
 - [ ] **Step 6: Update the API snapshot and run the gates**
 
 Run, from `packages/nax-agent`:
@@ -611,7 +614,7 @@ git commit -m "feat(nax-agent): resumeAgentSession and the interrupted turn stat
 **Interfaces:**
 - Consumes: `OpenSessionOpts.transportRetry?: TurnRetryConfig` (`{ maxAttempts: number; baseDelayMs: number }`, `#src/native/session/turn-retry`).
 - Produces:
-  - `export const SESSION_TRANSPORT_RETRY: TurnRetryConfig` in `agent-session.ts`, unexported from `index.ts`;
+  - a module-private `const SESSION_TRANSPORT_RETRY: TurnRetryConfig` in `agent-session.ts`, not exported;
   - the test helper `faultRound(text: string, kind?: "transport" | "overloaded"): Round` in `test/helpers/agent-session.ts`, used by Task 3.
 
 - [ ] **Step 1: Add the `faultRound` helper**
@@ -686,7 +689,7 @@ Add this below `IDLE_SIGNAL`:
  * overloaded or rate-limit fault that arrives after events have streamed, and
  * emits `stream_reset` so the consumer voids that round's deltas (spec 5.3).
  */
-export const SESSION_TRANSPORT_RETRY: TurnRetryConfig = { maxAttempts: 3, baseDelayMs: 2000 };
+const SESSION_TRANSPORT_RETRY: TurnRetryConfig = { maxAttempts: 3, baseDelayMs: 2000 };
 ```
 
 In `assemble`'s `adapter.openSession(sessionId, { ... })`, add `transportRetry: SESSION_TRANSPORT_RETRY,` directly after `spinBreaker: DEFAULT_SPIN_BREAKER_SETTINGS,`.
@@ -878,7 +881,8 @@ describe("agent session on Node: approvals and questions", () => {
     const deny = reader(session.send("two"));
     const [second] = eventsOf(await deny.until("approval_requested"), "approval_requested");
     session.answer(second?.requestId ?? "", { decision: "deny" });
-    expect(eventsOf(await deny.rest(), "tool_result")[0]?.isError).toBe(true);
+    // A denial is a refusal the model reads, not an error result (as the bun denial test pins).
+    expect(eventsOf(await deny.rest(), "tool_result")[0]?.preview).toContain("Denied");
 
     const timeout = reader(session.send("three"));
     const [third] = eventsOf(await timeout.until("approval_requested"), "approval_requested");
@@ -1368,6 +1372,7 @@ Create `packages/nax-agent/test/node/fixtures/live-chat-smoke.mjs`:
  * directory, read the way nax's CLI reads them.
  */
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { configureCredentials, createAgentSession, createMemoryTranscriptStore } from "@nathapp/nax-agent";
@@ -1376,10 +1381,14 @@ assert.equal(process.versions.bun, undefined, "the live chat smoke must run on n
 
 const model = process.env.NAX_AGENT_LIVE_MODEL ?? "minimax/MiniMax-M2.7";
 const configDir = process.env.NAX_GLOBAL_CONFIG_DIR ?? join(homedir(), ".nax");
-configureCredentials({
-  configDir: () => configDir,
-  readAuthConfig: async () => ({ source: "file", onChange: "warn" }),
-});
+// nax's global auth section with its schema defaults, as test/preload.ts reads it.
+async function readAuthConfig() {
+  const file = join(configDir, "config.json");
+  const auth = (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).auth : undefined) ?? {};
+  const exec = auth.exec === undefined ? undefined : { ...auth.exec, timeoutMs: auth.exec.timeoutMs ?? 10_000 };
+  return { source: auth.source ?? "file", onChange: auth.onChange ?? "warn", ...(exec === undefined ? {} : { exec }) };
+}
+configureCredentials({ configDir: () => configDir, readAuthConfig });
 
 const runs = [];
 const lookupOrder = {
@@ -1447,7 +1456,7 @@ console.log(`live chat smoke ok (model ${model}, $${total.toFixed(4)})`);
 
 - [ ] **Step 2: Syntax-check it without running it**
 
-Run: `node --check test/node/fixtures/live-chat-smoke.mjs` and `bun run lint`.
+Run: `node --check test/node/fixtures/live-chat-smoke.mjs`, then `bun run lint:fix` and `bun run lint`.
 Expected: no output from `node --check`, and lint PASS. `node --check` only parses the file; it does not execute it, so it makes no provider call.
 
 - [ ] **Step 3: Document the procedure**
@@ -1556,8 +1565,8 @@ await session.close();
 ```
 
 - **One turn at a time.** `send()` claims the session's turn slot at once. A second `send()` while a turn runs throws `AGENT_SESSION_BUSY`. The returned iterable is single-use, and the turn starts on its first `next()`. Breaking out of the loop cancels the turn.
-- **Events.** `turn_start`, `text_delta`, `thinking_delta`, `stream_reset`, `tool_call`, `tool_result`, `approval_requested`, `approval_resolved`, `question`, `usage`, `compaction` and `turn_end`. Each carries `sessionId`, `turnId`, `at` and your `metadata`. `turn_end` is always last, and a failed turn arrives as `turn_end`, never as a throw.
-- **Deltas are provisional.** `stream_reset` means the deltas of that round so far are void: the provider call was retried after a transient fault. `turn_end.output` and the stored transcript are authoritative. While your consumer lags, adjacent deltas are merged; control events are never merged or dropped.
+- **Events.** `turn_start`, `text_delta`, `thinking_delta`, `stream_reset`, `tool_call`, `tool_result`, `approval_requested`, `approval_resolved`, `question`, `usage`, `compaction` and `turn_end`. In 0.2.0 sessions do not compact, so `compaction` is not emitted and a conversation that outgrows the model's context window ends `errored`. Each carries `sessionId`, `turnId`, `at` and your `metadata`. `turn_end` is always last, and a failed turn arrives as `turn_end`, never as a throw.
+- **Deltas are provisional.** `stream_reset` means the deltas of that round so far are void: the provider call was retried after a transient fault (up to 3 attempts; a rate-limit retry waits the provider's `retryAfter` silently, and `cancel()` ends the wait). `turn_end.output` and the stored transcript are authoritative. While your consumer lags, adjacent deltas are merged; control events are never merged or dropped.
 - **Approvals and questions.** Answer them with `session.answer(requestId, { decision: "allow" | "deny" })` or `{ text }`. An unanswered one is denied after `approvalTimeoutMs` (default 600000, range 30000..3600000). `answer` returns `"accepted"`, `"expired"`, `"cancelled"` or `"unknown"`.
 - **Profiles.** `none` gives your tools, a private scratchpad and `ask_human`. `read` adds Read, Glob, Grep and read-only Git over `workdir`. `full` adds writes and Bash, under the OS sandbox and `bashApproval` (default `"gated"`: every command is put to the person).
 - **Credentials.** A session's `credentials` (`memory` or `exec`) and `catalogOverrides` give it its own client. Without them it uses the process-wide `configureCredentials` slot.
@@ -1573,7 +1582,7 @@ await session.close();
 
 - [ ] **Step 2: CHANGELOG**
 
-In `packages/nax-agent/CHANGELOG.md`, replace everything between `## [Unreleased]` and `## [0.1.0] - 2026-10-03` (exclusive) with:
+In `packages/nax-agent/CHANGELOG.md`, replace from the `## [Unreleased]` heading line itself up to, but not including, the `## [0.1.0] - 2026-10-03` line, with the block below. The block starts with its own `## [Unreleased]` heading; the file must end up with exactly one.
 
 ```markdown
 ## [Unreleased]
@@ -1588,7 +1597,7 @@ The conversational session API for embedders. nax behaviour unchanged.
 - The `TranscriptStore` port: `TranscriptDoc`, `TurnMarker`, `createFileTranscriptStore`, `createMemoryTranscriptStore` (`MemoryTranscriptStore`). `OpenSessionOpts` gains `transcriptStore`, `retainOnClose` and `systemPrompt`.
 - Native model calls stream. `SendTurnOpts.onTurnEvent` receives `TurnEvent`s (`TurnEventSink`): text and thinking deltas, `stream_reset`, `tool_call`, `tool_result`, per-call `usage` and `compaction`. Payloads are redacted and byte-capped.
 - Per-session credential sources (`CredentialSource`: `memory`, `exec`) and adapter-owned clients (`NativeSessionAdapterOptions`); `AuthStamp.source` may be `memory`.
-- The loop-handler and loop-event types are public on `.`: `LoopHandlerSet`, `LoopHandlerEntry`, `LoopHandlerContext`, `LoopEvent`, `LoopEventMap`, `PayloadOf`, `PatchOf`, `ExternalHandlerOf`, `CompleteCallOptions` and the `Before*` / `After*` / `TransformContext*` payload and patch types. So are the command-interceptor types `CommandInterceptor`, `InterceptRequest`, `InterceptResult`, `ShellInterceptRequest` and `ShellInterceptResult`.
+- The loop-handler and loop-event types are public on `.`: `LoopHandlerSet`, `LoopHandlerEntry`, `LoopHandlerContext`, `LoopEvent`, `LoopEventMap`, `PayloadOf`, `PatchOf`, `ExternalHandlerOf`, `CompleteCallOptions` and the `Before*` / `After*` / `TransformContext*` payload, patch and outcome types. So are the command-interceptor types `CommandInterceptor`, `InterceptRequest`, `InterceptResult`, `ShellInterceptRequest` and `ShellInterceptResult`.
 - The `OwnedPathsPolicy` host port with `EMPTY_OWNED_PATHS_POLICY` and `OwnedBashCandidate`: which paths the host owns the writes to, and how its refusals read. nax supplies its own policy; an embedder that injects nothing gets the empty policy.
 
 ### Changed
@@ -1599,15 +1608,17 @@ The conversational session API for embedders. nax behaviour unchanged.
 - `./internal` (outside semver): the module-scope native session maps are replaced by a per-adapter `NativeSessionState`.
 ```
 
-Then verify that every name added on `.` since 0.1.0 is named in the section:
+Then verify the result. Run these from `packages/nax-agent`. The first check guards the release helper, which throws "Ambiguous changelog notes" on a second `[Unreleased]`. The second compares only the `[.]` sections of the 0.1.0 and current API snapshots, so `./internal` names never enter the changelog:
 
 ```sh
-for name in $(git diff nax-agent-v0.1.0..HEAD -- api/nax-agent.api.txt | awk '/^ \[\.\/internal\]/{exit} /^\+[^+]/{sub(/^\+(type )?/,""); print}'); do
+grep -c '^## \[Unreleased\]' CHANGELOG.md   # must print 1
+sect() { git show "$1":packages/nax-agent/api/nax-agent.api.txt | awk '/^\[\.\/internal\]/{exit} /^\[\.\]/{on=1;next} on&&NF{sub(/^type /,"");print}' | sort; }
+for name in $(comm -13 <(sect nax-agent-v0.1.0) <(sect HEAD)); do
   grep -q "$name" CHANGELOG.md || echo "missing from CHANGELOG: $name"
 done
 ```
 
-Expected: no output. For each name it prints, add that name to the matching bullet above. A `Before*` / `After*` / `TransformContext*` payload or patch type counts as covered by the wildcard sentence; list any other.
+Run the second check after Task 1's snapshot commit, so `HEAD` includes `resumeAgentSession`. Expected output: only `Before*`, `After*` and `TransformContext*` names, which the wildcard sentence covers. For any other name it prints, add it to the matching bullet.
 
 - [ ] **Step 3: Spec amendments**
 
@@ -1622,7 +1633,9 @@ In `docs/superpowers/specs/2026-10-03-s3-conversational-session-api-design.md`:
   is the same model. A document with no recorded model (a marker-only document from a first turn that failed
   before the loop saved) resumes. A document whose `messages` is not an array throws `TRANSCRIPT_CORRUPT`. On
   resume, `lastTurn` is set only for an interrupted turn; an `ended` marker records no status, so `lastTurn` stays
-  undefined. Instructions, tools and profile are not stored; the caller passes them again.
+  undefined. Instructions, tools and profile are not stored; the caller passes them again. The store has no lock:
+  resuming an id that another live session (in this or another process) holds mid-turn ends that turn's
+  `running` marker and reports a false `interrupted`. The embedder must not open one session id twice at once.
 ```
 
 3b. At the end of §5.3, add:
@@ -1630,6 +1643,9 @@ In `docs/superpowers/specs/2026-10-03-s3-conversational-session-api-design.md`:
 ```markdown
 **As built (S3-5).** Facade sessions set `transportRetry` to nax's default (`maxAttempts: 3`, `baseDelayMs: 2000`).
 Without it a facade session never retried a fault after the first event, and `stream_reset` was unreachable.
+A `rate-limit` retry waits the provider's `retryAfter` with no event, up to the turn's remaining budget; `cancel()`
+ends the wait. Facade sessions enable no compaction in 0.2.0 (`assemble` passes no `compaction`), so the
+`compaction` event is not emitted and a conversation that outgrows the context window ends `errored`.
 ```
 
 3c. At the end of §6.4, add:
@@ -1675,9 +1691,9 @@ Record the unit, integration and Node counts and the coverage numbers for the PR
 
 - [ ] **Step 3: nax unchanged**
 
-From `packages/nax`:
-- `bun bin/nax.ts --help | md5` and `bun bin/nax.ts --version`. Expected: both identical to `main`. Compare with a `git stash`-free checkout of `origin/main` in a temporary worktree, or with the values recorded in the S3-4 PR.
-- `git diff origin/main -- packages/nax/`. Expected: empty.
+From the repo root:
+- `git diff --exit-code origin/main -- packages/nax/`. Expected: exit 0, no output.
+- `git diff --name-only origin/main...HEAD -- packages/nax-agent/src`. Expected: exactly `src/index.ts`, `src/session/agent-session.ts`, `src/session/agent-session-resume.ts` and `src/session/agent-session-types.ts`, with nothing under `src/native/`.
 
 - [ ] **Step 4: Whole-branch review**
 
@@ -1700,35 +1716,54 @@ Merge only after CI is green, including the Node 22/24 contract job and the pack
 Run on the merged `main` commit (the release candidate), following `RELEASING.md`, "S3 acceptance".
 
 - [ ] **Step 1: §10.1.** Confirm the CI run for the merge commit is green, including Node 22 and 24 contract and packed smoke. Record the run URL.
-- [ ] **Step 2: §10.2, billed.** Ask the maintainer for approval, naming the model (default `minimax/MiniMax-M2.7`) and the expected cost (a few cents). On approval, run the live chat smoke exactly as `RELEASING.md` describes. Record the model, cost and output. A failed assertion is a finding: report it with the output, and do not re-run with a loosened script.
+- [ ] **Step 2: §10.2, billed.** Ask the maintainer for approval, naming the model (default `minimax/MiniMax-M2.7`) and the expected cost (a few cents; the script has no cost cap, but each turn is bounded by `turnTimeoutSeconds: 300` and the spin breaker, and a missing credential fails before any billed call). On approval, run the live chat smoke exactly as `RELEASING.md` describes. Record the model, cost and output. A failed assertion is a finding: report it with the output, and do not re-run with a loosened script.
 - [ ] **Step 3: §10.3, billed.** Ask the maintainer for approval. S3-5 changes no nax code path, and S3-3's smoke passed at `ef9e80e81`, but S3-4's backend changes (`systemPrompt`, bounded redaction) had no billed smoke, so this run covers them. The maintainer may waive it explicitly. On approval, run the S1-recipe smoke on a fresh fixture copy as in the S3-3 acceptance (trust the copy with `nax trust add <dir> --yes`, reuse the S1 clamp-helper PRD with statuses reset, no `nax plan`, `nax run -f s1-smoke -a native --headless --max-cost 2` using the local build at the candidate). Compare the tool-audit and cost-row shapes against S3-3's recorded evidence.
 
 ---
 
-### Task 10: Release 0.2.0 (controller, approval at each gate)
+### Task 10: Release 0.2.0 (maintainer-run, approval at each gate)
 
-- [ ] **Step 1: Prepare.** After Task 9 passes, ask the maintainer for approval of the concrete `0.2.0` release. From `packages/nax-agent` on clean, up-to-date `main`:
+The release helper asks for confirmation on a TTY, and an agent shell has none: `confirm()` resolves false on EOF, so the helper aborts. **The maintainer runs `release minor` and `release tag` in their own terminal** (or with the `!` prefix in the Claude Code prompt). Nobody pipes an answer (`yes |`) into it; that would defeat the approval gate. The controller prepares, checks and verifies around those two commands.
+
+- [ ] **Step 1: Prepare.** After Task 9 passes, ask the maintainer for approval of the concrete `0.2.0` release. On clean, up-to-date `main`, from `packages/nax-agent`, the maintainer runs:
 
 ```sh
-rtk bun run release --dry-run minor
-rtk bun run release minor
+bun run release --dry-run minor
+bun run release minor
 ```
 
-Expected: the dry run shows `0.1.0 -> 0.2.0`, the changelog section dated, and the `latest` dist-tag. The second command opens the release-preparation PR. Review and merge it; it needs green CI.
+Expected:
+- The dry run prints version `0.2.0`, tag `nax-agent-v0.2.0`, the branch and dist-tag `latest`. It does not touch the changelog; the date appears only in the release PR.
+- The real run dates the `[Unreleased]` section and opens the release-preparation PR. If it throws "Ambiguous changelog notes", Task 7's single-heading check was skipped: fix `CHANGELOG.md` on `main` first.
 
-- [ ] **Step 2: Tag.** Ask the maintainer for separate approval of the tag push. On clean, updated `main`:
+Review the PR (version bump, dated changelog, lockfile) and merge it on green CI.
+
+- [ ] **Step 2: Tag.** Ask the maintainer for separate approval of the tag push. First confirm the tag will land on the merged release commit:
 
 ```sh
-rtk bun run release --dry-run tag
-rtk bun run release tag
+git checkout main && git pull --ff-only origin main
+git log -1 --oneline                                # the release PR's merge
+test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" && echo head-ok
+(cd packages/nax-agent && node -p "require('./package.json').version")   # must print 0.2.0
+git status --short                                  # must be empty
+```
+
+Then, from `packages/nax-agent`, the maintainer runs:
+
+```sh
+bun run release --dry-run tag
+bun run release tag
 ```
 
 This pushes `nax-agent-v0.2.0`. The `release.yml` workflow reruns the gates, publishes `.publish/` with OIDC and provenance, and creates the GitHub prerelease. Watch the run to completion.
 
+**If the workflow fails after the npm upload** (for example while extracting notes or creating the GitHub release), do not re-run it: a re-run tries to publish `0.2.0` again, and only `0.1.0` tolerates an existing version. Check `npm view @nathapp/nax-agent@0.2.0 version` first. If the version is live, create the GitHub prerelease by hand (`gh release create nax-agent-v0.2.0 --prerelease --notes-file <the 0.2.0 changelog section>`) and record the failure.
+
 - [ ] **Step 3: Verify the publish.**
 - `rtk npm view @nathapp/nax-agent@0.2.0 version dist.integrity` and `rtk npm view @nathapp/nax-agent dist-tags --json`. Expected: `latest` is `0.2.0`.
-- Install `@nathapp/nax-agent@0.2.0` into a fresh temporary Node project and run `npm audit signatures`. Expected: a verified registry signature and a verified provenance attestation. This is the first OIDC publish (RELEASING, "Subsequent releases").
-- Copy `test/node/fixtures/packed-smoke.mjs` into the project and run `node packed-smoke.mjs` on Node 22 and on Node 24 (for example `npx -y node@22 packed-smoke.mjs`). Expected: `packed smoke ok` on both. The installed package contains dist and documentation only.
+- `rtk npm view @nathapp/nax-agent@0.2.0 dist.attestations --json`. Expected: a provenance attestation (`predicateType` `https://slsa.dev/provenance/v1`). This is the first OIDC publish (RELEASING, "Subsequent releases").
+- Install `@nathapp/nax-agent@0.2.0` into a fresh temporary Node project and run `npm audit signatures`. Expected: it reports verified registry signatures and verified attestations, including for `@nathapp/nax-agent`.
+- Copy `test/node/fixtures/packed-smoke.mjs` into that project and run it on Node 22 and on Node 24: `npx -y -p node@22 node packed-smoke.mjs` and `npx -y -p node@24 node packed-smoke.mjs`. Expected: `packed smoke ok` on both. The installed package contains dist and documentation only.
 
 - [ ] **Step 4: Record.** In the maintainer's workspace master plan (`projects/nax/nax-agent-master-plan.md`, row S3), record:
 - the release URL, tagged commit, registry integrity and provenance result;
