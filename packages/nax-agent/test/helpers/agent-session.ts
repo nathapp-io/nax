@@ -50,6 +50,17 @@ export function toolRound(
   ];
 }
 
+/**
+ * A round that streams `text`, then fails with a retryable `kind` fault. It
+ * sets `retryAfter: 0`, so the loop's retry waits zero ms and tests never sleep.
+ */
+export function faultRound(text: string, kind: "transport" | "overloaded" = "transport"): Round {
+  return async function* fault(): AsyncGenerator<ProtocolEvent> {
+    yield { type: "text-delta", text };
+    yield { type: "error", error: { kind, message: `scripted ${kind} fault`, retryAfter: 0 } };
+  };
+}
+
 export function installScriptedProvider(): ScriptedProvider {
   const requests: ClientRequest[] = [];
   let queue: readonly Round[] = [];

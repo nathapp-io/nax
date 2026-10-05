@@ -3,14 +3,18 @@
  * One NativeSessionAdapter per session. The facade fills the S1
  * OpenSessionOpts itself and talks to the backend through the S1 contract
  * only (openSession, sendTurn, closeSession), so the acpx backend (S4) slots
- * in behind the same API. resumeAgentSession follows in S3-5.
+ * in behind the same API. resumeAgentSession reopens a stored session
+ * (spec 4.2, 6.4).
  */
 import { DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
 import { NATIVE_AGENT } from "#src/native/models";
+import type { TranscriptStore } from "#src/native/session/transcript-types";
+import type { TurnRetryConfig } from "#src/native/session/turn-retry";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import { type ResolvedAgentSessionOptions, resolveAgentSessionOptions } from "./agent-session-options.ts";
+import { interruptedTurnOf, loadResumable, resumeInput } from "./agent-session-resume.ts";
 import { type ClaimedTurn, claimTurn, type LiveTurn, type TurnRunContext } from "./agent-session-turn.ts";
 import type {
   AgentSession,
@@ -31,8 +35,23 @@ interface LiveSlot {
   callId: string | undefined;
 }
 
+type LastTurn = { readonly turnId: string; readonly status: TurnEndStatus };
+
+/** How the backend session is opened, and the lastTurn a resume reports. */
+interface Opening {
+  readonly resume: boolean;
+  readonly lastTurn: LastTurn | undefined;
+}
+
 /** The handler's turn signal between turns: never aborts. */
 const IDLE_SIGNAL = new AbortController().signal;
+
+/**
+ * nax's `agent.native.transportRetry` default. The loop retries a transport,
+ * overloaded or rate-limit fault that arrives after events have streamed, and
+ * emits `stream_reset` so the consumer voids that round's deltas (spec 5.3).
+ */
+const SESSION_TRANSPORT_RETRY: TurnRetryConfig = { maxAttempts: 3, baseDelayMs: 2000 };
 
 interface SessionRoot {
   readonly dir: string;
@@ -48,16 +67,21 @@ interface SessionParts {
 
 class NativeAgentSession implements AgentSession {
   private active: ClaimedTurn | undefined;
-  private last: { readonly turnId: string; readonly status: TurnEndStatus } | undefined;
+  private last: LastTurn | undefined;
   private closing: Promise<void> | undefined;
 
-  constructor(private readonly parts: SessionParts) {}
+  constructor(
+    private readonly parts: SessionParts,
+    last: LastTurn | undefined,
+  ) {
+    this.last = last;
+  }
 
   get id(): string {
     return this.parts.ctx.sessionId;
   }
 
-  get lastTurn(): { readonly turnId: string; readonly status: TurnEndStatus } | undefined {
+  get lastTurn(): LastTurn | undefined {
     return this.last;
   }
 
@@ -141,7 +165,8 @@ async function assemble(
   options: ResolvedAgentSessionOptions,
   sessionId: string,
   root: SessionRoot,
-): Promise<AgentSession> {
+  opening: Opening,
+): Promise<NativeAgentSession> {
   const raw = options.raw;
   // A supplied policy is merged over the default, so enabling GitCommit never drops the credential read-deny.
   const protectedPaths = { ...defaultProtectedPaths(raw.credentials !== undefined), ...raw.hostPorts?.protectedPaths };
@@ -184,7 +209,9 @@ async function assemble(
     timeoutSeconds: options.turnTimeoutSeconds,
     transcriptStore: raw.transcriptStore,
     retainOnClose: true,
+    resume: opening.resume,
     spinBreaker: DEFAULT_SPIN_BREAKER_SETTINGS,
+    transportRetry: SESSION_TRANSPORT_RETRY,
     // An empty instructions is no system prompt: `system: ""` on the wire invites provider quirks.
     ...(raw.instructions !== undefined && raw.instructions !== "" ? { systemPrompt: raw.instructions } : {}),
   });
@@ -200,7 +227,22 @@ async function assemble(
     turnTimeoutSeconds: options.turnTimeoutSeconds,
     metadata: options.metadata,
   };
-  return new NativeAgentSession({ ctx, table, slot, cleanup: root.cleanup });
+  return new NativeAgentSession({ ctx, table, slot, cleanup: root.cleanup }, opening.lastTurn);
+}
+
+/** Opens the backend session under a fresh root; a failure removes the root. */
+async function open(
+  options: ResolvedAgentSessionOptions,
+  sessionId: string,
+  opening: Opening,
+): Promise<NativeAgentSession> {
+  const root = await sessionRoot(options);
+  try {
+    return await assemble(options, sessionId, root, opening);
+  } catch (err) {
+    await root.cleanup();
+    throw err;
+  }
 }
 
 export async function createAgentSession(input: CreateAgentSessionOptions): Promise<AgentSession> {
@@ -213,11 +255,41 @@ export async function createAgentSession(input: CreateAgentSessionOptions): Prom
       { sessionId },
     );
   }
-  const root = await sessionRoot(options);
+  return open(options, sessionId, { resume: false, lastTurn: undefined });
+}
+
+/**
+ * Spec 6.4: the turn a dead process left running is marked ended, so the next
+ * send starts clean. A failure closes the session and rethrows the store's
+ * error; a close failure would only mask it.
+ */
+async function endInterruptedTurn(
+  session: NativeAgentSession,
+  store: TranscriptStore,
+  sessionId: string,
+  turnId: string,
+): Promise<void> {
   try {
-    return await assemble(options, sessionId, root);
+    await store.markTurn(sessionId, { turnId, state: "ended" });
   } catch (err) {
-    await root.cleanup();
+    await session.close().catch(() => undefined);
     throw err;
   }
+}
+
+/**
+ * Reopens a stored session (spec 4.2). `options` are a create's options; the
+ * session id is the argument. Instructions, tools and profile are not stored:
+ * pass them again.
+ */
+export async function resumeAgentSession(sessionId: string, input: CreateAgentSessionOptions): Promise<AgentSession> {
+  const options = resolveAgentSessionOptions(resumeInput(sessionId, input));
+  const store = options.raw.transcriptStore;
+  const interrupted = interruptedTurnOf(await loadResumable(store, sessionId, options.raw.model));
+  const session = await open(options, sessionId, {
+    resume: true,
+    lastTurn: interrupted === undefined ? undefined : { turnId: interrupted, status: "interrupted" },
+  });
+  if (interrupted !== undefined) await endInterruptedTurn(session, store, sessionId, interrupted);
+  return session;
 }

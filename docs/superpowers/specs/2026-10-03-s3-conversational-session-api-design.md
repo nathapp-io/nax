@@ -153,6 +153,15 @@ open iterator receives `turn_end(cancelled)`), keeps the document in the store a
   silently reads such a transcript as an empty conversation (`isForeignTranscript`,
   `native/session/transcript-store.ts:124-143`); the facade makes it explicit.
 - Opens the S1 session with `resume: true`.
+- **As built (S3-5):** the session id is the argument. `options.sessionId`, if set, must equal it, or the call
+  throws `AGENT_SESSION_INVALID_OPTIONS` before the store is read. Every check runs before any backend opens.
+  The model comparison uses the loop's identity rule (`transcriptModelIdentity`), so a different `[effort]` suffix
+  is the same model. A document with no recorded model (a marker-only document from a first turn that failed
+  before the loop saved) resumes. A document whose `messages` is not an array throws `TRANSCRIPT_CORRUPT`. On
+  resume, `lastTurn` is set only for an interrupted turn; an `ended` marker records no status, so `lastTurn` stays
+  undefined. Instructions, tools and profile are not stored; the caller passes them again. The store has no lock:
+  resuming an id that another live session (in this or another process) holds mid-turn ends that turn's
+  `running` marker and reports a false `interrupted`. The embedder must not open one session id twice at once.
 
 ### 4.3 Embedder tools
 
@@ -306,6 +315,12 @@ nax-ai already implements `Client.complete()` as `collectStream(streamFrom(...))
   attempt after the first.
 - Without a sink (nax), the tap is a pass-through; nax's events and results are unchanged.
 
+**As built (S3-5).** Facade sessions set `transportRetry` to nax's default (`maxAttempts: 3`, `baseDelayMs: 2000`).
+Without it a facade session never retried a fault after the first event, and `stream_reset` was unreachable.
+A `rate-limit` retry waits the provider's `retryAfter` with no event, up to the turn's remaining budget; `cancel()`
+ends the wait. Facade sessions enable no compaction in 0.2.0 (`assemble` passes no `compaction`), so the
+`compaction` event is not emitted and a conversation that outgrows the context window ends `errored`.
+
 ### 5.4 Richer turn events
 
 The same per-turn sink (`SendTurnOpts.onTurnEvent`) carries `tool_call`, `tool_result`, `usage` per call and
@@ -426,6 +441,9 @@ The threat model is agent mistakes only (arc decision D8).
 Pending asks die with the process. `resumeAgentSession` finds `turn.state === "running"`, writes
 `markTurn(ended)`, and sets `session.lastTurn = { turnId, status: "interrupted" }` so the embedder can show it. The
 interrupted turn's user message is not in history (§5.5). The next `send` starts a normal turn.
+
+**As built (S3-5).** The session is opened first and the marker ended second. If `markTurn(ended)` throws, the
+opened session is closed (its private root removed) and the store's error is rethrown.
 
 ### 6.5 Owned-writes policy (arc decision D16; carried from S1 §4.2 row 6)
 

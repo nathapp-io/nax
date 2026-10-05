@@ -6,9 +6,25 @@ release may change the public API.
 
 ## [Unreleased]
 
-Per-session credential sources (`memory`, `exec`) and adapter-owned clients for embedders; `AuthStamp.source` may be `memory`. nax behaviour unchanged.
+The conversational session API for embedders. nax behaviour unchanged.
 
-The `OwnedPathsPolicy` host port lands on the public entry with `EMPTY_OWNED_PATHS_POLICY` and `OwnedBashCandidate`: which paths the host owns the writes to, and how its refusals read. Owned-path rules are now injected by the host — nax supplies its own policy, so nax behaviour is unchanged, and an embedder that injects nothing gets the empty policy. Signatures on `.` change to carry it: `resolveWithin` gains a required third parameter (`ownedPaths`); `SandboxPolicyInput` gains `ownedPaths` (required) and `projectStateDir` (optional), and `buildSandboxPolicy` follows; three `ProtectedPathsPolicy` fields (`projectStateDir`, `credentialDir`, `trustStoreFile`) become optional, and the sandbox skips the absent ones. `Read`, `Glob` and `Grep` now refuse a symlink-resolved host credential directory or trust-store file when the workdir contains it, regardless of grant.
+### Added
+
+- `createAgentSession` and `resumeAgentSession`: a multi-turn session with streamed `SessionEvent`s, embedder tools (`EmbedderTool`, approval `"never" | "always"`), approvals and questions answered with `session.answer()`, `cancel()`, `close()`, and the `none` / `read` / `full` tool profiles. Types: `AgentSession`, `CreateAgentSessionOptions`, `AgentSessionHostPorts`, `AgentSessionProfile`, `EmbedderToolContext`, `EmbedderToolResult`, `SessionEvent`, `SessionEventBase`, `SessionEventBody`, `TurnEndStatus`, `ApprovalDecidedBy`, `AnswerReply`, `AnswerStatus`. Errors: `AgentSessionError` with `AgentSessionErrorCode` (`AGENT_SESSION_*`).
+- `resumeAgentSession` reopens a stored session after a restart; a turn the dead process left running is reported as `lastTurn.status: "interrupted"`.
+- Facade sessions retry a transient provider fault after text has streamed (3 attempts) and emit `stream_reset` for the voided deltas.
+- The `TranscriptStore` port: `TranscriptDoc`, `TurnMarker`, `createFileTranscriptStore`, `createMemoryTranscriptStore` (`MemoryTranscriptStore`). `OpenSessionOpts` gains `transcriptStore`, `retainOnClose` and `systemPrompt`.
+- Native model calls stream. `SendTurnOpts.onTurnEvent` receives `TurnEvent`s (`TurnEventSink`): text and thinking deltas, `stream_reset`, `tool_call`, `tool_result`, per-call `usage` and `compaction`. Payloads are redacted and byte-capped.
+- Per-session credential sources (`CredentialSource`: `memory`, `exec`) and adapter-owned clients (`NativeSessionAdapterOptions`); `AuthStamp.source` may be `memory`.
+- The loop-handler and loop-event types are public on `.`: `LoopHandlerSet`, `LoopHandlerEntry`, `LoopHandlerContext`, `LoopEvent`, `LoopEventMap`, `PayloadOf`, `PatchOf`, `ExternalHandlerOf`, `CompleteCallOptions` and the `Before*` / `After*` / `TransformContext*` payload, patch and outcome types. So are the command-interceptor types `CommandInterceptor`, `InterceptRequest`, `InterceptResult`, `ShellInterceptRequest` and `ShellInterceptResult`.
+- The `OwnedPathsPolicy` host port with `EMPTY_OWNED_PATHS_POLICY` and `OwnedBashCandidate`: which paths the host owns the writes to, and how its refusals read. nax supplies its own policy; an embedder that injects nothing gets the empty policy.
+
+### Changed
+
+- `resolveWithin` gains a required third parameter (`ownedPaths`). `SandboxPolicyInput` gains `ownedPaths` (required) and `projectStateDir` (optional), and `buildSandboxPolicy` follows.
+- Three `ProtectedPathsPolicy` fields (`projectStateDir`, `credentialDir`, `trustStoreFile`) become optional; the sandbox skips the absent ones.
+- `Read`, `Glob` and `Grep` refuse a symlink-resolved host credential directory or trust-store file when the workdir contains it, regardless of grant.
+- `./internal` (outside semver): the module-scope native session maps are replaced by a per-adapter `NativeSessionState`.
 
 ## [0.1.0] - 2026-10-03
 

@@ -64,9 +64,9 @@ export interface CreateAgentSessionOptions {
   readonly tools?: readonly EmbedderTool[];
   /**
    * Where the conversation lives. The session keeps its document on close, so
-   * it can be resumed. A file store's failed-close prune counts every
-   * transcript in its directory, so do not share a file-store directory with
-   * sessions that are closed as failed.
+   * `resumeAgentSession` can reopen it. A file store's failed-close prune counts
+   * every transcript in its directory, so do not share a file-store directory
+   * with sessions that are closed as failed.
    */
   readonly transcriptStore: TranscriptStore;
   /** How long an approval or question waits. Default 600000; 30000..3600000. */
@@ -154,7 +154,7 @@ export type AnswerStatus = "accepted" | "expired" | "cancelled" | "unknown";
 
 export interface AgentSession {
   readonly id: string;
-  /** Set after each `turn_end`; undefined before the first. */
+  /** Set after each `turn_end`; on resume, `interrupted` when a dead process left a turn running. Undefined otherwise. */
   readonly lastTurn: { readonly turnId: string; readonly status: TurnEndStatus } | undefined;
   /** Claims the session's single turn slot synchronously; the turn starts on the first `next()`. */
   send(message: string): AsyncIterable<SessionEvent>;

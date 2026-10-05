@@ -41,7 +41,7 @@ afterAll(() => {
 });
 
 describe("the packed tarball", () => {
-  test("runs one tool round-trip, one native turn and (on Linux) one sandboxed command", () => {
+  test("runs one tool round-trip, one native turn, the S3 chat round-trip and (on Linux) one sandboxed command", () => {
     cpSync(FIXTURE, join(consumer, "packed-smoke.mjs"));
     expect(run("node", ["packed-smoke.mjs"], consumer, 120_000)).toContain("packed smoke ok");
   }, 180_000);
@@ -50,9 +50,10 @@ describe("the packed tarball", () => {
     writeFileSync(
       join(consumer, "index.ts"),
       [
-        'import { NativeSessionAdapter, getAgentRuntime, globTool, nodeRuntime, setAgentRuntime } from "@nathapp/nax-agent";',
+        'import { NativeSessionAdapter, createAgentSession, getAgentRuntime, globTool, nodeRuntime, resumeAgentSession, setAgentRuntime, type SessionEvent } from "@nathapp/nax-agent";',
         'import { _clientDeps } from "@nathapp/nax-agent/internal";',
-        "export const names = [typeof NativeSessionAdapter, typeof getAgentRuntime, typeof globTool, typeof nodeRuntime, typeof setAgentRuntime, typeof _clientDeps];",
+        "export type Event = SessionEvent;",
+        "export const names = [typeof NativeSessionAdapter, typeof createAgentSession, typeof getAgentRuntime, typeof globTool, typeof nodeRuntime, typeof resumeAgentSession, typeof setAgentRuntime, typeof _clientDeps];",
         "",
       ].join("\n"),
     );

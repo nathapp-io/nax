@@ -377,6 +377,7 @@ resolveGitLayout
 resolveNativeId
 resolveProviderTools
 resolveWithin
+resumeAgentSession
 runLogin
 runTempRoots
 runTmpRoot
