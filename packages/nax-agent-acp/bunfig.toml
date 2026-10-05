@@ -1,0 +1,13 @@
+# Bun test configuration for nax-agent-acp (mirrors packages/nax-agent/bunfig.toml, without a preload:
+# this package has no global state to isolate yet).
+
+[test]
+smol = true
+root = "./test"
+timeout = 5000
+
+# Coverage, only when `--coverage` is passed (`bun run test:coverage`): lcov only, test files skipped,
+# floors enforced by packages/repo-tooling/scripts/check-coverage.ts, which parses coverage/lcov.info.
+coverageSkipTestFiles = true
+coverageReporter = ["lcov"]
+coverageDir = "coverage"

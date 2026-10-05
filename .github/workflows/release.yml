@@ -9,6 +9,8 @@ on:
       - "nax-ai-v*.*.*-canary.*"
       - "nax-agent-v*.*.*"
       - "nax-agent-v*.*.*-canary.*"
+      - "nax-agent-acp-v*.*.*"
+      - "nax-agent-acp-v*.*.*-canary.*"
   workflow_dispatch:
     inputs:
       tag:
@@ -37,6 +39,7 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           case "$TAG" in
+            nax-agent-acp-v*) V="${TAG#nax-agent-acp-v}"; echo "dir=packages/nax-agent-acp" >> "$GITHUB_OUTPUT"; echo "name=@nathapp/nax-agent-acp" >> "$GITHUB_OUTPUT" ;;
             nax-agent-v*) V="${TAG#nax-agent-v}"; echo "dir=packages/nax-agent" >> "$GITHUB_OUTPUT"; echo "name=@nathapp/nax-agent" >> "$GITHUB_OUTPUT" ;;
             nax-ai-v*) V="${TAG#nax-ai-v}"; echo "dir=packages/nax-ai" >> "$GITHUB_OUTPUT"; echo "name=@nathapp/nax-ai" >> "$GITHUB_OUTPUT" ;;
             v*)        V="${TAG#v}";        echo "dir=packages/nax" >> "$GITHUB_OUTPUT";    echo "name=@nathapp/nax" >> "$GITHUB_OUTPUT" ;;
@@ -96,7 +99,7 @@ jobs:
         env:
           NAME: ${{ steps.pkg.outputs.name }}
         run: |
-          if [ "$NAME" = "@nathapp/nax-agent" ]; then
+          if [ "$NAME" = "@nathapp/nax-agent" ] || [ "$NAME" = "@nathapp/nax-agent-acp" ]; then
             bun run check:all
             bun run typecheck
             bun run build
@@ -122,7 +125,7 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-          if [ "$NAME" = "@nathapp/nax-ai" ] || [ "$NAME" = "@nathapp/nax-agent" ]; then
+          if [ "$NAME" = "@nathapp/nax-ai" ] || [ "$NAME" = "@nathapp/nax-agent" ] || [ "$NAME" = "@nathapp/nax-agent-acp" ]; then
             # Library release rule: canary → canary dist-tag; otherwise latest,
             # with 0.x marked prerelease. Never notifies Telegram.
             if [[ "$TAG" == *"-canary."* ]]; then
@@ -158,19 +161,38 @@ jobs:
           PIN=$(node -p "require('./package.json').dependencies['@nathapp/nax-ai']")
           npm view "@nathapp/nax-ai@$PIN" version || { echo "::error::@nathapp/nax-ai@$PIN is not on npm; release nax-ai first"; exit 1; }
 
+      # nax-agent-acp peers on @nathapp/nax-agent at the same version (R10), so an acp
+      # release is only installable once that nax-agent version is on npm.
+      - name: nax-agent peer is published
+        if: steps.pkg.outputs.name == '@nathapp/nax-agent-acp'
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: |
+          RANGE=$(node -p "require('./.publish/package.json').peerDependencies?.['@nathapp/nax-agent'] ?? ''")
+          PEER="${RANGE#^}"
+          if [ -z "$PEER" ] || [ "$PEER" = "$RANGE" ]; then echo "::error::staged manifest has no ^X.Y.Z @nathapp/nax-agent peer range"; exit 1; fi
+          OUT=$(npm view "@nathapp/nax-agent@$PEER" version) || { echo "::error::@nathapp/nax-agent@$PEER is not on npm; release nax-agent first"; exit 1; }
+          if [ -z "$OUT" ]; then echo "::error::@nathapp/nax-agent@$PEER is not on npm; release nax-agent first"; exit 1; fi
+
       # Publish to npm (trusted publishing via OIDC — no token needed)
       - name: Publish to npm
         run: |
-          if [ "$NAME" = "@nathapp/nax-agent" ]; then
-            if [ "$VERSION" = "0.1.0" ]; then
-              if REGISTRY_RESULT=$(npm view @nathapp/nax-agent@0.1.0 version --json); then
-                bun scripts/verify-bootstrap.ts
+          if [ "$NAME" = "@nathapp/nax-agent" ] || [ "$NAME" = "@nathapp/nax-agent-acp" ]; then
+            # Each package's first version was published manually (D23); its tag only verifies it.
+            if [ "$NAME" = "@nathapp/nax-agent" ]; then BOOTSTRAP=0.1.0; else BOOTSTRAP=0.3.0; fi
+            if [ "$VERSION" = "$BOOTSTRAP" ]; then
+              if REGISTRY_RESULT=$(npm view "$NAME@$BOOTSTRAP" version --json); then
+                bun ../repo-tooling/scripts/verify-bootstrap.ts --package=. --version="$BOOTSTRAP"
                 exit 0
               else
                 REGISTRY_RESULT="$REGISTRY_RESULT" node -e '
                   const result = JSON.parse(process.env.REGISTRY_RESULT || "{}");
                   if (result.error?.code !== "E404") throw new Error("bootstrap registry check failed: " + JSON.stringify(result));
                 '
+                # Trusted publishing cannot create a package: the acp first version must already exist.
+                if [ "$NAME" = "@nathapp/nax-agent-acp" ]; then
+                  echo "::error::@nathapp/nax-agent-acp@$BOOTSTRAP is not on npm; publish it manually first (packages/nax-agent-acp/RELEASING.md)"
+                  exit 1
+                fi
               fi
             fi
             # publishConfig.tag also needs the canary value; do not rely on flag precedence.

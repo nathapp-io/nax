@@ -6,6 +6,7 @@ import {
   type ApiSurface,
   checkApiSnapshot,
   diffSnapshots,
+  entryPointsOf,
   extractApiSurface,
   extractPackageSurface,
   privateNamesOnPublicEntry,
@@ -54,7 +55,12 @@ const FIXTURE_FILES: Record<string, string> = {
 
 function writeFixture(root: string, files: Record<string, string>): void {
   const all: Record<string, string> = {
-    "package.json": JSON.stringify({ name: "@scope/fixture", type: "module", imports: { "#src/*": "./src/*.ts" } }),
+    "package.json": JSON.stringify({
+      name: "@scope/fixture",
+      type: "module",
+      exports: { ".": "./src/index.ts", "./internal": "./src/internal.ts" },
+      imports: { "#src/*": "./src/*.ts" },
+    }),
     "tsconfig.build.json": JSON.stringify(BUILD_CONFIG),
     ...files,
   };
@@ -168,7 +174,12 @@ describe("extractApiSurface", () => {
       mkdirSync(dirname(join(root, rel)), { recursive: true });
       writeFileSync(join(root, rel), body, "utf8");
     }
-    await expect(extractApiSurface(root)).rejects.toThrow(/missing\.ts/);
+    await expect(
+      extractApiSurface(root, [
+        { entry: ".", dts: "index.d.ts" },
+        { entry: "./internal", dts: "internal.d.ts" },
+      ]),
+    ).rejects.toThrow(/missing\.ts/);
   }, 60_000);
 });
 
@@ -189,10 +200,10 @@ describe("renderSnapshot and diffSnapshots", () => {
   test("diffSnapshots reports added and removed lines per section, and a kind flip as one of each", () => {
     const before = renderSnapshot("p", surface);
     const flipped: ApiSurface = {
+      ...surface,
       ".": surface["."]
         .filter((e) => e.name !== "Zed")
         .map((e) => (e.name === "Klass" ? { ...e, kind: "type" as const } : e)),
-      "./internal": surface["./internal"],
     };
     expect(diffSnapshots(before, renderSnapshot("p", flipped))).toEqual({
       added: ["[.] type Klass"],
@@ -204,7 +215,7 @@ describe("renderSnapshot and diffSnapshots", () => {
 
 describe("privateNamesOnPublicEntry", () => {
   test("reports a `_` name that arrives through export *, and ignores `_` names on /internal", () => {
-    expect(privateNamesOnPublicEntry(surface)).toEqual(["_seam"]);
+    expect(privateNamesOnPublicEntry(surface)).toEqual([{ entry: ".", names: ["_seam"] }]);
     expect(
       privateNamesOnPublicEntry({ ".": [{ name: "a", kind: "value" }], "./internal": [{ name: "_x", kind: "value" }] }),
     ).toEqual([]);
@@ -261,5 +272,59 @@ describe("checkApiSnapshot", () => {
     expect(result.ok).toBe(false);
     expect(result.messages.join("\n")).toContain("_seam");
     expect(existsSync(snapshotPathFor(root))).toBe(false);
+  }, 60_000);
+});
+
+describe("entryPointsOf", () => {
+  test("maps each exports key to its built declaration, sorted by entry", () => {
+    const root = fixture({
+      ...FIXTURE_FILES,
+      "package.json": JSON.stringify({
+        name: "@scope/two",
+        type: "module",
+        exports: { "./server": "./src/server/index.ts", "./client": "./src/client/index.ts" },
+      }),
+    });
+    expect(entryPointsOf(root)).toEqual([
+      { entry: "./client", dts: "client/index.d.ts" },
+      { entry: "./server", dts: "server/index.d.ts" },
+    ]);
+  });
+
+  test("rejects a package with no exports, and an exports target outside ./src/*.ts", () => {
+    const none = fixture({ ...FIXTURE_FILES, "package.json": JSON.stringify({ name: "@scope/none" }) });
+    expect(() => entryPointsOf(none)).toThrow(/no "exports"/);
+    const bad = fixture({
+      ...FIXTURE_FILES,
+      "package.json": JSON.stringify({ name: "@scope/bad", exports: { ".": "./dist/index.js" } }),
+    });
+    expect(() => entryPointsOf(bad)).toThrow(/\.\/src\/\*\.ts/);
+  });
+});
+
+describe("multi-entry packages", () => {
+  const TWO: Record<string, string> = {
+    "package.json": JSON.stringify({
+      name: "@scope/two",
+      type: "module",
+      exports: { "./client": "./src/client/index.ts", "./server": "./src/server/index.ts" },
+      imports: { "#src/*": "./src/*.ts" },
+    }),
+    "src/client/index.ts": 'export { reg } from "./reg.ts";\n',
+    "src/client/reg.ts": "export const reg = 1;\nexport const _hidden = 2;\n",
+    "src/server/index.ts": "/** Reserved. */\nexport {};\n",
+  };
+
+  test("an entry with no exports is an empty section, not an error", async () => {
+    const root = fixture(TWO);
+    expect((await checkApiSnapshot(root, { update: true })).ok).toBe(true);
+    expect(readFileSync(snapshotPathFor(root), "utf8")).toContain("\n[./client]\nreg\n\n[./server]\n");
+  }, 60_000);
+
+  test("a `_` name on any entry other than ./internal fails", async () => {
+    const root = fixture({ ...TWO, "src/client/index.ts": 'export * from "./reg.ts";\n' });
+    const result = await checkApiSnapshot(root, { update: true });
+    expect(result.ok).toBe(false);
+    expect(result.messages.join("\n")).toContain('"./client" exports 1 "_" name(s): _hidden');
   }, 60_000);
 });

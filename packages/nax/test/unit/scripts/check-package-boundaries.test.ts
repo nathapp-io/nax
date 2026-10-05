@@ -230,3 +230,119 @@ test("agent production Bun imports fail while retained Bun tests and nax runtime
     "packages/nax-agent/src/bun.ts bun:test Bun import outside test/",
   ]);
 });
+
+describe("nax-agent-acp", () => {
+  function acp(): void {
+    workspace();
+    write(
+      "packages/nax-agent-acp/package.json",
+      JSON.stringify({
+        name: "@nathapp/nax-agent-acp",
+        dependencies: { "@agentclientprotocol/sdk": "~1.7.0", "@modelcontextprotocol/sdk": "^1.30.0", zod: "^4" },
+        peerDependencies: { "@nathapp/nax-agent": "workspace:*" },
+        devDependencies: { "@nathapp/nax-agent": "workspace:*", "@nathapp/nax-test-kit": "workspace:*", vitest: "4" },
+      }),
+    );
+    write(
+      "packages/nax-agent-acp/src/client/ok.ts",
+      [
+        'import { AgentSessionError } from "@nathapp/nax-agent";',
+        'import type { SessionBackend } from "@nathapp/nax-agent";',
+        'import { ClientSideConnection } from "@agentclientprotocol/sdk";',
+        'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";',
+        'import { z } from "zod";',
+        'import { join } from "node:path";',
+        'import { r } from "#src/client/registry";',
+        'import { s } from "./sibling.ts";',
+        "",
+      ].join("\n"),
+    );
+    write(
+      "packages/nax-agent-acp/test/unit/ok.test.ts",
+      'import { test } from "bun:test";\nimport { t } from "@nathapp/nax-test-kit/bun/temp";\nimport { c } from "@nathapp/nax-agent-acp/client";\n',
+    );
+    write("packages/nax-agent-acp/test/node/ok.test.ts", 'import { test } from "vitest";\n');
+  }
+
+  test("a clean acp package passes", () => {
+    acp();
+    expect(whys()).toEqual([]);
+  });
+
+  test("acp may reach nax-agent only through its public entry, from src/ and test/ alike", () => {
+    acp();
+    write(
+      "packages/nax-agent-acp/src/bad.ts",
+      [
+        'import { _clientDeps } from "@nathapp/nax-agent/internal";',
+        'import type { X } from "@nathapp/nax-agent/internal";',
+        'const m = await import("@nathapp/nax-agent/internal");',
+        'import { y } from "@nathapp/nax-agent/src/index.ts";',
+        "",
+      ].join("\n"),
+    );
+    write("packages/nax-agent-acp/test/unit/bad.test.ts", 'import { s } from "@nathapp/nax-agent/internal";\n');
+    expect(whys()).toEqual([
+      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/internal only @nathapp/nax-agent (never ./internal or a deep path)",
+      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/internal only @nathapp/nax-agent (never ./internal or a deep path)",
+      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/internal only @nathapp/nax-agent (never ./internal or a deep path)",
+      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-agent/src/index.ts only @nathapp/nax-agent (never ./internal or a deep path)",
+      "packages/nax-agent-acp/test/unit/bad.test.ts @nathapp/nax-agent/internal only @nathapp/nax-agent (never ./internal or a deep path)",
+    ]);
+  });
+
+  test("acp src/ may import only the SDK root, the MCP SDK, zod and node builtins", () => {
+    acp();
+    write(
+      "packages/nax-agent-acp/package.json",
+      JSON.stringify({
+        name: "@nathapp/nax-agent-acp",
+        // chalk is declared, so only the src/ allowlist can reject it; the rest matches acp() so ok.ts stays clean.
+        dependencies: {
+          "@agentclientprotocol/sdk": "~1.7.0",
+          "@modelcontextprotocol/sdk": "^1.30.0",
+          zod: "^4",
+          chalk: "^5",
+        },
+        devDependencies: { "@nathapp/nax-agent": "workspace:*", "@nathapp/nax-test-kit": "workspace:*", vitest: "4" },
+      }),
+    );
+    write(
+      "packages/nax-agent-acp/src/bad.ts",
+      [
+        'import { c } from "chalk";',
+        'import { e } from "@agentclientprotocol/sdk/experimental";',
+        'import { v } from "vitest";',
+        'import { n } from "@nathapp/nax";',
+        'import { a } from "@nathapp/nax-ai";',
+        'import { B } from "bun";',
+        'import { p } from "../../nax-agent/src/index.ts";',
+        "",
+      ].join("\n"),
+    );
+    expect(whys()).toEqual([
+      "packages/nax-agent-acp/src/bad.ts chalk nax-agent-acp src/ may import only @agentclientprotocol/sdk, @modelcontextprotocol/sdk, zod",
+      "packages/nax-agent-acp/src/bad.ts @agentclientprotocol/sdk/experimental only the @agentclientprotocol/sdk root",
+      "packages/nax-agent-acp/src/bad.ts vitest devDependency vitest imported outside test/",
+      "packages/nax-agent-acp/src/bad.ts @nathapp/nax imports nax",
+      "packages/nax-agent-acp/src/bad.ts @nathapp/nax-ai imports nax-ai (reach it through @nathapp/nax-agent)",
+      "packages/nax-agent-acp/src/bad.ts bun Bun import outside test/",
+      "packages/nax-agent-acp/src/bad.ts ../../nax-agent/src/index.ts relative import leaves the package",
+    ]);
+  });
+
+  test("no other package may import nax-agent-acp before S4b", () => {
+    acp();
+    write("packages/nax/src/bad.ts", 'import { c } from "@nathapp/nax-agent-acp/client";\n');
+    write("packages/nax-agent/src/bad.ts", 'import { c } from "@nathapp/nax-agent-acp/client";\n');
+    write("packages/nax-ai/src/bad.ts", 'import { c } from "@nathapp/nax-agent-acp/client";\n');
+    write("packages/test-kit/src/bun/bad.ts", 'import { c } from "@nathapp/nax-agent-acp/client";\n');
+    // Package directories are scanned in code-point order: nax, nax-agent, nax-agent-acp, nax-ai, ..., test-kit.
+    expect(whys()).toEqual([
+      "packages/nax/src/bad.ts @nathapp/nax-agent-acp/client nax does not depend on nax-agent-acp until S4b",
+      "packages/nax-agent/src/bad.ts @nathapp/nax-agent-acp/client nax-agent imports nax-agent-acp",
+      "packages/nax-ai/src/bad.ts @nathapp/nax-agent-acp/client nax-ai imports @nathapp/nax-agent-acp",
+      "packages/test-kit/src/bun/bad.ts @nathapp/nax-agent-acp/client @nathapp/nax-test-kit imports @nathapp/nax-agent-acp",
+    ]);
+  });
+});

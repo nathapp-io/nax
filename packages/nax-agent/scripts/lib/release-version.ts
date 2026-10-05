@@ -50,6 +50,45 @@ export function distTagsFor(version: string): string[] {
   return version.includes("-canary.") ? ["canary"] : ["latest"];
 }
 
+/** Semver precedence: -1, 0 or 1. A prerelease sorts below its release; numeric identifiers compare numerically. */
+export function compareVersions(a: string, b: string): number {
+  const x = parseVersion(a);
+  const y = parseVersion(b);
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (x[key] !== y[key]) return x[key] < y[key] ? -1 : 1;
+  }
+  if (x.prerelease === y.prerelease) return 0;
+  if (x.prerelease === undefined) return 1;
+  if (y.prerelease === undefined) return -1;
+  return comparePrereleaseIdentifiers(x.prerelease, y.prerelease);
+}
+
+/** Compares dot-separated prerelease identifiers: numeric ones numerically, numeric below alphanumeric. */
+function comparePrereleaseIdentifiers(left: string, right: string): number {
+  const a = left.split(".");
+  const b = right.split(".");
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const l = a[i];
+    const r = b[i];
+    if (l === undefined) return -1;
+    if (r === undefined) return 1;
+    const order = compareIdentifier(l, r);
+    if (order !== 0) return order;
+  }
+  return 0;
+}
+
+/** -1 or 1 for two unequal single prerelease identifiers; 0 when equal. */
+function compareIdentifier(l: string, r: string): number {
+  if (l === r) return 0;
+  const ln = /^\d+$/.test(l) ? Number(l) : undefined;
+  const rn = /^\d+$/.test(r) ? Number(r) : undefined;
+  if (ln !== undefined && rn !== undefined) return ln < rn ? -1 : 1;
+  if (ln !== undefined) return -1;
+  if (rn !== undefined) return 1;
+  return l < r ? -1 : 1;
+}
+
 export function updateChangelog(text: string, version: string, date: string): string {
   parseVersion(version);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Invalid release date");

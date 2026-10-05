@@ -30,10 +30,11 @@ This repository is a Bun-workspace monorepo. Package-specific context lives in
 | `packages/nax` | `@nathapp/nax` | CLI orchestrator (Bun bundle, `dist/nax.js`) |
 | `packages/nax-ai` | `@nathapp/nax-ai` | Provider-agnostic LLM client (Node target, ESM-only, vitest) |
 | `packages/nax-agent` | `@nathapp/nax-agent` | Node library: session contract, loop, tools, permissions, sandbox; also bundled into nax (workspace private; npm uses staged manifest) |
+| `packages/nax-agent-acp` | `@nathapp/nax-agent-acp` | ACP backend for nax-agent sessions (`./client`; `./server` reserved); Node library, nax-agent peer, versioned in lockstep with nax-agent (workspace private; npm uses staged manifest) |
 | `packages/repo-tooling` | `@nathapp/nax-repo-tooling` | Check scripts shared by the packages (private; never published) |
 | `packages/test-kit` | `@nathapp/nax-test-kit` | Shared bun:test helpers (private; never published) |
 
-Dependency direction: `nax-ai` → `nax-agent` → `nax` (a package never imports one to its right).
+Dependency direction: `nax-ai` → `nax-agent` → `nax`, and `nax-agent` → `nax-agent-acp` (peer). No package imports nax-agent-acp until S4b; it reaches nax-agent only through its public entry. `check:package-boundaries` (packages/nax) enforces both.
 
 ## Tooling
 
@@ -47,7 +48,7 @@ Dependency direction: `nax-ai` → `nax-agent` → `nax` (a package never import
 
 ## Releases
 
-Tag-driven, one `release.yml`: `vX.Y.Z` publishes `@nathapp/nax`; `nax-ai-vX.Y.Z` publishes `@nathapp/nax-ai`; `nax-agent-vX.Y.Z` publishes `@nathapp/nax-agent` from `.publish/`.
+Tag-driven, one `release.yml`: `vX.Y.Z` publishes `@nathapp/nax`; `nax-ai-vX.Y.Z` publishes `@nathapp/nax-ai`; `nax-agent-vX.Y.Z` publishes `@nathapp/nax-agent` from `.publish/`; `nax-agent-acp-vX.Y.Z` publishes `@nathapp/nax-agent-acp` from `.publish/` after the same nax-agent version is on npm.
 Releases are maintainer-initiated only.
-Release order: nax-ai → nax-agent → nax. Bumping nax-ai updates both consumers' exact pins in the same PR.
-nax-agent's first 0.1.0 publish is manual (maintainer OTP/2FA), followed by trusted-publisher setup; its tag verifies the existing artifact and creates the GitHub prerelease. Later agent tags use OIDC with provenance. See `packages/nax-agent/RELEASING.md`.
+Release order: nax-ai → nax-agent → nax-agent-acp → nax. Bumping nax-ai updates both consumers' exact pins in the same PR.
+nax-agent's first 0.1.0 publish is manual (maintainer OTP/2FA), followed by trusted-publisher setup; its tag verifies the existing artifact and creates the GitHub prerelease. Later agent tags use OIDC with provenance. See `packages/nax-agent/RELEASING.md`. nax-agent and nax-agent-acp share one version; nax-agent's release helper bumps both. See `packages/nax-agent-acp/RELEASING.md`.

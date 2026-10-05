@@ -89,7 +89,7 @@ retrying. Once a version exists, do not try to publish it again:
 rtk npm view @nathapp/nax-agent@0.1.0 version dist.integrity
 rtk npm view @nathapp/nax-agent dist-tags --json
 rtk bun run stage-publish
-rtk bun scripts/verify-bootstrap.ts
+rtk bun ../repo-tooling/scripts/verify-bootstrap.ts --package=. --version=0.1.0
 ```
 
 Restaging restores provenance `true`. The verifier fetches the registry tarball
@@ -177,6 +177,11 @@ Add meaningful notes under a single `## [Unreleased]` heading. From
 rtk bun run release --dry-run patch
 rtk bun run release patch
 ```
+
+Since S4-1 the helper also bumps `@nathapp/nax-agent-acp` to the same version (R10),
+so its `## [Unreleased]` notes are required too. Publish nax-agent first with
+`release tag`; `release tag-acp` publishes nax-agent-acp afterwards. See
+`packages/nax-agent-acp/RELEASING.md`.
 
 The helper supports `canary`, `promote`, `patch`, `minor`, `major` or an explicit
 version. It bumps package/changelog metadata, refreshes the root lockfile, commits

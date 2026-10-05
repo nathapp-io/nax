@@ -243,6 +243,96 @@ jobs:
       - name: Node contract suite
         run: bun run test:node
 
+  # S4-1: the ACP backend package. Same gates as nax-agent, without the OS
+  # sandbox (this package never sandboxes; the agent process runs on the host, R7).
+  nax-agent-acp:
+    name: nax-agent-acp
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/nax-agent-acp
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      # Root install: links the workspace (nax-agent as the peer) and runs nax-ai's
+      # `prepare`, whose dist/ the peer's source resolves @nathapp/nax-ai to.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: .
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Check all
+        run: bun run check:all
+
+      - name: Build
+        run: bun run build
+
+      # The built API of ./client and ./server equals api/nax-agent-acp.api.txt.
+      - name: API snapshot
+        run: bun run check:api
+
+      - name: Test (unit)
+        run: bun test ./test/unit/ --timeout=60000 --bail
+
+      # 80% lines and functions overall and per src/ file; every src/ file with code
+      # must appear in the report. The per-file baseline stays empty.
+      - name: Coverage floor
+        run: bun run test:coverage
+
+  nax-agent-acp-node:
+    name: "nax-agent-acp: node ${{ matrix.node }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    defaults:
+      run:
+        working-directory: packages/nax-agent-acp
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: .
+
+      - run: node --version
+
+      - name: Node contract suite
+        run: bun run test:node
+
   tooling:
     name: tooling
     runs-on: ubuntu-latest

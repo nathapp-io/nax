@@ -15,6 +15,10 @@
  *   another package.
  * - packages/test-kit and packages/repo-tooling (private tooling) import no nax
  *   package; repo-tooling may use test-kit from its tests (a devDependency).
+ * - packages/nax-agent-acp (S4 spec section 4) reaches nax-agent only through
+ *   `@nathapp/nax-agent`, never `./internal` or a deep path, from src/ and test/
+ *   alike. Its src/ imports only the ACP SDK root, the MCP SDK, zod and node:
+ *   builtins. No other package imports it (nax adopts it in S4b).
  *
  * Scans src/, test/, bin/ and scripts/ of every package.
  *
@@ -54,7 +58,10 @@ const AGENT = "@nathapp/nax-agent";
 const NAX_ALLOWED_AGENT_SPECS = new Set([AGENT, `${AGENT}/internal`]);
 const TEST_KIT = "@nathapp/nax-test-kit";
 const REPO_TOOLING = "@nathapp/nax-repo-tooling";
-const NAX_PACKAGES = new Set(["@nathapp/nax", AGENT, "@nathapp/nax-ai", TEST_KIT, REPO_TOOLING]);
+const ACP = "@nathapp/nax-agent-acp";
+const ACP_SDK = "@agentclientprotocol/sdk";
+const ACP_SRC_DEPS = new Set([ACP_SDK, "@modelcontextprotocol/sdk", "zod"]);
+const NAX_PACKAGES = new Set(["@nathapp/nax", AGENT, "@nathapp/nax-ai", ACP, TEST_KIT, REPO_TOOLING]);
 
 function inDir(pkg: PackageInfo, file: string, dir: string): boolean {
   return relative(pkg.dir, file).startsWith(`${dir}${sep}`);
@@ -106,6 +113,7 @@ function agentViolation(pkg: PackageInfo, file: string, spec: string): string | 
   if (spec.startsWith("@/") || spec.startsWith("@test/") || spec.startsWith("@scripts/")) return "tsconfig alias";
   const name = packageName(spec);
   if (name === "@nathapp/nax") return "imports nax";
+  if (name === ACP) return "nax-agent imports nax-agent-acp";
   if (name === AGENT || pkg.deps.has(name)) return null;
   const inTests = inDir(pkg, file, "test");
   if (pkg.devDeps.has(name)) return inTests ? null : `devDependency ${name} imported outside test/`;
@@ -114,11 +122,12 @@ function agentViolation(pkg: PackageInfo, file: string, spec: string): string | 
 
 function naxAiViolation(_pkg: PackageInfo, _file: string, spec: string): string | null {
   const name = packageName(spec);
-  return name === "@nathapp/nax" || name === AGENT ? `nax-ai imports ${name}` : null;
+  return name === "@nathapp/nax" || name === AGENT || name === ACP ? `nax-ai imports ${name}` : null;
 }
 
 function naxViolation(pkg: PackageInfo, file: string, spec: string): string | null {
   if (leavesPackage(pkg, file, spec)) return "relative import leaves the package";
+  if (packageName(spec) === ACP) return "nax does not depend on nax-agent-acp until S4b";
   const name = packageName(spec);
   if (name === TEST_KIT) return inDir(pkg, file, "test") ? null : `${TEST_KIT} imported outside test/`;
   if (name === REPO_TOOLING) {
@@ -146,6 +155,32 @@ function toolingViolation(pkg: PackageInfo, file: string, spec: string): string 
   return `undeclared dependency ${name}`;
 }
 
+/** acp's dependency tail: devDependencies are test/- and scripts/-only, and src/ has a strict allowlist. */
+function acpDependencyViolation(pkg: PackageInfo, file: string, name: string, inTests: boolean): string | null {
+  if (pkg.devDeps.has(name) && !pkg.deps.has(name)) {
+    return inTests || inDir(pkg, file, "scripts") ? null : `devDependency ${name} imported outside test/`;
+  }
+  if (!pkg.deps.has(name)) return `undeclared dependency ${name}`;
+  if (!inTests && inDir(pkg, file, "src") && !ACP_SRC_DEPS.has(name)) {
+    return `nax-agent-acp src/ may import only ${[...ACP_SRC_DEPS].join(", ")}`;
+  }
+  return null;
+}
+
+function acpViolation(pkg: PackageInfo, file: string, spec: string): string | null {
+  const inTests = inDir(pkg, file, "test");
+  if ((spec === "bun" || spec.startsWith("bun:")) && !inTests) return "Bun import outside test/";
+  if (isBuiltin(spec) || spec.startsWith("#src/") || spec.startsWith("#test/")) return null;
+  if (spec.startsWith(".")) return leavesPackage(pkg, file, spec) ? "relative import leaves the package" : null;
+  const name = packageName(spec);
+  if (name === pkg.name) return null;
+  if (name === AGENT) return spec === AGENT ? null : `only ${AGENT} (never ./internal or a deep path)`;
+  if (name === "@nathapp/nax") return "imports nax";
+  if (name === "@nathapp/nax-ai") return `imports nax-ai (reach it through ${AGENT})`;
+  if (name === ACP_SDK && spec !== ACP_SDK) return `only the ${ACP_SDK} root`;
+  return acpDependencyViolation(pkg, file, name, inTests);
+}
+
 type Rule = (pkg: PackageInfo, file: string, spec: string) => string | null;
 
 const RULES: Readonly<Record<string, Rule>> = {
@@ -154,6 +189,7 @@ const RULES: Readonly<Record<string, Rule>> = {
   "@nathapp/nax": naxViolation,
   [TEST_KIT]: toolingViolation,
   [REPO_TOOLING]: toolingViolation,
+  [ACP]: acpViolation,
 };
 
 /**

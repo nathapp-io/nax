@@ -1,0 +1,5 @@
+coverage/
+test/tmp/
+node_modules/
+dist/
+.publish/
