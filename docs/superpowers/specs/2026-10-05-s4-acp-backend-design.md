@@ -531,8 +531,8 @@ Release order: nax-ai → nax-agent → nax-agent-acp → nax. nax does not depe
 | PR | Scope |
 |---|---|
 | S4-0 | nax-agent 0.3.0 contract: `SessionBackend`, `SessionAskPort`, `BackendInfo`, `nativeBackend()`, options break, profiles incl. native `ask`, §5.5 additions, the §5.6 backend kit, README and CHANGELOG. **Done when:** the nax-agent gates pass; the nax suite and `bun run typecheck` pass; if any change touches nax-agent `native/`, `tools/`, `permissions/`, `session/` or `internal/` (expected), the billed `nax run` S1-recipe smoke passes (approval at launch). |
-| S4-1 | `packages/nax-agent-acp` scaffold: workspace, tsc build, gates incl. the boundary gate, API snapshot, coverage, CI job, release machinery (§8), context files |
-| S4-2 | `launch`, `registry`, `connection`, `capabilities`, the lifecycle (§6.3), the fake agent, and a minimal `acpBackend()` end to end for text-only `full` sessions |
+| S4-1 | `packages/nax-agent-acp` scaffold: workspace, tsc build, gates incl. the boundary gate, API snapshot, coverage, CI job, release machinery (§8), context files, and the agent registry data (§6.10, `src/client/registry.ts`, not exported) |
+| S4-2 | `launch` (on the S4-1 registry), `connection`, `capabilities`, the lifecycle (§6.3), the fake agent, and a minimal `acpBackend()` end to end for text-only `full` sessions |
 | S4-3 | `permissions` (§6.4), all four profiles end to end |
 | S4-4 | `tool-host` and pre-approval (§6.6) |
 | S4-5 | `events` and usage, `elicitation` (§6.7, §6.8) |
