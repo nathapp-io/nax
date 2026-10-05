@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 // biome-ignore lint/style/noRestrictedImports: release decisions are script helpers, outside the source surface
-import { bumpVersion, distTagsFor, updateChangelog } from "../../../scripts/lib/release-version.ts";
+import { bumpVersion, compareVersions, distTagsFor, updateChangelog } from "../../../scripts/lib/release-version.ts";
 
 describe("release version decisions", () => {
   test.each([
@@ -28,6 +28,14 @@ describe("release version decisions", () => {
     expect(distTagsFor("0.1.0")).toEqual(["latest"]);
     expect(distTagsFor("1.0.0")).toEqual(["latest"]);
     expect(distTagsFor("0.1.1-canary.1")).toEqual(["canary"]);
+  });
+  test("compareVersions orders by semver precedence; a canary sorts below its release", () => {
+    expect(compareVersions("0.3.0", "0.3.0")).toBe(0);
+    expect(compareVersions("0.2.1", "0.3.0")).toBeLessThan(0);
+    expect(compareVersions("0.10.0", "0.9.9")).toBeGreaterThan(0);
+    expect(compareVersions("0.3.0-canary.1", "0.3.0")).toBeLessThan(0);
+    expect(compareVersions("0.3.0-canary.10", "0.3.0-canary.9")).toBeGreaterThan(0);
+    expect(compareVersions("0.3.1-canary.1", "0.3.0")).toBeGreaterThan(0);
   });
 });
 
