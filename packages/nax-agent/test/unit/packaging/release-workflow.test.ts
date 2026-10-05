@@ -158,9 +158,11 @@ describe("release checks and upload", () => {
       expect(result.status).toBe(0);
       expect(result.calls).toEqual([
         "npm view @nathapp/nax-agent@0.1.0 version --json",
-        "bun scripts/verify-bootstrap.ts",
+        "bun ../repo-tooling/scripts/verify-bootstrap.ts --package=. --version=0.1.0",
       ]);
-      const bad = shell.run("Publish to npm", { BUN_FAIL: "scripts/verify-bootstrap.ts" });
+      const bad = shell.run("Publish to npm", {
+        BUN_FAIL: "../repo-tooling/scripts/verify-bootstrap.ts --package=. --version=0.1.0",
+      });
       expect(bad.status).not.toBe(0);
       expect(bad.calls.some((call) => call.startsWith("npm publish"))).toBe(false);
     } finally {

@@ -89,7 +89,7 @@ retrying. Once a version exists, do not try to publish it again:
 rtk npm view @nathapp/nax-agent@0.1.0 version dist.integrity
 rtk npm view @nathapp/nax-agent dist-tags --json
 rtk bun run stage-publish
-rtk bun scripts/verify-bootstrap.ts
+rtk bun ../repo-tooling/scripts/verify-bootstrap.ts --package=. --version=0.1.0
 ```
 
 Restaging restores provenance `true`. The verifier fetches the registry tarball

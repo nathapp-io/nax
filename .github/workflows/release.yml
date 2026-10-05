@@ -164,7 +164,7 @@ jobs:
           if [ "$NAME" = "@nathapp/nax-agent" ]; then
             if [ "$VERSION" = "0.1.0" ]; then
               if REGISTRY_RESULT=$(npm view @nathapp/nax-agent@0.1.0 version --json); then
-                bun scripts/verify-bootstrap.ts
+                bun ../repo-tooling/scripts/verify-bootstrap.ts --package=. --version=0.1.0
                 exit 0
               else
                 REGISTRY_RESULT="$REGISTRY_RESULT" node -e '

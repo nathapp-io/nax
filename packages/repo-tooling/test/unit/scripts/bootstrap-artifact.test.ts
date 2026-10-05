@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
-// biome-ignore lint/style/noRestrictedImports: bootstrap verification is a script, outside the source surface
-import { assertBootstrapArtifact } from "../../../scripts/lib/bootstrap-artifact.ts";
+import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { assertBootstrapArtifact } from "#scripts/lib/bootstrap-artifact";
 
 function fixture(): { dir: string; staged: string; packed: string } {
   const dir = makeTempDir("bootstrap-artifact-");
