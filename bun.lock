@@ -10,7 +10,7 @@
     },
     "packages/nax": {
       "name": "@nathapp/nax",
-      "version": "0.83.2",
+      "version": "0.83.3",
       "bin": {
         "nax": "./dist/nax.js",
       },
@@ -56,6 +56,28 @@
         "vitest": "4.1.9",
       },
     },
+    "packages/nax-agent-acp": {
+      "name": "@nathapp/nax-agent-acp",
+      "version": "0.3.0",
+      "dependencies": {
+        "@agentclientprotocol/sdk": "~1.7.0",
+        "@modelcontextprotocol/sdk": "^1.30.0",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "2.5.10",
+        "@nathapp/nax-agent": "workspace:*",
+        "@nathapp/nax-test-kit": "workspace:*",
+        "@types/bun": "^1.3.8",
+        "@types/node": "25.2.3",
+        "bun-types": "^1.3.9",
+        "typescript": "7.0.2",
+        "vitest": "4.1.9",
+      },
+      "peerDependencies": {
+        "@nathapp/nax-agent": "workspace:*",
+      },
+    },
     "packages/nax-ai": {
       "name": "@nathapp/nax-ai",
       "version": "0.1.16",
@@ -96,6 +118,8 @@
     },
   },
   "packages": {
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.7.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-ZORuxsuEnLjRly7t6Ad7zAsWitjWsyprswyPUHz/yycPb+tTm3DGa8XheaHhRXqX8LS9snuxaYavXSRA50TlHw=="],
+
     "@alcalzone/ansi-tokenize": ["@alcalzone/ansi-tokenize@0.2.5", "", { "dependencies": { "ansi-styles": "^6.2.1", "is-fullwidth-code-point": "^5.0.0" } }, "sha512-3NX/MpTdroi0aKz134A6RC2Gb2iXVECN4QaAXnvCIxxIm3C3AVB1mkUe8NaaiyvOpDfsrqWhYtj+Q6a62RrTsw=="],
 
     "@anthropic-ai/sandbox-runtime": ["@anthropic-ai/sandbox-runtime@0.0.77", "", { "dependencies": { "@pondwader/socks5-server": "^1.0.10", "commander": "^12.1.0", "node-forge": "^1.4.0", "zod": "^3.24.1" }, "bin": { "srt": "dist/cli.js" } }, "sha512-uOe6kkAbo91r5shXXBxZ1DKbOpWmnXkNDDujXrFJRaHSG7D7s8b7Yfsu0pGDkYFgKZ2ECtVCNisl6pCYcaMF7A=="],
@@ -175,6 +199,8 @@
     "@nathapp/nax": ["@nathapp/nax@workspace:packages/nax"],
 
     "@nathapp/nax-agent": ["@nathapp/nax-agent@workspace:packages/nax-agent"],
+
+    "@nathapp/nax-agent-acp": ["@nathapp/nax-agent-acp@workspace:packages/nax-agent-acp"],
 
     "@nathapp/nax-ai": ["@nathapp/nax-ai@workspace:packages/nax-ai"],
 
