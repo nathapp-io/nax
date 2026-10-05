@@ -164,6 +164,7 @@ type ModelSpec
 type ModelTruncationOptions
 NATIVE_AGENT
 NO_OP_INTERACTION_HANDLER
+type NativeBackendOptions
 type NativeCatalogOverrides
 type NativeCompleteContext
 type NativeCompleteOptions
@@ -351,6 +352,7 @@ maskForPrompt
 mcpRuleAdmits
 namespacedToolName
 narrowGrants
+nativeBackend
 nativeComplete
 nativeTierProviders
 naxCredentialStore

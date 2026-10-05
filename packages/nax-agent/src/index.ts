@@ -308,6 +308,8 @@ export {
   type InteractionHandler,
   NO_OP_INTERACTION_HANDLER,
 } from "#src/session/interaction-handler";
+export { nativeBackend } from "#src/session/native-backend";
+export type { NativeBackendOptions } from "#src/session/native-backend-options";
 export type { ProtocolIds } from "#src/session/protocol-types";
 export type {
   ApprovalRequest,
