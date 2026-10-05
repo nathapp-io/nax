@@ -14,6 +14,11 @@ Release preparation and publication follow `packages/nax-agent/RELEASING.md`:
 manual 0.1.0 publish with maintainer OTP/2FA, then trusted-publisher setup;
 subsequent `nax-agent-vX.Y.Z` tags publish through OIDC with provenance.
 
+`@nathapp/nax-agent-acp` peers on this package at the same version (S4 R10): the
+release helper bumps both, and `release tag-acp` publishes it after this package.
+Its only allowed import of nax-agent is the public entry `.`, so any symbol the ACP
+backend needs must be exported from `.`, never `./internal`.
+
 > Edit this file to update AI agent context — do not edit `CLAUDE.md`, `AGENTS.md`,
 > `.cursorrules`, `GEMINI.md` or other generated agent files directly.
 > Run `nax generate` after changing it.
