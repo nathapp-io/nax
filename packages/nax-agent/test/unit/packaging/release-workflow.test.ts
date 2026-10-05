@@ -10,6 +10,8 @@ describe("release workflow routing", () => {
     ["nax-agent-v0.1.0", "packages/nax-agent", "@nathapp/nax-agent", "0.1.0"],
     ["nax-agent-v0.1.1-canary.1", "packages/nax-agent", "@nathapp/nax-agent", "0.1.1-canary.1"],
     ["nax-ai-v0.1.16", "packages/nax-ai", "@nathapp/nax-ai", "0.1.16"],
+    ["nax-agent-acp-v0.3.0", "packages/nax-agent-acp", "@nathapp/nax-agent-acp", "0.3.0"],
+    ["nax-agent-acp-v0.3.1-canary.1", "packages/nax-agent-acp", "@nathapp/nax-agent-acp", "0.3.1-canary.1"],
     ["v0.83.2", "packages/nax", "@nathapp/nax", "0.83.2"],
   ])("routes %s", (tag, dir, name, version) => {
     const shell = makeReleaseShell();
@@ -22,14 +24,17 @@ describe("release workflow routing", () => {
     }
   });
 
-  test.each(["other-v0.1.0", "nax-agent-v", "nax-agent-v0.1.0;echo bad"])("rejects invalid tag %s", (tag) => {
-    const shell = makeReleaseShell();
-    try {
-      expect(shell.run("Resolve package", { TAG: tag }).status).not.toBe(0);
-    } finally {
-      cleanupTempDir(shell.dir);
-    }
-  });
+  test.each(["other-v0.1.0", "nax-agent-v", "nax-agent-v0.1.0;echo bad", "nax-agent-acp-v", "nax-agent-acp-v0.3"])(
+    "rejects invalid tag %s",
+    (tag) => {
+      const shell = makeReleaseShell();
+      try {
+        expect(shell.run("Resolve package", { TAG: tag }).status).not.toBe(0);
+      } finally {
+        cleanupTempDir(shell.dir);
+      }
+    },
+  );
 
   test("dispatch checks out its tag and agent tags trigger the workflow", () => {
     const checkout = releaseWorkflow.jobs.release.steps.find((step) => step.uses?.startsWith("actions/checkout@"));
@@ -37,6 +42,8 @@ describe("release workflow routing", () => {
     expect(checkout?.with?.["fetch-depth"]).toBe(0);
     expect(releaseWorkflow.on.push.tags).toContain("nax-agent-v*.*.*");
     expect(releaseWorkflow.on.push.tags).toContain("nax-agent-v*.*.*-canary.*");
+    expect(releaseWorkflow.on.push.tags).toContain("nax-agent-acp-v*.*.*");
+    expect(releaseWorkflow.on.push.tags).toContain("nax-agent-acp-v*.*.*-canary.*");
   });
 
   test.each([true, false])(
@@ -70,6 +77,8 @@ describe("release workflow routing", () => {
     ["@nathapp/nax-agent", "1.0.0", "latest", "false", "false"],
     ["@nathapp/nax-agent", "0.1.1-canary.1", "canary", "true", "false"],
     ["@nathapp/nax-ai", "0.1.16", "latest", "true", "false"],
+    ["@nathapp/nax-agent-acp", "0.3.0", "latest", "true", "false"],
+    ["@nathapp/nax-agent-acp", "0.3.1-canary.1", "canary", "true", "false"],
     ["@nathapp/nax", "0.83.2", "latest", "false", "true"],
   ])("release info for %s %s", (name, version, npmTag, prerelease, notify) => {
     const shell = makeReleaseShell();
@@ -192,6 +201,101 @@ describe("release checks and upload", () => {
     try {
       expect(shell.run("Validate npm version", { NPM_VERSION: "11.5.0" }).status).not.toBe(0);
       expect(shell.run("Validate npm version", { NPM_VERSION: "11.5.1" }).status).toBe(0);
+    } finally {
+      cleanupTempDir(shell.dir);
+    }
+  });
+});
+
+describe("nax-agent-acp release", () => {
+  const ACP = { NAME: "@nathapp/nax-agent-acp", VERSION: "0.3.0", TAG: "nax-agent-acp-v0.3.0" };
+  const acpManifest = {
+    version: "0.3.0",
+    peerDependencies: { "@nathapp/nax-agent": "^0.3.0" },
+    publishConfig: { tag: "latest" },
+  };
+
+  test("runs the same gates as nax-agent", () => {
+    const shell = makeReleaseShell();
+    try {
+      expect(shell.run("Pre-publish checks", ACP).calls).toEqual([
+        "bun run check:all",
+        "bun run typecheck",
+        "bun run build",
+        "bun run check:api",
+        "bun run test:coverage",
+        "bun run test:node",
+        "bun run stage-publish",
+      ]);
+    } finally {
+      cleanupTempDir(shell.dir);
+    }
+  });
+
+  test("the peer step checks the exact nax-agent version the staged range names", () => {
+    const step = releaseStep("nax-agent peer is published");
+    expect(step.if).toBe("steps.pkg.outputs.name == '@nathapp/nax-agent-acp'");
+    expect(step["working-directory"]).toBe(`\${{ steps.pkg.outputs.dir }}`);
+    const shell = makeReleaseShell({ manifest: acpManifest });
+    try {
+      expect(shell.run("nax-agent peer is published", ACP).calls).toEqual([
+        "npm view @nathapp/nax-agent@0.3.0 version",
+      ]);
+      for (const code of ["E404", "E401", "ETIMEDOUT"]) {
+        expect(shell.run("nax-agent peer is published", { ...ACP, NPM_ERROR: code }).status).not.toBe(0);
+      }
+      expect(shell.run("nax-agent peer is published", { ...ACP, NPM_VIEW_EMPTY: "1" }).status).not.toBe(0);
+    } finally {
+      cleanupTempDir(shell.dir);
+    }
+  });
+
+  test("a staged manifest without the peer range fails the peer step", () => {
+    const shell = makeReleaseShell({ manifest: { version: "0.3.0", publishConfig: { tag: "latest" } } });
+    try {
+      const result = shell.run("nax-agent peer is published", ACP);
+      expect(result.status).not.toBe(0);
+      expect(result.calls).toEqual([]);
+    } finally {
+      cleanupTempDir(shell.dir);
+    }
+  });
+
+  test("0.3.0 is the acp bootstrap: verifies the existing artifact and skips upload", () => {
+    const shell = makeReleaseShell({ manifest: acpManifest });
+    try {
+      const result = shell.run("Publish to npm", ACP);
+      expect(result.status).toBe(0);
+      expect(result.calls).toEqual([
+        "npm view @nathapp/nax-agent-acp@0.3.0 version --json",
+        "bun ../repo-tooling/scripts/verify-bootstrap.ts --package=. --version=0.3.0",
+      ]);
+    } finally {
+      cleanupTempDir(shell.dir);
+    }
+  });
+
+  test("0.3.0 absent from npm stops with a manual-publish error instead of an OIDC upload", () => {
+    const shell = makeReleaseShell({ manifest: acpManifest });
+    try {
+      const result = shell.run("Publish to npm", { ...ACP, NPM_ERROR: "E404" });
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain("publish it manually first");
+      expect(result.calls.some((call) => call.startsWith("npm publish"))).toBe(false);
+    } finally {
+      cleanupTempDir(shell.dir);
+    }
+  });
+
+  test("later acp versions publish .publish/ with the selected dist-tag", () => {
+    const shell = makeReleaseShell({ manifest: { ...acpManifest, version: "0.3.1" } });
+    try {
+      const result = shell.run("Publish to npm", { ...ACP, VERSION: "0.3.1", NPM_TAG: "canary" });
+      expect(result.status).toBe(0);
+      expect(result.calls).toEqual(["npm publish ./.publish/ --access public --tag canary --provenance"]);
+      expect(JSON.parse(readFileSync(join(shell.dir, ".publish/package.json"), "utf8")).publishConfig.tag).toBe(
+        "canary",
+      );
     } finally {
       cleanupTempDir(shell.dir);
     }

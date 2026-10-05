@@ -23,7 +23,7 @@ export function releaseStep(name: string): WorkflowStep {
   return step;
 }
 
-export function makeReleaseShell(): {
+export function makeReleaseShell(opts: { manifest?: Record<string, unknown> } = {}): {
   dir: string;
   run: (
     name: string,
@@ -34,7 +34,7 @@ export function makeReleaseShell(): {
   const bin = join(dir, "bin");
   mkdirSync(bin);
   mkdirSync(join(dir, ".publish"));
-  const manifest = {
+  const manifest = opts.manifest ?? {
     version: "0.1.0",
     dependencies: { "@nathapp/nax-ai": "0.1.16" },
     publishConfig: { tag: "latest" },
@@ -58,6 +58,7 @@ case "$1" in
       echo "{\\"error\\":{\\"code\\":\\"$NPM_ERROR\\"}}"
       exit 1
     fi
+    if [ -n "$NPM_VIEW_EMPTY" ]; then exit 0; fi
     echo '"0.1.0"'
     ;;
   publish) exit "\${NPM_PUBLISH_EXIT:-0}" ;;
