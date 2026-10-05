@@ -13,6 +13,7 @@ import {
   EMPTY_OWNED_PATHS_POLICY,
   globTool,
   NativeSessionAdapter,
+  nativeBackend,
   resetSandboxBackend,
   resumeAgentSession,
 } from "@nathapp/nax-agent";
@@ -197,12 +198,13 @@ const fireApprovalTimers = () => {
 
 const ran = [];
 const chatOptions = {
-  backend: "native",
+  backend: nativeBackend({
+    model: "stub/chat-stub",
+    credentials: { kind: "memory", credentials: { stub: { kind: "api-key", key: "sk-packed" } } },
+  }),
   sessionId: "packed-chat",
-  model: "stub/chat-stub",
   profile: "none",
   transcriptStore: createMemoryTranscriptStore(),
-  credentials: { kind: "memory", credentials: { stub: { kind: "api-key", key: "sk-packed" } } },
   approvalTimeoutMs: 30_000,
   tools: [
     {

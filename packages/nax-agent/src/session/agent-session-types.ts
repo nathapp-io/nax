@@ -4,13 +4,10 @@
  * acpx backend (S4) reuses these types unchanged.
  */
 import type { CommandInterceptor } from "#src/command-interceptor/index";
-import type { BashApprovalMode } from "#src/config/bash-approval";
 import type { TokenUsage } from "#src/cost/standard-types";
-import type { NativeCatalogOverrides } from "#src/native/client";
-import type { CredentialSource } from "#src/native/credentials/session-source";
-import type { LoopHandlerSet } from "#src/native/session/loop-events/types";
 import type { TranscriptStore } from "#src/native/session/transcript-types";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
+import type { BackendInfo, SessionBackend } from "./session-backend.ts";
 import type { JSONSchema } from "./tool-descriptor.ts";
 
 /**
@@ -54,11 +51,10 @@ export interface AgentSessionHostPorts {
 }
 
 export interface CreateAgentSessionOptions {
-  readonly backend: "native";
+  /** The driver: `nativeBackend({ model })`, or an ACP backend. Native-only options live on the backend. */
+  readonly backend: SessionBackend;
   /** The store key. Generated when absent. Letters, digits, `.`, `_`, `-`; starts with a letter or digit; at most 128 characters. */
   readonly sessionId?: string;
-  /** `"provider/model"`, optionally with an `[effort]` suffix. */
-  readonly model: string;
   readonly profile: AgentSessionProfile;
   /** An absolute directory. Required for `read` and `full`; `none` gets a private temporary root. */
   readonly workdir?: string;
@@ -74,19 +70,10 @@ export interface CreateAgentSessionOptions {
   readonly transcriptStore: TranscriptStore;
   /** How long an approval or question waits. Default 600000; 30000..3600000. */
   readonly approvalTimeoutMs?: number;
-  /** `full` only. Default `"gated"`. */
-  readonly bashApproval?: BashApprovalMode;
-  /** `full` only, and only with `bashApproval: "gated"`: run without a sandbox when none is usable. */
-  readonly allowUnsandboxed?: boolean;
-  /** Falls back to the `configureCredentials` slot when absent. */
-  readonly credentials?: CredentialSource;
-  readonly catalogOverrides?: NativeCatalogOverrides;
-  readonly loopHandlers?: LoopHandlerSet;
-  readonly hostPorts?: AgentSessionHostPorts;
-  /** Copied onto every event. */
-  readonly metadata?: Readonly<Record<string, string>>;
   /** Per-turn wall clock. Default 3600; 1..86400. */
   readonly turnTimeoutSeconds?: number;
+  /** Copied onto every event. */
+  readonly metadata?: Readonly<Record<string, string>>;
 }
 
 export type TurnEndStatus = "completed" | "cancelled" | "timed_out" | "interrupted" | "errored";
@@ -166,6 +153,8 @@ export type AnswerStatus = "accepted" | "expired" | "cancelled" | "unknown";
 
 export interface AgentSession {
   readonly id: string;
+  /** The backend that opened this session (`kind` and its capability summary). */
+  readonly backend: BackendInfo;
   /** Set after each `turn_end`; on resume, `interrupted` when a dead process left a turn running. Undefined otherwise. */
   readonly lastTurn: { readonly turnId: string; readonly status: TurnEndStatus } | undefined;
   /** Claims the session's single turn slot synchronously; the turn starts on the first `next()`. */

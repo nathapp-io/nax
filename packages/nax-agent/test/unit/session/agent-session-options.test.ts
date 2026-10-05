@@ -1,11 +1,13 @@
 /**
- * S3-4: createAgentSession's option validation (spec 4.1, 7). zod checks the
- * shape; profile rules, reserved tool names and the model spec are checked
- * after it. The caller's objects are kept, never zod's copies, so an embedder
- * tool written as a class keeps its `this`.
+ * S3-4: createAgentSession's shared option validation (spec 4.1, 7). zod checks
+ * the shape (the backend included); profile rules and reserved tool names are
+ * checked after it. The caller's objects are kept, never zod's copies, so an
+ * embedder tool written as a class keeps its `this`. The native-only options
+ * now live on nativeBackend (S4): a shape error throws from nativeBackend, a
+ * native profile rule rejects from createAgentSession (raised in open).
  */
 import { describe, expect, test } from "bun:test";
-import type { EmbedderTool } from "@nathapp/nax-agent";
+import { createAgentSession, type EmbedderTool, nativeBackend, type SessionBackend } from "@nathapp/nax-agent";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import {
   DEFAULT_APPROVAL_TIMEOUT_MS,
@@ -13,6 +15,10 @@ import {
   resolveAgentSessionOptions,
 } from "#src/session/agent-session-options";
 import { assertNaxError } from "#test/helpers/index";
+
+const MODEL = "openai/gpt-5.4-mini";
+
+const BACKEND: SessionBackend = { kind: "native", open: () => Promise.reject(new Error("not opened")) };
 
 const echo: EmbedderTool = {
   name: "echo",
@@ -26,8 +32,7 @@ const echo: EmbedderTool = {
 
 function base(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    backend: "native",
-    model: "openai/gpt-5.4-mini",
+    backend: BACKEND,
     profile: "none",
     transcriptStore: createMemoryTranscriptStore(),
     ...extra,
@@ -52,11 +57,8 @@ describe("resolveAgentSessionOptions", () => {
     const resolved = resolveAgentSessionOptions(input);
     expect(resolved.raw).toBe<unknown>(input);
     expect(resolved.tools[0]).toBe(echo);
-    expect(resolved.provider).toBe("openai");
     expect(resolved.approvalTimeoutMs).toBe(DEFAULT_APPROVAL_TIMEOUT_MS);
     expect(resolved.turnTimeoutSeconds).toBe(DEFAULT_TURN_TIMEOUT_SECONDS);
-    expect(resolved.bashApproval).toBe("gated");
-    expect(resolved.allowUnsandboxed).toBe(false);
     expect(resolved.metadata).toEqual({});
   });
 
@@ -95,12 +97,12 @@ describe("resolveAgentSessionOptions", () => {
     rejects(base({ profle: "read" }), "AGENT_SESSION_INVALID_OPTIONS", "profle");
   });
 
-  test("rejects the reserved mcpServers option, even when undefined", () => {
-    rejects(base({ mcpServers: undefined }), "AGENT_SESSION_INVALID_OPTIONS", "mcpServers");
+  test("rejects a native option at the top level, by name", () => {
+    rejects(base({ model: MODEL }), "AGENT_SESSION_INVALID_OPTIONS", "model");
   });
 
-  test("hostPorts.runDeclaredCommand is refused as deferred", () => {
-    rejects(base({ hostPorts: { runDeclaredCommand: async () => ({}) } }), "AGENT_SESSION_INVALID_OPTIONS", "deferred");
+  test("rejects the reserved mcpServers option, even when undefined", () => {
+    rejects(base({ mcpServers: undefined }), "AGENT_SESSION_INVALID_OPTIONS", "mcpServers");
   });
 
   test("read and full need an absolute workdir", () => {
@@ -108,38 +110,11 @@ describe("resolveAgentSessionOptions", () => {
     rejects(base({ profile: "full", workdir: "relative/dir" }), "AGENT_SESSION_INVALID_OPTIONS", "workdir");
   });
 
-  test("bashApproval and allowUnsandboxed are full-only", () => {
-    rejects(base({ bashApproval: "raw" }), "AGENT_SESSION_INVALID_OPTIONS", "bashApproval");
-    rejects(
-      base({ profile: "read", workdir: "/tmp", allowUnsandboxed: true }),
-      "AGENT_SESSION_INVALID_OPTIONS",
-      "allowUnsandboxed",
-    );
-  });
-
-  test("allowUnsandboxed needs bashApproval gated", () => {
-    const full = { profile: "full", workdir: "/tmp", allowUnsandboxed: true };
-    rejects(base({ ...full, bashApproval: "raw" }), "AGENT_SESSION_INVALID_OPTIONS", "allowUnsandboxed");
-    expect(resolveAgentSessionOptions(base(full)).allowUnsandboxed).toBe(true);
-  });
-
   test("approvalTimeoutMs and turnTimeoutSeconds are range-checked", () => {
     rejects(base({ approvalTimeoutMs: 29_999 }), "AGENT_SESSION_INVALID_OPTIONS", "approvalTimeoutMs");
     rejects(base({ approvalTimeoutMs: 3_600_001 }), "AGENT_SESSION_INVALID_OPTIONS", "approvalTimeoutMs");
     rejects(base({ turnTimeoutSeconds: 0 }), "AGENT_SESSION_INVALID_OPTIONS", "turnTimeoutSeconds");
     expect(resolveAgentSessionOptions(base({ approvalTimeoutMs: 30_000 })).approvalTimeoutMs).toBe(30_000);
-  });
-
-  test("a malformed model spec is an invalid option", () => {
-    rejects(base({ model: "no-provider" }), "AGENT_SESSION_INVALID_OPTIONS", "model");
-  });
-
-  test("a protectedPaths policy without its arrays is rejected", () => {
-    rejects(
-      base({ hostPorts: { protectedPaths: { credentialDir: "/x" } } }),
-      "AGENT_SESSION_INVALID_OPTIONS",
-      "protectedPaths",
-    );
   });
 
   test("a transcriptStore missing markTurn is rejected", () => {
@@ -163,5 +138,34 @@ describe("resolveAgentSessionOptions", () => {
 
   test("a non-object input is invalid", () => {
     rejects(undefined, "AGENT_SESSION_INVALID_OPTIONS", "options");
+  });
+});
+
+describe("native backend option boundary", () => {
+  test("a shape error throws synchronously from nativeBackend", () => {
+    let caught: unknown;
+    try {
+      nativeBackend({ model: "no-provider" });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+  });
+
+  test("a native profile rule rejects from createAgentSession (raised in open)", async () => {
+    let caught: unknown;
+    try {
+      await createAgentSession({
+        backend: nativeBackend({ model: MODEL, bashApproval: "raw" }),
+        profile: "none",
+        transcriptStore: createMemoryTranscriptStore(),
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(caught.message).toContain("bashApproval");
   });
 });

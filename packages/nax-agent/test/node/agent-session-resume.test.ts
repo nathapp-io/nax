@@ -22,6 +22,7 @@ import {
   collect,
   installScriptedProvider,
   resetScriptedProvider,
+  type SessionTestOptions,
   sessionOptions,
   textRound,
   turnEndOf,
@@ -38,7 +39,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function nodeOptions(extra: Partial<CreateAgentSessionOptions> = {}): CreateAgentSessionOptions {
+function nodeOptions(extra: SessionTestOptions = {}): CreateAgentSessionOptions {
   return sessionOptions({ credentials: CREDENTIALS, transcriptStore: createFileTranscriptStore(dir), ...extra });
 }
 

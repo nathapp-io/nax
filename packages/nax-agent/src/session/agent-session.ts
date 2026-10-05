@@ -1,20 +1,16 @@
 /**
- * createAgentSession: the conversational session facade (S3 spec 4, 5.1).
- * One NativeSessionAdapter per session. The facade fills the S1
- * OpenSessionOpts itself and talks to the backend through the S1 contract
- * only (openSession, sendTurn, closeSession), so the acpx backend (S4) slots
- * in behind the same API. resumeAgentSession reopens a stored session
- * (spec 4.2, 6.4).
+ * createAgentSession: the conversational session facade (S3 spec 4, 5.1). The
+ * facade drives any SessionBackend: it resolves the shared options and the
+ * session root, opens the backend, and runs turns through the S1
+ * AgentSessionAdapter the backend returns. The native backend lives in
+ * native-backend.ts and the ACP backend (S4) satisfies the same seam.
+ * resumeAgentSession reopens a stored session (spec 4.2, 6.4).
  */
-import { DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
-import { NATIVE_AGENT } from "#src/native/models";
-import type { TranscriptStore } from "#src/native/session/transcript-types";
-import type { TurnRetryConfig } from "#src/native/session/turn-retry";
-import { NativeSessionAdapter } from "#src/native/session-adapter";
+import type { TranscriptDoc, TranscriptStore } from "#src/native/session/transcript-types";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import { type ResolvedAgentSessionOptions, resolveAgentSessionOptions } from "./agent-session-options.ts";
-import { interruptedTurnOf, loadResumable, resumeInput } from "./agent-session-resume.ts";
+import { checkBackendKind, interruptedTurnOf, loadResumable, resumeInput } from "./agent-session-resume.ts";
 import { type ClaimedTurn, claimTurn, type LiveTurn, type TurnRunContext } from "./agent-session-turn.ts";
 import type {
   AgentSession,
@@ -25,34 +21,24 @@ import type {
   TurnEndStatus,
 } from "./agent-session-types.ts";
 import { createPendingAskTable, type PendingAskTable } from "./pending-asks.ts";
-import { createSessionAskLink, createSessionAskResolver } from "./session-ask-link.ts";
 import { createSessionAskPort } from "./session-ask-port.ts";
-import { createSessionInteractionHandler, embedderToolDescriptor } from "./session-interaction.ts";
-import { buildSessionToolSupport, defaultProtectedPaths, resolveSessionLauncher } from "./session-tool-support.ts";
+import type { BackendInfo, OpenedBackend } from "./session-backend.ts";
 
-/** The running turn and the tool call being answered: what the ask link and the handler read. */
+/** The running turn: what the ask port reads. */
 interface LiveSlot {
   turn: LiveTurn | undefined;
-  callId: string | undefined;
 }
 
 type LastTurn = { readonly turnId: string; readonly status: TurnEndStatus };
 
-/** How the backend session is opened, and the lastTurn a resume reports. */
+/** How the backend session is opened, and the document a resume starts from. */
 interface Opening {
-  readonly resume: boolean;
+  readonly doc: TranscriptDoc | undefined;
   readonly lastTurn: LastTurn | undefined;
 }
 
 /** The handler's turn signal between turns: never aborts. */
 const IDLE_SIGNAL = new AbortController().signal;
-
-/**
- * nax's `agent.native.transportRetry` default. The loop retries a transport,
- * overloaded or rate-limit fault that arrives after events have streamed, and
- * emits `stream_reset` so the consumer voids that round's deltas (spec 5.3).
- */
-const SESSION_TRANSPORT_RETRY: TurnRetryConfig = { maxAttempts: 3, baseDelayMs: 2000 };
 
 interface SessionRoot {
   readonly dir: string;
@@ -63,10 +49,12 @@ interface SessionParts {
   readonly ctx: TurnRunContext;
   readonly table: PendingAskTable;
   readonly slot: LiveSlot;
+  readonly opened: OpenedBackend;
+  readonly closeController: AbortController;
   readonly cleanup: () => Promise<void>;
 }
 
-class NativeAgentSession implements AgentSession {
+class FacadeAgentSession implements AgentSession {
   private active: ClaimedTurn | undefined;
   private last: LastTurn | undefined;
   private closing: Promise<void> | undefined;
@@ -80,6 +68,10 @@ class NativeAgentSession implements AgentSession {
 
   get id(): string {
     return this.parts.ctx.sessionId;
+  }
+
+  get backend(): BackendInfo {
+    return this.parts.opened.info;
   }
 
   get lastTurn(): LastTurn | undefined {
@@ -124,13 +116,18 @@ class NativeAgentSession implements AgentSession {
 
   private async shutdown(): Promise<void> {
     const active = this.active;
+    this.parts.closeController.abort();
     this.parts.table.close();
     active?.cancel("session closed");
     await active?.settled;
     try {
       await this.parts.ctx.adapter.closeSession(this.parts.ctx.handle);
     } finally {
-      await this.parts.cleanup();
+      try {
+        await this.parts.opened.close();
+      } finally {
+        await this.parts.cleanup();
+      }
     }
   }
 }
@@ -151,84 +148,42 @@ async function sessionRoot(options: ResolvedAgentSessionOptions): Promise<Sessio
   return { dir: workdir, cleanup: async () => {} };
 }
 
-function createAdapter(options: ResolvedAgentSessionOptions): NativeSessionAdapter {
-  const overrides = options.raw.catalogOverrides ?? [];
-  const credentials = options.raw.credentials;
-  // A session with its own catalog or credentials owns its client; the rest share the process memo.
-  const owns = overrides.length > 0 || credentials !== undefined;
-  return new NativeSessionAdapter(overrides, {
-    ...(credentials !== undefined ? { credentials } : {}),
-    ...(owns ? { ownClient: true } : {}),
-  });
-}
-
 async function assemble(
   options: ResolvedAgentSessionOptions,
   sessionId: string,
   root: SessionRoot,
   opening: Opening,
-): Promise<NativeAgentSession> {
+): Promise<FacadeAgentSession> {
   const raw = options.raw;
-  // A supplied policy is merged over the default, so enabling GitCommit never drops the credential read-deny.
-  const protectedPaths = { ...defaultProtectedPaths(raw.credentials !== undefined), ...raw.hostPorts?.protectedPaths };
-  const launcher = await resolveSessionLauncher({
-    profile: raw.profile,
-    root: root.dir,
-    protectedPaths,
-    bashApproval: options.bashApproval,
-    allowUnsandboxed: options.allowUnsandboxed,
-  });
   const table = createPendingAskTable(options.approvalTimeoutMs);
-  const slot: LiveSlot = { turn: undefined, callId: undefined };
-  const port = createSessionAskPort({ table, emit: (body) => slot.turn?.emit(body), turn: () => slot.turn });
-  const { support, grants } = buildSessionToolSupport({
-    profile: raw.profile,
-    root: root.dir,
-    sessionName: sessionId,
-    protectedPaths,
-    bashApproval: options.bashApproval,
-    launcher,
-    askResolver: createSessionAskResolver(createSessionAskLink({ port, currentCallId: () => slot.callId })),
-    interceptor: raw.hostPorts?.commandInterceptor,
-  });
-  const interactionHandler = createSessionInteractionHandler({
+  const slot: LiveSlot = { turn: undefined };
+  const closeController = new AbortController();
+  const asks = createSessionAskPort({ table, emit: (body) => slot.turn?.emit(body), turn: () => slot.turn });
+  const opened = await raw.backend.open({
     sessionId,
-    runtime: support.runtime,
-    embedderTools: new Map(options.tools.map((tool) => [tool.name, tool])),
-    asks: port,
-    turnSignal: () => slot.turn?.signal ?? IDLE_SIGNAL,
-    setCurrentCallId: (callId) => {
-      slot.callId = callId;
-    },
-  });
-  const adapter = createAdapter(options);
-  const handle = await adapter.openSession(sessionId, {
-    agentName: NATIVE_AGENT,
     workdir: root.dir,
-    resolvedPermissions: { mode: "default", toolGrants: grants, bashApproval: options.bashApproval },
-    modelDef: { provider: options.provider, model: raw.model },
-    timeoutSeconds: options.turnTimeoutSeconds,
+    profile: raw.profile,
+    instructions: raw.instructions,
+    tools: options.tools,
     transcriptStore: raw.transcriptStore,
-    retainOnClose: true,
-    resume: opening.resume,
-    spinBreaker: DEFAULT_SPIN_BREAKER_SETTINGS,
-    transportRetry: SESSION_TRANSPORT_RETRY,
-    // An empty instructions is no system prompt: `system: ""` on the wire invites provider quirks.
-    ...(raw.instructions !== undefined && raw.instructions !== "" ? { systemPrompt: raw.instructions } : {}),
+    resume: opening.doc === undefined ? undefined : { doc: opening.doc },
+    asks,
+    turnSignal: () => slot.turn?.signal ?? IDLE_SIGNAL,
+    currentTurnId: () => slot.turn?.turnId,
+    turnTimeoutSeconds: options.turnTimeoutSeconds,
+    metadata: options.metadata,
+    openSignal: closeController.signal,
   });
   const ctx: TurnRunContext = {
     sessionId,
-    adapter,
-    handle,
+    adapter: opened.adapter,
+    handle: opened.handle,
     store: raw.transcriptStore,
-    codingTools: [...support.tools, ...options.tools.map(embedderToolDescriptor)],
-    interactionHandler,
-    loopHandlers: raw.loopHandlers,
-    loopHandlerContext: { sessionName: sessionId, workdir: root.dir, model: raw.model, provider: options.provider },
+    turnOpts: () => opened.turnOpts(),
     turnTimeoutSeconds: options.turnTimeoutSeconds,
     metadata: options.metadata,
   };
-  return new NativeAgentSession({ ctx, table, slot, cleanup: root.cleanup }, opening.lastTurn);
+  return new FacadeAgentSession({ ctx, table, slot, opened, closeController, cleanup: root.cleanup }, opening.lastTurn);
 }
 
 /** Opens the backend session under a fresh root; a failure removes the root. */
@@ -236,7 +191,7 @@ async function open(
   options: ResolvedAgentSessionOptions,
   sessionId: string,
   opening: Opening,
-): Promise<NativeAgentSession> {
+): Promise<FacadeAgentSession> {
   const root = await sessionRoot(options);
   try {
     return await assemble(options, sessionId, root, opening);
@@ -256,7 +211,7 @@ export async function createAgentSession(input: CreateAgentSessionOptions): Prom
       { sessionId },
     );
   }
-  return open(options, sessionId, { resume: false, lastTurn: undefined });
+  return open(options, sessionId, { doc: undefined, lastTurn: undefined });
 }
 
 /**
@@ -265,7 +220,7 @@ export async function createAgentSession(input: CreateAgentSessionOptions): Prom
  * error; a close failure would only mask it.
  */
 async function endInterruptedTurn(
-  session: NativeAgentSession,
+  session: FacadeAgentSession,
   store: TranscriptStore,
   sessionId: string,
   turnId: string,
@@ -286,9 +241,11 @@ async function endInterruptedTurn(
 export async function resumeAgentSession(sessionId: string, input: CreateAgentSessionOptions): Promise<AgentSession> {
   const options = resolveAgentSessionOptions(resumeInput(sessionId, input));
   const store = options.raw.transcriptStore;
-  const interrupted = interruptedTurnOf(await loadResumable(store, sessionId, options.raw.model));
+  const doc = await loadResumable(store, sessionId);
+  checkBackendKind(doc, sessionId, options.raw.backend.kind);
+  const interrupted = interruptedTurnOf(doc);
   const session = await open(options, sessionId, {
-    resume: true,
+    doc,
     lastTurn: interrupted === undefined ? undefined : { turnId: interrupted, status: "interrupted" },
   });
   if (interrupted !== undefined) await endInterruptedTurn(session, store, sessionId, interrupted);

@@ -26,6 +26,7 @@ import {
   installScriptedProvider,
   reader,
   resetScriptedProvider,
+  type SessionTestOptions,
   sessionOptions,
   textRound,
   toolRound,
@@ -43,7 +44,7 @@ afterEach(() => {
   resetScriptedProvider();
 });
 
-function nodeOptions(extra: Partial<CreateAgentSessionOptions> = {}): CreateAgentSessionOptions {
+function nodeOptions(extra: SessionTestOptions = {}): CreateAgentSessionOptions {
   return sessionOptions({ credentials: CREDENTIALS, approvalTimeoutMs: APPROVAL_MS, ...extra });
 }
 

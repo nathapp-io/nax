@@ -4,11 +4,12 @@
  * readers over a send()'s events. Imported by path, not through the helpers
  * barrel, which nearly every suite loads.
  */
-import type { CreateAgentSessionOptions, SessionEvent } from "@nathapp/nax-agent";
+import type { CreateAgentSessionOptions, NativeBackendOptions, SessionBackend, SessionEvent } from "@nathapp/nax-agent";
 import type { Client, ClientRequest, ProtocolEvent, ResolvedModel } from "@nathapp/nax-ai";
 import { _clientDeps, _resetNativeClient } from "#src/native/client";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { _agentSessionDeps } from "#src/session/agent-session-deps";
+import { nativeBackend } from "#src/session/native-backend";
 
 export const MODEL = "openai/gpt-5.4-mini";
 
@@ -132,8 +133,44 @@ export function installManualTimers(): ManualTimers {
   };
 }
 
-export function sessionOptions(extra: Partial<CreateAgentSessionOptions> = {}): CreateAgentSessionOptions {
-  return { backend: "native", model: MODEL, profile: "none", transcriptStore: createMemoryTranscriptStore(), ...extra };
+export type SessionTestOptions = Partial<Omit<CreateAgentSessionOptions, "backend">> &
+  Partial<NativeBackendOptions> & { readonly backend?: SessionBackend };
+
+/** Shared options, with native-only keys routed into nativeBackend() (S4: the 0.3.0 options shape). */
+export function sessionOptions(extra: SessionTestOptions = {}): CreateAgentSessionOptions {
+  const {
+    backend,
+    model,
+    credentials,
+    catalogOverrides,
+    loopHandlers,
+    hostPorts,
+    bashApproval,
+    allowUnsandboxed,
+    ...shared
+  } = extra;
+  return {
+    backend:
+      backend ??
+      nativeBackend({
+        model: model ?? MODEL,
+        ...(credentials !== undefined ? { credentials } : {}),
+        ...(catalogOverrides !== undefined ? { catalogOverrides } : {}),
+        ...(loopHandlers !== undefined ? { loopHandlers } : {}),
+        ...(hostPorts !== undefined ? { hostPorts } : {}),
+        ...(bashApproval !== undefined ? { bashApproval } : {}),
+        ...(allowUnsandboxed !== undefined ? { allowUnsandboxed } : {}),
+      }),
+    sessionId: shared.sessionId,
+    profile: shared.profile ?? "none",
+    workdir: shared.workdir,
+    instructions: shared.instructions,
+    tools: shared.tools,
+    transcriptStore: shared.transcriptStore ?? createMemoryTranscriptStore(),
+    approvalTimeoutMs: shared.approvalTimeoutMs,
+    turnTimeoutSeconds: shared.turnTimeoutSeconds,
+    metadata: shared.metadata,
+  };
 }
 
 export async function collect(iterable: AsyncIterable<SessionEvent>): Promise<SessionEvent[]> {
