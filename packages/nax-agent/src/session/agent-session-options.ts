@@ -50,7 +50,8 @@ const EmbedderToolSchema = z.object({
 
 const OptionsSchema = z.strictObject({
   backend: z.custom<SessionBackend>(
-    (value) => isRecord(value) && typeof value.kind === "string" && typeof value.open === "function",
+    (value) =>
+      isRecord(value) && typeof value.kind === "string" && value.kind.length > 0 && typeof value.open === "function",
     "must be a SessionBackend (for example nativeBackend({ model }))",
   ),
   sessionId: z

@@ -111,6 +111,8 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
       loopHandlerContext,
       ...(raw.loopHandlers !== undefined ? { loopHandlers: raw.loopHandlers } : {}),
     }),
+    // Native owns no per-session resource beyond the adapter, which
+    // closeSession (the facade's step before this) already releases.
     close: async () => {},
   };
 }

@@ -153,7 +153,7 @@ export interface SessionAskPort {
   recordAutoDecision(req: { callId?: string; tool: string; summary: string; reason: string }, decision: "allow" | "deny"): void;
   /** null on deadline, cancel or no active turn. */
   askQuestion(text: string): Promise<string | null>;
-  /** Informational question event with a fresh requestId; answer() on it returns "unknown". */
+  /** Informational question event with a fresh requestId; answer() on it returns "cancelled". */
   noteQuestion(text: string): void;
 }
 ```

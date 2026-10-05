@@ -42,6 +42,10 @@ export function createStderrTail(capacityBytes: number = DEFAULT_CAPACITY): Stde
   return {
     push(chunk) {
       buffer += typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+      // Known limitation: trimming at the raw capacity boundary can cut a
+      // caller secret in two, leaving the older half as a suffix in the buffer;
+      // excerpt() redacts only whole occurrences it sees. Capacity semantics are
+      // deliberate and stay as they are.
       buffer = lastBytes(buffer, capacityBytes);
     },
     excerpt(opts = {}) {

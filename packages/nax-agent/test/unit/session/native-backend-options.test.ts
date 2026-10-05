@@ -79,9 +79,15 @@ describe("nativeProfileRules", () => {
       allowUnsandboxed: false,
     });
     for (const mode of ["raw", "escalate"] as const) {
-      expect(code(() => nativeProfileRules("ask", { model: "openai/x", bashApproval: mode }))).toBe(
-        "AGENT_SESSION_INVALID_OPTIONS",
-      );
+      let caught: unknown;
+      try {
+        nativeProfileRules("ask", { model: "openai/x", bashApproval: mode });
+      } catch (err) {
+        caught = err;
+      }
+      assertNaxError(caught);
+      expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+      expect(caught.context).toMatchObject({ path: "backend.bashApproval" });
     }
   });
 

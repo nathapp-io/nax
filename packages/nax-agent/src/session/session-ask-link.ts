@@ -19,8 +19,6 @@ export interface SessionAskDeps {
   readonly table: PendingAskTable;
   /** Emits on the running turn's event stream. */
   readonly emit: (body: SessionEventBody) => void;
-  /** The tool call being answered right now, if any. */
-  readonly currentCallId: () => string | undefined;
 }
 
 export interface ApprovalAsk {

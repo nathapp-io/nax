@@ -77,6 +77,8 @@ describe("agent session: backend seam", () => {
       transcriptStore: createMemoryTranscriptStore(),
     });
     expect(session.backend).toEqual({ kind: "acp:fake", capabilities: { resume: true } });
+    expect(Object.isFrozen(session.backend)).toBe(true);
+    expect(Object.isFrozen(session.backend.capabilities)).toBe(true);
     const end = turnEndOf(await collect(session.send("ping")));
     expect(end).toMatchObject({ status: "completed", output: "pong", costSource: "unpriced" });
     expect(state.opened[0]?.workdir).toBeString();
@@ -112,6 +114,30 @@ describe("agent session: backend seam", () => {
     const backend: SessionBackend = nativeBackend({ model: MODEL });
     // Object.assign lets a non-backend slip past the type, for the runtime validator to refuse.
     Object.assign(backend, { open: undefined });
+    await rejectsWith(
+      createAgentSession({ backend, profile: "none", transcriptStore: createMemoryTranscriptStore() }),
+      "AGENT_SESSION_INVALID_OPTIONS",
+    );
+  });
+
+  test('a non-object backend (the primitive "native") is refused', async () => {
+    const options = {
+      backend: nativeBackend({ model: MODEL }),
+      profile: "none" as const,
+      transcriptStore: createMemoryTranscriptStore(),
+    };
+    // Object.assign swaps in a primitive the type does not declare: the runtime shape is what this test pins.
+    Object.assign(options, { backend: "native" });
+    await rejectsWith(createAgentSession(options), "AGENT_SESSION_INVALID_OPTIONS");
+  });
+
+  test("a backend with an empty kind is refused", async () => {
+    const backend: SessionBackend = {
+      kind: "",
+      open: async () => {
+        throw new Error("unreachable: validation must reject before open");
+      },
+    };
     await rejectsWith(
       createAgentSession({ backend, profile: "none", transcriptStore: createMemoryTranscriptStore() }),
       "AGENT_SESSION_INVALID_OPTIONS",

@@ -31,6 +31,18 @@ describe("createStderrTail", () => {
     expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(8);
   });
 
+  test("a multi-byte character cut at the maxBytes boundary drops the leading U+FFFD", () => {
+    const tail = createStderrTail();
+    // "éx" is 0xC3 0xA9 0x78; a 2-byte tail starts mid-"é", decoding 0xA9 to
+    // U+FFFD. The leading replacement char is dropped; the following "x" stays.
+    tail.push("\u00e9x");
+    const out = tail.excerpt({ maxBytes: 2 });
+    expect(out).toBe("x");
+    expect(out.startsWith("\uFFFD")).toBe(false);
+    expect(out).not.toContain("\uFFFD");
+    expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(2);
+  });
+
   test("ignores secrets shorter than 4 characters so they do not shred the text", () => {
     const tail = createStderrTail();
     tail.push("a b c");

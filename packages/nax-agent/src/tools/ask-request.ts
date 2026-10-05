@@ -10,6 +10,7 @@ import {
   ASK_CANCELLED_REASON,
   ASK_DENIED_REASON,
   ASK_NO_CHANNEL_REASON,
+  ASK_PROFILE_REASON,
   ASK_TIMEOUT_REASON,
   ASK_UNSHOWABLE_REASON,
   type AskVerdict,
@@ -63,5 +64,6 @@ export function askDenyReason(decidedBy: AskVerdict["decidedBy"]): string {
   if (decidedBy === "human") return ASK_DENIED_REASON;
   if (decidedBy === "cancelled") return ASK_CANCELLED_REASON;
   if (decidedBy === "unshowable") return ASK_UNSHOWABLE_REASON;
+  if (decidedBy === "profile") return ASK_PROFILE_REASON;
   return ASK_NO_CHANNEL_REASON;
 }

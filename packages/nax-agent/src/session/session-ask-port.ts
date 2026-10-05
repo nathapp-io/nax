@@ -27,7 +27,7 @@ function noTurn(): NaxError {
 }
 
 export function createSessionAskPort(deps: SessionAskPortDeps): SessionAskPort {
-  const askDeps = { table: deps.table, emit: deps.emit, currentCallId: () => undefined };
+  const askDeps = { table: deps.table, emit: deps.emit };
   const now = (): string => new Date(_agentSessionDeps.now()).toISOString();
   return {
     async requestApproval(req: ApprovalRequest) {
@@ -37,6 +37,9 @@ export function createSessionAskPort(deps: SessionAskPortDeps): SessionAskPort {
       const { signal: _ignored, ...ask } = req;
       return askPerson(askDeps, ask, signal);
     },
+    // Informational only. The requestId is emitted but never put in the pending
+    // table, so session.answer() on it is not answerable, and expiresAt is the
+    // emit time (the auto-decision is already resolved), not a real deadline.
     recordAutoDecision(req, decision) {
       if (deps.turn() === undefined) return;
       const requestId = _agentSessionDeps.randomUUID();

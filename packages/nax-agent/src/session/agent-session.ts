@@ -71,7 +71,8 @@ class FacadeAgentSession implements AgentSession {
   }
 
   get backend(): BackendInfo {
-    return this.parts.opened.info;
+    const info = this.parts.opened.info;
+    return Object.freeze({ kind: info.kind, capabilities: Object.freeze({ ...info.capabilities }) });
   }
 
   get lastTurn(): LastTurn | undefined {
@@ -174,16 +175,27 @@ async function assemble(
     metadata: options.metadata,
     openSignal: closeController.signal,
   });
-  const ctx: TurnRunContext = {
-    sessionId,
-    adapter: opened.adapter,
-    handle: opened.handle,
-    store: raw.transcriptStore,
-    turnOpts: () => opened.turnOpts(),
-    turnTimeoutSeconds: options.turnTimeoutSeconds,
-    metadata: options.metadata,
-  };
-  return new FacadeAgentSession({ ctx, table, slot, opened, closeController, cleanup: root.cleanup }, opening.lastTurn);
+  try {
+    const ctx: TurnRunContext = {
+      sessionId,
+      adapter: opened.adapter,
+      handle: opened.handle,
+      store: raw.transcriptStore,
+      turnOpts: () => opened.turnOpts(),
+      turnTimeoutSeconds: options.turnTimeoutSeconds,
+      metadata: options.metadata,
+    };
+    return new FacadeAgentSession(
+      { ctx, table, slot, opened, closeController, cleanup: root.cleanup },
+      opening.lastTurn,
+    );
+  } catch (err) {
+    // No step after backend.open throws today; a future backend's must not leak
+    // the opened resources. open() still removes the root and lets open()'s own
+    // failure propagate untouched.
+    await opened.close().catch(() => undefined);
+    throw err;
+  }
 }
 
 /** Opens the backend session under a fresh root; a failure removes the root. */

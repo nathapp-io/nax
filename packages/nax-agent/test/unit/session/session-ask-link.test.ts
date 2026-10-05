@@ -41,7 +41,6 @@ function harness(callId?: string): Harness {
   const deps: SessionAskDeps = {
     table,
     emit,
-    currentCallId: () => callId,
   };
   const port = createSessionAskPort({ table, emit, turn: () => ({ turnId: "t", signal: turn.signal }) });
   const link = createSessionAskLink({ port, currentCallId: () => callId });

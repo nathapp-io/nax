@@ -201,6 +201,20 @@ describe("resolveSessionLauncher", () => {
     expect(caught.message).toContain("no sandbox backend on this host");
   });
 
+  test("ask without a sandbox fails like full, while none needs none", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    _sessionSandboxDeps.probe = async () => ({ available: false, reason: "no sandbox backend on this host" });
+    let caught: unknown;
+    try {
+      await resolveSessionLauncher({ ...launcherArgs, profile: "ask" });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_SANDBOX_UNAVAILABLE");
+    expect(await resolveSessionLauncher({ ...launcherArgs, profile: "none" })).toBeUndefined();
+  });
+
   test("gated with allowUnsandboxed runs without a launcher", async () => {
     stubSessionSandboxDeps(_sessionSandboxDeps);
     _sessionSandboxDeps.probe = async () => ({ available: false, reason: "none" });

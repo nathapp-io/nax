@@ -1,7 +1,7 @@
 /**
  * Public types of the agent session facade (S3 spec section 4). The facade
  * drives the S1 AgentSessionAdapter; nothing here is backend-specific, so the
- * acpx backend (S4) reuses these types unchanged.
+ * @nathapp/nax-agent-acp backend (S4) reuses these types unchanged.
  */
 import type { CommandInterceptor } from "#src/command-interceptor/index";
 import type { TokenUsage } from "#src/cost/standard-types";
