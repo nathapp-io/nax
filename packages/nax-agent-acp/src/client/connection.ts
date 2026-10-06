@@ -1,7 +1,8 @@
 /**
  * The ACP client connection (S4 spec §6.1 connection). One ClientApp per agent
  * process, attached with connect() for the session's lifetime (not connectWith).
- * Outbound calls use the connection's request API directly; inbound
+ * Outbound calls (including session/resume and session/load, S4-6) use the
+ * connection's request API directly; inbound
  * session/update, session/request_permission and elicitation/create go to the
  * backend's handlers. Requests are not bounded here: callers race them (race.ts),
  * because the SDK's cancellation is cooperative and still waits for the agent's answer.
@@ -13,6 +14,8 @@ import {
   client,
   type InitializeRequest,
   type InitializeResponse,
+  type LoadSessionRequest,
+  type LoadSessionResponse,
   methods,
   type NewSessionRequest,
   type NewSessionResponse,
@@ -20,6 +23,8 @@ import {
   type PromptResponse,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type ResumeSessionRequest,
+  type ResumeSessionResponse,
   type SessionNotification,
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
@@ -35,6 +40,8 @@ export interface InboundHandlers {
 export interface AcpLink {
   initialize(params: InitializeRequest): Promise<InitializeResponse>;
   newSession(params: NewSessionRequest): Promise<NewSessionResponse>;
+  resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse>;
+  loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse>;
   setConfigOption(params: SetSessionConfigOptionRequest): Promise<SetSessionConfigOptionResponse>;
   prompt(params: PromptRequest): Promise<PromptResponse>;
   cancel(sessionId: string): Promise<void>;
@@ -56,6 +63,8 @@ export function openConnection(target: LaunchTarget, handlers: InboundHandlers):
   return {
     initialize: (params) => agent.request(methods.agent.initialize, params),
     newSession: (params) => agent.request(methods.agent.session.new, params),
+    resumeSession: (params) => agent.request(methods.agent.session.resume, params),
+    loadSession: (params) => agent.request(methods.agent.session.load, params),
     setConfigOption: (params) => agent.request(methods.agent.session.setConfigOption, params),
     prompt: (params) => agent.request(methods.agent.session.prompt, params),
     cancel: (sessionId) => agent.notify(methods.agent.session.cancel, { sessionId }),

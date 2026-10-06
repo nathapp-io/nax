@@ -1,10 +1,10 @@
 /**
  * The fake ACP agent (S4 spec §9) on the SDK's agent side. It answers initialize,
- * session/new, session/set_config_option, session/prompt and session/close from a
- * FakeScript, sends updates, permission requests, MCP calls and elicitations as its
- * steps say, and records each request through FakeHooks. It runs in process (the
- * client connects to the AgentApp directly) or as a subprocess (main.ts). Erasable
- * TypeScript only: Node runs it with type stripping.
+ * session/new, session/resume, session/load, session/set_config_option, session/prompt
+ * and session/close from a FakeScript, sends updates, permission requests, MCP calls
+ * and elicitations as its steps say, and records each request through FakeHooks. It
+ * runs in process (the client connects to the AgentApp directly) or as a subprocess
+ * (main.ts). Erasable TypeScript only: Node runs it with type stripping.
  */
 import {
   type AgentApp,
@@ -17,6 +17,8 @@ import {
   PROTOCOL_VERSION,
   type PromptResponse,
   RequestError,
+  type ResumeSessionResponse,
+  type SessionConfigOption,
   type StopReason,
 } from "@agentclientprotocol/sdk";
 import { callMcpTool, httpServerOf } from "./mcp.ts";
@@ -218,6 +220,38 @@ async function runTurn(
   return { stopReason: turn.stopReason ?? "end_turn", ...(turn.usage === undefined ? {} : { usage: turn.usage }) };
 }
 
+/** Resume and load fail as scripted, or with resourceNotFound for a session the agent does not hold (D6-l). */
+function checkRestore(script: FakeScript, ownId: string, requested: string): void {
+  if (script.restoreFailure !== undefined) throw rpcError(script.restoreFailure);
+  if (!(script.knownSessions ?? [ownId]).includes(requested)) throw RequestError.resourceNotFound(requested);
+}
+
+/** A resume/load answer. Claude's adapter also echoes the session id, outside the protocol's schema (D6-d). */
+function restoredResponse(script: FakeScript, configOptions: readonly SessionConfigOption[]): ResumeSessionResponse {
+  const response = {
+    ...(script.configOptions === undefined ? {} : { configOptions: [...configOptions] }),
+    ...(script.restoredSessionId === undefined ? {} : { sessionId: script.restoredSessionId }),
+  };
+  return response;
+}
+
+/** session/load's history replay: updates, then optionally one permission request. */
+async function replay(script: FakeScript, sessionId: string, client: AgentContext, hooks: FakeHooks): Promise<void> {
+  for (const update of script.loadReplay ?? []) {
+    await client.notify(methods.client.session.update, { sessionId, update });
+  }
+  if (script.loadPermission !== true) return;
+  const response = await client.request(methods.client.session.requestPermission, {
+    sessionId,
+    toolCall: { toolCallId: "replay-permission", title: "Replay an edit", kind: "edit", status: "pending" },
+    options: [
+      { optionId: "opt-allow_once", name: "allow_once", kind: "allow_once" },
+      { optionId: "opt-reject_once", name: "reject_once", kind: "reject_once" },
+    ],
+  });
+  hooks.record("load-permission-outcome", response.outcome);
+}
+
 export function buildFakeAgent(script: FakeScript, hooks: FakeHooks): AgentApp {
   const sessionId = script.sessionId ?? "fake-session-1";
   const turns = script.turns ?? [DEFAULT_TURN];
@@ -241,6 +275,19 @@ export function buildFakeAgent(script: FakeScript, hooks: FakeHooks): AgentApp {
       mcpServers = ctx.params.mcpServers;
       if (script.newSessionFailure !== undefined) throw rpcError(script.newSessionFailure);
       return { sessionId, ...(script.configOptions === undefined ? {} : { configOptions }) };
+    })
+    .onRequest(methods.agent.session.resume, async (ctx) => {
+      hooks.record("session/resume", ctx.params);
+      mcpServers = ctx.params.mcpServers ?? [];
+      checkRestore(script, sessionId, ctx.params.sessionId);
+      return restoredResponse(script, configOptions);
+    })
+    .onRequest(methods.agent.session.load, async (ctx) => {
+      hooks.record("session/load", ctx.params);
+      mcpServers = ctx.params.mcpServers;
+      checkRestore(script, sessionId, ctx.params.sessionId);
+      await replay(script, ctx.params.sessionId, ctx.client, hooks);
+      return restoredResponse(script, configOptions);
     })
     .onRequest(methods.agent.session.setConfigOption, async (ctx) => {
       hooks.record("session/set_config_option", ctx.params);

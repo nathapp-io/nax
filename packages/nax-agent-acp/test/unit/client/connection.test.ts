@@ -174,3 +174,31 @@ describe("openConnection over a real subprocess", () => {
     expect((await race(link.initialize(INIT), { timeoutMs: 10_000 })).kind).toBe("failed");
   });
 });
+
+describe("openConnection: restoring a session (S4-6, spec §6.9)", () => {
+  test("session/resume and session/load reach the agent; the agent's extra sessionId passes through (D6-d)", async () => {
+    const { link, callsTo } = pair({ restoredSessionId: "fake-session-1" });
+    const params = { sessionId: "fake-session-1", cwd: "/w", mcpServers: [] };
+    const resumed: unknown = await link.resumeSession(params);
+    const loaded: unknown = await link.loadSession(params);
+    expect(resumed).toEqual({ sessionId: "fake-session-1" });
+    expect(loaded).toEqual({ sessionId: "fake-session-1" });
+    expect(callsTo("session/resume")).toEqual([params]);
+    expect(callsTo("session/load")).toEqual([params]);
+  });
+
+  test("an unknown session is the JSON-RPC error resourceNotFound", async () => {
+    const { link } = pair({ knownSessions: [] });
+    const err = await link.resumeSession({ sessionId: "gone", cwd: "/w" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RequestError);
+    expect(err).toMatchObject({ code: -32002 });
+  });
+
+  test("a load replays history as session/update before it answers", async () => {
+    const { link, updates } = pair({
+      loadReplay: [{ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "old" } }],
+    });
+    await link.loadSession({ sessionId: "fake-session-1", cwd: "/w", mcpServers: [] });
+    expect(updates.map((n) => n.update.sessionUpdate)).toEqual(["agent_message_chunk"]);
+  });
+});

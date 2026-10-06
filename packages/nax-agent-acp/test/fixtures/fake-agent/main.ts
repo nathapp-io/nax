@@ -2,19 +2,30 @@
  * Subprocess entry of the fake ACP agent. FAKE_AGENT_SCRIPT holds the JSON
  * FakeScript. FAKE_AGENT_RECORD, when set, names a file every received request
  * is appended to as one JSON line, after a "start" record with the pid, cwd and
- * which of `recordEnv` are set. Runs under Bun (unit suite) and Node 22+
- * (contract suite, type stripping), so it uses erasable TypeScript only and
- * writes stderr synchronously (pipes are asynchronous on macOS).
+ * which of `recordEnv` are set. The number of "start" records already in that
+ * file is this launch's index, so `relaunch` applies from the second launch on
+ * (S4-6 D6-l). Runs under Bun (unit suite) and Node 22+ (contract suite, type
+ * stripping), so it uses erasable TypeScript only and writes stderr synchronously
+ * (pipes are asynchronous on macOS).
  */
 import { spawn } from "node:child_process";
-import { appendFileSync, writeSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeSync } from "node:fs";
 import { Readable, Writable } from "node:stream";
 import { ndJsonStream } from "@agentclientprotocol/sdk";
 import { buildFakeAgent } from "./agent.ts";
-import type { FakeScript } from "./script.ts";
+import { type FakeScript, scriptFor } from "./script.ts";
 
-const script: FakeScript = JSON.parse(process.env.FAKE_AGENT_SCRIPT ?? "{}");
 const recordPath = process.env.FAKE_AGENT_RECORD;
+
+/** Launches before this one: the "start" records already written. */
+function priorLaunches(path: string | undefined): number {
+  if (path === undefined || !existsSync(path)) return 0;
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .filter((line) => line.startsWith('{"method":"start"')).length;
+}
+
+const script: FakeScript = scriptFor(JSON.parse(process.env.FAKE_AGENT_SCRIPT ?? "{}"), priorLaunches(recordPath));
 
 function record(method: string, params: unknown): void {
   if (recordPath !== undefined) appendFileSync(recordPath, `${JSON.stringify({ method, params })}\n`);
