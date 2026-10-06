@@ -24,6 +24,7 @@ import { createInboundRouter, type InboundRouter } from "#src/client/inbound";
 import { type LaunchFn, launchAgent } from "#src/client/launch";
 import { type OpenedAcp, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, type ResolvedAcpOptions, resolveAcpOptions } from "#src/client/options";
+import { rejectLocally } from "#src/client/permissions";
 import { race } from "#src/client/race";
 import { runPromptTurn, type TurnState } from "#src/client/turn";
 
@@ -60,7 +61,7 @@ function refuseUnbuilt(ctx: BackendOpenContext): void {
 
 async function openBackend(options: ResolvedAcpOptions, ctx: BackendOpenContext): Promise<OpenedBackend> {
   refuseUnbuilt(ctx);
-  const router = createInboundRouter();
+  const router = createInboundRouter(async (request) => rejectLocally(request));
   const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch);
   const flags: SessionFlags = { disconnected: false, closing: undefined, instructionsSent: false };
   void acp.launched.exited.then(() => {
@@ -112,11 +113,12 @@ async function sendTurn(live: Live, prompt: string, opts: SendTurnOpts): Promise
   flags.instructionsSent = true;
   const text = instructions === undefined || instructions === "" ? prompt : `${instructions}\n\n${prompt}`;
   const collector = createTurnCollector(opts.onTurnEvent);
-  const release = live.router.attach(live.acp.agentSessionId, collector);
+  const signal = opts.signal ?? ctx.turnSignal();
+  const release = live.router.attach(live.acp.agentSessionId, collector, signal);
   try {
-    return await runPromptTurn(live.state, { text, signal: opts.signal ?? ctx.turnSignal(), collector });
+    return await runPromptTurn(live.state, { text, signal, collector });
   } finally {
-    release();
+    await release();
   }
 }
 
