@@ -139,3 +139,39 @@ describe("turnSpend and usageEvent (S4-5 D5-h)", () => {
     });
   });
 });
+
+describe("createCostMeter: a seeded baseline (S4-6 D6-a)", () => {
+  test("a resumed agent whose total includes earlier turns: the turn costs its own share", () => {
+    const meter = createCostMeter(0.01);
+    expect(meter.baseline()).toBe(0.01);
+    meter.beginTurn();
+    meter.observe(usd(0.025));
+    const turn = meter.settle();
+    expect(turn.costSource).toBe("reported");
+    expect(turn.costUsd).toBeCloseTo(0.015, 10);
+    expect(meter.baseline()).toBe(0.025);
+  });
+
+  test("an agent whose counter restarted below the seed: the raw reading, never negative", () => {
+    const meter = createCostMeter(0.5);
+    meter.beginTurn();
+    meter.observe(usd(0.004));
+    expect(meter.settle()).toEqual({ costUsd: 0.004, costSource: "reported" });
+    expect(meter.baseline()).toBe(0.004);
+  });
+
+  test("an unpriced turn keeps the seed", () => {
+    const meter = createCostMeter(0.2);
+    meter.beginTurn();
+    expect(meter.settle()).toEqual({ costUsd: 0, costSource: "unpriced" });
+    expect(meter.baseline()).toBe(0.2);
+  });
+
+  test.each([-1, Number.NaN, Number.POSITIVE_INFINITY])("a seed of %p is 0", (seed) => {
+    expect(createCostMeter(seed).baseline()).toBe(0);
+  });
+
+  test("no seed is 0", () => {
+    expect(createCostMeter().baseline()).toBe(0);
+  });
+});
