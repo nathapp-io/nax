@@ -33,7 +33,12 @@ function pair(script: FakeScript, handlers: Partial<InboundHandlers> = {}) {
   });
   const link = openConnection(
     { kind: "app", agent: app },
-    { onUpdate: (n) => updates.push(n), onPermission: async (r) => rejectLocally(r), ...handlers },
+    {
+      onUpdate: (n) => updates.push(n),
+      onPermission: async (r) => rejectLocally(r),
+      onElicitation: async () => ({ action: "cancel" }),
+      ...handlers,
+    },
   );
   links.push(link);
   const callsTo = (method: string) => calls.filter((c) => c.method === method).map((c) => c.params);
@@ -92,6 +97,24 @@ describe("openConnection: outbound requests (spec §6.1 connection)", () => {
     expect(callsTo("permission-outcome")).toEqual([{ outcome: "selected", optionId: "opt-reject_once" }]);
   });
 
+  test("an elicitation reaches onElicitation and its answer reaches the agent (S4-5)", async () => {
+    const seen: unknown[] = [];
+    const { link, callsTo } = pair(
+      { turns: [{ steps: [{ kind: "elicit", message: "Which env?" }] }] },
+      {
+        onElicitation: async (request) => {
+          seen.push(request);
+          return { action: "accept", content: { env: "staging" } };
+        },
+      },
+    );
+    await link.initialize(INIT);
+    await link.newSession({ cwd: "/w", mcpServers: [] });
+    await link.prompt({ sessionId: "fake-session-1", prompt: [{ type: "text", text: "go" }] });
+    expect(seen).toMatchObject([{ sessionId: "fake-session-1", mode: "form", message: "Which env?" }]);
+    expect(callsTo("elicitation-answer")).toEqual([{ action: "accept", content: { env: "staging" } }]);
+  });
+
   test("session/cancel reaches the agent", async () => {
     const { link, callsTo } = pair({ turns: [{ steps: [{ kind: "waitForCancel" }] }] });
     await link.initialize(INIT);
@@ -132,7 +155,11 @@ describe("openConnection over a real subprocess", () => {
       ...(maxMessageBytes === undefined ? {} : { maxMessageBytes }),
     });
     agents.push(agent);
-    const link = openConnection(agent.target, { onUpdate: () => {}, onPermission: async (r) => rejectLocally(r) });
+    const link = openConnection(agent.target, {
+      onUpdate: () => {},
+      onPermission: async (r) => rejectLocally(r),
+      onElicitation: async () => ({ action: "cancel" }),
+    });
     links.push(link);
     return link;
   }

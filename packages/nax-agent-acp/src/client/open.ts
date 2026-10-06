@@ -1,5 +1,6 @@
 /**
- * Opening an ACP session (S4 spec §6.3 step 1): spawn, initialize, capability
+ * Opening an ACP session (S4 spec §6.3 step 1): spawn, initialize (form
+ * elicitation advertised under ask and full, S4-5 D5-l), capability
  * check, the tool host when the session has tools, session/new (with the host's
  * server entry and the pre-approval _meta, §6.6), the profile's mode, then the
  * model, then the initial transcript document. Every failure after the spawn
@@ -8,8 +9,13 @@
  * bounded by initializeTimeoutMs (D-c) and by openSignal: close() during open
  * rejects AGENT_SESSION_CLOSED.
  */
-import { type McpServer, PROTOCOL_VERSION, type SessionConfigOption } from "@agentclientprotocol/sdk";
-import { type BackendOpenContext, NaxError, type TranscriptDoc } from "@nathapp/nax-agent";
+import {
+  type ClientCapabilities,
+  type McpServer,
+  PROTOCOL_VERSION,
+  type SessionConfigOption,
+} from "@agentclientprotocol/sdk";
+import { type AgentSessionProfile, type BackendOpenContext, NaxError, type TranscriptDoc } from "@nathapp/nax-agent";
 import {
   buildCapabilityRecord,
   type CapabilityRecord,
@@ -114,11 +120,16 @@ async function step<T>(o: Opening, label: string, request: Promise<T>): Promise<
   }
 }
 
+/** §6.3 step 1.1: no fs and no terminal (R11); form elicitation under ask and full (§6.8, D5-l). */
+export function clientCapabilitiesFor(profile: AgentSessionProfile): ClientCapabilities {
+  return profile === "ask" || profile === "full" ? { elicitation: { form: {} } } : {};
+}
+
 async function establish(o: Opening): Promise<OpenedAcp> {
   const init = await step(
     o,
     "initialize",
-    o.link.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} }),
+    o.link.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: clientCapabilitiesFor(o.ctx.profile) }),
   );
   if (init.protocolVersion !== PROTOCOL_VERSION) {
     throw backendUnavailable(

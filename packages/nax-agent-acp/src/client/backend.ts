@@ -5,11 +5,14 @@
  * through the caller under `ask`. Embedder tools are served by a per-session MCP
  * tool host (§6.6, tool-host.ts) and pre-approved at the adapter (R12); the
  * host's token joins the session's redaction set before the agent starts (D4-i).
- * A turn's permission decisions and tool calls are cancelled when the turn is
- * cancelled, times out, ends or loses its process (D3-d, D4-f). Until its stage
- * lands it refuses resume (S4-6) before spawning anything. A crashed or killed
- * agent leaves the session disconnected; reconnect is S4-6, so until then later
- * turns end AGENT_SESSION_CLOSED (D-f).
+ * The agent's updates become turn events with per-turn usage priced by one cost
+ * meter per session (§6.7, events.ts, usage.ts), and its form elicitations become
+ * questions under `ask` and `full` (§6.8, elicitation.ts). A turn's permission
+ * decisions, questions and tool calls are cancelled when the turn is cancelled,
+ * times out, ends or loses its process (D3-d, D4-f, D5-j). Until its stage lands
+ * it refuses resume (S4-6) before spawning anything. A crashed or killed agent
+ * leaves the session disconnected; reconnect is S4-6, so until then later turns
+ * end AGENT_SESSION_CLOSED (D-f).
  */
 import {
   type AgentSessionAdapter,
@@ -23,6 +26,7 @@ import {
   type TranscriptStore,
   type TurnResult,
 } from "@nathapp/nax-agent";
+import { answerElicitation } from "#src/client/elicitation";
 import { capabilityUnsupported } from "#src/client/errors";
 import { createTurnCollector } from "#src/client/events";
 import { createInboundRouter, type InboundRouter } from "#src/client/inbound";
@@ -34,6 +38,7 @@ import { race } from "#src/client/race";
 import { createToolCalls } from "#src/client/tool-calls";
 import { createToolHost, newToolHostToken, type ToolHost } from "#src/client/tool-host";
 import { runPromptTurn, type TurnState } from "#src/client/turn";
+import { type CostMeter, createCostMeter } from "#src/client/usage";
 
 /** Test seam: the process launcher. Production always uses launchAgent. */
 export const _acpBackendDeps: { launch: LaunchFn } = { launch: launchAgent };
@@ -55,6 +60,8 @@ interface Live {
   readonly gone: AbortController;
   /** The embedder tools' MCP host; undefined when the session has no tools. */
   readonly host: ToolHost | undefined;
+  /** The agent process's cumulative cost readings, one meter per process (D5-b). */
+  readonly meter: CostMeter;
 }
 
 export function acpBackend(input: AcpBackendOptions): SessionBackend {
@@ -90,14 +97,21 @@ function toolHostFor(
   return createToolHost(calls, token);
 }
 
+/** Permission requests and elicitations, decided by profile with the session's redaction set. */
+function routerFor(ctx: BackendOpenContext, secrets: readonly string[]): InboundRouter {
+  const base = { profile: ctx.profile, asks: ctx.asks, secrets };
+  return createInboundRouter(
+    (request, signal) => decidePermission(request, { ...base, signal }),
+    (request, signal) => answerElicitation(request, { ...base, signal }),
+  );
+}
+
 async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): Promise<OpenedBackend> {
   refuseUnbuilt(ctx);
   const token = ctx.tools.length > 0 ? newToolHostToken() : undefined;
   const options = withToken(base, token);
   const gone = new AbortController();
-  const router = createInboundRouter((request, signal) =>
-    decidePermission(request, { profile: ctx.profile, asks: ctx.asks, secrets: options.secrets, signal }),
-  );
+  const router = routerFor(ctx, options.secrets);
   const host = toolHostFor(ctx, router, options.secrets, token);
   const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch, host).catch(
     async (err: unknown) => {
@@ -120,7 +134,7 @@ async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): P
       flags.disconnected = true;
     },
   };
-  return assemble({ options, ctx, acp, router, flags, state, gone, host });
+  return assemble({ options, ctx, acp, router, flags, state, gone, host, meter: createCostMeter() });
 }
 
 function assemble(live: Live): OpenedBackend {
@@ -155,7 +169,7 @@ async function sendTurn(live: Live, prompt: string, opts: SendTurnOpts): Promise
   const instructions = flags.instructionsSent ? undefined : ctx.instructions;
   flags.instructionsSent = true;
   const text = instructions === undefined || instructions === "" ? prompt : `${instructions}\n\n${prompt}`;
-  const collector = createTurnCollector(opts.onTurnEvent);
+  const collector = createTurnCollector(opts.onTurnEvent, { secrets: live.options.secrets, meter: live.meter });
   const signal = opts.signal ?? ctx.turnSignal();
   const release = live.router.attach(live.acp.agentSessionId, collector, AbortSignal.any([signal, live.gone.signal]));
   try {
@@ -164,6 +178,8 @@ async function sendTurn(live: Live, prompt: string, opts: SendTurnOpts): Promise
     await release();
     // The release aborted this turn's tool calls; wait for their answers (D4-f).
     await live.host?.drain();
+    // Held text and calls left without a result go out before turn_end (D5-e, D5-g).
+    collector.finish();
   }
 }
 

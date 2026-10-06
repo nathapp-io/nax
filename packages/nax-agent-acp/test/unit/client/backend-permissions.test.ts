@@ -86,12 +86,15 @@ describe("profiles none and read (spec §6.4)", () => {
     expect(answers(o)).toEqual([{ outcome: "selected", optionId: "opt-reject_once" }]);
     expect(types(events)).toEqual([
       "turn_start",
+      "tool_call",
       "approval_requested",
       "approval_resolved",
       "text_delta",
+      "tool_result",
       "usage",
       "turn_end",
     ]);
+    expect(find(events, "tool_call")).toMatchObject({ callId: "fake-permission", name: "Edit a file" });
     expect(find(events, "approval_requested")).toMatchObject({
       callId: "fake-permission",
       tool: "edit",
