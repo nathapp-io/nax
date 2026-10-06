@@ -168,7 +168,8 @@ and `read` forms are not offered, and one that arrives anyway is declined.
   fields or more than 32 choices, and requests to open a URL are declined. You see
   an informational `question` that starts with `declined:`; `answer()` on it
   returns `"cancelled"`. A reply that matches no choice (when there is no "Other"
-  box) and an empty reply to a required field also decline the form, with a note.
+  box, or the field is required) and an empty reply to a required field also
+  decline the form, with a note.
 - **No answer cancels.** An unanswered question after `approvalTimeoutMs`, a
   cancelled turn, the turn ending or the agent process dying cancels the whole form,
   and later fields are not asked. `answer()` on that question returns `"cancelled"`.
